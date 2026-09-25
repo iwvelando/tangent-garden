@@ -6,6 +6,9 @@ import type { Bounds, Config, Frame, Kind } from "./types";
 import { EngineClient, boundText } from "./engine-client";
 import { useTheme } from "./useTheme";
 import { AnimationPanel } from "./AnimationPanel";
+import { Field, HelpText, HelpToggle, useHelp } from "./Field";
+import { useDisclosure } from "./useDisclosure";
+import { useMediaQuery } from "./useMediaQuery";
 import type { AnimationView, Viewport } from "./animation";
 import "./style.css";
 
@@ -67,8 +70,38 @@ function App() {
     virtual: true,
     axes: false,
   });
+  const modeHelp = useHelp();
+  const narrow = useMediaQuery("(max-width: 700px)");
+  const expressions = useDisclosure("expressions");
+  const indices = useDisclosure("indices");
+  const diagnostics = useDisclosure("diagnostics");
+  const samplesHelp =
+    "More samples trace the curve more finely and take longer to compute; they do not raise numerical precision on their own." +
+    (expert ? " Whole numbers from 64 to 32,768." : "");
   const client = useRef<EngineClient | null>(null);
   const manualView = useRef<Viewport | undefined>(undefined);
+  const plotWrap = useRef<HTMLDivElement>(null);
+  // On narrow screens the controls sit below the drawing, so playback started
+  // from them would otherwise run out of sight. Wide layouts keep the drawing
+  // in view already and are left untouched.
+  const revealPlot = () => {
+    const plot = plotWrap.current;
+    if (!plot) return;
+    // A docked playback bar covers the bottom of the screen.
+    const bar = document.getElementById("playback");
+    const limit =
+      bar && getComputedStyle(bar).position === "fixed"
+        ? bar.getBoundingClientRect().top
+        : window.innerHeight;
+    const { top, bottom } = plot.getBoundingClientRect();
+    if (top >= 0 && bottom <= limit) return;
+    plot.scrollIntoView({
+      block: "start",
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+  };
   useEffect(() => {
     const engine = new EngineClient();
     client.current = engine;
@@ -111,24 +144,53 @@ function App() {
     label: ReactNode,
     value: number,
     change: (n: number) => void,
-    step: number | string = "any",
-    min?: number,
-    max?: number,
-    help?: string,
+    options: {
+      step?: number | string;
+      min?: number;
+      max?: number;
+      help?: ReactNode;
+      topic?: string;
+    } = {},
   ) => (
-    <label className="field" title={help}>
-      <span>
-        <span>{label}</span>
-      </span>
+    <Field label={label} help={options.help} topic={options.topic}>
       <input
         type="number"
         value={Number.isNaN(value) ? "" : value}
-        step={step}
-        min={min}
-        max={max}
+        step={options.step ?? "any"}
+        min={options.min}
+        max={options.max}
         onChange={(e) => change(e.target.valueAsNumber)}
       />
-    </label>
+    </Field>
+  );
+  // On phones the controls follow the drawing directly, so the explanation
+  // moves after them instead of separating the two.
+  const behind = (
+    <>
+      <div className="explanation">
+        <div>
+          <span className="section-label">BEHIND THE LINES</span>
+          <p>{info.description}</p>
+        </div>
+        <div className="formula">{info.formula}</div>
+      </div>
+      {result?.warnings.length !== 0 && result && (
+        <details className="diagnostics" {...diagnostics}>
+          <summary>Numerical notes · {result.invalid} omitted samples</summary>
+          {result.warnings.map((w) => (
+            <p key={w}>{w}</p>
+          ))}
+        </details>
+      )}
+      <p className="bottom-note">
+        {optical
+          ? "A mathematical ray family: every sampled point participates. No occlusion or multiple bounces."
+          : "The connecting lines reveal the geometry of the construction."}{" "}
+        Finite sampling can miss fine detail; compare resolutions near
+        singularities.
+      </p>
+      <p className="closing">An open notebook for mathematical beauty.</p>
+    </>
   );
   const exportSVG = () => {
     const svg = document.getElementById("artwork");
@@ -195,8 +257,7 @@ function App() {
       <main>
         <aside aria-label="Study parameters">
           <div className="section-label">01 / THE STUDY</div>
-          <label className="field">
-            <span>Start with a notebook example</span>
+          <Field label="Start with a notebook example">
             <select
               value={preset}
               onChange={(e) => {
@@ -218,23 +279,31 @@ function App() {
                 </option>
               ))}
             </select>
-          </label>
-          <fieldset
-            className="mode-switch"
-            title="Simple mode provides presets and sliders. Expert mode unlocks exact whole-number inputs: 64–32,768 samples and 2–2,048 construction lines (no more lines than samples). Larger values take more work to compute and draw."
-          >
-            <legend>Controls</legend>
-            {[false, true].map((value) => (
-              <label key={String(value)}>
-                <input
-                  type="radio"
-                  name="controls-mode"
-                  checked={expert === value}
-                  onChange={() => setExpert(value)}
-                />
-                {value ? "Expert mode" : "Simple mode"}
-              </label>
-            ))}
+          </Field>
+          <fieldset className="mode-switch" aria-labelledby="controls-legend">
+            <legend>
+              <span id="controls-legend">Controls</span>
+              <HelpToggle topic="control modes" help={modeHelp} />
+            </legend>
+            <div className="mode-options">
+              {[false, true].map((value) => (
+                <label key={String(value)}>
+                  <input
+                    type="radio"
+                    name="controls-mode"
+                    checked={expert === value}
+                    onChange={() => setExpert(value)}
+                  />
+                  {value ? "Expert mode" : "Simple mode"}
+                </label>
+              ))}
+            </div>
+            <HelpText help={modeHelp}>
+              Simple mode offers presets and sliders. Expert mode takes exact
+              whole numbers: 64–32,768 samples and 2–2,048 construction lines,
+              never more lines than samples. Larger values take longer to
+              compute and draw.
+            </HelpText>
           </fieldset>
           <div className="tabs" role="group" aria-label="Construction">
             {(Object.keys(descriptions) as Kind[]).map((k) => (
@@ -250,8 +319,7 @@ function App() {
           </div>
           <section>
             <div className="section-label">02 / THE CURVE</div>
-            <label className="field">
-              <span>Definition</span>
+            <Field label="Definition">
               <select
                 value={config.curve.format}
                 onChange={(e) =>
@@ -262,48 +330,49 @@ function App() {
                 <option value="cartesian">Cartesian · y = f(x)</option>
                 <option value="polar">Polar · r(t)</option>
               </select>
-            </label>
+            </Field>
             {config.curve.format === "parametric" && (
-              <label className="field equation">
-                <span>x(t)</span>
+              <Field label="x(t)" className="equation">
                 <input
                   value={config.curve.x}
                   onChange={(e) => curve({ x: e.target.value })}
                   spellCheck={false}
                 />
-              </label>
+              </Field>
             )}
             {config.curve.format !== "polar" ? (
-              <label className="field equation">
-                <span>
-                  {config.curve.format === "cartesian" ? "f(x)" : "y(t)"}
-                </span>
+              <Field
+                label={config.curve.format === "cartesian" ? "f(x)" : "y(t)"}
+                className="equation"
+              >
                 <input
                   value={config.curve.y}
                   onChange={(e) => curve({ y: e.target.value })}
                   spellCheck={false}
                 />
-              </label>
+              </Field>
             ) : (
-              <label className="field equation">
-                <span>r(t)</span>
+              <Field label="r(t)" className="equation">
                 <input
                   value={config.curve.r}
                   onChange={(e) => curve({ r: e.target.value })}
                   spellCheck={false}
                 />
-              </label>
+              </Field>
             )}
             <div className="pair">
               {(["min", "max"] as const).map((key) => (
-                <label className="field equation" key={key}>
-                  <span>
-                    {key === "min"
+                <Field
+                  className="equation"
+                  key={key}
+                  label={
+                    key === "min"
                       ? config.curve.format === "cartesian"
                         ? "x from"
                         : "t from"
-                      : "to"}
-                  </span>
+                      : "to"
+                  }
+                >
                   <input
                     value={bounds[key]}
                     onChange={(e) => {
@@ -312,7 +381,7 @@ function App() {
                     }}
                     spellCheck={false}
                   />
-                </label>
+                </Field>
               ))}
             </div>
             {number(
@@ -321,12 +390,18 @@ function App() {
               </>,
               config.curve.a,
               (n) => curve({ a: n }),
-              "any",
-              undefined,
-              undefined,
-              "Use a in your curve expression as an adjustable coefficient, for example a*cos(t). This value sets a; animate Shape parameter a to change it over time. Expressions without a are unaffected.",
+              {
+                topic: "shape parameter a",
+                help: (
+                  <>
+                    Use <var>a</var> as an adjustable coefficient in your curve,
+                    for example <code>a*cos(t)</code>, then animate it.
+                    Expressions without a are unaffected.
+                  </>
+                ),
+              },
             )}
-            <details>
+            <details {...expressions}>
               <summary>Expression reference</summary>
               <p>
                 Use explicit multiplication: <code>2*cos(t)</code>. Supports + −
@@ -350,8 +425,7 @@ function App() {
           {optical && (
             <section>
               <div className="section-label">03 / THE LIGHT</div>
-              <label className="field">
-                <span>Source</span>
+              <Field label="Source">
                 <select
                   value={config.source.kind}
                   onChange={(e) =>
@@ -366,10 +440,16 @@ function App() {
                   <option value="point">Point source</option>
                   <option value="parallel">At infinity · parallel rays</option>
                 </select>
-              </label>
+              </Field>
               {config.source.kind === "point" && (
-                <label className="field">
-                  <span>Source coordinates</span>
+                <Field
+                  label="Source coordinates"
+                  help={
+                    config.source.coordinates === "polar"
+                      ? "Radius r ≥ 0 is the distance from the origin. Angle θ is in radians, counterclockwise from +x; animate it from 0 to pi/2 for a quarter orbit. Angles are not wrapped."
+                      : undefined
+                  }
+                >
                   <select
                     value={config.source.coordinates ?? "cartesian"}
                     onChange={(e) => {
@@ -400,34 +480,24 @@ function App() {
                     <option value="cartesian">Cartesian · x, y</option>
                     <option value="polar">Polar · r, θ</option>
                   </select>
-                </label>
+                </Field>
               )}
               {config.source.kind === "point" &&
               config.source.coordinates === "polar" ? (
-                <>
-                  <div className="pair">
-                    {number(
-                      "Source radius r",
-                      config.source.radius ?? 0,
-                      (radius) =>
-                        update({ source: { ...config.source, radius } }),
-                      "any",
-                      0,
-                    )}
-                    {number(
-                      "Source theta θ (radians)",
-                      config.source.theta ?? 0,
-                      (theta) =>
-                        update({ source: { ...config.source, theta } }),
-                    )}
-                  </div>
-                  <p className="hint">
-                    Radius <var>r</var> ≥ 0. Angle <var>θ</var> is in radians,
-                    counterclockwise from +x. Animate θ from 0 to pi/2 for a
-                    quarter orbit; angles follow your entered values without
-                    wrapping.
-                  </p>
-                </>
+                <div className="pair">
+                  {number(
+                    "Source radius r",
+                    config.source.radius ?? 0,
+                    (radius) =>
+                      update({ source: { ...config.source, radius } }),
+                    { min: 0 },
+                  )}
+                  {number(
+                    "Source theta θ (radians)",
+                    config.source.theta ?? 0,
+                    (theta) => update({ source: { ...config.source, theta } }),
+                  )}
+                </div>
               ) : config.source.kind === "point" ? (
                 <div className="pair">
                   {number("Source x", config.source.position.x, (n) =>
@@ -453,7 +523,7 @@ function App() {
                 )
               )}
               {config.source.kind === "parallel" && (
-                <p className="hint">0° travels right; 90° travels up.</p>
+                <p className="note">0° travels right; 90° travels up.</p>
               )}
               {config.kind === "diacaustic" && (
                 <>
@@ -462,25 +532,21 @@ function App() {
                       "Incident index n₁",
                       config.nIncident,
                       (n) => update({ nIncident: n }),
-                      "any",
-                      0.01,
-                      10,
+                      { min: 0.01, max: 10 },
                     )}
                     {number(
                       "Transmitted n₂",
                       config.nTransmitted,
                       (n) => update({ nTransmitted: n }),
-                      "any",
-                      0.01,
-                      10,
+                      { min: 0.01, max: 10 },
                     )}
                   </div>
-                  <p className="hint">
+                  <p className="note">
                     Ratio n₁/n₂ ={" "}
                     {(config.nIncident / config.nTransmitted).toFixed(3)}. Each
                     ray crosses once.
                   </p>
-                  <details>
+                  <details {...indices}>
                     <summary>How the refractive indices work</summary>
                     <p>
                       The incident index n₁ describes the medium light is
@@ -515,13 +581,15 @@ function App() {
           )}
           {config.kind === "involute" && (
             <section>
-              {number("Initial string offset c", config.offset, (n) =>
-                update({ offset: n }),
+              {number(
+                "Initial string offset c",
+                config.offset,
+                (n) => update({ offset: n }),
+                {
+                  topic: "initial string offset",
+                  help: "Arc length starts at the domain minimum. The offset selects a member of the involute family.",
+                },
               )}
-              <p className="hint">
-                Arc length starts at the domain minimum. The offset selects a
-                member of the involute family.
-              </p>
             </section>
           )}
           <section>
@@ -533,15 +601,15 @@ function App() {
                 "Construction lines",
                 config.lines,
                 (n) => update({ lines: n }),
-                1,
-                2,
-                Math.min(2048, config.samples),
+                {
+                  step: 1,
+                  min: 2,
+                  max: Math.min(2048, config.samples),
+                  help: "Whole numbers from 2 to 2,048, no more than the samples. Dense drawings slow interaction and export.",
+                },
               )
             ) : (
-              <label className="field">
-                <span>
-                  Construction lines <b>{config.lines}</b>
-                </span>
+              <Field label="Construction lines" value={config.lines}>
                 <input
                   type="range"
                   min={Math.min(
@@ -555,19 +623,10 @@ function App() {
                   value={config.lines}
                   onChange={(e) => update({ lines: +e.target.value })}
                 />
-              </label>
-            )}
-            {expert && (
-              <p className="hint">
-                Whole numbers: 2–2,048 lines, no more than the number of
-                samples. Dense SVG drawings can slow interaction and export.
-              </p>
+              </Field>
             )}
             {optical && (
-              <label className="field">
-                <span>
-                  Ray length <b>{length.toFixed(1)}×</b>
-                </span>
+              <Field label="Ray length" value={`${length.toFixed(1)}×`}>
                 <input
                   type="range"
                   min=".1"
@@ -576,7 +635,7 @@ function App() {
                   value={length}
                   onChange={(e) => setLength(+e.target.value)}
                 />
-              </label>
+              </Field>
             )}
             <div className="layer-grid">
               {(Object.keys(layers) as (keyof Layers)[])
@@ -608,13 +667,10 @@ function App() {
                 "Numerical samples",
                 config.samples,
                 (n) => update({ samples: n }),
-                1,
-                64,
-                32768,
+                { step: 1, min: 64, max: 32768, help: samplesHelp },
               )
             ) : (
-              <label className="field">
-                <span>Numerical samples</span>
+              <Field label="Numerical samples" help={samplesHelp}>
                 <select
                   value={config.samples}
                   onChange={(e) => update({ samples: +e.target.value })}
@@ -629,14 +685,7 @@ function App() {
                   <option value="2000">2,000 · fine</option>
                   <option value="4000">4,000 · finest</option>
                 </select>
-              </label>
-            )}
-            {expert && (
-              <p className="hint">
-                64–32,768 samples. These are workload guardrails, not browser
-                limits. Higher counts increase calculation time, not numerical
-                precision automatically.
-              </p>
+              </Field>
             )}
           </section>
           <AnimationPanel
@@ -650,12 +699,8 @@ function App() {
             disabled={busy || !!error}
             onView={setAnimation}
             onRunning={setAnimationRunning}
+            onPlay={revealPlot}
           />
-          <div className="sidebar-foot">
-            An open notebook for mathematical beauty.
-            <br />
-            Computed entirely in your browser.
-          </div>
         </aside>
         <article>
           <div className="plot-heading">
@@ -675,7 +720,7 @@ function App() {
               ↔ Fit view
             </button>
           </div>
-          <div className="plot-wrap" aria-busy={busy}>
+          <div className="plot-wrap" ref={plotWrap} aria-busy={busy}>
             {error ? (
               <div className="error" role="alert">
                 <strong>Let’s check the definition</strong>
@@ -710,31 +755,9 @@ function App() {
               </span>
             </div>
           </div>
-          <div className="explanation">
-            <div>
-              <span className="section-label">BEHIND THE LINES</span>
-              <p>{info.description}</p>
-            </div>
-            <div className="formula">{info.formula}</div>
-          </div>
-          {result?.warnings.length !== 0 && result && (
-            <details className="diagnostics">
-              <summary>
-                Numerical notes · {result.invalid} omitted samples
-              </summary>
-              {result.warnings.map((w) => (
-                <p key={w}>{w}</p>
-              ))}
-            </details>
-          )}
-          <p className="bottom-note">
-            {optical
-              ? "A mathematical ray family: every sampled point participates. No occlusion or multiple bounces."
-              : "The connecting lines reveal the geometry of the construction."}{" "}
-            Finite sampling can miss fine detail; compare resolutions near
-            singularities.
-          </p>
+          {!narrow && behind}
         </article>
+        {narrow && <div className="behind">{behind}</div>}
       </main>
     </div>
   );

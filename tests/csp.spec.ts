@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openExportSettings } from "./helpers";
 import { readFileSync } from "node:fs";
 
 // The production Content-Security-Policy. CloudFront sends it (iwvelando/cloud-accounts,
@@ -34,6 +35,7 @@ test("the engine, SVG export, and WebP export run under the policy", async ({
   const svg = page.waitForEvent("download");
   await page.getByRole("button", { name: /Export SVG/ }).click();
   await svg;
+  await openExportSettings(page);
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".2");
   await page
     .getByRole("combobox", { name: "Export frame rate" })

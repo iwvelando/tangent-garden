@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openAnimation } from "./helpers";
 import { applyTracks, reveal } from "../web/animation";
 import { presets } from "../web/presets";
 import type { Result } from "../web/types";
@@ -6,6 +7,7 @@ import type { Result } from "../web/types";
 async function ready(page: Page, preset = "1") {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
+  await openAnimation(page);
   await page
     .getByRole("combobox", { name: "Start with a notebook example" })
     .selectOption(preset);
@@ -284,3 +286,48 @@ test("shape coefficient animation changes the numerical curve", async ({
     "data-animation-progress",
   );
 });
+
+for (const mode of ["reveal", "parameters"] as const) {
+  test(`dragging the paused timeline scrubs continuously in ${mode} mode`, async ({
+    page,
+  }) => {
+    await ready(page, "0");
+    await page
+      .getByRole("combobox", { name: "Animate", exact: true })
+      .selectOption(mode);
+    await page
+      .getByRole("spinbutton", { name: "Duration (seconds)" })
+      .fill("20");
+    await page.getByRole("button", { name: "Play animation" }).click();
+    await expect.poll(() => progress(page)).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const slider = page.getByRole("slider", {
+      name: "Animation progress",
+      exact: true,
+    });
+    await slider.scrollIntoViewIfNeeded();
+    const box = (await slider.boundingBox())!;
+    const y = box.y + box.height / 2;
+    const at = (f: number) => box.x + 8 + (box.width - 16) * f;
+    const start = await progress(page);
+    await page.mouse.move(at(start), y);
+    await page.mouse.down();
+    const seen = new Set<number>();
+    for (let i = 1; i <= 12; i++) {
+      await page.mouse.move(at(start + ((0.8 - start) * i) / 12), y, {
+        steps: 2,
+      });
+      // The slider stays usable, and its value follows the pointer.
+      await expect(slider).toBeEnabled();
+      seen.add(await progress(page));
+    }
+    await page.mouse.up();
+    await expect(slider).toHaveValue(/^0\.(79|8|80)\d*$/);
+    await expect.poll(() => progress(page)).toBeCloseTo(0.8, 1);
+    // Intermediate frames rendered during the drag, not only at release.
+    expect(seen.size).toBeGreaterThan(2);
+    await expect(
+      page.getByRole("button", { name: "Resume", exact: true }),
+    ).toBeVisible();
+  });
+}

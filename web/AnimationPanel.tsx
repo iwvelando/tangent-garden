@@ -17,6 +17,8 @@ import type { Frame } from "./types";
 import type { Layers } from "./Plot";
 import { exportTiming } from "./animated-webp";
 import { defaultExportSettings, exportEncoding } from "./export-quality";
+import { Field } from "./Field";
+import { useDisclosure } from "./useDisclosure";
 
 type Status =
   "idle" | "preparing" | "playing" | "paused" | "complete" | "exporting";
@@ -43,6 +45,8 @@ type Props = {
   getCurrentView: () => Viewport | undefined;
   onView: (view: AnimationView | null) => void;
   onRunning: (running: boolean) => void;
+  // Called when playback starts or resumes, so the drawing can be shown.
+  onPlay: () => void;
 };
 
 export function AnimationPanel({
@@ -56,6 +60,7 @@ export function AnimationPanel({
   getCurrentView,
   onView,
   onRunning,
+  onPlay,
 }: Props) {
   const [mode, setMode] = useState<"reveal" | "parameters">("reveal");
   const [camera, setCamera] = useState<CameraMode>("hold");
@@ -65,6 +70,8 @@ export function AnimationPanel({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [live, setLive] = useState("");
+  const section = useDisclosure("animation");
+  const exportSection = useDisclosure("export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
   const [exportScale, setExportScale] = useState(defaultExportSettings.scale);
@@ -72,6 +79,8 @@ export function AnimationPanel({
   const exportSize = exportEncoding({ scale: exportScale, quality });
   const [exportNotice, setExportNotice] = useState("");
   const exportAbort = useRef<AbortController | null>(null);
+  const seekTarget = useRef<number | null>(null),
+    scrubbing = useRef(-1);
   const epoch = useRef(0),
     raf = useRef(0),
     session = useRef<Session | null>(null);
@@ -100,6 +109,7 @@ export function AnimationPanel({
   };
   const cancel = () => {
     epoch.current++;
+    seekTarget.current = null;
     cancelAnimationFrame(raf.current);
     exportAbort.current?.abort();
     exportAbort.current = null;
@@ -242,6 +252,7 @@ export function AnimationPanel({
   }
   async function start(save = false) {
     if (!frame || !client.current) return;
+    if (!save) onPlay();
     cancel();
     const token = epoch.current;
     setError("");
@@ -368,33 +379,71 @@ export function AnimationPanel({
     cancel();
     changeStatus("paused");
   }
-  async function seek(p: number) {
-    const s = session.current;
-    if (!s) return;
-    cancel();
+  // Scrubbing keeps the slider enabled and its thumb under the pointer; a
+  // disabled or lagging range input would drop the drag. At most one frame is
+  // calculated at a time, and only the latest requested position is kept.
+  function seek(p: number) {
+    if (!session.current) return;
+    setProgress(p);
+    seekTarget.current = p;
+    if (scrubbing.current !== epoch.current) void scrub(session.current);
+  }
+  async function scrub(s: Session) {
     const token = epoch.current;
-    changeStatus("preparing");
+    scrubbing.current = token;
     try {
-      const view = await sample(s, p);
-      if (token !== epoch.current) return;
-      display(s, view);
-      changeStatus(p === 1 ? "complete" : "paused");
+      while (seekTarget.current !== null) {
+        const p = seekTarget.current;
+        seekTarget.current = null;
+        const view = await sample(s, p);
+        if (token !== epoch.current) return;
+        display(s, view);
+        if (seekTarget.current !== null) setProgress(seekTarget.current);
+        changeStatus(p === 1 ? "complete" : "paused");
+      }
     } catch (error) {
       if (token === epoch.current) fail(error);
+    } finally {
+      if (scrubbing.current === token) scrubbing.current = -1;
     }
   }
   return (
     <section className="animation-section">
-      <details open>
-        <summary className="section-label">ANIMATION</summary>
+      <details id="animation-section" {...section}>
+        <summary
+          className="section-label"
+          onClick={(e) => {
+            // Keep playback controls reachable until the animation is stopped.
+            if (active) e.preventDefault();
+          }}
+        >
+          ANIMATION
+        </summary>
         <fieldset
           disabled={running || status === "paused" || disabled}
           onChangeCapture={() => {
             if (status === "complete") stop();
           }}
         >
-          <label className="field">
-            <span>Animate</span>
+          <Field
+            label="Animate"
+            topic="animation modes"
+            help={
+              mode === "reveal" ? (
+                "Reveal the full study from its domain start to its end. The arc-length anchor and final sample spacing stay fixed."
+              ) : (
+                <>
+                  Tracks vary together, linearly. Use <var>a</var> in a curve
+                  expression to animate any coefficient, for example{" "}
+                  <code>
+                    <var>a</var>*cos(t)
+                  </code>
+                  . Integer counts change in whole steps. Endpoints accept
+                  constants.
+                </>
+              )
+            }
+          >
             <select
               value={mode}
               onChange={(e) => parameterMode(e.target.value as typeof mode)}
@@ -402,18 +451,12 @@ export function AnimationPanel({
               <option value="reveal">Draw along the curve</option>
               <option value="parameters">Vary parameters</option>
             </select>
-          </label>
-          {mode === "reveal" ? (
-            <p className="hint">
-              Reveal the full study from its domain start to its end. The
-              arc-length anchor and final sample spacing stay fixed.
-            </p>
-          ) : (
+          </Field>
+          {mode === "parameters" && (
             <>
               {tracks.map((track, i) => (
                 <div className="animation-track" key={i}>
-                  <label className="field">
-                    <span>Parameter {i + 1}</span>
+                  <Field label={`Parameter ${i + 1}`}>
                     <select
                       value={track.target}
                       onChange={(e) =>
@@ -438,11 +481,13 @@ export function AnimationPanel({
                           </option>
                         ))}
                     </select>
-                  </label>
+                  </Field>
                   <div className="pair">
                     {(["from", "to"] as const).map((endpoint) => (
-                      <label className="field" key={endpoint}>
-                        <span>{endpoint === "from" ? "From" : "To"}</span>
+                      <Field
+                        label={endpoint === "from" ? "From" : "To"}
+                        key={endpoint}
+                      >
                         <input
                           aria-label={`Track ${i + 1} ${endpoint}`}
                           value={track[endpoint]}
@@ -457,7 +502,7 @@ export function AnimationPanel({
                           }
                           spellCheck={false}
                         />
-                      </label>
+                      </Field>
                     ))}
                   </div>
                   <button
@@ -480,19 +525,9 @@ export function AnimationPanel({
               >
                 + Add parameter
               </button>
-              <p className="hint">
-                Tracks vary together, linearly. Use <var>a</var> in a curve
-                expression to animate any coefficient, for example{" "}
-                <code>
-                  <var>a</var>*cos(t)
-                </code>
-                . Integer counts change in whole steps. Endpoints accept
-                constants.
-              </p>
             </>
           )}
-          <label className="field">
-            <span>Duration (seconds)</span>
+          <Field label="Duration (seconds)">
             <input
               type="number"
               min="0.1"
@@ -501,9 +536,23 @@ export function AnimationPanel({
               value={Number.isNaN(duration) ? "" : duration}
               onChange={(e) => setDuration(e.target.valueAsNumber)}
             />
-          </label>
-          <label className="field">
-            <span>Animation camera</span>
+          </Field>
+          <Field
+            label="Animation camera"
+            help={
+              <>
+                {camera === "current"
+                  ? "Keeps your current pan and zoom throughout, including export."
+                  : camera === "hold"
+                    ? "Frames the final result once and holds that view."
+                    : camera === "follow"
+                      ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
+                      : "Recenters and zooms to fit the evolving geometry."}
+                {(camera === "fit" || camera === "follow") &&
+                  " Isolated points near asymptotes are ignored; use Hold current view to explore distant branches."}
+              </>
+            }
+          >
             <select
               value={camera}
               onChange={(e) => setCamera(e.target.value as CameraMode)}
@@ -513,132 +562,165 @@ export function AnimationPanel({
               <option value="follow">Follow center, fixed zoom</option>
               <option value="fit">Fit each frame</option>
             </select>
-          </label>
-          <p className="hint">
-            {camera === "current"
-              ? "Keep your current pan and zoom for the entire animation, including export."
-              : camera === "hold"
-                ? "Frame the final result once and hold that view."
-                : camera === "follow"
-                  ? "Keep the final zoom level and recenter on the evolving geometry."
-                  : "Recenter and adjust zoom to fit the evolving geometry."}{" "}
-            {camera !== "current" && "Start with a clean view. "}Stop restores
-            your manual pan and zoom.
-          </p>
-          {(camera === "fit" || camera === "follow") && (
-            <p className="hint">
-              Both curves contribute to framing. Isolated extreme points near
-              asymptotes are excluded to keep the view useful; use Hold current
-              view to explore distant branches. Follow center keeps the final
-              view’s zoom, so a parameter animation that grows beyond that size
-              may leave the frame.
-            </p>
-          )}
-          <label className="field">
-            <span>Export frame rate</span>
-            <select value={fps} onChange={(e) => setFPS(+e.target.value)}>
-              <option value={30}>30 fps · smoother motion</option>
-              <option value={15}>15 fps · smaller file</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>
-              Export resolution{" "}
-              <b>
-                {exportSize.width} × {exportSize.height}
-              </b>
-            </span>
-            <input
-              aria-label="Export resolution"
-              aria-valuetext={`${exportSize.width} by ${exportSize.height} pixels`}
-              aria-describedby="export-resolution-help"
-              type="range"
-              min="0.5"
-              max="2"
-              step="0.25"
-              value={exportScale}
-              onChange={(e) => setExportScale(+e.target.value)}
-            />
-          </label>
-          <p className="hint" id="export-resolution-help">
-            More pixels preserve finer detail, with larger files and slower
-            export. 2000 × 1520 has four times the pixels of the default.
-          </p>
-          <label className="field">
-            <span>
-              Export quality <b>{quality} / 100</b>
-            </span>
-            <input
-              aria-label="Export quality"
-              aria-valuetext={`${quality} out of 100`}
-              aria-describedby="export-quality-help"
-              type="range"
-              min="1"
-              max="100"
-              step="1"
-              value={quality}
-              onChange={(e) => setQuality(+e.target.value)}
-            />
-          </label>
-          <p className="hint" id="export-quality-help">
-            Lower values compress more; higher values preserve detail. Maximum
-            quality (100) can produce much larger files. File size depends on
-            the drawing and browser, and does not grow linearly.
-          </p>
-          <button
-            className="text-button export-reset"
-            disabled={
-              exportScale === defaultExportSettings.scale &&
-              quality === defaultExportSettings.quality
-            }
-            onClick={() => {
-              if (status === "complete") stop();
-              setExportScale(defaultExportSettings.scale);
-              setQuality(defaultExportSettings.quality);
-            }}
+          </Field>
+          <details
+            id="export-settings"
+            className="subsection"
+            {...exportSection}
           >
-            Reset export settings to 1000 × 760 · quality 95
-          </button>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={loop}
-              onChange={(e) => setLoop(e.target.checked)}
-            />
-            Loop exported animation
-          </label>
-        </fieldset>
-        <div className="animation-buttons">
-          {status === "playing" ? (
-            <button onClick={pause}>Pause</button>
-          ) : status === "paused" ? (
+            <summary>
+              Export settings
+              <span className="summary-detail">
+                {fps} fps · {exportSize.width} × {exportSize.height} · quality{" "}
+                {quality}
+              </span>
+            </summary>
+            <Field label="Export frame rate">
+              <select value={fps} onChange={(e) => setFPS(+e.target.value)}>
+                <option value={30}>30 fps · smoother motion</option>
+                <option value={15}>15 fps · smaller file</option>
+              </select>
+            </Field>
+            <Field
+              label="Export resolution"
+              value={`${exportSize.width} × ${exportSize.height}`}
+              help="More pixels keep finer detail, with larger files and slower export."
+            >
+              <input
+                aria-label="Export resolution"
+                aria-valuetext={`${exportSize.width} by ${exportSize.height} pixels`}
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.25"
+                value={exportScale}
+                onChange={(e) => setExportScale(+e.target.value)}
+              />
+            </Field>
+            <Field
+              label="Export quality"
+              value={`${quality} / 100`}
+              help="Lower values compress more. Near 100, files can grow much larger; size depends on the drawing and browser."
+            >
+              <input
+                aria-label="Export quality"
+                aria-valuetext={`${quality} out of 100`}
+                type="range"
+                min="1"
+                max="100"
+                step="1"
+                value={quality}
+                onChange={(e) => setQuality(+e.target.value)}
+              />
+            </Field>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={loop}
+                onChange={(e) => setLoop(e.target.checked)}
+              />
+              Loop exported animation
+            </label>
             <button
-              onClick={() =>
-                session.current && schedule(session.current, progress)
+              className="text-button export-reset"
+              disabled={
+                exportScale === defaultExportSettings.scale &&
+                quality === defaultExportSettings.quality
               }
+              onClick={() => {
+                if (status === "complete") stop();
+                setExportScale(defaultExportSettings.scale);
+                setQuality(defaultExportSettings.quality);
+              }}
             >
-              Resume
+              Reset export settings to 1000 × 760 · quality 95
             </button>
-          ) : (
-            <button
-              className="export"
-              disabled={disabled || running || !frame}
-              onClick={() => void start()}
-            >
-              {status === "complete"
-                ? "Replay"
-                : status === "preparing"
-                  ? "Preparing…"
-                  : "Play animation"}
+            <p className="hint">
+              Export renders every frame in your browser with the current theme,
+              layers, and camera, which can take longer than playback. Up to
+              7,200 frames or 256 MiB.
+            </p>
+          </details>
+        </fieldset>
+        {/* On narrow screens this docks below the drawing while active. */}
+        <div
+          id="playback"
+          className={active ? "playback active" : "playback"}
+          role="group"
+          aria-label="Playback"
+        >
+          <div className="animation-buttons">
+            {status === "playing" ? (
+              <button onClick={pause}>Pause</button>
+            ) : status === "paused" ? (
+              <button
+                onClick={() => {
+                  if (!session.current) return;
+                  onPlay();
+                  schedule(session.current, progress);
+                }}
+              >
+                Resume
+              </button>
+            ) : (
+              <button
+                className="export"
+                disabled={disabled || running || !frame}
+                onClick={() => void start()}
+              >
+                {status === "complete"
+                  ? "Replay"
+                  : status === "preparing"
+                    ? "Preparing…"
+                    : "Play animation"}
+              </button>
+            )}
+            <button disabled={!active} onClick={stop}>
+              {status === "exporting"
+                ? "Cancel export"
+                : status === "complete"
+                  ? "Reset view"
+                  : "Stop"}
             </button>
+          </div>
+          {active && (
+            <div className="timeline">
+              <Field
+                label="Animation progress"
+                value={`${Math.round(progress * 100)}%`}
+              >
+                <input
+                  aria-label="Animation progress"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step=".001"
+                  value={progress}
+                  disabled={running}
+                  onChange={(e) => void seek(+e.target.value)}
+                />
+              </Field>
+              <div className="note" role="status" aria-live="off">
+                {status === "exporting"
+                  ? "Exporting WebP…"
+                  : status === "complete"
+                    ? "Complete"
+                    : status === "paused"
+                      ? "Paused"
+                      : status === "preparing"
+                        ? "Preparing"
+                        : `${(progress * duration).toFixed(1)} / ${duration} s`}
+              </div>
+              <output className="animation-values">{live}</output>
+              <p className="note playback-tip">
+                {status === "exporting"
+                  ? "Cancel export discards the file; your study stays as it was."
+                  : status === "complete"
+                    ? "Scrub the timeline or export this frame as SVG. Reset view restores your study and manual view."
+                    : "Pause to scrub or export this frame as SVG. Stop restores your study and manual view."}
+              </p>
+            </div>
           )}
-          <button disabled={!active} onClick={stop}>
-            {status === "exporting"
-              ? "Cancel export"
-              : status === "complete"
-                ? "Reset view"
-                : "Stop"}
-          </button>
         </div>
         <button
           className="animation-export"
@@ -647,54 +729,10 @@ export function AnimationPanel({
         >
           Export animated WebP ↗
         </button>
-        <p className="hint">
-          Save the full animation at the selected quality, with the current
-          theme, layers, and animation camera. Rendering every frame may take
-          longer than playback. Up to 7,200 frames or 256 MiB; no upload
-          required.
-        </p>
         {exportNotice && (
-          <p className="hint" role="status">
+          <p className="note" role="status">
             {exportNotice}
           </p>
-        )}
-        {active && (
-          <div className="timeline">
-            <label className="field">
-              <span>
-                Animation progress <b>{Math.round(progress * 100)}%</b>
-              </span>
-              <input
-                aria-label="Animation progress"
-                type="range"
-                min="0"
-                max="1"
-                step=".001"
-                value={progress}
-                disabled={running}
-                onChange={(e) => void seek(+e.target.value)}
-              />
-            </label>
-            <div className="hint" role="status" aria-live="off">
-              {status === "exporting"
-                ? "Exporting WebP…"
-                : status === "complete"
-                  ? "Complete"
-                  : status === "paused"
-                    ? "Paused"
-                    : status === "preparing"
-                      ? "Preparing"
-                      : `${(progress * duration).toFixed(1)} / ${duration} s`}
-            </div>
-            <output className="animation-values">{live}</output>
-            <p className="hint">
-              {status === "exporting"
-                ? "Rendering the entire animation. Cancel export discards the file; your original study stays available."
-                : status === "complete"
-                  ? "Complete. Scrub the timeline, export this frame as SVG, or edit the settings for another run. Reset view restores the original study."
-                  : "Pause to scrub or export the current frame as SVG. Stop restores the original study. Playback frame rate depends on your device and resolution."}
-            </p>
-          </div>
         )}
         {error && (
           <p className="animation-error" role="alert">
