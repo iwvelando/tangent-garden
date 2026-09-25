@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { Mp4Writer, avcCodec, videoBitrate } from "../web/mp4-video";
+import {
+  Mp4Writer,
+  avcCodec,
+  sameFrameTime,
+  videoBitrate,
+} from "../web/mp4-video";
 import { exportEncoding } from "../web/export-quality";
 
 type Box = { type: string; body: Buffer; start: number };
@@ -209,4 +214,17 @@ test("MP4 writer omits colour information it cannot describe exactly", async () 
     "avc1",
   ]);
   expect(boxes(entry.body.subarray(78)).map((b) => b.type)).toEqual(["avcC"]);
+});
+
+test("frame times match within the file's millisecond precision", () => {
+  // WebKit stores VideoFrame timestamps with rounding: 8033000 becomes 8032999.
+  expect(sameFrameTime(8033000, 8032999)).toBe(true);
+  expect(sameFrameTime(8033000, 8033001)).toBe(true);
+  expect(sameFrameTime(0, 0)).toBe(true);
+  expect(sameFrameTime(1000, 1499)).toBe(true);
+  expect(sameFrameTime(1000, 1500)).toBe(false);
+  // A dropped or reordered frame is a whole frame away (16.7 ms at 60 fps).
+  expect(sameFrameTime(8033000, 8050000)).toBe(false);
+  expect(sameFrameTime(8033000, 8000000)).toBe(false);
+  expect(sameFrameTime(1000, NaN)).toBe(false);
 });

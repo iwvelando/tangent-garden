@@ -55,6 +55,13 @@ export function videoBitrate(
   return Math.round(encoding.width * encoding.height * fps * bitsPerPixel);
 }
 
+// Encoder timestamps (microseconds) identify frames. WebKit stores them with
+// rounding (8033000 becomes 8032999), so match within the file's millisecond
+// precision; a dropped or reordered frame is a whole frame (16+ ms) away.
+export function sameFrameTime(expected: number, actual: number) {
+  return Math.abs(expected - actual) < 500;
+}
+
 const ascii = (text: string) => new TextEncoder().encode(text);
 function box(type: string, ...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const size = 8 + parts.reduce((sum, p) => sum + p.length, 0);
