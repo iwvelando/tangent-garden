@@ -109,6 +109,7 @@ export function AnimationPanel({
   const setQuality = (value: number) =>
     setQualities((q) => ({ ...q, [chosen]: value }));
   const exportSize = exportEncoding({ scale: exportScale, quality });
+  const defaultSize = exportEncoding({ scale: defaultScale, quality });
   // Animated WebP stops at 30 fps; the MP4 choice is kept for switching back.
   const exportFps = chosen === "webp" && fps === 60 ? 30 : fps;
   const exportReady = formats?.[chosen] === "yes";
@@ -718,8 +719,8 @@ export function AnimationPanel({
                 setQuality(defaultQuality[chosen]);
               }}
             >
-              Reset export settings to 1000 × 760 · quality{" "}
-              {defaultQuality[chosen]}
+              Reset export settings to {defaultSize.width} ×{" "}
+              {defaultSize.height} · quality {defaultQuality[chosen]}
             </button>
             <p className="hint">
               Export renders every frame in your browser with the current theme,

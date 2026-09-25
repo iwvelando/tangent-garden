@@ -42,7 +42,7 @@ test("animation and its export settings start collapsed with a summary", async (
   const fps = page.getByRole("combobox", { name: "Export frame rate" });
   await expect(fps).toBeHidden();
   const summary = page.locator("#export-settings > summary");
-  await expect(summary).toContainText("30 fps · 1000 × 760 · quality 60");
+  await expect(summary).toContainText("30 fps · 2000 × 1520 · quality 60");
   await summary.click();
   await fps.selectOption("15");
   await expect(summary).toContainText("15 fps");
