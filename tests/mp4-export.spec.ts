@@ -336,3 +336,48 @@ test("each format starts at its own quality default and keeps edits when switchi
   await reset.click();
   await expect(quality).toHaveValue("85");
 });
+
+test("encoders that round frame timestamps, as WebKit does, still export exact timing", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const Frame = window.VideoFrame;
+    window.VideoFrame = function (source: any, init?: any) {
+      const shifted = init?.timestamp
+        ? { ...init, timestamp: init.timestamp - 1 }
+        : init;
+      return new Frame(source, shifted);
+    } as any;
+    window.VideoFrame.prototype = Frame.prototype;
+  });
+  await ready(page);
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".4");
+  await page
+    .getByRole("combobox", { name: "Export frame rate" })
+    .selectOption("15");
+  const download = page.waitForEvent("download");
+  await exportMP4(page).click();
+  const probed = probe((await (await download).path())!);
+  if (probed) {
+    const durations = exportTiming(0.4, 15).map((f) => f.duration);
+    expect(probed.durations).toEqual(durations);
+    expect(probed.frames).toBe(6);
+  }
+});
+
+test("a dropped encoder frame is still refused", async ({ page }) => {
+  await page.addInitScript(() => {
+    const encode = VideoEncoder.prototype.encode;
+    let calls = 0;
+    VideoEncoder.prototype.encode = function (frame, options) {
+      if (++calls !== 3) encode.call(this, frame, options);
+    };
+  });
+  await ready(page);
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".4");
+  await exportMP4(page).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "This browser couldn't save the MP4 video (the encoder dropped or reordered frames).",
+  );
+  await expect(exportMP4(page)).toBeEnabled();
+});

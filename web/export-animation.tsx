@@ -8,7 +8,7 @@ import {
   type ExportSettings,
 } from "./export-quality";
 import { videoConfig, type ExportFormat } from "./export-formats";
-import { Mp4Writer } from "./mp4-video";
+import { Mp4Writer, sameFrameTime } from "./mp4-video";
 import { inOrder } from "./lookahead";
 
 type Options = {
@@ -140,7 +140,8 @@ const bytes = (source: AllowSharedBufferSource) =>
 // millisecond timestamps, so the saved duration never depends on render speed.
 function mp4Sink(encoding: Encoding, fps: number): Sink {
   const writer = new Mp4Writer(encoding.width, encoding.height);
-  // Baseline H.264 outputs frames in input order; anything else is refused.
+  // Baseline H.264 outputs frames in input order; a dropped or reordered frame
+  // is refused. Durations come from this list, not from the encoder.
   const expected: { timestamp: number; milliseconds: number }[] = [];
   let description: Uint8Array | null = null;
   let failure: Error | null = null;
@@ -161,8 +162,8 @@ function mp4Sink(encoding: Encoding, fps: number): Sink {
           description = next.slice();
         }
         const frame = expected.shift();
-        if (!frame || frame.timestamp !== chunk.timestamp)
-          throw new Error("the encoder reordered frames");
+        if (!frame || !sameFrameTime(frame.timestamp, chunk.timestamp))
+          throw new Error("the encoder dropped or reordered frames");
         const data = new Uint8Array(chunk.byteLength);
         chunk.copyTo(data);
         writer.add(data, frame.milliseconds, chunk.type === "key");
