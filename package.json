@@ -1,0 +1,31 @@
+{
+  "name": "tangent-garden",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "wasm": "node scripts/build-wasm.mjs",
+    "dev": "npm run wasm && vite --host 127.0.0.1",
+    "build": "npm run wasm && node scripts/build-notices.mjs && tsc --noEmit && vite build && node scripts/check-dist.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "npm run wasm && go test ./... && node scripts/test-wasm.mjs",
+    "format": "prettier --write web scripts tests *.json *.ts index.html",
+    "format:check": "prettier --check web scripts tests *.json *.ts index.html"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

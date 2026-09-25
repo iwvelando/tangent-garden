@@ -1,0 +1,27 @@
+node_modules/
+dist/
+public/engine.wasm
+public/wasm_exec.js
+public/GO-LICENSE.txt
+.DS_Store
+*.log
+coverage.out
+test-results/
+playwright-report/
+public/LICENSE.txt
+public/THIRD-PARTY-NOTICES.txt
+blob-report/
+coverage/
+*.tsbuildinfo
+
+# Local settings and credentials (commit documented examples deliberately).
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+/.codex/
+/.claude/
+CLAUDE.local.md
+*.swp
+*~

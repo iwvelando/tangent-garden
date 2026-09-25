@@ -1,0 +1,47 @@
+# Architecture and extension boundaries
+
+## Current shape
+
+`expression text → Go parser → planar curve evaluator → numerical construction → sampled geometry → SVG`
+
+The `engine` package has no browser, React, filesystem, or network dependency. It can run natively in Go tests or in WASM unchanged. `cmd/wasm` is the only package importing `syscall/js`. The bridge takes one JSON request and returns one JSON result/error; the TypeScript types mirror that schema.
+
+A classic Web Worker loads the matching Go runtime and WASM module. Requests are debounced and numbered; stale responses cannot overwrite newer studies. The UI remains usable during calculations. The initial build uses ordinary Go, not TinyGo, to minimize numerical and runtime compatibility surprises. See [Go's WebAssembly documentation](https://go.dev/wiki/WebAssembly) for the compiler/runtime pairing requirement.
+
+`EngineClient` correlates worker requests and rejects failed/timed-out requests. The worker resolves scalar expressions using the Go `tangentGardenScalars` bridge before calling `tangentGardenCompute`; curve geometry and expression semantics stay in Go. Editor bounds retain their original text, while returned frames carry the resolved numerical configuration. Readiness is tied to the exact input revision so export and playback cannot consume a stale frame during a debounce.
+
+`AnimationPanel` owns a cancellable playback session with immutable original and endpoint frames. Reveal playback slices the precomputed geometry; ray `sampleIndex` values associate construction lines with the same sample grid. Parameter playback interpolates inputs and asks Go for new geometry. It never interpolates output curves across potential singularities. An epoch invalidates in-flight results on stop, pause, or edits; the live loop awaits one frame at a time and derives progress from a monotonic clock. Exact cached endpoints prevent accumulated interpolation error at completion. Discrete counts are rounded; categorical controls remain fixed. Curve parameter `a` is bound as a number by the expression parser, not substituted into expression text.
+
+The plot's automatic animation camera is separate from manual camera state. Holding the current view snapshots the effective center and scale after manual pan/zoom (and the grid span), shared by playback and export. Holding the final view fixes both center and scale; following fixes scale only; fitting uses each current frame. Ray lengths during animation use the final reference span so choosing a camera cannot change the world-space ray lengths. Stopping removes the automatic override and restores the manual view.
+
+Animation export reuses the session sampler and lazily loads `export-animation.tsx`. React's static renderer produces the same `Plot` SVG independently of the live DOM, then an opaque sRGB canvas rasterizes each frame. The browser supplies a still WebP bitstream; `animated-webp.ts` packages full frames according to the [WebP RIFF specification](https://developers.google.com/speed/webp/docs/riff_container). It writes explicit millisecond durations and a finite or infinite loop count, with no screen capture, server, or additional image codec dependency. Only compressed frames accumulate, bounded by a frame-count limit and a compressed-size limit. Abort signals and the session epoch suppress stale frames and downloads; a canceled in-flight calculation/encode may finish but its result is discarded. The selected theme/layers are snapshots. Export uses deterministic sample progress rather than real elapsed time, so slow calculations do not shorten or lengthen the saved animation. Browser integration tests independently decode the actual downloaded files to check frames, timing, dimensions, and colors.
+
+Theme preference is a three-state value (system/light/dark). The system mode listens for media-query changes; explicit choices use local storage, with an in-memory fallback when storage is denied. The sidebar and article have independent scroll containers on desktop, while mobile retains ordinary document scrolling.
+
+React owns form state and presentation. SVG provides equal x/y scale, and supports inspectable vector export without rasterizing. The exported SVG records its inputs in a description element and includes explicit colors. Curve and optical computations remain in Go; frontend source-coordinate conversions only change the editor representation. Expert counts permit denser drawings, with explicit workload limits and possible responsiveness costs.
+
+Vite generates a static bundle with relative paths. There is no hosting provider integration; the output can be served by an ordinary static host. Dependencies are recorded in `package-lock.json`.
+
+## Adding a 2D construction
+
+1. Define the mathematical convention and independent analytic expectations.
+2. Add pure Go geometry and tests. Preserve null gaps and diagnostics.
+3. Extend the request/result schema deliberately on both sides of the bridge.
+4. Add controls and a verified preset. Keep rendering separate from computation.
+5. Run `make check` and `make test-browser`.
+
+## 3D without premature generalization
+
+Keep `Vec` and the current 2D engine honest about their dimension. A future `geometry3` or `engine3` package should define a separate `Vec3`, space curves, parametric surfaces, and meshes. Do not append a dummy z coordinate to the present SVG API.
+
+Reflection/refraction formulas generalize to 3D with a surface normal. Involutes of regular space curves also admit `r−sT`. However, a planar evolute does not transfer as a unique envelope curve of all normals in space, and a two-parameter surface ray family generally forms a caustic surface. Those objects need their own definitions and singularity handling. Projecting rays onto a receiver surface is another operation, with a separate result type.
+
+Reusable boundaries are expression parsing, numerical policies, pure Go geometry, a versioned transport adapter when needed, and worker execution. A later WebGL renderer can coexist with SVG. General implicit curves, piecewise definitions, adaptive sampling, saved studies, and video-format export are prospective features, not claims about the current prototype.
+
+Source coordinate choice is independent of curve format. Optional source `coordinates`, `radius`, and `theta` preserve existing Cartesian requests; polar requests are converted by Go and return `sourcePosition`, which the worker copies into the resolved frame configuration. Animation target availability follows the source coordinate choice, so switching modes invalidates incompatible tracks.
+
+Framing derives robust bounds independently for base and derived sample families, then unions the surviving extrema. Outer Tukey fences reject isolated asymptotic tails without using the base curve as a distance cutoff for derived points. Short prefixes retain both families even with a large involute offset. The policy is explicitly heuristic; manual framing remains the way to examine distant branches.
+
+Export quality controls intrinsic SVG rasterization size (1000 × 760 or 2000 × 1520) and canvas encoder quality (0.95 or 1.0). The shared viewBox and camera do not change. No promise of lossless encoding is made across browsers. Completed animation sessions keep the final frame and scrub support but unlock their settings; editing invalidates that preview before preparing a new session.
+
+Brand assets live in `public/tangent-garden.svg`, shared by the header, favicon, and README. Package, Go module, bridge symbols, titles, and download filenames use the Tangent Garden name. The browser theme preference is stored under `tangent-garden.theme`.
