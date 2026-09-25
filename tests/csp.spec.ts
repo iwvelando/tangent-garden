@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openExportSettings } from "./helpers";
+import { openExportSettings, exportImage } from "./helpers";
 import { readFileSync } from "node:fs";
 
 // The production Content-Security-Policy. CloudFront sends it (iwvelando/cloud-accounts,
@@ -26,20 +26,29 @@ test("preview serves the production Content-Security-Policy", async ({
   expect(response.headers()["content-security-policy"]).toBe(policy);
 });
 
-test("the engine, SVG export, and WebP export run under the policy", async ({
+test("the engine, SVG and PNG export, and WebP and MP4 exports run under the policy", async ({
   page,
 }) => {
   const found = violations(page);
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
   const svg = page.waitForEvent("download");
-  await page.getByRole("button", { name: /Export SVG/ }).click();
+  await exportImage(page, "SVG");
   await svg;
+  const png = page.waitForEvent("download");
+  await exportImage(page, "PNG");
+  expect((await png).suggestedFilename()).toMatch(/\.png$/);
   await openExportSettings(page);
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".2");
   await page
     .getByRole("combobox", { name: "Export frame rate" })
     .selectOption("15");
+  const mp4 = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export MP4 video" }).click();
+  expect((await mp4).suggestedFilename()).toMatch(/\.mp4$/);
+  await page
+    .getByRole("combobox", { name: "Export format" })
+    .selectOption("webp");
   const webp = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export animated WebP" }).click();
   expect((await webp).suggestedFilename()).toMatch(/\.webp$/);

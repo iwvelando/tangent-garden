@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openAnimation } from "./helpers";
+import { openAnimation, exportImage, imageButton } from "./helpers";
 
 async function ready(page: Page, preset = "0") {
   await page.goto("/");
@@ -54,7 +54,7 @@ test("expert counts reach 32,768 samples and 2,048 lines without truncation and 
   await page
     .getByRole("spinbutton", { name: "Construction lines", exact: true })
     .fill("2048");
-  await expect(page.getByRole("button", { name: /Export SVG/ })).toBeEnabled({
+  await expect(imageButton(page)).toBeEnabled({
     timeout: 15000,
   });
   expect((await definition(page)).samples).toBe(32768);
@@ -108,7 +108,7 @@ test("hold current view captures pan and zoom through playback, scrubbing and SV
   await expect(svg).toHaveAttribute("data-camera-scale", scale!);
   expect((await definition(page)).animation.heldView.scale).toBe(Number(scale));
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: /Export SVG/ }).click();
+  await exportImage(page, "SVG");
   expect((await download).suggestedFilename()).toMatch(/\.svg$/);
   await page
     .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })

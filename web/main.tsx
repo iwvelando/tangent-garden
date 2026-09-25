@@ -6,6 +6,7 @@ import type { Bounds, Config, Frame, Kind } from "./types";
 import { EngineClient, boundText } from "./engine-client";
 import { useTheme } from "./useTheme";
 import { AnimationPanel } from "./AnimationPanel";
+import { ExportImageMenu } from "./ExportImageMenu";
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { useDisclosure } from "./useDisclosure";
 import { useMediaQuery } from "./useMediaQuery";
@@ -192,19 +193,6 @@ function App() {
       <p className="closing">An open notebook for mathematical beauty.</p>
     </>
   );
-  const exportSVG = () => {
-    const svg = document.getElementById("artwork");
-    if (!svg) return;
-    const blob = new Blob([new XMLSerializer().serializeToString(svg)], {
-      type: "image/svg+xml",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `tangent-garden-${config.kind}.svg`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
   return (
     <div
       className={dark ? "app dark" : "app"}
@@ -245,13 +233,10 @@ function App() {
               Follow system
             </button>
           )}
-          <button
-            className="export"
+          <ExportImageMenu
             disabled={!result || busy || !!error || animationRunning}
-            onClick={exportSVG}
-          >
-            Export SVG <span>↗</span>
-          </button>
+            kind={config.kind}
+          />
         </div>
       </header>
       <main>

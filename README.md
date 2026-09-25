@@ -14,7 +14,7 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - Eight example studies; point and parallel light sources; polar source coordinates; configurable refraction.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.
 - Curve-reveal and multi-parameter animations with four camera modes.
-- Vector SVG and animated WebP exports, including a higher-resolution quality option.
+- PNG and vector SVG image exports; animation exports as MP4 video (the default) or animated WebP, whichever the browser can encode, with resolution, quality, and up to 60 fps for MP4.
 - Expert sampling controls and an engine designed for independent mathematical testing.
 
 See the **[usage guide](docs/usage.md)** for controls, examples, animations, camera behavior, and export limits.
@@ -39,7 +39,7 @@ npx playwright install chromium
 make test-browser # builds and tests the production app
 ```
 
-On Linux, Playwright may also need system libraries: `npx playwright install --with-deps chromium`. CI installs those dependencies. Additional targets include `make test-go`, `make test-wasm`, `make typecheck`, and `make clean` (generated build artifacts only).
+On Linux, Playwright may also need system libraries: `npx playwright install --with-deps chromium`. CI installs those dependencies. MP4 export tests also decode files with `ffprobe` from [FFmpeg](https://ffmpeg.org/) when it is installed; CI installs it, and local runs without it skip only those checks. Additional targets include `make test-go`, `make test-wasm`, `make typecheck`, and `make clean` (generated build artifacts only).
 
 Commit source, tests, docs, and `package-lock.json`; dependency directories, build output, browser reports, and generated WASM/runtime files are ignored. Read [AGENTS.md](AGENTS.md) for contribution boundaries and verification expectations; [CLAUDE.md](CLAUDE.md) points to the same instructions. Proposals, fixes, and tests should respect the mathematical-art focus.
 

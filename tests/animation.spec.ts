@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openAnimation } from "./helpers";
+import { openAnimation, exportImage } from "./helpers";
 import { applyTracks, reveal } from "../web/animation";
 import { presets } from "../web/presets";
 import type { Result } from "../web/types";
@@ -100,7 +100,7 @@ test("unwinding holds final framing, pauses, scrubs, exports, and restores the m
     page.getByRole("button", { name: "Resume", exact: true }),
   ).toBeVisible();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: /Export SVG/ }).click();
+  await exportImage(page, "SVG");
   expect((await download).suggestedFilename()).toBe(
     "tangent-garden-involute.svg",
   );

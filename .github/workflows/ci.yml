@@ -26,6 +26,8 @@ jobs:
       - run: make install
       - run: make check
       - run: npx playwright install --with-deps chromium
+      # ffprobe independently decodes exported MP4 files in the browser tests.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       # Runs against the production build in dist/, under the production CSP.
       - run: npx playwright test
       - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -120,6 +122,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # ffprobe independently decodes exported MP4 files in the browser tests.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npx playwright test --grep @smoke
         env:
           BASE_URL: https://tangent-garden.isaacvelando.com

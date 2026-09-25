@@ -5,6 +5,9 @@ import { fitFrame, framingPoints } from "../web/Plot";
 import { presets } from "../web/presets";
 import { reveal } from "../web/animation";
 import type { Result } from "../web/types";
+import { exportEncoding } from "../web/export-quality";
+import { videoBitrate } from "../web/mp4-video";
+import { decodeVideo, probe } from "./video";
 
 test("offset involute fits both curves throughout reveal, with fixed follow zoom", () => {
   const config = structuredClone(presets[1].config);
@@ -111,6 +114,9 @@ for (const [scale, quality, width, height] of [
     await page.goto("/");
     await expect(page.locator("#artwork")).toBeVisible();
     await openExportSettings(page);
+    await page
+      .getByRole("combobox", { name: "Export format" })
+      .selectOption("webp");
     const resolution = page.getByRole("slider", {
       name: "Export resolution",
       exact: true,
@@ -120,9 +126,9 @@ for (const [scale, quality, width, height] of [
       exact: true,
     });
     await expect(resolution).toHaveValue("1");
-    await expect(compression).toHaveValue("95");
+    await expect(compression).toHaveValue("85");
     await resolution.fill(String(scale));
-    await expect(compression).toHaveValue("95");
+    await expect(compression).toHaveValue("85");
     await compression.fill(String(quality));
     await expect(resolution).toHaveValue(String(scale));
     await expect(resolution).toHaveAttribute(
@@ -173,6 +179,55 @@ for (const [scale, quality, width, height] of [
     );
     await page.getByRole("button", { name: "Reset export settings" }).click();
     await expect(resolution).toHaveValue("1");
-    await expect(compression).toHaveValue("95");
+    await expect(compression).toHaveValue("85");
+  });
+}
+
+for (const [scale, quality, width, height, codec] of [
+  [0.5, 70, 500, 380, "avc1.42E01F"],
+  [2, 100, 2000, 1520, "avc1.42E032"],
+] as const) {
+  test(`MP4 export at ${width} × ${height} and quality ${quality} uses a fitting level and bitrate`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.locator("#artwork")).toBeVisible();
+    await openExportSettings(page);
+    await page
+      .getByRole("combobox", { name: "Export format" })
+      .selectOption("mp4");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill(String(scale));
+    await page
+      .getByRole("slider", { name: "Export quality", exact: true })
+      .fill(String(quality));
+    await page.evaluate(() => {
+      (window as any).configs = [];
+      const configure = VideoEncoder.prototype.configure;
+      VideoEncoder.prototype.configure = function (config) {
+        (window as any).configs.push(config);
+        configure.call(this, config);
+      };
+    });
+    await page
+      .getByRole("spinbutton", { name: "Duration (seconds)" })
+      .fill(".1");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export MP4 video" }).click();
+    const path = (await (await download).path())!;
+    const [config] = await page.evaluate(() => (window as any).configs);
+    expect(config).toMatchObject({ codec, width, height, framerate: 30 });
+    expect(config.bitrate).toBe(
+      videoBitrate(exportEncoding({ scale, quality }), 30),
+    );
+    const probed = probe(path);
+    if (probed) {
+      expect([probed.width, probed.height]).toEqual([width, height]);
+      expect(probed.frames).toBe(3);
+    }
+    const decoded = await decodeVideo(page, await readFile(path));
+    expect([decoded.width, decoded.height]).toEqual([width, height]);
+    expect(decoded.duration).toBeCloseTo(0.1, 3);
   });
 }

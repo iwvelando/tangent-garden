@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { EngineClient } from "./engine-client";
+import { EngineClient, exportEngineCount } from "./engine-client";
 import {
   applyTracks,
   availableTargets,
@@ -15,8 +15,15 @@ import {
 } from "./animation";
 import type { Frame } from "./types";
 import type { Layers } from "./Plot";
-import { exportTiming } from "./animated-webp";
-import { defaultExportSettings, exportEncoding } from "./export-quality";
+import { defaultScale, exportEncoding, exportTiming } from "./export-quality";
+import {
+  defaultQuality,
+  detectFormats,
+  formatText,
+  type ExportFormat,
+  type Formats,
+} from "./export-formats";
+import { saveFile } from "./export-image";
 import { Field } from "./Field";
 import { useDisclosure } from "./useDisclosure";
 
@@ -74,10 +81,44 @@ export function AnimationPanel({
   const exportSection = useDisclosure("export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
-  const [exportScale, setExportScale] = useState(defaultExportSettings.scale);
-  const [quality, setQuality] = useState(defaultExportSettings.quality);
-  const exportSize = exportEncoding({ scale: exportScale, quality });
+  const [exportScale, setExportScale] = useState(defaultScale);
+  // Each format keeps its own quality, starting from its default.
+  const [qualities, setQualities] = useState(defaultQuality);
   const [exportNotice, setExportNotice] = useState("");
+  const [format, setFormat] = useState<ExportFormat>("mp4");
+  const [formats, setFormats] = useState<Formats | null>(null);
+  // Offer only what this browser can encode. Safari and every iOS browser
+  // cannot encode canvas WebP; some encoders refuse large H.264 frames.
+  useEffect(() => {
+    let current = true;
+    const settings = { scale: exportScale, quality: qualities.mp4 };
+    void detectFormats(settings, fps).then((found) => {
+      if (current) setFormats(found);
+    });
+    return () => {
+      current = false;
+    };
+  }, [exportScale, qualities.mp4, fps]);
+  // MP4 is far smaller at comparable quality, so it leads when available.
+  const offered = (["mp4", "webp"] satisfies ExportFormat[]).filter(
+    (f) => formats && formats[f] !== "no",
+  );
+  const chosen = offered.includes(format) ? format : (offered[0] ?? format);
+  const text = formatText[chosen];
+  const quality = qualities[chosen];
+  const setQuality = (value: number) =>
+    setQualities((q) => ({ ...q, [chosen]: value }));
+  const exportSize = exportEncoding({ scale: exportScale, quality });
+  // Animated WebP stops at 30 fps; the MP4 choice is kept for switching back.
+  const exportFps = chosen === "webp" && fps === 60 ? 30 : fps;
+  const exportReady = formats?.[chosen] === "yes";
+  const exportHint = !formats
+    ? ""
+    : offered.length === 0
+      ? "This browser can't save animations. You can still save single frames as SVG."
+      : formats[chosen] === "size"
+        ? `This browser can't save ${text.name} at ${exportSize.width} × ${exportSize.height}. Choose a lower export resolution${offered.length > 1 ? " or another format" : ""}.`
+        : "";
   const exportAbort = useRef<AbortController | null>(null);
   const seekTarget = useRef<number | null>(null),
     scrubbing = useRef(-1);
@@ -169,7 +210,11 @@ export function AnimationPanel({
     if (next === "parameters" && !tracks.length && targets.length)
       setTracks([defaultTrack(targets[0])]);
   }
-  async function sample(s: Session, p: number): Promise<AnimationView> {
+  async function sample(
+    s: Session,
+    p: number,
+    engine = client.current!,
+  ): Promise<AnimationView> {
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
     let current: Frame;
     if (s.mode === "reveal")
@@ -181,7 +226,7 @@ export function AnimationPanel({
     else if (p === 1) current = s.final;
     else if (s.tracks.every((t) => t.target === "rayLength"))
       current = s.original;
-    else current = await client.current!.compute(values.config);
+    else current = await engine.compute(values.config);
     return {
       frame: current,
       final: s.final,
@@ -210,13 +255,13 @@ export function AnimationPanel({
           .join(" · "),
       );
   }
-  function fail(reason: unknown) {
+  function fail(reason: unknown, what = "Animation") {
     cancel();
     session.current = null;
     onView(null);
     changeStatus("idle");
     setError(
-      `Animation stopped: ${reason instanceof Error ? reason.message : String(reason)}`,
+      `${what} stopped: ${reason instanceof Error ? reason.message : String(reason)}`,
     );
   }
   function schedule(s: Session, from: number) {
@@ -264,7 +309,7 @@ export function AnimationPanel({
         throw new Error("Duration must be between 0.1 and 3600 seconds.");
       if (camera === "current" && !heldView)
         throw new Error("The current view is not ready yet.");
-      if (save) exportTiming(duration, fps);
+      if (save) exportTiming(duration, exportFps);
       let numeric: NumericTrack[] = [];
       if (mode === "parameters") {
         if (!tracks.length)
@@ -337,33 +382,46 @@ export function AnimationPanel({
         onView(null);
         const { exportAnimation } = await import("./export-animation");
         if (epoch.current !== token) return;
+        // Parameter frames each need a calculation. Temporary engines compute
+        // them in parallel for this export only; frames are still drawn in order.
+        const computes =
+          mode === "parameters" &&
+          !numeric.every((t) => t.target === "rayLength");
+        const extras = Array.from(
+          { length: computes ? exportEngineCount() - 1 : 0 },
+          () => new EngineClient(),
+        );
+        const release = () => extras.forEach((engine) => engine.dispose());
+        controller.signal.addEventListener("abort", release);
+        const engines = [client.current, ...extras];
+        let next = 0;
         const blob = await exportAnimation({
+          format: chosen,
           duration,
-          fps,
-          loop,
+          fps: exportFps,
+          loop: chosen === "webp" && loop,
           settings: { scale: exportScale, quality },
           dark,
           layers: { ...layers },
           signal: controller.signal,
-          sample: (p) => sample(s, p),
+          lookahead: engines.length + 1,
+          sample: (p) => sample(s, p, engines[next++ % engines.length]),
           onProgress: (completed, total) => {
             if (epoch.current !== token) return;
             setProgress(completed / total);
             setLive(`Rendering frame ${completed} of ${total}`);
           },
-        });
+        }).finally(release);
         if (epoch.current !== token) return;
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `tangent-garden-${frame.config.kind}-${mode}.webp`;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        saveFile(
+          blob,
+          `tangent-garden-${frame.config.kind}-${mode}.${text.extension}`,
+        );
         exportAbort.current = null;
         session.current = null;
         changeStatus("idle");
         setExportNotice(
-          `Saved animated WebP · ${(blob.size / (1024 * 1024)).toFixed(1)} MiB`,
+          `Saved ${text.name} · ${(blob.size / (1024 * 1024)).toFixed(1)} MiB`,
         );
         return;
       }
@@ -372,7 +430,7 @@ export function AnimationPanel({
       display(s, firstView);
       schedule(s, 0);
     } catch (error) {
-      if (epoch.current === token) fail(error);
+      if (epoch.current === token) fail(error, save ? "Export" : "Animation");
     }
   }
   function pause() {
@@ -571,12 +629,32 @@ export function AnimationPanel({
             <summary>
               Export settings
               <span className="summary-detail">
-                {fps} fps · {exportSize.width} × {exportSize.height} · quality{" "}
-                {quality}
+                {text.short} · {exportFps} fps · {exportSize.width} ×{" "}
+                {exportSize.height} · quality {quality}
               </span>
             </summary>
+            {offered.length > 1 && (
+              <Field label="Export format">
+                <select
+                  value={chosen}
+                  onChange={(e) => setFormat(e.target.value as ExportFormat)}
+                >
+                  {offered.map((f) => (
+                    <option key={f} value={f}>
+                      {formatText[f].option}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <Field label="Export frame rate">
-              <select value={fps} onChange={(e) => setFPS(+e.target.value)}>
+              <select
+                value={exportFps}
+                onChange={(e) => setFPS(+e.target.value)}
+              >
+                {chosen === "mp4" && (
+                  <option value={60}>60 fps · smoothest motion</option>
+                )}
                 <option value={30}>30 fps · smoother motion</option>
                 <option value={15}>15 fps · smaller file</option>
               </select>
@@ -600,7 +678,7 @@ export function AnimationPanel({
             <Field
               label="Export quality"
               value={`${quality} / 100`}
-              help="Lower values compress more. Near 100, files can grow much larger; size depends on the drawing and browser."
+              help={`${text.short} starts at ${defaultQuality[chosen]}; lower values make smaller files. Near 100, files can grow much larger; size depends on the drawing and browser.`}
             >
               <input
                 aria-label="Export quality"
@@ -613,32 +691,40 @@ export function AnimationPanel({
                 onChange={(e) => setQuality(+e.target.value)}
               />
             </Field>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={loop}
-                onChange={(e) => setLoop(e.target.checked)}
-              />
-              Loop exported animation
-            </label>
+            {chosen === "webp" ? (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={loop}
+                  onChange={(e) => setLoop(e.target.checked)}
+                />
+                Loop exported animation
+              </label>
+            ) : (
+              <p className="hint">
+                MP4 files have no loop setting; video players decide whether to
+                loop.
+              </p>
+            )}
             <button
               className="text-button export-reset"
               disabled={
-                exportScale === defaultExportSettings.scale &&
-                quality === defaultExportSettings.quality
+                exportScale === defaultScale &&
+                quality === defaultQuality[chosen]
               }
               onClick={() => {
                 if (status === "complete") stop();
-                setExportScale(defaultExportSettings.scale);
-                setQuality(defaultExportSettings.quality);
+                setExportScale(defaultScale);
+                setQuality(defaultQuality[chosen]);
               }}
             >
-              Reset export settings to 1000 × 760 · quality 95
+              Reset export settings to 1000 × 760 · quality{" "}
+              {defaultQuality[chosen]}
             </button>
             <p className="hint">
               Export renders every frame in your browser with the current theme,
               layers, and camera, which can take longer than playback. Up to
-              7,200 frames or 256 MiB.
+              7,200 frames (2 minutes at 60 fps) or 256 MiB.
             </p>
           </details>
         </fieldset>
@@ -702,7 +788,7 @@ export function AnimationPanel({
               </Field>
               <div className="note" role="status" aria-live="off">
                 {status === "exporting"
-                  ? "Exporting WebP…"
+                  ? `Exporting ${text.short}…`
                   : status === "complete"
                     ? "Complete"
                     : status === "paused"
@@ -724,11 +810,12 @@ export function AnimationPanel({
         </div>
         <button
           className="animation-export"
-          disabled={disabled || running || !frame}
+          disabled={disabled || running || !frame || !exportReady}
           onClick={() => void start(true)}
         >
-          Export animated WebP ↗
+          Export {text.name} ↗
         </button>
+        {exportHint && <p className="hint">{exportHint}</p>}
         {exportNotice && (
           <p className="note" role="status">
             {exportNotice}
