@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 for (const file of [
   "index.html",
+  "404.html",
   "engine.wasm",
   "wasm_exec.js",
   "tangent-garden.svg",

@@ -54,6 +54,13 @@ Serve **the contents of `dist/`** over HTTP(S), preserving its structure. Use th
 
 The build pairs the Go WASM runtime with the installed compiler and checks the resulting distribution for its required assets and notices. Static-host compression is useful for the several-megabyte WASM module.
 
+The live site is **https://tangent-garden.isaacvelando.com**. Every push to `main` that passes verification deploys the tested `dist/` there, through the `production` environment. Serve these headers wherever you host it:
+
+- **Content-Security-Policy:** the value in [`deploy/content-security-policy.txt`](deploy/content-security-policy.txt). `make preview` sends it too, so the browser tests run under it.
+- **Content type:** serve `engine.wasm` as `application/wasm`.
+
+`404.html` links to `/`, so it assumes the site is at the root of its host.
+
 ## Mathematical scope
 
 This is a **mathematical construction explorer**, not a scene renderer: every regular sampled point participates, without occlusion or multiple bounces. The current engine is 2D. Future 3D work needs separate mathematical definitions and types.

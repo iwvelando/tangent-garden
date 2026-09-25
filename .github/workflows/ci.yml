@@ -1,5 +1,8 @@
 name: Verify
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -7,16 +10,95 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.24.x'
           cache: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: npm
       - run: make install
       - run: make check
       - run: npx playwright install --with-deps chromium
+      # Runs against the production build in dist/, under the production CSP.
       - run: npx playwright test
+      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Publishes the exact build that passed `check`. Hosting is managed in
+  # iwvelando/cloud-accounts (sites/tangent-garden.isaacvelando.com). Only this job
+  # can get AWS credentials, and the `production` environment only allows main.
+  deploy:
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://tangent-garden.isaacvelando.com
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      DEPLOY_ROLE_ARN: arn:aws:iam::634753796535:role/tangent-garden-deploy
+      BUCKET: tangent-garden-site-634753796535
+      DISTRIBUTION_ID: E1T03M5KK77GZX
+      SITE_URL: https://tangent-garden.isaacvelando.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: deploy
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+
+      # `sync --delete` below would wipe the site if the build came out empty.
+      - name: sanity-check build
+        run: |
+          for f in index.html 404.html engine.wasm wasm_exec.js; do test -s "dist/$f"; done
+          ls dist/assets/*.js
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Fingerprinted assets first, so the new index.html never references a missing
+      # file. Old assets are kept for pages that were already open during a deploy.
+      - name: upload
+        run: |
+          aws s3 sync dist/assets/ "s3://$BUCKET/assets/" \
+            --cache-control 'public, max-age=31536000, immutable'
+          aws s3 cp dist/engine.wasm "s3://$BUCKET/engine.wasm" \
+            --content-type application/wasm --cache-control 'public, max-age=300'
+          aws s3 sync dist/ "s3://$BUCKET/" --delete \
+            --exclude 'assets/*' --exclude 'engine.wasm' \
+            --cache-control 'public, max-age=300'
+
+      - name: invalidate CloudFront
+        run: |
+          id=$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+            --paths '/*' --query Invalidation.Id --output text)
+          aws cloudfront wait invalidation-completed --distribution-id "$DISTRIBUTION_ID" --id "$id"
+
+      - name: smoke test
+        run: |
+          header() { curl -fsSI "$SITE_URL$1" | tr -d '\r' | grep -i "^$2:" | cut -d' ' -f2-; }
+          if [ "$(header / content-security-policy)" != "$(tr -d '\n' < deploy/content-security-policy.txt)" ]; then
+            echo "::error::The live CSP differs from deploy/content-security-policy.txt. Update iwvelando/cloud-accounts to match."
+            exit 1
+          fi
+          test "$(header /engine.wasm content-type)" = application/wasm
+          curl -fsS "$SITE_URL/" | grep -q '<title>Tangent Garden'
