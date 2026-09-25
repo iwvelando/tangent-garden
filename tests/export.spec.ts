@@ -1,6 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { AnimatedWebP, exportTiming } from "../web/animated-webp";
+import { exportEncoding } from "../web/export-quality";
+
+test("export settings reject nonfinite and out-of-range values before encoding", () => {
+  for (const scale of [NaN, Infinity, 0, 0.49, 2.01])
+    expect(() => exportEncoding({ scale, quality: 95 })).toThrow("resolution");
+  for (const quality of [NaN, Infinity, 0, 101, 95.5])
+    expect(() => exportEncoding({ scale: 1, quality })).toThrow("quality");
+});
 
 async function ready(page: Page, preset = "1") {
   await page.goto("/");

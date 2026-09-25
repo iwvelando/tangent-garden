@@ -2,13 +2,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Plot, type Layers } from "./Plot";
 import type { AnimationView } from "./animation";
 import { AnimatedWebP, exportTiming } from "./animated-webp";
-import { exportQualities, type ExportQuality } from "./export-quality";
+import { exportEncoding, type ExportSettings } from "./export-quality";
 
 type Options = {
   duration: number;
   fps: number;
   loop: boolean;
-  quality: ExportQuality;
+  settings: ExportSettings;
   dark: boolean;
   layers: Layers;
   signal: AbortSignal;
@@ -22,9 +22,9 @@ export async function exportAnimation(options: Options): Promise<Blob> {
   const { signal, sample, onProgress, dark, layers } = options;
   const timing = exportTiming(options.duration, options.fps);
   const canvas = document.createElement("canvas");
-  const quality = exportQualities[options.quality];
-  canvas.width = 1000 * quality.scale;
-  canvas.height = 760 * quality.scale;
+  const encoding = exportEncoding(options.settings);
+  canvas.width = encoding.width;
+  canvas.height = encoding.height;
   const context = canvas.getContext("2d", { alpha: false });
   if (!context)
     throw new Error("Canvas drawing is unavailable in this browser.");
@@ -42,7 +42,7 @@ export async function exportAnimation(options: Options): Promise<Blob> {
         length={view.length}
         animation={view}
         reset={0}
-        pixelRatio={quality.scale}
+        pixelRatio={encoding.scale}
       />,
     );
     const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
@@ -60,7 +60,7 @@ export async function exportAnimation(options: Options): Promise<Blob> {
         (blob) =>
           blob ? resolve(blob) : reject(new Error("WebP encoding failed.")),
         "image/webp",
-        quality.compression,
+        encoding.compression,
       );
     });
     signal.throwIfAborted();

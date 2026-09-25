@@ -16,7 +16,7 @@ import {
 import type { Frame } from "./types";
 import type { Layers } from "./Plot";
 import { exportTiming } from "./animated-webp";
-import { exportQualities, type ExportQuality } from "./export-quality";
+import { defaultExportSettings, exportEncoding } from "./export-quality";
 
 type Status =
   "idle" | "preparing" | "playing" | "paused" | "complete" | "exporting";
@@ -67,7 +67,9 @@ export function AnimationPanel({
   const [live, setLive] = useState("");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
-  const [quality, setQuality] = useState<ExportQuality>("standard");
+  const [exportScale, setExportScale] = useState(defaultExportSettings.scale);
+  const [quality, setQuality] = useState(defaultExportSettings.quality);
+  const exportSize = exportEncoding({ scale: exportScale, quality });
   const [exportNotice, setExportNotice] = useState("");
   const exportAbort = useRef<AbortController | null>(null);
   const epoch = useRef(0),
@@ -328,7 +330,7 @@ export function AnimationPanel({
           duration,
           fps,
           loop,
-          quality,
+          settings: { scale: exportScale, quality },
           dark,
           layers: { ...layers },
           signal: controller.signal,
@@ -540,22 +542,63 @@ export function AnimationPanel({
             </select>
           </label>
           <label className="field">
-            <span>Export quality</span>
-            <select
-              value={quality}
-              onChange={(e) => setQuality(e.target.value as ExportQuality)}
-            >
-              {Object.entries(exportQualities).map(([value, option]) => (
-                <option key={value} value={value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <span>
+              Export resolution{" "}
+              <b>
+                {exportSize.width} × {exportSize.height}
+              </b>
+            </span>
+            <input
+              aria-label="Export resolution"
+              aria-valuetext={`${exportSize.width} by ${exportSize.height} pixels`}
+              aria-describedby="export-resolution-help"
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.25"
+              value={exportScale}
+              onChange={(e) => setExportScale(+e.target.value)}
+            />
           </label>
-          <p className="hint">
-            Fine renders at twice the resolution with maximum encoding quality
-            for sharper lines. Expect larger files and slower export.
+          <p className="hint" id="export-resolution-help">
+            More pixels preserve finer detail, with larger files and slower
+            export. 2000 × 1520 has four times the pixels of the default.
           </p>
+          <label className="field">
+            <span>
+              Export quality <b>{quality} / 100</b>
+            </span>
+            <input
+              aria-label="Export quality"
+              aria-valuetext={`${quality} out of 100`}
+              aria-describedby="export-quality-help"
+              type="range"
+              min="1"
+              max="100"
+              step="1"
+              value={quality}
+              onChange={(e) => setQuality(+e.target.value)}
+            />
+          </label>
+          <p className="hint" id="export-quality-help">
+            Lower values compress more; higher values preserve detail. Maximum
+            quality (100) can produce much larger files. File size depends on
+            the drawing and browser, and does not grow linearly.
+          </p>
+          <button
+            className="text-button export-reset"
+            disabled={
+              exportScale === defaultExportSettings.scale &&
+              quality === defaultExportSettings.quality
+            }
+            onClick={() => {
+              if (status === "complete") stop();
+              setExportScale(defaultExportSettings.scale);
+              setQuality(defaultExportSettings.quality);
+            }}
+          >
+            Reset export settings to 1000 × 760 · quality 95
+          </button>
           <label className="check">
             <input
               type="checkbox"

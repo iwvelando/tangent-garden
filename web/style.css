@@ -80,6 +80,11 @@ fieldset:disabled {
   width: 100%;
   margin-top: 8px;
 }
+.export-reset {
+  display: block;
+  margin-bottom: 14px;
+  text-align: left;
+}
 .animation-values {
   font:
     11px/1.8 ui-monospace,

@@ -99,30 +99,78 @@ test("help, branding, and completed animation settings are usable without stoppi
   ).toBe("fit");
 });
 
-test("fine animation export decodes at double resolution", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Export quality" })
-    .selectOption("fine");
-  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".1");
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export animated WebP" }).click();
-  const saved = await download;
-  expect(saved.suggestedFilename()).toMatch(/^tangent-garden-/);
-  const bytes = await readFile((await saved.path())!);
-  const decoded = await page.evaluate(async (data) => {
-    const decoder = new (window as any).ImageDecoder({
-      data: new Uint8Array(data),
-      type: "image/webp",
+for (const [scale, quality, width, height] of [
+  [0.5, 70, 500, 380],
+  [1.5, 95, 1500, 1140],
+  [2, 100, 2000, 1520],
+]) {
+  test(`animation export at ${width} × ${height} and quality ${quality} decodes correctly`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.locator("#artwork")).toBeVisible();
+    const resolution = page.getByRole("slider", {
+      name: "Export resolution",
+      exact: true,
     });
-    await decoder.tracks.ready;
-    const count = decoder.tracks.selectedTrack.frameCount;
-    const { image } = await decoder.decode({ frameIndex: count - 1 });
-    const dimensions = [image.displayWidth, image.displayHeight];
-    image.close();
-    decoder.close();
-    return { count, dimensions };
-  }, Array.from(bytes));
-  expect(decoded).toEqual({ count: 3, dimensions: [2000, 1520] });
-});
+    const compression = page.getByRole("slider", {
+      name: "Export quality",
+      exact: true,
+    });
+    await expect(resolution).toHaveValue("1");
+    await expect(compression).toHaveValue("95");
+    await resolution.fill(String(scale));
+    await expect(compression).toHaveValue("95");
+    await compression.fill(String(quality));
+    await expect(resolution).toHaveValue(String(scale));
+    await expect(resolution).toHaveAttribute(
+      "aria-valuetext",
+      `${width} by ${height} pixels`,
+    );
+    await page.evaluate(() => {
+      (window as any).encodedFrames = [];
+      const encode = HTMLCanvasElement.prototype.toBlob;
+      HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+        (window as any).encodedFrames.push([this.width, this.height, quality]);
+        encode.call(this, callback, type, quality);
+      };
+    });
+    await page
+      .getByRole("spinbutton", { name: "Duration (seconds)" })
+      .fill(".1");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export animated WebP" }).click();
+    const saved = await download;
+    expect(saved.suggestedFilename()).toMatch(/^tangent-garden-/);
+    const bytes = await readFile((await saved.path())!);
+    const decoded = await page.evaluate(async (data) => {
+      const decoder = new (window as any).ImageDecoder({
+        data: new Uint8Array(data),
+        type: "image/webp",
+      });
+      await decoder.tracks.ready;
+      const count = decoder.tracks.selectedTrack.frameCount;
+      const durations: number[] = [];
+      const dimensions: number[][] = [];
+      for (let i = 0; i < count; i++) {
+        const { image } = await decoder.decode({ frameIndex: i });
+        dimensions.push([image.displayWidth, image.displayHeight]);
+        durations.push(image.duration);
+        image.close();
+      }
+      decoder.close();
+      return { count, dimensions, durations };
+    }, Array.from(bytes));
+    expect(decoded.count).toBe(3);
+    expect(decoded.dimensions).toEqual(Array(3).fill([width, height]));
+    expect(decoded.durations.reduce((sum, duration) => sum + duration, 0)).toBe(
+      100000,
+    );
+    expect(await page.evaluate(() => (window as any).encodedFrames)).toEqual(
+      Array(3).fill([width, height, quality / 100]),
+    );
+    await page.getByRole("button", { name: "Reset export settings" }).click();
+    await expect(resolution).toHaveValue("1");
+    await expect(compression).toHaveValue("95");
+  });
+}
