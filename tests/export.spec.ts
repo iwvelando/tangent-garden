@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openExportSettings } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { AnimatedWebP, exportTiming } from "../web/animated-webp";
 import { exportEncoding } from "../web/export-quality";
@@ -13,6 +14,7 @@ test("export settings reject nonfinite and out-of-range values before encoding",
 async function ready(page: Page, preset = "1") {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
+  await openExportSettings(page);
   await page
     .getByRole("combobox", { name: "Start with a notebook example" })
     .selectOption(preset);

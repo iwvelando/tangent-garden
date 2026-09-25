@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openAnimation } from "./helpers";
 
 test("system theme follows live changes, and overrides persist until reset", async ({
   page,
@@ -116,6 +117,7 @@ test("sidebar scrolling leaves the drawing stationary and decimal indices are va
 }) => {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
+  await openAnimation(page);
   const before = await page.locator("#artwork").boundingBox();
   await page
     .getByRole("button", { name: "Play animation" })

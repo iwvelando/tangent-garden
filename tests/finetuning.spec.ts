@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openAnimation, openExportSettings } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { fitFrame, framingPoints } from "../web/Plot";
 import { presets } from "../web/presets";
@@ -60,17 +61,17 @@ test("help, branding, and completed animation settings are usable without stoppi
     "src",
     /tangent-garden\.svg$/,
   );
-  await expect(page.getByRole("group", { name: "Controls" })).toHaveAttribute(
-    "title",
-    /Expert mode unlocks/,
-  );
+  await page.getByRole("button", { name: "About control modes" }).click();
+  await expect(page.getByText(/Expert mode takes exact/)).toBeVisible();
+  await page.getByRole("button", { name: "About shape parameter a" }).click();
   await expect(
-    page.getByRole("spinbutton", { name: "Shape parameter a" }).locator(".."),
-  ).toHaveAttribute("title", /Expressions without a are unaffected/);
+    page.getByRole("spinbutton", { name: "Shape parameter a" }),
+  ).toHaveAccessibleDescription(/Expressions without a are unaffected/);
   await page.getByText("Expression reference", { exact: true }).click();
   await expect(
     page.locator("details var").filter({ hasText: "a" }).first(),
   ).toBeVisible();
+  await openAnimation(page);
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".1");
   await page.getByRole("button", { name: "Play animation" }).click();
   await expect(
@@ -109,6 +110,7 @@ for (const [scale, quality, width, height] of [
   }) => {
     await page.goto("/");
     await expect(page.locator("#artwork")).toBeVisible();
+    await openExportSettings(page);
     const resolution = page.getByRole("slider", {
       name: "Export resolution",
       exact: true,
