@@ -1,0 +1,69 @@
+name: Dependabot merge
+# Merges a Dependabot PR once its `Verify` run passes, then starts `Verify` on main,
+# which tests the merged result again and deploys it.
+#
+# Why not `gh pr merge --auto` on pull_request: a merge made with GITHUB_TOKEN
+# triggers no workflows, so main would never be verified or deployed. Starting a
+# workflow by dispatch is the one exception. This runs on workflow_run, in the
+# context of main, and never checks out or runs PR code.
+on:
+  workflow_run:
+    workflows: [Verify]
+    types: [completed]
+permissions: {}
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: find the tested PR
+        id: pr
+        run: |
+          pr=$(gh api "repos/$GH_REPO/pulls?state=open&head=${GH_REPO%%/*}:$BRANCH" \
+            --jq "map(select(.user.login == \"dependabot[bot]\" and .head.sha == env.SHA)) | .[0].number // empty")
+          if [ -z "$pr" ]; then
+            echo "No open Dependabot PR at $SHA (closed, or pushed to since this run)."
+          fi
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
+
+      - name: check it changes no major version
+        id: safe
+        if: steps.pr.outputs.number != ''
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          COMMIT_MESSAGE=$(gh api "repos/$GH_REPO/commits/$SHA" --jq .commit.message)
+          export COMMIT_MESSAGE
+          if gh pr view "$PR" --json body --jq .body | .github/scripts/dependabot-safe-update.sh; then
+            echo "merge=true" >> "$GITHUB_OUTPUT"
+          else
+            gh pr comment "$PR" --body "Not auto-merged: this changes a major version, or its versions couldn't be read. Review and merge by hand."
+          fi
+
+      - name: merge and deploy
+        if: steps.safe.outputs.merge == 'true'
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          # --match-head-commit: merge only the exact commit that passed Verify.
+          gh pr merge "$PR" --squash --match-head-commit "$SHA"
+          gh workflow run ci.yml --ref main
