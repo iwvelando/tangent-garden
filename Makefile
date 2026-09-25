@@ -1,4 +1,4 @@
-.PHONY: install wasm test test-go test-wasm test-browser typecheck vet format format-check build dev preview check clean
+.PHONY: install wasm test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev preview check clean
 
 install:
 	npm ci
@@ -22,6 +22,8 @@ format-check:
 test: test-go test-wasm typecheck
 test-browser: build
 	npx playwright test
+test-webkit: build
+	WEBKIT=1 npx playwright test --project=webkit
 build:
 	npm run build
 check: format-check vet test build

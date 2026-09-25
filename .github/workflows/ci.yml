@@ -38,11 +38,36 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Publishes the exact build that passed `check`. Hosting is managed in
+  # Safari's engine, which every iOS browser also uses: no canvas WebP, and its
+  # own H.264 encoder and VideoFrame behavior. Standard macOS runners are free
+  # for public repositories. Runs tests/webkit.spec.ts only.
+  webkit:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: make install
+      - run: npx playwright install webkit
+      # ffprobe independently decodes the exported MP4 files.
+      - run: brew install ffmpeg
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      - run: make test-webkit
+
+  # Publishes the exact build that passed `check` (and `webkit`). Hosting is managed in
   # iwvelando/cloud-accounts (sites/tangent-garden.isaacvelando.com). Only this job
   # can get AWS credentials, and the `production` environment only allows main.
   deploy:
-    needs: check
+    needs: [check, webkit]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
