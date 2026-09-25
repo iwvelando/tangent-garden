@@ -1,0 +1,27 @@
+# Version updates. Patch and minor updates auto-merge once `Verify` passes
+# (workflows/dependabot-merge.yml) and then deploy. Majors wait for a human.
+# Security updates are on in the repo settings and follow the same merge rules.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # Compromised releases are usually pulled within days. Security updates skip this.
+    cooldown:
+      default-days: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 5
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
