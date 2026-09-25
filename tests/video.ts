@@ -123,9 +123,16 @@ function decode(page: Page, bytes: Buffer) {
       return { hash, background };
     };
     const first = capture();
+    // "seeked" does not mean the new frame can be drawn yet; under load,
+    // Chromium on Linux still drew the first frame. Wait until the seeked
+    // frame is presented, and seek inside the last frame rather than to the
+    // very end of the file.
+    const presented = new Promise<void>((resolve) =>
+      video.requestVideoFrameCallback(() => resolve()),
+    );
     const seeked = event("seeked");
-    video.currentTime = video.duration;
-    await seeked;
+    video.currentTime = Math.max(0, video.duration - 0.005);
+    await Promise.all([seeked, presented]);
     const last = capture();
     URL.revokeObjectURL(url);
     return {
