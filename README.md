@@ -69,7 +69,6 @@ The engine uses numerical differentiation, arc-length integration, and ray envel
 
 - [Mathematical definitions and numerical conventions](docs/mathematics.md)
 - [Architecture and extension boundaries](docs/architecture.md)
-- [Independent assessment of the original Maple work](docs/reference-review.md)
 
 ## Project map
 

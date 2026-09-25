@@ -4,7 +4,7 @@
 
 Tangent Garden is a mathematical art explorer. The curve, derived curve, and representative construction lines are the product. Do not turn it into a scene editor or physical graphics renderer without explicit direction. Start with 2D; preserve clear boundaries for future 3D work.
 
-Read `README.md`, `docs/mathematics.md`, and `docs/reference-review.md` before changing numerical behavior. The Maple exports are historical inspiration, **not a correctness oracle**. They are not part of this repository; do not introduce a dependency on them.
+Read `README.md` and `docs/mathematics.md` before changing numerical behavior.
 
 ## Discovery and tools
 

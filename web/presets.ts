@@ -81,6 +81,8 @@ export const presets: { title: string; note: string; config: Config }[] = [
         y: "exp(t)*cos(t)",
         max: Math.PI,
       },
+      // This spiral's speed is √2·eᵗ, so c = √2 makes the involute use the arc-length
+      // antiderivative √2·eᵗ itself rather than the one anchored at zero at t = 0.
       offset: Math.SQRT2,
     },
   },
