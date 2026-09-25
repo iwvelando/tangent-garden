@@ -7,6 +7,8 @@ for (const file of [
   "engine.wasm",
   "wasm_exec.js",
   "tangent-garden.svg",
+  "og-image.png",
+  "apple-touch-icon.png",
   "LICENSE.txt",
   "GO-LICENSE.txt",
   "THIRD-PARTY-NOTICES.txt",

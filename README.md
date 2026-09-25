@@ -50,18 +50,21 @@ Commit source, tests, docs, and `package-lock.json`; dependency directories, bui
 ```sh
 make build        # creates dist/
 make preview      # serves that build locally
+make share-card   # re-renders the link-preview card and home-screen icon into public/
 ```
 
 Serve **the contents of `dist/`** over HTTP(S), preserving its structure. Use the whole directory, including `engine.wasm`, `wasm_exec.js`, the logo, and the license/notice files. No server-side computation is needed. Relative asset URLs support hosting beneath a path prefix. Do not open the site using `file://`.
 
 The build pairs the Go WASM runtime with the installed compiler and checks the resulting distribution for its required assets and notices. Static-host compression is useful for the several-megabyte WASM module.
 
-The live site is **https://tangent-garden.isaacvelando.com**. Every push to `main` that passes verification deploys the tested `dist/` there, through the `production` environment. A browser smoke test (`tests/smoke.spec.ts`) then checks the live site. Run it yourself with `BASE_URL=https://tangent-garden.isaacvelando.com npx playwright test --grep @smoke`. A failed run on `main` opens a "Production deploy failed" issue. Serve these headers wherever you host it:
+The live site is **https://tangent-garden.isaacvelando.com**. Every push to `main` that passes verification deploys the tested `dist/` there, through the `production` environment. Browser smoke tests (`tests/smoke.spec.ts` and `tests/share.spec.ts`) then check the live site. Run them yourself with `BASE_URL=https://tangent-garden.isaacvelando.com npx playwright test --grep @smoke`. A failed run on `main` opens a "Production deploy failed" issue. Serve these headers wherever you host it:
 
 - **Content-Security-Policy:** the value in [`deploy/content-security-policy.txt`](deploy/content-security-policy.txt). `make preview` sends it too, so the browser tests run under it.
 - **Content type:** serve `engine.wasm` as `application/wasm`.
 
 `404.html` links to `/`, so it assumes the site is at the root of its host.
+
+A shared link unfurls into a card (Open Graph and Twitter tags in `index.html`) showing `public/og-image.png`. Those tags and the canonical link name the production URL, since link scrapers need absolute URLs; change them if you host it elsewhere. The card and `public/apple-touch-icon.png` are rendered from the built site by `make share-card` and committed; re-render them, check them by eye, and commit when the site's look changes.
 
 ## Mathematical scope
 
