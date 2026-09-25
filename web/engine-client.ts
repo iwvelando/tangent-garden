@@ -1,6 +1,7 @@
 import type { Bounds, Config, Frame } from "./types";
 
-// One worker per app. Callers own cancellation; stale responses settle their
+// One worker per app, plus temporary ones during parameter-animation export.
+// Callers own cancellation; stale responses settle their
 // promises but never replace a newer study or animation session.
 export class EngineClient {
   private worker = new Worker(new URL("./engine.worker.ts", import.meta.url));
@@ -63,6 +64,7 @@ export class EngineClient {
     return (await this.request({ action: "scalars", expressions })).values;
   }
   dispose(error = new Error("Numerical engine closed.")) {
+    if (this.closed) return;
     this.closed = true;
     this.worker.terminate();
     for (const p of this.pending.values()) {
@@ -71,6 +73,17 @@ export class EngineClient {
     }
     this.pending.clear();
   }
+}
+
+// Engines used for a parameter-animation export: the app's own plus up to
+// three temporary ones, leaving a core free for drawing and encoding. Each can
+// hold ~100 MB at expert scale, so phones and tablets (a touch primary pointer)
+// get at most one.
+export function exportEngineCount(
+  cores = navigator.hardwareConcurrency || 1,
+  touch = matchMedia("(pointer: coarse)").matches,
+) {
+  return 1 + Math.max(0, Math.min(touch ? 1 : 3, cores - 2));
 }
 
 export function boundText(value: number) {

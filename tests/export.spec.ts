@@ -1,8 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openExportSettings } from "./helpers";
 import { readFile } from "node:fs/promises";
-import { AnimatedWebP, exportTiming } from "../web/animated-webp";
-import { exportEncoding } from "../web/export-quality";
+import { AnimatedWebP } from "../web/animated-webp";
+import { exportEncoding, exportTiming } from "../web/export-quality";
 
 test("export settings reject nonfinite and out-of-range values before encoding", () => {
   for (const scale of [NaN, Infinity, 0, 0.49, 2.01])
@@ -16,6 +16,9 @@ async function ready(page: Page, preset = "1") {
   await expect(page.locator("#artwork")).toBeVisible();
   await openExportSettings(page);
   await page
+    .getByRole("combobox", { name: "Export format" })
+    .selectOption("webp");
+  await page
     .getByRole("combobox", { name: "Start with a notebook example" })
     .selectOption(preset);
   await expect(
@@ -25,7 +28,8 @@ async function ready(page: Page, preset = "1") {
 
 test("export timing includes endpoints, preserves milliseconds, and bounds work", async () => {
   for (const duration of [0.1, 0.1234, 1, 30, 240]) {
-    for (const fps of [15, 30]) {
+    for (const fps of [15, 30, 60]) {
+      if (duration * fps > 7200) continue; // Checked at the cap below.
       const frames = exportTiming(duration, fps);
       expect(frames[0].progress).toBe(0);
       expect(frames.at(-1)!.progress).toBe(1);
@@ -37,11 +41,13 @@ test("export timing includes endpoints, preserves milliseconds, and bounds work"
   }
   expect(() => exportTiming(NaN, 30)).toThrow("Duration");
   expect(() => exportTiming(241, 30)).toThrow("7,200");
-  expect(() => exportTiming(1, 60)).toThrow("15 or 30");
+  expect(exportTiming(120, 60)).toHaveLength(7200);
+  expect(() => exportTiming(121, 60)).toThrow("lower frame rate");
+  expect(() => exportTiming(1, 90)).toThrow("15, 30, or 60");
   const writer = new AnimatedWebP(1000, 760, false);
   await expect(
     writer.add(new Blob([], { type: "image/png" }), 33),
-  ).rejects.toThrow("cannot encode WebP");
+  ).rejects.toThrow("can't save animated WebP files");
   await expect(
     writer.add(new Blob(["RIFF"], { type: "image/webp" }), 33),
   ).rejects.toThrow("invalid WebP");
@@ -195,7 +201,9 @@ test("unsupported encoders and oversized exports fail visibly and recover", asyn
     };
   });
   await page.getByRole("button", { name: "Export animated WebP" }).click();
-  await expect(page.getByRole("alert")).toContainText("cannot encode WebP");
+  await expect(page.getByRole("alert")).toContainText(
+    "This browser can't save animated WebP files.",
+  );
   await expect(
     page.getByRole("button", { name: "Play animation" }),
   ).toBeEnabled();

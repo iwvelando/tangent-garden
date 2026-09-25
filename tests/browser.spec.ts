@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { exportImage, imageButton } from "./helpers";
 
 test("a failed WASM download can recover on the next input change", async ({
   page,
@@ -29,7 +30,7 @@ test("WASM loads, all notebook studies compute, and SVG exports geometry", async
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Export SVG/ })).toBeEnabled();
+  await expect(imageButton(page)).toBeEnabled();
   expect(await page.locator("#artwork line").count()).toBeGreaterThan(20);
   for (const preset of ["1", "2", "3", "4", "5", "6", "7", "0"]) {
     await page.getByLabel("Start with a notebook example").selectOption(preset);
@@ -44,7 +45,7 @@ test("WASM loads, all notebook studies compute, and SVG exports geometry", async
     );
   }
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: /Export SVG/ }).click();
+  await exportImage(page, "SVG");
   const file = await download;
   const svg = await readFile((await file.path())!, "utf8");
   expect(svg).toContain("<svg");
@@ -61,7 +62,7 @@ test("curve formats, invalid input recovery, layers, optics and dark mode", asyn
   await expect(page.locator("#artwork")).toBeVisible();
   await page.getByLabel("x(t)", { exact: true }).fill("sin(");
   await expect(page.getByRole("alert")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Export SVG/ })).toBeDisabled();
+  await expect(imageButton(page)).toBeDisabled();
   await page.getByLabel("x(t)", { exact: true }).fill("2*cos(t)");
   await expect(page.locator("#artwork")).toBeVisible();
   await page

@@ -16,3 +16,12 @@ async function open(page: Page, selector: string) {
   if ((await details.getAttribute("open")) === null)
     await details.locator(":scope > summary").click();
 }
+
+export const imageButton = (page: Page) =>
+  page.getByRole("button", { name: "Export image" });
+
+// Still-image exports live in the header's Export image menu.
+export async function exportImage(page: Page, kind: "PNG" | "SVG") {
+  await imageButton(page).click();
+  await page.getByRole("menuitem", { name: new RegExp(`^${kind}`) }).click();
+}

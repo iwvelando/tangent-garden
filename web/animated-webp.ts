@@ -15,25 +15,6 @@ function chunk(name: string, body: Blob): Blob {
   return new Blob([header, body, new Uint8Array(body.size % 2)]);
 }
 
-export function exportTiming(seconds: number, fps: number) {
-  if (!Number.isFinite(seconds) || seconds < 0.1 || seconds > 3600)
-    throw new Error("Duration must be between 0.1 and 3600 seconds.");
-  if (fps !== 15 && fps !== 30)
-    throw new Error("Choose 15 or 30 frames per second.");
-  const count = Math.max(2, Math.ceil(seconds * fps));
-  if (count > 7200)
-    throw new Error(
-      "Export is limited to 7,200 frames. Shorten the duration or choose 15 fps.",
-    );
-  const milliseconds = Math.round(seconds * 1000);
-  return Array.from({ length: count }, (_, i) => ({
-    progress: i / (count - 1),
-    duration:
-      Math.round(((i + 1) * milliseconds) / count) -
-      Math.round((i * milliseconds) / count),
-  }));
-}
-
 export class AnimatedWebP {
   private frames: Blob[] = [];
   private size = 44;
@@ -50,9 +31,7 @@ export class AnimatedWebP {
   }
   async add(image: Blob, milliseconds: number) {
     if (image.type !== "image/webp")
-      throw new Error(
-        "This browser cannot encode WebP. Try a browser with canvas WebP export support.",
-      );
+      throw new Error("This browser can't save animated WebP files.");
     if (
       !Number.isInteger(milliseconds) ||
       milliseconds < 11 ||

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { imageButton } from "./helpers";
 
 // Post-deploy smoke test. CI also runs it against the preview build; the deploy
 // runs it against the live site with BASE_URL=https://tangent-garden.isaacvelando.com.
@@ -19,6 +20,6 @@ test("@smoke the engine loads and draws with no browser errors", async ({
   expect((await wasm).headers()["content-type"]).toBe("application/wasm");
   await expect(page.locator("#artwork")).toBeVisible();
   expect(await page.locator("#artwork line").count()).toBeGreaterThan(20);
-  await expect(page.getByRole("button", { name: /Export SVG/ })).toBeEnabled();
+  await expect(imageButton(page)).toBeEnabled();
   expect(problems).toEqual([]);
 });

@@ -1,6 +1,9 @@
 export type ExportSettings = { scale: number; quality: number };
 
-export const defaultExportSettings: ExportSettings = { scale: 1, quality: 95 };
+// Animated WebP is limited to 15 and 30; 60 fps is offered for MP4 only.
+export const frameRates = [15, 30, 60];
+
+export const defaultScale = 1;
 
 export function exportEncoding({ scale, quality }: ExportSettings) {
   if (!Number.isFinite(scale) || scale < 0.5 || scale > 2)
@@ -13,4 +16,25 @@ export function exportEncoding({ scale, quality }: ExportSettings) {
     scale,
     compression: quality / 100,
   };
+}
+
+// Frame progress and millisecond delays shared by every export format. The
+// delays sum exactly to the requested duration and include both endpoints.
+export function exportTiming(seconds: number, fps: number) {
+  if (!Number.isFinite(seconds) || seconds < 0.1 || seconds > 3600)
+    throw new Error("Duration must be between 0.1 and 3600 seconds.");
+  if (!frameRates.includes(fps))
+    throw new Error("Choose 15, 30, or 60 frames per second.");
+  const count = Math.max(2, Math.ceil(seconds * fps));
+  if (count > 7200)
+    throw new Error(
+      "Export is limited to 7,200 frames. Shorten the duration or choose a lower frame rate.",
+    );
+  const milliseconds = Math.round(seconds * 1000);
+  return Array.from({ length: count }, (_, i) => ({
+    progress: i / (count - 1),
+    duration:
+      Math.round(((i + 1) * milliseconds) / count) -
+      Math.round((i * milliseconds) / count),
+  }));
 }
