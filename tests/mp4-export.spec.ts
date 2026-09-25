@@ -79,6 +79,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     if (probed) {
       expect(probed.codec).toBe("h264");
       expect(probed.profile).toBe("Constrained Baseline");
+      expect(probed.bFrames).toBe(0);
       expect([probed.width, probed.height]).toEqual([2000, 1520]);
       expect(probed.frames).toBe(6);
       // Endpoints on the first and last frames, with exact millisecond delays.

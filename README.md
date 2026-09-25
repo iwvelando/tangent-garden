@@ -37,9 +37,11 @@ make format       # gofmt and Prettier
 make check        # formatting, vet, race/coverage tests, WASM, types, production build
 npx playwright install chromium
 make test-browser # builds and tests the production app
+npx playwright install webkit
+make test-webkit  # Safari/iOS engine checks (tests/webkit.spec.ts)
 ```
 
-On Linux, Playwright may also need system libraries: `npx playwright install --with-deps chromium`. CI installs those dependencies. MP4 export tests also decode files with `ffprobe` from [FFmpeg](https://ffmpeg.org/) when it is installed; CI installs it, and local runs without it skip only those checks. Additional targets include `make test-go`, `make test-wasm`, `make typecheck`, and `make clean` (generated build artifacts only).
+On Linux, Playwright may also need system libraries: `npx playwright install --with-deps chromium`. CI installs those dependencies. MP4 export tests also decode files with `ffprobe` from [FFmpeg](https://ffmpeg.org/) when it is installed; CI installs it, and local runs without it skip only those checks. `make test-webkit` runs the WebKit-specific export checks; CI runs them on a macOS runner, since Safari and every iOS browser use WebKit, with its own video encoder and no canvas WebP. Additional targets include `make test-go`, `make test-wasm`, `make typecheck`, and `make clean` (generated build artifacts only).
 
 Commit source, tests, docs, and `package-lock.json`; dependency directories, build output, browser reports, and generated WASM/runtime files are ignored. Read [AGENTS.md](AGENTS.md) for contribution boundaries and verification expectations; [CLAUDE.md](CLAUDE.md) points to the same instructions. Proposals, fixes, and tests should respect the mathematical-art focus.
 
