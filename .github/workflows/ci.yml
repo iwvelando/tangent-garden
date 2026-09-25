@@ -1,6 +1,8 @@
 name: Verify
 on:
+  # PR branches are verified by their pull_request run; push covers main only.
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -13,7 +15,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.24.x'
+          # Latest release, so the deployed engine.wasm always has current Go security
+          # fixes. go.mod's `go` line is the minimum supported toolchain.
+          go-version: stable
           cache: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -93,7 +97,7 @@ jobs:
             --paths '/*' --query Invalidation.Id --output text)
           aws cloudfront wait invalidation-completed --distribution-id "$DISTRIBUTION_ID" --id "$id"
 
-      - name: smoke test
+      - name: check headers
         run: |
           header() { curl -fsSI "$SITE_URL$1" | tr -d '\r' | grep -i "^$2:" | cut -d' ' -f2-; }
           if [ "$(header / content-security-policy)" != "$(tr -d '\n' < deploy/content-security-policy.txt)" ]; then
@@ -102,3 +106,43 @@ jobs:
           fi
           test "$(header /engine.wasm content-type)" = application/wasm
           curl -fsS "$SITE_URL/" | grep -q '<title>Tangent Garden'
+
+  # A real browser against the live site, after the deploy. No AWS credentials.
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --grep @smoke
+        env:
+          BASE_URL: https://tangent-garden.isaacvelando.com
+
+  # Runs on main started by a workflow (e.g. Dependabot merges) notify no one, so a
+  # failure on main opens an issue, or comments on the one already open.
+  alert:
+    needs: [check, deploy, smoke]
+    if: failure() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: Production deploy failed
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SHA: ${{ github.sha }}
+    steps:
+      - run: |
+          body="Verify run $RUN_URL failed on main at $SHA. The live site may be stale or broken. Fix forward, or revert the change and let it redeploy."
+          open=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
+          if [ -n "$open" ]; then gh issue comment "$open" --body "$body"
+          else gh issue create --title "$TITLE" --body "$body"; fi
