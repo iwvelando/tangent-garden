@@ -1,4 +1,4 @@
-.PHONY: install wasm test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev preview check clean
+.PHONY: install wasm test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev preview check clean share-card
 
 install:
 	npm ci
@@ -26,6 +26,8 @@ test-webkit: build
 	WEBKIT=1 npx playwright test --project=webkit
 build:
 	npm run build
+share-card: build
+	node scripts/build-share-card.mjs
 check: format-check vet test build
 dev:
 	npm run dev
