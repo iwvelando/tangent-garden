@@ -21,7 +21,7 @@ See the **[usage guide](docs/usage.md)** for controls, examples, animations, cam
 
 ## Run locally
 
-Requires **Go 1.24+**, **Node 22.12+**, npm, and Make. CI verifies Go 1.24 and Node 22 on Linux. A modern browser with WebAssembly is required; WebP export additionally needs canvas WebP encoding. Browser integration tests currently target Chromium.
+Requires **Go 1.26+**, **Node 22.12+**, npm, and Make. CI uses the latest stable Go and Node 22 on Linux. A modern browser with WebAssembly is required; WebP export additionally needs canvas WebP encoding. Browser integration tests currently target Chromium.
 
 ```sh
 make install
@@ -54,7 +54,7 @@ Serve **the contents of `dist/`** over HTTP(S), preserving its structure. Use th
 
 The build pairs the Go WASM runtime with the installed compiler and checks the resulting distribution for its required assets and notices. Static-host compression is useful for the several-megabyte WASM module.
 
-The live site is **https://tangent-garden.isaacvelando.com**. Every push to `main` that passes verification deploys the tested `dist/` there, through the `production` environment. Serve these headers wherever you host it:
+The live site is **https://tangent-garden.isaacvelando.com**. Every push to `main` that passes verification deploys the tested `dist/` there, through the `production` environment. A browser smoke test (`tests/smoke.spec.ts`) then checks the live site. Run it yourself with `BASE_URL=https://tangent-garden.isaacvelando.com npx playwright test --grep @smoke`. A failed run on `main` opens a "Production deploy failed" issue. Serve these headers wherever you host it:
 
 - **Content-Security-Policy:** the value in [`deploy/content-security-policy.txt`](deploy/content-security-policy.txt). `make preview` sends it too, so the browser tests run under it.
 - **Content type:** serve `engine.wasm` as `application/wasm`.
