@@ -53,7 +53,7 @@ jobs:
       AWS_REGION: us-east-1
       DEPLOY_ROLE_ARN: arn:aws:iam::634753796535:role/tangent-garden-deploy
       BUCKET: tangent-garden-site-634753796535
-      DISTRIBUTION_ID: SET_AFTER_APPLY
+      DISTRIBUTION_ID: E1T03M5KK77GZX
       SITE_URL: https://tangent-garden.isaacvelando.com
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
