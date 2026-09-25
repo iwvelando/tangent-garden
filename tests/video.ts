@@ -107,7 +107,20 @@ function decode(page: Page, bytes: Buffer) {
       let hash = 0;
       for (let j = 0; j < pixels.length; j += 4)
         hash = (Math.imul(hash, 31) + (pixels[j] >> 3)) | 0;
-      return { hash, background: Array.from(pixels.slice(0, 4)) };
+      // The most common colour is the background, wherever lines fall.
+      const counts = new Map<number, number>();
+      for (let j = 0; j < pixels.length; j += 4) {
+        const key = (pixels[j] << 16) | (pixels[j + 1] << 8) | pixels[j + 2];
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      const [common] = [...counts].reduce((a, b) => (b[1] > a[1] ? b : a));
+      const background = [
+        common >> 16,
+        (common >> 8) & 255,
+        common & 255,
+        pixels[3],
+      ];
+      return { hash, background };
     };
     const first = capture();
     const seeked = event("seeked");

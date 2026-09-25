@@ -79,7 +79,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     if (probed) {
       expect(probed.codec).toBe("h264");
       expect(probed.profile).toBe("Constrained Baseline");
-      expect([probed.width, probed.height]).toEqual([1000, 760]);
+      expect([probed.width, probed.height]).toEqual([2000, 1520]);
       expect(probed.frames).toBe(6);
       // Endpoints on the first and last frames, with exact millisecond delays.
       const durations = exportTiming(0.4, 15).map((f) => f.duration);
@@ -93,7 +93,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     }
     const decoded = await decodeVideo(page, bytes);
     expect(decoded.duration).toBeCloseTo(0.4, 3);
-    expect([decoded.width, decoded.height]).toEqual([1000, 760]);
+    expect([decoded.width, decoded.height]).toEqual([2000, 1520]);
     expect(decoded.first.hash).not.toBe(decoded.last.hash);
     for (const frame of [decoded.first, decoded.last]) {
       expect(frame.background[3]).toBe(255);
@@ -234,7 +234,10 @@ test("an MP4 size the encoder refuses is explained, not silently switched", asyn
     VideoEncoder.isConfigSupported = async (config) =>
       config.width > 1000 ? { supported: false, config } : check(config);
   });
-  await ready(page);
+  await ready(page, "1", false);
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("1");
   await format(page).selectOption("mp4");
   await expect(exportMP4(page)).toBeEnabled();
   await page
@@ -312,13 +315,13 @@ test("each format starts at its own quality default and keeps edits when switchi
   await expect(quality).toHaveValue("60");
   await expect(summary).toContainText("quality 60");
   await expect(reset).toHaveText(
-    "Reset export settings to 1000 × 760 · quality 60",
+    "Reset export settings to 2000 × 1520 · quality 60",
   );
   await expect(reset).toBeDisabled();
   await format(page).selectOption("webp");
   await expect(quality).toHaveValue("85");
   await expect(reset).toHaveText(
-    "Reset export settings to 1000 × 760 · quality 85",
+    "Reset export settings to 2000 × 1520 · quality 85",
   );
   await expect(reset).toBeDisabled();
   await format(page).selectOption("mp4");

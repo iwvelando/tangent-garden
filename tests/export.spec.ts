@@ -124,17 +124,30 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
       const fingerprints: number[] = [];
       let background: number[] = [];
       const canvas = document.createElement("canvas");
-      canvas.width = 1000;
-      canvas.height = 760;
+      // The default export size.
+      canvas.width = 2000;
+      canvas.height = 1520;
       const ctx = canvas.getContext("2d")!;
       for (let i = 0; i < count; i++) {
         const { image } = await decoder.decode({ frameIndex: i });
-        if (image.displayWidth !== 1000 || image.displayHeight !== 760)
+        if (image.displayWidth !== 2000 || image.displayHeight !== 1520)
           throw new Error("Wrong dimensions");
         durations.push(image.duration);
         ctx.drawImage(image, 0, 0);
-        const pixels = ctx.getImageData(0, 0, 1000, 760).data;
-        background = Array.from(pixels.slice(0, 4));
+        const pixels = ctx.getImageData(0, 0, 2000, 1520).data;
+        // The most common colour is the background, wherever lines fall.
+        const counts = new Map<number, number>();
+        for (let j = 0; j < pixels.length; j += 4) {
+          const key = (pixels[j] << 16) | (pixels[j + 1] << 8) | pixels[j + 2];
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        const [common] = [...counts].reduce((a, b) => (b[1] > a[1] ? b : a));
+        background = [
+          common >> 16,
+          (common >> 8) & 255,
+          common & 255,
+          pixels[3],
+        ];
         let hash = 0;
         for (let j = 0; j < pixels.length; j += 4)
           hash = (Math.imul(hash, 31) + pixels[j]) | 0;

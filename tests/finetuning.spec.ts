@@ -125,7 +125,7 @@ for (const [scale, quality, width, height] of [
       name: "Export quality",
       exact: true,
     });
-    await expect(resolution).toHaveValue("1");
+    await expect(resolution).toHaveValue("2");
     await expect(compression).toHaveValue("85");
     await resolution.fill(String(scale));
     await expect(compression).toHaveValue("85");
@@ -178,7 +178,7 @@ for (const [scale, quality, width, height] of [
       Array(3).fill([width, height, quality / 100]),
     );
     await page.getByRole("button", { name: "Reset export settings" }).click();
-    await expect(resolution).toHaveValue("1");
+    await expect(resolution).toHaveValue("2");
     await expect(compression).toHaveValue("85");
   });
 }

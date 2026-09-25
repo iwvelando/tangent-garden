@@ -3,7 +3,10 @@ export type ExportSettings = { scale: number; quality: number };
 // Animated WebP is limited to 15 and 30; 60 fps is offered for MP4 only.
 export const frameRates = [15, 30, 60];
 
-export const defaultScale = 1;
+// 2000 × 1520. At 1000 × 760 construction lines are about one pixel wide, and
+// H.264 and lossy WebP store colour at half resolution, so thin lines lose
+// their colour and soften; at twice the size they stay crisp.
+export const defaultScale = 2;
 
 export function exportEncoding({ scale, quality }: ExportSettings) {
   if (!Number.isFinite(scale) || scale < 0.5 || scale > 2)
