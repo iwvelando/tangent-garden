@@ -15,6 +15,8 @@ const available = (() => {
 export type Probe = {
   codec: string;
   profile: string;
+  // Frames that decode out of display order; the MP4 writer needs zero.
+  bFrames: number;
   width: number;
   height: number;
   frames: number;
@@ -43,7 +45,7 @@ export function probe(path: string): Probe | null {
         "-select_streams",
         "v:0",
         "-show_entries",
-        "stream=codec_name,profile,width,height,nb_read_frames:frame=pts_time,duration_time,key_frame",
+        "stream=codec_name,profile,width,height,nb_read_frames,has_b_frames:frame=pts_time,duration_time,key_frame",
         "-of",
         "json",
         path,
@@ -56,6 +58,7 @@ export function probe(path: string): Probe | null {
   return {
     codec: stream.codec_name,
     profile: stream.profile,
+    bFrames: Number(stream.has_b_frames),
     width: stream.width,
     height: stream.height,
     frames: Number(stream.nb_read_frames),

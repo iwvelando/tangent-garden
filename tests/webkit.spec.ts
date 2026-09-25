@@ -85,7 +85,10 @@ test("a 10 s parameter animation exports every frame with exact timing", async (
   const probed = probe(path);
   if (probed) {
     expect(probed.codec).toBe("h264");
-    expect(probed.profile).toBe("Constrained Baseline");
+    // A macOS VM's encoder reports plain Baseline, hardware Constrained
+    // Baseline. Neither allows B-frames, which is what the writer relies on.
+    expect(probed.profile).toMatch(/^(Constrained )?Baseline$/);
+    expect(probed.bFrames).toBe(0);
     expect([probed.width, probed.height]).toEqual([500, 380]);
     expect(probed.frames).toBe(300);
     expect(probed.durations).toEqual(durations);
