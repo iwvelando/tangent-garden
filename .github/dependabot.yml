@@ -1,5 +1,7 @@
 # Version updates. Patch and minor updates auto-merge once `Verify` passes
-# (workflows/dependabot-merge.yml) and then deploy. Majors wait for a human.
+# (workflows/dependabot-merge.yml) and then deploy. Majors are never merged
+# automatically: they need a review, then a manual merge (by a person, or by an
+# agent once `Verify` has passed).
 # Security updates are on in the repo settings and follow the same merge rules.
 version: 2
 updates:
