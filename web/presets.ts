@@ -12,6 +12,7 @@ const base: Config = {
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
+  pole: { x: 0, y: 0 },
   nTransmitted: 1,
   offset: 0,
   samples: 1000,
@@ -94,6 +95,17 @@ export const presets: { title: string; note: string; config: Config }[] = [
       kind: "catacaustic",
       curve: { ...base.curve, x: "cos(t)", y: "sin(t)" },
       source: { ...base.source, kind: "parallel", angle: 0 },
+    },
+  },
+  {
+    title: "Ellipse & its pedal",
+    note: "A pole and its tangent projections",
+    config: {
+      ...base,
+      kind: "pedal",
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      pole: { x: 1.65, y: 0.3 },
+      lines: 64,
     },
   },
 ];

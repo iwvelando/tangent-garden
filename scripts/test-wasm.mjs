@@ -33,5 +33,29 @@ assert.deepEqual(scalars.values, [2 * Math.PI, (1 + Math.sqrt(5)) / 2, 1]);
 assert.ok(JSON.parse(globalThis.tangentGardenScalars('["t"]')).error);
 assert.ok(JSON.parse(globalThis.tangentGardenScalars('["1/0"]')).error);
 assert.equal(result.rays.at(-1).sampleIndex, 999);
-console.log("WASM bridge: analytic ellipse and invalid JSON passed.");
+const pedal = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "pedal",
+      curve: { ...config.curve, x: "cos(t)", y: "sin(t)" },
+      pole: { x: 1, y: 0 },
+    }),
+  ),
+);
+assert.equal(pedal.invalid, 0);
+assert.equal(pedal.rays.length, config.lines);
+for (const i of [0, 249, 500, 999]) {
+  const t = (i * 2 * Math.PI) / 999;
+  assert.ok(
+    Math.abs(pedal.derived[i].x - (1 + Math.cos(t) - Math.cos(t) ** 2)) < 1e-7,
+  );
+  assert.ok(
+    Math.abs(pedal.derived[i].y - Math.sin(t) * (1 - Math.cos(t))) < 1e-7,
+  );
+  assert.equal(pedal.virtual[i], false);
+}
+console.log(
+  "WASM bridge: analytic ellipse, pedal cardioid, and invalid JSON passed.",
+);
 process.exit(0);

@@ -91,6 +91,12 @@ func derivativesAtStep(f curveFunc, t, lo, hi, h float64) (Vec, Vec) {
 
 // Agreement at two step sizes rejects ill-conditioned samples, including poles
 // that floating-point arithmetic lands extremely close to rather than exactly on.
+func stableTangent(f curveFunc, t, lo, hi float64, d Vec) bool {
+	a, _ := derivativesAtStep(f, t, lo, hi, (hi-lo)*5e-5)
+	return a.Valid() && d.Valid() &&
+		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+1e-8
+}
+
 func stable(f curveFunc, t, lo, hi float64, d, dd Vec) bool {
 	a, b := derivativesAtStep(f, t, lo, hi, (hi-lo)*5e-5)
 	return a.Valid() && b.Valid() && d.Valid() && dd.Valid() &&

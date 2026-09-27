@@ -64,6 +64,7 @@ self.onmessage = async ({
       config.nTransmitted,
       config.samples,
       config.lines,
+      ...(config.kind === "pedal" ? [config.pole.x, config.pole.y] : []),
       ...(config.source.kind === "point" &&
       config.source.coordinates === "polar"
         ? [config.source.radius, config.source.theta]

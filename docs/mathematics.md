@@ -18,6 +18,14 @@ This is the signed center of curvature. Straight segments have no finite evolute
 
 We use Simpson integration on every adjacent sample interval. The constant `c` selects an involute from the family. Reversing a curve's orientation changes this anchored construction. Increasing the sample count improves the integral but does not remove derivative conditioning limits.
 
+## Pedal curve
+
+For a fixed pole `P`, `H = r + ((P-r)·T) T` is its orthogonal projection onto the tangent line at r. The pole is independent of the optical source and uses Cartesian coordinates; omitted pole coordinates in a Go request default to the origin. Finite coordinates are required. A pole on the base curve is valid. The representative segments are r→H along the tangent and P→H perpendicular to it. A straight line has a valid pedal consisting of one point, rendered with the same point marker used for other collapsed derived curves.
+
+Only a stable, nonzero first derivative is required. Pedals use the same bounded five-point and half-step first-derivative comparison as other constructions, without requiring a stable second derivative. Stationary points and invalid or unstable evaluations produce gaps; no limiting tangent is inferred. A centered circle is its own pedal, and a pole on a circle produces a cardioid. The construction is independent of regular reparameterization and orientation. The absolute speed cutoff of 10⁻⁹ is a numerical guardrail, not scale-invariant regularity detection.
+
+See [MathCurve's pedal constructions](https://mathcurve.com/courbes2d/podaire/podaire.shtml). Contrapedals and orthotomics are planned separately, not currently implemented.
+
 ## Ray envelopes
 
 Let a unit outgoing direction be `d(t)` and the ray family be `F(t,λ)=r(t)+λd(t)`. The envelope condition is linear dependence of `∂F/∂t` and `∂F/∂λ`:

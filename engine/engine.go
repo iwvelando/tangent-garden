@@ -18,6 +18,7 @@ type Request struct {
 	Kind         string  `json:"kind"`
 	Curve        Curve   `json:"curve"`
 	Source       Source  `json:"source"`
+	Pole         Vec     `json:"pole"`
 	NIncident    float64 `json:"nIncident"`
 	NTransmitted float64 `json:"nTransmitted"`
 	Offset       float64 `json:"offset"`
@@ -46,8 +47,11 @@ type Result struct {
 func Compute(q Request) (Result, error) {
 	out := Result{Rays: []Ray{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
-	if !optical && q.Kind != "evolute" && q.Kind != "involute" {
+	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "pedal" {
 		return out, fmt.Errorf("unknown construction")
+	}
+	if q.Kind == "pedal" && !q.Pole.Valid() {
+		return out, fmt.Errorf("pole coordinates must be finite numbers")
 	}
 	if q.Samples < 64 || q.Samples > 32768 || q.Lines < 2 || q.Lines > 2048 || q.Lines > q.Samples {
 		return out, fmt.Errorf("samples must be 64–32768 and lines 2–2048, with no more lines than samples")
@@ -119,7 +123,13 @@ func Compute(q Request) (Result, error) {
 		p := f(t)
 		dp, ddp := derivatives(f, t, lo, hi)
 		out.Base[j] = point(p)
-		if !p.Valid() || !stable(f, t, lo, hi, dp, ddp) {
+		stableSample := false
+		if q.Kind == "pedal" {
+			stableSample = stableTangent(f, t, lo, hi, dp)
+		} else {
+			stableSample = stable(f, t, lo, hi, dp, ddp)
+		}
+		if !p.Valid() || !stableSample {
 			out.Base[j] = nil
 			out.Invalid++
 			if q.Kind == "involute" {
@@ -144,6 +154,8 @@ func Compute(q Request) (Result, error) {
 		var dir Vec
 		virtual, tir := false, false
 		switch q.Kind {
+		case "pedal":
+			target = Pedal(p, dp, q.Pole)
 		case "evolute":
 			target = Evolute(p, dp, ddp)
 		case "involute":
