@@ -312,6 +312,35 @@ const studies: {
     ],
   },
   {
+    preset: "Four chasers at unequal speeds",
+    cases: [
+      {
+        name: "Start x₁",
+        text: "sqrt(2)",
+        value: Math.SQRT2,
+        path: ["curve", "pursuit", "pursuers", "0", "x"],
+      },
+      {
+        name: "Start y₃",
+        text: "-phi",
+        value: -phi,
+        path: ["curve", "pursuit", "pursuers", "2", "y"],
+      },
+      {
+        name: "Speed v₄",
+        text: "e/2",
+        value: Math.E / 2,
+        path: ["curve", "pursuit", "pursuers", "3", "speed"],
+      },
+      {
+        name: "Capture distance ε",
+        text: "pi/100",
+        value: Math.PI / 100,
+        path: ["curve", "pursuit", "capture"],
+      },
+    ],
+  },
+  {
     preset: "Unwinding a circle",
     cases: [
       {

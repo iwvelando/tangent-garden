@@ -24,6 +24,13 @@ export const maxTerms = 16;
 export const harmonicFormats = ["lissajous", "fourier"] as const;
 export const isHarmonic = (format: string) =>
   (harmonicFormats as readonly string[]).includes(format);
+// One member of a cyclic pursuit: its position at the domain start and its
+// constant speed.
+export type Pursuer = { x: number; y: number; speed: number };
+export const maxPursuers = 16;
+// Harmonic curves and pursuits define their own shape, without a.
+export const ownsShape = (format: string) =>
+  isHarmonic(format) || format === "pursuit";
 // How the rolling circle moves: inside or outside a fixed circle centered at
 // the origin, or along the x-axis on its upper side.
 export type Roll = "inside" | "outside" | "line";
@@ -36,7 +43,8 @@ export type Config = {
       | "polar"
       | "roulette"
       | "lissajous"
-      | "fourier";
+      | "fourier"
+      | "pursuit";
     x: string;
     y: string;
     r: string;
@@ -67,6 +75,12 @@ export type Config = {
     // chained in this order from the origin; positive frequencies turn
     // counterclockwise. Used only when format is "fourier".
     terms: Term[];
+    // 2–16 pursuers, each running straight at the next (the last at the
+    // first) at its own speed, from its position at the domain start; t is
+    // time. The chase stops for everyone when any pursuer comes within
+    // capture of its target. The first pursuer's path is the curve that
+    // constructions use. Used only when format is "pursuit".
+    pursuit: { pursuers: Pursuer[]; capture: number };
   };
   source: {
     kind: "point" | "parallel";
@@ -205,6 +219,19 @@ export type HarmonicResult = {
   positions: Epicycles[];
 };
 
+// The pursuers' positions, in chase order, at a representative sample.
+export type Polygon = { sampleIndex: number; points: Vec[] };
+// Every pursuer's path, indexed like base. The chase is known from the domain
+// start to end: the domain end, the capture, or, when exhausted, where the
+// integration step budget ran out. Pursuer indices count from 0.
+export type PursuitResult = {
+  paths: (Vec | null)[][];
+  polygons: Polygon[];
+  capture: { time: number; pursuer: number; target: number } | null;
+  exhausted: boolean;
+  end: number;
+};
+
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
 export type Result = {
@@ -224,6 +251,8 @@ export type Result = {
   roulette?: RouletteResult;
   // Present only for a Lissajous or Fourier curve.
   harmonic?: HarmonicResult;
+  // Present only for a cyclic pursuit.
+  pursuit?: PursuitResult;
   // Present only for a rolling curve.
   moving?: MovingResult;
   // The chords' far endpoints, indexed like base; present only for chords.

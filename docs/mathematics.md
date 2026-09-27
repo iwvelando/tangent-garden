@@ -33,6 +33,20 @@ A rotation of frequency `k` repeats after `2π/|k|`, so a harmonic curve repeats
 
 The generators are evaluated in closed form. Constructions use the engine's usual five-point numerical derivatives, which the tests check against the analytic `z′ = Σ i k r e^{iθ}` and `z″ = −Σ k² r e^{iθ}`. High frequencies need proportionally more samples.
 
+## Cyclic pursuit
+
+`n` pursuers (`2 ≤ n ≤ 16`) start at points `p_i` when `t` is at the domain start, and each runs straight at the next, the last at the first, at its own constant speed `0 ≤ v_i ≤ 100000`:
+
+`p_i′ = v_i (p_{i+1} − p_i) / |p_{i+1} − p_i|`.
+
+`t` is time. The first pursuer's path is the base curve that constructions use; every path is returned separately, indexed like the base samples, with the connecting polygon of all positions at each representative sample.
+
+The direction is undefined when a pursuer reaches its target, so the chase has an explicit collision policy: it stops, for every pursuer, the first time any pursuer comes within the capture distance `0 < ε ≤ 100000` of its own target. Later samples are gaps. Nobody merges or changes target, since either would silently change the pursuit's topology. Pursuers that are not chasing one another may pass through each other: none steers around the rest. The result reports the capture time and pair (the closest pair, then the lowest index, when several close together); a pursuer that starts within `ε` of its target ends the chase at once.
+
+For equal speeds `v` from a regular polygon of circumradius `r₀`, every pursuer moves inward at `v sin(π/n)` and turns at `v cos(π/n)/r`. The polygon stays regular as it turns and shrinks: `r(t) = r₀ − v t sin(π/n)`, `θ = θ₀ + cot(π/n) ln(r₀/r)`, so each path is the logarithmic spiral `r = r₀ exp(−tan(π/n)(θ − θ₀))`, and neighbors close to `ε` when `r = ε / (2 sin(π/n))`. The evolute of the first path, about the polygon's center `c`, is the same spiral scaled by `tan(π/n)`: `(E − c) ⊥ (P − c)` and `|E − c| = |P − c| tan(π/n)`. The tests check these, a pursuer running straight at a stationary target, two pursuers closing at the sum of their speeds, and a runner passing briefly within `ε` of a still pursuer.
+
+The chase is integrated with the Dormand–Prince 5(4) pair and adaptive steps. The local error of each step is held to `10⁻¹²` of the smallest gap at its start (plus a rounding floor of `10⁻¹⁴` times each coordinate), so the shape stays accurate as the gaps shrink and a scaled chase is the same chase in scaled time. No gap closes faster than the two speeds in it together, so each step is also at most `(g − ε)/(2 v_max)` for the smallest gap `g`: no pursuer can come within `ε` of its target inside a step, however briefly. The steps shrink geometrically as a gap approaches `ε`, and the chase stops when the remaining difference is below `10⁻¹²ε` plus the rounding floor of that pair's coordinates. Positions between accepted steps are one step of the same method from the step's start, so paths are smooth within steps and continuous across them, and constructions differentiate them numerically as usual. A chase is limited to 40000 attempted steps; when that runs out, the result is marked exhausted, the time reached is reported, and later samples are gaps. Tests compare tolerances `10⁻⁶`, `10⁻⁹`, and `10⁻¹²` for convergence and check that every pursuer's velocity points at its target at its speed.
+
 ## Rolling circle on a curve
 
 The rolling construction rolls a circle of radius `ρ > 0` without slipping along any regular base curve, tangent to it on a chosen side of travel, and traces a point fixed to the circle at distance `ℓ ≥ 0` from its center. With `σ = +1` for the left side and `−1` for the right, `N = JT` the left unit normal, and `s(t) = ∫[t_min,t] |r′(u)|du` the arc length from the domain start:

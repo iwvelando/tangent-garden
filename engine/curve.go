@@ -21,6 +21,7 @@ type Curve struct {
 	// "fourier"; t is their time parameter.
 	Lissajous Lissajous `json:"lissajous"`
 	Terms     []Term    `json:"terms"`
+	Pursuit   Pursuit   `json:"pursuit"`
 }
 type curveFunc func(float64) Vec
 
@@ -58,6 +59,12 @@ func compile(c Curve) (curveFunc, error) {
 		}
 		terms := append([]Term{}, c.Terms...)
 		return func(t float64) Vec { return fourierAt(terms, t) }, nil
+	}
+	if c.Format == "pursuit" {
+		if err := c.Pursuit.validate(); err != nil {
+			return nil, err
+		}
+		return newChase(c.Pursuit, c.Min, c.Max, chaseTolerance).pursuer(0), nil
 	}
 	if c.Format == "polar" {
 		r, e := expr.ParseWithParameter(c.R, c.A)

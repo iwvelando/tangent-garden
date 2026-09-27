@@ -69,6 +69,7 @@ const studies: Record<string, string> = {
   inversion: "24",
   lissajous: "27",
   fourier: "28",
+  pursuit: "30",
 };
 for (const study of [
   "hold",
@@ -87,6 +88,7 @@ for (const study of [
   "inversion",
   "lissajous",
   "fourier",
+  "pursuit",
 ]) {
   const studyPreset = studies[study];
   const camera = studyPreset ? "hold" : study;

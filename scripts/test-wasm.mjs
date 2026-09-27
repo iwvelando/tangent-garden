@@ -533,7 +533,59 @@ assert.match(
   ).error,
   /1–16 terms/,
 );
+// Seven equal-speed pursuers on the unit heptagon spiral in on logarithmic
+// spirals, r = 1 − t sin(π/7), and stop when neighbors are ε apart.
+const heptagon = Array.from({ length: 7 }, (_, j) => ({
+  x: Math.cos((2 * Math.PI * j) / 7),
+  y: Math.sin((2 * Math.PI * j) / 7),
+  speed: 1,
+}));
+const chase = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      curve: {
+        ...config.curve,
+        format: "pursuit",
+        min: 0,
+        max: 2.4,
+        pursuit: { pursuers: heptagon, capture: 0.001 },
+      },
+    }),
+  ),
+);
+const sin7 = Math.sin(Math.PI / 7);
+assert.ok(
+  Math.abs(chase.pursuit.capture.time - (1 - 0.001 / (2 * sin7)) / sin7) < 1e-9,
+);
+assert.equal(chase.pursuit.paths.length, 7);
+for (const polygon of chase.pursuit.polygons) {
+  const t = (2.4 * polygon.sampleIndex) / (config.samples - 1);
+  for (const p of polygon.points) {
+    assert.ok(Math.abs(Math.hypot(p.x, p.y) - (1 - t * sin7)) < 1e-9);
+  }
+  assert.deepEqual(
+    polygon.points[0],
+    chase.pursuit.paths[0][polygon.sampleIndex],
+  );
+}
+assert.equal(chase.pursuit.paths[3].at(-1), null);
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: {
+          ...config.curve,
+          format: "pursuit",
+          pursuit: { pursuers: heptagon.slice(0, 1), capture: 0.001 },
+        },
+      }),
+    ),
+  ).error,
+  /2–16 pursuers/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, and invalid JSON passed.",
 );
 process.exit(0);
