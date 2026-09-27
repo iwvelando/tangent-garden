@@ -66,6 +66,12 @@ const descriptions: Record<
       "Reflect the pole across each tangent line: continue past the pedal foot by the same distance. The reflections trace the orthotomic, twice the pedal as seen from the pole. Dashed segments show the reflected half.",
     formula: "Q(t) = 2H(t) − P",
   },
+  offset: {
+    title: "The curve, carried along its normals",
+    description:
+      "Move every point the same signed distance along its normal; positive distances go to the left of travel. Where the distance reaches the radius of curvature, the offset folds back in a cusp that lies on the evolute.",
+    formula: "O(t) = r(t) + d N(t)",
+  },
 };
 // One tab per family; the pole constructions share a tab and a selector.
 const tabs: Kind[] = [
@@ -74,6 +80,7 @@ const tabs: Kind[] = [
   "catacaustic",
   "diacaustic",
   "pedal",
+  "offset",
 ];
 const poleOptions: Record<PoleKind, { label: string; note: string }> = {
   pedal: {
@@ -654,6 +661,24 @@ function App() {
               )}
             </section>
           )}
+          {config.kind === "offset" && (
+            <section>
+              <div className="section-label">03 / THE OFFSET</div>
+              {number(
+                "Offset distance d",
+                config.distance,
+                (n) => update({ distance: n }),
+                {
+                  topic: "offset distance",
+                  help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel, which is inward on a counterclockwise closed curve. Negative values move to the right.",
+                },
+              )}
+              <p className="note">
+                Cusps and self-crossings are part of the offset, not errors: it
+                is the full parallel curve, not a trimmed outline.
+              </p>
+            </section>
+          )}
           {config.kind === "involute" && (
             <section>
               {number(
@@ -669,7 +694,10 @@ function App() {
           )}
           <section>
             <div className="section-label">
-              {optical || usesPole(config.kind) ? "04" : "03"} / THE DRAWING
+              {optical || usesPole(config.kind) || config.kind === "offset"
+                ? "04"
+                : "03"}{" "}
+              / THE DRAWING
             </div>
             {expert ? (
               number(

@@ -22,6 +22,7 @@ type Request struct {
 	NIncident    float64 `json:"nIncident"`
 	NTransmitted float64 `json:"nTransmitted"`
 	Offset       float64 `json:"offset"`
+	Distance     float64 `json:"distance"`
 	Samples      int     `json:"samples"`
 	Lines        int     `json:"lines"`
 }
@@ -47,7 +48,7 @@ type Result struct {
 func Compute(q Request) (Result, error) {
 	out := Result{Rays: []Ray{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
-	if !optical && q.Kind != "evolute" && q.Kind != "involute" && !usesPole(q.Kind) {
+	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && !usesPole(q.Kind) {
 		return out, fmt.Errorf("unknown construction")
 	}
 	if usesPole(q.Kind) && !q.Pole.Valid() {
@@ -58,6 +59,9 @@ func Compute(q Request) (Result, error) {
 	}
 	if !finite(q.Offset) || math.Abs(q.Offset) > 1e5 {
 		return out, fmt.Errorf("involute offset must be finite and within ±100000")
+	}
+	if !finite(q.Distance) || math.Abs(q.Distance) > 1e5 {
+		return out, fmt.Errorf("offset distance must be finite and within ±100000")
 	}
 	if optical && q.Source.Kind == "point" {
 		switch q.Source.Coordinates {
@@ -124,7 +128,7 @@ func Compute(q Request) (Result, error) {
 		dp, ddp := derivatives(f, t, lo, hi)
 		out.Base[j] = point(p)
 		stableSample := false
-		if usesPole(q.Kind) {
+		if firstOrder(q.Kind) {
 			stableSample = stableTangent(f, t, lo, hi, dp)
 		} else {
 			stableSample = stable(f, t, lo, hi, dp, ddp)
@@ -160,6 +164,8 @@ func Compute(q Request) (Result, error) {
 			target = Contrapedal(p, dp, q.Pole)
 		case "orthotomic":
 			target = Orthotomic(p, dp, q.Pole)
+		case "offset":
+			target = Offset(p, dp, q.Distance)
 		case "evolute":
 			target = Evolute(p, dp, ddp)
 		case "involute":
@@ -208,4 +214,10 @@ func Compute(q Request) (Result, error) {
 		out.Warnings = append(out.Warnings, "Arc length crossed an invalid interval; involute stopped. Choose a continuous domain.")
 	}
 	return out, nil
+}
+
+// firstOrder reports whether a construction needs only a stable tangent, so an
+// ill-conditioned second derivative must not turn its samples into gaps.
+func firstOrder(kind string) bool {
+	return usesPole(kind) || kind == "offset"
 }

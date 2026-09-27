@@ -1,6 +1,6 @@
 export type Vec = { x: number; y: number };
 export type Kind =
-  "evolute" | "involute" | "catacaustic" | "diacaustic" | PoleKind;
+  "evolute" | "involute" | "catacaustic" | "diacaustic" | "offset" | PoleKind;
 // Constructions that project an independent geometric pole onto the tangent
 // or normal. They share one tab and one pole, never the optical source.
 export const poleKinds = ["pedal", "contrapedal", "orthotomic"] as const;
@@ -29,7 +29,10 @@ export type Config = {
   nIncident: number;
   pole: Vec;
   nTransmitted: number;
+  // Involute string length c at the domain start.
   offset: number;
+  // Signed normal offset d, positive toward the left of travel.
+  distance: number;
   samples: number;
   lines: number;
 };

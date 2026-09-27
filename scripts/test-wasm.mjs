@@ -90,7 +90,40 @@ assert.ok(
     ),
   ).error,
 );
+// Offsets of the counterclockwise circle of radius 2: positive d moves inward,
+// d = 2 collapses to the center, and a missing distance means zero.
+for (const [distance, radius] of [
+  [0.5, 1.5],
+  [-1, 3],
+  [2, 0],
+  [undefined, 2],
+]) {
+  const offset = JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        kind: "offset",
+        curve: { ...config.curve, x: "2*cos(t)", y: "2*sin(t)" },
+        distance,
+      }),
+    ),
+  );
+  assert.equal(offset.invalid, 0);
+  assert.equal(offset.rays.length, config.lines);
+  for (const i of [0, 249, 500, 999]) {
+    const t = (i * 2 * Math.PI) / 999;
+    assert.ok(Math.abs(offset.derived[i].x - radius * Math.cos(t)) < 1e-7);
+    assert.ok(Math.abs(offset.derived[i].y - radius * Math.sin(t)) < 1e-7);
+  }
+}
+assert.ok(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({ ...config, kind: "offset", distance: "1" }),
+    ),
+  ).error,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, and invalid JSON passed.",
 );
 process.exit(0);

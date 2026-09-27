@@ -57,6 +57,7 @@ self.onmessage = async ({
       config.curve.max,
       config.curve.a,
       config.offset,
+      config.distance,
       config.source.position.x,
       config.source.position.y,
       config.source.angle,

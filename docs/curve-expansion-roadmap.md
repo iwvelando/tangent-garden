@@ -12,7 +12,7 @@ Support all nine families: pedals and related projections; offsets/wavefronts; r
 
 - [x] 1a. Pedal curves: Go projection, independent pole controls, construction segments, preset, animation, exports, analytic and browser tests.
 - [x] 1b. Contrapedals and orthotomics using the same pole and projection geometry.
-- [ ] 2a. Single signed normal offset with distance animation.
+- [x] 2a. Single signed normal offset with distance animation.
 - [ ] 2b. Offset families and generating circles; introduce the minimal multiple-path/circle result model needed for this slice.
 - [ ] 3a. Circle-on-circle and circle-on-line roulettes with rolling geometry and closure controls.
 - [ ] 3b. Circle rolling on an arbitrary regular input curve, then general rolling curves where well-defined.
@@ -130,7 +130,9 @@ Verification: `make check` passed (formatting, vet, native race/coverage, analyt
 
 Completed slice 1b on `claude/curve-expansion-contrapedal-orthotomic`: `contrapedal` and `orthotomic` kinds in `engine/pedal.go` built on the pedal foot, a single **Pedal** tab with a **Projection** selector that remembers the variant, “Ellipse & its contrapedal” and “Ellipse & its orthotomic” (focus → circle) presets, dashed reflected H→Q segments with the foot recovered as (P+Q)/2, shared pole tracks/framing/marker. Tests cover analytic circles, lines, parabola directrix, ellipse focus circle, the rectangle identity H+K=r+P, reflection invariants, rigid motions with orientation reversal, reparameterization, contrapedal = pedal of evolute, C1 inputs, stationary gaps, and nonfinite poles, plus the WASM bridge and browser/export checks.
 
-Next: 2a, a single signed normal offset with distance animation. Polar pole editing remains a later optional enhancement; do not overload optical-source state. Keep later phases unchecked until fully verified.
+Completed slice 2a on `claude/curve-expansion-offset`: `offset` kind in `engine/offset.go` with a separate signed `distance` request field (not the involute `offset`), first-derivative-only stability via `firstOrder`, an **Offset** tab with a distance control, the “Flower & its offset” preset (polar `1+0.18cos(5t)`, d=0.4, swallowtails at the tips), normal construction segments, a `distance` animation track, and shared export rendering. Tests cover circles (inward, outward, clockwise, collapse to the center, through the center), lines, orientation reversal with sign reversal, rigid motion, reparameterization, Steiner length convergence, cusp onset at d=1/2 on the parabola with cusps on the evolute, C1 inputs, stationary gaps, and invalid distances, plus the WASM bridge and browser/export checks including short-arc framing. The phone tab grid now uses three columns for six tabs. Animation interpolation was changed to `from·(1−p)+to·p` so endpoints are exact; the old form missed by one ulp for some values.
+
+Next: 2b, offset families and generating circles, which needs the first multiple-path/circle result model. Polar pole editing remains a later optional enhancement; do not overload optical-source state. Keep later phases unchecked until fully verified.
 
 ## Final task: delete this document
 

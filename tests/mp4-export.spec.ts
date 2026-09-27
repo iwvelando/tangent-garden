@@ -43,7 +43,12 @@ const exportMP4 = (page: Page) =>
   page.getByRole("button", { name: "Export MP4 video" });
 
 // Pole studies animate the pole's x coordinate from their preset.
-const poleStudies: Record<string, string> = { pedal: "8", orthotomic: "10" };
+// Construction studies animate their own first track from a preset.
+const studies: Record<string, string> = {
+  pedal: "8",
+  orthotomic: "10",
+  offset: "11",
+};
 for (const study of [
   "hold",
   "current",
@@ -51,16 +56,17 @@ for (const study of [
   "fit",
   "pedal",
   "orthotomic",
+  "offset",
 ]) {
-  const polePreset = poleStudies[study];
-  const camera = polePreset ? "hold" : study;
+  const studyPreset = studies[study];
+  const camera = studyPreset ? "hold" : study;
   test(`saved ${study} MP4 decodes with exact timing, endpoints, and theme`, async ({
     page,
   }) => {
-    const parameterMode = camera === "follow" || !!polePreset;
+    const parameterMode = camera === "follow" || !!studyPreset;
     const dark = camera === "fit";
     await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
-    await ready(page, polePreset ?? (parameterMode ? "2" : "1"));
+    await ready(page, studyPreset ?? (parameterMode ? "2" : "1"));
     const original = await page.locator("#artwork").innerHTML();
     if (parameterMode) {
       await page

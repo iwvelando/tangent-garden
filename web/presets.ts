@@ -15,6 +15,7 @@ const base: Config = {
   pole: { x: 0, y: 0 },
   nTransmitted: 1,
   offset: 0,
+  distance: 0,
   samples: 1000,
   lines: 48,
 };
@@ -130,6 +131,19 @@ export const presets: { title: string; note: string; config: Config }[] = [
       curve: { ...base.curve, x: "2*cos(t)", y: "sqrt(3)*sin(t)" },
       pole: { x: 1, y: 0 },
       lines: 64,
+    },
+  },
+  {
+    title: "Flower & its offset",
+    note: "Every point moved along its normal",
+    config: {
+      ...base,
+      kind: "offset",
+      // The petal tips have radius of curvature about 0.245, so moving 0.4
+      // inward folds each tip into a swallowtail with cusps on the evolute.
+      curve: { ...base.curve, format: "polar", r: "1+0.18*cos(5*t)" },
+      distance: 0.4,
+      lines: 120,
     },
   },
 ];
