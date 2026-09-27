@@ -25,6 +25,9 @@ type Curve struct {
 	// Field defines the curve when Format is "field": the first seed's
 	// trajectory, with t as time.
 	Field VectorField `json:"field"`
+	// Implicit defines the curve when Format is "implicit": the level set
+	// F(x, y) = c, which has no parameter, so the domain plays no part.
+	Implicit Implicit `json:"implicit"`
 }
 type curveFunc func(float64) Vec
 

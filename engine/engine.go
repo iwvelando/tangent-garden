@@ -71,6 +71,9 @@ type Result struct {
 	Second []*Vec `json:"second,omitempty"`
 	// Inversion is present only for an inversion.
 	Inversion *InversionResult `json:"inversion,omitempty"`
+	// Contours is present only for an implicit curve, which replaces the
+	// base and derived paths.
+	Contours *ContourResult `json:"contours,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
@@ -84,6 +87,17 @@ func Compute(q Request) (Result, error) {
 	}
 	if q.Samples < 64 || q.Samples > 32768 || q.Lines < 2 || q.Lines > 2048 || q.Lines > q.Samples {
 		return out, fmt.Errorf("samples must be 64–32768 and lines 2–2048, with no more lines than samples")
+	}
+	if q.Curve.Format == "implicit" {
+		// A level set has no parameter to build a construction on: its
+		// contours are the drawing, with the gradient as construction.
+		res, warnings, err := q.Curve.Implicit.contours(q.Curve.A, q.Lines)
+		if err != nil {
+			return out, err
+		}
+		out.Base, out.Derived, out.Virtual, out.Contours = []*Vec{}, []*Vec{}, []bool{}, res
+		out.Warnings = append(out.Warnings, warnings...)
+		return out, nil
 	}
 	if !finite(q.Offset) || math.Abs(q.Offset) > 1e5 {
 		return out, fmt.Errorf("involute offset must be finite and within ±100000")

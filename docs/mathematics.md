@@ -75,6 +75,39 @@ The tests check trajectories against exact solutions:
 
 They also check the evolute of a trajectory circle at its center, scale invariance for λ = 10⁻⁴ and 10³, and convergence at tolerances `10⁻⁶`, `10⁻⁹`, and `10⁻¹²` on `(−y, x)(1 + x² + y²)`, whose circles turn at speed `1 + r²`. In the browser, the pendulum's energy `y²/2 − cos x` stays constant along every drawn trajectory, and mirrored seeds give mirrored trajectories.
 
+## Implicit curves
+
+An implicit curve is the level set `F(x, y) = c` of an expression in `x`, `y`, and `a`, sought in a window `[x₀, x₁] × [y₀, y₁]` with coordinates within ±100000 and each side at least `10⁻⁶`. It has no parameter, so no construction applies to it; its contours are the drawing. `F` cannot use `t`: animate `a`, the level, or the window instead. The gradient `∇F` is normal to the curve and points toward larger values.
+
+The window is divided into `N` cells along its longer side (4–1024), and as many along the shorter side as keeps them nearest to square. `F` is evaluated at every grid point. A point where it is not finite is counted, and every cell touching it is left out.
+
+The curve is found by marching squares:
+
+- **Sides.** A corner is above the level when `F − c ≥ 0`, so a grid point exactly on the level counts as above; otherwise it is below. A cell whose corners disagree contains the curve.
+- **Crossings.** Each crossed edge is bisected on `F` itself down to adjacent floating-point numbers, so every vertex lies on the curve to rounding.
+- **Ambiguous cells.** A cell whose corners alternate is decided by the saddle value of the bilinear interpolant, `(g₀₀g₁₁ − g₁₀g₀₁)/(g₀₀ + g₁₁ − g₁₀ − g₀₁)` with `g = F − c` (the asymptotic decider): its sign says which diagonal pair of corners connects through the cell.
+- **Joining.** Segments are joined by the grid edges they share, never by position, so separate components never merge. A grid point exactly on the level can be shared by pieces meeting there, as the lemniscate's two loops meet at its saddle.
+- **Orientation.** Every contour runs with larger `F` on its left: clockwise around a minimum, counterclockwise around a maximum. An open contour ends at the window's edge or beside cells left out.
+
+A sign change along an edge is a zero crossing only if `F` is continuous there. Once bisection ends, `F − c` at the bracket must be within `10⁶` times the edge's mean slope times the bracket's width, and `F` must be a number throughout. Otherwise the sign change is a discontinuity: a pole such as that of `1/x`, or a jump. It is located at the bracket, counted, and marked with a small cross, never drawn as curve. A level that `F` touches without changing sign is not drawn either: an isolated zero such as `x² + y² = 0`, or a fold such as `(x − ½)² = 0`.
+
+Each chord between vertices is refined adaptively. Its midpoint is projected onto the curve by Newton's method along the gradient (five-point differences a thousandth of a cell wide), and the chord is halved at the projection when that lies more than `10⁻³` of a cell away. The projection must stay within half the chord and between its ends, so refinement never jumps to another piece; each grid chord is halved at most six times. Without refinement the chords' error falls as `h²` with the cell size `h`; with it, below the tolerance.
+
+An optional family adds 2–64 levels evenly spaced from its first to its last, both exact. The normals are placed at `lines` points evenly spaced by arc length along the curve's contours, each projected onto the curve, with `∇F` there; they are drawn at a fixed length, a twentieth of the window. Work is bounded by 65,536 grid edges bisected over all levels: a level that would exceed it is skipped whole, with those after it, and a note says so. Contours hold at most 131,072 points, beyond which refinement stops.
+
+Topology is resolved at the grid's resolution. A component smaller than a cell can be missed, and two pieces passing through one cell are decided by the bilinear interpolant, as is a level exactly at a saddle value. Cells beside undefined points are left out whole, so a contour stops short of where `F` becomes undefined.
+
+The tests check:
+
+- circles and lines by their equations, with orientation and exact grid edges;
+- Cassini ovals `((x−a)² + y²)((x+a)² + y²) = b⁴` with a = 1: two ovals below b = a, never joined across the saddle, and one above, with the saddle both at a grid point and inside a cell;
+- hyperbolas near the saddles of `x² − y²` and `xy`, both ways;
+- isolated zeros and folds, which draw nothing;
+- the poles of `1/x` and `tan x`, jumps, and a steep but continuous `tanh`, with the discontinuities located;
+- undefined regions, residuals below `10⁻¹²`, second-order convergence of the unrefined chords, refinement to tolerance, and scale invariance.
+
+In the browser, the drawn lemniscate satisfies its equation, and each normal points along the exact gradient.
+
 ## Rolling circle on a curve
 
 The rolling construction rolls a circle of radius `ρ > 0` without slipping along any regular base curve, tangent to it on a chosen side of travel, and traces a point fixed to the circle at distance `ℓ ≥ 0` from its center. With `σ = +1` for the left side and `−1` for the right, `N = JT` the left unit normal, and `s(t) = ∫[t_min,t] |r′(u)|du` the arc length from the domain start:

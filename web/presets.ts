@@ -42,6 +42,15 @@ const base: Config = {
       ],
       escape: 10,
     },
+    // Cassini ovals about foci (±a, 0): points whose distances to the foci
+    // multiply to b², for level b⁴. Level a⁴ is the lemniscate.
+    implicit: {
+      f: "((x-a)^2+y^2)*((x+a)^2+y^2)",
+      level: 1,
+      family: { enabled: true, from: 0.2, to: 2.6, count: 9 },
+      window: { xMin: -2, xMax: 2, yMin: -1.5, yMax: 1.5 },
+      cells: 160,
+    },
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
@@ -613,6 +622,40 @@ export const presets: { title: string; note: string; config: Config }[] = [
       },
       samples: 6000,
       lines: 24,
+    },
+  },
+  {
+    title: "Cassini ovals & the lemniscate",
+    note: "One level set, split and joined",
+    config: {
+      ...base,
+      // The lemniscate b = a among ovals on both sides of it: two apiece
+      // below, one above. The saddle at the origin is a grid point, so the
+      // lemniscate's two loops meet there.
+      curve: { ...base.curve, format: "implicit" },
+    },
+  },
+  {
+    title: "Circles through two points",
+    note: "Level sets beside a pole",
+    config: {
+      ...base,
+      // y/(x² + y² − a²) = c is the circle through (±a, 0) about
+      // (0, 1/(2c)); c = 0 is the x-axis. F has a pole along the circle of
+      // radius a, where it changes sign without passing through any level,
+      // and is undefined at (±a, 0), where every circle meets.
+      curve: {
+        ...base.curve,
+        format: "implicit",
+        implicit: {
+          f: "y/(x^2+y^2-a^2)",
+          level: 1,
+          family: { enabled: true, from: -2, to: 2, count: 9 },
+          window: { xMin: -2.5, xMax: 2.5, yMin: -2, yMax: 2 },
+          cells: 200,
+        },
+      },
+      lines: 40,
     },
   },
 ];

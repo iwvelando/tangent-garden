@@ -642,7 +642,78 @@ const timed = field({ x: "-a*y*cos(t)" });
 assert.equal(timed.field.timed, true);
 assert.equal(timed.field.grid.points.length, 0);
 assert.match(field({ y: "x*z" }).error, /dy\/dt: unknown name "z"/);
+// Cassini ovals ((x − a)² + y²)((x + a)² + y²) = b⁴ with a = 1 split into
+// two at b < a and join into one at b > a; a family of levels comes back
+// beside them, and the gradient at representative points.
+const cassini = (implicit) =>
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: {
+          ...config.curve,
+          format: "implicit",
+          a: 1,
+          implicit: {
+            f: "((x-a)^2+y^2)*((x+a)^2+y^2)",
+            level: 0.9 ** 4,
+            family: { enabled: false, from: 0, to: 0, count: 0 },
+            window: { xMin: -2, xMax: 2, yMin: -1.5, yMax: 1.5 },
+            cells: 81,
+            ...implicit,
+          },
+        },
+      }),
+    ),
+  );
+const ovals = (b) => {
+  const r = cassini({ level: b ** 4 });
+  assert.deepEqual(r.base, []);
+  assert.deepEqual(r.derived, []);
+  for (const { points } of r.contours.curve.contours)
+    for (const { x, y } of points)
+      assert.ok(
+        Math.abs(((x - 1) ** 2 + y ** 2) * ((x + 1) ** 2 + y ** 2) - b ** 4) <
+          1e-12,
+      );
+  return r.contours;
+};
+assert.equal(ovals(0.9).curve.contours.length, 2);
+assert.equal(ovals(1.1).curve.contours.length, 1);
+const nested = ovals(1.1);
+assert.equal(nested.columns, 81);
+assert.equal(nested.rows, 61);
+assert.equal(nested.normals.length, config.lines);
+for (const { point, gradient } of nested.normals) {
+  const { x, y } = point;
+  const exact = {
+    x:
+      2 * (x - 1) * ((x + 1) ** 2 + y ** 2) +
+      2 * (x + 1) * ((x - 1) ** 2 + y ** 2),
+    y: 2 * y * ((x + 1) ** 2 + y ** 2) + 2 * y * ((x - 1) ** 2 + y ** 2),
+  };
+  assert.ok(Math.hypot(gradient.x - exact.x, gradient.y - exact.y) < 1e-8);
+}
+const levels = cassini({
+  family: { enabled: true, from: 0.5, to: 2.3, count: 4 },
+}).contours.family;
+assert.deepEqual(
+  levels.map((l) => [l.level, l.contours.length]),
+  [
+    [0.5, 2],
+    [1.1, 1],
+    [1.7, 1],
+    [2.3, 1],
+  ],
+);
+// y/(x² + y² − a²) has a pole on the circle of radius a: it changes sign
+// across it without reaching any level, and is located there.
+const pole = cassini({ f: "y/(x^2+y^2-a^2)", level: 1 }).contours;
+assert.ok(pole.discontinuities.length > 100);
+for (const { x, y } of pole.discontinuities)
+  assert.ok(Math.abs(Math.hypot(x, y) - 1) < 1e-12);
+assert.match(cassini({ f: "x+t" }).error, /F\(x, y\) cannot use t/);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, and invalid JSON passed.",
 );
 process.exit(0);

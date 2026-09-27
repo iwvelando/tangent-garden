@@ -364,6 +364,29 @@ const studies: {
     ],
   },
   {
+    preset: "Cassini ovals & the lemniscate",
+    cases: [
+      {
+        name: "Level c",
+        text: "phi",
+        value: phi,
+        path: ["curve", "implicit", "level"],
+      },
+      {
+        name: "Window y to",
+        text: "sqrt(3)",
+        value: Math.sqrt(3),
+        path: ["curve", "implicit", "window", "yMax"],
+      },
+      {
+        name: "Levels from",
+        text: "1/e",
+        value: 1 / Math.E,
+        path: ["curve", "implicit", "family", "from"],
+      },
+    ],
+  },
+  {
     preset: "Unwinding a circle",
     cases: [
       {

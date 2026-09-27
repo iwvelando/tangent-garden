@@ -4,6 +4,8 @@
 
 `expression text or roulette, Lissajous, Fourier, pursuit, or vector-field generator → planar curve evaluator → numerical construction → sampled geometry → SVG`
 
+An implicit curve takes a separate path: `F(x, y) → grid and marching squares → contours → SVG`, with no construction.
+
 The `engine` package has no browser, React, filesystem, or network dependency. It can run natively in Go tests or in WASM unchanged. `cmd/wasm` is the only package importing `syscall/js`. The bridge takes one JSON request and returns one JSON result/error; the TypeScript types mirror that schema.
 
 A classic Web Worker loads the matching Go runtime and WASM module. Requests are debounced and numbered; stale responses cannot overwrite newer studies. The UI remains usable during calculations. The initial build uses ordinary Go, not TinyGo, to minimize numerical and runtime compatibility surprises. See [Go's WebAssembly documentation](https://go.dev/wiki/WebAssembly) for the compiler/runtime pairing requirement.
@@ -36,7 +38,7 @@ Keep `Vec` and the current 2D engine honest about their dimension. A future `geo
 
 Reflection/refraction formulas generalize to 3D with a surface normal. Involutes of regular space curves also admit `r−sT`. However, a planar evolute does not transfer as a unique envelope curve of all normals in space, and a two-parameter surface ray family generally forms a caustic surface. Those objects need their own definitions and singularity handling. Projecting rays onto a receiver surface is another operation, with a separate result type.
 
-Reusable boundaries are expression parsing, numerical policies, pure Go geometry, a versioned transport adapter when needed, and worker execution. A later WebGL renderer can coexist with SVG. General implicit curves, piecewise definitions, adaptive sampling, saved studies, and video-format export are prospective features, not claims about the current prototype.
+Reusable boundaries are expression parsing, numerical policies, pure Go geometry, a versioned transport adapter when needed, and worker execution. A later WebGL renderer can coexist with SVG. Piecewise definitions, adaptive sampling, saved studies, and video-format export are prospective features, not claims about the current prototype.
 
 Source coordinate choice is independent of curve format. Optional source `coordinates`, `radius`, and `theta` preserve existing Cartesian requests; polar requests are converted by Go and return `sourcePosition`, which the worker copies into the resolved frame configuration. Animation target availability follows the source coordinate choice, so switching modes invalidates incompatible tracks.
 
@@ -78,4 +80,28 @@ Reveal slices the paths like `base` and filters arrows by sample. Every trajecto
 - with the base curve: every trajectory;
 - with the construction lines: the chevrons, the seeds, the dashed escape circle, and the grid's arrows, at a fixed fraction of the lattice spacing.
 
-Framing fits each trajectory as its own family and never the escape circle or the grid. Tracks `seed<n>X`, `seed<n>Y`, and `fieldEscape` join `a`, which a field keeps. Adding or removing a seed waits for pending field evaluations. The temporary [expansion roadmap](curve-expansion-roadmap.md) describes later curve families and the staged transition toward explicit generators and multiple-path output.
+Framing fits each trajectory as its own family and never the escape circle or the grid. Tracks `seed<n>X`, `seed<n>Y`, and `fieldEscape` join `a`, which a field keeps. Adding or removing a seed waits for pending field evaluations.
+
+Implicit curves (`engine/contour.go`) are defined by `curve.format: "implicit"` with `curve.implicit`:
+
+- `f`: the expression F(x, y), parsed in the three-variable mode and rejected if it reads `t`;
+- `level`: the level c;
+- `family`: `enabled`, `from`, `to`, and `count`, for evenly spaced extra levels;
+- `window`: `xMin`, `xMax`, `yMin`, `yMax`;
+- `cells`: the grid's cells along the window's longer side.
+
+A level set has no parameter, so `Compute` returns before any construction: `base`, `derived`, and `virtual` are empty, the request's `kind` is ignored, and the domain bounds are not checked. `Result.contours` carries:
+
+- `window`, `columns`, and `rows`: the grid;
+- `curve` and `family`: level sets, each a `level` and its `contours`, each a list of `points` and whether it is `closed`;
+- `normals`: points on the curve with F's gradient there;
+- `discontinuities`: where F changes sign along a grid edge without reaching a level, one per edge;
+- `nonfinite`: the number of grid points where F is not finite.
+
+In the UI the construction tabs are disabled and every construction section is hidden while the format is implicit, and the animation targets are the level, window edges, family, grid cells, `a`, and the number of normals; `kind` stays in the configuration for when another format is chosen. The worker checks the implicit fields are finite and the counts whole. Reveal draws each contour along by the same fraction of its points, open until complete, and the normals in order. The renderer draws:
+
+- with the base curve: the curve's contours;
+- with the derived curve: the family's contours;
+- with the construction lines: the dashed window, the normals as arrows of a fixed fraction of the window, and a cross at each discontinuity.
+
+Framing is the window itself, so the drawing holds still while contours split and join. Export filenames use `implicit` in place of the construction. The temporary [expansion roadmap](curve-expansion-roadmap.md) describes later curve families and the staged transition toward explicit generators and multiple-path output.

@@ -23,7 +23,7 @@ Support all nine families: pedals and related projections; offsets/wavefronts; r
 - [x] 6. Harmonic/Lissajous generators and finite Fourier epicycle controls.
 - [x] 7a. Cyclic pursuit with explicit collision policy.
 - [x] 7b. Planar vector-field trajectories with bounded integration.
-- [ ] 8. Implicit curves and contour families, including topology changes.
+- [x] 8. Implicit curves and contour families, including topology changes.
 - [ ] 9. Curated iterated maps and strange-attractor density rendering.
 - [ ] Final integration: compatible generator/construction combinations, documentation, presets, animation/export verification, and removal of this temporary plan.
 
@@ -168,7 +168,19 @@ Limits:
 - Time dependence is detected from the text, so `t*0` counts.
 - Worst-case cost in WASM: 16 seeds at 32768 samples take about 1.9 s over [0, 30], or 3.4 s when every seed exhausts its budget. Sampling dominates, since each sample restarts from a stored state.
 
-Next: 8, implicit curves and contour families, including topology changes. `ParseField` already evaluates expressions in x and y. Polar pole editing remains a later optional enhancement; do not overload optical-source state. Keep later phases unchecked until fully verified.
+Completed slice 8 on `claude/curve-expansion-contours`: an `implicit` curve format (`engine/contour.go`), `curve.implicit` with an expression `f` in x, y, and a (parsed by `ParseField`, rejected if it reads t), a `level`, an optional `family` of 2–64 evenly spaced levels, a `window` (within ±100000, sides at least 10⁻⁶), and `cells` (4–1024 along the longer side, near-square). A level set has no parameter, so `Compute` returns before any construction with empty `base`/`derived` and `Result.contours`; the UI disables the construction tabs, hides construction sections, samples, and the domain, and frames the window. Marching squares treats F − c ≥ 0 as above; crossings are bisected on F to adjacent floats; alternating cells use the asymptotic decider on the bilinear saddle value; segments are joined by shared edge identity, never position, and oriented with larger F on the left. A sign change whose bracketed |F − c| exceeds 10⁶ × mean edge slope × bracket width, or that meets a non-number, is a discontinuity: located, returned (`discontinuities`, one per edge), marked with a cross, never drawn. Cells touching a nonfinite grid point are left out and counted. Chords are refined by Newton projection of midpoints along the gradient (five-point differences at 10⁻³ cell) to 10⁻³ cell, at most six halvings, with the projection kept within half the chord and between its ends. Normals are `lines` gradient arrows evenly spaced by arc length along the curve. Budgets: 65,536 bisected edges over all levels (a level that would exceed it is skipped whole, with those after it, and a warning), 131,072 points (refinement stops, with a warning). Tracks: `contourLevel`, the four window edges, `levelsFrom`/`levelsTo`/`levelsCount`, `contourCells` (counts rounded), `a`, and `lines`. Reveal draws each contour along by the same fraction of its points, open until complete. Presets: Cassini ovals with the lemniscate as the curve among nine family levels (the saddle is a grid point, so its lobes meet there), and circles through two points, y/(x² + y² − a²), whose pole circle is marked.
+
+Verification: `make check` passed (engine coverage 97.8%, expr 93.9%, WASM bridge with Cassini ovals splitting and joining, exact gradients at the normals, a family, the pole circle located to 10⁻¹², and the t error). Native tests cover circles and lines (residual 10⁻¹², orientation, grid shape, arc-spaced normals and exact gradients), second-order convergence of unrefined chords and refinement to tolerance, Cassini ovals at eight values of b with the saddle at a grid point and inside a cell, never joined across it, hyperbolas at the saddles of x² − y² and xy both ways, isolated zeros and folds, poles of 1/x and tan x, jumps (including one finite everywhere, atan(1/x)), a steep continuous tanh, undefined regions with and without nearby contours, a grid point where three crossings coincide, families with exact endpoints, scale invariance at 10⁻³ and 10³, both budgets, invalid input, and JSON shape; 39 of 39 mutations were caught (after adding tests for an off-grid jump, a positive corner beside an undefined region, and a coinciding loop start, and simplifying two equivalent branches). All 363 Chromium tests passed, including 17 new implicit tests (12 browser tests red on the old build; the pure TypeScript tests import current sources), the scalar-field case, and decoded WebP and MP4 implicit exports; WebKit 4/4. Both presets were inspected in both themes, at desktop and phone widths.
+
+Limits:
+
+- Topology is resolved at grid resolution: a component smaller than a cell can be missed, two pieces in one cell are decided by the bilinear interpolant, and a level exactly at a saddle value takes the bilinear decision.
+- Cells beside undefined points are left out whole, so contours stop a cell short of them.
+- An isolated zero or fold is never drawn, by definition of the sign test.
+- Worst case in WASM: 1024 cells with 64 levels takes about 2 s and 6 MB of JSON before the budgets stop it.
+- Constructions do not apply to implicit curves. A regular branch could feed them once an arc-length evaluator (continuation along J∇F/|∇F| with projection) exists.
+
+Next: 9, curated iterated maps and strange-attractor density rendering. It needs a raster density path and a CSP review (with the matching `iwvelando/cloud-accounts` change) before any new resource type. Polar pole editing remains a later optional enhancement; do not overload optical-source state. Keep later phases unchecked until fully verified.
 
 ## Final task: delete this document
 

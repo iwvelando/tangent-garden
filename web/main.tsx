@@ -27,6 +27,7 @@ import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
 import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
 import { endNote, nextSeed } from "./flow";
+import { contourNote } from "./contour";
 import { pursuerLabels, seedLabels, termLabels } from "./animation";
 import { useDisclosure } from "./useDisclosure";
 import { useMediaQuery } from "./useMediaQuery";
@@ -131,6 +132,13 @@ const stackDescription = {
   description:
     "Offset the curve by evenly spaced signed distances along its normals. Each normal segment crosses the whole stack at a right angle. Circles centered on the curve touch the offsets at their radius: the offsets ±R are the envelope of those circles.",
   formula: "Oₖ(t) = r(t) + dₖ N(t)",
+};
+// An implicit curve replaces the construction altogether.
+const implicitDescription = {
+  title: "A level set and its gradient",
+  description:
+    "Sample F on a grid and mark where it lies above or below the level c. The curve F = c runs between them, through every cell whose corners disagree; each crossing is then found exactly and the pieces refined onto the curve. Where F has a saddle the pieces split or join as c passes it. The gradient of F is normal to the curve, pointing toward larger values.",
+  formula: "F(x, y) = c,  ∇F ⟂ curve",
 };
 // One tab per family; the pole constructions share a tab and a selector.
 const tabs: Kind[] = [
@@ -302,14 +310,20 @@ function App() {
   }, [config, bounds]);
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
-  const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
+  // A level set has no parameter, so no construction applies to it.
+  const implicit = config.curve.format === "implicit";
+  const optical =
+    !implicit &&
+    (config.kind === "catacaustic" || config.kind === "diacaustic");
   // Chords that are not extended have envelope points beyond the segments.
   const chords =
+    !implicit &&
     config.kind === "envelope" &&
     config.envelope.mode === "chord" &&
     !config.envelope.extend;
-  const info =
-    config.kind === "offset" && config.stack.enabled
+  const info = implicit
+    ? implicitDescription
+    : config.kind === "offset" && config.stack.enabled
       ? stackDescription
       : config.kind === "rolling" && config.rolling.shape === "curve"
         ? rollingCurveDescription
@@ -769,6 +783,98 @@ function App() {
       </p>
     </>
   );
+  const toImplicit = (patch: Partial<Config["curve"]["implicit"]>) =>
+    update((c) => ({
+      curve: { ...c.curve, implicit: { ...c.curve.implicit, ...patch } },
+    }));
+  const levels = config.curve.implicit.family;
+  const levelSets =
+    frame?.config.curve.format === "implicit"
+      ? frame.result.contours
+      : undefined;
+  const implicitControls = (
+    <>
+      <p className="note">
+        The curve is every point of the window where F(x, y) equals the level c.
+        Use <var>x</var>, <var>y</var>, and <var>a</var>. It has no parameter,
+        so no construction applies; the normals show F&rsquo;s gradient,
+        pointing across the curve toward larger values.
+      </p>
+      <Field label="F(x, y)" className="equation">
+        <input
+          value={config.curve.implicit.f}
+          onChange={(e) => toImplicit({ f: e.target.value })}
+          spellCheck={false}
+        />
+      </Field>
+      {scalar("Level c", ["curve", "implicit", "level"], {
+        topic: "level c",
+        help: "The curve is F = c. As c passes a saddle value of F, pieces of the curve split or join.",
+      })}
+      <div className="pair">
+        {scalar("Window x from", ["curve", "implicit", "window", "xMin"])}
+        {scalar("Window x to", ["curve", "implicit", "window", "xMax"], {
+          topic: "window",
+          help: "The curve is sought only in this rectangle, within ±100,000. Contours that leave it are cut off at its edge.",
+        })}
+      </div>
+      <div className="pair">
+        {scalar("Window y from", ["curve", "implicit", "window", "yMin"])}
+        {scalar("Window y to", ["curve", "implicit", "window", "yMax"])}
+      </div>
+      {number(
+        "Grid cells",
+        config.curve.implicit.cells,
+        (n) => toImplicit({ cells: n }),
+        {
+          step: 1,
+          min: 4,
+          max: 1024,
+          topic: "grid cells",
+          help: "Whole numbers from 4 to 1,024 along the window's longer side. F is sampled at the cells' corners, so a piece of the curve smaller than a cell can be missed; crossings and the curve between them are then found exactly.",
+        },
+      )}
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={levels.enabled}
+          onChange={(e) =>
+            toImplicit({ family: { ...levels, enabled: e.target.checked } })
+          }
+        />
+        Family of levels
+      </label>
+      {levels.enabled && (
+        <>
+          <div className="pair">
+            {scalar("Levels from", ["curve", "implicit", "family", "from"])}
+            {scalar("Levels to", ["curve", "implicit", "family", "to"], {
+              topic: "family of levels",
+              help: "Evenly spaced levels from the first to the last, both included, drawn beside the curve.",
+            })}
+          </div>
+          {number(
+            "Level count",
+            levels.count,
+            (n) =>
+              update((c) => ({
+                curve: {
+                  ...c.curve,
+                  implicit: {
+                    ...c.curve.implicit,
+                    family: { ...c.curve.implicit.family, count: n },
+                  },
+                },
+              })),
+            { step: 1, min: 2, max: 64, help: "Whole numbers from 2 to 64." },
+          )}
+        </>
+      )}
+      <p className="note" data-testid="contour-note">
+        {levelSets ? contourNote(levelSets) : "Tracing…"}
+      </p>
+    </>
+  );
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const behind = (
@@ -840,7 +946,7 @@ function App() {
           )}
           <ExportImageMenu
             disabled={!result || busy || !!error || animationRunning}
-            kind={config.kind}
+            kind={implicit ? "implicit" : config.kind}
           />
         </div>
       </header>
@@ -902,12 +1008,20 @@ function App() {
             <div className="tabs" role="group" aria-label="Construction">
               {tabs.map((k) => {
                 const active =
-                  config.kind === k || (k === "pedal" && usesPole(config.kind));
+                  !implicit &&
+                  (config.kind === k ||
+                    (k === "pedal" && usesPole(config.kind)));
                 return (
                   <button
                     className={active ? "active" : ""}
                     aria-pressed={active}
                     key={k}
+                    disabled={implicit}
+                    title={
+                      implicit
+                        ? "An implicit curve has no parameter to build a construction on."
+                        : undefined
+                    }
                     onClick={() =>
                       !active && update({ kind: k === "pedal" ? poleKind : k })
                     }
@@ -940,6 +1054,7 @@ function App() {
                     Pursuit · each chases the next
                   </option>
                   <option value="field">Vector field · trajectories</option>
+                  <option value="implicit">Implicit · F(x, y) = c</option>
                 </select>
               </Field>
               {config.curve.format === "roulette" ? (
@@ -952,6 +1067,8 @@ function App() {
                 pursuitControls
               ) : config.curve.format === "field" ? (
                 fieldControls
+              ) : implicit ? (
+                implicitControls
               ) : (
                 <>
                   {config.curve.format === "parametric" && (
@@ -987,56 +1104,58 @@ function App() {
                   )}
                 </>
               )}
-              <div className="pair">
-                {(["min", "max"] as const).map((key) => (
-                  <Field
-                    className="equation"
-                    key={key}
-                    topic={
-                      key !== "min"
-                        ? undefined
-                        : config.curve.format === "roulette"
-                          ? "rolling parameter t"
-                          : harmonic ||
-                              config.curve.format === "pursuit" ||
-                              config.curve.format === "field"
-                            ? "time parameter t"
-                            : undefined
-                    }
-                    help={
-                      key !== "min"
-                        ? undefined
-                        : config.curve.format === "roulette"
-                          ? config.curve.roulette.roll === "line"
-                            ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
-                            : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
-                          : harmonic
-                            ? "t is time: a vector of frequency k turns through k·t radians."
-                            : config.curve.format === "pursuit"
-                              ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
-                              : config.curve.format === "field"
-                                ? "t is time: every trajectory starts from its seed when t is at the domain start. Fields may depend on t."
-                                : undefined
-                    }
-                    label={
-                      key === "min"
-                        ? config.curve.format === "cartesian"
-                          ? "x from"
-                          : "t from"
-                        : "to"
-                    }
-                  >
-                    <input
-                      value={bounds[key]}
-                      onChange={(e) => {
-                        setPreset("custom");
-                        setBounds({ ...bounds, [key]: e.target.value });
-                      }}
-                      spellCheck={false}
-                    />
-                  </Field>
-                ))}
-              </div>
+              {!implicit && (
+                <div className="pair">
+                  {(["min", "max"] as const).map((key) => (
+                    <Field
+                      className="equation"
+                      key={key}
+                      topic={
+                        key !== "min"
+                          ? undefined
+                          : config.curve.format === "roulette"
+                            ? "rolling parameter t"
+                            : harmonic ||
+                                config.curve.format === "pursuit" ||
+                                config.curve.format === "field"
+                              ? "time parameter t"
+                              : undefined
+                      }
+                      help={
+                        key !== "min"
+                          ? undefined
+                          : config.curve.format === "roulette"
+                            ? config.curve.roulette.roll === "line"
+                              ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
+                              : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
+                            : harmonic
+                              ? "t is time: a vector of frequency k turns through k·t radians."
+                              : config.curve.format === "pursuit"
+                                ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
+                                : config.curve.format === "field"
+                                  ? "t is time: every trajectory starts from its seed when t is at the domain start. Fields may depend on t."
+                                  : undefined
+                      }
+                      label={
+                        key === "min"
+                          ? config.curve.format === "cartesian"
+                            ? "x from"
+                            : "t from"
+                          : "to"
+                      }
+                    >
+                      <input
+                        value={bounds[key]}
+                        onChange={(e) => {
+                          setPreset("custom");
+                          setBounds({ ...bounds, [key]: e.target.value });
+                        }}
+                        spellCheck={false}
+                      />
+                    </Field>
+                  ))}
+                </div>
+              )}
               {config.curve.format !== "roulette" &&
                 !ownsShape(config.curve.format) &&
                 scalar(
@@ -1064,11 +1183,12 @@ function App() {
                   atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt, abs. Angles
                   are radians. Use <var>t</var> (or <var>x</var> for a graph),
                   and <var>a</var> for an adjustable shape coefficient. A vector
-                  field uses <var>x</var>, <var>y</var>, and <var>t</var>.
-                  Bounds, numeric parameters such as radii and phases, and
-                  animation endpoints accept constant expressions such as 2*pi
-                  or -phi; they cannot contain <var>t</var>, <var>x</var>,
-                  <var>y</var>, or <var>a</var>.
+                  field uses <var>x</var>, <var>y</var>, and <var>t</var>; an
+                  implicit curve uses <var>x</var> and <var>y</var>. Bounds,
+                  numeric parameters such as radii and phases, and animation
+                  endpoints accept constant expressions such as 2*pi or -phi;
+                  they cannot contain <var>t</var>, <var>x</var>,<var>y</var>,
+                  or <var>a</var>.
                 </p>
                 <p>
                   <code>pi ≈ 3.1415926536</code> · circle constant
@@ -1079,7 +1199,7 @@ function App() {
                 </p>
               </details>
             </section>
-            {usesPole(config.kind) && (
+            {!implicit && usesPole(config.kind) && (
               <section>
                 <div className="section-label">03 / THE POLE</div>
                 <Field label="Projection">
@@ -1239,7 +1359,7 @@ function App() {
                 )}
               </section>
             )}
-            {config.kind === "offset" && (
+            {!implicit && config.kind === "offset" && (
               <section>
                 <div className="section-label">03 / THE OFFSET</div>
                 <Field label="Offsets">
@@ -1301,7 +1421,7 @@ function App() {
                 </p>
               </section>
             )}
-            {config.kind === "rolling" && (
+            {!implicit && config.kind === "rolling" && (
               <section>
                 <div className="section-label">
                   03 / THE ROLLING{" "}
@@ -1426,7 +1546,7 @@ function App() {
                 )}
               </section>
             )}
-            {config.kind === "envelope" && (
+            {!implicit && config.kind === "envelope" && (
               <section>
                 <div className="section-label">03 / THE FAMILY</div>
                 <Field label="Family">
@@ -1544,7 +1664,7 @@ function App() {
                 )}
               </section>
             )}
-            {config.kind === "inversion" && (
+            {!implicit && config.kind === "inversion" && (
               <section>
                 <div className="section-label">03 / THE INVERSION</div>
                 <Field label="Invert">
@@ -1552,7 +1672,9 @@ function App() {
                     value={config.inversion.of}
                     onChange={(e) => {
                       const of = e.target.value as InversionSource;
-                      update((c) => ({ inversion: { ...c.inversion, of } }));
+                      update((c) => ({
+                        inversion: { ...c.inversion, of },
+                      }));
                     }}
                   >
                     {(Object.keys(inversionOptions) as InversionSource[]).map(
@@ -1591,7 +1713,7 @@ function App() {
                 </p>
               </section>
             )}
-            {config.kind === "involute" && (
+            {!implicit && config.kind === "involute" && (
               <section>
                 {scalar("Initial string offset c", ["offset"], {
                   topic: "initial string offset",
@@ -1601,12 +1723,13 @@ function App() {
             )}
             <section>
               <div className="section-label">
-                {optical ||
-                usesPole(config.kind) ||
-                config.kind === "offset" ||
-                config.kind === "rolling" ||
-                config.kind === "envelope" ||
-                config.kind === "inversion"
+                {!implicit &&
+                (optical ||
+                  usesPole(config.kind) ||
+                  config.kind === "offset" ||
+                  config.kind === "rolling" ||
+                  config.kind === "envelope" ||
+                  config.kind === "inversion")
                   ? "04"
                   : "03"}{" "}
                 / THE DRAWING
@@ -1671,8 +1794,8 @@ function App() {
                       />
                       {
                         {
-                          base: "Base curve",
-                          derived: "Derived curve",
+                          base: implicit ? "Curve F = c" : "Base curve",
+                          derived: implicit ? "Other levels" : "Derived curve",
                           lines: "Construction lines",
                           incident: "Incident rays",
                           virtual: "Virtual extensions",
@@ -1682,7 +1805,7 @@ function App() {
                     </label>
                   ))}
               </div>
-              {expert ? (
+              {implicit ? null : expert ? (
                 number(
                   "Numerical samples",
                   config.samples,
@@ -1767,7 +1890,9 @@ function App() {
             <div className="plot-meta">
               <div className="legend">
                 <span className="base-dot" />
-                Base curve <span className="derived-dot" /> {config.kind}
+                {implicit ? "Curve F = c" : "Base curve"}{" "}
+                <span className="derived-dot" />{" "}
+                {implicit ? "Other levels" : config.kind}
               </div>
               <span>
                 {animation

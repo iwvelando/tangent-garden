@@ -435,7 +435,7 @@ export function AnimationPanel({
         if (epoch.current !== token) return;
         saveFile(
           blob,
-          `tangent-garden-${frame.config.kind}-${mode}.${text.extension}`,
+          `tangent-garden-${frame.config.curve.format === "implicit" ? "implicit" : frame.config.kind}-${mode}.${text.extension}`,
         );
         exportAbort.current = null;
         session.current = null;

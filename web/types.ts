@@ -46,7 +46,8 @@ export type Config = {
       | "lissajous"
       | "fourier"
       | "pursuit"
-      | "field";
+      | "field"
+      | "implicit";
     x: string;
     y: string;
     r: string;
@@ -90,6 +91,19 @@ export type Config = {
     // trajectory is the curve that constructions use. Used only when format
     // is "field".
     field: { x: string; y: string; seeds: Vec[]; escape: number };
+    // The level set F(x, y) = level within window, sought on a grid of
+    // `cells` near-square cells along the window's longer side (4–1024). f
+    // may use a but not t. When enabled, the family adds `count` (2–64)
+    // levels evenly spaced from `from` to `to`, both included. Used only when
+    // format is "implicit", which has no parameter: its contours are the
+    // drawing, and no construction applies.
+    implicit: {
+      f: string;
+      level: number;
+      family: { enabled: boolean; from: number; to: number; count: number };
+      window: Window;
+      cells: number;
+    };
   };
   source: {
     kind: "point" | "parallel";
@@ -268,6 +282,32 @@ export type FieldResult = {
   grid: { spacing: number; points: { point: Vec; velocity: Vec }[] };
 };
 
+// The rectangle an implicit curve is sought in.
+export type Window = { xMin: number; xMax: number; yMin: number; yMax: number };
+// One connected piece of a level set, running with larger F on its left. An
+// open contour ends at the window's edge or beside cells where F is not
+// finite or not continuous.
+export type Contour = { points: Vec[]; closed: boolean };
+export type LevelSet = { level: number; contours: Contour[] };
+// F's gradient at a point of the curve.
+export type Normal = { point: Vec; gradient: Vec };
+// The curve's level set on a grid of columns × rows cells, the family's
+// level sets, and the gradient at points spaced evenly by arc length along
+// the curve. discontinuities are where F changes sign along a grid edge
+// without reaching the level (a pole or a jump), one per edge; nonfinite
+// counts grid points where F is not a finite number. Neither is drawn
+// through.
+export type ContourResult = {
+  window: Window;
+  columns: number;
+  rows: number;
+  curve: LevelSet;
+  family: LevelSet[];
+  normals: Normal[];
+  discontinuities: Vec[];
+  nonfinite: number;
+};
+
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
 export type Result = {
@@ -291,6 +331,9 @@ export type Result = {
   pursuit?: PursuitResult;
   // Present only for a vector field's trajectories.
   field?: FieldResult;
+  // Present only for an implicit curve, whose base and derived paths are
+  // empty.
+  contours?: ContourResult;
   // Present only for a rolling curve.
   moving?: MovingResult;
   // The chords' far endpoints, indexed like base; present only for chords.
