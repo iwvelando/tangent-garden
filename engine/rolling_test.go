@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func rollingRequest(x, y string, lo, hi float64, c RollingCircle) Request {
+func rollingRequest(x, y string, lo, hi float64, c Roller) Request {
 	q := request("rolling", x, y, lo, hi)
 	q.Rolling = c
 	return q
@@ -20,12 +20,12 @@ func rollingRequest(x, y string, lo, hi float64, c RollingCircle) Request {
 func TestRollingReducesToCircularRoulettes(t *testing.T) {
 	for _, tc := range []struct {
 		x, y string
-		c    RollingCircle
+		c    Roller
 		g    Roulette
 	}{
-		{"5*cos(t)", "5*sin(t)", RollingCircle{Side: "left", Radius: 2, Arm: 3, Phase: .4}, Roulette{Roll: "inside", FixedRadius: 5, Radius: 2, Arm: 3, Phase: .4}},
-		{"3*cos(t)", "3*sin(t)", RollingCircle{Side: "right", Radius: 1.3, Arm: .7, Phase: -1}, Roulette{Roll: "outside", FixedRadius: 3, Radius: 1.3, Arm: .7, Phase: -1}},
-		{"1.5*t", "0", RollingCircle{Side: "left", Radius: 1.5, Arm: 2.5, Phase: 2}, Roulette{Roll: "line", Radius: 1.5, Arm: 2.5, Phase: 2}},
+		{"5*cos(t)", "5*sin(t)", Roller{Side: "left", Radius: 2, Arm: 3, Phase: .4}, Roulette{Roll: "inside", FixedRadius: 5, Radius: 2, Arm: 3, Phase: .4}},
+		{"3*cos(t)", "3*sin(t)", Roller{Side: "right", Radius: 1.3, Arm: .7, Phase: -1}, Roulette{Roll: "outside", FixedRadius: 3, Radius: 1.3, Arm: .7, Phase: -1}},
+		{"1.5*t", "0", Roller{Side: "left", Radius: 1.5, Arm: 2.5, Phase: 2}, Roulette{Roll: "line", Radius: 1.5, Arm: 2.5, Phase: 2}},
 	} {
 		q := rollingRequest(tc.x, tc.y, 0, 4*math.Pi, tc.c)
 		q.Samples = 2001
@@ -55,7 +55,7 @@ func TestRollingWithoutSlipping(t *testing.T) {
 	for _, base := range [][2]string{{"2*cos(t)", "1.2*sin(t)"}, {"t", "sin(t)"}, {"t", "t^3/3-t"}} {
 		for _, side := range []string{"left", "right"} {
 			for _, phase := range []float64{.3, .3 + math.Pi/2} {
-				c := RollingCircle{Side: side, Radius: .45, Arm: .8, Phase: phase}
+				c := Roller{Side: side, Radius: .45, Arm: .8, Phase: phase}
 				q := rollingRequest(base[0], base[1], -2, 3, c)
 				q.Samples = 8001
 				r := compute(t, q)
@@ -105,7 +105,7 @@ func mustCompile(t *testing.T, c Curve) curveFunc {
 // At the domain start the arm points at the contact, turned by the phase.
 func TestRollingPhaseConvention(t *testing.T) {
 	for _, side := range []string{"left", "right"} {
-		c := RollingCircle{Side: side, Radius: .6, Arm: 1.1}
+		c := Roller{Side: side, Radius: .6, Arm: 1.1}
 		q := rollingRequest("2*cos(t)", "sin(t)", .7, 3, c)
 		s := compute(t, q).Rolling[0]
 		toContact := s.Contact.Sub(s.Center).Mul(c.Arm / c.Radius)
@@ -121,7 +121,7 @@ func TestRollingPhaseConvention(t *testing.T) {
 func TestRollingArclengthConverges(t *testing.T) {
 	want := math.Sqrt2 * (math.Exp(4) - 1)
 	arc := func(samples int, side string) float64 {
-		q := rollingRequest("exp(t)*cos(t)", "exp(t)*sin(t)", 0, 4, RollingCircle{Side: side, Radius: 30, Arm: 1})
+		q := rollingRequest("exp(t)*cos(t)", "exp(t)*sin(t)", 0, 4, Roller{Side: side, Radius: 30, Arm: 1})
 		q.Samples = samples
 		r := compute(t, q)
 		s := r.Rolling[len(r.Rolling)-1]
@@ -146,7 +146,7 @@ func TestRollingArclengthConverges(t *testing.T) {
 // A center point (ℓ = 0) rides on the offset at distance σρ.
 func TestRollingCenterIsOffset(t *testing.T) {
 	for _, side := range []string{"left", "right"} {
-		q := rollingRequest("2*cos(t)", "1.2*sin(t)", 0, 6, RollingCircle{Side: side, Radius: .3, Phase: 1})
+		q := rollingRequest("2*cos(t)", "1.2*sin(t)", 0, 6, Roller{Side: side, Radius: .3, Phase: 1})
 		o := offsetRequest("2*cos(t)", "1.2*sin(t)", 0, 6, map[string]float64{"left": .3, "right": -.3}[side])
 		r, want := compute(t, q), compute(t, o)
 		for j := range r.Derived {
@@ -157,7 +157,7 @@ func TestRollingCenterIsOffset(t *testing.T) {
 
 // Rotating and translating the base curve moves the trace rigidly.
 func TestRollingRigidMotion(t *testing.T) {
-	c := RollingCircle{Side: "right", Radius: .4, Arm: .9, Phase: .2}
+	c := Roller{Side: "right", Radius: .4, Arm: .9, Phase: .2}
 	q := rollingRequest("2*cos(t)", "1.2*sin(t)", 0, 5, c)
 	b := .7
 	cb, sb := math.Cos(b), math.Sin(b)
@@ -174,7 +174,7 @@ func TestRollingRigidMotion(t *testing.T) {
 // Rolling needs only a regular tangent: a C¹ curve whose second derivative
 // is unbounded at the origin is rolled over without gaps.
 func TestRollingFirstOrder(t *testing.T) {
-	r := compute(t, rollingRequest("t", "abs(t)^1.5", -1, 1, RollingCircle{Side: "left", Radius: .2, Arm: .1}))
+	r := compute(t, rollingRequest("t", "abs(t)^1.5", -1, 1, Roller{Side: "left", Radius: .2, Arm: .1}))
 	if r.Invalid != 0 {
 		t.Fatalf("%d invalid samples on a C¹ curve", r.Invalid)
 	}
@@ -193,7 +193,7 @@ func TestRollingStops(t *testing.T) {
 		{"cos(t)^3", "sin(t)^3", .3, 2, math.Pi / 2, "tangent reversed"},
 		{"t", "1/t", -1, 1, 0, "invalid interval"},
 	} {
-		q := rollingRequest(tc.x, tc.y, tc.lo, tc.hi, RollingCircle{Side: "left", Radius: .1, Arm: .1})
+		q := rollingRequest(tc.x, tc.y, tc.lo, tc.hi, Roller{Side: "left", Radius: .1, Arm: .1})
 		r := compute(t, q)
 		for j, p := range r.Derived {
 			u := sampleT(q, j)
@@ -213,7 +213,7 @@ func TestRollingStops(t *testing.T) {
 }
 
 func TestRollingResult(t *testing.T) {
-	q := rollingRequest("2*cos(t)", "1.2*sin(t)", 0, 6, RollingCircle{Side: "right", Radius: .3, Arm: .5})
+	q := rollingRequest("2*cos(t)", "1.2*sin(t)", 0, 6, Roller{Side: "right", Radius: .3, Arm: .5})
 	r := compute(t, q)
 	if len(r.Rolling) != q.Lines || len(r.Rays) != q.Lines {
 		t.Fatalf("%d positions, %d rays", len(r.Rolling), len(r.Rays))
@@ -235,13 +235,13 @@ func TestRollingResult(t *testing.T) {
 	}
 	// Other constructions return an empty list and ignore rolling settings.
 	o := offsetRequest("2*cos(t)", "1.2*sin(t)", 0, 6, .2)
-	o.Rolling = RollingCircle{Side: "up", Radius: -1}
+	o.Rolling = Roller{Side: "up", Radius: -1}
 	if other := compute(t, o); other.Rolling == nil || len(other.Rolling) != 0 {
 		t.Fatalf("offset rolling %v", other.Rolling)
 	}
 	// A rolling circle can roll on a roulette, keeping both circles.
 	g := rouletteRequest(Roulette{Roll: "inside", FixedRadius: 5, Radius: 2, Arm: 1}, 0, 4*math.Pi)
-	g.Kind, g.Rolling = "rolling", RollingCircle{Side: "right", Radius: .5, Arm: .5}
+	g.Kind, g.Rolling = "rolling", Roller{Side: "right", Radius: .5, Arm: .5}
 	both := compute(t, g)
 	if len(both.Rolling) != g.Lines || len(both.Roulette.Positions) != g.Lines || both.Invalid != 0 {
 		t.Fatalf("%d rolling, %d roulette positions, %d invalid", len(both.Rolling), len(both.Roulette.Positions), both.Invalid)
@@ -249,21 +249,21 @@ func TestRollingResult(t *testing.T) {
 }
 
 func TestRollingInvalid(t *testing.T) {
-	ok := RollingCircle{Side: "left", Radius: 1, Arm: 1}
+	ok := Roller{Side: "left", Radius: 1, Arm: 1}
 	for _, tc := range []struct {
-		change func(*RollingCircle)
+		change func(*Roller)
 		want   string
 	}{
-		{func(c *RollingCircle) { c.Side = "" }, "left or right"},
-		{func(c *RollingCircle) { c.Side = "up" }, "left or right"},
-		{func(c *RollingCircle) { c.Radius = 0 }, "radius ρ"},
-		{func(c *RollingCircle) { c.Radius = -1 }, "radius ρ"},
-		{func(c *RollingCircle) { c.Radius = math.NaN() }, "radius ρ"},
-		{func(c *RollingCircle) { c.Radius = 2e5 }, "radius ρ"},
-		{func(c *RollingCircle) { c.Arm = -.1 }, "tracing distance ℓ"},
-		{func(c *RollingCircle) { c.Arm = math.Inf(1) }, "tracing distance ℓ"},
-		{func(c *RollingCircle) { c.Phase = math.NaN() }, "phase ψ"},
-		{func(c *RollingCircle) { c.Phase = 2e6 }, "phase ψ"},
+		{func(c *Roller) { c.Side = "" }, "left or right"},
+		{func(c *Roller) { c.Side = "up" }, "left or right"},
+		{func(c *Roller) { c.Radius = 0 }, "radius ρ"},
+		{func(c *Roller) { c.Radius = -1 }, "radius ρ"},
+		{func(c *Roller) { c.Radius = math.NaN() }, "radius ρ"},
+		{func(c *Roller) { c.Radius = 2e5 }, "radius ρ"},
+		{func(c *Roller) { c.Arm = -.1 }, "tracing distance ℓ"},
+		{func(c *Roller) { c.Arm = math.Inf(1) }, "tracing distance ℓ"},
+		{func(c *Roller) { c.Phase = math.NaN() }, "phase ψ"},
+		{func(c *Roller) { c.Phase = 2e6 }, "phase ψ"},
 	} {
 		c := ok
 		tc.change(&c)
@@ -273,7 +273,7 @@ func TestRollingInvalid(t *testing.T) {
 		}
 	}
 	// Boundary values are accepted.
-	for _, c := range []RollingCircle{{Side: "right", Radius: 1e5, Arm: 0, Phase: -1e6}, {Side: "left", Radius: 1e-9, Arm: 1e5, Phase: 1e6}} {
+	for _, c := range []Roller{{Side: "right", Radius: 1e5, Arm: 0, Phase: -1e6}, {Side: "left", Radius: 1e-9, Arm: 1e5, Phase: 1e6}} {
 		if _, err := Compute(rollingRequest("cos(t)", "sin(t)", 0, 1, c)); err != nil {
 			t.Fatal(err)
 		}

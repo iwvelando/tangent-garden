@@ -89,6 +89,13 @@ const descriptions: Record<
     formula: "P(t) = r + σρN + ℓ · rot(ψ − σs/ρ)(−σN)",
   },
 };
+// A rolling curve shares the rolling tab but explains contact matching.
+const rollingCurveDescription = {
+  title: "A curve, rolled along the curve",
+  description:
+    "A second curve rolls along the first without slipping: equal arc lengths are laid against each other, and the two stay tangent at the contact. A point fixed to the rolling curve traces a roulette. The contact is momentarily at rest, so each line from it to the tracing point is normal to the roulette.",
+  formula: "P = r + rot(θ)(Q − m(u)),  arc m(u₀→u) = s",
+};
 // A stack of offsets shares the offset tab but explains the family.
 const stackDescription = {
   title: "A stack of parallel curves",
@@ -260,7 +267,9 @@ function App() {
   const info =
     config.kind === "offset" && config.stack.enabled
       ? stackDescription
-      : descriptions[config.kind];
+      : config.kind === "rolling" && config.rolling.shape === "curve"
+        ? rollingCurveDescription
+        : descriptions[config.kind];
   // Changes apply to the latest configuration, never to this render's copy:
   // a constant expression resolved by Go can land between a state update and
   // the next render, and a stale copy would overwrite it.
@@ -900,44 +909,127 @@ function App() {
             )}
             {config.kind === "rolling" && (
               <section>
-                <div className="section-label">03 / THE ROLLING CIRCLE</div>
-                <Field label="Side of the curve">
-                  <select
-                    value={config.rolling.side}
-                    onChange={(e) =>
-                      update((c) => ({
-                        rolling: {
-                          ...c.rolling,
-                          side: e.target.value as "left" | "right",
-                        },
-                      }))
-                    }
-                  >
-                    <option value="left">Left of travel</option>
-                    <option value="right">Right of travel</option>
-                  </select>
-                </Field>
-                <div className="pair">
-                  {scalar("Circle radius ρ", ["rolling", "radius"], {
-                    topic: "rolling circle radius",
-                    help: "Positive and at most 100,000.",
-                  })}
-                  {scalar("Tracing distance ℓ", ["rolling", "arm"], {
-                    topic: "rolling tracing distance",
-                    help: "Distance of the tracing point from the circle's center, 0–100,000. ℓ = ρ traces the rim, with cusps on the curve; larger values give loops.",
-                  })}
+                <div className="section-label">
+                  03 / THE ROLLING{" "}
+                  {config.rolling.shape === "curve" ? "CURVE" : "CIRCLE"}
                 </div>
-                {scalar("Phase ψ (radians)", ["rolling", "phase"], {
-                  topic: "rolling phase",
-                  help: "At the domain start the tracing arm points at the contact; the phase turns it counterclockwise by ψ radians.",
-                })}
-                <p className="note">
-                  On a counterclockwise closed curve the left is the inside. The
-                  circle rolls from the domain start and stops at a cusp. Where
-                  it is larger than the curve's radius of curvature, or the
-                  curve comes back near itself, it overlaps the curve: this is
-                  the mathematical roulette, not a collision.
-                </p>
+                <div className="pair">
+                  <Field label="Rolling shape">
+                    <select
+                      value={config.rolling.shape}
+                      onChange={(e) =>
+                        update((c) => ({
+                          rolling: {
+                            ...c.rolling,
+                            shape: e.target.value as "circle" | "curve",
+                          },
+                        }))
+                      }
+                    >
+                      <option value="circle">Circle</option>
+                      <option value="curve">Curve · x(t), y(t)</option>
+                    </select>
+                  </Field>
+                  <Field label="Side of the curve">
+                    <select
+                      value={config.rolling.side}
+                      onChange={(e) =>
+                        update((c) => ({
+                          rolling: {
+                            ...c.rolling,
+                            side: e.target.value as "left" | "right",
+                          },
+                        }))
+                      }
+                    >
+                      <option value="left">Left of travel</option>
+                      <option value="right">Right of travel</option>
+                    </select>
+                  </Field>
+                </div>
+                {config.rolling.shape === "curve" ? (
+                  <>
+                    {(["x", "y"] as const).map((key) => (
+                      <Field
+                        key={key}
+                        label={`Rolling ${key}(t)`}
+                        className="equation"
+                        topic={key === "x" ? "rolling curve" : undefined}
+                        help={
+                          key === "x"
+                            ? "The rolling curve in its own frame, in t (and a). It is placed on the base so the two stay tangent at the contact, with equal arc lengths rolled on each."
+                            : undefined
+                        }
+                      >
+                        <input
+                          value={config.rolling.curve[key]}
+                          onChange={(e) => {
+                            const text = e.target.value;
+                            update((c) => ({
+                              rolling: {
+                                ...c.rolling,
+                                curve: { ...c.rolling.curve, [key]: text },
+                              },
+                            }));
+                          }}
+                          spellCheck={false}
+                        />
+                      </Field>
+                    ))}
+                    <div className="pair">
+                      {scalar("Rolling t from", ["rolling", "curve", "min"])}
+                      {scalar("Rolling t to", ["rolling", "curve", "max"])}
+                    </div>
+                    {scalar(
+                      "Contact starts at t",
+                      ["rolling", "curve", "start"],
+                      {
+                        topic: "rolling curve start",
+                        help: "The rolling curve's point that touches the base at its domain start. On the left the contact runs toward the end of the rolling curve's domain; on the right, toward its start.",
+                      },
+                    )}
+                    <div className="pair">
+                      {scalar("Tracing point x", ["rolling", "point", "x"], {
+                        topic: "rolling curve tracing point",
+                        help: "A point fixed to the rolling curve, in the same frame as x(t), y(t); within ±100,000.",
+                      })}
+                      {scalar("Tracing point y", ["rolling", "point", "y"])}
+                    </div>
+                    <p className="note">
+                      On the left, the rolling curve's own left side faces the
+                      base's left; on the right, its left side faces the base's
+                      right. For a counterclockwise closed curve its left is its
+                      inside. A closed rolling curve wraps around; an open one,
+                      or one with a cusp, stops there. Overlaps are part of the
+                      roulette, not collisions.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="pair">
+                      {scalar("Circle radius ρ", ["rolling", "radius"], {
+                        topic: "rolling circle radius",
+                        help: "Positive and at most 100,000.",
+                      })}
+                      {scalar("Tracing distance ℓ", ["rolling", "arm"], {
+                        topic: "rolling tracing distance",
+                        help: "Distance of the tracing point from the circle's center, 0–100,000. ℓ = ρ traces the rim, with cusps on the curve; larger values give loops.",
+                      })}
+                    </div>
+                    {scalar("Phase ψ (radians)", ["rolling", "phase"], {
+                      topic: "rolling phase",
+                      help: "At the domain start the tracing arm points at the contact; the phase turns it counterclockwise by ψ radians.",
+                    })}
+                    <p className="note">
+                      On a counterclockwise closed curve the left is the inside.
+                      The circle rolls from the domain start and stops at a
+                      cusp. Where it is larger than the curve's radius of
+                      curvature, or the curve comes back near itself, it
+                      overlaps the curve: this is the mathematical roulette, not
+                      a collision.
+                    </p>
+                  </>
+                )}
               </section>
             )}
             {config.kind === "involute" && (

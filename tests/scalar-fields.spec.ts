@@ -83,6 +83,41 @@ const studies: {
     ],
   },
   {
+    preset: "Ellipse rolling on an ellipse",
+    cases: [
+      {
+        name: "Rolling t from",
+        text: "-pi",
+        value: -Math.PI,
+        path: ["rolling", "curve", "min"],
+      },
+      {
+        name: "Rolling t to",
+        text: "pi",
+        value: Math.PI,
+        path: ["rolling", "curve", "max"],
+      },
+      {
+        name: "Contact starts at t",
+        text: "-pi/phi",
+        value: -Math.PI / phi,
+        path: ["rolling", "curve", "start"],
+      },
+      {
+        name: "Tracing point x",
+        text: "e/2",
+        value: Math.E / 2,
+        path: ["rolling", "point", "x"],
+      },
+      {
+        name: "Tracing point y",
+        text: "-1/phi",
+        value: -1 / phi,
+        path: ["rolling", "point", "y"],
+      },
+    ],
+  },
+  {
     preset: "Ellipse & its evolute",
     cases: [
       {

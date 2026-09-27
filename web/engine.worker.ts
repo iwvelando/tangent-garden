@@ -90,7 +90,15 @@ self.onmessage = async ({
         ? [config.stack.from, config.stack.to, config.stack.count]
         : []),
       ...(config.kind === "rolling"
-        ? [config.rolling.radius, config.rolling.arm, config.rolling.phase]
+        ? config.rolling.shape === "curve"
+          ? [
+              config.rolling.curve.min,
+              config.rolling.curve.max,
+              config.rolling.curve.start,
+              config.rolling.point.x,
+              config.rolling.point.y,
+            ]
+          : [config.rolling.radius, config.rolling.arm, config.rolling.phase]
         : []),
       ...(config.curve.format === "roulette"
         ? [
