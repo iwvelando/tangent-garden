@@ -69,6 +69,7 @@ With `N = JT` the left unit normal, the contrapedal `K = r + ((P-r)·N) N` proje
 The orthotomic `Q = 2H - P` reflects the pole across the tangent line. It is the pedal enlarged by a factor of two about P, so it satisfies `|Q-r| = |P-r|` and `(Q-P)·T = 0`, with P and Q on opposite sides of the tangent. Reflecting a parabola's focus gives its directrix; reflecting one focus of an ellipse gives the circle of radius 2a about the other focus; a line's orthotomic is one reflected point. The orthotomic is the curve whose evolute is the catacaustic from a point source at P, but the two constructions are independent here: the pole is not the optical source. Each representative construction draws r→H and P→H as solid genuine projection segments and H→Q dashed, the reflected half. The renderer recovers H as (P+Q)/2 rather than transmitting a second point.
 
 All three share the pole, the first-derivative stability rule, and gap handling. Neither orientation nor regular reparameterization changes any of them. See [MathCurve's pedal constructions](https://mathcurve.com/courbes2d/podaire/podaire.shtml), which also covers contrapedals and orthotomics.
+
 ## Offsets
 
 `O = r + d N`, with `N = JT` the left unit normal and signed distance `d`: positive d moves to the left of travel, which is inward on a counterclockwise closed curve. Reversing orientation flips N, so the same points need the opposite sign. The request field is `distance`, separate from the involute string offset `c` (`offset`); both must be finite and within ±100000.
@@ -94,6 +95,20 @@ Reflection: `d=i−2(i·n)n` for a unit normal `n`.
 Refraction: orient `n` so `i·n≤0`, let `η=n₁/n₂`, `c=−i·n`, `k=1−η²(1−c²)`. For `k≥0`, `d=ηi+(ηc−√k)n`. For `k<0`, total internal reflection occurs: no transmitted direction or diacaustic point is emitted, and the representative reflected ray is separately flagged. Indices describe the incident and transmitted side for each ray, not an inferred global solid.
 
 The vector refraction treatment follows the geometric construction in [Physically Based Rendering, Specular Reflection and Transmission](https://pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission). No Fresnel weights, wavelength dispersion, or intensity estimates are computed.
+
+## Line and chord envelopes
+
+The envelope construction applies the same determinant to a family of lines chosen directly. Each line passes through the base point `r(t)` with a unit direction `u(t)`: either `(cos θ(t), sin θ(t))` for an entered direction angle θ, in radians counterclockwise from +x, or `(q(t) − r(t))/|q(t) − r(t)|` for a chord to a second endpoint `q(t) = (x(t), y(t))` on the same parameter. On `F(t,λ) = r(t) + λu(t)` the envelope point is `r + λu` with
+
+`λ = −det(u, r′)/det(u, u′)`.
+
+Lines are unoriented, so before differentiating, the neighbouring directions in the five-point stencil are aligned with `u(t)`: a direction turning by exactly π is the same line, and its envelope continues across. Any other jump in the direction is a genuine break; the two-step stability check rejects the samples whose stencil crosses it. Where `det(u, u′)` vanishes (below `10⁻⁹`), neighbouring lines are parallel and meet only at infinity, so there is no finite envelope point; those lines are still drawn. A chord needs distinct endpoints: where `|q − r| ≤ 10⁻⁹(1 + |r| + |q|)` it has no direction, so no line is drawn and the envelope has a gap, counted in a note. No limit is taken across the coincidence.
+
+A chord is the segment `0 ≤ λ ≤ |q − r|`. Its touching point may lie on the line beyond the segment; such points belong to the envelope of the full lines but not to the segments, and are marked virtual and dashed unless the chords are extended to full lines. Angle lines are always unbounded; the renderer draws them across the whole view, and they never frame the drawing. Chords frame by their second endpoints.
+
+For the unit circle and `q(t) = (cos mt, sin mt)`, the chords envelope the epicycloid `(m e^{it} + e^{imt})/(m + 1)`, touching each chord at `λ = |q − r|/(m + 1)`, which divides it `1 : m`. For m = 2 this is the cardioid, for m = 3 the nephroid, and for m = 4 the three-cusped epicycloid of the 200-chord reference study. For m < 0 the touching point lies behind the chord, and swapping the roles of the two endpoints puts it beyond. The endpoints coincide where `(m − 1)t` is a multiple of 2π. The creases that fold a focus `(0, 1)` onto the axis point `(t, 0)` run through that point perpendicular to `(t, −1)`, direction angle `atan t`, and envelope the parabola `x² = 4y`.
+
+Verification includes: the epicycloids for several m, including m < 0 and swapped endpoints, with their virtual flags and coincident gaps; the 200-phase reference study; tangent lines enveloping the curve itself; the folded parabola; a pencil of lines through a fixed point enveloping that point; chords of angle `t → 3t` agreeing with the direction angle `2t + π/2`; chords from an ellipse along its normals enveloping its evolute, virtual behind the chords unless extended; each touching point lying on its line with the envelope tangent there, in two arbitrary families; parallel lines; a direction flipping by π versus a genuine jump; and undefined angles and endpoints.
 
 ## Numerical policy
 

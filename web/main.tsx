@@ -80,6 +80,19 @@ const descriptions: Record<
       "A circle rolls along the curve without slipping, touching it on one side. A point fixed to the circle traces a roulette. The contact is momentarily at rest, so each line from the contact to the tracing point is normal to the roulette.",
     formula: "P(t) = r + σρN + ℓ · rot(ψ − σs/ρ)(−σN)",
   },
+  envelope: {
+    title: "The envelope of turning lines",
+    description:
+      "Through each point of the curve passes a line, turned to the direction angle θ(t). Neighbouring lines cross ever closer together; the curve they all touch is their envelope.",
+    formula: "E = r + λu,  det(r′ + λu′, u) = 0",
+  },
+};
+// Chords share the envelope tab but explain their two endpoints.
+const chordDescription = {
+  title: "The envelope of chords",
+  description:
+    "Join each point of the curve to a second point moving with the same t. Neighbouring chords cross ever closer together; the curve they all touch is their envelope. Dashed parts lie on the chords' extensions, beyond the segments.",
+  formula: "E = r + λ(q − r),  det(r′ + λu′, u) = 0",
 };
 // A rolling curve shares the rolling tab but explains contact matching.
 const rollingCurveDescription = {
@@ -104,6 +117,7 @@ const tabs: Kind[] = [
   "pedal",
   "offset",
   "rolling",
+  "envelope",
 ];
 const poleOptions: Record<PoleKind, { label: string; note: string }> = {
   pedal: {
@@ -256,12 +270,19 @@ function App() {
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
   const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
+  // Chords that are not extended have envelope points beyond the segments.
+  const chords =
+    config.kind === "envelope" &&
+    config.envelope.mode === "chord" &&
+    !config.envelope.extend;
   const info =
     config.kind === "offset" && config.stack.enabled
       ? stackDescription
       : config.kind === "rolling" && config.rolling.shape === "curve"
         ? rollingCurveDescription
-        : descriptions[config.kind];
+        : config.kind === "envelope" && config.envelope.mode === "chord"
+          ? chordDescription
+          : descriptions[config.kind];
   // Changes apply to the latest configuration, never to this render's copy:
   // a constant expression resolved by Go can land between a state update and
   // the next render, and a stale copy would overwrite it.
@@ -1016,6 +1037,97 @@ function App() {
                 )}
               </section>
             )}
+            {config.kind === "envelope" && (
+              <section>
+                <div className="section-label">03 / THE LINES</div>
+                <Field label="Lines">
+                  <select
+                    value={config.envelope.mode}
+                    onChange={(e) =>
+                      update((c) => ({
+                        envelope: {
+                          ...c.envelope,
+                          mode: e.target.value as "angle" | "chord",
+                        },
+                      }))
+                    }
+                  >
+                    <option value="chord">Chords to a second point</option>
+                    <option value="angle">Turned to an angle θ(t)</option>
+                  </select>
+                </Field>
+                {config.envelope.mode === "chord" ? (
+                  <>
+                    {(["x", "y"] as const).map((key) => (
+                      <Field
+                        key={key}
+                        label={`Second point ${key}(t)`}
+                        className="equation"
+                        topic={key === "x" ? "second point" : undefined}
+                        help={
+                          key === "x"
+                            ? "The chord's other endpoint, in t (and a), over the curve's domain. With x = cos(a*t), y = sin(a*t) on the unit circle, animate a for the multiplication tables."
+                            : undefined
+                        }
+                      >
+                        <input
+                          value={config.envelope[key]}
+                          onChange={(e) => {
+                            const text = e.target.value;
+                            update((c) => ({
+                              envelope: { ...c.envelope, [key]: text },
+                            }));
+                          }}
+                          spellCheck={false}
+                        />
+                      </Field>
+                    ))}
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={config.envelope.extend}
+                        onChange={(e) => {
+                          const extend = e.target.checked;
+                          update((c) => ({
+                            envelope: { ...c.envelope, extend },
+                          }));
+                        }}
+                      />
+                      Extend chords to full lines
+                    </label>
+                    <p className="note">
+                      Where the two endpoints coincide the chord has no
+                      direction, and the envelope has a gap.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Field
+                      label="Direction angle θ(t)"
+                      className="equation"
+                      topic="direction angle"
+                      help="In radians, counterclockwise from +x, in t (and a). Each line passes through the curve's point at t. A turn by exactly pi gives the same line."
+                    >
+                      <input
+                        value={config.envelope.angle}
+                        onChange={(e) => {
+                          const angle = e.target.value;
+                          update((c) => ({
+                            envelope: { ...c.envelope, angle },
+                          }));
+                        }}
+                        spellCheck={false}
+                      />
+                    </Field>
+                    <p className="note">
+                      Lines are unbounded and drawn across the view. Parallel
+                      neighbours meet at infinity, so the envelope has gaps
+                      there.
+                    </p>
+                  </>
+                )}
+              </section>
+            )}
             {config.kind === "involute" && (
               <section>
                 {scalar("Initial string offset c", ["offset"], {
@@ -1029,7 +1141,8 @@ function App() {
                 {optical ||
                 usesPole(config.kind) ||
                 config.kind === "offset" ||
-                config.kind === "rolling"
+                config.kind === "rolling" ||
+                config.kind === "envelope"
                   ? "04"
                   : "03"}{" "}
                 / THE DRAWING
@@ -1078,7 +1191,10 @@ function App() {
               <div className="layer-grid">
                 {(Object.keys(layers) as (keyof Layers)[])
                   .filter(
-                    (k) => optical || !["incident", "virtual"].includes(k),
+                    (k) =>
+                      optical ||
+                      (k === "virtual" && chords) ||
+                      !["incident", "virtual"].includes(k),
                   )
                   .map((k) => (
                     <label className="check" key={k}>

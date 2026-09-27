@@ -320,7 +320,59 @@ assert.match(
   ).error,
   /outside its domain/,
 );
+// Chords from t to 2t on the unit circle envelope the cardioid
+// (2e^{it} + e^{2it})/3, touching each chord a third of the way along.
+const chords = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "envelope",
+      curve: { ...config.curve, x: "cos(t)", y: "sin(t)", a: 2 },
+      envelope: {
+        mode: "chord",
+        angle: "",
+        x: "cos(a*t)",
+        y: "sin(a*t)",
+        extend: false,
+      },
+    }),
+  ),
+);
+assert.equal(chords.second.length, config.samples);
+assert.equal(chords.derived[0], null);
+assert.equal(chords.derived.at(-1), null);
+assert.ok(chords.warnings.some((w) => /endpoints coincide/.test(w)));
+for (const i of [1, 250, 500, 998]) {
+  const t = (i * 2 * Math.PI) / 999;
+  const want = {
+    x: (2 * Math.cos(t) + Math.cos(2 * t)) / 3,
+    y: (2 * Math.sin(t) + Math.sin(2 * t)) / 3,
+  };
+  assert.ok(
+    Math.hypot(chords.derived[i].x - want.x, chords.derived[i].y - want.y) <
+      1e-7,
+  );
+  assert.equal(chords.virtual[i], false);
+}
+assert.equal(chords.rays.length, config.lines - 2);
+chords.rays.forEach((ray) => {
+  assert.deepEqual(ray.end, chords.second[ray.sampleIndex]);
+  assert.deepEqual(ray.origin, chords.base[ray.sampleIndex]);
+});
+assert.equal(result.second, undefined);
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        kind: "envelope",
+        envelope: { mode: "angle", angle: "s", x: "", y: "", extend: false },
+      }),
+    ),
+  ).error,
+  /direction angle/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, and invalid JSON passed.",
 );
 process.exit(0);

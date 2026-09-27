@@ -183,6 +183,12 @@ export function Plot({
     );
   };
   const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
+  // Constructions whose derived points can be virtual: optical rays behind
+  // the curve, and envelope points beyond their chords.
+  const extended =
+    config.kind === "envelope" &&
+    (config.envelope.mode === "angle" || config.envelope.extend);
+  const dashed = optical || (config.kind === "envelope" && !extended);
   // A derived curve or stack member that collapses to one point, such as a
   // circle offset by its radius, is drawn as a dot rather than vanishing.
   const collapsed = (points: (Vec | null)[]) => {
@@ -197,7 +203,7 @@ export function Plot({
   const focuses = [
     collapsed(
       result.derived.map((p, i) =>
-        !optical || layers.virtual || !result.virtual[i] ? p : null,
+        !dashed || layers.virtual || !result.virtual[i] ? p : null,
       ),
     ),
     ...result.family.map((path) => collapsed(path.points)),
@@ -209,6 +215,8 @@ export function Plot({
     x1 = x0 + W / scale,
     y1 = frame.cy + (H / 2 + cam.y) / scale,
     y0 = y1 - H / scale;
+  // Unbounded lines reach past the view box, which a wider panel shows.
+  const pad = 2 * Math.max(x1 - x0, y1 - y0);
   const roulette = result.roulette;
   // Rolling circles are drawn where their traces have reached.
   const rolling = roulette?.positions.at(-1);
@@ -346,6 +354,27 @@ export function Plot({
                 y: (config.pole.y + ray.target.y) / 2,
               }
             : ray.target;
+        if (config.kind === "envelope") {
+          const ends =
+            ray.end && !extended
+              ? [ray.origin, ray.end]
+              : across(
+                  ray.origin,
+                  ray.direction,
+                  x0 - pad,
+                  x1 + pad,
+                  y0 - pad,
+                  y1 + pad,
+                );
+          return (
+            layers.lines &&
+            ends && (
+              <g key={i} data-testid="envelope-line">
+                {line(ends[0], ends[1], palette.line, 0.45)}
+              </g>
+            )
+          );
+        }
         return (
           <g key={i}>
             {optical &&
@@ -454,6 +483,17 @@ export function Plot({
           />
         </g>
       )}
+      {layers.base && result.second && (
+        <path
+          data-testid="second-curve"
+          aria-label="Second endpoints"
+          d={path(result.second)}
+          fill="none"
+          stroke={palette.base}
+          strokeWidth="1.4"
+          opacity=".55"
+        />
+      )}
       {layers.base && (
         <path
           d={path(result.base)}
@@ -473,14 +513,14 @@ export function Plot({
       )}
       {layers.derived && result.derived.length > 0 && (
         <path
-          d={path(result.derived, optical ? false : undefined)}
+          d={path(result.derived, dashed ? false : undefined)}
           fill="none"
           stroke={palette.derived}
           strokeWidth="2.6"
           strokeLinejoin="round"
         />
       )}
-      {optical && layers.derived && layers.virtual && (
+      {dashed && layers.derived && layers.virtual && (
         <path
           d={path(result.derived, true)}
           fill="none"
@@ -589,6 +629,37 @@ export function framingPoints(points: (Vec | null)[]): Vec[] {
   const [y0, y1] = fence(finite.map((p) => p.y));
   return finite.filter((p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
 }
+// The part of the unbounded line through p along u inside the rectangle
+// [x0, x1] × [y0, y1], or null where it misses.
+function across(
+  p: Vec,
+  u: Vec,
+  x0: number,
+  x1: number,
+  y0: number,
+  y1: number,
+): [Vec, Vec] | null {
+  let lo = -Infinity,
+    hi = Infinity;
+  for (const [start, step, min, max] of [
+    [p.x, u.x, x0, x1],
+    [p.y, u.y, y0, y1],
+  ]) {
+    if (step === 0) {
+      if (start < min || start > max) return null;
+      continue;
+    }
+    const a = (min - start) / step,
+      b = (max - start) / step;
+    lo = Math.max(lo, Math.min(a, b));
+    hi = Math.min(hi, Math.max(a, b));
+  }
+  if (!(lo < hi)) return null;
+  return [
+    { x: p.x + lo * u.x, y: p.y + lo * u.y },
+    { x: p.x + hi * u.x, y: p.y + hi * u.y },
+  ];
+}
 // A rolling curve frames every placement, like a rolling circle, by the
 // circle enclosing it.
 function movingExtents(result: Result) {
@@ -659,6 +730,7 @@ export function fitFrame(result: Result, config: Config) {
       : [];
   const points = [
     ...framingPoints(result.base),
+    ...framingPoints(result.second ?? []),
     ...framingPoints(result.derived),
     ...result.family.flatMap((path) => framingPoints(path.points)),
     ...framingPoints(extents),
