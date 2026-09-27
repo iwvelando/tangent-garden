@@ -51,6 +51,21 @@ const base: Config = {
       window: { xMin: -2, xMax: 2, yMin: -1.5, yMax: 1.5 },
       cells: 160,
     },
+    // The reference Clifford study: its iterates stay within 1 + |c| by
+    // 1 + |d|, the window used when nothing is accumulated.
+    attractor: {
+      map: "clifford",
+      a: -1.4,
+      b: 1.6,
+      c: 1,
+      d: 0.7,
+      start: { x: 0.1, y: 0.1 },
+      discard: 1000,
+      iterates: 800000,
+      fit: true,
+      window: { xMin: -2, xMax: 2, yMin: -1.7, yMax: 1.7 },
+      cells: 600,
+    },
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
@@ -653,6 +668,66 @@ export const presets: { title: string; note: string; config: Config }[] = [
           family: { enabled: true, from: -2, to: 2, count: 9 },
           window: { xMin: -2.5, xMax: 2.5, yMin: -2, yMax: 2 },
           cells: 200,
+        },
+      },
+      lines: 40,
+    },
+  },
+  {
+    title: "Clifford attractor",
+    note: "The visits of 800,000 iterates",
+    config: {
+      ...base,
+      // (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from (0.1, 0.1): 1,000 iterates
+      // discarded, the next 800,000 counted. An illustration of an iterated
+      // map, not a proof of chaos.
+      curve: { ...base.curve, format: "attractor" },
+      lines: 40,
+    },
+  },
+  {
+    title: "De Jong attractor",
+    note: "An iterated map of sines and cosines",
+    config: {
+      ...base,
+      curve: {
+        ...base.curve,
+        format: "attractor",
+        attractor: {
+          ...base.curve.attractor,
+          map: "dejong",
+          a: 1.4,
+          b: -2.3,
+          c: 2.4,
+          d: -2.1,
+          window: { xMin: -2, xMax: 2, yMin: -2, yMax: 2 },
+        },
+      },
+      lines: 40,
+    },
+  },
+  {
+    title: "Hénon map",
+    note: "Folded layers of a quadratic map",
+    config: {
+      ...base,
+      // Hénon's (a, b) = (1.4, 0.3) from the origin. Starts farther out,
+      // such as (2, 0), leave any bound within a few iterates.
+      curve: {
+        ...base.curve,
+        format: "attractor",
+        attractor: {
+          ...base.curve.attractor,
+          map: "henon",
+          a: 1.4,
+          b: 0.3,
+          c: 0,
+          d: 0,
+          start: { x: 0, y: 0 },
+          discard: 100,
+          iterates: 400000,
+          window: { xMin: -1.5, xMax: 1.5, yMin: -0.5, yMax: 0.5 },
+          cells: 800,
         },
       },
       lines: 40,

@@ -55,6 +55,8 @@ self.onmessage = async ({
     const stacked = config.kind === "offset" && config.stack.enabled;
     const implicit =
       config.curve.format === "implicit" ? config.curve.implicit : null;
+    const attractor =
+      config.curve.format === "attractor" ? config.curve.attractor : null;
     const numbers = [
       config.curve.min,
       config.curve.max,
@@ -143,6 +145,20 @@ self.onmessage = async ({
               : []),
           ]
         : []),
+      ...(attractor
+        ? [
+            attractor.a,
+            attractor.b,
+            attractor.c,
+            attractor.d,
+            attractor.start.x,
+            attractor.start.y,
+            attractor.discard,
+            attractor.iterates,
+            attractor.cells,
+            ...Object.values(attractor.window),
+          ]
+        : []),
       ...(config.source.kind === "point" &&
       config.source.coordinates === "polar"
         ? [config.source.radius, config.source.theta]
@@ -158,6 +174,13 @@ self.onmessage = async ({
         (implicit.family.enabled && !Number.isInteger(implicit.family.count)))
     )
       throw new Error("Grid cells and the level count must be whole numbers.");
+    if (
+      attractor &&
+      ![attractor.cells, attractor.discard, attractor.iterates].every(
+        Number.isInteger,
+      )
+    )
+      throw new Error("Grid cells and iterate counts must be whole numbers.");
     if (stacked && !Number.isInteger(config.stack.count))
       throw new Error("The number of offsets must be a whole number.");
     const result: Result | { error: string } = JSON.parse(

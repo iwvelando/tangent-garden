@@ -1,6 +1,7 @@
 import {
   ownsShape,
   usesPole,
+  type AttractorResult,
   type Config,
   type Frame,
   type LevelSet,
@@ -62,6 +63,14 @@ type FixedTarget =
   | "levelsTo"
   | "levelsCount"
   | "contourCells"
+  | "mapA"
+  | "mapB"
+  | "mapC"
+  | "mapD"
+  | "startX"
+  | "startY"
+  | "discard"
+  | "iterates"
   | "samples"
   | "lines"
   | "rayLength";
@@ -123,6 +132,14 @@ const targetLabels: Record<FixedTarget, string> = {
   levelsTo: "Levels to",
   levelsCount: "Level count",
   contourCells: "Grid cells",
+  mapA: "Coefficient a",
+  mapB: "Coefficient b",
+  mapC: "Coefficient c",
+  mapD: "Coefficient d",
+  startX: "Start x₀",
+  startY: "Start y₀",
+  discard: "Discarded iterates",
+  iterates: "Accumulated iterates",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -187,6 +204,12 @@ export function targetLabel(target: Target) {
         ? seedLabels[seed.field](seed.index + 1)
         : targetLabels[target as FixedTarget];
 }
+// An implicit curve's or an iterated map's window and grid, whichever the
+// curve is.
+const gridded = (config: Config) =>
+  config.curve.format === "attractor"
+    ? config.curve.attractor
+    : config.curve.implicit;
 // The implicit curve's fields, with the window's paths in the configuration.
 const windowTargets = {
   windowXMin: "xMin",
@@ -199,6 +222,8 @@ const levelsTargets = {
   levelsTo: "to",
   levelsCount: "count",
 } as const;
+const mapTargets = { mapA: "a", mapB: "b", mapC: "c", mapD: "d" } as const;
+const startTargets = { startX: "x", startY: "y" } as const;
 export function availableTargets(config: Config): Target[] {
   // A level set has no parameter, so no domain, samples, or construction:
   // only F's a and the number of normals carry over.
@@ -213,6 +238,23 @@ export function availableTargets(config: Config): Target[] {
       "a",
       "lines",
     ];
+  // An iterated map's own coefficients, start, and counts; a window when it
+  // is given rather than fitted.
+  if (config.curve.format === "attractor") {
+    const map = config.curve.attractor;
+    return [
+      "mapA",
+      "mapB",
+      ...((map.map === "henon" ? [] : ["mapC", "mapD"]) as Target[]),
+      "startX",
+      "startY",
+      "discard",
+      "iterates",
+      ...((map.fit ? [] : Object.keys(windowTargets)) as Target[]),
+      "contourCells",
+      "lines",
+    ];
+  }
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
   if (config.kind === "involute") targets.push("offset");
   if (config.kind === "offset")
@@ -385,13 +427,24 @@ export function targetValue(
     case "windowXMax":
     case "windowYMin":
     case "windowYMax":
-      return config.curve.implicit.window[windowTargets[target]];
+      return gridded(config).window[windowTargets[target]];
     case "levelsFrom":
     case "levelsTo":
     case "levelsCount":
       return config.curve.implicit.family[levelsTargets[target]];
     case "contourCells":
-      return config.curve.implicit.cells;
+      return gridded(config).cells;
+    case "mapA":
+    case "mapB":
+    case "mapC":
+    case "mapD":
+      return config.curve.attractor[mapTargets[target]];
+    case "startX":
+    case "startY":
+      return config.curve.attractor.start[startTargets[target]];
+    case "discard":
+    case "iterates":
+      return config.curve.attractor[target];
     case "rayLength":
       return length;
     default:
@@ -405,6 +458,8 @@ export const integerTargets: Target[] = [
   "stackCount",
   "levelsCount",
   "contourCells",
+  "discard",
+  "iterates",
 ];
 export function applyTracks(
   base: Config,
@@ -538,7 +593,7 @@ export function applyTracks(
       case "windowXMax":
       case "windowYMin":
       case "windowYMax":
-        config.curve.implicit.window[windowTargets[track.target]] = value;
+        gridded(config).window[windowTargets[track.target]] = value;
         break;
       case "levelsFrom":
       case "levelsTo":
@@ -546,7 +601,21 @@ export function applyTracks(
         config.curve.implicit.family[levelsTargets[track.target]] = value;
         break;
       case "contourCells":
-        config.curve.implicit.cells = value;
+        gridded(config).cells = value;
+        break;
+      case "mapA":
+      case "mapB":
+      case "mapC":
+      case "mapD":
+        config.curve.attractor[mapTargets[track.target]] = value;
+        break;
+      case "startX":
+      case "startY":
+        config.curve.attractor.start[startTargets[track.target]] = value;
+        break;
+      case "discard":
+      case "iterates":
+        config.curve.attractor[track.target] = value;
         break;
       case "rayLength":
         length = value;
@@ -556,6 +625,23 @@ export function applyTracks(
     }
   }
   return { config, length };
+}
+// An iterated map is revealed by accumulating a prefix of its iterates,
+// rounded to a whole number, in the final drawing's window: the grid stays
+// put, and no cell ever holds more than it does at the end.
+export function revealConfig(
+  config: Config,
+  final: AttractorResult,
+  progress: number,
+): Config {
+  const next = structuredClone(config);
+  const p = Math.max(0, Math.min(1, progress));
+  next.curve.attractor.iterates = Math.round(
+    p * config.curve.attractor.iterates,
+  );
+  next.curve.attractor.fit = false;
+  next.curve.attractor.window = { ...final.window };
+  return next;
 }
 // Reveal existing numerical samples, so neither the arc-length anchor nor the
 // differentiation stencil changes while the string is being unwound.

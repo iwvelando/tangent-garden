@@ -4,7 +4,7 @@
 
 `expression text or roulette, Lissajous, Fourier, pursuit, or vector-field generator → planar curve evaluator → numerical construction → sampled geometry → SVG`
 
-An implicit curve takes a separate path: `F(x, y) → grid and marching squares → contours → SVG`, with no construction.
+An implicit curve takes a separate path: `F(x, y) → grid and marching squares → contours → SVG`, with no construction. So does an iterated map: `map and start → iterates → visit counts in a grid → PNG image embedded in the SVG`.
 
 The `engine` package has no browser, React, filesystem, or network dependency. It can run natively in Go tests or in WASM unchanged. `cmd/wasm` is the only package importing `syscall/js`. The bridge takes one JSON request and returns one JSON result/error; the TypeScript types mirror that schema.
 
@@ -104,4 +104,15 @@ In the UI the construction tabs are disabled and every construction section is h
 - with the derived curve: the family's contours;
 - with the construction lines: the dashed window, the normals as arrows of a fixed fraction of the window, and a cross at each discontinuity.
 
-Framing is the window itself, so the drawing holds still while contours split and join. Export filenames use `implicit` in place of the construction. The temporary [expansion roadmap](curve-expansion-roadmap.md) describes later curve families and the staged transition toward explicit generators and multiple-path output.
+Framing is the window itself, so the drawing holds still while contours split and join. Export filenames use `implicit` in place of the construction.
+
+Iterated maps (`engine/attractor.go`) are defined by `curve.format: "attractor"` with `curve.attractor`: `map` (`clifford`, `dejong`, or `henon`), coefficients `a`–`d`, `start`, `discard`, `iterates`, `fit`, `window`, and `cells`. Like an implicit curve, `Compute` returns before any construction with empty paths, and `Result.attractor` carries:
+
+- `window`, `columns`, and `rows`: the grid, fitted or given, shaped as for implicit curves;
+- `counts`: visits per cell, row-major from the lower-left corner with rows upward, and `max`;
+- `accumulated`, `outside`, and `escape`: the iterates counted, those beyond the window, and the number of the iterate that left ±100000, or 0;
+- `orbit`: the start and the first `lines` iterates.
+
+A fitted window iterates the accumulated span twice, once to bound it and once to count it, so memory is only the grid (at most 1,024² cells). Budgets are 1,000,000 discarded and 5,000,000 accumulated iterates; the reference study takes about 150 ms in WebAssembly and the largest about 0.7 s.
+
+The browser turns counts into an RGBA image (`web/attractor.ts`: one pixel per cell, top row first, the base colour at opacity `log(1 + n)/log(1 + max)`) and a PNG data URL through a canvas, cached per result and colour. The SVG draws it as an `<image>` over the window with `image-rendering="pixelated"`, so still and animated exports, which rasterize the same SVG at their target size, show the same cells with square edges, and an SVG export carries the density as an embedded PNG. The Content-Security-Policy already allows `data:` images (`img-src 'self' blob: data:`), so no policy change was needed here or in `iwvelando/cloud-accounts`. Reveal cannot cut back a density, so each revealed frame recomputes the first `round(p·N)` iterates in the finished drawing's window with fitting off; live playback and export sample identically. Tracks are the coefficients, start, both counts, the window edges when not fitted, grid cells, and `lines`; `a` is not offered. Export filenames use `attractor`. The temporary [expansion roadmap](curve-expansion-roadmap.md) describes later curve families and the staged transition toward explicit generators and multiple-path output.

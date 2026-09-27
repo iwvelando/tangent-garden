@@ -31,7 +31,9 @@ export const maxPursuers = 16;
 export const maxSeeds = 16;
 // Harmonic curves and pursuits define their own shape, without a.
 export const ownsShape = (format: string) =>
-  isHarmonic(format) || format === "pursuit";
+  isHarmonic(format) || format === "pursuit" || format === "attractor";
+// The curated iterated maps.
+export type AttractorMap = "clifford" | "dejong" | "henon";
 // How the rolling circle moves: inside or outside a fixed circle centered at
 // the origin, or along the x-axis on its upper side.
 export type Roll = "inside" | "outside" | "line";
@@ -47,7 +49,8 @@ export type Config = {
       | "fourier"
       | "pursuit"
       | "field"
-      | "implicit";
+      | "implicit"
+      | "attractor";
     x: string;
     y: string;
     r: string;
@@ -101,6 +104,25 @@ export type Config = {
       f: string;
       level: number;
       family: { enabled: boolean; from: number; to: number; count: number };
+      window: Window;
+      cells: number;
+    };
+    // An iterated map's orbit from start: the first `discard` iterates
+    // (0–1,000,000) are dropped and the next `iterates` (0–5,000,000) counted
+    // in a grid of `cells` near-square cells (4–1024) along the longer side
+    // of the window, or of the iterates' own bounds when fit is set. Hénon's
+    // map uses only a and b. Used only when format is "attractor", which has
+    // no parameter and no construction.
+    attractor: {
+      map: AttractorMap;
+      a: number;
+      b: number;
+      c: number;
+      d: number;
+      start: Vec;
+      discard: number;
+      iterates: number;
+      fit: boolean;
       window: Window;
       cells: number;
     };
@@ -308,6 +330,23 @@ export type ContourResult = {
   nonfinite: number;
 };
 
+// How often the accumulated iterates visit each cell of the window: counts
+// are row-major from (xMin, yMin), rows upward. outside counts accumulated
+// iterates beyond the window; escape is the number of the iterate that left
+// |x|, |y| ≤ 100000, ending the orbit, or 0. orbit is the start and the
+// first iterates, discarded or not.
+export type AttractorResult = {
+  window: Window;
+  columns: number;
+  rows: number;
+  counts: number[];
+  max: number;
+  accumulated: number;
+  outside: number;
+  escape: number;
+  orbit: Vec[];
+};
+
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
 export type Result = {
@@ -334,6 +373,9 @@ export type Result = {
   // Present only for an implicit curve, whose base and derived paths are
   // empty.
   contours?: ContourResult;
+  // Present only for an iterated map, whose base and derived paths are
+  // empty.
+  attractor?: AttractorResult;
   // Present only for a rolling curve.
   moving?: MovingResult;
   // The chords' far endpoints, indexed like base; present only for chords.

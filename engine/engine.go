@@ -74,6 +74,9 @@ type Result struct {
 	// Contours is present only for an implicit curve, which replaces the
 	// base and derived paths.
 	Contours *ContourResult `json:"contours,omitempty"`
+	// Attractor is present only for an iterated map, which replaces the
+	// base and derived paths.
+	Attractor *AttractorResult `json:"attractor,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
@@ -97,6 +100,16 @@ func Compute(q Request) (Result, error) {
 		}
 		out.Base, out.Derived, out.Virtual, out.Contours = []*Vec{}, []*Vec{}, []bool{}, res
 		out.Warnings = append(out.Warnings, warnings...)
+		return out, nil
+	}
+	if q.Curve.Format == "attractor" {
+		// Discrete iterates are counted, never joined: the density is the
+		// drawing, with the first iterates as construction.
+		res, err := q.Curve.Attractor.density(q.Lines)
+		if err != nil {
+			return out, err
+		}
+		out.Base, out.Derived, out.Virtual, out.Attractor = []*Vec{}, []*Vec{}, []bool{}, res
 		return out, nil
 	}
 	if !finite(q.Offset) || math.Abs(q.Offset) > 1e5 {

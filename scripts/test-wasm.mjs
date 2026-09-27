@@ -713,7 +713,76 @@ assert.ok(pole.discontinuities.length > 100);
 for (const { x, y } of pole.discontinuities)
   assert.ok(Math.abs(Math.hypot(x, y) - 1) < 1e-12);
 assert.match(cassini({ f: "x+t" }).error, /F\(x, y\) cannot use t/);
+// The reference Clifford study, (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from
+// (0.1, 0.1): every accumulated iterate is counted in its fitted window,
+// which stays within 1 + |c| by 1 + |d|, and the same request gives the same
+// counts. Its first iterates follow the map; a Hénon orbit that leaves
+// ±100000 stops there.
+const iterated = (attractor) =>
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: {
+          ...config.curve,
+          format: "attractor",
+          attractor: {
+            map: "clifford",
+            a: -1.4,
+            b: 1.6,
+            c: 1,
+            d: 0.7,
+            start: { x: 0.1, y: 0.1 },
+            discard: 1000,
+            iterates: 800000,
+            fit: true,
+            window: { xMin: -2, xMax: 2, yMin: -2, yMax: 2 },
+            cells: 600,
+            ...attractor,
+          },
+        },
+      }),
+    ),
+  );
+const clifford = iterated({}).attractor;
+assert.deepEqual(iterated({}).attractor, clifford);
+assert.equal(
+  clifford.counts.reduce((sum, n) => sum + n, 0),
+  800000,
+);
+assert.equal(clifford.accumulated, 800000);
+assert.equal(clifford.outside, 0);
+assert.equal(clifford.escape, 0);
+assert.equal(clifford.counts.length, clifford.columns * clifford.rows);
+assert.equal(Math.max(clifford.columns, clifford.rows), 600);
+assert.equal(
+  clifford.counts.reduce((m, n) => Math.max(m, n), 0),
+  clifford.max,
+);
+const { window } = clifford;
+assert.ok(window.xMin >= -2 && window.xMax <= 2);
+assert.ok(window.yMin >= -1.7 && window.yMax <= 1.7);
+assert.equal(clifford.orbit.length, config.lines + 1);
+clifford.orbit.slice(1).forEach(({ x, y }, k) => {
+  const p = clifford.orbit[k];
+  assert.ok(
+    Math.abs(x - (Math.sin(-1.4 * p.y) + Math.cos(-1.4 * p.x))) < 1e-14,
+  );
+  assert.ok(
+    Math.abs(y - (Math.sin(1.6 * p.x) + 0.7 * Math.cos(1.6 * p.y))) < 1e-14,
+  );
+});
+const henon = iterated({
+  map: "henon",
+  a: 1.4,
+  b: 0.3,
+  start: { x: 2, y: 0 },
+  discard: 1,
+  iterates: 100,
+}).attractor;
+assert.deepEqual([henon.escape, henon.accumulated], [4, 2]);
+assert.match(iterated({ iterates: 5000001 }).error, /accumulate 0–5,000,000/);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, Clifford and Hénon densities, and invalid JSON passed.",
 );
 process.exit(0);
