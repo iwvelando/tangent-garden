@@ -6,20 +6,45 @@ export type Kind =
   | "diacaustic"
   | "offset"
   | "rolling"
+  | "envelope"
+  | "inversion"
   | PoleKind;
 // Constructions that project an independent geometric pole onto the tangent
 // or normal. They share one tab and one pole, never the optical source.
 export const poleKinds = ["pedal", "contrapedal", "orthotomic"] as const;
 export type PoleKind = (typeof poleKinds)[number];
-export const usesPole = (kind: Kind): kind is PoleKind =>
-  (poleKinds as readonly Kind[]).includes(kind);
+export const usesPole = (kind: string): kind is PoleKind =>
+  (poleKinds as readonly string[]).includes(kind);
+// The curve an inversion inverts: the curve itself, or one of its derived
+// curves, computed with the configuration's own pole or offset distance.
+export type InversionSource = "curve" | "evolute" | PoleKind | "offset";
+// One rotating vector of a Fourier curve.
+export type Term = { frequency: number; radius: number; phase: number };
+export const maxTerms = 16;
+export const harmonicFormats = ["lissajous", "fourier"] as const;
+export const isHarmonic = (format: string) =>
+  (harmonicFormats as readonly string[]).includes(format);
+// One member of a cyclic pursuit: its position at the domain start and its
+// constant speed.
+export type Pursuer = { x: number; y: number; speed: number };
+export const maxPursuers = 16;
+// Harmonic curves and pursuits define their own shape, without a.
+export const ownsShape = (format: string) =>
+  isHarmonic(format) || format === "pursuit";
 // How the rolling circle moves: inside or outside a fixed circle centered at
 // the origin, or along the x-axis on its upper side.
 export type Roll = "inside" | "outside" | "line";
 export type Config = {
   kind: Kind;
   curve: {
-    format: "parametric" | "cartesian" | "polar" | "roulette";
+    format:
+      | "parametric"
+      | "cartesian"
+      | "polar"
+      | "roulette"
+      | "lissajous"
+      | "fourier"
+      | "pursuit";
     x: string;
     y: string;
     r: string;
@@ -37,6 +62,25 @@ export type Config = {
       arm: number;
       phase: number;
     };
+    // x = A sin(mt + φ), y = B sin(nt), with amplitudes A, B ≥ 0 and phase φ
+    // in radians. Used only when format is "lissajous".
+    lissajous: {
+      amplitudeX: number;
+      amplitudeY: number;
+      frequencyX: number;
+      frequencyY: number;
+      phase: number;
+    };
+    // z(t) = Σ radius·exp(i(frequency·t + phase)), 1–16 rotating vectors
+    // chained in this order from the origin; positive frequencies turn
+    // counterclockwise. Used only when format is "fourier".
+    terms: Term[];
+    // 2–16 pursuers, each running straight at the next (the last at the
+    // first) at its own speed, from its position at the domain start; t is
+    // time. The chase stops for everyone when any pursuer comes within
+    // capture of its target. The first pursuer's path is the curve that
+    // constructions use. Used only when format is "pursuit".
+    pursuit: { pursuers: Pursuer[]; capture: number };
   };
   source: {
     kind: "point" | "parallel";
@@ -79,6 +123,23 @@ export type Config = {
     curve: { x: string; y: string; min: number; max: number; start: number };
     point: Vec;
   };
+  // A family of lines or circles for the envelope kind. Lines pass through
+  // the curve's point at t, turned to the direction angle `angle` (radians,
+  // counterclockwise from +x), or are chords to the second endpoint x(t),
+  // y(t); chords are segments unless `extend` draws them as full lines.
+  // Circles are centered on the curve's point with radius `radius`.
+  // Expressions use t and a.
+  envelope: {
+    mode: "angle" | "chord" | "circle";
+    angle: string;
+    x: string;
+    y: string;
+    extend: boolean;
+    radius: string;
+  };
+  // Inversion in the circle of radius `radius` about `center`, applied to the
+  // curve named by `of`. Used only by the inversion kind.
+  inversion: { center: Vec; radius: number; of: InversionSource };
   samples: number;
   lines: number;
 };
@@ -90,9 +151,17 @@ export type Ray = {
   target: Vec | null;
   virtual: boolean;
   tir: boolean;
+  // A chord's far endpoint; absent for other lines.
+  end?: Vec;
 };
 
-export type OffsetPath = { distance: number; points: (Vec | null)[] };
+// An offset stack member at its distance, or a circle envelope's branch to
+// the left or right of travel.
+export type OffsetPath = {
+  distance: number;
+  points: (Vec | null)[];
+  branch?: "left" | "right";
+};
 export type Circle = { sampleIndex: number; center: Vec; radius: number };
 // The rolling circle at a representative sample, with its contact point and
 // its tracing point: on the base curve for a roulette, on the derived curve
@@ -123,6 +192,46 @@ export type RouletteResult = {
   positions: Rolling[];
 };
 
+// The circle of inversion and, for a derived curve, that curve indexed like
+// base. The image is open before each sample index in breaks, where it runs
+// off to infinity between two finite samples.
+export type InversionResult = {
+  center: Vec;
+  radius: number;
+  source?: (Vec | null)[];
+  breaks: number[];
+};
+
+// A harmonic curve's rotating geometry at a representative sample: the
+// centers of a Fourier curve's circles, chained from the origin, or the
+// points turning on a Lissajous figure's x and y guides.
+export type Epicycles = { sampleIndex: number; joints: Vec[]; point: Vec };
+// Period is the smallest t-span after which the curve repeats, 0 when it
+// never does exactly (or is a single point, when constant). whole marks
+// whole-number frequencies. guides are a Lissajous figure's fixed circles;
+// radii are a Fourier curve's term radii, in the order of joints.
+export type HarmonicResult = {
+  period: number;
+  whole: boolean;
+  constant: boolean;
+  guides: Circle[];
+  radii: number[];
+  positions: Epicycles[];
+};
+
+// The pursuers' positions, in chase order, at a representative sample.
+export type Polygon = { sampleIndex: number; points: Vec[] };
+// Every pursuer's path, indexed like base. The chase is known from the domain
+// start to end: the domain end, the capture, or, when exhausted, where the
+// integration step budget ran out. Pursuer indices count from 0.
+export type PursuitResult = {
+  paths: (Vec | null)[][];
+  polygons: Polygon[];
+  capture: { time: number; pursuer: number; target: number } | null;
+  exhausted: boolean;
+  end: number;
+};
+
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
 export type Result = {
@@ -131,7 +240,8 @@ export type Result = {
   derived: (Vec | null)[];
   virtual: boolean[];
   rays: Ray[];
-  // Offset stack members, indexed like base; empty for other results.
+  // Offset stack members or circle envelope branches, indexed like base;
+  // empty for other results.
   family: OffsetPath[];
   circles: Circle[];
   // Rolling-circle positions at representative samples; empty for other
@@ -139,8 +249,16 @@ export type Result = {
   rolling: Rolling[];
   // Present only for a roulette curve.
   roulette?: RouletteResult;
+  // Present only for a Lissajous or Fourier curve.
+  harmonic?: HarmonicResult;
+  // Present only for a cyclic pursuit.
+  pursuit?: PursuitResult;
   // Present only for a rolling curve.
   moving?: MovingResult;
+  // The chords' far endpoints, indexed like base; present only for chords.
+  second?: (Vec | null)[];
+  // Present only for an inversion.
+  inversion?: InversionResult;
   warnings: string[];
   invalid: number;
 };

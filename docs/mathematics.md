@@ -20,6 +20,33 @@ When `R/r = p/q` in lowest terms, the trace repeats exactly after the rolling ce
 
 The traced curve is the base curve: every construction applies to it with the usual numerical derivatives. Radii and `d` are bounded by 100000 and `|φ|` by 1000000. Rolling positions (rolling center and radius, contact point, tracing point) are reported at the representative samples, including samples where the construction itself is undefined, such as the cusps of a rim trace.
 
+## Harmonic curves
+
+Two generators build curves from uniform rotations. Like a roulette, they replace the expressions, and the result is an ordinary base curve that every construction applies to. `t` is time: a vector of frequency `k` turns through `kt` radians.
+
+- **Lissajous:** `x = A sin(mt + φ)`, `y = B sin(nt)`, with amplitudes `0 ≤ A, B ≤ 100000`, real frequencies `|m|, |n| ≤ 1000`, and phase `φ` in radians. With `m = n`, `φ = π/2` gives an ellipse and `φ = 0` a segment of slope `B/A`. `m : n = 1 : 2` with `φ = π/2` gives the lemniscate of Gerono `y² = 4x²(1 − x²)` (for `A = B = 1`), `2 : 1` a parabolic arc `x = 1 − 2y²`, and `3 : 1` with `φ = 0` the cubic `x = 3y − 4y³`.
+- **Fourier:** `z(t) = Σ r_j e^{i(k_j t + φ_j)}` for 1–16 terms, with radius `0 ≤ r_j ≤ 100000`, frequency `|k_j| ≤ 1000` (positive turns counterclockwise), and phase `φ_j` in radians, the vector's angle from +x at `t = 0`. One term is a circle of radius `r` about the origin, clockwise for negative `k`. A Lissajous figure is the four-term Fourier curve with terms `(m, A/2, φ − π/2)`, `(−m, A/2, π/2 − φ)`, `(n, B/2, 0)`, and `(−n, B/2, π)`.
+
+Each coordinate of a Lissajous figure is the projection of a point turning uniformly on a circle of its amplitude. The x guide is centered at `(0, B + g + A)` and the y guide at `(A + g + B, 0)`, with `g = max(A, B)/4`. Their points turn counterclockwise, at angle `mt + φ − π/2` (from straight down) and `nt` (from the right), so they project vertically and horizontally onto the traced point. A Fourier curve's vectors are chained from the origin in the order given: term `j`'s circle is centered where the previous vectors end, and the last vector ends at the traced point. The engine reports this geometry at every representative sample, including where the construction is undefined.
+
+A rotation of frequency `k` repeats after `2π/|k|`, so a harmonic curve repeats after `T = 2π/ω`, where `ω` is the largest number of which every frequency that moves the curve is a whole multiple. Terms with zero radius or amplitude do not move it, whatever their frequency. A zero-frequency term is a fixed translation. When those frequencies are whole numbers, `ω` is their greatest common divisor, and the curve is closed over any `t`-span of `2π`. Otherwise each frequency's ratio to the first is found with continued fractions, as for roulettes (relative tolerance `10⁻¹²`, denominators up to 1000), and `ω` is the first frequency over the least common multiple of those denominators, which must also be at most 1000. The ratios of frequencies such as `√2` and `3√2` are whole, so they close. Frequencies that are merely close to such ratios, periods longer than the widest domain (`100000`), and incommensurate ratios such as `1 : √2` are reported as never closing and are not forced closed. When nothing turns, the curve is a single point. The period assumes distinct frequencies: equal-frequency terms that cancel exactly are still counted.
+
+The generators are evaluated in closed form. Constructions use the engine's usual five-point numerical derivatives, which the tests check against the analytic `z′ = Σ i k r e^{iθ}` and `z″ = −Σ k² r e^{iθ}`. High frequencies need proportionally more samples.
+
+## Cyclic pursuit
+
+`n` pursuers (`2 ≤ n ≤ 16`) start at points `p_i` when `t` is at the domain start, and each runs straight at the next, the last at the first, at its own constant speed `0 ≤ v_i ≤ 100000`:
+
+`p_i′ = v_i (p_{i+1} − p_i) / |p_{i+1} − p_i|`.
+
+`t` is time. The first pursuer's path is the base curve that constructions use; every path is returned separately, indexed like the base samples, with the connecting polygon of all positions at each representative sample.
+
+The direction is undefined when a pursuer reaches its target, so the chase has an explicit collision policy: it stops, for every pursuer, the first time any pursuer comes within the capture distance `0 < ε ≤ 100000` of its own target. Later samples are gaps. Nobody merges or changes target, since either would silently change the pursuit's topology. Pursuers that are not chasing one another may pass through each other: none steers around the rest. The result reports the capture time and pair (the closest pair, then the lowest index, when several close together); a pursuer that starts within `ε` of its target ends the chase at once.
+
+For equal speeds `v` from a regular polygon of circumradius `r₀`, every pursuer moves inward at `v sin(π/n)` and turns at `v cos(π/n)/r`. The polygon stays regular as it turns and shrinks: `r(t) = r₀ − v t sin(π/n)`, `θ = θ₀ + cot(π/n) ln(r₀/r)`, so each path is the logarithmic spiral `r = r₀ exp(−tan(π/n)(θ − θ₀))`, and neighbors close to `ε` when `r = ε / (2 sin(π/n))`. The evolute of the first path, about the polygon's center `c`, is the same spiral scaled by `tan(π/n)`: `(E − c) ⊥ (P − c)` and `|E − c| = |P − c| tan(π/n)`. The tests check these, a pursuer running straight at a stationary target, two pursuers closing at the sum of their speeds, and a runner passing briefly within `ε` of a still pursuer.
+
+The chase is integrated with the Dormand–Prince 5(4) pair and adaptive steps. The local error of each step is held to `10⁻¹²` of the smallest gap at its start (plus a rounding floor of `10⁻¹⁴` times each coordinate), so the shape stays accurate as the gaps shrink and a scaled chase is the same chase in scaled time. No gap closes faster than the two speeds in it together, so each step is also at most `(g − ε)/(2 v_max)` for the smallest gap `g`: no pursuer can come within `ε` of its target inside a step, however briefly. The steps shrink geometrically as a gap approaches `ε`, and the chase stops when the remaining difference is below `10⁻¹²ε` plus the rounding floor of that pair's coordinates. Positions between accepted steps are one step of the same method from the step's start, so paths are smooth within steps and continuous across them, and constructions differentiate them numerically as usual. A chase is limited to 40000 attempted steps; when that runs out, the result is marked exhausted, the time reached is reported, and later samples are gaps. Tests compare tolerances `10⁻⁶`, `10⁻⁹`, and `10⁻¹²` for convergence and check that every pursuer's velocity points at its target at its speed.
+
 ## Rolling circle on a curve
 
 The rolling construction rolls a circle of radius `ρ > 0` without slipping along any regular base curve, tangent to it on a chosen side of travel, and traces a point fixed to the circle at distance `ℓ ≥ 0` from its center. With `σ = +1` for the left side and `−1` for the right, `N = JT` the left unit normal, and `s(t) = ∫[t_min,t] |r′(u)|du` the arc length from the domain start:
@@ -69,6 +96,7 @@ With `N = JT` the left unit normal, the contrapedal `K = r + ((P-r)·N) N` proje
 The orthotomic `Q = 2H - P` reflects the pole across the tangent line. It is the pedal enlarged by a factor of two about P, so it satisfies `|Q-r| = |P-r|` and `(Q-P)·T = 0`, with P and Q on opposite sides of the tangent. Reflecting a parabola's focus gives its directrix; reflecting one focus of an ellipse gives the circle of radius 2a about the other focus; a line's orthotomic is one reflected point. The orthotomic is the curve whose evolute is the catacaustic from a point source at P, but the two constructions are independent here: the pole is not the optical source. Each representative construction draws r→H and P→H as solid genuine projection segments and H→Q dashed, the reflected half. The renderer recovers H as (P+Q)/2 rather than transmitting a second point.
 
 All three share the pole, the first-derivative stability rule, and gap handling. Neither orientation nor regular reparameterization changes any of them. See [MathCurve's pedal constructions](https://mathcurve.com/courbes2d/podaire/podaire.shtml), which also covers contrapedals and orthotomics.
+
 ## Offsets
 
 `O = r + d N`, with `N = JT` the left unit normal and signed distance `d`: positive d moves to the left of travel, which is inward on a counterclockwise closed curve. Reversing orientation flips N, so the same points need the opposite sign. The request field is `distance`, separate from the involute string offset `c` (`offset`); both must be finite and within ±100000.
@@ -94,6 +122,52 @@ Reflection: `d=i−2(i·n)n` for a unit normal `n`.
 Refraction: orient `n` so `i·n≤0`, let `η=n₁/n₂`, `c=−i·n`, `k=1−η²(1−c²)`. For `k≥0`, `d=ηi+(ηc−√k)n`. For `k<0`, total internal reflection occurs: no transmitted direction or diacaustic point is emitted, and the representative reflected ray is separately flagged. Indices describe the incident and transmitted side for each ray, not an inferred global solid.
 
 The vector refraction treatment follows the geometric construction in [Physically Based Rendering, Specular Reflection and Transmission](https://pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission). No Fresnel weights, wavelength dispersion, or intensity estimates are computed.
+
+## Line and chord envelopes
+
+The envelope construction applies the same determinant to a family of lines chosen directly. Each line passes through the base point `r(t)` with a unit direction `u(t)`: either `(cos θ(t), sin θ(t))` for an entered direction angle θ, in radians counterclockwise from +x, or `(q(t) − r(t))/|q(t) − r(t)|` for a chord to a second endpoint `q(t) = (x(t), y(t))` on the same parameter. On `F(t,λ) = r(t) + λu(t)` the envelope point is `r + λu` with
+
+`λ = −det(u, r′)/det(u, u′)`.
+
+Lines are unoriented, so before differentiating, the neighbouring directions in the five-point stencil are aligned with `u(t)`: a direction turning by exactly π is the same line, and its envelope continues across. Any other jump in the direction is a genuine break; the two-step stability check rejects the samples whose stencil crosses it. Where `det(u, u′)` vanishes (below `10⁻⁹`), neighbouring lines are parallel and meet only at infinity, so there is no finite envelope point; those lines are still drawn. A chord needs distinct endpoints: where `|q − r| ≤ 10⁻⁹(1 + |r| + |q|)` it has no direction, so no line is drawn and the envelope has a gap, counted in a note. No limit is taken across the coincidence.
+
+A chord is the segment `0 ≤ λ ≤ |q − r|`. Its touching point may lie on the line beyond the segment; such points belong to the envelope of the full lines but not to the segments, and are marked virtual and dashed unless the chords are extended to full lines. Angle lines are always unbounded; the renderer draws them across the whole view, and they never frame the drawing. Chords frame by their second endpoints.
+
+For the unit circle and `q(t) = (cos mt, sin mt)`, the chords envelope the epicycloid `(m e^{it} + e^{imt})/(m + 1)`, touching each chord at `λ = |q − r|/(m + 1)`, which divides it `1 : m`. For m = 2 this is the cardioid, for m = 3 the nephroid, and for m = 4 the three-cusped epicycloid of the 200-chord reference study. For m < 0 the touching point lies behind the chord, and swapping the roles of the two endpoints puts it beyond. The endpoints coincide where `(m − 1)t` is a multiple of 2π. The creases that fold a focus `(0, 1)` onto the axis point `(t, 0)` run through that point perpendicular to `(t, −1)`, direction angle `atan t`, and envelope the parabola `x² = 4y`.
+
+Verification includes: the epicycloids for several m, including m < 0 and swapped endpoints, with their virtual flags and coincident gaps; the 200-phase reference study; tangent lines enveloping the curve itself; the folded parabola; a pencil of lines through a fixed point enveloping that point; chords of angle `t → 3t` agreeing with the direction angle `2t + π/2`; chords from an ellipse along its normals enveloping its evolute, virtual behind the chords unless extended; each touching point lying on its line with the envelope tangent there, in two arbitrary families; parallel lines; a direction flipping by π versus a genuine jump; and undefined angles and endpoints.
+
+## Circle envelopes
+
+The envelope construction's circle family centers a circle of radius `R(t) > 0` on each base point `c(t)`. With `F(t, X) = |X − c|² − R²`, the envelope solves `F = 0` and `∂F/∂t = 0`; for `q = X − c` these are
+
+`|q|² = R²` and `q·c′ = −RR′`.
+
+Where the center moves, with speed `v = |c′| > 0`, unit tangent `T = c′/v`, left normal `N = JT`, and `k = R′/v`, the solutions are
+
+`q = R(−kT ± √(1 − k²) N)`.
+
+The `+` branch lies to the left of travel and the `−` branch to the right, so reversing the parameter swaps them. Both are real while `|k| < 1`. At `|k| = 1` they merge into one point, the circle's point straight behind or ahead of its motion; values of `1 − k²` within `−10⁻⁹` of zero count as merged, since the separation `R√(1 − k²)` turns a rounding error ε in `R′` into roughly `R√ε`. Where `|k| > 1` the radius changes faster than the center moves, each circle nests strictly inside or around its neighbours, and there is no real envelope point; both branches have gaps there, counted in a note. A stationary center (`v < 10⁻⁹`) leaves the system degenerate: concentric circles have no envelope point, and a repeated circle is its own characteristic set, so neither is drawn as envelope, with a separate note. A radius that is not positive or not finite has no circle and leaves a gap with its own note. `R′` uses the base's five-point stencil and the same two-step stability check, so a kink in `R` inside a sample's stencil is a gap, not a guessed derivative. A kink or jump between samples is not detected. Only a stable first derivative of the base is needed.
+
+A constant radius gives `k = 0`, and the branches are the offsets `±R`. Circles centered on the parabola `4y = x²`, of radius `t²/4 + 1`, all pass through the focus `(0, 1)` and touch the directrix `y = −1`: the right branch is the directrix, and the left collapses to the focus, a degenerate branch that the renderer draws as a point. On the axis, `c = (t, 0)` and `R = t²/2 + 1/2` give `k = t`: the branches `(t − Rt, ±R√(1 − t²))` merge at `t = ±1` and vanish beyond. The radii from each center to its touching points are normal to the envelope, since the envelope is tangent to the circle there.
+
+Verification includes: both equations against analytic derivatives, and each branch's side of travel, for an arbitrary family and its reversal; constant radii reproducing the offset construction, with branches tangent to their circles; the focus and directrix; merging and vanishing branches and the count of nested samples; circles all through one point, merged everywhere; stationary centers; nonpositive, undefined, and zero radii; and a kink in the radius.
+
+## Circle inversion
+
+Inversion in the circle of radius `R > 0` about the center `O` maps each point `p ≠ O` to
+
+`I(p) = O + R²(p − O)/|p − O|²`,
+
+on the same ray from `O`, with `|I(p) − O| |p − O| = R²`. It is an involution, `I(I(p)) = p`, and fixes the circle pointwise; the inside and outside are exchanged. Lines not through `O` become circles through `O`, circles through `O` become lines, other circles stay circles, and lines through `O` map to themselves. Inversion is conformal but reverses orientation: a counterclockwise circle not enclosing `O` inverts into a clockwise one. It is the complex map `z ↦ O + R²/conj(z − O)`, anti-holomorphic, so not a Möbius transformation, though composing two inversions gives one. `O` itself has no finite image; a sample exactly on it is a gap with its own note.
+
+The inverted curve is the base curve itself or one of its derived curves: the evolute, the pedal, contrapedal, or orthotomic with the configuration's pole, or the offset at its distance. A derived curve is evaluated from the base's expressions at any `t`, not resampled from a polyline, and needs exactly its construction's derivatives: none for the base, which may have cusps, the first for the pedal family and offsets, the second for the evolute. Where it is undefined, as the evolute at an inflection, so is the image.
+
+Where the curve passes through `O`, its image runs off to infinity along one direction and returns from another. Consecutive samples are never joined across that. Each sample interval is bisected at least once, then further wherever a piece subtends more than 0.25 radians at `O`, until every piece stays well away from it. The image is left open (a break before the later sample, with a note) where the curve meets `O` or becomes undefined inside the interval, or where it comes closer to `O` than half the nearer sample's distance: its image would reach more than twice as far out as either sample's, and a chord would cut that excursion short. A piece that cannot be resolved down to floating-point resolution crosses `O` or infinity. Inside the circle it is left open, since the curve crosses `O`; outside, the curve runs off to infinity, and its image passes continuously through `O` and is joined. Each interval may evaluate the curve at most 512 times; an interval that needs more is left open rather than joined unchecked. A close pass is thus found even when no sample lies near `O`; more samples resolve it where the image is merely steep. An excursion narrower than half a sample interval can still be missed.
+
+The hyperbola `x² − y² = 1`, inverted about its center in the circle of radius `R`, is Bernoulli's lemniscate `(x² + y²)² = R⁴(x² − y²)`: the hyperbola's four ends at infinity become the lemniscate's node at `O`. The pedal of a curve about a pole, inverted about that pole in the unit circle, is the curve's polar reciprocal; for the ellipse `(a cos t, b sin t)` about its center that is the ellipse `a²x² + b²y² = 1`.
+
+Verification includes: the identities above, including the involution and the fixed circle; lines to circles and circles to lines, with the circle through `O` left open once; orientation reversal by signed area; near passes between samples at several distances, a narrow spike to `O`, an undefined stretch between samples, and an exact sample on `O`; the hyperbola's lemniscate, joined through `O`; a hypocycloid inverted through its cusps; every derived curve matching its construction computed alone, including its derivative requirements on a C¹ curve; the pedal's polar reciprocal; breaks following the inverted curve rather than the base; and bounded work on a curve oscillating ever faster about `O`.
 
 ## Numerical policy
 

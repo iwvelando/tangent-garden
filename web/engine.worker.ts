@@ -104,7 +104,17 @@ self.onmessage = async ({
       config.nTransmitted,
       config.samples,
       config.lines,
-      ...(usesPole(config.kind) ? [config.pole.x, config.pole.y] : []),
+      ...(usesPole(config.kind) ||
+      (config.kind === "inversion" && usesPole(config.inversion.of))
+        ? [config.pole.x, config.pole.y]
+        : []),
+      ...(config.kind === "inversion"
+        ? [
+            config.inversion.center.x,
+            config.inversion.center.y,
+            config.inversion.radius,
+          ]
+        : []),
       ...(stacked
         ? [config.stack.from, config.stack.to, config.stack.count]
         : []),
@@ -127,6 +137,26 @@ self.onmessage = async ({
             ...(config.curve.roulette.roll === "line"
               ? []
               : [config.curve.roulette.fixedRadius]),
+          ]
+        : []),
+      ...(config.curve.format === "lissajous"
+        ? Object.values(config.curve.lissajous)
+        : []),
+      ...(config.curve.format === "fourier"
+        ? config.curve.terms.flatMap((term) => [
+            term.frequency,
+            term.radius,
+            term.phase,
+          ])
+        : []),
+      ...(config.curve.format === "pursuit"
+        ? [
+            config.curve.pursuit.capture,
+            ...config.curve.pursuit.pursuers.flatMap((p) => [
+              p.x,
+              p.y,
+              p.speed,
+            ]),
           ]
         : []),
       ...(config.source.kind === "point" &&

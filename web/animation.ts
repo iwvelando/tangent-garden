@@ -1,7 +1,18 @@
-import { usesPole, type Config, type Frame, type Result } from "./types";
+import {
+  ownsShape,
+  usesPole,
+  type Config,
+  type Frame,
+  type Result,
+} from "./types";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 export type Viewport = { cx: number; cy: number; scale: number; span: number };
-export type Target =
+// A Fourier term's frequency, radius, or phase, numbered from 1.
+export type TermTarget = `term${number}${"Frequency" | "Radius" | "Phase"}`;
+// A pursuer's starting x, y, or speed, numbered from 1.
+export type PursuerTarget = `pursuer${number}${"X" | "Y" | "Speed"}`;
+export type Target = FixedTarget | TermTarget | PursuerTarget;
+type FixedTarget =
   | "a"
   | "min"
   | "max"
@@ -9,6 +20,9 @@ export type Target =
   | "sourceY"
   | "poleX"
   | "poleY"
+  | "inversionX"
+  | "inversionY"
+  | "inversionRadius"
   | "sourceRadius"
   | "sourceTheta"
   | "angle"
@@ -29,6 +43,12 @@ export type Target =
   | "rollingPointX"
   | "rollingPointY"
   | "rollingStart"
+  | "lissajousA"
+  | "lissajousB"
+  | "lissajousM"
+  | "lissajousN"
+  | "lissajousPhase"
+  | "pursuitCapture"
   | "samples"
   | "lines"
   | "rayLength";
@@ -43,7 +63,7 @@ export type AnimationView = {
   progress: number;
   mode: "reveal" | "parameters";
 };
-export const targetLabels: Record<Target, string> = {
+const targetLabels: Record<FixedTarget, string> = {
   a: "Shape parameter a",
   min: "Domain start",
   max: "Domain end",
@@ -51,6 +71,9 @@ export const targetLabels: Record<Target, string> = {
   sourceY: "Source y",
   poleX: "Pole x",
   poleY: "Pole y",
+  inversionX: "Inversion center x",
+  inversionY: "Inversion center y",
+  inversionRadius: "Inversion radius R",
   sourceRadius: "Source radius r",
   sourceTheta: "Source theta θ (radians)",
   angle: "Travel direction (degrees)",
@@ -71,10 +94,59 @@ export const targetLabels: Record<Target, string> = {
   rollingPointX: "Tracing point x",
   rollingPointY: "Tracing point y",
   rollingStart: "Contact starts at t",
+  lissajousA: "Amplitude A",
+  lissajousB: "Amplitude B",
+  lissajousM: "Frequency m",
+  lissajousN: "Frequency n",
+  lissajousPhase: "Phase φ (radians)",
+  pursuitCapture: "Capture distance ε",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
 };
+const subscripts = "₀₁₂₃₄₅₆₇₈₉";
+// Term numbers as subscripts, as in the term fields' labels: r₁, φ₁₂.
+export const subscript = (n: number) =>
+  [...String(n)].map((d) => subscripts[+d]).join("");
+export const termLabels = {
+  Frequency: (n: number) => `Frequency k${subscript(n)}`,
+  Radius: (n: number) => `Radius r${subscript(n)}`,
+  Phase: (n: number) => `Phase φ${subscript(n)}`,
+};
+function termTarget(target: Target) {
+  const match = /^term(\d+)(Frequency|Radius|Phase)$/.exec(target);
+  return match
+    ? {
+        index: +match[1] - 1,
+        field: match[2] as keyof typeof termLabels,
+        key: match[2].toLowerCase() as "frequency" | "radius" | "phase",
+      }
+    : null;
+}
+export const pursuerLabels = {
+  X: (n: number) => `Start x${subscript(n)}`,
+  Y: (n: number) => `Start y${subscript(n)}`,
+  Speed: (n: number) => `Speed v${subscript(n)}`,
+};
+function pursuerTarget(target: Target) {
+  const match = /^pursuer(\d+)(X|Y|Speed)$/.exec(target);
+  return match
+    ? {
+        index: +match[1] - 1,
+        field: match[2] as keyof typeof pursuerLabels,
+        key: match[2].toLowerCase() as "x" | "y" | "speed",
+      }
+    : null;
+}
+export function targetLabel(target: Target) {
+  const term = termTarget(target);
+  const pursuer = pursuerTarget(target);
+  return term
+    ? termLabels[term.field](term.index + 1)
+    : pursuer
+      ? pursuerLabels[pursuer.field](pursuer.index + 1)
+      : targetLabels[target as FixedTarget];
+}
 export function availableTargets(config: Config): Target[] {
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
   if (config.kind === "involute") targets.push("offset");
@@ -85,6 +157,20 @@ export function availableTargets(config: Config): Target[] {
         : (["distance"] as Target[])),
     );
   if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
+  if (config.kind === "inversion") {
+    // The inverted curve's own parameters follow the circle's.
+    const of = config.inversion.of;
+    targets.unshift(
+      "inversionX",
+      "inversionY",
+      "inversionRadius",
+      ...((usesPole(of)
+        ? ["poleX", "poleY"]
+        : of === "offset"
+          ? ["distance"]
+          : []) as Target[]),
+    );
+  }
   if (config.kind === "rolling")
     targets.unshift(
       ...((config.rolling.shape === "curve"
@@ -114,6 +200,33 @@ export function availableTargets(config: Config): Target[] {
         : (["rollFixed"] as Target[])),
     );
   }
+  // Harmonic curves and pursuits define their own shape, without a.
+  if (ownsShape(config.curve.format)) targets.splice(targets.indexOf("a"), 1);
+  if (config.curve.format === "lissajous")
+    targets.unshift(
+      "lissajousPhase",
+      "lissajousM",
+      "lissajousN",
+      "lissajousA",
+      "lissajousB",
+    );
+  if (config.curve.format === "fourier")
+    targets.unshift(
+      ...config.curve.terms.flatMap((_, k) =>
+        (["Phase", "Radius", "Frequency"] as const).map(
+          (field) => `term${k + 1}${field}` as const,
+        ),
+      ),
+    );
+  if (config.curve.format === "pursuit")
+    targets.unshift(
+      ...config.curve.pursuit.pursuers.flatMap((_, k) =>
+        (["Speed", "X", "Y"] as const).map(
+          (field) => `pursuer${k + 1}${field}` as const,
+        ),
+      ),
+      "pursuitCapture",
+    );
   return targets;
 }
 export function targetValue(
@@ -121,6 +234,11 @@ export function targetValue(
   target: Target,
   length: number,
 ): number {
+  const term = termTarget(target);
+  if (term) return config.curve.terms[term.index]?.[term.key] ?? NaN;
+  const pursuer = pursuerTarget(target);
+  if (pursuer)
+    return config.curve.pursuit.pursuers[pursuer.index]?.[pursuer.key] ?? NaN;
   switch (target) {
     case "a":
     case "min":
@@ -134,6 +252,12 @@ export function targetValue(
       return config.pole.x;
     case "poleY":
       return config.pole.y;
+    case "inversionX":
+      return config.inversion.center.x;
+    case "inversionY":
+      return config.inversion.center.y;
+    case "inversionRadius":
+      return config.inversion.radius;
     case "sourceRadius":
       return config.source.radius ?? 0;
     case "sourceTheta":
@@ -166,10 +290,22 @@ export function targetValue(
       return config.rolling.point.y;
     case "rollingStart":
       return config.rolling.curve.start;
+    case "lissajousA":
+      return config.curve.lissajous.amplitudeX;
+    case "lissajousB":
+      return config.curve.lissajous.amplitudeY;
+    case "lissajousM":
+      return config.curve.lissajous.frequencyX;
+    case "lissajousN":
+      return config.curve.lissajous.frequencyY;
+    case "lissajousPhase":
+      return config.curve.lissajous.phase;
+    case "pursuitCapture":
+      return config.curve.pursuit.capture;
     case "rayLength":
       return length;
     default:
-      return config[target];
+      return config[target as "offset"];
   }
 }
 // Counts are whole numbers throughout playback and at both endpoints.
@@ -185,6 +321,18 @@ export function applyTracks(
     // This form returns each endpoint exactly, unlike from + (to - from) * p.
     let value = track.from * (1 - progress) + track.to * progress;
     if (integerTargets.includes(track.target)) value = Math.round(value);
+    const term = termTarget(track.target);
+    if (term) {
+      if (config.curve.terms[term.index])
+        config.curve.terms[term.index][term.key] = value;
+      continue;
+    }
+    const pursuer = pursuerTarget(track.target);
+    if (pursuer) {
+      if (config.curve.pursuit.pursuers[pursuer.index])
+        config.curve.pursuit.pursuers[pursuer.index][pursuer.key] = value;
+      continue;
+    }
     switch (track.target) {
       case "a":
       case "min":
@@ -202,6 +350,15 @@ export function applyTracks(
         break;
       case "poleY":
         config.pole.y = value;
+        break;
+      case "inversionX":
+        config.inversion.center.x = value;
+        break;
+      case "inversionY":
+        config.inversion.center.y = value;
+        break;
+      case "inversionRadius":
+        config.inversion.radius = value;
         break;
       case "sourceRadius":
         config.source.radius = value;
@@ -251,11 +408,29 @@ export function applyTracks(
       case "rollingStart":
         config.rolling.curve.start = value;
         break;
+      case "lissajousA":
+        config.curve.lissajous.amplitudeX = value;
+        break;
+      case "lissajousB":
+        config.curve.lissajous.amplitudeY = value;
+        break;
+      case "lissajousM":
+        config.curve.lissajous.frequencyX = value;
+        break;
+      case "lissajousN":
+        config.curve.lissajous.frequencyY = value;
+        break;
+      case "lissajousPhase":
+        config.curve.lissajous.phase = value;
+        break;
+      case "pursuitCapture":
+        config.curve.pursuit.capture = value;
+        break;
       case "rayLength":
         length = value;
         break;
       default:
-        config[track.target] = value;
+        config[track.target as "offset"] = value;
     }
   }
   return { config, length };
@@ -281,6 +456,21 @@ export function reveal(result: Result, progress: number): Result {
     roulette: result.roulette && {
       ...result.roulette,
       positions: result.roulette.positions.filter((s) => s.sampleIndex <= last),
+    },
+    harmonic: result.harmonic && {
+      ...result.harmonic,
+      positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
+    },
+    pursuit: result.pursuit && {
+      ...result.pursuit,
+      paths: result.pursuit.paths.map((path) => path.slice(0, last + 1)),
+      polygons: result.pursuit.polygons.filter((p) => p.sampleIndex <= last),
+    },
+    second: result.second?.slice(0, last + 1),
+    // The circle stays; breaks beyond the revealed samples are harmless.
+    inversion: result.inversion && {
+      ...result.inversion,
+      source: result.inversion.source?.slice(0, last + 1),
     },
     moving: result.moving && {
       ...result.moving,

@@ -10,6 +10,27 @@ const base: Config = {
     min: 0,
     max: 2 * Math.PI,
     roulette: { roll: "inside", fixedRadius: 5, radius: 2, arm: 3, phase: 0 },
+    lissajous: {
+      amplitudeX: 1,
+      amplitudeY: 1,
+      frequencyX: 3,
+      frequencyY: 2,
+      phase: Math.PI / 2,
+    },
+    terms: [
+      { frequency: 1, radius: 1, phase: 0 },
+      { frequency: -4, radius: 0.45, phase: 0 },
+      { frequency: 6, radius: 0.2, phase: 0 },
+    ],
+    // Seven equal-speed pursuers on the unit heptagon.
+    pursuit: {
+      pursuers: Array.from({ length: 7 }, (_, j) => ({
+        x: Math.cos((2 * Math.PI * j) / 7),
+        y: Math.sin((2 * Math.PI * j) / 7),
+        speed: 1,
+      })),
+      capture: 0.001,
+    },
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
@@ -35,6 +56,17 @@ const base: Config = {
     },
     point: { x: 0.24, y: 0 },
   },
+  // Chords from angle t to angle a·t on the unit circle; circles breathe
+  // with a lobes.
+  envelope: {
+    mode: "chord",
+    angle: "2*t+pi/2",
+    x: "cos(a*t)",
+    y: "sin(a*t)",
+    extend: false,
+    radius: "1+0.35*sin(a*t)",
+  },
+  inversion: { center: { x: 0, y: 0 }, radius: 1, of: "curve" },
   samples: 1000,
   lines: 48,
 };
@@ -277,6 +309,247 @@ export const presets: { title: string; note: string; config: Config }[] = [
       },
       samples: 2000,
       lines: 60,
+    },
+  },
+  {
+    title: "Chords & a cardioid",
+    note: "Angle t joined to angle 2t",
+    config: {
+      ...base,
+      kind: "envelope",
+      // Each chord touches the cardioid (2e^{it} + e^{2it})/3 a third of
+      // the way along. Animate a for the other multiplication tables.
+      curve: { ...base.curve, x: "cos(t)", y: "sin(t)", a: 2 },
+      samples: 2401,
+      lines: 121,
+    },
+  },
+  {
+    title: "Chords of four",
+    note: "Angle t joined to angle 4t, 200 chords",
+    config: {
+      ...base,
+      kind: "envelope",
+      // The reference study: 200 evenly spaced phases. The chords envelope
+      // the three-cusped epicycloid (4e^{it} + e^{4it})/5.
+      curve: { ...base.curve, x: "cos(t)", y: "sin(t)", a: 4 },
+      samples: 2001,
+      lines: 201,
+    },
+  },
+  {
+    title: "Folding a parabola",
+    note: "Creases folding a point onto a line",
+    config: {
+      ...base,
+      kind: "envelope",
+      // Folding the focus (0, 1) onto the axis point (t, 0) creases along
+      // the line through it perpendicular to (t, −1): direction atan(t).
+      // The creases envelope the parabola x² = 4y.
+      curve: {
+        ...base.curve,
+        format: "cartesian",
+        y: "0",
+        min: -4,
+        max: 4,
+      },
+      envelope: { ...base.envelope, mode: "angle", angle: "atan(x)" },
+      lines: 41,
+    },
+  },
+  {
+    title: "Circles through a focus",
+    note: "Centered on a parabola, touching its directrix",
+    config: {
+      ...base,
+      kind: "envelope",
+      // Each circle centered on 4y = x² passes through the focus (0, 1) and
+      // touches the directrix y = −1: the right branch is the directrix, the
+      // left collapses to the focus.
+      curve: { ...base.curve, x: "t", y: "t^2/4", min: -3, max: 3 },
+      envelope: { ...base.envelope, mode: "circle", radius: "t^2/4+1" },
+      samples: 1201,
+      lines: 25,
+    },
+  },
+  {
+    title: "Breathing circles",
+    note: "Radius 1 + 0.35 sin(at) around a circle",
+    config: {
+      ...base,
+      kind: "envelope",
+      // |R′| ≤ 0.35a stays below the center's speed 2 up to a = 40/7, so
+      // both branches are real; animate a past it to open gaps.
+      curve: { ...base.curve, x: "2*cos(t)", y: "2*sin(t)", a: 5 },
+      envelope: { ...base.envelope, mode: "circle" },
+      samples: 1801,
+      lines: 61,
+    },
+  },
+  {
+    title: "Swelling circles",
+    note: "A radius that outruns its center",
+    config: {
+      ...base,
+      kind: "envelope",
+      // Where |R′| = 1.2|cos t| exceeds the unit speed of the center, the
+      // circles nest and the envelope has gaps; the branches meet at their
+      // ends, where |R′| = 1.
+      curve: {
+        ...base.curve,
+        format: "cartesian",
+        y: "0",
+        min: -2 * Math.PI,
+        max: 2 * Math.PI,
+      },
+      envelope: { ...base.envelope, mode: "circle", radius: "1.6+1.2*sin(t)" },
+      samples: 2001,
+      lines: 41,
+    },
+  },
+  {
+    title: "Hyperbola into a lemniscate",
+    note: "Inverted about its center",
+    config: {
+      ...base,
+      kind: "inversion",
+      // Both branches of x² − y² = 1. Where the hyperbola runs off to
+      // infinity its image passes through O: Bernoulli's lemniscate, reaching
+      // R² = 4 along the x-axis.
+      curve: { ...base.curve, x: "1/cos(t)", y: "tan(t)" },
+      inversion: { ...base.inversion, radius: 2 },
+      samples: 1201,
+      lines: 48,
+    },
+  },
+  {
+    title: "Hypotrochoid, turned inside out",
+    note: "A roulette inverted about its center",
+    config: {
+      ...base,
+      kind: "inversion",
+      // The loops nearest the center become the outermost petals.
+      curve: {
+        ...base.curve,
+        format: "roulette",
+        min: 0,
+        max: 4 * Math.PI,
+        roulette: { ...base.curve.roulette, arm: 2.2 },
+      },
+      inversion: { ...base.inversion, radius: 2 },
+      samples: 2000,
+      lines: 60,
+    },
+  },
+  {
+    title: "An ellipse's pedal, inverted",
+    note: "The polar reciprocal, an ellipse",
+    config: {
+      ...base,
+      kind: "inversion",
+      // Inverting a pedal about its pole in the unit circle gives the polar
+      // reciprocal of the curve: here the ellipse 4x² + 1.21y² = 1.
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      inversion: { ...base.inversion, of: "pedal" },
+      lines: 48,
+    },
+  },
+  {
+    title: "Lissajous 3 : 2 & its pedal",
+    note: "Two perpendicular oscillations",
+    config: {
+      ...base,
+      kind: "pedal",
+      // x = sin(3t + π/2), y = sin(2t) closes after t spans 2π; its pedal
+      // about the center is a four-petalled flower.
+      curve: { ...base.curve, format: "lissajous" },
+      samples: 2000,
+      lines: 48,
+    },
+  },
+  {
+    title: "Epicycles, turned inside out",
+    note: "Three rotating circles, inverted",
+    config: {
+      ...base,
+      kind: "inversion",
+      // e^{it} + 0.45e^{−4it} + 0.2e^{6it}: every frequency is 1 more than a
+      // multiple of 5, so the curve has five-fold symmetry. Its inverse in
+      // the unit circle turns the star's arms into petals.
+      curve: { ...base.curve, format: "fourier" },
+      samples: 2000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Lissajous √2 : 1, never closing",
+    note: "An incommensurate ratio and its pedal",
+    config: {
+      ...base,
+      kind: "pedal",
+      // The frequencies have no whole-number ratio, so the figure fills its
+      // box without ever repeating, and so does its pedal about the center.
+      curve: {
+        ...base.curve,
+        format: "lissajous",
+        min: 0,
+        max: 12 * Math.PI,
+        lissajous: {
+          ...base.curve.lissajous,
+          frequencyX: Math.SQRT2,
+          frequencyY: 1,
+          phase: 0,
+        },
+      },
+      // The pedal turns fast where the figure turns at the edges of its box.
+      samples: 12000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Seven pursuers & an evolute",
+    note: "Cyclic pursuit from a heptagon",
+    config: {
+      ...base,
+      kind: "evolute",
+      // Each pursuer runs at unit speed straight at the next, so the heptagon
+      // turns and shrinks, r = 1 − t sin(π/7), and every path is the
+      // logarithmic spiral r = exp(−tan(π/7)θ). Neighbors come within the
+      // capture distance just before t = 1/sin(π/7) ≈ 2.3048. The evolute
+      // of the first path is the same spiral scaled by tan(π/7).
+      curve: { ...base.curve, format: "pursuit", min: 0, max: 2.31 },
+      samples: 4000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Four chasers at unequal speeds",
+    note: "The first capture ends the chase",
+    config: {
+      ...base,
+      kind: "pedal",
+      // From the corners of a square, the second pursuer runs a quarter
+      // faster and the fourth a fifth slower. The square skews as it turns,
+      // and the third catches the slow fourth at t ≈ 1.96, while the others
+      // are still apart: the chase stops there. The pedal is of the first
+      // pursuer's path about the square's center.
+      curve: {
+        ...base.curve,
+        format: "pursuit",
+        min: 0,
+        max: 2,
+        pursuit: {
+          pursuers: [
+            { x: 1, y: 1, speed: 1 },
+            { x: -1, y: 1, speed: 1.25 },
+            { x: -1, y: -1, speed: 1 },
+            { x: 1, y: -1, speed: 0.8 },
+          ],
+          capture: 0.01,
+        },
+      },
+      samples: 4000,
+      lines: 36,
     },
   },
 ];

@@ -231,6 +231,116 @@ const studies: {
     ],
   },
   {
+    preset: "Hyperbola into a lemniscate",
+    cases: [
+      {
+        name: "Inversion center x",
+        text: "-phi/10",
+        value: -phi / 10,
+        path: ["inversion", "center", "x"],
+      },
+      {
+        name: "Inversion center y",
+        text: "e/10",
+        value: Math.E / 10,
+        path: ["inversion", "center", "y"],
+      },
+      {
+        name: "Inversion radius R",
+        text: "sqrt(phi)",
+        value: Math.sqrt(phi),
+        path: ["inversion", "radius"],
+      },
+    ],
+  },
+  {
+    preset: "Lissajous 3 : 2 & its pedal",
+    cases: [
+      {
+        name: "Amplitude A",
+        text: "phi",
+        value: phi,
+        path: ["curve", "lissajous", "amplitudeX"],
+      },
+      {
+        name: "Amplitude B",
+        text: "e/2",
+        value: Math.E / 2,
+        path: ["curve", "lissajous", "amplitudeY"],
+      },
+      {
+        name: "Frequency m",
+        text: "sqrt(2)",
+        value: Math.SQRT2,
+        path: ["curve", "lissajous", "frequencyX"],
+      },
+      {
+        name: "Frequency n",
+        text: "-pi",
+        value: -Math.PI,
+        path: ["curve", "lissajous", "frequencyY"],
+      },
+      {
+        name: "Phase φ (radians)",
+        text: "pi/3",
+        value: Math.PI / 3,
+        path: ["curve", "lissajous", "phase"],
+      },
+    ],
+  },
+  {
+    preset: "Epicycles, turned inside out",
+    cases: [
+      {
+        name: "Frequency k₁",
+        text: "phi",
+        value: phi,
+        path: ["curve", "terms", "0", "frequency"],
+      },
+      {
+        name: "Radius r₂",
+        text: "1/e",
+        value: 1 / Math.E,
+        path: ["curve", "terms", "1", "radius"],
+      },
+      {
+        name: "Phase φ₃",
+        text: "-pi/4",
+        value: -Math.PI / 4,
+        path: ["curve", "terms", "2", "phase"],
+      },
+    ],
+  },
+  {
+    preset: "Four chasers at unequal speeds",
+    cases: [
+      {
+        name: "Start x₁",
+        text: "sqrt(2)",
+        value: Math.SQRT2,
+        path: ["curve", "pursuit", "pursuers", "0", "x"],
+      },
+      {
+        name: "Start y₃",
+        text: "-phi",
+        value: -phi,
+        path: ["curve", "pursuit", "pursuers", "2", "y"],
+      },
+      {
+        name: "Speed v₄",
+        text: "e/2",
+        value: Math.E / 2,
+        path: ["curve", "pursuit", "pursuers", "3", "speed"],
+      },
+      {
+        name: "Capture distance ε",
+        text: "pi/100",
+        value: Math.PI / 100,
+        path: ["curve", "pursuit", "capture"],
+      },
+    ],
+  },
+  {
     preset: "Unwinding a circle",
     cases: [
       {

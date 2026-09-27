@@ -26,8 +26,13 @@ type Request struct {
 	Stack        Stack   `json:"stack"`
 	Circles      bool    `json:"circles"`
 	Rolling      Roller  `json:"rolling"`
-	Samples      int     `json:"samples"`
-	Lines        int     `json:"lines"`
+	// Envelope is the family of lines for the envelope construction.
+	Envelope EnvelopeFamily `json:"envelope"`
+	// Inversion is the circle and the curve inverted by the inversion
+	// construction.
+	Inversion Inversion `json:"inversion"`
+	Samples   int       `json:"samples"`
+	Lines     int       `json:"lines"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -37,6 +42,8 @@ type Ray struct {
 	Target      *Vec `json:"target"`
 	Virtual     bool `json:"virtual"`
 	TIR         bool `json:"tir"`
+	// End is a chord's far endpoint, present only for chords.
+	End *Vec `json:"end,omitempty"`
 }
 type Result struct {
 	Base           []*Vec    `json:"base"`
@@ -51,14 +58,23 @@ type Result struct {
 	SourcePosition *Vec      `json:"sourcePosition,omitempty"`
 	// Roulette is present only for a roulette curve.
 	Roulette *RouletteResult `json:"roulette,omitempty"`
+	// Harmonic is present only for a Lissajous or Fourier curve.
+	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
+	// Pursuit is present only for a cyclic pursuit.
+	Pursuit *PursuitResult `json:"pursuit,omitempty"`
 	// Moving is present only for a rolling curve.
 	Moving *MovingResult `json:"moving,omitempty"`
+	// Second holds the chords' far endpoints, indexed like Base, present
+	// only for chords.
+	Second []*Vec `json:"second,omitempty"`
+	// Inversion is present only for an inversion.
+	Inversion *InversionResult `json:"inversion,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
 	out := Result{Rays: []Ray{}, Family: []Path{}, Circles: []Circle{}, Rolling: []Rolling{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
-	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && q.Kind != "rolling" && !usesPole(q.Kind) {
+	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && q.Kind != "rolling" && q.Kind != "envelope" && q.Kind != "inversion" && !usesPole(q.Kind) {
 		return out, fmt.Errorf("unknown construction")
 	}
 	if usesPole(q.Kind) && !q.Pole.Valid() {
@@ -76,6 +92,16 @@ func Compute(q Request) (Result, error) {
 	if q.Kind == "rolling" {
 		if err := q.Rolling.validate(); err != nil {
 			return out, err
+		}
+	}
+	var inv *inverter
+	if q.Kind == "inversion" {
+		if err := q.Inversion.validate(q.Pole); err != nil {
+			return out, err
+		}
+		out.Inversion = &InversionResult{Center: q.Inversion.Center, Radius: q.Inversion.Radius, Breaks: []int{}}
+		if q.Inversion.Of != "curve" {
+			out.Inversion.Source = make([]*Vec, q.Samples)
 		}
 	}
 	stacked := q.Kind == "offset" && q.Stack.Enabled
@@ -107,10 +133,27 @@ func Compute(q Request) (Result, error) {
 	if err != nil {
 		return out, err
 	}
+	if out.Inversion != nil {
+		inv = &inverter{Inversion: q.Inversion, f: f, lo: q.Curve.Min, hi: q.Curve.Max, pole: q.Pole, distance: q.Distance}
+	}
 	var mv *mover
 	if q.Kind == "rolling" && q.Rolling.curve() {
 		if mv, out.Moving, err = newMover(q.Rolling, q.Curve.A, q.Samples); err != nil {
 			return out, err
+		}
+	}
+	var family *lines
+	var circles *rings
+	if q.Kind == "envelope" && q.Envelope.Mode == "circle" {
+		if circles, err = newRings(q.Envelope, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
+			return out, err
+		}
+	} else if q.Kind == "envelope" {
+		if family, err = newLines(q.Envelope, f, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
+			return out, err
+		}
+		if family.end != nil {
+			out.Second = make([]*Vec, q.Samples)
 		}
 	}
 	var roll *Roulette
@@ -123,13 +166,31 @@ func Compute(q Request) (Result, error) {
 			out.Roulette.FixedRadius = g.FixedRadius
 		}
 	}
+	var epicycles func(float64) Epicycles
+	if q.Curve.Format == "lissajous" || q.Curve.Format == "fourier" {
+		out.Harmonic, epicycles = harmonicResult(q.Curve)
+	}
 	lo, hi := q.Curve.Min, q.Curve.Max
+	var chaser *chase
+	if q.Curve.Format == "pursuit" {
+		chaser = newChase(q.Curve.Pursuit, lo, hi, chaseTolerance)
+		out.Pursuit = newPursuitResult(chaser, q.Samples)
+		if chaser.exhausted {
+			out.Warnings = append(out.Warnings, fmt.Sprintf("The chase ran out of integration steps at t = %.6g; later samples are left empty.", chaser.end))
+		}
+	}
 	step := (hi - lo) / float64(q.Samples-1)
 	out.Base = make([]*Vec, q.Samples)
-	if stacked {
-		// A stack replaces the single derived curve with one path per distance.
+	// A stack or a circle family's two branches replace the single derived
+	// curve with several paths.
+	paths := stacked || circles != nil
+	if paths {
 		out.Derived, out.Virtual = []*Vec{}, []bool{}
+	}
+	if stacked {
 		out.Family = q.Stack.paths(q.Samples)
+	} else if circles != nil {
+		out.Family = circles.paths(q.Samples)
 	} else {
 		out.Derived = make([]*Vec, q.Samples)
 		out.Virtual = make([]bool, q.Samples)
@@ -177,13 +238,23 @@ func Compute(q Request) (Result, error) {
 	// Why a rolling curve stopped, other than the base's own arc length.
 	movingStop := placedOK
 	tirCount := 0
+	coincident := 0
+	stationary, nested, unsized := 0, 0, 0
+	// The last sample with an image, where the inverted curve was at src.
+	onCenter, last, lastT, lastSrc := 0, -2, 0.0, Vec{}
 	nextLine := 0
 	for j := 0; j < q.Samples; j++ {
 		t := lo + float64(j)*step
 		p := f(t)
 		dp, ddp := derivatives(f, t, lo, hi)
 		out.Base[j] = point(p)
+		if out.Second != nil {
+			out.Second[j] = point(family.end(t))
+		}
 		line := nextLine < q.Lines && j == int(math.Round(float64(nextLine)*float64(q.Samples-1)/float64(q.Lines-1)))
+		if chaser != nil {
+			out.Pursuit.sample(chaser, j, t, line)
+		}
 		if line {
 			nextLine++
 			// The rolling circle is shown wherever the trace itself is finite,
@@ -193,11 +264,17 @@ func Compute(q Request) (Result, error) {
 				s.SampleIndex = j
 				out.Roulette.Positions = append(out.Roulette.Positions, s)
 			}
+			if epicycles != nil && p.Valid() {
+				s := epicycles(t)
+				s.SampleIndex = j
+				out.Harmonic.Positions = append(out.Harmonic.Positions, s)
+			}
 		}
-		stableSample := false
-		if firstOrder(q.Kind) {
+		stableSample := true
+		switch derivativeOrder(q) {
+		case 1:
 			stableSample = stableTangent(f, t, lo, hi, dp)
-		} else {
+		case 2:
 			stableSample = stable(f, t, lo, hi, dp, ddp)
 		}
 		if !p.Valid() || !stableSample {
@@ -225,6 +302,8 @@ func Compute(q Request) (Result, error) {
 		var target *Vec
 		var rolled *Rolling
 		var placed *Placement
+		var member familyLine
+		var circle ring
 		origin := p
 		var dir Vec
 		virtual, tir := false, false
@@ -264,6 +343,43 @@ func Compute(q Request) (Result, error) {
 					rolled = &s
 				}
 			}
+		case "envelope":
+			if circles != nil {
+				circle = circles.at(t, p, dp)
+				out.Family[0].Points[j], out.Family[1].Points[j] = circle.left, circle.right
+				target = circle.left
+				switch {
+				case !circle.ok:
+					unsized++
+				case circle.stationary:
+					stationary++
+				case circle.nested:
+					nested++
+				}
+				break
+			}
+			member = family.at(t, p, dp)
+			target, virtual = member.target, member.virtual
+			if member.coincident {
+				coincident++
+			}
+		case "inversion":
+			src := inv.at(p, dp, ddp)
+			if out.Inversion.Source != nil {
+				out.Inversion.Source[j] = src
+			}
+			if src == nil {
+				break
+			}
+			origin = *src
+			if target = Invert(*src, inv.Center, inv.Radius); target == nil {
+				onCenter++
+				break
+			}
+			if last == j-1 && inv.open(lastT, t, lastSrc, *src) {
+				out.Inversion.Breaks = append(out.Inversion.Breaks, j)
+			}
+			last, lastT, lastSrc = j, t, *src
 		case "evolute":
 			target = Evolute(p, dp, ddp)
 		case "involute":
@@ -286,14 +402,31 @@ func Compute(q Request) (Result, error) {
 				virtual = s < 0
 			}
 		}
-		if !stacked {
+		if !paths {
 			out.Derived[j] = target
 			out.Virtual[j] = virtual
 		}
 		if target == nil {
 			out.Invalid++
 		}
-		if line {
+		if line && inv != nil {
+			// Each correspondence segment joins a point to its image.
+			if target != nil {
+				out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: origin, Target: target})
+			}
+		} else if line && circle.ok {
+			// Every circle is drawn, touching its envelope or not, with its
+			// radii to the touching points.
+			out.Circles = append(out.Circles, Circle{SampleIndex: j, Center: p, Radius: circle.radius})
+			for _, e := range []*Vec{circle.left, circle.right} {
+				if e != nil {
+					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Target: e})
+				}
+			}
+		} else if line && member.ok {
+			// Every defined line is drawn, touching its envelope or not.
+			out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: member.direction, Target: target, Virtual: virtual, End: member.end})
+		} else if line {
 			if p.Valid() && dp.Valid() && dp.Norm() > 1e-9 {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})
@@ -314,6 +447,28 @@ func Compute(q Request) (Result, error) {
 	}
 	if out.Invalid > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("%d samples have no finite construction (singularity, parallel rays, or invalid domain).", out.Invalid))
+	}
+	if coincident > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the chord's endpoints coincide, so it has no direction; they are left as gaps.", coincident))
+	}
+	if unsized > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius is not positive (or undefined), so there is no circle; they are left as gaps.", unsized))
+	}
+	if stationary > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the center is stationary, so neighbouring circles are concentric or the same; they have no envelope point.", stationary))
+	}
+	if nested > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius changes faster than the center moves (|R′| > |c′|): each circle nests inside its neighbours, with no real envelope point.", nested))
+	}
+	if onCenter > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the inverted curve lies exactly on the center of inversion, whose image is at infinity; they are left as gaps.", onCenter))
+	}
+	if n := len(breaksOf(out)); n > 0 {
+		places := "places"
+		if n == 1 {
+			places = "place"
+		}
+		out.Warnings = append(out.Warnings, fmt.Sprintf("In %d %s the inverted curve passes through or close to the center between samples, where its image runs off toward infinity, or is undefined between them: the image is left open there, not joined across. More samples resolve a close pass.", n, places))
 	}
 	if tirCount > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("Total internal reflection at %d samples; reflected rays are shown in amber.", tirCount))
@@ -337,8 +492,21 @@ func Compute(q Request) (Result, error) {
 	return out, nil
 }
 
-// firstOrder reports whether a construction needs only a stable tangent, so an
-// ill-conditioned second derivative must not turn its samples into gaps.
-func firstOrder(kind string) bool {
-	return usesPole(kind) || kind == "offset" || kind == "rolling"
+func breaksOf(r Result) []int {
+	if r.Inversion == nil {
+		return nil
+	}
+	return r.Inversion.Breaks
+}
+
+// derivativeOrder is the number of stable derivatives a construction needs,
+// so an ill-conditioned higher derivative must not turn its samples into gaps.
+func derivativeOrder(q Request) int {
+	switch {
+	case q.Kind == "inversion":
+		return q.Inversion.order()
+	case usesPole(q.Kind) || q.Kind == "offset" || q.Kind == "rolling" || q.Kind == "envelope":
+		return 1
+	}
+	return 2
 }

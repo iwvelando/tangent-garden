@@ -5,7 +5,7 @@ import {
   availableTargets,
   integerTargets,
   reveal,
-  targetLabels,
+  targetLabel,
   targetValue,
   type AnimationView,
   type CameraMode,
@@ -194,7 +194,7 @@ export function AnimationPanel({
         ? 0.75
         : target === "sourceTheta"
           ? from + Math.PI / 2
-          : target === "rollPhase" || target === "rollingPhase"
+          : target.endsWith("Phase")
             ? from + 2 * Math.PI
             : // Shrinking keeps a circle rolling inside smaller than R.
               target === "rollRadius" || target === "rollingRadius"
@@ -211,7 +211,9 @@ export function AnimationPanel({
                         ? from * 1.5
                         : target === "nIncident" || target === "nTransmitted"
                           ? 1.5
-                          : from + 1;
+                          : target === "pursuitCapture"
+                            ? from * 20
+                            : from + 1;
     return { target, from: String(from), to: String(to) };
   }
   function parameterMode(next: "reveal" | "parameters") {
@@ -259,7 +261,7 @@ export function AnimationPanel({
         s.tracks
           .map(
             (t) =>
-              `${targetLabels[t.target]} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
+              `${targetLabel(t.target)} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
           )
           .join(" · "),
       );
@@ -553,7 +555,7 @@ export function AnimationPanel({
                         )
                         .map((target) => (
                           <option key={target} value={target}>
-                            {targetLabels[target]}
+                            {targetLabel(target)}
                           </option>
                         ))}
                     </select>

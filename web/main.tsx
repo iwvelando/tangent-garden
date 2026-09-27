@@ -12,10 +12,15 @@ import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { Plot, type Layers } from "./Plot";
 import {
+  isHarmonic,
+  maxTerms,
+  maxPursuers,
+  ownsShape,
   usesPole,
   type Bounds,
   type Config,
   type Frame,
+  type InversionSource,
   type Kind,
   type PoleKind,
   type Roll,
@@ -26,6 +31,9 @@ import { AnimationPanel } from "./AnimationPanel";
 import { ExportImageMenu } from "./ExportImageMenu";
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
+import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
+import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
+import { pursuerLabels, termLabels } from "./animation";
 import { useDisclosure } from "./useDisclosure";
 import { useMediaQuery } from "./useMediaQuery";
 import type { AnimationView, Viewport } from "./animation";
@@ -89,6 +97,32 @@ const descriptions: Record<
       "A circle rolls along the curve without slipping, touching it on one side. A point fixed to the circle traces a roulette. The contact is momentarily at rest, so each line from the contact to the tracing point is normal to the roulette.",
     formula: "P(t) = r + σρN + ℓ · rot(ψ − σs/ρ)(−σN)",
   },
+  envelope: {
+    title: "The envelope of turning lines",
+    description:
+      "Through each point of the curve passes a line, turned to the direction angle θ(t). Neighbouring lines cross ever closer together; the curve they all touch is their envelope.",
+    formula: "E = r + λu,  det(r′ + λu′, u) = 0",
+  },
+  inversion: {
+    title: "Inversion in a circle",
+    description:
+      "Carry each point along its ray from the center O until the product of the two distances is R². Points inside the circle go outside, the circle itself stays put, and lines and circles become lines or circles. Where the curve passes through O its image runs off to infinity; where the curve runs off to infinity its image passes through O. Inversion reverses the sense of turning.",
+    formula: "I(p) = O + R² (p − O) / |p − O|²",
+  },
+};
+// Chords share the envelope tab but explain their two endpoints.
+const chordDescription = {
+  title: "The envelope of chords",
+  description:
+    "Join each point of the curve to a second point moving with the same t. Neighbouring chords cross ever closer together; the curve they all touch is their envelope. Dashed parts lie on the chords' extensions, beyond the segments.",
+  formula: "E = r + λ(q − r),  det(r′ + λu′, u) = 0",
+};
+// Circles share the envelope tab but explain their two branches.
+const circleDescription = {
+  title: "The envelope of moving circles",
+  description:
+    "Center a circle of radius R(t) on each point of the curve. Neighbouring circles cross ever closer together, touching their envelope on either side of travel. The branches meet where the radius changes as fast as the center moves, and vanish where it changes faster: there each circle nests inside its neighbours.",
+  formula: "E = c + R(−kT ± √(1−k²) N),  k = R′/|c′|",
 };
 // A rolling curve shares the rolling tab but explains contact matching.
 const rollingCurveDescription = {
@@ -113,7 +147,17 @@ const tabs: Kind[] = [
   "pedal",
   "offset",
   "rolling",
+  "envelope",
+  "inversion",
 ];
+const inversionOptions: Record<InversionSource, string> = {
+  curve: "The curve itself",
+  evolute: "Its evolute",
+  pedal: "Its pedal",
+  contrapedal: "Its contrapedal",
+  orthotomic: "Its orthotomic",
+  offset: "Its offset",
+};
 const poleOptions: Record<PoleKind, { label: string; note: string }> = {
   pedal: {
     label: "Pedal · tangent foot",
@@ -265,12 +309,21 @@ function App({ active }: { active: boolean }) {
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
   const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
+  // Chords that are not extended have envelope points beyond the segments.
+  const chords =
+    config.kind === "envelope" &&
+    config.envelope.mode === "chord" &&
+    !config.envelope.extend;
   const info =
     config.kind === "offset" && config.stack.enabled
       ? stackDescription
       : config.kind === "rolling" && config.rolling.shape === "curve"
         ? rollingCurveDescription
-        : descriptions[config.kind];
+        : config.kind === "envelope" && config.envelope.mode === "chord"
+          ? chordDescription
+          : config.kind === "envelope" && config.envelope.mode === "circle"
+            ? circleDescription
+            : descriptions[config.kind];
   // Changes apply to the latest configuration, never to this render's copy:
   // a constant expression resolved by Go can land between a state update and
   // the next render, and a stale copy would overwrite it.
@@ -396,6 +449,239 @@ function App({ active }: { active: boolean }) {
           }}
         >
           Trace one full period
+        </button>
+      )}
+    </>
+  );
+  const harmonic = isHarmonic(config.curve.format);
+  // Like a roulette's, a harmonic curve's closure note stays while inputs
+  // that cannot change it recompute.
+  const harmonicClosure =
+    frame &&
+    frame.config.curve.format === config.curve.format &&
+    closureKey(frame.config.curve) === closureKey(config.curve)
+      ? frame.result.harmonic
+      : undefined;
+  const periodButton = harmonicClosure && harmonicClosure.period > 0 && (
+    <button
+      className="closure"
+      type="button"
+      onClick={() => {
+        const span = periodText(harmonicClosure.period).expression;
+        setPreset("custom");
+        setBounds({
+          ...bounds,
+          max: bounds.min.trim() === "0" ? span : `(${bounds.min})+${span}`,
+        });
+      }}
+    >
+      Trace one full period
+    </button>
+  );
+  const harmonicNote = (
+    <>
+      <p className="note" data-testid="closure-note">
+        {harmonicClosure
+          ? closureNote(harmonicClosure)
+          : "Checking whether the curve closes…"}
+      </p>
+      {periodButton}
+    </>
+  );
+  const lissajous = ["curve", "lissajous"];
+  const lissajousControls = (
+    <>
+      <div className="pair">
+        {scalar("Amplitude A", [...lissajous, "amplitudeX"], {
+          topic: "Lissajous amplitudes",
+          help: "Half-widths of the figure, 0–100,000: x swings between ±A and y between ±B.",
+        })}
+        {scalar("Amplitude B", [...lissajous, "amplitudeY"])}
+      </div>
+      <div className="pair">
+        {scalar("Frequency m", [...lissajous, "frequencyX"], {
+          topic: "Lissajous frequencies",
+          help: "Radians per unit t, within ±1,000. Whole numbers close after t spans 2π, other whole-number ratios eventually, and the rest never.",
+        })}
+        {scalar("Frequency n", [...lissajous, "frequencyY"])}
+      </div>
+      {scalar("Phase φ (radians)", [...lissajous, "phase"], {
+        topic: "Lissajous phase",
+        help: "Shifts x against y. With m = n, φ = π/2 draws an ellipse and φ = 0 a segment.",
+      })}
+      {harmonicNote}
+    </>
+  );
+  const terms = config.curve.terms;
+  // Adding or removing a term renumbers the fields after it, so evaluations
+  // still pending for them land first.
+  const editTerms = async (
+    change: (terms: Config["curve"]["terms"]) => Config["curve"]["terms"],
+  ) => {
+    await scalarStatus.resolved();
+    update((c) => ({ curve: { ...c.curve, terms: change(c.curve.terms) } }));
+  };
+  const fourierControls = (
+    <>
+      <p className="note">
+        Each term is a vector of radius r (0–100,000) turning at frequency k
+        radians per unit t (within ±1,000, counterclockwise when positive), from
+        angle φ radians at t = 0. The vectors are chained from the origin in
+        this order.
+      </p>
+      {terms.map((_, i) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`term-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`term-${i}`}>Term {i + 1}</span>
+            <button
+              type="button"
+              aria-label={`Remove term ${i + 1}`}
+              disabled={terms.length === 1}
+              onClick={() => editTerms((t) => t.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair trio">
+            {scalar(termLabels.Frequency(i + 1), [
+              "curve",
+              "terms",
+              String(i),
+              "frequency",
+            ])}
+            {scalar(termLabels.Radius(i + 1), [
+              "curve",
+              "terms",
+              String(i),
+              "radius",
+            ])}
+            {scalar(termLabels.Phase(i + 1), [
+              "curve",
+              "terms",
+              String(i),
+              "phase",
+            ])}
+          </div>
+        </div>
+      ))}
+      <button
+        className="closure"
+        type="button"
+        disabled={terms.length >= maxTerms}
+        onClick={() => editTerms((t) => [...t, nextTerm(t)])}
+      >
+        {terms.length >= maxTerms ? "At most 16 terms" : "Add a term"}
+      </button>
+      {harmonicNote}
+    </>
+  );
+  const pursuers = config.curve.pursuit.pursuers;
+  // Like term edits, adding or removing a pursuer renumbers the fields after
+  // it, so pending evaluations land first.
+  const editPursuers = async (
+    change: (
+      pursuers: Config["curve"]["pursuit"]["pursuers"],
+    ) => Config["curve"]["pursuit"]["pursuers"],
+  ) => {
+    await scalarStatus.resolved();
+    update((c) => ({
+      curve: {
+        ...c.curve,
+        pursuit: {
+          ...c.curve.pursuit,
+          pursuers: change(c.curve.pursuit.pursuers),
+        },
+      },
+    }));
+  };
+  const chase =
+    frame?.config.curve.format === "pursuit" ? frame.result.pursuit : undefined;
+  const captured =
+    chase?.capture && chase.capture.time > frame!.config.curve.min
+      ? chase.capture
+      : undefined;
+  const pursuitControls = (
+    <>
+      <p className="note">
+        Each pursuer starts at (x, y) (within ±100,000) when t is at the domain
+        start and runs straight at the next one, the last at the first, at its
+        own speed v (0–100,000). The first pursuer&rsquo;s path is the curve the
+        construction uses.
+      </p>
+      {pursuers.map((_, i) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`pursuer-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`pursuer-${i}`}>
+              Pursuer {i + 1}, chasing {i + 1 === pursuers.length ? 1 : i + 2}
+            </span>
+            <button
+              type="button"
+              aria-label={`Remove pursuer ${i + 1}`}
+              disabled={pursuers.length === 2}
+              onClick={() => editPursuers((p) => p.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair trio">
+            {(["X", "Y", "Speed"] as const).map((field) =>
+              scalar(pursuerLabels[field](i + 1), [
+                "curve",
+                "pursuit",
+                "pursuers",
+                String(i),
+                field.toLowerCase(),
+              ]),
+            )}
+          </div>
+        </div>
+      ))}
+      <div className="pair">
+        <button
+          className="closure"
+          type="button"
+          disabled={pursuers.length >= maxPursuers}
+          onClick={() => editPursuers((p) => [...p, nextPursuer(p)])}
+        >
+          {pursuers.length >= maxPursuers
+            ? "At most 16 pursuers"
+            : "Add a pursuer"}
+        </button>
+        <button
+          className="closure"
+          type="button"
+          onClick={() => editPursuers(regularPolygon)}
+        >
+          Space evenly on a circle
+        </button>
+      </div>
+      {scalar("Capture distance ε", ["curve", "pursuit", "capture"], {
+        topic: "capture distance",
+        help: "A pursuer’s direction is undefined on its target, so the chase stops, for everyone, the first time any pursuer comes this close to its own target (0–100,000). Nobody merges or changes target.",
+      })}
+      <p className="note" data-testid="capture-note">
+        {chase ? captureNote(chase, frame!.config.curve.min) : "Chasing…"}
+      </p>
+      {captured && (
+        <button
+          className="closure"
+          type="button"
+          onClick={() => {
+            setPreset("custom");
+            setBounds({ ...bounds, max: String(captured.time) });
+          }}
+        >
+          End the domain at the capture
         </button>
       )}
     </>
@@ -564,10 +850,23 @@ function App({ active }: { active: boolean }) {
                   <option value="cartesian">Cartesian · y = f(x)</option>
                   <option value="polar">Polar · r(t)</option>
                   <option value="roulette">Roulette · rolling circle</option>
+                  <option value="lissajous">
+                    Lissajous · A sin(mt + φ), B sin(nt)
+                  </option>
+                  <option value="fourier">Fourier · rotating circles</option>
+                  <option value="pursuit">
+                    Pursuit · each chases the next
+                  </option>
                 </select>
               </Field>
               {config.curve.format === "roulette" ? (
                 rouletteControls
+              ) : config.curve.format === "lissajous" ? (
+                lissajousControls
+              ) : config.curve.format === "fourier" ? (
+                fourierControls
+              ) : config.curve.format === "pursuit" ? (
+                pursuitControls
               ) : (
                 <>
                   {config.curve.format === "parametric" && (
@@ -609,16 +908,26 @@ function App({ active }: { active: boolean }) {
                     className="equation"
                     key={key}
                     topic={
-                      key === "min" && config.curve.format === "roulette"
-                        ? "rolling parameter t"
-                        : undefined
+                      key !== "min"
+                        ? undefined
+                        : config.curve.format === "roulette"
+                          ? "rolling parameter t"
+                          : harmonic || config.curve.format === "pursuit"
+                            ? "time parameter t"
+                            : undefined
                     }
                     help={
-                      key === "min" && config.curve.format === "roulette"
-                        ? config.curve.roulette.roll === "line"
-                          ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
-                          : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
-                        : undefined
+                      key !== "min"
+                        ? undefined
+                        : config.curve.format === "roulette"
+                          ? config.curve.roulette.roll === "line"
+                            ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
+                            : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
+                          : harmonic
+                            ? "t is time: a vector of frequency k turns through k·t radians."
+                            : config.curve.format === "pursuit"
+                              ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
+                              : undefined
                     }
                     label={
                       key === "min"
@@ -640,6 +949,7 @@ function App({ active }: { active: boolean }) {
                 ))}
               </div>
               {config.curve.format !== "roulette" &&
+                !ownsShape(config.curve.format) &&
                 scalar(
                   <>
                     Shape parameter <var>a</var>
@@ -1026,6 +1336,171 @@ function App({ active }: { active: boolean }) {
                 )}
               </section>
             )}
+            {config.kind === "envelope" && (
+              <section>
+                <div className="section-label">03 / THE FAMILY</div>
+                <Field label="Family">
+                  <select
+                    value={config.envelope.mode}
+                    onChange={(e) =>
+                      update((c) => ({
+                        envelope: {
+                          ...c.envelope,
+                          mode: e.target.value as "angle" | "chord" | "circle",
+                        },
+                      }))
+                    }
+                  >
+                    <option value="chord">Chords to a second point</option>
+                    <option value="angle">Lines turned to an angle θ(t)</option>
+                    <option value="circle">Circles of radius R(t)</option>
+                  </select>
+                </Field>
+                {config.envelope.mode === "circle" ? (
+                  <>
+                    <Field
+                      label="Circle radius R(t)"
+                      className="equation"
+                      topic="circle radius"
+                      help="Positive, in t (and a). Each circle is centered on the curve's point at t; where the radius is not positive there is no circle."
+                    >
+                      <input
+                        value={config.envelope.radius}
+                        onChange={(e) => {
+                          const radius = e.target.value;
+                          update((c) => ({
+                            envelope: { ...c.envelope, radius },
+                          }));
+                        }}
+                        spellCheck={false}
+                      />
+                    </Field>
+                    <p className="note">
+                      Each circle is drawn with its radii to the touching
+                      points. Where |R′| exceeds the curve's speed the circles
+                      nest, and the envelope has gaps; a stationary center has
+                      no envelope point.
+                    </p>
+                  </>
+                ) : config.envelope.mode === "chord" ? (
+                  <>
+                    {(["x", "y"] as const).map((key) => (
+                      <Field
+                        key={key}
+                        label={`Second point ${key}(t)`}
+                        className="equation"
+                        topic={key === "x" ? "second point" : undefined}
+                        help={
+                          key === "x"
+                            ? "The chord's other endpoint, in t (and a), over the curve's domain. With x = cos(a*t), y = sin(a*t) on the unit circle, animate a for the multiplication tables."
+                            : undefined
+                        }
+                      >
+                        <input
+                          value={config.envelope[key]}
+                          onChange={(e) => {
+                            const text = e.target.value;
+                            update((c) => ({
+                              envelope: { ...c.envelope, [key]: text },
+                            }));
+                          }}
+                          spellCheck={false}
+                        />
+                      </Field>
+                    ))}
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={config.envelope.extend}
+                        onChange={(e) => {
+                          const extend = e.target.checked;
+                          update((c) => ({
+                            envelope: { ...c.envelope, extend },
+                          }));
+                        }}
+                      />
+                      Extend chords to full lines
+                    </label>
+                    <p className="note">
+                      Where the two endpoints coincide the chord has no
+                      direction, and the envelope has a gap.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Field
+                      label="Direction angle θ(t)"
+                      className="equation"
+                      topic="direction angle"
+                      help="In radians, counterclockwise from +x, in t (and a). Each line passes through the curve's point at t. A turn by exactly pi gives the same line."
+                    >
+                      <input
+                        value={config.envelope.angle}
+                        onChange={(e) => {
+                          const angle = e.target.value;
+                          update((c) => ({
+                            envelope: { ...c.envelope, angle },
+                          }));
+                        }}
+                        spellCheck={false}
+                      />
+                    </Field>
+                    <p className="note">
+                      Lines are unbounded and drawn across the view. Parallel
+                      neighbours meet at infinity, so the envelope has gaps
+                      there.
+                    </p>
+                  </>
+                )}
+              </section>
+            )}
+            {config.kind === "inversion" && (
+              <section>
+                <div className="section-label">03 / THE INVERSION</div>
+                <Field label="Invert">
+                  <select
+                    value={config.inversion.of}
+                    onChange={(e) => {
+                      const of = e.target.value as InversionSource;
+                      update((c) => ({ inversion: { ...c.inversion, of } }));
+                    }}
+                  >
+                    {(Object.keys(inversionOptions) as InversionSource[]).map(
+                      (k) => (
+                        <option key={k} value={k}>
+                          {inversionOptions[k]}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </Field>
+                <div className="pair">
+                  {scalar("Inversion center x", ["inversion", "center", "x"])}
+                  {scalar("Inversion center y", ["inversion", "center", "y"])}
+                </div>
+                {scalar("Inversion radius R", ["inversion", "radius"], {
+                  topic: "inversion radius",
+                  help: "Positive, at most 100,000. Points at distance R from the center stay fixed; the product of a point's distance and its image's is R².",
+                })}
+                {usesPole(config.inversion.of) && (
+                  <div className="pair">
+                    {scalar("Pole x", ["pole", "x"])}
+                    {scalar("Pole y", ["pole", "y"])}
+                  </div>
+                )}
+                {config.inversion.of === "offset" &&
+                  scalar("Offset distance d", ["distance"], {
+                    topic: "offset distance",
+                    help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel.",
+                  })}
+                <p className="note">
+                  {config.inversion.of === "curve"
+                    ? "Each segment joins a point of the curve to its image, along a ray from the center."
+                    : "The derived curve is drawn faintly; each segment joins one of its points to its image, along a ray from the center."}{" "}
+                  The image is left open where it runs off to infinity.
+                </p>
+              </section>
+            )}
             {config.kind === "involute" && (
               <section>
                 {scalar("Initial string offset c", ["offset"], {
@@ -1039,7 +1514,9 @@ function App({ active }: { active: boolean }) {
                 {optical ||
                 usesPole(config.kind) ||
                 config.kind === "offset" ||
-                config.kind === "rolling"
+                config.kind === "rolling" ||
+                config.kind === "envelope" ||
+                config.kind === "inversion"
                   ? "04"
                   : "03"}{" "}
                 / THE DRAWING
@@ -1088,7 +1565,10 @@ function App({ active }: { active: boolean }) {
               <div className="layer-grid">
                 {(Object.keys(layers) as (keyof Layers)[])
                   .filter(
-                    (k) => optical || !["incident", "virtual"].includes(k),
+                    (k) =>
+                      optical ||
+                      (k === "virtual" && chords) ||
+                      !["incident", "virtual"].includes(k),
                   )
                   .map((k) => (
                     <label className="check" key={k}>

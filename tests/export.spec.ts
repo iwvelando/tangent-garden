@@ -64,6 +64,12 @@ const studies: Record<string, string> = {
   roulette: "14",
   rolling: "15",
   "rolling curve": "16",
+  chords: "18",
+  circles: "22",
+  inversion: "24",
+  lissajous: "27",
+  fourier: "28",
+  pursuit: "30",
 };
 for (const study of [
   "hold",
@@ -77,6 +83,12 @@ for (const study of [
   "roulette",
   "rolling",
   "rolling curve",
+  "chords",
+  "circles",
+  "inversion",
+  "lissajous",
+  "fourier",
+  "pursuit",
 ]) {
   const studyPreset = studies[study];
   const camera = studyPreset ? "hold" : study;

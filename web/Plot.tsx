@@ -131,26 +131,17 @@ export function Plot({
     x: W / 2 + (p.x - frame.cx) * scale + cam.x,
     y: H / 2 - (p.y - frame.cy) * scale + cam.y,
   });
-  const path = (points: (Vec | null)[], virtual?: boolean) => {
-    let s = "",
-      last: Vec | null = null;
-    points.forEach((p, i) => {
-      if (!p || (virtual !== undefined && result.virtual[i] !== virtual)) {
-        last = null;
-        return;
-      }
-      const a = xy(p);
-      if (Math.abs(a.x) > 1e6 || Math.abs(a.y) > 1e6) {
-        last = null;
-        return;
-      }
-      const gap =
-        !last || Math.hypot(a.x - last.x, a.y - last.y) > Math.max(W, H) * 0.6;
-      s += `${gap ? "M" : "L"}${a.x.toFixed(3)},${a.y.toFixed(3)} `;
-      last = a;
-    });
-    return s;
-  };
+  const path = (
+    points: (Vec | null)[],
+    virtual?: boolean,
+    breaks?: Set<number>,
+  ) =>
+    pathData(
+      points,
+      xy,
+      (i) => virtual === undefined || result.virtual[i] === virtual,
+      breaks,
+    );
   const line = (
     a: Vec,
     b: Vec,
@@ -162,6 +153,10 @@ export function Plot({
     const p = xy(a),
       q = xy(b);
     if (
+      !Number.isFinite(p.x) ||
+      !Number.isFinite(p.y) ||
+      Math.abs(p.x) > 1e7 ||
+      Math.abs(p.y) > 1e7 ||
       !Number.isFinite(q.x) ||
       !Number.isFinite(q.y) ||
       Math.abs(q.x) > 1e7 ||
@@ -183,6 +178,17 @@ export function Plot({
     );
   };
   const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
+  // Constructions whose derived points can be virtual: optical rays behind
+  // the curve, and envelope points beyond their chords.
+  const extended =
+    config.kind === "envelope" &&
+    (config.envelope.mode === "angle" || config.envelope.extend);
+  const rings = config.kind === "envelope" && config.envelope.mode === "circle";
+  const dashed = optical || (config.kind === "envelope" && !rings && !extended);
+  // The circle of inversion, the curve inverted when it is derived, and where
+  // its image is open between samples.
+  const inversion = result.inversion;
+  const breaks = new Set(inversion?.breaks);
   // A derived curve or stack member that collapses to one point, such as a
   // circle offset by its radius, is drawn as a dot rather than vanishing.
   const collapsed = (points: (Vec | null)[]) => {
@@ -197,7 +203,7 @@ export function Plot({
   const focuses = [
     collapsed(
       result.derived.map((p, i) =>
-        !optical || layers.virtual || !result.virtual[i] ? p : null,
+        !dashed || layers.virtual || !result.virtual[i] ? p : null,
       ),
     ),
     ...result.family.map((path) => collapsed(path.points)),
@@ -209,9 +215,18 @@ export function Plot({
     x1 = x0 + W / scale,
     y1 = frame.cy + (H / 2 + cam.y) / scale,
     y0 = y1 - H / scale;
+  // Unbounded lines reach past the view box, which a wider panel shows.
+  const pad = 2 * Math.max(x1 - x0, y1 - y0);
   const roulette = result.roulette;
   // Rolling circles are drawn where their traces have reached.
   const rolling = roulette?.positions.at(-1);
+  const harmonic = result.harmonic;
+  // Like rolling circles, the rotating vectors are drawn where the trace
+  // has reached.
+  const epicycles = harmonic?.positions.at(-1);
+  const pursuit = result.pursuit;
+  // The pursuers are marked where the chase has reached.
+  const chasers = pursuit?.polygons.at(-1);
   const roller = result.rolling.at(-1);
   const moving = result.moving;
   const placed = moving?.positions.at(-1);
@@ -346,6 +361,47 @@ export function Plot({
                 y: (config.pole.y + ray.target.y) / 2,
               }
             : ray.target;
+        // A point joined to its image, along a ray from the center.
+        if (inversion)
+          return (
+            layers.lines &&
+            ray.target && (
+              <g key={i} data-testid="inversion-segment">
+                {line(ray.origin, ray.target, palette.line, 0.4)}
+              </g>
+            )
+          );
+        // A circle's radius to one of its touching points.
+        if (rings)
+          return (
+            layers.lines &&
+            ray.target && (
+              <g key={i} data-testid="envelope-radius">
+                {line(ray.origin, ray.target, palette.line, 0.45)}
+              </g>
+            )
+          );
+        if (config.kind === "envelope") {
+          const ends =
+            ray.end && !extended
+              ? [ray.origin, ray.end]
+              : across(
+                  ray.origin,
+                  ray.direction,
+                  x0 - pad,
+                  x1 + pad,
+                  y0 - pad,
+                  y1 + pad,
+                );
+          return (
+            layers.lines &&
+            ends && (
+              <g key={i} data-testid="envelope-line">
+                {line(ends[0], ends[1], palette.line, 0.45)}
+              </g>
+            )
+          );
+        }
         return (
           <g key={i}>
             {optical &&
@@ -419,6 +475,98 @@ export function Plot({
           )}
         </g>
       )}
+      {layers.lines && pursuit && (
+        <g data-testid="pursuit-polygons" aria-label="Connecting polygons">
+          {pursuit.polygons.map((p) => (
+            <path
+              key={p.sampleIndex}
+              data-testid="pursuit-polygon"
+              data-sample={p.sampleIndex}
+              d={
+                // Always joined: a long edge is not a jump, as in a path.
+                `M${p.points
+                  .map((q) => `${xy(q).x.toFixed(3)},${xy(q).y.toFixed(3)}`)
+                  .join("L")}Z`
+              }
+              fill="none"
+              stroke={palette.line}
+              strokeWidth="1"
+              strokeLinejoin="round"
+              opacity=".55"
+            />
+          ))}
+        </g>
+      )}
+      {layers.lines && harmonic && (
+        <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
+          {harmonic.guides.map((g, k) => (
+            <circle
+              key={k}
+              data-testid="lissajous-guide"
+              cx={xy(g.center).x}
+              cy={xy(g.center).y}
+              r={g.radius * scale}
+              fill="none"
+              stroke={palette.line}
+              strokeWidth="1.5"
+              opacity=".85"
+            />
+          ))}
+          {epicycles && (
+            <g data-testid="epicycles" data-sample={epicycles.sampleIndex}>
+              {harmonic.radii.map(
+                (r, k) =>
+                  r > 0 && (
+                    <circle
+                      key={`c${k}`}
+                      data-testid="epicycle"
+                      cx={xy(epicycles.joints[k]).x}
+                      cy={xy(epicycles.joints[k]).y}
+                      r={r * scale}
+                      fill="none"
+                      stroke={palette.line}
+                      strokeWidth="1"
+                      opacity=".55"
+                    />
+                  ),
+              )}
+              {harmonic.radii.map((_, k) => (
+                <g key={`v${k}`} data-testid="epicycle-arm">
+                  {line(
+                    epicycles.joints[k],
+                    epicycles.joints[k + 1] ?? epicycles.point,
+                    palette.line,
+                    0.95,
+                  )}
+                </g>
+              ))}
+              {harmonic.guides.map((g, k) => (
+                <g key={`g${k}`}>
+                  {line(g.center, epicycles.joints[k], palette.line, 0.8)}
+                  <g data-testid="lissajous-projection">
+                    {line(
+                      epicycles.joints[k],
+                      epicycles.point,
+                      palette.line,
+                      0.6,
+                      true,
+                    )}
+                  </g>
+                </g>
+              ))}
+              {epicycles.joints.map((j, k) => (
+                <circle
+                  key={`j${k}`}
+                  cx={xy(j).x}
+                  cy={xy(j).y}
+                  r="2.5"
+                  fill={palette.line}
+                />
+              ))}
+            </g>
+          )}
+        </g>
+      )}
       {layers.lines && roller && (
         <g
           data-testid="rolling-construction"
@@ -454,12 +602,81 @@ export function Plot({
           />
         </g>
       )}
+      {layers.base && result.second && (
+        <path
+          data-testid="second-curve"
+          aria-label="Second endpoints"
+          d={path(result.second)}
+          fill="none"
+          stroke={palette.base}
+          strokeWidth="1.4"
+          opacity=".55"
+        />
+      )}
+      {layers.lines && inversion && (
+        <circle
+          data-testid="inversion-circle"
+          aria-label="Circle of inversion"
+          cx={xy(inversion.center).x}
+          cy={xy(inversion.center).y}
+          r={inversion.radius * scale}
+          fill="none"
+          stroke={palette.line}
+          strokeWidth="1.4"
+          strokeDasharray="7 5"
+          opacity=".85"
+        />
+      )}
+      {layers.base && inversion?.source && (
+        <path
+          data-testid="inversion-source"
+          aria-label="Inverted curve"
+          d={path(inversion.source)}
+          fill="none"
+          stroke={palette.derived}
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+          opacity=".5"
+        />
+      )}
+      {layers.base &&
+        pursuit?.paths.map((points, k) => (
+          <path
+            key={k}
+            data-testid="pursuit-path"
+            d={path(points)}
+            fill="none"
+            stroke={palette.base}
+            strokeWidth="2.3"
+            strokeLinejoin="round"
+          />
+        ))}
       {layers.base && (
         <path
           d={path(result.base)}
           fill="none"
           stroke={palette.base}
           strokeWidth="2.3"
+        />
+      )}
+      {layers.lines &&
+        chasers?.points.map((p, k) => (
+          <circle
+            key={k}
+            data-testid="pursuer"
+            cx={xy(p).x}
+            cy={xy(p).y}
+            r="3.5"
+            fill={palette.base}
+          />
+        ))}
+      {layers.lines && epicycles && (
+        <circle
+          data-testid="harmonic-point"
+          cx={xy(epicycles.point).x}
+          cy={xy(epicycles.point).y}
+          r="4"
+          fill={palette.base}
         />
       )}
       {layers.lines && rolling && (
@@ -473,14 +690,15 @@ export function Plot({
       )}
       {layers.derived && result.derived.length > 0 && (
         <path
-          d={path(result.derived, optical ? false : undefined)}
+          data-testid="derived-curve"
+          d={path(result.derived, dashed ? false : undefined, breaks)}
           fill="none"
           stroke={palette.derived}
           strokeWidth="2.6"
           strokeLinejoin="round"
         />
       )}
-      {optical && layers.derived && layers.virtual && (
+      {dashed && layers.derived && layers.virtual && (
         <path
           d={path(result.derived, true)}
           fill="none"
@@ -490,11 +708,15 @@ export function Plot({
         />
       )}
       {layers.derived && result.family.length > 0 && (
-        <g data-testid="offset-family" aria-label="Offset stack">
+        <g
+          data-testid={rings ? "envelope-branches" : "offset-family"}
+          aria-label={rings ? "Envelope branches" : "Offset stack"}
+        >
           {result.family.map((member, k) => (
             <path
               key={k}
-              data-distance={member.distance}
+              data-distance={rings ? undefined : member.distance}
+              data-branch={member.branch}
               d={path(member.points)}
               fill="none"
               stroke={palette.derived}
@@ -543,7 +765,18 @@ export function Plot({
           />
         </g>
       )}
-      {usesPole(config.kind) && (
+      {inversion && (
+        <g data-testid="inversion-center" aria-label="Center of inversion">
+          <circle
+            cx={xy(inversion.center).x}
+            cy={xy(inversion.center).y}
+            r="4"
+            fill={palette.line}
+          />
+        </g>
+      )}
+      {(usesPole(config.kind) ||
+        (inversion && usesPole(config.inversion.of))) && (
         <g data-testid="pole-point" aria-label="Pole">
           <circle
             cx={xy(config.pole).x}
@@ -565,6 +798,36 @@ export function Plot({
   );
 }
 
+// SVG path data for points drawn by xy. The path breaks at gaps, at points
+// keep rejects, before each sample in breaks, where the curve is known to be
+// open between two finite samples, and at jumps too long to be one step of a
+// curve.
+export function pathData(
+  points: (Vec | null)[],
+  xy: (p: Vec) => Vec,
+  keep: (i: number) => boolean = () => true,
+  breaks?: Set<number>,
+) {
+  let s = "",
+    last: Vec | null = null;
+  points.forEach((p, i) => {
+    if (breaks?.has(i)) last = null;
+    if (!p || !keep(i)) {
+      last = null;
+      return;
+    }
+    const a = xy(p);
+    if (Math.abs(a.x) > 1e6 || Math.abs(a.y) > 1e6) {
+      last = null;
+      return;
+    }
+    const gap =
+      !last || Math.hypot(a.x - last.x, a.y - last.y) > Math.max(W, H) * 0.6;
+    s += `${gap ? "M" : "L"}${a.x.toFixed(3)},${a.y.toFixed(3)} `;
+    last = a;
+  });
+  return s;
+}
 // Fit each point family independently: a short base arc must not discard a
 // distant but coherent derived arc. Outer Tukey fences suppress isolated tails
 // near asymptotes without clipping ordinary extrema to percentile bounds.
@@ -588,6 +851,37 @@ export function framingPoints(points: (Vec | null)[]): Vec[] {
   const [x0, x1] = fence(finite.map((p) => p.x));
   const [y0, y1] = fence(finite.map((p) => p.y));
   return finite.filter((p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
+}
+// The part of the unbounded line through p along u inside the rectangle
+// [x0, x1] × [y0, y1], or null where it misses.
+function across(
+  p: Vec,
+  u: Vec,
+  x0: number,
+  x1: number,
+  y0: number,
+  y1: number,
+): [Vec, Vec] | null {
+  let lo = -Infinity,
+    hi = Infinity;
+  for (const [start, step, min, max] of [
+    [p.x, u.x, x0, x1],
+    [p.y, u.y, y0, y1],
+  ]) {
+    if (step === 0) {
+      if (start < min || start > max) return null;
+      continue;
+    }
+    const a = (min - start) / step,
+      b = (max - start) / step;
+    lo = Math.max(lo, Math.min(a, b));
+    hi = Math.min(hi, Math.max(a, b));
+  }
+  if (!(lo < hi)) return null;
+  return [
+    { x: p.x + lo * u.x, y: p.y + lo * u.y },
+    { x: p.x + hi * u.x, y: p.y + hi * u.y },
+  ];
 }
 // A rolling curve frames every placement, like a rolling circle, by the
 // circle enclosing it.
@@ -659,13 +953,33 @@ export function fitFrame(result: Result, config: Config) {
       : [];
   const points = [
     ...framingPoints(result.base),
+    ...framingPoints(result.second ?? []),
     ...framingPoints(result.derived),
     ...result.family.flatMap((path) => framingPoints(path.points)),
     ...framingPoints(extents),
     ...framingPoints(fixed),
     ...framingPoints(circleExtents(roulette?.positions ?? [])),
+    // A Lissajous figure's guides and a Fourier curve's circles, at every
+    // representative sample, as their own families.
+    ...framingPoints(circleExtents(result.harmonic?.guides ?? [])),
+    ...framingPoints(
+      circleExtents(
+        (result.harmonic?.positions ?? []).flatMap((s) =>
+          result.harmonic!.radii.map((radius, k) => ({
+            center: s.joints[k],
+            radius,
+          })),
+        ),
+      ),
+    ),
+    // Each pursuer's path is its own family.
+    ...(result.pursuit?.paths ?? []).flatMap((points) => framingPoints(points)),
     ...framingPoints(circleExtents(result.rolling)),
     ...framingPoints(movingExtents(result)),
+    // An inverted derived curve, and the circle of inversion as its own
+    // family: its image can be far smaller or larger than the curve.
+    ...framingPoints(result.inversion?.source ?? []),
+    ...framingPoints(circleExtents(result.inversion ? [result.inversion] : [])),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };
   let minX = Infinity,
@@ -681,7 +995,8 @@ export function fitFrame(result: Result, config: Config) {
   points.forEach(include);
   const extent = Math.max(maxX - minX, maxY - minY, 0.1);
   if (
-    usesPole(config.kind) &&
+    (usesPole(config.kind) ||
+      (config.kind === "inversion" && usesPole(config.inversion.of))) &&
     Math.hypot(
       config.pole.x - (minX + maxX) / 2,
       config.pole.y - (minY + maxY) / 2,
