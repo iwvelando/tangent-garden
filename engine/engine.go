@@ -62,6 +62,8 @@ type Result struct {
 	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
 	// Pursuit is present only for a cyclic pursuit.
 	Pursuit *PursuitResult `json:"pursuit,omitempty"`
+	// Field is present only for a vector field's trajectories.
+	Field *FieldResult `json:"field,omitempty"`
 	// Moving is present only for a rolling curve.
 	Moving *MovingResult `json:"moving,omitempty"`
 	// Second holds the chords' far endpoints, indexed like Base, present
@@ -179,6 +181,18 @@ func Compute(q Request) (Result, error) {
 			out.Warnings = append(out.Warnings, fmt.Sprintf("The chase ran out of integration steps at t = %.6g; later samples are left empty.", chaser.end))
 		}
 	}
+	var flows []*trajectory
+	var velocity odeFunc
+	if q.Curve.Format == "field" {
+		var timed bool
+		if flows, velocity, timed, err = q.Curve.Field.flows(q.Curve.A, lo, hi); err != nil {
+			return out, err
+		}
+		out.Field = newFieldResult(flows, q.Samples, timed)
+		if w := exhaustedWarning(flows); w != "" {
+			out.Warnings = append(out.Warnings, w)
+		}
+	}
 	step := (hi - lo) / float64(q.Samples-1)
 	out.Base = make([]*Vec, q.Samples)
 	// A stack or a circle family's two branches replace the single derived
@@ -254,6 +268,9 @@ func Compute(q Request) (Result, error) {
 		line := nextLine < q.Lines && j == int(math.Round(float64(nextLine)*float64(q.Samples-1)/float64(q.Lines-1)))
 		if chaser != nil {
 			out.Pursuit.sample(chaser, j, t, line)
+		}
+		if flows != nil {
+			out.Field.sample(flows, velocity, j, t, line)
 		}
 		if line {
 			nextLine++
@@ -450,6 +467,9 @@ func Compute(q Request) (Result, error) {
 	}
 	if coincident > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the chord's endpoints coincide, so it has no direction; they are left as gaps.", coincident))
+	}
+	if out.Field != nil {
+		out.Field.directions(velocity)
 	}
 	if unsized > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius is not positive (or undefined), so there is no circle; they are left as gaps.", unsized))

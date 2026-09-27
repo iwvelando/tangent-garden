@@ -585,7 +585,64 @@ assert.match(
   ).error,
   /2–16 pursuers/,
 );
+// Trajectories of a rotation, ẋ = −ay, ẏ = ax with a = 1, are circles; a
+// seed outside the escape circle has none, and one field of expressions in
+// x, y, and t carries the error.
+const field = (f) =>
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: {
+          ...config.curve,
+          format: "field",
+          min: 0,
+          max: 2 * Math.PI,
+          a: 1,
+          field: {
+            x: "-a*y",
+            y: "a*x",
+            seeds: [
+              { x: 1, y: 0 },
+              { x: 0, y: 3 },
+            ],
+            escape: 2,
+            ...f,
+          },
+        },
+      }),
+    ),
+  );
+const rotation = field({});
+assert.equal(rotation.field.paths.length, 2);
+for (const [j, p] of rotation.field.paths[0].entries()) {
+  const t = (2 * Math.PI * j) / (config.samples - 1);
+  assert.ok(Math.hypot(p.x - Math.cos(t), p.y - Math.sin(t)) < 1e-8);
+  assert.deepEqual(p, rotation.base[j]);
+}
+assert.ok(rotation.field.paths[1].every((p) => p === null));
+assert.deepEqual(rotation.field.ends, [
+  { time: 2 * Math.PI, reason: "end" },
+  { time: 0, reason: "escape" },
+]);
+for (const arrow of rotation.field.arrows)
+  assert.ok(
+    Math.hypot(
+      arrow.velocity.x + arrow.point.y,
+      arrow.velocity.y - arrow.point.x,
+    ) < 1e-15,
+  );
+assert.equal(rotation.field.arrows.length, config.lines);
+// Without t there is one direction field; with it there is none.
+assert.equal(rotation.field.timed, false);
+assert.ok(rotation.field.grid.points.length > 100);
+for (const { point, velocity } of rotation.field.grid.points)
+  assert.ok(Math.hypot(velocity.x + point.y, velocity.y - point.x) < 1e-15);
+const timed = field({ x: "-a*y*cos(t)" });
+assert.equal(timed.field.timed, true);
+assert.equal(timed.field.grid.points.length, 0);
+assert.match(field({ y: "x*z" }).error, /dy\/dt: unknown name "z"/);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, and invalid JSON passed.",
 );
 process.exit(0);

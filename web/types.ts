@@ -28,6 +28,7 @@ export const isHarmonic = (format: string) =>
 // constant speed.
 export type Pursuer = { x: number; y: number; speed: number };
 export const maxPursuers = 16;
+export const maxSeeds = 16;
 // Harmonic curves and pursuits define their own shape, without a.
 export const ownsShape = (format: string) =>
   isHarmonic(format) || format === "pursuit";
@@ -44,7 +45,8 @@ export type Config = {
       | "roulette"
       | "lissajous"
       | "fourier"
-      | "pursuit";
+      | "pursuit"
+      | "field";
     x: string;
     y: string;
     r: string;
@@ -81,6 +83,13 @@ export type Config = {
     // capture of its target. The first pursuer's path is the curve that
     // constructions use. Used only when format is "pursuit".
     pursuit: { pursuers: Pursuer[]; capture: number };
+    // The trajectories of ẋ = x(x, y, t), ẏ = y(x, y, t) from 1–16 seeds at
+    // the domain start; t is time, and a binds as in any curve expression.
+    // A trajectory ends where it leaves the circle of radius escape about
+    // the origin, or where the field stops being finite. The first seed's
+    // trajectory is the curve that constructions use. Used only when format
+    // is "field".
+    field: { x: string; y: string; seeds: Vec[]; escape: number };
   };
   source: {
     kind: "point" | "parallel";
@@ -232,6 +241,33 @@ export type PursuitResult = {
   end: number;
 };
 
+// Why a trajectory stopped: the domain end, leaving the escape circle (at
+// the domain start for a seed outside it), a field that is not finite or a
+// collapsing step, or the integration step budget.
+export type TrajectoryEnd = {
+  time: number;
+  reason: "end" | "escape" | "singular" | "exhausted";
+};
+// The field's value at a trajectory's position at a representative sample.
+export type Arrow = {
+  sampleIndex: number;
+  seed: number;
+  point: Vec;
+  velocity: Vec;
+};
+// Every trajectory, indexed like base; samples after its end are gaps. Seed
+// indices count from 0. A field whose expressions do not read t (timed is
+// false) has one direction field: the field's value on a square lattice of
+// the given spacing spanning the trajectories, without points where it is
+// zero or not finite.
+export type FieldResult = {
+  paths: (Vec | null)[][];
+  arrows: Arrow[];
+  ends: TrajectoryEnd[];
+  timed: boolean;
+  grid: { spacing: number; points: { point: Vec; velocity: Vec }[] };
+};
+
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
 export type Result = {
@@ -253,6 +289,8 @@ export type Result = {
   harmonic?: HarmonicResult;
   // Present only for a cyclic pursuit.
   pursuit?: PursuitResult;
+  // Present only for a vector field's trajectories.
+  field?: FieldResult;
   // Present only for a rolling curve.
   moving?: MovingResult;
   // The chords' far endpoints, indexed like base; present only for chords.

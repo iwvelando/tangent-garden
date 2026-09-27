@@ -29,6 +29,34 @@ type Props = {
 };
 const W = 1000,
   H = 760;
+// An arrow along a direction in plot coordinates, drawn in screen pixels: a
+// shaft of the given length from `behind` pixels before (x, y), and a head
+// of the given size at its tip. A zero-length shaft leaves a chevron at
+// (x, y). Nothing is drawn for a zero or nonfinite direction.
+function arrow(
+  x: number,
+  y: number,
+  direction: Vec,
+  length: number,
+  behind: number,
+  head: number,
+) {
+  const n = Math.hypot(direction.x, direction.y);
+  if (!(n > 0) || !Number.isFinite(n)) return "";
+  // The screen's y axis points down.
+  const ux = direction.x / n,
+    uy = -direction.y / n;
+  const f = (v: number) => v.toFixed(3);
+  const tip = [x + (length - behind) * ux, y + (length - behind) * uy];
+  const side = (turn: number) =>
+    `${f(tip[0] - head * (ux * Math.cos(turn) - uy * Math.sin(turn)))},${f(tip[1] - head * (ux * Math.sin(turn) + uy * Math.cos(turn)))}`;
+  const shaft =
+    length > 0
+      ? `M${f(x - behind * ux)},${f(y - behind * uy)}L${f(tip[0])},${f(tip[1])}`
+      : "";
+  return `${shaft}M${side(0.5)}L${f(tip[0])},${f(tip[1])}L${side(-0.5)}`;
+}
+
 export function Plot({
   result,
   config,
@@ -227,6 +255,8 @@ export function Plot({
   const pursuit = result.pursuit;
   // The pursuers are marked where the chase has reached.
   const chasers = pursuit?.polygons.at(-1);
+  const field = result.field;
+  const seeds = field ? config.curve.field.seeds : [];
   const roller = result.rolling.at(-1);
   const moving = result.moving;
   const placed = moving?.positions.at(-1);
@@ -497,6 +527,42 @@ export function Plot({
           ))}
         </g>
       )}
+      {layers.lines && field && (
+        <g data-testid="field-construction" aria-label="Direction field">
+          {/* Trajectories end where they leave this circle; it does not
+              frame the drawing, so a large one only shows as an arc. */}
+          <circle
+            data-testid="escape-circle"
+            cx={xy({ x: 0, y: 0 }).x}
+            cy={xy({ x: 0, y: 0 }).y}
+            r={config.curve.field.escape * scale}
+            fill="none"
+            stroke={palette.line}
+            strokeWidth="1"
+            strokeDasharray="4 5"
+            opacity=".5"
+          />
+          {/* Directions only: the speed varies too widely to draw to
+              scale. Each arrow is centered on its lattice point. */}
+          {field.grid.points.map(({ point, velocity }, k) => {
+            const length = 0.6 * field.grid.spacing * scale;
+            const { x, y } = xy(point);
+            return (
+              <path
+                key={k}
+                data-testid="field-direction"
+                d={arrow(x, y, velocity, length, length / 2, length * 0.3)}
+                fill="none"
+                stroke={palette.line}
+                strokeWidth="1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity=".55"
+              />
+            );
+          })}
+        </g>
+      )}
       {layers.lines && harmonic && (
         <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
           {harmonic.guides.map((g, k) => (
@@ -651,6 +717,18 @@ export function Plot({
             strokeLinejoin="round"
           />
         ))}
+      {layers.base &&
+        field?.paths.map((points, k) => (
+          <path
+            key={k}
+            data-testid="field-path"
+            d={path(points)}
+            fill="none"
+            stroke={palette.base}
+            strokeWidth="2.3"
+            strokeLinejoin="round"
+          />
+        ))}
       {layers.base && (
         <path
           d={path(result.base)}
@@ -668,6 +746,37 @@ export function Plot({
             cy={xy(p).y}
             r="3.5"
             fill={palette.base}
+          />
+        ))}
+      {layers.lines &&
+        field?.arrows.map((a) => {
+          // The direction of travel at representative samples.
+          const { x, y } = xy(a.point);
+          return (
+            <path
+              key={`${a.seed}-${a.sampleIndex}`}
+              data-testid="field-arrow"
+              data-sample={a.sampleIndex}
+              d={arrow(x, y, a.velocity, 0, 0, 5.5)}
+              fill="none"
+              stroke={palette.base}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          );
+        })}
+      {layers.lines &&
+        seeds.map((p, k) => (
+          <circle
+            key={k}
+            data-testid="seed"
+            cx={xy(p).x}
+            cy={xy(p).y}
+            r="3.5"
+            fill={palette.bg}
+            stroke={palette.base}
+            strokeWidth="1.5"
           />
         ))}
       {layers.lines && epicycles && (
@@ -974,6 +1083,8 @@ export function fitFrame(result: Result, config: Config) {
     ),
     // Each pursuer's path is its own family.
     ...(result.pursuit?.paths ?? []).flatMap((points) => framingPoints(points)),
+    // So is each trajectory; the escape circle is not framed.
+    ...(result.field?.paths ?? []).flatMap((points) => framingPoints(points)),
     ...framingPoints(circleExtents(result.rolling)),
     ...framingPoints(movingExtents(result)),
     // An inverted derived curve, and the circle of inversion as its own

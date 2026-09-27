@@ -22,6 +22,9 @@ type Curve struct {
 	Lissajous Lissajous `json:"lissajous"`
 	Terms     []Term    `json:"terms"`
 	Pursuit   Pursuit   `json:"pursuit"`
+	// Field defines the curve when Format is "field": the first seed's
+	// trajectory, with t as time.
+	Field VectorField `json:"field"`
 }
 type curveFunc func(float64) Vec
 
@@ -65,6 +68,16 @@ func compile(c Curve) (curveFunc, error) {
 			return nil, err
 		}
 		return newChase(c.Pursuit, c.Min, c.Max, chaseTolerance).pursuer(0), nil
+	}
+	if c.Format == "field" {
+		if err := c.Field.validate(); err != nil {
+			return nil, err
+		}
+		f, _, err := c.Field.system(c.A)
+		if err != nil {
+			return nil, err
+		}
+		return newTrajectory(f, c.Field.Seeds[0], c.Min, c.Max, c.Field.Escape, fieldTolerance).curve(), nil
 	}
 	if c.Format == "polar" {
 		r, e := expr.ParseWithParameter(c.R, c.A)
