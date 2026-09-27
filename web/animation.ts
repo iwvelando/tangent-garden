@@ -1,4 +1,4 @@
-import type { Config, Frame, Result } from "./types";
+import { usesPole, type Config, type Frame, type Result } from "./types";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 export type Viewport = { cx: number; cy: number; scale: number; span: number };
 export type Target =
@@ -50,7 +50,7 @@ export const targetLabels: Record<Target, string> = {
 export function availableTargets(config: Config): Target[] {
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
   if (config.kind === "involute") targets.push("offset");
-  if (config.kind === "pedal") targets.unshift("poleX", "poleY");
+  if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
   if (config.kind === "catacaustic" || config.kind === "diacaustic") {
     targets.unshift(
       ...(config.source.kind === "point"

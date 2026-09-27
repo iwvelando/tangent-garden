@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Config, Result, Vec } from "./types";
+import { usesPole, type Config, type Result, type Vec } from "./types";
 import type { AnimationView, Viewport } from "./animation";
 export type Layers = {
   base: boolean;
@@ -287,6 +287,15 @@ export function Plot({
                 x: ray.origin.x - ray.incident.x * distance,
                 y: ray.origin.y - ray.incident.y * distance,
               };
+        // An orthotomic point is the pole reflected across the tangent. Draw
+        // the genuine projection foot H=(P+Q)/2 and dash the reflected part.
+        const foot =
+          config.kind === "orthotomic" && ray.target
+            ? {
+                x: (config.pole.x + ray.target.x) / 2,
+                y: (config.pole.y + ray.target.y) / 2,
+              }
+            : ray.target;
         return (
           <g key={i}>
             {optical &&
@@ -295,12 +304,16 @@ export function Plot({
             {layers.lines &&
               (optical
                 ? line(ray.origin, end, ray.tir ? "#c18b32" : palette.line, 0.5)
-                : ray.target &&
-                  line(ray.origin, ray.target, palette.line, 0.52))}
-            {config.kind === "pedal" &&
+                : foot && line(ray.origin, foot, palette.line, 0.52))}
+            {usesPole(config.kind) &&
               layers.lines &&
+              foot &&
+              line(config.pole, foot, palette.line, 0.35)}
+            {config.kind === "orthotomic" &&
+              layers.lines &&
+              foot &&
               ray.target &&
-              line(config.pole, ray.target, palette.line, 0.35)}
+              line(foot, ray.target, palette.line, 0.35, true)}
             {optical &&
               layers.lines &&
               layers.virtual &&
@@ -361,7 +374,7 @@ export function Plot({
           />
         </g>
       )}
-      {config.kind === "pedal" && (
+      {usesPole(config.kind) && (
         <g data-testid="pole-point" aria-label="Pole">
           <circle
             cx={xy(config.pole).x}
@@ -426,7 +439,7 @@ export function fitFrame(result: Result, config: Config) {
   points.forEach(include);
   const extent = Math.max(maxX - minX, maxY - minY, 0.1);
   if (
-    config.kind === "pedal" &&
+    usesPole(config.kind) &&
     Math.hypot(
       config.pole.x - (minX + maxX) / 2,
       config.pole.y - (minY + maxY) / 2,

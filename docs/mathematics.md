@@ -18,13 +18,17 @@ This is the signed center of curvature. Straight segments have no finite evolute
 
 We use Simpson integration on every adjacent sample interval. The constant `c` selects an involute from the family. Reversing a curve's orientation changes this anchored construction. Increasing the sample count improves the integral but does not remove derivative conditioning limits.
 
-## Pedal curve
+## Pedal family
 
 For a fixed pole `P`, `H = r + ((P-r)·T) T` is its orthogonal projection onto the tangent line at r. The pole is independent of the optical source and uses Cartesian coordinates; omitted pole coordinates in a Go request default to the origin. Finite coordinates are required. A pole on the base curve is valid. The representative segments are r→H along the tangent and P→H perpendicular to it. A straight line has a valid pedal consisting of one point, rendered with the same point marker used for other collapsed derived curves.
 
 Only a stable, nonzero first derivative is required. Pedals use the same bounded five-point and half-step first-derivative comparison as other constructions, without requiring a stable second derivative. Stationary points and invalid or unstable evaluations produce gaps; no limiting tangent is inferred. A centered circle is its own pedal, and a pole on a circle produces a cardioid. The construction is independent of regular reparameterization and orientation. The absolute speed cutoff of 10⁻⁹ is a numerical guardrail, not scale-invariant regularity detection.
 
-See [MathCurve's pedal constructions](https://mathcurve.com/courbes2d/podaire/podaire.shtml). Contrapedals and orthotomics are planned separately, not currently implemented.
+With `N = JT` the left unit normal, the contrapedal `K = r + ((P-r)·N) N` projects the pole onto the normal line instead. Because T and N are orthonormal, r, H, P, and K form a rectangle: `H + K = r + P`. Normals are the evolute's tangents, so the contrapedal is the pedal of the evolute where the evolute is regular; unlike that composition, K needs only a first derivative and remains defined at vertices, where the evolute has cusps. A centered circle has a one-point contrapedal at its center; a line's contrapedal is the parallel line through the pole. Representative segments are r→K along the normal and P→K perpendicular to it.
+
+The orthotomic `Q = 2H - P` reflects the pole across the tangent line. It is the pedal enlarged by a factor of two about P, so it satisfies `|Q-r| = |P-r|` and `(Q-P)·T = 0`, with P and Q on opposite sides of the tangent. Reflecting a parabola's focus gives its directrix; reflecting one focus of an ellipse gives the circle of radius 2a about the other focus; a line's orthotomic is one reflected point. The orthotomic is the curve whose evolute is the catacaustic from a point source at P, but the two constructions are independent here: the pole is not the optical source. Each representative construction draws r→H and P→H as solid genuine projection segments and H→Q dashed, the reflected half. The renderer recovers H as (P+Q)/2 rather than transmitting a second point.
+
+All three share the pole, the first-derivative stability rule, and gap handling. Neither orientation nor regular reparameterization changes any of them. See [MathCurve's pedal constructions](https://mathcurve.com/courbes2d/podaire/podaire.shtml), which also covers contrapedals and orthotomics.
 
 ## Ray envelopes
 

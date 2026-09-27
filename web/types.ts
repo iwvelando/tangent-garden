@@ -1,6 +1,12 @@
 export type Vec = { x: number; y: number };
 export type Kind =
-  "evolute" | "involute" | "catacaustic" | "diacaustic" | "pedal";
+  "evolute" | "involute" | "catacaustic" | "diacaustic" | PoleKind;
+// Constructions that project an independent geometric pole onto the tangent
+// or normal. They share one tab and one pole, never the optical source.
+export const poleKinds = ["pedal", "contrapedal", "orthotomic"] as const;
+export type PoleKind = (typeof poleKinds)[number];
+export const usesPole = (kind: Kind): kind is PoleKind =>
+  (poleKinds as readonly Kind[]).includes(kind);
 export type Config = {
   kind: Kind;
   curve: {

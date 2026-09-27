@@ -2,7 +2,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { Plot, type Layers } from "./Plot";
-import type { Bounds, Config, Frame, Kind } from "./types";
+import {
+  usesPole,
+  type Bounds,
+  type Config,
+  type Frame,
+  type Kind,
+  type PoleKind,
+} from "./types";
 import { EngineClient, boundText } from "./engine-client";
 import { useTheme } from "./useTheme";
 import { AnimationPanel } from "./AnimationPanel";
@@ -47,10 +54,46 @@ const descriptions: Record<
       "Drop a perpendicular from a fixed point, the pole, onto each tangent line. The feet of those perpendiculars trace the pedal curve. The two segments meet at a right angle.",
     formula: "H(t) = r(t) + ((P − r(t)) · T(t)) T(t)",
   },
+  contrapedal: {
+    title: "The feet of the normals",
+    description:
+      "Drop a perpendicular from the pole onto each normal line instead. The feet trace the contrapedal, which is also the pedal of the evolute. The two segments meet at a right angle.",
+    formula: "K(t) = r(t) + ((P − r(t)) · N(t)) N(t)",
+  },
+  orthotomic: {
+    title: "The pole, reflected",
+    description:
+      "Reflect the pole across each tangent line: continue past the pedal foot by the same distance. The reflections trace the orthotomic, twice the pedal as seen from the pole. Dashed segments show the reflected half.",
+    formula: "Q(t) = 2H(t) − P",
+  },
+};
+// One tab per family; the pole constructions share a tab and a selector.
+const tabs: Kind[] = [
+  "evolute",
+  "involute",
+  "catacaustic",
+  "diacaustic",
+  "pedal",
+];
+const poleOptions: Record<PoleKind, { label: string; note: string }> = {
+  pedal: {
+    label: "Pedal · tangent foot",
+    note: "Project this point onto each tangent.",
+  },
+  contrapedal: {
+    label: "Contrapedal · normal foot",
+    note: "Project this point onto each normal.",
+  },
+  orthotomic: {
+    label: "Orthotomic · reflected pole",
+    note: "Reflect this point across each tangent.",
+  },
 };
 function App() {
   const [config, setConfig] = useState<Config>(presets[0].config);
   const [preset, setPreset] = useState("0");
+  // Remembers the pole construction while another tab is selected.
+  const [poleKind, setPoleKind] = useState<PoleKind>("pedal");
   const [frame, setFrame] = useState<Frame | null>(null);
   const [bounds, setBounds] = useState<Bounds>({
     min: boundText(config.curve.min),
@@ -253,7 +296,9 @@ function App() {
               value={preset}
               onChange={(e) => {
                 setPreset(e.target.value);
-                setConfig(structuredClone(presets[+e.target.value].config));
+                const next = presets[+e.target.value].config;
+                if (usesPole(next.kind)) setPoleKind(next.kind);
+                setConfig(structuredClone(next));
                 setBounds({
                   min: boundText(presets[+e.target.value].config.curve.min),
                   max: boundText(presets[+e.target.value].config.curve.max),
@@ -297,16 +342,22 @@ function App() {
             </HelpText>
           </fieldset>
           <div className="tabs" role="group" aria-label="Construction">
-            {(Object.keys(descriptions) as Kind[]).map((k) => (
-              <button
-                className={config.kind === k ? "active" : ""}
-                aria-pressed={config.kind === k}
-                key={k}
-                onClick={() => update({ kind: k })}
-              >
-                {k}
-              </button>
-            ))}
+            {tabs.map((k) => {
+              const active =
+                config.kind === k || (k === "pedal" && usesPole(config.kind));
+              return (
+                <button
+                  className={active ? "active" : ""}
+                  aria-pressed={active}
+                  key={k}
+                  onClick={() =>
+                    !active && update({ kind: k === "pedal" ? poleKind : k })
+                  }
+                >
+                  {k}
+                </button>
+              );
+            })}
           </div>
           <section>
             <div className="section-label">02 / THE CURVE</div>
@@ -413,12 +464,28 @@ function App() {
               </p>
             </details>
           </section>
-          {config.kind === "pedal" && (
+          {usesPole(config.kind) && (
             <section>
               <div className="section-label">03 / THE POLE</div>
+              <Field label="Projection">
+                <select
+                  value={config.kind}
+                  onChange={(e) => {
+                    const kind = e.target.value as PoleKind;
+                    setPoleKind(kind);
+                    update({ kind });
+                  }}
+                >
+                  {(Object.keys(poleOptions) as PoleKind[]).map((k) => (
+                    <option key={k} value={k}>
+                      {poleOptions[k].label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               <p className="note">
-                Project this point onto each tangent. The pole is independent of
-                the light source and can lie on the curve.
+                {poleOptions[config.kind].note} The pole is independent of the
+                light source and can lie on the curve.
               </p>
               <div className="pair">
                 {number("Pole x", config.pole.x, (x) =>
@@ -602,7 +669,7 @@ function App() {
           )}
           <section>
             <div className="section-label">
-              {optical || config.kind === "pedal" ? "04" : "03"} / THE DRAWING
+              {optical || usesPole(config.kind) ? "04" : "03"} / THE DRAWING
             </div>
             {expert ? (
               number(

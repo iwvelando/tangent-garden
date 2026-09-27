@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import type { Bounds, Config, Result } from "./types";
+import { usesPole, type Bounds, type Config, type Result } from "./types";
 declare const Go: new () => {
   importObject: WebAssembly.Imports;
   run(instance: WebAssembly.Instance): Promise<void>;
@@ -64,7 +64,7 @@ self.onmessage = async ({
       config.nTransmitted,
       config.samples,
       config.lines,
-      ...(config.kind === "pedal" ? [config.pole.x, config.pole.y] : []),
+      ...(usesPole(config.kind) ? [config.pole.x, config.pole.y] : []),
       ...(config.source.kind === "point" &&
       config.source.coordinates === "polar"
         ? [config.source.radius, config.source.theta]
