@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   usesPole,
   type Config,
+  type Placement,
   type Result,
   type Rolling,
   type Vec,
@@ -212,6 +213,9 @@ export function Plot({
   // Rolling circles are drawn where their traces have reached.
   const rolling = roulette?.positions.at(-1);
   const roller = result.rolling.at(-1);
+  const moving = result.moving;
+  const placed = moving?.positions.at(-1);
+  const tracer = roller ?? placed;
   // A rolling circle with its tracing arm, center, and contact point.
   const rollingParts = (s: Rolling) => (
     <>
@@ -424,6 +428,32 @@ export function Plot({
           {rollingParts(roller)}
         </g>
       )}
+      {layers.lines && moving && placed && (
+        <g
+          data-testid="rolling-curve"
+          data-sample={placed.sampleIndex}
+          aria-label="Curve rolling on the curve"
+        >
+          <path
+            d={path(moving.path.map((p) => p && carry(placed, p)))}
+            fill="none"
+            stroke={palette.line}
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+            opacity=".75"
+          />
+          {line(placed.contact, placed.point, palette.line, 0.75)}
+          <circle
+            data-testid="contact-point"
+            cx={xy(placed.contact).x}
+            cy={xy(placed.contact).y}
+            r="3.5"
+            fill="none"
+            stroke={palette.line}
+            strokeWidth="1.5"
+          />
+        </g>
+      )}
       {layers.base && (
         <path
           d={path(result.base)}
@@ -475,11 +505,11 @@ export function Plot({
           ))}
         </g>
       )}
-      {layers.lines && roller && (
+      {layers.lines && tracer && (
         <circle
           data-testid="rolling-construction-point"
-          cx={xy(roller.point).x}
-          cy={xy(roller.point).y}
+          cx={xy(tracer.point).x}
+          cy={xy(tracer.point).y}
           r="4"
           fill={palette.derived}
         />
@@ -559,6 +589,19 @@ export function framingPoints(points: (Vec | null)[]): Vec[] {
   const [y0, y1] = fence(finite.map((p) => p.y));
   return finite.filter((p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
 }
+// A rolling curve frames every placement, like a rolling circle, by the
+// circle enclosing it.
+function movingExtents(result: Result) {
+  const moving = result.moving;
+  const body = moving && enclosing(moving.path);
+  if (!moving || !body) return [];
+  return circleExtents(
+    moving.positions.map((p) => ({
+      center: carry(p, body.center),
+      radius: body.radius,
+    })),
+  );
+}
 // The four extreme points of each circle.
 const circleExtents = (circles: { center: Vec; radius: number }[]) =>
   circles.flatMap(({ center: c, radius: r }) => [
@@ -567,6 +610,37 @@ const circleExtents = (circles: { center: Vec; radius: number }[]) =>
     { x: c.x, y: c.y - r },
     { x: c.x, y: c.y + r },
   ]);
+// A rolling curve's frame point, carried to the drawing by a placement.
+function carry(placement: Placement, v: Vec): Vec {
+  const cos = Math.cos(placement.angle),
+    sin = Math.sin(placement.angle);
+  return {
+    x: placement.origin.x + cos * v.x - sin * v.y,
+    y: placement.origin.y + sin * v.x + cos * v.y,
+  };
+}
+// A circle enclosing a rolling curve in its own frame, so each placement is
+// framed by four points rather than the whole curve.
+function enclosing(points: (Vec | null)[]) {
+  const finite = points.filter((p): p is Vec => !!p);
+  if (!finite.length) return null;
+  // Loops rather than spreads: a path can hold 32,768 points.
+  let x0 = Infinity,
+    x1 = -Infinity,
+    y0 = Infinity,
+    y1 = -Infinity;
+  for (const p of finite) {
+    x0 = Math.min(x0, p.x);
+    x1 = Math.max(x1, p.x);
+    y0 = Math.min(y0, p.y);
+    y1 = Math.max(y1, p.y);
+  }
+  const center = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+  let radius = 0;
+  for (const p of finite)
+    radius = Math.max(radius, Math.hypot(p.x - center.x, p.y - center.y));
+  return { center, radius };
+}
 export function fitFrame(result: Result, config: Config) {
   // Circles are framed by their full extent when requested, independent of
   // whether the construction layer is showing, so toggling it never reframes.
@@ -591,6 +665,7 @@ export function fitFrame(result: Result, config: Config) {
     ...framingPoints(fixed),
     ...framingPoints(circleExtents(roulette?.positions ?? [])),
     ...framingPoints(circleExtents(result.rolling)),
+    ...framingPoints(movingExtents(result)),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };
   let minX = Infinity,

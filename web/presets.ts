@@ -19,7 +19,22 @@ const base: Config = {
   distance: 0,
   stack: { enabled: false, from: -0.5, to: 0.5, count: 6 },
   circles: false,
-  rolling: { side: "right", radius: 0.5, arm: 0.5, phase: 0 },
+  rolling: {
+    side: "right",
+    shape: "circle",
+    radius: 0.5,
+    arm: 0.5,
+    phase: 0,
+    // A small ellipse, tracing its focus.
+    curve: {
+      x: "0.3*cos(t)",
+      y: "0.18*sin(t)",
+      min: 0,
+      max: 2 * Math.PI,
+      start: 0,
+    },
+    point: { x: 0.24, y: 0 },
+  },
   samples: 1000,
   lines: 48,
 };
@@ -199,7 +214,67 @@ export const presets: { title: string; note: string; config: Config }[] = [
       // The flower's length is about 7.41469 = 10 · 2π · 0.11800838, so ten
       // turns of this rim point nearly complete one lap: its ten cusps touch
       // the petal tips and waists. The ratio is not forced to close.
-      rolling: { side: "left", radius: 0.118, arm: 0.118, phase: 0 },
+      rolling: {
+        ...base.rolling,
+        side: "left",
+        radius: 0.118,
+        arm: 0.118,
+        phase: 0,
+      },
+      samples: 2000,
+      lines: 60,
+    },
+  },
+  {
+    title: "Ellipse rolling on an ellipse",
+    note: "A focus, rolled around its twin",
+    config: {
+      ...base,
+      kind: "rolling",
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.2*sin(t)" },
+      // Congruent ellipses rolling from matching vertices stay mirror images
+      // across the common tangent, so the rolling focus (1.6, 0) stays
+      // 2a = 4 from the fixed far focus (−1.6, 0): it traces a circle.
+      rolling: {
+        ...base.rolling,
+        side: "right",
+        shape: "curve",
+        curve: {
+          x: "2*cos(t)",
+          y: "1.2*sin(t)",
+          min: 0,
+          max: 2 * Math.PI,
+          start: 0,
+        },
+        point: { x: 1.6, y: 0 },
+      },
+      samples: 2000,
+      lines: 48,
+    },
+  },
+  {
+    title: "Ellipse rolling in a flower",
+    note: "An ellipse's vertex, rolled inside a flower",
+    config: {
+      ...base,
+      kind: "rolling",
+      curve: { ...base.curve, format: "polar", r: "1+0.18*cos(5*t)" },
+      // The ellipse's perimeter, 1.48294, is a fifth of the flower's length
+      // 7.41469 to within 1e-6, so its vertex returns to the curve at each
+      // petal tip: the five cusps close a star. Closure is not forced.
+      rolling: {
+        ...base.rolling,
+        side: "left",
+        shape: "curve",
+        curve: {
+          x: "0.3*cos(t)",
+          y: "0.1616*sin(t)",
+          min: 0,
+          max: 2 * Math.PI,
+          start: 0,
+        },
+        point: { x: 0.3, y: 0 },
+      },
       samples: 2000,
       lines: 60,
     },

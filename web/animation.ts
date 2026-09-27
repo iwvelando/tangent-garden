@@ -26,6 +26,9 @@ export type Target =
   | "rollingRadius"
   | "rollingArm"
   | "rollingPhase"
+  | "rollingPointX"
+  | "rollingPointY"
+  | "rollingStart"
   | "samples"
   | "lines"
   | "rayLength";
@@ -65,6 +68,9 @@ export const targetLabels: Record<Target, string> = {
   rollingRadius: "Circle radius ρ",
   rollingArm: "Tracing distance ℓ",
   rollingPhase: "Phase ψ (radians)",
+  rollingPointX: "Tracing point x",
+  rollingPointY: "Tracing point y",
+  rollingStart: "Contact starts at t",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -80,7 +86,11 @@ export function availableTargets(config: Config): Target[] {
     );
   if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
   if (config.kind === "rolling")
-    targets.unshift("rollingArm", "rollingPhase", "rollingRadius");
+    targets.unshift(
+      ...((config.rolling.shape === "curve"
+        ? ["rollingPointX", "rollingPointY", "rollingStart"]
+        : ["rollingArm", "rollingPhase", "rollingRadius"]) as Target[]),
+    );
   if (config.kind === "catacaustic" || config.kind === "diacaustic") {
     targets.unshift(
       ...(config.source.kind === "point"
@@ -150,6 +160,12 @@ export function targetValue(
       return config.rolling.arm;
     case "rollingPhase":
       return config.rolling.phase;
+    case "rollingPointX":
+      return config.rolling.point.x;
+    case "rollingPointY":
+      return config.rolling.point.y;
+    case "rollingStart":
+      return config.rolling.curve.start;
     case "rayLength":
       return length;
     default:
@@ -226,6 +242,15 @@ export function applyTracks(
       case "rollingPhase":
         config.rolling.phase = value;
         break;
+      case "rollingPointX":
+        config.rolling.point.x = value;
+        break;
+      case "rollingPointY":
+        config.rolling.point.y = value;
+        break;
+      case "rollingStart":
+        config.rolling.curve.start = value;
+        break;
       case "rayLength":
         length = value;
         break;
@@ -256,6 +281,10 @@ export function reveal(result: Result, progress: number): Result {
     roulette: result.roulette && {
       ...result.roulette,
       positions: result.roulette.positions.filter((s) => s.sampleIndex <= last),
+    },
+    moving: result.moving && {
+      ...result.moving,
+      positions: result.moving.positions.filter((s) => s.sampleIndex <= last),
     },
   };
 }

@@ -264,7 +264,63 @@ assert.match(
   ).error,
   /left or right/,
 );
+// An ellipse rolling outside a congruent ellipse from matching vertices: its
+// focus stays 2a = 4 from the fixed ellipse's far focus (−1.6, 0).
+const moving = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "rolling",
+      curve: { ...config.curve, x: "2*cos(t)", y: "1.2*sin(t)" },
+      rolling: {
+        side: "right",
+        shape: "curve",
+        radius: 1,
+        arm: 1,
+        phase: 0,
+        curve: {
+          x: "2*cos(t)",
+          y: "1.2*sin(t)",
+          min: 0,
+          max: 2 * Math.PI,
+          start: 0,
+        },
+        point: { x: 1.6, y: 0 },
+      },
+    }),
+  ),
+);
+assert.equal(moving.invalid, 0);
+assert.equal(moving.moving.closed, true);
+assert.equal(moving.moving.path.length, config.samples);
+assert.equal(moving.moving.positions.length, config.lines);
+assert.deepEqual(moving.rolling, []);
+moving.derived.forEach((p) =>
+  assert.ok(Math.abs(Math.hypot(p.x + 1.6, p.y) - 4) < 1e-8),
+);
+moving.moving.positions.forEach((s) => {
+  assert.deepEqual(s.contact, moving.base[s.sampleIndex]);
+  assert.deepEqual(s.point, moving.derived[s.sampleIndex]);
+});
+assert.equal(result.moving, undefined);
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        kind: "rolling",
+        rolling: {
+          side: "left",
+          shape: "curve",
+          curve: { x: "cos(t)", y: "sin(t)", min: 0, max: 1, start: 2 },
+          point: { x: 0, y: 0 },
+        },
+      }),
+    ),
+  ).error,
+  /outside its domain/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, and invalid JSON passed.",
 );
 process.exit(0);

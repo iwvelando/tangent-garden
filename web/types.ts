@@ -58,15 +58,26 @@ export type Config = {
   stack: { enabled: boolean; from: number; to: number; count: number };
   // Offset circles of the largest distance, centered at representative samples.
   circles: boolean;
-  // A circle of radius `radius` rolling without slipping along the curve on
-  // the given side of travel, tracing a point at distance `arm` from its
+  // A shape rolling without slipping along the curve on the given side of
+  // travel. Used only by the rolling kind.
+  //
+  // A circle of radius `radius` traces a point at distance `arm` from its
   // center. At the domain start the arm points at the contact, turned
-  // counterclockwise by `phase` radians. Used only by the rolling kind.
+  // counterclockwise by `phase` radians.
+  //
+  // A curve is defined in its own frame by x(t), y(t) for t from min to max,
+  // and traces `point`, given in that frame. The contact starts at t = start
+  // and arc lengths match. On the left it runs forward, with the rolling
+  // curve's own left side on the base's left; on the right it runs backward.
+  // A closed rolling curve wraps around; an open one stops at its ends.
   rolling: {
     side: "left" | "right";
+    shape: "circle" | "curve";
     radius: number;
     arm: number;
     phase: number;
+    curve: { x: string; y: string; min: number; max: number; start: number };
+    point: Vec;
   };
   samples: number;
   lines: number;
@@ -87,6 +98,21 @@ export type Circle = { sampleIndex: number; center: Vec; radius: number };
 // its tracing point: on the base curve for a roulette, on the derived curve
 // for the rolling construction.
 export type Rolling = Circle & { contact: Vec; point: Vec };
+// The rigid motion carrying a rolling curve's own frame to the drawing at a
+// representative sample: a frame point v lands at origin + rot(angle)v.
+export type Placement = {
+  sampleIndex: number;
+  origin: Vec;
+  angle: number;
+  contact: Vec;
+  point: Vec;
+};
+// A rolling curve in its own frame, with gaps, and its placements.
+export type MovingResult = {
+  path: (Vec | null)[];
+  closed: boolean;
+  positions: Placement[];
+};
 // A roulette closes after `turns` revolutions of the rolling center with
 // `lobes` arches; turns is 0 when it does not close exactly (or on a line).
 export type RouletteResult = {
@@ -113,6 +139,8 @@ export type Result = {
   rolling: Rolling[];
   // Present only for a roulette curve.
   roulette?: RouletteResult;
+  // Present only for a rolling curve.
+  moving?: MovingResult;
   warnings: string[];
   invalid: number;
 };

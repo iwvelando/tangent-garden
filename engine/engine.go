@@ -15,19 +15,19 @@ type Source struct {
 	Theta       float64 `json:"theta,omitempty"` // radians, counterclockwise from +x
 }
 type Request struct {
-	Kind         string        `json:"kind"`
-	Curve        Curve         `json:"curve"`
-	Source       Source        `json:"source"`
-	Pole         Vec           `json:"pole"`
-	NIncident    float64       `json:"nIncident"`
-	NTransmitted float64       `json:"nTransmitted"`
-	Offset       float64       `json:"offset"`
-	Distance     float64       `json:"distance"`
-	Stack        Stack         `json:"stack"`
-	Circles      bool          `json:"circles"`
-	Rolling      RollingCircle `json:"rolling"`
-	Samples      int           `json:"samples"`
-	Lines        int           `json:"lines"`
+	Kind         string  `json:"kind"`
+	Curve        Curve   `json:"curve"`
+	Source       Source  `json:"source"`
+	Pole         Vec     `json:"pole"`
+	NIncident    float64 `json:"nIncident"`
+	NTransmitted float64 `json:"nTransmitted"`
+	Offset       float64 `json:"offset"`
+	Distance     float64 `json:"distance"`
+	Stack        Stack   `json:"stack"`
+	Circles      bool    `json:"circles"`
+	Rolling      Roller  `json:"rolling"`
+	Samples      int     `json:"samples"`
+	Lines        int     `json:"lines"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -51,6 +51,8 @@ type Result struct {
 	SourcePosition *Vec      `json:"sourcePosition,omitempty"`
 	// Roulette is present only for a roulette curve.
 	Roulette *RouletteResult `json:"roulette,omitempty"`
+	// Moving is present only for a rolling curve.
+	Moving *MovingResult `json:"moving,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
@@ -104,6 +106,12 @@ func Compute(q Request) (Result, error) {
 	f, err := compile(q.Curve)
 	if err != nil {
 		return out, err
+	}
+	var mv *mover
+	if q.Kind == "rolling" && q.Rolling.curve() {
+		if mv, out.Moving, err = newMover(q.Rolling, q.Curve.A, q.Samples); err != nil {
+			return out, err
+		}
 	}
 	var roll *Roulette
 	if q.Curve.Format == "roulette" {
@@ -166,6 +174,8 @@ func Compute(q Request) (Result, error) {
 	arcOK := true
 	arcLength := q.Kind == "involute" || q.Kind == "rolling"
 	reversed := false
+	// Why a rolling curve stopped, other than the base's own arc length.
+	movingStop := placedOK
 	tirCount := 0
 	nextLine := 0
 	for j := 0; j < q.Samples; j++ {
@@ -214,6 +224,7 @@ func Compute(q Request) (Result, error) {
 		}
 		var target *Vec
 		var rolled *Rolling
+		var placed *Placement
 		origin := p
 		var dir Vec
 		virtual, tir := false, false
@@ -238,7 +249,15 @@ func Compute(q Request) (Result, error) {
 				origin, target = *start, Offset(p, dp, hi)
 			}
 		case "rolling":
-			if arcOK {
+			if arcOK && mv != nil {
+				s, why := mv.place(p, dp, arc)
+				if why != placedOK {
+					arcOK, movingStop = false, why
+					break
+				}
+				s.SampleIndex = j
+				target, placed = point(s.Point), &s
+			} else if arcOK {
 				s := q.Rolling.at(p, dp, arc)
 				s.SampleIndex = j
 				if target = point(s.Point); target != nil && s.Center.Valid() {
@@ -283,6 +302,9 @@ func Compute(q Request) (Result, error) {
 					if rolled != nil {
 						out.Rolling = append(out.Rolling, *rolled)
 					}
+					if placed != nil {
+						out.Moving.Positions = append(out.Moving.Positions, *placed)
+					}
 					if radius > 0 {
 						out.Circles = append(out.Circles, Circle{SampleIndex: j, Center: p, Radius: radius})
 					}
@@ -296,11 +318,19 @@ func Compute(q Request) (Result, error) {
 	if tirCount > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("Total internal reflection at %d samples; reflected rays are shown in amber.", tirCount))
 	}
+	roller, rolling := "the circle", "the rolling circle"
+	if mv != nil {
+		roller, rolling = "the rolling curve", "the rolling curve"
+	}
 	switch {
+	case movingStop == exhausted:
+		out.Warnings = append(out.Warnings, "The contact reached the end of the rolling curve's domain; it stopped there. Extend its domain, or close the curve so it wraps around.")
+	case movingStop == irregular:
+		out.Warnings = append(out.Warnings, "The contact reached a cusp, corner, or invalid point on the rolling curve; it stopped there. Choose a regular stretch of the rolling curve.")
 	case reversed:
-		out.Warnings = append(out.Warnings, "The tangent reversed between samples, at a cusp or corner; the circle cannot roll past it and stopped there. Choose a regular domain.")
+		out.Warnings = append(out.Warnings, "The tangent reversed between samples, at a cusp or corner; "+roller+" cannot roll past it and stopped there. Choose a regular domain.")
 	case !arcOK && q.Kind == "rolling":
-		out.Warnings = append(out.Warnings, "Arc length crossed an invalid interval; the rolling circle stopped. Choose a continuous domain.")
+		out.Warnings = append(out.Warnings, "Arc length crossed an invalid interval; "+rolling+" stopped. Choose a continuous domain.")
 	case !arcOK:
 		out.Warnings = append(out.Warnings, "Arc length crossed an invalid interval; involute stopped. Choose a continuous domain.")
 	}
