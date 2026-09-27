@@ -101,6 +101,7 @@ test("reveal keeps family sample identity and circles follow their samples", () 
       center: point(i),
       radius: 1,
     })),
+    rolling: [],
     warnings: [],
     invalid: 1,
   };
@@ -124,6 +125,7 @@ test("framing fits each family member and circle extents independently", () => {
       { distance: 0.01, points: shifted(-0.01) },
     ],
     circles: [],
+    rolling: [],
     warnings: [],
     invalid: 0,
   };

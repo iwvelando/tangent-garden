@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usesPole, type Config, type Result, type Vec } from "./types";
+import {
+  usesPole,
+  type Config,
+  type Result,
+  type Rolling,
+  type Vec,
+} from "./types";
 import type { AnimationView, Viewport } from "./animation";
 export type Layers = {
   base: boolean;
@@ -203,8 +209,39 @@ export function Plot({
     y1 = frame.cy + (H / 2 + cam.y) / scale,
     y0 = y1 - H / scale;
   const roulette = result.roulette;
-  // The rolling circle is drawn where the trace has reached.
+  // Rolling circles are drawn where their traces have reached.
   const rolling = roulette?.positions.at(-1);
+  const roller = result.rolling.at(-1);
+  // A rolling circle with its tracing arm, center, and contact point.
+  const rollingParts = (s: Rolling) => (
+    <>
+      <circle
+        cx={xy(s.center).x}
+        cy={xy(s.center).y}
+        r={s.radius * scale}
+        fill="none"
+        stroke={palette.line}
+        strokeWidth="1.2"
+        opacity=".75"
+      />
+      {line(s.center, s.point, palette.line, 0.75)}
+      <circle
+        cx={xy(s.center).x}
+        cy={xy(s.center).y}
+        r="2.5"
+        fill={palette.line}
+      />
+      <circle
+        data-testid="contact-point"
+        cx={xy(s.contact).x}
+        cy={xy(s.contact).y}
+        r="3.5"
+        fill="none"
+        stroke={palette.line}
+        strokeWidth="1.5"
+      />
+    </>
+  );
   if (layers.axes) {
     for (
       let x = Math.ceil(x0 / gridStep) * gridStep;
@@ -373,33 +410,18 @@ export function Plot({
           )}
           {rolling && (
             <g data-testid="rolling-circle" data-sample={rolling.sampleIndex}>
-              <circle
-                cx={xy(rolling.center).x}
-                cy={xy(rolling.center).y}
-                r={rolling.radius * scale}
-                fill="none"
-                stroke={palette.line}
-                strokeWidth="1.2"
-                opacity=".75"
-              />
-              {line(rolling.center, rolling.point, palette.line, 0.75)}
-              <circle
-                cx={xy(rolling.center).x}
-                cy={xy(rolling.center).y}
-                r="2.5"
-                fill={palette.line}
-              />
-              <circle
-                data-testid="contact-point"
-                cx={xy(rolling.contact).x}
-                cy={xy(rolling.contact).y}
-                r="3.5"
-                fill="none"
-                stroke={palette.line}
-                strokeWidth="1.5"
-              />
+              {rollingParts(rolling)}
             </g>
           )}
+        </g>
+      )}
+      {layers.lines && roller && (
+        <g
+          data-testid="rolling-construction"
+          data-sample={roller.sampleIndex}
+          aria-label="Circle rolling on the curve"
+        >
+          {rollingParts(roller)}
         </g>
       )}
       {layers.base && (
@@ -452,6 +474,15 @@ export function Plot({
             />
           ))}
         </g>
+      )}
+      {layers.lines && roller && (
+        <circle
+          data-testid="rolling-construction-point"
+          cx={xy(roller.point).x}
+          cy={xy(roller.point).y}
+          r="4"
+          fill={palette.derived}
+        />
       )}
       {layers.derived &&
         focuses.map((focus, i) => (
@@ -540,10 +571,11 @@ export function fitFrame(result: Result, config: Config) {
   // Circles are framed by their full extent when requested, independent of
   // whether the construction layer is showing, so toggling it never reframes.
   const extents = circleExtents(result.circles);
-  // A roulette frames its fixed circle and every rolling-circle position, so
-  // the rolling circle stays in view as it is revealed. The fixed circle is
-  // its own family, never an outlier of the rolling ones. A fixed line is
-  // unbounded; the rolling circles frame the stretch that is rolled over.
+  // A roulette and the rolling construction frame every rolling-circle
+  // position, so the circle stays in view as it is revealed. A roulette also
+  // frames its fixed circle as its own family, never an outlier of the
+  // rolling ones. A fixed line is unbounded; the rolling circles frame the
+  // stretch that is rolled over.
   const roulette = result.roulette;
   const fixed =
     roulette && roulette.roll !== "line"
@@ -558,6 +590,7 @@ export function fitFrame(result: Result, config: Config) {
     ...framingPoints(extents),
     ...framingPoints(fixed),
     ...framingPoints(circleExtents(roulette?.positions ?? [])),
+    ...framingPoints(circleExtents(result.rolling)),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };
   let minX = Infinity,

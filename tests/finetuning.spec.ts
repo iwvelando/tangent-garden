@@ -19,6 +19,7 @@ test("offset involute fits both curves throughout reveal, with fixed follow zoom
     rays: [],
     family: [],
     circles: [],
+    rolling: [],
     warnings: [],
     invalid: 0,
   };
@@ -57,6 +58,7 @@ test("robust framing rejects isolated asymptotic tails but keeps a distant coher
       rays: [],
       family: [],
       circles: [],
+      rolling: [],
       warnings: [],
       invalid: 0,
     },

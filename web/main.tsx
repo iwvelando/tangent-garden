@@ -73,6 +73,12 @@ const descriptions: Record<
       "Move every point the same signed distance along its normal; positive distances go to the left of travel. Where the distance reaches the radius of curvature, the offset folds back in a cusp that lies on the evolute.",
     formula: "O(t) = r(t) + d N(t)",
   },
+  rolling: {
+    title: "A circle, rolled along the curve",
+    description:
+      "A circle rolls along the curve without slipping, touching it on one side. A point fixed to the circle traces a roulette. The contact is momentarily at rest, so each line from the contact to the tracing point is normal to the roulette.",
+    formula: "P(t) = r + σρN + ℓ · rot(ψ − σs/ρ)(−σN)",
+  },
 };
 // A stack of offsets shares the offset tab but explains the family.
 const stackDescription = {
@@ -89,6 +95,7 @@ const tabs: Kind[] = [
   "diacaustic",
   "pedal",
   "offset",
+  "rolling",
 ];
 const poleOptions: Record<PoleKind, { label: string; note: string }> = {
   pedal: {
@@ -850,6 +857,66 @@ function App() {
               </p>
             </section>
           )}
+          {config.kind === "rolling" && (
+            <section>
+              <div className="section-label">03 / THE ROLLING CIRCLE</div>
+              <Field label="Side of the curve">
+                <select
+                  value={config.rolling.side}
+                  onChange={(e) =>
+                    update({
+                      rolling: {
+                        ...config.rolling,
+                        side: e.target.value as "left" | "right",
+                      },
+                    })
+                  }
+                >
+                  <option value="left">Left of travel</option>
+                  <option value="right">Right of travel</option>
+                </select>
+              </Field>
+              <div className="pair">
+                {number(
+                  "Circle radius ρ",
+                  config.rolling.radius,
+                  (radius) =>
+                    update({ rolling: { ...config.rolling, radius } }),
+                  {
+                    min: 0,
+                    topic: "rolling circle radius",
+                    help: "Positive and at most 100,000.",
+                  },
+                )}
+                {number(
+                  "Tracing distance ℓ",
+                  config.rolling.arm,
+                  (arm) => update({ rolling: { ...config.rolling, arm } }),
+                  {
+                    min: 0,
+                    topic: "rolling tracing distance",
+                    help: "Distance of the tracing point from the circle's center, 0–100,000. ℓ = ρ traces the rim, with cusps on the curve; larger values give loops.",
+                  },
+                )}
+              </div>
+              {number(
+                "Phase ψ (radians)",
+                config.rolling.phase,
+                (phase) => update({ rolling: { ...config.rolling, phase } }),
+                {
+                  topic: "rolling phase",
+                  help: "At the domain start the tracing arm points at the contact; the phase turns it counterclockwise by ψ radians.",
+                },
+              )}
+              <p className="note">
+                On a counterclockwise closed curve the left is the inside. The
+                circle rolls from the domain start and stops at a cusp. Where it
+                is larger than the curve's radius of curvature, or the curve
+                comes back near itself, it overlaps the curve: this is the
+                mathematical roulette, not a collision.
+              </p>
+            </section>
+          )}
           {config.kind === "involute" && (
             <section>
               {number(
@@ -865,7 +932,10 @@ function App() {
           )}
           <section>
             <div className="section-label">
-              {optical || usesPole(config.kind) || config.kind === "offset"
+              {optical ||
+              usesPole(config.kind) ||
+              config.kind === "offset" ||
+              config.kind === "rolling"
                 ? "04"
                 : "03"}{" "}
               / THE DRAWING

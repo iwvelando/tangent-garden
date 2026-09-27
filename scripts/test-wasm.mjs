@@ -222,7 +222,49 @@ assert.match(
   ).error,
   /smaller than the fixed radius/,
 );
+// A circle of radius 1 rolling outside a circle of radius 3 traces the
+// three-cusped epicycloid (4cos t − cos 4t, 4sin t − sin 4t).
+const rolling = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "rolling",
+      curve: { ...config.curve, x: "3*cos(t)", y: "3*sin(t)" },
+      rolling: { side: "right", radius: 1, arm: 1, phase: 0 },
+    }),
+  ),
+);
+assert.equal(rolling.invalid, 0);
+rolling.derived.forEach((p, j) => {
+  const t = (j * 2 * Math.PI) / (config.samples - 1);
+  assert.ok(
+    Math.hypot(
+      p.x - (4 * Math.cos(t) - Math.cos(4 * t)),
+      p.y - (4 * Math.sin(t) - Math.sin(4 * t)),
+    ) < 1e-9,
+  );
+});
+assert.equal(rolling.rolling.length, config.lines);
+rolling.rolling.forEach((s, k) => {
+  assert.deepEqual(s.contact, rolling.base[s.sampleIndex]);
+  assert.deepEqual(s.point, rolling.derived[s.sampleIndex]);
+  assert.deepEqual(rolling.rays[k].origin, s.contact);
+  assert.ok(Math.abs(Math.hypot(s.center.x, s.center.y) - 4) < 1e-9);
+});
+assert.deepEqual(result.rolling, []);
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        kind: "rolling",
+        rolling: { side: "up", radius: 1, arm: 1, phase: 0 },
+      }),
+    ),
+  ).error,
+  /left or right/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, and invalid JSON passed.",
 );
 process.exit(0);

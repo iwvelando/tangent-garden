@@ -194,10 +194,10 @@ export function AnimationPanel({
         ? 0.75
         : target === "sourceTheta"
           ? from + Math.PI / 2
-          : target === "rollPhase"
+          : target === "rollPhase" || target === "rollingPhase"
             ? from + 2 * Math.PI
             : // Shrinking keeps a circle rolling inside smaller than R.
-              target === "rollRadius"
+              target === "rollRadius" || target === "rollingRadius"
               ? from / 2
               : target === "angle"
                 ? from + 360

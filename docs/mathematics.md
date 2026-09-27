@@ -20,6 +20,20 @@ When `R/r = p/q` in lowest terms, the trace repeats exactly after the rolling ce
 
 The traced curve is the base curve: every construction applies to it with the usual numerical derivatives. Radii and `d` are bounded by 100000 and `|φ|` by 1000000. Rolling positions (rolling center and radius, contact point, tracing point) are reported at the representative samples, including samples where the construction itself is undefined, such as the cusps of a rim trace.
 
+## Rolling circle on a curve
+
+The rolling construction rolls a circle of radius `ρ > 0` without slipping along any regular base curve, tangent to it on a chosen side of travel, and traces a point fixed to the circle at distance `ℓ ≥ 0` from its center. With `σ = +1` for the left side and `−1` for the right, `N = JT` the left unit normal, and `s(t) = ∫[t_min,t] |r′(u)|du` the arc length from the domain start:
+
+`C = r + σρN`, `P = C + ℓ · rot(ψ − σs/ρ)(−σN)`,
+
+where `rot(α)` turns a vector counterclockwise by α. The contact is the base point `r` itself, and `−σN` points from the center to it. At the domain start the arm points at the contact, turned counterclockwise by the phase `ψ` (radians). On a counterclockwise closed curve the left is the inside.
+
+No slipping fixes the spin. The center moves at `|r′|(1 − σρκ)T`, and the material point at the contact, `C − σρN`, must be at rest, so the circle turns at `ω = −|r′|(1 − σρκ)/(σρ) = κ|r′| − σ|r′|/ρ`: the tangent's turning rate plus `−σ/ρ` per unit arc length. Its arm angle is therefore the tangent angle plus `−σs/ρ`. The tangent's own turning is carried by `N`, so only the arc length is integrated and no angle is unwrapped. Because the contact is momentarily at rest, every point of the circle moves at right angles to its segment from the contact; the representative construction lines are these segments from `r` to `P`, which are normals of the roulette wherever it is regular.
+
+This is the circular construction of the previous section with the circle replaced by any curve, not the circular formula with a substituted base. On a counterclockwise circle of radius R it reproduces the hypotrochoid (left side) and epitrochoid (right side), and on the x-axis traversed rightward with `x = ρt` the trochoid (left side), all with the same phase convention when the domain starts at `t = 0`. `ℓ = 0` traces the offset at distance `σρ`; `ℓ = ρ` traces the rim, whose cusps lie on the base curve.
+
+The arc length uses the involute's Simpson integration over each sample interval, so it converges at fourth order, and the construction needs only a stable, nonzero first derivative (the offset's stability rule). The circle stops explicitly, with a warning, at the first invalid sample and wherever the tangent reverses within one sample interval, which marks a cusp or corner between samples: across a cusp the circle would jump to the other side, which is not rolling. Everything after the stop is a gap. The construction is kinematic: where the circle is larger than the radius of curvature on its side (`σρκ > 1`), or the curve returns near itself, the circle overlaps the curve. That is drawn as defined, not treated as a collision. The trace of a closed curve of length L repeats after one lap only when `L/(2πρ)` is a whole number; no closure is detected or forced. `ρ` and `ℓ` are bounded by 100000 and `|ψ|` by 1000000. Rolling positions (center, radius, contact, tracing point) are reported at representative samples where the trace is defined. See [MathCurve's trochoids on arbitrary bases](https://mathcurve.com/courbes2d.gb/trochoidgene/trochoidgene.shtml).
+
 ## Evolute
 
 `E = r + (v·v)/det(v,a) Jv`.

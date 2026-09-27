@@ -19,6 +19,7 @@ const base: Config = {
   distance: 0,
   stack: { enabled: false, from: -0.5, to: 0.5, count: 6 },
   circles: false,
+  rolling: { side: "right", radius: 0.5, arm: 0.5, phase: 0 },
   samples: 1000,
   lines: 48,
 };
@@ -186,6 +187,21 @@ export const presets: { title: string; note: string; config: Config }[] = [
       curve: { ...base.curve, format: "roulette", min: 0, max: 4 * Math.PI },
       samples: 2000,
       lines: 40,
+    },
+  },
+  {
+    title: "Flower & a rolling circle",
+    note: "A circle rolling inside a flower",
+    config: {
+      ...base,
+      kind: "rolling",
+      curve: { ...base.curve, format: "polar", r: "1+0.18*cos(5*t)" },
+      // The flower's length is about 7.41469 = 10 · 2π · 0.11800838, so ten
+      // turns of this rim point nearly complete one lap: its ten cusps touch
+      // the petal tips and waists. The ratio is not forced to close.
+      rolling: { side: "left", radius: 0.118, arm: 0.118, phase: 0 },
+      samples: 2000,
+      lines: 60,
     },
   },
 ];

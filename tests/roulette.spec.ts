@@ -121,6 +121,7 @@ test("reveal moves the rolling circle with the trace; framing holds the fixed ci
     rays: [],
     family: [],
     circles: [],
+    rolling: [],
     roulette: {
       roll: "inside",
       fixedRadius: 30,

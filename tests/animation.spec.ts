@@ -63,6 +63,7 @@ test("tracks interpolate independently and reveal preserves gaps and sample iden
     ],
     family: [],
     circles: [],
+    rolling: [],
     warnings: [],
     invalid: 2,
   };
