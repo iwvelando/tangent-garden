@@ -87,8 +87,11 @@ export function exportEngineCount(
 }
 
 export function boundText(value: number) {
-  if (value === 2 * Math.PI) return "2*pi";
   if (value === Math.PI) return "pi";
   if (value === -Math.PI) return "-pi";
+  // Whole multiples of pi, such as a roulette's closing period 4*pi.
+  const turns = Math.round(value / Math.PI);
+  if (turns !== 0 && Math.abs(turns) <= 400 && value === turns * Math.PI)
+    return `${turns}*pi`;
   return String(value);
 }

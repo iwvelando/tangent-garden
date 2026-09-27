@@ -11,7 +11,8 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 ## Features
 
 - Parametric, Cartesian, and polar curve definitions, with a bounded expression parser and constants such as `pi`, `e`, and `phi`.
-- Fourteen example studies; point and parallel light sources; polar source coordinates; configurable refraction.
+- Roulettes traced by a circle rolling inside or outside a fixed circle or along a line, with the rolling circle drawn, exact closure for rational radius ratios, and radius, tracing-distance, and phase animation.
+- Fifteen example studies; point and parallel light sources; polar source coordinates; configurable refraction.
 - Independent poles for pedal, contrapedal, and orthotomic constructions, with tangent/normal projections, reflected segments, and pole-coordinate animation.
 - Signed normal offsets (parallel curves) that keep their cusps and swallowtails, with distance animation, evenly spaced offset stacks, and optional generating circles whose envelope is the offsets ±R.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.

@@ -7,16 +7,30 @@ export const poleKinds = ["pedal", "contrapedal", "orthotomic"] as const;
 export type PoleKind = (typeof poleKinds)[number];
 export const usesPole = (kind: Kind): kind is PoleKind =>
   (poleKinds as readonly Kind[]).includes(kind);
+// How the rolling circle moves: inside or outside a fixed circle centered at
+// the origin, or along the x-axis on its upper side.
+export type Roll = "inside" | "outside" | "line";
 export type Config = {
   kind: Kind;
   curve: {
-    format: "parametric" | "cartesian" | "polar";
+    format: "parametric" | "cartesian" | "polar" | "roulette";
     x: string;
     y: string;
     r: string;
     min: number;
     max: number;
     a: number;
+    // A point at distance arm from the center of a circle of radius radius
+    // rolling on a circle of radius fixedRadius (ignored on the line). phase
+    // turns the arm counterclockwise from the contact direction at t = 0, in
+    // radians. Used only when format is "roulette".
+    roulette: {
+      roll: Roll;
+      fixedRadius: number;
+      radius: number;
+      arm: number;
+      phase: number;
+    };
   };
   source: {
     kind: "point" | "parallel";
@@ -53,6 +67,18 @@ export type Ray = {
 
 export type OffsetPath = { distance: number; points: (Vec | null)[] };
 export type Circle = { sampleIndex: number; center: Vec; radius: number };
+// The rolling circle at a representative sample, with its contact point and
+// the tracing point on the base curve.
+export type Rolling = Circle & { contact: Vec; point: Vec };
+// A roulette closes after `turns` revolutions of the rolling center with
+// `lobes` arches; turns is 0 when it does not close exactly (or on a line).
+export type RouletteResult = {
+  roll: Roll;
+  fixedRadius: number;
+  turns: number;
+  lobes: number;
+  positions: Rolling[];
+};
 
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
@@ -65,6 +91,8 @@ export type Result = {
   // Offset stack members, indexed like base; empty for other results.
   family: OffsetPath[];
   circles: Circle[];
+  // Present only for a roulette curve.
+  roulette?: RouletteResult;
   warnings: string[];
   invalid: number;
 };

@@ -49,6 +49,7 @@ const studies: Record<string, string> = {
   orthotomic: "10",
   offset: "11",
   "offset stack": "12",
+  roulette: "14",
 };
 for (const study of [
   "hold",
@@ -59,6 +60,7 @@ for (const study of [
   "orthotomic",
   "offset",
   "offset stack",
+  "roulette",
 ]) {
   const studyPreset = studies[study];
   const camera = studyPreset ? "hold" : study;

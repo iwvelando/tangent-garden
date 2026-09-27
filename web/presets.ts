@@ -9,6 +9,7 @@ const base: Config = {
     r: "1+0.3*cos(3*t)",
     min: 0,
     max: 2 * Math.PI,
+    roulette: { roll: "inside", fixedRadius: 5, radius: 2, arm: 3, phase: 0 },
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
@@ -172,6 +173,19 @@ export const presets: { title: string; note: string; config: Config }[] = [
       // both envelope branches, the offsets ±0.5, stay smooth.
       stack: { enabled: true, from: -0.5, to: 0.5, count: 2 },
       circles: true,
+    },
+  },
+  {
+    title: "Hypotrochoid & its evolute",
+    note: "A circle rolling inside a circle",
+    config: {
+      ...base,
+      kind: "evolute",
+      // The reference study: R=5, r=2, d=3 closes after two turns, t∈[0,4π].
+      // Its evolute is a five-pointed star.
+      curve: { ...base.curve, format: "roulette", min: 0, max: 4 * Math.PI },
+      samples: 2000,
+      lines: 40,
     },
   },
 ];

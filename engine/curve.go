@@ -14,6 +14,9 @@ type Curve struct {
 	Min    float64 `json:"min"`
 	Max    float64 `json:"max"`
 	A      float64 `json:"a"`
+	// Roulette defines the curve when Format is "roulette"; t is its rolling
+	// parameter and the expressions are ignored.
+	Roulette Roulette `json:"roulette"`
 }
 type curveFunc func(float64) Vec
 
@@ -32,6 +35,12 @@ func compile(c Curve) (curveFunc, error) {
 	}
 	if span := c.Max - c.Min; span < 1e-6 || span > 1e5 {
 		return nil, fmt.Errorf("domain width is %g; supported widths are 0.000001–100000", span)
+	}
+	if c.Format == "roulette" {
+		if err := c.Roulette.validate(); err != nil {
+			return nil, err
+		}
+		return c.Roulette.curve(), nil
 	}
 	if c.Format == "polar" {
 		r, e := expr.ParseWithParameter(c.R, c.A)

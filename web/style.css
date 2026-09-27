@@ -432,6 +432,10 @@ details p,
   gap: 13px 8px;
   margin: 22px 0;
 }
+.closure {
+  width: 100%;
+  margin: 4px 0 8px;
+}
 .check {
   font-size: 12px;
   display: flex;

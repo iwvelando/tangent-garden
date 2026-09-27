@@ -19,6 +19,10 @@ export type Target =
   | "stackFrom"
   | "stackTo"
   | "stackCount"
+  | "rollFixed"
+  | "rollRadius"
+  | "rollArm"
+  | "rollPhase"
   | "samples"
   | "lines"
   | "rayLength";
@@ -51,6 +55,10 @@ export const targetLabels: Record<Target, string> = {
   stackFrom: "First offset distance",
   stackTo: "Last offset distance",
   stackCount: "Number of offsets",
+  rollFixed: "Fixed radius R",
+  rollRadius: "Rolling radius r",
+  rollArm: "Tracing distance d",
+  rollPhase: "Phase φ (radians)",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -76,6 +84,18 @@ export function availableTargets(config: Config): Target[] {
     targets.push("rayLength");
   }
   if (config.kind === "diacaustic") targets.push("nIncident", "nTransmitted");
+  // A roulette's shape comes from its rolling geometry, not from a.
+  if (config.curve.format === "roulette") {
+    targets.splice(targets.indexOf("a"), 1);
+    targets.unshift(
+      "rollArm",
+      "rollPhase",
+      "rollRadius",
+      ...(config.curve.roulette.roll === "line"
+        ? []
+        : (["rollFixed"] as Target[])),
+    );
+  }
   return targets;
 }
 export function targetValue(
@@ -108,6 +128,14 @@ export function targetValue(
       return config.stack.to;
     case "stackCount":
       return config.stack.count;
+    case "rollFixed":
+      return config.curve.roulette.fixedRadius;
+    case "rollRadius":
+      return config.curve.roulette.radius;
+    case "rollArm":
+      return config.curve.roulette.arm;
+    case "rollPhase":
+      return config.curve.roulette.phase;
     case "rayLength":
       return length;
     default:
@@ -163,6 +191,18 @@ export function applyTracks(
       case "stackCount":
         config.stack.count = value;
         break;
+      case "rollFixed":
+        config.curve.roulette.fixedRadius = value;
+        break;
+      case "rollRadius":
+        config.curve.roulette.radius = value;
+        break;
+      case "rollArm":
+        config.curve.roulette.arm = value;
+        break;
+      case "rollPhase":
+        config.curve.roulette.phase = value;
+        break;
       case "rayLength":
         length = value;
         break;
@@ -189,5 +229,9 @@ export function reveal(result: Result, progress: number): Result {
       points: path.points.slice(0, last + 1),
     })),
     circles: result.circles.filter((c) => c.sampleIndex <= last),
+    roulette: result.roulette && {
+      ...result.roulette,
+      positions: result.roulette.positions.filter((s) => s.sampleIndex <= last),
+    },
   };
 }
