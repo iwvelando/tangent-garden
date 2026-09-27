@@ -23,6 +23,8 @@ type Request struct {
 	NTransmitted float64 `json:"nTransmitted"`
 	Offset       float64 `json:"offset"`
 	Distance     float64 `json:"distance"`
+	Stack        Stack   `json:"stack"`
+	Circles      bool    `json:"circles"`
 	Samples      int     `json:"samples"`
 	Lines        int     `json:"lines"`
 }
@@ -40,13 +42,15 @@ type Result struct {
 	Derived        []*Vec   `json:"derived"`
 	Virtual        []bool   `json:"virtual"`
 	Rays           []Ray    `json:"rays"`
+	Family         []Path   `json:"family"`
+	Circles        []Circle `json:"circles"`
 	Warnings       []string `json:"warnings"`
 	Invalid        int      `json:"invalid"`
 	SourcePosition *Vec     `json:"sourcePosition,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
-	out := Result{Rays: []Ray{}, Warnings: []string{}}
+	out := Result{Rays: []Ray{}, Family: []Path{}, Circles: []Circle{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
 	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && !usesPole(q.Kind) {
 		return out, fmt.Errorf("unknown construction")
@@ -62,6 +66,12 @@ func Compute(q Request) (Result, error) {
 	}
 	if !finite(q.Distance) || math.Abs(q.Distance) > 1e5 {
 		return out, fmt.Errorf("offset distance must be finite and within ±100000")
+	}
+	stacked := q.Kind == "offset" && q.Stack.Enabled
+	if stacked {
+		if err := q.Stack.validate(q.Samples); err != nil {
+			return out, err
+		}
 	}
 	if optical && q.Source.Kind == "point" {
 		switch q.Source.Coordinates {
@@ -89,8 +99,21 @@ func Compute(q Request) (Result, error) {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	step := (hi - lo) / float64(q.Samples-1)
 	out.Base = make([]*Vec, q.Samples)
-	out.Derived = make([]*Vec, q.Samples)
-	out.Virtual = make([]bool, q.Samples)
+	if stacked {
+		// A stack replaces the single derived curve with one path per distance.
+		out.Derived, out.Virtual = []*Vec{}, []bool{}
+		out.Family = q.Stack.paths(q.Samples)
+	} else {
+		out.Derived = make([]*Vec, q.Samples)
+		out.Virtual = make([]bool, q.Samples)
+	}
+	radius := 0.0
+	if q.Kind == "offset" && q.Circles {
+		radius = math.Abs(q.Distance)
+		if stacked {
+			radius = math.Max(math.Abs(q.Stack.From), math.Abs(q.Stack.To))
+		}
+	}
 	incident := func(t float64) Vec {
 		if q.Source.Kind == "parallel" {
 			a := q.Source.Angle * math.Pi / 180
@@ -155,6 +178,7 @@ func Compute(q Request) (Result, error) {
 			}
 		}
 		var target *Vec
+		origin := p
 		var dir Vec
 		virtual, tir := false, false
 		switch q.Kind {
@@ -165,7 +189,18 @@ func Compute(q Request) (Result, error) {
 		case "orthotomic":
 			target = Orthotomic(p, dp, q.Pole)
 		case "offset":
-			target = Offset(p, dp, q.Distance)
+			if !stacked {
+				target = Offset(p, dp, q.Distance)
+				break
+			}
+			for k := range out.Family {
+				out.Family[k].Points[j] = Offset(p, dp, out.Family[k].Distance)
+			}
+			// The segment crosses every member and reaches back to the curve.
+			lo, hi := q.Stack.span()
+			if start := Offset(p, dp, lo); start != nil {
+				origin, target = *start, Offset(p, dp, hi)
+			}
 		case "evolute":
 			target = Evolute(p, dp, ddp)
 		case "involute":
@@ -188,8 +223,10 @@ func Compute(q Request) (Result, error) {
 				virtual = s < 0
 			}
 		}
-		out.Derived[j] = target
-		out.Virtual[j] = virtual
+		if !stacked {
+			out.Derived[j] = target
+			out.Virtual[j] = virtual
+		}
 		if target == nil {
 			out.Invalid++
 		}
@@ -199,7 +236,10 @@ func Compute(q Request) (Result, error) {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})
 				} else if !optical && target != nil {
-					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Target: target})
+					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: origin, Target: target})
+					if radius > 0 {
+						out.Circles = append(out.Circles, Circle{SampleIndex: j, Center: p, Radius: radius})
+					}
 				}
 			}
 		}

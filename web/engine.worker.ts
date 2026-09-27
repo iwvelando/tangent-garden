@@ -52,6 +52,7 @@ self.onmessage = async ({
       config.curve.min = min;
       config.curve.max = max;
     }
+    const stacked = config.kind === "offset" && config.stack.enabled;
     const numbers = [
       config.curve.min,
       config.curve.max,
@@ -66,6 +67,9 @@ self.onmessage = async ({
       config.samples,
       config.lines,
       ...(usesPole(config.kind) ? [config.pole.x, config.pole.y] : []),
+      ...(stacked
+        ? [config.stack.from, config.stack.to, config.stack.count]
+        : []),
       ...(config.source.kind === "point" &&
       config.source.coordinates === "polar"
         ? [config.source.radius, config.source.theta]
@@ -75,6 +79,8 @@ self.onmessage = async ({
       throw new Error("Fill in each numeric field with a finite number.");
     if (!Number.isInteger(config.samples) || !Number.isInteger(config.lines))
       throw new Error("Samples and construction lines must be whole numbers.");
+    if (stacked && !Number.isInteger(config.stack.count))
+      throw new Error("The number of offsets must be a whole number.");
     const result: Result | { error: string } = JSON.parse(
       tangentGardenCompute(JSON.stringify(config)),
     );

@@ -123,7 +123,51 @@ assert.ok(
     ),
   ).error,
 );
+// A stack of offsets of a radius-2 circle is three concentric circles, with
+// generating circles of the largest distance centered on the curve.
+const stack = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "offset",
+      curve: { ...config.curve, x: "2*cos(t)", y: "2*sin(t)" },
+      stack: { enabled: true, from: -1, to: 0.5, count: 3 },
+      circles: true,
+    }),
+  ),
+);
+assert.equal(stack.invalid, 0);
+assert.equal(stack.derived.length, 0);
+assert.deepEqual(
+  stack.family.map((path) => path.distance),
+  [-1, -0.25, 0.5],
+);
+for (const [k, radius] of [3, 2.25, 1.5].entries())
+  for (const i of [0, 249, 500, 999]) {
+    const t = (i * 2 * Math.PI) / 999;
+    const p = stack.family[k].points[i];
+    assert.ok(Math.abs(p.x - radius * Math.cos(t)) < 1e-7);
+    assert.ok(Math.abs(p.y - radius * Math.sin(t)) < 1e-7);
+  }
+assert.equal(stack.circles.length, config.lines);
+for (const [i, circle] of stack.circles.entries()) {
+  assert.equal(circle.radius, 1);
+  assert.equal(circle.sampleIndex, stack.rays[i].sampleIndex);
+  assert.ok(Math.abs(Math.hypot(circle.center.x, circle.center.y) - 2) < 1e-9);
+}
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        kind: "offset",
+        stack: { enabled: true, from: -1, to: 1, count: 65 },
+      }),
+    ),
+  ).error,
+  /2–64/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, and invalid JSON passed.",
 );
 process.exit(0);

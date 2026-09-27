@@ -33,6 +33,11 @@ export type Config = {
   offset: number;
   // Signed normal offset d, positive toward the left of travel.
   distance: number;
+  // When enabled, count offsets evenly spaced from `from` to `to` replace the
+  // single distance.
+  stack: { enabled: boolean; from: number; to: number; count: number };
+  // Offset circles of the largest distance, centered at representative samples.
+  circles: boolean;
   samples: number;
   lines: number;
 };
@@ -46,6 +51,9 @@ export type Ray = {
   tir: boolean;
 };
 
+export type OffsetPath = { distance: number; points: (Vec | null)[] };
+export type Circle = { sampleIndex: number; center: Vec; radius: number };
+
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
 export type Result = {
@@ -54,6 +62,9 @@ export type Result = {
   derived: (Vec | null)[];
   virtual: boolean[];
   rays: Ray[];
+  // Offset stack members, indexed like base; empty for other results.
+  family: OffsetPath[];
+  circles: Circle[];
   warnings: string[];
   invalid: number;
 };
