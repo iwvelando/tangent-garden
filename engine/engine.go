@@ -60,6 +60,8 @@ type Result struct {
 	Roulette *RouletteResult `json:"roulette,omitempty"`
 	// Harmonic is present only for a Lissajous or Fourier curve.
 	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
+	// Pursuit is present only for a cyclic pursuit.
+	Pursuit *PursuitResult `json:"pursuit,omitempty"`
 	// Moving is present only for a rolling curve.
 	Moving *MovingResult `json:"moving,omitempty"`
 	// Second holds the chords' far endpoints, indexed like Base, present
@@ -169,6 +171,14 @@ func Compute(q Request) (Result, error) {
 		out.Harmonic, epicycles = harmonicResult(q.Curve)
 	}
 	lo, hi := q.Curve.Min, q.Curve.Max
+	var chaser *chase
+	if q.Curve.Format == "pursuit" {
+		chaser = newChase(q.Curve.Pursuit, lo, hi, chaseTolerance)
+		out.Pursuit = newPursuitResult(chaser, q.Samples)
+		if chaser.exhausted {
+			out.Warnings = append(out.Warnings, fmt.Sprintf("The chase ran out of integration steps at t = %.6g; later samples are left empty.", chaser.end))
+		}
+	}
 	step := (hi - lo) / float64(q.Samples-1)
 	out.Base = make([]*Vec, q.Samples)
 	// A stack or a circle family's two branches replace the single derived
@@ -242,6 +252,9 @@ func Compute(q Request) (Result, error) {
 			out.Second[j] = point(family.end(t))
 		}
 		line := nextLine < q.Lines && j == int(math.Round(float64(nextLine)*float64(q.Samples-1)/float64(q.Lines-1)))
+		if chaser != nil {
+			out.Pursuit.sample(chaser, j, t, line)
+		}
 		if line {
 			nextLine++
 			// The rolling circle is shown wherever the trace itself is finite,

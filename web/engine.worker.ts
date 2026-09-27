@@ -111,6 +111,16 @@ self.onmessage = async ({
             term.phase,
           ])
         : []),
+      ...(config.curve.format === "pursuit"
+        ? [
+            config.curve.pursuit.capture,
+            ...config.curve.pursuit.pursuers.flatMap((p) => [
+              p.x,
+              p.y,
+              p.speed,
+            ]),
+          ]
+        : []),
       ...(config.source.kind === "point" &&
       config.source.coordinates === "polar"
         ? [config.source.radius, config.source.theta]

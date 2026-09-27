@@ -224,6 +224,9 @@ export function Plot({
   // Like rolling circles, the rotating vectors are drawn where the trace
   // has reached.
   const epicycles = harmonic?.positions.at(-1);
+  const pursuit = result.pursuit;
+  // The pursuers are marked where the chase has reached.
+  const chasers = pursuit?.polygons.at(-1);
   const roller = result.rolling.at(-1);
   const moving = result.moving;
   const placed = moving?.positions.at(-1);
@@ -472,6 +475,28 @@ export function Plot({
           )}
         </g>
       )}
+      {layers.lines && pursuit && (
+        <g data-testid="pursuit-polygons" aria-label="Connecting polygons">
+          {pursuit.polygons.map((p) => (
+            <path
+              key={p.sampleIndex}
+              data-testid="pursuit-polygon"
+              data-sample={p.sampleIndex}
+              d={
+                // Always joined: a long edge is not a jump, as in a path.
+                `M${p.points
+                  .map((q) => `${xy(q).x.toFixed(3)},${xy(q).y.toFixed(3)}`)
+                  .join("L")}Z`
+              }
+              fill="none"
+              stroke={palette.line}
+              strokeWidth="1"
+              strokeLinejoin="round"
+              opacity=".55"
+            />
+          ))}
+        </g>
+      )}
       {layers.lines && harmonic && (
         <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
           {harmonic.guides.map((g, k) => (
@@ -614,6 +639,18 @@ export function Plot({
           opacity=".5"
         />
       )}
+      {layers.base &&
+        pursuit?.paths.map((points, k) => (
+          <path
+            key={k}
+            data-testid="pursuit-path"
+            d={path(points)}
+            fill="none"
+            stroke={palette.base}
+            strokeWidth="2.3"
+            strokeLinejoin="round"
+          />
+        ))}
       {layers.base && (
         <path
           d={path(result.base)}
@@ -622,6 +659,17 @@ export function Plot({
           strokeWidth="2.3"
         />
       )}
+      {layers.lines &&
+        chasers?.points.map((p, k) => (
+          <circle
+            key={k}
+            data-testid="pursuer"
+            cx={xy(p).x}
+            cy={xy(p).y}
+            r="3.5"
+            fill={palette.base}
+          />
+        ))}
       {layers.lines && epicycles && (
         <circle
           data-testid="harmonic-point"
@@ -924,6 +972,8 @@ export function fitFrame(result: Result, config: Config) {
         ),
       ),
     ),
+    // Each pursuer's path is its own family.
+    ...(result.pursuit?.paths ?? []).flatMap((points) => framingPoints(points)),
     ...framingPoints(circleExtents(result.rolling)),
     ...framingPoints(movingExtents(result)),
     // An inverted derived curve, and the circle of inversion as its own

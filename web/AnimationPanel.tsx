@@ -211,7 +211,9 @@ export function AnimationPanel({
                         ? from * 1.5
                         : target === "nIncident" || target === "nTransmitted"
                           ? 1.5
-                          : from + 1;
+                          : target === "pursuitCapture"
+                            ? from * 20
+                            : from + 1;
     return { target, from: String(from), to: String(to) };
   }
   function parameterMode(next: "reveal" | "parameters") {

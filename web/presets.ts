@@ -22,6 +22,15 @@ const base: Config = {
       { frequency: -4, radius: 0.45, phase: 0 },
       { frequency: 6, radius: 0.2, phase: 0 },
     ],
+    // Seven equal-speed pursuers on the unit heptagon.
+    pursuit: {
+      pursuers: Array.from({ length: 7 }, (_, j) => ({
+        x: Math.cos((2 * Math.PI * j) / 7),
+        y: Math.sin((2 * Math.PI * j) / 7),
+        speed: 1,
+      })),
+      capture: 0.001,
+    },
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
@@ -495,6 +504,52 @@ export const presets: { title: string; note: string; config: Config }[] = [
       // The pedal turns fast where the figure turns at the edges of its box.
       samples: 12000,
       lines: 40,
+    },
+  },
+  {
+    title: "Seven pursuers & an evolute",
+    note: "Cyclic pursuit from a heptagon",
+    config: {
+      ...base,
+      kind: "evolute",
+      // Each pursuer runs at unit speed straight at the next, so the heptagon
+      // turns and shrinks, r = 1 − t sin(π/7), and every path is the
+      // logarithmic spiral r = exp(−tan(π/7)θ). Neighbors come within the
+      // capture distance just before t = 1/sin(π/7) ≈ 2.3048. The evolute
+      // of the first path is the same spiral scaled by tan(π/7).
+      curve: { ...base.curve, format: "pursuit", min: 0, max: 2.31 },
+      samples: 4000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Four chasers at unequal speeds",
+    note: "The first capture ends the chase",
+    config: {
+      ...base,
+      kind: "pedal",
+      // From the corners of a square, the second pursuer runs a quarter
+      // faster and the fourth a fifth slower. The square skews as it turns,
+      // and the third catches the slow fourth at t ≈ 1.96, while the others
+      // are still apart: the chase stops there. The pedal is of the first
+      // pursuer's path about the square's center.
+      curve: {
+        ...base.curve,
+        format: "pursuit",
+        min: 0,
+        max: 2,
+        pursuit: {
+          pursuers: [
+            { x: 1, y: 1, speed: 1 },
+            { x: -1, y: 1, speed: 1.25 },
+            { x: -1, y: -1, speed: 1 },
+            { x: 1, y: -1, speed: 0.8 },
+          ],
+          capture: 0.01,
+        },
+      },
+      samples: 4000,
+      lines: 36,
     },
   },
 ];

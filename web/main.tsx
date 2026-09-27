@@ -5,6 +5,8 @@ import { Plot, type Layers } from "./Plot";
 import {
   isHarmonic,
   maxTerms,
+  maxPursuers,
+  ownsShape,
   usesPole,
   type Bounds,
   type Config,
@@ -21,7 +23,8 @@ import { ExportImageMenu } from "./ExportImageMenu";
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
-import { termLabels } from "./animation";
+import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
+import { pursuerLabels, termLabels } from "./animation";
 import { useDisclosure } from "./useDisclosure";
 import { useMediaQuery } from "./useMediaQuery";
 import type { AnimationView, Viewport } from "./animation";
@@ -568,6 +571,112 @@ function App() {
       {harmonicNote}
     </>
   );
+  const pursuers = config.curve.pursuit.pursuers;
+  // Like term edits, adding or removing a pursuer renumbers the fields after
+  // it, so pending evaluations land first.
+  const editPursuers = async (
+    change: (
+      pursuers: Config["curve"]["pursuit"]["pursuers"],
+    ) => Config["curve"]["pursuit"]["pursuers"],
+  ) => {
+    await scalarStatus.resolved();
+    update((c) => ({
+      curve: {
+        ...c.curve,
+        pursuit: {
+          ...c.curve.pursuit,
+          pursuers: change(c.curve.pursuit.pursuers),
+        },
+      },
+    }));
+  };
+  const chase =
+    frame?.config.curve.format === "pursuit" ? frame.result.pursuit : undefined;
+  const captured =
+    chase?.capture && chase.capture.time > frame!.config.curve.min
+      ? chase.capture
+      : undefined;
+  const pursuitControls = (
+    <>
+      <p className="note">
+        Each pursuer starts at (x, y) (within ±100,000) when t is at the domain
+        start and runs straight at the next one, the last at the first, at its
+        own speed v (0–100,000). The first pursuer&rsquo;s path is the curve the
+        construction uses.
+      </p>
+      {pursuers.map((_, i) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`pursuer-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`pursuer-${i}`}>
+              Pursuer {i + 1}, chasing {i + 1 === pursuers.length ? 1 : i + 2}
+            </span>
+            <button
+              type="button"
+              aria-label={`Remove pursuer ${i + 1}`}
+              disabled={pursuers.length === 2}
+              onClick={() => editPursuers((p) => p.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair trio">
+            {(["X", "Y", "Speed"] as const).map((field) =>
+              scalar(pursuerLabels[field](i + 1), [
+                "curve",
+                "pursuit",
+                "pursuers",
+                String(i),
+                field.toLowerCase(),
+              ]),
+            )}
+          </div>
+        </div>
+      ))}
+      <div className="pair">
+        <button
+          className="closure"
+          type="button"
+          disabled={pursuers.length >= maxPursuers}
+          onClick={() => editPursuers((p) => [...p, nextPursuer(p)])}
+        >
+          {pursuers.length >= maxPursuers
+            ? "At most 16 pursuers"
+            : "Add a pursuer"}
+        </button>
+        <button
+          className="closure"
+          type="button"
+          onClick={() => editPursuers(regularPolygon)}
+        >
+          Space evenly on a circle
+        </button>
+      </div>
+      {scalar("Capture distance ε", ["curve", "pursuit", "capture"], {
+        topic: "capture distance",
+        help: "A pursuer’s direction is undefined on its target, so the chase stops, for everyone, the first time any pursuer comes this close to its own target (0–100,000). Nobody merges or changes target.",
+      })}
+      <p className="note" data-testid="capture-note">
+        {chase ? captureNote(chase, frame!.config.curve.min) : "Chasing…"}
+      </p>
+      {captured && (
+        <button
+          className="closure"
+          type="button"
+          onClick={() => {
+            setPreset("custom");
+            setBounds({ ...bounds, max: String(captured.time) });
+          }}
+        >
+          End the domain at the capture
+        </button>
+      )}
+    </>
+  );
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const behind = (
@@ -735,6 +844,9 @@ function App() {
                     Lissajous · A sin(mt + φ), B sin(nt)
                   </option>
                   <option value="fourier">Fourier · rotating circles</option>
+                  <option value="pursuit">
+                    Pursuit · each chases the next
+                  </option>
                 </select>
               </Field>
               {config.curve.format === "roulette" ? (
@@ -743,6 +855,8 @@ function App() {
                 lissajousControls
               ) : config.curve.format === "fourier" ? (
                 fourierControls
+              ) : config.curve.format === "pursuit" ? (
+                pursuitControls
               ) : (
                 <>
                   {config.curve.format === "parametric" && (
@@ -788,7 +902,7 @@ function App() {
                         ? undefined
                         : config.curve.format === "roulette"
                           ? "rolling parameter t"
-                          : harmonic
+                          : harmonic || config.curve.format === "pursuit"
                             ? "time parameter t"
                             : undefined
                     }
@@ -801,7 +915,9 @@ function App() {
                             : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
                           : harmonic
                             ? "t is time: a vector of frequency k turns through k·t radians."
-                            : undefined
+                            : config.curve.format === "pursuit"
+                              ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
+                              : undefined
                     }
                     label={
                       key === "min"
@@ -823,7 +939,7 @@ function App() {
                 ))}
               </div>
               {config.curve.format !== "roulette" &&
-                !harmonic &&
+                !ownsShape(config.curve.format) &&
                 scalar(
                   <>
                     Shape parameter <var>a</var>

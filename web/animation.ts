@@ -1,5 +1,5 @@
 import {
-  isHarmonic,
+  ownsShape,
   usesPole,
   type Config,
   type Frame,
@@ -9,7 +9,9 @@ export type CameraMode = "hold" | "current" | "follow" | "fit";
 export type Viewport = { cx: number; cy: number; scale: number; span: number };
 // A Fourier term's frequency, radius, or phase, numbered from 1.
 export type TermTarget = `term${number}${"Frequency" | "Radius" | "Phase"}`;
-export type Target = FixedTarget | TermTarget;
+// A pursuer's starting x, y, or speed, numbered from 1.
+export type PursuerTarget = `pursuer${number}${"X" | "Y" | "Speed"}`;
+export type Target = FixedTarget | TermTarget | PursuerTarget;
 type FixedTarget =
   | "a"
   | "min"
@@ -46,6 +48,7 @@ type FixedTarget =
   | "lissajousM"
   | "lissajousN"
   | "lissajousPhase"
+  | "pursuitCapture"
   | "samples"
   | "lines"
   | "rayLength";
@@ -96,6 +99,7 @@ const targetLabels: Record<FixedTarget, string> = {
   lissajousM: "Frequency m",
   lissajousN: "Frequency n",
   lissajousPhase: "Phase φ (radians)",
+  pursuitCapture: "Capture distance ε",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -119,11 +123,29 @@ function termTarget(target: Target) {
       }
     : null;
 }
+export const pursuerLabels = {
+  X: (n: number) => `Start x${subscript(n)}`,
+  Y: (n: number) => `Start y${subscript(n)}`,
+  Speed: (n: number) => `Speed v${subscript(n)}`,
+};
+function pursuerTarget(target: Target) {
+  const match = /^pursuer(\d+)(X|Y|Speed)$/.exec(target);
+  return match
+    ? {
+        index: +match[1] - 1,
+        field: match[2] as keyof typeof pursuerLabels,
+        key: match[2].toLowerCase() as "x" | "y" | "speed",
+      }
+    : null;
+}
 export function targetLabel(target: Target) {
   const term = termTarget(target);
+  const pursuer = pursuerTarget(target);
   return term
     ? termLabels[term.field](term.index + 1)
-    : targetLabels[target as FixedTarget];
+    : pursuer
+      ? pursuerLabels[pursuer.field](pursuer.index + 1)
+      : targetLabels[target as FixedTarget];
 }
 export function availableTargets(config: Config): Target[] {
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
@@ -178,8 +200,8 @@ export function availableTargets(config: Config): Target[] {
         : (["rollFixed"] as Target[])),
     );
   }
-  // A harmonic curve's shape comes from its own terms, not from a.
-  if (isHarmonic(config.curve.format)) targets.splice(targets.indexOf("a"), 1);
+  // Harmonic curves and pursuits define their own shape, without a.
+  if (ownsShape(config.curve.format)) targets.splice(targets.indexOf("a"), 1);
   if (config.curve.format === "lissajous")
     targets.unshift(
       "lissajousPhase",
@@ -196,6 +218,15 @@ export function availableTargets(config: Config): Target[] {
         ),
       ),
     );
+  if (config.curve.format === "pursuit")
+    targets.unshift(
+      ...config.curve.pursuit.pursuers.flatMap((_, k) =>
+        (["Speed", "X", "Y"] as const).map(
+          (field) => `pursuer${k + 1}${field}` as const,
+        ),
+      ),
+      "pursuitCapture",
+    );
   return targets;
 }
 export function targetValue(
@@ -205,6 +236,9 @@ export function targetValue(
 ): number {
   const term = termTarget(target);
   if (term) return config.curve.terms[term.index]?.[term.key] ?? NaN;
+  const pursuer = pursuerTarget(target);
+  if (pursuer)
+    return config.curve.pursuit.pursuers[pursuer.index]?.[pursuer.key] ?? NaN;
   switch (target) {
     case "a":
     case "min":
@@ -266,6 +300,8 @@ export function targetValue(
       return config.curve.lissajous.frequencyY;
     case "lissajousPhase":
       return config.curve.lissajous.phase;
+    case "pursuitCapture":
+      return config.curve.pursuit.capture;
     case "rayLength":
       return length;
     default:
@@ -289,6 +325,12 @@ export function applyTracks(
     if (term) {
       if (config.curve.terms[term.index])
         config.curve.terms[term.index][term.key] = value;
+      continue;
+    }
+    const pursuer = pursuerTarget(track.target);
+    if (pursuer) {
+      if (config.curve.pursuit.pursuers[pursuer.index])
+        config.curve.pursuit.pursuers[pursuer.index][pursuer.key] = value;
       continue;
     }
     switch (track.target) {
@@ -381,6 +423,9 @@ export function applyTracks(
       case "lissajousPhase":
         config.curve.lissajous.phase = value;
         break;
+      case "pursuitCapture":
+        config.curve.pursuit.capture = value;
+        break;
       case "rayLength":
         length = value;
         break;
@@ -415,6 +460,11 @@ export function reveal(result: Result, progress: number): Result {
     harmonic: result.harmonic && {
       ...result.harmonic,
       positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
+    },
+    pursuit: result.pursuit && {
+      ...result.pursuit,
+      paths: result.pursuit.paths.map((path) => path.slice(0, last + 1)),
+      polygons: result.pursuit.polygons.filter((p) => p.sampleIndex <= last),
     },
     second: result.second?.slice(0, last + 1),
     // The circle stays; breaks beyond the revealed samples are harmless.
