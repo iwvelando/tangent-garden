@@ -205,14 +205,18 @@ export function Plot({
       />
     );
   };
-  const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
+  // An implicit curve has contours and no construction, whatever kind the
+  // configuration still names.
+  const contours = result.contours;
+  const kind = contours ? "implicit" : config.kind;
+  const optical = kind === "catacaustic" || kind === "diacaustic";
   // Constructions whose derived points can be virtual: optical rays behind
   // the curve, and envelope points beyond their chords.
   const extended =
-    config.kind === "envelope" &&
+    kind === "envelope" &&
     (config.envelope.mode === "angle" || config.envelope.extend);
-  const rings = config.kind === "envelope" && config.envelope.mode === "circle";
-  const dashed = optical || (config.kind === "envelope" && !rings && !extended);
+  const rings = kind === "envelope" && config.envelope.mode === "circle";
+  const dashed = optical || (kind === "envelope" && !rings && !extended);
   // The circle of inversion, the curve inverted when it is derived, and where
   // its image is open between samples.
   const inversion = result.inversion;
@@ -325,7 +329,11 @@ export function Plot({
       data-camera-center={`${frame.cx - cam.x / scale},${frame.cy + cam.y / scale}`}
       data-animation-progress={animation?.progress}
       role="img"
-      aria-label={`${config.kind} construction with ${config.lines} representative lines`}
+      aria-label={
+        contours
+          ? `Implicit curve with ${config.lines} gradient normals`
+          : `${config.kind} construction with ${config.lines} representative lines`
+      }
       style={{ background: palette.bg, touchAction: "none" }}
       onPointerDown={(e) => {
         if (animation) return;
@@ -349,7 +357,7 @@ export function Plot({
         drag.current = null;
       }}
     >
-      <title>Tangent Garden · {config.kind}</title>
+      <title>Tangent Garden · {kind}</title>
       <desc>
         {JSON.stringify({
           ...config,
@@ -563,6 +571,65 @@ export function Plot({
           })}
         </g>
       )}
+      {layers.lines && contours && (
+        <g data-testid="contour-construction" aria-label="Window and normals">
+          {/* The contours are sought only inside the window. */}
+          <rect
+            data-testid="contour-window"
+            x={xy({ x: contours.window.xMin, y: contours.window.yMax }).x}
+            y={xy({ x: contours.window.xMin, y: contours.window.yMax }).y}
+            width={(contours.window.xMax - contours.window.xMin) * scale}
+            height={(contours.window.yMax - contours.window.yMin) * scale}
+            fill="none"
+            stroke={palette.line}
+            strokeWidth="1"
+            strokeDasharray="4 5"
+            opacity=".5"
+          />
+          {/* Where F changes sign without reaching the level: a pole or a
+              jump, not a curve. */}
+          {contours.discontinuities.map((p, k) => {
+            const { x, y } = xy(p);
+            return (
+              <path
+                key={`break-${k}`}
+                data-testid="contour-break"
+                data-x={p.x}
+                data-y={p.y}
+                d={`M${x - 2.5},${y - 2.5}L${x + 2.5},${y + 2.5}M${x - 2.5},${y + 2.5}L${x + 2.5},${y - 2.5}`}
+                stroke={palette.line}
+                strokeWidth="1"
+                opacity=".6"
+              />
+            );
+          })}
+          {/* F's gradient, from the curve toward larger values; a fixed
+              length, since its size varies too widely to draw to scale. */}
+          {contours.normals.map(({ point, gradient }, k) => {
+            const length =
+              0.05 *
+              Math.max(
+                contours.window.xMax - contours.window.xMin,
+                contours.window.yMax - contours.window.yMin,
+              ) *
+              scale;
+            const { x, y } = xy(point);
+            return (
+              <path
+                key={k}
+                data-testid="contour-normal"
+                d={arrow(x, y, gradient, length, 0, 5)}
+                fill="none"
+                stroke={palette.line}
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity=".75"
+              />
+            );
+          })}
+        </g>
+      )}
       {layers.lines && harmonic && (
         <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
           {harmonic.guides.map((g, k) => (
@@ -718,6 +785,18 @@ export function Plot({
           />
         ))}
       {layers.base &&
+        contours?.curve.contours.map((c, k) => (
+          <path
+            key={k}
+            data-testid="contour-path"
+            d={path(c.points) + (c.closed ? "Z" : "")}
+            fill="none"
+            stroke={palette.base}
+            strokeWidth="2.3"
+            strokeLinejoin="round"
+          />
+        ))}
+      {layers.base &&
         field?.paths.map((points, k) => (
           <path
             key={k}
@@ -816,6 +895,25 @@ export function Plot({
           strokeDasharray="6 4"
         />
       )}
+      {layers.derived && contours && contours.family.length > 0 && (
+        <g data-testid="contour-levels" aria-label="Family of levels">
+          {contours.family.flatMap((set, k) =>
+            set.contours.map((c, j) => (
+              <path
+                key={`${k}-${j}`}
+                data-testid="contour-family"
+                data-level={set.level}
+                d={path(c.points) + (c.closed ? "Z" : "")}
+                fill="none"
+                stroke={palette.derived}
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+                opacity=".8"
+              />
+            )),
+          )}
+        </g>
+      )}
       {layers.derived && result.family.length > 0 && (
         <g
           data-testid={rings ? "envelope-branches" : "offset-family"}
@@ -884,8 +982,7 @@ export function Plot({
           />
         </g>
       )}
-      {(usesPole(config.kind) ||
-        (inversion && usesPole(config.inversion.of))) && (
+      {(usesPole(kind) || (inversion && usesPole(config.inversion.of))) && (
         <g data-testid="pole-point" aria-label="Pole">
           <circle
             cx={xy(config.pole).x}
@@ -1045,6 +1142,19 @@ function enclosing(points: (Vec | null)[]) {
   return { center, radius };
 }
 export function fitFrame(result: Result, config: Config) {
+  // An implicit curve is framed by its window, which bounds every contour
+  // and stays put while they split and join.
+  const window = result.contours?.window;
+  if (window)
+    return {
+      cx: (window.xMin + window.xMax) / 2,
+      cy: (window.yMin + window.yMax) / 2,
+      scale: Math.min(
+        (W * 0.78) / (window.xMax - window.xMin),
+        (H * 0.78) / (window.yMax - window.yMin),
+      ),
+      span: Math.max(window.xMax - window.xMin, window.yMax - window.yMin),
+    };
   // Circles are framed by their full extent when requested, independent of
   // whether the construction layer is showing, so toggling it never reframes.
   const extents = circleExtents(result.circles);

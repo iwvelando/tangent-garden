@@ -3,6 +3,7 @@ import {
   usesPole,
   type Config,
   type Frame,
+  type LevelSet,
   type Result,
 } from "./types";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
@@ -52,6 +53,15 @@ type FixedTarget =
   | "lissajousPhase"
   | "pursuitCapture"
   | "fieldEscape"
+  | "contourLevel"
+  | "windowXMin"
+  | "windowXMax"
+  | "windowYMin"
+  | "windowYMax"
+  | "levelsFrom"
+  | "levelsTo"
+  | "levelsCount"
+  | "contourCells"
   | "samples"
   | "lines"
   | "rayLength";
@@ -104,6 +114,15 @@ const targetLabels: Record<FixedTarget, string> = {
   lissajousPhase: "Phase φ (radians)",
   pursuitCapture: "Capture distance ε",
   fieldEscape: "Escape radius R",
+  contourLevel: "Level c",
+  windowXMin: "Window x from",
+  windowXMax: "Window x to",
+  windowYMin: "Window y from",
+  windowYMax: "Window y to",
+  levelsFrom: "Levels from",
+  levelsTo: "Levels to",
+  levelsCount: "Level count",
+  contourCells: "Grid cells",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -168,7 +187,32 @@ export function targetLabel(target: Target) {
         ? seedLabels[seed.field](seed.index + 1)
         : targetLabels[target as FixedTarget];
 }
+// The implicit curve's fields, with the window's paths in the configuration.
+const windowTargets = {
+  windowXMin: "xMin",
+  windowXMax: "xMax",
+  windowYMin: "yMin",
+  windowYMax: "yMax",
+} as const;
+const levelsTargets = {
+  levelsFrom: "from",
+  levelsTo: "to",
+  levelsCount: "count",
+} as const;
 export function availableTargets(config: Config): Target[] {
+  // A level set has no parameter, so no domain, samples, or construction:
+  // only F's a and the number of normals carry over.
+  if (config.curve.format === "implicit")
+    return [
+      "contourLevel",
+      ...(Object.keys(windowTargets) as Target[]),
+      ...(config.curve.implicit.family.enabled
+        ? (Object.keys(levelsTargets) as Target[])
+        : []),
+      "contourCells",
+      "a",
+      "lines",
+    ];
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
   if (config.kind === "involute") targets.push("offset");
   if (config.kind === "offset")
@@ -335,6 +379,19 @@ export function targetValue(
       return config.curve.pursuit.capture;
     case "fieldEscape":
       return config.curve.field.escape;
+    case "contourLevel":
+      return config.curve.implicit.level;
+    case "windowXMin":
+    case "windowXMax":
+    case "windowYMin":
+    case "windowYMax":
+      return config.curve.implicit.window[windowTargets[target]];
+    case "levelsFrom":
+    case "levelsTo":
+    case "levelsCount":
+      return config.curve.implicit.family[levelsTargets[target]];
+    case "contourCells":
+      return config.curve.implicit.cells;
     case "rayLength":
       return length;
     default:
@@ -342,7 +399,13 @@ export function targetValue(
   }
 }
 // Counts are whole numbers throughout playback and at both endpoints.
-export const integerTargets: Target[] = ["samples", "lines", "stackCount"];
+export const integerTargets: Target[] = [
+  "samples",
+  "lines",
+  "stackCount",
+  "levelsCount",
+  "contourCells",
+];
 export function applyTracks(
   base: Config,
   tracks: NumericTrack[],
@@ -468,6 +531,23 @@ export function applyTracks(
       case "fieldEscape":
         config.curve.field.escape = value;
         break;
+      case "contourLevel":
+        config.curve.implicit.level = value;
+        break;
+      case "windowXMin":
+      case "windowXMax":
+      case "windowYMin":
+      case "windowYMax":
+        config.curve.implicit.window[windowTargets[track.target]] = value;
+        break;
+      case "levelsFrom":
+      case "levelsTo":
+      case "levelsCount":
+        config.curve.implicit.family[levelsTargets[track.target]] = value;
+        break;
+      case "contourCells":
+        config.curve.implicit.cells = value;
+        break;
       case "rayLength":
         length = value;
         break;
@@ -480,9 +560,22 @@ export function applyTracks(
 // Reveal existing numerical samples, so neither the arc-length anchor nor the
 // differentiation stencil changes while the string is being unwound.
 export function reveal(result: Result, progress: number): Result {
-  const last = Math.floor(
-    Math.max(0, Math.min(1, progress)) * (result.base.length - 1),
-  );
+  const p = Math.max(0, Math.min(1, progress));
+  const last = Math.floor(p * (result.base.length - 1));
+  // Contours have no samples: each is drawn along by the same fraction of
+  // its points, and a loop stays open until it is complete.
+  const along = (set: LevelSet) => ({
+    ...set,
+    contours: set.contours.map((c) =>
+      p < 1
+        ? {
+            points: c.points.slice(0, Math.ceil(p * c.points.length)),
+            closed: false,
+          }
+        : c,
+    ),
+  });
+  const contours = result.contours;
   return {
     ...result,
     base: result.base.slice(0, last + 1),
@@ -524,6 +617,15 @@ export function reveal(result: Result, progress: number): Result {
     moving: result.moving && {
       ...result.moving,
       positions: result.moving.positions.filter((s) => s.sampleIndex <= last),
+    },
+    contours: contours && {
+      ...contours,
+      curve: along(contours.curve),
+      family: contours.family.map(along),
+      normals: contours.normals.slice(
+        0,
+        Math.floor(p * contours.normals.length),
+      ),
     },
   };
 }

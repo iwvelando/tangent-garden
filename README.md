@@ -19,7 +19,8 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - Lissajous figures and Fourier curves of up to 16 rotating vectors, drawn with their guide circles or chained epicycles, with closure reported exactly for whole-number frequency ratios and never forced otherwise, and animation of every amplitude, frequency, radius, and phase.
 - Cyclic pursuit of 2–16 pursuers at their own speeds, integrated with adaptive error control, drawn with every path and the connecting polygons, and stopped explicitly at the first capture.
 - Vector-field trajectories from 1–16 seeds, integrated with adaptive error control and explicit escape, singularity, and step-budget ends, with the direction field of an autonomous field.
-- Thirty-four example studies; point and parallel light sources; polar source coordinates; configurable refraction.
+- Implicit curves F(x, y) = c and families of levels, traced on a bounded grid with exact crossings, deliberately decided saddle cells, poles and jumps told apart from zero crossings, and adaptive refinement, drawn with F's gradient.
+- Thirty-six example studies; point and parallel light sources; polar source coordinates; configurable refraction.
 - Independent poles for pedal, contrapedal, and orthotomic constructions, with tangent/normal projections, reflected segments, and pole-coordinate animation.
 - Signed normal offsets (parallel curves) that keep their cusps and swallowtails, with distance animation, evenly spaced offset stacks, and optional generating circles whose envelope is the offsets ±R.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.
