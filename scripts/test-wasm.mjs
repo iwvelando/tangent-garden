@@ -372,7 +372,54 @@ assert.match(
   ).error,
   /direction angle/,
 );
+// Circles centered on the parabola 4y = x² through its focus: the right
+// branch is the directrix y = −1, the left collapses to the focus.
+const rings = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "envelope",
+      curve: { ...config.curve, x: "t", y: "t^2/4", min: -3, max: 3 },
+      envelope: {
+        mode: "circle",
+        angle: "",
+        x: "",
+        y: "",
+        extend: false,
+        radius: "t^2/4+1",
+      },
+    }),
+  ),
+);
+assert.deepEqual(
+  rings.family.map((path) => path.branch),
+  ["left", "right"],
+);
+assert.equal(rings.derived.length, 0);
+assert.equal(rings.circles.length, config.lines);
+for (const i of [0, 250, 700, 999]) {
+  const t = -3 + (i * 6) / 999;
+  const [focus, directrix] = rings.family.map((path) => path.points[i]);
+  assert.ok(Math.hypot(focus.x, focus.y - 1) < 1e-8);
+  assert.ok(Math.hypot(directrix.x - t, directrix.y + 1) < 1e-8);
+}
+rings.circles.forEach((c) => {
+  const t = c.center.x;
+  assert.ok(Math.abs(c.radius - (t * t) / 4 - 1) < 1e-12);
+});
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        kind: "envelope",
+        envelope: { mode: "circle", radius: "s" },
+      }),
+    ),
+  ).error,
+  /circle radius/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, and invalid JSON passed.",
 );
 process.exit(0);

@@ -94,6 +94,13 @@ const chordDescription = {
     "Join each point of the curve to a second point moving with the same t. Neighbouring chords cross ever closer together; the curve they all touch is their envelope. Dashed parts lie on the chords' extensions, beyond the segments.",
   formula: "E = r + λ(q − r),  det(r′ + λu′, u) = 0",
 };
+// Circles share the envelope tab but explain their two branches.
+const circleDescription = {
+  title: "The envelope of moving circles",
+  description:
+    "Center a circle of radius R(t) on each point of the curve. Neighbouring circles cross ever closer together, touching their envelope on either side of travel. The branches meet where the radius changes as fast as the center moves, and vanish where it changes faster: there each circle nests inside its neighbours.",
+  formula: "E = c + R(−kT ± √(1−k²) N),  k = R′/|c′|",
+};
 // A rolling curve shares the rolling tab but explains contact matching.
 const rollingCurveDescription = {
   title: "A curve, rolled along the curve",
@@ -282,7 +289,9 @@ function App() {
         ? rollingCurveDescription
         : config.kind === "envelope" && config.envelope.mode === "chord"
           ? chordDescription
-          : descriptions[config.kind];
+          : config.kind === "envelope" && config.envelope.mode === "circle"
+            ? circleDescription
+            : descriptions[config.kind];
   // Changes apply to the latest configuration, never to this render's copy:
   // a constant expression resolved by Go can land between a state update and
   // the next render, and a stale copy would overwrite it.
@@ -1039,24 +1048,51 @@ function App() {
             )}
             {config.kind === "envelope" && (
               <section>
-                <div className="section-label">03 / THE LINES</div>
-                <Field label="Lines">
+                <div className="section-label">03 / THE FAMILY</div>
+                <Field label="Family">
                   <select
                     value={config.envelope.mode}
                     onChange={(e) =>
                       update((c) => ({
                         envelope: {
                           ...c.envelope,
-                          mode: e.target.value as "angle" | "chord",
+                          mode: e.target.value as "angle" | "chord" | "circle",
                         },
                       }))
                     }
                   >
                     <option value="chord">Chords to a second point</option>
-                    <option value="angle">Turned to an angle θ(t)</option>
+                    <option value="angle">Lines turned to an angle θ(t)</option>
+                    <option value="circle">Circles of radius R(t)</option>
                   </select>
                 </Field>
-                {config.envelope.mode === "chord" ? (
+                {config.envelope.mode === "circle" ? (
+                  <>
+                    <Field
+                      label="Circle radius R(t)"
+                      className="equation"
+                      topic="circle radius"
+                      help="Positive, in t (and a). Each circle is centered on the curve's point at t; where the radius is not positive there is no circle."
+                    >
+                      <input
+                        value={config.envelope.radius}
+                        onChange={(e) => {
+                          const radius = e.target.value;
+                          update((c) => ({
+                            envelope: { ...c.envelope, radius },
+                          }));
+                        }}
+                        spellCheck={false}
+                      />
+                    </Field>
+                    <p className="note">
+                      Each circle is drawn with its radii to the touching
+                      points. Where |R′| exceeds the curve's speed the circles
+                      nest, and the envelope has gaps; a stationary center has
+                      no envelope point.
+                    </p>
+                  </>
+                ) : config.envelope.mode === "chord" ? (
                   <>
                     {(["x", "y"] as const).map((key) => (
                       <Field

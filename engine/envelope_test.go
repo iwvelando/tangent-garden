@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-func linesRequest(x, y string, lo, hi float64, l LineFamily) Request {
+func linesRequest(x, y string, lo, hi float64, l EnvelopeFamily) Request {
 	q := request("envelope", x, y, lo, hi)
 	q.Envelope = l
 	return q
 }
 
-func chords(x, y string) LineFamily { return LineFamily{Mode: "chord", X: x, Y: y} }
+func chords(x, y string) EnvelopeFamily { return EnvelopeFamily{Mode: "chord", X: x, Y: y} }
 
 // Chords from angle t to angle mt on the unit circle touch their envelope,
 // the epicycloid (m e^{it} + e^{imt})/(m+1), dividing each chord 1 : m.
@@ -106,7 +106,7 @@ func TestLineEnvelopeByAngle(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			q := linesRequest(tc.x, tc.y, tc.lo, tc.hi, LineFamily{Mode: "angle", Angle: tc.angle})
+			q := linesRequest(tc.x, tc.y, tc.lo, tc.hi, EnvelopeFamily{Mode: "angle", Angle: tc.angle})
 			r := compute(t, q)
 			if r.Invalid != 0 || len(r.Rays) != q.Lines || r.Second != nil {
 				t.Fatalf("%d invalid, %d lines, second %v", r.Invalid, len(r.Rays), r.Second != nil)
@@ -133,7 +133,7 @@ func TestLineEnvelopeByAngle(t *testing.T) {
 // Every touching point lies on its own line, and the envelope is tangent to
 // the line there, in any parameterization.
 func TestLineEnvelopeTangency(t *testing.T) {
-	for _, l := range []LineFamily{
+	for _, l := range []EnvelopeFamily{
 		{Mode: "angle", Angle: "0.3*t^2+1"},
 		chords("2*cos(2*t)+0.5", "sin(3*t)"),
 	} {
@@ -189,7 +189,7 @@ func TestChordNormalsEnvelopeTheEvolute(t *testing.T) {
 
 func TestLineEnvelopeDegenerate(t *testing.T) {
 	// Parallel lines have no finite envelope, but every line is drawn.
-	q := linesRequest("t", "t^2", -1, 1, LineFamily{Mode: "angle", Angle: "1"})
+	q := linesRequest("t", "t^2", -1, 1, EnvelopeFamily{Mode: "angle", Angle: "1"})
 	r := compute(t, q)
 	if r.Invalid != q.Samples || len(r.Rays) != q.Lines {
 		t.Fatalf("parallel: %d invalid, %d rays", r.Invalid, len(r.Rays))
@@ -202,7 +202,7 @@ func TestLineEnvelopeDegenerate(t *testing.T) {
 	// Lines are unoriented: a direction that jumps by π gives the same lines,
 	// so their envelope continues across; any other jump is not joined.
 	angle := func(a string) Result {
-		return compute(t, linesRequest("t", "0", 0, math.Pi, LineFamily{Mode: "angle", Angle: a}))
+		return compute(t, linesRequest("t", "0", 0, math.Pi, EnvelopeFamily{Mode: "angle", Angle: a}))
 	}
 	smooth, flipped, broken := angle("t"), angle("atan(tan(t))"), angle("atan(tan(t))/2")
 	for j := range smooth.Derived {
@@ -212,7 +212,7 @@ func TestLineEnvelopeDegenerate(t *testing.T) {
 		t.Fatalf("envelope across the direction's jump: %v", broken.Derived[250])
 	}
 	// Undefined directions and endpoints leave gaps rather than lines.
-	for _, l := range []LineFamily{{Mode: "angle", Angle: "sqrt(t)"}, chords("t+1", "sqrt(t)")} {
+	for _, l := range []EnvelopeFamily{{Mode: "angle", Angle: "sqrt(t)"}, chords("t+1", "sqrt(t)")} {
 		r = compute(t, linesRequest("t", "1", -1, 1, l))
 		if r.Derived[100] != nil || r.Derived[400] == nil {
 			t.Fatalf("%v: gap %v, point %v", l, r.Derived[100], r.Derived[400])
@@ -240,18 +240,18 @@ func TestLineEnvelopeResult(t *testing.T) {
 	}
 	// The family is ignored by other constructions.
 	q = request("evolute", "2*cos(t)", "sin(t)", 0, 1)
-	q.Envelope = LineFamily{Mode: "nonsense"}
+	q.Envelope = EnvelopeFamily{Mode: "nonsense"}
 	compute(t, q)
 }
 
 func TestLineEnvelopeInvalid(t *testing.T) {
 	for _, tc := range []struct {
-		l    LineFamily
+		l    EnvelopeFamily
 		want string
 	}{
-		{LineFamily{}, "direction angle or a second endpoint"},
-		{LineFamily{Mode: "angle", Angle: "s"}, "direction angle:"},
-		{LineFamily{Mode: "angle", Angle: ""}, "direction angle:"},
+		{EnvelopeFamily{}, "direction angle, chords to a second endpoint, or circles"},
+		{EnvelopeFamily{Mode: "angle", Angle: "s"}, "direction angle:"},
+		{EnvelopeFamily{Mode: "angle", Angle: ""}, "direction angle:"},
 		{chords("s", "1"), "second endpoint x:"},
 		{chords("1", "(t"), "second endpoint y:"},
 	} {

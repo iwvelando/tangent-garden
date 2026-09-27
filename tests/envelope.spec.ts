@@ -132,7 +132,7 @@ test("the cardioid preset draws each chord between its endpoints and gaps the co
 }) => {
   await ready(page);
   await expect(tab(page, "envelope")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("03 / THE LINES")).toBeVisible();
+  await expect(page.getByText("03 / THE FAMILY")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "The envelope of chords" }),
   ).toBeVisible();
@@ -208,7 +208,7 @@ test("envelope controls switch to angles, extend chords, dash virtual points, an
   await expect(page.getByRole("alert")).toHaveCount(0);
   // Angles: each line through the curve's point, turned to θ(t).
   await page
-    .getByRole("combobox", { name: "Lines", exact: true })
+    .getByRole("combobox", { name: "Family", exact: true })
     .selectOption("angle");
   await settled(page);
   await expect(
@@ -354,7 +354,7 @@ for (const theme of ["light", "dark"] as const) {
         await expect(field(page, name)).toBeVisible();
       const section = page
         .locator("section")
-        .filter({ hasText: "03 / THE LINES" });
+        .filter({ hasText: "03 / THE FAMILY" });
       const bounds = (await section.boundingBox())!;
       for (const input of await section.locator("input, select").all()) {
         const box = (await input.boundingBox())!;

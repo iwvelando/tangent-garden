@@ -35,13 +35,15 @@ const base: Config = {
     },
     point: { x: 0.24, y: 0 },
   },
-  // Chords from angle t to angle a·t on the unit circle.
+  // Chords from angle t to angle a·t on the unit circle; circles breathe
+  // with a lobes.
   envelope: {
     mode: "chord",
     angle: "2*t+pi/2",
     x: "cos(a*t)",
     y: "sin(a*t)",
     extend: false,
+    radius: "1+0.35*sin(a*t)",
   },
   samples: 1000,
   lines: 48,
@@ -330,6 +332,56 @@ export const presets: { title: string; note: string; config: Config }[] = [
         max: 4,
       },
       envelope: { ...base.envelope, mode: "angle", angle: "atan(x)" },
+      lines: 41,
+    },
+  },
+  {
+    title: "Circles through a focus",
+    note: "Centered on a parabola, touching its directrix",
+    config: {
+      ...base,
+      kind: "envelope",
+      // Each circle centered on 4y = x² passes through the focus (0, 1) and
+      // touches the directrix y = −1: the right branch is the directrix, the
+      // left collapses to the focus.
+      curve: { ...base.curve, x: "t", y: "t^2/4", min: -3, max: 3 },
+      envelope: { ...base.envelope, mode: "circle", radius: "t^2/4+1" },
+      samples: 1201,
+      lines: 25,
+    },
+  },
+  {
+    title: "Breathing circles",
+    note: "Radius 1 + 0.35 sin(at) around a circle",
+    config: {
+      ...base,
+      kind: "envelope",
+      // |R′| ≤ 0.35a stays below the center's speed 2 up to a = 40/7, so
+      // both branches are real; animate a past it to open gaps.
+      curve: { ...base.curve, x: "2*cos(t)", y: "2*sin(t)", a: 5 },
+      envelope: { ...base.envelope, mode: "circle" },
+      samples: 1801,
+      lines: 61,
+    },
+  },
+  {
+    title: "Swelling circles",
+    note: "A radius that outruns its center",
+    config: {
+      ...base,
+      kind: "envelope",
+      // Where |R′| = 1.2|cos t| exceeds the unit speed of the center, the
+      // circles nest and the envelope has gaps; the branches meet at their
+      // ends, where |R′| = 1.
+      curve: {
+        ...base.curve,
+        format: "cartesian",
+        y: "0",
+        min: -2 * Math.PI,
+        max: 2 * Math.PI,
+      },
+      envelope: { ...base.envelope, mode: "circle", radius: "1.6+1.2*sin(t)" },
+      samples: 2001,
       lines: 41,
     },
   },

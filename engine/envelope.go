@@ -6,21 +6,22 @@ import (
 	"tangentgarden/engine/expr"
 )
 
-// LineFamily is a one-parameter family of lines, each through the base point
-// r(t). Mode "angle" turns each line to the direction angle Angle(t), in
+// EnvelopeFamily is a one-parameter family of lines or circles. Lines pass
+// through the base point r(t); circles are centered on it. Mode "angle" turns each line to the direction angle Angle(t), in
 // radians counterclockwise from +x. Mode "chord" joins r(t) to a second
 // endpoint (X(t), Y(t)) on the same parameter, drawn as the segment between
-// them unless Extend asks for the full line. Expressions share a and the
-// base's domain.
+// them unless Extend asks for the full line. Mode "circle" gives each circle
+// the radius Radius(t). Expressions share a and the base's domain.
 //
 // Lines are unoriented, so a direction turning by exactly π is the same line.
 // A chord whose endpoints coincide has no direction; it is left as a gap.
-type LineFamily struct {
+type EnvelopeFamily struct {
 	Mode   string `json:"mode"`
 	Angle  string `json:"angle"`
 	X      string `json:"x"`
 	Y      string `json:"y"`
 	Extend bool   `json:"extend"`
+	Radius string `json:"radius"`
 }
 
 // lines evaluates a family on the base's domain.
@@ -31,7 +32,7 @@ type lines struct {
 	lo, hi float64
 }
 
-func newLines(l LineFamily, base curveFunc, a, lo, hi float64) (*lines, error) {
+func newLines(l EnvelopeFamily, base curveFunc, a, lo, hi float64) (*lines, error) {
 	out := &lines{extend: l.Extend, lo: lo, hi: hi}
 	switch l.Mode {
 	case "angle":
@@ -57,7 +58,7 @@ func newLines(l LineFamily, base curveFunc, a, lo, hi float64) (*lines, error) {
 			return q.Sub(p).Unit()
 		}
 	default:
-		return nil, fmt.Errorf("the lines are given by a direction angle or a second endpoint")
+		return nil, fmt.Errorf("the family is lines at a direction angle, chords to a second endpoint, or circles of a radius")
 	}
 	return out, nil
 }
@@ -119,4 +120,71 @@ func (l *lines) at(t float64, p, dp Vec) familyLine {
 		out.virtual = s < -slack || s > length+slack
 	}
 	return out
+}
+
+// rings evaluates a family of circles centered on the base, of radius R(t).
+type rings struct {
+	radius curveFunc // R(t) as the x coordinate, to share the differentiator
+	lo, hi float64
+}
+
+func newRings(l EnvelopeFamily, a, lo, hi float64) (*rings, error) {
+	radius, err := expr.ParseWithParameter(l.Radius, a)
+	if err != nil {
+		return nil, fmt.Errorf("circle radius: %w", err)
+	}
+	return &rings{radius: func(t float64) Vec { return Vec{radius(t), 0} }, lo: lo, hi: hi}, nil
+}
+
+// ring is one circle of the family, with its touching points.
+type ring struct {
+	ok          bool    // the circle is defined: a positive radius
+	radius      float64 //
+	left, right *Vec    // touching points to the left and right of travel
+	stationary  bool    // the center does not move
+	nested      bool    // |R′| > |c′|: no real envelope point
+}
+
+// merge is the tolerance within which |R′| = |c′| merges the two branches,
+// rather than leaving no real point, relative to 1.
+const merge = 1e-9
+
+// at is the circle centered at c, where the base has derivative dc, at t.
+// Its envelope points X = c + q solve |q|² = R² and q·c′ = −RR′: with
+// v = |c′|, T = c′/v, and k = R′/v, q = R(−kT ± √(1−k²) JT). There are two
+// real points while |k| < 1, one where |k| = 1, and none beyond. A stationary
+// center leaves the system degenerate, so it has no envelope point.
+func (g *rings) at(t float64, c, dc Vec) ring {
+	R := g.radius(t).X
+	if !finite(R) || R <= 0 {
+		return ring{}
+	}
+	out := ring{ok: true, radius: R}
+	v := dc.Norm()
+	if v < 1e-9 {
+		out.stationary = true
+		return out
+	}
+	dR, _ := derivatives(g.radius, t, g.lo, g.hi)
+	if !stableTangent(g.radius, t, g.lo, g.hi, dR) {
+		return out
+	}
+	k := dR.X / v
+	h := 1 - k*k
+	if h < -merge {
+		out.nested = true
+		return out
+	}
+	T := dc.Mul(1 / v)
+	along, across := T.Mul(-R*k), T.Perp().Mul(R*math.Sqrt(math.Max(0, h)))
+	out.left, out.right = point(c.Add(along).Add(across)), point(c.Add(along).Sub(across))
+	return out
+}
+
+// paths are the envelope's two branches, indexed like the base samples.
+func (g *rings) paths(samples int) []Path {
+	return []Path{
+		{Branch: "left", Points: make([]*Vec, samples)},
+		{Branch: "right", Points: make([]*Vec, samples)},
+	}
 }

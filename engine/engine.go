@@ -27,9 +27,9 @@ type Request struct {
 	Circles      bool    `json:"circles"`
 	Rolling      Roller  `json:"rolling"`
 	// Envelope is the family of lines for the envelope construction.
-	Envelope LineFamily `json:"envelope"`
-	Samples  int        `json:"samples"`
-	Lines    int        `json:"lines"`
+	Envelope EnvelopeFamily `json:"envelope"`
+	Samples  int            `json:"samples"`
+	Lines    int            `json:"lines"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -121,7 +121,12 @@ func Compute(q Request) (Result, error) {
 		}
 	}
 	var family *lines
-	if q.Kind == "envelope" {
+	var circles *rings
+	if q.Kind == "envelope" && q.Envelope.Mode == "circle" {
+		if circles, err = newRings(q.Envelope, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
+			return out, err
+		}
+	} else if q.Kind == "envelope" {
 		if family, err = newLines(q.Envelope, f, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
 			return out, err
 		}
@@ -142,10 +147,16 @@ func Compute(q Request) (Result, error) {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	step := (hi - lo) / float64(q.Samples-1)
 	out.Base = make([]*Vec, q.Samples)
-	if stacked {
-		// A stack replaces the single derived curve with one path per distance.
+	// A stack or a circle family's two branches replace the single derived
+	// curve with several paths.
+	paths := stacked || circles != nil
+	if paths {
 		out.Derived, out.Virtual = []*Vec{}, []bool{}
+	}
+	if stacked {
 		out.Family = q.Stack.paths(q.Samples)
+	} else if circles != nil {
+		out.Family = circles.paths(q.Samples)
 	} else {
 		out.Derived = make([]*Vec, q.Samples)
 		out.Virtual = make([]bool, q.Samples)
@@ -194,6 +205,7 @@ func Compute(q Request) (Result, error) {
 	movingStop := placedOK
 	tirCount := 0
 	coincident := 0
+	stationary, nested, unsized := 0, 0, 0
 	nextLine := 0
 	for j := 0; j < q.Samples; j++ {
 		t := lo + float64(j)*step
@@ -246,6 +258,7 @@ func Compute(q Request) (Result, error) {
 		var rolled *Rolling
 		var placed *Placement
 		var member familyLine
+		var circle ring
 		origin := p
 		var dir Vec
 		virtual, tir := false, false
@@ -286,6 +299,20 @@ func Compute(q Request) (Result, error) {
 				}
 			}
 		case "envelope":
+			if circles != nil {
+				circle = circles.at(t, p, dp)
+				out.Family[0].Points[j], out.Family[1].Points[j] = circle.left, circle.right
+				target = circle.left
+				switch {
+				case !circle.ok:
+					unsized++
+				case circle.stationary:
+					stationary++
+				case circle.nested:
+					nested++
+				}
+				break
+			}
 			member = family.at(t, p, dp)
 			target, virtual = member.target, member.virtual
 			if member.coincident {
@@ -313,14 +340,23 @@ func Compute(q Request) (Result, error) {
 				virtual = s < 0
 			}
 		}
-		if !stacked {
+		if !paths {
 			out.Derived[j] = target
 			out.Virtual[j] = virtual
 		}
 		if target == nil {
 			out.Invalid++
 		}
-		if line && member.ok {
+		if line && circle.ok {
+			// Every circle is drawn, touching its envelope or not, with its
+			// radii to the touching points.
+			out.Circles = append(out.Circles, Circle{SampleIndex: j, Center: p, Radius: circle.radius})
+			for _, e := range []*Vec{circle.left, circle.right} {
+				if e != nil {
+					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Target: e})
+				}
+			}
+		} else if line && member.ok {
 			// Every defined line is drawn, touching its envelope or not.
 			out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: member.direction, Target: target, Virtual: virtual, End: member.end})
 		} else if line {
@@ -347,6 +383,15 @@ func Compute(q Request) (Result, error) {
 	}
 	if coincident > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the chord's endpoints coincide, so it has no direction; they are left as gaps.", coincident))
+	}
+	if unsized > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius is not positive (or undefined), so there is no circle; they are left as gaps.", unsized))
+	}
+	if stationary > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the center is stationary, so neighbouring circles are concentric or the same; they have no envelope point.", stationary))
+	}
+	if nested > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius changes faster than the center moves (|R′| > |c′|): each circle nests inside its neighbours, with no real envelope point.", nested))
 	}
 	if tirCount > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("Total internal reflection at %d samples; reflected rays are shown in amber.", tirCount))
