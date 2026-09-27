@@ -16,6 +16,8 @@ const base: Config = {
   nTransmitted: 1,
   offset: 0,
   distance: 0,
+  stack: { enabled: false, from: -0.5, to: 0.5, count: 6 },
+  circles: false,
   samples: 1000,
   lines: 48,
 };
@@ -144,6 +146,32 @@ export const presets: { title: string; note: string; config: Config }[] = [
       curve: { ...base.curve, format: "polar", r: "1+0.18*cos(5*t)" },
       distance: 0.4,
       lines: 120,
+    },
+  },
+  {
+    title: "Flower & its offset stack",
+    note: "Eighteen parallel curves, 0.105 apart",
+    config: {
+      ...base,
+      kind: "offset",
+      curve: { ...base.curve, format: "polar", r: "1+0.18*cos(5*t)" },
+      // d = 0.105k for k = −9…8. The inner members fold at the petal tips
+      // and the outer ones at the waists, where the curve is concave.
+      stack: { enabled: true, from: -0.945, to: 0.84, count: 18 },
+      lines: 60,
+    },
+  },
+  {
+    title: "Circles & their envelope",
+    note: "Rolling a coin around an ellipse",
+    config: {
+      ...base,
+      kind: "offset",
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      // Radius 0.5 is below the least radius of curvature 1.1²/2 = 0.605, so
+      // both envelope branches, the offsets ±0.5, stay smooth.
+      stack: { enabled: true, from: -0.5, to: 0.5, count: 2 },
+      circles: true,
     },
   },
 ];

@@ -176,20 +176,25 @@ export function Plot({
     );
   };
   const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
-  const visibleDerived = result.derived.filter(
-    (p, i): p is Vec =>
-      !!p && (!optical || layers.virtual || !result.virtual[i]),
-  );
-  const focus =
-    visibleDerived.length > 0 &&
-    visibleDerived.every(
-      (p) =>
-        Math.hypot(p.x - visibleDerived[0].x, p.y - visibleDerived[0].y) *
-          scale <
-        0.5,
-    )
-      ? xy(visibleDerived[0])
+  // A derived curve or stack member that collapses to one point, such as a
+  // circle offset by its radius, is drawn as a dot rather than vanishing.
+  const collapsed = (points: (Vec | null)[]) => {
+    const visible = points.filter((p): p is Vec => !!p);
+    return visible.length > 0 &&
+      visible.every(
+        (p) => Math.hypot(p.x - visible[0].x, p.y - visible[0].y) * scale < 0.5,
+      )
+      ? xy(visible[0])
       : null;
+  };
+  const focuses = [
+    collapsed(
+      result.derived.map((p, i) =>
+        !optical || layers.virtual || !result.virtual[i] ? p : null,
+      ),
+    ),
+    ...result.family.map((path) => collapsed(path.points)),
+  ].filter((p): p is Vec => !!p);
   const gridStep = 10 ** Math.floor(Math.log10(frame.span / (cam.zoom * 5)));
   const grid = [];
   if (layers.axes) {
@@ -321,6 +326,29 @@ export function Plot({
           </g>
         );
       })}
+      {layers.lines && result.circles.length > 0 && (
+        <g data-testid="generating-circles" aria-label="Generating circles">
+          {result.circles.map((c) => {
+            const center = xy(c.center);
+            const radius = c.radius * scale;
+            return (
+              Number.isFinite(radius) &&
+              radius < 1e7 && (
+                <circle
+                  key={c.sampleIndex}
+                  cx={center.x}
+                  cy={center.y}
+                  r={radius}
+                  fill="none"
+                  stroke={palette.line}
+                  strokeWidth="1"
+                  opacity=".32"
+                />
+              )
+            );
+          })}
+        </g>
+      )}
       {layers.base && (
         <path
           d={path(result.base)}
@@ -329,7 +357,7 @@ export function Plot({
           strokeWidth="2.3"
         />
       )}
-      {layers.derived && (
+      {layers.derived && result.derived.length > 0 && (
         <path
           d={path(result.derived, optical ? false : undefined)}
           fill="none"
@@ -347,15 +375,33 @@ export function Plot({
           strokeDasharray="6 4"
         />
       )}
-      {layers.derived && focus && (
-        <circle
-          data-testid="focus-point"
-          cx={focus.x}
-          cy={focus.y}
-          r="3.5"
-          fill={palette.derived}
-        />
+      {layers.derived && result.family.length > 0 && (
+        <g data-testid="offset-family" aria-label="Offset stack">
+          {result.family.map((member, k) => (
+            <path
+              key={k}
+              data-distance={member.distance}
+              d={path(member.points)}
+              fill="none"
+              stroke={palette.derived}
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+              opacity=".9"
+            />
+          ))}
+        </g>
       )}
+      {layers.derived &&
+        focuses.map((focus, i) => (
+          <circle
+            key={i}
+            data-testid="focus-point"
+            cx={focus.x}
+            cy={focus.y}
+            r="3.5"
+            fill={palette.derived}
+          />
+        ))}
       {optical && config.source.kind === "point" && (
         <g>
           <circle
@@ -421,9 +467,19 @@ export function framingPoints(points: (Vec | null)[]): Vec[] {
   return finite.filter((p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
 }
 export function fitFrame(result: Result, config: Config) {
+  // Circles are framed by their full extent when requested, independent of
+  // whether the construction layer is showing, so toggling it never reframes.
+  const extents = result.circles.flatMap(({ center: c, radius: r }) => [
+    { x: c.x - r, y: c.y },
+    { x: c.x + r, y: c.y },
+    { x: c.x, y: c.y - r },
+    { x: c.x, y: c.y + r },
+  ]);
   const points = [
     ...framingPoints(result.base),
     ...framingPoints(result.derived),
+    ...result.family.flatMap((path) => framingPoints(path.points)),
+    ...framingPoints(extents),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };
   let minX = Infinity,

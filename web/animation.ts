@@ -16,6 +16,9 @@ export type Target =
   | "nTransmitted"
   | "offset"
   | "distance"
+  | "stackFrom"
+  | "stackTo"
+  | "stackCount"
   | "samples"
   | "lines"
   | "rayLength";
@@ -45,6 +48,9 @@ export const targetLabels: Record<Target, string> = {
   nTransmitted: "Transmitted index n₂",
   offset: "String offset c",
   distance: "Offset distance d",
+  stackFrom: "First offset distance",
+  stackTo: "Last offset distance",
+  stackCount: "Number of offsets",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -52,7 +58,12 @@ export const targetLabels: Record<Target, string> = {
 export function availableTargets(config: Config): Target[] {
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
   if (config.kind === "involute") targets.push("offset");
-  if (config.kind === "offset") targets.unshift("distance");
+  if (config.kind === "offset")
+    targets.unshift(
+      ...(config.stack.enabled
+        ? (["stackFrom", "stackTo", "stackCount"] as Target[])
+        : (["distance"] as Target[])),
+    );
   if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
   if (config.kind === "catacaustic" || config.kind === "diacaustic") {
     targets.unshift(
@@ -91,12 +102,20 @@ export function targetValue(
       return config.source.theta ?? 0;
     case "angle":
       return config.source.angle;
+    case "stackFrom":
+      return config.stack.from;
+    case "stackTo":
+      return config.stack.to;
+    case "stackCount":
+      return config.stack.count;
     case "rayLength":
       return length;
     default:
       return config[target];
   }
 }
+// Counts are whole numbers throughout playback and at both endpoints.
+export const integerTargets: Target[] = ["samples", "lines", "stackCount"];
 export function applyTracks(
   base: Config,
   tracks: NumericTrack[],
@@ -107,8 +126,7 @@ export function applyTracks(
   for (const track of tracks) {
     // This form returns each endpoint exactly, unlike from + (to - from) * p.
     let value = track.from * (1 - progress) + track.to * progress;
-    if (track.target === "samples" || track.target === "lines")
-      value = Math.round(value);
+    if (integerTargets.includes(track.target)) value = Math.round(value);
     switch (track.target) {
       case "a":
       case "min":
@@ -136,6 +154,15 @@ export function applyTracks(
       case "angle":
         config.source.angle = value;
         break;
+      case "stackFrom":
+        config.stack.from = value;
+        break;
+      case "stackTo":
+        config.stack.to = value;
+        break;
+      case "stackCount":
+        config.stack.count = value;
+        break;
       case "rayLength":
         length = value;
         break;
@@ -157,5 +184,10 @@ export function reveal(result: Result, progress: number): Result {
     derived: result.derived.slice(0, last + 1),
     virtual: result.virtual.slice(0, last + 1),
     rays: result.rays.filter((ray) => ray.sampleIndex <= last),
+    family: result.family.map((path) => ({
+      ...path,
+      points: path.points.slice(0, last + 1),
+    })),
+    circles: result.circles.filter((c) => c.sampleIndex <= last),
   };
 }

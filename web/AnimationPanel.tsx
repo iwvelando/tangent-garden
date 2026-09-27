@@ -3,6 +3,7 @@ import { EngineClient, exportEngineCount } from "./engine-client";
 import {
   applyTracks,
   availableTargets,
+  integerTargets,
   reveal,
   targetLabels,
   targetValue,
@@ -199,11 +200,13 @@ export function AnimationPanel({
               ? Math.min(32768, Math.max(64, from * 2))
               : target === "lines"
                 ? Math.min(2048, frame?.config.samples ?? 2048, from + 20)
-                : target === "rayLength"
-                  ? from * 1.5
-                  : target === "nIncident" || target === "nTransmitted"
-                    ? 1.5
-                    : from + 1;
+                : target === "stackCount"
+                  ? Math.min(64, from + 6)
+                  : target === "rayLength"
+                    ? from * 1.5
+                    : target === "nIncident" || target === "nTransmitted"
+                      ? 1.5
+                      : from + 1;
     return { target, from: String(from), to: String(to) };
   }
   function parameterMode(next: "reveal" | "parameters") {
@@ -332,10 +335,12 @@ export function AnimationPanel({
         }));
         for (const t of numeric) {
           if (
-            (t.target === "samples" || t.target === "lines") &&
+            integerTargets.includes(t.target) &&
             (!Number.isInteger(t.from) || !Number.isInteger(t.to))
           )
-            throw new Error("Sample and line endpoints must be whole numbers.");
+            throw new Error(
+              "Sample, line, and offset count endpoints must be whole numbers.",
+            );
           if (
             t.target === "rayLength" &&
             (Math.min(t.from, t.to) < 0.01 || Math.max(t.from, t.to) > 100)

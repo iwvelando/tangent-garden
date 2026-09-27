@@ -73,6 +73,13 @@ const descriptions: Record<
     formula: "O(t) = r(t) + d N(t)",
   },
 };
+// A stack of offsets shares the offset tab but explains the family.
+const stackDescription = {
+  title: "A stack of parallel curves",
+  description:
+    "Offset the curve by evenly spaced signed distances along its normals. Each normal segment crosses the whole stack at a right angle. Circles centered on the curve touch the offsets at their radius: the offsets ±R are the envelope of those circles.",
+  formula: "Oₖ(t) = r(t) + dₖ N(t)",
+};
 // One tab per family; the pole constructions share a tab and a selector.
 const tabs: Kind[] = [
   "evolute",
@@ -190,7 +197,10 @@ function App() {
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
   const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
-  const info = descriptions[config.kind];
+  const info =
+    config.kind === "offset" && config.stack.enabled
+      ? stackDescription
+      : descriptions[config.kind];
   const update = (patch: Partial<Config>) => {
     setPreset("custom");
     setConfig({ ...config, ...patch });
@@ -664,18 +674,73 @@ function App() {
           {config.kind === "offset" && (
             <section>
               <div className="section-label">03 / THE OFFSET</div>
-              {number(
-                "Offset distance d",
-                config.distance,
-                (n) => update({ distance: n }),
-                {
-                  topic: "offset distance",
-                  help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel, which is inward on a counterclockwise closed curve. Negative values move to the right.",
-                },
+              <Field label="Offsets">
+                <select
+                  value={config.stack.enabled ? "stack" : "single"}
+                  onChange={(e) =>
+                    update({
+                      stack: {
+                        ...config.stack,
+                        enabled: e.target.value === "stack",
+                      },
+                    })
+                  }
+                >
+                  <option value="single">One offset</option>
+                  <option value="stack">A stack of offsets</option>
+                </select>
+              </Field>
+              {config.stack.enabled ? (
+                <>
+                  <div className="pair">
+                    {number(
+                      "First offset distance",
+                      config.stack.from,
+                      (from) => update({ stack: { ...config.stack, from } }),
+                      {
+                        topic: "offset stack distances",
+                        help: "The stack runs evenly from the first distance to the last, both included, each within ±100,000. Positive values move to the left of travel.",
+                      },
+                    )}
+                    {number("Last offset distance", config.stack.to, (to) =>
+                      update({ stack: { ...config.stack, to } }),
+                    )}
+                  </div>
+                  {number(
+                    "Number of offsets",
+                    config.stack.count,
+                    (count) => update({ stack: { ...config.stack, count } }),
+                    {
+                      step: 1,
+                      min: 2,
+                      max: 64,
+                      help: "Whole numbers from 2 to 64. Offsets × samples may not exceed 131,072.",
+                    },
+                  )}
+                </>
+              ) : (
+                number(
+                  "Offset distance d",
+                  config.distance,
+                  (n) => update({ distance: n }),
+                  {
+                    topic: "offset distance",
+                    help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel, which is inward on a counterclockwise closed curve. Negative values move to the right.",
+                  },
+                )
               )}
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={config.circles}
+                  onChange={(e) => update({ circles: e.target.checked })}
+                />
+                Generating circles
+              </label>
               <p className="note">
-                Cusps and self-crossings are part of the offset, not errors: it
-                is the full parallel curve, not a trimmed outline.
+                Circles have the largest distance as their radius. Cusps and
+                self-crossings are part of the offset, not errors: it is the
+                full parallel curve, not a trimmed outline.
               </p>
             </section>
           )}

@@ -17,6 +17,8 @@ test("offset involute fits both curves throughout reveal, with fixed follow zoom
     derived: [],
     virtual: [],
     rays: [],
+    family: [],
+    circles: [],
     warnings: [],
     invalid: 0,
   };
@@ -48,7 +50,16 @@ test("robust framing rejects isolated asymptotic tails but keeps a distant coher
   derived.push({ x: 1e8, y: -1e8 });
   expect(framingPoints(derived)).toHaveLength(101);
   const frame = fitFrame(
-    { base, derived, virtual: [], rays: [], warnings: [], invalid: 0 },
+    {
+      base,
+      derived,
+      virtual: [],
+      rays: [],
+      family: [],
+      circles: [],
+      warnings: [],
+      invalid: 0,
+    },
     presets[0].config,
   );
   expect(frame.cx).toBe(50.5);
