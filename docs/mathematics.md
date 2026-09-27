@@ -47,6 +47,34 @@ For equal speeds `v` from a regular polygon of circumradius `r₀`, every pursue
 
 The chase is integrated with the Dormand–Prince 5(4) pair and adaptive steps. The local error of each step is held to `10⁻¹²` of the smallest gap at its start (plus a rounding floor of `10⁻¹⁴` times each coordinate), so the shape stays accurate as the gaps shrink and a scaled chase is the same chase in scaled time. No gap closes faster than the two speeds in it together, so each step is also at most `(g − ε)/(2 v_max)` for the smallest gap `g`: no pursuer can come within `ε` of its target inside a step, however briefly. The steps shrink geometrically as a gap approaches `ε`, and the chase stops when the remaining difference is below `10⁻¹²ε` plus the rounding floor of that pair's coordinates. Positions between accepted steps are one step of the same method from the step's start, so paths are smooth within steps and continuous across them, and constructions differentiate them numerically as usual. A chase is limited to 40000 attempted steps; when that runs out, the result is marked exhausted, the time reached is reported, and later samples are gaps. Tests compare tolerances `10⁻⁶`, `10⁻⁹`, and `10⁻¹²` for convergence and check that every pursuer's velocity points at its target at its speed.
 
+## Vector-field trajectories
+
+A planar field `r′ = V(r, t)`, entered as `dx/dt = X(x, y, t)` and `dy/dt = Y(x, y, t)` (expressions that may also use `a`), is followed from 1–16 seeds, each at its position when `t` is at the domain start. `t` is time. The first seed's trajectory is the base curve that constructions use; every trajectory is returned separately, indexed like the base samples. Trajectories are independent: one ending never stops another.
+
+Each trajectory has explicit termination events, and the result reports each one's end time and reason:
+
+- **end**: it reaches the domain end.
+- **escape**: it leaves the escape circle `|r| ≤ R` about the origin, `0 < R ≤ 100000`. The crossing is located by bisection on the dense solution within the step that crossed it, and the end is the last time still inside. A seed outside the circle has no trajectory. A step moves at most `R/8` at the speed it starts with, so a trajectory rarely leaves the circle and returns within one step unseen; one that does is not caught.
+- **singular**: the field is not finite along the step (division by zero, a logarithm of a negative number), or it changes so fast that the step size falls below `10⁻¹²` of the domain width. A field that is not finite at the seed ends there at once. Near a finite-time blow-up such as `ẋ = −1/x`, the end lies within about `10⁻⁹` of the true singular time.
+- **exhausted**: 50000 attempted steps run out. The time reached is reported, and later samples are gaps.
+
+Samples after a trajectory's end are gaps. Every trajectory is sampled at the base's own times, so a sample index is the same moment on each; this gives reveal a defined meaning in time even though each trajectory takes its own adaptive steps.
+
+Trajectories share the pursuit's Dormand–Prince 5(4) stepper (`engine/ode.go`), whose stages see their own times, so time-dependent fields are integrated to the same order. The local error of each step is held to `10⁻¹⁰` of the distance from the origin, with a floor of `10⁻⁶ R`. A scaled field with a scaled escape radius therefore gives the same trajectories, scaled, even as a spiral sink shrinks a trajectory a millionfold. Positions between accepted steps are one step from the step's start, as for a pursuit. Stiff fields need very small steps with this explicit method and may exhaust the budget.
+
+A field whose expressions never mention `t` is autonomous. Its direction field is drawn as unit directions on a square lattice, with at most 21 points on the longer side, spanning the sampled trajectories' bounding box widened by a tenth on each side, and at least half as tall as wide or as wide as tall. Points where the field is zero or not finite are left out. Time dependence is read from the text, so `t*0` counts. A field that changes with `t` has no single direction field, and none is drawn. At each representative sample a chevron shows each trajectory's direction of travel.
+
+The tests check trajectories against exact solutions:
+
+- rotation, `(−y, x)`, including a fixed point at the origin;
+- a straight flow, whose escape times solve a quadratic;
+- exponential growth, which escapes the radius-`e` circle at `t = 1`;
+- a time-dependent field, `(cos t, a sin 3t)`, on a domain not starting at 0;
+- a parabola that leaves the circle and returns within one uncapped step;
+- a finite-time pole, `ẋ = −1/x`.
+
+They also check the evolute of a trajectory circle at its center, scale invariance for λ = 10⁻⁴ and 10³, and convergence at tolerances `10⁻⁶`, `10⁻⁹`, and `10⁻¹²` on `(−y, x)(1 + x² + y²)`, whose circles turn at speed `1 + r²`. In the browser, the pendulum's energy `y²/2 − cos x` stays constant along every drawn trajectory, and mirrored seeds give mirrored trajectories.
+
 ## Rolling circle on a curve
 
 The rolling construction rolls a circle of radius `ρ > 0` without slipping along any regular base curve, tangent to it on a chosen side of travel, and traces a point fixed to the circle at distance `ℓ ≥ 0` from its center. With `σ = +1` for the left side and `−1` for the right, `N = JT` the left unit normal, and `s(t) = ∫[t_min,t] |r′(u)|du` the arc length from the domain start:

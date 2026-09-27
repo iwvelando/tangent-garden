@@ -11,7 +11,9 @@ export type Viewport = { cx: number; cy: number; scale: number; span: number };
 export type TermTarget = `term${number}${"Frequency" | "Radius" | "Phase"}`;
 // A pursuer's starting x, y, or speed, numbered from 1.
 export type PursuerTarget = `pursuer${number}${"X" | "Y" | "Speed"}`;
-export type Target = FixedTarget | TermTarget | PursuerTarget;
+// A vector field seed's x or y, numbered from 1.
+export type SeedTarget = `seed${number}${"X" | "Y"}`;
+export type Target = FixedTarget | TermTarget | PursuerTarget | SeedTarget;
 type FixedTarget =
   | "a"
   | "min"
@@ -49,6 +51,7 @@ type FixedTarget =
   | "lissajousN"
   | "lissajousPhase"
   | "pursuitCapture"
+  | "fieldEscape"
   | "samples"
   | "lines"
   | "rayLength";
@@ -100,6 +103,7 @@ const targetLabels: Record<FixedTarget, string> = {
   lissajousN: "Frequency n",
   lissajousPhase: "Phase φ (radians)",
   pursuitCapture: "Capture distance ε",
+  fieldEscape: "Escape radius R",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -138,14 +142,31 @@ function pursuerTarget(target: Target) {
       }
     : null;
 }
+export const seedLabels = {
+  X: (n: number) => `Seed x${subscript(n)}`,
+  Y: (n: number) => `Seed y${subscript(n)}`,
+};
+function seedTarget(target: Target) {
+  const match = /^seed(\d+)(X|Y)$/.exec(target);
+  return match
+    ? {
+        index: +match[1] - 1,
+        field: match[2] as keyof typeof seedLabels,
+        key: match[2].toLowerCase() as "x" | "y",
+      }
+    : null;
+}
 export function targetLabel(target: Target) {
   const term = termTarget(target);
   const pursuer = pursuerTarget(target);
+  const seed = seedTarget(target);
   return term
     ? termLabels[term.field](term.index + 1)
     : pursuer
       ? pursuerLabels[pursuer.field](pursuer.index + 1)
-      : targetLabels[target as FixedTarget];
+      : seed
+        ? seedLabels[seed.field](seed.index + 1)
+        : targetLabels[target as FixedTarget];
 }
 export function availableTargets(config: Config): Target[] {
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
@@ -227,6 +248,14 @@ export function availableTargets(config: Config): Target[] {
       ),
       "pursuitCapture",
     );
+  // A field keeps a, which its expressions may use.
+  if (config.curve.format === "field")
+    targets.unshift(
+      ...config.curve.field.seeds.flatMap((_, k) =>
+        (["X", "Y"] as const).map((field) => `seed${k + 1}${field}` as const),
+      ),
+      "fieldEscape",
+    );
   return targets;
 }
 export function targetValue(
@@ -239,6 +268,8 @@ export function targetValue(
   const pursuer = pursuerTarget(target);
   if (pursuer)
     return config.curve.pursuit.pursuers[pursuer.index]?.[pursuer.key] ?? NaN;
+  const seed = seedTarget(target);
+  if (seed) return config.curve.field.seeds[seed.index]?.[seed.key] ?? NaN;
   switch (target) {
     case "a":
     case "min":
@@ -302,6 +333,8 @@ export function targetValue(
       return config.curve.lissajous.phase;
     case "pursuitCapture":
       return config.curve.pursuit.capture;
+    case "fieldEscape":
+      return config.curve.field.escape;
     case "rayLength":
       return length;
     default:
@@ -331,6 +364,12 @@ export function applyTracks(
     if (pursuer) {
       if (config.curve.pursuit.pursuers[pursuer.index])
         config.curve.pursuit.pursuers[pursuer.index][pursuer.key] = value;
+      continue;
+    }
+    const seed = seedTarget(track.target);
+    if (seed) {
+      if (config.curve.field.seeds[seed.index])
+        config.curve.field.seeds[seed.index][seed.key] = value;
       continue;
     }
     switch (track.target) {
@@ -426,6 +465,9 @@ export function applyTracks(
       case "pursuitCapture":
         config.curve.pursuit.capture = value;
         break;
+      case "fieldEscape":
+        config.curve.field.escape = value;
+        break;
       case "rayLength":
         length = value;
         break;
@@ -465,6 +507,13 @@ export function reveal(result: Result, progress: number): Result {
       ...result.pursuit,
       paths: result.pursuit.paths.map((path) => path.slice(0, last + 1)),
       polygons: result.pursuit.polygons.filter((p) => p.sampleIndex <= last),
+    },
+    // Every trajectory shares the base's sample times, so a revealed prefix
+    // is the same span of time on each.
+    field: result.field && {
+      ...result.field,
+      paths: result.field.paths.map((path) => path.slice(0, last + 1)),
+      arrows: result.field.arrows.filter((a) => a.sampleIndex <= last),
     },
     second: result.second?.slice(0, last + 1),
     // The circle stays; breaks beyond the revealed samples are harmless.

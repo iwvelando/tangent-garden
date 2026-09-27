@@ -341,6 +341,29 @@ const studies: {
     ],
   },
   {
+    preset: "Van der Pol limit cycle",
+    cases: [
+      {
+        name: "Seed x₁",
+        text: "-sqrt(2)",
+        value: -Math.SQRT2,
+        path: ["curve", "field", "seeds", "0", "x"],
+      },
+      {
+        name: "Seed y₂",
+        text: "phi",
+        value: phi,
+        path: ["curve", "field", "seeds", "1", "y"],
+      },
+      {
+        name: "Escape radius R",
+        text: "2*pi",
+        value: 2 * Math.PI,
+        path: ["curve", "field", "escape"],
+      },
+    ],
+  },
+  {
     preset: "Unwinding a circle",
     cases: [
       {

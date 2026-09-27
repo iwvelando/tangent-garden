@@ -82,19 +82,14 @@ func (p Pursuit) validate() error {
 	return nil
 }
 
-// chase is an integrated pursuit: the accepted Dormand–Prince steps from
-// states ys at times ts. A state between two steps is one step of the same
-// method from the earlier, so positions are smooth in t within each step and
-// continuous across them.
+// chase is an integrated pursuit, its state the pursuers' flattened
+// positions.
 type chase struct {
+	solution
 	speeds    []float64
 	eps, tol  float64
-	lo, hi    float64
-	ts        []float64
-	ys        [][]float64
 	capture   *Capture
 	exhausted bool
-	end       float64
 }
 
 // gap returns the smallest distance from a pursuer to its target, and that
@@ -114,7 +109,7 @@ func gap(y []float64) (float64, int) {
 }
 
 // velocity is the pursuit field; it is NaN where a pursuer is on its target.
-func (c *chase) velocity(y, out []float64) {
+func (c *chase) velocity(_ float64, y, out []float64) {
 	n := len(y) / 2
 	for i := 0; i < n; i++ {
 		j := (i + 1) % n
@@ -125,55 +120,10 @@ func (c *chase) velocity(y, out []float64) {
 	}
 }
 
-// Dormand–Prince 5(4) coefficients.
-var (
-	dpA = [6][]float64{
-		{1.0 / 5},
-		{3.0 / 40, 9.0 / 40},
-		{44.0 / 45, -56.0 / 15, 32.0 / 9},
-		{19372.0 / 6561, -25360.0 / 2187, 64448.0 / 6561, -212.0 / 729},
-		{9017.0 / 3168, -355.0 / 33, 46732.0 / 5247, 49.0 / 176, -5103.0 / 18656},
-		{35.0 / 384, 0, 500.0 / 1113, 125.0 / 192, -2187.0 / 6784, 11.0 / 84},
-	}
-	// The fifth-order solution minus the embedded fourth-order one.
-	dpE = [7]float64{71.0 / 57600, 0, -71.0 / 16695, 71.0 / 1920, -17253.0 / 339200, 22.0 / 525, -1.0 / 40}
-)
-
-// step advances y by h with the fifth-order solution, and returns the
-// embedded error estimate when asked.
-func (c *chase) step(y []float64, h float64, estimate bool) (next, err []float64) {
-	m := len(y)
-	var k [7][]float64
-	stage := make([]float64, m)
-	k[0] = make([]float64, m)
-	c.velocity(y, k[0])
-	for s, row := range dpA {
-		for q := range stage {
-			sum := 0.0
-			for r, a := range row {
-				sum += a * k[r][q]
-			}
-			stage[q] = y[q] + h*sum
-		}
-		k[s+1] = make([]float64, m)
-		c.velocity(stage, k[s+1])
-	}
-	// The last stage is evaluated at the fifth-order solution itself.
-	next = append([]float64{}, stage...)
-	if estimate {
-		err = make([]float64, m)
-		for q := range err {
-			for r, e := range dpE {
-				err[q] += h * e * k[r][q]
-			}
-		}
-	}
-	return next, err
-}
-
 func newChase(p Pursuit, lo, hi, tol float64) *chase {
 	n := len(p.Pursuers)
-	c := &chase{speeds: make([]float64, n), eps: p.Capture, tol: tol, lo: lo, hi: hi}
+	c := &chase{speeds: make([]float64, n), eps: p.Capture, tol: tol}
+	c.f, c.lo, c.hi = c.velocity, lo, hi
 	y := make([]float64, 2*n)
 	vmax := 0.0
 	for i, q := range p.Pursuers {
@@ -210,7 +160,7 @@ func newChase(p Pursuit, lo, hi, tol float64) *chase {
 		if last {
 			h = hi - t
 		}
-		next, e := c.step(y, h, true)
+		next, e := dormandPrince(c.f, t, y, h, true)
 		size := 0.0
 		for q := range e {
 			size = math.Max(size, math.Abs(e[q])/(tol*g0+1e-14*math.Abs(y[q])))
@@ -239,6 +189,7 @@ func newChase(p Pursuit, lo, hi, tol float64) *chase {
 		}
 	}
 	c.end = t
+	c.complete = t >= hi && !c.exhausted
 	return c
 }
 
@@ -248,30 +199,11 @@ func (c *chase) stop(t float64, i int) {
 	c.end = t
 }
 
-func (c *chase) steps() int { return len(c.ts) - 1 }
-
 // at returns every pursuer's position at t, while the chase is known.
 func (c *chase) at(t float64) ([]Vec, bool) {
-	if t > c.end && c.end == c.hi && c.capture == nil && !c.exhausted && t-c.end <= 1e-12*(c.hi-c.lo) {
-		// The last sample can land a rounding error past the domain end.
-		t = c.end
-	}
-	if !(t >= c.lo && t <= c.end) {
+	y, ok := c.state(t)
+	if !ok {
 		return nil, false
-	}
-	// The last accepted step starting at or before t.
-	k, top := 0, len(c.ts)-1
-	for k < top {
-		mid := (k + top + 1) / 2
-		if c.ts[mid] <= t {
-			k = mid
-		} else {
-			top = mid - 1
-		}
-	}
-	y := c.ys[k]
-	if s := t - c.ts[k]; s > 0 {
-		y, _ = c.step(y, s, false)
 	}
 	out := make([]Vec, len(y)/2)
 	for i := range out {

@@ -31,6 +31,17 @@ const base: Config = {
       })),
       capture: 0.001,
     },
+    // The Van der Pol oscillator, with a as its damping μ: trajectories from
+    // near the origin and from far out both wind onto its limit cycle.
+    field: {
+      x: "y",
+      y: "a*(1-x^2)*y-x",
+      seeds: [
+        { x: 0.1, y: 0 },
+        { x: 3, y: 3 },
+      ],
+      escape: 10,
+    },
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
@@ -550,6 +561,58 @@ export const presets: { title: string; note: string; config: Config }[] = [
       },
       samples: 4000,
       lines: 36,
+    },
+  },
+  {
+    title: "Van der Pol limit cycle",
+    note: "Two trajectories, one closed orbit",
+    config: {
+      ...base,
+      kind: "offset",
+      // ẋ = y, ẏ = a(1 − x²)y − x with damping a = 1. The origin repels and
+      // far points fall inward, so a trajectory from near the origin and one
+      // from far out both wind onto the same closed orbit, whose period is
+      // about 6.66. Parallel curves on both sides of the first trajectory
+      // wind on with it.
+      stack: { enabled: true, from: -0.3, to: 0.3, count: 7 },
+      curve: { ...base.curve, format: "field", min: 0, max: 30 },
+      samples: 6000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Pendulum phase portrait",
+    note: "Swings, a separatrix, and escapes",
+    config: {
+      ...base,
+      kind: "evolute",
+      // ẋ = y, ẏ = −sin x: angle and angular velocity of a pendulum. Seeds
+      // below the separatrix, where the speed at the bottom is 2, swing back
+      // and forth on closed orbits, the widest in a period of about 9.1;
+      // those above it go over the top and keep turning, until they leave
+      // the escape circle. The evolute is of the first swing.
+      curve: {
+        ...base.curve,
+        format: "field",
+        min: 0,
+        max: 9.2,
+        field: {
+          x: "y",
+          y: "-sin(x)",
+          seeds: [
+            { x: 0, y: 1.2 },
+            { x: 0, y: 0.6 },
+            { x: 0, y: 1.8 },
+            { x: 0, y: 2.2 },
+            { x: 0, y: -2.2 },
+            { x: 0, y: 2.8 },
+            { x: 0, y: -2.8 },
+          ],
+          escape: 7,
+        },
+      },
+      samples: 6000,
+      lines: 24,
     },
   },
 ];

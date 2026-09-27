@@ -121,6 +121,12 @@ self.onmessage = async ({
             ]),
           ]
         : []),
+      ...(config.curve.format === "field"
+        ? [
+            config.curve.field.escape,
+            ...config.curve.field.seeds.flatMap((p) => [p.x, p.y]),
+          ]
+        : []),
       ...(config.source.kind === "point" &&
       config.source.coordinates === "polar"
         ? [config.source.radius, config.source.theta]

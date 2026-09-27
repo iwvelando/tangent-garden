@@ -6,6 +6,7 @@ import {
   isHarmonic,
   maxTerms,
   maxPursuers,
+  maxSeeds,
   ownsShape,
   usesPole,
   type Bounds,
@@ -15,6 +16,7 @@ import {
   type Kind,
   type PoleKind,
   type Roll,
+  type Vec,
 } from "./types";
 import { EngineClient, boundText } from "./engine-client";
 import { useTheme } from "./useTheme";
@@ -24,7 +26,8 @@ import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
 import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
-import { pursuerLabels, termLabels } from "./animation";
+import { endNote, nextSeed } from "./flow";
+import { pursuerLabels, seedLabels, termLabels } from "./animation";
 import { useDisclosure } from "./useDisclosure";
 import { useMediaQuery } from "./useMediaQuery";
 import type { AnimationView, Viewport } from "./animation";
@@ -677,6 +680,95 @@ function App() {
       )}
     </>
   );
+  const seeds = config.curve.field.seeds;
+  const toField = (patch: Partial<Config["curve"]["field"]>) =>
+    update((c) => ({
+      curve: { ...c.curve, field: { ...c.curve.field, ...patch } },
+    }));
+  // Adding or removing a seed renumbers the fields after it, so pending
+  // evaluations land first.
+  const editSeeds = async (change: (seeds: Vec[]) => Vec[]) => {
+    await scalarStatus.resolved();
+    update((c) => ({
+      curve: {
+        ...c.curve,
+        field: { ...c.curve.field, seeds: change(c.curve.field.seeds) },
+      },
+    }));
+  };
+  const flows =
+    frame?.config.curve.format === "field" ? frame.result.field : undefined;
+  const fieldControls = (
+    <>
+      <p className="note">
+        Each trajectory starts at its seed (within ±100,000) when t is at the
+        domain start and follows the field: its velocity at (x, y) at time t is
+        (dx/dt, dy/dt). Use <var>x</var>, <var>y</var>, <var>t</var>, and{" "}
+        <var>a</var>. The first seed&rsquo;s trajectory is the curve the
+        construction uses.
+      </p>
+      <Field label="dx/dt" className="equation">
+        <input
+          value={config.curve.field.x}
+          onChange={(e) => toField({ x: e.target.value })}
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="dy/dt" className="equation">
+        <input
+          value={config.curve.field.y}
+          onChange={(e) => toField({ y: e.target.value })}
+          spellCheck={false}
+        />
+      </Field>
+      {seeds.map((_, i) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`seed-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`seed-${i}`}>Seed {i + 1}</span>
+            <button
+              type="button"
+              aria-label={`Remove seed ${i + 1}`}
+              disabled={seeds.length === 1}
+              onClick={() => editSeeds((s) => s.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair">
+            {(["X", "Y"] as const).map((field) =>
+              scalar(seedLabels[field](i + 1), [
+                "curve",
+                "field",
+                "seeds",
+                String(i),
+                field.toLowerCase(),
+              ]),
+            )}
+          </div>
+        </div>
+      ))}
+      <button
+        className="closure"
+        type="button"
+        disabled={seeds.length >= maxSeeds}
+        onClick={() => editSeeds((s) => [...s, nextSeed(s)])}
+      >
+        {seeds.length >= maxSeeds ? "At most 16 seeds" : "Add a seed"}
+      </button>
+      {scalar("Escape radius R", ["curve", "field", "escape"], {
+        topic: "escape radius",
+        help: "A trajectory ends the first time it leaves the circle of this radius about the origin (0–100,000), so a field that runs off to infinity stops in view. A seed outside the circle has no path.",
+      })}
+      <p className="note" data-testid="field-note">
+        {flows ? endNote(flows, frame!.config.curve.min) : "Integrating…"}
+      </p>
+    </>
+  );
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const behind = (
@@ -847,6 +939,7 @@ function App() {
                   <option value="pursuit">
                     Pursuit · each chases the next
                   </option>
+                  <option value="field">Vector field · trajectories</option>
                 </select>
               </Field>
               {config.curve.format === "roulette" ? (
@@ -857,6 +950,8 @@ function App() {
                 fourierControls
               ) : config.curve.format === "pursuit" ? (
                 pursuitControls
+              ) : config.curve.format === "field" ? (
+                fieldControls
               ) : (
                 <>
                   {config.curve.format === "parametric" && (
@@ -902,7 +997,9 @@ function App() {
                         ? undefined
                         : config.curve.format === "roulette"
                           ? "rolling parameter t"
-                          : harmonic || config.curve.format === "pursuit"
+                          : harmonic ||
+                              config.curve.format === "pursuit" ||
+                              config.curve.format === "field"
                             ? "time parameter t"
                             : undefined
                     }
@@ -917,7 +1014,9 @@ function App() {
                             ? "t is time: a vector of frequency k turns through k·t radians."
                             : config.curve.format === "pursuit"
                               ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
-                              : undefined
+                              : config.curve.format === "field"
+                                ? "t is time: every trajectory starts from its seed when t is at the domain start. Fields may depend on t."
+                                : undefined
                     }
                     label={
                       key === "min"
@@ -964,11 +1063,12 @@ function App() {
                   − * / ^, parentheses, pi, e, phi, sin, cos, tan, asin, acos,
                   atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt, abs. Angles
                   are radians. Use <var>t</var> (or <var>x</var> for a graph),
-                  and <var>a</var> for an adjustable shape coefficient. Bounds,
-                  numeric parameters such as radii and phases, and animation
-                  endpoints accept constant expressions such as 2*pi or -phi;
-                  they cannot contain <var>t</var>, <var>x</var>, or
-                  <var>a</var>.
+                  and <var>a</var> for an adjustable shape coefficient. A vector
+                  field uses <var>x</var>, <var>y</var>, and <var>t</var>.
+                  Bounds, numeric parameters such as radii and phases, and
+                  animation endpoints accept constant expressions such as 2*pi
+                  or -phi; they cannot contain <var>t</var>, <var>x</var>,
+                  <var>y</var>, or <var>a</var>.
                 </p>
                 <p>
                   <code>pi ≈ 3.1415926536</code> · circle constant
