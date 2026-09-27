@@ -73,6 +73,7 @@ test("one pedal tab selects the family and keeps the pole across variants", asyn
     "offset",
     "rolling",
     "envelope",
+    "inversion",
   ]);
   await expect(family(page)).toHaveValue("pedal");
   await page.getByRole("textbox", { name: "Pole x", exact: true }).fill("1");

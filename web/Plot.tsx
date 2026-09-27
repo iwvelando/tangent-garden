@@ -131,26 +131,17 @@ export function Plot({
     x: W / 2 + (p.x - frame.cx) * scale + cam.x,
     y: H / 2 - (p.y - frame.cy) * scale + cam.y,
   });
-  const path = (points: (Vec | null)[], virtual?: boolean) => {
-    let s = "",
-      last: Vec | null = null;
-    points.forEach((p, i) => {
-      if (!p || (virtual !== undefined && result.virtual[i] !== virtual)) {
-        last = null;
-        return;
-      }
-      const a = xy(p);
-      if (Math.abs(a.x) > 1e6 || Math.abs(a.y) > 1e6) {
-        last = null;
-        return;
-      }
-      const gap =
-        !last || Math.hypot(a.x - last.x, a.y - last.y) > Math.max(W, H) * 0.6;
-      s += `${gap ? "M" : "L"}${a.x.toFixed(3)},${a.y.toFixed(3)} `;
-      last = a;
-    });
-    return s;
-  };
+  const path = (
+    points: (Vec | null)[],
+    virtual?: boolean,
+    breaks?: Set<number>,
+  ) =>
+    pathData(
+      points,
+      xy,
+      (i) => virtual === undefined || result.virtual[i] === virtual,
+      breaks,
+    );
   const line = (
     a: Vec,
     b: Vec,
@@ -162,6 +153,10 @@ export function Plot({
     const p = xy(a),
       q = xy(b);
     if (
+      !Number.isFinite(p.x) ||
+      !Number.isFinite(p.y) ||
+      Math.abs(p.x) > 1e7 ||
+      Math.abs(p.y) > 1e7 ||
       !Number.isFinite(q.x) ||
       !Number.isFinite(q.y) ||
       Math.abs(q.x) > 1e7 ||
@@ -190,6 +185,10 @@ export function Plot({
     (config.envelope.mode === "angle" || config.envelope.extend);
   const rings = config.kind === "envelope" && config.envelope.mode === "circle";
   const dashed = optical || (config.kind === "envelope" && !rings && !extended);
+  // The circle of inversion, the curve inverted when it is derived, and where
+  // its image is open between samples.
+  const inversion = result.inversion;
+  const breaks = new Set(inversion?.breaks);
   // A derived curve or stack member that collapses to one point, such as a
   // circle offset by its radius, is drawn as a dot rather than vanishing.
   const collapsed = (points: (Vec | null)[]) => {
@@ -355,6 +354,16 @@ export function Plot({
                 y: (config.pole.y + ray.target.y) / 2,
               }
             : ray.target;
+        // A point joined to its image, along a ray from the center.
+        if (inversion)
+          return (
+            layers.lines &&
+            ray.target && (
+              <g key={i} data-testid="inversion-segment">
+                {line(ray.origin, ray.target, palette.line, 0.4)}
+              </g>
+            )
+          );
         // A circle's radius to one of its touching points.
         if (rings)
           return (
@@ -505,6 +514,32 @@ export function Plot({
           opacity=".55"
         />
       )}
+      {layers.lines && inversion && (
+        <circle
+          data-testid="inversion-circle"
+          aria-label="Circle of inversion"
+          cx={xy(inversion.center).x}
+          cy={xy(inversion.center).y}
+          r={inversion.radius * scale}
+          fill="none"
+          stroke={palette.line}
+          strokeWidth="1.4"
+          strokeDasharray="7 5"
+          opacity=".85"
+        />
+      )}
+      {layers.base && inversion?.source && (
+        <path
+          data-testid="inversion-source"
+          aria-label="Inverted curve"
+          d={path(inversion.source)}
+          fill="none"
+          stroke={palette.derived}
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+          opacity=".5"
+        />
+      )}
       {layers.base && (
         <path
           d={path(result.base)}
@@ -524,7 +559,8 @@ export function Plot({
       )}
       {layers.derived && result.derived.length > 0 && (
         <path
-          d={path(result.derived, dashed ? false : undefined)}
+          data-testid="derived-curve"
+          d={path(result.derived, dashed ? false : undefined, breaks)}
           fill="none"
           stroke={palette.derived}
           strokeWidth="2.6"
@@ -598,7 +634,18 @@ export function Plot({
           />
         </g>
       )}
-      {usesPole(config.kind) && (
+      {inversion && (
+        <g data-testid="inversion-center" aria-label="Center of inversion">
+          <circle
+            cx={xy(inversion.center).x}
+            cy={xy(inversion.center).y}
+            r="4"
+            fill={palette.line}
+          />
+        </g>
+      )}
+      {(usesPole(config.kind) ||
+        (inversion && usesPole(config.inversion.of))) && (
         <g data-testid="pole-point" aria-label="Pole">
           <circle
             cx={xy(config.pole).x}
@@ -620,6 +667,36 @@ export function Plot({
   );
 }
 
+// SVG path data for points drawn by xy. The path breaks at gaps, at points
+// keep rejects, before each sample in breaks, where the curve is known to be
+// open between two finite samples, and at jumps too long to be one step of a
+// curve.
+export function pathData(
+  points: (Vec | null)[],
+  xy: (p: Vec) => Vec,
+  keep: (i: number) => boolean = () => true,
+  breaks?: Set<number>,
+) {
+  let s = "",
+    last: Vec | null = null;
+  points.forEach((p, i) => {
+    if (breaks?.has(i)) last = null;
+    if (!p || !keep(i)) {
+      last = null;
+      return;
+    }
+    const a = xy(p);
+    if (Math.abs(a.x) > 1e6 || Math.abs(a.y) > 1e6) {
+      last = null;
+      return;
+    }
+    const gap =
+      !last || Math.hypot(a.x - last.x, a.y - last.y) > Math.max(W, H) * 0.6;
+    s += `${gap ? "M" : "L"}${a.x.toFixed(3)},${a.y.toFixed(3)} `;
+    last = a;
+  });
+  return s;
+}
 // Fit each point family independently: a short base arc must not discard a
 // distant but coherent derived arc. Outer Tukey fences suppress isolated tails
 // near asymptotes without clipping ordinary extrema to percentile bounds.
@@ -753,6 +830,10 @@ export function fitFrame(result: Result, config: Config) {
     ...framingPoints(circleExtents(roulette?.positions ?? [])),
     ...framingPoints(circleExtents(result.rolling)),
     ...framingPoints(movingExtents(result)),
+    // An inverted derived curve, and the circle of inversion as its own
+    // family: its image can be far smaller or larger than the curve.
+    ...framingPoints(result.inversion?.source ?? []),
+    ...framingPoints(circleExtents(result.inversion ? [result.inversion] : [])),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };
   let minX = Infinity,
@@ -768,7 +849,8 @@ export function fitFrame(result: Result, config: Config) {
   points.forEach(include);
   const extent = Math.max(maxX - minX, maxY - minY, 0.1);
   if (
-    usesPole(config.kind) &&
+    (usesPole(config.kind) ||
+      (config.kind === "inversion" && usesPole(config.inversion.of))) &&
     Math.hypot(
       config.pole.x - (minX + maxX) / 2,
       config.pole.y - (minY + maxY) / 2,

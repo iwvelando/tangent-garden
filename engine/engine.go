@@ -28,8 +28,11 @@ type Request struct {
 	Rolling      Roller  `json:"rolling"`
 	// Envelope is the family of lines for the envelope construction.
 	Envelope EnvelopeFamily `json:"envelope"`
-	Samples  int            `json:"samples"`
-	Lines    int            `json:"lines"`
+	// Inversion is the circle and the curve inverted by the inversion
+	// construction.
+	Inversion Inversion `json:"inversion"`
+	Samples   int       `json:"samples"`
+	Lines     int       `json:"lines"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -60,12 +63,14 @@ type Result struct {
 	// Second holds the chords' far endpoints, indexed like Base, present
 	// only for chords.
 	Second []*Vec `json:"second,omitempty"`
+	// Inversion is present only for an inversion.
+	Inversion *InversionResult `json:"inversion,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
 	out := Result{Rays: []Ray{}, Family: []Path{}, Circles: []Circle{}, Rolling: []Rolling{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
-	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && q.Kind != "rolling" && q.Kind != "envelope" && !usesPole(q.Kind) {
+	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && q.Kind != "rolling" && q.Kind != "envelope" && q.Kind != "inversion" && !usesPole(q.Kind) {
 		return out, fmt.Errorf("unknown construction")
 	}
 	if usesPole(q.Kind) && !q.Pole.Valid() {
@@ -83,6 +88,16 @@ func Compute(q Request) (Result, error) {
 	if q.Kind == "rolling" {
 		if err := q.Rolling.validate(); err != nil {
 			return out, err
+		}
+	}
+	var inv *inverter
+	if q.Kind == "inversion" {
+		if err := q.Inversion.validate(q.Pole); err != nil {
+			return out, err
+		}
+		out.Inversion = &InversionResult{Center: q.Inversion.Center, Radius: q.Inversion.Radius, Breaks: []int{}}
+		if q.Inversion.Of != "curve" {
+			out.Inversion.Source = make([]*Vec, q.Samples)
 		}
 	}
 	stacked := q.Kind == "offset" && q.Stack.Enabled
@@ -113,6 +128,9 @@ func Compute(q Request) (Result, error) {
 	f, err := compile(q.Curve)
 	if err != nil {
 		return out, err
+	}
+	if out.Inversion != nil {
+		inv = &inverter{Inversion: q.Inversion, f: f, lo: q.Curve.Min, hi: q.Curve.Max, pole: q.Pole, distance: q.Distance}
 	}
 	var mv *mover
 	if q.Kind == "rolling" && q.Rolling.curve() {
@@ -206,6 +224,8 @@ func Compute(q Request) (Result, error) {
 	tirCount := 0
 	coincident := 0
 	stationary, nested, unsized := 0, 0, 0
+	// The last sample with an image, where the inverted curve was at src.
+	onCenter, last, lastT, lastSrc := 0, -2, 0.0, Vec{}
 	nextLine := 0
 	for j := 0; j < q.Samples; j++ {
 		t := lo + float64(j)*step
@@ -226,10 +246,11 @@ func Compute(q Request) (Result, error) {
 				out.Roulette.Positions = append(out.Roulette.Positions, s)
 			}
 		}
-		stableSample := false
-		if firstOrder(q.Kind) {
+		stableSample := true
+		switch derivativeOrder(q) {
+		case 1:
 			stableSample = stableTangent(f, t, lo, hi, dp)
-		} else {
+		case 2:
 			stableSample = stable(f, t, lo, hi, dp, ddp)
 		}
 		if !p.Valid() || !stableSample {
@@ -318,6 +339,23 @@ func Compute(q Request) (Result, error) {
 			if member.coincident {
 				coincident++
 			}
+		case "inversion":
+			src := inv.at(p, dp, ddp)
+			if out.Inversion.Source != nil {
+				out.Inversion.Source[j] = src
+			}
+			if src == nil {
+				break
+			}
+			origin = *src
+			if target = Invert(*src, inv.Center, inv.Radius); target == nil {
+				onCenter++
+				break
+			}
+			if last == j-1 && inv.open(lastT, t, lastSrc, *src) {
+				out.Inversion.Breaks = append(out.Inversion.Breaks, j)
+			}
+			last, lastT, lastSrc = j, t, *src
 		case "evolute":
 			target = Evolute(p, dp, ddp)
 		case "involute":
@@ -347,7 +385,12 @@ func Compute(q Request) (Result, error) {
 		if target == nil {
 			out.Invalid++
 		}
-		if line && circle.ok {
+		if line && inv != nil {
+			// Each correspondence segment joins a point to its image.
+			if target != nil {
+				out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: origin, Target: target})
+			}
+		} else if line && circle.ok {
 			// Every circle is drawn, touching its envelope or not, with its
 			// radii to the touching points.
 			out.Circles = append(out.Circles, Circle{SampleIndex: j, Center: p, Radius: circle.radius})
@@ -393,6 +436,16 @@ func Compute(q Request) (Result, error) {
 	if nested > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius changes faster than the center moves (|R′| > |c′|): each circle nests inside its neighbours, with no real envelope point.", nested))
 	}
+	if onCenter > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the inverted curve lies exactly on the center of inversion, whose image is at infinity; they are left as gaps.", onCenter))
+	}
+	if n := len(breaksOf(out)); n > 0 {
+		places := "places"
+		if n == 1 {
+			places = "place"
+		}
+		out.Warnings = append(out.Warnings, fmt.Sprintf("In %d %s the inverted curve passes through or close to the center between samples, where its image runs off toward infinity, or is undefined between them: the image is left open there, not joined across. More samples resolve a close pass.", n, places))
+	}
 	if tirCount > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("Total internal reflection at %d samples; reflected rays are shown in amber.", tirCount))
 	}
@@ -415,8 +468,21 @@ func Compute(q Request) (Result, error) {
 	return out, nil
 }
 
-// firstOrder reports whether a construction needs only a stable tangent, so an
-// ill-conditioned second derivative must not turn its samples into gaps.
-func firstOrder(kind string) bool {
-	return usesPole(kind) || kind == "offset" || kind == "rolling" || kind == "envelope"
+func breaksOf(r Result) []int {
+	if r.Inversion == nil {
+		return nil
+	}
+	return r.Inversion.Breaks
+}
+
+// derivativeOrder is the number of stable derivatives a construction needs,
+// so an ill-conditioned higher derivative must not turn its samples into gaps.
+func derivativeOrder(q Request) int {
+	switch {
+	case q.Kind == "inversion":
+		return q.Inversion.order()
+	case usesPole(q.Kind) || q.Kind == "offset" || q.Kind == "rolling" || q.Kind == "envelope":
+		return 1
+	}
+	return 2
 }

@@ -7,13 +7,17 @@ export type Kind =
   | "offset"
   | "rolling"
   | "envelope"
+  | "inversion"
   | PoleKind;
 // Constructions that project an independent geometric pole onto the tangent
 // or normal. They share one tab and one pole, never the optical source.
 export const poleKinds = ["pedal", "contrapedal", "orthotomic"] as const;
 export type PoleKind = (typeof poleKinds)[number];
-export const usesPole = (kind: Kind): kind is PoleKind =>
-  (poleKinds as readonly Kind[]).includes(kind);
+export const usesPole = (kind: string): kind is PoleKind =>
+  (poleKinds as readonly string[]).includes(kind);
+// The curve an inversion inverts: the curve itself, or one of its derived
+// curves, computed with the configuration's own pole or offset distance.
+export type InversionSource = "curve" | "evolute" | PoleKind | "offset";
 // How the rolling circle moves: inside or outside a fixed circle centered at
 // the origin, or along the x-axis on its upper side.
 export type Roll = "inside" | "outside" | "line";
@@ -94,6 +98,9 @@ export type Config = {
     extend: boolean;
     radius: string;
   };
+  // Inversion in the circle of radius `radius` about `center`, applied to the
+  // curve named by `of`. Used only by the inversion kind.
+  inversion: { center: Vec; radius: number; of: InversionSource };
   samples: number;
   lines: number;
 };
@@ -146,6 +153,16 @@ export type RouletteResult = {
   positions: Rolling[];
 };
 
+// The circle of inversion and, for a derived curve, that curve indexed like
+// base. The image is open before each sample index in breaks, where it runs
+// off to infinity between two finite samples.
+export type InversionResult = {
+  center: Vec;
+  radius: number;
+  source?: (Vec | null)[];
+  breaks: number[];
+};
+
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
 export type Result = {
@@ -167,6 +184,8 @@ export type Result = {
   moving?: MovingResult;
   // The chords' far endpoints, indexed like base; present only for chords.
   second?: (Vec | null)[];
+  // Present only for an inversion.
+  inversion?: InversionResult;
   warnings: string[];
   invalid: number;
 };

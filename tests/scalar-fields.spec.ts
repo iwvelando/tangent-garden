@@ -231,6 +231,29 @@ const studies: {
     ],
   },
   {
+    preset: "Hyperbola into a lemniscate",
+    cases: [
+      {
+        name: "Inversion center x",
+        text: "-phi/10",
+        value: -phi / 10,
+        path: ["inversion", "center", "x"],
+      },
+      {
+        name: "Inversion center y",
+        text: "e/10",
+        value: Math.E / 10,
+        path: ["inversion", "center", "y"],
+      },
+      {
+        name: "Inversion radius R",
+        text: "sqrt(phi)",
+        value: Math.sqrt(phi),
+        path: ["inversion", "radius"],
+      },
+    ],
+  },
+  {
     preset: "Unwinding a circle",
     cases: [
       {
