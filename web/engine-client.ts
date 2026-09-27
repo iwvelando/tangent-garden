@@ -93,5 +93,12 @@ export function boundText(value: number) {
   const turns = Math.round(value / Math.PI);
   if (turns !== 0 && Math.abs(turns) <= 400 && value === turns * Math.PI)
     return `${turns}*pi`;
+  // Simple fractions of pi, such as a phase of pi/2, when the text evaluates
+  // back to exactly this value.
+  for (let q = 2; q <= 12; q++) {
+    const p = Math.round((value * q) / Math.PI);
+    if (p !== 0 && Math.abs(p) <= 400 * q && value === (p * Math.PI) / q)
+      return `${p === 1 ? "" : p === -1 ? "-" : `${p}*`}pi/${q}`;
+  }
   return String(value);
 }

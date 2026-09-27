@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { Plot, type Layers } from "./Plot";
 import {
+  isHarmonic,
+  maxTerms,
   usesPole,
   type Bounds,
   type Config,
@@ -18,6 +20,8 @@ import { AnimationPanel } from "./AnimationPanel";
 import { ExportImageMenu } from "./ExportImageMenu";
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
+import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
+import { termLabels } from "./animation";
 import { useDisclosure } from "./useDisclosure";
 import { useMediaQuery } from "./useMediaQuery";
 import type { AnimationView, Viewport } from "./animation";
@@ -437,6 +441,133 @@ function App() {
       )}
     </>
   );
+  const harmonic = isHarmonic(config.curve.format);
+  // Like a roulette's, a harmonic curve's closure note stays while inputs
+  // that cannot change it recompute.
+  const harmonicClosure =
+    frame &&
+    frame.config.curve.format === config.curve.format &&
+    closureKey(frame.config.curve) === closureKey(config.curve)
+      ? frame.result.harmonic
+      : undefined;
+  const periodButton = harmonicClosure && harmonicClosure.period > 0 && (
+    <button
+      className="closure"
+      type="button"
+      onClick={() => {
+        const span = periodText(harmonicClosure.period).expression;
+        setPreset("custom");
+        setBounds({
+          ...bounds,
+          max: bounds.min.trim() === "0" ? span : `(${bounds.min})+${span}`,
+        });
+      }}
+    >
+      Trace one full period
+    </button>
+  );
+  const harmonicNote = (
+    <>
+      <p className="note" data-testid="closure-note">
+        {harmonicClosure
+          ? closureNote(harmonicClosure)
+          : "Checking whether the curve closes…"}
+      </p>
+      {periodButton}
+    </>
+  );
+  const lissajous = ["curve", "lissajous"];
+  const lissajousControls = (
+    <>
+      <div className="pair">
+        {scalar("Amplitude A", [...lissajous, "amplitudeX"], {
+          topic: "Lissajous amplitudes",
+          help: "Half-widths of the figure, 0–100,000: x swings between ±A and y between ±B.",
+        })}
+        {scalar("Amplitude B", [...lissajous, "amplitudeY"])}
+      </div>
+      <div className="pair">
+        {scalar("Frequency m", [...lissajous, "frequencyX"], {
+          topic: "Lissajous frequencies",
+          help: "Radians per unit t, within ±1,000. Whole numbers close after t spans 2π, other whole-number ratios eventually, and the rest never.",
+        })}
+        {scalar("Frequency n", [...lissajous, "frequencyY"])}
+      </div>
+      {scalar("Phase φ (radians)", [...lissajous, "phase"], {
+        topic: "Lissajous phase",
+        help: "Shifts x against y. With m = n, φ = π/2 draws an ellipse and φ = 0 a segment.",
+      })}
+      {harmonicNote}
+    </>
+  );
+  const terms = config.curve.terms;
+  // Adding or removing a term renumbers the fields after it, so evaluations
+  // still pending for them land first.
+  const editTerms = async (
+    change: (terms: Config["curve"]["terms"]) => Config["curve"]["terms"],
+  ) => {
+    await scalarStatus.resolved();
+    update((c) => ({ curve: { ...c.curve, terms: change(c.curve.terms) } }));
+  };
+  const fourierControls = (
+    <>
+      <p className="note">
+        Each term is a vector of radius r (0–100,000) turning at frequency k
+        radians per unit t (within ±1,000, counterclockwise when positive), from
+        angle φ radians at t = 0. The vectors are chained from the origin in
+        this order.
+      </p>
+      {terms.map((_, i) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`term-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`term-${i}`}>Term {i + 1}</span>
+            <button
+              type="button"
+              aria-label={`Remove term ${i + 1}`}
+              disabled={terms.length === 1}
+              onClick={() => editTerms((t) => t.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair trio">
+            {scalar(termLabels.Frequency(i + 1), [
+              "curve",
+              "terms",
+              String(i),
+              "frequency",
+            ])}
+            {scalar(termLabels.Radius(i + 1), [
+              "curve",
+              "terms",
+              String(i),
+              "radius",
+            ])}
+            {scalar(termLabels.Phase(i + 1), [
+              "curve",
+              "terms",
+              String(i),
+              "phase",
+            ])}
+          </div>
+        </div>
+      ))}
+      <button
+        className="closure"
+        type="button"
+        disabled={terms.length >= maxTerms}
+        onClick={() => editTerms((t) => [...t, nextTerm(t)])}
+      >
+        {terms.length >= maxTerms ? "At most 16 terms" : "Add a term"}
+      </button>
+      {harmonicNote}
+    </>
+  );
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const behind = (
@@ -600,10 +731,18 @@ function App() {
                   <option value="cartesian">Cartesian · y = f(x)</option>
                   <option value="polar">Polar · r(t)</option>
                   <option value="roulette">Roulette · rolling circle</option>
+                  <option value="lissajous">
+                    Lissajous · A sin(mt + φ), B sin(nt)
+                  </option>
+                  <option value="fourier">Fourier · rotating circles</option>
                 </select>
               </Field>
               {config.curve.format === "roulette" ? (
                 rouletteControls
+              ) : config.curve.format === "lissajous" ? (
+                lissajousControls
+              ) : config.curve.format === "fourier" ? (
+                fourierControls
               ) : (
                 <>
                   {config.curve.format === "parametric" && (
@@ -645,16 +784,24 @@ function App() {
                     className="equation"
                     key={key}
                     topic={
-                      key === "min" && config.curve.format === "roulette"
-                        ? "rolling parameter t"
-                        : undefined
+                      key !== "min"
+                        ? undefined
+                        : config.curve.format === "roulette"
+                          ? "rolling parameter t"
+                          : harmonic
+                            ? "time parameter t"
+                            : undefined
                     }
                     help={
-                      key === "min" && config.curve.format === "roulette"
-                        ? config.curve.roulette.roll === "line"
-                          ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
-                          : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
-                        : undefined
+                      key !== "min"
+                        ? undefined
+                        : config.curve.format === "roulette"
+                          ? config.curve.roulette.roll === "line"
+                            ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
+                            : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
+                          : harmonic
+                            ? "t is time: a vector of frequency k turns through k·t radians."
+                            : undefined
                     }
                     label={
                       key === "min"
@@ -676,6 +823,7 @@ function App() {
                 ))}
               </div>
               {config.curve.format !== "roulette" &&
+                !harmonic &&
                 scalar(
                   <>
                     Shape parameter <var>a</var>

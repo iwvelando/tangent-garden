@@ -101,6 +101,16 @@ self.onmessage = async ({
               : [config.curve.roulette.fixedRadius]),
           ]
         : []),
+      ...(config.curve.format === "lissajous"
+        ? Object.values(config.curve.lissajous)
+        : []),
+      ...(config.curve.format === "fourier"
+        ? config.curve.terms.flatMap((term) => [
+            term.frequency,
+            term.radius,
+            term.phase,
+          ])
+        : []),
       ...(config.source.kind === "point" &&
       config.source.coordinates === "polar"
         ? [config.source.radius, config.source.theta]

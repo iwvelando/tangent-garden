@@ -16,7 +16,8 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - A second curve rolling without slipping along the curve, with arc-length contact matching, wrapping for closed rolling curves, explicit stops at open ends and cusps, and tracing-point and start animation.
 - Envelopes of line families, each line through the curve at a direction angle θ(t) or a chord to a second moving point, with coincident endpoints left as gaps, chord extensions dashed, and multiplier animation through `a`; and envelopes of moving circles of radius R(t), with both real branches, their mergers, and gaps where the circles nest.
 - Inversion in a circle of the curve itself, including a roulette, or of its evolute, pedal, contrapedal, orthotomic, or offset, evaluated from the curve rather than a polyline, with the circle, correspondence segments, images left open where they run off to infinity, and center and radius animation.
-- Twenty-seven example studies; point and parallel light sources; polar source coordinates; configurable refraction.
+- Lissajous figures and Fourier curves of up to 16 rotating vectors, drawn with their guide circles or chained epicycles, with closure reported exactly for whole-number frequency ratios and never forced otherwise, and animation of every amplitude, frequency, radius, and phase.
+- Thirty example studies; point and parallel light sources; polar source coordinates; configurable refraction.
 - Independent poles for pedal, contrapedal, and orthotomic constructions, with tangent/normal projections, reflected segments, and pole-coordinate animation.
 - Signed normal offsets (parallel curves) that keep their cusps and swallowtails, with distance animation, evenly spaced offset stacks, and optional generating circles whose envelope is the offsets ±R.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.

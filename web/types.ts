@@ -18,13 +18,25 @@ export const usesPole = (kind: string): kind is PoleKind =>
 // The curve an inversion inverts: the curve itself, or one of its derived
 // curves, computed with the configuration's own pole or offset distance.
 export type InversionSource = "curve" | "evolute" | PoleKind | "offset";
+// One rotating vector of a Fourier curve.
+export type Term = { frequency: number; radius: number; phase: number };
+export const maxTerms = 16;
+export const harmonicFormats = ["lissajous", "fourier"] as const;
+export const isHarmonic = (format: string) =>
+  (harmonicFormats as readonly string[]).includes(format);
 // How the rolling circle moves: inside or outside a fixed circle centered at
 // the origin, or along the x-axis on its upper side.
 export type Roll = "inside" | "outside" | "line";
 export type Config = {
   kind: Kind;
   curve: {
-    format: "parametric" | "cartesian" | "polar" | "roulette";
+    format:
+      | "parametric"
+      | "cartesian"
+      | "polar"
+      | "roulette"
+      | "lissajous"
+      | "fourier";
     x: string;
     y: string;
     r: string;
@@ -42,6 +54,19 @@ export type Config = {
       arm: number;
       phase: number;
     };
+    // x = A sin(mt + φ), y = B sin(nt), with amplitudes A, B ≥ 0 and phase φ
+    // in radians. Used only when format is "lissajous".
+    lissajous: {
+      amplitudeX: number;
+      amplitudeY: number;
+      frequencyX: number;
+      frequencyY: number;
+      phase: number;
+    };
+    // z(t) = Σ radius·exp(i(frequency·t + phase)), 1–16 rotating vectors
+    // chained in this order from the origin; positive frequencies turn
+    // counterclockwise. Used only when format is "fourier".
+    terms: Term[];
   };
   source: {
     kind: "point" | "parallel";
@@ -163,6 +188,23 @@ export type InversionResult = {
   breaks: number[];
 };
 
+// A harmonic curve's rotating geometry at a representative sample: the
+// centers of a Fourier curve's circles, chained from the origin, or the
+// points turning on a Lissajous figure's x and y guides.
+export type Epicycles = { sampleIndex: number; joints: Vec[]; point: Vec };
+// Period is the smallest t-span after which the curve repeats, 0 when it
+// never does exactly (or is a single point, when constant). whole marks
+// whole-number frequencies. guides are a Lissajous figure's fixed circles;
+// radii are a Fourier curve's term radii, in the order of joints.
+export type HarmonicResult = {
+  period: number;
+  whole: boolean;
+  constant: boolean;
+  guides: Circle[];
+  radii: number[];
+  positions: Epicycles[];
+};
+
 export type Bounds = { min: string; max: string };
 export type Frame = { config: Config; result: Result };
 export type Result = {
@@ -180,6 +222,8 @@ export type Result = {
   rolling: Rolling[];
   // Present only for a roulette curve.
   roulette?: RouletteResult;
+  // Present only for a Lissajous or Fourier curve.
+  harmonic?: HarmonicResult;
   // Present only for a rolling curve.
   moving?: MovingResult;
   // The chords' far endpoints, indexed like base; present only for chords.

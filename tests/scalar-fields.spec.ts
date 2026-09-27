@@ -254,6 +254,64 @@ const studies: {
     ],
   },
   {
+    preset: "Lissajous 3 : 2 & its pedal",
+    cases: [
+      {
+        name: "Amplitude A",
+        text: "phi",
+        value: phi,
+        path: ["curve", "lissajous", "amplitudeX"],
+      },
+      {
+        name: "Amplitude B",
+        text: "e/2",
+        value: Math.E / 2,
+        path: ["curve", "lissajous", "amplitudeY"],
+      },
+      {
+        name: "Frequency m",
+        text: "sqrt(2)",
+        value: Math.SQRT2,
+        path: ["curve", "lissajous", "frequencyX"],
+      },
+      {
+        name: "Frequency n",
+        text: "-pi",
+        value: -Math.PI,
+        path: ["curve", "lissajous", "frequencyY"],
+      },
+      {
+        name: "Phase φ (radians)",
+        text: "pi/3",
+        value: Math.PI / 3,
+        path: ["curve", "lissajous", "phase"],
+      },
+    ],
+  },
+  {
+    preset: "Epicycles, turned inside out",
+    cases: [
+      {
+        name: "Frequency k₁",
+        text: "phi",
+        value: phi,
+        path: ["curve", "terms", "0", "frequency"],
+      },
+      {
+        name: "Radius r₂",
+        text: "1/e",
+        value: 1 / Math.E,
+        path: ["curve", "terms", "1", "radius"],
+      },
+      {
+        name: "Phase φ₃",
+        text: "-pi/4",
+        value: -Math.PI / 4,
+        path: ["curve", "terms", "2", "phase"],
+      },
+    ],
+  },
+  {
     preset: "Unwinding a circle",
     cases: [
       {

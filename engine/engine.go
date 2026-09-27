@@ -58,6 +58,8 @@ type Result struct {
 	SourcePosition *Vec      `json:"sourcePosition,omitempty"`
 	// Roulette is present only for a roulette curve.
 	Roulette *RouletteResult `json:"roulette,omitempty"`
+	// Harmonic is present only for a Lissajous or Fourier curve.
+	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
 	// Moving is present only for a rolling curve.
 	Moving *MovingResult `json:"moving,omitempty"`
 	// Second holds the chords' far endpoints, indexed like Base, present
@@ -162,6 +164,10 @@ func Compute(q Request) (Result, error) {
 			out.Roulette.FixedRadius = g.FixedRadius
 		}
 	}
+	var epicycles func(float64) Epicycles
+	if q.Curve.Format == "lissajous" || q.Curve.Format == "fourier" {
+		out.Harmonic, epicycles = harmonicResult(q.Curve)
+	}
 	lo, hi := q.Curve.Min, q.Curve.Max
 	step := (hi - lo) / float64(q.Samples-1)
 	out.Base = make([]*Vec, q.Samples)
@@ -244,6 +250,11 @@ func Compute(q Request) (Result, error) {
 				s := roll.state(t)
 				s.SampleIndex = j
 				out.Roulette.Positions = append(out.Roulette.Positions, s)
+			}
+			if epicycles != nil && p.Valid() {
+				s := epicycles(t)
+				s.SampleIndex = j
+				out.Harmonic.Positions = append(out.Harmonic.Positions, s)
 			}
 		}
 		stableSample := true
