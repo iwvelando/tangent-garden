@@ -471,7 +471,69 @@ assert.match(
   ).error,
   /inversion radius/,
 );
+// The deltoid 2e^{it} + e^{-2it} closes after 2π, with its epicycles chained
+// from the origin; a Lissajous 3:2 figure projects from its two guides.
+const deltoid = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      curve: {
+        ...config.curve,
+        format: "fourier",
+        terms: [
+          { frequency: 1, radius: 2, phase: 0 },
+          { frequency: -2, radius: 1, phase: 0 },
+        ],
+      },
+    }),
+  ),
+);
+assert.equal(deltoid.harmonic.period, 2 * Math.PI);
+assert.equal(deltoid.harmonic.whole, true);
+assert.deepEqual(deltoid.harmonic.radii, [2, 1]);
+assert.equal(deltoid.harmonic.positions.length, config.lines);
+for (const s of deltoid.harmonic.positions) {
+  assert.deepEqual(s.joints[0], { x: 0, y: 0 });
+  assert.ok(Math.abs(Math.hypot(s.joints[1].x, s.joints[1].y) - 2) < 1e-12);
+  assert.deepEqual(s.point, deltoid.base[s.sampleIndex]);
+}
+const lissajous = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      curve: {
+        ...config.curve,
+        format: "lissajous",
+        lissajous: {
+          amplitudeX: 1,
+          amplitudeY: 1,
+          frequencyX: 1.5,
+          frequencyY: 1,
+          phase: 0,
+        },
+      },
+    }),
+  ),
+);
+assert.ok(Math.abs(lissajous.harmonic.period - 4 * Math.PI) < 1e-12);
+assert.equal(lissajous.harmonic.whole, false);
+assert.equal(lissajous.harmonic.guides.length, 2);
+for (const s of lissajous.harmonic.positions) {
+  assert.ok(Math.abs(s.joints[0].x - s.point.x) < 1e-12);
+  assert.ok(Math.abs(s.joints[1].y - s.point.y) < 1e-12);
+}
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: { ...config.curve, format: "fourier", terms: [] },
+      }),
+    ),
+  ).error,
+  /1–16 terms/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, and invalid JSON passed.",
 );
 process.exit(0);

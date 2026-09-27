@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -76,6 +77,27 @@ func TestDomainErrorsRemainNonfinite(t *testing.T) {
 		}
 		if v := e(0); !math.IsNaN(v) && !math.IsInf(v, 0) {
 			t.Errorf("%s became %g", s, v)
+		}
+	}
+}
+
+// Fields display exact fractions of pi as p*pi/q (web/engine-client.ts); the
+// text must evaluate back to the same value, (p·π)/q, bit for bit.
+func TestPiFractionsRoundTrip(t *testing.T) {
+	for q := 2; q <= 12; q++ {
+		for p := -400 * q; p <= 400*q; p++ {
+			text := fmt.Sprintf("%d*pi/%d", p, q)
+			switch p {
+			case 0:
+				continue
+			case 1:
+				text = fmt.Sprintf("pi/%d", q)
+			case -1:
+				text = fmt.Sprintf("-pi/%d", q)
+			}
+			if v, err := Scalar(text); err != nil || v != float64(p)*math.Pi/float64(q) {
+				t.Fatalf("%s: %v, %v", text, v, err)
+			}
 		}
 	}
 }

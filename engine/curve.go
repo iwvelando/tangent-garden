@@ -17,6 +17,10 @@ type Curve struct {
 	// Roulette defines the curve when Format is "roulette"; t is its rolling
 	// parameter and the expressions are ignored.
 	Roulette Roulette `json:"roulette"`
+	// Lissajous and Terms define the curve when Format is "lissajous" or
+	// "fourier"; t is their time parameter.
+	Lissajous Lissajous `json:"lissajous"`
+	Terms     []Term    `json:"terms"`
 }
 type curveFunc func(float64) Vec
 
@@ -41,6 +45,19 @@ func compile(c Curve) (curveFunc, error) {
 			return nil, err
 		}
 		return c.Roulette.curve(), nil
+	}
+	if c.Format == "lissajous" {
+		if err := c.Lissajous.validate(); err != nil {
+			return nil, err
+		}
+		return c.Lissajous.at, nil
+	}
+	if c.Format == "fourier" {
+		if err := validateTerms(c.Terms); err != nil {
+			return nil, err
+		}
+		terms := append([]Term{}, c.Terms...)
+		return func(t float64) Vec { return fourierAt(terms, t) }, nil
 	}
 	if c.Format == "polar" {
 		r, e := expr.ParseWithParameter(c.R, c.A)

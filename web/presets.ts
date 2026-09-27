@@ -10,6 +10,18 @@ const base: Config = {
     min: 0,
     max: 2 * Math.PI,
     roulette: { roll: "inside", fixedRadius: 5, radius: 2, arm: 3, phase: 0 },
+    lissajous: {
+      amplitudeX: 1,
+      amplitudeY: 1,
+      frequencyX: 3,
+      frequencyY: 2,
+      phase: Math.PI / 2,
+    },
+    terms: [
+      { frequency: 1, radius: 1, phase: 0 },
+      { frequency: -4, radius: 0.45, phase: 0 },
+      { frequency: 6, radius: 0.2, phase: 0 },
+    ],
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
@@ -431,6 +443,58 @@ export const presets: { title: string; note: string; config: Config }[] = [
       curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
       inversion: { ...base.inversion, of: "pedal" },
       lines: 48,
+    },
+  },
+  {
+    title: "Lissajous 3 : 2 & its pedal",
+    note: "Two perpendicular oscillations",
+    config: {
+      ...base,
+      kind: "pedal",
+      // x = sin(3t + π/2), y = sin(2t) closes after t spans 2π; its pedal
+      // about the center is a four-petalled flower.
+      curve: { ...base.curve, format: "lissajous" },
+      samples: 2000,
+      lines: 48,
+    },
+  },
+  {
+    title: "Epicycles, turned inside out",
+    note: "Three rotating circles, inverted",
+    config: {
+      ...base,
+      kind: "inversion",
+      // e^{it} + 0.45e^{−4it} + 0.2e^{6it}: every frequency is 1 more than a
+      // multiple of 5, so the curve has five-fold symmetry. Its inverse in
+      // the unit circle turns the star's arms into petals.
+      curve: { ...base.curve, format: "fourier" },
+      samples: 2000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Lissajous √2 : 1, never closing",
+    note: "An incommensurate ratio and its pedal",
+    config: {
+      ...base,
+      kind: "pedal",
+      // The frequencies have no whole-number ratio, so the figure fills its
+      // box without ever repeating, and so does its pedal about the center.
+      curve: {
+        ...base.curve,
+        format: "lissajous",
+        min: 0,
+        max: 12 * Math.PI,
+        lissajous: {
+          ...base.curve.lissajous,
+          frequencyX: Math.SQRT2,
+          frequencyY: 1,
+          phase: 0,
+        },
+      },
+      // The pedal turns fast where the figure turns at the edges of its box.
+      samples: 12000,
+      lines: 40,
     },
   },
 ];

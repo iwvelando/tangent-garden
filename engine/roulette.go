@@ -103,24 +103,8 @@ func (g Roulette) closure() (turns, lobes int) {
 	if g.Roll == "line" {
 		return 0, 0
 	}
-	ratio := g.FixedRadius / g.Radius
-	x := ratio
-	p0, q0, p1, q1 := 0.0, 1.0, 1.0, 0.0
-	for range 64 {
-		a := math.Floor(x)
-		p0, q0, p1, q1 = p1, q1, a*p1+p0, a*q1+q0
-		if q1 > maxClosureTurns {
-			return 0, 0
-		}
-		if math.Abs(ratio-p1/q1) <= 1e-12*ratio {
-			return int(q1), int(p1)
-		}
-		if x == a {
-			break
-		}
-		x = 1 / (x - a)
-	}
-	return 0, 0
+	p, q, _ := ratio(g.FixedRadius/g.Radius, maxClosureTurns)
+	return q, p
 }
 
 func (g Roulette) curve() curveFunc {

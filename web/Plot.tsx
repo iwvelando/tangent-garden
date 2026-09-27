@@ -220,6 +220,10 @@ export function Plot({
   const roulette = result.roulette;
   // Rolling circles are drawn where their traces have reached.
   const rolling = roulette?.positions.at(-1);
+  const harmonic = result.harmonic;
+  // Like rolling circles, the rotating vectors are drawn where the trace
+  // has reached.
+  const epicycles = harmonic?.positions.at(-1);
   const roller = result.rolling.at(-1);
   const moving = result.moving;
   const placed = moving?.positions.at(-1);
@@ -468,6 +472,76 @@ export function Plot({
           )}
         </g>
       )}
+      {layers.lines && harmonic && (
+        <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
+          {harmonic.guides.map((g, k) => (
+            <circle
+              key={k}
+              data-testid="lissajous-guide"
+              cx={xy(g.center).x}
+              cy={xy(g.center).y}
+              r={g.radius * scale}
+              fill="none"
+              stroke={palette.line}
+              strokeWidth="1.5"
+              opacity=".85"
+            />
+          ))}
+          {epicycles && (
+            <g data-testid="epicycles" data-sample={epicycles.sampleIndex}>
+              {harmonic.radii.map(
+                (r, k) =>
+                  r > 0 && (
+                    <circle
+                      key={`c${k}`}
+                      data-testid="epicycle"
+                      cx={xy(epicycles.joints[k]).x}
+                      cy={xy(epicycles.joints[k]).y}
+                      r={r * scale}
+                      fill="none"
+                      stroke={palette.line}
+                      strokeWidth="1"
+                      opacity=".55"
+                    />
+                  ),
+              )}
+              {harmonic.radii.map((_, k) => (
+                <g key={`v${k}`} data-testid="epicycle-arm">
+                  {line(
+                    epicycles.joints[k],
+                    epicycles.joints[k + 1] ?? epicycles.point,
+                    palette.line,
+                    0.95,
+                  )}
+                </g>
+              ))}
+              {harmonic.guides.map((g, k) => (
+                <g key={`g${k}`}>
+                  {line(g.center, epicycles.joints[k], palette.line, 0.8)}
+                  <g data-testid="lissajous-projection">
+                    {line(
+                      epicycles.joints[k],
+                      epicycles.point,
+                      palette.line,
+                      0.6,
+                      true,
+                    )}
+                  </g>
+                </g>
+              ))}
+              {epicycles.joints.map((j, k) => (
+                <circle
+                  key={`j${k}`}
+                  cx={xy(j).x}
+                  cy={xy(j).y}
+                  r="2.5"
+                  fill={palette.line}
+                />
+              ))}
+            </g>
+          )}
+        </g>
+      )}
       {layers.lines && roller && (
         <g
           data-testid="rolling-construction"
@@ -546,6 +620,15 @@ export function Plot({
           fill="none"
           stroke={palette.base}
           strokeWidth="2.3"
+        />
+      )}
+      {layers.lines && epicycles && (
+        <circle
+          data-testid="harmonic-point"
+          cx={xy(epicycles.point).x}
+          cy={xy(epicycles.point).y}
+          r="4"
+          fill={palette.base}
         />
       )}
       {layers.lines && rolling && (
@@ -828,6 +911,19 @@ export function fitFrame(result: Result, config: Config) {
     ...framingPoints(extents),
     ...framingPoints(fixed),
     ...framingPoints(circleExtents(roulette?.positions ?? [])),
+    // A Lissajous figure's guides and a Fourier curve's circles, at every
+    // representative sample, as their own families.
+    ...framingPoints(circleExtents(result.harmonic?.guides ?? [])),
+    ...framingPoints(
+      circleExtents(
+        (result.harmonic?.positions ?? []).flatMap((s) =>
+          result.harmonic!.radii.map((radius, k) => ({
+            center: s.joints[k],
+            radius,
+          })),
+        ),
+      ),
+    ),
     ...framingPoints(circleExtents(result.rolling)),
     ...framingPoints(movingExtents(result)),
     // An inverted derived curve, and the circle of inversion as its own
