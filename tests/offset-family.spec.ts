@@ -270,21 +270,22 @@ test("generating circles stay framed and exported with their envelope", async ({
         r: Number(c.getAttribute("r")),
       })),
     );
-    for (const c of boxes) {
-      expect(c.x - c.r).toBeGreaterThanOrEqual(0);
-      expect(c.x + c.r).toBeLessThanOrEqual(1000);
-      expect(c.y - c.r).toBeGreaterThanOrEqual(0);
-      expect(c.y + c.r).toBeLessThanOrEqual(760);
-    }
+    // One assertion per family: thousands of separate expect calls make
+    // this test slow enough to time out on a loaded machine.
+    expect(
+      boxes.filter(
+        (c) =>
+          c.x - c.r < 0 || c.x + c.r > 1000 || c.y - c.r < 0 || c.y + c.r > 760,
+      ),
+    ).toEqual([]);
     for (const d of await members(page).evaluateAll((ps) =>
       ps.map((p) => p.getAttribute("d")!),
     )) {
       const values = numbers(d);
       expect(values.length).toBeGreaterThan(20);
-      values.forEach((v, i) => {
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThanOrEqual(i % 2 ? 760 : 1000);
-      });
+      expect(
+        values.filter((v, i) => v < 0 || v > (i % 2 ? 760 : 1000)),
+      ).toEqual([]);
     }
   };
   await inView();

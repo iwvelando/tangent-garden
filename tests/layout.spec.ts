@@ -56,3 +56,66 @@ test("the explanation follows the layout when the window is resized", async ({
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(page.locator("article .explanation")).toHaveCount(1);
 });
+
+// Opening a field's help pushes down only what lies below it: the field
+// beside it in a pair keeps its place, and paired controls stay level even
+// when one label wraps. Every preset, both widths, and polar source
+// coordinates cover every pair with help.
+for (const width of [1440, 390]) {
+  test(`help text in paired fields moves neither neighbour at ${width}px`, async ({
+    page,
+  }) => {
+    test.slow();
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/");
+    await expect(page.locator("#artwork")).toBeVisible();
+    const study = page.getByRole("combobox", {
+      name: "Start with a notebook example",
+    });
+    const labels = (await study.locator("option").allTextContents()).filter(
+      (l) => l !== "Custom study",
+    );
+    const setups: (() => Promise<unknown>)[] = labels.map(
+      (label) => () => study.selectOption({ label }),
+    );
+    setups.push(async () => {
+      await study.selectOption({ label: "Light inside a circle" });
+      await page
+        .getByRole("combobox", { name: "Source coordinates" })
+        .selectOption("polar");
+    });
+    let checked = 0;
+    for (const setup of setups) {
+      await setup();
+      for (const pair of await page.locator("aside .pair").all()) {
+        if (!(await pair.isVisible())) continue;
+        const controls = pair.locator(":scope > .field > :is(input, select)");
+        const boxes = async () =>
+          (await controls.evaluateAll((els) =>
+            els.map((e) => {
+              // Relative to the pair, since clicking may scroll the sidebar.
+              const r = e.getBoundingClientRect();
+              const p = e.closest(".pair")!.getBoundingClientRect();
+              return [Math.round(r.x - p.x), Math.round(r.y - p.y)];
+            }),
+          )) as [number, number][];
+        const before = await boxes();
+        // Controls sharing a row are level.
+        for (const [x, y] of before)
+          for (const [x2, y2] of before)
+            if (x !== x2 && Math.abs(y - y2) < 30) expect(y2).toBe(y);
+        for (const toggle of await pair.locator(".help-toggle").all()) {
+          await toggle.click();
+          await expect(
+            page.locator(`#${await toggle.getAttribute("aria-controls")}`),
+          ).toBeVisible();
+          expect(await boxes()).toEqual(before);
+          await toggle.click();
+          checked++;
+        }
+      }
+    }
+    // Guard against a sweep that silently finds nothing.
+    expect(checked).toBeGreaterThanOrEqual(10);
+  });
+}
