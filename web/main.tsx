@@ -1,3 +1,4 @@
+import { NotebookContext, NotebookMode } from "./NotebookMode";
 import {
   lazy,
   Suspense,
@@ -138,7 +139,7 @@ function setIn(config: Config, path: string[], value: number): Config {
   parent[path.at(-1)!] = value;
   return next;
 }
-function App() {
+function App({ active }: { active: boolean }) {
   const [config, setConfig] = useState<Config>(presets[0].config);
   const [preset, setPreset] = useState("0");
   // Remembers the pole construction while another tab is selected.
@@ -445,14 +446,7 @@ function App() {
           <small>CURVES & CONSTRUCTIONS</small>
         </a>
         <div className="header-actions">
-          <a
-            className="spatial-back"
-            href="?study=3d"
-            target="_blank"
-            rel="noopener"
-          >
-            Explore 3D ↗
-          </a>
+          <NotebookMode />
           <span className="local-note">
             A little geometry. A lot of beauty.
           </span>
@@ -1151,7 +1145,7 @@ function App() {
               frame={frame}
               client={client}
               length={length}
-              revision={JSON.stringify([config, bounds, length])}
+              revision={JSON.stringify([config, bounds, length, active])}
               disabled={busy || !!error}
               onView={setAnimation}
               onRunning={setAnimationRunning}
@@ -1220,14 +1214,55 @@ function App() {
   );
 }
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
-createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).get("study") === "3d" ? (
-    <Suspense
-      fallback={<div className="loading">Opening the spatial notebook…</div>}
-    >
-      <SpatialApp />
-    </Suspense>
-  ) : (
-    <App />
-  ),
-);
+function Notebook() {
+  const initial =
+    new URLSearchParams(location.search).get("study") === "3d" ? "3d" : "2d";
+  const [mode, setMode] = useState<"2d" | "3d">(initial);
+  const [seen, setSeen] = useState({
+    "2d": initial === "2d",
+    "3d": initial === "3d",
+  });
+  const show = (next: "2d" | "3d") => {
+    setSeen((s) => ({ ...s, [next]: true }));
+    setMode(next);
+  };
+  const choose = (next: "2d" | "3d") => {
+    if (next === mode) return;
+    show(next);
+    const url = new URL(location.href);
+    if (next === "3d") url.searchParams.set("study", "3d");
+    else url.searchParams.delete("study");
+    history.pushState(null, "", url);
+  };
+  useEffect(() => {
+    const pop = () =>
+      show(
+        new URLSearchParams(location.search).get("study") === "3d"
+          ? "3d"
+          : "2d",
+      );
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, []);
+  return (
+    <NotebookContext.Provider value={{ mode, choose }}>
+      {seen["2d"] && (
+        <div hidden={mode !== "2d"}>
+          <App active={mode === "2d"} />
+        </div>
+      )}
+      {seen["3d"] && (
+        <div hidden={mode !== "3d"}>
+          <Suspense
+            fallback={
+              <div className="loading">Opening the spatial notebook…</div>
+            }
+          >
+            <SpatialApp active={mode === "3d"} />
+          </Suspense>
+        </div>
+      )}
+    </NotebookContext.Provider>
+  );
+}
+createRoot(document.getElementById("root")!).render(<Notebook />);

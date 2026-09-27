@@ -9,7 +9,17 @@ import (
 func study() Request {
 	return Request{Radius: 2.4, Tube: 0.85, Length: 2.3, P: 2, Q: 3, Samples: 480, Lines: 96}
 }
-func near(t *testing.T, got, want Vec3, tol float64) {
+func near(t *testing.T, a, b any, tol float64) {
+	value := func(v any) Vec3 {
+		switch p := v.(type) {
+		case Vec3:
+			return p
+		case *Vec3:
+			return *p
+		}
+		panic("not a vector")
+	}
+	got, want := value(a), value(b)
 	t.Helper()
 	if got.sub(want).norm() > tol {
 		t.Fatalf("got %+v want %+v (tolerance %g)", got, want, tol)
@@ -63,7 +73,7 @@ func TestDevelopableGeometry(t *testing.T) {
 		}
 		near(t, r.Mesh[i*12+6].Normal, normal.mul(-1), 1e-12)
 		for _, vertex := range r.Mesh[i*12 : i*12+12] {
-			if vertex.Position.norm() > r.Radius {
+			if vertex.Position.sub(r.Bounds.Center).norm() > r.Radius {
 				t.Fatal("bounding sphere missed geometry")
 			}
 		}
@@ -84,7 +94,7 @@ func TestMeshConvergence(t *testing.T) {
 		for i := 0; i < n; i++ {
 			point, v, _ := knot(c, (float64(i)+0.5)*2*math.Pi/float64(n))
 			exact := point.add(v.unit().mul(c.Length))
-			linear := r.Plus[i].add(r.Plus[i+1]).mul(0.5)
+			linear := r.Plus[i].add(*r.Plus[i+1]).mul(0.5)
 			max = math.Max(max, linear.sub(exact).norm())
 		}
 		return max

@@ -1,55 +1,76 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpatialResult } from "./types";
-import { createRenderer, type Layers, type View } from "./renderer";
-const initial: View = { yaw: 0.3, pitch: 0.75, zoom: 1 };
+import {
+  createRenderer,
+  initialView,
+  type Layers,
+  type View,
+} from "./renderer";
 export function SpatialPlot({
   result,
   dark,
   layers,
   reset,
   spinning,
+  override,
+  onViewport,
+  onError,
 }: {
   result: SpatialResult;
   dark: boolean;
   layers: Layers;
   reset: number;
   spinning: boolean;
+  override?: View;
+  onViewport: (view: View) => void;
+  onError: (message: string) => void;
 }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
-  const view = useRef({ ...initial });
-  const state = useRef({ dark, layers });
-  state.current = { dark, layers };
+  const canvas = useRef<HTMLCanvasElement>(null),
+    renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
+  const manual = useRef({ ...initialView });
+  const state = useRef({ dark, layers, result, override, onViewport });
+  state.current = { dark, layers, result, override, onViewport };
   const [error, setError] = useState("");
-  const draw = () =>
-    renderer.current?.draw(
-      view.current,
-      state.current.layers,
-      state.current.dark,
-    );
+  const current = (): View =>
+    state.current.override ?? {
+      ...manual.current,
+      ...state.current.result.bounds,
+    };
+  const draw = () => {
+    const v = current();
+    renderer.current?.draw(v, state.current.layers, state.current.dark);
+    state.current.onViewport(v);
+  };
   useEffect(() => {
     const element = canvas.current!;
     try {
       renderer.current = createRenderer(element);
+      onError("");
     } catch (e) {
-      setError((e as Error).message);
+      const text = (e as Error).message;
+      setError(text);
+      onError(text);
       return;
     }
-    const observer = new ResizeObserver(draw);
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth) draw();
+    });
     observer.observe(element);
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      view.current.zoom = Math.max(
-        0.4,
-        Math.min(3, view.current.zoom * Math.exp(-e.deltaY * 0.001)),
+      if (state.current.override) return;
+      manual.current.zoom = Math.max(
+        0.2,
+        Math.min(8, manual.current.zoom * Math.exp(-e.deltaY * 0.001)),
       );
       draw();
     };
     const lost = (e: Event) => {
       e.preventDefault();
-      setError(
-        "The 3D graphics context was lost. Reload this page to restore it.",
-      );
+      const text =
+        "The 3D graphics context was lost. Reload this page to restore it.";
+      setError(text);
+      onError(text);
     };
     element.addEventListener("wheel", wheel, { passive: false });
     element.addEventListener("webglcontextlost", lost);
@@ -65,46 +86,71 @@ export function SpatialPlot({
     renderer.current?.upload(result);
     draw();
   }, [result]);
-  useEffect(draw, [dark, layers]);
+  useEffect(draw, [dark, layers, override]);
   useEffect(() => {
-    view.current = { ...initial };
+    manual.current = { ...initialView };
     draw();
   }, [reset]);
   useEffect(() => {
-    if (!spinning) return;
+    if (!spinning || override) return;
     let id = 0,
       last = 0;
     const tick = (now: number) => {
-      if (last) view.current.yaw += Math.min(now - last, 50) * 0.00018;
+      if (last) manual.current.yaw += Math.min(now - last, 50) * 0.00018;
       last = now;
       draw();
       id = requestAnimationFrame(tick);
     };
     id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
-  }, [spinning]);
-  const drag = useRef<{ id: number; x: number; y: number } | null>(null);
+  }, [spinning, override]);
+  const drag = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    pan: boolean;
+  } | null>(null);
   return (
     <>
       <canvas
         ref={canvas}
         id="spatial-artwork"
         role="img"
-        aria-label="Interactive 3D tangent developable. Drag to orbit, scroll to zoom, or use arrow keys and plus and minus."
+        aria-label="Interactive 3D tangent developable. Drag to orbit, shift-drag to pan, scroll to zoom. Arrow keys orbit; shift-arrows pan; plus and minus zoom."
         tabIndex={0}
         onPointerDown={(e) => {
+          if (override) return;
           e.currentTarget.setPointerCapture(e.pointerId);
-          drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+          drag.current = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            pan: e.shiftKey,
+          };
         }}
         onPointerMove={(e) => {
           const d = drag.current;
-          if (!d || d.id !== e.pointerId) return;
-          view.current.yaw += (e.clientX - d.x) * 0.008;
-          view.current.pitch = Math.max(
-            -1.5,
-            Math.min(1.5, view.current.pitch + (e.clientY - d.y) * 0.008),
-          );
-          drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+          if (!d || d.id !== e.pointerId || override) return;
+          const dx = e.clientX - d.x,
+            dy = e.clientY - d.y;
+          if (d.pan) {
+            const unit =
+              (2 * result.bounds.radius * 1.16) /
+              (Math.min(
+                e.currentTarget.clientWidth,
+                e.currentTarget.clientHeight,
+              ) *
+                manual.current.zoom);
+            manual.current.panX += dx * unit;
+            manual.current.panY -= dy * unit;
+          } else {
+            manual.current.yaw += dx * 0.008;
+            manual.current.pitch = Math.max(
+              -1.5,
+              Math.min(1.5, manual.current.pitch + dy * 0.008),
+            );
+          }
+          drag.current = { ...d, x: e.clientX, y: e.clientY };
           draw();
         }}
         onPointerUp={() => {
@@ -117,29 +163,35 @@ export function SpatialPlot({
           drag.current = null;
         }}
         onKeyDown={(e) => {
-          const v = view.current;
+          if (override) return;
+          const v = manual.current,
+            delta = (result.bounds.radius * 0.05) / v.zoom;
           switch (e.key) {
             case "ArrowLeft":
-              v.yaw -= 0.1;
+              if (e.shiftKey) v.panX -= delta;
+              else v.yaw -= 0.1;
               break;
             case "ArrowRight":
-              v.yaw += 0.1;
+              if (e.shiftKey) v.panX += delta;
+              else v.yaw += 0.1;
               break;
             case "ArrowUp":
-              v.pitch = Math.max(-1.5, v.pitch - 0.1);
+              if (e.shiftKey) v.panY += delta;
+              else v.pitch = Math.max(-1.5, v.pitch - 0.1);
               break;
             case "ArrowDown":
-              v.pitch = Math.min(1.5, v.pitch + 0.1);
+              if (e.shiftKey) v.panY -= delta;
+              else v.pitch = Math.min(1.5, v.pitch + 0.1);
               break;
             case "+":
             case "=":
-              v.zoom = Math.min(3, v.zoom * 1.1);
+              v.zoom = Math.min(8, v.zoom * 1.1);
               break;
             case "-":
-              v.zoom = Math.max(0.4, v.zoom / 1.1);
+              v.zoom = Math.max(0.2, v.zoom / 1.1);
               break;
             case "Home":
-              view.current = { ...initial };
+              manual.current = { ...initialView };
               break;
             default:
               return;

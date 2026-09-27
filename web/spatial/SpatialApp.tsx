@@ -1,127 +1,195 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EngineClient } from "../engine-client";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
 import { useTheme } from "../useTheme";
+import { useDisclosure } from "../useDisclosure";
+import { Field } from "../Field";
+import { ExportImageMenu } from "../ExportImageMenu";
+import { saveFile } from "../export-image";
+import { NotebookMode } from "../NotebookMode";
 import { SpatialPlot } from "./SpatialPlot";
-import type { SpatialConfig, SpatialResult } from "./types";
-import type { Layers } from "./renderer";
+import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
+import { spatialPresets } from "./presets";
+import { animationCamera, type AnimationView } from "./animation";
+import type { SpatialConfig, Frame } from "./types";
+import type { Layers, View } from "./renderer";
 import "./spatial.css";
-
-const studies = [
-  {
-    name: "Trefoil",
-    detail: "Three folds, one continuous thread",
-    p: 2,
-    q: 3,
-    radius: 2.4,
-    tube: 0.85,
-    length: 2.3,
-  },
-  {
-    name: "Cinquefoil",
-    detail: "A five-fold tangle of tangent silk",
-    p: 2,
-    q: 5,
-    radius: 2.4,
-    tube: 0.7,
-    length: 1.8,
-  },
-  {
-    name: "Woven orbit",
-    detail: "Three turns around, four through",
-    p: 3,
-    q: 4,
-    radius: 2.4,
-    tube: 1.1,
-    length: 2.1,
-  },
-];
-const geometry = (index: number) => {
-  const { name: _name, detail: _detail, ...parameters } = studies[index];
-  return parameters;
-};
-const defaults: SpatialConfig = { ...geometry(0), samples: 960, lines: 96 };
-export default function SpatialApp() {
-  const theme = useTheme();
-  const client = useRef<EngineClient | null>(null);
-  const generation = useRef(0);
-  const [config, setConfig] = useState<SpatialConfig>(defaults);
-  const [preset, setPreset] = useState(0);
-  const [states, setStates] = useState<Record<string, ScalarState>>({});
-  const [frame, setFrame] = useState<{
-    config: SpatialConfig;
-    result: SpatialResult;
-  } | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(true);
-  const [reset, setReset] = useState(0);
-  const [spinning, setSpinning] = useState(false);
+export default function SpatialApp({ active = true }: { active?: boolean }) {
+  const theme = useTheme(),
+    expressions = useDisclosure("expressions");
+  const client = useRef<EngineClient | null>(null),
+    generation = useRef(0),
+    jobs = useRef(new Set<Promise<void>>());
+  const [config, setConfig] = useState<SpatialConfig>(spatialPresets[0].config),
+    latest = useRef(config);
+  latest.current = config;
+  const [preset, setPreset] = useState("0"),
+    [states, setStates] = useState<Record<string, ScalarState>>({});
+  const [frame, setFrame] = useState<Frame | null>(null),
+    [settled, setSettled] = useState("");
+  const [error, setError] = useState(""),
+    [renderError, setRenderError] = useState(""),
+    [imageBusy, setImageBusy] = useState(false);
+  const [reset, setReset] = useState(0),
+    [spinning, setSpinning] = useState(false);
+  const [animation, setAnimation] = useState<AnimationView | null>(null),
+    [running, setRunning] = useState(false);
   const [layers, setLayers] = useState<Layers>({
     surface: true,
     rulings: true,
     edges: true,
   });
+  const viewport = useRef<View | undefined>(undefined),
+    stage = useRef<HTMLDivElement>(null),
+    imageAbort = useRef<AbortController | null>(null);
+  const pending = Object.values(states).some((s) => s.pending),
+    scalarError = Object.values(states).find((s) => s.error);
+  const key = JSON.stringify(config),
+    busy = settled !== key || pending;
+  const revision = JSON.stringify([key, states, active]);
   useEffect(() => {
     client.current = new EngineClient();
     return () => {
       generation.current++;
       client.current?.dispose();
       client.current = null;
+      imageAbort.current?.abort();
     };
   }, []);
-  const pending = Object.values(states).some((s) => s.pending);
-  const scalarError = Object.values(states).find((s) => s.error);
   useEffect(() => {
     let current = true;
-    setBusy(true);
     setError("");
     if (pending || scalarError) {
-      setBusy(pending);
+      setSettled(key);
       return;
     }
     const timer = setTimeout(() => {
       client
-        .current!.spatial(config)
-        .then((result) => {
+        .current!.computeSpatial(config)
+        .then((value) => {
           if (current) {
-            setFrame({ config, result });
-            setBusy(false);
+            setFrame(value);
+            setSettled(key);
           }
         })
         .catch((e: Error) => {
           if (current) {
             setError(e.message);
-            setBusy(false);
+            setSettled(key);
           }
         });
-    }, 100);
+    }, 140);
     return () => {
       current = false;
       clearTimeout(timer);
     };
-  }, [config, pending, scalarError]);
-  const scalarStatus = {
-    client,
-    generation,
-    track: (_job: Promise<void>) => {},
-    report: (id: string, state: ScalarState | null) =>
-      setStates((old) => {
-        const next = { ...old };
-        if (state) next[id] = state;
-        else delete next[id];
-        return next;
-      }),
+  }, [key, pending, scalarError]);
+  useEffect(() => {
+    imageAbort.current?.abort();
+    setImageBusy(false);
+    setSpinning(false);
+  }, [revision]);
+  const scalarStatus = useMemo(
+    () => ({
+      client,
+      generation,
+      track: (job: Promise<void>) => {
+        jobs.current.add(job);
+        void job.finally(() => jobs.current.delete(job));
+      },
+      report: (id: string, state: ScalarState | null) =>
+        setStates((old) => {
+          if (!state && !(id in old)) return old;
+          const next = { ...old };
+          if (state) next[id] = state;
+          else delete next[id];
+          return next;
+        }),
+    }),
+    [],
+  );
+  const update = (change: (c: SpatialConfig) => SpatialConfig) => {
+    setPreset("");
+    setConfig(change);
   };
-  const choose = (index: number) => {
+  const choose = (index: string) => {
+    if (index === "") return;
     generation.current++;
     setStates({});
     setPreset(index);
-    setConfig((c) => ({ ...c, ...geometry(index) }));
+    setConfig(structuredClone(spatialPresets[+index].config));
     setReset((n) => n + 1);
   };
+  async function definition(format: SpatialConfig["format"]) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    setConfig((c) => {
+      if (format === "torus") return { ...c, format };
+      // Preserve an edited custom definition. A generated knot can also be opened
+      // as expressions, with every pending scalar resolved before conversion.
+      if (c.format === "parametric") return c;
+      const h = `(${c.radius}+${c.tube}*cos(${c.q}*t))`;
+      return {
+        ...c,
+        format,
+        curve: {
+          ...c.curve,
+          x: `${h}*cos(${c.p}*t)`,
+          y: `${h}*sin(${c.p}*t)`,
+          z: `${c.tube}*sin(${c.q}*t)`,
+          min: 0,
+          max: 2 * Math.PI,
+        },
+      };
+    });
+    setPreset("");
+  }
   const failure = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
     : error;
+  const shown = animation?.frame ?? frame,
+    override = animation ? animationCamera(animation) : undefined;
+  const ready = !!frame && !busy && !failure && !renderError;
+  async function save(format: "png" | "svg") {
+    if (!shown || !viewport.current) return;
+    imageAbort.current?.abort();
+    const controller = new AbortController();
+    imageAbort.current = controller;
+    setImageBusy(true);
+    const snapshot = structuredClone({
+      frame: shown,
+      view: viewport.current,
+      layers,
+      dark: theme.dark,
+    });
+    try {
+      const { imageFile } = await import("./export");
+      controller.signal.throwIfAborted();
+      const blob = await imageFile(
+        snapshot.frame,
+        snapshot.view,
+        snapshot.layers,
+        snapshot.dark,
+        format,
+        controller.signal,
+      );
+      controller.signal.throwIfAborted();
+      saveFile(blob, `tangent-garden-spatial.${format}`);
+    } catch (e) {
+      if (!controller.signal.aborted) throw e;
+    } finally {
+      if (imageAbort.current === controller) {
+        imageAbort.current = null;
+        setImageBusy(false);
+      }
+    }
+  }
+  const showPlot = () => {
+    setSpinning(false);
+    if (matchMedia("(max-width:800px)").matches)
+      stage.current?.scrollIntoView({ block: "start", behavior: "instant" });
+  };
   return (
     <div
       className={`app spatial-app${theme.dark ? " dark" : ""}`}
@@ -137,9 +205,7 @@ export default function SpatialApp() {
           <span className="brand-name">Tangent Garden</span>
         </a>
         <div className="header-actions">
-          <a className="spatial-back" href="./">
-            ← 2D notebook
-          </a>
+          <NotebookMode />
           <button
             onClick={theme.toggle}
             aria-label={
@@ -153,6 +219,13 @@ export default function SpatialApp() {
               Follow system
             </button>
           )}
+          <ExportImageMenu
+            disabled={!ready || running || imageBusy}
+            kind="spatial"
+            menuId="spatial-export-image-menu"
+            svgLabel="SVG · embedded 3D image"
+            onSave={save}
+          />
         </div>
       </header>
       <main className="spatial-layout">
@@ -160,48 +233,165 @@ export default function SpatialApp() {
           className="spatial-controls"
           aria-label="Spatial study parameters"
         >
-          <div className="section-label">SPATIAL STUDIES / 001</div>
-          <h1>A knot of tangents.</h1>
+          <div className="section-label">01 / THE SPATIAL STUDY</div>
+          <h1>A curve, woven into space.</h1>
           <p className="spatial-intro">
             A single thread. A family of straight lines. A ribbon that folds
             back into itself.
           </p>
-          <div className="spatial-badge">3D EXPLORATION</div>
-          <label className="spatial-field">
-            Starting curve
-            <select
-              aria-label="Starting curve"
-              value={preset}
-              onChange={(e) => choose(Number(e.target.value))}
-            >
-              {studies.map((s, i) => (
+          <Field label="Starting curve">
+            <select value={preset} onChange={(e) => choose(e.target.value)}>
+              <option value="">Custom study</option>
+              {spatialPresets.map((s, i) => (
                 <option key={s.name} value={i}>
-                  {s.name} · ({s.p}, {s.q})
+                  {s.name}
                 </option>
               ))}
             </select>
-          </label>
-          <p className="spatial-caption">{studies[preset].detail}</p>
+          </Field>
+          <p className="spatial-caption">
+            {preset !== ""
+              ? spatialPresets[+preset].detail
+              : "Your own spatial exploration"}
+          </p>
           <ScalarStatus.Provider value={scalarStatus}>
             <div key={generation.current}>
-              {(
-                [
-                  ["radius", "Major radius R"],
-                  ["tube", "Minor radius r"],
-                  ["length", "Tangent reach L"],
-                ] as const
-              ).map(([key, label]) => (
-                <label className="spatial-field" key={key}>
-                  {label}
-                  <ScalarInput
-                    name={label}
-                    value={config[key]}
-                    onChange={(value) =>
-                      setConfig((c) => ({ ...c, [key]: value }))
-                    }
-                  />
-                </label>
-              ))}
+              <Field label="Spatial definition">
+                <select
+                  value={config.format}
+                  onChange={(e) =>
+                    void definition(e.target.value as SpatialConfig["format"])
+                  }
+                >
+                  <option value="torus">Torus knot generator</option>
+                  <option value="parametric">
+                    Parametric · x(t), y(t), z(t)
+                  </option>
+                </select>
+              </Field>
+              {config.format === "torus" ? (
+                <>
+                  {(
+                    [
+                      ["radius", "Major radius R"],
+                      ["tube", "Minor radius r"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <Field
+                      key={key}
+                      label={label}
+                      help={
+                        key === "radius"
+                          ? "Distance from the torus center to the tube center. From 0.1 to 20."
+                          : "Tube radius, at least 0.01 and smaller than R."
+                      }
+                    >
+                      <ScalarInput
+                        name={label}
+                        value={config[key]}
+                        onChange={(value) =>
+                          update((c) => ({ ...c, [key]: value }))
+                        }
+                      />
+                    </Field>
+                  ))}
+                  <Field label="Knot winding">
+                    <select
+                      value={`${config.p},${config.q}`}
+                      onChange={(e) => {
+                        const [p, q] = e.target.value.split(",").map(Number);
+                        update((c) => ({ ...c, p, q }));
+                      }}
+                    >
+                      {[
+                        [2, 3],
+                        [2, 5],
+                        [3, 4],
+                        [3, 5],
+                        [4, 5],
+                        [5, 7],
+                      ].map(([p, q]) => (
+                        <option key={`${p},${q}`} value={`${p},${q}`}>
+                          {p} around · {q} through
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </>
+              ) : (
+                <>
+                  {(["x", "y", "z"] as const).map((axis) => (
+                    <Field label={`${axis}(t)`} key={axis}>
+                      <input
+                        value={config.curve[axis]}
+                        spellCheck={false}
+                        onChange={(e) =>
+                          update((c) => ({
+                            ...c,
+                            curve: { ...c.curve, [axis]: e.target.value },
+                          }))
+                        }
+                      />
+                    </Field>
+                  ))}
+                  <div className="pair">
+                    {(
+                      [
+                        ["min", "t from"],
+                        ["max", "to"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <Field label={label} key={key}>
+                        <ScalarInput
+                          name={label}
+                          value={config.curve[key]}
+                          onChange={(value) =>
+                            update((c) => ({
+                              ...c,
+                              curve: { ...c.curve, [key]: value },
+                            }))
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                  <Field
+                    label="Shape parameter a"
+                    help="Use a in any coordinate expression, then animate it with a parameter track."
+                  >
+                    <ScalarInput
+                      name="Shape parameter a"
+                      value={config.curve.a}
+                      onChange={(value) =>
+                        update((c) => ({
+                          ...c,
+                          curve: { ...c.curve, a: value },
+                        }))
+                      }
+                    />
+                  </Field>
+                  <details {...expressions} className="spatial-details">
+                    <summary>Expression reference</summary>
+                    <p>
+                      Use t, a, pi, e, phi; + − * / ^; sin, cos, tan, asin,
+                      acos, atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt,
+                      abs. Trigonometry uses radians. Write multiplication
+                      explicitly, such as 2*cos(t). Constants only in numeric
+                      controls.
+                    </p>
+                  </details>
+                </>
+              )}
+              <Field
+                label="Tangent reach L"
+                help="Half-length of each straight tangent segment, in world units. Greater than 0 and at most 20."
+              >
+                <ScalarInput
+                  name="Tangent reach L"
+                  value={config.length}
+                  onChange={(value) => update((c) => ({ ...c, length: value }))}
+                />
+              </Field>
             </div>
           </ScalarStatus.Provider>
           <p className="spatial-caption">
@@ -230,44 +420,34 @@ export default function SpatialApp() {
           </fieldset>
           <details className="spatial-details">
             <summary>Sampling & definition</summary>
-            <label className="spatial-field">
-              Curve samples
+            <Field label="Curve samples">
               <input
-                aria-label="Curve samples"
                 type="number"
                 min="240"
                 max="2400"
                 step="1"
                 value={Number.isNaN(config.samples) ? "" : config.samples}
                 onChange={(e) =>
-                  setConfig((c) => ({ ...c, samples: e.target.valueAsNumber }))
+                  update((c) => ({ ...c, samples: e.target.valueAsNumber }))
                 }
               />
-            </label>
-            <label className="spatial-field">
-              Tangent lines
+            </Field>
+            <Field label="Tangent lines">
               <input
-                aria-label="Tangent lines"
                 type="number"
                 min="12"
                 max="240"
                 step="1"
                 value={Number.isNaN(config.lines) ? "" : config.lines}
                 onChange={(e) =>
-                  setConfig((c) => ({ ...c, lines: e.target.valueAsNumber }))
+                  update((c) => ({ ...c, lines: e.target.valueAsNumber }))
                 }
               />
-            </label>
+            </Field>
             <p>
-              r(t) = ((R + r cos qt) cos pt,
-              <br />
-              (R + r cos qt) sin pt, r sin qt)
-            </p>
-            <p>0 ≤ t ≤ 2π · T = r′ / |r′|</p>
-            <p>
-              Finite sampling approximates the sheets. Self-intersections are
-              kept; the knot is a singular seam. Compare sample counts for
-              delicate folds.
+              Finite sampling can miss fine detail. Compare resolutions near
+              poles, stationary points, and tight folds. Invalid samples and
+              unresolved tangent or normal intervals leave gaps.
             </p>
           </details>
           {failure && (
@@ -282,28 +462,56 @@ export default function SpatialApp() {
                 ? "Resolve the input to update the study."
                 : `${config.samples.toLocaleString()} samples · ${config.lines} tangents`}
           </p>
+          <SpatialAnimationPanel
+            frame={frame}
+            client={client}
+            length={config.length}
+            revision={revision}
+            disabled={!ready || !active || imageBusy}
+            dark={theme.dark}
+            layers={layers}
+            getCurrentView={() =>
+              viewport.current ? structuredClone(viewport.current) : undefined
+            }
+            onView={setAnimation}
+            onRunning={setRunning}
+            onPlay={showPlot}
+          />
         </aside>
         <section
           className="spatial-stage"
+          ref={stage}
           aria-label="Spatial artwork"
-          aria-busy={busy || pending}
-          data-config={frame ? JSON.stringify(frame.config) : undefined}
+          aria-busy={busy}
+          data-config={shown ? JSON.stringify(shown.config) : undefined}
+          data-progress={animation?.progress}
+          data-mode={animation?.mode}
+          data-camera={override ? JSON.stringify(override) : undefined}
         >
           <div className="spatial-stage-heading">
             <span>TANGENT DEVELOPABLE</span>
             <span>ORTHOGRAPHIC / 3D</span>
           </div>
           <div className="spatial-canvas-wrap">
-            {frame ? (
+            {shown ? (
               <SpatialPlot
-                result={frame.result}
+                result={shown.result}
                 dark={theme.dark}
                 layers={layers}
                 reset={reset}
-                spinning={spinning}
+                spinning={spinning && active}
+                override={override}
+                onViewport={(v) => {
+                  viewport.current = v;
+                }}
+                onError={setRenderError}
               />
             ) : (
-              <div className="loading">Preparing the spatial engine…</div>
+              <div className="loading">
+                {failure
+                  ? "Check the study definition to begin."
+                  : "Preparing the spatial engine…"}
+              </div>
             )}
             {frame && failure && (
               <span className="spatial-stale">Previous valid study</span>
@@ -311,18 +519,24 @@ export default function SpatialApp() {
           </div>
           <div className="spatial-toolbar">
             <span>
-              Drag to orbit · scroll to zoom
+              Drag to orbit · shift-drag to pan · scroll to zoom
               <br />
-              <small>Keyboard: arrows, + / −, Home</small>
+              <small>Keyboard: arrows, shift-arrows, + / −, Home</small>
             </span>
             <div>
               <button
+                disabled={!!animation || running || !!renderError}
                 aria-pressed={spinning}
                 onClick={() => setSpinning((s) => !s)}
               >
                 {spinning ? "Pause rotation" : "Rotate view"}
               </button>
-              <button onClick={() => setReset((n) => n + 1)}>Reset view</button>
+              <button
+                disabled={!!animation || running}
+                onClick={() => setReset((n) => n + 1)}
+              >
+                Reset view
+              </button>
             </div>
           </div>
           <div className="spatial-explanation">
@@ -332,20 +546,23 @@ export default function SpatialApp() {
             </div>
             <div>
               <p>
-                At every point of the knot, extend a straight line in the
-                tangent direction. Together those lines sweep a{" "}
+                At every regular point of the curve, extend a straight line in
+                the tangent direction. Together those lines sweep a{" "}
                 <em>tangent developable</em>. The gold thread marks the original
                 curve; the two sheets meet there in a sharp fold.
               </p>
               <p className="spatial-formula">
                 S(t, u) = r(t) + u T(t) <span>−L ≤ u ≤ L</span>
               </p>
-              {frame?.result.omitted ? (
-                <p>
-                  {frame.result.omitted} intervals have undefined or unresolved
-                  surface normals; faces are omitted.
-                </p>
-              ) : null}
+              {shown &&
+                (shown.result.omitted > 0 || shown.result.invalid > 0) && (
+                  <p>
+                    {shown.result.invalid} invalid samples ·{" "}
+                    {shown.result.omitted} intervals without a stable ribbon
+                    surface. The curve and tangents remain visible where
+                    defined.
+                  </p>
+                )}
             </div>
           </div>
         </section>

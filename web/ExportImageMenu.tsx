@@ -4,9 +4,21 @@ import { pngFile, saveFile, svgFile } from "./export-image";
 // Twice the drawing's 1000 × 760 layout: crisp on high-density screens.
 const png = { width: 2000, height: 1520 };
 
-type Props = { disabled: boolean; kind: string };
+type Props = {
+  disabled: boolean;
+  kind: string;
+  onSave?: (format: "png" | "svg") => Promise<void>;
+  svgLabel?: string;
+  menuId?: string;
+};
 
-export function ExportImageMenu({ disabled, kind }: Props) {
+export function ExportImageMenu({
+  disabled,
+  kind,
+  onSave,
+  svgLabel = "SVG · vector, scalable",
+  menuId = "export-image-menu",
+}: Props) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const wrap = useRef<HTMLDivElement>(null);
@@ -45,6 +57,16 @@ export function ExportImageMenu({ disabled, kind }: Props) {
   async function save(format: "png" | "svg") {
     close();
     setError("");
+    if (onSave) {
+      try {
+        await onSave(format);
+      } catch (error) {
+        setError(
+          error instanceof Error ? error.message : "Image export failed.",
+        );
+      }
+      return;
+    }
     const svg = document.getElementById("artwork");
     if (!(svg instanceof SVGSVGElement)) return;
     try {
@@ -70,7 +92,7 @@ export function ExportImageMenu({ disabled, kind }: Props) {
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-controls={open ? "export-image-menu" : undefined}
+        aria-controls={open ? menuId : undefined}
         onClick={() => {
           setError("");
           setOpen(!open);
@@ -79,12 +101,7 @@ export function ExportImageMenu({ disabled, kind }: Props) {
         Export image <span aria-hidden="true">▾</span>
       </button>
       {open && (
-        <div
-          id="export-image-menu"
-          role="menu"
-          aria-label="Export image"
-          onKeyDown={keys}
-        >
+        <div id={menuId} role="menu" aria-label="Export image" onKeyDown={keys}>
           <button
             ref={item(0)}
             role="menuitem"
@@ -99,7 +116,7 @@ export function ExportImageMenu({ disabled, kind }: Props) {
             tabIndex={-1}
             onClick={() => void save("svg")}
           >
-            SVG · vector, scalable
+            {svgLabel}
           </button>
         </div>
       )}

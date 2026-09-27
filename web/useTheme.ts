@@ -23,9 +23,13 @@ export function useTheme() {
       if (event.key === key || event.key === null)
         setPreference(valid(event.newValue));
     };
+    const local = (event: Event) =>
+      setPreference((event as CustomEvent<Theme>).detail);
+    window.addEventListener("tangent-garden-theme", local);
     window.addEventListener("storage", storage);
     return () => {
       media.removeEventListener("change", change);
+      window.removeEventListener("tangent-garden-theme", local);
       window.removeEventListener("storage", storage);
     };
   }, []);
@@ -35,6 +39,9 @@ export function useTheme() {
   }, [dark]);
   const choose = (theme: Theme) => {
     setPreference(theme);
+    window.dispatchEvent(
+      new CustomEvent("tangent-garden-theme", { detail: theme }),
+    );
     try {
       if (theme === "system") localStorage.removeItem(key);
       else localStorage.setItem(key, theme);

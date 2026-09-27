@@ -1,6 +1,13 @@
-import type { SpatialResult, Vec3 } from "./types";
+import type { SpatialResult, Vec3, Bounds3 } from "./types";
 
-export type View = { yaw: number; pitch: number; zoom: number };
+export type View = Bounds3 & {
+  yaw: number;
+  pitch: number;
+  zoom: number;
+  panX: number;
+  panY: number;
+};
+export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 export type Layers = { surface: boolean; rulings: boolean; edges: boolean };
 const vertexSource = `
 attribute vec3 position;
@@ -8,14 +15,16 @@ attribute vec3 normal;
 attribute float phase;
 uniform mat3 rotation;
 uniform vec3 framing;
+uniform vec3 center;
+uniform vec2 pan;
 varying vec3 N;
 varying vec3 P;
 varying float U;
 void main() {
-  P = rotation * position;
+  P = rotation * (position - center);
   N = rotation * normal;
   U = phase;
-  gl_Position = vec4(P.x * framing.x, P.y * framing.y, -P.z * framing.z, 1.0);
+  gl_Position = vec4((P.x + pan.x) * framing.x, (P.y + pan.y) * framing.y, -P.z * framing.z, 1.0);
 }`;
 const fragmentSource = `
 precision mediump float;
@@ -75,7 +84,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl.getAttribLocation(program, n),
   );
   const uniforms = Object.fromEntries(
-    ["rotation", "framing", "ink", "dark"].map((n) => [
+    ["rotation", "framing", "center", "pan", "ink", "dark"].map((n) => [
       n,
       gl.getUniformLocation(program, n),
     ]),
@@ -87,7 +96,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     ink: number;
   };
   let mesh: Batch, base: Batch, minus: Batch, plus: Batch, rulings: Batch;
-  let radius = 1;
+
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
     buffers.push(buffer);
@@ -95,26 +104,19 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl!.bufferData(gl!.ARRAY_BUFFER, new Float32Array(data), gl!.STATIC_DRAW);
     return { buffer, count: data.length / 7, mode, ink };
   }
-  function path(points: Vec3[], mode: number, ink: number) {
+  function path(points: (Vec3 | null)[], breaks: boolean[], ink: number) {
+    const pairs: Vec3[] = [];
+    for (let i = 1; i < points.length; i++)
+      if (points[i - 1] && points[i] && !breaks[i])
+        pairs.push(points[i - 1]!, points[i]!);
     return batch(
-      points.flatMap((p, i) => [
-        p.x,
-        p.y,
-        p.z,
-        0,
-        0,
-        1,
-        i / Math.max(1, points.length - 1),
-      ]),
-      mode,
+      pairs.flatMap((p) => [p.x, p.y, p.z, 0, 0, 1, 0]),
+      gl!.LINES,
       ink,
     );
   }
   function upload(result: SpatialResult) {
     buffers.splice(0).forEach((b) => gl!.deleteBuffer(b));
-    radius = 0;
-    for (const p of [...result.base, ...result.minus, ...result.plus])
-      radius = Math.max(radius, Math.hypot(p.x, p.y, p.z));
     mesh = batch(
       result.mesh.flatMap((v) => [
         v.position.x,
@@ -128,19 +130,32 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.TRIANGLES,
       0,
     );
-    base = path(result.base, gl!.LINE_STRIP, 2);
-    minus = path(result.minus, gl!.LINE_STRIP, 2);
-    plus = path(result.plus, gl!.LINE_STRIP, 2);
-    rulings = path(
-      result.rulings.flatMap((r) => [r.from, r.to]),
+    base = path(result.base, result.breaks, 2);
+    minus = path(result.minus, result.breaks, 2);
+    plus = path(result.plus, result.breaks, 2);
+    rulings = batch(
+      result.rulings
+        .flatMap((r) => [r.from, r.to])
+        .flatMap((p) => [p.x, p.y, p.z, 0, 0, 1, 0]),
       gl!.LINES,
       1,
     );
   }
-  function draw(view: View, layers: Layers, dark: boolean) {
+  function draw(
+    view: View,
+    layers: Layers,
+    dark: boolean,
+    size?: { width: number; height: number },
+  ) {
     const ratio = Math.min(devicePixelRatio || 1, 2);
-    const width = Math.max(1, Math.round(canvas.clientWidth * ratio)),
-      height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+    const width = Math.max(
+        1,
+        size?.width ?? Math.round(canvas.clientWidth * ratio),
+      ),
+      height = Math.max(
+        1,
+        size?.height ?? Math.round(canvas.clientHeight * ratio),
+      );
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
@@ -162,6 +177,9 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       false,
       new Float32Array([c, b * s, -a * s, 0, a, b, s, -b * c, a * c]),
     );
+    const radius = view.radius;
+    gl!.uniform3f(uniforms.center, view.center.x, view.center.y, view.center.z);
+    gl!.uniform2f(uniforms.pan, view.panX, view.panY);
     const scale = view.zoom / (radius * 1.16),
       aspect = width / height;
     gl!.uniform3f(

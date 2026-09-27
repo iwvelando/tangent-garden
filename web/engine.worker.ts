@@ -49,7 +49,26 @@ self.onmessage = async ({
       return;
     }
     if (data.action === "spatial") {
-      if (!data.spatial || !Object.values(data.spatial).every(Number.isFinite))
+      if (
+        !data.spatial ||
+        ![
+          data.spatial.length,
+          data.spatial.samples,
+          data.spatial.lines,
+          ...(data.spatial.format === "parametric"
+            ? [
+                data.spatial.curve.min,
+                data.spatial.curve.max,
+                data.spatial.curve.a,
+              ]
+            : [
+                data.spatial.radius,
+                data.spatial.tube,
+                data.spatial.p,
+                data.spatial.q,
+              ]),
+        ].every(Number.isFinite)
+      )
         throw new Error("Fill in each spatial parameter with a finite number.");
       if (
         !Number.isInteger(data.spatial.samples) ||

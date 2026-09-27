@@ -61,6 +61,11 @@ export class EngineClient {
     });
     return { result, config: resolved };
   }
+  async computeSpatial(
+    config: SpatialConfig,
+  ): Promise<import("./spatial/types").Frame> {
+    return { config, result: await this.spatial(config) };
+  }
   async spatial(config: SpatialConfig): Promise<SpatialResult> {
     return (await this.request({ action: "spatial", spatial: config })).result;
   }

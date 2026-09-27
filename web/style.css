@@ -800,3 +800,44 @@ h1 {
   text-decoration: none;
   font-size: 12px;
 }
+
+.notebook-mode {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+  gap: 3px;
+}
+.notebook-mode button {
+  border: 0;
+  background: transparent;
+  padding: 7px 10px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.notebook-mode button[aria-pressed="true"] {
+  background: #367e78;
+  color: #fff;
+}
+@media (max-width: 1200px) {
+  .header-actions .local-note {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  header {
+    height: auto;
+    min-height: 66px;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    gap: 10px;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+  }
+  .notebook-mode button {
+    padding: 7px;
+    font-size: 11px;
+  }
+}

@@ -4,7 +4,13 @@ import { useState, type SyntheticEvent } from "react";
 // disabled, in which case sections still work and simply start at defaults.
 const key = "tangent-garden.sections";
 export type Section =
-  "animation" | "export" | "expressions" | "indices" | "diagnostics";
+  | "animation"
+  | "export"
+  | "expressions"
+  | "indices"
+  | "diagnostics"
+  | "spatial-animation"
+  | "spatial-export";
 
 function read(): Partial<Record<Section, boolean>> {
   try {
