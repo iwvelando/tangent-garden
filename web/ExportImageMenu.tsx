@@ -99,7 +99,9 @@ export function ExportImageMenu({ disabled, kind }: Props) {
             tabIndex={-1}
             onClick={() => void save("svg")}
           >
-            SVG · vector, scalable
+            {kind === "attractor"
+              ? "SVG · vectors, density as an embedded PNG"
+              : "SVG · vector, scalable"}
           </button>
         </div>
       )}

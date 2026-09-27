@@ -90,8 +90,8 @@ var (
 
 func formatLevel(v float64) string { return strconv.FormatFloat(v, 'g', 6, 64) }
 
-func (v Implicit) validate() error {
-	w := v.Window
+// validate checks a window for an implicit curve or a density grid.
+func (w Window) validate() error {
 	for _, x := range []float64{w.XMin, w.XMax, w.YMin, w.YMax} {
 		if !finite(x) || math.Abs(x) > 1e5 {
 			return fmt.Errorf("the window must be finite and within ±100000")
@@ -99,6 +99,26 @@ func (v Implicit) validate() error {
 	}
 	if !(w.XMax-w.XMin >= 1e-6) || !(w.YMax-w.YMin >= 1e-6) {
 		return fmt.Errorf("the window needs x and y ranges at least 0.000001 wide, each from below to above")
+	}
+	return nil
+}
+
+// gridShape divides a window into columns × rows cells as close to square
+// as it allows, with cells along its longer side.
+func gridShape(w Window, cells int) (nx, ny int) {
+	width, height := w.XMax-w.XMin, w.YMax-w.YMin
+	nx, ny = cells, cells
+	if width >= height {
+		ny = max(1, int(math.Round(height/(width/float64(cells)))))
+	} else {
+		nx = max(1, int(math.Round(width/(height/float64(cells)))))
+	}
+	return
+}
+
+func (v Implicit) validate() error {
+	if err := v.Window.validate(); err != nil {
+		return err
 	}
 	if v.Cells < minCells || v.Cells > maxCells {
 		return fmt.Errorf("an implicit curve needs 4–1024 cells along the window's longer side")
@@ -164,13 +184,8 @@ func newSheet(v Implicit, a float64) (*sheet, error) {
 	}
 	w := v.Window
 	width, height := w.XMax-w.XMin, w.YMax-w.YMin
-	s := &sheet{f: f, w: w, nx: v.Cells, ny: v.Cells, rejected: map[int]Vec{}}
-	// Cells are as close to square as the window allows.
-	if width >= height {
-		s.ny = max(1, int(math.Round(height/(width/float64(v.Cells)))))
-	} else {
-		s.nx = max(1, int(math.Round(width/(height/float64(v.Cells)))))
-	}
+	s := &sheet{f: f, w: w, rejected: map[int]Vec{}}
+	s.nx, s.ny = gridShape(w, v.Cells)
 	s.hx, s.hy = width/float64(s.nx), height/float64(s.ny)
 	s.scale = math.Max(width, height) + math.Max(math.Max(math.Abs(w.XMin), math.Abs(w.XMax)), math.Max(math.Abs(w.YMin), math.Abs(w.YMax)))
 	s.values = make([]float64, (s.nx+1)*(s.ny+1))

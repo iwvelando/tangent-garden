@@ -108,6 +108,24 @@ The tests check:
 
 In the browser, the drawn lemniscate satisfies its equation, and each normal points along the exact gradient.
 
+## Iterated maps
+
+An iterated map sends a point to the next, `pₖ₊₁ = M(pₖ)`, updating both coordinates from the previous point. Three curated maps are offered:
+
+- Clifford: `x′ = sin(a y) + c cos(a x)`, `y′ = sin(b x) + d cos(b y)`; every iterate after the start lies within `|x| ≤ 1 + |c|`, `|y| ≤ 1 + |d|`;
+- Peter de Jong: `x′ = sin(a y) − cos(b x)`, `y′ = sin(c x) − cos(d y)`; every iterate after the start lies within `|x|, |y| ≤ 2`;
+- Hénon: `x′ = 1 − a x² + y`, `y′ = b x`, whose orbits can grow without bound.
+
+Coefficients are finite and within ±1000; the start is within ±100000. Iterate 0 is the start. Iterates 1 to D are discarded (D from 0 to 1,000,000) and iterates D + 1 to D + N accumulated (N from 0 to 5,000,000). If an iterate leaves `|x|, |y| ≤ 100000` the orbit ends there: its number is reported as the escape, and the iterates before it stand. Nothing is joined: the iterates are counted in the cells of a grid, which is the drawing.
+
+The grid covers a window: the given one, or when fitted, the bounding box of the accumulated iterates, with a side narrower than 10⁻⁶ widened to 10⁻⁶ about its middle. With nothing accumulated, the given window stands in. The window's longer side has 4–1,024 cells, and the other as many as keep them nearest to square, as for implicit curves. An iterate at `(x, y)` counts in column `⌊(x − x₀)/(x₁ − x₀) · columns⌋` and row likewise, with an iterate on the upper edges in the last column or row; iterates outside the window are counted separately and not drawn. So the visits in the cells and outside them total the accumulated iterates.
+
+Each cell is shaded in the base colour with opacity `log(1 + n) / log(1 + nₘₐₓ)`, where n is its visits and nₘₐₓ the busiest cell's: unvisited cells are clear and the busiest opaque. The logarithm shows sparse and dense parts together; it is a display scale, not a probability density.
+
+A picture like this is an illustration, not a proof. Coefficients giving an intricate orbit are found by trying; others give a fixed point, a cycle, or an escape, and nothing here establishes chaos. Chaotic orbits amplify rounding, so builds that round differently (such as a native build that fuses multiplications and additions, and the browser's WebAssembly, which does not) follow different orbits from the same start after a few dozen iterates, with similar densities. For one build the orbit is deterministic.
+
+The tests check each map's iterates against the formulas written out independently, the density against an independent count in an independent grid, Clifford's bounds, an exact linear Hénon orbit, an attracting fixed point `x* = (−(1 − b) + √((1 − b)² + 4a)) / 2a`, discarding as a change of start, prefixes that never exceed the whole in any cell, iterates outside a given window, escapes during and after the discard, and invalid input. The WebAssembly bridge test checks the reference Clifford study's totals, bounds, first iterates, and repeatability.
+
 ## Rolling circle on a curve
 
 The rolling construction rolls a circle of radius `ρ > 0` without slipping along any regular base curve, tangent to it on a chosen side of travel, and traces a point fixed to the circle at distance `ℓ ≥ 0` from its center. With `σ = +1` for the left side and `−1` for the right, `N = JT` the left unit normal, and `s(t) = ∫[t_min,t] |r′(u)|du` the arc length from the domain start:

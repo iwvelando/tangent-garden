@@ -8,6 +8,7 @@ import {
   type Vec,
 } from "./types";
 import type { AnimationView, Viewport } from "./animation";
+import { densityImage } from "./attractor";
 export type Layers = {
   base: boolean;
   derived: boolean;
@@ -205,10 +206,11 @@ export function Plot({
       />
     );
   };
-  // An implicit curve has contours and no construction, whatever kind the
-  // configuration still names.
+  // An implicit curve has contours and an iterated map a density, and
+  // neither a construction, whatever kind the configuration still names.
   const contours = result.contours;
-  const kind = contours ? "implicit" : config.kind;
+  const attractor = result.attractor;
+  const kind = contours ? "implicit" : attractor ? "attractor" : config.kind;
   const optical = kind === "catacaustic" || kind === "diacaustic";
   // Constructions whose derived points can be virtual: optical rays behind
   // the curve, and envelope points beyond their chords.
@@ -332,7 +334,9 @@ export function Plot({
       aria-label={
         contours
           ? `Implicit curve with ${config.lines} gradient normals`
-          : `${config.kind} construction with ${config.lines} representative lines`
+          : attractor
+            ? `Iterated map density with its first ${attractor.orbit.length - 1} iterates`
+            : `${config.kind} construction with ${config.lines} representative lines`
       }
       style={{ background: palette.bg, touchAction: "none" }}
       onPointerDown={(e) => {
@@ -569,6 +573,76 @@ export function Plot({
               />
             );
           })}
+        </g>
+      )}
+      {/* One pixel per cell, embedded as a PNG so exports carry it; cells
+          stay square-edged at any size rather than blurring into each
+          other. */}
+      {layers.base &&
+        attractor &&
+        attractor.accumulated > attractor.outside && (
+          <image
+            data-testid="attractor-density"
+            data-columns={attractor.columns}
+            data-rows={attractor.rows}
+            data-accumulated={attractor.accumulated}
+            href={densityImage(attractor, palette.base)}
+            x={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).x}
+            y={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).y}
+            width={(attractor.window.xMax - attractor.window.xMin) * scale}
+            height={(attractor.window.yMax - attractor.window.yMin) * scale}
+            preserveAspectRatio="none"
+            imageRendering="pixelated"
+          />
+        )}
+      {layers.lines && attractor && (
+        <g
+          data-testid="attractor-construction"
+          aria-label="Window and first iterates"
+        >
+          <rect
+            data-testid="attractor-window"
+            x={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).x}
+            y={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).y}
+            width={(attractor.window.xMax - attractor.window.xMin) * scale}
+            height={(attractor.window.yMax - attractor.window.yMin) * scale}
+            fill="none"
+            stroke={palette.line}
+            strokeWidth="1"
+            strokeDasharray="4 5"
+            opacity=".5"
+          />
+          {/* The start and the first iterates as separate dots: a map jumps
+              from one to the next, so they are never joined. */}
+          {attractor.orbit.map((p, k) => {
+            const { x, y } = xy(p);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+            return (
+              <circle
+                key={k}
+                data-testid="attractor-orbit"
+                cx={x}
+                cy={y}
+                r={k === 0 ? 4 : 2.2}
+                fill={k === 0 ? "none" : palette.line}
+                stroke={palette.line}
+                strokeWidth={k === 0 ? 1.5 : 0}
+                opacity=".85"
+              />
+            );
+          })}
+          {attractor.orbit.length > 0 && (
+            <circle
+              data-testid="attractor-start"
+              cx={xy(attractor.orbit[0]).x}
+              cy={xy(attractor.orbit[0]).y}
+              r="7"
+              fill="none"
+              stroke={palette.line}
+              strokeWidth="1"
+              opacity=".6"
+            />
+          )}
         </g>
       )}
       {layers.lines && contours && (
@@ -1143,8 +1217,9 @@ function enclosing(points: (Vec | null)[]) {
 }
 export function fitFrame(result: Result, config: Config) {
   // An implicit curve is framed by its window, which bounds every contour
-  // and stays put while they split and join.
-  const window = result.contours?.window;
+  // and stays put while they split and join; so is an iterated map's
+  // density.
+  const window = result.contours?.window ?? result.attractor?.window;
   if (window)
     return {
       cx: (window.xMin + window.xMax) / 2,

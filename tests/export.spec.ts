@@ -72,6 +72,7 @@ const studies: Record<string, string> = {
   pursuit: "30",
   field: "33",
   implicit: "34",
+  attractor: "36",
 };
 for (const study of [
   "hold",
@@ -93,6 +94,7 @@ for (const study of [
   "pursuit",
   "field",
   "implicit",
+  "attractor",
 ]) {
   const studyPreset = studies[study];
   const camera = studyPreset ? "hold" : study;

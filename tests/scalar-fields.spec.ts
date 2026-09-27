@@ -387,6 +387,39 @@ const studies: {
     ],
   },
   {
+    preset: "Clifford attractor",
+    setup: (page: Page) =>
+      page
+        .getByRole("checkbox", { name: "Fit the window to the iterates" })
+        .uncheck(),
+    cases: [
+      {
+        name: "Coefficient a",
+        text: "-sqrt(2)",
+        value: -Math.SQRT2,
+        path: ["curve", "attractor", "a"],
+      },
+      {
+        name: "Coefficient d",
+        text: "1/phi",
+        value: 1 / phi,
+        path: ["curve", "attractor", "d"],
+      },
+      {
+        name: "Start y₀",
+        text: "pi/30",
+        value: Math.PI / 30,
+        path: ["curve", "attractor", "start", "y"],
+      },
+      {
+        name: "Window y to",
+        text: "sqrt(3)",
+        value: Math.sqrt(3),
+        path: ["curve", "attractor", "window", "yMax"],
+      },
+    ],
+  },
+  {
     preset: "Unwinding a circle",
     cases: [
       {

@@ -28,6 +28,9 @@ type Curve struct {
 	// Implicit defines the curve when Format is "implicit": the level set
 	// F(x, y) = c, which has no parameter, so the domain plays no part.
 	Implicit Implicit `json:"implicit"`
+	// Attractor defines the drawing when Format is "attractor": the visit
+	// density of an iterated map's orbit, which has no parameter either.
+	Attractor Attractor `json:"attractor"`
 }
 type curveFunc func(float64) Vec
 
