@@ -7,6 +7,8 @@ export type Target =
   | "max"
   | "sourceX"
   | "sourceY"
+  | "poleX"
+  | "poleY"
   | "sourceRadius"
   | "sourceTheta"
   | "angle"
@@ -33,6 +35,8 @@ export const targetLabels: Record<Target, string> = {
   max: "Domain end",
   sourceX: "Source x",
   sourceY: "Source y",
+  poleX: "Pole x",
+  poleY: "Pole y",
   sourceRadius: "Source radius r",
   sourceTheta: "Source theta θ (radians)",
   angle: "Travel direction (degrees)",
@@ -46,6 +50,7 @@ export const targetLabels: Record<Target, string> = {
 export function availableTargets(config: Config): Target[] {
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
   if (config.kind === "involute") targets.push("offset");
+  if (config.kind === "pedal") targets.unshift("poleX", "poleY");
   if (config.kind === "catacaustic" || config.kind === "diacaustic") {
     targets.unshift(
       ...(config.source.kind === "point"
@@ -73,6 +78,10 @@ export function targetValue(
       return config.source.position.x;
     case "sourceY":
       return config.source.position.y;
+    case "poleX":
+      return config.pole.x;
+    case "poleY":
+      return config.pole.y;
     case "sourceRadius":
       return config.source.radius ?? 0;
     case "sourceTheta":
@@ -107,6 +116,12 @@ export function applyTracks(
         break;
       case "sourceY":
         config.source.position.y = value;
+        break;
+      case "poleX":
+        config.pole.x = value;
+        break;
+      case "poleY":
+        config.pole.y = value;
         break;
       case "sourceRadius":
         config.source.radius = value;

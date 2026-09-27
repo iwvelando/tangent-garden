@@ -297,6 +297,10 @@ export function Plot({
                 ? line(ray.origin, end, ray.tir ? "#c18b32" : palette.line, 0.5)
                 : ray.target &&
                   line(ray.origin, ray.target, palette.line, 0.52))}
+            {config.kind === "pedal" &&
+              layers.lines &&
+              ray.target &&
+              line(config.pole, ray.target, palette.line, 0.35)}
             {optical &&
               layers.lines &&
               layers.virtual &&
@@ -357,6 +361,24 @@ export function Plot({
           />
         </g>
       )}
+      {config.kind === "pedal" && (
+        <g data-testid="pole-point" aria-label="Pole">
+          <circle
+            cx={xy(config.pole).x}
+            cy={xy(config.pole).y}
+            r="5"
+            fill={palette.derived}
+          />
+          <circle
+            cx={xy(config.pole).x}
+            cy={xy(config.pole).y}
+            r="10"
+            fill="none"
+            stroke={palette.derived}
+            opacity=".35"
+          />
+        </g>
+      )}
     </svg>
   );
 }
@@ -403,6 +425,15 @@ export function fitFrame(result: Result, config: Config) {
   };
   points.forEach(include);
   const extent = Math.max(maxX - minX, maxY - minY, 0.1);
+  if (
+    config.kind === "pedal" &&
+    Math.hypot(
+      config.pole.x - (minX + maxX) / 2,
+      config.pole.y - (minY + maxY) / 2,
+    ) <
+      extent * 4
+  )
+    include(config.pole);
   if (
     (config.kind === "catacaustic" || config.kind === "diacaustic") &&
     config.source.kind === "point" &&

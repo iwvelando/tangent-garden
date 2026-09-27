@@ -42,14 +42,15 @@ const exportWebP = (page: Page) =>
 const exportMP4 = (page: Page) =>
   page.getByRole("button", { name: "Export MP4 video" });
 
-for (const camera of ["hold", "current", "follow", "fit"]) {
-  test(`saved ${camera} MP4 decodes with exact timing, endpoints, and theme`, async ({
+for (const study of ["hold", "current", "follow", "fit", "pedal"]) {
+  const camera = study === "pedal" ? "hold" : study;
+  test(`saved ${study} MP4 decodes with exact timing, endpoints, and theme`, async ({
     page,
   }) => {
-    const parameterMode = camera === "follow";
+    const parameterMode = camera === "follow" || study === "pedal";
     const dark = camera === "fit";
     await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
-    await ready(page, parameterMode ? "2" : "1");
+    await ready(page, study === "pedal" ? "8" : parameterMode ? "2" : "1");
     const original = await page.locator("#artwork").innerHTML();
     if (parameterMode) {
       await page

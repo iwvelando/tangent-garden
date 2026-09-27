@@ -41,6 +41,12 @@ const descriptions: Record<
       "Light bends as it crosses a curve between two media. The envelope of transmitted rays is the diacaustic.",
     formula: "n₁ sin θ₁ = n₂ sin θ₂",
   },
+  pedal: {
+    title: "The feet of the tangents",
+    description:
+      "Drop a perpendicular from a fixed point, the pole, onto each tangent line. The feet of those perpendiculars trace the pedal curve. The two segments meet at a right angle.",
+    formula: "H(t) = r(t) + ((P − r(t)) · T(t)) T(t)",
+  },
 };
 function App() {
   const [config, setConfig] = useState<Config>(presets[0].config);
@@ -407,6 +413,23 @@ function App() {
               </p>
             </details>
           </section>
+          {config.kind === "pedal" && (
+            <section>
+              <div className="section-label">03 / THE POLE</div>
+              <p className="note">
+                Project this point onto each tangent. The pole is independent of
+                the light source and can lie on the curve.
+              </p>
+              <div className="pair">
+                {number("Pole x", config.pole.x, (x) =>
+                  update({ pole: { ...config.pole, x } }),
+                )}
+                {number("Pole y", config.pole.y, (y) =>
+                  update({ pole: { ...config.pole, y } }),
+                )}
+              </div>
+            </section>
+          )}
           {optical && (
             <section>
               <div className="section-label">03 / THE LIGHT</div>
@@ -579,7 +602,7 @@ function App() {
           )}
           <section>
             <div className="section-label">
-              {optical ? "04" : "03"} / THE DRAWING
+              {optical || config.kind === "pedal" ? "04" : "03"} / THE DRAWING
             </div>
             {expert ? (
               number(

@@ -1,5 +1,6 @@
 export type Vec = { x: number; y: number };
-export type Kind = "evolute" | "involute" | "catacaustic" | "diacaustic";
+export type Kind =
+  "evolute" | "involute" | "catacaustic" | "diacaustic" | "pedal";
 export type Config = {
   kind: Kind;
   curve: {
@@ -20,6 +21,7 @@ export type Config = {
     theta?: number;
   };
   nIncident: number;
+  pole: Vec;
   nTransmitted: number;
   offset: number;
   samples: number;

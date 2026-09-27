@@ -54,15 +54,16 @@ test("export timing includes endpoints, preserves milliseconds, and bounds work"
   expect(() => writer.finish()).toThrow("at least two");
 });
 
-for (const camera of ["hold", "current", "follow", "fit"]) {
-  test(`saved ${camera} animation decodes with correct timing, appearance, and loop count`, async ({
+for (const study of ["hold", "current", "follow", "fit", "pedal"]) {
+  const camera = study === "pedal" ? "hold" : study;
+  test(`saved ${study} animation decodes with correct timing, appearance, and loop count`, async ({
     page,
   }) => {
-    const parameterMode = camera === "follow";
+    const parameterMode = camera === "follow" || study === "pedal";
     await page.emulateMedia({
       colorScheme: camera === "fit" ? "dark" : "light",
     });
-    await ready(page, parameterMode ? "2" : "1");
+    await ready(page, study === "pedal" ? "8" : parameterMode ? "2" : "1");
     const original = await page.locator("#artwork").innerHTML();
     if (parameterMode) {
       await page
