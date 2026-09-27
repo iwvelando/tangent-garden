@@ -66,7 +66,17 @@ self.onmessage = async ({
       config.nTransmitted,
       config.samples,
       config.lines,
-      ...(usesPole(config.kind) ? [config.pole.x, config.pole.y] : []),
+      ...(usesPole(config.kind) ||
+      (config.kind === "inversion" && usesPole(config.inversion.of))
+        ? [config.pole.x, config.pole.y]
+        : []),
+      ...(config.kind === "inversion"
+        ? [
+            config.inversion.center.x,
+            config.inversion.center.y,
+            config.inversion.radius,
+          ]
+        : []),
       ...(stacked
         ? [config.stack.from, config.stack.to, config.stack.count]
         : []),

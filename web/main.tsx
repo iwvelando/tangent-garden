@@ -7,6 +7,7 @@ import {
   type Bounds,
   type Config,
   type Frame,
+  type InversionSource,
   type Kind,
   type PoleKind,
   type Roll,
@@ -86,6 +87,12 @@ const descriptions: Record<
       "Through each point of the curve passes a line, turned to the direction angle θ(t). Neighbouring lines cross ever closer together; the curve they all touch is their envelope.",
     formula: "E = r + λu,  det(r′ + λu′, u) = 0",
   },
+  inversion: {
+    title: "Inversion in a circle",
+    description:
+      "Carry each point along its ray from the center O until the product of the two distances is R². Points inside the circle go outside, the circle itself stays put, and lines and circles become lines or circles. Where the curve passes through O its image runs off to infinity; where the curve runs off to infinity its image passes through O. Inversion reverses the sense of turning.",
+    formula: "I(p) = O + R² (p − O) / |p − O|²",
+  },
 };
 // Chords share the envelope tab but explain their two endpoints.
 const chordDescription = {
@@ -125,7 +132,16 @@ const tabs: Kind[] = [
   "offset",
   "rolling",
   "envelope",
+  "inversion",
 ];
+const inversionOptions: Record<InversionSource, string> = {
+  curve: "The curve itself",
+  evolute: "Its evolute",
+  pedal: "Its pedal",
+  contrapedal: "Its contrapedal",
+  orthotomic: "Its orthotomic",
+  offset: "Its offset",
+};
 const poleOptions: Record<PoleKind, { label: string; note: string }> = {
   pedal: {
     label: "Pedal · tangent foot",
@@ -1164,6 +1180,53 @@ function App() {
                 )}
               </section>
             )}
+            {config.kind === "inversion" && (
+              <section>
+                <div className="section-label">03 / THE INVERSION</div>
+                <Field label="Invert">
+                  <select
+                    value={config.inversion.of}
+                    onChange={(e) => {
+                      const of = e.target.value as InversionSource;
+                      update((c) => ({ inversion: { ...c.inversion, of } }));
+                    }}
+                  >
+                    {(Object.keys(inversionOptions) as InversionSource[]).map(
+                      (k) => (
+                        <option key={k} value={k}>
+                          {inversionOptions[k]}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </Field>
+                <div className="pair">
+                  {scalar("Inversion center x", ["inversion", "center", "x"])}
+                  {scalar("Inversion center y", ["inversion", "center", "y"])}
+                </div>
+                {scalar("Inversion radius R", ["inversion", "radius"], {
+                  topic: "inversion radius",
+                  help: "Positive, at most 100,000. Points at distance R from the center stay fixed; the product of a point's distance and its image's is R².",
+                })}
+                {usesPole(config.inversion.of) && (
+                  <div className="pair">
+                    {scalar("Pole x", ["pole", "x"])}
+                    {scalar("Pole y", ["pole", "y"])}
+                  </div>
+                )}
+                {config.inversion.of === "offset" &&
+                  scalar("Offset distance d", ["distance"], {
+                    topic: "offset distance",
+                    help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel.",
+                  })}
+                <p className="note">
+                  {config.inversion.of === "curve"
+                    ? "Each segment joins a point of the curve to its image, along a ray from the center."
+                    : "The derived curve is drawn faintly; each segment joins one of its points to its image, along a ray from the center."}{" "}
+                  The image is left open where it runs off to infinity.
+                </p>
+              </section>
+            )}
             {config.kind === "involute" && (
               <section>
                 {scalar("Initial string offset c", ["offset"], {
@@ -1178,7 +1241,8 @@ function App() {
                 usesPole(config.kind) ||
                 config.kind === "offset" ||
                 config.kind === "rolling" ||
-                config.kind === "envelope"
+                config.kind === "envelope" ||
+                config.kind === "inversion"
                   ? "04"
                   : "03"}{" "}
                 / THE DRAWING

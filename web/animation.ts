@@ -9,6 +9,9 @@ export type Target =
   | "sourceY"
   | "poleX"
   | "poleY"
+  | "inversionX"
+  | "inversionY"
+  | "inversionRadius"
   | "sourceRadius"
   | "sourceTheta"
   | "angle"
@@ -51,6 +54,9 @@ export const targetLabels: Record<Target, string> = {
   sourceY: "Source y",
   poleX: "Pole x",
   poleY: "Pole y",
+  inversionX: "Inversion center x",
+  inversionY: "Inversion center y",
+  inversionRadius: "Inversion radius R",
   sourceRadius: "Source radius r",
   sourceTheta: "Source theta θ (radians)",
   angle: "Travel direction (degrees)",
@@ -85,6 +91,20 @@ export function availableTargets(config: Config): Target[] {
         : (["distance"] as Target[])),
     );
   if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
+  if (config.kind === "inversion") {
+    // The inverted curve's own parameters follow the circle's.
+    const of = config.inversion.of;
+    targets.unshift(
+      "inversionX",
+      "inversionY",
+      "inversionRadius",
+      ...((usesPole(of)
+        ? ["poleX", "poleY"]
+        : of === "offset"
+          ? ["distance"]
+          : []) as Target[]),
+    );
+  }
   if (config.kind === "rolling")
     targets.unshift(
       ...((config.rolling.shape === "curve"
@@ -134,6 +154,12 @@ export function targetValue(
       return config.pole.x;
     case "poleY":
       return config.pole.y;
+    case "inversionX":
+      return config.inversion.center.x;
+    case "inversionY":
+      return config.inversion.center.y;
+    case "inversionRadius":
+      return config.inversion.radius;
     case "sourceRadius":
       return config.source.radius ?? 0;
     case "sourceTheta":
@@ -202,6 +228,15 @@ export function applyTracks(
         break;
       case "poleY":
         config.pole.y = value;
+        break;
+      case "inversionX":
+        config.inversion.center.x = value;
+        break;
+      case "inversionY":
+        config.inversion.center.y = value;
+        break;
+      case "inversionRadius":
+        config.inversion.radius = value;
         break;
       case "sourceRadius":
         config.source.radius = value;
@@ -283,6 +318,11 @@ export function reveal(result: Result, progress: number): Result {
       positions: result.roulette.positions.filter((s) => s.sampleIndex <= last),
     },
     second: result.second?.slice(0, last + 1),
+    // The circle stays; breaks beyond the revealed samples are harmless.
+    inversion: result.inversion && {
+      ...result.inversion,
+      source: result.inversion.source?.slice(0, last + 1),
+    },
     moving: result.moving && {
       ...result.moving,
       positions: result.moving.positions.filter((s) => s.sampleIndex <= last),

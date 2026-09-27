@@ -45,6 +45,7 @@ const base: Config = {
     extend: false,
     radius: "1+0.35*sin(a*t)",
   },
+  inversion: { center: { x: 0, y: 0 }, radius: 1, of: "curve" },
   samples: 1000,
   lines: 48,
 };
@@ -383,6 +384,53 @@ export const presets: { title: string; note: string; config: Config }[] = [
       envelope: { ...base.envelope, mode: "circle", radius: "1.6+1.2*sin(t)" },
       samples: 2001,
       lines: 41,
+    },
+  },
+  {
+    title: "Hyperbola into a lemniscate",
+    note: "Inverted about its center",
+    config: {
+      ...base,
+      kind: "inversion",
+      // Both branches of x² − y² = 1. Where the hyperbola runs off to
+      // infinity its image passes through O: Bernoulli's lemniscate, reaching
+      // R² = 4 along the x-axis.
+      curve: { ...base.curve, x: "1/cos(t)", y: "tan(t)" },
+      inversion: { ...base.inversion, radius: 2 },
+      samples: 1201,
+      lines: 48,
+    },
+  },
+  {
+    title: "Hypotrochoid, turned inside out",
+    note: "A roulette inverted about its center",
+    config: {
+      ...base,
+      kind: "inversion",
+      // The loops nearest the center become the outermost petals.
+      curve: {
+        ...base.curve,
+        format: "roulette",
+        min: 0,
+        max: 4 * Math.PI,
+        roulette: { ...base.curve.roulette, arm: 2.2 },
+      },
+      inversion: { ...base.inversion, radius: 2 },
+      samples: 2000,
+      lines: 60,
+    },
+  },
+  {
+    title: "An ellipse's pedal, inverted",
+    note: "The polar reciprocal, an ellipse",
+    config: {
+      ...base,
+      kind: "inversion",
+      // Inverting a pedal about its pole in the unit circle gives the polar
+      // reciprocal of the curve: here the ellipse 4x² + 1.21y² = 1.
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      inversion: { ...base.inversion, of: "pedal" },
+      lines: 48,
     },
   },
 ];

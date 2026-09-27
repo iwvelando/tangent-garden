@@ -419,7 +419,59 @@ assert.match(
   ).error,
   /circle radius/,
 );
+// A circle through the center of inversion maps to a line, open where the
+// circle passes through the center; the pedal of an ellipse about its center
+// inverts into the reciprocal ellipse a²x² + b²y² = 1.
+const inversion = { center: { x: 0, y: 0 }, radius: 2, of: "curve" };
+const inverted = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "inversion",
+      curve: { ...config.curve, x: "1+cos(t)", y: "sin(t)" },
+      inversion,
+    }),
+  ),
+);
+assert.equal(inverted.inversion.radius, 2);
+assert.equal(inverted.inversion.source, undefined);
+assert.equal(inverted.inversion.breaks.length, 1);
+assert.ok(Math.abs(inverted.inversion.breaks[0] - 500) <= 1);
+inverted.derived.forEach(
+  (p) => p && assert.ok(Math.abs(p.x - 2) < 1e-9 * Math.max(1, Math.abs(p.y))),
+);
+inverted.rays.forEach((ray) => {
+  assert.deepEqual(ray.origin, inverted.base[ray.sampleIndex]);
+  assert.deepEqual(ray.target, inverted.derived[ray.sampleIndex]);
+});
+const reciprocal = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "inversion",
+      curve: { ...config.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      pole: { x: 0, y: 0 },
+      inversion: { ...inversion, radius: 1, of: "pedal" },
+    }),
+  ),
+);
+assert.equal(reciprocal.inversion.source.length, config.samples);
+reciprocal.derived.forEach((p) =>
+  assert.ok(Math.abs(4 * p.x * p.x + 1.21 * p.y * p.y - 1) < 1e-9),
+);
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        kind: "inversion",
+        inversion: { ...inversion, radius: 0 },
+      }),
+    ),
+  ).error,
+  /inversion radius/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, and invalid JSON passed.",
 );
 process.exit(0);
