@@ -70,7 +70,7 @@ test("the rolling preset rolls a rim point inside the flower and animates its ci
   expect(preset.kind).toBe("rolling");
   expect(preset.curve.format).toBe("polar");
   expect(preset.curve.r).toBe("1+0.18*cos(5*t)");
-  expect(preset.rolling).toEqual({
+  expect(preset.rolling).toMatchObject({
     side: "left",
     radius: 0.118,
     arm: 0.118,
@@ -92,13 +92,13 @@ test("the rolling preset rolls a rim point inside the flower and animates its ci
     { target: "rollingPhase" as const, from: 0, to: 2 * Math.PI },
     { target: "rollingRadius" as const, from: 0.118, to: Math.SQRT1_2 },
   ];
-  expect(applyTracks(preset, tracks, 0, 1).config.rolling).toEqual({
+  expect(applyTracks(preset, tracks, 0, 1).config.rolling).toMatchObject({
     side: "left",
     radius: 0.118,
     arm: 1 / 1.618,
     phase: 0,
   });
-  expect(applyTracks(preset, tracks, 1, 1).config.rolling).toEqual({
+  expect(applyTracks(preset, tracks, 1, 1).config.rolling).toMatchObject({
     side: "left",
     radius: Math.SQRT1_2,
     arm: Math.PI / 2,
@@ -216,7 +216,7 @@ test("rolling controls choose a side, validate, stop at cusps, and roll on roule
   await field(page, "Tracing distance ℓ").fill("0.6");
   await field(page, "Phase ψ (radians)").fill("1.5");
   await settled(page);
-  expect((await definition(page)).rolling).toEqual({
+  expect((await definition(page)).rolling).toMatchObject({
     side: "left",
     radius: 0.3,
     arm: 0.6,

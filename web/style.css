@@ -404,11 +404,26 @@ input[type="range"] {
   background: #294744;
   color: #d9eeee;
 }
+/* Paired fields share rows through a subgrid: label, control, then help.
+   Labels align to the bottom of their row, so a wrapped label keeps the
+   controls level, and help opens in its own row below both controls instead
+   of pushing the neighbouring field down. */
 .pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  align-items: end;
-  gap: 10px;
+  column-gap: 10px;
+}
+.pair > .field {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+}
+.pair > .field > .field-label {
+  align-self: end;
+}
+.pair > .field > .hint {
+  align-self: start;
 }
 section {
   border-top: 1px solid var(--border);
