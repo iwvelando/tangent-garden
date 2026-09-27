@@ -15,18 +15,19 @@ type Source struct {
 	Theta       float64 `json:"theta,omitempty"` // radians, counterclockwise from +x
 }
 type Request struct {
-	Kind         string  `json:"kind"`
-	Curve        Curve   `json:"curve"`
-	Source       Source  `json:"source"`
-	Pole         Vec     `json:"pole"`
-	NIncident    float64 `json:"nIncident"`
-	NTransmitted float64 `json:"nTransmitted"`
-	Offset       float64 `json:"offset"`
-	Distance     float64 `json:"distance"`
-	Stack        Stack   `json:"stack"`
-	Circles      bool    `json:"circles"`
-	Samples      int     `json:"samples"`
-	Lines        int     `json:"lines"`
+	Kind         string        `json:"kind"`
+	Curve        Curve         `json:"curve"`
+	Source       Source        `json:"source"`
+	Pole         Vec           `json:"pole"`
+	NIncident    float64       `json:"nIncident"`
+	NTransmitted float64       `json:"nTransmitted"`
+	Offset       float64       `json:"offset"`
+	Distance     float64       `json:"distance"`
+	Stack        Stack         `json:"stack"`
+	Circles      bool          `json:"circles"`
+	Rolling      RollingCircle `json:"rolling"`
+	Samples      int           `json:"samples"`
+	Lines        int           `json:"lines"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -38,23 +39,24 @@ type Ray struct {
 	TIR         bool `json:"tir"`
 }
 type Result struct {
-	Base           []*Vec   `json:"base"`
-	Derived        []*Vec   `json:"derived"`
-	Virtual        []bool   `json:"virtual"`
-	Rays           []Ray    `json:"rays"`
-	Family         []Path   `json:"family"`
-	Circles        []Circle `json:"circles"`
-	Warnings       []string `json:"warnings"`
-	Invalid        int      `json:"invalid"`
-	SourcePosition *Vec     `json:"sourcePosition,omitempty"`
+	Base           []*Vec    `json:"base"`
+	Derived        []*Vec    `json:"derived"`
+	Virtual        []bool    `json:"virtual"`
+	Rays           []Ray     `json:"rays"`
+	Family         []Path    `json:"family"`
+	Circles        []Circle  `json:"circles"`
+	Rolling        []Rolling `json:"rolling"`
+	Warnings       []string  `json:"warnings"`
+	Invalid        int       `json:"invalid"`
+	SourcePosition *Vec      `json:"sourcePosition,omitempty"`
 	// Roulette is present only for a roulette curve.
 	Roulette *RouletteResult `json:"roulette,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
-	out := Result{Rays: []Ray{}, Family: []Path{}, Circles: []Circle{}, Warnings: []string{}}
+	out := Result{Rays: []Ray{}, Family: []Path{}, Circles: []Circle{}, Rolling: []Rolling{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
-	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && !usesPole(q.Kind) {
+	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && q.Kind != "rolling" && !usesPole(q.Kind) {
 		return out, fmt.Errorf("unknown construction")
 	}
 	if usesPole(q.Kind) && !q.Pole.Valid() {
@@ -68,6 +70,11 @@ func Compute(q Request) (Result, error) {
 	}
 	if !finite(q.Distance) || math.Abs(q.Distance) > 1e5 {
 		return out, fmt.Errorf("offset distance must be finite and within ±100000")
+	}
+	if q.Kind == "rolling" {
+		if err := q.Rolling.validate(); err != nil {
+			return out, err
+		}
 	}
 	stacked := q.Kind == "offset" && q.Stack.Enabled
 	if stacked {
@@ -153,8 +160,12 @@ func Compute(q Request) (Result, error) {
 		}
 		return v
 	}
+	// Both the involute and the rolling circle measure arc length from the
+	// domain start; neither continues across a break in it.
 	arc := 0.0
 	arcOK := true
+	arcLength := q.Kind == "involute" || q.Kind == "rolling"
+	reversed := false
 	tirCount := 0
 	nextLine := 0
 	for j := 0; j < q.Samples; j++ {
@@ -182,22 +193,27 @@ func Compute(q Request) (Result, error) {
 		if !p.Valid() || !stableSample {
 			out.Base[j] = nil
 			out.Invalid++
-			if q.Kind == "involute" {
+			if arcLength {
 				arcOK = false
 			}
 			continue
 		}
-		if j > 0 && q.Kind == "involute" {
+		if j > 0 && arcLength && arcOK {
 			a, _ := derivatives(f, t-step, lo, hi)
 			b, _ := derivatives(f, t-step/2, lo, hi)
 			inc := step / 6 * (a.Norm() + 4*b.Norm() + dp.Norm())
-			if !finite(inc) {
+			// A tangent that reverses within one step marks a cusp or corner
+			// between samples, where the circle would jump to the other side.
+			if q.Kind == "rolling" && (a.Dot(b) <= 0 || b.Dot(dp) <= 0) {
+				arcOK, reversed = false, true
+			} else if !finite(inc) {
 				arcOK = false
 			} else {
 				arc += inc
 			}
 		}
 		var target *Vec
+		var rolled *Rolling
 		origin := p
 		var dir Vec
 		virtual, tir := false, false
@@ -220,6 +236,14 @@ func Compute(q Request) (Result, error) {
 			lo, hi := q.Stack.span()
 			if start := Offset(p, dp, lo); start != nil {
 				origin, target = *start, Offset(p, dp, hi)
+			}
+		case "rolling":
+			if arcOK {
+				s := q.Rolling.at(p, dp, arc)
+				s.SampleIndex = j
+				if target = point(s.Point); target != nil && s.Center.Valid() {
+					rolled = &s
+				}
 			}
 		case "evolute":
 			target = Evolute(p, dp, ddp)
@@ -256,6 +280,9 @@ func Compute(q Request) (Result, error) {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})
 				} else if !optical && target != nil {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: origin, Target: target})
+					if rolled != nil {
+						out.Rolling = append(out.Rolling, *rolled)
+					}
 					if radius > 0 {
 						out.Circles = append(out.Circles, Circle{SampleIndex: j, Center: p, Radius: radius})
 					}
@@ -269,7 +296,12 @@ func Compute(q Request) (Result, error) {
 	if tirCount > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("Total internal reflection at %d samples; reflected rays are shown in amber.", tirCount))
 	}
-	if !arcOK {
+	switch {
+	case reversed:
+		out.Warnings = append(out.Warnings, "The tangent reversed between samples, at a cusp or corner; the circle cannot roll past it and stopped there. Choose a regular domain.")
+	case !arcOK && q.Kind == "rolling":
+		out.Warnings = append(out.Warnings, "Arc length crossed an invalid interval; the rolling circle stopped. Choose a continuous domain.")
+	case !arcOK:
 		out.Warnings = append(out.Warnings, "Arc length crossed an invalid interval; involute stopped. Choose a continuous domain.")
 	}
 	return out, nil
@@ -278,5 +310,5 @@ func Compute(q Request) (Result, error) {
 // firstOrder reports whether a construction needs only a stable tangent, so an
 // ill-conditioned second derivative must not turn its samples into gaps.
 func firstOrder(kind string) bool {
-	return usesPole(kind) || kind == "offset"
+	return usesPole(kind) || kind == "offset" || kind == "rolling"
 }

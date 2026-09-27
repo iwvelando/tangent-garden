@@ -30,8 +30,9 @@ async function progress(page: Page) {
     await page.locator("#artwork").getAttribute("data-animation-progress"),
   );
 }
+// Definition parameters are constant-expression text fields; counts are numeric.
 const field = (page: Page, name: string) =>
-  page.getByRole("spinbutton", { name, exact: true });
+  page.getByLabel(name, { exact: true });
 const rolling = (page: Page) => page.getByTestId("rolling-circle");
 const note = (page: Page) => page.getByTestId("closure-note");
 const scale = async (page: Page) =>
@@ -121,6 +122,7 @@ test("reveal moves the rolling circle with the trace; framing holds the fixed ci
     rays: [],
     family: [],
     circles: [],
+    rolling: [],
     roulette: {
       roll: "inside",
       fixedRadius: 30,

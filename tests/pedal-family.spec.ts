@@ -71,9 +71,10 @@ test("one pedal tab selects the family and keeps the pole across variants", asyn
     "diacaustic",
     "pedal",
     "offset",
+    "rolling",
   ]);
   await expect(family(page)).toHaveValue("pedal");
-  await page.getByRole("spinbutton", { name: "Pole x", exact: true }).fill("1");
+  await page.getByRole("textbox", { name: "Pole x", exact: true }).fill("1");
   await family(page).selectOption("contrapedal");
   await settled(page);
   await expect(

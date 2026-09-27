@@ -391,6 +391,10 @@ input[type="range"] {
   border-color: var(--border);
   padding: 9px 4px;
 }
+/* An odd tab out spans its row rather than leaving a gap beside it. */
+.tabs button:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 .tabs .active {
   background: #dce9e2;
   color: #235f57;

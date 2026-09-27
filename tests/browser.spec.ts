@@ -16,7 +16,7 @@ test("a failed WASM download can recover on the next input change", async ({
   await expect(page.getByRole("alert")).toContainText(
     "Engine download failed (503)",
   );
-  await page.getByRole("spinbutton", { name: "Shape parameter a" }).fill("2");
+  await page.getByRole("textbox", { name: "Shape parameter a" }).fill("2");
   await expect(page.locator("#artwork")).toBeVisible();
   expect(attempts).toBe(2);
   await expect(page.getByRole("alert")).toHaveCount(0);

@@ -23,6 +23,9 @@ export type Target =
   | "rollRadius"
   | "rollArm"
   | "rollPhase"
+  | "rollingRadius"
+  | "rollingArm"
+  | "rollingPhase"
   | "samples"
   | "lines"
   | "rayLength";
@@ -59,6 +62,9 @@ export const targetLabels: Record<Target, string> = {
   rollRadius: "Rolling radius r",
   rollArm: "Tracing distance d",
   rollPhase: "Phase φ (radians)",
+  rollingRadius: "Circle radius ρ",
+  rollingArm: "Tracing distance ℓ",
+  rollingPhase: "Phase ψ (radians)",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -73,6 +79,8 @@ export function availableTargets(config: Config): Target[] {
         : (["distance"] as Target[])),
     );
   if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
+  if (config.kind === "rolling")
+    targets.unshift("rollingArm", "rollingPhase", "rollingRadius");
   if (config.kind === "catacaustic" || config.kind === "diacaustic") {
     targets.unshift(
       ...(config.source.kind === "point"
@@ -136,6 +144,12 @@ export function targetValue(
       return config.curve.roulette.arm;
     case "rollPhase":
       return config.curve.roulette.phase;
+    case "rollingRadius":
+      return config.rolling.radius;
+    case "rollingArm":
+      return config.rolling.arm;
+    case "rollingPhase":
+      return config.rolling.phase;
     case "rayLength":
       return length;
     default:
@@ -203,6 +217,15 @@ export function applyTracks(
       case "rollPhase":
         config.curve.roulette.phase = value;
         break;
+      case "rollingRadius":
+        config.rolling.radius = value;
+        break;
+      case "rollingArm":
+        config.rolling.arm = value;
+        break;
+      case "rollingPhase":
+        config.rolling.phase = value;
+        break;
       case "rayLength":
         length = value;
         break;
@@ -229,6 +252,7 @@ export function reveal(result: Result, progress: number): Result {
       points: path.points.slice(0, last + 1),
     })),
     circles: result.circles.filter((c) => c.sampleIndex <= last),
+    rolling: result.rolling.filter((s) => s.sampleIndex <= last),
     roulette: result.roulette && {
       ...result.roulette,
       positions: result.roulette.positions.filter((s) => s.sampleIndex <= last),

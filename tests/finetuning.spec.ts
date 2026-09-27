@@ -19,6 +19,7 @@ test("offset involute fits both curves throughout reveal, with fixed follow zoom
     rays: [],
     family: [],
     circles: [],
+    rolling: [],
     warnings: [],
     invalid: 0,
   };
@@ -57,6 +58,7 @@ test("robust framing rejects isolated asymptotic tails but keeps a distant coher
       rays: [],
       family: [],
       circles: [],
+      rolling: [],
       warnings: [],
       invalid: 0,
     },
@@ -79,7 +81,7 @@ test("help, branding, and completed animation settings are usable without stoppi
   await expect(page.getByText(/Expert mode takes exact/)).toBeVisible();
   await page.getByRole("button", { name: "About shape parameter a" }).click();
   await expect(
-    page.getByRole("spinbutton", { name: "Shape parameter a" }),
+    page.getByRole("textbox", { name: "Shape parameter a" }),
   ).toHaveAccessibleDescription(/Expressions without a are unaffected/);
   await page.getByText("Expression reference", { exact: true }).click();
   await expect(

@@ -1,6 +1,12 @@
 export type Vec = { x: number; y: number };
 export type Kind =
-  "evolute" | "involute" | "catacaustic" | "diacaustic" | "offset" | PoleKind;
+  | "evolute"
+  | "involute"
+  | "catacaustic"
+  | "diacaustic"
+  | "offset"
+  | "rolling"
+  | PoleKind;
 // Constructions that project an independent geometric pole onto the tangent
 // or normal. They share one tab and one pole, never the optical source.
 export const poleKinds = ["pedal", "contrapedal", "orthotomic"] as const;
@@ -52,6 +58,16 @@ export type Config = {
   stack: { enabled: boolean; from: number; to: number; count: number };
   // Offset circles of the largest distance, centered at representative samples.
   circles: boolean;
+  // A circle of radius `radius` rolling without slipping along the curve on
+  // the given side of travel, tracing a point at distance `arm` from its
+  // center. At the domain start the arm points at the contact, turned
+  // counterclockwise by `phase` radians. Used only by the rolling kind.
+  rolling: {
+    side: "left" | "right";
+    radius: number;
+    arm: number;
+    phase: number;
+  };
   samples: number;
   lines: number;
 };
@@ -68,7 +84,8 @@ export type Ray = {
 export type OffsetPath = { distance: number; points: (Vec | null)[] };
 export type Circle = { sampleIndex: number; center: Vec; radius: number };
 // The rolling circle at a representative sample, with its contact point and
-// the tracing point on the base curve.
+// its tracing point: on the base curve for a roulette, on the derived curve
+// for the rolling construction.
 export type Rolling = Circle & { contact: Vec; point: Vec };
 // A roulette closes after `turns` revolutions of the rolling center with
 // `lobes` arches; turns is 0 when it does not close exactly (or on a line).
@@ -91,6 +108,9 @@ export type Result = {
   // Offset stack members, indexed like base; empty for other results.
   family: OffsetPath[];
   circles: Circle[];
+  // Rolling-circle positions at representative samples; empty for other
+  // constructions.
+  rolling: Rolling[];
   // Present only for a roulette curve.
   roulette?: RouletteResult;
   warnings: string[];

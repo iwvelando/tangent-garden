@@ -70,6 +70,9 @@ self.onmessage = async ({
       ...(stacked
         ? [config.stack.from, config.stack.to, config.stack.count]
         : []),
+      ...(config.kind === "rolling"
+        ? [config.rolling.radius, config.rolling.arm, config.rolling.phase]
+        : []),
       ...(config.curve.format === "roulette"
         ? [
             config.curve.roulette.radius,
