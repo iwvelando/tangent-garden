@@ -194,19 +194,24 @@ export function AnimationPanel({
         ? 0.75
         : target === "sourceTheta"
           ? from + Math.PI / 2
-          : target === "angle"
-            ? from + 360
-            : target === "samples"
-              ? Math.min(32768, Math.max(64, from * 2))
-              : target === "lines"
-                ? Math.min(2048, frame?.config.samples ?? 2048, from + 20)
-                : target === "stackCount"
-                  ? Math.min(64, from + 6)
-                  : target === "rayLength"
-                    ? from * 1.5
-                    : target === "nIncident" || target === "nTransmitted"
-                      ? 1.5
-                      : from + 1;
+          : target === "rollPhase"
+            ? from + 2 * Math.PI
+            : // Shrinking keeps a circle rolling inside smaller than R.
+              target === "rollRadius"
+              ? from / 2
+              : target === "angle"
+                ? from + 360
+                : target === "samples"
+                  ? Math.min(32768, Math.max(64, from * 2))
+                  : target === "lines"
+                    ? Math.min(2048, frame?.config.samples ?? 2048, from + 20)
+                    : target === "stackCount"
+                      ? Math.min(64, from + 6)
+                      : target === "rayLength"
+                        ? from * 1.5
+                        : target === "nIncident" || target === "nTransmitted"
+                          ? 1.5
+                          : from + 1;
     return { target, from: String(from), to: String(to) };
   }
   function parameterMode(next: "reveal" | "parameters") {

@@ -6,6 +6,20 @@ Scalar bounds accept the same numeric constants as curves: `pi`, `e`, and the po
 
 Let `r(t)=(x(t),y(t))`, `v=r′`, `a=r″`, `T=v/|v|`, and `J(x,y)=(-y,x)`. Curves must be sufficiently smooth and regular locally for the requested construction.
 
+## Roulettes
+
+A roulette curve is generated rather than typed: a point at distance `d ≥ 0` from the center of a circle of radius `r > 0` that rolls without slipping on a fixed circle of radius `R > 0` centered at the origin, or along the x-axis. The drawing places the rolling circle on the upper side of the line, inside the fixed circle (a hypotrochoid, requiring `R > r`), or outside it (an epitrochoid). For a fixed circle, `t` is the polar angle of the rolling center; along the line, `t` is the angle the rolling circle has turned, so its center is `(rt, r)`. With phase `φ = 0` the tracing arm points at the contact point at `t = 0`:
+
+- Inside: `x = (R−r)cos t + d cos((R−r)t/r − φ)`, `y = (R−r)sin t − d sin((R−r)t/r − φ)`.
+- Outside: `x = (R+r)cos t − d cos((R+r)t/r + φ)`, `y = (R+r)sin t − d sin((R+r)t/r + φ)`.
+- Line: `x = rt − d sin(t − φ)`, `y = r − d cos(t − φ)`.
+
+The phase `φ` (radians) turns the arm counterclockwise from the contact direction at `t = 0`. The rolling circle spins at `−(R−r)/r`, `(R+r)/r`, or `−1` radians per unit `t`, so the material point at the contact is at rest: rolling without slipping. `d = r` traces the rim with cusps (hypocycloid, epicycloid, cycloid); `d < r` is curtate and `d > r` looped. Familiar special cases include the Tusi couple (`R = 2r`, `d = r`, a diameter), ellipses (`R = 2r`), the astroid (`R = 4r`, `d = r`), and the cardioid (outside, `R = r = d`).
+
+When `R/r = p/q` in lowest terms, the trace repeats exactly after the rolling center makes `q` turns, `t` advancing by `2πq`, with `p` arches. The engine finds `p/q` with continued fractions, accepting it only within a relative `10⁻¹²` of the entered ratio and with `q ≤ 200`. Other ratios, including irrational ones and decimals that are merely close to a simple fraction, are reported as not closing and are never forced closed. A trace along a line repeats each turn, shifted by `2πr`, and never closes. Only the chosen domain is drawn; the closure report offers to set its end to one full period.
+
+The traced curve is the base curve: every construction applies to it with the usual numerical derivatives. Radii and `d` are bounded by 100000 and `|φ|` by 1000000. Rolling positions (rolling center and radius, contact point, tracing point) are reported at the representative samples, including samples where the construction itself is undefined, such as the cusps of a rim trace.
+
 ## Evolute
 
 `E = r + (v·v)/det(v,a) Jv`.

@@ -47,6 +47,8 @@ type Result struct {
 	Warnings       []string `json:"warnings"`
 	Invalid        int      `json:"invalid"`
 	SourcePosition *Vec     `json:"sourcePosition,omitempty"`
+	// Roulette is present only for a roulette curve.
+	Roulette *RouletteResult `json:"roulette,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
@@ -95,6 +97,16 @@ func Compute(q Request) (Result, error) {
 	f, err := compile(q.Curve)
 	if err != nil {
 		return out, err
+	}
+	var roll *Roulette
+	if q.Curve.Format == "roulette" {
+		g := q.Curve.Roulette
+		roll = &g
+		turns, lobes := g.closure()
+		out.Roulette = &RouletteResult{Roll: g.Roll, Turns: turns, Lobes: lobes, Positions: []Rolling{}}
+		if g.Roll != "line" {
+			out.Roulette.FixedRadius = g.FixedRadius
+		}
 	}
 	lo, hi := q.Curve.Min, q.Curve.Max
 	step := (hi - lo) / float64(q.Samples-1)
@@ -150,6 +162,17 @@ func Compute(q Request) (Result, error) {
 		p := f(t)
 		dp, ddp := derivatives(f, t, lo, hi)
 		out.Base[j] = point(p)
+		line := nextLine < q.Lines && j == int(math.Round(float64(nextLine)*float64(q.Samples-1)/float64(q.Lines-1)))
+		if line {
+			nextLine++
+			// The rolling circle is shown wherever the trace itself is finite,
+			// even where the construction is undefined, such as at a cusp.
+			if roll != nil && p.Valid() {
+				s := roll.state(t)
+				s.SampleIndex = j
+				out.Roulette.Positions = append(out.Roulette.Positions, s)
+			}
+		}
 		stableSample := false
 		if firstOrder(q.Kind) {
 			stableSample = stableTangent(f, t, lo, hi, dp)
@@ -161,9 +184,6 @@ func Compute(q Request) (Result, error) {
 			out.Invalid++
 			if q.Kind == "involute" {
 				arcOK = false
-			}
-			if nextLine < q.Lines && j == int(math.Round(float64(nextLine)*float64(q.Samples-1)/float64(q.Lines-1))) {
-				nextLine++
 			}
 			continue
 		}
@@ -230,8 +250,7 @@ func Compute(q Request) (Result, error) {
 		if target == nil {
 			out.Invalid++
 		}
-		if nextLine < q.Lines && j == int(math.Round(float64(nextLine)*float64(q.Samples-1)/float64(q.Lines-1))) {
-			nextLine++
+		if line {
 			if p.Valid() && dp.Valid() && dp.Norm() > 1e-9 {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})

@@ -167,7 +167,62 @@ assert.match(
   ).error,
   /2–64/,
 );
+// A rim point of a circle rolling inside one four times its size traces an
+// astroid, which closes after one turn with four cusps.
+const roulette = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "offset",
+      distance: 0.1,
+      curve: {
+        ...config.curve,
+        format: "roulette",
+        roulette: {
+          roll: "inside",
+          fixedRadius: 4,
+          radius: 1,
+          arm: 1,
+          phase: 0,
+        },
+      },
+    }),
+  ),
+);
+assert.equal(roulette.roulette.turns, 1);
+assert.equal(roulette.roulette.lobes, 4);
+assert.equal(roulette.roulette.fixedRadius, 4);
+assert.equal(roulette.roulette.positions.length, config.lines);
+for (const p of roulette.base.filter(Boolean))
+  assert.ok(
+    Math.abs(Math.cbrt(p.x * p.x) + Math.cbrt(p.y * p.y) - Math.cbrt(16)) <
+      1e-9,
+  );
+for (const s of roulette.roulette.positions) {
+  assert.ok(Math.abs(Math.hypot(s.contact.x, s.contact.y) - 4) < 1e-12);
+  assert.ok(Math.abs(Math.hypot(s.center.x, s.center.y) - 3) < 1e-12);
+  assert.deepEqual(s.point, roulette.base[s.sampleIndex]);
+}
+assert.equal(
+  JSON.parse(globalThis.tangentGardenCompute(JSON.stringify(config))).roulette,
+  undefined,
+);
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: {
+          ...config.curve,
+          format: "roulette",
+          roulette: { roll: "inside", fixedRadius: 1, radius: 1, arm: 1 },
+        },
+      }),
+    ),
+  ).error,
+  /smaller than the fixed radius/,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, and invalid JSON passed.",
 );
 process.exit(0);

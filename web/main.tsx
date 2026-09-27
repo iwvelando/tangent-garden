@@ -9,6 +9,7 @@ import {
   type Frame,
   type Kind,
   type PoleKind,
+  type Roll,
 } from "./types";
 import { EngineClient, boundText } from "./engine-client";
 import { useTheme } from "./useTheme";
@@ -230,6 +231,80 @@ function App() {
       />
     </Field>
   );
+  const roll = config.curve.roulette;
+  const rollTo = (patch: Partial<Config["curve"]["roulette"]>) =>
+    curve({ roulette: { ...roll, ...patch } });
+  // Closure comes from the engine's result for exactly these inputs.
+  const closure = !busy && !error ? frame?.result.roulette : undefined;
+  const rouletteControls = (
+    <>
+      <Field label="Rolling">
+        <select
+          value={roll.roll}
+          onChange={(e) => rollTo({ roll: e.target.value as Roll })}
+        >
+          <option value="inside">Inside a fixed circle · hypotrochoid</option>
+          <option value="outside">Outside a fixed circle · epitrochoid</option>
+          <option value="line">Along a line · trochoid</option>
+        </select>
+      </Field>
+      <div className="pair">
+        {roll.roll !== "line" &&
+          number(
+            "Fixed radius R",
+            roll.fixedRadius,
+            (fixedRadius) => rollTo({ fixedRadius }),
+            { min: 0 },
+          )}
+        {number(
+          "Rolling radius r",
+          roll.radius,
+          (radius) => rollTo({ radius }),
+          {
+            min: 0,
+            topic: "roulette radii",
+            help: "Radii are positive and at most 100,000. A circle rolling inside must be smaller than the fixed circle.",
+          },
+        )}
+      </div>
+      <div className="pair">
+        {number("Tracing distance d", roll.arm, (arm) => rollTo({ arm }), {
+          min: 0,
+          topic: "tracing distance",
+          help: "Distance of the tracing point from the rolling center, 0–100,000. d = r traces the rim and gives cusps; larger values give loops.",
+        })}
+        {number("Phase φ (radians)", roll.phase, (phase) => rollTo({ phase }), {
+          topic: "roulette phase",
+          help: "At t = 0 the tracing arm points at the contact; the phase turns it counterclockwise by φ radians.",
+        })}
+      </div>
+      <p className="note" data-testid="closure-note">
+        {roll.roll === "line"
+          ? "Along a line the trace repeats every turn of the circle, shifted by 2πr. It never closes."
+          : !closure
+            ? "Checking whether the trace closes…"
+            : closure.turns > 0
+              ? `R/r = ${closure.lobes}/${closure.turns}: the trace closes after ${closure.turns} ${closure.turns === 1 ? "turn" : "turns"} of the rolling center (t over ${2 * closure.turns}π), with ${closure.lobes} ${closure.lobes === 1 ? "arch" : "arches"}.`
+              : "R/r is not a ratio of whole numbers with at most 200 turns, so the trace never closes exactly. It is not forced closed."}
+      </p>
+      {closure && closure.turns > 0 && (
+        <button
+          className="closure"
+          type="button"
+          onClick={() => {
+            const span = `${2 * closure.turns}*pi`;
+            setPreset("custom");
+            setBounds({
+              ...bounds,
+              max: bounds.min.trim() === "0" ? span : `(${bounds.min})+${span}`,
+            });
+          }}
+        >
+          Trace one full period
+        </button>
+      )}
+    </>
+  );
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const behind = (
@@ -388,42 +463,63 @@ function App() {
                 <option value="parametric">Parametric · x(t), y(t)</option>
                 <option value="cartesian">Cartesian · y = f(x)</option>
                 <option value="polar">Polar · r(t)</option>
+                <option value="roulette">Roulette · rolling circle</option>
               </select>
             </Field>
-            {config.curve.format === "parametric" && (
-              <Field label="x(t)" className="equation">
-                <input
-                  value={config.curve.x}
-                  onChange={(e) => curve({ x: e.target.value })}
-                  spellCheck={false}
-                />
-              </Field>
-            )}
-            {config.curve.format !== "polar" ? (
-              <Field
-                label={config.curve.format === "cartesian" ? "f(x)" : "y(t)"}
-                className="equation"
-              >
-                <input
-                  value={config.curve.y}
-                  onChange={(e) => curve({ y: e.target.value })}
-                  spellCheck={false}
-                />
-              </Field>
+            {config.curve.format === "roulette" ? (
+              rouletteControls
             ) : (
-              <Field label="r(t)" className="equation">
-                <input
-                  value={config.curve.r}
-                  onChange={(e) => curve({ r: e.target.value })}
-                  spellCheck={false}
-                />
-              </Field>
+              <>
+                {config.curve.format === "parametric" && (
+                  <Field label="x(t)" className="equation">
+                    <input
+                      value={config.curve.x}
+                      onChange={(e) => curve({ x: e.target.value })}
+                      spellCheck={false}
+                    />
+                  </Field>
+                )}
+                {config.curve.format !== "polar" ? (
+                  <Field
+                    label={
+                      config.curve.format === "cartesian" ? "f(x)" : "y(t)"
+                    }
+                    className="equation"
+                  >
+                    <input
+                      value={config.curve.y}
+                      onChange={(e) => curve({ y: e.target.value })}
+                      spellCheck={false}
+                    />
+                  </Field>
+                ) : (
+                  <Field label="r(t)" className="equation">
+                    <input
+                      value={config.curve.r}
+                      onChange={(e) => curve({ r: e.target.value })}
+                      spellCheck={false}
+                    />
+                  </Field>
+                )}
+              </>
             )}
             <div className="pair">
               {(["min", "max"] as const).map((key) => (
                 <Field
                   className="equation"
                   key={key}
+                  topic={
+                    key === "min" && config.curve.format === "roulette"
+                      ? "rolling parameter t"
+                      : undefined
+                  }
+                  help={
+                    key === "min" && config.curve.format === "roulette"
+                      ? config.curve.roulette.roll === "line"
+                        ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
+                        : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
+                      : undefined
+                  }
                   label={
                     key === "min"
                       ? config.curve.format === "cartesian"
@@ -443,23 +539,24 @@ function App() {
                 </Field>
               ))}
             </div>
-            {number(
-              <>
-                Shape parameter <var>a</var>
-              </>,
-              config.curve.a,
-              (n) => curve({ a: n }),
-              {
-                topic: "shape parameter a",
-                help: (
-                  <>
-                    Use <var>a</var> as an adjustable coefficient in your curve,
-                    for example <code>a*cos(t)</code>, then animate it.
-                    Expressions without a are unaffected.
-                  </>
-                ),
-              },
-            )}
+            {config.curve.format !== "roulette" &&
+              number(
+                <>
+                  Shape parameter <var>a</var>
+                </>,
+                config.curve.a,
+                (n) => curve({ a: n }),
+                {
+                  topic: "shape parameter a",
+                  help: (
+                    <>
+                      Use <var>a</var> as an adjustable coefficient in your
+                      curve, for example <code>a*cos(t)</code>, then animate it.
+                      Expressions without a are unaffected.
+                    </>
+                  ),
+                },
+              )}
             <details {...expressions}>
               <summary>Expression reference</summary>
               <p>

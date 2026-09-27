@@ -197,11 +197,15 @@ export function Plot({
   ].filter((p): p is Vec => !!p);
   const gridStep = 10 ** Math.floor(Math.log10(frame.span / (cam.zoom * 5)));
   const grid = [];
+  // The visible world rectangle, for lines that cross the whole drawing.
+  const x0 = frame.cx + (-W / 2 - cam.x) / scale,
+    x1 = x0 + W / scale,
+    y1 = frame.cy + (H / 2 + cam.y) / scale,
+    y0 = y1 - H / scale;
+  const roulette = result.roulette;
+  // The rolling circle is drawn where the trace has reached.
+  const rolling = roulette?.positions.at(-1);
   if (layers.axes) {
-    const x0 = frame.cx + (-W / 2 - cam.x) / scale,
-      x1 = x0 + W / scale,
-      y1 = frame.cy + (H / 2 + cam.y) / scale,
-      y0 = y1 - H / scale;
     for (
       let x = Math.ceil(x0 / gridStep) * gridStep;
       x < x1 && grid.length < 200;
@@ -349,12 +353,70 @@ export function Plot({
           })}
         </g>
       )}
+      {layers.lines && roulette && (
+        <g data-testid="rolling-geometry" aria-label="Rolling circle">
+          {roulette.roll === "line" ? (
+            <g data-testid="fixed-line">
+              {line({ x: x0, y: 0 }, { x: x1, y: 0 }, palette.line, 0.6, false)}
+            </g>
+          ) : (
+            <circle
+              data-testid="fixed-circle"
+              cx={xy({ x: 0, y: 0 }).x}
+              cy={xy({ x: 0, y: 0 }).y}
+              r={roulette.fixedRadius * scale}
+              fill="none"
+              stroke={palette.line}
+              strokeWidth="1.8"
+              opacity=".9"
+            />
+          )}
+          {rolling && (
+            <g data-testid="rolling-circle" data-sample={rolling.sampleIndex}>
+              <circle
+                cx={xy(rolling.center).x}
+                cy={xy(rolling.center).y}
+                r={rolling.radius * scale}
+                fill="none"
+                stroke={palette.line}
+                strokeWidth="1.2"
+                opacity=".75"
+              />
+              {line(rolling.center, rolling.point, palette.line, 0.75)}
+              <circle
+                cx={xy(rolling.center).x}
+                cy={xy(rolling.center).y}
+                r="2.5"
+                fill={palette.line}
+              />
+              <circle
+                data-testid="contact-point"
+                cx={xy(rolling.contact).x}
+                cy={xy(rolling.contact).y}
+                r="3.5"
+                fill="none"
+                stroke={palette.line}
+                strokeWidth="1.5"
+              />
+            </g>
+          )}
+        </g>
+      )}
       {layers.base && (
         <path
           d={path(result.base)}
           fill="none"
           stroke={palette.base}
           strokeWidth="2.3"
+        />
+      )}
+      {layers.lines && rolling && (
+        <circle
+          data-testid="tracing-point"
+          cx={xy(rolling.point).x}
+          cy={xy(rolling.point).y}
+          r="4"
+          fill={palette.base}
         />
       )}
       {layers.derived && result.derived.length > 0 && (
@@ -466,20 +528,36 @@ export function framingPoints(points: (Vec | null)[]): Vec[] {
   const [y0, y1] = fence(finite.map((p) => p.y));
   return finite.filter((p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
 }
-export function fitFrame(result: Result, config: Config) {
-  // Circles are framed by their full extent when requested, independent of
-  // whether the construction layer is showing, so toggling it never reframes.
-  const extents = result.circles.flatMap(({ center: c, radius: r }) => [
+// The four extreme points of each circle.
+const circleExtents = (circles: { center: Vec; radius: number }[]) =>
+  circles.flatMap(({ center: c, radius: r }) => [
     { x: c.x - r, y: c.y },
     { x: c.x + r, y: c.y },
     { x: c.x, y: c.y - r },
     { x: c.x, y: c.y + r },
   ]);
+export function fitFrame(result: Result, config: Config) {
+  // Circles are framed by their full extent when requested, independent of
+  // whether the construction layer is showing, so toggling it never reframes.
+  const extents = circleExtents(result.circles);
+  // A roulette frames its fixed circle and every rolling-circle position, so
+  // the rolling circle stays in view as it is revealed. The fixed circle is
+  // its own family, never an outlier of the rolling ones. A fixed line is
+  // unbounded; the rolling circles frame the stretch that is rolled over.
+  const roulette = result.roulette;
+  const fixed =
+    roulette && roulette.roll !== "line"
+      ? circleExtents([
+          { center: { x: 0, y: 0 }, radius: roulette.fixedRadius },
+        ])
+      : [];
   const points = [
     ...framingPoints(result.base),
     ...framingPoints(result.derived),
     ...result.family.flatMap((path) => framingPoints(path.points)),
     ...framingPoints(extents),
+    ...framingPoints(fixed),
+    ...framingPoints(circleExtents(roulette?.positions ?? [])),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };
   let minX = Infinity,
