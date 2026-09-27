@@ -314,6 +314,45 @@ test("roulette controls validate, report closure, and trace a full period", asyn
   expect((await definition(page)).curve.roulette.roll).toBe("line");
 });
 
+test("closure text stays put while unrelated inputs recompute", async ({
+  page,
+}) => {
+  await ready(page);
+  // Record every closure text and button presence the page ever shows.
+  await page.evaluate(() => {
+    const seen = new Set<string>();
+    (window as any).closureSeen = seen;
+    const record = () => {
+      const note = document.querySelector('[data-testid="closure-note"]');
+      const button = [...document.querySelectorAll("button")].some(
+        (b) => b.textContent === "Trace one full period",
+      );
+      seen.add(`${note?.textContent} | ${button}`);
+    };
+    record();
+    new MutationObserver(record).observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  });
+  const slider = page.getByRole("slider", { name: "Construction lines" });
+  for (const lines of [50, 70, 90, 30, 40]) {
+    await slider.fill(String(lines));
+    await page.waitForTimeout(30);
+  }
+  await field(page, "Tracing distance d").fill("2.5");
+  await field(page, "Phase φ (radians)").fill("1");
+  await settled(page);
+  expect(await page.evaluate(() => [...(window as any).closureSeen])).toEqual([
+    "R/r = 5/2: the trace closes after 2 turns of the rolling center (t over 4π), with 5 arches. | true",
+  ]);
+  // Changing a radius does recheck closure.
+  await field(page, "Rolling radius r").fill("2.2");
+  await settled(page);
+  await expect(note(page)).toContainText("R/r = 25/11");
+});
+
 test("an exported roulette keeps its rolling geometry and definition", async ({
   page,
 }) => {

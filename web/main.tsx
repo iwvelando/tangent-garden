@@ -234,8 +234,17 @@ function App() {
   const roll = config.curve.roulette;
   const rollTo = (patch: Partial<Config["curve"]["roulette"]>) =>
     curve({ roulette: { ...roll, ...patch } });
-  // Closure comes from the engine's result for exactly these inputs.
-  const closure = !busy && !error ? frame?.result.roulette : undefined;
+  // Closure comes from the engine and depends only on the roll and radii, so
+  // the last result stays valid while other inputs recompute. Showing it
+  // throughout keeps the note and button from reflowing the controls.
+  const computed = frame?.config.curve.roulette;
+  const closure =
+    frame?.config.curve.format === "roulette" &&
+    computed?.roll === roll.roll &&
+    computed.radius === roll.radius &&
+    (roll.roll === "line" || computed.fixedRadius === roll.fixedRadius)
+      ? frame.result.roulette
+      : undefined;
   const rouletteControls = (
     <>
       <Field label="Rolling">
