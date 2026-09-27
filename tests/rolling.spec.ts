@@ -30,8 +30,9 @@ async function progress(page: Page) {
     await page.locator("#artwork").getAttribute("data-animation-progress"),
   );
 }
+// Definition parameters are constant-expression text fields; counts are numeric.
 const field = (page: Page, name: string) =>
-  page.getByRole("spinbutton", { name, exact: true });
+  page.getByLabel(name, { exact: true });
 const construction = (page: Page) => page.getByTestId("rolling-construction");
 const tab = (page: Page, name: string) =>
   page

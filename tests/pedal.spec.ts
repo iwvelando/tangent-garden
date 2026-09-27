@@ -80,11 +80,9 @@ test("pedal projections, custom controls, invalid input recovery, and SVG export
   await page.getByRole("textbox", { name: "to", exact: true }).fill("2*pi");
   await settled(page);
   await expect(page.locator("#artwork line")).toHaveCount(146);
-  await page.getByRole("spinbutton", { name: "Pole x", exact: true }).fill("");
+  await page.getByRole("textbox", { name: "Pole x", exact: true }).fill("");
   await expect(page.getByRole("alert")).toContainText("finite number");
-  await page
-    .getByRole("spinbutton", { name: "Pole x", exact: true })
-    .fill("1.25");
+  await page.getByRole("textbox", { name: "Pole x", exact: true }).fill("1.25");
   await settled(page);
   const source = (await definition(page)).source;
   await page.getByRole("button", { name: "catacaustic", exact: true }).click();
@@ -181,9 +179,7 @@ test("pedal reveal pauses and resumes, and editing cancels moving-pole playback"
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("30");
   await page.getByRole("button", { name: "Play animation" }).click();
   await expect.poll(() => progress(page)).toBeGreaterThan(0);
-  await page
-    .getByRole("spinbutton", { name: "Pole x", exact: true })
-    .fill("-2");
+  await page.getByRole("textbox", { name: "Pole x", exact: true }).fill("-2");
   await settled(page);
   await expect(page.locator("#artwork")).not.toHaveAttribute(
     "data-animation-progress",
@@ -203,7 +199,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: theme });
       await ready(page);
       await expect(
-        page.getByRole("spinbutton", { name: "Pole x", exact: true }),
+        page.getByRole("textbox", { name: "Pole x", exact: true }),
       ).toHaveValue("1.65");
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth),

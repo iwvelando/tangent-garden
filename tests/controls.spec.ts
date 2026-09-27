@@ -129,7 +129,7 @@ test("sidebar scrolling leaves the drawing stationary and decimal indices are va
   ).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
   await page.getByRole("button", { name: "diacaustic", exact: true }).click();
-  const input = page.getByRole("spinbutton", { name: "Incident index n₁" });
+  const input = page.getByRole("textbox", { name: "Incident index n₁" });
   await input.fill("1.333");
   expect(
     await input.evaluate((el: HTMLInputElement) => el.validity.valid),

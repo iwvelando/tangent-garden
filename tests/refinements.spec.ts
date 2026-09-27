@@ -127,9 +127,9 @@ test("polar light source follows a circular orbit, accepts scalar angle endpoint
   await page
     .getByRole("combobox", { name: "Source coordinates" })
     .selectOption("polar");
-  await page.getByRole("spinbutton", { name: "Source radius r" }).fill("1");
+  await page.getByRole("textbox", { name: "Source radius r" }).fill("1");
   await page
-    .getByRole("spinbutton", { name: "Source theta θ (radians)" })
+    .getByRole("textbox", { name: "Source theta θ (radians)" })
     .fill("0");
   await page
     .getByRole("combobox", { name: "Animate", exact: true })
@@ -169,17 +169,17 @@ test("polar light source follows a circular orbit, accepts scalar angle endpoint
     .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
     .click();
   await page
-    .getByRole("spinbutton", { name: "Source theta θ (radians)" })
+    .getByRole("textbox", { name: "Source theta θ (radians)" })
     .fill(String(Math.PI / 2));
   await page
     .getByRole("combobox", { name: "Source coordinates" })
     .selectOption("cartesian");
   await expect(
-    page.getByRole("spinbutton", { name: "Source y", exact: true }),
+    page.getByRole("textbox", { name: "Source y", exact: true }),
   ).toHaveValue("1");
   await page
     .getByRole("combobox", { name: "Source coordinates" })
     .selectOption("polar");
-  await page.getByRole("spinbutton", { name: "Source radius r" }).fill("-1");
+  await page.getByRole("textbox", { name: "Source radius r" }).fill("-1");
   await expect(page.getByRole("alert")).toContainText("nonnegative");
 });

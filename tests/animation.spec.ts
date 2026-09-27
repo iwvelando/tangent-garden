@@ -245,7 +245,7 @@ test("parallel-light direction, scalar endpoints, and invalid track recovery", a
     .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
     .click();
   await page
-    .getByRole("spinbutton", { name: "Travel direction (degrees)" })
+    .getByRole("textbox", { name: "Travel direction (degrees)" })
     .fill("45");
   await expect(page.locator(".plot-wrap")).toHaveAttribute(
     "aria-busy",

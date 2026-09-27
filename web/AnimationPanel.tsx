@@ -286,7 +286,14 @@ export function AnimationPanel({
         return;
       }
       last = now;
-      const p = Math.min(1, from + (now - began) / (s.duration * 1000));
+      // A frame's timestamp marks the start of the frame and can precede
+      // `began`, so clamp at the starting point: extrapolating before it
+      // would overshoot the entered endpoint, such as rounding a count of 2
+      // down to 1, and a resumed animation would step backward.
+      const p = Math.min(
+        1,
+        Math.max(from, from + (now - began) / (s.duration * 1000)),
+      );
       try {
         // At most one calculation is in flight. Slow devices skip intermediate
         // times instead of queuing work or lengthening a 30-second animation.

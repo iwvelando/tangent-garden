@@ -81,7 +81,7 @@ test("help, branding, and completed animation settings are usable without stoppi
   await expect(page.getByText(/Expert mode takes exact/)).toBeVisible();
   await page.getByRole("button", { name: "About shape parameter a" }).click();
   await expect(
-    page.getByRole("spinbutton", { name: "Shape parameter a" }),
+    page.getByRole("textbox", { name: "Shape parameter a" }),
   ).toHaveAccessibleDescription(/Expressions without a are unaffected/);
   await page.getByText("Expression reference", { exact: true }).click();
   await expect(

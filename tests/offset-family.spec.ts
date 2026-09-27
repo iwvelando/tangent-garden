@@ -35,8 +35,9 @@ const members = (page: Page) =>
   page.getByTestId("offset-family").locator("path");
 const circles = (page: Page) =>
   page.getByTestId("generating-circles").locator("circle");
+// Definition parameters are constant-expression text fields; counts are numeric.
 const field = (page: Page, name: string) =>
-  page.getByRole("spinbutton", { name, exact: true });
+  page.getByLabel(name, { exact: true });
 const numbers = (d: string) =>
   (d.match(/-?\d+(\.\d+)?(e-?\d+)?/g) ?? []).map(Number);
 
@@ -359,6 +360,51 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     await expect(members(page)).toHaveCount(18);
   });
 }
+
+// A frame's timestamp marks the start of the frame and can precede the
+// moment playback began. Playback must clamp to its start rather than
+// extrapolate before it, where a count of 2 would round down to 1.
+test("playback never extrapolates before its start when frame times lag", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const request = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) =>
+      request(() => callback(performance.now() - 50));
+  });
+  await ready(page);
+  const seen: number[] = [];
+  await page.exposeFunction("recordProgress", (p: number) => seen.push(p));
+  await page.evaluate(() => {
+    const artwork = () => document.querySelector("#artwork");
+    new MutationObserver(() => {
+      const p = artwork()?.getAttribute("data-animation-progress");
+      if (p !== null && p !== undefined) (window as any).recordProgress(+p);
+    }).observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-animation-progress"],
+    });
+  });
+  await openAnimation(page);
+  await page
+    .getByRole("combobox", { name: "Animate", exact: true })
+    .selectOption("parameters");
+  await page
+    .getByRole("combobox", { name: "Parameter 1", exact: true })
+    .selectOption("stackCount");
+  await page.getByRole("textbox", { name: "Track 1 from" }).fill("2");
+  await page.getByRole("textbox", { name: "Track 1 to" }).fill("12");
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".2");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect((await definition(page)).stack.count).toBe(12);
+  expect(seen.length).toBeGreaterThan(0);
+  expect(Math.min(...seen)).toBeGreaterThanOrEqual(0);
+});
 
 test("stack reveal pauses, resumes, and an edit cancels playback", async ({
   page,

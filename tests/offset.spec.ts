@@ -24,7 +24,7 @@ async function definition(page: Page) {
   return JSON.parse((await page.locator("#artwork desc").textContent())!);
 }
 const distance = (page: Page) =>
-  page.getByRole("spinbutton", { name: "Offset distance d", exact: true });
+  page.getByRole("textbox", { name: "Offset distance d", exact: true });
 const segments = (page: Page) =>
   page.locator("#artwork > g line").evaluateAll((ls) =>
     ls.map((l) => ({

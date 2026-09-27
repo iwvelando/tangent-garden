@@ -10,7 +10,7 @@ test("explanations are available on demand instead of always visible", async ({
   await expect(aside.locator(".hint:visible")).toHaveCount(0);
   await expect(aside.locator("[title]")).toHaveCount(0);
 
-  const shape = page.getByRole("spinbutton", { name: "Shape parameter a" });
+  const shape = page.getByRole("textbox", { name: "Shape parameter a" });
   const shapeHelp = page.getByRole("button", {
     name: "About shape parameter a",
   });
