@@ -720,8 +720,21 @@ h1 {
   .plot-heading {
     margin-bottom: 18px;
   }
+  /* Three tabs per row, on a six-column grid so a short last row shares
+     its width evenly: one tab spans the row, two split it. */
   .tabs {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .tabs button,
+  .tabs button:last-child:nth-child(odd) {
+    grid-column: span 2;
+  }
+  .tabs button:last-child:nth-child(3n + 1) {
+    grid-column: 1 / -1;
+  }
+  .tabs button:nth-last-child(2):nth-child(3n + 1),
+  .tabs button:last-child:nth-child(3n + 2) {
+    grid-column: span 3;
   }
   .layer-grid {
     grid-template-columns: repeat(2, 1fr);

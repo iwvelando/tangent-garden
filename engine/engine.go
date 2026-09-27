@@ -26,8 +26,10 @@ type Request struct {
 	Stack        Stack   `json:"stack"`
 	Circles      bool    `json:"circles"`
 	Rolling      Roller  `json:"rolling"`
-	Samples      int     `json:"samples"`
-	Lines        int     `json:"lines"`
+	// Envelope is the family of lines for the envelope construction.
+	Envelope LineFamily `json:"envelope"`
+	Samples  int        `json:"samples"`
+	Lines    int        `json:"lines"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -37,6 +39,8 @@ type Ray struct {
 	Target      *Vec `json:"target"`
 	Virtual     bool `json:"virtual"`
 	TIR         bool `json:"tir"`
+	// End is a chord's far endpoint, present only for chords.
+	End *Vec `json:"end,omitempty"`
 }
 type Result struct {
 	Base           []*Vec    `json:"base"`
@@ -53,12 +57,15 @@ type Result struct {
 	Roulette *RouletteResult `json:"roulette,omitempty"`
 	// Moving is present only for a rolling curve.
 	Moving *MovingResult `json:"moving,omitempty"`
+	// Second holds the chords' far endpoints, indexed like Base, present
+	// only for chords.
+	Second []*Vec `json:"second,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
 	out := Result{Rays: []Ray{}, Family: []Path{}, Circles: []Circle{}, Rolling: []Rolling{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
-	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && q.Kind != "rolling" && !usesPole(q.Kind) {
+	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && q.Kind != "rolling" && q.Kind != "envelope" && !usesPole(q.Kind) {
 		return out, fmt.Errorf("unknown construction")
 	}
 	if usesPole(q.Kind) && !q.Pole.Valid() {
@@ -111,6 +118,15 @@ func Compute(q Request) (Result, error) {
 	if q.Kind == "rolling" && q.Rolling.curve() {
 		if mv, out.Moving, err = newMover(q.Rolling, q.Curve.A, q.Samples); err != nil {
 			return out, err
+		}
+	}
+	var family *lines
+	if q.Kind == "envelope" {
+		if family, err = newLines(q.Envelope, f, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
+			return out, err
+		}
+		if family.end != nil {
+			out.Second = make([]*Vec, q.Samples)
 		}
 	}
 	var roll *Roulette
@@ -177,12 +193,16 @@ func Compute(q Request) (Result, error) {
 	// Why a rolling curve stopped, other than the base's own arc length.
 	movingStop := placedOK
 	tirCount := 0
+	coincident := 0
 	nextLine := 0
 	for j := 0; j < q.Samples; j++ {
 		t := lo + float64(j)*step
 		p := f(t)
 		dp, ddp := derivatives(f, t, lo, hi)
 		out.Base[j] = point(p)
+		if out.Second != nil {
+			out.Second[j] = point(family.end(t))
+		}
 		line := nextLine < q.Lines && j == int(math.Round(float64(nextLine)*float64(q.Samples-1)/float64(q.Lines-1)))
 		if line {
 			nextLine++
@@ -225,6 +245,7 @@ func Compute(q Request) (Result, error) {
 		var target *Vec
 		var rolled *Rolling
 		var placed *Placement
+		var member familyLine
 		origin := p
 		var dir Vec
 		virtual, tir := false, false
@@ -264,6 +285,12 @@ func Compute(q Request) (Result, error) {
 					rolled = &s
 				}
 			}
+		case "envelope":
+			member = family.at(t, p, dp)
+			target, virtual = member.target, member.virtual
+			if member.coincident {
+				coincident++
+			}
 		case "evolute":
 			target = Evolute(p, dp, ddp)
 		case "involute":
@@ -293,7 +320,10 @@ func Compute(q Request) (Result, error) {
 		if target == nil {
 			out.Invalid++
 		}
-		if line {
+		if line && member.ok {
+			// Every defined line is drawn, touching its envelope or not.
+			out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: member.direction, Target: target, Virtual: virtual, End: member.end})
+		} else if line {
 			if p.Valid() && dp.Valid() && dp.Norm() > 1e-9 {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})
@@ -314,6 +344,9 @@ func Compute(q Request) (Result, error) {
 	}
 	if out.Invalid > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("%d samples have no finite construction (singularity, parallel rays, or invalid domain).", out.Invalid))
+	}
+	if coincident > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the chord's endpoints coincide, so it has no direction; they are left as gaps.", coincident))
 	}
 	if tirCount > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("Total internal reflection at %d samples; reflected rays are shown in amber.", tirCount))
@@ -340,5 +373,5 @@ func Compute(q Request) (Result, error) {
 // firstOrder reports whether a construction needs only a stable tangent, so an
 // ill-conditioned second derivative must not turn its samples into gaps.
 func firstOrder(kind string) bool {
-	return usesPole(kind) || kind == "offset" || kind == "rolling"
+	return usesPole(kind) || kind == "offset" || kind == "rolling" || kind == "envelope"
 }

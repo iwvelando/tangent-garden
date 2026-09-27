@@ -119,3 +119,30 @@ for (const width of [1440, 390]) {
     expect(checked).toBeGreaterThanOrEqual(10);
   });
 }
+
+for (const width of [1440, 390]) {
+  test(`construction tabs fill every row, with no gap, at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    const group = page.getByRole("group", { name: "Construction" });
+    const whole = (await group.boundingBox())!;
+    const boxes = await group
+      .getByRole("button")
+      .evaluateAll((all) => all.map((b) => b.getBoundingClientRect().toJSON()));
+    const rows = new Map<number, { left: number; right: number }[]>();
+    for (const b of boxes) {
+      const y = Math.round(b.top);
+      rows.set(y, [...(rows.get(y) ?? []), { left: b.left, right: b.right }]);
+    }
+    expect(rows.size).toBeGreaterThan(1);
+    for (const row of rows.values()) {
+      expect(row[0].left).toBeCloseTo(whole.x, 0);
+      expect(row.at(-1)!.right).toBeCloseTo(whole.x + whole.width, 0);
+      // Tabs in one row share its width equally.
+      const widths = row.map((b) => b.right - b.left);
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1);
+    }
+  });
+}

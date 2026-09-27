@@ -6,6 +6,7 @@ export type Kind =
   | "diacaustic"
   | "offset"
   | "rolling"
+  | "envelope"
   | PoleKind;
 // Constructions that project an independent geometric pole onto the tangent
 // or normal. They share one tab and one pole, never the optical source.
@@ -79,6 +80,17 @@ export type Config = {
     curve: { x: string; y: string; min: number; max: number; start: number };
     point: Vec;
   };
+  // A family of lines, each through the curve's point at t, for the envelope
+  // kind: turned to the direction angle `angle` (radians, counterclockwise
+  // from +x), or chords to the second endpoint x(t), y(t). Expressions use t
+  // and a. Chords are segments unless `extend` draws them as full lines.
+  envelope: {
+    mode: "angle" | "chord";
+    angle: string;
+    x: string;
+    y: string;
+    extend: boolean;
+  };
   samples: number;
   lines: number;
 };
@@ -90,6 +102,8 @@ export type Ray = {
   target: Vec | null;
   virtual: boolean;
   tir: boolean;
+  // A chord's far endpoint; absent for other lines.
+  end?: Vec;
 };
 
 export type OffsetPath = { distance: number; points: (Vec | null)[] };
@@ -141,6 +155,8 @@ export type Result = {
   roulette?: RouletteResult;
   // Present only for a rolling curve.
   moving?: MovingResult;
+  // The chords' far endpoints, indexed like base; present only for chords.
+  second?: (Vec | null)[];
   warnings: string[];
   invalid: number;
 };

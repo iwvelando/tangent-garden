@@ -35,6 +35,14 @@ const base: Config = {
     },
     point: { x: 0.24, y: 0 },
   },
+  // Chords from angle t to angle a·t on the unit circle.
+  envelope: {
+    mode: "chord",
+    angle: "2*t+pi/2",
+    x: "cos(a*t)",
+    y: "sin(a*t)",
+    extend: false,
+  },
   samples: 1000,
   lines: 48,
 };
@@ -277,6 +285,52 @@ export const presets: { title: string; note: string; config: Config }[] = [
       },
       samples: 2000,
       lines: 60,
+    },
+  },
+  {
+    title: "Chords & a cardioid",
+    note: "Angle t joined to angle 2t",
+    config: {
+      ...base,
+      kind: "envelope",
+      // Each chord touches the cardioid (2e^{it} + e^{2it})/3 a third of
+      // the way along. Animate a for the other multiplication tables.
+      curve: { ...base.curve, x: "cos(t)", y: "sin(t)", a: 2 },
+      samples: 2401,
+      lines: 121,
+    },
+  },
+  {
+    title: "Chords of four",
+    note: "Angle t joined to angle 4t, 200 chords",
+    config: {
+      ...base,
+      kind: "envelope",
+      // The reference study: 200 evenly spaced phases. The chords envelope
+      // the three-cusped epicycloid (4e^{it} + e^{4it})/5.
+      curve: { ...base.curve, x: "cos(t)", y: "sin(t)", a: 4 },
+      samples: 2001,
+      lines: 201,
+    },
+  },
+  {
+    title: "Folding a parabola",
+    note: "Creases folding a point onto a line",
+    config: {
+      ...base,
+      kind: "envelope",
+      // Folding the focus (0, 1) onto the axis point (t, 0) creases along
+      // the line through it perpendicular to (t, −1): direction atan(t).
+      // The creases envelope the parabola x² = 4y.
+      curve: {
+        ...base.curve,
+        format: "cartesian",
+        y: "0",
+        min: -4,
+        max: 4,
+      },
+      envelope: { ...base.envelope, mode: "angle", angle: "atan(x)" },
+      lines: 41,
     },
   },
 ];

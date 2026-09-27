@@ -282,6 +282,7 @@ export function reveal(result: Result, progress: number): Result {
       ...result.roulette,
       positions: result.roulette.positions.filter((s) => s.sampleIndex <= last),
     },
+    second: result.second?.slice(0, last + 1),
     moving: result.moving && {
       ...result.moving,
       positions: result.moving.positions.filter((s) => s.sampleIndex <= last),
