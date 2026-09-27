@@ -80,16 +80,19 @@ export type Config = {
     curve: { x: string; y: string; min: number; max: number; start: number };
     point: Vec;
   };
-  // A family of lines, each through the curve's point at t, for the envelope
-  // kind: turned to the direction angle `angle` (radians, counterclockwise
-  // from +x), or chords to the second endpoint x(t), y(t). Expressions use t
-  // and a. Chords are segments unless `extend` draws them as full lines.
+  // A family of lines or circles for the envelope kind. Lines pass through
+  // the curve's point at t, turned to the direction angle `angle` (radians,
+  // counterclockwise from +x), or are chords to the second endpoint x(t),
+  // y(t); chords are segments unless `extend` draws them as full lines.
+  // Circles are centered on the curve's point with radius `radius`.
+  // Expressions use t and a.
   envelope: {
-    mode: "angle" | "chord";
+    mode: "angle" | "chord" | "circle";
     angle: string;
     x: string;
     y: string;
     extend: boolean;
+    radius: string;
   };
   samples: number;
   lines: number;
@@ -106,7 +109,13 @@ export type Ray = {
   end?: Vec;
 };
 
-export type OffsetPath = { distance: number; points: (Vec | null)[] };
+// An offset stack member at its distance, or a circle envelope's branch to
+// the left or right of travel.
+export type OffsetPath = {
+  distance: number;
+  points: (Vec | null)[];
+  branch?: "left" | "right";
+};
 export type Circle = { sampleIndex: number; center: Vec; radius: number };
 // The rolling circle at a representative sample, with its contact point and
 // its tracing point: on the base curve for a roulette, on the derived curve
@@ -145,7 +154,8 @@ export type Result = {
   derived: (Vec | null)[];
   virtual: boolean[];
   rays: Ray[];
-  // Offset stack members, indexed like base; empty for other results.
+  // Offset stack members or circle envelope branches, indexed like base;
+  // empty for other results.
   family: OffsetPath[];
   circles: Circle[];
   // Rolling-circle positions at representative samples; empty for other

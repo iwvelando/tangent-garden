@@ -188,7 +188,8 @@ export function Plot({
   const extended =
     config.kind === "envelope" &&
     (config.envelope.mode === "angle" || config.envelope.extend);
-  const dashed = optical || (config.kind === "envelope" && !extended);
+  const rings = config.kind === "envelope" && config.envelope.mode === "circle";
+  const dashed = optical || (config.kind === "envelope" && !rings && !extended);
   // A derived curve or stack member that collapses to one point, such as a
   // circle offset by its radius, is drawn as a dot rather than vanishing.
   const collapsed = (points: (Vec | null)[]) => {
@@ -354,6 +355,16 @@ export function Plot({
                 y: (config.pole.y + ray.target.y) / 2,
               }
             : ray.target;
+        // A circle's radius to one of its touching points.
+        if (rings)
+          return (
+            layers.lines &&
+            ray.target && (
+              <g key={i} data-testid="envelope-radius">
+                {line(ray.origin, ray.target, palette.line, 0.45)}
+              </g>
+            )
+          );
         if (config.kind === "envelope") {
           const ends =
             ray.end && !extended
@@ -530,11 +541,15 @@ export function Plot({
         />
       )}
       {layers.derived && result.family.length > 0 && (
-        <g data-testid="offset-family" aria-label="Offset stack">
+        <g
+          data-testid={rings ? "envelope-branches" : "offset-family"}
+          aria-label={rings ? "Envelope branches" : "Offset stack"}
+        >
           {result.family.map((member, k) => (
             <path
               key={k}
-              data-distance={member.distance}
+              data-distance={rings ? undefined : member.distance}
+              data-branch={member.branch}
               d={path(member.points)}
               fill="none"
               stroke={palette.derived}

@@ -29,6 +29,9 @@ type Stack struct {
 type Path struct {
 	Distance float64 `json:"distance"`
 	Points   []*Vec  `json:"points"`
+	// Branch names a circle envelope's side of travel, "left" or "right";
+	// it is empty for offsets.
+	Branch string `json:"branch,omitempty"`
 }
 
 // Circle is a generating circle centered on the base curve at SampleIndex.

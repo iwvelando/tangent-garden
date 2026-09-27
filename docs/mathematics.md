@@ -110,6 +110,22 @@ For the unit circle and `q(t) = (cos mt, sin mt)`, the chords envelope the epicy
 
 Verification includes: the epicycloids for several m, including m < 0 and swapped endpoints, with their virtual flags and coincident gaps; the 200-phase reference study; tangent lines enveloping the curve itself; the folded parabola; a pencil of lines through a fixed point enveloping that point; chords of angle `t → 3t` agreeing with the direction angle `2t + π/2`; chords from an ellipse along its normals enveloping its evolute, virtual behind the chords unless extended; each touching point lying on its line with the envelope tangent there, in two arbitrary families; parallel lines; a direction flipping by π versus a genuine jump; and undefined angles and endpoints.
 
+## Circle envelopes
+
+The envelope construction's circle family centers a circle of radius `R(t) > 0` on each base point `c(t)`. With `F(t, X) = |X − c|² − R²`, the envelope solves `F = 0` and `∂F/∂t = 0`; for `q = X − c` these are
+
+`|q|² = R²` and `q·c′ = −RR′`.
+
+Where the center moves, with speed `v = |c′| > 0`, unit tangent `T = c′/v`, left normal `N = JT`, and `k = R′/v`, the solutions are
+
+`q = R(−kT ± √(1 − k²) N)`.
+
+The `+` branch lies to the left of travel and the `−` branch to the right, so reversing the parameter swaps them. Both are real while `|k| < 1`. At `|k| = 1` they merge into one point, the circle's point straight behind or ahead of its motion; values of `1 − k²` within `−10⁻⁹` of zero count as merged, since the separation `R√(1 − k²)` turns a rounding error ε in `R′` into roughly `R√ε`. Where `|k| > 1` the radius changes faster than the center moves, each circle nests strictly inside or around its neighbours, and there is no real envelope point; both branches have gaps there, counted in a note. A stationary center (`v < 10⁻⁹`) leaves the system degenerate: concentric circles have no envelope point, and a repeated circle is its own characteristic set, so neither is drawn as envelope, with a separate note. A radius that is not positive or not finite has no circle and leaves a gap with its own note. `R′` uses the base's five-point stencil and the same two-step stability check, so a kink in `R` inside a sample's stencil is a gap, not a guessed derivative. A kink or jump between samples is not detected. Only a stable first derivative of the base is needed.
+
+A constant radius gives `k = 0`, and the branches are the offsets `±R`. Circles centered on the parabola `4y = x²`, of radius `t²/4 + 1`, all pass through the focus `(0, 1)` and touch the directrix `y = −1`: the right branch is the directrix, and the left collapses to the focus, a degenerate branch that the renderer draws as a point. On the axis, `c = (t, 0)` and `R = t²/2 + 1/2` give `k = t`: the branches `(t − Rt, ±R√(1 − t²))` merge at `t = ±1` and vanish beyond. The radii from each center to its touching points are normal to the envelope, since the envelope is tangent to the circle there.
+
+Verification includes: both equations against analytic derivatives, and each branch's side of travel, for an arbitrary family and its reversal; constant radii reproducing the offset construction, with branches tangent to their circles; the focus and directrix; merging and vanishing branches and the count of nested samples; circles all through one point, merged everywhere; stationary centers; nonpositive, undefined, and zero radii; and a kink in the radius.
+
 ## Numerical policy
 
 Derivatives use five-point Lagrange stencils at spacing `domain_span × 10⁻⁴`, shifted to remain inside the domain at endpoints. First and second derivatives of the base curve are compared against a half-step stencil to reject ill-conditioned evaluations. Direction derivatives use the same bounded stencil. Curvature and ray-envelope denominators have explicit tolerances.
