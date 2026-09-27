@@ -42,15 +42,25 @@ const exportWebP = (page: Page) =>
 const exportMP4 = (page: Page) =>
   page.getByRole("button", { name: "Export MP4 video" });
 
-for (const study of ["hold", "current", "follow", "fit", "pedal"]) {
-  const camera = study === "pedal" ? "hold" : study;
+// Pole studies animate the pole's x coordinate from their preset.
+const poleStudies: Record<string, string> = { pedal: "8", orthotomic: "10" };
+for (const study of [
+  "hold",
+  "current",
+  "follow",
+  "fit",
+  "pedal",
+  "orthotomic",
+]) {
+  const polePreset = poleStudies[study];
+  const camera = polePreset ? "hold" : study;
   test(`saved ${study} MP4 decodes with exact timing, endpoints, and theme`, async ({
     page,
   }) => {
-    const parameterMode = camera === "follow" || study === "pedal";
+    const parameterMode = camera === "follow" || !!polePreset;
     const dark = camera === "fit";
     await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
-    await ready(page, study === "pedal" ? "8" : parameterMode ? "2" : "1");
+    await ready(page, polePreset ?? (parameterMode ? "2" : "1"));
     const original = await page.locator("#artwork").innerHTML();
     if (parameterMode) {
       await page

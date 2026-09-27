@@ -54,16 +54,26 @@ test("export timing includes endpoints, preserves milliseconds, and bounds work"
   expect(() => writer.finish()).toThrow("at least two");
 });
 
-for (const study of ["hold", "current", "follow", "fit", "pedal"]) {
-  const camera = study === "pedal" ? "hold" : study;
+// Pole studies animate the pole's x coordinate from their preset.
+const poleStudies: Record<string, string> = { pedal: "8", orthotomic: "10" };
+for (const study of [
+  "hold",
+  "current",
+  "follow",
+  "fit",
+  "pedal",
+  "orthotomic",
+]) {
+  const polePreset = poleStudies[study];
+  const camera = polePreset ? "hold" : study;
   test(`saved ${study} animation decodes with correct timing, appearance, and loop count`, async ({
     page,
   }) => {
-    const parameterMode = camera === "follow" || study === "pedal";
+    const parameterMode = camera === "follow" || !!polePreset;
     await page.emulateMedia({
       colorScheme: camera === "fit" ? "dark" : "light",
     });
-    await ready(page, study === "pedal" ? "8" : parameterMode ? "2" : "1");
+    await ready(page, polePreset ?? (parameterMode ? "2" : "1"));
     const original = await page.locator("#artwork").innerHTML();
     if (parameterMode) {
       await page

@@ -108,4 +108,28 @@ export const presets: { title: string; note: string; config: Config }[] = [
       lines: 64,
     },
   },
+  {
+    title: "Ellipse & its contrapedal",
+    note: "The center projected onto each normal",
+    config: {
+      ...base,
+      kind: "contrapedal",
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      pole: { x: 0, y: 0 },
+      lines: 64,
+    },
+  },
+  {
+    title: "Ellipse & its orthotomic",
+    note: "A focus reflected onto a circle",
+    config: {
+      ...base,
+      kind: "orthotomic",
+      // Foci at (±1, 0): reflecting one across every tangent lands on the
+      // circle of radius 2a = 4 about the other.
+      curve: { ...base.curve, x: "2*cos(t)", y: "sqrt(3)*sin(t)" },
+      pole: { x: 1, y: 0 },
+      lines: 64,
+    },
+  },
 ];

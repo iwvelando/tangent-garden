@@ -47,10 +47,10 @@ type Result struct {
 func Compute(q Request) (Result, error) {
 	out := Result{Rays: []Ray{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
-	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "pedal" {
+	if !optical && q.Kind != "evolute" && q.Kind != "involute" && !usesPole(q.Kind) {
 		return out, fmt.Errorf("unknown construction")
 	}
-	if q.Kind == "pedal" && !q.Pole.Valid() {
+	if usesPole(q.Kind) && !q.Pole.Valid() {
 		return out, fmt.Errorf("pole coordinates must be finite numbers")
 	}
 	if q.Samples < 64 || q.Samples > 32768 || q.Lines < 2 || q.Lines > 2048 || q.Lines > q.Samples {
@@ -124,7 +124,7 @@ func Compute(q Request) (Result, error) {
 		dp, ddp := derivatives(f, t, lo, hi)
 		out.Base[j] = point(p)
 		stableSample := false
-		if q.Kind == "pedal" {
+		if usesPole(q.Kind) {
 			stableSample = stableTangent(f, t, lo, hi, dp)
 		} else {
 			stableSample = stable(f, t, lo, hi, dp, ddp)
@@ -156,6 +156,10 @@ func Compute(q Request) (Result, error) {
 		switch q.Kind {
 		case "pedal":
 			target = Pedal(p, dp, q.Pole)
+		case "contrapedal":
+			target = Contrapedal(p, dp, q.Pole)
+		case "orthotomic":
+			target = Orthotomic(p, dp, q.Pole)
 		case "evolute":
 			target = Evolute(p, dp, ddp)
 		case "involute":

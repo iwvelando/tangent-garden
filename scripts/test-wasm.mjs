@@ -55,7 +55,42 @@ for (const i of [0, 249, 500, 999]) {
   );
   assert.equal(pedal.virtual[i], false);
 }
+// Contrapedal and orthotomic of the unit circle about the pole (1, 0).
+const family = Object.fromEntries(
+  ["contrapedal", "orthotomic"].map((kind) => [
+    kind,
+    JSON.parse(
+      globalThis.tangentGardenCompute(
+        JSON.stringify({
+          ...config,
+          kind,
+          curve: { ...config.curve, x: "cos(t)", y: "sin(t)" },
+          pole: { x: 1, y: 0 },
+        }),
+      ),
+    ),
+  ]),
+);
+for (const i of [0, 249, 500, 999]) {
+  const t = (i * 2 * Math.PI) / 999;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  const k = family.contrapedal.derived[i];
+  const q = family.orthotomic.derived[i];
+  assert.ok(Math.abs(k.x - c * c) < 1e-7 && Math.abs(k.y - c * s) < 1e-7);
+  assert.ok(Math.abs(q.x - (1 + 2 * c - 2 * c * c)) < 1e-7);
+  assert.ok(Math.abs(q.y - 2 * s * (1 - c)) < 1e-7);
+}
+assert.equal(family.contrapedal.invalid, 0);
+assert.equal(family.orthotomic.rays.length, config.lines);
+assert.ok(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({ ...config, kind: "orthotomic", pole: { x: "a", y: 0 } }),
+    ),
+  ).error,
+);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, and invalid JSON passed.",
 );
 process.exit(0);

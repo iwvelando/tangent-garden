@@ -11,7 +11,7 @@ Support all nine families: pedals and related projections; offsets/wavefronts; r
 ## Proposed implementation order and progress
 
 - [x] 1a. Pedal curves: Go projection, independent pole controls, construction segments, preset, animation, exports, analytic and browser tests.
-- [ ] 1b. Contrapedals and orthotomics using the same pole and projection geometry.
+- [x] 1b. Contrapedals and orthotomics using the same pole and projection geometry.
 - [ ] 2a. Single signed normal offset with distance animation.
 - [ ] 2b. Offset families and generating circles; introduce the minimal multiple-path/circle result model needed for this slice.
 - [ ] 3a. Circle-on-circle and circle-on-line roulettes with rolling geometry and closure controls.
@@ -128,7 +128,9 @@ Completed slice 1a on `codex/curve-expansion-pedals`: `engine/pedal.go`, first-d
 
 Verification: `make check` passed (formatting, vet, native race/coverage, analytic WASM bridge, TypeScript, build, distribution notices). All 112 Chromium tests passed, including new pole/projection tests and independently decoded pedal MP4/WebP files. Layout inspected in light/dark themes at desktop and phone widths. The local default test port was occupied by another project, so the complete suite used an isolated preview and a temporary local Playwright configuration; do not use `BASE_URL` for an uncompressed local preview, since the smoke test treats it as a deployed site. No test harness override or machine-specific path is committed. WebKit was not run for this slice; encoding implementation is unchanged.
 
-Next: 1b, contrapedals and orthotomics, reusing the independent pole and projection primitives. Choose a compact family selector before adding more top-level construction buttons. Keep genuine projection feet distinct from reflected orthotomic points in the construction geometry. Polar pole editing remains a later optional enhancement; do not overload optical-source state. Keep later phases unchecked until fully verified.
+Completed slice 1b on `claude/curve-expansion-contrapedal-orthotomic`: `contrapedal` and `orthotomic` kinds in `engine/pedal.go` built on the pedal foot, a single **Pedal** tab with a **Projection** selector that remembers the variant, “Ellipse & its contrapedal” and “Ellipse & its orthotomic” (focus → circle) presets, dashed reflected H→Q segments with the foot recovered as (P+Q)/2, shared pole tracks/framing/marker. Tests cover analytic circles, lines, parabola directrix, ellipse focus circle, the rectangle identity H+K=r+P, reflection invariants, rigid motions with orientation reversal, reparameterization, contrapedal = pedal of evolute, C1 inputs, stationary gaps, and nonfinite poles, plus the WASM bridge and browser/export checks.
+
+Next: 2a, a single signed normal offset with distance animation. Polar pole editing remains a later optional enhancement; do not overload optical-source state. Keep later phases unchecked until fully verified.
 
 ## Final task: delete this document
 
