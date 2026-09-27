@@ -5,6 +5,7 @@ declare const Go: new () => {
   run(instance: WebAssembly.Instance): Promise<void>;
 };
 declare const tangentGardenCompute: (json: string) => string;
+declare const tangentGardenSpatial: (json: string) => string;
 declare const tangentGardenScalars: (json: string) => string;
 let ready: Promise<void> | undefined;
 async function init(base: string) {
@@ -27,7 +28,8 @@ self.onmessage = async ({
   config: Config;
   bounds?: Bounds;
   expressions?: string[];
-  action: "compute" | "scalars";
+  action: "compute" | "scalars" | "spatial";
+  spatial?: import("./spatial/types").SpatialConfig;
   base: string;
 }>) => {
   try {
@@ -44,6 +46,23 @@ self.onmessage = async ({
     };
     if (data.action === "scalars") {
       self.postMessage({ id: data.id, values: scalar(data.expressions ?? []) });
+      return;
+    }
+    if (data.action === "spatial") {
+      if (!data.spatial || !Object.values(data.spatial).every(Number.isFinite))
+        throw new Error("Fill in each spatial parameter with a finite number.");
+      if (
+        !Number.isInteger(data.spatial.samples) ||
+        !Number.isInteger(data.spatial.lines)
+      )
+        throw new Error("Samples and tangent lines must be whole numbers.");
+      const result = JSON.parse(
+        tangentGardenSpatial(JSON.stringify(data.spatial)),
+      );
+      self.postMessage({
+        id: data.id,
+        ...("error" in result ? result : { result }),
+      });
       return;
     }
     const config = structuredClone(data.config);

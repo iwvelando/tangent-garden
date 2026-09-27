@@ -778,3 +778,10 @@ h1 {
     padding: 5px;
   }
 }
+
+/* The spatial notebook opens separately to preserve the current planar study. */
+.spatial-back {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12px;
+}

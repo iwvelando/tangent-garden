@@ -92,3 +92,16 @@ The engine returns `null` at omitted points instead of serializing NaN or infini
 Reveal animations expose progressively larger prefixes of the final numerical grid, retaining the original `t_min` arc-length anchor. Their temporal resolution and spatial resolution are independent. Parameter animations instead construct a fresh curve/ray family at each displayed parameter value. Numerical singularities can appear or disappear as parameters move; output curves are never blended across such transitions. Increasing duration increases temporal granularity at a given achieved frame rate, not the number of spatial samples.
 
 Point sources may be specified as Cartesian x/y or polar radius and theta. Radius is nonnegative, theta is in radians counterclockwise from +x, and Go resolves the source as `(r cos(theta), r sin(theta))`. A polar angle animation interpolates the angle itself without wrapping, then resolves the Cartesian position for each frame; it follows an arc rather than a chord. The result includes the effective Cartesian source position for consistent rendering. Coordinate controls in the frontend convert representations when switching editors; the numerical engine remains authoritative for each computation.
+
+
+## Experimental 3D tangent developable
+
+This construction belongs to `engine3`, with true vectors `(x,y,z)`. For coprime positive winding numbers p and q, major radius R and minor radius r with `0 < r < R`, define the torus knot
+
+`c(t) = ((R+r cos qt) cos pt, (R+r cos qt) sin pt, r sin qt)`, `0 ≤ t ≤ 2π`.
+
+Its speed squared is `p²(R+r cos qt)² + r²q² > 0`, so the unit tangent `T=c′/|c′|` exists throughout. With tangent reach L, the truncated tangent developable is `S(t,u)=c(t)+uT(t)` for `−L ≤ u ≤ L`. Each ruling has length 2L in world units. This is a ruled surface formed from the curve's tangents, not a tubular neighborhood of the knot. See the [Wolfram implementation of tangent developables](https://www.wolframcloud.com/obj/resourcesystem/published/FunctionRepository/resources/TangentDevelopableSurface/).
+
+At u=0, `S_t=c′` and `S_u=T` are parallel: the knot is a singular seam, retained explicitly. Away from the seam and zero curvature, the normal is parallel to `c′ × c″`, constant along each ruling. Thus the regular sheets have zero Gaussian curvature. The engine computes first and second derivatives analytically and uses normalized `±(c′ × c″)` for the two separately tessellated sheets; the renderer shades both sides. No triangles span from negative to positive u. Self-intersections remain part of the construction and depth testing reveals the visible sheets; no physical collision or optical simulation is implied.
+
+If the cross product is too small relative to the analytic derivative scale, or adjacent normals reverse beyond 90 degrees, adjacent faces are omitted. This includes unresolved zero-curvature intervals between samples. The base, boundary curves, and straight rulings remain well-defined there. The closure sample copies the start exactly. Sampling uses 240–2400 intervals; boundary chord error converges quadratically. Uniform sampling and these guards are not certified adaptive tessellation. Very narrow folds can need a higher sample count.

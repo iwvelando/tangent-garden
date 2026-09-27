@@ -70,9 +70,15 @@ The live site is **https://tangent-garden.isaacvelando.com**. Every push to `mai
 
 A shared link unfurls into a card (Open Graph and Twitter tags in `index.html`) showing `public/og-image.png`. Those tags and the canonical link name the production URL, since link scrapers need absolute URLs; change them if you host it elsewhere. The card and `public/apple-touch-icon.png` are rendered from the built site by `make share-card` and committed; re-render them, check them by eye, and commit when the site's look changes.
 
+## Experimental spatial study
+
+Choose **Explore 3D** in the header, or open `?study=3d`, for a tangent developable of a torus knot: two folded sheets swept out by straight tangent lines. Three knot presets, scalar-expression controls, independent surface/ruling/edge layers, and orbit/zoom controls explore one construction class. The experiment uses a separate pure Go `engine3` package in the same worker and a lazily loaded WebGL renderer. The planar notebook opens the experiment in another tab to preserve the current study.
+
+Drag to orbit, scroll to zoom, or focus the drawing and use the arrow keys, +/−, and Home. **Rotate view** turns only the camera; **Reset view** restores its initial orientation and scale. This first prototype does not include spatial expression editing, geometry animation, or export. See [the 3D investigation](docs/spatial-study.md) for rationale, mathematics, and limits.
+
 ## Mathematical scope
 
-This is a **mathematical construction explorer**, not a scene renderer: every regular sampled point participates, without occlusion or multiple bounces. The current engine is 2D. Future 3D work needs separate mathematical definitions and types.
+This is a **mathematical construction explorer**, not a scene renderer: every regular sampled point participates, without occlusion or multiple bounces. The planar engine remains 2D. The experimental spatial study uses separate 3D definitions and types; its renderer uses depth testing to reveal the ribbon folds.
 
 The engine uses numerical differentiation, arc-length integration, and ray envelopes. Singular or ill-conditioned samples produce gaps. Uniform sampling can miss fine detail; more samples do not automatically improve derivative accuracy. Automatic framing filters isolated extreme points heuristically, so distant branches may need manual framing. Compare resolutions before relying on delicate features.
 

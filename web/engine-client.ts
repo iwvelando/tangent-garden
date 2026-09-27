@@ -1,3 +1,4 @@
+import type { SpatialConfig, SpatialResult } from "./spatial/types";
 import type { Bounds, Config, Frame } from "./types";
 
 // One worker per app, plus temporary ones during parameter-animation export.
@@ -59,6 +60,9 @@ export class EngineClient {
       bounds,
     });
     return { result, config: resolved };
+  }
+  async spatial(config: SpatialConfig): Promise<SpatialResult> {
+    return (await this.request({ action: "spatial", spatial: config })).result;
   }
   async scalars(expressions: string[]): Promise<number[]> {
     return (await this.request({ action: "scalars", expressions })).values;

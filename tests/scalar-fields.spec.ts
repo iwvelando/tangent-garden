@@ -318,3 +318,36 @@ test("fields show new values set elsewhere, replacing an expression", async ({
   await expect(field(page, "Phase φ (radians)")).toHaveValue("0");
   await expect(field(page, "Tracing distance d")).toHaveValue("3");
 });
+
+// Spatial parameters share the same Go scalar parser as planar controls.
+test("spatial radii and tangent reach accept constants and reject variables", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  const stage = page.locator(".spatial-stage");
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  for (const [name, text, key, value] of [
+    ["Major radius R", "2*pi", "radius", 2 * Math.PI],
+    ["Minor radius r", "phi", "tube", phi],
+    ["Tangent reach L", "e", "length", Math.E],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect
+      .poll(
+        async () => JSON.parse((await stage.getAttribute("data-config"))!)[key],
+      )
+      .toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+  }
+  for (const variable of ["t", "x", "a"]) {
+    await field(page, "Tangent reach L").fill(variable);
+    await expect(page.getByRole("alert")).toBeVisible();
+  }
+  await field(page, "Tangent reach L").fill("pi/2");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect
+    .poll(
+      async () => JSON.parse((await stage.getAttribute("data-config"))!).length,
+    )
+    .toBe(Math.PI / 2);
+});

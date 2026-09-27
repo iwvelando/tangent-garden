@@ -7,9 +7,32 @@ import (
 	"syscall/js"
 	"tangentgarden/engine"
 	"tangentgarden/engine/expr"
+	"tangentgarden/engine3"
 )
 
 func main() {
+	spatial := js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) != 1 {
+			return `{"error":"expected one spatial JSON request"}`
+		}
+		var q engine3.Request
+		err := json.Unmarshal([]byte(args[0].String()), &q)
+		var result engine3.Result
+		if err == nil {
+			result, err = engine3.Compute(q)
+		}
+		if err != nil {
+			b, _ := json.Marshal(map[string]string{"error": err.Error()})
+			return string(b)
+		}
+		b, err := json.Marshal(result)
+		if err != nil {
+			return `{"error":"non-finite spatial result"}`
+		}
+		return string(b)
+	})
+	js.Global().Set("tangentGardenSpatial", spatial)
+
 	fn := js.FuncOf(func(this js.Value, args []js.Value) any {
 		var q engine.Request
 		var result engine.Result

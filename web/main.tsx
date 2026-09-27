@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { Plot, type Layers } from "./Plot";
@@ -428,6 +436,14 @@ function App() {
           <small>CURVES & CONSTRUCTIONS</small>
         </a>
         <div className="header-actions">
+          <a
+            className="spatial-back"
+            href="?study=3d"
+            target="_blank"
+            rel="noopener"
+          >
+            Explore 3D ↗
+          </a>
           <span className="local-note">
             A little geometry. A lot of beauty.
           </span>
@@ -1111,4 +1127,15 @@ function App() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
+createRoot(document.getElementById("root")!).render(
+  new URLSearchParams(location.search).get("study") === "3d" ? (
+    <Suspense
+      fallback={<div className="loading">Opening the spatial notebook…</div>}
+    >
+      <SpatialApp />
+    </Suspense>
+  ) : (
+    <App />
+  ),
+);

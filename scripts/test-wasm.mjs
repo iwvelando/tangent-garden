@@ -267,4 +267,40 @@ assert.match(
 console.log(
   "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, and invalid JSON passed.",
 );
+const spatial = JSON.parse(
+  globalThis.tangentGardenSpatial(
+    JSON.stringify({
+      radius: 2.4,
+      tube: 0.85,
+      length: 2.3,
+      p: 2,
+      q: 3,
+      samples: 480,
+      lines: 96,
+    }),
+  ),
+);
+assert.equal(spatial.base.length, 481);
+assert.equal(spatial.mesh.length, 5760);
+assert.equal(spatial.rulings.length, 96);
+assert.deepEqual(spatial.base[0], spatial.base.at(-1));
+assert.ok(Math.abs(spatial.base[0].x - 3.25) < 1e-12);
+assert.ok(spatial.base.some((p) => Math.abs(p.z) > 0.8));
+assert.ok(JSON.parse(globalThis.tangentGardenSpatial("{")).error);
+assert.ok(
+  JSON.parse(
+    globalThis.tangentGardenSpatial(
+      JSON.stringify({
+        radius: 2,
+        tube: 1,
+        length: 1,
+        p: 2.5,
+        q: 3,
+        samples: 480,
+        lines: 96,
+      }),
+    ),
+  ).error,
+);
+console.log("Spatial WASM bridge: knot, mesh, closure, and validation passed.");
 process.exit(0);
