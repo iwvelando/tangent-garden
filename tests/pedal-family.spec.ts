@@ -70,6 +70,7 @@ test("one pedal tab selects the family and keeps the pole across variants", asyn
     "catacaustic",
     "diacaustic",
     "pedal",
+    "offset",
   ]);
   await expect(family(page)).toHaveValue("pedal");
   await page.getByRole("spinbutton", { name: "Pole x", exact: true }).fill("1");

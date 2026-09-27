@@ -15,6 +15,7 @@ export type Target =
   | "nIncident"
   | "nTransmitted"
   | "offset"
+  | "distance"
   | "samples"
   | "lines"
   | "rayLength";
@@ -43,6 +44,7 @@ export const targetLabels: Record<Target, string> = {
   nIncident: "Incident index n₁",
   nTransmitted: "Transmitted index n₂",
   offset: "String offset c",
+  distance: "Offset distance d",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -50,6 +52,7 @@ export const targetLabels: Record<Target, string> = {
 export function availableTargets(config: Config): Target[] {
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
   if (config.kind === "involute") targets.push("offset");
+  if (config.kind === "offset") targets.unshift("distance");
   if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
   if (config.kind === "catacaustic" || config.kind === "diacaustic") {
     targets.unshift(
@@ -102,7 +105,8 @@ export function applyTracks(
 ) {
   const config = structuredClone(base);
   for (const track of tracks) {
-    let value = track.from + (track.to - track.from) * progress;
+    // This form returns each endpoint exactly, unlike from + (to - from) * p.
+    let value = track.from * (1 - progress) + track.to * progress;
     if (track.target === "samples" || track.target === "lines")
       value = Math.round(value);
     switch (track.target) {

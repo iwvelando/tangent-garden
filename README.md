@@ -4,15 +4,16 @@
 
 Grow a little mathematical wonder.
 
-An interactive mathematical art notebook for **evolutes, involutes, catacaustics, diacaustics, pedals, contrapedals, and orthotomics**. Enter a planar curve and explore both the derived curve and the lines that construct it. Inspired by hobby Maple worksheets from around 2006, independently reworked and validated with numerical geometry.
+An interactive mathematical art notebook for **evolutes, involutes, catacaustics, diacaustics, pedals, contrapedals, orthotomics, and offsets**. Enter a planar curve and explore both the derived curve and the lines that construct it. Inspired by hobby Maple worksheets from around 2006, independently reworked and validated with numerical geometry.
 
 Go computes the geometry in a browser Web Worker through WebAssembly. React and TypeScript provide the controls; SVG draws the curves. The result is a static website with no application server, account, telemetry, or remote computation.
 
 ## Features
 
 - Parametric, Cartesian, and polar curve definitions, with a bounded expression parser and constants such as `pi`, `e`, and `phi`.
-- Eleven example studies; point and parallel light sources; polar source coordinates; configurable refraction.
+- Twelve example studies; point and parallel light sources; polar source coordinates; configurable refraction.
 - Independent poles for pedal, contrapedal, and orthotomic constructions, with tangent/normal projections, reflected segments, and pole-coordinate animation.
+- Signed normal offsets (parallel curves) that keep their cusps and swallowtails, with distance animation.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.
 - Curve-reveal and multi-parameter animations with four camera modes.
 - PNG and vector SVG image exports; animation exports as MP4 video (the default) or animated WebP, whichever the browser can encode, with resolution, quality, and up to 60 fps for MP4.
