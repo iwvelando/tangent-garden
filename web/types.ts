@@ -15,9 +15,22 @@ export const poleKinds = ["pedal", "contrapedal", "orthotomic"] as const;
 export type PoleKind = (typeof poleKinds)[number];
 export const usesPole = (kind: string): kind is PoleKind =>
   (poleKinds as readonly string[]).includes(kind);
-// The curve an inversion inverts: the curve itself, or one of its derived
+// The curve a construction acts on: the curve itself, or one of its derived
 // curves, computed with the configuration's own pole or offset distance.
-export type InversionSource = "curve" | "evolute" | PoleKind | "offset";
+export type ConstructionInput = "curve" | "evolute" | PoleKind | "offset";
+// A study's name in exported file names: a format with no parameter, or the
+// construction and, when it is derived, the curve it acts on.
+export const studyName = (config: Config) =>
+  config.curve.format === "implicit" || config.curve.format === "attractor"
+    ? config.curve.format
+    : config.input === "curve"
+      ? config.kind
+      : `${config.kind}-of-${config.input}`;
+// An evolute input already needs the curve's second derivative, so it cannot
+// feed a construction that needs two more (engine/input.go).
+export const inputAllowed = (kind: Kind, input: ConstructionInput) =>
+  input !== "evolute" ||
+  (kind !== "evolute" && kind !== "catacaustic" && kind !== "diacaustic");
 // One rotating vector of a Fourier curve.
 export type Term = { frequency: number; radius: number; phase: number };
 export const maxTerms = 16;
@@ -182,9 +195,11 @@ export type Config = {
     extend: boolean;
     radius: string;
   };
-  // Inversion in the circle of radius `radius` about `center`, applied to the
-  // curve named by `of`. Used only by the inversion kind.
-  inversion: { center: Vec; radius: number; of: InversionSource };
+  // Inversion in the circle of radius `radius` about `center`. Used only by
+  // the inversion kind.
+  inversion: { center: Vec; radius: number };
+  // The curve the construction acts on. Formats with no parameter ignore it.
+  input: ConstructionInput;
   samples: number;
   lines: number;
 };
@@ -237,13 +252,11 @@ export type RouletteResult = {
   positions: Rolling[];
 };
 
-// The circle of inversion and, for a derived curve, that curve indexed like
-// base. The image is open before each sample index in breaks, where it runs
-// off to infinity between two finite samples.
+// The circle of inversion. The image is open before each sample index in
+// breaks, where it runs off to infinity between two finite samples.
 export type InversionResult = {
   center: Vec;
   radius: number;
-  source?: (Vec | null)[];
   breaks: number[];
 };
 
@@ -382,6 +395,9 @@ export type Result = {
   second?: (Vec | null)[];
   // Present only for an inversion.
   inversion?: InversionResult;
+  // The derived curve the construction acts on, indexed like base; present
+  // only when the input is not the curve itself.
+  input?: (Vec | null)[];
   warnings: string[];
   invalid: number;
 };

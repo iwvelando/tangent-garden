@@ -15,7 +15,7 @@ import {
   type Track,
   type Viewport,
 } from "./animation";
-import type { Frame } from "./types";
+import { studyName, type Frame } from "./types";
 import type { Layers } from "./Plot";
 import { defaultScale, exportEncoding, exportTiming } from "./export-quality";
 import {
@@ -456,7 +456,7 @@ export function AnimationPanel({
         if (epoch.current !== token) return;
         saveFile(
           blob,
-          `tangent-garden-${frame.config.curve.format === "implicit" || frame.config.curve.format === "attractor" ? frame.config.curve.format : frame.config.kind}-${mode}.${text.extension}`,
+          `tangent-garden-${studyName(frame.config)}-${mode}.${text.extension}`,
         );
         exportAbort.current = null;
         session.current = null;

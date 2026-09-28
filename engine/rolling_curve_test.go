@@ -237,10 +237,31 @@ func TestRollingCurveStops(t *testing.T) {
 			}
 		}
 	}
-	// A cusp on the base stops a rolling curve too, naming the curve.
-	q := curveRequest("cos(t)^3", "sin(t)^3", .3, 2, "left", MovingCurve{X: "0.1*cos(t)", Y: "0.1*sin(t)", Max: 2 * math.Pi}, Vec{})
-	if w := strings.Join(compute(t, q).Warnings, " "); !strings.Contains(w, "the rolling curve cannot roll past it") {
-		t.Fatalf("warnings %v", w)
+}
+
+// A rolling curve rolls back out of a base cusp like a circle: on (t², 0) it
+// retraces its path. An open one rolling back can run off the start of its
+// domain: a segment starting 0.2 along rolls 1.2 forward and then back past
+// its start, which it reaches when t² = 1.2.
+func TestRollingCurveBackOutOfCusps(t *testing.T) {
+	q := curveRequest("t^2", "0", -1, 1, "left", MovingCurve{X: "0.1*cos(t)", Y: "0.1*sin(t)", Max: 2 * math.Pi}, Vec{.05, .02})
+	r := compute(t, q)
+	n := q.Samples - 1
+	for j := 0; j < n/2; j++ {
+		closeVec(t, r.Derived[n-j], *r.Derived[j], 1e-9)
+	}
+	if !warned(r, "the rolling curve rolls back out of 1 cusp") {
+		t.Fatalf("warnings %v", r.Warnings)
+	}
+	q = curveRequest("t^2", "0", -1, 1.2, "left", MovingCurve{X: "t", Y: "0", Min: 0, Max: 5, Start: .2}, Vec{1, .1})
+	r = compute(t, q)
+	for j, p := range r.Derived {
+		if u := sampleT(q, j); u < math.Sqrt(1.2)-.01 && p == nil && math.Abs(u) > .01 || u > math.Sqrt(1.2)+.01 && p != nil {
+			t.Fatalf("at t=%g: %v", u, p)
+		}
+	}
+	if !warned(r, "end of the rolling curve's domain") {
+		t.Fatalf("warnings %v", r.Warnings)
 	}
 }
 

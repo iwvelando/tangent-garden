@@ -138,6 +138,14 @@ func TestCircleInvolute(t *testing.T) {
 		closeVec(t, p, Vec{math.Cos(u) + s*math.Sin(u), math.Sin(u) - s*math.Cos(u)}, 1e-6)
 	}
 }
+
+// The involute needs only the tangent, so a C¹ curve whose second derivative
+// is unbounded, like |t|^1.5 at 0, has no gaps.
+func TestInvoluteFirstOrder(t *testing.T) {
+	if r := compute(t, request("involute", "t", "abs(t)^1.5", -1, 1)); r.Invalid != 0 {
+		t.Fatalf("%d invalid samples on a C¹ curve, %v", r.Invalid, r.Warnings)
+	}
+}
 func TestInvoluteEvoluteRoundTrip(t *testing.T) {
 	q := request("evolute", "cos(t)+t*sin(t)", "sin(t)-t*cos(t)", .1, 6)
 	r := compute(t, q)

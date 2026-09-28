@@ -422,7 +422,7 @@ assert.match(
 // A circle through the center of inversion maps to a line, open where the
 // circle passes through the center; the pedal of an ellipse about its center
 // inverts into the reciprocal ellipse a²x² + b²y² = 1.
-const inversion = { center: { x: 0, y: 0 }, radius: 2, of: "curve" };
+const inversion = { center: { x: 0, y: 0 }, radius: 2 };
 const inverted = JSON.parse(
   globalThis.tangentGardenCompute(
     JSON.stringify({
@@ -434,7 +434,7 @@ const inverted = JSON.parse(
   ),
 );
 assert.equal(inverted.inversion.radius, 2);
-assert.equal(inverted.inversion.source, undefined);
+assert.equal(inverted.input, undefined);
 assert.equal(inverted.inversion.breaks.length, 1);
 assert.ok(Math.abs(inverted.inversion.breaks[0] - 500) <= 1);
 inverted.derived.forEach(
@@ -451,11 +451,12 @@ const reciprocal = JSON.parse(
       kind: "inversion",
       curve: { ...config.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
       pole: { x: 0, y: 0 },
-      inversion: { ...inversion, radius: 1, of: "pedal" },
+      input: "pedal",
+      inversion: { ...inversion, radius: 1 },
     }),
   ),
 );
-assert.equal(reciprocal.inversion.source.length, config.samples);
+assert.equal(reciprocal.input.length, config.samples);
 reciprocal.derived.forEach((p) =>
   assert.ok(Math.abs(4 * p.x * p.x + 1.21 * p.y * p.y - 1) < 1e-9),
 );
@@ -470,6 +471,41 @@ assert.match(
     ),
   ).error,
   /inversion radius/,
+);
+// Any construction acts on a derived input: unwinding a string from an
+// ellipse's evolute, starting with the radius of curvature at the domain
+// start, retraces the ellipse. An evolute cannot feed a second-order
+// construction.
+const involute = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "involute",
+      input: "evolute",
+      offset: Math.pow(4 * Math.sin(0.1) ** 2 + Math.cos(0.1) ** 2, 1.5) / 2,
+      curve: {
+        ...config.curve,
+        x: "2*cos(t)",
+        y: "sin(t)",
+        min: 0.1,
+        max: 1.4,
+      },
+    }),
+  ),
+);
+assert.equal(involute.invalid, 0);
+assert.equal(involute.input.length, config.samples);
+involute.derived.forEach((p, j) => {
+  const t = 0.1 + (1.3 * j) / (config.samples - 1);
+  assert.ok(Math.hypot(p.x - 2 * Math.cos(t), p.y - Math.sin(t)) < 1e-6);
+});
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({ ...config, kind: "evolute", input: "evolute" }),
+    ),
+  ).error,
+  /fourth derivative/,
 );
 // The deltoid 2e^{it} + e^{-2it} closes after 2π, with its epicycles chained
 // from the origin; a Lissajous 3:2 figure projects from its two guides.
@@ -783,6 +819,6 @@ const henon = iterated({
 assert.deepEqual([henon.escape, henon.accumulated], [4, 2]);
 assert.match(iterated({ iterates: 5000001 }).error, /accumulate 0–5,000,000/);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, Clifford and Hénon densities, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, an involute of an evolute, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, Clifford and Hénon densities, and invalid JSON passed.",
 );
 process.exit(0);

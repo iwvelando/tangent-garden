@@ -365,7 +365,7 @@ func TestHarmonicConstructionGeometry(t *testing.T) {
 func TestHarmonicConstructions(t *testing.T) {
 	// The inverse of a circle through the center of inversion is a line.
 	q := fourierRequest([]Term{{0, 1, 0}, {1, 1, math.Pi}}, 0, 2*math.Pi)
-	q.Kind, q.Inversion = "inversion", Inversion{Center: Vec{}, Radius: 2, Of: "curve"}
+	q.Kind, q.Inversion = "inversion", Inversion{Center: Vec{}, Radius: 2}
 	// Rounding leaves the samples at t = 0 and 2π a hair off the center, with
 	// images far out along the line.
 	for _, p := range compute(t, q).Derived {

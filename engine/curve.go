@@ -111,7 +111,24 @@ func compile(c Curve) (curveFunc, error) {
 // Five-point Lagrange differentiation. The stencil stays inside the declared
 // domain, including at endpoints; it never assumes the curve is periodic.
 func derivatives(f curveFunc, t, lo, hi float64) (Vec, Vec) {
-	return derivativesAtStep(f, t, lo, hi, (hi-lo)*1e-4)
+	return baseStencil(lo, hi).derivatives(f, t)
+}
+
+// stencil differentiates curves on a domain at spacing h, and checks the
+// result against spacing h/2, to a relative tolerance plus an absolute floor
+// on the first derivative.
+type stencil struct{ lo, hi, h, floor float64 }
+
+// baseStencil is the spacing for curves evaluated directly.
+func baseStencil(lo, hi float64) stencil { return stencil{lo, hi, (hi - lo) * 1e-4, 1e-8} }
+
+// inputStencil checks a derived input, whose rounding is far above a curve's
+// own: its first derivative must agree relatively, with no absolute floor,
+// so a derivative made of rounding, as at a cusp, is never accepted.
+func inputStencil(lo, hi float64) stencil { return stencil{lo, hi, (hi - lo) * 1e-4, 0} }
+
+func (s stencil) derivatives(f curveFunc, t float64) (Vec, Vec) {
+	return derivativesAtStep(f, t, s.lo, s.hi, s.h)
 }
 
 func derivativesAtStep(f curveFunc, t, lo, hi, h float64) (Vec, Vec) {
@@ -144,14 +161,22 @@ func derivativesAtStep(f curveFunc, t, lo, hi, h float64) (Vec, Vec) {
 // Agreement at two step sizes rejects ill-conditioned samples, including poles
 // that floating-point arithmetic lands extremely close to rather than exactly on.
 func stableTangent(f curveFunc, t, lo, hi float64, d Vec) bool {
-	a, _ := derivativesAtStep(f, t, lo, hi, (hi-lo)*5e-5)
-	return a.Valid() && d.Valid() &&
-		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+1e-8
+	return baseStencil(lo, hi).stableTangent(f, t, d)
 }
 
 func stable(f curveFunc, t, lo, hi float64, d, dd Vec) bool {
-	a, b := derivativesAtStep(f, t, lo, hi, (hi-lo)*5e-5)
+	return baseStencil(lo, hi).stable(f, t, d, dd)
+}
+
+func (s stencil) stableTangent(f curveFunc, t float64, d Vec) bool {
+	a, _ := derivativesAtStep(f, t, s.lo, s.hi, s.h/2)
+	return a.Valid() && d.Valid() &&
+		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.floor
+}
+
+func (s stencil) stable(f curveFunc, t float64, d, dd Vec) bool {
+	a, b := derivativesAtStep(f, t, s.lo, s.hi, s.h/2)
 	return a.Valid() && b.Valid() && d.Valid() && dd.Valid() &&
-		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+1e-8 &&
-		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(hi-lo))
+		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.floor &&
+		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(s.hi-s.lo))
 }

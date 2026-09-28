@@ -834,11 +834,11 @@ export function Plot({
           opacity=".85"
         />
       )}
-      {layers.base && inversion?.source && (
+      {layers.base && result.input && (
         <path
-          data-testid="inversion-source"
-          aria-label="Inverted curve"
-          d={path(inversion.source)}
+          data-testid="construction-input"
+          aria-label={`The curve's ${config.input}, which the construction acts on`}
+          d={path(result.input)}
           fill="none"
           stroke={palette.derived}
           strokeWidth="1.5"
@@ -1056,7 +1056,7 @@ export function Plot({
           />
         </g>
       )}
-      {(usesPole(kind) || (inversion && usesPole(config.inversion.of))) && (
+      {(usesPole(kind) || (result.input && usesPole(config.input))) && (
         <g data-testid="pole-point" aria-label="Pole">
           <circle
             cx={xy(config.pole).x}
@@ -1272,9 +1272,10 @@ export function fitFrame(result: Result, config: Config) {
     ...(result.field?.paths ?? []).flatMap((points) => framingPoints(points)),
     ...framingPoints(circleExtents(result.rolling)),
     ...framingPoints(movingExtents(result)),
-    // An inverted derived curve, and the circle of inversion as its own
-    // family: its image can be far smaller or larger than the curve.
-    ...framingPoints(result.inversion?.source ?? []),
+    // A derived input, and the circle of inversion, are their own families:
+    // an input can be far smaller or larger than the curve, and so can an
+    // image.
+    ...framingPoints(result.input ?? []),
     ...framingPoints(circleExtents(result.inversion ? [result.inversion] : [])),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };
@@ -1291,8 +1292,7 @@ export function fitFrame(result: Result, config: Config) {
   points.forEach(include);
   const extent = Math.max(maxX - minX, maxY - minY, 0.1);
   if (
-    (usesPole(config.kind) ||
-      (config.kind === "inversion" && usesPole(config.inversion.of))) &&
+    (usesPole(config.kind) || (result.input && usesPole(config.input))) &&
     Math.hypot(
       config.pole.x - (minX + maxX) / 2,
       config.pole.y - (minY + maxY) / 2,

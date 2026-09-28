@@ -386,6 +386,44 @@ const studies: {
       },
     ],
   },
+  // A derived input shows its own pole or offset distance when the
+  // construction does not.
+  {
+    preset: "Rolling on an ellipse's pedal",
+    cases: [
+      {
+        name: "Pole y",
+        text: "sqrt(2)/10",
+        value: Math.SQRT2 / 10,
+        path: ["pole", "y"],
+      },
+    ],
+  },
+  {
+    preset: "Ellipse & its evolute",
+    setup: async (page: Page) => {
+      await page
+        .getByRole("button", { name: "inversion", exact: true })
+        .click();
+      await page
+        .getByRole("combobox", { name: "Construct on" })
+        .selectOption("offset");
+    },
+    cases: [
+      {
+        name: "Offset distance d",
+        text: "-1/e",
+        value: -1 / Math.E,
+        path: ["distance"],
+      },
+      {
+        name: "Inversion radius R",
+        text: "sqrt(3)",
+        value: Math.sqrt(3),
+        path: ["inversion", "radius"],
+      },
+    ],
+  },
   {
     preset: "Clifford attractor",
     setup: (page: Page) =>

@@ -34,7 +34,7 @@ async function progress(page: Page) {
 const field = (page: Page, name: string) =>
   page.getByLabel(name, { exact: true });
 const source = (page: Page) =>
-  page.getByRole("combobox", { name: "Invert", exact: true });
+  page.getByRole("combobox", { name: "Construct on", exact: true });
 const segments = (page: Page) => page.getByTestId("inversion-segment");
 const image = (page: Page) => page.getByTestId("derived-curve");
 const scale = async (page: Page) =>
@@ -73,17 +73,15 @@ const point = (x: number, y = 0): Vec => ({ x, y });
 test("the inversion presets invert a curve, a roulette, and a pedal; their parameters animate", () => {
   const lemniscate = preset(title);
   expect(lemniscate.kind).toBe("inversion");
-  expect(lemniscate.inversion).toEqual({
-    center: { x: 0, y: 0 },
-    radius: 2,
-    of: "curve",
-  });
+  expect(lemniscate.inversion).toEqual({ center: { x: 0, y: 0 }, radius: 2 });
+  expect(lemniscate.input).toBe("curve");
   expect(lemniscate.curve).toMatchObject({ x: "1/cos(t)", y: "tan(t)" });
   const rosette = preset("Hypotrochoid, turned inside out");
   expect(rosette.curve.format).toBe("roulette");
-  expect(rosette.inversion.of).toBe("curve");
+  expect(rosette.input).toBe("curve");
   const reciprocal = preset("An ellipse's pedal, inverted");
-  expect(reciprocal.inversion).toMatchObject({ of: "pedal", radius: 1 });
+  expect(reciprocal.input).toBe("pedal");
+  expect(reciprocal.inversion.radius).toBe(1);
   // Inverting about the pole gives the polar reciprocal.
   expect(reciprocal.inversion.center).toEqual(reciprocal.pole);
   // Every preset carries an inversion, so switching tabs has one to use.
@@ -96,10 +94,7 @@ test("the inversion presets invert a curve, a roulette, and a pedal; their param
   ]);
   expect(availableTargets(lemniscate)).not.toContain("poleX");
   expect(availableTargets(reciprocal)).toContain("poleX");
-  const offset: Config = {
-    ...lemniscate,
-    inversion: { ...lemniscate.inversion, of: "offset" },
-  };
+  const offset: Config = { ...lemniscate, input: "offset" };
   expect(availableTargets(offset)).toContain("distance");
   const tracks = [
     { target: "inversionRadius" as const, from: 1, to: 2 * Math.PI },
@@ -107,11 +102,7 @@ test("the inversion presets invert a curve, a roulette, and a pedal; their param
     { target: "inversionY" as const, from: 0, to: 0.1 },
   ];
   const end = applyTracks(lemniscate, tracks, 1, 1).config.inversion;
-  expect(end).toEqual({
-    center: { x: -Math.E, y: 0.1 },
-    radius: 2 * Math.PI,
-    of: "curve",
-  });
+  expect(end).toEqual({ center: { x: -Math.E, y: 0.1 }, radius: 2 * Math.PI });
   expect(lemniscate.inversion.radius).toBe(2);
 });
 
@@ -125,17 +116,13 @@ const inverted = (breaks: number[]): Result => ({
   rolling: [],
   warnings: [],
   invalid: 0,
-  inversion: {
-    center: point(0),
-    radius: 20,
-    source: [point(0, 2), point(1, 2), point(2, 2), point(3, 2)],
-    breaks,
-  },
+  inversion: { center: point(0), radius: 20, breaks },
+  input: [point(0, 2), point(1, 2), point(2, 2), point(3, 2)],
 });
 
 test("reveal keeps the circle and breaks; framing includes the circle and the inverted curve", () => {
   const half = reveal(inverted([2]), 0.5);
-  expect(half.inversion!.source).toEqual([point(0, 2), point(1, 2)]);
+  expect(half.input).toEqual([point(0, 2), point(1, 2)]);
   expect(half.inversion!.breaks).toEqual([2]);
   expect(half.inversion!.radius).toBe(20);
   const config = preset(title);
@@ -212,13 +199,13 @@ test("the inverted curve can be a derived curve, with its own parameters, and in
   await page.getByRole("button", { name: "inversion", exact: true }).click();
   await settled(page);
   await expect(source(page)).toHaveValue("curve");
-  await expect(page.getByTestId("inversion-source")).toHaveCount(0);
+  await expect(page.getByTestId("construction-input")).toHaveCount(0);
   await expect(field(page, "Pole x")).toHaveCount(0);
   await source(page).selectOption("pedal");
   await settled(page);
   await expect(field(page, "Pole x")).toBeVisible();
-  await expect(page.getByTestId("inversion-source")).toHaveCount(1);
-  expect((await definition(page)).inversion.of).toBe("pedal");
+  await expect(page.getByTestId("construction-input")).toHaveCount(1);
+  expect((await definition(page)).input).toBe("pedal");
   await source(page).selectOption("offset");
   await settled(page);
   await expect(field(page, "Pole x")).toHaveCount(0);
@@ -227,7 +214,7 @@ test("the inverted curve can be a derived curve, with its own parameters, and in
   expect((await definition(page)).distance).toBe(0.5);
   await source(page).selectOption("evolute");
   await settled(page);
-  await expect(page.getByTestId("inversion-source")).toHaveCount(1);
+  await expect(page.getByTestId("construction-input")).toHaveCount(1);
   await field(page, "Inversion radius R").fill("0");
   await expect(page.getByRole("alert")).toContainText("inversion radius");
   await field(page, "Inversion radius R").fill("2");
@@ -263,14 +250,16 @@ test("an exported inversion keeps its circle, segments, and definition", async (
   const download = page.waitForEvent("download");
   await exportImage(page, "SVG");
   const file = await download;
-  expect(file.suggestedFilename()).toBe("tangent-garden-inversion.svg");
+  expect(file.suggestedFilename()).toBe(
+    "tangent-garden-inversion-of-pedal.svg",
+  );
   const svg = await readFile((await file.path())!, "utf8");
   const exported = await page.evaluate((s) => {
     const doc = new DOMParser().parseFromString(s, "image/svg+xml");
     return {
       config: JSON.parse(doc.querySelector("desc")!.textContent!),
       circle: doc.querySelectorAll('[data-testid="inversion-circle"]').length,
-      source: doc.querySelectorAll('[data-testid="inversion-source"]').length,
+      source: doc.querySelectorAll('[data-testid="construction-input"]').length,
       segments: doc.querySelectorAll('[data-testid="inversion-segment"]')
         .length,
     };

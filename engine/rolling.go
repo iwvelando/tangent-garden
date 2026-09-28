@@ -72,3 +72,90 @@ func (c Roller) at(p, d Vec, s float64) Rolling {
 	arm := toContact.Mul(cos).Add(toContact.Perp().Mul(sin))
 	return Rolling{Center: center, Radius: c.Radius, Contact: p, Point: center.Add(arm.Mul(c.Arm))}
 }
+
+// stationary is the speed below which a curve has no tangent to roll along.
+const stillSpeed = 1e-9
+
+// travel is a rolling shape's progress along g. At a cusp the direction of
+// travel reverses; the shape stays on its side of the curve and rolls back
+// out, turning the other way. So it is placed with the heading, the tangent
+// with its reversals undone, and the signed arc length, which runs backward
+// after an odd number of cusps: the circle's center, turn, and tracing point
+// stay continuous through each cusp.
+type travel struct {
+	g       curveFunc
+	lo, hi  float64
+	heading Vec     // the last tangent with a direction, as travelled
+	at      float64 // where it was taken
+	known   bool
+	orient  float64 // +1, or −1 after an odd number of cusps
+	arc     float64 // signed arc length from the domain start
+	cusps   int
+}
+
+func newTravel(g curveFunc, lo, hi float64) *travel {
+	return &travel{g: g, lo: lo, hi: hi, orient: 1}
+}
+
+// note records a tangent d at t, locating a cusp by bisection when it
+// points against the heading. It returns the cusp, or NaN.
+func (v *travel) note(t float64, d Vec) float64 {
+	if !(d.Norm() > stillSpeed) {
+		return math.NaN()
+	}
+	cusp := math.NaN()
+	if v.known && v.heading.Dot(d) < 0 {
+		u0, u1 := v.at, t
+		for i := 0; i < 200; i++ {
+			m := u0 + (u1-u0)/2
+			if m <= u0 || m >= u1 {
+				break
+			}
+			if dm, _ := derivatives(v.g, m, v.lo, v.hi); dm.Dot(v.heading) > 0 {
+				u0 = m
+			} else {
+				u1 = m
+			}
+		}
+		cusp = u0 + (u1-u0)/2
+	}
+	v.heading, v.at, v.known = d, t, true
+	return cusp
+}
+
+// step advances from t−h to t, where g′ is a, b (at t − h/2), and d. Simpson
+// arc length is split at each cusp between them, and its sign turned there.
+// It reports whether the arc length stays finite.
+func (v *travel) step(t, h float64, a, b, d Vec) bool {
+	ts := [3]float64{t - h, t - h/2, t}
+	var cuts []float64
+	for k, w := range [3]Vec{a, b, d} {
+		if c := v.note(ts[k], w); !math.IsNaN(c) {
+			cuts = append(cuts, c)
+		}
+	}
+	if len(cuts) == 0 {
+		inc := h / 6 * (a.Norm() + 4*b.Norm() + d.Norm())
+		v.arc += v.orient * inc
+		return finite(inc)
+	}
+	x := ts[0]
+	piece := func(c float64) bool {
+		// A cusp located from a heading before this step lies at its start.
+		c = math.Max(x, math.Min(c, t))
+		sa, _ := derivatives(v.g, x, v.lo, v.hi)
+		sb, _ := derivatives(v.g, x+(c-x)/2, v.lo, v.hi)
+		sc, _ := derivatives(v.g, c, v.lo, v.hi)
+		inc := (c - x) / 6 * (sa.Norm() + 4*sb.Norm() + sc.Norm())
+		v.arc += v.orient * inc
+		x = c
+		return finite(inc)
+	}
+	for _, c := range cuts {
+		if !piece(c) {
+			return false
+		}
+		v.orient, v.cusps = -v.orient, v.cusps+1
+	}
+	return piece(t)
+}
