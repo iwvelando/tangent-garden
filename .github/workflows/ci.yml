@@ -30,6 +30,13 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       # Runs against the production build in dist/, under the production CSP.
       - run: npx playwright test
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chromium-test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
       - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -62,6 +69,24 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
       - run: make test-webkit
+      # A "Page crashed" failure leaves no trace in the log. macOS writes the
+      # WebContent crash or jetsam (memory) report here, which tells an engine
+      # crash from memory pressure on the runner.
+      - if: failure()
+        run: |
+          mkdir -p test-results/crash-reports
+          for dir in ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports; do
+            find "$dir" -maxdepth 1 -type f -mmin -30 \( -name '*WebKit*' -o -name '*WebContent*' -o -name 'JetsamEvent*' -o -name '*pw_run*' \) \
+              -exec cp {} test-results/crash-reports/ \; 2>/dev/null || true
+          done
+          ls -la test-results/crash-reports
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webkit-test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Publishes the exact build that passed `check` (and `webkit`). Hosting is managed in
   # iwvelando/cloud-accounts (sites/tangent-garden.isaacvelando.com). Only this job

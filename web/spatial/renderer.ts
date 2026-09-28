@@ -8,7 +8,22 @@ export type View = Bounds3 & {
   panY: number;
 };
 export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
-export type Layers = { surface: boolean; rulings: boolean; edges: boolean };
+// Surface, rulings, and edges belong to the tangent developable; filaments
+// and strings to the involute. The base curve is always drawn.
+export type Layers = {
+  surface: boolean;
+  rulings: boolean;
+  edges: boolean;
+  filaments: boolean;
+  strings: boolean;
+};
+export const defaultLayers: Layers = {
+  surface: true,
+  rulings: true,
+  edges: true,
+  filaments: true,
+  strings: true,
+};
 const vertexSource = `
 attribute vec3 position;
 attribute vec3 normal;
@@ -38,7 +53,15 @@ void main() {
   vec3 teal = mix(vec3(0.30,0.62,0.56),vec3(0.23,0.70,0.67),dark);
   vec3 gold = mix(vec3(0.90,0.66,0.36),vec3(0.94,0.65,0.31),dark);
   vec3 color = mix(teal,gold,blend);
-  if (ink > 0.5) {
+  if (ink > 3.5) {
+    // Unwinding strings recede toward the background behind the filaments.
+    color = mix(vec3(0.58,0.66,0.63),vec3(0.24,0.37,0.37),dark);
+  } else if (ink > 2.5) {
+    // Involute filaments: deep teal drifting toward gold across a family by
+    // member position (decorative, not a measured quantity).
+    vec3 deep = mix(vec3(0.66,0.40,0.12),gold,dark);
+    color = mix(mix(vec3(0.04,0.38,0.36),vec3(0.40,0.88,0.80),dark),deep,0.7*U);
+  } else if (ink > 0.5) {
     if (ink < 1.5) color = mix(vec3(0.10,0.30,0.29),vec3(0.63,0.89,0.83),dark);
     else color = mix(vec3(0.50,0.25,0.09),vec3(1.0,0.87,0.58),dark);
   } else {
@@ -95,7 +118,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     mode: number;
     ink: number;
   };
-  let mesh: Batch, base: Batch, minus: Batch, plus: Batch, rulings: Batch;
+  let mesh: Batch,
+    base: Batch,
+    minus: Batch,
+    plus: Batch,
+    rulings: Batch,
+    filaments: Batch,
+    strings: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -104,16 +133,38 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl!.bufferData(gl!.ARRAY_BUFFER, new Float32Array(data), gl!.STATIC_DRAW);
     return { buffer, count: data.length / 7, mode, ink };
   }
-  function path(points: (Vec3 | null)[], breaks: boolean[], ink: number) {
-    const pairs: Vec3[] = [];
+  function pairs(points: (Vec3 | null)[], breaks: boolean[]) {
+    const out: Vec3[] = [];
     for (let i = 1; i < points.length; i++)
       if (points[i - 1] && points[i] && !breaks[i])
-        pairs.push(points[i - 1]!, points[i]!);
-    return batch(
-      pairs.flatMap((p) => [p.x, p.y, p.z, 0, 0, 1, 0]),
-      gl!.LINES,
-      ink,
-    );
+        out.push(points[i - 1]!, points[i]!);
+    return out;
+  }
+  const vertices = (points: Vec3[], phase = 0) =>
+    points.flatMap((p) => [p.x, p.y, p.z, 0, 0, 1, phase]);
+  function path(points: (Vec3 | null)[], breaks: boolean[], ink: number) {
+    return batch(vertices(pairs(points, breaks)), gl!.LINES, ink);
+  }
+  // Every member shares the base's breaks: arc length never crosses one, so
+  // a member has no points beyond it. A collapsed member (a line's involute)
+  // is one point, marked by a small three-axis cross sized to the study.
+  function filamentBatch(result: SpatialResult) {
+    const members = result.involute?.members ?? [];
+    const arm = result.bounds.radius * 0.025;
+    const data = members.flatMap((m, k) => {
+      const phase = members.length > 1 ? k / (members.length - 1) : 0;
+      const at = m.points.find((p) => p);
+      if (m.collapsed && at)
+        return vertices(
+          (["x", "y", "z"] as const).flatMap((axis) => [
+            { ...at, [axis]: at[axis] - arm },
+            { ...at, [axis]: at[axis] + arm },
+          ]),
+          phase,
+        );
+      return vertices(pairs(m.points, result.breaks), phase);
+    });
+    return batch(data, gl!.LINES, 3);
   }
   function upload(result: SpatialResult) {
     buffers.splice(0).forEach((b) => gl!.deleteBuffer(b));
@@ -139,6 +190,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         .flatMap((p) => [p.x, p.y, p.z, 0, 0, 1, 0]),
       gl!.LINES,
       1,
+    );
+    filaments = filamentBatch(result);
+    strings = batch(
+      vertices((result.involute?.strings ?? []).flatMap((r) => [r.from, r.to])),
+      gl!.LINES,
+      4,
     );
   }
   function draw(
@@ -218,6 +275,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       render(minus);
       render(plus);
     }
+    if (layers.strings) render(strings);
+    if (layers.filaments) render(filaments);
     render(base);
   }
   return {

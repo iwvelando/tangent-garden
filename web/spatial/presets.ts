@@ -1,6 +1,12 @@
 import type { SpatialConfig } from "./types";
 const base: SpatialConfig = {
   format: "torus",
+  construction: "developable",
+  involute: {
+    anchor: 0,
+    offset: 0,
+    family: { enabled: false, from: -2, to: 2, count: 5 },
+  },
   radius: 2.4,
   tube: 0.85,
   length: 2.3,
@@ -69,6 +75,46 @@ export const spatialPresets: {
         min: 0,
         max: 2 * Math.PI,
       },
+    },
+  },
+  {
+    name: "Unwinding a staircase",
+    detail: "Taut strings peel stacked spirals off a helix",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "involute",
+      involute: {
+        anchor: 0,
+        offset: 0,
+        family: { enabled: true, from: -4, to: 4, count: 9 },
+      },
+      lines: 32,
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t",
+        a: 1,
+        min: -Math.PI,
+        max: Math.PI,
+      },
+    },
+  },
+  {
+    name: "A knot shedding filaments",
+    detail: "Seven strings unwound from a (3, 4) knot",
+    config: {
+      ...base,
+      p: 3,
+      q: 4,
+      tube: 1.1,
+      construction: "involute",
+      involute: {
+        anchor: 0,
+        offset: 0,
+        family: { enabled: true, from: 0, to: 6, count: 7 },
+      },
+      lines: 30,
     },
   },
 ];

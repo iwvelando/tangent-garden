@@ -59,10 +59,20 @@ self.onmessage = async ({
       return;
     }
     if (data.action === "spatial") {
+      // JSON turns NaN into null, which Go would read as zero: refuse it here.
+      const involute = data.spatial?.construction === "involute",
+        family = data.spatial?.involute.family;
       if (
         !data.spatial ||
         ![
-          data.spatial.length,
+          ...(involute
+            ? [
+                data.spatial.involute.anchor,
+                ...(family!.enabled
+                  ? [family!.from, family!.to, family!.count]
+                  : [data.spatial.involute.offset]),
+              ]
+            : [data.spatial.length]),
           data.spatial.samples,
           data.spatial.lines,
           ...(data.spatial.format === "parametric"
@@ -84,7 +94,9 @@ self.onmessage = async ({
         !Number.isInteger(data.spatial.samples) ||
         !Number.isInteger(data.spatial.lines)
       )
-        throw new Error("Samples and tangent lines must be whole numbers.");
+        throw new Error("Sample and line counts must be whole numbers.");
+      if (involute && family!.enabled && !Number.isInteger(family!.count))
+        throw new Error("The number of involutes must be a whole number.");
       const result = JSON.parse(
         tangentGardenSpatial(JSON.stringify(data.spatial)),
       );

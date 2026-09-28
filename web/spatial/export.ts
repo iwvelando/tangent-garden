@@ -40,7 +40,7 @@ export async function imageFile(
         .replaceAll(">", "&gt;");
     return new Blob(
       [
-        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — spatial tangent developable</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${frame.config.construction === "involute" ? "spatial involutes" : "spatial tangent developable"}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
       ],
       { type: "image/svg+xml" },
     );

@@ -882,4 +882,48 @@ assert.equal(spatialCustom.mesh.at(-1).sampleIndex, 480);
 assert.equal(spatialCustom.rulings.at(-1).sampleIndex, 480);
 assert.ok(spatialCustom.bounds.radius > 2);
 console.log("Spatial custom-expression WASM bridge passed.");
+// Helix involute family: s = k t with k = √(4 + 1/9); each member lies in
+// the plane z = c/(3k), with its string reaching back to the curve.
+const helixInvolute = (involute) =>
+  JSON.parse(
+    globalThis.tangentGardenSpatial(
+      JSON.stringify({
+        format: "parametric",
+        construction: "involute",
+        involute,
+        curve: {
+          x: "2*cos(t)",
+          y: "2*sin(t)",
+          z: "t/3",
+          a: 1,
+          min: 0,
+          max: 2 * Math.PI,
+        },
+        samples: 480,
+        lines: 25,
+      }),
+    ),
+  );
+const unwound = helixInvolute({
+  anchor: 0,
+  offset: 0,
+  family: { enabled: true, from: -1, to: 2, count: 4 },
+});
+const speed = Math.sqrt(4 + 1 / 9);
+[-1, 0, 1, 2].forEach((c, k) =>
+  assert.ok(Math.abs(unwound.involute.members[k].offset - c) < 1e-15),
+);
+for (const member of unwound.involute.members)
+  for (const p of member.points)
+    assert.ok(Math.abs(p.z - member.offset / (3 * speed)) < 1e-9);
+assert.equal(unwound.involute.strings.length, 25);
+assert.equal(unwound.involute.unreached, 0);
+assert.equal(unwound.mesh.length, 0);
+assert.equal(unwound.rulings.length, 0);
+assert.ok(unwound.bounds.radius > speed * 2 * Math.PI - 2);
+assert.match(
+  helixInvolute({ anchor: 7, offset: 0, family: { enabled: false } }).error,
+  /anchor/,
+);
+console.log("Spatial involute-family WASM bridge passed.");
 process.exit(0);

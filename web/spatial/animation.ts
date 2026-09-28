@@ -10,7 +10,19 @@ export type { Frame };
 export type Viewport = View;
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 export type Target =
-  "a" | "min" | "max" | "radius" | "tube" | "length" | "samples" | "lines";
+  | "a"
+  | "min"
+  | "max"
+  | "radius"
+  | "tube"
+  | "length"
+  | "anchor"
+  | "offset"
+  | "from"
+  | "to"
+  | "count"
+  | "samples"
+  | "lines";
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
 export type AnimationView = {
@@ -29,16 +41,47 @@ export const targetLabels: Record<Target, string> = {
   radius: "Major radius R",
   tube: "Minor radius r",
   length: "Tangent reach L",
+  anchor: "Anchor t₀",
+  offset: "String length c",
+  from: "Family c from",
+  to: "Family c to",
+  count: "Involutes",
   samples: "Curve samples",
   lines: "Tangent lines",
 };
-export const integerTargets: Target[] = ["samples", "lines"];
-export const availableTargets = (c: SpatialConfig): Target[] =>
-  c.format === "parametric"
-    ? ["a", "length", "min", "max", "samples", "lines"]
-    : ["length", "radius", "tube", "samples", "lines"];
+export const targetLabel = (c: SpatialConfig, t: Target) =>
+  t === "lines" && c.construction === "involute"
+    ? "Unwinding strings"
+    : targetLabels[t];
+export const integerTargets: Target[] = ["samples", "lines", "count"];
+const curveTargets = ["a", "min", "max"] as const;
+const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
+type CurveTarget = (typeof curveTargets)[number];
+type InvoluteTarget = (typeof involuteTargets)[number];
+const isCurve = (t: Target): t is CurveTarget =>
+  (curveTargets as readonly Target[]).includes(t);
+const isInvolute = (t: Target): t is InvoluteTarget =>
+  (involuteTargets as readonly Target[]).includes(t);
+// Animating the anchor or c recomputes the whole arc length in Go for every
+// frame, so a track never reuses a prefix measured from another anchor.
+export const availableTargets = (c: SpatialConfig): Target[] => {
+  const construction: Target[] =
+    c.construction === "involute"
+      ? c.involute.family.enabled
+        ? ["from", "to", "count", "anchor"]
+        : ["offset", "anchor"]
+      : ["length"];
+  const curve: Target[] =
+    c.format === "parametric" ? ["a", "min", "max"] : ["radius", "tube"];
+  return c.format === "parametric"
+    ? [curve[0], ...construction, ...curve.slice(1), "samples", "lines"]
+    : [...construction, ...curve, "samples", "lines"];
+};
 export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
-  return t === "a" || t === "min" || t === "max" ? c.curve[t] : c[t];
+  if (isCurve(t)) return c.curve[t];
+  if (t === "anchor" || t === "offset") return c.involute[t];
+  if (isInvolute(t)) return c.involute.family[t];
+  return c[t];
 }
 export function applyTracks(
   base: SpatialConfig,
@@ -51,8 +94,10 @@ export function applyTracks(
   for (const t of tracks) {
     let v = t.from * (1 - p) + t.to * p;
     if (integerTargets.includes(t.target)) v = Math.round(v);
-    if (t.target === "a" || t.target === "min" || t.target === "max")
-      config.curve[t.target] = v;
+    if (isCurve(t.target)) config.curve[t.target] = v;
+    else if (t.target === "anchor" || t.target === "offset")
+      config.involute[t.target] = v;
+    else if (isInvolute(t.target)) config.involute.family[t.target] = v;
     else config[t.target] = v;
   }
   return { config, length: config.length };
@@ -114,6 +159,16 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
   const base = result.base.slice(0, last + 1),
     minus = result.minus.slice(0, last + 1),
     plus = result.plus.slice(0, last + 1);
+  // The involute keeps its anchor and final integration grid: reveal only
+  // truncates the already-measured filaments, never re-measures a prefix.
+  const involute = result.involute && {
+    ...result.involute,
+    members: result.involute.members.map((m) => ({
+      ...m,
+      points: m.points.slice(0, last + 1),
+    })),
+    strings: result.involute.strings.filter((r) => r.sampleIndex <= last),
+  };
   return {
     ...result,
     base,
@@ -122,7 +177,10 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     breaks: result.breaks.slice(0, last + 1),
     mesh: result.mesh.filter((v) => v.sampleIndex <= last),
     rulings: result.rulings.filter((r) => r.sampleIndex <= last),
-    bounds: fitBounds(base, minus, plus),
+    involute,
+    bounds: involute
+      ? fitBounds(base, ...involute.members.map((m) => m.points))
+      : fitBounds(base, minus, plus),
   };
 }
 export function animationCamera(view: AnimationView): View {

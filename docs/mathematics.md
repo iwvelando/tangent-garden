@@ -292,6 +292,24 @@ Midpoint checks, tangent reversals, and chord-versus-local-speed checks mark int
 
 Camera fitting treats the base and each boundary as independent point families, rejects isolated asymptotic extremes using outer Tukey fences, and combines the retained extrema before computing a bounding sphere. Reveal uses the same policy on the retained prefix. Fitting is heuristic; Hold current view and manual pan/zoom provide access to distant branches. Animation interpolates inputs only, never output triangles across changing singularities.
 
+## Spatial involute
+
+For a regular space curve r(t) with unit tangent `T = r′/|r′|`, choose an anchor t₀ inside the domain and a signed string length c. With the signed arc length `s(t) = ∫[t₀,t] |r′(v)| dv` (negative before the anchor), the involute is
+
+`I_c(t) = r(t) + (c − s(t)) T(t)`.
+
+Think of a string of length c held taut along the tangent at the anchor and unwound as the contact point moves: its free end traces I_c. The segment from r to I_c lies on the tangent line and has length `|c − s|`; these are the drawn **unwinding strings**. Since `dI_c/ds = (c − s) dT/ds` and `T · dT/ds = 0`, the filament's tangent is perpendicular to T wherever it is regular, so every filament crosses the strings at right angles. Where `s = c` the string has run out: the filament touches the curve and has a cusp. That point is kept, not rejected for its vanishing derivative. A straight line's involute is a single point (`r(t₀) + cT`), drawn as a small three-axis cross and reported as collapsed.
+
+**Relation to the planar involute.** The planar notebook writes `I = r − (s + c_planar)T` with arc length from the domain start. With t₀ at the domain start the two agree when `c = −c_planar`; the spatial convention makes c the string's length at the anchor and places the cusp at `s = c`. The anchor and c are part of the study: changing t₀ changes every filament.
+
+**Arc length.** Only a stable nonzero first derivative is needed, from the torus generator's analytic derivative or the bounded five-point stencils used for custom curves. Arc length uses Simpson's rule on each sample interval from the speeds at its ends and midpoint, so it converges at fourth order. The anchor's own interval is split at t₀ with Simpson's rule on each part. Accumulation proceeds outward from the anchor on both sides and stops at the first invalid sample or interval break (a pole, stationary point, tangent reversal, or chord inconsistent with the local speed, as in the developable); every regular sample beyond it is **unreached** and has no filament point, and a note counts them. Arc length is never carried across a gap, and no restart with a new anchor is invented. An anchor outside the domain, at an invalid point, or in a broken interval is refused with an explicit error. On a closed torus knot the curve closes but its involutes generally do not: with the anchor at 0 the full length ℓ of the knot accumulates across the domain, so the last point is `r(2π) + (c − ℓ)T`, not the first.
+
+**Families.** A family replaces c with `count` lengths `c_k = from·(1 − k/(count − 1)) + to·k/(count − 1)`, k = 0…count − 1, so both entered endpoints are exact and a descending range stays descending. Each member is exactly the single involute at its length. A family has 2–24 members and at most 48,000 points in total (members × (samples + 1)); single lengths and family endpoints lie within ±100000. At each representative sample one string runs along the tangent from `r + min(0, from − s, to − s)T` to `r + max(0, from − s, to − s)T`, reaching the curve and crossing every member. Members are indexed like the base samples and share its breaks, so reveal truncates the filaments measured on the final grid from the original anchor and never re-measures a prefix. Parameter animation recomputes the whole arc length in Go for each frame, including when t₀, c, the family range, or the count moves.
+
+**Framing.** The base curve and each member are fitted as independent point families, using the same outer Tukey fences, before combining them, so a short base with a distant filament still frames the filament. Member color drifts from teal toward gold by position in the family; it is decorative and encodes no measured quantity.
+
+**Checks.** On the helix `(2 cos t, 2 sin t, a t/3)`, `s = k(t − t₀)` with `k = √(4 + a²/9)`, and every involute lies in the plane `z = a t₀/3 + c a/(3k)`: an involute of a circle, lifted. Tests compare filaments with this closed form to 10⁻⁸, check `|I − r| = |c − s|`, retain the cusp at `s = c`, and match the planar engine's circle involute with `c = −c_planar`. They also check rigid motions and a regular reparameterization with corresponding anchors, fourth-order convergence of the knot's arc length against an analytic-speed reference, second-order decay of the central chord's component along T, collapsed lines, stopping at stationary points and poles on the far side of the anchor, refused anchors, exact family endpoints and strings that reach every member, independent framing of a short base, and the input bounds. The WebAssembly bridge test checks a helix family's planes and strings.
+
 ## Reference studies
 
 Each of these recipes is a preset, framed independently with equal axis scale. They are mathematical descriptions, not pixel specifications.
@@ -301,6 +319,7 @@ Each of these recipes is a preset, framed independently with equal axis scale. T
 - Pedal: the ellipse `(2 cos t, 1.1 sin t)` about the pole (1.65, 0.3), t ∈ [0, 2π], with 64 projection constructions (**Ellipse & its pedal**).
 - Chords: circle angles t and 4t joined at 200 evenly spaced phases; the chords are drawn, and their envelope is solved separately (**Chords of four**).
 - Pursuit: seven equal-speed pursuers starting on the unit regular heptagon. The exact paths are `exp(−tan(π/7)θ)(cos(θ + 2πj/7), sin(θ + 2πj/7))`, where θ is an angle, not time; the connecting polygons are drawn (**Seven pursuers & an evolute**).
+- Involute family: the helix `(2 cos t, 2 sin t, t)`, t ∈ [−π, π], anchored at t₀ = 0 with nine string lengths c = −4, −3, …, 4. Each member is a lifted circle involute in the plane `z = c/√5` (**Unwinding a staircase**).
 - Clifford density: (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from (0.1, 0.1), discarding 1,000 iterates and accumulating the next 800,000, shaded logarithmically. It illustrates, and does not prove, chaotic dynamics (**Clifford attractor**).
 
 ## References
