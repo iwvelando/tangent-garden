@@ -51,8 +51,11 @@ type NamedTarget =
   | "rate"
   | "shift"
   | "sphereRadius"
-  | "meridians";
-export type Target = NamedTarget | HarmonicTarget;
+  | "meridians"
+  | "escape";
+// One coordinate of a vector field's seed, numbered from 1.
+export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
+export type Target = NamedTarget | HarmonicTarget | SeedTarget;
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
 export type AnimationView = {
@@ -100,6 +103,21 @@ export const targetLabels: Record<NamedTarget, string> = {
   shift: "Shift δ",
   sphereRadius: "Tube radius R",
   meridians: "Meridians",
+  escape: "Escape radius R",
+};
+const subscript = (n: number) =>
+  String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
+export const seedLabel = (n: number, axis: "x" | "y" | "z") =>
+  `Seed ${axis}${subscript(n)}`;
+const isSeed = (t: Target): t is SeedTarget => t.startsWith("seed");
+const seedTarget = (t: Target) => {
+  const match = /^seed(\d+)([XYZ])$/.exec(t);
+  return match
+    ? {
+        index: +match[1] - 1,
+        axis: match[2].toLowerCase() as "x" | "y" | "z",
+      }
+    : null;
 };
 // Framed-construction targets and the FrameConfig field each one moves.
 const frameFields = {
@@ -137,19 +155,25 @@ export const targetLabel = (c: SpatialConfig, t: Target): string => {
     return h.field === "frequency"
       ? harmonicLabels.frequency(h.index + 1)
       : harmonicLabels[h.field](h.index + 1, h.axis!);
-  return t === "lines" && c.construction === "canal"
-    ? "Contact circles"
-    : t === "lines" && c.construction === "ruled"
-      ? "Rulings"
-      : t === "lines" && c.construction === "framed"
-        ? "Frames & cross-lines"
-        : t === "lines" && c.construction === "involute"
-          ? "Unwinding strings"
-          : t === "lines" && c.construction === "inversion"
-            ? "Correspondences"
-            : t === "lines" && usesSpatialPole(c)
-              ? "Projection constructions"
-              : targetLabels[t as NamedTarget];
+  const seed = seedTarget(t);
+  if (seed) return seedLabel(seed.index + 1, seed.axis);
+  return t === "lines" && c.construction === "none"
+    ? c.format === "field"
+      ? "Field arrows"
+      : "Representative samples"
+    : t === "lines" && c.construction === "canal"
+      ? "Contact circles"
+      : t === "lines" && c.construction === "ruled"
+        ? "Rulings"
+        : t === "lines" && c.construction === "framed"
+          ? "Frames & cross-lines"
+          : t === "lines" && c.construction === "involute"
+            ? "Unwinding strings"
+            : t === "lines" && c.construction === "inversion"
+              ? "Correspondences"
+              : t === "lines" && usesSpatialPole(c)
+                ? "Projection constructions"
+                : targetLabels[t as NamedTarget];
 };
 export const integerTargets: Target[] = [
   "samples",
@@ -170,65 +194,79 @@ const isInvolute = (t: Target): t is InvoluteTarget =>
 // frame, so a track never reuses a prefix measured from another anchor.
 export const availableTargets = (c: SpatialConfig): Target[] => {
   const construction: Target[] =
-    c.construction === "canal"
-      ? [
-          "sphereRadius",
-          "angle",
-          "twist",
-          "meridians",
-          "normalX",
-          "normalY",
-          "normalZ",
-        ]
-      : c.construction === "ruled"
-        ? ["shift", "rate"]
-        : c.construction === "framed"
-          ? [
-              "angle",
-              "twist",
-              "width",
-              "distance",
-              "strands",
-              // N₀ only starts the transported frame; Frenet ignores it.
-              ...(c.frame.kind === "rotation-minimizing"
-                ? (["normalX", "normalY", "normalZ"] as const)
-                : []),
-            ]
-          : c.construction === "involute"
-            ? c.involute.family.enabled
-              ? ["from", "to", "count", "anchor"]
-              : ["offset", "anchor"]
-            : c.construction === "inversion"
-              ? [
-                  "centerX",
-                  "centerY",
-                  "centerZ",
-                  "sphere",
-                  ...(usesSpatialPole(c)
-                    ? (["poleX", "poleY", "poleZ"] as const)
-                    : []),
-                ]
-              : usesSpatialPole(c)
-                ? ["poleX", "poleY", "poleZ"]
-                : ["length"];
+    c.construction === "none"
+      ? []
+      : c.construction === "canal"
+        ? [
+            "sphereRadius",
+            "angle",
+            "twist",
+            "meridians",
+            "normalX",
+            "normalY",
+            "normalZ",
+          ]
+        : c.construction === "ruled"
+          ? ["shift", "rate"]
+          : c.construction === "framed"
+            ? [
+                "angle",
+                "twist",
+                "width",
+                "distance",
+                "strands",
+                // N₀ only starts the transported frame; Frenet ignores it.
+                ...(c.frame.kind === "rotation-minimizing"
+                  ? (["normalX", "normalY", "normalZ"] as const)
+                  : []),
+              ]
+            : c.construction === "involute"
+              ? c.involute.family.enabled
+                ? ["from", "to", "count", "anchor"]
+                : ["offset", "anchor"]
+              : c.construction === "inversion"
+                ? [
+                    "centerX",
+                    "centerY",
+                    "centerZ",
+                    "sphere",
+                    ...(usesSpatialPole(c)
+                      ? (["poleX", "poleY", "poleZ"] as const)
+                      : []),
+                  ]
+                : usesSpatialPole(c)
+                  ? ["poleX", "poleY", "poleZ"]
+                  : ["length"];
   const curve: Target[] =
     c.format === "parametric"
       ? ["a", "min", "max"]
-      : c.format === "harmonic"
+      : c.format === "field"
         ? [
-            "c0x",
-            "c0y",
-            "c0z",
-            ...c.harmonic.terms.flatMap((_, k) =>
-              (["Frequency", "Ax", "Ay", "Az", "Bx", "By", "Bz"] as const).map(
-                (field) => `harmonic${k + 1}${field}` as const,
+            "a",
+            ...c.field.seeds.flatMap((_, k) =>
+              (["X", "Y", "Z"] as const).map(
+                (axis) => `seed${k + 1}${axis}` as const,
               ),
             ),
+            "escape",
             "min",
             "max",
           ]
-        : ["radius", "tube"];
-  return c.format === "parametric"
+        : c.format === "harmonic"
+          ? [
+              "c0x",
+              "c0y",
+              "c0z",
+              ...c.harmonic.terms.flatMap((_, k) =>
+                (
+                  ["Frequency", "Ax", "Ay", "Az", "Bx", "By", "Bz"] as const
+                ).map((field) => `harmonic${k + 1}${field}` as const),
+              ),
+              "min",
+              "max",
+            ]
+          : ["radius", "tube"];
+  return c.format === "parametric" || c.format === "field"
     ? [curve[0], ...construction, ...curve.slice(1), "samples", "lines"]
     : [...construction, ...curve, "samples", "lines"];
 };
@@ -254,6 +292,12 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   }
   if ((t === "min" || t === "max") && c.format === "harmonic")
     return c.harmonic[t];
+  if (isSeed(t)) {
+    const seed = seedTarget(t)!;
+    return c.field.seeds[seed.index]?.[seed.axis] ?? NaN;
+  }
+  if (t === "escape") return c.field.escape;
+  if (isCurve(t) && c.format === "field") return c.field[t];
   if (isCurve(t)) return c.curve[t];
   if (t === "anchor" || t === "offset") return c.involute[t];
   if (isInvolute(t)) return c.involute.family[t];
@@ -297,6 +341,13 @@ export function applyTracks(
       config.format === "harmonic"
     )
       config.harmonic[t.target] = v;
+    else if (isSeed(t.target)) {
+      const seed = seedTarget(t.target)!;
+      if (config.field.seeds[seed.index])
+        config.field.seeds[seed.index][seed.axis] = v;
+    } else if (t.target === "escape") config.field.escape = v;
+    else if (isCurve(t.target) && config.format === "field")
+      config.field[t.target] = v;
     else if (isCurve(t.target)) config.curve[t.target] = v;
     else if (t.target === "anchor" || t.target === "offset")
       config.involute[t.target] = v;
@@ -430,7 +481,23 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     meridians: result.canal.meridians.map((m) => m.slice(0, last + 1)),
     breaks: result.canal.breaks.slice(0, last + 1),
   };
-  const generating = harmonicFamilies(harmonic);
+  // Every trajectory is revealed to the same time. An early stop falls
+  // after a path's last known sample, so it is marked only once the reveal
+  // passes the next.
+  const reached = (path: (Vec3 | null)[]) => {
+    let known = path.length - 1;
+    while (known >= 0 && !path[known]) known--;
+    return last >= Math.min(known + 1, path.length - 1);
+  };
+  const field = result.field && {
+    ...result.field,
+    paths: result.field.paths.map((p) => p.slice(0, last + 1)),
+    arrows: result.field.arrows.filter((a) => a.sampleIndex <= last),
+    ends: result.field.ends.map((e, k) =>
+      reached(result.field!.paths[k]) ? e : { ...e, point: null },
+    ),
+  };
+  const generating = [...harmonicFamilies(harmonic), ...(field?.paths ?? [])];
   return {
     ...result,
     base,
@@ -443,6 +510,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     projection,
     inversion,
     harmonic,
+    field,
     frame,
     ruled,
     canal,

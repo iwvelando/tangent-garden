@@ -853,6 +853,39 @@ test("spatial canal radius shares the bounded scalar parser", async ({
   }
 });
 
+test("spatial vector-field seeds, escape and time share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("field");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly string[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  for (const [name, text, value, path] of [
+    ["Seed y₂", "phi/2", phi / 2, ["field", "seeds", "1", "y"]],
+    ["Seed z₁", "-1/e", -1 / Math.E, ["field", "seeds", "0", "z"]],
+    ["Escape radius R", "4*pi", 4 * Math.PI, ["field", "escape"]],
+    ["to", "3*pi", 3 * Math.PI, ["field", "max"]],
+    ["Shape parameter a", "1/phi", 1 / phi, ["field", "a"]],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(path)).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
+
 test("spatial ruled shift and rate share the bounded scalar parser", async ({
   page,
 }) => {

@@ -16,7 +16,8 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // ribbon reuses surface, rulings and edges; the ruled construction reuses
 // surface, rulings and edges, its partner thread drawn as the edge; and the
 // canal construction reuses surface, frames and seam, with its own contact
-// circles and meridians. The base curve is always drawn.
+// circles and meridians; trajectories, arrows and seeds to a vector field
+// under any construction. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -37,6 +38,9 @@ export type Layers = {
   seam: boolean;
   circles: boolean;
   meridians: boolean;
+  trajectories: boolean;
+  arrows: boolean;
+  seeds: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -58,6 +62,9 @@ export const defaultLayers: Layers = {
   seam: true,
   circles: true,
   meridians: true,
+  trajectories: true,
+  arrows: true,
+  seeds: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -178,7 +185,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     seam: Batch,
     circles: Batch,
     spheres: Batch,
-    meridians: Batch;
+    meridians: Batch,
+    trajectories: Batch,
+    arrows: Batch,
+    seeds: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -527,6 +537,56 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       4,
     );
+    // The first trajectory is the base, drawn as such. The others shade from
+    // teal to gold by seed order (decorative), joined wherever both ends of
+    // an interval are known; a trajectory has no break before its end.
+    const flow = result.field;
+    const paths = flow?.paths ?? [];
+    trajectories = batch(
+      paths
+        .slice(1)
+        .flatMap((points, k) =>
+          vertices(
+            pairs(points, []),
+            paths.length > 2 ? k / (paths.length - 2) : 0,
+          ),
+        ),
+      gl!.LINES,
+      3,
+    );
+    // Arrows show the field's direction only: one length, pointing on.
+    const reach = result.bounds.radius * 0.07;
+    arrows = batch(
+      vertices(
+        (flow?.arrows ?? []).flatMap((a) => {
+          const speed = Math.hypot(a.velocity.x, a.velocity.y, a.velocity.z);
+          return along(
+            a.point,
+            {
+              x: a.velocity.x / speed,
+              y: a.velocity.y / speed,
+              z: a.velocity.z / speed,
+            },
+            reach,
+          );
+        }),
+      ),
+      gl!.LINES,
+      4,
+    );
+    // Seeds, and where a trajectory stopped before the end of the interval.
+    seeds = batch(
+      vertices([
+        ...(flow ? result.field!.paths.map((p) => p[0]) : [])
+          .filter((p): p is Vec3 => !!p)
+          .flatMap((p) => cross(p, result.bounds.radius * 0.02)),
+        ...(flow?.ends ?? [])
+          .filter((e) => e.reason !== "end" && e.point)
+          .flatMap((e) => cross(e.point!, result.bounds.radius * 0.012)),
+      ]),
+      gl!.LINES,
+      1,
+    );
   }
   function draw(
     view: View,
@@ -631,7 +691,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (layers.inverse) render(inverse);
     if (layers.vectors) render(vectors);
     if (layers.ellipses) render(ellipses);
+    if (layers.arrows) render(arrows);
+    if (layers.trajectories) render(trajectories);
     render(base);
+    if (layers.seeds) render(seeds);
     if (layers.seam) render(seam);
     if (layers.pole) render(pole);
     if (layers.sphere) render(center);

@@ -27,7 +27,18 @@ func (v Vec3) valid() bool {
 
 type evaluation func(float64) (Vec3, Vec3, Vec3, bool)
 
-func compile(c Request) (evaluation, float64, float64, bool, error) {
+// domain checks a parameter or time interval.
+func domain(lo, hi float64) error {
+	span := hi - lo
+	if !finite(lo) || !finite(hi) || math.Abs(lo) > 1e6 || math.Abs(hi) > 1e6 || span < 1e-6 || span > 1e5 {
+		return fmt.Errorf("domain start must be below end, within ±1000000, with width 0.000001–100000")
+	}
+	return nil
+}
+
+// compile returns the base curve's evaluator. A vector field's base is its
+// first trajectory, from flow, which Compute integrates beforehand.
+func compile(c Request, flow *flowCurve) (evaluation, float64, float64, bool, error) {
 	if c.Format == "" || c.Format == "torus" {
 		gcd := func(a, b int) int {
 			for b != 0 {
@@ -43,13 +54,6 @@ func compile(c Request) (evaluation, float64, float64, bool, error) {
 		}
 		return func(t float64) (Vec3, Vec3, Vec3, bool) { r, v, a := knot(c, t); return r, v, a, true }, 0, 2 * math.Pi, true, nil
 	}
-	domain := func(lo, hi float64) error {
-		span := hi - lo
-		if !finite(lo) || !finite(hi) || math.Abs(lo) > 1e6 || math.Abs(hi) > 1e6 || span < 1e-6 || span > 1e5 {
-			return fmt.Errorf("domain start must be below end, within ±1000000, with width 0.000001–100000")
-		}
-		return nil
-	}
 	if c.Format == "harmonic" {
 		h := c.Harmonic
 		if err := domain(h.Min, h.Max); err != nil {
@@ -60,6 +64,10 @@ func compile(c Request) (evaluation, float64, float64, bool, error) {
 		}
 		_, _, closed := h.closure()
 		return h.evaluate, h.Min, h.Max, closed, nil
+	}
+	if c.Format == "field" {
+		v := c.Field
+		return flow.flows[0].evaluation(flow.f, v.Max-v.Min), v.Min, v.Max, false, nil
 	}
 	if c.Format != "parametric" {
 		return nil, 0, 0, false, fmt.Errorf("unknown spatial curve definition")

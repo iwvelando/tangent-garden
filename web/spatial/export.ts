@@ -47,6 +47,10 @@ export async function imageFile(
       framed: "spatial framed ribbon",
       ruled: "spatial ruled surface",
       canal: "spatial canal surface",
+      none:
+        frame.config.format === "field"
+          ? "spatial vector-field trajectories"
+          : "spatial curve",
     };
     return new Blob(
       [

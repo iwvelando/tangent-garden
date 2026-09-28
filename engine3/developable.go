@@ -31,8 +31,9 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // inversion described by Inversion, or "framed" for the ribbon and offset
 // strands described by Frame, or "ruled" for the surface joining the curve to
 // the partner described by Ruled, or "canal" for the envelope of spheres
-// described by Canal, whose angle is carried by Frame. Length applies only to
-// the developable.
+// described by Canal, whose angle is carried by Frame, or "none" for the
+// curve alone. Length applies only to the developable. Format "field" makes
+// the base the first trajectory of the vector field described by Field.
 type Request struct {
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
@@ -43,6 +44,7 @@ type Request struct {
 	Frame        FrameRequest     `json:"frame"`
 	Ruled        RuledRequest     `json:"ruled"`
 	Canal        CanalRequest     `json:"canal"`
+	Field        FieldRequest     `json:"field"`
 	Curve        Curve            `json:"curve"`
 	Radius       float64          `json:"radius"`
 	Tube         float64          `json:"tube"`
@@ -91,6 +93,8 @@ type Result struct {
 	Canal *CanalResult `json:"canal,omitempty"`
 	// Harmonic is present only for a harmonic curve, under any construction.
 	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
+	// Field is present only for a vector field, under any construction.
+	Field *FieldResult `json:"field,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -125,7 +129,8 @@ func Compute(c Request) (Result, error) {
 	ruled := c.Construction == "ruled"
 	canal := c.Construction == "canal"
 	developable := c.Construction == "" || c.Construction == "developable"
-	if !involute && !projection && !inversion && !framed && !ruled && !canal && !developable {
+	none := c.Construction == "none"
+	if !involute && !projection && !inversion && !framed && !ruled && !canal && !developable && !none {
 		return Result{}, fmt.Errorf("unknown spatial construction")
 	}
 	if developable && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
@@ -157,7 +162,14 @@ func Compute(c Request) (Result, error) {
 			return Result{}, err
 		}
 	}
-	evaluate, lo, hi, closed, err := compile(c)
+	var flow *flowCurve
+	if c.Format == "field" {
+		var err error
+		if flow, err = c.Field.compile(); err != nil {
+			return Result{}, err
+		}
+	}
+	evaluate, lo, hi, closed, err := compile(c, flow)
 	if err != nil {
 		return Result{}, err
 	}
@@ -196,11 +208,11 @@ func Compute(c Request) (Result, error) {
 		scale := math.Max(a.norm(), v.norm()/(hi-lo))
 		if c.Format == "harmonic" {
 			scale = c.Harmonic.curvatureScale()
-		} else if c.Format != "parametric" {
+		} else if c.Format != "parametric" && c.Format != "field" {
 			scale = float64(c.P*c.P)*(c.Radius+c.Tube) + float64(2*c.P*c.Q+c.Q*c.Q)*c.Tube
 		}
 		tolerance := 1e-8
-		if c.Format == "parametric" {
+		if c.Format == "parametric" || c.Format == "field" {
 			tolerance = 1e-6
 		} // numerical second derivatives have a finite noise floor
 		valid[i] = a.valid() && b.norm() > tolerance*v.norm()*scale
@@ -250,14 +262,31 @@ func Compute(c Request) (Result, error) {
 			out.Mesh = append(out.Mesh, a, b, c, b, d, c)
 		}
 	}
-	if out.Invalid == n+1 {
-		return Result{}, fmt.Errorf("no regular finite samples; check the expressions and domain")
-	}
-	// A harmonic curve's generating vectors and ellipses frame as their own
-	// families under every construction.
+	// A harmonic curve's generating vectors and ellipses, and a field's
+	// trajectories, frame as their own families under every construction.
 	var generating [][]*Vec3
 	if c.Format == "harmonic" {
 		out.Harmonic, generating = harmonicGeometry(c, lo, hi)
+	}
+	if c.Format == "field" {
+		out.Field, generating = fieldGeometry(c, flow.f, flow.timed, flow.flows)
+	}
+	if out.Invalid == n+1 {
+		if c.Format != "field" {
+			return Result{}, fmt.Errorf("no regular finite samples; check the expressions and domain")
+		}
+		if !none {
+			return Result{}, fmt.Errorf("trajectory 1 has no regular sample: its seed rests, escapes, or meets a singularity at once; choose another first seed")
+		}
+		if !out.Field.moves() {
+			return Result{}, fmt.Errorf("no trajectory moves; check the field, seeds, and escape radius")
+		}
+	}
+	if none {
+		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
+		out.Bounds = fit(append([][]*Vec3{out.Base}, generating...)...)
+		out.Radius = out.Bounds.Radius
+		return out, nil
 	}
 	if framed {
 		frames(c, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)

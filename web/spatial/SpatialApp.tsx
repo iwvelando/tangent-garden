@@ -15,7 +15,7 @@ import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
-import { animationCamera, type AnimationView } from "./animation";
+import { animationCamera, seedLabel, type AnimationView } from "./animation";
 import {
   maxFrameStrands,
   maxHarmonicTerms,
@@ -23,7 +23,9 @@ import {
   type FrameConfig,
   type RuledConfig,
   type CanalConfig,
+  type FieldConfig,
   maxMeridians,
+  maxSpatialSeeds,
   type HarmonicCurve,
   type SpatialConfig,
   type Frame,
@@ -38,6 +40,7 @@ import { periodText } from "../harmonic";
 import { frameNote } from "./frame";
 import { ruledNote } from "./ruled";
 import { canalNote } from "./canal";
+import { fieldNote, nextSpatialSeed } from "./field";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -148,7 +151,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     await Promise.allSettled([...jobs.current]);
     if (token !== generation.current) return;
     setConfig((c) => {
-      if (format === "torus" || format === "harmonic") return { ...c, format };
+      if (format === "torus" || format === "harmonic" || format === "field")
+        return { ...c, format };
       // Preserve an edited custom definition. A generated knot can also be opened
       // as expressions, with every pending scalar resolved before conversion.
       if (c.format === "parametric" || customOpened) return { ...c, format };
@@ -174,6 +178,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const framed = config.construction === "framed";
   const ruled = config.construction === "ruled";
   const canal = config.construction === "canal";
+  const none = config.construction === "none";
+  const flowing = config.format === "field";
   const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
     update((c) => ({ ...c, canal: change(c.canal) }));
   const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
@@ -344,6 +350,125 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           Trace one full period ({periodText(closure.period).text})
         </button>
       )}
+    </>
+  );
+  const setField = (change: (f: FieldConfig) => FieldConfig) =>
+    update((c) => ({ ...c, field: change(c.field) }));
+  // Adding or removing a seed renumbers the fields after it, so evaluations
+  // still pending for them land first; a preset chosen meanwhile wins.
+  async function editSeeds(
+    change: (seeds: FieldConfig["seeds"]) => FieldConfig["seeds"],
+  ) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    setField((f) => ({ ...f, seeds: change(f.seeds) }));
+  }
+  const flows =
+    frame?.config.format === "field" ? frame.result.field : undefined;
+  const fieldControls = (
+    <>
+      <p className="note">
+        Each trajectory starts at its seed (within ±100,000) when t is at the
+        interval start and follows the field: its velocity at (x, y, z) at time
+        t is (dx/dt, dy/dt, dz/dt). Use <var>x</var>, <var>y</var>, <var>z</var>
+        , <var>t</var>, and <var>a</var>. The first seed&rsquo;s trajectory is
+        the curve a construction uses.
+      </p>
+      {(["x", "y", "z"] as const).map((axis) => (
+        <Field label={`d${axis}/dt`} className="equation" key={axis}>
+          <input
+            value={config.field[axis]}
+            spellCheck={false}
+            onChange={(e) =>
+              setField((f) => ({ ...f, [axis]: e.target.value }))
+            }
+          />
+        </Field>
+      ))}
+      <Field
+        label="Shape parameter a"
+        help="Use a in any of the three expressions, then animate it with a parameter track."
+      >
+        <ScalarInput
+          name="Shape parameter a"
+          value={config.field.a}
+          onChange={(value) => setField((f) => ({ ...f, a: value }))}
+        />
+      </Field>
+      {config.field.seeds.map((seed, i) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`spatial-seed-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`spatial-seed-${i}`}>Seed {i + 1}</span>
+            <button
+              type="button"
+              aria-label={`Remove seed ${i + 1}`}
+              disabled={config.field.seeds.length === 1}
+              onClick={() => void editSeeds((s) => s.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair trio">
+            {(["x", "y", "z"] as const).map((axis) =>
+              vector(seedLabel(i + 1, axis), seed[axis], (value) =>
+                setField((f) => ({
+                  ...f,
+                  seeds: f.seeds.map((s, j) =>
+                    j === i ? { ...s, [axis]: value } : s,
+                  ),
+                })),
+              ),
+            )}
+          </div>
+        </div>
+      ))}
+      <button
+        className="closure"
+        type="button"
+        disabled={config.field.seeds.length >= maxSpatialSeeds}
+        onClick={() => void editSeeds((s) => [...s, nextSpatialSeed(s)])}
+      >
+        {config.field.seeds.length >= maxSpatialSeeds
+          ? "At most 12 seeds"
+          : "Add a seed"}
+      </button>
+      <div className="pair">
+        {(
+          [
+            ["min", "t from"],
+            ["max", "to"],
+          ] as const
+        ).map(([key, label]) => (
+          <Field label={label} key={key}>
+            <ScalarInput
+              name={label}
+              value={config.field[key]}
+              onChange={(value) => setField((f) => ({ ...f, [key]: value }))}
+            />
+          </Field>
+        ))}
+      </div>
+      {vector(
+        "Escape radius R",
+        config.field.escape,
+        (value) => setField((f) => ({ ...f, escape: value })),
+        "A trajectory ends the first time it leaves the sphere of this radius about the origin (0–100,000), so a field that runs off to infinity stops in view. A seed outside the sphere has no path.",
+      )}
+      <p className="note" data-testid="field-note">
+        {flows
+          ? fieldNote(
+              flows,
+              frame!.config.field.min,
+              frame!.config.construction !== "none",
+            )
+          : "Integrating…"}
+      </p>
     </>
   );
   const failure = scalarError
@@ -672,7 +797,58 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </Field>
     </>
   );
-  const behind = canal ? (
+  const behind = none ? (
+    flowing ? (
+      <StudyExplanation
+        label="BEHIND THE FLOW"
+        title="Paths that follow a field."
+        formula={
+          <>
+            r′(t) = V(r(t), t) <span>r(t₀) = seed</span>
+          </>
+        }
+        note="Grey strokes show the field's direction, not its speed, at evenly spaced times; crosses mark the seeds and any trajectory that stops early."
+        diagnostics={
+          shown?.result.field?.ends.some((e) => e.reason !== "end") && (
+            <p className="bottom-note">
+              A trajectory that stops early is never continued: its later
+              samples are left empty.
+            </p>
+          )
+        }
+      >
+        <p>
+          Give every point of space a velocity, and a seed dropped anywhere
+          drifts along it. Its path, the <em>trajectory</em>, has the field as
+          its tangent at every moment. The rising vortex turns its seeds into
+          helices; Lorenz&rsquo;s and Rössler&rsquo;s equations fold them around
+          unstable equilibria, where nearby seeds drift apart. Every path is
+          integrated on its own, to its own error tolerance, and all are shown
+          at the same times, so a reveal grows them together.
+        </p>
+      </StudyExplanation>
+    ) : (
+      <StudyExplanation
+        label="THE CURVE ALONE"
+        title="A curve before any construction."
+        formula={<>r(t) = (x(t), y(t), z(t))</>}
+        note="Choose a construction to build on the curve."
+        diagnostics={
+          shown &&
+          shown.result.invalid > 0 && (
+            <p className="bottom-note">
+              {shown.result.invalid} invalid samples leave gaps in the curve.
+            </p>
+          )
+        }
+      >
+        <p>
+          The gold thread is the curve itself, with nothing built on it. Every
+          construction in this notebook starts here.
+        </p>
+      </StudyExplanation>
+    )
+  ) : canal ? (
     <StudyExplanation
       label="BEHIND THE SPHERES"
       title="A surface that every sphere touches."
@@ -957,10 +1133,15 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <option value="harmonic">
                     Harmonic sum · generating vectors
                   </option>
+                  <option value="field">
+                    Vector field · trajectories r′ = V
+                  </option>
                 </select>
               </Field>
               {config.format === "harmonic" ? (
                 harmonicControls
+              ) : flowing ? (
+                fieldControls
               ) : config.format === "torus" ? (
                 <>
                   {(
@@ -1093,6 +1274,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     Ruled surface · chords & threads
                   </option>
                   <option value="canal">Tube · canal surface</option>
+                  <option value="none">None · the curve alone</option>
                 </select>
               </Field>
               {canal ? (
@@ -1308,7 +1490,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     </Field>
                   )}
                 </>
-              ) : (
+              ) : none ? null : (
                 <Field
                   label="Tangent reach L"
                   help="Half-length of each straight tangent segment, in world units. Greater than 0 and at most 20."
@@ -1327,80 +1509,92 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           <p className="spatial-caption">
             Constant expressions welcome: pi, e, phi.
           </p>
-          <fieldset className="spatial-layers">
-            <legend>Reveal the construction</legend>
-            {[
-              ...(canal
-                ? ([
-                    ["surface", "Canal surface"],
-                    ["circles", "Contact circles"],
-                    ["meridians", "Meridians"],
-                    ["frames", "Frames"],
-                    ...(canalShown?.frame?.closed
-                      ? ([["seam", "Seam"]] as const)
-                      : []),
-                  ] as const)
-                : ruled
-                  ? ([
-                      ["surface", "Ruled surface"],
-                      ["rulings", "Rulings"],
-                      ["edges", "Partner thread"],
-                    ] as const)
-                  : framed
+          {/* The curve alone, unless a field or harmonic, has no layers. */}
+          {!(none && !flowing && config.format !== "harmonic") && (
+            <fieldset className="spatial-layers">
+              <legend>Reveal the construction</legend>
+              {[
+                ...(none
+                  ? []
+                  : canal
                     ? ([
-                        ["surface", "Ribbon surface"],
-                        ["rulings", "Cross-lines"],
-                        ["edges", "Ribbon edges"],
-                        ["strands", "Strands"],
+                        ["surface", "Canal surface"],
+                        ["circles", "Contact circles"],
+                        ["meridians", "Meridians"],
                         ["frames", "Frames"],
-                        ...(frameResult?.closed
+                        ...(canalShown?.frame?.closed
                           ? ([["seam", "Seam"]] as const)
                           : []),
                       ] as const)
-                    : inversion
+                    : ruled
                       ? ([
-                          ["inverse", "Inverted curve"],
-                          ["correspondences", "Correspondence segments"],
-                          ["sphere", "Inversion sphere & center"],
-                          ...(config.inversion.input === "base"
-                            ? []
-                            : ([["source", "Projection & pole"]] as const)),
+                          ["surface", "Ruled surface"],
+                          ["rulings", "Rulings"],
+                          ["edges", "Partner thread"],
                         ] as const)
-                      : projection
+                      : framed
                         ? ([
-                            ["projection", projectionName],
-                            ["connectors", "Perpendiculars & tangent feet"],
-                            ["pole", "Pole marker"],
+                            ["surface", "Ribbon surface"],
+                            ["rulings", "Cross-lines"],
+                            ["edges", "Ribbon edges"],
+                            ["strands", "Strands"],
+                            ["frames", "Frames"],
+                            ...(frameResult?.closed
+                              ? ([["seam", "Seam"]] as const)
+                              : []),
                           ] as const)
-                        : involute
+                        : inversion
                           ? ([
-                              ["filaments", "Involute filaments"],
-                              ["strings", "Unwinding strings"],
+                              ["inverse", "Inverted curve"],
+                              ["correspondences", "Correspondence segments"],
+                              ["sphere", "Inversion sphere & center"],
+                              ...(config.inversion.input === "base"
+                                ? []
+                                : ([["source", "Projection & pole"]] as const)),
                             ] as const)
-                          : ([
-                              ["surface", "Ribbon surface"],
-                              ["rulings", "Tangent rulings"],
-                              ["edges", "Ribbon edges"],
-                            ] as const)),
-              ...(config.format === "harmonic"
-                ? ([
-                    ["vectors", "Vector sums"],
-                    ["ellipses", "Generating ellipses"],
-                  ] as const)
-                : []),
-            ].map(([key, label]) => (
-              <label key={key}>
-                <input
-                  type="checkbox"
-                  checked={layers[key]}
-                  onChange={(e) =>
-                    setLayers((s) => ({ ...s, [key]: e.target.checked }))
-                  }
-                />
-                {label}
-              </label>
-            ))}
-          </fieldset>
+                          : projection
+                            ? ([
+                                ["projection", projectionName],
+                                ["connectors", "Perpendiculars & tangent feet"],
+                                ["pole", "Pole marker"],
+                              ] as const)
+                            : involute
+                              ? ([
+                                  ["filaments", "Involute filaments"],
+                                  ["strings", "Unwinding strings"],
+                                ] as const)
+                              : ([
+                                  ["surface", "Ribbon surface"],
+                                  ["rulings", "Tangent rulings"],
+                                  ["edges", "Ribbon edges"],
+                                ] as const)),
+                ...(config.format === "harmonic"
+                  ? ([
+                      ["vectors", "Vector sums"],
+                      ["ellipses", "Generating ellipses"],
+                    ] as const)
+                  : []),
+                ...(flowing
+                  ? ([
+                      ["trajectories", "Other trajectories"],
+                      ["arrows", "Field directions"],
+                      ["seeds", "Seeds & early stops"],
+                    ] as const)
+                  : []),
+              ].map(([key, label]) => (
+                <label key={key}>
+                  <input
+                    type="checkbox"
+                    checked={layers[key]}
+                    onChange={(e) =>
+                      setLayers((s) => ({ ...s, [key]: e.target.checked }))
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          )}
           <details className="spatial-details">
             <summary>Sampling & definition</summary>
             <Field label="Curve samples">
@@ -1417,19 +1611,23 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             </Field>
             <Field
               label={
-                canal
-                  ? "Contact circles"
-                  : ruled
-                    ? "Rulings"
-                    : framed
-                      ? "Frames & cross-lines"
-                      : inversion
-                        ? "Correspondences"
-                        : projection
-                          ? "Projection constructions"
-                          : involute
-                            ? "Unwinding strings"
-                            : "Tangent lines"
+                none
+                  ? flowing
+                    ? "Field arrows"
+                    : "Representative samples"
+                  : canal
+                    ? "Contact circles"
+                    : ruled
+                      ? "Rulings"
+                      : framed
+                        ? "Frames & cross-lines"
+                        : inversion
+                          ? "Correspondences"
+                          : projection
+                            ? "Projection constructions"
+                            : involute
+                              ? "Unwinding strings"
+                              : "Tangent lines"
               }
             >
               <input
@@ -1456,7 +1654,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               a second thread is differentiated like a custom curve. A canal
               surface's profile ρ(t) is differentiated the same way, checked at
               each interval's midpoint, and drawn on at most 480 contact
-              circles, always including those beside a gap.
+              circles, always including those beside a gap. A vector
+              field&rsquo;s trajectories are integrated with adaptive
+              Dormand&ndash;Prince steps, each to its own error tolerance and
+              within 50,000 steps, and sampled at the same evenly spaced times;
+              the first one&rsquo;s velocity is the field itself.
             </p>
           </details>
           {failure && (
@@ -1469,7 +1671,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} ${canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
+                : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -1504,19 +1706,23 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {canal
-                  ? "A surface enveloping spheres"
-                  : ruled
-                    ? "A surface of straight threads"
-                    : framed
-                      ? "A ribbon carried by a frame"
-                      : inversion
-                        ? "A curve inverted in a sphere"
-                        : projection
-                          ? projectionName
-                          : involute
-                            ? "Filaments unwound from a curve"
-                            : "A ribbon of tangent lines"}
+                {none
+                  ? flowing
+                    ? "Paths that follow a field"
+                    : "A curve in space"
+                  : canal
+                    ? "A surface enveloping spheres"
+                    : ruled
+                      ? "A surface of straight threads"
+                      : framed
+                        ? "A ribbon carried by a frame"
+                        : inversion
+                          ? "A curve inverted in a sphere"
+                          : projection
+                            ? projectionName
+                            : involute
+                              ? "Filaments unwound from a curve"
+                              : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -1565,21 +1771,26 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             </div>
             <div className="plot-meta">
               <div className="legend">
-                <span className="thread-dot" /> Base curve{" "}
-                <span className="ribbon-dot" />{" "}
-                {canal
-                  ? "Canal surface"
-                  : ruled
-                    ? "Ruled surface"
-                    : framed
-                      ? "Framed ribbon"
-                      : inversion
-                        ? "Inverted curve"
-                        : projection
-                          ? projectionName
-                          : involute
-                            ? "Involute filaments"
-                            : "Tangent developable"}
+                <span className="thread-dot" />{" "}
+                {flowing ? "Trajectory 1" : "Base curve"}{" "}
+                {!(none && !flowing) && <span className="ribbon-dot" />}{" "}
+                {none
+                  ? flowing
+                    ? "Other trajectories"
+                    : ""
+                  : canal
+                    ? "Canal surface"
+                    : ruled
+                      ? "Ruled surface"
+                      : framed
+                        ? "Framed ribbon"
+                        : inversion
+                          ? "Inverted curve"
+                          : projection
+                            ? projectionName
+                            : involute
+                              ? "Involute filaments"
+                              : "Tangent developable"}
               </div>
               <span>
                 {animation

@@ -264,7 +264,7 @@ func TestFieldStepRefinement(t *testing.T) {
 			}
 			d = math.Max(d, p.Sub(spinAt(seed, tk)).Norm())
 		}
-		return d, r.steps()
+		return d, r.Steps()
 	}
 	l, ls := worst(1e-6)
 	m, ms := worst(1e-9)
@@ -325,7 +325,7 @@ func TestFieldStepBudget(t *testing.T) {
 		t.Fatalf("fixed point ends %+v", e)
 	}
 	f, _, _ := VectorField{X: spinX, Y: spinY}.system(0)
-	if s := newTrajectory(f, Seed{1, 0}, 0, 50, 10, fieldTolerance).steps(); s > 20 {
+	if s := newTrajectory(f, Seed{1, 0}, 0, 50, 10, fieldTolerance).Steps(); s > 20 {
 		t.Fatalf("%d steps", s)
 	}
 	r = compute(t, fieldRequest(spinX, spinY, []Seed{{0, 0}, {1, 0}}, 10, 0, 50))

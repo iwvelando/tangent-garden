@@ -74,7 +74,7 @@ func TestHarmonicAnalyticDerivatives(t *testing.T) {
 		HarmonicTerm{Frequency: -3, Cosine: Vec3{0, 0.4, 0.7}, Sine: Vec3{0.2, 0, 0}},
 		HarmonicTerm{Frequency: math.Sqrt2, Cosine: Vec3{0, 0, 0.3}, Sine: Vec3{0.1, 0.1, 0}},
 		HarmonicTerm{Frequency: 0, Cosine: Vec3{1, 1, 1}, Sine: Vec3{9, 9, 9}})
-	evaluate, lo, hi, closed, err := compile(c)
+	evaluate, lo, hi, closed, err := compile(c, nil)
 	if err != nil || lo != -1 || hi != 3 || closed {
 		t.Fatal(lo, hi, closed, err)
 	}

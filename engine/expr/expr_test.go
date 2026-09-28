@@ -143,3 +143,41 @@ func TestFieldVariables(t *testing.T) {
 		t.Error("x no longer aliases t in a curve expression")
 	}
 }
+
+func TestSpatialFieldVariables(t *testing.T) {
+	f, timed, err := ParseSpatialField("x - 2*y + 3*z^2 - t + a", 5)
+	if err != nil || !timed {
+		t.Fatal(err, timed)
+	}
+	if got := f(1, 10, 2, 4); math.Abs(got-(1-20+12-4+5)) > 1e-12 {
+		t.Fatalf("got %g", got)
+	}
+	// Lorenz's third equation reads no time.
+	g, timed, err := ParseSpatialField("x*y - 8/3*z", 0)
+	if err != nil || timed {
+		t.Fatal(err, timed)
+	}
+	if got := g(2, 3, 3, 99); math.Abs(got-(6-8)) > 1e-12 {
+		t.Fatalf("got %g", got)
+	}
+	for s, want := range map[string]bool{"z": false, "t*0": true, "Z*T": true} {
+		if _, timed, _ := ParseSpatialField(s, 0); timed != want {
+			t.Errorf("%s uses t: %v", s, timed)
+		}
+	}
+	for _, s := range []string{"w", "x z", "", "u"} {
+		if _, _, err := ParseSpatialField(s, 0); err == nil {
+			t.Errorf("accepted field %q", s)
+		}
+	}
+	if _, _, err := ParseSpatialField("x", math.NaN()); err == nil {
+		t.Error("accepted a nonfinite a")
+	}
+	// z belongs only to the spatial field.
+	if _, err := Parse("z"); err == nil {
+		t.Error("accepted z in a curve expression")
+	}
+	if _, err := Scalar("z"); err == nil || !strings.Contains(err.Error(), "constant") {
+		t.Errorf("scalar z: %v", err)
+	}
+}

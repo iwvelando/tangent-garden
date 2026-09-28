@@ -123,14 +123,14 @@ func (c *chase) velocity(_ float64, y, out []float64) {
 func newChase(p Pursuit, lo, hi, tol float64) *chase {
 	n := len(p.Pursuers)
 	c := &chase{speeds: make([]float64, n), eps: p.Capture, tol: tol}
-	c.f, c.lo, c.hi = c.velocity, lo, hi
+	c.F, c.Lo, c.Hi = c.velocity, lo, hi
 	y := make([]float64, 2*n)
 	vmax := 0.0
 	for i, q := range p.Pursuers {
 		y[2*i], y[2*i+1], c.speeds[i] = q.X, q.Y, q.Speed
 		vmax = math.Max(vmax, q.Speed)
 	}
-	c.ts, c.ys = []float64{lo}, [][]float64{y}
+	c.Ts, c.Ys = []float64{lo}, [][]float64{y}
 	t, h := lo, hi-lo
 	for attempts := 0; ; attempts++ {
 		g0, i := gap(y)
@@ -160,7 +160,7 @@ func newChase(p Pursuit, lo, hi, tol float64) *chase {
 		if last {
 			h = hi - t
 		}
-		next, e := dormandPrince(c.f, t, y, h, true)
+		next, e := dormandPrince(c.F, t, y, h, true)
 		size := 0.0
 		for q := range e {
 			size = math.Max(size, math.Abs(e[q])/(tol*g0+1e-14*math.Abs(y[q])))
@@ -181,27 +181,27 @@ func newChase(p Pursuit, lo, hi, tol float64) *chase {
 		if t += h; last {
 			t = hi
 		}
-		c.ts, c.ys, y = append(c.ts, t), append(c.ys, next), next
+		c.Ts, c.Ys, y = append(c.Ts, t), append(c.Ys, next), next
 		if size == 0 {
 			h *= 5
 		} else {
 			h *= math.Min(5, .9*math.Pow(size, -.2))
 		}
 	}
-	c.end = t
-	c.complete = t >= hi && !c.exhausted
+	c.End = t
+	c.Complete = t >= hi && !c.exhausted
 	return c
 }
 
 func (c *chase) stop(t float64, i int) {
 	n := len(c.speeds)
 	c.capture = &Capture{Time: t, Pursuer: i, Target: (i + 1) % n}
-	c.end = t
+	c.End = t
 }
 
 // at returns every pursuer's position at t, while the chase is known.
 func (c *chase) at(t float64) ([]Vec, bool) {
-	y, ok := c.state(t)
+	y, ok := c.State(t)
 	if !ok {
 		return nil, false
 	}
@@ -224,7 +224,7 @@ func (c *chase) pursuer(i int) curveFunc {
 }
 
 func newPursuitResult(c *chase, samples int) *PursuitResult {
-	out := &PursuitResult{Paths: make([][]*Vec, len(c.speeds)), Polygons: []Polygon{}, Capture: c.capture, Exhausted: c.exhausted, End: c.end}
+	out := &PursuitResult{Paths: make([][]*Vec, len(c.speeds)), Polygons: []Polygon{}, Capture: c.capture, Exhausted: c.exhausted, End: c.End}
 	for i := range out.Paths {
 		out.Paths[i] = make([]*Vec, samples)
 	}

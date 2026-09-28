@@ -127,7 +127,9 @@ self.onmessage = async ({
                             ]
                           : []),
                       ]
-                    : [data.spatial.length]),
+                    : data.spatial.construction === "none"
+                      ? []
+                      : [data.spatial.length]),
           data.spatial.samples,
           data.spatial.lines,
           ...(data.spatial.format === "parametric"
@@ -136,25 +138,33 @@ self.onmessage = async ({
                 data.spatial.curve.max,
                 data.spatial.curve.a,
               ]
-            : data.spatial.format === "harmonic"
+            : data.spatial.format === "field"
               ? [
-                  data.spatial.harmonic.min,
-                  data.spatial.harmonic.max,
-                  ...[
-                    data.spatial.harmonic.center,
-                    ...data.spatial.harmonic.terms.flatMap((t) => [
-                      t.cosine,
-                      t.sine,
-                    ]),
-                  ].flatMap((v) => [v.x, v.y, v.z]),
-                  ...data.spatial.harmonic.terms.map((t) => t.frequency),
+                  data.spatial.field.min,
+                  data.spatial.field.max,
+                  data.spatial.field.a,
+                  data.spatial.field.escape,
+                  ...data.spatial.field.seeds.flatMap((v) => [v.x, v.y, v.z]),
                 ]
-              : [
-                  data.spatial.radius,
-                  data.spatial.tube,
-                  data.spatial.p,
-                  data.spatial.q,
-                ]),
+              : data.spatial.format === "harmonic"
+                ? [
+                    data.spatial.harmonic.min,
+                    data.spatial.harmonic.max,
+                    ...[
+                      data.spatial.harmonic.center,
+                      ...data.spatial.harmonic.terms.flatMap((t) => [
+                        t.cosine,
+                        t.sine,
+                      ]),
+                    ].flatMap((v) => [v.x, v.y, v.z]),
+                    ...data.spatial.harmonic.terms.map((t) => t.frequency),
+                  ]
+                : [
+                    data.spatial.radius,
+                    data.spatial.tube,
+                    data.spatial.p,
+                    data.spatial.q,
+                  ]),
         ].every(Number.isFinite)
       )
         throw new Error("Fill in each spatial parameter with a finite number.");
