@@ -705,3 +705,39 @@ for (const construction of ["tangent-foot", "orthotomic"])
       await expect(page.getByRole("alert")).toHaveCount(0);
     }
   });
+
+test("spatial inversion center, radius and derived pole share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page
+    .getByLabel("Construction", { exact: true })
+    .selectOption("inversion");
+  await page
+    .getByLabel("Curve to invert", { exact: true })
+    .selectOption("orthotomic");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly string[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  for (const [name, text, value, path] of [
+    ["Center x", "pi/2", Math.PI / 2, ["inversion", "center", "x"]],
+    ["Center y", "-e", -Math.E, ["inversion", "center", "y"]],
+    ["Center z", "phi", phi, ["inversion", "center", "z"]],
+    ["Sphere radius R", "e/2", Math.E / 2, ["inversion", "radius"]],
+    ["Pole z", "-pi", -Math.PI, ["pole", "z"]],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(path)).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});

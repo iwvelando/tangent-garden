@@ -134,6 +134,7 @@ for (const [preset, name] of [
   ["3", "custom developable"],
   ["7", "tangent-foot projection"],
   ["8", "tangent-line orthotomic"],
+  ["11", "sphere inversion of a projection"],
 ])
   test(`spatial ${name} renders and exports through WebKit WebGL and H.264`, async ({
     page,

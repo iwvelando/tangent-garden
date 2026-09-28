@@ -987,4 +987,69 @@ for (const construction of ["tangent-foot", "orthotomic"]) {
 console.log(
   "WASM spatial projections: helix feet, half-turns and sample identities passed",
 );
+// Sphere inversion: a circle through the center becomes the line x = R²/2,
+// broken once where the source passes through the center between samples.
+const sphereInversion = (inversion, extra = {}) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "parametric",
+        construction: "inversion",
+        pole: { x: 1, y: -2, z: 3 },
+        inversion,
+        curve: {
+          x: "1+cos(t)",
+          y: "sin(t)",
+          z: "0",
+          min: 0,
+          max: 2 * Math.PI + 0.01,
+          a: 1,
+        },
+        samples: 480,
+        lines: 24,
+        ...extra,
+      }),
+    ),
+  );
+{
+  const q = sphereInversion({
+    center: { x: 0, y: 0, z: 0 },
+    radius: 1,
+    input: "base",
+  });
+  assert.equal(q.mesh.length, 0);
+  assert.equal(q.inversion.points.length, 481);
+  assert.equal(q.inversion.crossings, 1);
+  assert.equal(q.inversion.invalid, 0);
+  assert.deepEqual(
+    q.inversion.breaks.flatMap((b, i) => (b ? [i] : [])),
+    [240],
+  );
+  for (const p of q.inversion.points) assert.ok(Math.abs(p.x - 0.5) < 1e-9);
+  for (const s of q.inversion.correspondences) {
+    assert.deepEqual(s.source, q.inversion.source[s.sampleIndex]);
+    assert.deepEqual(s.image, q.inversion.points[s.sampleIndex]);
+  }
+  // Orthotomic input: every image lies on the ray from the center through
+  // its source with |OJ||OS| = R².
+  const center = { x: 0.2, y: 0.1, z: -0.4 };
+  const d = sphereInversion({ center, radius: 2, input: "orthotomic" });
+  d.inversion.points.forEach((p, i) => {
+    const s = d.inversion.source[i];
+    if (!p) return;
+    const a = ["x", "y", "z"].map((k) => s[k] - center[k]),
+      b = ["x", "y", "z"].map((k) => p[k] - center[k]);
+    const norm = (v) => Math.hypot(...v);
+    assert.ok(Math.abs(norm(a) * norm(b) - 4) < 1e-9);
+    assert.ok(a.reduce((sum, v, k) => sum + v * b[k], 0) > 0);
+  });
+  assert.match(
+    sphereInversion({ center: { x: 0, y: 0, z: 0 }, radius: 0, input: "base" })
+      .error,
+    /radius/,
+  );
+}
+console.log(
+  "WASM sphere inversion: center passage, derived input and validation passed",
+);
 process.exit(0);

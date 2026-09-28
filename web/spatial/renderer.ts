@@ -10,7 +10,8 @@ export type View = Bounds3 & {
 export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // Surface, rulings, and edges belong to the tangent developable; filaments
 // and strings to the involute; projection, connectors and pole to tangent
-// projections. The base curve is always drawn.
+// projections; inverse, correspondences, sphere and source to sphere
+// inversion. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -20,6 +21,10 @@ export type Layers = {
   projection: boolean;
   connectors: boolean;
   pole: boolean;
+  inverse: boolean;
+  correspondences: boolean;
+  sphere: boolean;
+  source: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -30,6 +35,10 @@ export const defaultLayers: Layers = {
   projection: true,
   connectors: true,
   pole: true,
+  inverse: true,
+  correspondences: true,
+  sphere: true,
+  source: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -135,7 +144,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     projection: Batch,
     connectors: Batch,
     feet: Batch,
-    pole: Batch;
+    pole: Batch,
+    inverse: Batch,
+    correspondences: Batch,
+    sphere: Batch,
+    center: Batch,
+    source: Batch,
+    sourcePole: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -246,6 +261,62 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       1,
     );
+    // The image uses its own breaks: the base's plus every passage through
+    // the center, where the image leaves through infinity.
+    const v = result.inversion;
+    const image = v?.points.find((p) => p);
+    inverse = batch(
+      vertices(
+        v?.collapsed && image
+          ? cross(image, result.bounds.radius * 0.025)
+          : pairs(v?.points ?? [], v?.breaks ?? []),
+      ),
+      gl!.LINES,
+      3,
+    );
+    correspondences = batch(
+      vertices((v?.correspondences ?? []).flatMap((c) => [c.source, c.image])),
+      gl!.LINES,
+      4,
+    );
+    // Three great circles show the sphere sparingly, without a surface that
+    // would hide the curves.
+    const circle = (u: Vec3, w: Vec3) =>
+      Array.from({ length: 96 }, (_, k) => {
+        const [a, b] = [0, 1].map((d) => (2 * Math.PI * (k + d)) / 96);
+        return [a, b].map((t) => ({
+          x: v!.center.x + v!.radius * (Math.cos(t) * u.x + Math.sin(t) * w.x),
+          y: v!.center.y + v!.radius * (Math.cos(t) * u.y + Math.sin(t) * w.y),
+          z: v!.center.z + v!.radius * (Math.cos(t) * u.z + Math.sin(t) * w.z),
+        }));
+      }).flat();
+    const [i, j, k] = [
+      { x: 1, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: 0, z: 1 },
+    ];
+    sphere = batch(
+      vertices(v ? [...circle(i, j), ...circle(j, k), ...circle(k, i)] : []),
+      gl!.LINES,
+      4,
+    );
+    center = batch(
+      vertices(v ? cross(v.center, result.bounds.radius * 0.03) : []),
+      gl!.LINES,
+      1,
+    );
+    // A derived source (a tangent projection) and its pole; a base source is
+    // already drawn as the base.
+    source = batch(
+      vertices(v?.pole ? pairs(v.source, result.breaks) : []),
+      gl!.LINES,
+      4,
+    );
+    sourcePole = batch(
+      vertices(v?.pole ? cross(v.pole, result.bounds.radius * 0.02) : []),
+      gl!.LINES,
+      1,
+    );
     filaments = filamentBatch(result);
     strings = batch(
       vertices((result.involute?.strings ?? []).flatMap((r) => [r.from, r.to])),
@@ -337,8 +408,16 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       render(feet);
     }
     if (layers.projection) render(projection);
+    if (layers.sphere) render(sphere);
+    if (layers.correspondences) render(correspondences);
+    if (layers.source) {
+      render(source);
+      render(sourcePole);
+    }
+    if (layers.inverse) render(inverse);
     render(base);
     if (layers.pole) render(pole);
+    if (layers.sphere) render(center);
   }
   return {
     upload,
