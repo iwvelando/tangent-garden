@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"math"
+	"tangentgarden/engine/closure"
 )
 
 // Lissajous is x = A sin(mt + φ), y = B sin(nt): each coordinate is the
@@ -53,11 +54,8 @@ type HarmonicResult struct {
 }
 
 const (
-	maxTerms = 16
-	// Frequency ratios with larger denominators are treated as not closing:
-	// every period needs its own share of the samples.
-	maxHarmonicDenominator = 1000
-	maxFrequency           = 1000
+	maxTerms     = 16
+	maxFrequency = 1000
 )
 
 func (l Lissajous) validate() error {
@@ -138,78 +136,6 @@ func fourierState(terms []Term, t float64) Epicycles {
 	return s
 }
 
-// ratio finds x = p/q in lowest terms with q ≤ limit, by continued-fraction
-// convergents. Values that are merely close are not rounded into a ratio.
-func ratio(x float64, limit int) (p, q int, ok bool) {
-	v := x
-	p0, q0, p1, q1 := 0.0, 1.0, 1.0, 0.0
-	for range 64 {
-		a := math.Floor(v)
-		p0, q0, p1, q1 = p1, q1, a*p1+p0, a*q1+q0
-		if q1 > float64(limit) || p1 > 1e9 {
-			return 0, 0, false
-		}
-		if math.Abs(x-p1/q1) <= 1e-12*x {
-			return int(p1), int(q1), true
-		}
-		if v == a {
-			break
-		}
-		v = 1 / (v - a)
-	}
-	return 0, 0, false
-}
-
-func gcd(a, b int) int {
-	for b != 0 {
-		a, b = b, a%b
-	}
-	return a
-}
-
-// closure returns the smallest period of a sum of rotations at the given
-// frequencies, each with a nonzero radius. A rotation repeats after 2π/|k|,
-// so the sum repeats after 2π/ω, where every |k| is a whole multiple of ω:
-// exactly 2π/gcd for whole numbers, and otherwise found from each frequency's
-// ratio to the first. Periods longer than the widest domain are not closure.
-func closure(frequencies []float64) (period float64, whole, constant bool) {
-	var moving []float64
-	whole = true
-	for _, k := range frequencies {
-		if k != 0 {
-			moving = append(moving, math.Abs(k))
-			whole = whole && k == math.Trunc(k)
-		}
-	}
-	if len(moving) == 0 {
-		return 0, false, true
-	}
-	if whole {
-		g := 0
-		for _, k := range moving {
-			g = gcd(g, int(k))
-		}
-		return 2 * math.Pi / float64(g), true, false
-	}
-	// Each frequency is (p/q)·ref; all are whole multiples of ref/lcm(q),
-	// and of nothing larger, since ref itself is one of them.
-	ref, common := moving[0], 1
-	for _, k := range moving {
-		_, q, ok := ratio(k/ref, maxHarmonicDenominator)
-		if !ok {
-			return 0, false, false
-		}
-		if common = common / gcd(common, q) * q; common > maxHarmonicDenominator {
-			return 0, false, false
-		}
-	}
-	period = 2 * math.Pi * float64(common) / ref
-	if period > 1e5 {
-		return 0, false, false
-	}
-	return period, false, false
-}
-
 // harmonics are the frequencies that move a harmonic curve: those of terms
 // or coordinates with a nonzero radius or amplitude.
 func harmonics(c Curve) []float64 {
@@ -235,7 +161,7 @@ func harmonics(c Curve) []float64 {
 // rotating geometry at parameter t.
 func harmonicResult(c Curve) (*HarmonicResult, func(t float64) Epicycles) {
 	out := &HarmonicResult{Guides: []Circle{}, Radii: []float64{}, Positions: []Epicycles{}}
-	out.Period, out.Whole, out.Constant = closure(harmonics(c))
+	out.Period, out.Whole, out.Constant = closure.Period(harmonics(c))
 	if c.Format == "lissajous" {
 		out.Guides = c.Lissajous.guides()
 		return out, c.Lissajous.state

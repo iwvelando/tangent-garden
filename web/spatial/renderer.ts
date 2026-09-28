@@ -11,7 +11,8 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // Surface, rulings, and edges belong to the tangent developable; filaments
 // and strings to the involute; projection, connectors and pole to tangent
 // projections; inverse, correspondences, sphere and source to sphere
-// inversion. The base curve is always drawn.
+// inversion; vectors and ellipses to a harmonic curve under any
+// construction. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -25,6 +26,8 @@ export type Layers = {
   correspondences: boolean;
   sphere: boolean;
   source: boolean;
+  vectors: boolean;
+  ellipses: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -39,6 +42,8 @@ export const defaultLayers: Layers = {
   correspondences: true,
   sphere: true,
   source: true,
+  vectors: true,
+  ellipses: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -150,7 +155,9 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     sphere: Batch,
     center: Batch,
     source: Batch,
-    sourcePole: Batch;
+    sourcePole: Batch,
+    vectors: Batch,
+    ellipses: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -317,6 +324,54 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       1,
     );
+    // A harmonic curve's chained generating vectors at every representative
+    // sample, and, at the last one shown, that chain again with each turning
+    // term's ellipse around its joint and a cross at c₀.
+    const h = result.harmonic;
+    const chain = (s: NonNullable<typeof h>["positions"][number]) =>
+      s.joints.flatMap((j, k) => [j, s.joints[k + 1] ?? s.point]);
+    vectors = batch(
+      vertices((h?.positions ?? []).flatMap(chain)),
+      gl!.LINES,
+      4,
+    );
+    const current = h?.positions.at(-1);
+    ellipses = batch(
+      vertices(
+        h && current
+          ? [
+              ...chain(current),
+              ...cross(h.center, result.bounds.radius * 0.02),
+              ...h.terms.flatMap((term, k) =>
+                term.frequency === 0
+                  ? []
+                  : Array.from({ length: 64 }, (_, m) =>
+                      [m, m + 1].map((d) => {
+                        const t = (2 * Math.PI * d) / 64,
+                          j = current.joints[k];
+                        return {
+                          x:
+                            j.x +
+                            Math.cos(t) * term.cosine.x +
+                            Math.sin(t) * term.sine.x,
+                          y:
+                            j.y +
+                            Math.cos(t) * term.cosine.y +
+                            Math.sin(t) * term.sine.y,
+                          z:
+                            j.z +
+                            Math.cos(t) * term.cosine.z +
+                            Math.sin(t) * term.sine.z,
+                        };
+                      }),
+                    ).flat(),
+              ),
+            ]
+          : [],
+      ),
+      gl!.LINES,
+      1,
+    );
     filaments = filamentBatch(result);
     strings = batch(
       vertices((result.involute?.strings ?? []).flatMap((r) => [r.from, r.to])),
@@ -415,6 +470,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       render(sourcePole);
     }
     if (layers.inverse) render(inverse);
+    if (layers.vectors) render(vectors);
+    if (layers.ellipses) render(ellipses);
     render(base);
     if (layers.pole) render(pole);
     if (layers.sphere) render(center);

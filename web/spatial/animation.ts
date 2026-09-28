@@ -1,16 +1,22 @@
 import { usesSpatialPole } from "./types";
+import { harmonicLabels } from "./harmonic";
 import type {
   SpatialConfig,
   SpatialResult,
   Frame,
   Vec3,
   Bounds3,
+  SpatialHarmonicResult,
 } from "./types";
 import type { View } from "./renderer";
 export type { Frame };
 export type Viewport = View;
 export type CameraMode = "hold" | "current" | "follow" | "fit";
-export type Target =
+// A harmonic term's frequency or one coordinate of its vector A or B,
+// numbered from 1 in term order.
+export type HarmonicTarget =
+  `harmonic${number}${"Frequency" | "Ax" | "Ay" | "Az" | "Bx" | "By" | "Bz"}`;
+type NamedTarget =
   | "poleX"
   | "poleY"
   | "poleZ"
@@ -30,7 +36,11 @@ export type Target =
   | "to"
   | "count"
   | "samples"
-  | "lines";
+  | "lines"
+  | "c0x"
+  | "c0y"
+  | "c0z";
+export type Target = NamedTarget | HarmonicTarget;
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
 export type AnimationView = {
@@ -42,7 +52,7 @@ export type AnimationView = {
   progress: number;
   mode: "reveal" | "parameters" | "orbit";
 };
-export const targetLabels: Record<Target, string> = {
+export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",
   poleY: "Pole y",
   poleZ: "Pole z",
@@ -63,15 +73,41 @@ export const targetLabels: Record<Target, string> = {
   count: "Involutes",
   samples: "Curve samples",
   lines: "Tangent lines",
+  c0x: harmonicLabels.center("x"),
+  c0y: harmonicLabels.center("y"),
+  c0z: harmonicLabels.center("z"),
 };
-export const targetLabel = (c: SpatialConfig, t: Target) =>
-  t === "lines" && c.construction === "involute"
+const harmonicTarget = (t: Target) => {
+  const match = /^harmonic(\d+)(Frequency|A|B)([xyz])?$/.exec(t);
+  if (!match) return null;
+  return {
+    index: +match[1] - 1,
+    field: (match[2] === "A"
+      ? "cosine"
+      : match[2] === "B"
+        ? "sine"
+        : "frequency") as "frequency" | "cosine" | "sine",
+    axis: match[3] as "x" | "y" | "z" | undefined,
+  };
+};
+const isHarmonic = (t: Target): t is HarmonicTarget => t.startsWith("harmonic");
+const isCenter = (t: Target): t is "c0x" | "c0y" | "c0z" =>
+  t === "c0x" || t === "c0y" || t === "c0z";
+const centerAxis = (t: "c0x" | "c0y" | "c0z") => t.slice(2) as "x" | "y" | "z";
+export const targetLabel = (c: SpatialConfig, t: Target): string => {
+  const h = harmonicTarget(t);
+  if (h)
+    return h.field === "frequency"
+      ? harmonicLabels.frequency(h.index + 1)
+      : harmonicLabels[h.field](h.index + 1, h.axis!);
+  return t === "lines" && c.construction === "involute"
     ? "Unwinding strings"
     : t === "lines" && c.construction === "inversion"
       ? "Correspondences"
       : t === "lines" && usesSpatialPole(c)
         ? "Projection constructions"
-        : targetLabels[t];
+        : targetLabels[t as NamedTarget];
+};
 export const integerTargets: Target[] = ["samples", "lines", "count"];
 const curveTargets = ["a", "min", "max"] as const;
 const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
@@ -103,7 +139,22 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
           ? ["poleX", "poleY", "poleZ"]
           : ["length"];
   const curve: Target[] =
-    c.format === "parametric" ? ["a", "min", "max"] : ["radius", "tube"];
+    c.format === "parametric"
+      ? ["a", "min", "max"]
+      : c.format === "harmonic"
+        ? [
+            "c0x",
+            "c0y",
+            "c0z",
+            ...c.harmonic.terms.flatMap((_, k) =>
+              (["Frequency", "Ax", "Ay", "Az", "Bx", "By", "Bz"] as const).map(
+                (field) => `harmonic${k + 1}${field}` as const,
+              ),
+            ),
+            "min",
+            "max",
+          ]
+        : ["radius", "tube"];
   return c.format === "parametric"
     ? [curve[0], ...construction, ...curve.slice(1), "samples", "lines"]
     : [...construction, ...curve, "samples", "lines"];
@@ -116,6 +167,15 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (t === "centerY") return c.inversion.center.y;
   if (t === "centerZ") return c.inversion.center.z;
   if (t === "sphere") return c.inversion.radius;
+  if (isCenter(t)) return c.harmonic.center[centerAxis(t)];
+  if (isHarmonic(t)) {
+    const h = harmonicTarget(t)!,
+      term = c.harmonic.terms[h.index];
+    if (!term) return NaN;
+    return h.field === "frequency" ? term.frequency : term[h.field][h.axis!];
+  }
+  if ((t === "min" || t === "max") && c.format === "harmonic")
+    return c.harmonic[t];
   if (isCurve(t)) return c.curve[t];
   if (t === "anchor" || t === "offset") return c.involute[t];
   if (isInvolute(t)) return c.involute.family[t];
@@ -139,6 +199,19 @@ export function applyTracks(
     else if (t.target === "centerY") config.inversion.center.y = v;
     else if (t.target === "centerZ") config.inversion.center.z = v;
     else if (t.target === "sphere") config.inversion.radius = v;
+    else if (isCenter(t.target))
+      config.harmonic.center[centerAxis(t.target)] = v;
+    else if (isHarmonic(t.target)) {
+      const h = harmonicTarget(t.target)!,
+        term = config.harmonic.terms[h.index];
+      if (!term) continue;
+      if (h.field === "frequency") term.frequency = v;
+      else term[h.field][h.axis!] = v;
+    } else if (
+      (t.target === "min" || t.target === "max") &&
+      config.format === "harmonic"
+    )
+      config.harmonic[t.target] = v;
     else if (isCurve(t.target)) config.curve[t.target] = v;
     else if (t.target === "anchor" || t.target === "offset")
       config.involute[t.target] = v;
@@ -197,6 +270,24 @@ export function fitBounds(...families: (Vec3 | null)[][]): Bounds3 {
         );
   return { center, radius };
 }
+// A harmonic curve's joints and ellipse axis extents, one pair of families
+// per term, as Go frames them.
+export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
+  if (!h) return [];
+  return h.terms.flatMap((term, k) => {
+    const reach = (["x", "y", "z"] as const).map((axis) =>
+      Math.hypot(term.cosine[axis], term.sine[axis]),
+    );
+    const joints = h.positions.map((s) => s.joints[k]);
+    const extents = joints.flatMap((j) =>
+      (["x", "y", "z"] as const).flatMap((axis, i) => [
+        { ...j, [axis]: j[axis] - reach[i] },
+        { ...j, [axis]: j[axis] + reach[i] },
+      ]),
+    );
+    return [joints, extents];
+  });
+}
 export function reveal(result: SpatialResult, p: number): SpatialResult {
   const last = Math.floor(
     Math.max(0, Math.min(1, p)) * (result.base.length - 1),
@@ -231,6 +322,11 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       (c) => c.sampleIndex <= last,
     ),
   };
+  const harmonic = result.harmonic && {
+    ...result.harmonic,
+    positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
+  };
+  const generating = harmonicFamilies(harmonic);
   return {
     ...result,
     base,
@@ -242,13 +338,30 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     involute,
     projection,
     inversion,
+    harmonic,
     bounds: inversion
-      ? fitBounds(base, inversion.source, inversion.points, [inversion.center])
+      ? fitBounds(
+          base,
+          inversion.source,
+          inversion.points,
+          [inversion.center],
+          ...generating,
+        )
       : projection
-        ? fitBounds(base, projection.points, projection.feet, [projection.pole])
+        ? fitBounds(
+            base,
+            projection.points,
+            projection.feet,
+            [projection.pole],
+            ...generating,
+          )
         : involute
-          ? fitBounds(base, ...involute.members.map((m) => m.points))
-          : fitBounds(base, minus, plus),
+          ? fitBounds(
+              base,
+              ...involute.members.map((m) => m.points),
+              ...generating,
+            )
+          : fitBounds(base, minus, plus, ...generating),
   };
 }
 export function animationCamera(view: AnimationView): View {

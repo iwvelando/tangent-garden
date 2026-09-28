@@ -1052,4 +1052,77 @@ const sphereInversion = (inversion, extra = {}) =>
 console.log(
   "WASM sphere inversion: center passage, derived input and validation passed",
 );
+// Spatial harmonic generator: one term traces the ellipse c₀ + A cos t +
+// B sin t, closed over 2π; an incommensurate pair is left open.
+const spatialHarmonic = (terms, min, max) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "harmonic",
+        construction: "developable",
+        length: 1,
+        harmonic: { center: { x: 1, y: 2, z: 3 }, terms, min, max },
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+{
+  const ellipse = spatialHarmonic(
+    [
+      {
+        frequency: 1,
+        cosine: { x: 2, y: 0, z: 0 },
+        sine: { x: 0, y: 0, z: 1 },
+      },
+    ],
+    0,
+    2 * Math.PI,
+  );
+  assert.equal(ellipse.harmonic.period, 2 * Math.PI);
+  assert.equal(ellipse.harmonic.closed, true);
+  assert.deepEqual(ellipse.base[480], ellipse.base[0]);
+  for (const p of ellipse.base) {
+    assert.ok(Math.abs(p.y - 2) < 1e-12);
+    assert.ok(Math.abs(((p.x - 1) / 2) ** 2 + (p.z - 3) ** 2 - 1) < 1e-12);
+  }
+  assert.equal(ellipse.harmonic.positions.length, 24);
+  for (const s of ellipse.harmonic.positions)
+    assert.deepEqual(s.point, ellipse.base[s.sampleIndex]);
+  const open = spatialHarmonic(
+    [
+      {
+        frequency: 1,
+        cosine: { x: 2, y: 0, z: 0 },
+        sine: { x: 0, y: 2, z: 0 },
+      },
+      {
+        frequency: Math.SQRT2,
+        cosine: { x: 0, y: 0, z: 0.5 },
+        sine: { x: 0, y: 0, z: 0 },
+      },
+    ],
+    0,
+    20,
+  );
+  assert.equal(open.harmonic.period, 0);
+  assert.equal(open.harmonic.closed, false);
+  assert.match(
+    spatialHarmonic(
+      [
+        {
+          frequency: 0,
+          cosine: { x: 1, y: 0, z: 0 },
+          sine: { x: 0, y: 0, z: 0 },
+        },
+      ],
+      0,
+      1,
+    ).error,
+    /nothing turns/,
+  );
+}
+console.log(
+  "WASM spatial harmonics: ellipse, closure, open arc and validation passed",
+);
 process.exit(0);

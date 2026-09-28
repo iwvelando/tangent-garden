@@ -16,7 +16,20 @@ import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
 import { animationCamera, type AnimationView } from "./animation";
-import { usesSpatialPole, type SpatialConfig, type Frame } from "./types";
+import {
+  maxHarmonicTerms,
+  usesSpatialPole,
+  type HarmonicCurve,
+  type SpatialConfig,
+  type Frame,
+} from "./types";
+import {
+  harmonicClosureKey,
+  harmonicClosureNote,
+  harmonicLabels,
+  nextHarmonicTerm,
+} from "./harmonic";
+import { periodText } from "../harmonic";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -127,7 +140,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     await Promise.allSettled([...jobs.current]);
     if (token !== generation.current) return;
     setConfig((c) => {
-      if (format === "torus") return { ...c, format };
+      if (format === "torus" || format === "harmonic") return { ...c, format };
       // Preserve an edited custom definition. A generated knot can also be opened
       // as expressions, with every pending scalar resolved before conversion.
       if (c.format === "parametric" || customOpened) return { ...c, format };
@@ -162,6 +175,160 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     "tangent-foot": "the tangent-foot curve",
     orthotomic: "the tangent-line orthotomic",
   }[config.inversion.input];
+  const harmonic = config.harmonic;
+  const setHarmonic = (change: (h: HarmonicCurve) => HarmonicCurve) =>
+    update((c) => ({ ...c, harmonic: change(c.harmonic) }));
+  // Adding or removing a term renumbers the fields after it, so evaluations
+  // still pending for them land first; a preset chosen meanwhile wins.
+  async function editTerms(
+    change: (terms: HarmonicCurve["terms"]) => HarmonicCurve["terms"],
+  ) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    setHarmonic((h) => ({ ...h, terms: change(h.terms) }));
+  }
+  // Closure depends only on the moving frequencies and the domain, so the
+  // last result still describes a curve whose vectors have changed.
+  const closure =
+    frame?.config.format === "harmonic" &&
+    harmonicClosureKey(frame.config.harmonic) === harmonicClosureKey(harmonic)
+      ? frame.result.harmonic
+      : undefined;
+  const vector = (
+    label: string,
+    value: number,
+    set: (value: number) => void,
+    help?: string,
+  ) => (
+    <Field key={label} label={label} help={help}>
+      <ScalarInput name={label} value={value} onChange={set} />
+    </Field>
+  );
+  const harmonicControls = (
+    <>
+      <p className="note">
+        r(t) = c₀ + Σ [Aₖ cos(ωₖ t) + Bₖ sin(ωₖ t)]. Each term is a vector
+        turning around the ellipse spanned by Aₖ and Bₖ, from Aₖ at t = 0
+        towards Bₖ, at ωₖ radians per unit t. The vectors are chained from c₀ in
+        this order.
+      </p>
+      <div className="pair trio">
+        {(["x", "y", "z"] as const).map((axis) =>
+          vector(
+            harmonicLabels.center(axis),
+            harmonic.center[axis],
+            (value) =>
+              setHarmonic((h) => ({
+                ...h,
+                center: { ...h.center, [axis]: value },
+              })),
+            axis === "x"
+              ? "The fixed center c₀ the vectors start from. Coordinates within ±100000."
+              : undefined,
+          ),
+        )}
+      </div>
+      {harmonic.terms.map((term, i) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`spatial-term-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`spatial-term-${i}`}>Term {i + 1}</span>
+            <button
+              type="button"
+              aria-label={`Remove term ${i + 1}`}
+              disabled={harmonic.terms.length === 1}
+              onClick={() => void editTerms((t) => t.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+          {vector(
+            harmonicLabels.frequency(i + 1),
+            term.frequency,
+            (value) =>
+              setHarmonic((h) => ({
+                ...h,
+                terms: h.terms.map((t, j) =>
+                  j === i ? { ...t, frequency: value } : t,
+                ),
+              })),
+            "Radians per unit t, within ±1000; negative turns from Aₖ away from Bₖ. At 0 the term is the fixed translation Aₖ.",
+          )}
+          {(["cosine", "sine"] as const).map((field) => (
+            <div className="pair trio" key={field}>
+              {(["x", "y", "z"] as const).map((axis) =>
+                vector(
+                  harmonicLabels[field](i + 1, axis),
+                  term[field][axis],
+                  (value) =>
+                    setHarmonic((h) => ({
+                      ...h,
+                      terms: h.terms.map((t, j) =>
+                        j === i
+                          ? { ...t, [field]: { ...t[field], [axis]: value } }
+                          : t,
+                      ),
+                    })),
+                  axis === "x"
+                    ? field === "cosine"
+                      ? "Aₖ is the vector at t = 0. Coordinates within ±100000."
+                      : "Bₖ is the vector a quarter turn later. Parallel to Aₖ, the ellipse flattens to a segment."
+                    : undefined,
+                ),
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+      <button
+        className="closure"
+        type="button"
+        disabled={harmonic.terms.length >= maxHarmonicTerms}
+        onClick={() => void editTerms((t) => [...t, nextHarmonicTerm(t)])}
+      >
+        {harmonic.terms.length >= maxHarmonicTerms
+          ? "At most 8 terms"
+          : "Add a term"}
+      </button>
+      <div className="pair">
+        {(
+          [
+            ["min", "t from"],
+            ["max", "to"],
+          ] as const
+        ).map(([key, label]) => (
+          <Field label={label} key={key}>
+            <ScalarInput
+              name={label}
+              value={harmonic[key]}
+              onChange={(value) => setHarmonic((h) => ({ ...h, [key]: value }))}
+            />
+          </Field>
+        ))}
+      </div>
+      <p className="note" data-testid="closure-note">
+        {closure
+          ? harmonicClosureNote(closure, harmonic.max - harmonic.min)
+          : "Checking whether the curve closes…"}
+      </p>
+      {closure && closure.period > 0 && !closure.closed && (
+        <button
+          className="closure"
+          type="button"
+          onClick={() =>
+            setHarmonic((h) => ({ ...h, max: h.min + closure.period }))
+          }
+        >
+          Trace one full period ({periodText(closure.period).text})
+        </button>
+      )}
+    </>
+  );
   const failure = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
     : error;
@@ -431,9 +598,14 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <option value="parametric">
                     Parametric · x(t), y(t), z(t)
                   </option>
+                  <option value="harmonic">
+                    Harmonic sum · generating vectors
+                  </option>
                 </select>
               </Field>
-              {config.format === "torus" ? (
+              {config.format === "harmonic" ? (
+                harmonicControls
+              ) : config.format === "torus" ? (
                 <>
                   {(
                     [
@@ -790,32 +962,39 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           </p>
           <fieldset className="spatial-layers">
             <legend>Reveal the construction</legend>
-            {(inversion
-              ? ([
-                  ["inverse", "Inverted curve"],
-                  ["correspondences", "Correspondence segments"],
-                  ["sphere", "Inversion sphere & center"],
-                  ...(config.inversion.input === "base"
-                    ? []
-                    : ([["source", "Projection & pole"]] as const)),
-                ] as const)
-              : projection
+            {[
+              ...(inversion
                 ? ([
-                    ["projection", projectionName],
-                    ["connectors", "Perpendiculars & tangent feet"],
-                    ["pole", "Pole marker"],
+                    ["inverse", "Inverted curve"],
+                    ["correspondences", "Correspondence segments"],
+                    ["sphere", "Inversion sphere & center"],
+                    ...(config.inversion.input === "base"
+                      ? []
+                      : ([["source", "Projection & pole"]] as const)),
                   ] as const)
-                : involute
+                : projection
                   ? ([
-                      ["filaments", "Involute filaments"],
-                      ["strings", "Unwinding strings"],
+                      ["projection", projectionName],
+                      ["connectors", "Perpendiculars & tangent feet"],
+                      ["pole", "Pole marker"],
                     ] as const)
-                  : ([
-                      ["surface", "Ribbon surface"],
-                      ["rulings", "Tangent rulings"],
-                      ["edges", "Ribbon edges"],
-                    ] as const)
-            ).map(([key, label]) => (
+                  : involute
+                    ? ([
+                        ["filaments", "Involute filaments"],
+                        ["strings", "Unwinding strings"],
+                      ] as const)
+                    : ([
+                        ["surface", "Ribbon surface"],
+                        ["rulings", "Tangent rulings"],
+                        ["edges", "Ribbon edges"],
+                      ] as const)),
+              ...(config.format === "harmonic"
+                ? ([
+                    ["vectors", "Vector sums"],
+                    ["ellipses", "Generating ellipses"],
+                  ] as const)
+                : []),
+            ].map(([key, label]) => (
               <label key={key}>
                 <input
                   type="checkbox"
@@ -868,7 +1047,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               Finite sampling can miss fine detail. Compare resolutions near
               poles, stationary points, and tight folds. Invalid samples and
               unresolved tangent or normal intervals leave gaps. Involute arc
-              length uses Simpson's rule on each sample interval.
+              length uses Simpson's rule on each sample interval. A harmonic
+              curve's vector sums sit at the same evenly spaced samples as the
+              construction lines, and its derivatives are exact.
             </p>
           </details>
           {failure && (

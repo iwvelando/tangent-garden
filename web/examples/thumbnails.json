@@ -45,17 +45,20 @@
     "offsets-of-an-evolute": "5fb87797"
   },
   "3d": {
-    "trefoil-2-3": "00f74256",
-    "cinquefoil-2-5": "771ab2b6",
-    "woven-orbit-3-4": "211ddabf",
-    "helix-a-ribbon-staircase": "4a60fd2c",
-    "lissajous-a-spatial-weave": "64caafce",
-    "unwinding-a-staircase": "ed49461f",
-    "a-knot-shedding-filaments": "e914f4fa",
-    "a-knot-through-perpendiculars": "fa8d8bc2",
-    "half-turns-around-a-helix": "37643a22",
-    "a-staircase-drawn-into-a-sphere": "2c943a5e",
-    "a-trefoil-turned-inside-out": "0e8af415",
-    "inverted-perpendiculars": "39a40d99"
+    "trefoil-2-3": "5300fc73",
+    "cinquefoil-2-5": "ee7a1af1",
+    "woven-orbit-3-4": "380aba24",
+    "helix-a-ribbon-staircase": "70dc440d",
+    "lissajous-a-spatial-weave": "aaf904f5",
+    "unwinding-a-staircase": "81037b8a",
+    "a-knot-shedding-filaments": "2f7b39d7",
+    "a-knot-through-perpendiculars": "b1ca7c2f",
+    "half-turns-around-a-helix": "23b87a2b",
+    "a-staircase-drawn-into-a-sphere": "7daf3333",
+    "a-trefoil-turned-inside-out": "947e2700",
+    "inverted-perpendiculars": "485460e4",
+    "a-harmonic-trefoil": "6fc2824a",
+    "tilted-ellipses-1-3-5": "83559ed7",
+    "an-orbit-that-never-closes": "25cf25a5"
   }
 }

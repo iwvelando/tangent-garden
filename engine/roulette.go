@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"math"
+	"tangentgarden/engine/closure"
 )
 
 // Roulette is a point at distance Arm from the center of a circle of radius
@@ -103,7 +104,7 @@ func (g Roulette) closure() (turns, lobes int) {
 	if g.Roll == "line" {
 		return 0, 0
 	}
-	p, q, _ := ratio(g.FixedRadius/g.Radius, maxClosureTurns)
+	p, q, _ := closure.Ratio(g.FixedRadius/g.Radius, maxClosureTurns)
 	return q, p
 }
 

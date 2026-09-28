@@ -9,6 +9,30 @@ const base: SpatialConfig = {
     offset: 0,
     family: { enabled: false, from: -2, to: 2, count: 5 },
   },
+  // A harmonic trefoil: two circles turning opposite ways, with a vertical
+  // wave. The faster circle is the larger, so the curve never stops.
+  harmonic: {
+    center: { x: 0, y: 0, z: 0 },
+    terms: [
+      {
+        frequency: 1,
+        cosine: { x: 1, y: 0, z: 0 },
+        sine: { x: 0, y: 1, z: 0 },
+      },
+      {
+        frequency: -2,
+        cosine: { x: 2, y: 0, z: 0 },
+        sine: { x: 0, y: 2, z: 0 },
+      },
+      {
+        frequency: 3,
+        cosine: { x: 0, y: 0, z: 1 },
+        sine: { x: 0, y: 0, z: 0 },
+      },
+    ],
+    min: 0,
+    max: 2 * Math.PI,
+  },
   radius: 2.4,
   tube: 0.85,
   length: 2.3,
@@ -190,6 +214,75 @@ export const spatialPresets: {
         input: "tangent-foot",
       },
       lines: 48,
+    },
+  },
+  {
+    name: "A harmonic trefoil",
+    detail: "Two circles turning opposite ways, lifted by a wave",
+    config: {
+      ...base,
+      format: "harmonic",
+      length: 0.8,
+      lines: 36,
+    },
+  },
+  {
+    name: "Tilted ellipses · 1 : 3 : −5",
+    detail: "Three generating ellipses in three different planes",
+    config: {
+      ...base,
+      format: "harmonic",
+      length: 0.6,
+      lines: 30,
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 2, y: 0, z: 0 },
+            sine: { x: 0, y: 1.6, z: 0.8 },
+          },
+          {
+            frequency: 3,
+            cosine: { x: 0, y: 0.4, z: 0 },
+            sine: { x: 0, y: 0, z: 0.4 },
+          },
+          {
+            frequency: -5,
+            cosine: { x: 0.1, y: 0, z: 0 },
+            sine: { x: 0, y: 0.1, z: 0 },
+          },
+        ],
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+  },
+  {
+    name: "An orbit that never closes",
+    detail: "Frequencies 1 and φ: an open arc, not forced shut",
+    config: {
+      ...base,
+      format: "harmonic",
+      length: 0.35,
+      lines: 48,
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 2, y: 0, z: 0 },
+            sine: { x: 0, y: 2, z: 0 },
+          },
+          {
+            frequency: (1 + Math.sqrt(5)) / 2,
+            cosine: { x: 0, y: 0, z: 0.8 },
+            sine: { x: 0.5, y: 0, z: 0 },
+          },
+        ],
+        min: 0,
+        max: 6 * Math.PI,
+      },
     },
   },
 ];
