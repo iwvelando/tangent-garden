@@ -16,7 +16,9 @@ export function ExportImageMenu({
   disabled,
   kind,
   onSave,
-  svgLabel = "SVG · vector, scalable",
+  svgLabel = kind === "attractor"
+    ? "SVG · vectors, density as an embedded PNG"
+    : "SVG · vector, scalable",
   menuId = "export-image-menu",
 }: Props) {
   const [open, setOpen] = useState(false);

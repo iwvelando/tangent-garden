@@ -5,6 +5,7 @@ import {
   availableTargets,
   integerTargets,
   reveal,
+  revealConfig,
   targetLabel,
   targetValue,
   type AnimationView,
@@ -14,7 +15,7 @@ import {
   type Track,
   type Viewport,
 } from "./animation";
-import type { Frame } from "./types";
+import { studyName, type Frame } from "./types";
 import type { Layers } from "./Plot";
 import { defaultScale, exportEncoding, exportTiming } from "./export-quality";
 import {
@@ -128,6 +129,7 @@ export function AnimationPanel({
     raf = useRef(0),
     session = useRef<Session | null>(null);
   const targets = frame ? availableTargets(frame.config) : [];
+  const iterated = frame?.config.curve.format === "attractor";
   useEffect(() => {
     setTracks((previous) => {
       const retained = previous.filter((track) =>
@@ -228,7 +230,22 @@ export function AnimationPanel({
   ): Promise<AnimationView> {
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
     let current: Frame;
-    if (s.mode === "reveal")
+    const attractor = s.original.result.attractor;
+    // An iterated map's density cannot be cut back, so each revealed frame
+    // counts a prefix of the iterates afresh, live and exported alike.
+    if (s.mode === "reveal" && attractor)
+      current =
+        p === 1
+          ? s.original
+          : {
+              config: s.original.config,
+              result: (
+                await engine.compute(
+                  revealConfig(s.original.config, attractor, p),
+                )
+              ).result,
+            };
+    else if (s.mode === "reveal")
       current = {
         config: s.original.config,
         result: reveal(s.original.result, p),
@@ -252,7 +269,11 @@ export function AnimationPanel({
     s.progress = view.progress;
     setProgress(view.progress);
     onView(view);
-    if (s.mode === "reveal")
+    if (s.mode === "reveal" && view.frame.result.attractor)
+      setLive(
+        `Accumulated iterates = ${view.frame.result.attractor.accumulated.toLocaleString("en-US")}`,
+      );
+    else if (s.mode === "reveal")
       setLive(
         `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`,
       );
@@ -435,7 +456,7 @@ export function AnimationPanel({
         if (epoch.current !== token) return;
         saveFile(
           blob,
-          `tangent-garden-${frame.config.kind}-${mode}.${text.extension}`,
+          `tangent-garden-${studyName(frame.config)}-${mode}.${text.extension}`,
         );
         exportAbort.current = null;
         session.current = null;
@@ -508,7 +529,11 @@ export function AnimationPanel({
             topic="animation modes"
             help={
               mode === "reveal" ? (
-                "Reveal the full study from its domain start to its end. The arc-length anchor and final sample spacing stay fixed."
+                iterated ? (
+                  "Count the iterates in order, from none to all of them, in the finished drawing's window and grid."
+                ) : (
+                  "Reveal the full study from its domain start to its end. The arc-length anchor and final sample spacing stay fixed."
+                )
               ) : (
                 <>
                   Tracks vary together, linearly. Use <var>a</var> in a curve
@@ -526,7 +551,9 @@ export function AnimationPanel({
               value={mode}
               onChange={(e) => parameterMode(e.target.value as typeof mode)}
             >
-              <option value="reveal">Draw along the curve</option>
+              <option value="reveal">
+                {iterated ? "Accumulate the iterates" : "Draw along the curve"}
+              </option>
               <option value="parameters">Vary parameters</option>
             </select>
           </Field>

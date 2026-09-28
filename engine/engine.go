@@ -28,11 +28,13 @@ type Request struct {
 	Rolling      Roller  `json:"rolling"`
 	// Envelope is the family of lines for the envelope construction.
 	Envelope EnvelopeFamily `json:"envelope"`
-	// Inversion is the circle and the curve inverted by the inversion
-	// construction.
+	// Inversion is the circle of the inversion construction.
 	Inversion Inversion `json:"inversion"`
-	Samples   int       `json:"samples"`
-	Lines     int       `json:"lines"`
+	// Input is the curve the construction acts on: the base ("curve", or
+	// empty) or a derived curve (engine/input.go).
+	Input   string `json:"input"`
+	Samples int    `json:"samples"`
+	Lines   int    `json:"lines"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -62,6 +64,8 @@ type Result struct {
 	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
 	// Pursuit is present only for a cyclic pursuit.
 	Pursuit *PursuitResult `json:"pursuit,omitempty"`
+	// Field is present only for a vector field's trajectories.
+	Field *FieldResult `json:"field,omitempty"`
 	// Moving is present only for a rolling curve.
 	Moving *MovingResult `json:"moving,omitempty"`
 	// Second holds the chords' far endpoints, indexed like Base, present
@@ -69,6 +73,15 @@ type Result struct {
 	Second []*Vec `json:"second,omitempty"`
 	// Inversion is present only for an inversion.
 	Inversion *InversionResult `json:"inversion,omitempty"`
+	// Input is the derived curve the construction acts on, indexed like
+	// Base, present only when the input is not the base itself.
+	Input []*Vec `json:"input,omitempty"`
+	// Contours is present only for an implicit curve, which replaces the
+	// base and derived paths.
+	Contours *ContourResult `json:"contours,omitempty"`
+	// Attractor is present only for an iterated map, which replaces the
+	// base and derived paths.
+	Attractor *AttractorResult `json:"attractor,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
@@ -83,11 +96,35 @@ func Compute(q Request) (Result, error) {
 	if q.Samples < 64 || q.Samples > 32768 || q.Lines < 2 || q.Lines > 2048 || q.Lines > q.Samples {
 		return out, fmt.Errorf("samples must be 64–32768 and lines 2–2048, with no more lines than samples")
 	}
+	if q.Curve.Format == "implicit" {
+		// A level set has no parameter to build a construction on: its
+		// contours are the drawing, with the gradient as construction.
+		res, warnings, err := q.Curve.Implicit.contours(q.Curve.A, q.Lines)
+		if err != nil {
+			return out, err
+		}
+		out.Base, out.Derived, out.Virtual, out.Contours = []*Vec{}, []*Vec{}, []bool{}, res
+		out.Warnings = append(out.Warnings, warnings...)
+		return out, nil
+	}
+	if q.Curve.Format == "attractor" {
+		// Discrete iterates are counted, never joined: the density is the
+		// drawing, with the first iterates as construction.
+		res, err := q.Curve.Attractor.density(q.Lines)
+		if err != nil {
+			return out, err
+		}
+		out.Base, out.Derived, out.Virtual, out.Attractor = []*Vec{}, []*Vec{}, []bool{}, res
+		return out, nil
+	}
 	if !finite(q.Offset) || math.Abs(q.Offset) > 1e5 {
 		return out, fmt.Errorf("involute offset must be finite and within ±100000")
 	}
 	if !finite(q.Distance) || math.Abs(q.Distance) > 1e5 {
 		return out, fmt.Errorf("offset distance must be finite and within ±100000")
+	}
+	if err := validateInput(q.Input, q.Kind, q.Pole); err != nil {
+		return out, err
 	}
 	if q.Kind == "rolling" {
 		if err := q.Rolling.validate(); err != nil {
@@ -96,13 +133,10 @@ func Compute(q Request) (Result, error) {
 	}
 	var inv *inverter
 	if q.Kind == "inversion" {
-		if err := q.Inversion.validate(q.Pole); err != nil {
+		if err := q.Inversion.validate(); err != nil {
 			return out, err
 		}
 		out.Inversion = &InversionResult{Center: q.Inversion.Center, Radius: q.Inversion.Radius, Breaks: []int{}}
-		if q.Inversion.Of != "curve" {
-			out.Inversion.Source = make([]*Vec, q.Samples)
-		}
 	}
 	stacked := q.Kind == "offset" && q.Stack.Enabled
 	if stacked {
@@ -133,8 +167,13 @@ func Compute(q Request) (Result, error) {
 	if err != nil {
 		return out, err
 	}
+	// The construction acts on g, the base or a curve derived from it.
+	g := inputCurve(q.Input, f, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
+	if composed(q.Input) {
+		out.Input = make([]*Vec, q.Samples)
+	}
 	if out.Inversion != nil {
-		inv = &inverter{Inversion: q.Inversion, f: f, lo: q.Curve.Min, hi: q.Curve.Max, pole: q.Pole, distance: q.Distance}
+		inv = &inverter{Inversion: q.Inversion, g: g}
 	}
 	var mv *mover
 	if q.Kind == "rolling" && q.Rolling.curve() {
@@ -149,7 +188,7 @@ func Compute(q Request) (Result, error) {
 			return out, err
 		}
 	} else if q.Kind == "envelope" {
-		if family, err = newLines(q.Envelope, f, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
+		if family, err = newLines(q.Envelope, g, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
 			return out, err
 		}
 		if family.end != nil {
@@ -177,6 +216,18 @@ func Compute(q Request) (Result, error) {
 		out.Pursuit = newPursuitResult(chaser, q.Samples)
 		if chaser.exhausted {
 			out.Warnings = append(out.Warnings, fmt.Sprintf("The chase ran out of integration steps at t = %.6g; later samples are left empty.", chaser.end))
+		}
+	}
+	var flows []*trajectory
+	var velocity odeFunc
+	if q.Curve.Format == "field" {
+		var timed bool
+		if flows, velocity, timed, err = q.Curve.Field.flows(q.Curve.A, lo, hi); err != nil {
+			return out, err
+		}
+		out.Field = newFieldResult(flows, q.Samples, timed)
+		if w := exhaustedWarning(flows); w != "" {
+			out.Warnings = append(out.Warnings, w)
 		}
 	}
 	step := (hi - lo) / float64(q.Samples-1)
@@ -207,14 +258,14 @@ func Compute(q Request) (Result, error) {
 			a := q.Source.Angle * math.Pi / 180
 			return Vec{math.Cos(a), math.Sin(a)}
 		}
-		delta := f(t).Sub(q.Source.Position)
+		delta := g(t).Sub(q.Source.Position)
 		if delta.Norm() < 1e-9 {
 			return Vec{math.NaN(), math.NaN()}
 		}
 		return delta.Unit()
 	}
 	direction := func(t float64) Vec {
-		dp, _ := derivatives(f, t, lo, hi)
+		dp, _ := derivatives(g, t, lo, hi)
 		if dp.Norm() < 1e-9 {
 			return Vec{math.NaN(), math.NaN()}
 		}
@@ -229,12 +280,26 @@ func Compute(q Request) (Result, error) {
 		}
 		return v
 	}
+	// A tangent that reverses within the step before t marks a cusp or
+	// corner between samples. Constructions oriented by the tangent jump
+	// there to its other side: offsets, the involute's unwinding direction,
+	// and a circle envelope's left and right.
+	reverses := func(t float64, dp Vec) bool {
+		a, _ := derivatives(g, t-step, lo, hi)
+		b, _ := derivatives(g, t-step/2, lo, hi)
+		return a.Dot(b) <= 0 || b.Dot(dp) <= 0
+	}
+	oriented := q.Kind == "offset" || q.Kind == "involute" || circles != nil
+	jumps := 0
 	// Both the involute and the rolling circle measure arc length from the
 	// domain start; neither continues across a break in it.
 	arc := 0.0
 	arcOK := true
 	arcLength := q.Kind == "involute" || q.Kind == "rolling"
-	reversed := false
+	var rolls *travel
+	if q.Kind == "rolling" {
+		rolls = newTravel(g, lo, hi)
+	}
 	// Why a rolling curve stopped, other than the base's own arc length.
 	movingStop := placedOK
 	tirCount := 0
@@ -254,6 +319,9 @@ func Compute(q Request) (Result, error) {
 		line := nextLine < q.Lines && j == int(math.Round(float64(nextLine)*float64(q.Samples-1)/float64(q.Lines-1)))
 		if chaser != nil {
 			out.Pursuit.sample(chaser, j, t, line)
+		}
+		if flows != nil {
+			out.Field.sample(flows, velocity, j, t, line)
 		}
 		if line {
 			nextLine++
@@ -285,19 +353,45 @@ func Compute(q Request) (Result, error) {
 			}
 			continue
 		}
+		if out.Input != nil {
+			// From here on the construction acts on the derived input, and
+			// only the construction has a gap where the input does.
+			p = g(t)
+			out.Input[j] = point(p)
+			dp, ddp = derivatives(g, t, lo, hi)
+			switch checks := inputStencil(lo, hi); constructionOrder(q.Kind) {
+			case 1:
+				stableSample = checks.stableTangent(g, t, dp)
+			case 2:
+				stableSample = checks.stable(g, t, dp, ddp)
+			}
+			if !p.Valid() || !stableSample {
+				out.Invalid++
+				if arcLength {
+					arcOK = false
+				}
+				continue
+			}
+		}
+		if j == 0 && rolls != nil {
+			rolls.note(t, dp)
+		}
 		if j > 0 && arcLength && arcOK {
-			a, _ := derivatives(f, t-step, lo, hi)
-			b, _ := derivatives(f, t-step/2, lo, hi)
+			a, _ := derivatives(g, t-step, lo, hi)
+			b, _ := derivatives(g, t-step/2, lo, hi)
 			inc := step / 6 * (a.Norm() + 4*b.Norm() + dp.Norm())
-			// A tangent that reverses within one step marks a cusp or corner
-			// between samples, where the circle would jump to the other side.
-			if q.Kind == "rolling" && (a.Dot(b) <= 0 || b.Dot(dp) <= 0) {
-				arcOK, reversed = false, true
+			if rolls != nil {
+				arcOK = rolls.step(t, step, a, b, dp)
 			} else if !finite(inc) {
 				arcOK = false
 			} else {
 				arc += inc
 			}
+		}
+		if oriented && j > 0 && reverses(t, dp) {
+			jumps++
+			out.Invalid++
+			continue
 		}
 		var target *Vec
 		var rolled *Rolling
@@ -328,8 +422,13 @@ func Compute(q Request) (Result, error) {
 				origin, target = *start, Offset(p, dp, hi)
 			}
 		case "rolling":
+			// Placed along the heading, which undoes reversals at cusps.
+			heading := dp.Mul(rolls.orient)
+			if !(dp.Norm() > stillSpeed) {
+				break
+			}
 			if arcOK && mv != nil {
-				s, why := mv.place(p, dp, arc)
+				s, why := mv.place(p, heading, rolls.arc)
 				if why != placedOK {
 					arcOK, movingStop = false, why
 					break
@@ -337,7 +436,7 @@ func Compute(q Request) (Result, error) {
 				s.SampleIndex = j
 				target, placed = point(s.Point), &s
 			} else if arcOK {
-				s := q.Rolling.at(p, dp, arc)
+				s := q.Rolling.at(p, heading, rolls.arc)
 				s.SampleIndex = j
 				if target = point(s.Point); target != nil && s.Center.Valid() {
 					rolled = &s
@@ -364,22 +463,14 @@ func Compute(q Request) (Result, error) {
 				coincident++
 			}
 		case "inversion":
-			src := inv.at(p, dp, ddp)
-			if out.Inversion.Source != nil {
-				out.Inversion.Source[j] = src
-			}
-			if src == nil {
-				break
-			}
-			origin = *src
-			if target = Invert(*src, inv.Center, inv.Radius); target == nil {
+			if target = Invert(p, inv.Center, inv.Radius); target == nil {
 				onCenter++
 				break
 			}
-			if last == j-1 && inv.open(lastT, t, lastSrc, *src) {
+			if last == j-1 && inv.open(lastT, t, lastSrc, p) {
 				out.Inversion.Breaks = append(out.Inversion.Breaks, j)
 			}
-			last, lastT, lastSrc = j, t, *src
+			last, lastT, lastSrc = j, t, p
 		case "evolute":
 			target = Evolute(p, dp, ddp)
 		case "involute":
@@ -448,8 +539,14 @@ func Compute(q Request) (Result, error) {
 	if out.Invalid > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("%d samples have no finite construction (singularity, parallel rays, or invalid domain).", out.Invalid))
 	}
+	if jumps > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("In %d places the tangent reverses between samples, at a cusp or corner, and the construction jumps to its other side: it is left open there, not joined across.", jumps))
+	}
 	if coincident > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the chord's endpoints coincide, so it has no direction; they are left as gaps.", coincident))
+	}
+	if out.Field != nil {
+		out.Field.directions(velocity)
 	}
 	if unsized > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius is not positive (or undefined), so there is no circle; they are left as gaps.", unsized))
@@ -477,13 +574,18 @@ func Compute(q Request) (Result, error) {
 	if mv != nil {
 		roller, rolling = "the rolling curve", "the rolling curve"
 	}
+	if rolls != nil && rolls.cusps > 0 {
+		cusps := "cusps"
+		if rolls.cusps == 1 {
+			cusps = "cusp"
+		}
+		out.Warnings = append(out.Warnings, fmt.Sprintf("Along this curve %s rolls back out of %d %s: the direction of travel reverses there, and it stays on its side of the curve, turning the other way.", roller, rolls.cusps, cusps))
+	}
 	switch {
 	case movingStop == exhausted:
 		out.Warnings = append(out.Warnings, "The contact reached the end of the rolling curve's domain; it stopped there. Extend its domain, or close the curve so it wraps around.")
 	case movingStop == irregular:
 		out.Warnings = append(out.Warnings, "The contact reached a cusp, corner, or invalid point on the rolling curve; it stopped there. Choose a regular stretch of the rolling curve.")
-	case reversed:
-		out.Warnings = append(out.Warnings, "The tangent reversed between samples, at a cusp or corner; "+roller+" cannot roll past it and stopped there. Choose a regular domain.")
 	case !arcOK && q.Kind == "rolling":
 		out.Warnings = append(out.Warnings, "Arc length crossed an invalid interval; "+rolling+" stopped. Choose a continuous domain.")
 	case !arcOK:
@@ -499,13 +601,23 @@ func breaksOf(r Result) []int {
 	return r.Inversion.Breaks
 }
 
-// derivativeOrder is the number of stable derivatives a construction needs,
-// so an ill-conditioned higher derivative must not turn its samples into gaps.
+// derivativeOrder is the number of stable derivatives of the base a request
+// needs, so an ill-conditioned higher derivative must not turn its samples
+// into gaps: its input's, or for the base itself, its construction's.
 func derivativeOrder(q Request) int {
+	if composed(q.Input) {
+		return inputOrder(q.Input)
+	}
+	return constructionOrder(q.Kind)
+}
+
+// constructionOrder is the number of stable derivatives a construction needs
+// of the curve it acts on.
+func constructionOrder(kind string) int {
 	switch {
-	case q.Kind == "inversion":
-		return q.Inversion.order()
-	case usesPole(q.Kind) || q.Kind == "offset" || q.Kind == "rolling" || q.Kind == "envelope":
+	case kind == "inversion":
+		return 0
+	case usesPole(kind) || kind == "offset" || kind == "rolling" || kind == "envelope" || kind == "involute":
 		return 1
 	}
 	return 2

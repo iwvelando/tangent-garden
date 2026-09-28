@@ -73,8 +73,6 @@ type mover struct {
 	closed  bool
 	sign    float64 // +1 rolling forward (left), −1 backward (right)
 	start   float64 // arc coordinate of the first contact
-	limit   float64 // where an open curve's contact must stop
-	atEnd   bool    // the limit is the domain's end, not an irregular point
 	tracing Vec
 }
 
@@ -133,7 +131,6 @@ func newMover(c Roller, a float64, samples int) (*mover, *MovingResult, error) {
 	// An open curve rolls only across the regular intervals next to the start.
 	v.first, v.last = k, k
 	if !v.ok[k] {
-		v.limit = v.start
 		return v, out, nil
 	}
 	for v.first > 0 && v.ok[v.first-1] {
@@ -141,11 +138,6 @@ func newMover(c Roller, a float64, samples int) (*mover, *MovingResult, error) {
 	}
 	for v.last < n-1 && v.ok[v.last+1] {
 		v.last++
-	}
-	if v.sign > 0 {
-		v.limit, v.atEnd = v.arc[v.last+1], v.last == n-1
-	} else {
-		v.limit, v.atEnd = v.arc[v.first], v.first == 0
 	}
 	return v, out, nil
 }
@@ -176,8 +168,12 @@ func (v *mover) contact(s float64) (float64, stop) {
 			target += length
 		}
 		first, last = 0, len(v.ok)-1
-	} else if slack := 1e-12 * (1 + length); v.sign*(target-v.limit) > slack || !v.ok[first] {
-		if v.atEnd && v.ok[first] {
+	} else if slack := 1e-12 * (1 + length); !v.ok[first] {
+		return 0, irregular
+	} else if past, before := target > v.arc[last+1]+slack, target < v.arc[first]-slack; past || before {
+		// Rolling back out of a base cusp, the contact can run off either
+		// end of the regular stretch around the start.
+		if past && last == len(v.ok)-1 || before && first == 0 {
 			return 0, exhausted
 		}
 		return 0, irregular

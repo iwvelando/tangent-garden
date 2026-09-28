@@ -422,7 +422,7 @@ assert.match(
 // A circle through the center of inversion maps to a line, open where the
 // circle passes through the center; the pedal of an ellipse about its center
 // inverts into the reciprocal ellipse a²x² + b²y² = 1.
-const inversion = { center: { x: 0, y: 0 }, radius: 2, of: "curve" };
+const inversion = { center: { x: 0, y: 0 }, radius: 2 };
 const inverted = JSON.parse(
   globalThis.tangentGardenCompute(
     JSON.stringify({
@@ -434,7 +434,7 @@ const inverted = JSON.parse(
   ),
 );
 assert.equal(inverted.inversion.radius, 2);
-assert.equal(inverted.inversion.source, undefined);
+assert.equal(inverted.input, undefined);
 assert.equal(inverted.inversion.breaks.length, 1);
 assert.ok(Math.abs(inverted.inversion.breaks[0] - 500) <= 1);
 inverted.derived.forEach(
@@ -451,11 +451,12 @@ const reciprocal = JSON.parse(
       kind: "inversion",
       curve: { ...config.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
       pole: { x: 0, y: 0 },
-      inversion: { ...inversion, radius: 1, of: "pedal" },
+      input: "pedal",
+      inversion: { ...inversion, radius: 1 },
     }),
   ),
 );
-assert.equal(reciprocal.inversion.source.length, config.samples);
+assert.equal(reciprocal.input.length, config.samples);
 reciprocal.derived.forEach((p) =>
   assert.ok(Math.abs(4 * p.x * p.x + 1.21 * p.y * p.y - 1) < 1e-9),
 );
@@ -470,6 +471,41 @@ assert.match(
     ),
   ).error,
   /inversion radius/,
+);
+// Any construction acts on a derived input: unwinding a string from an
+// ellipse's evolute, starting with the radius of curvature at the domain
+// start, retraces the ellipse. An evolute cannot feed a second-order
+// construction.
+const involute = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "involute",
+      input: "evolute",
+      offset: Math.pow(4 * Math.sin(0.1) ** 2 + Math.cos(0.1) ** 2, 1.5) / 2,
+      curve: {
+        ...config.curve,
+        x: "2*cos(t)",
+        y: "sin(t)",
+        min: 0.1,
+        max: 1.4,
+      },
+    }),
+  ),
+);
+assert.equal(involute.invalid, 0);
+assert.equal(involute.input.length, config.samples);
+involute.derived.forEach((p, j) => {
+  const t = 0.1 + (1.3 * j) / (config.samples - 1);
+  assert.ok(Math.hypot(p.x - 2 * Math.cos(t), p.y - Math.sin(t)) < 1e-6);
+});
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({ ...config, kind: "evolute", input: "evolute" }),
+    ),
+  ).error,
+  /fourth derivative/,
 );
 // The deltoid 2e^{it} + e^{-2it} closes after 2π, with its epicycles chained
 // from the origin; a Lissajous 3:2 figure projects from its two guides.
@@ -585,8 +621,205 @@ assert.match(
   ).error,
   /2–16 pursuers/,
 );
+// Trajectories of a rotation, ẋ = −ay, ẏ = ax with a = 1, are circles; a
+// seed outside the escape circle has none, and one field of expressions in
+// x, y, and t carries the error.
+const field = (f) =>
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: {
+          ...config.curve,
+          format: "field",
+          min: 0,
+          max: 2 * Math.PI,
+          a: 1,
+          field: {
+            x: "-a*y",
+            y: "a*x",
+            seeds: [
+              { x: 1, y: 0 },
+              { x: 0, y: 3 },
+            ],
+            escape: 2,
+            ...f,
+          },
+        },
+      }),
+    ),
+  );
+const rotation = field({});
+assert.equal(rotation.field.paths.length, 2);
+for (const [j, p] of rotation.field.paths[0].entries()) {
+  const t = (2 * Math.PI * j) / (config.samples - 1);
+  assert.ok(Math.hypot(p.x - Math.cos(t), p.y - Math.sin(t)) < 1e-8);
+  assert.deepEqual(p, rotation.base[j]);
+}
+assert.ok(rotation.field.paths[1].every((p) => p === null));
+assert.deepEqual(rotation.field.ends, [
+  { time: 2 * Math.PI, reason: "end" },
+  { time: 0, reason: "escape" },
+]);
+for (const arrow of rotation.field.arrows)
+  assert.ok(
+    Math.hypot(
+      arrow.velocity.x + arrow.point.y,
+      arrow.velocity.y - arrow.point.x,
+    ) < 1e-15,
+  );
+assert.equal(rotation.field.arrows.length, config.lines);
+// Without t there is one direction field; with it there is none.
+assert.equal(rotation.field.timed, false);
+assert.ok(rotation.field.grid.points.length > 100);
+for (const { point, velocity } of rotation.field.grid.points)
+  assert.ok(Math.hypot(velocity.x + point.y, velocity.y - point.x) < 1e-15);
+const timed = field({ x: "-a*y*cos(t)" });
+assert.equal(timed.field.timed, true);
+assert.equal(timed.field.grid.points.length, 0);
+assert.match(field({ y: "x*z" }).error, /dy\/dt: unknown name "z"/);
+// Cassini ovals ((x − a)² + y²)((x + a)² + y²) = b⁴ with a = 1 split into
+// two at b < a and join into one at b > a; a family of levels comes back
+// beside them, and the gradient at representative points.
+const cassini = (implicit) =>
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: {
+          ...config.curve,
+          format: "implicit",
+          a: 1,
+          implicit: {
+            f: "((x-a)^2+y^2)*((x+a)^2+y^2)",
+            level: 0.9 ** 4,
+            family: { enabled: false, from: 0, to: 0, count: 0 },
+            window: { xMin: -2, xMax: 2, yMin: -1.5, yMax: 1.5 },
+            cells: 81,
+            ...implicit,
+          },
+        },
+      }),
+    ),
+  );
+const ovals = (b) => {
+  const r = cassini({ level: b ** 4 });
+  assert.deepEqual(r.base, []);
+  assert.deepEqual(r.derived, []);
+  for (const { points } of r.contours.curve.contours)
+    for (const { x, y } of points)
+      assert.ok(
+        Math.abs(((x - 1) ** 2 + y ** 2) * ((x + 1) ** 2 + y ** 2) - b ** 4) <
+          1e-12,
+      );
+  return r.contours;
+};
+assert.equal(ovals(0.9).curve.contours.length, 2);
+assert.equal(ovals(1.1).curve.contours.length, 1);
+const nested = ovals(1.1);
+assert.equal(nested.columns, 81);
+assert.equal(nested.rows, 61);
+assert.equal(nested.normals.length, config.lines);
+for (const { point, gradient } of nested.normals) {
+  const { x, y } = point;
+  const exact = {
+    x:
+      2 * (x - 1) * ((x + 1) ** 2 + y ** 2) +
+      2 * (x + 1) * ((x - 1) ** 2 + y ** 2),
+    y: 2 * y * ((x + 1) ** 2 + y ** 2) + 2 * y * ((x - 1) ** 2 + y ** 2),
+  };
+  assert.ok(Math.hypot(gradient.x - exact.x, gradient.y - exact.y) < 1e-8);
+}
+const levels = cassini({
+  family: { enabled: true, from: 0.5, to: 2.3, count: 4 },
+}).contours.family;
+assert.deepEqual(
+  levels.map((l) => [l.level, l.contours.length]),
+  [
+    [0.5, 2],
+    [1.1, 1],
+    [1.7, 1],
+    [2.3, 1],
+  ],
+);
+// y/(x² + y² − a²) has a pole on the circle of radius a: it changes sign
+// across it without reaching any level, and is located there.
+const pole = cassini({ f: "y/(x^2+y^2-a^2)", level: 1 }).contours;
+assert.ok(pole.discontinuities.length > 100);
+for (const { x, y } of pole.discontinuities)
+  assert.ok(Math.abs(Math.hypot(x, y) - 1) < 1e-12);
+assert.match(cassini({ f: "x+t" }).error, /F\(x, y\) cannot use t/);
+// The reference Clifford study, (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from
+// (0.1, 0.1): every accumulated iterate is counted in its fitted window,
+// which stays within 1 + |c| by 1 + |d|, and the same request gives the same
+// counts. Its first iterates follow the map; a Hénon orbit that leaves
+// ±100000 stops there.
+const iterated = (attractor) =>
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        ...config,
+        curve: {
+          ...config.curve,
+          format: "attractor",
+          attractor: {
+            map: "clifford",
+            a: -1.4,
+            b: 1.6,
+            c: 1,
+            d: 0.7,
+            start: { x: 0.1, y: 0.1 },
+            discard: 1000,
+            iterates: 800000,
+            fit: true,
+            window: { xMin: -2, xMax: 2, yMin: -2, yMax: 2 },
+            cells: 600,
+            ...attractor,
+          },
+        },
+      }),
+    ),
+  );
+const clifford = iterated({}).attractor;
+assert.deepEqual(iterated({}).attractor, clifford);
+assert.equal(
+  clifford.counts.reduce((sum, n) => sum + n, 0),
+  800000,
+);
+assert.equal(clifford.accumulated, 800000);
+assert.equal(clifford.outside, 0);
+assert.equal(clifford.escape, 0);
+assert.equal(clifford.counts.length, clifford.columns * clifford.rows);
+assert.equal(Math.max(clifford.columns, clifford.rows), 600);
+assert.equal(
+  clifford.counts.reduce((m, n) => Math.max(m, n), 0),
+  clifford.max,
+);
+const { window } = clifford;
+assert.ok(window.xMin >= -2 && window.xMax <= 2);
+assert.ok(window.yMin >= -1.7 && window.yMax <= 1.7);
+assert.equal(clifford.orbit.length, config.lines + 1);
+clifford.orbit.slice(1).forEach(({ x, y }, k) => {
+  const p = clifford.orbit[k];
+  assert.ok(
+    Math.abs(x - (Math.sin(-1.4 * p.y) + Math.cos(-1.4 * p.x))) < 1e-14,
+  );
+  assert.ok(
+    Math.abs(y - (Math.sin(1.6 * p.x) + 0.7 * Math.cos(1.6 * p.y))) < 1e-14,
+  );
+});
+const henon = iterated({
+  map: "henon",
+  a: 1.4,
+  b: 0.3,
+  start: { x: 2, y: 0 },
+  discard: 1,
+  iterates: 100,
+}).attractor;
+assert.deepEqual([henon.escape, henon.accumulated], [4, 2]);
+assert.match(iterated({ iterates: 5000001 }).error, /accumulate 0–5,000,000/);
 console.log(
-  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, and invalid JSON passed.",
+  "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, an involute of an evolute, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, Clifford and Hénon densities, and invalid JSON passed.",
 );
 const spatial = JSON.parse(
   globalThis.tangentGardenSpatial(

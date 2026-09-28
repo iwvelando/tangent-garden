@@ -15,15 +15,20 @@ import {
   isHarmonic,
   maxTerms,
   maxPursuers,
+  maxSeeds,
   ownsShape,
   usesPole,
+  inputAllowed,
+  studyName,
   type Bounds,
   type Config,
   type Frame,
-  type InversionSource,
+  type ConstructionInput,
   type Kind,
   type PoleKind,
+  type AttractorMap,
   type Roll,
+  type Vec,
 } from "./types";
 import { EngineClient, boundText } from "./engine-client";
 import { useTheme } from "./useTheme";
@@ -33,7 +38,10 @@ import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
 import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
-import { pursuerLabels, termLabels } from "./animation";
+import { endNote, nextSeed } from "./flow";
+import { contourNote } from "./contour";
+import { attractorNote, mapDefaults, mapFormulas, mapNames } from "./attractor";
+import { pursuerLabels, seedLabels, termLabels } from "./animation";
 import { useDisclosure } from "./useDisclosure";
 import { useMediaQuery } from "./useMediaQuery";
 import type { AnimationView, Viewport } from "./animation";
@@ -138,6 +146,20 @@ const stackDescription = {
     "Offset the curve by evenly spaced signed distances along its normals. Each normal segment crosses the whole stack at a right angle. Circles centered on the curve touch the offsets at their radius: the offsets ±R are the envelope of those circles.",
   formula: "Oₖ(t) = r(t) + dₖ N(t)",
 };
+// An implicit curve replaces the construction altogether.
+const implicitDescription = {
+  title: "A level set and its gradient",
+  description:
+    "Sample F on a grid and mark where it lies above or below the level c. The curve F = c runs between them, through every cell whose corners disagree; each crossing is then found exactly and the pieces refined onto the curve. Where F has a saddle the pieces split or join as c passes it. The gradient of F is normal to the curve, pointing toward larger values.",
+  formula: "F(x, y) = c,  ∇F ⟂ curve",
+};
+// So does an iterated map, whose formula depends on the map.
+const attractorDescription = (map: AttractorMap) => ({
+  title: "The visit density of an iterated map",
+  description:
+    "An iterated map sends each point to the next. From the start, the first iterates are discarded and the rest counted in the cells of a grid; each cell is shaded by the logarithm of its visits. The iterates are separate points, never joined into a curve. Coefficients that give a strange attractor are found by trying, and a picture like this does not prove the orbit is chaotic.",
+  formula: mapFormulas[map],
+});
 // One tab per family; the pole constructions share a tab and a selector.
 const tabs: Kind[] = [
   "evolute",
@@ -150,7 +172,7 @@ const tabs: Kind[] = [
   "envelope",
   "inversion",
 ];
-const inversionOptions: Record<InversionSource, string> = {
+const inputOptions: Record<ConstructionInput, string> = {
   curve: "The curve itself",
   evolute: "Its evolute",
   pedal: "Its pedal",
@@ -308,22 +330,33 @@ function App({ active }: { active: boolean }) {
   }, [config, bounds]);
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
-  const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
+  // A level set and an iterated map have no parameter, so no construction
+  // applies to them.
+  const implicit = config.curve.format === "implicit";
+  const attractor = config.curve.format === "attractor";
+  const unparametrized = implicit || attractor;
+  const optical =
+    !unparametrized &&
+    (config.kind === "catacaustic" || config.kind === "diacaustic");
   // Chords that are not extended have envelope points beyond the segments.
   const chords =
+    !unparametrized &&
     config.kind === "envelope" &&
     config.envelope.mode === "chord" &&
     !config.envelope.extend;
-  const info =
-    config.kind === "offset" && config.stack.enabled
-      ? stackDescription
-      : config.kind === "rolling" && config.rolling.shape === "curve"
-        ? rollingCurveDescription
-        : config.kind === "envelope" && config.envelope.mode === "chord"
-          ? chordDescription
-          : config.kind === "envelope" && config.envelope.mode === "circle"
-            ? circleDescription
-            : descriptions[config.kind];
+  const info = implicit
+    ? implicitDescription
+    : attractor
+      ? attractorDescription(config.curve.attractor.map)
+      : config.kind === "offset" && config.stack.enabled
+        ? stackDescription
+        : config.kind === "rolling" && config.rolling.shape === "curve"
+          ? rollingCurveDescription
+          : config.kind === "envelope" && config.envelope.mode === "chord"
+            ? chordDescription
+            : config.kind === "envelope" && config.envelope.mode === "circle"
+              ? circleDescription
+              : descriptions[config.kind];
   // Changes apply to the latest configuration, never to this render's copy:
   // a constant expression resolved by Go can land between a state update and
   // the next render, and a stale copy would overwrite it.
@@ -686,6 +719,301 @@ function App({ active }: { active: boolean }) {
       )}
     </>
   );
+  const seeds = config.curve.field.seeds;
+  const toField = (patch: Partial<Config["curve"]["field"]>) =>
+    update((c) => ({
+      curve: { ...c.curve, field: { ...c.curve.field, ...patch } },
+    }));
+  // Adding or removing a seed renumbers the fields after it, so pending
+  // evaluations land first.
+  const editSeeds = async (change: (seeds: Vec[]) => Vec[]) => {
+    await scalarStatus.resolved();
+    update((c) => ({
+      curve: {
+        ...c.curve,
+        field: { ...c.curve.field, seeds: change(c.curve.field.seeds) },
+      },
+    }));
+  };
+  const flows =
+    frame?.config.curve.format === "field" ? frame.result.field : undefined;
+  const fieldControls = (
+    <>
+      <p className="note">
+        Each trajectory starts at its seed (within ±100,000) when t is at the
+        domain start and follows the field: its velocity at (x, y) at time t is
+        (dx/dt, dy/dt). Use <var>x</var>, <var>y</var>, <var>t</var>, and{" "}
+        <var>a</var>. The first seed&rsquo;s trajectory is the curve the
+        construction uses.
+      </p>
+      <Field label="dx/dt" className="equation">
+        <input
+          value={config.curve.field.x}
+          onChange={(e) => toField({ x: e.target.value })}
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="dy/dt" className="equation">
+        <input
+          value={config.curve.field.y}
+          onChange={(e) => toField({ y: e.target.value })}
+          spellCheck={false}
+        />
+      </Field>
+      {seeds.map((_, i) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`seed-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`seed-${i}`}>Seed {i + 1}</span>
+            <button
+              type="button"
+              aria-label={`Remove seed ${i + 1}`}
+              disabled={seeds.length === 1}
+              onClick={() => editSeeds((s) => s.filter((_, j) => j !== i))}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair">
+            {(["X", "Y"] as const).map((field) =>
+              scalar(seedLabels[field](i + 1), [
+                "curve",
+                "field",
+                "seeds",
+                String(i),
+                field.toLowerCase(),
+              ]),
+            )}
+          </div>
+        </div>
+      ))}
+      <button
+        className="closure"
+        type="button"
+        disabled={seeds.length >= maxSeeds}
+        onClick={() => editSeeds((s) => [...s, nextSeed(s)])}
+      >
+        {seeds.length >= maxSeeds ? "At most 16 seeds" : "Add a seed"}
+      </button>
+      {scalar("Escape radius R", ["curve", "field", "escape"], {
+        topic: "escape radius",
+        help: "A trajectory ends the first time it leaves the circle of this radius about the origin (0–100,000), so a field that runs off to infinity stops in view. A seed outside the circle has no path.",
+      })}
+      <p className="note" data-testid="field-note">
+        {flows ? endNote(flows, frame!.config.curve.min) : "Integrating…"}
+      </p>
+    </>
+  );
+  const toImplicit = (patch: Partial<Config["curve"]["implicit"]>) =>
+    update((c) => ({
+      curve: { ...c.curve, implicit: { ...c.curve.implicit, ...patch } },
+    }));
+  const levels = config.curve.implicit.family;
+  const levelSets =
+    frame?.config.curve.format === "implicit"
+      ? frame.result.contours
+      : undefined;
+  const implicitControls = (
+    <>
+      <p className="note">
+        The curve is every point of the window where F(x, y) equals the level c.
+        Use <var>x</var>, <var>y</var>, and <var>a</var>. It has no parameter,
+        so no construction applies; the normals show F&rsquo;s gradient,
+        pointing across the curve toward larger values.
+      </p>
+      <Field label="F(x, y)" className="equation">
+        <input
+          value={config.curve.implicit.f}
+          onChange={(e) => toImplicit({ f: e.target.value })}
+          spellCheck={false}
+        />
+      </Field>
+      {scalar("Level c", ["curve", "implicit", "level"], {
+        topic: "level c",
+        help: "The curve is F = c. As c passes a saddle value of F, pieces of the curve split or join.",
+      })}
+      <div className="pair">
+        {scalar("Window x from", ["curve", "implicit", "window", "xMin"])}
+        {scalar("Window x to", ["curve", "implicit", "window", "xMax"], {
+          topic: "window",
+          help: "The curve is sought only in this rectangle, within ±100,000. Contours that leave it are cut off at its edge.",
+        })}
+      </div>
+      <div className="pair">
+        {scalar("Window y from", ["curve", "implicit", "window", "yMin"])}
+        {scalar("Window y to", ["curve", "implicit", "window", "yMax"])}
+      </div>
+      {number(
+        "Grid cells",
+        config.curve.implicit.cells,
+        (n) => toImplicit({ cells: n }),
+        {
+          step: 1,
+          min: 4,
+          max: 1024,
+          topic: "grid cells",
+          help: "Whole numbers from 4 to 1,024 along the window's longer side. F is sampled at the cells' corners, so a piece of the curve smaller than a cell can be missed; crossings and the curve between them are then found exactly.",
+        },
+      )}
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={levels.enabled}
+          onChange={(e) =>
+            toImplicit({ family: { ...levels, enabled: e.target.checked } })
+          }
+        />
+        Family of levels
+      </label>
+      {levels.enabled && (
+        <>
+          <div className="pair">
+            {scalar("Levels from", ["curve", "implicit", "family", "from"])}
+            {scalar("Levels to", ["curve", "implicit", "family", "to"], {
+              topic: "family of levels",
+              help: "Evenly spaced levels from the first to the last, both included, drawn beside the curve.",
+            })}
+          </div>
+          {number(
+            "Level count",
+            levels.count,
+            (n) =>
+              update((c) => ({
+                curve: {
+                  ...c.curve,
+                  implicit: {
+                    ...c.curve.implicit,
+                    family: { ...c.curve.implicit.family, count: n },
+                  },
+                },
+              })),
+            { step: 1, min: 2, max: 64, help: "Whole numbers from 2 to 64." },
+          )}
+        </>
+      )}
+      <p className="note" data-testid="contour-note">
+        {levelSets ? contourNote(levelSets) : "Tracing…"}
+      </p>
+    </>
+  );
+  const iterated = config.curve.attractor;
+  const toAttractor = (patch: Partial<Config["curve"]["attractor"]>) =>
+    update((c) => ({
+      curve: { ...c.curve, attractor: { ...c.curve.attractor, ...patch } },
+    }));
+  const visits =
+    frame?.config.curve.format === "attractor"
+      ? frame.result.attractor
+      : undefined;
+  const attractorControls = (
+    <>
+      <p className="note">
+        Each point is sent to the next by the map. The iterates are counted in
+        the cells they land in, never joined; a cell&rsquo;s shade is the
+        logarithm of its visits. The orbit is sensitive to rounding, so a
+        different build or device can give different iterates and a similar
+        density.
+      </p>
+      <Field
+        label="Map"
+        topic="iterated map"
+        help="Choosing a map loads coefficients known to give an intricate orbit from nearby starts. Other coefficients may give a few points, a cycle, or an orbit that leaves."
+      >
+        <select
+          value={iterated.map}
+          onChange={(e) => {
+            const map = e.target.value as AttractorMap;
+            toAttractor({ map, ...mapDefaults[map] });
+          }}
+        >
+          {(Object.keys(mapNames) as AttractorMap[]).map((m) => (
+            <option key={m} value={m}>
+              {mapNames[m]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="pair">
+        {scalar("Coefficient a", ["curve", "attractor", "a"])}
+        {scalar("Coefficient b", ["curve", "attractor", "b"], {
+          topic: "map coefficients",
+          help: "Finite, within ±1,000. The formula above shows where each enters.",
+        })}
+      </div>
+      {iterated.map !== "henon" && (
+        <div className="pair">
+          {scalar("Coefficient c", ["curve", "attractor", "c"])}
+          {scalar("Coefficient d", ["curve", "attractor", "d"])}
+        </div>
+      )}
+      <div className="pair">
+        {scalar("Start x₀", ["curve", "attractor", "start", "x"])}
+        {scalar("Start y₀", ["curve", "attractor", "start", "y"], {
+          topic: "start",
+          help: "Where the orbit begins, within ±100,000. It ends if an iterate leaves |x|, |y| ≤ 100,000.",
+        })}
+      </div>
+      <div className="pair">
+        {number(
+          "Discarded iterates",
+          iterated.discard,
+          (n) => toAttractor({ discard: n }),
+          { step: 1, min: 0, max: 1000000 },
+        )}
+        {number(
+          "Accumulated iterates",
+          iterated.iterates,
+          (n) => toAttractor({ iterates: n }),
+          {
+            step: 1,
+            min: 0,
+            max: 5000000,
+            topic: "iterates",
+            help: "Whole numbers: up to 1,000,000 discarded while the orbit settles, then up to 5,000,000 counted. More iterates give a smoother density and take longer.",
+          },
+        )}
+      </div>
+      {number("Grid cells", iterated.cells, (n) => toAttractor({ cells: n }), {
+        step: 1,
+        min: 4,
+        max: 1024,
+        topic: "density grid",
+        help: "Whole numbers from 4 to 1,024 along the window's longer side. Each cell is one pixel of the density, drawn with square edges at any size.",
+      })}
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={iterated.fit}
+          onChange={(e) => toAttractor({ fit: e.target.checked })}
+        />
+        Fit the window to the iterates
+      </label>
+      {!iterated.fit && (
+        <>
+          <div className="pair">
+            {scalar("Window x from", ["curve", "attractor", "window", "xMin"])}
+            {scalar("Window x to", ["curve", "attractor", "window", "xMax"], {
+              topic: "density window",
+              help: "Iterates are counted only in this rectangle, within ±100,000; the note counts those outside it. A fitted window is the accumulated iterates' bounds, and this one stands in when none are accumulated.",
+            })}
+          </div>
+          <div className="pair">
+            {scalar("Window y from", ["curve", "attractor", "window", "yMin"])}
+            {scalar("Window y to", ["curve", "attractor", "window", "yMax"])}
+          </div>
+        </>
+      )}
+      <p className="note" data-testid="attractor-note">
+        {visits
+          ? attractorNote(visits, frame!.config.curve.attractor.discard)
+          : "Iterating…"}
+      </p>
+    </>
+  );
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const behind = (
@@ -694,6 +1022,13 @@ function App({ active }: { active: boolean }) {
         <div>
           <span className="section-label">BEHIND THE LINES</span>
           <p>{info.description}</p>
+          {!unparametrized && config.input !== "curve" && (
+            <p data-testid="input-description">
+              Here it acts on the curve&rsquo;s {config.input}, drawn faintly
+              with the curve, which is evaluated from the curve&rsquo;s
+              definition at every t rather than from its drawn points.
+            </p>
+          )}
         </div>
         <div className="formula">{info.formula}</div>
       </div>
@@ -758,7 +1093,7 @@ function App({ active }: { active: boolean }) {
           )}
           <ExportImageMenu
             disabled={!result || busy || !!error || animationRunning}
-            kind={config.kind}
+            kind={studyName(config)}
           />
         </div>
       </header>
@@ -820,15 +1155,31 @@ function App({ active }: { active: boolean }) {
             <div className="tabs" role="group" aria-label="Construction">
               {tabs.map((k) => {
                 const active =
-                  config.kind === k || (k === "pedal" && usesPole(config.kind));
+                  !unparametrized &&
+                  (config.kind === k ||
+                    (k === "pedal" && usesPole(config.kind)));
                 return (
                   <button
                     className={active ? "active" : ""}
                     aria-pressed={active}
                     key={k}
-                    onClick={() =>
-                      !active && update({ kind: k === "pedal" ? poleKind : k })
+                    disabled={unparametrized}
+                    title={
+                      implicit
+                        ? "An implicit curve has no parameter to build a construction on."
+                        : attractor
+                          ? "An iterated map has no parameter to build a construction on."
+                          : undefined
                     }
+                    onClick={() => {
+                      if (active) return;
+                      const kind = k === "pedal" ? poleKind : k;
+                      // An evolute cannot feed every construction.
+                      update((c) => ({
+                        kind,
+                        input: inputAllowed(kind, c.input) ? c.input : "curve",
+                      }));
+                    }}
                   >
                     {k}
                   </button>
@@ -857,6 +1208,9 @@ function App({ active }: { active: boolean }) {
                   <option value="pursuit">
                     Pursuit · each chases the next
                   </option>
+                  <option value="field">Vector field · trajectories</option>
+                  <option value="implicit">Implicit · F(x, y) = c</option>
+                  <option value="attractor">Attractor · iterated map</option>
                 </select>
               </Field>
               {config.curve.format === "roulette" ? (
@@ -867,6 +1221,12 @@ function App({ active }: { active: boolean }) {
                 fourierControls
               ) : config.curve.format === "pursuit" ? (
                 pursuitControls
+              ) : config.curve.format === "field" ? (
+                fieldControls
+              ) : implicit ? (
+                implicitControls
+              ) : attractor ? (
+                attractorControls
               ) : (
                 <>
                   {config.curve.format === "parametric" && (
@@ -902,52 +1262,58 @@ function App({ active }: { active: boolean }) {
                   )}
                 </>
               )}
-              <div className="pair">
-                {(["min", "max"] as const).map((key) => (
-                  <Field
-                    className="equation"
-                    key={key}
-                    topic={
-                      key !== "min"
-                        ? undefined
-                        : config.curve.format === "roulette"
-                          ? "rolling parameter t"
-                          : harmonic || config.curve.format === "pursuit"
-                            ? "time parameter t"
-                            : undefined
-                    }
-                    help={
-                      key !== "min"
-                        ? undefined
-                        : config.curve.format === "roulette"
-                          ? config.curve.roulette.roll === "line"
-                            ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
-                            : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
-                          : harmonic
-                            ? "t is time: a vector of frequency k turns through k·t radians."
-                            : config.curve.format === "pursuit"
-                              ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
+              {!unparametrized && (
+                <div className="pair">
+                  {(["min", "max"] as const).map((key) => (
+                    <Field
+                      className="equation"
+                      key={key}
+                      topic={
+                        key !== "min"
+                          ? undefined
+                          : config.curve.format === "roulette"
+                            ? "rolling parameter t"
+                            : harmonic ||
+                                config.curve.format === "pursuit" ||
+                                config.curve.format === "field"
+                              ? "time parameter t"
                               : undefined
-                    }
-                    label={
-                      key === "min"
-                        ? config.curve.format === "cartesian"
-                          ? "x from"
-                          : "t from"
-                        : "to"
-                    }
-                  >
-                    <input
-                      value={bounds[key]}
-                      onChange={(e) => {
-                        setPreset("custom");
-                        setBounds({ ...bounds, [key]: e.target.value });
-                      }}
-                      spellCheck={false}
-                    />
-                  </Field>
-                ))}
-              </div>
+                      }
+                      help={
+                        key !== "min"
+                          ? undefined
+                          : config.curve.format === "roulette"
+                            ? config.curve.roulette.roll === "line"
+                              ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
+                              : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
+                            : harmonic
+                              ? "t is time: a vector of frequency k turns through k·t radians."
+                              : config.curve.format === "pursuit"
+                                ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
+                                : config.curve.format === "field"
+                                  ? "t is time: every trajectory starts from its seed when t is at the domain start. Fields may depend on t."
+                                  : undefined
+                      }
+                      label={
+                        key === "min"
+                          ? config.curve.format === "cartesian"
+                            ? "x from"
+                            : "t from"
+                          : "to"
+                      }
+                    >
+                      <input
+                        value={bounds[key]}
+                        onChange={(e) => {
+                          setPreset("custom");
+                          setBounds({ ...bounds, [key]: e.target.value });
+                        }}
+                        spellCheck={false}
+                      />
+                    </Field>
+                  ))}
+                </div>
+              )}
               {config.curve.format !== "roulette" &&
                 !ownsShape(config.curve.format) &&
                 scalar(
@@ -974,11 +1340,13 @@ function App({ active }: { active: boolean }) {
                   − * / ^, parentheses, pi, e, phi, sin, cos, tan, asin, acos,
                   atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt, abs. Angles
                   are radians. Use <var>t</var> (or <var>x</var> for a graph),
-                  and <var>a</var> for an adjustable shape coefficient. Bounds,
+                  and <var>a</var> for an adjustable shape coefficient. A vector
+                  field uses <var>x</var>, <var>y</var>, and <var>t</var>; an
+                  implicit curve uses <var>x</var> and <var>y</var>. Bounds,
                   numeric parameters such as radii and phases, and animation
                   endpoints accept constant expressions such as 2*pi or -phi;
-                  they cannot contain <var>t</var>, <var>x</var>, or
-                  <var>a</var>.
+                  they cannot contain <var>t</var>, <var>x</var>,<var>y</var>,
+                  or <var>a</var>.
                 </p>
                 <p>
                   <code>pi ≈ 3.1415926536</code> · circle constant
@@ -988,8 +1356,48 @@ function App({ active }: { active: boolean }) {
                   <code>phi ≈ 1.6180339887</code> · golden ratio, (1+√5)/2
                 </p>
               </details>
+              {!unparametrized && (
+                <>
+                  <Field
+                    label="Construct on"
+                    topic="construction input"
+                    help="The construction acts on this curve: the curve itself, or a curve derived from it, which is drawn faintly with it. A derived curve is evaluated from the curve's definition at every t, never from its drawn points. Its evolute cannot feed the evolute or the caustics, which would need the curve's fourth derivative."
+                  >
+                    <select
+                      value={config.input}
+                      onChange={(e) =>
+                        update({ input: e.target.value as ConstructionInput })
+                      }
+                    >
+                      {(Object.keys(inputOptions) as ConstructionInput[]).map(
+                        (k) => (
+                          <option
+                            key={k}
+                            value={k}
+                            disabled={!inputAllowed(config.kind, k)}
+                          >
+                            {inputOptions[k]}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </Field>
+                  {usesPole(config.input) && !usesPole(config.kind) && (
+                    <div className="pair">
+                      {scalar("Pole x", ["pole", "x"])}
+                      {scalar("Pole y", ["pole", "y"])}
+                    </div>
+                  )}
+                  {config.input === "offset" &&
+                    (config.kind !== "offset" || config.stack.enabled) &&
+                    scalar("Offset distance d", ["distance"], {
+                      topic: "offset distance",
+                      help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel.",
+                    })}
+                </>
+              )}
             </section>
-            {usesPole(config.kind) && (
+            {!unparametrized && usesPole(config.kind) && (
               <section>
                 <div className="section-label">03 / THE POLE</div>
                 <Field label="Projection">
@@ -1149,7 +1557,7 @@ function App({ active }: { active: boolean }) {
                 )}
               </section>
             )}
-            {config.kind === "offset" && (
+            {!unparametrized && config.kind === "offset" && (
               <section>
                 <div className="section-label">03 / THE OFFSET</div>
                 <Field label="Offsets">
@@ -1211,7 +1619,7 @@ function App({ active }: { active: boolean }) {
                 </p>
               </section>
             )}
-            {config.kind === "rolling" && (
+            {!unparametrized && config.kind === "rolling" && (
               <section>
                 <div className="section-label">
                   03 / THE ROLLING{" "}
@@ -1336,7 +1744,7 @@ function App({ active }: { active: boolean }) {
                 )}
               </section>
             )}
-            {config.kind === "envelope" && (
+            {!unparametrized && config.kind === "envelope" && (
               <section>
                 <div className="section-label">03 / THE FAMILY</div>
                 <Field label="Family">
@@ -1454,26 +1862,9 @@ function App({ active }: { active: boolean }) {
                 )}
               </section>
             )}
-            {config.kind === "inversion" && (
+            {!unparametrized && config.kind === "inversion" && (
               <section>
                 <div className="section-label">03 / THE INVERSION</div>
-                <Field label="Invert">
-                  <select
-                    value={config.inversion.of}
-                    onChange={(e) => {
-                      const of = e.target.value as InversionSource;
-                      update((c) => ({ inversion: { ...c.inversion, of } }));
-                    }}
-                  >
-                    {(Object.keys(inversionOptions) as InversionSource[]).map(
-                      (k) => (
-                        <option key={k} value={k}>
-                          {inversionOptions[k]}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </Field>
                 <div className="pair">
                   {scalar("Inversion center x", ["inversion", "center", "x"])}
                   {scalar("Inversion center y", ["inversion", "center", "y"])}
@@ -1482,26 +1873,17 @@ function App({ active }: { active: boolean }) {
                   topic: "inversion radius",
                   help: "Positive, at most 100,000. Points at distance R from the center stay fixed; the product of a point's distance and its image's is R².",
                 })}
-                {usesPole(config.inversion.of) && (
-                  <div className="pair">
-                    {scalar("Pole x", ["pole", "x"])}
-                    {scalar("Pole y", ["pole", "y"])}
-                  </div>
-                )}
-                {config.inversion.of === "offset" &&
-                  scalar("Offset distance d", ["distance"], {
-                    topic: "offset distance",
-                    help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel.",
-                  })}
                 <p className="note">
-                  {config.inversion.of === "curve"
+                  {config.input === "curve"
                     ? "Each segment joins a point of the curve to its image, along a ray from the center."
-                    : "The derived curve is drawn faintly; each segment joins one of its points to its image, along a ray from the center."}{" "}
+                    : "Each segment joins a point of the curve's " +
+                      config.input +
+                      " to its image, along a ray from the center."}{" "}
                   The image is left open where it runs off to infinity.
                 </p>
               </section>
             )}
-            {config.kind === "involute" && (
+            {!unparametrized && config.kind === "involute" && (
               <section>
                 {scalar("Initial string offset c", ["offset"], {
                   topic: "initial string offset",
@@ -1511,12 +1893,13 @@ function App({ active }: { active: boolean }) {
             )}
             <section>
               <div className="section-label">
-                {optical ||
-                usesPole(config.kind) ||
-                config.kind === "offset" ||
-                config.kind === "rolling" ||
-                config.kind === "envelope" ||
-                config.kind === "inversion"
+                {!unparametrized &&
+                (optical ||
+                  usesPole(config.kind) ||
+                  config.kind === "offset" ||
+                  config.kind === "rolling" ||
+                  config.kind === "envelope" ||
+                  config.kind === "inversion")
                   ? "04"
                   : "03"}{" "}
                 / THE DRAWING
@@ -1566,9 +1949,10 @@ function App({ active }: { active: boolean }) {
                 {(Object.keys(layers) as (keyof Layers)[])
                   .filter(
                     (k) =>
-                      optical ||
-                      (k === "virtual" && chords) ||
-                      !["incident", "virtual"].includes(k),
+                      (optical ||
+                        (k === "virtual" && chords) ||
+                        !["incident", "virtual"].includes(k)) &&
+                      !(attractor && k === "derived"),
                   )
                   .map((k) => (
                     <label className="check" key={k}>
@@ -1581,8 +1965,12 @@ function App({ active }: { active: boolean }) {
                       />
                       {
                         {
-                          base: "Base curve",
-                          derived: "Derived curve",
+                          base: implicit
+                            ? "Curve F = c"
+                            : attractor
+                              ? "Visit density"
+                              : "Base curve",
+                          derived: implicit ? "Other levels" : "Derived curve",
                           lines: "Construction lines",
                           incident: "Incident rays",
                           virtual: "Virtual extensions",
@@ -1592,7 +1980,7 @@ function App({ active }: { active: boolean }) {
                     </label>
                   ))}
               </div>
-              {expert ? (
+              {unparametrized ? null : expert ? (
                 number(
                   "Numerical samples",
                   config.samples,
@@ -1677,7 +2065,18 @@ function App({ active }: { active: boolean }) {
             <div className="plot-meta">
               <div className="legend">
                 <span className="base-dot" />
-                Base curve <span className="derived-dot" /> {config.kind}
+                {implicit
+                  ? "Curve F = c"
+                  : attractor
+                    ? "Visit density"
+                    : "Base curve"}
+                {!attractor && (
+                  <>
+                    {" "}
+                    <span className="derived-dot" />{" "}
+                    {implicit ? "Other levels" : config.kind}
+                  </>
+                )}
               </div>
               <span>
                 {animation

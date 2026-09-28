@@ -165,3 +165,39 @@ test("spatial custom curves render and export through WebKit WebGL and H.264", a
   expect(video.duration).toBeCloseTo(0.4, 3);
   expect(video.first.hash).not.toBe(video.last.hash);
 });
+
+// An iterated map's density is a PNG embedded in the SVG; drawing that SVG
+// to a canvas must keep it and must not taint the canvas.
+test("PNG export keeps an iterated map's embedded density in WebKit", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Start with a notebook example" })
+    .selectOption({ label: "Clifford attractor" });
+  await expect(page.getByTestId("attractor-density")).toHaveCount(1);
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const download = page.waitForEvent("download");
+  await exportImage(page, "PNG");
+  const bytes = await readFile((await (await download).path())!);
+  const shaded = await page.evaluate(async (png) => {
+    const bitmap = await createImageBitmap(
+      new Blob([new Uint8Array(png)], { type: "image/png" }),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(bitmap, 0, 0);
+    const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+    let n = 0;
+    for (let i = 0; i < data.length; i += 4)
+      if (data[i] !== data[0] || data[i + 1] !== data[1]) n++;
+    return n / (data.length / 4);
+  }, Array.from(bytes));
+  expect(shaded).toBeGreaterThan(0.1);
+});

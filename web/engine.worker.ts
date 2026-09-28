@@ -91,6 +91,10 @@ self.onmessage = async ({
       config.curve.max = max;
     }
     const stacked = config.kind === "offset" && config.stack.enabled;
+    const implicit =
+      config.curve.format === "implicit" ? config.curve.implicit : null;
+    const attractor =
+      config.curve.format === "attractor" ? config.curve.attractor : null;
     const numbers = [
       config.curve.min,
       config.curve.max,
@@ -104,8 +108,7 @@ self.onmessage = async ({
       config.nTransmitted,
       config.samples,
       config.lines,
-      ...(usesPole(config.kind) ||
-      (config.kind === "inversion" && usesPole(config.inversion.of))
+      ...(usesPole(config.kind) || usesPole(config.input)
         ? [config.pole.x, config.pole.y]
         : []),
       ...(config.kind === "inversion"
@@ -159,6 +162,40 @@ self.onmessage = async ({
             ]),
           ]
         : []),
+      ...(config.curve.format === "field"
+        ? [
+            config.curve.field.escape,
+            ...config.curve.field.seeds.flatMap((p) => [p.x, p.y]),
+          ]
+        : []),
+      ...(implicit
+        ? [
+            implicit.level,
+            implicit.cells,
+            ...Object.values(implicit.window),
+            ...(implicit.family.enabled
+              ? [
+                  implicit.family.from,
+                  implicit.family.to,
+                  implicit.family.count,
+                ]
+              : []),
+          ]
+        : []),
+      ...(attractor
+        ? [
+            attractor.a,
+            attractor.b,
+            attractor.c,
+            attractor.d,
+            attractor.start.x,
+            attractor.start.y,
+            attractor.discard,
+            attractor.iterates,
+            attractor.cells,
+            ...Object.values(attractor.window),
+          ]
+        : []),
       ...(config.source.kind === "point" &&
       config.source.coordinates === "polar"
         ? [config.source.radius, config.source.theta]
@@ -168,6 +205,19 @@ self.onmessage = async ({
       throw new Error("Fill in each numeric field with a finite number.");
     if (!Number.isInteger(config.samples) || !Number.isInteger(config.lines))
       throw new Error("Samples and construction lines must be whole numbers.");
+    if (
+      implicit &&
+      (!Number.isInteger(implicit.cells) ||
+        (implicit.family.enabled && !Number.isInteger(implicit.family.count)))
+    )
+      throw new Error("Grid cells and the level count must be whole numbers.");
+    if (
+      attractor &&
+      ![attractor.cells, attractor.discard, attractor.iterates].every(
+        Number.isInteger,
+      )
+    )
+      throw new Error("Grid cells and iterate counts must be whole numbers.");
     if (stacked && !Number.isInteger(config.stack.count))
       throw new Error("The number of offsets must be a whole number.");
     const result: Result | { error: string } = JSON.parse(

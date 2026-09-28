@@ -8,6 +8,7 @@ import {
   type Vec,
 } from "./types";
 import type { AnimationView, Viewport } from "./animation";
+import { densityImage } from "./attractor";
 export type Layers = {
   base: boolean;
   derived: boolean;
@@ -29,6 +30,34 @@ type Props = {
 };
 const W = 1000,
   H = 760;
+// An arrow along a direction in plot coordinates, drawn in screen pixels: a
+// shaft of the given length from `behind` pixels before (x, y), and a head
+// of the given size at its tip. A zero-length shaft leaves a chevron at
+// (x, y). Nothing is drawn for a zero or nonfinite direction.
+function arrow(
+  x: number,
+  y: number,
+  direction: Vec,
+  length: number,
+  behind: number,
+  head: number,
+) {
+  const n = Math.hypot(direction.x, direction.y);
+  if (!(n > 0) || !Number.isFinite(n)) return "";
+  // The screen's y axis points down.
+  const ux = direction.x / n,
+    uy = -direction.y / n;
+  const f = (v: number) => v.toFixed(3);
+  const tip = [x + (length - behind) * ux, y + (length - behind) * uy];
+  const side = (turn: number) =>
+    `${f(tip[0] - head * (ux * Math.cos(turn) - uy * Math.sin(turn)))},${f(tip[1] - head * (ux * Math.sin(turn) + uy * Math.cos(turn)))}`;
+  const shaft =
+    length > 0
+      ? `M${f(x - behind * ux)},${f(y - behind * uy)}L${f(tip[0])},${f(tip[1])}`
+      : "";
+  return `${shaft}M${side(0.5)}L${f(tip[0])},${f(tip[1])}L${side(-0.5)}`;
+}
+
 export function Plot({
   result,
   config,
@@ -177,14 +206,19 @@ export function Plot({
       />
     );
   };
-  const optical = config.kind === "catacaustic" || config.kind === "diacaustic";
+  // An implicit curve has contours and an iterated map a density, and
+  // neither a construction, whatever kind the configuration still names.
+  const contours = result.contours;
+  const attractor = result.attractor;
+  const kind = contours ? "implicit" : attractor ? "attractor" : config.kind;
+  const optical = kind === "catacaustic" || kind === "diacaustic";
   // Constructions whose derived points can be virtual: optical rays behind
   // the curve, and envelope points beyond their chords.
   const extended =
-    config.kind === "envelope" &&
+    kind === "envelope" &&
     (config.envelope.mode === "angle" || config.envelope.extend);
-  const rings = config.kind === "envelope" && config.envelope.mode === "circle";
-  const dashed = optical || (config.kind === "envelope" && !rings && !extended);
+  const rings = kind === "envelope" && config.envelope.mode === "circle";
+  const dashed = optical || (kind === "envelope" && !rings && !extended);
   // The circle of inversion, the curve inverted when it is derived, and where
   // its image is open between samples.
   const inversion = result.inversion;
@@ -227,6 +261,8 @@ export function Plot({
   const pursuit = result.pursuit;
   // The pursuers are marked where the chase has reached.
   const chasers = pursuit?.polygons.at(-1);
+  const field = result.field;
+  const seeds = field ? config.curve.field.seeds : [];
   const roller = result.rolling.at(-1);
   const moving = result.moving;
   const placed = moving?.positions.at(-1);
@@ -295,7 +331,13 @@ export function Plot({
       data-camera-center={`${frame.cx - cam.x / scale},${frame.cy + cam.y / scale}`}
       data-animation-progress={animation?.progress}
       role="img"
-      aria-label={`${config.kind} construction with ${config.lines} representative lines`}
+      aria-label={
+        contours
+          ? `Implicit curve with ${config.lines} gradient normals`
+          : attractor
+            ? `Iterated map density with its first ${attractor.orbit.length - 1} iterates`
+            : `${config.kind} construction with ${config.lines} representative lines`
+      }
       style={{ background: palette.bg, touchAction: "none" }}
       onPointerDown={(e) => {
         if (animation) return;
@@ -319,7 +361,7 @@ export function Plot({
         drag.current = null;
       }}
     >
-      <title>Tangent Garden · {config.kind}</title>
+      <title>Tangent Garden · {kind}</title>
       <desc>
         {JSON.stringify({
           ...config,
@@ -497,6 +539,171 @@ export function Plot({
           ))}
         </g>
       )}
+      {layers.lines && field && (
+        <g data-testid="field-construction" aria-label="Direction field">
+          {/* Trajectories end where they leave this circle; it does not
+              frame the drawing, so a large one only shows as an arc. */}
+          <circle
+            data-testid="escape-circle"
+            cx={xy({ x: 0, y: 0 }).x}
+            cy={xy({ x: 0, y: 0 }).y}
+            r={config.curve.field.escape * scale}
+            fill="none"
+            stroke={palette.line}
+            strokeWidth="1"
+            strokeDasharray="4 5"
+            opacity=".5"
+          />
+          {/* Directions only: the speed varies too widely to draw to
+              scale. Each arrow is centered on its lattice point. */}
+          {field.grid.points.map(({ point, velocity }, k) => {
+            const length = 0.6 * field.grid.spacing * scale;
+            const { x, y } = xy(point);
+            return (
+              <path
+                key={k}
+                data-testid="field-direction"
+                d={arrow(x, y, velocity, length, length / 2, length * 0.3)}
+                fill="none"
+                stroke={palette.line}
+                strokeWidth="1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity=".55"
+              />
+            );
+          })}
+        </g>
+      )}
+      {/* One pixel per cell, embedded as a PNG so exports carry it; cells
+          stay square-edged at any size rather than blurring into each
+          other. */}
+      {layers.base &&
+        attractor &&
+        attractor.accumulated > attractor.outside && (
+          <image
+            data-testid="attractor-density"
+            data-columns={attractor.columns}
+            data-rows={attractor.rows}
+            data-accumulated={attractor.accumulated}
+            href={densityImage(attractor, palette.base)}
+            x={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).x}
+            y={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).y}
+            width={(attractor.window.xMax - attractor.window.xMin) * scale}
+            height={(attractor.window.yMax - attractor.window.yMin) * scale}
+            preserveAspectRatio="none"
+            imageRendering="pixelated"
+          />
+        )}
+      {layers.lines && attractor && (
+        <g
+          data-testid="attractor-construction"
+          aria-label="Window and first iterates"
+        >
+          <rect
+            data-testid="attractor-window"
+            x={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).x}
+            y={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).y}
+            width={(attractor.window.xMax - attractor.window.xMin) * scale}
+            height={(attractor.window.yMax - attractor.window.yMin) * scale}
+            fill="none"
+            stroke={palette.line}
+            strokeWidth="1"
+            strokeDasharray="4 5"
+            opacity=".5"
+          />
+          {/* The start and the first iterates as separate dots: a map jumps
+              from one to the next, so they are never joined. */}
+          {attractor.orbit.map((p, k) => {
+            const { x, y } = xy(p);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+            return (
+              <circle
+                key={k}
+                data-testid="attractor-orbit"
+                cx={x}
+                cy={y}
+                r={k === 0 ? 4 : 2.2}
+                fill={k === 0 ? "none" : palette.line}
+                stroke={palette.line}
+                strokeWidth={k === 0 ? 1.5 : 0}
+                opacity=".85"
+              />
+            );
+          })}
+          {attractor.orbit.length > 0 && (
+            <circle
+              data-testid="attractor-start"
+              cx={xy(attractor.orbit[0]).x}
+              cy={xy(attractor.orbit[0]).y}
+              r="7"
+              fill="none"
+              stroke={palette.line}
+              strokeWidth="1"
+              opacity=".6"
+            />
+          )}
+        </g>
+      )}
+      {layers.lines && contours && (
+        <g data-testid="contour-construction" aria-label="Window and normals">
+          {/* The contours are sought only inside the window. */}
+          <rect
+            data-testid="contour-window"
+            x={xy({ x: contours.window.xMin, y: contours.window.yMax }).x}
+            y={xy({ x: contours.window.xMin, y: contours.window.yMax }).y}
+            width={(contours.window.xMax - contours.window.xMin) * scale}
+            height={(contours.window.yMax - contours.window.yMin) * scale}
+            fill="none"
+            stroke={palette.line}
+            strokeWidth="1"
+            strokeDasharray="4 5"
+            opacity=".5"
+          />
+          {/* Where F changes sign without reaching the level: a pole or a
+              jump, not a curve. */}
+          {contours.discontinuities.map((p, k) => {
+            const { x, y } = xy(p);
+            return (
+              <path
+                key={`break-${k}`}
+                data-testid="contour-break"
+                data-x={p.x}
+                data-y={p.y}
+                d={`M${x - 2.5},${y - 2.5}L${x + 2.5},${y + 2.5}M${x - 2.5},${y + 2.5}L${x + 2.5},${y - 2.5}`}
+                stroke={palette.line}
+                strokeWidth="1"
+                opacity=".6"
+              />
+            );
+          })}
+          {/* F's gradient, from the curve toward larger values; a fixed
+              length, since its size varies too widely to draw to scale. */}
+          {contours.normals.map(({ point, gradient }, k) => {
+            const length =
+              0.05 *
+              Math.max(
+                contours.window.xMax - contours.window.xMin,
+                contours.window.yMax - contours.window.yMin,
+              ) *
+              scale;
+            const { x, y } = xy(point);
+            return (
+              <path
+                key={k}
+                data-testid="contour-normal"
+                d={arrow(x, y, gradient, length, 0, 5)}
+                fill="none"
+                stroke={palette.line}
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity=".75"
+              />
+            );
+          })}
+        </g>
+      )}
       {layers.lines && harmonic && (
         <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
           {harmonic.guides.map((g, k) => (
@@ -627,11 +834,11 @@ export function Plot({
           opacity=".85"
         />
       )}
-      {layers.base && inversion?.source && (
+      {layers.base && result.input && (
         <path
-          data-testid="inversion-source"
-          aria-label="Inverted curve"
-          d={path(inversion.source)}
+          data-testid="construction-input"
+          aria-label={`The curve's ${config.input}, which the construction acts on`}
+          d={path(result.input)}
           fill="none"
           stroke={palette.derived}
           strokeWidth="1.5"
@@ -644,6 +851,30 @@ export function Plot({
           <path
             key={k}
             data-testid="pursuit-path"
+            d={path(points)}
+            fill="none"
+            stroke={palette.base}
+            strokeWidth="2.3"
+            strokeLinejoin="round"
+          />
+        ))}
+      {layers.base &&
+        contours?.curve.contours.map((c, k) => (
+          <path
+            key={k}
+            data-testid="contour-path"
+            d={path(c.points) + (c.closed ? "Z" : "")}
+            fill="none"
+            stroke={palette.base}
+            strokeWidth="2.3"
+            strokeLinejoin="round"
+          />
+        ))}
+      {layers.base &&
+        field?.paths.map((points, k) => (
+          <path
+            key={k}
+            data-testid="field-path"
             d={path(points)}
             fill="none"
             stroke={palette.base}
@@ -668,6 +899,37 @@ export function Plot({
             cy={xy(p).y}
             r="3.5"
             fill={palette.base}
+          />
+        ))}
+      {layers.lines &&
+        field?.arrows.map((a) => {
+          // The direction of travel at representative samples.
+          const { x, y } = xy(a.point);
+          return (
+            <path
+              key={`${a.seed}-${a.sampleIndex}`}
+              data-testid="field-arrow"
+              data-sample={a.sampleIndex}
+              d={arrow(x, y, a.velocity, 0, 0, 5.5)}
+              fill="none"
+              stroke={palette.base}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          );
+        })}
+      {layers.lines &&
+        seeds.map((p, k) => (
+          <circle
+            key={k}
+            data-testid="seed"
+            cx={xy(p).x}
+            cy={xy(p).y}
+            r="3.5"
+            fill={palette.bg}
+            stroke={palette.base}
+            strokeWidth="1.5"
           />
         ))}
       {layers.lines && epicycles && (
@@ -706,6 +968,25 @@ export function Plot({
           strokeWidth="2.3"
           strokeDasharray="6 4"
         />
+      )}
+      {layers.derived && contours && contours.family.length > 0 && (
+        <g data-testid="contour-levels" aria-label="Family of levels">
+          {contours.family.flatMap((set, k) =>
+            set.contours.map((c, j) => (
+              <path
+                key={`${k}-${j}`}
+                data-testid="contour-family"
+                data-level={set.level}
+                d={path(c.points) + (c.closed ? "Z" : "")}
+                fill="none"
+                stroke={palette.derived}
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+                opacity=".8"
+              />
+            )),
+          )}
+        </g>
       )}
       {layers.derived && result.family.length > 0 && (
         <g
@@ -775,8 +1056,7 @@ export function Plot({
           />
         </g>
       )}
-      {(usesPole(config.kind) ||
-        (inversion && usesPole(config.inversion.of))) && (
+      {(usesPole(kind) || (result.input && usesPole(config.input))) && (
         <g data-testid="pole-point" aria-label="Pole">
           <circle
             cx={xy(config.pole).x}
@@ -936,6 +1216,20 @@ function enclosing(points: (Vec | null)[]) {
   return { center, radius };
 }
 export function fitFrame(result: Result, config: Config) {
+  // An implicit curve is framed by its window, which bounds every contour
+  // and stays put while they split and join; so is an iterated map's
+  // density.
+  const window = result.contours?.window ?? result.attractor?.window;
+  if (window)
+    return {
+      cx: (window.xMin + window.xMax) / 2,
+      cy: (window.yMin + window.yMax) / 2,
+      scale: Math.min(
+        (W * 0.78) / (window.xMax - window.xMin),
+        (H * 0.78) / (window.yMax - window.yMin),
+      ),
+      span: Math.max(window.xMax - window.xMin, window.yMax - window.yMin),
+    };
   // Circles are framed by their full extent when requested, independent of
   // whether the construction layer is showing, so toggling it never reframes.
   const extents = circleExtents(result.circles);
@@ -974,11 +1268,14 @@ export function fitFrame(result: Result, config: Config) {
     ),
     // Each pursuer's path is its own family.
     ...(result.pursuit?.paths ?? []).flatMap((points) => framingPoints(points)),
+    // So is each trajectory; the escape circle is not framed.
+    ...(result.field?.paths ?? []).flatMap((points) => framingPoints(points)),
     ...framingPoints(circleExtents(result.rolling)),
     ...framingPoints(movingExtents(result)),
-    // An inverted derived curve, and the circle of inversion as its own
-    // family: its image can be far smaller or larger than the curve.
-    ...framingPoints(result.inversion?.source ?? []),
+    // A derived input, and the circle of inversion, are their own families:
+    // an input can be far smaller or larger than the curve, and so can an
+    // image.
+    ...framingPoints(result.input ?? []),
     ...framingPoints(circleExtents(result.inversion ? [result.inversion] : [])),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };
@@ -995,8 +1292,7 @@ export function fitFrame(result: Result, config: Config) {
   points.forEach(include);
   const extent = Math.max(maxX - minX, maxY - minY, 0.1);
   if (
-    (usesPole(config.kind) ||
-      (config.kind === "inversion" && usesPole(config.inversion.of))) &&
+    (usesPole(config.kind) || (result.input && usesPole(config.input))) &&
     Math.hypot(
       config.pole.x - (minX + maxX) / 2,
       config.pole.y - (minY + maxY) / 2,

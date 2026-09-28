@@ -84,6 +84,13 @@ for (const width of [1440, 390]) {
         .getByRole("combobox", { name: "Source coordinates" })
         .selectOption("polar");
     });
+    // An iterated map's window appears only when it is not fitted.
+    setups.push(async () => {
+      await study.selectOption({ label: "Clifford attractor" });
+      await page
+        .getByRole("checkbox", { name: "Fit the window to the iterates" })
+        .uncheck();
+    });
     for (const preset of ["0", "3", "4"])
       setups.push(async () => {
         await page.goto("/?study=3d");

@@ -9,7 +9,7 @@ import (
 
 func inversionRequest(x, y string, lo, hi float64, center Vec, radius float64) Request {
 	q := request("inversion", x, y, lo, hi)
-	q.Inversion = Inversion{Center: center, Radius: radius, Of: "curve"}
+	q.Inversion = Inversion{Center: center, Radius: radius}
 	return q
 }
 
@@ -67,7 +67,7 @@ func TestInversionLineToCircle(t *testing.T) {
 			t.Fatalf("image %v at %d is off the circle", p, j)
 		}
 	}
-	if r.Inversion == nil || r.Inversion.Center != (Vec{}) || r.Inversion.Radius != 2 || r.Inversion.Source != nil {
+	if r.Inversion == nil || r.Inversion.Center != (Vec{}) || r.Inversion.Radius != 2 || r.Input != nil {
 		t.Fatalf("inversion %+v", r.Inversion)
 	}
 	if len(r.Rays) != q.Lines {
@@ -220,7 +220,7 @@ func TestInversionSampleOnCenter(t *testing.T) {
 // O, but its offset y = 1 does not, and inverts into a whole circle.
 func TestInversionUsesTheSourceNotTheBase(t *testing.T) {
 	q := inversionRequest("t", "0", -1, 1.002, Vec{}, 1)
-	q.Inversion.Of, q.Distance = "offset", 1
+	q.Input, q.Distance = "offset", 1
 	r := compute(t, q)
 	if len(breaksOf(r)) != 0 || r.Invalid != 0 {
 		t.Fatalf("breaks %v, %d invalid", breaksOf(r), r.Invalid)
@@ -238,7 +238,7 @@ func TestInversionOfGeneratedCurve(t *testing.T) {
 	q := rouletteRequest(Roulette{Roll: "inside", FixedRadius: 4, Radius: 1, Arm: 1}, 0, 2*math.Pi)
 	q.Kind = "inversion"
 	o := Vec{0.3, 0.2}
-	q.Inversion = Inversion{Center: o, Radius: 1.5, Of: "curve"}
+	q.Inversion = Inversion{Center: o, Radius: 1.5}
 	r := compute(t, q)
 	if r.Invalid != 0 || len(breaksOf(r)) != 0 {
 		t.Fatalf("%d invalid, breaks %v, %v", r.Invalid, breaksOf(r), r.Warnings)
@@ -277,16 +277,22 @@ func TestInversionOfDerivedCurves(t *testing.T) {
 		q := alone
 		q.Kind = "inversion"
 		o := Vec{0.5, -0.2}
-		q.Inversion = Inversion{Center: o, Radius: 1.3, Of: of}
+		q.Inversion, q.Input = Inversion{Center: o, Radius: 1.3}, of
 		r := compute(t, q)
-		if r.Inversion == nil || len(r.Inversion.Source) != q.Samples {
-			t.Fatalf("%s: no source curve in %+v", of, r.Inversion)
+		if r.Inversion == nil || len(r.Input) != q.Samples {
+			t.Fatalf("%s: no input curve in %+v", of, r.Inversion)
 		}
 		for j := range r.Base {
 			sameVec(t, r.Base[j], want.Base[j], 0, of+" base")
-			sameVec(t, r.Inversion.Source[j], want.Derived[j], 1e-12, of+" source")
+			// The input's stencil is wider than the construction's, which
+			// matters most where |t|^1.5's curvature is unbounded.
+			tol := 1e-6
+			if tc.x == "t" {
+				tol = 1e-4
+			}
+			sameVec(t, r.Input[j], want.Derived[j], tol, of+" input")
 			var image *Vec
-			if s := r.Inversion.Source[j]; s != nil {
+			if s := r.Input[j]; s != nil {
 				image = Invert(*s, o, 1.3)
 			}
 			sameVec(t, r.Derived[j], image, 0, of+" image")
@@ -296,7 +302,7 @@ func TestInversionOfDerivedCurves(t *testing.T) {
 		}
 		// Segments join each source point, not the base point, to its image.
 		for _, ray := range r.Rays {
-			closeVec(t, &ray.Origin, *r.Inversion.Source[ray.SampleIndex], 0)
+			closeVec(t, &ray.Origin, *r.Input[ray.SampleIndex], 0)
 			closeVec(t, ray.Target, *r.Derived[ray.SampleIndex], 0)
 		}
 	}
@@ -306,7 +312,7 @@ func TestInversionOfDerivedCurves(t *testing.T) {
 // there, is its polar reciprocal: the ellipse a²x² + b²y² = 1.
 func TestInversionPedalReciprocal(t *testing.T) {
 	q := inversionRequest("2*cos(t)", "1.1*sin(t)", 0, 2*math.Pi, Vec{}, 1)
-	q.Inversion.Of = "pedal"
+	q.Input = "pedal"
 	r := compute(t, q)
 	for j, p := range r.Derived {
 		if p == nil {
@@ -323,10 +329,10 @@ func TestInversionPedalReciprocal(t *testing.T) {
 func TestInversionDerivedGaps(t *testing.T) {
 	// The evolute of a sine has no point at its inflections.
 	q := inversionRequest("t", "sin(t)", -1, 1, Vec{0, 3}, 1)
-	q.Inversion.Of = "evolute"
+	q.Input = "evolute"
 	r := compute(t, q)
-	if r.Inversion.Source[250] != nil || r.Derived[250] != nil || r.Derived[100] == nil {
-		t.Fatalf("evolute at the inflection: %v, image %v", r.Inversion.Source[250], r.Derived[250])
+	if r.Input[250] != nil || r.Derived[250] != nil || r.Derived[100] == nil {
+		t.Fatalf("evolute at the inflection: %v, image %v", r.Input[250], r.Derived[250])
 	}
 	// With no sample on the inflection the evolute runs through infinity
 	// between samples, undefined at the inflection itself: the image, which
@@ -364,9 +370,8 @@ func TestInversionInvalid(t *testing.T) {
 		{func(q *Request) { q.Inversion.Radius = math.NaN() }, "radius"},
 		{func(q *Request) { q.Inversion.Radius = 2e5 }, "radius"},
 		{func(q *Request) { q.Inversion.Center.X = math.Inf(1) }, "center"},
-		{func(q *Request) { q.Inversion.Of = "involute" }, "invert"},
-		{func(q *Request) { q.Inversion.Of = "" }, "invert"},
-		{func(q *Request) { q.Inversion.Of, q.Pole.X = "pedal", math.NaN() }, "pole"},
+		{func(q *Request) { q.Input = "involute" }, "construct on"},
+		{func(q *Request) { q.Input, q.Pole.X = "pedal", math.NaN() }, "pole"},
 	} {
 		q := inversionRequest("cos(t)", "sin(t)", 0, 1, Vec{}, 1)
 		tc.change(&q)
@@ -386,10 +391,10 @@ func TestInversionResult(t *testing.T) {
 		t.Fatalf("inversion JSON: %.400s", b)
 	}
 	q := inversionRequest("cos(t)", "sin(t)", 0, 1, Vec{3, 0}, 1)
-	q.Inversion.Of = "offset"
+	q.Input = "offset"
 	b, _ = json.Marshal(compute(t, q))
-	if !strings.Contains(string(b), `"source":[`) {
-		t.Fatalf("derived source JSON: %.400s", b)
+	if !strings.Contains(string(b), `"input":[`) {
+		t.Fatalf("derived input JSON: %.400s", b)
 	}
 	b, _ = json.Marshal(compute(t, request("evolute", "cos(t)", "sin(t)", 0, 1)))
 	if strings.Contains(string(b), `"inversion"`) {

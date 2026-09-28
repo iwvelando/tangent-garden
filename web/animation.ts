@@ -1,8 +1,10 @@
 import {
   ownsShape,
   usesPole,
+  type AttractorResult,
   type Config,
   type Frame,
+  type LevelSet,
   type Result,
 } from "./types";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
@@ -11,7 +13,9 @@ export type Viewport = { cx: number; cy: number; scale: number; span: number };
 export type TermTarget = `term${number}${"Frequency" | "Radius" | "Phase"}`;
 // A pursuer's starting x, y, or speed, numbered from 1.
 export type PursuerTarget = `pursuer${number}${"X" | "Y" | "Speed"}`;
-export type Target = FixedTarget | TermTarget | PursuerTarget;
+// A vector field seed's x or y, numbered from 1.
+export type SeedTarget = `seed${number}${"X" | "Y"}`;
+export type Target = FixedTarget | TermTarget | PursuerTarget | SeedTarget;
 type FixedTarget =
   | "a"
   | "min"
@@ -49,6 +53,24 @@ type FixedTarget =
   | "lissajousN"
   | "lissajousPhase"
   | "pursuitCapture"
+  | "fieldEscape"
+  | "contourLevel"
+  | "windowXMin"
+  | "windowXMax"
+  | "windowYMin"
+  | "windowYMax"
+  | "levelsFrom"
+  | "levelsTo"
+  | "levelsCount"
+  | "contourCells"
+  | "mapA"
+  | "mapB"
+  | "mapC"
+  | "mapD"
+  | "startX"
+  | "startY"
+  | "discard"
+  | "iterates"
   | "samples"
   | "lines"
   | "rayLength";
@@ -100,6 +122,24 @@ const targetLabels: Record<FixedTarget, string> = {
   lissajousN: "Frequency n",
   lissajousPhase: "Phase φ (radians)",
   pursuitCapture: "Capture distance ε",
+  fieldEscape: "Escape radius R",
+  contourLevel: "Level c",
+  windowXMin: "Window x from",
+  windowXMax: "Window x to",
+  windowYMin: "Window y from",
+  windowYMax: "Window y to",
+  levelsFrom: "Levels from",
+  levelsTo: "Levels to",
+  levelsCount: "Level count",
+  contourCells: "Grid cells",
+  mapA: "Coefficient a",
+  mapB: "Coefficient b",
+  mapC: "Coefficient c",
+  mapD: "Coefficient d",
+  startX: "Start x₀",
+  startY: "Start y₀",
+  discard: "Discarded iterates",
+  iterates: "Accumulated iterates",
   samples: "Numerical samples",
   lines: "Construction lines",
   rayLength: "Ray length",
@@ -138,16 +178,83 @@ function pursuerTarget(target: Target) {
       }
     : null;
 }
+export const seedLabels = {
+  X: (n: number) => `Seed x${subscript(n)}`,
+  Y: (n: number) => `Seed y${subscript(n)}`,
+};
+function seedTarget(target: Target) {
+  const match = /^seed(\d+)(X|Y)$/.exec(target);
+  return match
+    ? {
+        index: +match[1] - 1,
+        field: match[2] as keyof typeof seedLabels,
+        key: match[2].toLowerCase() as "x" | "y",
+      }
+    : null;
+}
 export function targetLabel(target: Target) {
   const term = termTarget(target);
   const pursuer = pursuerTarget(target);
+  const seed = seedTarget(target);
   return term
     ? termLabels[term.field](term.index + 1)
     : pursuer
       ? pursuerLabels[pursuer.field](pursuer.index + 1)
-      : targetLabels[target as FixedTarget];
+      : seed
+        ? seedLabels[seed.field](seed.index + 1)
+        : targetLabels[target as FixedTarget];
 }
+// An implicit curve's or an iterated map's window and grid, whichever the
+// curve is.
+const gridded = (config: Config) =>
+  config.curve.format === "attractor"
+    ? config.curve.attractor
+    : config.curve.implicit;
+// The implicit curve's fields, with the window's paths in the configuration.
+const windowTargets = {
+  windowXMin: "xMin",
+  windowXMax: "xMax",
+  windowYMin: "yMin",
+  windowYMax: "yMax",
+} as const;
+const levelsTargets = {
+  levelsFrom: "from",
+  levelsTo: "to",
+  levelsCount: "count",
+} as const;
+const mapTargets = { mapA: "a", mapB: "b", mapC: "c", mapD: "d" } as const;
+const startTargets = { startX: "x", startY: "y" } as const;
 export function availableTargets(config: Config): Target[] {
+  // A level set has no parameter, so no domain, samples, or construction:
+  // only F's a and the number of normals carry over.
+  if (config.curve.format === "implicit")
+    return [
+      "contourLevel",
+      ...(Object.keys(windowTargets) as Target[]),
+      ...(config.curve.implicit.family.enabled
+        ? (Object.keys(levelsTargets) as Target[])
+        : []),
+      "contourCells",
+      "a",
+      "lines",
+    ];
+  // An iterated map's own coefficients, start, and counts; a window when it
+  // is given rather than fitted.
+  if (config.curve.format === "attractor") {
+    const map = config.curve.attractor;
+    return [
+      "mapA",
+      "mapB",
+      ...((map.map === "henon" ? [] : ["mapC", "mapD"]) as Target[]),
+      "startX",
+      "startY",
+      "discard",
+      "iterates",
+      ...((map.fit ? [] : Object.keys(windowTargets)) as Target[]),
+      "contourCells",
+      "lines",
+    ];
+  }
   const targets: Target[] = ["a", "min", "max", "samples", "lines"];
   if (config.kind === "involute") targets.push("offset");
   if (config.kind === "offset")
@@ -157,20 +264,8 @@ export function availableTargets(config: Config): Target[] {
         : (["distance"] as Target[])),
     );
   if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
-  if (config.kind === "inversion") {
-    // The inverted curve's own parameters follow the circle's.
-    const of = config.inversion.of;
-    targets.unshift(
-      "inversionX",
-      "inversionY",
-      "inversionRadius",
-      ...((usesPole(of)
-        ? ["poleX", "poleY"]
-        : of === "offset"
-          ? ["distance"]
-          : []) as Target[]),
-    );
-  }
+  if (config.kind === "inversion")
+    targets.unshift("inversionX", "inversionY", "inversionRadius");
   if (config.kind === "rolling")
     targets.unshift(
       ...((config.rolling.shape === "curve"
@@ -188,6 +283,17 @@ export function availableTargets(config: Config): Target[] {
     targets.push("rayLength");
   }
   if (config.kind === "diacaustic") targets.push("nIncident", "nTransmitted");
+  // A derived input's own parameters follow the construction's, unless the
+  // construction already has them.
+  const input = config.input;
+  const inputTargets = (
+    usesPole(input) && !usesPole(config.kind)
+      ? ["poleX", "poleY"]
+      : input === "offset" && !targets.includes("distance")
+        ? ["distance"]
+        : []
+  ) as Target[];
+  targets.splice(targets.indexOf("a"), 0, ...inputTargets);
   // A roulette's shape comes from its rolling geometry, not from a.
   if (config.curve.format === "roulette") {
     targets.splice(targets.indexOf("a"), 1);
@@ -227,6 +333,14 @@ export function availableTargets(config: Config): Target[] {
       ),
       "pursuitCapture",
     );
+  // A field keeps a, which its expressions may use.
+  if (config.curve.format === "field")
+    targets.unshift(
+      ...config.curve.field.seeds.flatMap((_, k) =>
+        (["X", "Y"] as const).map((field) => `seed${k + 1}${field}` as const),
+      ),
+      "fieldEscape",
+    );
   return targets;
 }
 export function targetValue(
@@ -239,6 +353,8 @@ export function targetValue(
   const pursuer = pursuerTarget(target);
   if (pursuer)
     return config.curve.pursuit.pursuers[pursuer.index]?.[pursuer.key] ?? NaN;
+  const seed = seedTarget(target);
+  if (seed) return config.curve.field.seeds[seed.index]?.[seed.key] ?? NaN;
   switch (target) {
     case "a":
     case "min":
@@ -302,6 +418,32 @@ export function targetValue(
       return config.curve.lissajous.phase;
     case "pursuitCapture":
       return config.curve.pursuit.capture;
+    case "fieldEscape":
+      return config.curve.field.escape;
+    case "contourLevel":
+      return config.curve.implicit.level;
+    case "windowXMin":
+    case "windowXMax":
+    case "windowYMin":
+    case "windowYMax":
+      return gridded(config).window[windowTargets[target]];
+    case "levelsFrom":
+    case "levelsTo":
+    case "levelsCount":
+      return config.curve.implicit.family[levelsTargets[target]];
+    case "contourCells":
+      return gridded(config).cells;
+    case "mapA":
+    case "mapB":
+    case "mapC":
+    case "mapD":
+      return config.curve.attractor[mapTargets[target]];
+    case "startX":
+    case "startY":
+      return config.curve.attractor.start[startTargets[target]];
+    case "discard":
+    case "iterates":
+      return config.curve.attractor[target];
     case "rayLength":
       return length;
     default:
@@ -309,7 +451,15 @@ export function targetValue(
   }
 }
 // Counts are whole numbers throughout playback and at both endpoints.
-export const integerTargets: Target[] = ["samples", "lines", "stackCount"];
+export const integerTargets: Target[] = [
+  "samples",
+  "lines",
+  "stackCount",
+  "levelsCount",
+  "contourCells",
+  "discard",
+  "iterates",
+];
 export function applyTracks(
   base: Config,
   tracks: NumericTrack[],
@@ -331,6 +481,12 @@ export function applyTracks(
     if (pursuer) {
       if (config.curve.pursuit.pursuers[pursuer.index])
         config.curve.pursuit.pursuers[pursuer.index][pursuer.key] = value;
+      continue;
+    }
+    const seed = seedTarget(track.target);
+    if (seed) {
+      if (config.curve.field.seeds[seed.index])
+        config.curve.field.seeds[seed.index][seed.key] = value;
       continue;
     }
     switch (track.target) {
@@ -426,6 +582,40 @@ export function applyTracks(
       case "pursuitCapture":
         config.curve.pursuit.capture = value;
         break;
+      case "fieldEscape":
+        config.curve.field.escape = value;
+        break;
+      case "contourLevel":
+        config.curve.implicit.level = value;
+        break;
+      case "windowXMin":
+      case "windowXMax":
+      case "windowYMin":
+      case "windowYMax":
+        gridded(config).window[windowTargets[track.target]] = value;
+        break;
+      case "levelsFrom":
+      case "levelsTo":
+      case "levelsCount":
+        config.curve.implicit.family[levelsTargets[track.target]] = value;
+        break;
+      case "contourCells":
+        gridded(config).cells = value;
+        break;
+      case "mapA":
+      case "mapB":
+      case "mapC":
+      case "mapD":
+        config.curve.attractor[mapTargets[track.target]] = value;
+        break;
+      case "startX":
+      case "startY":
+        config.curve.attractor.start[startTargets[track.target]] = value;
+        break;
+      case "discard":
+      case "iterates":
+        config.curve.attractor[track.target] = value;
+        break;
       case "rayLength":
         length = value;
         break;
@@ -435,12 +625,42 @@ export function applyTracks(
   }
   return { config, length };
 }
+// An iterated map is revealed by accumulating a prefix of its iterates,
+// rounded to a whole number, in the final drawing's window: the grid stays
+// put, and no cell ever holds more than it does at the end.
+export function revealConfig(
+  config: Config,
+  final: AttractorResult,
+  progress: number,
+): Config {
+  const next = structuredClone(config);
+  const p = Math.max(0, Math.min(1, progress));
+  next.curve.attractor.iterates = Math.round(
+    p * config.curve.attractor.iterates,
+  );
+  next.curve.attractor.fit = false;
+  next.curve.attractor.window = { ...final.window };
+  return next;
+}
 // Reveal existing numerical samples, so neither the arc-length anchor nor the
 // differentiation stencil changes while the string is being unwound.
 export function reveal(result: Result, progress: number): Result {
-  const last = Math.floor(
-    Math.max(0, Math.min(1, progress)) * (result.base.length - 1),
-  );
+  const p = Math.max(0, Math.min(1, progress));
+  const last = Math.floor(p * (result.base.length - 1));
+  // Contours have no samples: each is drawn along by the same fraction of
+  // its points, and a loop stays open until it is complete.
+  const along = (set: LevelSet) => ({
+    ...set,
+    contours: set.contours.map((c) =>
+      p < 1
+        ? {
+            points: c.points.slice(0, Math.ceil(p * c.points.length)),
+            closed: false,
+          }
+        : c,
+    ),
+  });
+  const contours = result.contours;
   return {
     ...result,
     base: result.base.slice(0, last + 1),
@@ -466,15 +686,27 @@ export function reveal(result: Result, progress: number): Result {
       paths: result.pursuit.paths.map((path) => path.slice(0, last + 1)),
       polygons: result.pursuit.polygons.filter((p) => p.sampleIndex <= last),
     },
-    second: result.second?.slice(0, last + 1),
-    // The circle stays; breaks beyond the revealed samples are harmless.
-    inversion: result.inversion && {
-      ...result.inversion,
-      source: result.inversion.source?.slice(0, last + 1),
+    // Every trajectory shares the base's sample times, so a revealed prefix
+    // is the same span of time on each.
+    field: result.field && {
+      ...result.field,
+      paths: result.field.paths.map((path) => path.slice(0, last + 1)),
+      arrows: result.field.arrows.filter((a) => a.sampleIndex <= last),
     },
+    second: result.second?.slice(0, last + 1),
+    input: result.input?.slice(0, last + 1),
     moving: result.moving && {
       ...result.moving,
       positions: result.moving.positions.filter((s) => s.sampleIndex <= last),
+    },
+    contours: contours && {
+      ...contours,
+      curve: along(contours.curve),
+      family: contours.family.map(along),
+      normals: contours.normals.slice(
+        0,
+        Math.floor(p * contours.normals.length),
+      ),
     },
   };
 }

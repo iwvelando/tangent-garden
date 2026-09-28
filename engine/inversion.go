@@ -5,23 +5,18 @@ import (
 	"math"
 )
 
-// Inversion is inversion in the circle of radius Radius about Center. Of
-// names the curve inverted: "curve" for the base itself, or a derived curve
-// ("evolute", "pedal", "contrapedal", "orthotomic", "offset") evaluated from
-// the base with the request's own pole and offset distance.
+// Inversion is inversion in the circle of radius Radius about Center. The
+// curve inverted is the request's input.
 type Inversion struct {
 	Center Vec     `json:"center"`
 	Radius float64 `json:"radius"`
-	Of     string  `json:"of"`
 }
 
-// InversionResult is the circle of inversion and, for a derived curve, that
-// curve, indexed like the base. The image is open before each sample in
-// Breaks, where it runs off to infinity between two finite samples.
+// InversionResult is the circle of inversion. The image is open before each
+// sample in Breaks, where it runs off to infinity between two finite samples.
 type InversionResult struct {
 	Center Vec     `json:"center"`
 	Radius float64 `json:"radius"`
-	Source []*Vec  `json:"source,omitempty"`
 	Breaks []int   `json:"breaks"`
 }
 
@@ -32,70 +27,21 @@ func Invert(p, center Vec, radius float64) *Vec {
 	return point(center.Add(d.Mul(radius * radius / d.Dot(d))))
 }
 
-// order is the number of derivatives the inverted curve needs: none for the
-// base itself, which may have cusps.
-func (v Inversion) order() int {
-	switch v.Of {
-	case "curve":
-		return 0
-	case "evolute":
-		return 2
-	}
-	return 1
-}
-
-func (v Inversion) validate(pole Vec) error {
+func (v Inversion) validate() error {
 	if !v.Center.Valid() {
 		return fmt.Errorf("center of inversion coordinates must be finite numbers")
 	}
 	if !finite(v.Radius) || v.Radius <= 0 || v.Radius > 1e5 {
 		return fmt.Errorf("inversion radius must be positive and at most 100000")
 	}
-	switch v.Of {
-	case "curve", "evolute", "offset":
-	case "pedal", "contrapedal", "orthotomic":
-		if !pole.Valid() {
-			return fmt.Errorf("pole coordinates must be finite numbers")
-		}
-	default:
-		return fmt.Errorf("invert the curve, its evolute, pedal, contrapedal, orthotomic, or offset")
-	}
 	return nil
 }
 
-// inverter evaluates the inverted curve at any t, not only at samples, so the
-// image can be checked between them.
+// inverter checks the image between samples of the inverted curve g, which
+// it evaluates at any t.
 type inverter struct {
 	Inversion
-	f        curveFunc
-	lo, hi   float64
-	pole     Vec
-	distance float64
-}
-
-// at is the inverted curve's point for the base point p and its derivatives.
-func (v *inverter) at(p, dp, ddp Vec) *Vec {
-	switch v.Of {
-	case "curve":
-		return point(p)
-	case "evolute":
-		return Evolute(p, dp, ddp)
-	case "pedal":
-		return Pedal(p, dp, v.pole)
-	case "contrapedal":
-		return Contrapedal(p, dp, v.pole)
-	case "orthotomic":
-		return Orthotomic(p, dp, v.pole)
-	}
-	return Offset(p, dp, v.distance)
-}
-
-func (v *inverter) source(t float64) *Vec {
-	if v.Of == "curve" {
-		return point(v.f(t))
-	}
-	dp, ddp := derivatives(v.f, t, v.lo, v.hi)
-	return v.at(v.f(t), dp, ddp)
+	g curveFunc
 }
 
 // Bisection evaluations allowed per sample interval; an interval that needs
@@ -129,7 +75,7 @@ func (v *inverter) open(t0, t1 float64, a, b Vec) bool {
 		if budget--; budget < 0 {
 			return true
 		}
-		m := v.source(tm)
+		m := point(v.g(tm))
 		if m == nil || m.Sub(o).Norm() < limit {
 			return true
 		}

@@ -31,6 +31,41 @@ const base: Config = {
       })),
       capture: 0.001,
     },
+    // The Van der Pol oscillator, with a as its damping μ: trajectories from
+    // near the origin and from far out both wind onto its limit cycle.
+    field: {
+      x: "y",
+      y: "a*(1-x^2)*y-x",
+      seeds: [
+        { x: 0.1, y: 0 },
+        { x: 3, y: 3 },
+      ],
+      escape: 10,
+    },
+    // Cassini ovals about foci (±a, 0): points whose distances to the foci
+    // multiply to b², for level b⁴. Level a⁴ is the lemniscate.
+    implicit: {
+      f: "((x-a)^2+y^2)*((x+a)^2+y^2)",
+      level: 1,
+      family: { enabled: true, from: 0.2, to: 2.6, count: 9 },
+      window: { xMin: -2, xMax: 2, yMin: -1.5, yMax: 1.5 },
+      cells: 160,
+    },
+    // The reference Clifford study: its iterates stay within 1 + |c| by
+    // 1 + |d|, the window used when nothing is accumulated.
+    attractor: {
+      map: "clifford",
+      a: -1.4,
+      b: 1.6,
+      c: 1,
+      d: 0.7,
+      start: { x: 0.1, y: 0.1 },
+      discard: 1000,
+      iterates: 800000,
+      fit: true,
+      window: { xMin: -2, xMax: 2, yMin: -1.7, yMax: 1.7 },
+      cells: 600,
+    },
   },
   source: { kind: "point", position: { x: 1, y: 0 }, angle: -90 },
   nIncident: 1.2,
@@ -66,7 +101,8 @@ const base: Config = {
     extend: false,
     radius: "1+0.35*sin(a*t)",
   },
-  inversion: { center: { x: 0, y: 0 }, radius: 1, of: "curve" },
+  inversion: { center: { x: 0, y: 0 }, radius: 1 },
+  input: "curve",
   samples: 1000,
   lines: 48,
 };
@@ -450,7 +486,7 @@ export const presets: { title: string; note: string; config: Config }[] = [
       // Inverting a pedal about its pole in the unit circle gives the polar
       // reciprocal of the curve: here the ellipse 4x² + 1.21y² = 1.
       curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
-      inversion: { ...base.inversion, of: "pedal" },
+      input: "pedal",
       lines: 48,
     },
   },
@@ -550,6 +586,222 @@ export const presets: { title: string; note: string; config: Config }[] = [
       },
       samples: 4000,
       lines: 36,
+    },
+  },
+  {
+    title: "Van der Pol limit cycle",
+    note: "Two trajectories, one closed orbit",
+    config: {
+      ...base,
+      kind: "offset",
+      // ẋ = y, ẏ = a(1 − x²)y − x with damping a = 1. The origin repels and
+      // far points fall inward, so a trajectory from near the origin and one
+      // from far out both wind onto the same closed orbit, whose period is
+      // about 6.66. Parallel curves on both sides of the first trajectory
+      // wind on with it.
+      stack: { enabled: true, from: -0.3, to: 0.3, count: 7 },
+      curve: { ...base.curve, format: "field", min: 0, max: 30 },
+      samples: 6000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Pendulum phase portrait",
+    note: "Swings, a separatrix, and escapes",
+    config: {
+      ...base,
+      kind: "evolute",
+      // ẋ = y, ẏ = −sin x: angle and angular velocity of a pendulum. Seeds
+      // below the separatrix, where the speed at the bottom is 2, swing back
+      // and forth on closed orbits, the widest in a period of about 9.1;
+      // those above it go over the top and keep turning, until they leave
+      // the escape circle. The evolute is of the first swing.
+      curve: {
+        ...base.curve,
+        format: "field",
+        min: 0,
+        max: 9.2,
+        field: {
+          x: "y",
+          y: "-sin(x)",
+          seeds: [
+            { x: 0, y: 1.2 },
+            { x: 0, y: 0.6 },
+            { x: 0, y: 1.8 },
+            { x: 0, y: 2.2 },
+            { x: 0, y: -2.2 },
+            { x: 0, y: 2.8 },
+            { x: 0, y: -2.8 },
+          ],
+          escape: 7,
+        },
+      },
+      samples: 6000,
+      lines: 24,
+    },
+  },
+  {
+    title: "Cassini ovals & the lemniscate",
+    note: "One level set, split and joined",
+    config: {
+      ...base,
+      // The lemniscate b = a among ovals on both sides of it: two apiece
+      // below, one above. The saddle at the origin is a grid point, so the
+      // lemniscate's two loops meet there.
+      curve: { ...base.curve, format: "implicit" },
+    },
+  },
+  {
+    title: "Circles through two points",
+    note: "Level sets beside a pole",
+    config: {
+      ...base,
+      // y/(x² + y² − a²) = c is the circle through (±a, 0) about
+      // (0, 1/(2c)); c = 0 is the x-axis. F has a pole along the circle of
+      // radius a, where it changes sign without passing through any level,
+      // and is undefined at (±a, 0), where every circle meets.
+      curve: {
+        ...base.curve,
+        format: "implicit",
+        implicit: {
+          f: "y/(x^2+y^2-a^2)",
+          level: 1,
+          family: { enabled: true, from: -2, to: 2, count: 9 },
+          window: { xMin: -2.5, xMax: 2.5, yMin: -2, yMax: 2 },
+          cells: 200,
+        },
+      },
+      lines: 40,
+    },
+  },
+  {
+    title: "Clifford attractor",
+    note: "The visits of 800,000 iterates",
+    config: {
+      ...base,
+      // (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from (0.1, 0.1): 1,000 iterates
+      // discarded, the next 800,000 counted. An illustration of an iterated
+      // map, not a proof of chaos.
+      curve: { ...base.curve, format: "attractor" },
+      lines: 40,
+    },
+  },
+  {
+    title: "De Jong attractor",
+    note: "An iterated map of sines and cosines",
+    config: {
+      ...base,
+      curve: {
+        ...base.curve,
+        format: "attractor",
+        attractor: {
+          ...base.curve.attractor,
+          map: "dejong",
+          a: 1.4,
+          b: -2.3,
+          c: 2.4,
+          d: -2.1,
+          window: { xMin: -2, xMax: 2, yMin: -2, yMax: 2 },
+        },
+      },
+      lines: 40,
+    },
+  },
+  {
+    title: "Hénon map",
+    note: "Folded layers of a quadratic map",
+    config: {
+      ...base,
+      // Hénon's (a, b) = (1.4, 0.3) from the origin. Starts farther out,
+      // such as (2, 0), leave any bound within a few iterates.
+      curve: {
+        ...base.curve,
+        format: "attractor",
+        attractor: {
+          ...base.curve.attractor,
+          map: "henon",
+          a: 1.4,
+          b: 0.3,
+          c: 0,
+          d: 0,
+          start: { x: 0, y: 0 },
+          discard: 100,
+          iterates: 400000,
+          window: { xMin: -1.5, xMax: 1.5, yMin: -0.5, yMax: 0.5 },
+          cells: 800,
+        },
+      },
+      lines: 40,
+    },
+  },
+  {
+    title: "Cayley's sextic, a second pedal",
+    note: "The pedal of a circle's pedal",
+    config: {
+      ...base,
+      kind: "pedal",
+      // About a point on a circle its pedal is a cardioid, and the
+      // cardioid's pedal about its cusp is Cayley's sextic.
+      input: "pedal",
+      curve: {
+        ...base.curve,
+        x: "1+cos(t)",
+        y: "sin(t)",
+        min: -Math.PI,
+        max: Math.PI,
+      },
+      samples: 2000,
+      lines: 48,
+    },
+  },
+  {
+    title: "Unwinding an evolute",
+    note: "The involute of an evolute is the curve",
+    config: {
+      ...base,
+      kind: "involute",
+      // The evolute of a logarithmic spiral is the same spiral turned. A
+      // string as long as the radius of curvature at t = 0, √(1 + 0.15²),
+      // unwound from it retraces the spiral.
+      input: "evolute",
+      curve: {
+        ...base.curve,
+        x: "exp(0.15*t)*cos(t)",
+        y: "exp(0.15*t)*sin(t)",
+        min: 0,
+        max: 4 * Math.PI,
+      },
+      offset: Math.sqrt(1.0225),
+      samples: 2000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Rolling on an ellipse's pedal",
+    note: "A rolling circle on a derived curve",
+    config: {
+      ...base,
+      kind: "rolling",
+      // The pedal about the center is about 10.7411 long, so a circle of
+      // this radius turns 14 times around it and closes.
+      input: "pedal",
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      rolling: { ...base.rolling, side: "right", radius: 0.1221066, arm: 0.3 },
+      samples: 4000,
+      lines: 60,
+    },
+  },
+  {
+    title: "Offsets of an evolute",
+    note: "Parallels of an ellipse's evolute",
+    config: {
+      ...base,
+      kind: "offset",
+      input: "evolute",
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      stack: { enabled: true, from: -0.6, to: 0.6, count: 9 },
+      samples: 2000,
+      lines: 48,
     },
   },
 ];
