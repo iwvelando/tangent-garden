@@ -46,6 +46,7 @@ export async function imageFile(
       inversion: "spatial sphere inversion",
       framed: "spatial framed ribbon",
       ruled: "spatial ruled surface",
+      canal: "spatial canal surface",
     };
     return new Blob(
       [

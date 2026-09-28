@@ -69,7 +69,8 @@ self.onmessage = async ({
         family = data.spatial?.involute.family,
         framed = data.spatial?.construction === "framed",
         frame = data.spatial?.frame,
-        ruled = data.spatial?.construction === "ruled";
+        ruled = data.spatial?.construction === "ruled",
+        canal = data.spatial?.construction === "canal";
       if (
         !data.spatial ||
         ![
@@ -82,41 +83,51 @@ self.onmessage = async ({
               ]
             : ruled
               ? [data.spatial.ruled.rate, data.spatial.ruled.shift]
-              : framed
+              : canal
                 ? [
+                    data.spatial.canal.radius,
+                    data.spatial.canal.meridians,
                     frame!.angle,
                     frame!.twist,
-                    frame!.offset,
-                    frame!.width,
-                    frame!.strands,
-                    // A Frenet frame never reads N₀.
-                    ...(frame!.kind === "rotation-minimizing"
-                      ? [
-                          frame!.reference.x,
-                          frame!.reference.y,
-                          frame!.reference.z,
-                        ]
-                      : []),
+                    frame!.reference.x,
+                    frame!.reference.y,
+                    frame!.reference.z,
                   ]
-                : projection || inversion
+                : framed
                   ? [
-                      ...(inversion
+                      frame!.angle,
+                      frame!.twist,
+                      frame!.offset,
+                      frame!.width,
+                      frame!.strands,
+                      // A Frenet frame never reads N₀.
+                      ...(frame!.kind === "rotation-minimizing"
                         ? [
-                            data.spatial.inversion.center.x,
-                            data.spatial.inversion.center.y,
-                            data.spatial.inversion.center.z,
-                            data.spatial.inversion.radius,
-                          ]
-                        : []),
-                      ...(projection
-                        ? [
-                            data.spatial.pole.x,
-                            data.spatial.pole.y,
-                            data.spatial.pole.z,
+                            frame!.reference.x,
+                            frame!.reference.y,
+                            frame!.reference.z,
                           ]
                         : []),
                     ]
-                  : [data.spatial.length]),
+                  : projection || inversion
+                    ? [
+                        ...(inversion
+                          ? [
+                              data.spatial.inversion.center.x,
+                              data.spatial.inversion.center.y,
+                              data.spatial.inversion.center.z,
+                              data.spatial.inversion.radius,
+                            ]
+                          : []),
+                        ...(projection
+                          ? [
+                              data.spatial.pole.x,
+                              data.spatial.pole.y,
+                              data.spatial.pole.z,
+                            ]
+                          : []),
+                      ]
+                    : [data.spatial.length]),
           data.spatial.samples,
           data.spatial.lines,
           ...(data.spatial.format === "parametric"
@@ -156,6 +167,8 @@ self.onmessage = async ({
         throw new Error("The number of involutes must be a whole number.");
       if (framed && !Number.isInteger(frame!.strands))
         throw new Error("The number of offset strands must be a whole number.");
+      if (canal && !Number.isInteger(data.spatial.canal.meridians))
+        throw new Error("The number of meridians must be a whole number.");
       const result = JSON.parse(
         tangentGardenSpatial(JSON.stringify(data.spatial)),
       );

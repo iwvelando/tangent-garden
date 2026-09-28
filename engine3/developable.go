@@ -30,7 +30,9 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // "orthotomic" for projections from Pole, or "inversion" for the sphere
 // inversion described by Inversion, or "framed" for the ribbon and offset
 // strands described by Frame, or "ruled" for the surface joining the curve to
-// the partner described by Ruled. Length applies only to the developable.
+// the partner described by Ruled, or "canal" for the envelope of spheres
+// described by Canal, whose angle is carried by Frame. Length applies only to
+// the developable.
 type Request struct {
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
@@ -40,6 +42,7 @@ type Request struct {
 	Inversion    InversionRequest `json:"inversion"`
 	Frame        FrameRequest     `json:"frame"`
 	Ruled        RuledRequest     `json:"ruled"`
+	Canal        CanalRequest     `json:"canal"`
 	Curve        Curve            `json:"curve"`
 	Radius       float64          `json:"radius"`
 	Tube         float64          `json:"tube"`
@@ -82,6 +85,10 @@ type Result struct {
 	// Ruled is present only for the ruled construction, whose surface uses
 	// Mesh and Rulings, with the partner thread in Plus and Minus empty.
 	Ruled *RuledResult `json:"ruled,omitempty"`
+	// Canal is present only for the canal construction, whose surface uses
+	// Mesh, with Frame describing the frame that carries its angle; Minus,
+	// Plus and Rulings are empty.
+	Canal *CanalResult `json:"canal,omitempty"`
 	// Harmonic is present only for a harmonic curve, under any construction.
 	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
 }
@@ -116,8 +123,9 @@ func Compute(c Request) (Result, error) {
 	inversion := c.Construction == "inversion"
 	framed := c.Construction == "framed"
 	ruled := c.Construction == "ruled"
+	canal := c.Construction == "canal"
 	developable := c.Construction == "" || c.Construction == "developable"
-	if !involute && !projection && !inversion && !framed && !ruled && !developable {
+	if !involute && !projection && !inversion && !framed && !ruled && !canal && !developable {
 		return Result{}, fmt.Errorf("unknown spatial construction")
 	}
 	if developable && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
@@ -141,9 +149,23 @@ func Compute(c Request) (Result, error) {
 			return Result{}, err
 		}
 	}
+	if canal {
+		if err := c.Canal.validate(); err != nil {
+			return Result{}, err
+		}
+		if err := c.Canal.frame(c.Frame).validate(); err != nil {
+			return Result{}, err
+		}
+	}
 	evaluate, lo, hi, closed, err := compile(c)
 	if err != nil {
 		return Result{}, err
+	}
+	var radius func(float64) (float64, float64, bool)
+	if canal {
+		if radius, err = c.Canal.radius(hi - lo); err != nil {
+			return Result{}, err
+		}
 	}
 	var partner func(float64) (Vec3, Vec3, bool, bool)
 	if ruled {
@@ -241,6 +263,18 @@ func Compute(c Request) (Result, error) {
 		frames(c, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
 		families := [][]*Vec3{out.Base, out.Minus, out.Plus}
 		families = append(families, out.Frame.Strands...)
+		out.Bounds = fit(append(families, generating...)...)
+		out.Radius = out.Bounds.Radius
+		return out, nil
+	}
+	if canal {
+		framing := c
+		framing.Frame = c.Canal.frame(c.Frame)
+		frame := frames(framing, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
+		if err := canalSurface(c, &out, radius, frame, tangents, speeds, middles, lo, hi, closed); err != nil {
+			return Result{}, err
+		}
+		families := append([][]*Vec3{out.Base}, out.Canal.drawn()...)
 		out.Bounds = fit(append(families, generating...)...)
 		out.Radius = out.Bounds.Radius
 		return out, nil

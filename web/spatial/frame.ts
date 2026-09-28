@@ -8,8 +8,12 @@ export const degrees = (radians: number) => {
 
 // What the frame is and what it did on this curve: its kind, the closed
 // loop's return angle and seam (or why there is none), and any samples or
-// stretches it could not treat normally.
-export function frameNote(q: FrameResult): string[] {
+// stretches it could not treat normally. `drawn` names what the offset
+// direction places: the ribbon, or a canal surface's meridians.
+export function frameNote(
+  q: FrameResult,
+  drawn: "ribbon" | "meridians" = "ribbon",
+): string[] {
   const out = [
     q.kind === "frenet"
       ? "Frenet frame, a diagnostic: U is the principal normal and V the binormal. It is undefined where the curve is straight and reverses at inflections."
@@ -34,7 +38,7 @@ export function frameNote(q: FrameResult): string[] {
     }
     if (q.seam)
       out.push(
-        `With this twist the ribbon does not close: its ends differ by ${degrees(q.seam.angle)}.`,
+        `With this twist the ${drawn} ${drawn === "ribbon" ? "does" : "do"} not close: ${drawn === "ribbon" ? "its" : "their"} ends differ by ${degrees(q.seam.angle)}.`,
       );
   } else
     out.push(

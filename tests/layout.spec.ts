@@ -102,6 +102,7 @@ for (const width of [1440, 390]) {
       "17",
       "18",
       "19",
+      "21",
     ])
       setups.push(async () => {
         await page.goto("/?study=3d");

@@ -1268,4 +1268,79 @@ const spatialRuled = (ruled) =>
 console.log(
   "WASM ruled surface: hyperboloid, chords, collapse and validation passed",
 );
+// Canal surface: spheres of radius 0.5ρ(t) centred on a circle of radius 2.
+// With ρ = 1 the envelope is the torus (√(x² + y²) − 2)² + z² = 1/4; a
+// profile that grows faster than the centre moves has no real envelope.
+const spatialCanal = (canal, frame = {}) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "harmonic",
+        construction: "canal",
+        harmonic: {
+          center: { x: 0, y: 0, z: 0 },
+          terms: [
+            {
+              frequency: 1,
+              cosine: { x: 2, y: 0, z: 0 },
+              sine: { x: 0, y: 2, z: 0 },
+            },
+          ],
+          min: 0,
+          max: 2 * Math.PI,
+        },
+        canal: { radius: 0.5, profile: "1", meridians: 4, ...canal },
+        frame: {
+          kind: "rotation-minimizing",
+          reference: { x: 0, y: 0, z: 1 },
+          angle: 0,
+          twist: 0,
+          offset: 0,
+          width: 0,
+          strands: 0,
+          closure: "seam",
+          ...frame,
+        },
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+{
+  const torus = spatialCanal({});
+  const q = torus.canal;
+  assert.equal(q.constant, true);
+  assert.equal(q.closed, true);
+  assert.equal(q.imaginary, 0);
+  assert.equal(q.breaks.length, 481);
+  assert.equal(q.meridians.length, 4);
+  assert.equal(q.circles.length, 24);
+  assert.equal(torus.frame.kind, "rotation-minimizing");
+  assert.equal(torus.minus.length, 0);
+  assert.equal(torus.rulings.length, 0);
+  assert.equal(torus.mesh.length, 480 * 24 * 6);
+  for (const v of torus.mesh) {
+    const p = v.position;
+    assert.ok(
+      Math.abs((Math.hypot(p.x, p.y) - 2) ** 2 + p.z ** 2 - 0.25) < 1e-12,
+    );
+  }
+  for (const g of q.circles) {
+    assert.equal(g.real, true);
+    assert.equal(g.radius, 0.5);
+    assert.equal(g.points.length, 49);
+  }
+  // R′ = 0.5·4·cos(4t) reaches 2 = v: collapse where equal, gaps beyond.
+  const beads = spatialCanal({ profile: "1+1.2*sin(4*t)" });
+  assert.ok(beads.canal.imaginary > 0);
+  assert.equal(beads.canal.constant, false);
+  assert.ok(Math.abs(beads.canal.steepest - 1.2) < 1e-9);
+  assert.ok(beads.canal.circles.some((g) => !g.real && g.points.length === 0));
+  assert.ok(beads.omitted > 0);
+  assert.match(spatialCanal({ radius: 0 }).error, /radius R/);
+  assert.match(spatialCanal({ meridians: 13 }).error, /meridians/);
+  assert.match(spatialCanal({ profile: "a*t" }).error, /ρ\(t\)/);
+  assert.match(spatialCanal({}, { closure: "trim" }).error, /closure/);
+}
+console.log("WASM canal surface: torus, lost envelope and validation passed");
 process.exit(0);

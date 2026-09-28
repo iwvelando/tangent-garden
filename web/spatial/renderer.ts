@@ -13,9 +13,10 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // projections; inverse, correspondences, sphere and source to sphere
 // inversion; vectors and ellipses to a harmonic curve under any
 // construction; strands, frames and seam to the framed construction, whose
-// ribbon reuses surface, rulings and edges; and the ruled construction reuses
-// surface, rulings and edges, its partner thread drawn as the edge. The base
-// curve is always drawn.
+// ribbon reuses surface, rulings and edges; the ruled construction reuses
+// surface, rulings and edges, its partner thread drawn as the edge; and the
+// canal construction reuses surface, frames and seam, with its own contact
+// circles and meridians. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -34,6 +35,8 @@ export type Layers = {
   strands: boolean;
   frames: boolean;
   seam: boolean;
+  circles: boolean;
+  meridians: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -53,6 +56,8 @@ export const defaultLayers: Layers = {
   strands: true,
   frames: true,
   seam: true,
+  circles: true,
+  meridians: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -170,7 +175,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     strands: Batch,
     frames: Batch,
     tangents: Batch,
-    seam: Batch;
+    seam: Batch,
+    circles: Batch,
+    spheres: Batch,
+    meridians: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -306,24 +314,61 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     );
     // Three great circles show the sphere sparingly, without a surface that
     // would hide the curves.
-    const circle = (u: Vec3, w: Vec3) =>
-      Array.from({ length: 96 }, (_, k) => {
-        const [a, b] = [0, 1].map((d) => (2 * Math.PI * (k + d)) / 96);
-        return [a, b].map((t) => ({
-          x: v!.center.x + v!.radius * (Math.cos(t) * u.x + Math.sin(t) * w.x),
-          y: v!.center.y + v!.radius * (Math.cos(t) * u.y + Math.sin(t) * w.y),
-          z: v!.center.z + v!.radius * (Math.cos(t) * u.z + Math.sin(t) * w.z),
-        }));
-      }).flat();
-    const [i, j, k] = [
-      { x: 1, y: 0, z: 0 },
-      { x: 0, y: 1, z: 0 },
-      { x: 0, y: 0, z: 1 },
-    ];
+    const greatCircles = (o: Vec3, r: number) => {
+      const circle = (u: Vec3, w: Vec3) =>
+        Array.from({ length: 96 }, (_, k) => {
+          const [a, b] = [0, 1].map((d) => (2 * Math.PI * (k + d)) / 96);
+          return [a, b].map((t) => ({
+            x: o.x + r * (Math.cos(t) * u.x + Math.sin(t) * w.x),
+            y: o.y + r * (Math.cos(t) * u.y + Math.sin(t) * w.y),
+            z: o.z + r * (Math.cos(t) * u.z + Math.sin(t) * w.z),
+          }));
+        }).flat();
+      const [i, j, k] = [
+        { x: 1, y: 0, z: 0 },
+        { x: 0, y: 1, z: 0 },
+        { x: 0, y: 0, z: 1 },
+      ];
+      return [...circle(i, j), ...circle(j, k), ...circle(k, i)];
+    };
     sphere = batch(
-      vertices(v ? [...circle(i, j), ...circle(j, k), ...circle(k, i)] : []),
+      vertices(v ? greatCircles(v.center, v.radius) : []),
       gl!.LINES,
       4,
+    );
+    // Contact circles where the spheres touch their envelope; a sphere with
+    // no real circle is drawn by its great circles, in grey. Meridians shade
+    // across the family like offset strands.
+    const canal = result.canal;
+    const real = (canal?.circles ?? []).filter((g) => g.real);
+    circles = batch(
+      vertices(
+        real.flatMap((g) =>
+          g.points.slice(1).flatMap((p, k) => [g.points[k], p]),
+        ),
+      ),
+      gl!.LINES,
+      1,
+    );
+    spheres = batch(
+      vertices(
+        (canal?.circles ?? [])
+          .filter((g) => !g.real)
+          .flatMap((g) => greatCircles(g.center, g.sphere)),
+      ),
+      gl!.LINES,
+      4,
+    );
+    const lines = canal?.meridians ?? [];
+    meridians = batch(
+      lines.flatMap((points, k) =>
+        vertices(
+          pairs(points, canal!.breaks),
+          lines.length > 1 ? k / (lines.length - 1) : 0,
+        ),
+      ),
+      gl!.LINES,
+      3,
     );
     center = batch(
       vertices(v ? cross(v.center, result.bounds.radius * 0.03) : []),
@@ -445,6 +490,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
           arm * 1.5,
           beyond(result.plus[0]),
           ...f!.strands.map((points) => beyond(points[0])),
+          ...(result.canal?.meridians ?? []).map((points) => beyond(points[0])),
         );
       const normal = {
         x: g.tangent.y * s.start.z - g.tangent.z * s.start.y,
@@ -560,6 +606,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       render(plus);
     }
     if (layers.strands) render(strands);
+    if (layers.meridians) render(meridians);
+    if (layers.circles) {
+      render(circles);
+      render(spheres);
+    }
     if (layers.frames) {
       render(tangents);
       render(frames);

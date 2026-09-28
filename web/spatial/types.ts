@@ -61,6 +61,17 @@ export type RuledConfig = {
   rate: number;
   shift: number;
 };
+// The envelope of spheres centred on the curve with radius R(t) =
+// radius·ρ(t), `profile` being ρ written in t (1 gives a tube). The angle
+// around each contact circle is carried by the rotation-minimizing frame of
+// `frame` (N₀, θ₀, twist and closure only); `meridians` (0–12) curves
+// θ = θ₀ + 2πk/meridians are drawn on it. Mirrors engine3.CanalRequest.
+export type CanalConfig = {
+  radius: number;
+  profile: string;
+  meridians: number;
+};
+export const maxMeridians = 12;
 export type SpatialConfig = {
   format: "torus" | "parametric" | "harmonic";
   // `length` is the tangent reach, used only by the developable.
@@ -71,13 +82,15 @@ export type SpatialConfig = {
     | "orthotomic"
     | "inversion"
     | "framed"
-    | "ruled";
+    | "ruled"
+    | "canal";
   pole: Vec3;
   inversion: InversionConfig;
   involute: InvoluteConfig;
   harmonic: HarmonicCurve;
   frame: FrameConfig;
   ruled: RuledConfig;
+  canal: CanalConfig;
   curve: {
     x: string;
     y: string;
@@ -119,6 +132,10 @@ export type SpatialResult = {
   // Present only for the ruled construction: the partner fills plus (minus
   // is empty), and mesh and rulings are joined across ruled.breaks.
   ruled?: RuledResult;
+  // Present only for the canal construction, with `frame` for the frame that
+  // carries its angle. Its surface fills mesh; minus, plus and rulings are
+  // empty, and meridians are joined across canal.breaks.
+  canal?: CanalResult;
 };
 export type InvoluteResult = {
   members: { offset: number; points: (Vec3 | null)[]; collapsed: boolean }[];
@@ -215,4 +232,32 @@ export type RuledResult = {
   singular: number;
   developable: boolean;
   deviation: number;
+};
+// Mirrors engine3.CanalResult. Breaks add every interval with a sample or
+// midpoint without a real contact circle to the base's. A circle that is not
+// real (|R′| > v) keeps its sphere's centre and radius, with no points.
+// Between counts intervals whose midpoint alone has no real circle.
+// Steepest is the largest |R′|/v; gap is the distance between the first and
+// last contact circles of a closed curve whose surface does not close.
+export type CanalCircle = {
+  sampleIndex: number;
+  real: boolean;
+  sphere: number;
+  center: Vec3;
+  radius: number;
+  points: Vec3[];
+};
+export type CanalResult = {
+  circles: CanalCircle[];
+  meridians: (Vec3 | null)[][];
+  breaks: boolean[];
+  constant: boolean;
+  closed: boolean;
+  gap: number;
+  steepest: number;
+  undefined: number;
+  imaginary: number;
+  between: number;
+  collapsed: number;
+  folded: number;
 };

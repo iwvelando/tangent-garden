@@ -824,6 +824,35 @@ test("spatial frame reference, angle, twist, width and distance share the bounde
   }
 });
 
+test("spatial canal radius shares the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page.getByLabel("Construction", { exact: true }).selectOption("canal");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly string[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  for (const [name, text, value, path] of [
+    ["Tube radius R", "1/(2*phi)", 1 / (2 * phi), ["canal", "radius"]],
+    ["Angle θ₀", "pi/5", Math.PI / 5, ["frame", "angle"]],
+    ["N₀ y", "e", Math.E, ["frame", "reference", "y"]],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(path)).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
+
 test("spatial ruled shift and rate share the bounded scalar parser", async ({
   page,
 }) => {
