@@ -15,8 +15,9 @@ async function settled(page: Page) {
 for (const [path, count] of [
   ["/", 43],
   ["/?study=3d", 27],
+  ["/?study=4d", 6],
 ] as const)
-  test(`the ${path === "/" ? "2D" : "3D"} gallery shows every example with a current thumbnail`, async ({
+  test(`the ${path === "/" ? "2D" : path.endsWith("4d") ? "4D" : "3D"} gallery shows every example with a current thumbnail`, async ({
     page,
   }) => {
     await page.goto(path);
@@ -148,7 +149,7 @@ test("arrow keys move between cards", async ({ page }) => {
 });
 
 for (const path of ["/", "/?study=3d"])
-  test(`previous and next step through the ${path === "/" ? "2D" : "3D"} examples`, async ({
+  test(`previous and next step through the ${path === "/" ? "2D" : path.endsWith("4d") ? "4D" : "3D"} examples`, async ({
     page,
   }) => {
     await page.goto(path);

@@ -1408,4 +1408,51 @@ const spatialField = (field, construction = "none") =>
   assert.match(spatialField({ escape: -1 }).error, /escape radius/);
 }
 console.log("WASM vector field: helices, escape and validation passed");
+
+// The 4D engine has its own request/result contract.
+const hyper = {
+  mode: "section",
+  angles: [0, 0, 0, 0, 0, 0],
+  distance: 4,
+  slice: 0,
+  spread: 2,
+  count: 1,
+  grid: 0,
+  samples: 64,
+  clip: 4,
+};
+const h = JSON.parse(globalThis.tangentGardenTesseract(JSON.stringify(hyper)));
+assert.deepEqual(h.sections[0], {
+  level: 0,
+  vertices: 8,
+  edges: 12,
+  faces: 6,
+  dimension: 3,
+});
+assert.equal(h.paths.length, 12);
+assert.equal(h.faces.length, 6);
+for (const change of [
+  { mode: "perspective", distance: 2 },
+  { mode: "stereo", samples: 300 },
+  { mode: "orthographic", grid: -1 },
+  { count: 1.5 },
+  { mode: "bad" },
+  { angles: [0, 0, "x", 0, 0, 0] },
+])
+  assert.ok(
+    JSON.parse(
+      globalThis.tangentGardenTesseract(
+        JSON.stringify({ ...hyper, ...change }),
+      ),
+    ).error,
+  );
+for (const mode of ["perspective", "orthographic", "stereo"])
+  assert.equal(
+    JSON.parse(
+      globalThis.tangentGardenTesseract(JSON.stringify({ ...hyper, mode })),
+    ).paths.length,
+    32,
+  );
+console.log("Tesseract WASM contract passed");
+
 process.exit(0);

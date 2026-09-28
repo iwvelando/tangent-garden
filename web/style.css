@@ -887,3 +887,19 @@ h1 {
   font-size: 12px;
   padding: 2px 8px;
 }
+
+/* Three notebooks occupy their own row on phones. Keep export anchored at
+   the right so its menu and errors have the full row available to the left. */
+@media (max-width: 700px) {
+  .header-actions {
+    width: 100%;
+  }
+  .notebook-mode {
+    flex: 1 0 100%;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  .header-actions .export-menu {
+    margin-left: auto;
+  }
+}

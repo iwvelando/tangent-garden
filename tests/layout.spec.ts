@@ -118,6 +118,16 @@ for (const width of [1440, 390]) {
           .getByLabel("Animate", { exact: true })
           .selectOption("parameters");
       });
+    for (const preset of [
+      "A cube beyond a cube",
+      "Spherical loom",
+      "An octahedron within",
+      "Section garden",
+    ])
+      setups.push(async () => {
+        await page.goto("/?study=4d");
+        await choosePreset(page, { label: preset });
+      });
     let checked = 0;
     for (const setup of setups) {
       await setup();

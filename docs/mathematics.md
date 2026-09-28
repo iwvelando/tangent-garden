@@ -469,3 +469,7 @@ Conventions here were checked against these sources rather than copied from thei
 - [Hanson and Ma, Parallel transport approach to curve framing (Indiana University technical report)](https://scholarworks.iu.edu/dspace/items/39fbe931-c2c8-43a1-9c9d-a207b92d551e)
 - [Strange Attractors: Creating Patterns in Chaos — J. C. Sprott](https://sprott.physics.wisc.edu/SA.HTM)
 - [Clifford attractors and density rendering — Paul Bourke](https://paulbourke.net/fractals/clifford/index.html)
+
+## Tesseract projections and sections
+
+The independent `engine4` package models [−1, 1]⁴ with genuine four-dimensional rotations, linear and perspective projections, exact cell-edge intersections with w = h, and stereographic projections after radial normalization onto S³. See [Tesseract studies](tesseracts.md#mathematics-and-numerical-limits) for rotation order, formulas, analytic clipping, tolerance conventions, workload bounds, and numerical checks. The planar and spatial curve engines retain their existing definitions.

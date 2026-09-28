@@ -14,7 +14,7 @@ import { preview } from "vite";
 const port = 4175;
 const out = "web/examples";
 const stroke = 2.5;
-const recorded = { "2d": {}, "3d": {} };
+const recorded = { "2d": {}, "3d": {}, "4d": {} };
 // Each palette colour, in either theme, by its role.
 const roles = Object.fromEntries(
   [
@@ -34,12 +34,12 @@ try {
     colorScheme: "light",
     reducedMotion: "reduce",
   });
-  for (const notebook of ["2d", "3d"]) {
+  for (const notebook of ["2d", "3d", "4d"]) {
     rmSync(`${out}/${notebook}`, { recursive: true, force: true });
     mkdirSync(`${out}/${notebook}`, { recursive: true });
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(
-      `http://127.0.0.1:${port}/${notebook === "3d" ? "?study=3d" : ""}`,
+      `http://127.0.0.1:${port}/${notebook === "2d" ? "" : `?study=${notebook}`}`,
     );
     const button = page.getByRole("button", {
       name: "Browse notebook examples",
@@ -60,12 +60,16 @@ try {
       await gallery.waitFor({ state: "hidden" });
       // The drawing is ready once it shows this example's definition.
       await page.waitForFunction(
-        ([spatial, want]) => {
-          const text = spatial
-            ? document.querySelector(".spatial-stage[aria-busy=false]")?.dataset
-                .config
-            : document.querySelector(".plot-wrap[aria-busy=false]") &&
-              document.querySelector("#artwork > desc")?.textContent;
+        ([notebook, want]) => {
+          const text =
+            notebook === "4d"
+              ? document.querySelector(".tesseract-stage[aria-busy=false]")
+                  ?.dataset.config
+              : notebook === "3d"
+                ? document.querySelector(".spatial-stage[aria-busy=false]")
+                    ?.dataset.config
+                : document.querySelector(".plot-wrap[aria-busy=false]") &&
+                  document.querySelector("#artwork > desc")?.textContent;
           if (!text) return false;
           let h = 0x811c9dc5;
           for (const c of text) {
@@ -74,7 +78,7 @@ try {
           }
           return h.toString(16).padStart(8, "0") === want;
         },
-        [notebook === "3d", example.fingerprint],
+        [notebook, example.fingerprint],
         { timeout: 60_000 },
       );
       const name = example.exampleSlug;
@@ -98,9 +102,11 @@ try {
                 requestAnimationFrame(() => requestAnimationFrame(done)),
               ),
           );
-          const data = await page.evaluate(spatialThumbnail);
+          const data = await page.evaluate(
+            notebook === "4d" ? tesseractThumbnail : spatialThumbnail,
+          );
           writeFileSync(
-            `${out}/3d/${name}-${theme}.webp`,
+            `${out}/${notebook}/${name}-${theme}.webp`,
             Buffer.from(data.split(",")[1], "base64"),
           );
         }
@@ -265,4 +271,28 @@ function spatialThumbnail() {
     h,
   );
   return canvas.toDataURL("image/webp", 0.82);
+}
+
+async function tesseractThumbnail() {
+  const svg = document.getElementById("tesseract-artwork").cloneNode(true);
+  svg.setAttribute("width", "480");
+  svg.setAttribute("height", "365");
+  const canvas = Object.assign(document.createElement("canvas"), {
+    width: 480,
+    height: 365,
+  });
+  const url = URL.createObjectURL(
+    new Blob([new XMLSerializer().serializeToString(svg)], {
+      type: "image/svg+xml",
+    }),
+  );
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    canvas.getContext("2d").drawImage(image, 0, 0);
+    return canvas.toDataURL("image/webp", 0.88);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

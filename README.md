@@ -88,6 +88,10 @@ Explore tangent developables, folded sheets swept out by a space curve's straigh
 
 Drag to orbit, shift-drag to pan, and scroll to zoom. Keyboard equivalents are arrows, shift-arrows, +/−, and Home. Surface, tangent lines, boundary curves, filaments, strings, tangent projections, perpendicular constructions, the pole marker, an inversion's image, correspondence segments, and sphere, a harmonic curve's vector sums and generating ellipses, a framed ribbon's strands, frame glyphs, and seam, a ruled surface's rulings and partner thread, a canal surface's contact circles and meridians, and a vector field's other trajectories, field directions, and seeds have independent visibility controls. Animate a progressive reveal, multiple parameters, or one camera orbit; pause, scrub, and choose the same four camera modes as in 2D. Save PNG images, SVG files containing the shaded PNG view, or MP4/animated WebP where the browser supports encoding. Exports render at their target resolution and retain the chosen theme, layers, and camera. See [the spatial study](docs/spatial-study.md) for examples, mathematics, and numerical limits.
 
+## Tesseracts
+
+Choose **4D tesseracts** in the header (`?study=4d`) for a separate notebook of four-dimensional geometry. Explore perspective and orthogonal shadows, genuine polyhedral sections and section families, and stereographic curves woven from face grids on the 3-sphere. Six examples, six plane rotations, one- and two-plane motion, slice passages, an orbitable 3D viewpoint, and vector SVG, PNG, MP4 and animated WebP exports keep the construction at the centre of the drawing. Go computes the 4D geometry in the browser worker. See [the tesseract study](docs/tesseracts.md) for the mathematics, controls and limits.
+
 ## Mathematical scope
 
 This is a **mathematical construction explorer**, not a scene renderer: every regular sampled point participates, without occlusion or multiple bounces. The planar engine remains 2D. The experimental spatial study uses separate 3D definitions and types; its renderer uses depth testing to reveal the ribbon folds.

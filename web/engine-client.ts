@@ -69,6 +69,12 @@ export class EngineClient {
   async spatial(config: SpatialConfig): Promise<SpatialResult> {
     return (await this.request({ action: "spatial", spatial: config })).result;
   }
+  async tesseract(
+    config: import("./tesseract/types").Config,
+  ): Promise<import("./tesseract/types").Result> {
+    return (await this.request({ action: "tesseract", tesseract: config }))
+      .result;
+  }
   async scalars(expressions: string[]): Promise<number[]> {
     return (await this.request({ action: "scalars", expressions })).values;
   }

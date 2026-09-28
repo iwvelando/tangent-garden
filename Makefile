@@ -15,10 +15,10 @@ vet:
 	go vet ./...
 	GOOS=js GOARCH=wasm go vet ./cmd/wasm
 format:
-	gofmt -w engine engine3 cmd
+	gofmt -w engine engine3 engine4 cmd
 	npm run format
 format-check:
-	@files=$$(gofmt -l engine engine3 cmd); if [ -n "$$files" ]; then printf 'Run gofmt on:\n%s\n' "$$files"; exit 1; fi
+	@files=$$(gofmt -l engine engine3 engine4 cmd); if [ -n "$$files" ]; then printf 'Run gofmt on:\n%s\n' "$$files"; exit 1; fi
 	npm run format:check
 test: test-go test-wasm typecheck
 test-browser: build

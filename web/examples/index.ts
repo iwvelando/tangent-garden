@@ -1,3 +1,4 @@
+import { tesseractPresets } from "../tesseract/presets";
 import {
   fingerprint,
   slug,
@@ -99,5 +100,31 @@ export const spatialThumbnail: ThumbnailSource = async (example) => {
     images[`./3d/${name}-dark.webp`],
   ];
   if (!light || !dark || recorded["3d"][name] !== example.fingerprint) return;
+  return { kind: "image", light, dark };
+};
+
+export const tesseractExamples: Example[] = tesseractPresets.map((p) => ({
+  title: p.name,
+  caption: p.detail,
+  family:
+    p.config.mode === "section"
+      ? "Sections"
+      : p.config.mode === "stereo"
+        ? "Stereographic curves"
+        : "Shadows",
+  keywords: "tesseract 4D hypercube " + p.config.mode,
+  fingerprint: fingerprint(p.config),
+}));
+const hyperImages = import.meta.glob<string>("./4d/*.webp", {
+  query: "?url",
+  import: "default",
+  eager: true,
+});
+export const tesseractThumbnail: ThumbnailSource = async (example) => {
+  const name = slug(example.title),
+    light = hyperImages[`./4d/${name}-light.webp`],
+    dark = hyperImages[`./4d/${name}-dark.webp`];
+  const records = manifest as Record<string, Record<string, string>>;
+  if (!light || !dark || records["4d"]?.[name] !== example.fingerprint) return;
   return { kind: "image", light, dark };
 };
