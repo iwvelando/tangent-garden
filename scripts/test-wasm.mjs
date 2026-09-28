@@ -1343,4 +1343,69 @@ const spatialCanal = (canal, frame = {}) =>
   assert.match(spatialCanal({}, { closure: "trim" }).error, /closure/);
 }
 console.log("WASM canal surface: torus, lost envelope and validation passed");
+const spatialField = (field, construction = "none") =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "field",
+        construction,
+        field: {
+          x: "-y",
+          y: "x",
+          z: "a",
+          seeds: [
+            { x: 1, y: 0, z: 0 },
+            { x: -1, y: 0, z: 0 },
+            { x: 30, y: 0, z: 0 },
+          ],
+          escape: 10,
+          min: 0,
+          max: 4 * Math.PI,
+          a: 0.25,
+          ...field,
+        },
+        length: 1,
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+{
+  // The rising vortex: helices (cos(φ + t), sin(φ + t), t/4), all indexed
+  // by the same times; a seed outside the escape sphere never starts.
+  const vortex = spatialField({});
+  const q = vortex.field;
+  assert.equal(q.paths.length, 3);
+  assert.equal(q.timed, false);
+  assert.deepEqual(
+    q.ends.map((e) => e.reason),
+    ["end", "end", "escape"],
+  );
+  assert.equal(q.ends[2].point, null);
+  assert.ok(q.paths[2].every((p) => p === null));
+  for (const [k, phi] of [0, Math.PI].entries())
+    q.paths[k].forEach((p, i) => {
+      const t = (4 * Math.PI * i) / 480;
+      assert.ok(
+        Math.hypot(
+          p.x - Math.cos(phi + t),
+          p.y - Math.sin(phi + t),
+          p.z - t / 4,
+        ) < 1e-8,
+      );
+    });
+  assert.deepEqual(vortex.base, q.paths[0]);
+  assert.equal(vortex.mesh.length, 0);
+  assert.equal(vortex.minus.length, 0);
+  assert.equal(q.arrows.length, 48);
+  assert.ok(spatialField({}, "developable").mesh.length > 0);
+  // Growth leaves the sphere |r| = 10 at t = ln 10.
+  const growth = spatialField({ x: "x", y: "y", z: "z", max: 5 });
+  assert.ok(Math.abs(growth.field.ends[0].time - Math.log(10)) < 1e-9);
+  assert.equal(spatialField({ z: "t" }).field.timed, true);
+  assert.match(spatialField({ z: "w" }).error, /dz\/dt/);
+  assert.match(spatialField({ seeds: [] }).error, /seeds/);
+  assert.match(spatialField({ escape: -1 }).error, /escape radius/);
+}
+console.log("WASM vector field: helices, escape and validation passed");
 process.exit(0);

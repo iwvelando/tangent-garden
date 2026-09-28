@@ -54,6 +54,23 @@ const base: SpatialConfig = {
   },
   // A tube of constant radius, with four meridians.
   canal: { radius: 0.35, profile: "1", meridians: 4 },
+  // The rising vortex V = (−y, x, a): each seed on the unit ring climbs a
+  // helix of pitch 2πa.
+  field: {
+    x: "-y",
+    y: "x",
+    z: "a",
+    seeds: [
+      { x: 1, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 },
+      { x: -1, y: 0, z: 0 },
+      { x: 0, y: -1, z: 0 },
+    ],
+    escape: 20,
+    min: 0,
+    max: 4 * Math.PI,
+    a: 0.25,
+  },
   radius: 2.4,
   tube: 0.85,
   length: 2.3,
@@ -475,6 +492,73 @@ export const spatialPresets: {
         a: 1,
         min: -2 * Math.PI,
         max: 2 * Math.PI,
+      },
+    },
+  },
+  {
+    name: "A rising vortex",
+    detail:
+      "Four seeds on a ring climb one field as helices, one with its tangent ribbon",
+    config: {
+      ...base,
+      format: "field",
+      construction: "developable",
+      length: 0.7,
+      lines: 72,
+    },
+  },
+  {
+    name: "Lorenz's two wings",
+    detail:
+      "Two seeds a thousandth apart, folded around two unstable equilibria",
+    config: {
+      ...base,
+      format: "field",
+      construction: "none",
+      samples: 2400,
+      lines: 60,
+      field: {
+        // σ = 10, ρ = a = 28, β = 8/3.
+        x: "10*(y-x)",
+        y: "x*(a-z)-y",
+        z: "x*y-8/3*z",
+        seeds: [
+          { x: 1, y: 1, z: 20 },
+          { x: 1.001, y: 1, z: 20 },
+        ],
+        escape: 200,
+        min: 0,
+        max: 30,
+        a: 28,
+      },
+    },
+  },
+  {
+    name: "A ribbon along Rössler's band",
+    detail: "One trajectory spiralling out and folding back, carried by a band",
+    config: {
+      ...base,
+      format: "field",
+      construction: "framed",
+      samples: 2400,
+      lines: 120,
+      frame: {
+        ...base.frame,
+        reference: { x: 0, y: 0, z: 1 },
+        offset: 0,
+        width: 0.35,
+        strands: 0,
+      },
+      field: {
+        // a = 0.2, b = 0.2, c = 5.7.
+        x: "-y-z",
+        y: "x+a*y",
+        z: "0.2+z*(x-5.7)",
+        seeds: [{ x: 1, y: 1, z: 0 }],
+        escape: 100,
+        min: 0,
+        max: 60,
+        a: 0.2,
       },
     },
   },

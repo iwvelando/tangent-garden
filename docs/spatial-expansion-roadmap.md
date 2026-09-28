@@ -30,7 +30,7 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 - [x] 3b. Rotation-minimizing frames, normal-plane offsets, and explicitly framed ribbons.
 - [x] 4a. Two-curve ruled surfaces and chord families.
 - [x] 4b. Constant-radius tube envelopes, followed by variable-radius canal surfaces.
-- [ ] 5a. Bounded 3D vector-field trajectories and curated continuous attractors.
+- [x] 5a. Bounded 3D vector-field trajectories and curated continuous attractors.
 - [ ] 5b. Spatial cyclic pursuit with explicit capture events and multiple paths.
 - [ ] 6a. Parametric surface studies with normal congruences and signed offsets.
 - [ ] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
@@ -241,8 +241,30 @@ Slices 1a and 1b (branch `claude/spatial-involutes`) landed together, because a 
   - reveal and track unit tests, and the new scalar fields.
 
   The layout sweep includes the trefoil tube. Light and dark desktop drawings, the thumbnails, and the phone-width controls (scroll width 390, no horizontal scroll) were inspected.
+
 - Limits: uniform sampling; 24 fixed segments per mesh circle; folds are counted per sample, not located on the surface, and distant parts of the surface that cross are drawn but not reported. A collapsed contact circle is drawn as nothing in the circles layer. R′ comes from numerical stencils, so a nearly collapsing profile depends on the 10⁻⁹ band. There are no canal surfaces on derived curves, no spine given as a second curve, and no Dupin cyclides or union-of-balls rendering.
 
-Recommended next step: **5a, bounded 3D vector-field trajectories** with a seed set, integration interval, escape region, and explicit termination events. Start with the analytic rising vortex `V = (−y, x, h)`, whose trajectories are helices, before curated Lorenz- or Rössler-style studies. It needs a new evaluator (an integrator with events) rather than a construction on a sampled curve, so it should stand alone.
+### Slice completed in this follow-up: 5a
+
+- Implemented vector-field trajectories as a spatial definition, `format: "field"` (branch `claude/spatial-field`): `r′ = V(x, y, z, t)` from 1–12 seeds over an interval, with an escape sphere about the origin and explicit termination events (end, escape located by bisection, singular, exhausted), plus resting seeds. 5a stood alone, as recommended; 5b's pursuit reuses its pieces.
+- Evaluator decision, made before the UI: a field is a curve _definition_, like the planar notebook's, not a construction. The first trajectory is the base curve on which every existing construction runs unchanged; its velocity is the field and its acceleration a central difference of the field along the flow, never a derivative of integrated positions. Tangent ribbons are therefore the ordinary developable, optional. A new `construction: "none"` (**None · the curve alone**, for any definition) lets trajectories stand alone. Constructions are built on the first trajectory only.
+- Shared machinery: the planar Dormand–Prince stepper and dense solution moved into a dimension-free `engine/ode` package with its own convergence tests; the planar pursuit and trajectories use it unchanged. The error norm and events stay with each caller, so the spatial norm (largest component against `10⁻¹⁰` of the distance from the origin, floored at `10⁻⁶ E`) was chosen deliberately, not inherited. The parser gained four-variable nodes and `ParseSpatialField`.
+- Added `engine3/flow.go` with `FieldRequest`, `TrajectoryEnd`, `FieldArrow`, and `FieldResult` (paths indexed like the base, arrows, ends, resting, timed). The interface adds dx/dt, dy/dt and dz/dt, a, seeds in `.pair.trio` groups with add/remove, the interval, the escape radius, and a note (`web/spatial/field.ts`). It adds the **Other trajectories**, **Field directions** (fixed length, direction only), and **Seeds & early stops** layers and the tracks `a`, `seed{k}{X,Y,Z}`, `escape`, `min`, and `max`. There are three presets (a rising vortex with its tangent ribbon, Lorenz's two wings standing alone, a ribbon along Rössler's band), a "Vector-field trajectories" gallery family, and regenerated thumbnails. Adding `field` to the preset base changed every 3D fingerprint; existing images re-rendered byte-identically. A tube along Rössler was tried first and dropped: the canal mesh's 480-ring cap faceted the fast spike, while the framed ribbon meshes every sample.
+- Coefficient conventions were checked through equilibria before shipping: Lorenz (σ = 10, ρ = 28, β = 8/3) at the origin and C±, and Rössler (a = b = 0.2, c = 5.7) at its near-origin equilibrium, all resting. Chaotic behaviour is checked in aggregate (bounded boxes, repeated lobe switches and spikes, determinism within a build), never bit for bit.
+- Workload: at most 12 × 50,000 attempted steps. Twelve Lorenz seeds at 2400 samples took about 0.06 s over t ∈ [0, 40] and 0.1 s over [0, 100] natively (3 MB of JSON alone, 19 MB under a tube). Over [0, 1000], each seed exhausts its budget in about 0.2 s. There is no new runtime dependency or resource category. Durable definitions are in `mathematics.md#spatial-vector-field-trajectories`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: `make check` passed: formatting, vet, Go race tests (engine3 coverage 99.5%, `engine/ode` 100%), the WASM bridge (helices, escape, timed field and refusals), TypeScript, and the production build and notices. `make thumbnails` regenerated the gallery. The full Chromium run passed all 536 tests before two final label edits; after them, the field, layout and consistency specs passed again. All 14 WebKit tests passed, including a PNG and H.264 export of Lorenz's two wings. Go tests cover the list in `mathematics.md#spatial-vector-field-trajectories`. Mutations that drop the escape bisection or the timed-field rule for resting seeds each fail. Browser tests cover:
+  - layers and validation, with seeds added to twelve and removed to one;
+  - notes on ends, escapes, equilibria, fields that are not finite at a seed, timed fields, and the carried construction;
+  - a refused construction on an escaped first seed, with the trajectories still shown alone;
+  - reveal, pause, resume and edit invalidation;
+  - all four cameras on an `a` track;
+  - a decoded MP4 with a seed track;
+  - reveal and track unit tests, the curve alone on any definition, and the new scalar fields.
+
+  The layout sweep includes the rising vortex. Light and dark desktop drawings, the thumbnails, and the phone-width controls (scroll width 390) were inspected.
+
+- Limits: uniform time sampling, so fast excursions have fewer points (adaptive sampling remains in the backlog); constructions only on the first trajectory; an escape sphere about the origin only; no 3D direction lattice; no Poincaré sections or visitation densities; explicit integration, so stiff fields may exhaust the budget.
+
+Recommended next step: **5b, spatial cyclic pursuit** with explicit capture events and multiple paths. It can reuse `engine/ode`, the field's multi-path result shape (paths indexed like the base, per-path ends), its reveal rule for early stops, and the trajectory layers; begin from the planar capture policy and planar reductions.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

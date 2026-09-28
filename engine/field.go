@@ -121,13 +121,13 @@ type trajectory struct {
 
 func newTrajectory(f odeFunc, seed Seed, lo, hi, escape, tol float64) *trajectory {
 	r := &trajectory{escape: escape}
-	r.f, r.lo, r.hi, r.end = f, lo, hi, lo
+	r.F, r.Lo, r.Hi, r.End = f, lo, hi, lo
 	y := []float64{seed.X, seed.Y}
 	if math.Hypot(y[0], y[1]) > escape {
 		r.reason = "escape"
 		return r
 	}
-	r.ts, r.ys = []float64{lo}, [][]float64{y}
+	r.Ts, r.Ys = []float64{lo}, [][]float64{y}
 	v := make([]float64, 2)
 	t, h := lo, hi-lo
 	for attempts := 0; ; attempts++ {
@@ -171,15 +171,15 @@ func newTrajectory(f odeFunc, seed Seed, lo, hi, escape, tol float64) *trajector
 		if t += h; last {
 			t = hi
 		}
-		r.ts, r.ys, y = append(r.ts, t), append(r.ys, next), next
+		r.Ts, r.Ys, y = append(r.Ts, t), append(r.Ys, next), next
 		if size == 0 {
 			h *= 5
 		} else {
 			h *= math.Min(5, .9*math.Pow(size, -.2))
 		}
 	}
-	r.end = t
-	r.complete = r.reason == "end"
+	r.End = t
+	r.Complete = r.reason == "end"
 	return r
 }
 
@@ -192,7 +192,7 @@ func (r *trajectory) crossing(t float64, y []float64, h float64) float64 {
 		if mid <= in || mid >= out {
 			return in
 		}
-		p, _ := dormandPrince(r.f, t, y, mid, false)
+		p, _ := dormandPrince(r.F, t, y, mid, false)
 		if math.Hypot(p[0], p[1]) > r.escape {
 			out = mid
 		} else {
@@ -203,7 +203,7 @@ func (r *trajectory) crossing(t float64, y []float64, h float64) float64 {
 
 // at returns the trajectory's position at t, while it is known.
 func (r *trajectory) at(t float64) (Vec, bool) {
-	y, ok := r.state(t)
+	y, ok := r.State(t)
 	if !ok {
 		return Vec{}, false
 	}
@@ -246,7 +246,7 @@ func exhaustedWarning(flows []*trajectory) string {
 	case 0:
 		return ""
 	case 1:
-		return fmt.Sprintf("Trajectory %s ran out of integration steps at t = %.6g; its later samples are left empty.", names[0], flows[last].end)
+		return fmt.Sprintf("Trajectory %s ran out of integration steps at t = %.6g; its later samples are left empty.", names[0], flows[last].End)
 	}
 	return fmt.Sprintf("Trajectories %s ran out of integration steps; their later samples are left empty.", strings.Join(names, ", "))
 }
@@ -255,7 +255,7 @@ func newFieldResult(flows []*trajectory, samples int, timed bool) *FieldResult {
 	out := &FieldResult{Paths: make([][]*Vec, len(flows)), Arrows: []Arrow{}, Ends: make([]TrajectoryEnd, len(flows)), Timed: timed, Grid: Grid{Points: []Direction{}}}
 	for i, r := range flows {
 		out.Paths[i] = make([]*Vec, samples)
-		out.Ends[i] = TrajectoryEnd{Time: r.end, Reason: r.reason}
+		out.Ends[i] = TrajectoryEnd{Time: r.End, Reason: r.reason}
 	}
 	return out
 }

@@ -215,7 +215,7 @@ func Compute(q Request) (Result, error) {
 		chaser = newChase(q.Curve.Pursuit, lo, hi, chaseTolerance)
 		out.Pursuit = newPursuitResult(chaser, q.Samples)
 		if chaser.exhausted {
-			out.Warnings = append(out.Warnings, fmt.Sprintf("The chase ran out of integration steps at t = %.6g; later samples are left empty.", chaser.end))
+			out.Warnings = append(out.Warnings, fmt.Sprintf("The chase ran out of integration steps at t = %.6g; later samples are left empty.", chaser.End))
 		}
 	}
 	var flows []*trajectory

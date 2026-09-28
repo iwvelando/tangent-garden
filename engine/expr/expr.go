@@ -14,9 +14,12 @@ type Expr func(float64) float64
 // Field is an expression in the plane's coordinates x, y and the time t.
 type Field func(x, y, t float64) float64
 
-// A parsed expression takes up to three variables, in the order the parser's
+// SpatialField is an expression in the space coordinates x, y, z and the time t.
+type SpatialField func(x, y, z, t float64) float64
+
+// A parsed expression takes up to four variables, in the order the parser's
 // variable indices give.
-type node func(v0, v1, v2 float64) float64
+type node func(v0, v1, v2, v3 float64) float64
 
 type parser struct {
 	s          string
@@ -29,8 +32,9 @@ type parser struct {
 }
 
 var (
-	curveVariables = map[string]int{"t": 0, "x": 0}
-	fieldVariables = map[string]int{"x": 0, "y": 1, "t": 2}
+	curveVariables   = map[string]int{"t": 0, "x": 0}
+	fieldVariables   = map[string]int{"x": 0, "y": 1, "t": 2}
+	spatialVariables = map[string]int{"x": 0, "y": 1, "z": 2, "t": 3}
 )
 
 var functions = map[string]func(float64) float64{
@@ -61,7 +65,20 @@ func ParseField(s string, a float64) (f Field, timed bool, err error) {
 	if err != nil {
 		return nil, false, err
 	}
-	return Field(e), p.used["t"], nil
+	return func(x, y, t float64) float64 { return e(x, y, t, 0) }, p.used["t"], nil
+}
+
+// ParseSpatialField parses an expression in x, y, z and t, binding the shape
+// parameter a numerically. timed reports whether the text reads t at all.
+func ParseSpatialField(s string, a float64) (f SpatialField, timed bool, err error) {
+	if math.IsNaN(a) || math.IsInf(a, 0) {
+		return nil, false, fmt.Errorf("shape parameter a must be finite")
+	}
+	p, e, err := parse(s, spatialVariables, &a)
+	if err != nil {
+		return nil, false, err
+	}
+	return SpatialField(e), p.used["t"], nil
 }
 
 // curve parses an expression in its one variable, written t or x.
@@ -70,7 +87,7 @@ func curve(s string, a *float64) (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	return func(t float64) float64 { return e(t, 0, 0) }, nil
+	return func(t float64) float64 { return e(t, 0, 0, 0) }, nil
 }
 
 // Scalar accepts constants and arithmetic, but never a curve-dependent variable.
@@ -79,7 +96,7 @@ func Scalar(s string) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	v := e(0, 0, 0)
+	v := e(0, 0, 0, 0)
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0, fmt.Errorf("expression must have a finite real value")
 	}
@@ -124,7 +141,7 @@ func (p *parser) expression(min int) (node, error) {
 		}
 		left = e
 		if c == '-' {
-			left = func(v0, v1, v2 float64) float64 { return -e(v0, v1, v2) }
+			left = func(v0, v1, v2, v3 float64) float64 { return -e(v0, v1, v2, v3) }
 		}
 	case c == '(':
 		e, err := p.expression(0)
@@ -155,7 +172,7 @@ func (p *parser) expression(min int) (node, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid number")
 		}
-		left = func(_, _, _ float64) float64 { return v }
+		left = func(_, _, _, _ float64) float64 { return v }
 	case c >= 'a' && c <= 'z':
 		start := p.pos - 1
 		for p.pos < len(p.s) && p.s[p.pos] >= 'a' && p.s[p.pos] <= 'z' {
@@ -163,7 +180,7 @@ func (p *parser) expression(min int) (node, error) {
 		}
 		name := p.s[start:p.pos]
 		switch name {
-		case "t", "x", "y":
+		case "t", "x", "y", "z":
 			if p.variables == nil {
 				return nil, fmt.Errorf("%s is not allowed in a constant expression", name)
 			}
@@ -174,24 +191,26 @@ func (p *parser) expression(min int) (node, error) {
 			p.used[name] = true
 			switch k {
 			case 0:
-				left = func(v0, _, _ float64) float64 { return v0 }
+				left = func(v0, _, _, _ float64) float64 { return v0 }
 			case 1:
-				left = func(_, v1, _ float64) float64 { return v1 }
+				left = func(_, v1, _, _ float64) float64 { return v1 }
+			case 2:
+				left = func(_, _, v2, _ float64) float64 { return v2 }
 			default:
-				left = func(_, _, v2 float64) float64 { return v2 }
+				left = func(_, _, _, v3 float64) float64 { return v3 }
 			}
 		case "a":
 			if p.parameter == nil {
 				return nil, fmt.Errorf("a is only allowed in curve expressions")
 			}
 			value := *p.parameter
-			left = func(_, _, _ float64) float64 { return value }
+			left = func(_, _, _, _ float64) float64 { return value }
 		case "pi":
-			left = func(_, _, _ float64) float64 { return math.Pi }
+			left = func(_, _, _, _ float64) float64 { return math.Pi }
 		case "e":
-			left = func(_, _, _ float64) float64 { return math.E }
+			left = func(_, _, _, _ float64) float64 { return math.E }
 		case "phi":
-			left = func(_, _, _ float64) float64 { return (1 + math.Sqrt(5)) / 2 }
+			left = func(_, _, _, _ float64) float64 { return (1 + math.Sqrt(5)) / 2 }
 		default:
 			f, ok := functions[name]
 			if !ok {
@@ -211,7 +230,7 @@ func (p *parser) expression(min int) (node, error) {
 				return nil, fmt.Errorf("expected closing parenthesis")
 			}
 			p.pos++
-			left = func(v0, v1, v2 float64) float64 { return f(arg(v0, v1, v2)) }
+			left = func(v0, v1, v2, v3 float64) float64 { return f(arg(v0, v1, v2, v3)) }
 		}
 	default:
 		return nil, fmt.Errorf("unexpected character %q", c)
@@ -244,18 +263,18 @@ func (p *parser) expression(min int) (node, error) {
 			return nil, err
 		}
 		a, b := left, right
-		left = func(v0, v1, v2 float64) float64 {
+		left = func(v0, v1, v2, v3 float64) float64 {
 			switch op {
 			case '+':
-				return a(v0, v1, v2) + b(v0, v1, v2)
+				return a(v0, v1, v2, v3) + b(v0, v1, v2, v3)
 			case '-':
-				return a(v0, v1, v2) - b(v0, v1, v2)
+				return a(v0, v1, v2, v3) - b(v0, v1, v2, v3)
 			case '*':
-				return a(v0, v1, v2) * b(v0, v1, v2)
+				return a(v0, v1, v2, v3) * b(v0, v1, v2, v3)
 			case '/':
-				return a(v0, v1, v2) / b(v0, v1, v2)
+				return a(v0, v1, v2, v3) / b(v0, v1, v2, v3)
 			default:
-				return math.Pow(a(v0, v1, v2), b(v0, v1, v2))
+				return math.Pow(a(v0, v1, v2, v3), b(v0, v1, v2, v3))
 			}
 		}
 	}

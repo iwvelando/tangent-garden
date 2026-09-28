@@ -186,10 +186,10 @@ func TestPursuitScaleInvariance(t *testing.T) {
 			p.Pursuers = append(p.Pursuers, Pursuer{q.X * scale, q.Y * scale, q.Speed})
 		}
 		c := newChase(p, 0, 3*scale, chaseTolerance)
-		if math.Abs(c.end/scale-base.end) > 1e-10 {
-			t.Fatalf("λ=%g: capture at %v, want %v", scale, c.end/scale, base.end)
+		if math.Abs(c.End/scale-base.End) > 1e-10 {
+			t.Fatalf("λ=%g: capture at %v, want %v", scale, c.End/scale, base.End)
 		}
-		for tk := 0.; tk < base.end; tk += base.end / 40 {
+		for tk := 0.; tk < base.End; tk += base.End / 40 {
 			x, _ := base.at(tk)
 			y, _ := c.at(tk * scale)
 			for i := range x {
@@ -213,7 +213,7 @@ func TestPursuitDirections(t *testing.T) {
 	}
 	n := len(unequal.Pursuers)
 	const h = 1e-5
-	for tk := .01; tk < c.end-2*h; tk += c.end / 37 {
+	for tk := .01; tk < c.End-2*h; tk += c.End / 37 {
 		now, ok := c.at(tk)
 		before, ok1 := c.at(tk - h)
 		after, ok2 := c.at(tk + h)
@@ -229,7 +229,7 @@ func TestPursuitDirections(t *testing.T) {
 		}
 	}
 	// The capture is the moment the closest pair is exactly ε apart.
-	end, _ := c.at(c.end)
+	end, _ := c.at(c.End)
 	cp := c.capture
 	if cp.Target != (cp.Pursuer+1)%n || math.Abs(end[cp.Target].Sub(end[cp.Pursuer]).Norm()-unequal.Capture) > 1e-12 {
 		t.Fatalf("capture %+v at %v", cp, end)
@@ -239,7 +239,7 @@ func TestPursuitDirections(t *testing.T) {
 			t.Fatalf("pursuer %d is closer than ε at the capture", i)
 		}
 	}
-	if _, ok := c.at(c.end + 1e-9); ok {
+	if _, ok := c.at(c.End + 1e-9); ok {
 		t.Fatal("a state after the capture")
 	}
 	if _, ok := c.at(-1e-9); ok {
@@ -252,12 +252,12 @@ func TestPursuitStepRefinement(t *testing.T) {
 	loose := newChase(unequal, 0, 3, 1e-6)
 	mid := newChase(unequal, 0, 3, 1e-9)
 	tight := newChase(unequal, 0, 3, 1e-12)
-	if math.Abs(loose.end-tight.end) > 1e-4 || math.Abs(mid.end-tight.end) > 1e-7 {
-		t.Fatalf("capture times %v %v %v", loose.end, mid.end, tight.end)
+	if math.Abs(loose.End-tight.End) > 1e-4 || math.Abs(mid.End-tight.End) > 1e-7 {
+		t.Fatalf("capture times %v %v %v", loose.End, mid.End, tight.End)
 	}
 	worst := func(a *chase) float64 {
 		d := 0.0
-		for tk := 0.; tk < tight.end*.999; tk += tight.end / 50 {
+		for tk := 0.; tk < tight.End*.999; tk += tight.End / 50 {
 			x, _ := a.at(tk)
 			y, _ := tight.at(tk)
 			for i := range x {
@@ -269,8 +269,8 @@ func TestPursuitStepRefinement(t *testing.T) {
 	if l, m := worst(loose), worst(mid); m > 1e-7 || m > l/100 {
 		t.Fatalf("differences %v then %v", l, m)
 	}
-	if tight.steps() < mid.steps() || mid.steps() < loose.steps() {
-		t.Fatalf("steps %d %d %d", loose.steps(), mid.steps(), tight.steps())
+	if tight.Steps() < mid.Steps() || mid.Steps() < loose.Steps() {
+		t.Fatalf("steps %d %d %d", loose.Steps(), mid.Steps(), tight.Steps())
 	}
 }
 
