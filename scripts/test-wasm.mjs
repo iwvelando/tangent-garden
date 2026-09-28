@@ -821,4 +821,65 @@ assert.match(iterated({ iterates: 5000001 }).error, /accumulate 0–5,000,000/);
 console.log(
   "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, an involute of an evolute, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, Clifford and Hénon densities, and invalid JSON passed.",
 );
+const spatial = JSON.parse(
+  globalThis.tangentGardenSpatial(
+    JSON.stringify({
+      radius: 2.4,
+      tube: 0.85,
+      length: 2.3,
+      p: 2,
+      q: 3,
+      samples: 480,
+      lines: 96,
+    }),
+  ),
+);
+assert.equal(spatial.base.length, 481);
+assert.equal(spatial.mesh.length, 5760);
+assert.equal(spatial.rulings.length, 96);
+assert.deepEqual(spatial.base[0], spatial.base.at(-1));
+assert.ok(Math.abs(spatial.base[0].x - 3.25) < 1e-12);
+assert.ok(spatial.base.some((p) => Math.abs(p.z) > 0.8));
+assert.ok(JSON.parse(globalThis.tangentGardenSpatial("{")).error);
+assert.ok(
+  JSON.parse(
+    globalThis.tangentGardenSpatial(
+      JSON.stringify({
+        radius: 2,
+        tube: 1,
+        length: 1,
+        p: 2.5,
+        q: 3,
+        samples: 480,
+        lines: 96,
+      }),
+    ),
+  ).error,
+);
+console.log("Spatial WASM bridge: knot, mesh, closure, and validation passed.");
+const spatialCustom = JSON.parse(
+  globalThis.tangentGardenSpatial(
+    JSON.stringify({
+      format: "parametric",
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t",
+        a: 0.25,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      length: 1,
+      samples: 480,
+      lines: 48,
+    }),
+  ),
+);
+assert.equal(spatialCustom.invalid, 0);
+assert.equal(spatialCustom.base.length, 481);
+assert.ok(Math.abs(spatialCustom.base.at(-1).z - Math.PI / 2) < 1e-12);
+assert.equal(spatialCustom.mesh.at(-1).sampleIndex, 480);
+assert.equal(spatialCustom.rulings.at(-1).sampleIndex, 480);
+assert.ok(spatialCustom.bounds.radius > 2);
+console.log("Spatial custom-expression WASM bridge passed.");
 process.exit(0);

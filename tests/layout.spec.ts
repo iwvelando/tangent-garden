@@ -91,6 +91,22 @@ for (const width of [1440, 390]) {
         .getByRole("checkbox", { name: "Fit the window to the iterates" })
         .uncheck();
     });
+    for (const preset of ["0", "3", "4"])
+      setups.push(async () => {
+        await page.goto("/?study=3d");
+        await page
+          .getByLabel("Start with a notebook example")
+          .selectOption(preset);
+        if (
+          (await page
+            .locator("#spatial-animation-section")
+            .getAttribute("open")) === null
+        )
+          await page.locator("#spatial-animation-section > summary").click();
+        await page
+          .getByLabel("Animate", { exact: true })
+          .selectOption("parameters");
+      });
     let checked = 0;
     for (const setup of setups) {
       await setup();

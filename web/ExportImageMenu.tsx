@@ -1,17 +1,50 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { pngFile, saveFile, svgFile } from "./export-image";
 
 // Twice the drawing's 1000 × 760 layout: crisp on high-density screens.
 const png = { width: 2000, height: 1520 };
 
-type Props = { disabled: boolean; kind: string };
+type Props = {
+  disabled: boolean;
+  kind: string;
+  onSave?: (format: "png" | "svg") => Promise<void>;
+  svgLabel?: string;
+  menuId?: string;
+};
 
-export function ExportImageMenu({ disabled, kind }: Props) {
+export function ExportImageMenu({
+  disabled,
+  kind,
+  onSave,
+  svgLabel = kind === "attractor"
+    ? "SVG · vectors, density as an embedded PNG"
+    : "SVG · vector, scalable",
+  menuId = "export-image-menu",
+}: Props) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
+  // The menu and error hang below the button's right edge. When the header
+  // wraps the button to the start of its row on a narrow screen, that leaves
+  // no room to the left, so they align with the button's left edge instead.
+  const [alignStart, setAlignStart] = useState(false);
+  const popup = useRef<HTMLElement | null>(null);
+  const setPopup = (element: HTMLElement | null) => {
+    popup.current = element;
+  };
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const items = useRef<HTMLButtonElement[]>([]);
+  useLayoutEffect(() => {
+    if (!open && !error) return setAlignStart(false);
+    if (popup.current && popup.current.getBoundingClientRect().left < 0)
+      setAlignStart(true);
+  }, [open, error]);
   useEffect(() => {
     if (open) items.current[0]?.focus();
   }, [open]);
@@ -45,6 +78,16 @@ export function ExportImageMenu({ disabled, kind }: Props) {
   async function save(format: "png" | "svg") {
     close();
     setError("");
+    if (onSave) {
+      try {
+        await onSave(format);
+      } catch (error) {
+        setError(
+          error instanceof Error ? error.message : "Image export failed.",
+        );
+      }
+      return;
+    }
     const svg = document.getElementById("artwork");
     if (!(svg instanceof SVGSVGElement)) return;
     try {
@@ -70,7 +113,7 @@ export function ExportImageMenu({ disabled, kind }: Props) {
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-controls={open ? "export-image-menu" : undefined}
+        aria-controls={open ? menuId : undefined}
         onClick={() => {
           setError("");
           setOpen(!open);
@@ -80,7 +123,11 @@ export function ExportImageMenu({ disabled, kind }: Props) {
       </button>
       {open && (
         <div
-          id="export-image-menu"
+          ref={setPopup}
+          className={
+            alignStart ? "export-image-options start" : "export-image-options"
+          }
+          id={menuId}
           role="menu"
           aria-label="Export image"
           onKeyDown={keys}
@@ -99,14 +146,18 @@ export function ExportImageMenu({ disabled, kind }: Props) {
             tabIndex={-1}
             onClick={() => void save("svg")}
           >
-            {kind === "attractor"
-              ? "SVG · vectors, density as an embedded PNG"
-              : "SVG · vector, scalable"}
+            {svgLabel}
           </button>
         </div>
       )}
       {error && (
-        <p className="export-menu-error" role="alert">
+        <p
+          ref={setPopup}
+          className={
+            alignStart ? "export-menu-error start" : "export-menu-error"
+          }
+          role="alert"
+        >
           {error}
         </p>
       )}

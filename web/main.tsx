@@ -1,4 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { StudyExplanation } from "./StudyExplanation";
+import { NotebookContext } from "./NotebookMode";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { Plot, type Layers } from "./Plot";
@@ -24,6 +34,8 @@ import {
 import { EngineClient, boundText } from "./engine-client";
 import { useTheme } from "./useTheme";
 import { AnimationPanel } from "./AnimationPanel";
+import { AppHeader } from "./AppHeader";
+import { revealDrawing } from "./revealDrawing";
 import { ExportImageMenu } from "./ExportImageMenu";
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
@@ -196,7 +208,7 @@ function setIn(config: Config, path: string[], value: number): Config {
   parent[path.at(-1)!] = value;
   return next;
 }
-function App() {
+function App({ active }: { active: boolean }) {
   const [config, setConfig] = useState<Config>(presets[0].config);
   const [preset, setPreset] = useState("0");
   // Remembers the pole construction while another tab is selected.
@@ -224,7 +236,8 @@ function App() {
     : scalarError
       ? `${scalarError.name}: ${scalarError.error}`
       : computeError;
-  const { dark, preference, toggle, followSystem } = useTheme();
+  const theme = useTheme();
+  const { dark, preference } = theme;
   const [reset, setReset] = useState(0);
   const [length, setLength] = useState(0.8);
   const [layers, setLayers] = useState<Layers>({
@@ -270,27 +283,8 @@ function App() {
   );
   const manualView = useRef<Viewport | undefined>(undefined);
   const plotWrap = useRef<HTMLDivElement>(null);
-  // On narrow screens the controls sit below the drawing, so playback started
-  // from them would otherwise run out of sight. Wide layouts keep the drawing
-  // in view already and are left untouched.
-  const revealPlot = () => {
-    const plot = plotWrap.current;
-    if (!plot) return;
-    // A docked playback bar covers the bottom of the screen.
-    const bar = document.getElementById("playback");
-    const limit =
-      bar && getComputedStyle(bar).position === "fixed"
-        ? bar.getBoundingClientRect().top
-        : window.innerHeight;
-    const { top, bottom } = plot.getBoundingClientRect();
-    if (top >= 0 && bottom <= limit) return;
-    plot.scrollIntoView({
-      block: "start",
-      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-    });
-  };
+  const revealPlot = () =>
+    revealDrawing(plotWrap.current, document.getElementById("playback"));
   useEffect(() => {
     const engine = new EngineClient();
     client.current = engine;
@@ -1008,85 +1002,49 @@ function App() {
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const behind = (
-    <>
-      <div className="explanation">
-        <div>
-          <span className="section-label">BEHIND THE LINES</span>
-          <p>{info.description}</p>
-          {!unparametrized && config.input !== "curve" && (
-            <p data-testid="input-description">
-              Here it acts on the curve&rsquo;s {config.input}, drawn faintly
-              with the curve, which is evaluated from the curve&rsquo;s
-              definition at every t rather than from its drawn points.
-            </p>
-          )}
-        </div>
-        <div className="formula">{info.formula}</div>
-      </div>
-      {result?.warnings.length !== 0 && result && (
-        <details className="diagnostics" {...diagnostics}>
-          <summary>Numerical notes · {result.invalid} omitted samples</summary>
-          {result.warnings.map((w) => (
-            <p key={w}>{w}</p>
-          ))}
-        </details>
-      )}
-      <p className="bottom-note">
-        {optical
+    <StudyExplanation
+      title="Curves, revealed by construction."
+      formula={info.formula}
+      diagnostics={
+        result &&
+        result.warnings.length > 0 && (
+          <details className="diagnostics" {...diagnostics}>
+            <summary>
+              Numerical notes · {result.invalid} omitted samples
+            </summary>
+            {result.warnings.map((w) => (
+              <p key={w}>{w}</p>
+            ))}
+          </details>
+        )
+      }
+      note={
+        optical
           ? "A mathematical ray family: every sampled point participates. No occlusion or multiple bounces."
-          : "The connecting lines reveal the geometry of the construction."}{" "}
-        Finite sampling can miss fine detail; compare resolutions near
-        singularities.
-      </p>
-      <p className="closing">An open notebook for mathematical beauty.</p>
-    </>
+          : "The connecting lines reveal the geometry of the construction."
+      }
+    >
+      <p>{info.description}</p>
+      {!unparametrized && config.input !== "curve" && (
+        <p data-testid="input-description">
+          Here it acts on the curve&rsquo;s {config.input}, drawn faintly with
+          the curve, which is evaluated from the curve&rsquo;s definition at
+          every t rather than from its drawn points.
+        </p>
+      )}
+    </StudyExplanation>
   );
   return (
     <div
       className={dark ? "app dark" : "app"}
       data-theme-preference={preference}
     >
-      <header>
-        <a className="brand" href="./">
-          <img
-            className="brand-symbol"
-            src={`${import.meta.env.BASE_URL}tangent-garden.svg`}
-            alt=""
-          />
-          <span className="brand-name">Tangent Garden</span>
-          <span className="brand-divider" />{" "}
-          <small>CURVES & CONSTRUCTIONS</small>
-        </a>
-        <div className="header-actions">
-          <span className="local-note">
-            A little geometry. A lot of beauty.
-          </span>
-          <button
-            onClick={toggle}
-            title={
-              preference === "system"
-                ? "Following your system theme. Click to choose a fixed theme."
-                : "Your theme choice is saved in this browser."
-            }
-            aria-label={dark ? "Use light background" : "Use dark background"}
-          >
-            {dark ? "☼" : "◐"}
-          </button>
-          {preference !== "system" && (
-            <button
-              className="system-theme"
-              onClick={followSystem}
-              title="Follow system changes, including time-of-day changes"
-            >
-              Follow system
-            </button>
-          )}
-          <ExportImageMenu
-            disabled={!result || busy || !!error || animationRunning}
-            kind={studyName(config)}
-          />
-        </div>
-      </header>
+      <AppHeader theme={theme}>
+        <ExportImageMenu
+          disabled={!result || busy || !!error || animationRunning}
+          kind={studyName(config)}
+        />
+      </AppHeader>
       <main>
         <ScalarStatus.Provider value={scalarStatus}>
           <aside aria-label="Study parameters">
@@ -1108,7 +1066,9 @@ function App() {
                 }}
               >
                 {preset === "custom" && (
-                  <option value="custom">Custom study</option>
+                  <option value="custom" disabled>
+                    Custom study
+                  </option>
                 )}
                 {presets.map((p, i) => (
                   <option key={p.title} value={i}>
@@ -2003,7 +1963,7 @@ function App() {
               frame={frame}
               client={client}
               length={length}
-              revision={JSON.stringify([config, bounds, length])}
+              revision={JSON.stringify([config, bounds, length, active])}
               disabled={busy || !!error}
               onView={setAnimation}
               onRunning={setAnimationRunning}
@@ -2082,4 +2042,56 @@ function App() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
+function Notebook() {
+  const initial =
+    new URLSearchParams(location.search).get("study") === "3d" ? "3d" : "2d";
+  const [mode, setMode] = useState<"2d" | "3d">(initial);
+  const [seen, setSeen] = useState({
+    "2d": initial === "2d",
+    "3d": initial === "3d",
+  });
+  const show = (next: "2d" | "3d") => {
+    setSeen((s) => ({ ...s, [next]: true }));
+    setMode(next);
+  };
+  const choose = (next: "2d" | "3d") => {
+    if (next === mode) return;
+    show(next);
+    const url = new URL(location.href);
+    if (next === "3d") url.searchParams.set("study", "3d");
+    else url.searchParams.delete("study");
+    history.pushState(null, "", url);
+  };
+  useEffect(() => {
+    const pop = () =>
+      show(
+        new URLSearchParams(location.search).get("study") === "3d"
+          ? "3d"
+          : "2d",
+      );
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, []);
+  return (
+    <NotebookContext.Provider value={{ mode, choose }}>
+      {seen["2d"] && (
+        <div hidden={mode !== "2d"}>
+          <App active={mode === "2d"} />
+        </div>
+      )}
+      {seen["3d"] && (
+        <div hidden={mode !== "3d"}>
+          <Suspense
+            fallback={
+              <div className="loading">Opening the spatial notebook…</div>
+            }
+          >
+            <SpatialApp active={mode === "3d"} />
+          </Suspense>
+        </div>
+      )}
+    </NotebookContext.Provider>
+  );
+}
+createRoot(document.getElementById("root")!).render(<Notebook />);

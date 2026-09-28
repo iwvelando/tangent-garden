@@ -1,0 +1,40 @@
+# A first spatial study
+
+The artistic thread worth carrying into 3D is a simple curve giving rise to something unexpectedly intricate through a visible family of lines. A shaded solid alone would lose that connection. The construction should remain legible with its surface hidden.
+
+## Candidates
+
+| Construction | Visual opportunity | Mathematical and product tradeoff |
+| --- | --- | --- |
+| Tangent developable of a space curve | Folded ribbons, sharp seams, intertwined sheets, line-only string art | Direct definition from a curve and its unit tangents; manageable first prototype |
+| Families of spatial involutes | Unwound filaments surrounding a knot, with taut generating segments | A natural continuation of existing involutes; needs careful arc-length integration and family framing |
+| Focal surfaces of normal congruences | Layered cusps, ridges, and sheets around a surface | No single spatial analogue of a planar evolute; requires an explicit surface and principal-curvature conventions |
+| Reflective/refractive caustic surfaces | Luminous folds, cusp edges, and concentrated ray families | Needs surface normals and a two-parameter ray family; intensity would be a separate mathematical model |
+
+The first implementation chooses a **tangent developable of a space curve**, starting with torus knots. This offers actual spatial folds while retaining a base curve, straight construction lines, and a derived object. The gold/teal palette and notebook presentation continue the planar studies. Color varies periodically with the base parameter and shading communicates orientation; neither encodes physical light intensity or curvature magnitude.
+
+## What to try
+
+Choose **3D curves** in the notebook header, or open `?study=3d`. Switching to **2D curves** preserves both studies and their manual views. Start with Trefoil, orbit slowly, then hide **Ribbon surface** to see how straight tangents build the folds. Change **Tangent reach L** from a small positive value to 3 to watch those lines form broader intersecting sheets. Try Cinquefoil and Woven orbit for more intricate arrangements.
+
+The torus presets use coprime windings (2,3), (2,5), and (3,4). R is the major torus radius, r its minor radius, and L the half-length of each unit-tangent segment. R lies in [0.1,20], r in [0.01,R), and L in (0,20]. Samples range from 240 to 2400 and representative tangent lines from 12 to 240.
+
+Choose **Custom parametric** under Spatial definition to open a torus knot as editable expressions. Try the helix or spatial Lissajous presets for other shapes. A useful helix is `x=2*cos(t)`, `y=2*sin(t)`, `z=a*t/3`, from `-3*pi` to `3*pi`. Changing `a` changes its rise. Every geometric scalar and domain field accepts constant expressions through Go. Coordinate expressions bind `t` and `a`; scalar fields do not. Switching definitions preserves edited custom coordinates; choosing a preset replaces the study.
+
+Drag to orbit, shift-drag to pan, and scroll to zoom. Keyboard equivalents are arrows, shift-arrows, +/−, and Home. **Rotate view** provides a quick camera-only preview. **Animation** offers a progressive reveal, simultaneous parameter tracks, or a full camera orbit. Pause to scrub; Stop restores the base study and manual view. The four camera modes match the planar notebook. Hold current view includes orbit, pan, and zoom in playback and exports.
+
+**Export image** saves a 2000 × 1520 PNG or an SVG containing that shaded PNG and study metadata. The SVG option is explicitly labelled as an embedded image, since depth-tested shading is raster content. Animation exports use the same sampler and renderer, with MP4 or animated WebP according to browser capabilities, adjustable resolution/quality/frame rate, and exact file duration independent of rendering speed. Cancellation discards the file. No screen recording or external service is involved.
+
+## Deliberate limits
+
+This is one construction class, with no transparency, simulated optics, lighting editor, or saved-camera links. Rendering needs WebGL; the 2D notebook remains independent. Opaque, double-sided sheets and depth-tested linework make the folds readable. Occlusion hides rear geometry while surfaces are enabled; hiding surfaces exposes the line family. Orthographic projection avoids perspective scale distortion. Both notebooks share one page layout: the same header, sidebar, drawing frame with its heading and legend, and explanation. On desktop the controls scroll independently; narrow screens place the artwork first, followed by the controls and then the explanation.
+
+The engine retains the singular spine and self-intersections, leaves gaps at invalid points and unreliable normals, and closes analytic torus knots exactly. Arbitrary expressions are sampled with bounded numerical derivatives; narrow folds or rapid oscillations may need more samples or a smaller domain. No finite-resolution certification is claimed. See [the mathematical conventions](mathematics.md#spatial-tangent-developable).
+
+Analytic derivative checks, torus and speed identities, ruling length/tangency, opposite sheet normals, closure, zero-curvature gaps, convergence, bounded inputs, and the WASM bridge verify the mathematics. Browser checks cover custom expressions, scalars, playback endpoints and cameras, image dimensions, independently decoded animation timing, cancellation, layers, themes, and responsive paired-field layout.
+
+A later mathematical class could be a family of spatial involutes, reusing space curves and the camera while giving derived curves their own result type.
+
+## Future work
+
+The [spatial expansion roadmap](spatial-expansion-roadmap.md) records proposed constructions, deferred numerical and rendering work, notebook/media improvements, and the acceptance gates for future slices.

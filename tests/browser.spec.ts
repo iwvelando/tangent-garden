@@ -102,7 +102,7 @@ test("curve formats, invalid input recovery, layers, optics and dark mode", asyn
   await expect(page.locator(".app")).toHaveClass("app dark");
   await expect(page.locator("#artwork > rect")).toHaveAttribute(
     "fill",
-    "#141e22",
+    "#0b1517",
   );
   await page.getByLabel("to", { exact: true }).fill("");
   await expect(page.getByRole("alert")).toBeVisible();

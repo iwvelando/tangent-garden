@@ -144,7 +144,7 @@ for (const study of [
     for (const frame of [decoded.first, decoded.last]) {
       expect(frame.background[3]).toBe(255);
       expect(
-        Math.abs(frame.background[0] - (dark ? 20 : 255)),
+        Math.abs(frame.background[0] - (dark ? 11 : 243)),
       ).toBeLessThanOrEqual(3);
     }
     await expect(page.getByText(/Saved MP4 video · \d/)).toBeVisible();

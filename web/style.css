@@ -177,7 +177,7 @@ summary:focus-visible {
 }
 .app {
   --panel: #f8f7f2;
-  --paper: #fffefa;
+  --paper: #f3f1ea;
   --border: #e0e2da;
   --muted: #5f6d69;
   --text: #263c3d;
@@ -187,7 +187,7 @@ summary:focus-visible {
 }
 .dark {
   --panel: #19262b;
-  --paper: #141e22;
+  --paper: #0b1517;
   --border: #344349;
   --muted: #91a4a9;
   --text: #d9e6e4;
@@ -254,7 +254,7 @@ header {
 .export-menu {
   position: relative;
 }
-#export-image-menu {
+.export-image-options {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
@@ -267,12 +267,17 @@ header {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
 }
-#export-image-menu button {
+.export-image-options.start,
+.export-menu-error.start {
+  right: auto;
+  left: 0;
+}
+.export-image-options button {
   border: 0;
   text-align: left;
   white-space: nowrap;
 }
-#export-image-menu button:focus-visible {
+.export-image-options button:focus-visible {
   outline-offset: -2px;
 }
 .export-menu-error {
@@ -476,6 +481,7 @@ details p,
   color: var(--muted);
 }
 article {
+  background: var(--paper);
   padding: 32px 38px;
   min-width: 0;
 }
@@ -556,25 +562,39 @@ h1 {
 }
 .explanation {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 30px;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 32px;
   margin-top: 28px;
 }
+.explanation h2 {
+  font:
+    normal 26px/1.25 Georgia,
+    serif;
+  margin: 12px 0 0;
+  max-width: 280px;
+}
 .explanation p {
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.8;
   color: var(--muted);
-  max-width: 460px;
-  margin: 10px 0;
+  margin: 0 0 10px;
+}
+.explanation-body {
+  min-width: 0;
 }
 .formula {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font:
-    italic 15px Georgia,
+    18px/1.6 Georgia,
     serif;
   color: var(--text);
+  margin-top: 15px;
+  overflow-wrap: anywhere;
+}
+.formula span {
+  font: 12px sans-serif;
+  color: var(--muted);
+  margin-left: 16px;
+  white-space: nowrap;
 }
 .bottom-note {
   color: var(--muted);
@@ -649,8 +669,8 @@ h1 {
     grid-template-columns: 1fr;
     gap: 8px;
   }
-  .formula {
-    justify-content: flex-start;
+  .explanation h2 {
+    max-width: none;
   }
   .plot-meta {
     flex-wrap: wrap;
@@ -672,8 +692,7 @@ h1 {
     gap: 6px;
   }
   .brand-name {
-    max-width: 88px;
-    line-height: 1;
+    white-space: nowrap;
   }
   .brand-symbol {
     width: 34px;
@@ -768,6 +787,7 @@ h1 {
     padding-bottom: 200px;
   }
   .behind {
+    background: var(--paper);
     order: 2;
     border-top: 1px solid var(--border);
     padding: 24px;
@@ -806,6 +826,50 @@ h1 {
     padding: 5px;
   }
 }
+
+/* Shared notebook navigation. */
+
+.notebook-mode {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+  gap: 3px;
+}
+.notebook-mode button {
+  border: 0;
+  background: transparent;
+  padding: 7px 10px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.notebook-mode button[aria-pressed="true"] {
+  background: #367e78;
+  color: #fff;
+}
+@media (max-width: 1200px) {
+  .header-actions .local-note {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  header {
+    height: auto;
+    min-height: 66px;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    gap: 10px;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+  }
+  .notebook-mode button {
+    padding: 7px;
+    font-size: 12px;
+  }
+}
+
 /* A Fourier term: its heading, then frequency, radius, and phase side by
    side, sharing rows like any pair. */
 .pair.trio {

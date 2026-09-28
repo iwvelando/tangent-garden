@@ -102,3 +102,22 @@ for (const scheme of ["light", "dark"] as const) {
     });
   }
 }
+
+for (const scheme of ["light", "dark"] as const)
+  for (const width of [1440, 390])
+    test(`spatial controls are legible in ${scheme} at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto("/?study=3d");
+      await expect(page.locator("#spatial-artwork")).toBeVisible();
+      await page.locator("#spatial-animation-section > summary").click();
+      await page.locator("#spatial-export-settings > summary").click();
+      await expectLegible(page);
+      await page.getByLabel("Start with a notebook example").selectOption("3");
+      await page
+        .getByLabel("Animate", { exact: true })
+        .selectOption("parameters");
+      await expectLegible(page);
+    });

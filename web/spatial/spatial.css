@@ -1,0 +1,147 @@
+/* Layout, the sidebar, and the stage come from the shared main/aside/article
+   rules in style.css, so both notebooks share breakpoints and spacing. */
+.spatial-caption {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.spatial-layers {
+  border-top: 1px solid var(--border);
+  padding: 18px 0 5px;
+  margin: 25px 0 15px;
+}
+.spatial-layers legend {
+  padding-right: 12px;
+  font-size: 12px;
+}
+.spatial-layers label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 13px;
+  font-size: 12px;
+}
+.spatial-layers input {
+  accent-color: #638f82;
+}
+.spatial-details {
+  font-size: 12px;
+  line-height: 1.7;
+  border-top: 1px solid var(--border);
+  padding-top: 17px;
+}
+.spatial-details summary {
+  cursor: pointer;
+}
+.spatial-status {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 25px;
+}
+/* The stage is an article like the planar one: the same heading, bordered
+   frame, footer, and drawing height; only the drawing itself differs. */
+.view-buttons {
+  display: flex;
+}
+.view-buttons .fit[aria-pressed="true"] {
+  border-color: #7aa898;
+}
+.spatial-canvas-wrap {
+  position: relative;
+  height: calc(100vh - 325px);
+  min-height: 420px;
+  max-height: 880px;
+}
+#spatial-artwork {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+}
+#spatial-artwork:active {
+  cursor: grabbing;
+}
+#spatial-artwork:focus-visible {
+  outline: 2px solid #74a89a;
+  outline-offset: -4px;
+}
+/* Swatches match the renderer's thread and ribbon inks. */
+.thread-dot {
+  background: #804017;
+}
+.ribbon-dot {
+  background: #4d9e8f;
+  margin-left: 12px;
+}
+.dark .thread-dot {
+  background: #ffde94;
+}
+.dark .ribbon-dot {
+  background: #3bb3ab;
+}
+.spatial-stale,
+.spatial-render-error {
+  position: absolute;
+  top: 16px;
+  left: 30px;
+  right: 30px;
+}
+.spatial-stale {
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 700px) {
+  .spatial-canvas-wrap {
+    height: 55vh;
+    min-height: 340px;
+  }
+  /* Two view buttons would squeeze the heading; they take their own row. */
+  .plot-heading:has(.view-buttons) {
+    flex-wrap: wrap;
+    row-gap: 14px;
+  }
+  .view-buttons .fit:first-child {
+    margin-left: 0;
+  }
+}
+
+.spatial-controls .field {
+  min-width: 0;
+}
+#spatial-animation-section > summary {
+  margin-bottom: 14px;
+}
+.spatial-controls .animation-section {
+  margin-top: 24px;
+}
+#spatial-playback.active {
+  scroll-margin-bottom: 20px;
+}
+.spatial-controls .animation-buttons {
+  flex-wrap: wrap;
+}
+.spatial-controls .subsection .field-label {
+  flex-wrap: wrap;
+}
+@media (max-width: 700px) {
+  #spatial-playback.active {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    background: var(--panel);
+    padding: 10px 20px;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 16px #0002;
+  }
+  #spatial-playback.active .timeline {
+    margin: 0;
+  }
+  .spatial-app:has(#spatial-playback.active) {
+    padding-bottom: 160px;
+  }
+}
