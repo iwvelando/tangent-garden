@@ -138,6 +138,7 @@ for (const [preset, name] of [
   ["12", "harmonic generator with vectors and ellipses"],
   ["17", "framed ribbon with an exposed seam"],
   ["18", "ruled harmonic loom"],
+  ["23", "canal surface with a vanishing envelope"],
 ])
   test(`spatial ${name} renders and exports through WebKit WebGL and H.264`, async ({
     page,

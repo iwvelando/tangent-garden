@@ -374,6 +374,35 @@ A ruled surface joins two curves by straight segments, which requires a stated c
 
 **Checks.** Native tests verify that two unit rings at z = ∓1 with shift δ span the hyperboloid `x² + y² = cos²(δ/2) + z² sin²(δ/2)` at every mesh vertex (to 10⁻¹²), with normals parallel to `(x, y, −z sin²(δ/2))` and turning along each ruling; that δ = 0 gives a developable cylinder; that every vertex and ruling lies on the segment joining corresponding points; and that partners follow `b(m t + δ)`. They also cover chords of a torus knot at whole and fractional rates (closed, or with a reported gap) and chords stopping outside an open helix's domain, with the surface omitted there. Further tests cover zero-length chords, a cone singular at its apex with exact cone normals elsewhere, a single pinch, partner poles found by midpoint instability and by the jump test alone, rigid motion and reparameterization, framing a distant thread, and validation. The WebAssembly bridge test checks the hyperboloid, planar chords of a circle, collapse, and refusals.
 
+## Spatial canal surfaces and tubes
+
+A canal surface is the envelope of a one-parameter family of spheres: centres on the curve c(t), radius R(t) > 0. The canal construction takes `R(t) = R·ρ(t)`, with R a positive constant (at most 10⁵) and the profile ρ written in t with the bounded parser (without the shape parameter a), differentiated by the same stencils as a custom curve. A profile of 1 gives the tube of constant radius.
+
+**Contact circles.** With `q = X − c`, a point X lies on the envelope when it satisfies both `|q|² = R²` (it is on the sphere) and `q · c′ = −RR′` (it is also on the neighbouring spheres, the t-derivative of the first equation). With speed `v = |c′| > 0`, unit tangent T and `k = R′/v`, the solutions form the *contact circle* centred at `c − R k T`, set back along the tangent, of radius `R√(1 − k²)` in the plane normal to T. The surface normal there is the sphere's, `q / R`: every mesh vertex is shaded with that exact normal. For a tube, k = 0, so the circle is the normal circle of radius R and the envelope is the familiar tube.
+
+**Where the envelope fails.** The circle is real only while `|R′| ≤ v`. At `|R′| = v` (within 10⁻⁹) it *collapses* to the point `c ∓ R T`, which is counted and kept. Where `|R′| > v` the spheres are nested inside one another and have no real envelope. Those samples are counted, have no circle, and every interval touching one is broken. The profile is also checked at each interval's midpoint against the midpoint speed, so an envelope that vanishes only between two samples still breaks that interval, and it is counted separately. A sample whose profile is not a positive, finite radius with a stable slope has no sphere and is counted. A *stationary centre*, `c′ = 0`, is an invalid base sample: there `q · c′ = −RR′` has no solution when R′ ≠ 0 and is satisfied by the whole sphere when R′ = 0, so no circle is defined and the surface is left open. Nothing is joined across any of these gaps.
+
+**Angle and closure.** The circle itself does not depend on any frame; only the angle around it does. It is carried by the rotation-minimizing frame of the framed construction (N₀, θ₀, twist, and the closed-loop seam; the Frenet diagnostic and the ribbon fields do not apply). Up to 12 *meridians* `θ = θ₀ + 2πk/m` show that angle and its seam: on a closed loop they return turned by the frame's holonomy unless the correction is distributed. The mesh uses its own angular parameterization, the same frame with any holonomy always spread along a closed loop, so its first and last rings coincide and the surface closes whichever seam policy is chosen. The surface is closed when the curve is closed and the profile returns to its start with the same slope. Otherwise the distance between the first and last contact circles, which share an axis, is reported as the gap.
+
+**Folds.** The surface is not trimmed, not a collision-free tube, and not the boundary of a union of balls. A tube wider than the radius of curvature, `Rκ > 1`, folds back through itself on the inner side of each bend. A varying radius can fold across a cusped edge where the contact circles run backwards along the curve, as they do beside each collapse. A sample is counted as folded when, at one of the mesh's 24 angles, `(X_θ × X_t) · q/R < −10⁻⁶ |X_t|`. Here X_θ is exact and X_t is a second-order difference along that angle within an unbroken run. The sign is positive on a regular canal surface. Distant parts of the surface that pass through each other are drawn, not reported.
+
+**Mesh.** Each contact circle of the mesh has 24 segments. At most 480 circles are joined, every n/480-th rounded up, and every circle beside a gap is always included, so the surface reaches each gap exactly. That gives at most 69,120 vertices; dense gaps add at most one band of 144 vertices per gap, and never more than one band per sample interval.
+
+**Checks.** Native tests verify:
+
+- the torus `(√(x² + y²) − 2)² + z² = R²` around a circle, with exact normals, and a cylinder around a line;
+- both envelope equations at every meridian, circle, and mesh point of a helix with a varying radius (to 10⁻¹² and 10⁻⁹), with vertex normals `q/R`;
+- second-order convergence of the finite-difference surface tangent to orthogonality with q (3.3·10⁻³, 8.3·10⁻⁴, 2.1·10⁻⁴ at 240, 480, 960 samples);
+- the 30° cone of `R = t/2` along a unit-speed line and the collapse of every circle to the apex for `R = t`;
+- the samples without an envelope where `|R′| > v`, against the analytic count;
+- an envelope that vanishes only at an interval's midpoint;
+- a helix tube folded at every sample just beyond `1/κ` and at none just below;
+- closure, the gap of a drifting profile, the meridians' seam with the mesh still closed, and the distributed correction;
+- stationary centres and nonpositive radii, and mesh rings beside every gap at 2400 samples;
+- rigid motion and reparameterization, framing, and validation.
+
+Mutations that drop the midpoint check, the mesh's holonomy correction, the rings beside gaps, or the fold sign each fail. The WebAssembly bridge test checks the torus, a profile whose envelope vanishes, and refusals.
+
 ## Reference studies
 
 Each of these recipes is a preset, framed independently with equal axis scale. They are mathematical descriptions, not pixel specifications.

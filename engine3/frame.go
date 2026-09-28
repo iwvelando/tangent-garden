@@ -132,11 +132,20 @@ func start(reference, t Vec3) (Vec3, bool) {
 	return axis.sub(t.mul(axis.dot(t))).unit(), true
 }
 
+// carried is the frame field frames builds: U and V where ok, the arc length
+// at every sample, and the offset direction D turned by an extra angle.
+type carried struct {
+	us, vs    []Vec3
+	ok        []bool
+	arc       []float64
+	direction func(i int, turn float64) Vec3
+}
+
 // frames builds the frame at every sample, then the ribbon (in the result's
 // mesh, edges and cross-lines, as for the developable) and offset strands.
 // Arc length uses Simpson's rule per interval and is not carried across a
 // break; the frame restarts from N₀ after one.
-func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, binormals []Vec3, defined []bool, closed bool, lo, hi float64) {
+func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, binormals []Vec3, defined []bool, closed bool, lo, hi float64) carried {
 	f := c.Frame
 	base := out.Base
 	n := len(base) - 1
@@ -275,4 +284,5 @@ func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, 
 		}
 	}
 	out.Frame = q
+	return carried{us, vs, ok, arc, direction}
 }

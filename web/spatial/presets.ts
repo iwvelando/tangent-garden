@@ -52,6 +52,8 @@ const base: SpatialConfig = {
     rate: 1,
     shift: 1,
   },
+  // A tube of constant radius, with four meridians.
+  canal: { radius: 0.35, profile: "1", meridians: 4 },
   radius: 2.4,
   tube: 0.85,
   length: 2.3,
@@ -420,6 +422,59 @@ export const spatialPresets: {
         a: 1,
         min: -3 * Math.PI,
         max: 3 * Math.PI,
+      },
+    },
+  },
+  {
+    name: "A tube around the trefoil",
+    detail:
+      "Circles of one radius around the knot, their meridians returning turned",
+    config: {
+      ...base,
+      construction: "canal",
+      lines: 48,
+      canal: { radius: 0.32, profile: "1", meridians: 4 },
+    },
+  },
+  {
+    name: "A necklace of spheres",
+    detail:
+      "A swelling radius on a helix, each sphere touching along a tilted circle",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      lines: 60,
+      canal: { radius: 0.5, profile: "1+0.45*sin(4*t)", meridians: 0 },
+      frame: { ...base.frame, reference: { x: -1, y: 0, z: 0 } },
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t/3",
+        a: 1,
+        min: -3 * Math.PI,
+        max: 3 * Math.PI,
+      },
+    },
+  },
+  {
+    name: "Beads that lose their envelope",
+    detail:
+      "Where the radius grows faster than the centre moves, the spheres have no envelope",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      lines: 72,
+      canal: { radius: 0.7, profile: "1+0.8*sin(2*t)", meridians: 0 },
+      frame: { ...base.frame, reference: { x: 0, y: 0, z: 1 } },
+      curve: {
+        x: "t",
+        y: "0",
+        z: "0",
+        a: 1,
+        min: -2 * Math.PI,
+        max: 2 * Math.PI,
       },
     },
   },

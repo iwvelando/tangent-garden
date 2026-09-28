@@ -61,22 +61,24 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
   title: p.name,
   caption: p.detail,
   family:
-    p.config.construction === "ruled"
-      ? "Ruled surfaces"
-      : p.config.construction === "framed"
-        ? "Framed ribbons"
-        : p.config.format === "harmonic"
-          ? "Harmonic generators"
-          : p.config.construction === "involute"
-            ? "Involute filaments"
-            : p.config.construction === "tangent-foot" ||
-                p.config.construction === "orthotomic"
-              ? "Tangent projections"
-              : p.config.construction === "inversion"
-                ? "Sphere inversions"
-                : p.config.format === "torus"
-                  ? "Torus knots"
-                  : "Parametric curves",
+    p.config.construction === "canal"
+      ? "Tubes and canal surfaces"
+      : p.config.construction === "ruled"
+        ? "Ruled surfaces"
+        : p.config.construction === "framed"
+          ? "Framed ribbons"
+          : p.config.format === "harmonic"
+            ? "Harmonic generators"
+            : p.config.construction === "involute"
+              ? "Involute filaments"
+              : p.config.construction === "tangent-foot" ||
+                  p.config.construction === "orthotomic"
+                ? "Tangent projections"
+                : p.config.construction === "inversion"
+                  ? "Sphere inversions"
+                  : p.config.format === "torus"
+                    ? "Torus knots"
+                    : "Parametric curves",
   keywords: `${p.config.format} ${p.config.construction}`,
   fingerprint: fingerprint(p.config),
 }));

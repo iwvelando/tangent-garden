@@ -22,6 +22,8 @@ import {
   usesSpatialPole,
   type FrameConfig,
   type RuledConfig,
+  type CanalConfig,
+  maxMeridians,
   type HarmonicCurve,
   type SpatialConfig,
   type Frame,
@@ -35,6 +37,7 @@ import {
 import { periodText } from "../harmonic";
 import { frameNote } from "./frame";
 import { ruledNote } from "./ruled";
+import { canalNote } from "./canal";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -170,6 +173,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const inversion = config.construction === "inversion";
   const framed = config.construction === "framed";
   const ruled = config.construction === "ruled";
+  const canal = config.construction === "canal";
+  const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
+    update((c) => ({ ...c, canal: change(c.canal) }));
   const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
     update((c) => ({ ...c, ruled: change(c.ruled) }));
   const setFraming = (change: (f: FrameConfig) => FrameConfig) =>
@@ -394,6 +400,59 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const frameResult =
     shown?.config.construction === "framed" ? shown.result.frame : undefined;
   const transported = config.frame.kind === "rotation-minimizing";
+  // N₀, θ₀ with twist, and the closed-loop seam: shared by the framed ribbon
+  // and the canal surface, whose angle is carried by the same frame.
+  const referenceFields = (
+    <div className="pair trio">
+      {(["x", "y", "z"] as const).map((axis) =>
+        vector(
+          `N₀ ${axis}`,
+          config.frame.reference[axis],
+          (value) =>
+            setFraming((f) => ({
+              ...f,
+              reference: { ...f.reference, [axis]: value },
+            })),
+          axis === "x"
+            ? "Reference normal N₀, nonzero and within ±100000. Projected onto the normal plane where each unbroken stretch begins, it sets U there."
+            : undefined,
+        ),
+      )}
+    </div>
+  );
+  const angleFields = (
+    <div className="pair">
+      {vector(
+        "Angle θ₀",
+        config.frame.angle,
+        (angle) => setFraming((f) => ({ ...f, angle })),
+        "Where D starts, in radians from U towards V, within ±1000.",
+      )}
+      {vector(
+        "Twist (turns)",
+        config.frame.twist,
+        (twist) => setFraming((f) => ({ ...f, twist })),
+        "Turns of D about the tangent, spread by arc length over the curve, within ±100.",
+      )}
+    </div>
+  );
+  const closureField = (
+    <Field
+      label="Closed-loop seam"
+      help="On an unbroken closed loop the carried frame can return turned. Show that seam, or spread the opposite twist evenly along the loop."
+    >
+      <select
+        value={config.frame.closure}
+        onChange={(e) => {
+          const closure = e.target.value as FrameConfig["closure"];
+          setFraming((f) => ({ ...f, closure }));
+        }}
+      >
+        <option value="seam">Show the seam</option>
+        <option value="distribute">Distribute the correction</option>
+      </select>
+    </Field>
+  );
   const frameControls = (
     <>
       <Field
@@ -413,38 +472,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           <option value="frenet">Frenet (diagnostic)</option>
         </select>
       </Field>
-      {transported && (
-        <div className="pair trio">
-          {(["x", "y", "z"] as const).map((axis) =>
-            vector(
-              `N₀ ${axis}`,
-              config.frame.reference[axis],
-              (value) =>
-                setFraming((f) => ({
-                  ...f,
-                  reference: { ...f.reference, [axis]: value },
-                })),
-              axis === "x"
-                ? "Reference normal N₀, nonzero and within ±100000. Projected onto the normal plane where each unbroken stretch begins, it sets U there."
-                : undefined,
-            ),
-          )}
-        </div>
-      )}
-      <div className="pair">
-        {vector(
-          "Angle θ₀",
-          config.frame.angle,
-          (angle) => setFraming((f) => ({ ...f, angle })),
-          "Where D starts, in radians from U towards V, within ±1000.",
-        )}
-        {vector(
-          "Twist (turns)",
-          config.frame.twist,
-          (twist) => setFraming((f) => ({ ...f, twist })),
-          "Turns of D about the tangent, spread by arc length over the curve, within ±100.",
-        )}
-      </div>
+      {transported && referenceFields}
+      {angleFields}
       <div className="pair">
         {vector(
           "Half-width w",
@@ -475,23 +504,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           }}
         />
       </Field>
-      {transported && (
-        <Field
-          label="Closed-loop seam"
-          help="On an unbroken closed loop the carried frame can return turned. Show that seam, or spread the opposite twist evenly along the loop."
-        >
-          <select
-            value={config.frame.closure}
-            onChange={(e) => {
-              const closure = e.target.value as FrameConfig["closure"];
-              setFraming((f) => ({ ...f, closure }));
-            }}
-          >
-            <option value="seam">Show the seam</option>
-            <option value="distribute">Distribute the correction</option>
-          </select>
-        </Field>
-      )}
+      {transported && closureField}
       <p className="note" data-testid="frame-note">
         {frameResult
           ? frameNote(frameResult).join(" ")
@@ -563,6 +576,66 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </p>
     </>
   );
+  const canalShown =
+    shown?.config.construction === "canal" ? shown.result : undefined;
+  const canalControls = (
+    <>
+      <div className="pair">
+        {vector(
+          "Tube radius R",
+          config.canal.radius,
+          (radius) => setCanal((q) => ({ ...q, radius })),
+          "Each sphere has radius R·ρ(t); R is above 0 and at most 100000.",
+        )}
+        <Field
+          label="Meridians"
+          help={`From 0 to ${maxMeridians} curves at evenly spaced angles around each contact circle.`}
+        >
+          <input
+            type="number"
+            min="0"
+            max={maxMeridians}
+            step="1"
+            value={
+              Number.isNaN(config.canal.meridians) ? "" : config.canal.meridians
+            }
+            onChange={(e) => {
+              const meridians = e.target.valueAsNumber;
+              setCanal((q) => ({ ...q, meridians }));
+            }}
+          />
+        </Field>
+      </div>
+      <Field
+        label="Profile ρ(t)"
+        help="Scales the radius along the curve, in t only. 1 gives a tube of constant radius."
+      >
+        <input
+          value={config.canal.profile}
+          spellCheck={false}
+          onChange={(e) => {
+            const profile = e.target.value;
+            setCanal((q) => ({ ...q, profile }));
+          }}
+        />
+      </Field>
+      <p className="note">
+        The angle around each circle is carried by a rotation-minimizing frame.
+        It places the meridians, not the surface.
+      </p>
+      {referenceFields}
+      {angleFields}
+      {closureField}
+      <p className="note" data-testid="canal-note">
+        {canalShown?.canal && canalShown.frame
+          ? [
+              ...canalNote(canalShown),
+              ...frameNote(canalShown.frame, "meridians"),
+            ].join(" ")
+          : "Rolling the spheres along the curve…"}
+      </p>
+    </>
+  );
   const poleFields = (
     <>
       <div className="pair">
@@ -599,7 +672,41 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </Field>
     </>
   );
-  const behind = ruled ? (
+  const behind = canal ? (
+    <StudyExplanation
+      label="BEHIND THE SPHERES"
+      title="A surface that every sphere touches."
+      formula={
+        <>
+          |X − c|² = R², (X − c) · c′ = −RR′ <span>R = R·ρ(t)</span>
+        </>
+      }
+      note="Circles mark where representative spheres touch the surface; grey great circles mark spheres with no real circle. Meridians show how the frame carries the angle."
+      diagnostics={
+        shown &&
+        (shown.result.invalid > 0 || shown.result.omitted > 0) && (
+          <p className="bottom-note">
+            {shown.result.invalid} invalid samples · {shown.result.omitted}{" "}
+            intervals without a surface. The surface is never joined across a
+            break in the curve or where a sphere has no real contact circle.
+          </p>
+        )
+      }
+    >
+      <p>
+        Roll a sphere along the curve, its centre on the curve and its radius
+        R(t) changing as it goes. The surface that touches every sphere is their{" "}
+        <em>envelope</em>, a canal surface. Each sphere touches it along a
+        circle: the points of the sphere that the neighbouring spheres share.
+        With a constant radius that circle stands square to the curve, and the
+        envelope is a tube. As the radius grows it leans back along the tangent
+        and shrinks; where the radius changes as fast as the centre moves, the
+        circle closes to a point, and faster still the spheres nest inside one
+        another with no envelope at all. Nothing is trimmed: a tube wider than
+        the curve can turn folds through itself, and it is drawn that way.
+      </p>
+    </StudyExplanation>
+  ) : ruled ? (
     <StudyExplanation
       label="BEHIND THE RULINGS"
       title="A surface strung from straight threads."
@@ -985,9 +1092,12 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <option value="ruled">
                     Ruled surface · chords & threads
                   </option>
+                  <option value="canal">Tube · canal surface</option>
                 </select>
               </Field>
-              {ruled ? (
+              {canal ? (
+                canalControls
+              ) : ruled ? (
                 ruledControls
               ) : framed ? (
                 frameControls
@@ -1220,48 +1330,58 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           <fieldset className="spatial-layers">
             <legend>Reveal the construction</legend>
             {[
-              ...(ruled
+              ...(canal
                 ? ([
-                    ["surface", "Ruled surface"],
-                    ["rulings", "Rulings"],
-                    ["edges", "Partner thread"],
+                    ["surface", "Canal surface"],
+                    ["circles", "Contact circles"],
+                    ["meridians", "Meridians"],
+                    ["frames", "Frames"],
+                    ...(canalShown?.frame?.closed
+                      ? ([["seam", "Seam"]] as const)
+                      : []),
                   ] as const)
-                : framed
+                : ruled
                   ? ([
-                      ["surface", "Ribbon surface"],
-                      ["rulings", "Cross-lines"],
-                      ["edges", "Ribbon edges"],
-                      ["strands", "Strands"],
-                      ["frames", "Frames"],
-                      ...(frameResult?.closed
-                        ? ([["seam", "Seam"]] as const)
-                        : []),
+                      ["surface", "Ruled surface"],
+                      ["rulings", "Rulings"],
+                      ["edges", "Partner thread"],
                     ] as const)
-                  : inversion
+                  : framed
                     ? ([
-                        ["inverse", "Inverted curve"],
-                        ["correspondences", "Correspondence segments"],
-                        ["sphere", "Inversion sphere & center"],
-                        ...(config.inversion.input === "base"
-                          ? []
-                          : ([["source", "Projection & pole"]] as const)),
+                        ["surface", "Ribbon surface"],
+                        ["rulings", "Cross-lines"],
+                        ["edges", "Ribbon edges"],
+                        ["strands", "Strands"],
+                        ["frames", "Frames"],
+                        ...(frameResult?.closed
+                          ? ([["seam", "Seam"]] as const)
+                          : []),
                       ] as const)
-                    : projection
+                    : inversion
                       ? ([
-                          ["projection", projectionName],
-                          ["connectors", "Perpendiculars & tangent feet"],
-                          ["pole", "Pole marker"],
+                          ["inverse", "Inverted curve"],
+                          ["correspondences", "Correspondence segments"],
+                          ["sphere", "Inversion sphere & center"],
+                          ...(config.inversion.input === "base"
+                            ? []
+                            : ([["source", "Projection & pole"]] as const)),
                         ] as const)
-                      : involute
+                      : projection
                         ? ([
-                            ["filaments", "Involute filaments"],
-                            ["strings", "Unwinding strings"],
+                            ["projection", projectionName],
+                            ["connectors", "Perpendiculars & tangent feet"],
+                            ["pole", "Pole marker"],
                           ] as const)
-                        : ([
-                            ["surface", "Ribbon surface"],
-                            ["rulings", "Tangent rulings"],
-                            ["edges", "Ribbon edges"],
-                          ] as const)),
+                        : involute
+                          ? ([
+                              ["filaments", "Involute filaments"],
+                              ["strings", "Unwinding strings"],
+                            ] as const)
+                          : ([
+                              ["surface", "Ribbon surface"],
+                              ["rulings", "Tangent rulings"],
+                              ["edges", "Ribbon edges"],
+                            ] as const)),
               ...(config.format === "harmonic"
                 ? ([
                     ["vectors", "Vector sums"],
@@ -1297,17 +1417,19 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             </Field>
             <Field
               label={
-                ruled
-                  ? "Rulings"
-                  : framed
-                    ? "Frames & cross-lines"
-                    : inversion
-                      ? "Correspondences"
-                      : projection
-                        ? "Projection constructions"
-                        : involute
-                          ? "Unwinding strings"
-                          : "Tangent lines"
+                canal
+                  ? "Contact circles"
+                  : ruled
+                    ? "Rulings"
+                    : framed
+                      ? "Frames & cross-lines"
+                      : inversion
+                        ? "Correspondences"
+                        : projection
+                          ? "Projection constructions"
+                          : involute
+                            ? "Unwinding strings"
+                            : "Tangent lines"
               }
             >
               <input
@@ -1331,7 +1453,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               vector sums sit at the same evenly spaced samples as the
               construction lines, and its derivatives are exact. A ruled
               surface's partner is evaluated at mt + δ for the same samples, and
-              a second thread is differentiated like a custom curve.
+              a second thread is differentiated like a custom curve. A canal
+              surface's profile ρ(t) is differentiated the same way, checked at
+              each interval's midpoint, and drawn on at most 480 contact
+              circles, always including those beside a gap.
             </p>
           </details>
           {failure && (
@@ -1344,7 +1469,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} ${ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
+                : `${config.samples.toLocaleString()} samples · ${config.lines} ${canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -1379,17 +1504,19 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {ruled
-                  ? "A surface of straight threads"
-                  : framed
-                    ? "A ribbon carried by a frame"
-                    : inversion
-                      ? "A curve inverted in a sphere"
-                      : projection
-                        ? projectionName
-                        : involute
-                          ? "Filaments unwound from a curve"
-                          : "A ribbon of tangent lines"}
+                {canal
+                  ? "A surface enveloping spheres"
+                  : ruled
+                    ? "A surface of straight threads"
+                    : framed
+                      ? "A ribbon carried by a frame"
+                      : inversion
+                        ? "A curve inverted in a sphere"
+                        : projection
+                          ? projectionName
+                          : involute
+                            ? "Filaments unwound from a curve"
+                            : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -1440,17 +1567,19 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               <div className="legend">
                 <span className="thread-dot" /> Base curve{" "}
                 <span className="ribbon-dot" />{" "}
-                {ruled
-                  ? "Ruled surface"
-                  : framed
-                    ? "Framed ribbon"
-                    : inversion
-                      ? "Inverted curve"
-                      : projection
-                        ? projectionName
-                        : involute
-                          ? "Involute filaments"
-                          : "Tangent developable"}
+                {canal
+                  ? "Canal surface"
+                  : ruled
+                    ? "Ruled surface"
+                    : framed
+                      ? "Framed ribbon"
+                      : inversion
+                        ? "Inverted curve"
+                        : projection
+                          ? projectionName
+                          : involute
+                            ? "Involute filaments"
+                            : "Tangent developable"}
               </div>
               <span>
                 {animation
