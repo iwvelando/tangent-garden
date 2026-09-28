@@ -8,9 +8,53 @@ on:
 permissions:
   contents: read
 jobs:
+  # On main, looks for a passing pull request run that already tested this exact
+  # tree. Each run's `check` job uploads its build as `dist-<tree>`; a pull request
+  # run tests the merge of its head into main, so a squash merge made before main
+  # moves on yields the same tree. When one is found, the tests are skipped and
+  # `deploy` publishes that run's build; otherwise the full suite runs here. Only
+  # runs from this repository count, so a fork cannot supply a build.
+  reuse:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run-id: ${{ steps.find.outputs.run-id }}
+      tree: ${{ steps.find.outputs.tree }}
+    steps:
+      - id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          tree=$(gh api "repos/$GH_REPO/commits/$SHA" --jq .commit.tree.sha)
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          runs=$(gh api "repos/$GH_REPO/actions/artifacts?name=dist-$tree&per_page=100" \
+            --jq '.artifacts[] | select(.expired | not) | .workflow_run.id')
+          for run in $runs; do
+            passed=$(gh api "repos/$GH_REPO/actions/runs/$run" --jq 'select(
+              .event == "pull_request" and .conclusion == "success" and
+              .head_repository.full_name == env.GH_REPO and
+              .path == ".github/workflows/ci.yml") | .html_url')
+            if [ -n "$passed" ]; then
+              echo "Tree $tree passed in $passed; deploying that build."
+              echo "run-id=$run" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "No passing pull request run tested tree $tree; running the full suite."
+
   check:
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      tree: ${{ steps.tree.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -25,30 +69,60 @@ jobs:
           cache: npm
       - run: make install
       - run: make check
+      - id: tree
+        run: echo "sha=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      # Pull request runs upload too, so main can deploy a build that already passed.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-${{ steps.tree.outputs.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  # The Chromium suite, split across runners. Each shard builds its own copy of
+  # the production app, which takes seconds, rather than waiting on `check`.
+  browser:
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
+    name: chromium (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: make install
+      - run: make build
       - run: npx playwright install --with-deps chromium
       # ffprobe independently decodes exported MP4 files in the browser tests.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       # Runs against the production build in dist/, under the production CSP.
-      - run: npx playwright test
+      - run: npx playwright test --shard=${{ matrix.shard }}/4
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: chromium-test-results
+          name: chromium-test-results-${{ matrix.shard }}
           path: test-results/
           if-no-files-found: ignore
-          retention-days: 7
-      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: dist
-          path: dist/
-          if-no-files-found: error
           retention-days: 7
 
   # Safari's engine, which every iOS browser also uses: no canvas WebP, and its
   # own H.264 encoder and VideoFrame behavior. Standard macOS runners are free
   # for public repositories. Runs tests/webkit.spec.ts only.
   webkit:
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -88,12 +162,35 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Publishes the exact build that passed `check` (and `webkit`). Hosting is managed in
-  # iwvelando/cloud-accounts (sites/tangent-garden.isaacvelando.com). Only this job
-  # can get AWS credentials, and the `production` environment only allows main.
+  # The one required status check. Every test job must pass, except on main when
+  # `reuse` found a passing run of this exact tree and the tests were skipped.
+  verify:
+    needs: [reuse, check, browser, webkit]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          REUSED: ${{ needs.reuse.outputs.run-id }}
+          RESULTS: ${{ needs.check.result }} ${{ needs.browser.result }} ${{ needs.webkit.result }}
+        run: |
+          for result in $RESULTS; do
+            case "$result" in
+              success) ;;
+              skipped) test -n "$REUSED" || { echo "::error::A test job was skipped."; exit 1; } ;;
+              *) echo "::error::A test job finished with: $result"; exit 1 ;;
+            esac
+          done
+
+  # Publishes the exact build that passed `verify`, from this run or from the pull
+  # request run `reuse` found. Hosting is managed in iwvelando/cloud-accounts
+  # (sites/tangent-garden.isaacvelando.com). Only this job can get AWS credentials,
+  # and the `production` environment only allows main.
   deploy:
-    needs: [check, webkit]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [reuse, check, verify]
+    if: >-
+      !cancelled() && needs.verify.result == 'success' &&
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -103,6 +200,7 @@ jobs:
       group: deploy
       cancel-in-progress: false
     permissions:
+      actions: read
       contents: read
       id-token: write
     env:
@@ -117,8 +215,10 @@ jobs:
           sparse-checkout: deploy
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: dist
+          name: dist-${{ needs.check.outputs.tree || needs.reuse.outputs.tree }}
           path: dist
+          run-id: ${{ needs.reuse.outputs.run-id || github.run_id }}
+          github-token: ${{ github.token }}
 
       # `sync --delete` below would wipe the site if the build came out empty.
       - name: sanity-check build
@@ -181,7 +281,7 @@ jobs:
   # Runs on main started by a workflow (e.g. Dependabot merges) notify no one, so a
   # failure on main opens an issue, or comments on the one already open.
   alert:
-    needs: [check, deploy, smoke]
+    needs: [verify, deploy, smoke]
     if: failure() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5

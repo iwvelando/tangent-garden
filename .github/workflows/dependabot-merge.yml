@@ -1,6 +1,7 @@
 name: Dependabot merge
 # Merges a Dependabot PR once its `Verify` run passes, then starts `Verify` on main,
-# which tests the merged result again and deploys it.
+# which deploys the merged result, testing it again unless the PR run tested the
+# same tree.
 #
 # Why not `gh pr merge --auto` on pull_request: a merge made with GITHUB_TOKEN
 # triggers no workflows, so main would never be verified or deployed. Starting a
