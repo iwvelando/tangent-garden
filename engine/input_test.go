@@ -69,8 +69,10 @@ func TestInputPedalOfEvolute(t *testing.T) {
 			closeVec(t, r.Derived[j], *want.Derived[j], 1e-7)
 		}
 	}
+	// At the vertices the evolute has cusps, where its derivative is only
+	// rounding: a gap on every platform, never a point from a noisy tangent.
 	// The 25 lines include five vertices.
-	if len(r.Rays) != q.Lines-5 {
+	if r.Derived[250] != nil || len(r.Rays) != q.Lines-5 {
 		t.Fatalf("%d segments", len(r.Rays))
 	}
 	for _, ray := range r.Rays {

@@ -359,11 +359,11 @@ func Compute(q Request) (Result, error) {
 			p = g(t)
 			out.Input[j] = point(p)
 			dp, ddp = derivatives(g, t, lo, hi)
-			switch constructionOrder(q.Kind) {
+			switch checks := inputStencil(lo, hi); constructionOrder(q.Kind) {
 			case 1:
-				stableSample = stableTangent(g, t, lo, hi, dp)
+				stableSample = checks.stableTangent(g, t, dp)
 			case 2:
-				stableSample = stable(g, t, lo, hi, dp, ddp)
+				stableSample = checks.stable(g, t, dp, ddp)
 			}
 			if !p.Valid() || !stableSample {
 				out.Invalid++

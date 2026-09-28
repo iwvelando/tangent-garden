@@ -60,7 +60,7 @@ func inputCurve(input string, f curveFunc, lo, hi float64, pole Vec, distance fl
 	if !composed(input) {
 		return f
 	}
-	s := stencil{lo, hi, (hi - lo) * inputSpacing}
+	s := stencil{lo, hi, (hi - lo) * inputSpacing, 1e-8}
 	return func(t float64) Vec {
 		dp, ddp := s.derivatives(f, t)
 		q := derive(input, f(t), dp, ddp, pole, distance)
