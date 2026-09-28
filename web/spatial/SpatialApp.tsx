@@ -13,6 +13,8 @@ import { saveFile } from "../export-image";
 import { SpatialPlot } from "./SpatialPlot";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { spatialPresets } from "./presets";
+import { ExampleGallery } from "../ExampleGallery";
+import { spatialExamples, spatialThumbnail } from "../examples";
 import { animationCamera, type AnimationView } from "./animation";
 import type { SpatialConfig, Frame } from "./types";
 import type { Layers, View } from "./renderer";
@@ -249,20 +251,13 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           aria-label="Spatial study parameters"
         >
           <div className="section-label">01 / THE STUDY</div>
-          <Field label="Start with a notebook example">
-            <select value={preset} onChange={(e) => choose(e.target.value)}>
-              {preset === "" && (
-                <option value="" disabled>
-                  Custom study
-                </option>
-              )}
-              {spatialPresets.map((s, i) => (
-                <option key={s.name} value={i}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <ExampleGallery
+            examples={spatialExamples}
+            current={preset === "" ? null : +preset}
+            onChoose={(i) => choose(String(i))}
+            thumbnail={spatialThumbnail}
+            dark={theme.dark}
+          />
           <ScalarStatus.Provider value={scalarStatus}>
             <div key={generation.current}>
               <Field label="Spatial definition">

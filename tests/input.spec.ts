@@ -8,15 +8,13 @@ import {
   type Result,
   type Vec,
 } from "../web/types";
-import { openAnimation } from "./helpers";
+import { openAnimation, choosePreset } from "./helpers";
 
 const preset = (name: string) => presets.find((p) => p.title === name)!.config;
 async function ready(page: Page, name: string) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: name });
+  await choosePreset(page, { label: name });
   await settled(page);
 }
 async function settled(page: Page) {

@@ -2,14 +2,12 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { availableTargets } from "../web/animation";
 import { presets } from "../web/presets";
-import { exportImage, openAnimation } from "./helpers";
+import { exportImage, openAnimation, choosePreset } from "./helpers";
 
 async function ready(page: Page, preset: string) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: preset });
+  await choosePreset(page, { label: preset });
   await settled(page);
 }
 async function settled(page: Page) {

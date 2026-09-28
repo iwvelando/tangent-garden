@@ -11,7 +11,7 @@ import { attractorNote, densityPixels } from "../web/attractor";
 import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { AttractorResult, Config, Result } from "../web/types";
-import { exportImage, openAnimation } from "./helpers";
+import { exportImage, openAnimation, choosePreset } from "./helpers";
 
 const clifford = "Clifford attractor";
 const dejong = "De Jong attractor";
@@ -21,9 +21,7 @@ const preset = (title: string) =>
 async function ready(page: Page, title: string) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: title });
+  await choosePreset(page, { label: title });
   await settled(page);
 }
 async function settled(page: Page) {

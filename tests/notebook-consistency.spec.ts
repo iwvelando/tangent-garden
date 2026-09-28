@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { choosePreset, exampleTitles } from "./helpers";
 
 for (const width of [1440, 390]) {
   for (const colorScheme of ["light", "dark"] as const) {
@@ -144,12 +145,12 @@ test("each 3D example names itself above a shared construction title", async ({
   page,
 }) => {
   await page.goto("/?study=3d");
-  const presets = page.getByLabel("Start with a notebook example");
   const heading = page.locator(".app:visible .plot-heading");
-  await expect(presets.locator("option")).toHaveCount(5);
+  const titles = await exampleTitles(page);
+  expect(titles).toHaveLength(5);
   const eyebrows = new Set<string>();
-  for (const option of await presets.locator("option").all()) {
-    await presets.selectOption((await option.getAttribute("value"))!);
+  for (const label of titles) {
+    await choosePreset(page, { label });
     await expect(heading.locator("h1")).toHaveText("A ribbon of tangent lines");
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
@@ -176,21 +177,18 @@ test("custom study is an edit status, not a preset action, in both notebooks", a
 }) => {
   for (const spatial of [false, true]) {
     await page.goto(spatial ? "/?study=3d" : "/");
-    const presets = page.getByLabel("Start with a notebook example");
-    await expect(
-      presets.locator("option").filter({ hasText: "Custom study" }),
-    ).toHaveCount(0);
-    if (spatial) await presets.selectOption("3");
+    // The reader's own study is named on the picker, never offered in the
+    // gallery as an example to choose.
+    const current = page.locator(".app:visible .example-current");
+    await expect(current).not.toHaveText("Custom study");
+    if (spatial) await choosePreset(page, "3");
     await page
       .getByRole("textbox", { name: spatial ? "z(t)" : "x(t)", exact: true })
       .fill(spatial ? "t/4" : "3*cos(t)");
-    const custom = presets.locator("option:checked");
-    await expect(custom).toHaveText("Custom study");
-    await expect(custom).toBeDisabled();
-    await presets.selectOption("0");
-    await expect(
-      presets.locator("option").filter({ hasText: "Custom study" }),
-    ).toHaveCount(0);
+    await expect(current).toHaveText("Custom study");
+    expect(await exampleTitles(page)).not.toContain("Custom study");
+    await choosePreset(page, "0");
+    await expect(current).not.toHaveText("Custom study");
   }
 });
 
@@ -236,17 +234,14 @@ test("playing on a phone snaps the drawing into view in both notebooks", async (
 
 test("every 2D example names itself in its own words", async ({ page }) => {
   await page.goto("/");
-  const presets = page.getByLabel("Start with a notebook example");
   const eyebrow = page.locator(".app:visible .plot-heading .eyebrow");
   const lines = new Set<string>();
-  const values = await presets
-    .locator("option")
-    .evaluateAll((o) => o.map((e) => (e as HTMLOptionElement).value));
-  for (const value of values) {
-    await presets.selectOption(value);
+  const titles = await exampleTitles(page);
+  for (const label of titles) {
+    await choosePreset(page, { label });
     lines.add(await eyebrow.innerText());
   }
-  expect(lines.size).toBe(values.length);
+  expect(lines.size).toBe(titles.length);
   for (const line of lines) expect(line).not.toMatch(/FROM THE NOTEBOOKS/);
 });
 

@@ -1,13 +1,16 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openAnimation, exportImage, imageButton } from "./helpers";
+import {
+  openAnimation,
+  exportImage,
+  imageButton,
+  choosePreset,
+} from "./helpers";
 
 async function ready(page: Page, preset = "0") {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
   await openAnimation(page);
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption(preset);
+  await choosePreset(page, preset);
   await expect(
     page.getByRole("button", { name: "Play animation" }),
   ).toBeEnabled();

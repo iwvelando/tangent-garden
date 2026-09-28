@@ -4,15 +4,13 @@ import { applyTracks, availableTargets, reveal } from "../web/animation";
 import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { Result, Vec } from "../web/types";
-import { exportImage, openAnimation } from "./helpers";
+import { exportImage, openAnimation, choosePreset } from "./helpers";
 
 const title = "Chords & a cardioid";
 async function ready(page: Page, preset = title) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: preset });
+  await choosePreset(page, { label: preset });
   await settled(page);
 }
 async function settled(page: Page) {

@@ -11,7 +11,7 @@ import { captureNote, nextPursuer, regularPolygon } from "../web/pursuit";
 import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { PursuitResult, Result, Vec } from "../web/types";
-import { exportImage, openAnimation } from "./helpers";
+import { exportImage, openAnimation, choosePreset } from "./helpers";
 
 const heptagonTitle = "Seven pursuers & an evolute";
 const unequalTitle = "Four chasers at unequal speeds";
@@ -20,9 +20,7 @@ const preset = (title: string) =>
 async function ready(page: Page, title: string) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: title });
+  await choosePreset(page, { label: title });
   await settled(page);
 }
 async function settled(page: Page) {

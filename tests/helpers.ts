@@ -25,3 +25,38 @@ export async function exportImage(page: Page, kind: "PNG" | "SVG") {
   await imageButton(page).click();
   await page.getByRole("menuitem", { name: new RegExp(`^${kind}`) }).click();
 }
+
+// Examples are chosen from the gallery dialog: by index into the notebook's
+// preset list, or by title.
+export const examplesButton = (page: Page) =>
+  page.getByRole("button", { name: "Browse notebook examples" });
+
+export async function choosePreset(
+  page: Page,
+  which: string | number | { label: string },
+) {
+  await examplesButton(page).click();
+  const gallery = page.getByRole("dialog", { name: "Notebook examples" });
+  await gallery
+    .locator(
+      typeof which === "object"
+        ? `[data-example-title="${which.label.replace(/"/g, '\\"')}"]`
+        : `[data-example="${which}"]`,
+    )
+    .click();
+  await gallery.waitFor({ state: "hidden" });
+}
+
+// Every example's title, in preset order.
+export async function exampleTitles(page: Page) {
+  await examplesButton(page).click();
+  const gallery = page.getByRole("dialog", { name: "Notebook examples" });
+  const titles = await gallery
+    .locator("[data-example]")
+    .evaluateAll((cards) =>
+      cards.map((c) => (c as HTMLElement).dataset.exampleTitle!),
+    );
+  await page.keyboard.press("Escape");
+  await gallery.waitFor({ state: "hidden" });
+  return titles;
+}

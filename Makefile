@@ -1,4 +1,4 @@
-.PHONY: install wasm test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev preview check clean share-card
+.PHONY: install wasm test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev preview check clean share-card thumbnails
 
 install:
 	npm ci
@@ -36,3 +36,5 @@ preview:
 	npm run preview
 clean:
 	rm -rf dist public/engine.wasm public/wasm_exec.js public/GO-LICENSE.txt public/LICENSE.txt public/THIRD-PARTY-NOTICES.txt
+thumbnails: build
+	node scripts/build-thumbnails.mjs

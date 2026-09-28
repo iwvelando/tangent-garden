@@ -64,6 +64,7 @@ Commit source, tests, docs, and `package-lock.json`; dependency directories, bui
 make build        # creates dist/
 make preview      # serves that build locally
 make share-card   # re-renders the link-preview card and home-screen icon into public/
+make thumbnails   # re-draws the example gallery's thumbnails into web/examples/
 ```
 
 Serve **the contents of `dist/`** over HTTP(S), preserving its structure. Use the whole directory, including `engine.wasm`, `wasm_exec.js`, the logo, and the license/notice files. No server-side computation is needed. Relative asset URLs support hosting beneath a path prefix. Do not open the site using `file://`.

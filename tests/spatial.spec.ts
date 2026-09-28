@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { choosePreset } from "./helpers";
 async function ready(page: Page) {
   await page.goto("/?study=3d");
   await expect(page.locator("#spatial-artwork")).toBeVisible();
@@ -77,7 +78,7 @@ test("spatial construction renders, orbits, zooms, layers, and resets", async ({
   await page.waitForTimeout(100);
   expect(await pixels(page)).toBe(paused);
   for (const preset of ["1", "2", "0"]) {
-    await page.getByLabel("Start with a notebook example").selectOption(preset);
+    await choosePreset(page, preset);
     await expect(page.locator(".spatial-stage")).toHaveAttribute(
       "aria-busy",
       "false",
@@ -104,7 +105,7 @@ test("counts, invalid input, pending scalar replacement and desktop scrolling", 
   await page
     .getByRole("textbox", { name: "Major radius R", exact: true })
     .fill("phi+2");
-  await page.getByLabel("Start with a notebook example").selectOption("1");
+  await choosePreset(page, "1");
   await expect(
     page.getByRole("textbox", { name: "Major radius R", exact: true }),
   ).toHaveValue("2.4");

@@ -30,7 +30,8 @@ Vite generates a static bundle with relative paths. There is no hosting provider
 2. Add pure Go geometry and tests. Preserve null gaps and diagnostics.
 3. Extend the request/result schema deliberately on both sides of the bridge.
 4. Add controls and a verified preset. Keep rendering separate from computation.
-5. Run `make check` and `make test-browser`.
+5. Run `make thumbnails` so the example gallery can show the new or changed preset.
+6. Run `make check` and `make test-browser`.
 
 ## 3D without premature generalization
 

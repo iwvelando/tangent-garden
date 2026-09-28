@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
 const stage = (page: Page) => page.locator(".spatial-stage");
@@ -33,7 +34,7 @@ test("custom definitions, errors, and both notebooks preserve edits and views", 
   page,
 }) => {
   await ready(page);
-  await page.getByLabel("Start with a notebook example").selectOption("3");
+  await choosePreset(page, "3");
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("a*t/4");
   await expect.poll(async () => (await config(page)).curve.z).toBe("a*t/4");
   await page.getByLabel("Spatial definition").selectOption("torus");
@@ -56,9 +57,7 @@ test("custom definitions, errors, and both notebooks preserve edits and views", 
   const before = await canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL());
   await page.getByRole("button", { name: "2D curves", exact: true }).click();
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: "Flower & its offset" });
+  await choosePreset(page, { label: "Flower & its offset" });
   await page.getByRole("button", { name: "3D curves", exact: true }).click();
   await expect(canvas).toBeVisible();
   await expect(
@@ -74,11 +73,9 @@ test("custom definitions, errors, and both notebooks preserve edits and views", 
   await page.getByRole("button", { name: "Use dark background" }).click();
   await page.getByRole("button", { name: "2D curves", exact: true }).click();
   await expect(page.locator(".app:visible")).toHaveClass(/dark/);
-  await expect(
-    page
-      .getByRole("combobox", { name: "Start with a notebook example" })
-      .locator("option:checked"),
-  ).toHaveText("Flower & its offset");
+  await expect(page.locator(".app:visible .example-current")).toHaveText(
+    "Flower & its offset",
+  );
   await page.goBack();
   await expect(canvas).toBeVisible();
 });
@@ -88,7 +85,7 @@ for (const camera of ["hold", "current", "follow", "fit"])
     page,
   }) => {
     await ready(page);
-    await page.getByLabel("Start with a notebook example").selectOption("3");
+    await choosePreset(page, "3");
     await expect(stage(page)).toHaveAttribute("aria-busy", "false");
     await animation(page);
     await page
@@ -299,7 +296,7 @@ test("canceling and editing an export discard output", async ({ page }) => {
     page.getByRole("button", { name: "Play animation", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: /Export MP4/ }).click();
-  await page.getByLabel("Start with a notebook example").selectOption("2");
+  await choosePreset(page, "2");
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
   await expect(
     page.getByRole("button", { name: "Play animation", exact: true }),

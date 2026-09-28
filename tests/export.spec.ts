@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openExportSettings } from "./helpers";
+import { openExportSettings, choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { AnimatedWebP } from "../web/animated-webp";
 import { exportEncoding, exportTiming } from "../web/export-quality";
@@ -18,9 +18,7 @@ async function ready(page: Page, preset = "1") {
   await page
     .getByRole("combobox", { name: "Export format" })
     .selectOption("webp");
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption(preset);
+  await choosePreset(page, preset);
   await expect(
     page.getByRole("button", { name: "Export animated WebP" }),
   ).toBeEnabled();

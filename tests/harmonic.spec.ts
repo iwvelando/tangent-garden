@@ -11,7 +11,7 @@ import { closureNote, nextTerm, periodText } from "../web/harmonic";
 import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { Result, Vec } from "../web/types";
-import { exportImage, openAnimation } from "./helpers";
+import { exportImage, openAnimation, choosePreset } from "./helpers";
 
 const lissajousTitle = "Lissajous 3 : 2 & its pedal";
 const fourierTitle = "Epicycles, turned inside out";
@@ -21,9 +21,7 @@ const preset = (title: string) =>
 async function ready(page: Page, title: string) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: title });
+  await choosePreset(page, { label: title });
   await settled(page);
 }
 async function settled(page: Page) {

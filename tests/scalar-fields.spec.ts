@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { choosePreset, examplesButton } from "./helpers";
 
 // Every numeric curve and construction parameter is a constant expression
 // resolved by the Go parser, like the domain bounds: pi, e, phi, arithmetic,
@@ -6,9 +7,7 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 async function ready(page: Page, preset: string) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: preset });
+  await choosePreset(page, { label: preset });
   await settled(page);
 }
 async function settled(page: Page) {
@@ -547,6 +546,7 @@ test("fields show new values set elsewhere, replacing an expression", async ({
   // An expression still being evaluated when a preset is chosen is dropped,
   // not applied to the preset.
   await ready(page, "Ellipse & its evolute");
+  await examplesButton(page).click();
   await page.evaluate(() => {
     const control = (label: string) =>
       [...document.querySelectorAll("label")].find(
@@ -558,9 +558,7 @@ test("fields show new values set elsewhere, replacing an expression", async ({
       "value",
     )!.set!.call(input, "2*pi");
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    const select = control("Start with a notebook example");
-    select.value = "4";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>('[data-example="4"]')!.click();
   });
   await settled(page);
   expect((await definition(page)).curve.x).toBe("2*(t-sin(t))");
@@ -572,9 +570,7 @@ test("fields show new values set elsewhere, replacing an expression", async ({
   await field(page, "Phase φ (radians)").fill("pi");
   await field(page, "Tracing distance d").fill("x");
   await expect(page.getByRole("alert")).toContainText("Tracing distance d");
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: "Hypotrochoid & its evolute" });
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
   await settled(page);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(field(page, "Phase φ (radians)")).toHaveValue("0");
@@ -622,7 +618,7 @@ test("spatial custom domain and shape fields share the bounded scalar parser", a
   page,
 }) => {
   await page.goto("/?study=3d");
-  await page.getByLabel("Start with a notebook example").selectOption("3");
+  await choosePreset(page, "3");
   const stage = page.locator(".spatial-stage");
   for (const [name, text, key, value] of [
     ["t from", "-pi", "min", -Math.PI],

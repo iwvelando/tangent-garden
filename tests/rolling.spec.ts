@@ -4,15 +4,13 @@ import { applyTracks, availableTargets, reveal } from "../web/animation";
 import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { Result, Vec } from "../web/types";
-import { exportImage, openAnimation } from "./helpers";
+import { exportImage, openAnimation, choosePreset } from "./helpers";
 
 const title = "Flower & a rolling circle";
 async function ready(page: Page, preset = title) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: preset });
+  await choosePreset(page, { label: preset });
   await settled(page);
 }
 async function settled(page: Page) {
@@ -234,9 +232,7 @@ test("rolling controls choose a side, validate, roll back out of cusps, and roll
   await settled(page);
   await expect(page.getByRole("alert")).toHaveCount(0);
   // At a cusp the circle rolls back out on the same side, and says so.
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: "Three-cusped curve" });
+  await choosePreset(page, { label: "Three-cusped curve" });
   await settled(page);
   await tab(page, "rolling").click();
   await settled(page);

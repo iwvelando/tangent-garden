@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openExportSettings } from "./helpers";
+import { openExportSettings, choosePreset } from "./helpers";
 import { decodeVideo, probe } from "./video";
 import { exportTiming } from "../web/export-quality";
 
@@ -25,9 +25,7 @@ async function ready(page: Page, preset = "1", exports = true) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
   await openExportSettings(page);
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption(preset);
+  await choosePreset(page, preset);
   if (exports)
     await expect(
       page.getByRole("button", { name: /^Export (animated WebP|MP4 video)/ }),

@@ -11,6 +11,8 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
+import { ExampleGallery } from "./ExampleGallery";
+import { planarExamples, planarThumbnail } from "./examples";
 import { Plot, type Layers } from "./Plot";
 import {
   isHarmonic,
@@ -1034,6 +1036,18 @@ function App({ active }: { active: boolean }) {
       )}
     </StudyExplanation>
   );
+  const choosePreset = (index: number) => {
+    setPreset(String(index));
+    scalarGeneration.current++;
+    const next = presets[index].config;
+    if (usesPole(next.kind)) setPoleKind(next.kind);
+    setConfig(structuredClone(next));
+    setBounds({
+      min: boundText(next.curve.min),
+      max: boundText(next.curve.max),
+    });
+    setReset(reset + 1);
+  };
   return (
     <div
       className={dark ? "app dark" : "app"}
@@ -1049,34 +1063,13 @@ function App({ active }: { active: boolean }) {
         <ScalarStatus.Provider value={scalarStatus}>
           <aside aria-label="Study parameters">
             <div className="section-label">01 / THE STUDY</div>
-            <Field label="Start with a notebook example">
-              <select
-                value={preset}
-                onChange={(e) => {
-                  setPreset(e.target.value);
-                  scalarGeneration.current++;
-                  const next = presets[+e.target.value].config;
-                  if (usesPole(next.kind)) setPoleKind(next.kind);
-                  setConfig(structuredClone(next));
-                  setBounds({
-                    min: boundText(presets[+e.target.value].config.curve.min),
-                    max: boundText(presets[+e.target.value].config.curve.max),
-                  });
-                  setReset(reset + 1);
-                }}
-              >
-                {preset === "custom" && (
-                  <option value="custom" disabled>
-                    Custom study
-                  </option>
-                )}
-                {presets.map((p, i) => (
-                  <option key={p.title} value={i}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <ExampleGallery
+              examples={planarExamples}
+              current={preset === "custom" ? null : +preset}
+              onChoose={choosePreset}
+              thumbnail={planarThumbnail}
+              dark={dark}
+            />
             <fieldset className="mode-switch" aria-labelledby="controls-legend">
               <legend>
                 <span id="controls-legend">Controls</span>
