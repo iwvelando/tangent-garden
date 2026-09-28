@@ -9,13 +9,17 @@ export type View = Bounds3 & {
 };
 export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // Surface, rulings, and edges belong to the tangent developable; filaments
-// and strings to the involute. The base curve is always drawn.
+// and strings to the involute; projection, connectors and pole to tangent
+// projections. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
   edges: boolean;
   filaments: boolean;
   strings: boolean;
+  projection: boolean;
+  connectors: boolean;
+  pole: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -23,6 +27,9 @@ export const defaultLayers: Layers = {
   edges: true,
   filaments: true,
   strings: true,
+  projection: true,
+  connectors: true,
+  pole: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -124,7 +131,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     plus: Batch,
     rulings: Batch,
     filaments: Batch,
-    strings: Batch;
+    strings: Batch,
+    projection: Batch,
+    connectors: Batch,
+    feet: Batch,
+    pole: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -166,6 +177,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     });
     return batch(data, gl!.LINES, 3);
   }
+  const cross = (at: Vec3, arm: number): Vec3[] =>
+    (["x", "y", "z"] as const).flatMap((axis) => [
+      { ...at, [axis]: at[axis] - arm },
+      { ...at, [axis]: at[axis] + arm },
+    ]);
   function upload(result: SpatialResult) {
     buffers.splice(0).forEach((b) => gl!.deleteBuffer(b));
     mesh = batch(
@@ -188,6 +204,45 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       result.rulings
         .flatMap((r) => [r.from, r.to])
         .flatMap((p) => [p.x, p.y, p.z, 0, 0, 1, 0]),
+      gl!.LINES,
+      1,
+    );
+    const q = result.projection;
+    const at = q?.points.find((p) => p);
+    projection = batch(
+      vertices(
+        q?.collapsed && at
+          ? cross(at, result.bounds.radius * 0.025)
+          : pairs(q?.points ?? [], result.breaks),
+      ),
+      gl!.LINES,
+      3,
+    );
+    connectors = batch(
+      vertices(
+        (q?.constructions ?? []).flatMap((c) => [
+          c.contact,
+          c.foot,
+          q!.pole,
+          c.foot,
+          c.foot,
+          c.image,
+        ]),
+      ),
+      gl!.LINES,
+      4,
+    );
+    feet = batch(
+      vertices(
+        (q?.constructions ?? []).flatMap((c) =>
+          cross(c.foot, result.bounds.radius * 0.006),
+        ),
+      ),
+      gl!.LINES,
+      1,
+    );
+    pole = batch(
+      vertices(q ? cross(q.pole, result.bounds.radius * 0.03) : []),
       gl!.LINES,
       1,
     );
@@ -277,7 +332,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     }
     if (layers.strings) render(strings);
     if (layers.filaments) render(filaments);
+    if (layers.connectors) {
+      render(connectors);
+      render(feet);
+    }
+    if (layers.projection) render(projection);
     render(base);
+    if (layers.pole) render(pole);
   }
   return {
     upload,

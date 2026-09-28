@@ -63,9 +63,12 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
   family:
     p.config.construction === "involute"
       ? "Involute filaments"
-      : p.config.format === "torus"
-        ? "Torus knots"
-        : "Parametric curves",
+      : p.config.construction === "tangent-foot" ||
+          p.config.construction === "orthotomic"
+        ? "Tangent projections"
+        : p.config.format === "torus"
+          ? "Torus knots"
+          : "Parametric curves",
   keywords: `${p.config.format} ${p.config.construction}`,
   fingerprint: fingerprint(p.config),
 }));

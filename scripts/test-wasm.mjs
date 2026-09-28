@@ -926,4 +926,65 @@ assert.match(
   /anchor/,
 );
 console.log("Spatial involute-family WASM bridge passed.");
+
+// Spatial projection of a helix: independently known unit tangent, including
+// an out-of-plane pole. Transport keeps feet and sample correspondences.
+for (const construction of ["tangent-foot", "orthotomic"]) {
+  const pole = { x: 1, y: -2, z: 3 };
+  const q = JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "parametric",
+        construction,
+        pole,
+        curve: {
+          x: "2*cos(t)",
+          y: "2*sin(t)",
+          z: "t/3",
+          min: -Math.PI,
+          max: Math.PI,
+          a: 1,
+        },
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+  assert.equal(q.invalid, 0);
+  assert.equal(q.projection.invalid, 0);
+  assert.equal(q.projection.constructions.length, 24);
+  assert.equal(q.projection.points.length, 481);
+  assert.equal(q.mesh.length, 0);
+  q.projection.feet.forEach((h, i) => {
+    const t = -Math.PI + (2 * Math.PI * i) / 480,
+      k = Math.sqrt(4 + 1 / 9);
+    const r = { x: 2 * Math.cos(t), y: 2 * Math.sin(t), z: t / 3 };
+    const v = {
+      x: (-2 * Math.sin(t)) / k,
+      y: (2 * Math.cos(t)) / k,
+      z: 1 / (3 * k),
+    };
+    const d =
+      (pole.x - r.x) * v.x + (pole.y - r.y) * v.y + (pole.z - r.z) * v.z;
+    for (const axis of ["x", "y", "z"]) {
+      assert.ok(Math.abs(h[axis] - r[axis] - d * v[axis]) < 1e-8);
+      assert.ok(
+        Math.abs(
+          q.projection.points[i][axis] -
+            (construction === "tangent-foot"
+              ? h[axis]
+              : 2 * h[axis] - pole[axis]),
+        ) < 1e-12,
+      );
+    }
+  });
+  for (const s of q.projection.constructions) {
+    assert.deepEqual(s.contact, q.base[s.sampleIndex]);
+    assert.deepEqual(s.foot, q.projection.feet[s.sampleIndex]);
+    assert.deepEqual(s.image, q.projection.points[s.sampleIndex]);
+  }
+}
+console.log(
+  "WASM spatial projections: helix feet, half-turns and sample identities passed",
+);
 process.exit(0);

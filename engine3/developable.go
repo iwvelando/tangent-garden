@@ -26,12 +26,13 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // of each tangent ruling, measured in world units, not parameter units.
 //
 // Construction is "developable" (or empty) for the tangent developable, or
-// "involute" for the filaments described by Involute; Length applies only to
-// the developable.
+// "involute" for the filaments described by Involute, or "tangent-foot" /
+// "orthotomic" for projections from Pole. Length applies only to the developable.
 type Request struct {
 	Format       string          `json:"format"`
 	Construction string          `json:"construction"`
 	Involute     InvoluteRequest `json:"involute"`
+	Pole         Vec3            `json:"pole"`
 	Curve        Curve           `json:"curve"`
 	Radius       float64         `json:"radius"`
 	Tube         float64         `json:"tube"`
@@ -65,7 +66,8 @@ type Result struct {
 	Omitted int      `json:"omitted"`
 	// Involute is present only for the involute construction, which leaves
 	// the developable's Minus, Plus, Mesh, and Rulings empty.
-	Involute *InvoluteResult `json:"involute,omitempty"`
+	Involute   *InvoluteResult   `json:"involute,omitempty"`
+	Projection *ProjectionResult `json:"projection,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -85,11 +87,16 @@ func Compute(c Request) (Result, error) {
 		return Result{}, fmt.Errorf("use 240–2400 samples and 12–240 rulings")
 	}
 	involute := c.Construction == "involute"
-	if !involute && c.Construction != "" && c.Construction != "developable" {
+	projection := c.Construction == "tangent-foot" || c.Construction == "orthotomic"
+	developable := c.Construction == "" || c.Construction == "developable"
+	if !involute && !projection && !developable {
 		return Result{}, fmt.Errorf("unknown spatial construction")
 	}
-	if !involute && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
+	if developable && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
 		return Result{}, fmt.Errorf("tangent reach must be finite and between 0 (exclusive) and 20")
+	}
+	if projection && (!c.Pole.valid() || math.Max(math.Abs(c.Pole.X), math.Max(math.Abs(c.Pole.Y), math.Abs(c.Pole.Z))) > 1e5) {
+		return Result{}, fmt.Errorf("pole coordinates must be finite and within ±100000")
 	}
 	evaluate, lo, hi, closed, err := compile(c)
 	if err != nil {
@@ -154,7 +161,7 @@ func Compute(c Request) (Result, error) {
 			disconnected = chord > 8*middle.norm()*(hi-lo)/float64(n)+1e-7 || displacement.dot(middle) < -1e-8*chord*middle.norm()
 		}
 		out.Breaks[i+1] = disconnected
-		if involute {
+		if !developable {
 			continue
 		}
 		if disconnected || !valid[i] || !valid[i+1] || normals[i].dot(normals[i+1]) < 0 {
@@ -175,6 +182,13 @@ func Compute(c Request) (Result, error) {
 	}
 	if out.Invalid == n+1 {
 		return Result{}, fmt.Errorf("no regular finite samples; check the expressions and domain")
+	}
+	if projection {
+		out.Projection = projections(c, out.Base, tangents)
+		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
+		out.Bounds = fit(out.Base, out.Projection.Points, out.Projection.Feet, []*Vec3{&out.Projection.Pole})
+		out.Radius = out.Bounds.Radius
+		return out, nil
 	}
 	if involute {
 		result, err := involutes(c.Involute, evaluate, lo, hi, out.Base, tangents, speeds, middles, out.Breaks, c.Lines)

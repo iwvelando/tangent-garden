@@ -16,7 +16,7 @@ import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
 import { animationCamera, type AnimationView } from "./animation";
-import type { SpatialConfig, Frame } from "./types";
+import { usesSpatialPole, type SpatialConfig, type Frame } from "./types";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -149,6 +149,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     setPreset("");
   }
   const involute = config.construction === "involute";
+  const projection = usesSpatialPole(config);
+  const orthotomic = config.construction === "orthotomic";
+  const projectionName = orthotomic
+    ? "Tangent-line orthotomic"
+    : "Tangent-foot curve";
   const failure = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
     : error;
@@ -199,7 +204,53 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const unreached = shown?.result.involute?.unreached ?? 0;
-  const behind = involute ? (
+  const behind = projection ? (
+    <StudyExplanation
+      label="BEHIND THE PERPENDICULARS"
+      title={
+        orthotomic
+          ? "Half a turn around every tangent."
+          : "One pole, a moving perpendicular."
+      }
+      formula={
+        <>
+          {orthotomic
+            ? "Q(t) = 2H(t) − P"
+            : "H(t) = r(t) + ((P − r(t)) · T(t)) T(t)"}
+          <span>
+            {orthotomic
+              ? "H is the tangent foot of P"
+              : "T is the unit tangent"}
+          </span>
+        </>
+      }
+      note="The small crosses mark tangent feet H; the larger cross marks the fixed pole P."
+      diagnostics={
+        shown &&
+        (shown.result.invalid > 0 ||
+          (shown.result.projection?.invalid ?? 0) > 0 ||
+          shown.result.projection?.collapsed) && (
+          <p className="bottom-note">
+            {shown.result.invalid} invalid base samples ·{" "}
+            {shown.result.projection?.invalid ?? 0} invalid image samples.
+            Undefined tangents and unresolved intervals leave gaps.
+            {shown.result.projection?.collapsed &&
+              " The image collapses to a point, shown as a cross."}
+          </p>
+        )
+      }
+    >
+      <p>
+        Drop a perpendicular from the pole P onto the tangent line at each point
+        of the curve. Its foot H traces the <em>tangent-foot curve</em>. Extend
+        P–H by the same distance beyond H to get the{" "}
+        <em>tangent-line orthotomic</em>: a half-turn of P around the tangent.
+        The segments from the base to H show that H lies on the tangent. In
+        space a tangent has a whole normal plane; no particular normal direction
+        is chosen.
+      </p>
+    </StudyExplanation>
+  ) : involute ? (
     <StudyExplanation
       label="BEHIND THE FILAMENTS"
       title="A taut string, unwound in space."
@@ -425,9 +476,46 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 >
                   <option value="developable">Tangent developable</option>
                   <option value="involute">Involute · unwinding strings</option>
+                  <option value="tangent-foot">Tangent-foot projection</option>
+                  <option value="orthotomic">Tangent-line orthotomic</option>
                 </select>
               </Field>
-              {involute ? (
+              {projection ? (
+                <>
+                  <div className="pair">
+                    {(["x", "y"] as const).map((axis) => (
+                      <Field
+                        key={axis}
+                        label={`Pole ${axis}`}
+                        help={`Independent pole coordinate ${axis}, within ±100000. The pole is a geometric point, not a light source.`}
+                      >
+                        <ScalarInput
+                          name={`Pole ${axis}`}
+                          value={config.pole[axis]}
+                          onChange={(value) =>
+                            update((c) => ({
+                              ...c,
+                              pole: { ...c.pole, [axis]: value },
+                            }))
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                  <Field
+                    label="Pole z"
+                    help="Height of the independent pole, within ±100000. All three coordinates accept constant expressions."
+                  >
+                    <ScalarInput
+                      name="Pole z"
+                      value={config.pole.z}
+                      onChange={(value) =>
+                        update((c) => ({ ...c, pole: { ...c.pole, z: value } }))
+                      }
+                    />
+                  </Field>
+                </>
+              ) : involute ? (
                 <>
                   <Field
                     label="Anchor t₀"
@@ -564,16 +652,22 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           </p>
           <fieldset className="spatial-layers">
             <legend>Reveal the construction</legend>
-            {(involute
+            {(projection
               ? ([
-                  ["filaments", "Involute filaments"],
-                  ["strings", "Unwinding strings"],
+                  ["projection", projectionName],
+                  ["connectors", "Perpendiculars & tangent feet"],
+                  ["pole", "Pole marker"],
                 ] as const)
-              : ([
-                  ["surface", "Ribbon surface"],
-                  ["rulings", "Tangent rulings"],
-                  ["edges", "Ribbon edges"],
-                ] as const)
+              : involute
+                ? ([
+                    ["filaments", "Involute filaments"],
+                    ["strings", "Unwinding strings"],
+                  ] as const)
+                : ([
+                    ["surface", "Ribbon surface"],
+                    ["rulings", "Tangent rulings"],
+                    ["edges", "Ribbon edges"],
+                  ] as const)
             ).map(([key, label]) => (
               <label key={key}>
                 <input
@@ -601,7 +695,15 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 }
               />
             </Field>
-            <Field label={involute ? "Unwinding strings" : "Tangent lines"}>
+            <Field
+              label={
+                projection
+                  ? "Projection constructions"
+                  : involute
+                    ? "Unwinding strings"
+                    : "Tangent lines"
+              }
+            >
               <input
                 type="number"
                 min="12"
@@ -630,7 +732,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} ${involute ? "strings" : "tangents"}`}
+                : `${config.samples.toLocaleString()} samples · ${config.lines} ${projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -665,9 +767,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {involute
-                  ? "Filaments unwound from a curve"
-                  : "A ribbon of tangent lines"}
+                {projection
+                  ? projectionName
+                  : involute
+                    ? "Filaments unwound from a curve"
+                    : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -718,7 +822,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               <div className="legend">
                 <span className="thread-dot" /> Base curve{" "}
                 <span className="ribbon-dot" />{" "}
-                {involute ? "Involute filaments" : "Tangent developable"}
+                {projection
+                  ? projectionName
+                  : involute
+                    ? "Involute filaments"
+                    : "Tangent developable"}
               </div>
               <span>
                 {animation

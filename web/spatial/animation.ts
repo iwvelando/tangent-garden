@@ -1,3 +1,4 @@
+import { usesSpatialPole } from "./types";
 import type {
   SpatialConfig,
   SpatialResult,
@@ -10,6 +11,9 @@ export type { Frame };
 export type Viewport = View;
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 export type Target =
+  | "poleX"
+  | "poleY"
+  | "poleZ"
   | "a"
   | "min"
   | "max"
@@ -35,6 +39,9 @@ export type AnimationView = {
   mode: "reveal" | "parameters" | "orbit";
 };
 export const targetLabels: Record<Target, string> = {
+  poleX: "Pole x",
+  poleY: "Pole y",
+  poleZ: "Pole z",
   a: "Shape parameter a",
   min: "Domain start",
   max: "Domain end",
@@ -52,7 +59,9 @@ export const targetLabels: Record<Target, string> = {
 export const targetLabel = (c: SpatialConfig, t: Target) =>
   t === "lines" && c.construction === "involute"
     ? "Unwinding strings"
-    : targetLabels[t];
+    : t === "lines" && usesSpatialPole(c)
+      ? "Projection constructions"
+      : targetLabels[t];
 export const integerTargets: Target[] = ["samples", "lines", "count"];
 const curveTargets = ["a", "min", "max"] as const;
 const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
@@ -70,7 +79,9 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
       ? c.involute.family.enabled
         ? ["from", "to", "count", "anchor"]
         : ["offset", "anchor"]
-      : ["length"];
+      : usesSpatialPole(c)
+        ? ["poleX", "poleY", "poleZ"]
+        : ["length"];
   const curve: Target[] =
     c.format === "parametric" ? ["a", "min", "max"] : ["radius", "tube"];
   return c.format === "parametric"
@@ -78,6 +89,9 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
     : [...construction, ...curve, "samples", "lines"];
 };
 export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
+  if (t === "poleX") return c.pole.x;
+  if (t === "poleY") return c.pole.y;
+  if (t === "poleZ") return c.pole.z;
   if (isCurve(t)) return c.curve[t];
   if (t === "anchor" || t === "offset") return c.involute[t];
   if (isInvolute(t)) return c.involute.family[t];
@@ -94,7 +108,10 @@ export function applyTracks(
   for (const t of tracks) {
     let v = t.from * (1 - p) + t.to * p;
     if (integerTargets.includes(t.target)) v = Math.round(v);
-    if (isCurve(t.target)) config.curve[t.target] = v;
+    if (t.target === "poleX") config.pole.x = v;
+    else if (t.target === "poleY") config.pole.y = v;
+    else if (t.target === "poleZ") config.pole.z = v;
+    else if (isCurve(t.target)) config.curve[t.target] = v;
     else if (t.target === "anchor" || t.target === "offset")
       config.involute[t.target] = v;
     else if (isInvolute(t.target)) config.involute.family[t.target] = v;
@@ -169,6 +186,14 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     })),
     strings: result.involute.strings.filter((r) => r.sampleIndex <= last),
   };
+  const projection = result.projection && {
+    ...result.projection,
+    points: result.projection.points.slice(0, last + 1),
+    feet: result.projection.feet.slice(0, last + 1),
+    constructions: result.projection.constructions.filter(
+      (c) => c.sampleIndex <= last,
+    ),
+  };
   return {
     ...result,
     base,
@@ -178,9 +203,12 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     mesh: result.mesh.filter((v) => v.sampleIndex <= last),
     rulings: result.rulings.filter((r) => r.sampleIndex <= last),
     involute,
-    bounds: involute
-      ? fitBounds(base, ...involute.members.map((m) => m.points))
-      : fitBounds(base, minus, plus),
+    projection,
+    bounds: projection
+      ? fitBounds(base, projection.points, projection.feet, [projection.pole])
+      : involute
+        ? fitBounds(base, ...involute.members.map((m) => m.points))
+        : fitBounds(base, minus, plus),
   };
 }
 export function animationCamera(view: AnimationView): View {

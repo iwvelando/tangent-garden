@@ -117,7 +117,7 @@ export function SpatialPlot({
         ref={canvas}
         id="spatial-artwork"
         role="img"
-        aria-label="Interactive 3D tangent developable. Drag to orbit, shift-drag to pan, scroll to zoom. Arrow keys orbit; shift-arrows pan; plus and minus zoom."
+        aria-label="Interactive 3D curve construction. Drag to orbit, shift-drag to pan, scroll to zoom. Arrow keys orbit; shift-arrows pan; plus and minus zoom."
         tabIndex={0}
         onPointerDown={(e) => {
           if (override) return;
