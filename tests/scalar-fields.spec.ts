@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 
 // Every numeric curve and construction parameter is a constant expression
 // resolved by the Go parser, like the domain bounds: pi, e, phi, arithmetic,
@@ -582,6 +582,14 @@ test("fields show new values set elsewhere, replacing an expression", async ({
 });
 
 // Spatial parameters share the same Go scalar parser as planar controls.
+// The stage carries no configuration until the engine's first spatial result
+// arrives, which can lag on a slow machine. Returning undefined until then
+// keeps expect.poll retrying instead of failing on a thrown TypeError.
+async function spatialConfig(stage: Locator) {
+  const config = await stage.getAttribute("data-config");
+  return config ? JSON.parse(config) : undefined;
+}
+
 test("spatial radii and tangent reach accept constants and reject variables", async ({
   page,
 }) => {
@@ -595,9 +603,7 @@ test("spatial radii and tangent reach accept constants and reject variables", as
   ] as const) {
     await field(page, name).fill(text);
     await expect
-      .poll(
-        async () => JSON.parse((await stage.getAttribute("data-config"))!)[key],
-      )
+      .poll(async () => (await spatialConfig(stage))?.[key])
       .toBe(value);
     await expect(field(page, name)).toHaveValue(text);
   }
@@ -608,9 +614,7 @@ test("spatial radii and tangent reach accept constants and reject variables", as
   await field(page, "Tangent reach L").fill("pi/2");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect
-    .poll(
-      async () => JSON.parse((await stage.getAttribute("data-config"))!).length,
-    )
+    .poll(async () => (await spatialConfig(stage))?.length)
     .toBe(Math.PI / 2);
 });
 
@@ -627,10 +631,7 @@ test("spatial custom domain and shape fields share the bounded scalar parser", a
   ] as const) {
     await field(page, name).fill(text);
     await expect
-      .poll(
-        async () =>
-          JSON.parse((await stage.getAttribute("data-config"))!).curve[key],
-      )
+      .poll(async () => (await spatialConfig(stage))?.curve[key])
       .toBe(value);
     await expect(field(page, name)).toHaveValue(text);
   }
