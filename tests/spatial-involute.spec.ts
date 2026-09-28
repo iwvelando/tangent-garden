@@ -71,7 +71,7 @@ test("anchors, string lengths, and family counts are validated", async ({
   await expect(page.getByRole("alert")).toContainText("±100000");
   await field(page, "String length c").fill("2");
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect.poll(async () => (await config(page)).involute.offset).toBe(2);
+  await expect.poll(async () => (await config(page))?.involute?.offset).toBe(2);
   await page.getByRole("checkbox", { name: "Family of involutes" }).check();
   await expect(field(page, "String length c")).toHaveCount(0);
   const count = page.getByLabel("Involutes", { exact: true });

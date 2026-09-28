@@ -649,12 +649,13 @@ test("spatial involute anchor and string lengths share the bounded scalar parser
     .getByLabel("Construction", { exact: true })
     .selectOption("involute");
   const involute = async () => (await spatialConfig(stage))?.involute;
-  for (const [name, text, read, value] of [
-    ["Anchor t₀", "pi/2", (i: any) => i.anchor, Math.PI / 2],
-    ["String length c", "-e", (i: any) => i.offset, -Math.E],
+  // Optional chaining throughout: see spatialConfig.
+  for (const [name, text, key, value] of [
+    ["Anchor t₀", "pi/2", "anchor", Math.PI / 2],
+    ["String length c", "-e", "offset", -Math.E],
   ] as const) {
     await field(page, name).fill(text);
-    await expect.poll(async () => read(await involute())).toBe(value);
+    await expect.poll(async () => (await involute())?.[key]).toBe(value);
     await expect(field(page, name)).toHaveValue(text);
   }
   await page.getByRole("checkbox", { name: "Family of involutes" }).check();
@@ -663,7 +664,9 @@ test("spatial involute anchor and string lengths share the bounded scalar parser
     ["c to", "2*pi", "to", 2 * Math.PI],
   ] as const) {
     await field(page, name).fill(text);
-    await expect.poll(async () => (await involute())?.family[key]).toBe(value);
+    await expect
+      .poll(async () => (await involute())?.family?.[key])
+      .toBe(value);
   }
   for (const name of ["Anchor t₀", "c from", "c to"]) {
     for (const variable of ["t", "a"]) {
