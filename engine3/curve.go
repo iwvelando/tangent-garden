@@ -43,13 +43,31 @@ func compile(c Request) (evaluation, float64, float64, bool, error) {
 		}
 		return func(t float64) (Vec3, Vec3, Vec3, bool) { r, v, a := knot(c, t); return r, v, a, true }, 0, 2 * math.Pi, true, nil
 	}
+	domain := func(lo, hi float64) error {
+		span := hi - lo
+		if !finite(lo) || !finite(hi) || math.Abs(lo) > 1e6 || math.Abs(hi) > 1e6 || span < 1e-6 || span > 1e5 {
+			return fmt.Errorf("domain start must be below end, within ±1000000, with width 0.000001–100000")
+		}
+		return nil
+	}
+	if c.Format == "harmonic" {
+		h := c.Harmonic
+		if err := domain(h.Min, h.Max); err != nil {
+			return nil, 0, 0, false, err
+		}
+		if err := h.validate(); err != nil {
+			return nil, 0, 0, false, err
+		}
+		_, _, closed := h.closure()
+		return h.evaluate, h.Min, h.Max, closed, nil
+	}
 	if c.Format != "parametric" {
 		return nil, 0, 0, false, fmt.Errorf("unknown spatial curve definition")
 	}
 	q := c.Curve
 	span := q.Max - q.Min
-	if !finite(q.Min) || !finite(q.Max) || math.Abs(q.Min) > 1e6 || math.Abs(q.Max) > 1e6 || span < 1e-6 || span > 1e5 {
-		return nil, 0, 0, false, fmt.Errorf("domain start must be below end, within ±1000000, with width 0.000001–100000")
+	if err := domain(q.Min, q.Max); err != nil {
+		return nil, 0, 0, false, err
 	}
 	expressions := make([]expr.Expr, 3)
 	for i, s := range []string{q.X, q.Y, q.Z} {

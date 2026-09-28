@@ -741,3 +741,52 @@ test("spatial inversion center, radius and derived pole share the bounded scalar
     await expect(page.getByRole("alert")).toHaveCount(0);
   }
 });
+
+test("spatial harmonic center, term, and domain fields share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("harmonic");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly (string | number)[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  const term = (k: number, ...rest: string[]) => [
+    "harmonic",
+    "terms",
+    k,
+    ...rest,
+  ];
+  // The default harmonic trefoil keeps turning under every value below.
+  for (const [name, text, value, path] of [
+    ["c₀ x", "pi/2", Math.PI / 2, ["harmonic", "center", "x"]],
+    ["c₀ y", "-e", -Math.E, ["harmonic", "center", "y"]],
+    ["c₀ z", "phi", phi, ["harmonic", "center", "z"]],
+    ["Frequency ω₁", "sqrt(2)", Math.SQRT2, term(0, "frequency")],
+    ["A₁ x", "1/phi", 1 / phi, term(0, "cosine", "x")],
+    ["A₁ y", "e/10", Math.E / 10, term(0, "cosine", "y")],
+    ["A₁ z", "-pi/10", -Math.PI / 10, term(0, "cosine", "z")],
+    ["B₁ x", "1/e", 1 / Math.E, term(0, "sine", "x")],
+    ["B₁ y", "phi/2", phi / 2, term(0, "sine", "y")],
+    ["B₁ z", "-1/pi", -1 / Math.PI, term(0, "sine", "z")],
+    ["Frequency ω₃", "-pi", -Math.PI, term(2, "frequency")],
+    ["B₃ z", "e/5", Math.E / 5, term(2, "sine", "z")],
+    ["t from", "-pi", -Math.PI, ["harmonic", "min"]],
+    ["to", "3*pi/2", (3 * Math.PI) / 2, ["harmonic", "max"]],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(path)).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});

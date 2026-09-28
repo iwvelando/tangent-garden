@@ -17,14 +17,27 @@ export type InversionConfig = {
   radius: number;
   input: InversionInput;
 };
+// One generating vector A cos(ωt) + B sin(ωt) of a spatial harmonic curve
+// r(t) = c₀ + Σ[A_k cos(ω_k t) + B_k sin(ω_k t)]. Mirrors engine3.HarmonicTerm.
+export type HarmonicTerm = { frequency: number; cosine: Vec3; sine: Vec3 };
+// The domain is input: the curve is closed only when it spans whole periods.
+// Mirrors engine3.HarmonicCurve; at most 8 terms.
+export type HarmonicCurve = {
+  center: Vec3;
+  terms: HarmonicTerm[];
+  min: number;
+  max: number;
+};
+export const maxHarmonicTerms = 8;
 export type SpatialConfig = {
-  format: "torus" | "parametric";
+  format: "torus" | "parametric" | "harmonic";
   // `length` is the tangent reach, used only by the developable.
   construction:
     "developable" | "involute" | "tangent-foot" | "orthotomic" | "inversion";
   pole: Vec3;
   inversion: InversionConfig;
   involute: InvoluteConfig;
+  harmonic: HarmonicCurve;
   curve: {
     x: string;
     y: string;
@@ -58,6 +71,8 @@ export type SpatialResult = {
   involute?: InvoluteResult;
   projection?: ProjectionResult;
   inversion?: InversionResult;
+  // Present for a harmonic curve under any construction.
+  harmonic?: SpatialHarmonicResult;
 };
 export type InvoluteResult = {
   members: { offset: number; points: (Vec3 | null)[]; collapsed: boolean }[];
@@ -97,6 +112,17 @@ export type InversionResult = {
   collapsed: boolean;
   invalid: number;
   crossings: number;
+};
+// Mirrors engine3.HarmonicResult. Terms keep their input order, even when
+// zero. Joints[k] is where term k's vector starts at a representative
+// sample; period is 0 when the curve never repeats.
+export type SpatialHarmonicResult = {
+  center: Vec3;
+  terms: HarmonicTerm[];
+  period: number;
+  whole: boolean;
+  closed: boolean;
+  positions: { sampleIndex: number; joints: Vec3[]; point: Vec3 }[];
 };
 export const usesSpatialPole = (c: SpatialConfig) =>
   c.construction === "tangent-foot" ||

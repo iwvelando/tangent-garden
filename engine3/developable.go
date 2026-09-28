@@ -34,6 +34,7 @@ type Request struct {
 	Construction string           `json:"construction"`
 	Involute     InvoluteRequest  `json:"involute"`
 	Pole         Vec3             `json:"pole"`
+	Harmonic     HarmonicCurve    `json:"harmonic"`
 	Inversion    InversionRequest `json:"inversion"`
 	Curve        Curve            `json:"curve"`
 	Radius       float64          `json:"radius"`
@@ -71,6 +72,8 @@ type Result struct {
 	Involute   *InvoluteResult   `json:"involute,omitempty"`
 	Projection *ProjectionResult `json:"projection,omitempty"`
 	Inversion  *InversionResult  `json:"inversion,omitempty"`
+	// Harmonic is present only for a harmonic curve, under any construction.
+	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -132,7 +135,9 @@ func Compute(c Request) (Result, error) {
 		out.Plus[i] = &plus
 		b := v.cross(a)
 		scale := math.Max(a.norm(), v.norm()/(hi-lo))
-		if c.Format != "parametric" {
+		if c.Format == "harmonic" {
+			scale = c.Harmonic.curvatureScale()
+		} else if c.Format != "parametric" {
 			scale = float64(c.P*c.P)*(c.Radius+c.Tube) + float64(2*c.P*c.Q+c.Q*c.Q)*c.Tube
 		}
 		tolerance := 1e-8
@@ -192,10 +197,16 @@ func Compute(c Request) (Result, error) {
 	if out.Invalid == n+1 {
 		return Result{}, fmt.Errorf("no regular finite samples; check the expressions and domain")
 	}
+	// A harmonic curve's generating vectors and ellipses frame as their own
+	// families under every construction.
+	var generating [][]*Vec3
+	if c.Format == "harmonic" {
+		out.Harmonic, generating = harmonicGeometry(c, lo, hi)
+	}
 	if projection {
 		out.Projection = projections(c, out.Base, tangents)
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
-		out.Bounds = fit(out.Base, out.Projection.Points, out.Projection.Feet, []*Vec3{&out.Projection.Pole})
+		out.Bounds = fit(append([][]*Vec3{out.Base, out.Projection.Points, out.Projection.Feet, {&out.Projection.Pole}}, generating...)...)
 		out.Radius = out.Bounds.Radius
 		return out, nil
 	}
@@ -204,7 +215,7 @@ func Compute(c Request) (Result, error) {
 		out.Inversion = q
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
 		// A base source repeats the base, which leaves the fit unchanged.
-		out.Bounds = fit(out.Base, q.Source, q.Points, []*Vec3{&q.Center})
+		out.Bounds = fit(append([][]*Vec3{out.Base, q.Source, q.Points, {&q.Center}}, generating...)...)
 		out.Radius = out.Bounds.Radius
 		return out, nil
 	}
@@ -219,7 +230,7 @@ func Compute(c Request) (Result, error) {
 		for _, m := range result.Members {
 			families = append(families, m.Points)
 		}
-		out.Bounds = fit(families...)
+		out.Bounds = fit(append(families, generating...)...)
 		out.Radius = out.Bounds.Radius
 		return out, nil
 	}
@@ -229,7 +240,7 @@ func Compute(c Request) (Result, error) {
 			out.Rulings = append(out.Rulings, Ruling{j, *out.Minus[j], *out.Plus[j]})
 		}
 	}
-	out.Bounds = fit(out.Base, out.Minus, out.Plus)
+	out.Bounds = fit(append([][]*Vec3{out.Base, out.Minus, out.Plus}, generating...)...)
 	out.Radius = out.Bounds.Radius
 	return out, nil
 }
