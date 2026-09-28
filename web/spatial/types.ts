@@ -88,8 +88,21 @@ export type FieldConfig = {
   a: number;
 };
 export const maxSpatialSeeds = 12;
+// A pursuer starts at (x, y, z) at t = min and runs straight at the next,
+// the last at the first, at its own constant speed.
+export type SpatialPursuer = Vec3 & { speed: number };
+// A spatial cyclic pursuit from t = min to max. The chase stops for everyone
+// the first time any pursuer comes within `capture` of its own target. The
+// first pursuer's path is the base curve. Mirrors engine3.PursuitRequest.
+export type SpatialPursuitConfig = {
+  pursuers: SpatialPursuer[];
+  capture: number;
+  min: number;
+  max: number;
+};
+export const maxSpatialPursuers = 16;
 export type SpatialConfig = {
-  format: "torus" | "parametric" | "harmonic" | "field";
+  format: "torus" | "parametric" | "harmonic" | "field" | "pursuit";
   // `length` is the tangent reach, used only by the developable.
   construction:
     | "developable"
@@ -109,6 +122,7 @@ export type SpatialConfig = {
   ruled: RuledConfig;
   canal: CanalConfig;
   field: FieldConfig;
+  pursuit: SpatialPursuitConfig;
   curve: {
     x: string;
     y: string;
@@ -146,6 +160,8 @@ export type SpatialResult = {
   harmonic?: SpatialHarmonicResult;
   // Present for a vector field under any construction.
   field?: SpatialFieldResult;
+  // Present for a pursuit under any construction.
+  pursuit?: SpatialPursuitResult;
   // Present only for the framed construction; its ribbon fills mesh, minus,
   // plus, and rulings, joined across frame.breaks rather than breaks.
   frame?: FrameResult;
@@ -300,4 +316,17 @@ export type SpatialFieldResult = {
   }[];
   resting: boolean[];
   timed: boolean;
+};
+// Mirrors engine3.PursuitResult. Paths are indexed like base, the first
+// being the base; polygons join every pursuer, in chase order, at the
+// representative samples. The chase is known from min to end: max, the
+// capture (pursuer and target from 0), or where the step budget ran out.
+// Final is every pursuer's position at end.
+export type SpatialPursuitResult = {
+  paths: (Vec3 | null)[][];
+  polygons: { sampleIndex: number; points: Vec3[] }[];
+  capture: { time: number; pursuer: number; target: number } | null;
+  exhausted: boolean;
+  end: number;
+  final: Vec3[];
 };

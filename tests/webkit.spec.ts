@@ -140,6 +140,7 @@ for (const [preset, name] of [
   ["18", "ruled harmonic loom"],
   ["23", "canal surface with a vanishing envelope"],
   ["25", "vector-field trajectories standing alone"],
+  ["27", "spatial cyclic pursuit with connecting polygons"],
 ])
   test(`spatial ${name} renders and exports through WebKit WebGL and H.264`, async ({
     page,

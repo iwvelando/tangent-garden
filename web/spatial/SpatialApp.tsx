@@ -15,7 +15,12 @@ import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
-import { animationCamera, seedLabel, type AnimationView } from "./animation";
+import {
+  animationCamera,
+  seedLabel,
+  spatialPursuerLabels,
+  type AnimationView,
+} from "./animation";
 import {
   maxFrameStrands,
   maxHarmonicTerms,
@@ -24,8 +29,10 @@ import {
   type RuledConfig,
   type CanalConfig,
   type FieldConfig,
+  type SpatialPursuitConfig,
   maxMeridians,
   maxSpatialSeeds,
+  maxSpatialPursuers,
   type HarmonicCurve,
   type SpatialConfig,
   type Frame,
@@ -41,6 +48,7 @@ import { frameNote } from "./frame";
 import { ruledNote } from "./ruled";
 import { canalNote } from "./canal";
 import { fieldNote, nextSpatialSeed } from "./field";
+import { nextSpatialPursuer, pursuitNote } from "./pursuit";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -151,7 +159,12 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     await Promise.allSettled([...jobs.current]);
     if (token !== generation.current) return;
     setConfig((c) => {
-      if (format === "torus" || format === "harmonic" || format === "field")
+      if (
+        format === "torus" ||
+        format === "harmonic" ||
+        format === "field" ||
+        format === "pursuit"
+      )
         return { ...c, format };
       // Preserve an edited custom definition. A generated knot can also be opened
       // as expressions, with every pending scalar resolved before conversion.
@@ -180,6 +193,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const canal = config.construction === "canal";
   const none = config.construction === "none";
   const flowing = config.format === "field";
+  const chasing = config.format === "pursuit";
   const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
     update((c) => ({ ...c, canal: change(c.canal) }));
   const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
@@ -469,6 +483,131 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             )
           : "Integrating…"}
       </p>
+    </>
+  );
+  const setPursuit = (
+    change: (q: SpatialPursuitConfig) => SpatialPursuitConfig,
+  ) => update((c) => ({ ...c, pursuit: change(c.pursuit) }));
+  // Adding or removing a pursuer renumbers the fields after it, so
+  // evaluations still pending for them land first; a preset chosen meanwhile
+  // wins.
+  async function editPursuers(
+    change: (
+      pursuers: SpatialPursuitConfig["pursuers"],
+    ) => SpatialPursuitConfig["pursuers"],
+  ) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    setPursuit((q) => ({ ...q, pursuers: change(q.pursuers) }));
+  }
+  const chase =
+    frame?.config.format === "pursuit" ? frame.result.pursuit : undefined;
+  const captured =
+    chase?.capture && chase.capture.time > frame!.config.pursuit.min
+      ? chase.capture
+      : undefined;
+  const pursuitControls = (
+    <>
+      <p className="note">
+        Each pursuer starts at (x, y, z) (within ±100,000) when t is at the
+        interval start and runs straight at the next one, the last at the first,
+        at its own speed v (0–100,000). The first pursuer&rsquo;s path is the
+        curve a construction uses.
+      </p>
+      {config.pursuit.pursuers.map((pursuer, i, all) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`spatial-pursuer-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`spatial-pursuer-${i}`}>
+              Pursuer {i + 1}, chasing {i + 1 === all.length ? 1 : i + 2}
+            </span>
+            <button
+              type="button"
+              aria-label={`Remove pursuer ${i + 1}`}
+              disabled={all.length === 2}
+              onClick={() =>
+                void editPursuers((p) => p.filter((_, j) => j !== i))
+              }
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair quad">
+            {(["X", "Y", "Z", "Speed"] as const).map((field) => {
+              const key = field.toLowerCase() as "x" | "y" | "z" | "speed";
+              return vector(
+                spatialPursuerLabels[field](i + 1),
+                pursuer[key],
+                (value) =>
+                  setPursuit((q) => ({
+                    ...q,
+                    pursuers: q.pursuers.map((p, j) =>
+                      j === i ? { ...p, [key]: value } : p,
+                    ),
+                  })),
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <button
+        className="closure"
+        type="button"
+        disabled={config.pursuit.pursuers.length >= maxSpatialPursuers}
+        onClick={() => void editPursuers((p) => [...p, nextSpatialPursuer(p)])}
+      >
+        {config.pursuit.pursuers.length >= maxSpatialPursuers
+          ? "At most 16 pursuers"
+          : "Add a pursuer"}
+      </button>
+      <div className="pair">
+        {(
+          [
+            ["min", "t from"],
+            ["max", "to"],
+          ] as const
+        ).map(([key, label]) => (
+          <Field label={label} key={key}>
+            <ScalarInput
+              name={label}
+              value={config.pursuit[key]}
+              onChange={(value) => setPursuit((q) => ({ ...q, [key]: value }))}
+            />
+          </Field>
+        ))}
+      </div>
+      {vector(
+        "Capture distance ε",
+        config.pursuit.capture,
+        (value) => setPursuit((q) => ({ ...q, capture: value })),
+        "A pursuer’s direction is undefined on its target, so the chase stops, for everyone, the first time any pursuer comes this close to its own target (0–100,000). Nobody merges or changes target.",
+      )}
+      <p className="note" data-testid="pursuit-note">
+        {chase
+          ? pursuitNote(
+              chase,
+              frame!.config.pursuit.min,
+              frame!.config.construction !== "none",
+            )
+          : "Chasing…"}
+      </p>
+      {captured && (
+        <button
+          className="closure"
+          type="button"
+          onClick={() => {
+            setPreset("");
+            setPursuit((q) => ({ ...q, max: captured.time }));
+          }}
+        >
+          End the interval at the capture
+        </button>
+      )}
     </>
   );
   const failure = scalarError
@@ -798,7 +937,38 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     </>
   );
   const behind = none ? (
-    flowing ? (
+    chasing ? (
+      <StudyExplanation
+        label="BEHIND THE CHASE"
+        title="Pursuers closing in space."
+        formula={
+          <>
+            pᵢ′ = vᵢ (pᵢ₊₁ − pᵢ) / |pᵢ₊₁ − pᵢ| <span>pᵢ(t₀) = start</span>
+          </>
+        }
+        note="Grey polygons join the pursuers, in chase order, at evenly spaced times; crosses mark the starts and, when the chase stops early, where everyone stood."
+        diagnostics={
+          shown?.result.pursuit &&
+          (shown.result.pursuit.capture || shown.result.pursuit.exhausted) && (
+            <p className="bottom-note">
+              The chase is never continued past a capture or its step budget:
+              later samples are left empty, and nobody merges or changes target.
+            </p>
+          )
+        }
+      >
+        <p>
+          Each pursuer runs straight at the next, the last at the first, each at
+          its own speed. From a regular polygon the chase keeps its shape as it
+          turns and shrinks, tracing logarithmic spirals; from a regular
+          tetrahedron the four spiral down a paraboloid, carried each to the
+          next by a quarter turn and a reflection. Out of any plane, the paths
+          twist through space. A pursuer&rsquo;s direction is undefined on its
+          target, so the chase stops the moment anyone comes within the capture
+          distance of their own.
+        </p>
+      </StudyExplanation>
+    ) : flowing ? (
       <StudyExplanation
         label="BEHIND THE FLOW"
         title="Paths that follow a field."
@@ -1136,12 +1306,17 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <option value="field">
                     Vector field · trajectories r′ = V
                   </option>
+                  <option value="pursuit">
+                    Pursuit · each chases the next
+                  </option>
                 </select>
               </Field>
               {config.format === "harmonic" ? (
                 harmonicControls
               ) : flowing ? (
                 fieldControls
+              ) : chasing ? (
+                pursuitControls
               ) : config.format === "torus" ? (
                 <>
                   {(
@@ -1510,7 +1685,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             Constant expressions welcome: pi, e, phi.
           </p>
           {/* The curve alone, unless a field or harmonic, has no layers. */}
-          {!(none && !flowing && config.format !== "harmonic") && (
+          {!(none && !flowing && !chasing && config.format !== "harmonic") && (
             <fieldset className="spatial-layers">
               <legend>Reveal the construction</legend>
               {[
@@ -1581,6 +1756,13 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                       ["seeds", "Seeds & early stops"],
                     ] as const)
                   : []),
+                ...(chasing
+                  ? ([
+                      ["trajectories", "Other pursuers"],
+                      ["polygons", "Connecting polygons"],
+                      ["seeds", "Starts & capture"],
+                    ] as const)
+                  : []),
               ].map(([key, label]) => (
                 <label key={key}>
                   <input
@@ -1614,7 +1796,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 none
                   ? flowing
                     ? "Field arrows"
-                    : "Representative samples"
+                    : chasing
+                      ? "Connecting polygons"
+                      : "Representative samples"
                   : canal
                     ? "Contact circles"
                     : ruled
@@ -1658,7 +1842,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               field&rsquo;s trajectories are integrated with adaptive
               Dormand&ndash;Prince steps, each to its own error tolerance and
               within 50,000 steps, and sampled at the same evenly spaced times;
-              the first one&rsquo;s velocity is the field itself.
+              the first one&rsquo;s velocity is the field itself. A chase is
+              integrated the same way, as one system, within 40,000 steps, and
+              the first pursuer&rsquo;s velocity and acceleration come from the
+              pursuit law itself.
             </p>
           </details>
           {failure && (
@@ -1671,7 +1858,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
+                : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -1709,7 +1896,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 {none
                   ? flowing
                     ? "Paths that follow a field"
-                    : "A curve in space"
+                    : chasing
+                      ? "Pursuers closing in space"
+                      : "A curve in space"
                   : canal
                     ? "A surface enveloping spheres"
                     : ruled
@@ -1772,12 +1961,20 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             <div className="plot-meta">
               <div className="legend">
                 <span className="thread-dot" />{" "}
-                {flowing ? "Trajectory 1" : "Base curve"}{" "}
-                {!(none && !flowing) && <span className="ribbon-dot" />}{" "}
+                {flowing
+                  ? "Trajectory 1"
+                  : chasing
+                    ? "Pursuer 1"
+                    : "Base curve"}{" "}
+                {!(none && !flowing && !chasing) && (
+                  <span className="ribbon-dot" />
+                )}{" "}
                 {none
                   ? flowing
                     ? "Other trajectories"
-                    : ""
+                    : chasing
+                      ? "Other pursuers"
+                      : ""
                   : canal
                     ? "Canal surface"
                     : ruled

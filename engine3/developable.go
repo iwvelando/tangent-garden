@@ -33,7 +33,8 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // the partner described by Ruled, or "canal" for the envelope of spheres
 // described by Canal, whose angle is carried by Frame, or "none" for the
 // curve alone. Length applies only to the developable. Format "field" makes
-// the base the first trajectory of the vector field described by Field.
+// the base the first trajectory of the vector field described by Field, and
+// "pursuit" the first pursuer's path in the chase described by Pursuit.
 type Request struct {
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
@@ -45,6 +46,7 @@ type Request struct {
 	Ruled        RuledRequest     `json:"ruled"`
 	Canal        CanalRequest     `json:"canal"`
 	Field        FieldRequest     `json:"field"`
+	Pursuit      PursuitRequest   `json:"pursuit"`
 	Curve        Curve            `json:"curve"`
 	Radius       float64          `json:"radius"`
 	Tube         float64          `json:"tube"`
@@ -95,6 +97,8 @@ type Result struct {
 	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
 	// Field is present only for a vector field, under any construction.
 	Field *FieldResult `json:"field,omitempty"`
+	// Pursuit is present only for a spatial pursuit, under any construction.
+	Pursuit *PursuitResult `json:"pursuit,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -163,13 +167,24 @@ func Compute(c Request) (Result, error) {
 		}
 	}
 	var flow *flowCurve
+	var chase *spatialChase
+	var integrated evaluation
 	if c.Format == "field" {
 		var err error
 		if flow, err = c.Field.compile(); err != nil {
 			return Result{}, err
 		}
+		integrated = flow.flows[0].evaluation(flow.f, c.Field.Max-c.Field.Min)
 	}
-	evaluate, lo, hi, closed, err := compile(c, flow)
+	if c.Format == "pursuit" {
+		var err error
+		if chase, err = c.Pursuit.compile(); err != nil {
+			return Result{}, err
+		}
+		integrated = chase.evaluation()
+	}
+	evaluate, lo, hi, closed, err := compile(c, integrated)
+	dynamic := c.Format == "field" || c.Format == "pursuit"
 	if err != nil {
 		return Result{}, err
 	}
@@ -208,11 +223,11 @@ func Compute(c Request) (Result, error) {
 		scale := math.Max(a.norm(), v.norm()/(hi-lo))
 		if c.Format == "harmonic" {
 			scale = c.Harmonic.curvatureScale()
-		} else if c.Format != "parametric" && c.Format != "field" {
+		} else if c.Format != "parametric" && !dynamic {
 			scale = float64(c.P*c.P)*(c.Radius+c.Tube) + float64(2*c.P*c.Q+c.Q*c.Q)*c.Tube
 		}
 		tolerance := 1e-8
-		if c.Format == "parametric" || c.Format == "field" {
+		if c.Format == "parametric" || dynamic {
 			tolerance = 1e-6
 		} // numerical second derivatives have a finite noise floor
 		valid[i] = a.valid() && b.norm() > tolerance*v.norm()*scale
@@ -263,7 +278,8 @@ func Compute(c Request) (Result, error) {
 		}
 	}
 	// A harmonic curve's generating vectors and ellipses, and a field's
-	// trajectories, frame as their own families under every construction.
+	// trajectories or a pursuit's paths, frame as their own families under
+	// every construction.
 	var generating [][]*Vec3
 	if c.Format == "harmonic" {
 		out.Harmonic, generating = harmonicGeometry(c, lo, hi)
@@ -271,15 +287,22 @@ func Compute(c Request) (Result, error) {
 	if c.Format == "field" {
 		out.Field, generating = fieldGeometry(c, flow.f, flow.timed, flow.flows)
 	}
+	if c.Format == "pursuit" {
+		out.Pursuit, generating = pursuitGeometry(c, chase)
+	}
 	if out.Invalid == n+1 {
-		if c.Format != "field" {
+		switch {
+		case !dynamic:
 			return Result{}, fmt.Errorf("no regular finite samples; check the expressions and domain")
-		}
-		if !none {
+		case c.Format == "field" && !none:
 			return Result{}, fmt.Errorf("trajectory 1 has no regular sample: its seed rests, escapes, or meets a singularity at once; choose another first seed")
-		}
-		if !out.Field.moves() {
+		case c.Format == "pursuit" && !none:
+			return Result{}, fmt.Errorf("pursuer 1 has no regular sample: it stands still or is caught at once; give it a speed or move it")
+		case !moves(generating) && c.Format == "field":
 			return Result{}, fmt.Errorf("no trajectory moves; check the field, seeds, and escape radius")
+		case !moves(generating) && (chase.Capture == nil || chase.Capture.Time > lo):
+			// A chase caught at once is drawn as its starts; its note says why.
+			return Result{}, fmt.Errorf("no pursuer moves; give a pursuer a speed or lengthen the interval")
 		}
 	}
 	if none {

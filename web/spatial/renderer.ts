@@ -17,7 +17,8 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // surface, rulings and edges, its partner thread drawn as the edge; and the
 // canal construction reuses surface, frames and seam, with its own contact
 // circles and meridians; trajectories, arrows and seeds to a vector field
-// under any construction. The base curve is always drawn.
+// under any construction, and trajectories, polygons and seeds to a pursuit,
+// whose other paths and starts they draw. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -41,6 +42,7 @@ export type Layers = {
   trajectories: boolean;
   arrows: boolean;
   seeds: boolean;
+  polygons: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -65,6 +67,7 @@ export const defaultLayers: Layers = {
   trajectories: true,
   arrows: true,
   seeds: true,
+  polygons: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -188,7 +191,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     meridians: Batch,
     trajectories: Batch,
     arrows: Batch,
-    seeds: Batch;
+    seeds: Batch,
+    polygons: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -537,11 +541,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       4,
     );
-    // The first trajectory is the base, drawn as such. The others shade from
-    // teal to gold by seed order (decorative), joined wherever both ends of
-    // an interval are known; a trajectory has no break before its end.
+    // The first trajectory or pursuer is the base, drawn as such. The others
+    // shade from teal to gold by order (decorative), joined wherever both
+    // ends of an interval are known; a path has no break before its end.
     const flow = result.field;
-    const paths = flow?.paths ?? [];
+    const chase = result.pursuit;
+    const paths = flow?.paths ?? chase?.paths ?? [];
     trajectories = batch(
       paths
         .slice(1)
@@ -574,18 +579,35 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       4,
     );
-    // Seeds, and where a trajectory stopped before the end of the interval.
+    // Seeds or starts, and where a trajectory stopped, or the whole chase
+    // stopped, before the end of the interval.
+    const early =
+      chase && (chase.capture || chase.exhausted) ? chase.final : [];
     seeds = batch(
       vertices([
-        ...(flow ? result.field!.paths.map((p) => p[0]) : [])
+        ...paths
+          .map((p) => p[0])
           .filter((p): p is Vec3 => !!p)
           .flatMap((p) => cross(p, result.bounds.radius * 0.02)),
-        ...(flow?.ends ?? [])
-          .filter((e) => e.reason !== "end" && e.point)
-          .flatMap((e) => cross(e.point!, result.bounds.radius * 0.012)),
+        ...[
+          ...(flow?.ends ?? [])
+            .filter((e) => e.reason !== "end" && e.point)
+            .map((e) => e.point!),
+          ...early,
+        ].flatMap((p) => cross(p, result.bounds.radius * 0.012)),
       ]),
       gl!.LINES,
       1,
+    );
+    // Each connecting polygon closes, the last pursuer back to the first.
+    polygons = batch(
+      vertices(
+        (chase?.polygons ?? []).flatMap((g) =>
+          g.points.flatMap((p, j) => [p, g.points[(j + 1) % g.points.length]]),
+        ),
+      ),
+      gl!.LINES,
+      4,
     );
   }
   function draw(
@@ -692,6 +714,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (layers.vectors) render(vectors);
     if (layers.ellipses) render(ellipses);
     if (layers.arrows) render(arrows);
+    if (layers.polygons) render(polygons);
     if (layers.trajectories) render(trajectories);
     render(base);
     if (layers.seeds) render(seeds);

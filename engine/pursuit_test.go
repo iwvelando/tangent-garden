@@ -208,7 +208,7 @@ var unequal = Pursuit{Pursuers: []Pursuer{{1, 0, 1}, {.2, 1.3, 1.6}, {-1.2, .1, 
 // Every pursuer heads straight at its target, at its own speed.
 func TestPursuitDirections(t *testing.T) {
 	c := newChase(unequal, 0, 3, chaseTolerance)
-	if c.capture == nil {
+	if c.Capture == nil {
 		t.Fatal("no capture")
 	}
 	n := len(unequal.Pursuers)
@@ -230,7 +230,7 @@ func TestPursuitDirections(t *testing.T) {
 	}
 	// The capture is the moment the closest pair is exactly ε apart.
 	end, _ := c.at(c.End)
-	cp := c.capture
+	cp := c.Capture
 	if cp.Target != (cp.Pursuer+1)%n || math.Abs(end[cp.Target].Sub(end[cp.Pursuer]).Norm()-unequal.Capture) > 1e-12 {
 		t.Fatalf("capture %+v at %v", cp, end)
 	}

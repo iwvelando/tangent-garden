@@ -71,6 +71,20 @@ const base: SpatialConfig = {
     max: 4 * Math.PI,
     a: 0.25,
   },
+  // Four equal pursuers from a regular tetrahedron, in turn: a quarter turn
+  // with a reflection carries each to the next, and they spiral down a
+  // paraboloid to a capture near t = 1.62.
+  pursuit: {
+    pursuers: [
+      { x: 1, y: 0, z: Math.SQRT1_2, speed: 1 },
+      { x: 0, y: 1, z: -Math.SQRT1_2, speed: 1 },
+      { x: -1, y: 0, z: Math.SQRT1_2, speed: 1 },
+      { x: 0, y: -1, z: -Math.SQRT1_2, speed: 1 },
+    ],
+    capture: 0.005,
+    min: 0,
+    max: 1.75,
+  },
   radius: 2.4,
   tube: 0.85,
   length: 2.3,
@@ -559,6 +573,73 @@ export const spatialPresets: {
         min: 0,
         max: 60,
         a: 0.2,
+      },
+    },
+  },
+  {
+    name: "Four pursuers on a tetrahedron",
+    detail:
+      "Each spirals down a paraboloid, a quarter turn and a reflection from the next",
+    config: {
+      ...base,
+      format: "pursuit",
+      construction: "none",
+      samples: 1200,
+      lines: 16,
+    },
+  },
+  {
+    name: "A chase untangling a trefoil",
+    detail: "Nine equal pursuers start around a knot and close in on a point",
+    config: {
+      ...base,
+      format: "pursuit",
+      construction: "none",
+      samples: 1600,
+      lines: 16,
+      pursuit: {
+        // Nine points along the (2, 3) torus knot, in order, rounded.
+        pursuers: [
+          { x: 3, y: 0, z: 0, speed: 1 },
+          { x: 0.26, y: 1.477, z: 0.866, speed: 1 },
+          { x: -1.41, y: 0.513, z: -0.866, speed: 1 },
+          { x: -1.5, y: -2.598, z: 0, speed: 1 },
+          { x: 1.149, y: -0.964, z: 0.866, speed: 1 },
+          { x: 1.149, y: 0.964, z: -0.866, speed: 1 },
+          { x: -1.5, y: 2.598, z: 0, speed: 1 },
+          { x: -1.41, y: -0.513, z: 0.866, speed: 1 },
+          { x: 0.26, y: -1.477, z: -0.866, speed: 1 },
+        ],
+        capture: 0.005,
+        min: 0,
+        max: 4,
+      },
+    },
+  },
+  {
+    name: "A crown of six with a tangent ribbon",
+    detail:
+      "Six pursuers on a zigzag crown; each tangent points at the one being chased",
+    config: {
+      ...base,
+      format: "pursuit",
+      construction: "developable",
+      length: 0.25,
+      samples: 1200,
+      lines: 24,
+      pursuit: {
+        // A regular hexagon's corners, alternately raised and lowered.
+        pursuers: [
+          { x: 1, y: 0, z: 0.6, speed: 1 },
+          { x: 0.5, y: 0.866, z: -0.6, speed: 1 },
+          { x: -0.5, y: 0.866, z: 0.6, speed: 1 },
+          { x: -1, y: 0, z: -0.6, speed: 1 },
+          { x: -0.5, y: -0.866, z: 0.6, speed: 1 },
+          { x: 0.5, y: -0.866, z: -0.6, speed: 1 },
+        ],
+        capture: 0.005,
+        min: 0,
+        max: 2.2,
       },
     },
   },

@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"math"
+	"tangentgarden/engine/cyclic"
 )
 
 // Pursuer is one member of a cyclic pursuit: it starts at (X, Y) at the
@@ -25,14 +26,8 @@ type Pursuit struct {
 	Capture  float64   `json:"capture"`
 }
 
-// Capture is the moment the chase stopped: pursuer Pursuer came within the
-// capture distance of Target at Time. Indices count from 0. When several
-// pairs close at once, the closest is reported, then the lowest index.
-type Capture struct {
-	Time    float64 `json:"time"`
-	Pursuer int     `json:"pursuer"`
-	Target  int     `json:"target"`
-}
+// Capture is the moment the chase stopped, shared with spatial pursuit.
+type Capture = cyclic.Capture
 
 // Polygon is the pursuers' positions, in chase order, at base sample
 // SampleIndex.
@@ -82,121 +77,15 @@ func (p Pursuit) validate() error {
 	return nil
 }
 
-// chase is an integrated pursuit, its state the pursuers' flattened
-// positions.
-type chase struct {
-	solution
-	speeds    []float64
-	eps, tol  float64
-	capture   *Capture
-	exhausted bool
-}
-
-// gap returns the smallest distance from a pursuer to its target, and that
-// pursuer, the lowest index among equals.
-func gap(y []float64) (float64, int) {
-	n := len(y) / 2
-	best, at := math.Inf(1), 0
-	for i := 0; i < n; i++ {
-		j := (i + 1) % n
-		if g := math.Hypot(y[2*j]-y[2*i], y[2*j+1]-y[2*i+1]); g < best {
-			best, at = g, i
-		} else if math.IsNaN(g) {
-			return g, i
-		}
-	}
-	return best, at
-}
-
-// velocity is the pursuit field; it is NaN where a pursuer is on its target.
-func (c *chase) velocity(_ float64, y, out []float64) {
-	n := len(y) / 2
-	for i := 0; i < n; i++ {
-		j := (i + 1) % n
-		dx, dy := y[2*j]-y[2*i], y[2*j+1]-y[2*i+1]
-		// On the target, 0/0 leaves the direction NaN.
-		d := math.Hypot(dx, dy)
-		out[2*i], out[2*i+1] = c.speeds[i]*dx/d, c.speeds[i]*dy/d
-	}
-}
+// chase is an integrated planar pursuit.
+type chase struct{ *cyclic.Chase }
 
 func newChase(p Pursuit, lo, hi, tol float64) *chase {
-	n := len(p.Pursuers)
-	c := &chase{speeds: make([]float64, n), eps: p.Capture, tol: tol}
-	c.F, c.Lo, c.Hi = c.velocity, lo, hi
-	y := make([]float64, 2*n)
-	vmax := 0.0
+	y, speeds := make([]float64, 2*len(p.Pursuers)), make([]float64, len(p.Pursuers))
 	for i, q := range p.Pursuers {
-		y[2*i], y[2*i+1], c.speeds[i] = q.X, q.Y, q.Speed
-		vmax = math.Max(vmax, q.Speed)
+		y[2*i], y[2*i+1], speeds[i] = q.X, q.Y, q.Speed
 	}
-	c.Ts, c.Ys = []float64{lo}, [][]float64{y}
-	t, h := lo, hi-lo
-	for attempts := 0; ; attempts++ {
-		g0, i := gap(y)
-		// Within a hair of ε, the pursuer has caught its target. The hair
-		// allows for rounding in the pair's own coordinates.
-		j := (i + 1) % n
-		pair := math.Max(math.Max(math.Abs(y[2*i]), math.Abs(y[2*i+1])), math.Max(math.Abs(y[2*j]), math.Abs(y[2*j+1])))
-		if !(g0-c.eps > 1e-12*c.eps+1e-14*pair) {
-			c.stop(t, i)
-			return c
-		}
-		if t >= hi {
-			break
-		}
-		if attempts >= maxChaseSteps {
-			c.exhausted = true
-			break
-		}
-		// No gap closes faster than the two speeds in it together, so no
-		// pursuer can come within ε of its target during a step this short.
-		// Near a capture the steps shrink with the remaining gap, and the
-		// chase stops once that is negligible.
-		if vmax > 0 {
-			h = math.Min(h, (g0-c.eps)/(2*vmax))
-		}
-		last := t+h >= hi
-		if last {
-			h = hi - t
-		}
-		next, e := dormandPrince(c.F, t, y, h, true)
-		size := 0.0
-		for q := range e {
-			size = math.Max(size, math.Abs(e[q])/(tol*g0+1e-14*math.Abs(y[q])))
-		}
-		if math.IsNaN(size) {
-			size = math.Inf(1)
-		}
-		if size > 1 {
-			h *= math.Max(.2, .9*math.Pow(size, -.2))
-			if t+h == t {
-				c.exhausted = true
-				break
-			}
-			continue
-		}
-		// The step cannot close any gap past ε; rounding can only bring it
-		// to ε, and the next pass stops there.
-		if t += h; last {
-			t = hi
-		}
-		c.Ts, c.Ys, y = append(c.Ts, t), append(c.Ys, next), next
-		if size == 0 {
-			h *= 5
-		} else {
-			h *= math.Min(5, .9*math.Pow(size, -.2))
-		}
-	}
-	c.End = t
-	c.Complete = t >= hi && !c.exhausted
-	return c
-}
-
-func (c *chase) stop(t float64, i int) {
-	n := len(c.speeds)
-	c.capture = &Capture{Time: t, Pursuer: i, Target: (i + 1) % n}
-	c.End = t
+	return &chase{cyclic.Run(y, 2, speeds, p.Capture, lo, hi, tol, maxChaseSteps)}
 }
 
 // at returns every pursuer's position at t, while the chase is known.
@@ -224,7 +113,7 @@ func (c *chase) pursuer(i int) curveFunc {
 }
 
 func newPursuitResult(c *chase, samples int) *PursuitResult {
-	out := &PursuitResult{Paths: make([][]*Vec, len(c.speeds)), Polygons: []Polygon{}, Capture: c.capture, Exhausted: c.exhausted, End: c.End}
+	out := &PursuitResult{Paths: make([][]*Vec, len(c.Speeds)), Polygons: []Polygon{}, Capture: c.Capture, Exhausted: c.Exhausted, End: c.End}
 	for i := range out.Paths {
 		out.Paths[i] = make([]*Vec, samples)
 	}
