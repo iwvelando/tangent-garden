@@ -8,6 +8,7 @@ test-go:
 	go test -race -cover ./...
 test-wasm: wasm
 	node scripts/test-wasm.mjs
+	node scripts/test-dev-worker.mjs
 typecheck:
 	npx tsc --noEmit
 vet:
