@@ -262,6 +262,8 @@ jobs:
   # A real browser against the live site, after the deploy. No AWS credentials.
   smoke:
     needs: deploy
+    # The default success() would skip this whenever `reuse` skipped the test jobs.
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
