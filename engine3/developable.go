@@ -28,7 +28,8 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // Construction is "developable" (or empty) for the tangent developable, or
 // "involute" for the filaments described by Involute, or "tangent-foot" /
 // "orthotomic" for projections from Pole, or "inversion" for the sphere
-// inversion described by Inversion. Length applies only to the developable.
+// inversion described by Inversion, or "framed" for the ribbon and offset
+// strands described by Frame. Length applies only to the developable.
 type Request struct {
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
@@ -36,6 +37,7 @@ type Request struct {
 	Pole         Vec3             `json:"pole"`
 	Harmonic     HarmonicCurve    `json:"harmonic"`
 	Inversion    InversionRequest `json:"inversion"`
+	Frame        FrameRequest     `json:"frame"`
 	Curve        Curve            `json:"curve"`
 	Radius       float64          `json:"radius"`
 	Tube         float64          `json:"tube"`
@@ -72,6 +74,9 @@ type Result struct {
 	Involute   *InvoluteResult   `json:"involute,omitempty"`
 	Projection *ProjectionResult `json:"projection,omitempty"`
 	Inversion  *InversionResult  `json:"inversion,omitempty"`
+	// Frame is present only for the framed construction, whose ribbon uses
+	// Mesh, Minus, Plus, and Rulings with the frame's own breaks.
+	Frame *FrameResult `json:"frame,omitempty"`
 	// Harmonic is present only for a harmonic curve, under any construction.
 	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
 }
@@ -95,8 +100,9 @@ func Compute(c Request) (Result, error) {
 	involute := c.Construction == "involute"
 	projection := c.Construction == "tangent-foot" || c.Construction == "orthotomic"
 	inversion := c.Construction == "inversion"
+	framed := c.Construction == "framed"
 	developable := c.Construction == "" || c.Construction == "developable"
-	if !involute && !projection && !inversion && !developable {
+	if !involute && !projection && !inversion && !framed && !developable {
 		return Result{}, fmt.Errorf("unknown spatial construction")
 	}
 	if developable && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
@@ -107,6 +113,11 @@ func Compute(c Request) (Result, error) {
 	}
 	if inversion {
 		if err := c.Inversion.validate(c.Pole); err != nil {
+			return Result{}, err
+		}
+	}
+	if framed {
+		if err := c.Frame.validate(); err != nil {
 			return Result{}, err
 		}
 	}
@@ -202,6 +213,14 @@ func Compute(c Request) (Result, error) {
 	var generating [][]*Vec3
 	if c.Format == "harmonic" {
 		out.Harmonic, generating = harmonicGeometry(c, lo, hi)
+	}
+	if framed {
+		frames(c, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
+		families := [][]*Vec3{out.Base, out.Minus, out.Plus}
+		families = append(families, out.Frame.Strands...)
+		out.Bounds = fit(append(families, generating...)...)
+		out.Radius = out.Bounds.Radius
+		return out, nil
 	}
 	if projection {
 		out.Projection = projections(c, out.Base, tangents)

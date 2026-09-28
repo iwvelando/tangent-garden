@@ -17,8 +17,10 @@ import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
 import { animationCamera, type AnimationView } from "./animation";
 import {
+  maxFrameStrands,
   maxHarmonicTerms,
   usesSpatialPole,
+  type FrameConfig,
   type HarmonicCurve,
   type SpatialConfig,
   type Frame,
@@ -30,6 +32,7 @@ import {
   nextHarmonicTerm,
 } from "./harmonic";
 import { periodText } from "../harmonic";
+import { frameNote } from "./frame";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -163,6 +166,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   }
   const involute = config.construction === "involute";
   const inversion = config.construction === "inversion";
+  const framed = config.construction === "framed";
+  const setFraming = (change: (f: FrameConfig) => FrameConfig) =>
+    update((c) => ({ ...c, frame: change(c.frame) }));
   const projection =
     config.construction === "tangent-foot" ||
     config.construction === "orthotomic";
@@ -380,6 +386,114 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   // moves after them instead of separating the two.
   const unreached = shown?.result.involute?.unreached ?? 0;
   const inverted = shown?.result.inversion;
+  const frameResult =
+    shown?.config.construction === "framed" ? shown.result.frame : undefined;
+  const transported = config.frame.kind === "rotation-minimizing";
+  const frameControls = (
+    <>
+      <Field
+        label="Frame"
+        help="Rotation-minimizing frames are carried along without turning about the tangent. Frenet frames follow the curvature and serve only as a diagnostic."
+      >
+        <select
+          value={config.frame.kind}
+          onChange={(e) => {
+            const kind = e.target.value as FrameConfig["kind"];
+            setFraming((f) => ({ ...f, kind }));
+          }}
+        >
+          <option value="rotation-minimizing">
+            Rotation-minimizing (transported)
+          </option>
+          <option value="frenet">Frenet (diagnostic)</option>
+        </select>
+      </Field>
+      {transported && (
+        <div className="pair trio">
+          {(["x", "y", "z"] as const).map((axis) =>
+            vector(
+              `N₀ ${axis}`,
+              config.frame.reference[axis],
+              (value) =>
+                setFraming((f) => ({
+                  ...f,
+                  reference: { ...f.reference, [axis]: value },
+                })),
+              axis === "x"
+                ? "Reference normal N₀, nonzero and within ±100000. Projected onto the normal plane where each unbroken stretch begins, it sets U there."
+                : undefined,
+            ),
+          )}
+        </div>
+      )}
+      <div className="pair">
+        {vector(
+          "Angle θ₀",
+          config.frame.angle,
+          (angle) => setFraming((f) => ({ ...f, angle })),
+          "Where D starts, in radians from U towards V, within ±1000.",
+        )}
+        {vector(
+          "Twist (turns)",
+          config.frame.twist,
+          (twist) => setFraming((f) => ({ ...f, twist })),
+          "Turns of D about the tangent, spread by arc length over the curve, within ±100.",
+        )}
+      </div>
+      <div className="pair">
+        {vector(
+          "Half-width w",
+          config.frame.width,
+          (width) => setFraming((f) => ({ ...f, width })),
+          "The ribbon spans −w to w along D. 0 hides it; at most 100000.",
+        )}
+        {vector(
+          "Offset d",
+          config.frame.offset,
+          (offset) => setFraming((f) => ({ ...f, offset })),
+          "Distance of each strand r + dD from the curve, from 0 to 100000.",
+        )}
+      </div>
+      <Field
+        label="Offset strands"
+        help={`From 0 to ${maxFrameStrands} offset curves, spaced evenly around the tangent.`}
+      >
+        <input
+          type="number"
+          min="0"
+          max={maxFrameStrands}
+          step="1"
+          value={Number.isNaN(config.frame.strands) ? "" : config.frame.strands}
+          onChange={(e) => {
+            const strands = e.target.valueAsNumber;
+            setFraming((f) => ({ ...f, strands }));
+          }}
+        />
+      </Field>
+      {transported && (
+        <Field
+          label="Closed-loop seam"
+          help="On an unbroken closed loop the carried frame can return turned. Show that seam, or spread the opposite twist evenly along the loop."
+        >
+          <select
+            value={config.frame.closure}
+            onChange={(e) => {
+              const closure = e.target.value as FrameConfig["closure"];
+              setFraming((f) => ({ ...f, closure }));
+            }}
+          >
+            <option value="seam">Show the seam</option>
+            <option value="distribute">Distribute the correction</option>
+          </select>
+        </Field>
+      )}
+      <p className="note" data-testid="frame-note">
+        {frameResult
+          ? frameNote(frameResult).join(" ")
+          : "Carrying the frame along the curve…"}
+      </p>
+    </>
+  );
   const poleFields = (
     <>
       <div className="pair">
@@ -416,7 +530,40 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </Field>
     </>
   );
-  const behind = inversion ? (
+  const behind = framed ? (
+    <StudyExplanation
+      label="BEHIND THE FRAME"
+      title="A ribbon carried without twisting."
+      formula={
+        <>
+          S(t, u) = r(t) + u D(t) <span>D = cos θ U + sin θ V</span>
+        </>
+      }
+      note="At representative samples the longer arm marks U, the shorter V, and the grey arm the tangent T. Gold arms at the start of a closed loop mark the seam."
+      diagnostics={
+        shown &&
+        (shown.result.invalid > 0 || shown.result.omitted > 0) && (
+          <p className="bottom-note">
+            {shown.result.invalid} invalid samples · {shown.result.omitted}{" "}
+            intervals without a ribbon. A frame is never joined across a break
+            in the curve or a reversal of its normal.
+          </p>
+        )
+      }
+    >
+      <p>
+        At each point of the curve, the tangent T leaves a whole plane of normal
+        directions, and a <em>frame</em> picks two of them, U and V. A
+        rotation-minimizing frame carries U along as if on a wire, turning only
+        as much as the tangent forces it to. The ribbon and the offset strands
+        lean in the direction D, turned by θ within that frame. Twist is a
+        property of this geometry, not of the rotating view, and this ribbon is
+        a framed surface, not a tangent developable. Around a closed loop the
+        carried frame can come back turned: that angle belongs to the curve
+        itself.
+      </p>
+    </StudyExplanation>
+  ) : inversion ? (
     <StudyExplanation
       label="BEHIND THE SPHERE"
       title="Space turned inside out around one point."
@@ -732,9 +879,12 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <option value="tangent-foot">Tangent-foot projection</option>
                   <option value="orthotomic">Tangent-line orthotomic</option>
                   <option value="inversion">Sphere inversion</option>
+                  <option value="framed">Framed ribbon · offset strands</option>
                 </select>
               </Field>
-              {inversion ? (
+              {framed ? (
+                frameControls
+              ) : inversion ? (
                 <>
                   <Field
                     label="Curve to invert"
@@ -963,31 +1113,42 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           <fieldset className="spatial-layers">
             <legend>Reveal the construction</legend>
             {[
-              ...(inversion
+              ...(framed
                 ? ([
-                    ["inverse", "Inverted curve"],
-                    ["correspondences", "Correspondence segments"],
-                    ["sphere", "Inversion sphere & center"],
-                    ...(config.inversion.input === "base"
-                      ? []
-                      : ([["source", "Projection & pole"]] as const)),
+                    ["surface", "Ribbon surface"],
+                    ["rulings", "Cross-lines"],
+                    ["edges", "Ribbon edges"],
+                    ["strands", "Strands"],
+                    ["frames", "Frames"],
+                    ...(frameResult?.closed
+                      ? ([["seam", "Seam"]] as const)
+                      : []),
                   ] as const)
-                : projection
+                : inversion
                   ? ([
-                      ["projection", projectionName],
-                      ["connectors", "Perpendiculars & tangent feet"],
-                      ["pole", "Pole marker"],
+                      ["inverse", "Inverted curve"],
+                      ["correspondences", "Correspondence segments"],
+                      ["sphere", "Inversion sphere & center"],
+                      ...(config.inversion.input === "base"
+                        ? []
+                        : ([["source", "Projection & pole"]] as const)),
                     ] as const)
-                  : involute
+                  : projection
                     ? ([
-                        ["filaments", "Involute filaments"],
-                        ["strings", "Unwinding strings"],
+                        ["projection", projectionName],
+                        ["connectors", "Perpendiculars & tangent feet"],
+                        ["pole", "Pole marker"],
                       ] as const)
-                    : ([
-                        ["surface", "Ribbon surface"],
-                        ["rulings", "Tangent rulings"],
-                        ["edges", "Ribbon edges"],
-                      ] as const)),
+                    : involute
+                      ? ([
+                          ["filaments", "Involute filaments"],
+                          ["strings", "Unwinding strings"],
+                        ] as const)
+                      : ([
+                          ["surface", "Ribbon surface"],
+                          ["rulings", "Tangent rulings"],
+                          ["edges", "Ribbon edges"],
+                        ] as const)),
               ...(config.format === "harmonic"
                 ? ([
                     ["vectors", "Vector sums"],
@@ -1023,13 +1184,15 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             </Field>
             <Field
               label={
-                inversion
-                  ? "Correspondences"
-                  : projection
-                    ? "Projection constructions"
-                    : involute
-                      ? "Unwinding strings"
-                      : "Tangent lines"
+                framed
+                  ? "Frames & cross-lines"
+                  : inversion
+                    ? "Correspondences"
+                    : projection
+                      ? "Projection constructions"
+                      : involute
+                        ? "Unwinding strings"
+                        : "Tangent lines"
               }
             >
               <input
@@ -1047,8 +1210,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               Finite sampling can miss fine detail. Compare resolutions near
               poles, stationary points, and tight folds. Invalid samples and
               unresolved tangent or normal intervals leave gaps. Involute arc
-              length uses Simpson's rule on each sample interval. A harmonic
-              curve's vector sums sit at the same evenly spaced samples as the
+              length uses Simpson's rule on each sample interval, as does the
+              arc length that spreads a frame's twist. A transported frame is
+              carried between samples by two reflections. A harmonic curve's
+              vector sums sit at the same evenly spaced samples as the
               construction lines, and its derivatives are exact.
             </p>
           </details>
@@ -1062,7 +1227,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} ${inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
+                : `${config.samples.toLocaleString()} samples · ${config.lines} ${framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -1097,13 +1262,15 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {inversion
-                  ? "A curve inverted in a sphere"
-                  : projection
-                    ? projectionName
-                    : involute
-                      ? "Filaments unwound from a curve"
-                      : "A ribbon of tangent lines"}
+                {framed
+                  ? "A ribbon carried by a frame"
+                  : inversion
+                    ? "A curve inverted in a sphere"
+                    : projection
+                      ? projectionName
+                      : involute
+                        ? "Filaments unwound from a curve"
+                        : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -1154,13 +1321,15 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               <div className="legend">
                 <span className="thread-dot" /> Base curve{" "}
                 <span className="ribbon-dot" />{" "}
-                {inversion
-                  ? "Inverted curve"
-                  : projection
-                    ? projectionName
-                    : involute
-                      ? "Involute filaments"
-                      : "Tangent developable"}
+                {framed
+                  ? "Framed ribbon"
+                  : inversion
+                    ? "Inverted curve"
+                    : projection
+                      ? projectionName
+                      : involute
+                        ? "Involute filaments"
+                        : "Tangent developable"}
               </div>
               <span>
                 {animation

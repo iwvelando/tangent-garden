@@ -12,7 +12,8 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // and strings to the involute; projection, connectors and pole to tangent
 // projections; inverse, correspondences, sphere and source to sphere
 // inversion; vectors and ellipses to a harmonic curve under any
-// construction. The base curve is always drawn.
+// construction; strands, frames and seam to the framed construction, whose
+// ribbon reuses surface, rulings and edges. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -28,6 +29,9 @@ export type Layers = {
   source: boolean;
   vectors: boolean;
   ellipses: boolean;
+  strands: boolean;
+  frames: boolean;
+  seam: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -44,6 +48,9 @@ export const defaultLayers: Layers = {
   source: true,
   vectors: true,
   ellipses: true,
+  strands: true,
+  frames: true,
+  seam: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -157,7 +164,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     source: Batch,
     sourcePole: Batch,
     vectors: Batch,
-    ellipses: Batch;
+    ellipses: Batch,
+    strands: Batch,
+    frames: Batch,
+    tangents: Batch,
+    seam: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -220,8 +231,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       0,
     );
     base = path(result.base, result.breaks, 2);
-    minus = path(result.minus, result.breaks, 2);
-    plus = path(result.plus, result.breaks, 2);
+    // A framed ribbon's edges are also broken where a Frenet normal reverses.
+    const edgeBreaks = result.frame?.breaks ?? result.breaks;
+    minus = path(result.minus, edgeBreaks, 2);
+    plus = path(result.plus, edgeBreaks, 2);
     rulings = batch(
       result.rulings
         .flatMap((r) => [r.from, r.to])
@@ -372,6 +385,91 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       1,
     );
+    // Offset strands shade across the family like involute filaments. Frame
+    // glyphs draw U (the longer arm) and V, with a short T behind them; the
+    // seam shows the offset direction where the loop starts and where it
+    // returns.
+    const f = result.frame;
+    const offsets = f?.strands ?? [];
+    strands = batch(
+      offsets.flatMap((points, k) =>
+        vertices(
+          pairs(points, f!.breaks),
+          offsets.length > 1 ? k / (offsets.length - 1) : 0,
+        ),
+      ),
+      gl!.LINES,
+      3,
+    );
+    const arm = result.bounds.radius * 0.06;
+    const along = (p: Vec3, d: Vec3, length: number) => [
+      p,
+      {
+        x: p.x + d.x * length,
+        y: p.y + d.y * length,
+        z: p.z + d.z * length,
+      },
+    ];
+    frames = batch(
+      vertices(
+        (f?.frames ?? []).flatMap((g) => [
+          ...along(g.point, g.normal, arm),
+          ...along(g.point, g.binormal, arm * 0.6),
+        ]),
+      ),
+      gl!.LINES,
+      1,
+    );
+    tangents = batch(
+      vertices(
+        (f?.frames ?? []).flatMap((g) => along(g.point, g.tangent, arm * 0.6)),
+      ),
+      gl!.LINES,
+      4,
+    );
+    // The seam's arms reach past the ribbon and strands, joined by an arc
+    // that sweeps the return angle about the starting tangent.
+    const seamLines = () => {
+      const s = f!.seam!,
+        g = f!.frames[0];
+      const beyond = (p: Vec3 | null | undefined) =>
+        p ? Math.hypot(p.x - s.point.x, p.y - s.point.y, p.z - s.point.z) : 0;
+      const reach =
+        1.4 *
+        Math.max(
+          arm * 1.5,
+          beyond(result.plus[0]),
+          ...f!.strands.map((points) => beyond(points[0])),
+        );
+      const normal = {
+        x: g.tangent.y * s.start.z - g.tangent.z * s.start.y,
+        y: g.tangent.z * s.start.x - g.tangent.x * s.start.z,
+        z: g.tangent.x * s.start.y - g.tangent.y * s.start.x,
+      };
+      const at = (k: number) => {
+        const phi = (s.angle * k) / 32,
+          [c, n] = [Math.cos(phi), Math.sin(phi)];
+        return along(
+          s.point,
+          {
+            x: c * s.start.x + n * normal.x,
+            y: c * s.start.y + n * normal.y,
+            z: c * s.start.z + n * normal.z,
+          },
+          reach * 0.75,
+        )[1];
+      };
+      return [
+        ...along(s.point, s.start, reach),
+        ...along(s.point, s.end, reach),
+        ...Array.from({ length: 32 }, (_, k) => [at(k), at(k + 1)]).flat(),
+      ];
+    };
+    seam = batch(
+      vertices(f?.seam && f.frames[0]?.sampleIndex === 0 ? seamLines() : []),
+      gl!.LINES,
+      2,
+    );
     filaments = filamentBatch(result);
     strings = batch(
       vertices((result.involute?.strings ?? []).flatMap((r) => [r.from, r.to])),
@@ -456,6 +554,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       render(minus);
       render(plus);
     }
+    if (layers.strands) render(strands);
+    if (layers.frames) {
+      render(tangents);
+      render(frames);
+    }
     if (layers.strings) render(strings);
     if (layers.filaments) render(filaments);
     if (layers.connectors) {
@@ -473,6 +576,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (layers.vectors) render(vectors);
     if (layers.ellipses) render(ellipses);
     render(base);
+    if (layers.seam) render(seam);
     if (layers.pole) render(pole);
     if (layers.sphere) render(center);
   }

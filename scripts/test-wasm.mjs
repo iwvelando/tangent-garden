@@ -1125,4 +1125,76 @@ const spatialHarmonic = (terms, min, max) =>
 console.log(
   "WASM spatial harmonics: ellipse, closure, open arc and validation passed",
 );
+// Framed ribbon: a unit circle is planar, so its rotation-minimizing normal
+// stays e_z; one turn of twist from θ₀ = 0 carries D = cos θ U + sin θ V
+// around the tangent, and the loop closes without a seam.
+const spatialFrame = (frame) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "harmonic",
+        construction: "framed",
+        harmonic: {
+          center: { x: 0, y: 0, z: 0 },
+          terms: [
+            {
+              frequency: 1,
+              cosine: { x: 1, y: 0, z: 0 },
+              sine: { x: 0, y: 1, z: 0 },
+            },
+          ],
+          min: 0,
+          max: 2 * Math.PI,
+        },
+        frame: {
+          kind: "rotation-minimizing",
+          reference: { x: 0, y: 0, z: 1 },
+          angle: 0,
+          twist: 1,
+          offset: 0.5,
+          width: 0.25,
+          strands: 2,
+          closure: "seam",
+          ...frame,
+        },
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+{
+  const ring = spatialFrame({});
+  const q = ring.frame;
+  assert.equal(q.kind, "rotation-minimizing");
+  assert.equal(q.closed, true);
+  assert.equal(q.holonomy, 0);
+  assert.equal(q.seam, undefined);
+  assert.ok(Math.abs(q.length - 2 * Math.PI) < 1e-12);
+  assert.equal(q.strands.length, 2);
+  assert.equal(q.frames.length, 24);
+  for (const g of q.frames) {
+    assert.ok(Math.abs(g.normal.z - 1) < 1e-12);
+    const t = (2 * Math.PI * g.sampleIndex) / 480;
+    // V = T × e_z is the outward radius; D turns from e_z towards it.
+    const p = q.strands[0][g.sampleIndex];
+    const want = {
+      x: Math.cos(t) * (1 + 0.5 * Math.sin(t)),
+      y: Math.sin(t) * (1 + 0.5 * Math.sin(t)),
+      z: 0.5 * Math.cos(t),
+    };
+    for (const axis of ["x", "y", "z"])
+      assert.ok(Math.abs(p[axis] - want[axis]) < 1e-12, `strand at ${t}`);
+  }
+  assert.equal(ring.mesh.length, 6 * 480);
+  assert.equal(ring.rulings.length, 24);
+  assert.equal(ring.frame.breaks.length, 481);
+  // Half a turn cannot close: the seam reports it.
+  const half = spatialFrame({ twist: 0.5 });
+  assert.ok(Math.abs(Math.abs(half.frame.seam.angle) - Math.PI) < 1e-9);
+  assert.match(spatialFrame({ kind: "bishop" }).error, /rotation-minimizing/);
+  assert.match(spatialFrame({ strands: 13 }).error, /strands/);
+}
+console.log(
+  "WASM framed ribbon: transported frame, twist, seam and validation passed",
+);
 process.exit(0);

@@ -29,15 +29,41 @@ export type HarmonicCurve = {
   max: number;
 };
 export const maxHarmonicTerms = 8;
+// A frame (T, U, V) along the curve: rotation-minimizing (parallel transport)
+// or the Frenet frame as a diagnostic. N₀ (`reference`), projected onto the
+// normal plane where each unbroken stretch begins, sets U there. The offset
+// direction is D = cos θ U + sin θ V with θ = angle + 2π·twist·s/L (radians,
+// twist in turns over the drawn length). The ribbon is r + uD for |u| ≤
+// width; `strands` (0–12) offset curves r + offset·D turn by 2πk/strands.
+// Mirrors engine3.FrameRequest.
+export type FrameKind = "rotation-minimizing" | "frenet";
+export type FrameClosure = "seam" | "distribute";
+export type FrameConfig = {
+  kind: FrameKind;
+  reference: Vec3;
+  angle: number;
+  twist: number;
+  offset: number;
+  width: number;
+  strands: number;
+  closure: FrameClosure;
+};
+export const maxFrameStrands = 12;
 export type SpatialConfig = {
   format: "torus" | "parametric" | "harmonic";
   // `length` is the tangent reach, used only by the developable.
   construction:
-    "developable" | "involute" | "tangent-foot" | "orthotomic" | "inversion";
+    | "developable"
+    | "involute"
+    | "tangent-foot"
+    | "orthotomic"
+    | "inversion"
+    | "framed";
   pole: Vec3;
   inversion: InversionConfig;
   involute: InvoluteConfig;
   harmonic: HarmonicCurve;
+  frame: FrameConfig;
   curve: {
     x: string;
     y: string;
@@ -73,6 +99,9 @@ export type SpatialResult = {
   inversion?: InversionResult;
   // Present for a harmonic curve under any construction.
   harmonic?: SpatialHarmonicResult;
+  // Present only for the framed construction; its ribbon fills mesh, minus,
+  // plus, and rulings, joined across frame.breaks rather than breaks.
+  frame?: FrameResult;
 };
 export type InvoluteResult = {
   members: { offset: number; points: (Vec3 | null)[]; collapsed: boolean }[];
@@ -128,3 +157,30 @@ export const usesSpatialPole = (c: SpatialConfig) =>
   c.construction === "tangent-foot" ||
   c.construction === "orthotomic" ||
   (c.construction === "inversion" && c.inversion.input !== "base");
+// Mirrors engine3.FrameResult. Strands share base indices; `breaks` adds the
+// Frenet normal's reversals to the base's. Normal is U and binormal is V for
+// either frame. Holonomy (radians) is the transported U's return angle on an
+// unbroken closed loop; correction is the twist distributed to cancel it.
+export type FrameGlyph = {
+  sampleIndex: number;
+  point: Vec3;
+  tangent: Vec3;
+  normal: Vec3;
+  binormal: Vec3;
+};
+export type FrameResult = {
+  kind: FrameKind;
+  frames: FrameGlyph[];
+  strands: (Vec3 | null)[][];
+  breaks: boolean[];
+  length: number;
+  pieces: number;
+  undefined: number;
+  flips: number;
+  fallbacks: number;
+  closed: boolean;
+  holonomy: number;
+  correction: number;
+  // Where a closed loop's offset direction fails to return.
+  seam?: { point: Vec3; start: Vec3; end: Vec3; angle: number };
+};

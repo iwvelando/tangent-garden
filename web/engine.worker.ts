@@ -66,7 +66,9 @@ self.onmessage = async ({
         data.spatial?.construction === "orthotomic" ||
         (inversion && data.spatial?.inversion.input !== "base");
       const involute = data.spatial?.construction === "involute",
-        family = data.spatial?.involute.family;
+        family = data.spatial?.involute.family,
+        framed = data.spatial?.construction === "framed",
+        frame = data.spatial?.frame;
       if (
         !data.spatial ||
         ![
@@ -77,25 +79,41 @@ self.onmessage = async ({
                   ? [family!.from, family!.to, family!.count]
                   : [data.spatial.involute.offset]),
               ]
-            : projection || inversion
+            : framed
               ? [
-                  ...(inversion
+                  frame!.angle,
+                  frame!.twist,
+                  frame!.offset,
+                  frame!.width,
+                  frame!.strands,
+                  // A Frenet frame never reads N₀.
+                  ...(frame!.kind === "rotation-minimizing"
                     ? [
-                        data.spatial.inversion.center.x,
-                        data.spatial.inversion.center.y,
-                        data.spatial.inversion.center.z,
-                        data.spatial.inversion.radius,
-                      ]
-                    : []),
-                  ...(projection
-                    ? [
-                        data.spatial.pole.x,
-                        data.spatial.pole.y,
-                        data.spatial.pole.z,
+                        frame!.reference.x,
+                        frame!.reference.y,
+                        frame!.reference.z,
                       ]
                     : []),
                 ]
-              : [data.spatial.length]),
+              : projection || inversion
+                ? [
+                    ...(inversion
+                      ? [
+                          data.spatial.inversion.center.x,
+                          data.spatial.inversion.center.y,
+                          data.spatial.inversion.center.z,
+                          data.spatial.inversion.radius,
+                        ]
+                      : []),
+                    ...(projection
+                      ? [
+                          data.spatial.pole.x,
+                          data.spatial.pole.y,
+                          data.spatial.pole.z,
+                        ]
+                      : []),
+                  ]
+                : [data.spatial.length]),
           data.spatial.samples,
           data.spatial.lines,
           ...(data.spatial.format === "parametric"
@@ -133,6 +151,8 @@ self.onmessage = async ({
         throw new Error("Sample and line counts must be whole numbers.");
       if (involute && family!.enabled && !Number.isInteger(family!.count))
         throw new Error("The number of involutes must be a whole number.");
+      if (framed && !Number.isInteger(frame!.strands))
+        throw new Error("The number of offset strands must be a whole number.");
       const result = JSON.parse(
         tangentGardenSpatial(JSON.stringify(data.spatial)),
       );
