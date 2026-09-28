@@ -33,7 +33,7 @@ test("custom definitions, errors, and both notebooks preserve edits and views", 
   page,
 }) => {
   await ready(page);
-  await page.getByLabel("Starting curve").selectOption("3");
+  await page.getByLabel("Start with a notebook example").selectOption("3");
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("a*t/4");
   await expect.poll(async () => (await config(page)).curve.z).toBe("a*t/4");
   await page.getByLabel("Spatial definition").selectOption("torus");
@@ -88,7 +88,7 @@ for (const camera of ["hold", "current", "follow", "fit"])
     page,
   }) => {
     await ready(page);
-    await page.getByLabel("Starting curve").selectOption("3");
+    await page.getByLabel("Start with a notebook example").selectOption("3");
     await expect(stage(page)).toHaveAttribute("aria-busy", "false");
     await animation(page);
     await page
@@ -299,7 +299,7 @@ test("canceling and editing an export discard output", async ({ page }) => {
     page.getByRole("button", { name: "Play animation", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: /Export MP4/ }).click();
-  await page.getByLabel("Starting curve").selectOption("2");
+  await page.getByLabel("Start with a notebook example").selectOption("2");
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
   await expect(
     page.getByRole("button", { name: "Play animation", exact: true }),

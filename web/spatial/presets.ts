@@ -56,7 +56,7 @@ export const spatialPresets: {
   },
   {
     name: "Lissajous · a spatial weave",
-    detail: "Three harmonics, one woven path",
+    detail: "Three harmonics; the thread pauses twice",
     config: {
       ...base,
       format: "parametric",

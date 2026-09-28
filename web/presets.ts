@@ -109,12 +109,12 @@ const base: Config = {
 export const presets: { title: string; note: string; config: Config }[] = [
   {
     title: "Ellipse & its evolute",
-    note: "From the notebooks · study 07",
+    note: "An ellipse's normals, gathered into four cusps",
     config: base,
   },
   {
     title: "Unwinding a circle",
-    note: "From the notebooks · study 01",
+    note: "A taut thread unwound from a circle",
     config: {
       ...base,
       kind: "involute",
@@ -124,7 +124,7 @@ export const presets: { title: string; note: string; config: Config }[] = [
   },
   {
     title: "Light inside a circle",
-    note: "From the notebooks · catacaustic 01",
+    note: "A light on the rim, reflected into a cardioid",
     config: {
       ...base,
       kind: "catacaustic",
@@ -133,7 +133,7 @@ export const presets: { title: string; note: string; config: Config }[] = [
   },
   {
     title: "Through a parabola",
-    note: "From the notebooks · diacaustic",
+    note: "A point of light, bent at a parabola",
     config: {
       ...base,
       kind: "diacaustic",
@@ -144,7 +144,7 @@ export const presets: { title: string; note: string; config: Config }[] = [
   },
   {
     title: "Cycloid & its evolute",
-    note: "From the notebooks · study 05",
+    note: "Its evolute, the same cycloid again",
     config: {
       ...base,
       curve: { ...base.curve, x: "2*(t-sin(t))", y: "2*(1+cos(t))" },
@@ -152,7 +152,7 @@ export const presets: { title: string; note: string; config: Config }[] = [
   },
   {
     title: "Three-cusped curve",
-    note: "From the notebooks · study 08",
+    note: "Its evolute, the same curve three times larger",
     config: {
       ...base,
       curve: { ...base.curve, x: "cos(t)+cos(2*t)/2", y: "sin(t)-sin(2*t)/2" },
@@ -160,7 +160,7 @@ export const presets: { title: string; note: string; config: Config }[] = [
   },
   {
     title: "Spiral, unwound",
-    note: "From the notebooks · study 02",
+    note: "Its involute, the same spiral turned a quarter",
     config: {
       ...base,
       kind: "involute",

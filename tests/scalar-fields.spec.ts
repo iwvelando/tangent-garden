@@ -618,7 +618,7 @@ test("spatial custom domain and shape fields share the bounded scalar parser", a
   page,
 }) => {
   await page.goto("/?study=3d");
-  await page.getByLabel("Starting curve").selectOption("3");
+  await page.getByLabel("Start with a notebook example").selectOption("3");
   const stage = page.locator(".spatial-stage");
   for (const [name, text, key, value] of [
     ["t from", "-pi", "min", -Math.PI],

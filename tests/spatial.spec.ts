@@ -77,7 +77,7 @@ test("spatial construction renders, orbits, zooms, layers, and resets", async ({
   await page.waitForTimeout(100);
   expect(await pixels(page)).toBe(paused);
   for (const preset of ["1", "2", "0"]) {
-    await page.getByLabel("Starting curve").selectOption(preset);
+    await page.getByLabel("Start with a notebook example").selectOption(preset);
     await expect(page.locator(".spatial-stage")).toHaveAttribute(
       "aria-busy",
       "false",
@@ -104,7 +104,7 @@ test("counts, invalid input, pending scalar replacement and desktop scrolling", 
   await page
     .getByRole("textbox", { name: "Major radius R", exact: true })
     .fill("phi+2");
-  await page.getByLabel("Starting curve").selectOption("1");
+  await page.getByLabel("Start with a notebook example").selectOption("1");
   await expect(
     page.getByRole("textbox", { name: "Major radius R", exact: true }),
   ).toHaveValue("2.4");
@@ -174,7 +174,7 @@ test("narrow screens retain artwork, touch orbit, and controls without overflow"
   await expect(
     page.getByRole("textbox", { name: "Tangent reach L", exact: true }),
   ).toBeVisible();
-  for (const width of [390, 768]) {
+  for (const width of [390, 700]) {
     await page.setViewportSize({ width, height: 844 });
     const artwork = (await canvas.boundingBox())!;
     const controls = (await page.locator(".spatial-controls").boundingBox())!;

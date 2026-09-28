@@ -1,36 +1,5 @@
-.spatial-app {
-  min-height: 100dvh;
-}
-.spatial-app header {
-  height: 76px;
-}
-.spatial-layout {
-  display: grid;
-  grid-template-columns: 302px minmax(0, 1fr);
-  padding: 0;
-  gap: 0;
-  height: calc(100dvh - 76px);
-  max-width: none;
-}
-.spatial-controls {
-  padding: 34px 27px;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  background: var(--panel);
-}
-.spatial-controls h1 {
-  font-family: Georgia, serif;
-  font-size: 36px;
-  font-weight: 400;
-  letter-spacing: -1.4px;
-  line-height: 1.12;
-  margin: 20px 0 14px;
-}
-.spatial-intro {
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--muted);
-}
+/* Layout, the sidebar, and the stage come from the shared main/aside/article
+   rules in style.css, so both notebooks share breakpoints and spacing. */
 .spatial-caption {
   font-size: 12px;
   line-height: 1.6;
@@ -69,31 +38,19 @@
   font-size: 12px;
   margin-top: 25px;
 }
-.spatial-stage {
-  margin: 0;
-  padding: 0;
-  border: 0;
+/* The stage is an article like the planar one: the same heading, bordered
+   frame, footer, and drawing height; only the drawing itself differs. */
+.view-buttons {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-  overflow-y: auto;
-  background: #f3f1ea;
 }
-.dark .spatial-stage {
-  background: #0b1517;
-}
-.spatial-stage-heading {
-  display: flex;
-  justify-content: space-between;
-  padding: 27px 34px 0;
-  font-size: 12px;
-  letter-spacing: 2px;
-  color: var(--muted);
+.view-buttons .fit[aria-pressed="true"] {
+  border-color: #7aa898;
 }
 .spatial-canvas-wrap {
   position: relative;
-  flex: 1 0 420px;
+  height: calc(100vh - 325px);
   min-height: 420px;
+  max-height: 880px;
 }
 #spatial-artwork {
   display: block;
@@ -111,63 +68,19 @@
   outline: 2px solid #74a89a;
   outline-offset: -4px;
 }
-.spatial-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 34px 25px;
-  color: var(--muted);
-  font-size: 12px;
+/* Swatches match the renderer's thread and ribbon inks. */
+.thread-dot {
+  background: #804017;
 }
-.spatial-toolbar small {
-  display: inline-block;
-  margin-top: 5px;
-  font-size: 12px;
+.ribbon-dot {
+  background: #4d9e8f;
+  margin-left: 12px;
 }
-.spatial-toolbar > div {
-  display: flex;
-  gap: 8px;
+.dark .thread-dot {
+  background: #ffde94;
 }
-.spatial-toolbar button {
-  font-size: 12px;
-  padding: 9px 13px;
-}
-.spatial-toolbar button[aria-pressed="true"] {
-  border-color: #7aa898;
-}
-.spatial-explanation {
-  border-top: 1px solid var(--border);
-  padding: 28px 34px 32px;
-  display: grid;
-  grid-template-columns: 1fr 1.3fr;
-  gap: 32px;
-}
-.spatial-explanation h2 {
-  font-family: Georgia, serif;
-  font-weight: 400;
-  font-size: 26px;
-  line-height: 1.25;
-  margin: 12px 0 0;
-  max-width: 250px;
-}
-.spatial-explanation p {
-  font-size: 12px;
-  line-height: 1.8;
-  color: var(--muted);
-  margin: 0;
-}
-.spatial-explanation .spatial-formula {
-  font-family: Georgia, serif;
-  color: var(--text);
-  font-size: 18px;
-  margin-top: 15px;
-}
-.spatial-formula span {
-  font: 12px sans-serif;
-  color: var(--muted);
-  margin-left: 16px;
-  white-space: nowrap;
+.dark .ribbon-dot {
+  background: #3bb3ab;
 }
 .spatial-stale,
 .spatial-render-error {
@@ -180,77 +93,18 @@
   font-size: 12px;
   color: var(--muted);
 }
-@media (max-width: 800px) {
-  .spatial-app {
-    height: auto;
-    overflow: visible;
-  }
-  .spatial-layout {
-    background: #f3f1ea;
-  }
-  .dark .spatial-layout {
-    background: #0b1517;
-  }
-  .spatial-app .brand-name {
-    max-width: none;
-    white-space: nowrap;
-  }
-  .spatial-app .brand {
-    gap: 6px;
-  }
-  .spatial-app .brand-symbol {
-    width: 28px;
-    height: 28px;
-  }
-
-  .spatial-app header {
-    height: auto;
-    min-height: 68px;
-    padding: 15px 18px;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .spatial-app .brand-name {
-    font-size: 19px;
-  }
-  .spatial-layout {
-    display: flex;
-    flex-direction: column;
-    height: auto;
-  }
-  .spatial-controls {
-    order: 2;
-    border: 0;
-    overflow: visible;
-    padding: 28px 24px;
-  }
-  .spatial-stage {
-    display: contents;
-  }
-  .spatial-stage-heading {
-    padding: 24px 20px 0;
-    font-size: 11px;
-    letter-spacing: 1.4px;
-  }
+@media (max-width: 700px) {
   .spatial-canvas-wrap {
-    flex: none;
-    height: 64vh;
-    min-height: 320px;
-    max-height: 540px;
+    height: 55vh;
+    min-height: 340px;
   }
-  .spatial-toolbar {
-    padding: 12px 20px 22px;
+  /* Two view buttons would squeeze the heading; they take their own row. */
+  .plot-heading:has(.view-buttons) {
     flex-wrap: wrap;
+    row-gap: 14px;
   }
-  .spatial-explanation {
-    order: 3;
-    padding: 24px 20px;
-    gap: 16px;
-    grid-template-columns: 1fr;
-  }
-  .spatial-explanation h2 {
-    max-width: none;
-    font-size: 25px;
+  .view-buttons .fit:first-child {
+    margin-left: 0;
   }
 }
 
@@ -272,7 +126,7 @@
 .spatial-controls .subsection .field-label {
   flex-wrap: wrap;
 }
-@media (max-width: 800px) {
+@media (max-width: 700px) {
   #spatial-playback.active {
     position: fixed;
     bottom: 0;
@@ -289,8 +143,5 @@
   }
   .spatial-app:has(#spatial-playback.active) {
     padding-bottom: 160px;
-  }
-  .spatial-app .header-actions {
-    flex-wrap: wrap;
   }
 }

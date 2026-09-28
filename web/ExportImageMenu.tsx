@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { pngFile, saveFile, svgFile } from "./export-image";
 
 // Twice the drawing's 1000 × 760 layout: crisp on high-density screens.
@@ -23,9 +29,22 @@ export function ExportImageMenu({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
+  // The menu and error hang below the button's right edge. When the header
+  // wraps the button to the start of its row on a narrow screen, that leaves
+  // no room to the left, so they align with the button's left edge instead.
+  const [alignStart, setAlignStart] = useState(false);
+  const popup = useRef<HTMLElement | null>(null);
+  const setPopup = (element: HTMLElement | null) => {
+    popup.current = element;
+  };
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const items = useRef<HTMLButtonElement[]>([]);
+  useLayoutEffect(() => {
+    if (!open && !error) return setAlignStart(false);
+    if (popup.current && popup.current.getBoundingClientRect().left < 0)
+      setAlignStart(true);
+  }, [open, error]);
   useEffect(() => {
     if (open) items.current[0]?.focus();
   }, [open]);
@@ -103,7 +122,16 @@ export function ExportImageMenu({
         Export image <span aria-hidden="true">▾</span>
       </button>
       {open && (
-        <div id={menuId} role="menu" aria-label="Export image" onKeyDown={keys}>
+        <div
+          ref={setPopup}
+          className={
+            alignStart ? "export-image-options start" : "export-image-options"
+          }
+          id={menuId}
+          role="menu"
+          aria-label="Export image"
+          onKeyDown={keys}
+        >
           <button
             ref={item(0)}
             role="menuitem"
@@ -123,7 +151,13 @@ export function ExportImageMenu({
         </div>
       )}
       {error && (
-        <p className="export-menu-error" role="alert">
+        <p
+          ref={setPopup}
+          className={
+            alignStart ? "export-menu-error start" : "export-menu-error"
+          }
+          role="alert"
+        >
           {error}
         </p>
       )}

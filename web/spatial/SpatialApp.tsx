@@ -1,12 +1,15 @@
+import { StudyExplanation } from "../StudyExplanation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EngineClient } from "../engine-client";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
+import { useMediaQuery } from "../useMediaQuery";
 import { useTheme } from "../useTheme";
 import { useDisclosure } from "../useDisclosure";
 import { Field } from "../Field";
+import { AppHeader } from "../AppHeader";
+import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
 import { saveFile } from "../export-image";
-import { NotebookMode } from "../NotebookMode";
 import { SpatialPlot } from "./SpatialPlot";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { spatialPresets } from "./presets";
@@ -16,6 +19,7 @@ import type { Layers, View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
   const theme = useTheme(),
+    narrow = useMediaQuery("(max-width: 700px)"),
     expressions = useDisclosure("expressions");
   const client = useRef<EngineClient | null>(null),
     generation = useRef(0),
@@ -39,7 +43,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     edges: true,
   });
   const viewport = useRef<View | undefined>(undefined),
-    stage = useRef<HTMLDivElement>(null),
+    plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
   const pending = Object.values(states).some((s) => s.pending),
     scalarError = Object.values(states).find((s) => s.error);
@@ -188,61 +192,70 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   }
   const showPlot = () => {
     setSpinning(false);
-    if (matchMedia("(max-width:800px)").matches)
-      stage.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    revealDrawing(
+      plotWrap.current,
+      document.getElementById("spatial-playback"),
+    );
   };
+  // On phones the controls follow the drawing directly, so the explanation
+  // moves after them instead of separating the two.
+  const behind = (
+    <StudyExplanation
+      label="BEHIND THE FOLDS"
+      title="Straight lines, woven into space."
+      formula={
+        <>
+          S(t, u) = r(t) + u T(t) <span>−L ≤ u ≤ L</span>
+        </>
+      }
+      note="The curve and its tangent lines define the ribbon surface."
+      diagnostics={
+        shown &&
+        (shown.result.omitted > 0 || shown.result.invalid > 0) && (
+          <p className="bottom-note">
+            {shown.result.invalid} invalid samples · {shown.result.omitted}{" "}
+            intervals without a stable ribbon surface. The curve and tangents
+            remain visible where defined.
+          </p>
+        )
+      }
+    >
+      <p>
+        At every regular point of the curve, extend a straight line in the
+        tangent direction. Together those lines sweep a{" "}
+        <em>tangent developable</em>. The gold thread marks the original curve;
+        the two sheets meet there in a sharp fold, except where the curve
+        momentarily stops twisting.
+      </p>
+    </StudyExplanation>
+  );
   return (
     <div
       className={`app spatial-app${theme.dark ? " dark" : ""}`}
       data-theme-preference={theme.preference}
     >
-      <header>
-        <a className="brand" href="./">
-          <img
-            className="brand-symbol"
-            src={`${import.meta.env.BASE_URL}tangent-garden.svg`}
-            alt=""
-          />
-          <span className="brand-name">Tangent Garden</span>
-        </a>
-        <div className="header-actions">
-          <NotebookMode />
-          <button
-            onClick={theme.toggle}
-            aria-label={
-              theme.dark ? "Use light background" : "Use dark background"
-            }
-          >
-            {theme.dark ? "☼" : "◐"}
-          </button>
-          {theme.preference !== "system" && (
-            <button className="system-theme" onClick={theme.followSystem}>
-              Follow system
-            </button>
-          )}
-          <ExportImageMenu
-            disabled={!ready || running || imageBusy}
-            kind="spatial"
-            menuId="spatial-export-image-menu"
-            svgLabel="SVG · embedded 3D image"
-            onSave={save}
-          />
-        </div>
-      </header>
-      <main className="spatial-layout">
+      <AppHeader theme={theme}>
+        <ExportImageMenu
+          disabled={!ready || running || imageBusy}
+          kind="spatial"
+          menuId="spatial-export-image-menu"
+          svgLabel="SVG · embedded 3D image"
+          onSave={save}
+        />
+      </AppHeader>
+      <main>
         <aside
           className="spatial-controls"
           aria-label="Spatial study parameters"
         >
-          <div className="section-label">01 / THE SPATIAL STUDY</div>
-          <h1>A curve, woven into space.</h1>
-          <p className="spatial-intro">
-            A single thread. A family of straight lines. A ribbon that folds
-            back into itself.
-          </p>
-          <Field label="Starting curve">
+          <div className="section-label">01 / THE STUDY</div>
+          <Field label="Start with a notebook example">
             <select value={preset} onChange={(e) => choose(e.target.value)}>
-              <option value="">Custom study</option>
+              {preset === "" && (
+                <option value="" disabled>
+                  Custom study
+                </option>
+              )}
               {spatialPresets.map((s, i) => (
                 <option key={s.name} value={i}>
                   {s.name}
@@ -250,11 +263,6 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ))}
             </select>
           </Field>
-          <p className="spatial-caption">
-            {preset !== ""
-              ? spatialPresets[+preset].detail
-              : "Your own spatial exploration"}
-          </p>
           <ScalarStatus.Provider value={scalarStatus}>
             <div key={generation.current}>
               <Field label="Spatial definition">
@@ -479,9 +487,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             onPlay={showPlot}
           />
         </aside>
-        <section
+        <article
           className="spatial-stage"
-          ref={stage}
           aria-label="Spatial artwork"
           aria-busy={busy}
           data-config={shown ? JSON.stringify(shown.config) : undefined}
@@ -489,43 +496,18 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           data-mode={animation?.mode}
           data-camera={override ? JSON.stringify(override) : undefined}
         >
-          <div className="spatial-stage-heading">
-            <span>TANGENT DEVELOPABLE</span>
-            <span>ORTHOGRAPHIC / 3D</span>
-          </div>
-          <div className="spatial-canvas-wrap">
-            {shown ? (
-              <SpatialPlot
-                result={shown.result}
-                dark={theme.dark}
-                layers={layers}
-                reset={reset}
-                spinning={spinning && active}
-                override={override}
-                onViewport={(v) => {
-                  viewport.current = v;
-                }}
-                onError={setRenderError}
-              />
-            ) : (
-              <div className="loading">
-                {failure
-                  ? "Check the study definition to begin."
-                  : "Preparing the spatial engine…"}
-              </div>
-            )}
-            {frame && failure && (
-              <span className="spatial-stale">Previous valid study</span>
-            )}
-          </div>
-          <div className="spatial-toolbar">
-            <span>
-              Drag to orbit · shift-drag to pan · scroll to zoom
-              <br />
-              <small>Keyboard: arrows, shift-arrows, + / −, Home</small>
-            </span>
+          <div className="plot-heading">
             <div>
+              <div className="eyebrow">
+                {preset !== ""
+                  ? spatialPresets[+preset].detail
+                  : "YOUR OWN EXPLORATION"}
+              </div>
+              <h1>A ribbon of tangent lines</h1>
+            </div>
+            <div className="view-buttons">
               <button
+                className="fit"
                 disabled={!!animation || running || !!renderError}
                 aria-pressed={spinning}
                 onClick={() => setSpinning((s) => !s)}
@@ -533,6 +515,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 {spinning ? "Pause rotation" : "Rotate view"}
               </button>
               <button
+                className="fit"
                 disabled={!!animation || running}
                 onClick={() => setReset((n) => n + 1)}
               >
@@ -540,33 +523,47 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               </button>
             </div>
           </div>
-          <div className="spatial-explanation">
-            <div>
-              <span className="section-label">BEHIND THE FOLDS</span>
-              <h2>Straight lines, woven into space.</h2>
+          <div className="plot-wrap" ref={plotWrap}>
+            <div className="spatial-canvas-wrap">
+              {shown ? (
+                <SpatialPlot
+                  result={shown.result}
+                  dark={theme.dark}
+                  layers={layers}
+                  reset={reset}
+                  spinning={spinning && active}
+                  override={override}
+                  onViewport={(v) => {
+                    viewport.current = v;
+                  }}
+                  onError={setRenderError}
+                />
+              ) : (
+                <div className="loading">
+                  {failure
+                    ? "Check the study definition to begin."
+                    : "Preparing the spatial engine…"}
+                </div>
+              )}
+              {frame && failure && (
+                <span className="spatial-stale">Previous valid study</span>
+              )}
             </div>
-            <div>
-              <p>
-                At every regular point of the curve, extend a straight line in
-                the tangent direction. Together those lines sweep a{" "}
-                <em>tangent developable</em>. The gold thread marks the original
-                curve; the two sheets meet there in a sharp fold.
-              </p>
-              <p className="spatial-formula">
-                S(t, u) = r(t) + u T(t) <span>−L ≤ u ≤ L</span>
-              </p>
-              {shown &&
-                (shown.result.omitted > 0 || shown.result.invalid > 0) && (
-                  <p>
-                    {shown.result.invalid} invalid samples ·{" "}
-                    {shown.result.omitted} intervals without a stable ribbon
-                    surface. The curve and tangents remain visible where
-                    defined.
-                  </p>
-                )}
+            <div className="plot-meta">
+              <div className="legend">
+                <span className="thread-dot" /> Base curve{" "}
+                <span className="ribbon-dot" /> Tangent developable
+              </div>
+              <span>
+                {animation
+                  ? "Animation camera · Stop or Reset view restores manual framing"
+                  : "Orthographic · drag to orbit · shift-drag to pan · scroll to zoom · keys: arrows, + / −, Home"}
+              </span>
             </div>
           </div>
-        </section>
+          {!narrow && behind}
+        </article>
+        {narrow && <div className="behind spatial-explanation">{behind}</div>}
       </main>
     </div>
   );

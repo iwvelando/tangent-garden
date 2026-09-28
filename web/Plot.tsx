@@ -100,7 +100,7 @@ export function Plot({
   }, [reset, !!animation]);
   const palette = dark
     ? {
-        bg: "#141e22",
+        bg: "#0b1517",
         base: "#72c9c4",
         derived: "#f3bc83",
         line: "#86b5b6",
@@ -109,7 +109,7 @@ export function Plot({
         text: "#a0b0b4",
       }
     : {
-        bg: "#fffefa",
+        bg: "#f3f1ea",
         base: "#186b6b",
         derived: "#bc562e",
         line: "#397f82",

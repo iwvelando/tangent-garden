@@ -161,7 +161,9 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       canvas.height = height;
     }
     gl!.viewport(0, 0, width, height);
-    const background = dark ? [0.043, 0.082, 0.09] : [0.953, 0.945, 0.918];
+    const background = (dark ? [11, 21, 23] : [243, 241, 234]).map(
+      (c) => c / 255,
+    );
     gl!.clearColor(background[0], background[1], background[2], 1);
     gl!.clear(gl!.COLOR_BUFFER_BIT | gl!.DEPTH_BUFFER_BIT);
     if (!mesh) return;

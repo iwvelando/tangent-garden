@@ -115,7 +115,7 @@ for (const scheme of ["light", "dark"] as const)
       await page.locator("#spatial-animation-section > summary").click();
       await page.locator("#spatial-export-settings > summary").click();
       await expectLegible(page);
-      await page.getByLabel("Starting curve").selectOption("3");
+      await page.getByLabel("Start with a notebook example").selectOption("3");
       await page
         .getByLabel("Animate", { exact: true })
         .selectOption("parameters");

@@ -206,7 +206,7 @@ for (const study of [
     expect(decoded.durations.reduce((a, b) => a + b, 0)).toBe(400000);
     expect(new Set(decoded.fingerprints).size).toBe(6);
     expect(decoded.background[3]).toBe(255);
-    expect(decoded.background[0]).toBe(camera === "fit" ? 20 : 255);
+    expect(decoded.background[0]).toBe(camera === "fit" ? 11 : 243);
     await expect(page.getByText(/Saved animated WebP/)).toBeVisible();
     expect(await page.locator("#artwork").innerHTML()).toBe(original);
     await expect(

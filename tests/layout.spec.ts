@@ -94,7 +94,9 @@ for (const width of [1440, 390]) {
     for (const preset of ["0", "3", "4"])
       setups.push(async () => {
         await page.goto("/?study=3d");
-        await page.getByLabel("Starting curve").selectOption(preset);
+        await page
+          .getByLabel("Start with a notebook example")
+          .selectOption(preset);
         if (
           (await page
             .locator("#spatial-animation-section")

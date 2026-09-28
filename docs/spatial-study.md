@@ -27,7 +27,7 @@ Drag to orbit, shift-drag to pan, and scroll to zoom. Keyboard equivalents are a
 
 ## Deliberate limits
 
-This is one construction class, with no transparency, simulated optics, lighting editor, or saved-camera links. Rendering needs WebGL; the 2D notebook remains independent. Opaque, double-sided sheets and depth-tested linework make the folds readable. Occlusion hides rear geometry while surfaces are enabled; hiding surfaces exposes the line family. Orthographic projection avoids perspective scale distortion. On desktop the controls scroll independently; narrow screens place the artwork first, followed by the controls.
+This is one construction class, with no transparency, simulated optics, lighting editor, or saved-camera links. Rendering needs WebGL; the 2D notebook remains independent. Opaque, double-sided sheets and depth-tested linework make the folds readable. Occlusion hides rear geometry while surfaces are enabled; hiding surfaces exposes the line family. Orthographic projection avoids perspective scale distortion. Both notebooks share one page layout: the same header, sidebar, drawing frame with its heading and legend, and explanation. On desktop the controls scroll independently; narrow screens place the artwork first, followed by the controls and then the explanation.
 
 The engine retains the singular spine and self-intersections, leaves gaps at invalid points and unreliable normals, and closes analytic torus knots exactly. Arbitrary expressions are sampled with bounded numerical derivatives; narrow folds or rapid oscillations may need more samples or a smaller domain. No finite-resolution certification is claimed. See [the mathematical conventions](mathematics.md#spatial-tangent-developable).
 

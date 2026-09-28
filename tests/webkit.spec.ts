@@ -136,7 +136,7 @@ test("spatial custom curves render and export through WebKit WebGL and H.264", a
   page,
 }) => {
   await page.goto("/?study=3d");
-  await page.getByLabel("Starting curve").selectOption("3");
+  await page.getByLabel("Start with a notebook example").selectOption("3");
   await expect(page.locator(".spatial-stage")).toHaveAttribute(
     "aria-busy",
     "false",
