@@ -187,7 +187,7 @@ test("the preset draws the rolling circle at the end of the trace", async ({
   await expect(construction(page)).toBeVisible();
 });
 
-test("rolling controls choose a side, validate, stop at cusps, and roll on roulettes", async ({
+test("rolling controls choose a side, validate, roll back out of cusps, and roll on roulettes", async ({
   page,
 }) => {
   await ready(page, "Ellipse & its evolute");
@@ -233,7 +233,7 @@ test("rolling controls choose a side, validate, stop at cusps, and roll on roule
   await field(page, "Tracing distance ℓ").fill("0.6");
   await settled(page);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  // The circle cannot roll past a cusp and says so.
+  // At a cusp the circle rolls back out on the same side, and says so.
   await page
     .getByRole("combobox", { name: "Start with a notebook example" })
     .selectOption({ label: "Three-cusped curve" });
@@ -241,7 +241,8 @@ test("rolling controls choose a side, validate, stop at cusps, and roll on roule
   await tab(page, "rolling").click();
   await settled(page);
   await page.getByText(/omitted samples/).click();
-  await expect(page.getByText(/tangent reversed/)).toBeVisible();
+  await expect(page.getByText(/rolls back out of \d+ cusps?/)).toBeVisible();
+  await expect(page.getByText(/stopped/)).toHaveCount(0);
   // A roulette keeps its own rolling geometry beside the construction's.
   await page
     .getByRole("combobox", { name: "Definition", exact: true })
@@ -385,3 +386,33 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+test("a circle rolling on the flower's pedal rolls back out of all ten cusps, with every position drawn in a reveal", async ({
+  page,
+}) => {
+  await ready(page);
+  await page
+    .getByRole("combobox", { name: "Construct on", exact: true })
+    .selectOption("pedal");
+  await settled(page);
+  const trace = page.getByTestId("derived-curve");
+  // One unbroken trace, from the start to the end of the domain.
+  expect((await trace.getAttribute("d"))!.match(/M/g)).toHaveLength(1);
+  await page.getByText(/omitted samples|Numerical notes/).click();
+  await expect(page.getByText(/rolls back out of 10 cusps/)).toBeVisible();
+  // Halfway through a reveal the circle is still rolling, well past the
+  // first cusp, which comes 7% of the way along.
+  const config = await definition(page);
+  await openAnimation(page);
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("2");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await expect.poll(() => progress(page)).toBeGreaterThan(0.5);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const paused = await progress(page);
+  const last = Math.floor(paused * (config.samples - 1));
+  const circle = construction(page);
+  await expect(circle).toHaveCount(1);
+  expect(Number(await circle.getAttribute("data-sample"))).toBeGreaterThan(
+    last - (config.samples - 1) / (config.lines - 1) - 1,
+  );
+});

@@ -9,10 +9,12 @@ import {
   maxSeeds,
   ownsShape,
   usesPole,
+  inputAllowed,
+  studyName,
   type Bounds,
   type Config,
   type Frame,
-  type InversionSource,
+  type ConstructionInput,
   type Kind,
   type PoleKind,
   type AttractorMap,
@@ -161,7 +163,7 @@ const tabs: Kind[] = [
   "envelope",
   "inversion",
 ];
-const inversionOptions: Record<InversionSource, string> = {
+const inputOptions: Record<ConstructionInput, string> = {
   curve: "The curve itself",
   evolute: "Its evolute",
   pedal: "Its pedal",
@@ -1011,6 +1013,13 @@ function App() {
         <div>
           <span className="section-label">BEHIND THE LINES</span>
           <p>{info.description}</p>
+          {!unparametrized && config.input !== "curve" && (
+            <p data-testid="input-description">
+              Here it acts on the curve&rsquo;s {config.input}, drawn faintly
+              with the curve, which is evaluated from the curve&rsquo;s
+              definition at every t rather than from its drawn points.
+            </p>
+          )}
         </div>
         <div className="formula">{info.formula}</div>
       </div>
@@ -1074,7 +1083,7 @@ function App() {
           )}
           <ExportImageMenu
             disabled={!result || busy || !!error || animationRunning}
-            kind={unparametrized ? config.curve.format : config.kind}
+            kind={studyName(config)}
           />
         </div>
       </header>
@@ -1152,9 +1161,15 @@ function App() {
                           ? "An iterated map has no parameter to build a construction on."
                           : undefined
                     }
-                    onClick={() =>
-                      !active && update({ kind: k === "pedal" ? poleKind : k })
-                    }
+                    onClick={() => {
+                      if (active) return;
+                      const kind = k === "pedal" ? poleKind : k;
+                      // An evolute cannot feed every construction.
+                      update((c) => ({
+                        kind,
+                        input: inputAllowed(kind, c.input) ? c.input : "curve",
+                      }));
+                    }}
                   >
                     {k}
                   </button>
@@ -1331,6 +1346,46 @@ function App() {
                   <code>phi ≈ 1.6180339887</code> · golden ratio, (1+√5)/2
                 </p>
               </details>
+              {!unparametrized && (
+                <>
+                  <Field
+                    label="Construct on"
+                    topic="construction input"
+                    help="The construction acts on this curve: the curve itself, or a curve derived from it, which is drawn faintly with it. A derived curve is evaluated from the curve's definition at every t, never from its drawn points. Its evolute cannot feed the evolute or the caustics, which would need the curve's fourth derivative."
+                  >
+                    <select
+                      value={config.input}
+                      onChange={(e) =>
+                        update({ input: e.target.value as ConstructionInput })
+                      }
+                    >
+                      {(Object.keys(inputOptions) as ConstructionInput[]).map(
+                        (k) => (
+                          <option
+                            key={k}
+                            value={k}
+                            disabled={!inputAllowed(config.kind, k)}
+                          >
+                            {inputOptions[k]}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </Field>
+                  {usesPole(config.input) && !usesPole(config.kind) && (
+                    <div className="pair">
+                      {scalar("Pole x", ["pole", "x"])}
+                      {scalar("Pole y", ["pole", "y"])}
+                    </div>
+                  )}
+                  {config.input === "offset" &&
+                    (config.kind !== "offset" || config.stack.enabled) &&
+                    scalar("Offset distance d", ["distance"], {
+                      topic: "offset distance",
+                      help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel.",
+                    })}
+                </>
+              )}
             </section>
             {!unparametrized && usesPole(config.kind) && (
               <section>
@@ -1800,25 +1855,6 @@ function App() {
             {!unparametrized && config.kind === "inversion" && (
               <section>
                 <div className="section-label">03 / THE INVERSION</div>
-                <Field label="Invert">
-                  <select
-                    value={config.inversion.of}
-                    onChange={(e) => {
-                      const of = e.target.value as InversionSource;
-                      update((c) => ({
-                        inversion: { ...c.inversion, of },
-                      }));
-                    }}
-                  >
-                    {(Object.keys(inversionOptions) as InversionSource[]).map(
-                      (k) => (
-                        <option key={k} value={k}>
-                          {inversionOptions[k]}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </Field>
                 <div className="pair">
                   {scalar("Inversion center x", ["inversion", "center", "x"])}
                   {scalar("Inversion center y", ["inversion", "center", "y"])}
@@ -1827,21 +1863,12 @@ function App() {
                   topic: "inversion radius",
                   help: "Positive, at most 100,000. Points at distance R from the center stay fixed; the product of a point's distance and its image's is R².",
                 })}
-                {usesPole(config.inversion.of) && (
-                  <div className="pair">
-                    {scalar("Pole x", ["pole", "x"])}
-                    {scalar("Pole y", ["pole", "y"])}
-                  </div>
-                )}
-                {config.inversion.of === "offset" &&
-                  scalar("Offset distance d", ["distance"], {
-                    topic: "offset distance",
-                    help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel.",
-                  })}
                 <p className="note">
-                  {config.inversion.of === "curve"
+                  {config.input === "curve"
                     ? "Each segment joins a point of the curve to its image, along a ray from the center."
-                    : "The derived curve is drawn faintly; each segment joins one of its points to its image, along a ray from the center."}{" "}
+                    : "Each segment joins a point of the curve's " +
+                      config.input +
+                      " to its image, along a ray from the center."}{" "}
                   The image is left open where it runs off to infinity.
                 </p>
               </section>

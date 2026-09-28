@@ -264,20 +264,8 @@ export function availableTargets(config: Config): Target[] {
         : (["distance"] as Target[])),
     );
   if (usesPole(config.kind)) targets.unshift("poleX", "poleY");
-  if (config.kind === "inversion") {
-    // The inverted curve's own parameters follow the circle's.
-    const of = config.inversion.of;
-    targets.unshift(
-      "inversionX",
-      "inversionY",
-      "inversionRadius",
-      ...((usesPole(of)
-        ? ["poleX", "poleY"]
-        : of === "offset"
-          ? ["distance"]
-          : []) as Target[]),
-    );
-  }
+  if (config.kind === "inversion")
+    targets.unshift("inversionX", "inversionY", "inversionRadius");
   if (config.kind === "rolling")
     targets.unshift(
       ...((config.rolling.shape === "curve"
@@ -295,6 +283,17 @@ export function availableTargets(config: Config): Target[] {
     targets.push("rayLength");
   }
   if (config.kind === "diacaustic") targets.push("nIncident", "nTransmitted");
+  // A derived input's own parameters follow the construction's, unless the
+  // construction already has them.
+  const input = config.input;
+  const inputTargets = (
+    usesPole(input) && !usesPole(config.kind)
+      ? ["poleX", "poleY"]
+      : input === "offset" && !targets.includes("distance")
+        ? ["distance"]
+        : []
+  ) as Target[];
+  targets.splice(targets.indexOf("a"), 0, ...inputTargets);
   // A roulette's shape comes from its rolling geometry, not from a.
   if (config.curve.format === "roulette") {
     targets.splice(targets.indexOf("a"), 1);
@@ -695,11 +694,7 @@ export function reveal(result: Result, progress: number): Result {
       arrows: result.field.arrows.filter((a) => a.sampleIndex <= last),
     },
     second: result.second?.slice(0, last + 1),
-    // The circle stays; breaks beyond the revealed samples are harmless.
-    inversion: result.inversion && {
-      ...result.inversion,
-      source: result.inversion.source?.slice(0, last + 1),
-    },
+    input: result.input?.slice(0, last + 1),
     moving: result.moving && {
       ...result.moving,
       positions: result.moving.positions.filter((s) => s.sampleIndex <= last),

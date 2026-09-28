@@ -101,7 +101,8 @@ const base: Config = {
     extend: false,
     radius: "1+0.35*sin(a*t)",
   },
-  inversion: { center: { x: 0, y: 0 }, radius: 1, of: "curve" },
+  inversion: { center: { x: 0, y: 0 }, radius: 1 },
+  input: "curve",
   samples: 1000,
   lines: 48,
 };
@@ -485,7 +486,7 @@ export const presets: { title: string; note: string; config: Config }[] = [
       // Inverting a pedal about its pole in the unit circle gives the polar
       // reciprocal of the curve: here the ellipse 4x² + 1.21y² = 1.
       curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
-      inversion: { ...base.inversion, of: "pedal" },
+      input: "pedal",
       lines: 48,
     },
   },
@@ -731,6 +732,76 @@ export const presets: { title: string; note: string; config: Config }[] = [
         },
       },
       lines: 40,
+    },
+  },
+  {
+    title: "Cayley's sextic, a second pedal",
+    note: "The pedal of a circle's pedal",
+    config: {
+      ...base,
+      kind: "pedal",
+      // About a point on a circle its pedal is a cardioid, and the
+      // cardioid's pedal about its cusp is Cayley's sextic.
+      input: "pedal",
+      curve: {
+        ...base.curve,
+        x: "1+cos(t)",
+        y: "sin(t)",
+        min: -Math.PI,
+        max: Math.PI,
+      },
+      samples: 2000,
+      lines: 48,
+    },
+  },
+  {
+    title: "Unwinding an evolute",
+    note: "The involute of an evolute is the curve",
+    config: {
+      ...base,
+      kind: "involute",
+      // The evolute of a logarithmic spiral is the same spiral turned. A
+      // string as long as the radius of curvature at t = 0, √(1 + 0.15²),
+      // unwound from it retraces the spiral.
+      input: "evolute",
+      curve: {
+        ...base.curve,
+        x: "exp(0.15*t)*cos(t)",
+        y: "exp(0.15*t)*sin(t)",
+        min: 0,
+        max: 4 * Math.PI,
+      },
+      offset: Math.sqrt(1.0225),
+      samples: 2000,
+      lines: 40,
+    },
+  },
+  {
+    title: "Rolling on an ellipse's pedal",
+    note: "A rolling circle on a derived curve",
+    config: {
+      ...base,
+      kind: "rolling",
+      // The pedal about the center is about 10.7411 long, so a circle of
+      // this radius turns 14 times around it and closes.
+      input: "pedal",
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      rolling: { ...base.rolling, side: "right", radius: 0.1221066, arm: 0.3 },
+      samples: 4000,
+      lines: 60,
+    },
+  },
+  {
+    title: "Offsets of an evolute",
+    note: "Parallels of an ellipse's evolute",
+    config: {
+      ...base,
+      kind: "offset",
+      input: "evolute",
+      curve: { ...base.curve, x: "2*cos(t)", y: "1.1*sin(t)" },
+      stack: { enabled: true, from: -0.6, to: 0.6, count: 9 },
+      samples: 2000,
+      lines: 48,
     },
   },
 ];

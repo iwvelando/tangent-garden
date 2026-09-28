@@ -180,34 +180,70 @@ func TestRollingFirstOrder(t *testing.T) {
 	}
 }
 
-// The circle cannot roll past a cusp, where the tangent reverses between
-// samples, or across an invalid sample; it stops explicitly instead of
-// jumping to the other side.
+// The circle cannot roll across an invalid sample; it stops explicitly
+// instead of jumping.
 func TestRollingStops(t *testing.T) {
-	for _, tc := range []struct {
-		x, y    string
-		lo, hi  float64
-		stop    float64
-		warning string
-	}{
-		{"cos(t)^3", "sin(t)^3", .3, 2, math.Pi / 2, "tangent reversed"},
-		{"t", "1/t", -1, 1, 0, "invalid interval"},
-	} {
-		q := rollingRequest(tc.x, tc.y, tc.lo, tc.hi, Roller{Side: "left", Radius: .1, Arm: .1})
-		r := compute(t, q)
-		for j, p := range r.Derived {
-			u := sampleT(q, j)
-			if u < tc.stop-.01 && p == nil || u > tc.stop && p != nil {
-				t.Fatalf("%s at t=%g: %v", tc.y, u, p)
-			}
+	q := rollingRequest("t", "1/t", -1, 1, Roller{Side: "left", Radius: .1, Arm: .1})
+	r := compute(t, q)
+	for j, p := range r.Derived {
+		if u := sampleT(q, j); u < -.01 && p == nil || u > 0 && p != nil {
+			t.Fatalf("at t=%g: %v", u, p)
 		}
-		if !strings.Contains(strings.Join(r.Warnings, " "), tc.warning) {
-			t.Fatalf("%s: warnings %v", tc.y, r.Warnings)
+	}
+	if !warned(r, "invalid interval") {
+		t.Fatalf("warnings %v", r.Warnings)
+	}
+	for _, s := range r.Rolling {
+		if sampleT(q, s.SampleIndex) > 0 {
+			t.Fatalf("rolling position after the stop at %d", s.SampleIndex)
 		}
-		for _, s := range r.Rolling {
-			if sampleT(q, s.SampleIndex) > tc.stop {
-				t.Fatalf("rolling position after the stop at %d", s.SampleIndex)
-			}
+	}
+}
+
+// At a cusp the direction of travel reverses. The circle stays on its side
+// of the curve, touches the cusp, and rolls back out, turning the other way.
+// On (t², 0), which runs into the cusp at t = 0 and back along the same
+// line, it retraces its path: the trace at −t is the trace at t.
+func TestRollingBackOutOfCusps(t *testing.T) {
+	q := rollingRequest("t^2", "0", -1, 1, Roller{Side: "left", Radius: .2, Arm: .15, Phase: .3})
+	r := compute(t, q)
+	n := q.Samples - 1
+	for j := 0; j < n/2; j++ {
+		if r.Derived[j] == nil {
+			t.Fatalf("gap at %d", j)
+		}
+		closeVec(t, r.Derived[n-j], *r.Derived[j], 1e-9)
+	}
+	// Before the cusp, travel is toward −x, so the left is below the line.
+	s := q.Rolling.at(Vec{1, 0}, Vec{-2, 0}, 0)
+	closeVec(t, r.Derived[0], s.Point, 1e-12)
+	if len(r.Rolling) != q.Lines-1 || !warned(r, "rolls back out of 1 cusp") {
+		t.Fatalf("%d positions, %v", len(r.Rolling), r.Warnings)
+	}
+	for _, s := range r.Rolling {
+		if s.Center.Y > -.2+1e-12 || s.Center.Y < -.2-1e-12 {
+			t.Fatalf("center %v left the lower side", s.Center)
+		}
+	}
+
+	// Around an astroid the circle passes all four cusps without a jump, and
+	// never slips: the trace moves at right angles to the arm from the
+	// contact, except next to a cusp, where both stop.
+	q = rollingRequest("cos(t)^3", "sin(t)^3", .3, .3+2*math.Pi, Roller{Side: "right", Radius: .1, Arm: .07})
+	q.Samples = 4001
+	r = compute(t, q)
+	if r.Invalid != 0 || len(r.Rolling) != q.Lines || !warned(r, "rolls back out of 4 cusps") {
+		t.Fatalf("%d invalid, %d positions, %v", r.Invalid, len(r.Rolling), r.Warnings)
+	}
+	for j := 1; j < len(r.Derived)-1; j++ {
+		u := sampleT(q, j)
+		v := r.Derived[j+1].Sub(*r.Derived[j-1])
+		arm := r.Derived[j].Sub(*r.Base[j])
+		if math.Abs(v.Dot(arm)) > 2e-3*v.Norm()*arm.Norm()+1e-9 && math.Abs(math.Sin(2*u)) > .05 {
+			t.Fatalf("slipping at t=%g: %g", u, v.Dot(arm)/(v.Norm()*arm.Norm()))
+		}
+		if j > 1 && v.Norm() > 10*r.Derived[j].Sub(*r.Derived[j-2]).Norm()+1e-3 {
+			t.Fatalf("jump at %d", j)
 		}
 	}
 }

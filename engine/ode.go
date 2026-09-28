@@ -22,33 +22,51 @@ var (
 // dormandPrince advances y from t by h with the fifth-order solution, and
 // returns the embedded error estimate when asked.
 func dormandPrince(f odeFunc, t float64, y []float64, h float64, estimate bool) (next, err []float64) {
-	m := len(y)
-	var k [7][]float64
-	stage := make([]float64, m)
-	k[0] = make([]float64, m)
-	f(t, y, k[0])
-	for s, row := range dpA {
-		for q := range stage {
-			sum := 0.0
-			for r, a := range row {
-				sum += a * k[r][q]
-			}
-			stage[q] = y[q] + h*sum
-		}
-		k[s+1] = make([]float64, m)
-		f(t+dpC[s]*h, stage, k[s+1])
-	}
-	// The last stage is evaluated at the fifth-order solution itself.
-	next = append([]float64{}, stage...)
+	var w stages
+	next = append([]float64{}, w.step(f, t, y, h, estimate)...)
 	if estimate {
-		err = make([]float64, m)
+		err = make([]float64, len(y))
 		for q := range err {
 			for r, e := range dpE {
-				err[q] += h * e * k[r][q]
+				err[q] += h * e * w.k[r][q]
 			}
 		}
 	}
 	return next, err
+}
+
+// stages holds one step's slopes and stage state, so that repeated steps
+// allocate nothing.
+type stages struct {
+	k     [7][]float64
+	stage []float64
+}
+
+// step advances y from t by h and returns the fifth-order solution, valid
+// until the next step. The final slope, at that solution, is needed only for
+// the error estimate.
+func (w *stages) step(f odeFunc, t float64, y []float64, h float64, estimate bool) []float64 {
+	m := len(y)
+	if len(w.stage) != m {
+		for r := range w.k {
+			w.k[r] = make([]float64, m)
+		}
+		w.stage = make([]float64, m)
+	}
+	f(t, y, w.k[0])
+	for s, row := range dpA {
+		for q := range w.stage {
+			sum := 0.0
+			for r, a := range row {
+				sum += a * w.k[r][q]
+			}
+			w.stage[q] = y[q] + h*sum
+		}
+		if s+1 < len(dpA) || estimate {
+			f(t+dpC[s]*h, w.stage, w.k[s+1])
+		}
+	}
+	return w.stage
 }
 
 // solution is an integrated system: the accepted steps from states ys at
@@ -63,11 +81,14 @@ type solution struct {
 	end    float64
 	// Whether the solution runs all the way to hi.
 	complete bool
+	// Scratch for evaluating between steps.
+	work stages
 }
 
 func (s *solution) steps() int { return len(s.ts) - 1 }
 
-// state returns the solution at t, while it is known.
+// state returns the solution at t, while it is known. The state is valid
+// until the next call.
 func (s *solution) state(t float64) ([]float64, bool) {
 	if t > s.end && s.complete && t-s.end <= 1e-12*(s.hi-s.lo) {
 		// The last sample can land a rounding error past the domain end.
@@ -88,7 +109,8 @@ func (s *solution) state(t float64) ([]float64, bool) {
 	}
 	y := s.ys[k]
 	if d := t - s.ts[k]; d > 0 {
-		y, _ = dormandPrince(s.f, s.ts[k], y, d, false)
+		// Valid until the next call; callers copy what they keep.
+		y = s.work.step(s.f, s.ts[k], y, d, false)
 	}
 	return y, true
 }
