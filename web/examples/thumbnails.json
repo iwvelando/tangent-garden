@@ -45,10 +45,12 @@
     "offsets-of-an-evolute": "5fb87797"
   },
   "3d": {
-    "trefoil-2-3": "59b7d790",
-    "cinquefoil-2-5": "99ed862c",
-    "woven-orbit-3-4": "99626115",
-    "helix-a-ribbon-staircase": "4c66a25e",
-    "lissajous-a-spatial-weave": "f1968a70"
+    "trefoil-2-3": "996094a2",
+    "cinquefoil-2-5": "9948fdd2",
+    "woven-orbit-3-4": "846075b3",
+    "helix-a-ribbon-staircase": "060525b0",
+    "lissajous-a-spatial-weave": "688dca32",
+    "unwinding-a-staircase": "61fc95b7",
+    "a-knot-shedding-filaments": "5099136e"
   }
 }

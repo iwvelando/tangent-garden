@@ -60,8 +60,13 @@ export const planarExamples: Example[] = presets.map((p) => ({
 export const spatialExamples: Example[] = spatialPresets.map((p) => ({
   title: p.name,
   caption: p.detail,
-  family: p.config.format === "torus" ? "Torus knots" : "Parametric curves",
-  keywords: p.config.format,
+  family:
+    p.config.construction === "involute"
+      ? "Involute filaments"
+      : p.config.format === "torus"
+        ? "Torus knots"
+        : "Parametric curves",
+  keywords: `${p.config.format} ${p.config.construction}`,
   fingerprint: fingerprint(p.config),
 }));
 

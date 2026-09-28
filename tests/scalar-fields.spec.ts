@@ -638,3 +638,39 @@ test("spatial custom domain and shape fields share the bounded scalar parser", a
     await expect(page.getByRole("alert")).toHaveCount(0);
   }
 });
+
+test("spatial involute anchor and string lengths share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, "3");
+  const stage = page.locator(".spatial-stage");
+  await page
+    .getByLabel("Construction", { exact: true })
+    .selectOption("involute");
+  const involute = async () => (await spatialConfig(stage))?.involute;
+  for (const [name, text, read, value] of [
+    ["Anchor t₀", "pi/2", (i: any) => i.anchor, Math.PI / 2],
+    ["String length c", "-e", (i: any) => i.offset, -Math.E],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(async () => read(await involute())).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+  }
+  await page.getByRole("checkbox", { name: "Family of involutes" }).check();
+  for (const [name, text, key, value] of [
+    ["c from", "-phi", "from", -phi],
+    ["c to", "2*pi", "to", 2 * Math.PI],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(async () => (await involute())?.family[key]).toBe(value);
+  }
+  for (const name of ["Anchor t₀", "c from", "c to"]) {
+    for (const variable of ["t", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill("1");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});

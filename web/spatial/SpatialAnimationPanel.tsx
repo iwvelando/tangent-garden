@@ -5,7 +5,7 @@ import {
   availableTargets,
   integerTargets,
   reveal,
-  targetLabels,
+  targetLabel,
   targetValue,
   type AnimationView,
   type CameraMode,
@@ -194,9 +194,11 @@ export function SpatialAnimationPanel({
         ? Math.min(2400, from * 2)
         : target === "lines"
           ? Math.min(240, from + 20)
-          : target === "tube"
-            ? from * 0.75
-            : from + 1;
+          : target === "count"
+            ? Math.min(24, from + 4)
+            : target === "tube"
+              ? from * 0.75
+              : from + 1;
     return { target, from: String(from), to: String(to) };
   }
   function parameterMode(next: "reveal" | "parameters" | "orbit") {
@@ -245,7 +247,7 @@ export function SpatialAnimationPanel({
         s.tracks
           .map(
             (t) =>
-              `${targetLabels[t.target]} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
+              `${targetLabel(view.frame.config, t.target)} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
           )
           .join(" · "),
       );
@@ -336,7 +338,7 @@ export function SpatialAnimationPanel({
             (!Number.isInteger(t.from) || !Number.isInteger(t.to))
           )
             throw new Error(
-              "Sample and line count endpoints must be whole numbers.",
+              "Sample, line, and involute count endpoints must be whole numbers.",
             );
         }
       }
@@ -526,7 +528,7 @@ export function SpatialAnimationPanel({
                         )
                         .map((target) => (
                           <option key={target} value={target}>
-                            {targetLabels[target]}
+                            {frame ? targetLabel(frame.config, target) : target}
                           </option>
                         ))}
                     </select>

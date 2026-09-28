@@ -22,8 +22,8 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 
 ### Recommended next slices
 
-- [ ] 1a. One spatial involute with an arc-length anchor and visible unwinding segments.
-- [ ] 1b. Bounded involute families with independently framed members and stable reveal identities.
+- [x] 1a. One spatial involute with an arc-length anchor and visible unwinding segments.
+- [x] 1b. Bounded involute families with independently framed members and stable reveal identities.
 - [ ] 2a. Spatial tangent-foot projection and orthotomic, with an independent 3D pole.
 - [ ] 2b. Sphere inversion of a base or supported derived space curve.
 - [ ] 3a. Structured spatial harmonic generators and visible generating vectors.
@@ -169,6 +169,13 @@ Baseline: the spatial feature branch includes the initial tangent-developable im
 
 Known MVP limits: one spatial construction class; bounded torus/custom-expression inputs; uniform curve sampling and heuristic singularity/normal guards; opaque sheets and orthographic projection; fixed initial shading; no persistent study/camera files; no true vector shaded-surface export; no automatic WebGL context recovery. The UI, sampling policies and media path are already in place for adding another class deliberately.
 
-Recommended first implementation: **1a, one spatial involute**. Add arc length and a derived-path result to `engine3`, verify the circle/helix identities, then add the construction choice, c control/track, correspondence segments, and a preset. Keep involute stacks, framing methods and new surface classes out of that first PR.
+Slices 1a and 1b (branch `claude/spatial-involutes`) landed together, because a family is the natural shape of the result type: a single involute is a one-member family, and designing the type once avoided churn. Durable definitions now live in [mathematics.md](mathematics.md#spatial-involute), [architecture.md](architecture.md), [usage.md](usage.md), and [spatial-study.md](spatial-study.md).
+
+- Conventions: `I_c = r + (c − s)T` with s measured from the anchor t₀ inside the domain, so `c = −c_planar` against the planar engine (anchor at the domain start). Simpson arc length per interval, split at t₀; accumulation stops at the first invalid sample or break on each side and counts unreached samples. Anchors outside the domain or on a broken interval are refused. The cusp at s = c is kept; a line's involute is reported as collapsed and drawn as a cross.
+- Workload: families of 2–24 members and at most 48,000 points; `c`, `from`, `to` within ±100000. Anchor, c, family range and count are animation tracks; the tangent reach L is neither validated nor offered in involute mode.
+- Verification run on this branch: `go test ./engine3` (helix closed form, planar agreement, rigid motion, reparameterization, fourth-order arc length, orthogonality convergence, cusps, collapsed lines, stops, refused anchors, families, bounds, validation) and the WASM bridge test, plus `tests/spatial-involute.spec.ts` (layers, validation, count and range tracks, reveal, all four camera modes, an independently decoded MP4) and the scalar-field, layout, and gallery extensions. At handoff, `make check` passed (engine3 coverage 99.3%), all 452 Chromium tests passed, and all six WebKit tests passed. The WebKit suite has no involute-specific case; the involute reuses its rendering and encoding path.
+- Limits: no arc-length restart after a gap, no tangent-developable surface under the filaments, uniform sampling only, and 1-pixel WebGL lines. Filaments of a long closed curve (a whole knot) extend to about half its length from the anchor, so knot studies are dominated by their filaments.
+
+Recommended next step: **2a, spatial tangent-foot projection and orthotomic** with an independent 3D pole. It can reuse the construction selector, per-construction layers, and the derived-path pattern from the involute; add a pole marker type rather than overloading strings.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

@@ -23,17 +23,21 @@ Choose **Custom parametric** under Spatial definition to open a torus knot as ed
 
 Drag to orbit, shift-drag to pan, and scroll to zoom. Keyboard equivalents are arrows, shift-arrows, +/−, and Home. **Rotate view** provides a quick camera-only preview. **Animation** offers a progressive reveal, simultaneous parameter tracks, or a full camera orbit. Pause to scrub; Stop restores the base study and manual view. The four camera modes match the planar notebook. Hold current view includes orbit, pan, and zoom in playback and exports.
 
+## Involute filaments
+
+Choose **Construction · Involute** to unwind taut strings from the same curves. Arc length starts at **Anchor t₀**, where the string has length **c**; the free end traces a filament that touches the curve in a cusp where the string runs out. **Family of involutes** replaces c with 2–24 evenly spaced lengths. Open **Unwinding a staircase** to see a helix shed nine stacked planar spirals, each a lifted circle involute, joined by the tangent strings. **A knot shedding filaments** unwinds seven close lengths from a (3, 4) knot into a braided cage. Hide **Unwinding strings** to see the filaments alone. Animate c, the anchor, or the family range and count; reveal grows the filaments from the domain start without re-measuring arc length. Arc length never crosses a pole or stationary point: the far side is left without a filament, with a note. See [the mathematical conventions](mathematics.md#spatial-involute).
+
 **Export image** saves a 2000 × 1520 PNG or an SVG containing that shaded PNG and study metadata. The SVG option is explicitly labelled as an embedded image, since depth-tested shading is raster content. Animation exports use the same sampler and renderer, with MP4 or animated WebP according to browser capabilities, adjustable resolution/quality/frame rate, and exact file duration independent of rendering speed. Cancellation discards the file. No screen recording or external service is involved.
 
 ## Deliberate limits
 
-This is one construction class, with no transparency, simulated optics, lighting editor, or saved-camera links. Rendering needs WebGL; the 2D notebook remains independent. Opaque, double-sided sheets and depth-tested linework make the folds readable. Occlusion hides rear geometry while surfaces are enabled; hiding surfaces exposes the line family. Orthographic projection avoids perspective scale distortion. Both notebooks share one page layout: the same header, sidebar, drawing frame with its heading and legend, and explanation. On desktop the controls scroll independently; narrow screens place the artwork first, followed by the controls and then the explanation.
+There are two construction classes, with no transparency, simulated optics, lighting editor, or saved-camera links. Rendering needs WebGL; the 2D notebook remains independent. Opaque, double-sided sheets and depth-tested linework make the folds readable. Occlusion hides rear geometry while surfaces are enabled; hiding surfaces exposes the line family. Orthographic projection avoids perspective scale distortion. Both notebooks share one page layout: the same header, sidebar, drawing frame with its heading and legend, and explanation. On desktop the controls scroll independently; narrow screens place the artwork first, followed by the controls and then the explanation.
 
 The engine retains the singular spine and self-intersections, leaves gaps at invalid points and unreliable normals, and closes analytic torus knots exactly. Arbitrary expressions are sampled with bounded numerical derivatives; narrow folds or rapid oscillations may need more samples or a smaller domain. No finite-resolution certification is claimed. See [the mathematical conventions](mathematics.md#spatial-tangent-developable).
 
 Analytic derivative checks, torus and speed identities, ruling length/tangency, opposite sheet normals, closure, zero-curvature gaps, convergence, bounded inputs, and the WASM bridge verify the mathematics. Browser checks cover custom expressions, scalars, playback endpoints and cameras, image dimensions, independently decoded animation timing, cancellation, layers, themes, and responsive paired-field layout.
 
-A later mathematical class could be a family of spatial involutes, reusing space curves and the camera while giving derived curves their own result type.
+The involute reuses the space curves, sampling, camera, and media path, and gives its filaments and strings their own result type.
 
 ## Future work
 

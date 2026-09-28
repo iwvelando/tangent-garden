@@ -87,7 +87,7 @@ for (const width of [1440, 390]) {
         .getByRole("checkbox", { name: "Fit the window to the iterates" })
         .uncheck();
     });
-    for (const preset of ["0", "3", "4"])
+    for (const preset of ["0", "3", "4", "5", "6"])
       setups.push(async () => {
         await page.goto("/?study=3d");
         await choosePreset(page, preset);

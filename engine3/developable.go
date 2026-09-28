@@ -24,16 +24,22 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 
 // P and Q are coprime integer winding numbers. Length is the half-length
 // of each tangent ruling, measured in world units, not parameter units.
+//
+// Construction is "developable" (or empty) for the tangent developable, or
+// "involute" for the filaments described by Involute; Length applies only to
+// the developable.
 type Request struct {
-	Format  string  `json:"format"`
-	Curve   Curve   `json:"curve"`
-	Radius  float64 `json:"radius"`
-	Tube    float64 `json:"tube"`
-	Length  float64 `json:"length"`
-	P       int     `json:"p"`
-	Q       int     `json:"q"`
-	Samples int     `json:"samples"`
-	Lines   int     `json:"lines"`
+	Format       string          `json:"format"`
+	Construction string          `json:"construction"`
+	Involute     InvoluteRequest `json:"involute"`
+	Curve        Curve           `json:"curve"`
+	Radius       float64         `json:"radius"`
+	Tube         float64         `json:"tube"`
+	Length       float64         `json:"length"`
+	P            int             `json:"p"`
+	Q            int             `json:"q"`
+	Samples      int             `json:"samples"`
+	Lines        int             `json:"lines"`
 }
 type Vertex struct {
 	SampleIndex int     `json:"sampleIndex"`
@@ -57,6 +63,9 @@ type Result struct {
 	Rulings []Ruling `json:"rulings"`
 	Radius  float64  `json:"radius"`
 	Omitted int      `json:"omitted"`
+	// Involute is present only for the involute construction, which leaves
+	// the developable's Minus, Plus, Mesh, and Rulings empty.
+	Involute *InvoluteResult `json:"involute,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -75,7 +84,11 @@ func Compute(c Request) (Result, error) {
 	if c.Samples < 240 || c.Samples > 2400 || c.Lines < 12 || c.Lines > 240 {
 		return Result{}, fmt.Errorf("use 240–2400 samples and 12–240 rulings")
 	}
-	if !finite(c.Length) || c.Length <= 0 || c.Length > 20 {
+	involute := c.Construction == "involute"
+	if !involute && c.Construction != "" && c.Construction != "developable" {
+		return Result{}, fmt.Errorf("unknown spatial construction")
+	}
+	if !involute && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
 		return Result{}, fmt.Errorf("tangent reach must be finite and between 0 (exclusive) and 20")
 	}
 	evaluate, lo, hi, closed, err := compile(c)
@@ -85,6 +98,7 @@ func Compute(c Request) (Result, error) {
 	n := c.Samples
 	out := Result{Base: make([]*Vec3, n+1), Minus: make([]*Vec3, n+1), Plus: make([]*Vec3, n+1), Breaks: make([]bool, n+1), Mesh: make([]Vertex, 0, n*12), Rulings: make([]Ruling, 0, c.Lines)}
 	normals, tangents := make([]Vec3, n+1), make([]Vec3, n+1)
+	speeds, middles := make([]float64, n+1), make([]float64, n)
 	valid := make([]bool, n+1)
 	for i := 0; i <= n; i++ {
 		t := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
@@ -95,6 +109,7 @@ func Compute(c Request) (Result, error) {
 		}
 		tangent := v.unit()
 		tangents[i] = tangent
+		speeds[i] = v.norm()
 		minus, plus := r.sub(tangent.mul(c.Length)), r.add(tangent.mul(c.Length))
 		out.Base[i] = &r
 		out.Minus[i] = &minus
@@ -119,12 +134,17 @@ func Compute(c Request) (Result, error) {
 		out.Plus[n] = out.Plus[0]
 		normals[n] = normals[0]
 		tangents[n] = tangents[0]
+		speeds[n] = speeds[0]
 		valid[n] = valid[0]
 	}
 	for i := 0; i < n; i++ {
 		// Check inside every interval as well as at sample points, so a pole or
 		// stationary point between samples does not become a connecting face.
 		_, middle, _, ok := evaluate(lo + (hi-lo)*(float64(i)+0.5)/float64(n))
+		middles[i] = math.NaN()
+		if ok && middle.valid() {
+			middles[i] = middle.norm()
+		}
 		disconnected := out.Base[i] == nil || out.Base[i+1] == nil || !ok || !middle.valid() || middle.norm() < 1e-9 || tangents[i].dot(tangents[i+1]) < 0
 		if !disconnected && c.Format == "parametric" {
 			// A chord through an asymptote is not a local tangent segment. Comparing
@@ -134,6 +154,9 @@ func Compute(c Request) (Result, error) {
 			disconnected = chord > 8*middle.norm()*(hi-lo)/float64(n)+1e-7 || displacement.dot(middle) < -1e-8*chord*middle.norm()
 		}
 		out.Breaks[i+1] = disconnected
+		if involute {
+			continue
+		}
 		if disconnected || !valid[i] || !valid[i+1] || normals[i].dot(normals[i+1]) < 0 {
 			out.Omitted++
 			continue
@@ -150,6 +173,24 @@ func Compute(c Request) (Result, error) {
 			out.Mesh = append(out.Mesh, a, b, c, b, d, c)
 		}
 	}
+	if out.Invalid == n+1 {
+		return Result{}, fmt.Errorf("no regular finite samples; check the expressions and domain")
+	}
+	if involute {
+		result, err := involutes(c.Involute, evaluate, lo, hi, out.Base, tangents, speeds, middles, out.Breaks, c.Lines)
+		if err != nil {
+			return Result{}, err
+		}
+		out.Involute = result
+		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
+		families := [][]*Vec3{out.Base}
+		for _, m := range result.Members {
+			families = append(families, m.Points)
+		}
+		out.Bounds = fit(families...)
+		out.Radius = out.Bounds.Radius
+		return out, nil
+	}
 	for i := 0; i < c.Lines; i++ {
 		j := i * n / (c.Lines - 1)
 		if out.Base[j] != nil {
@@ -158,8 +199,5 @@ func Compute(c Request) (Result, error) {
 	}
 	out.Bounds = fit(out.Base, out.Minus, out.Plus)
 	out.Radius = out.Bounds.Radius
-	if out.Invalid == n+1 {
-		return Result{}, fmt.Errorf("no regular finite samples; check the expressions and domain")
-	}
 	return out, nil
 }

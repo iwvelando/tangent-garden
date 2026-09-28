@@ -17,7 +17,7 @@ import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
 import { animationCamera, type AnimationView } from "./animation";
 import type { SpatialConfig, Frame } from "./types";
-import type { Layers, View } from "./renderer";
+import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
   const theme = useTheme(),
@@ -39,11 +39,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     [spinning, setSpinning] = useState(false);
   const [animation, setAnimation] = useState<AnimationView | null>(null),
     [running, setRunning] = useState(false);
-  const [layers, setLayers] = useState<Layers>({
-    surface: true,
-    rulings: true,
-    edges: true,
-  });
+  const [layers, setLayers] = useState<Layers>(defaultLayers);
   const viewport = useRef<View | undefined>(undefined),
     plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
@@ -152,6 +148,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     if (format === "parametric") setCustomOpened(true);
     setPreset("");
   }
+  const involute = config.construction === "involute";
   const failure = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
     : error;
@@ -201,7 +198,38 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   };
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
-  const behind = (
+  const unreached = shown?.result.involute?.unreached ?? 0;
+  const behind = involute ? (
+    <StudyExplanation
+      label="BEHIND THE FILAMENTS"
+      title="A taut string, unwound in space."
+      formula={
+        <>
+          I(t) = r(t) + (c − s(t)) T(t){" "}
+          <span>s(t) = ∫ from t₀ to t of |r′|</span>
+        </>
+      }
+      note="Each filament is traced by the free end of a string held taut along the tangent."
+      diagnostics={
+        shown &&
+        (shown.result.invalid > 0 || unreached > 0) && (
+          <p className="bottom-note">
+            {shown.result.invalid} invalid samples · {unreached} regular samples
+            beyond a gap from the anchor. Arc length is never carried across a
+            gap, so no filament is drawn there.
+          </p>
+        )
+      }
+    >
+      <p>
+        Wrap a string along the curve, starting with length c at the anchor t₀,
+        and unwind it while keeping it taut along the tangent. Its free end
+        traces an <em>involute</em>. Where the string runs out, at s = c, the
+        filament touches the curve in a cusp. Every filament crosses the tangent
+        strings at right angles; changing c gives a family of them.
+      </p>
+    </StudyExplanation>
+  ) : (
     <StudyExplanation
       label="BEHIND THE FOLDS"
       title="Straight lines, woven into space."
@@ -386,16 +414,149 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   </details>
                 </>
               )}
-              <Field
-                label="Tangent reach L"
-                help="Half-length of each straight tangent segment, in world units. Greater than 0 and at most 20."
-              >
-                <ScalarInput
-                  name="Tangent reach L"
-                  value={config.length}
-                  onChange={(value) => update((c) => ({ ...c, length: value }))}
-                />
+              <Field label="Construction">
+                <select
+                  value={config.construction}
+                  onChange={(e) => {
+                    const construction = e.target
+                      .value as SpatialConfig["construction"];
+                    update((c) => ({ ...c, construction }));
+                  }}
+                >
+                  <option value="developable">Tangent developable</option>
+                  <option value="involute">Involute · unwinding strings</option>
+                </select>
               </Field>
+              {involute ? (
+                <>
+                  <Field
+                    label="Anchor t₀"
+                    help="Where arc length s starts, as a parameter value inside the domain. The string there has length c."
+                  >
+                    <ScalarInput
+                      name="Anchor t₀"
+                      value={config.involute.anchor}
+                      onChange={(value) =>
+                        update((c) => ({
+                          ...c,
+                          involute: { ...c.involute, anchor: value },
+                        }))
+                      }
+                    />
+                  </Field>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={config.involute.family.enabled}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        update((c) => ({
+                          ...c,
+                          involute: {
+                            ...c.involute,
+                            family: { ...c.involute.family, enabled },
+                          },
+                        }));
+                      }}
+                    />
+                    Family of involutes
+                  </label>
+                  {config.involute.family.enabled ? (
+                    <>
+                      <div className="pair">
+                        {(
+                          [
+                            ["from", "c from"],
+                            ["to", "c to"],
+                          ] as const
+                        ).map(([key, label]) => (
+                          <Field
+                            label={label}
+                            key={key}
+                            help={
+                              key === "from"
+                                ? "String length of the first filament, within ±100000."
+                                : "String length of the last; members are evenly spaced."
+                            }
+                          >
+                            <ScalarInput
+                              name={label}
+                              value={config.involute.family[key]}
+                              onChange={(value) =>
+                                update((c) => ({
+                                  ...c,
+                                  involute: {
+                                    ...c.involute,
+                                    family: {
+                                      ...c.involute.family,
+                                      [key]: value,
+                                    },
+                                  },
+                                }))
+                              }
+                            />
+                          </Field>
+                        ))}
+                      </div>
+                      <Field
+                        label="Involutes"
+                        help="From 2 to 24 filaments, and at most 48,000 points in all (involutes × samples)."
+                      >
+                        <input
+                          type="number"
+                          min="2"
+                          max="24"
+                          step="1"
+                          value={
+                            Number.isNaN(config.involute.family.count)
+                              ? ""
+                              : config.involute.family.count
+                          }
+                          onChange={(e) => {
+                            const count = e.target.valueAsNumber;
+                            update((c) => ({
+                              ...c,
+                              involute: {
+                                ...c.involute,
+                                family: { ...c.involute.family, count },
+                              },
+                            }));
+                          }}
+                        />
+                      </Field>
+                    </>
+                  ) : (
+                    <Field
+                      label="String length c"
+                      help="Signed length of the string at the anchor, within ±100000. The filament touches the curve where s = c."
+                    >
+                      <ScalarInput
+                        name="String length c"
+                        value={config.involute.offset}
+                        onChange={(value) =>
+                          update((c) => ({
+                            ...c,
+                            involute: { ...c.involute, offset: value },
+                          }))
+                        }
+                      />
+                    </Field>
+                  )}
+                </>
+              ) : (
+                <Field
+                  label="Tangent reach L"
+                  help="Half-length of each straight tangent segment, in world units. Greater than 0 and at most 20."
+                >
+                  <ScalarInput
+                    name="Tangent reach L"
+                    value={config.length}
+                    onChange={(value) =>
+                      update((c) => ({ ...c, length: value }))
+                    }
+                  />
+                </Field>
+              )}
             </div>
           </ScalarStatus.Provider>
           <p className="spatial-caption">
@@ -403,12 +564,16 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           </p>
           <fieldset className="spatial-layers">
             <legend>Reveal the construction</legend>
-            {(
-              [
-                ["surface", "Ribbon surface"],
-                ["rulings", "Tangent rulings"],
-                ["edges", "Ribbon edges"],
-              ] as const
+            {(involute
+              ? ([
+                  ["filaments", "Involute filaments"],
+                  ["strings", "Unwinding strings"],
+                ] as const)
+              : ([
+                  ["surface", "Ribbon surface"],
+                  ["rulings", "Tangent rulings"],
+                  ["edges", "Ribbon edges"],
+                ] as const)
             ).map(([key, label]) => (
               <label key={key}>
                 <input
@@ -436,7 +601,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 }
               />
             </Field>
-            <Field label="Tangent lines">
+            <Field label={involute ? "Unwinding strings" : "Tangent lines"}>
               <input
                 type="number"
                 min="12"
@@ -451,7 +616,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             <p>
               Finite sampling can miss fine detail. Compare resolutions near
               poles, stationary points, and tight folds. Invalid samples and
-              unresolved tangent or normal intervals leave gaps.
+              unresolved tangent or normal intervals leave gaps. Involute arc
+              length uses Simpson's rule on each sample interval.
             </p>
           </details>
           {failure && (
@@ -464,7 +630,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} tangents`}
+                : `${config.samples.toLocaleString()} samples · ${config.lines} ${involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -498,7 +664,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   ? spatialPresets[+preset].detail
                   : "YOUR OWN EXPLORATION"}
               </div>
-              <h1>A ribbon of tangent lines</h1>
+              <h1>
+                {involute
+                  ? "Filaments unwound from a curve"
+                  : "A ribbon of tangent lines"}
+              </h1>
             </div>
             <div className="view-buttons">
               <button
@@ -547,7 +717,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             <div className="plot-meta">
               <div className="legend">
                 <span className="thread-dot" /> Base curve{" "}
-                <span className="ribbon-dot" /> Tangent developable
+                <span className="ribbon-dot" />{" "}
+                {involute ? "Involute filaments" : "Tangent developable"}
               </div>
               <span>
                 {animation
