@@ -11,8 +11,9 @@ export type InvoluteConfig = {
 };
 export type SpatialConfig = {
   format: "torus" | "parametric";
-  // `length` is the developable's tangent reach and unused by the involute.
-  construction: "developable" | "involute";
+  // `length` is the tangent reach, used only by the developable.
+  construction: "developable" | "involute" | "tangent-foot" | "orthotomic";
+  pole: Vec3;
   involute: InvoluteConfig;
   curve: {
     x: string;
@@ -45,6 +46,7 @@ export type SpatialResult = {
   // and rulings are empty. Member points are indexed like base; null is
   // invalid or unreached from the anchor.
   involute?: InvoluteResult;
+  projection?: ProjectionResult;
 };
 export type InvoluteResult = {
   members: { offset: number; points: (Vec3 | null)[]; collapsed: boolean }[];
@@ -52,3 +54,20 @@ export type InvoluteResult = {
   unreached: number;
 };
 export type Frame = { config: SpatialConfig; result: SpatialResult };
+
+// Mirrors engine3.ProjectionResult; paths share base indices and breaks.
+export type ProjectionResult = {
+  pole: Vec3;
+  points: (Vec3 | null)[];
+  feet: (Vec3 | null)[];
+  constructions: {
+    sampleIndex: number;
+    contact: Vec3;
+    foot: Vec3;
+    image: Vec3;
+  }[];
+  collapsed: boolean;
+  invalid: number;
+};
+export const usesSpatialPole = (c: SpatialConfig) =>
+  c.construction === "tangent-foot" || c.construction === "orthotomic";

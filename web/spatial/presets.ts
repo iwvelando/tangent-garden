@@ -2,6 +2,7 @@ import type { SpatialConfig } from "./types";
 const base: SpatialConfig = {
   format: "torus",
   construction: "developable",
+  pole: { x: 1.5, y: 0, z: 1 },
   involute: {
     anchor: 0,
     offset: 0,
@@ -115,6 +116,35 @@ export const spatialPresets: {
         family: { enabled: true, from: 0, to: 6, count: 7 },
       },
       lines: 30,
+    },
+  },
+  {
+    name: "A knot through perpendiculars",
+    detail: "A fixed pole meets the trefoil's moving tangents",
+    config: {
+      ...base,
+      construction: "tangent-foot",
+      pole: { x: 0, y: 0, z: 2 },
+      lines: 36,
+    },
+  },
+  {
+    name: "Half-turns around a helix",
+    detail: "A pole reflected across each tangent line",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "orthotomic",
+      pole: { x: 1.5, y: 0, z: 0 },
+      lines: 36,
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t/2",
+        a: 1,
+        min: -2 * Math.PI,
+        max: 2 * Math.PI,
+      },
     },
   },
 ];

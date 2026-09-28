@@ -24,7 +24,7 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 
 - [x] 1a. One spatial involute with an arc-length anchor and visible unwinding segments.
 - [x] 1b. Bounded involute families with independently framed members and stable reveal identities.
-- [ ] 2a. Spatial tangent-foot projection and orthotomic, with an independent 3D pole.
+- [x] 2a. Spatial tangent-foot projection and orthotomic, with an independent 3D pole.
 - [ ] 2b. Sphere inversion of a base or supported derived space curve.
 - [ ] 3a. Structured spatial harmonic generators and visible generating vectors.
 - [ ] 3b. Rotation-minimizing frames, normal-plane offsets, and explicitly framed ribbons.
@@ -176,6 +176,15 @@ Slices 1a and 1b (branch `claude/spatial-involutes`) landed together, because a 
 - Verification run on this branch: `go test ./engine3` (helix closed form, planar agreement, rigid motion, reparameterization, fourth-order arc length, orthogonality convergence, cusps, collapsed lines, stops, refused anchors, families, bounds, validation) and the WASM bridge test, plus `tests/spatial-involute.spec.ts` (layers, validation, count and range tracks, reveal, all four camera modes, an independently decoded MP4) and the scalar-field, layout, and gallery extensions. At handoff, `make check` passed (engine3 coverage 99.3%), all 452 Chromium tests passed, and all six WebKit tests passed. The WebKit suite has no involute-specific case; the involute reuses its rendering and encoding path.
 - Limits: no arc-length restart after a gap, no tangent-developable surface under the filaments, uniform sampling only, and 1-pixel WebGL lines. Filaments of a long closed curve (a whole knot) extend to about half its length from the anchor, so knot studies are dominated by their filaments.
 
-Recommended next step: **2a, spatial tangent-foot projection and orthotomic** with an independent 3D pole. It can reuse the construction selector, per-construction layers, and the derived-path pattern from the involute; add a pole marker type rather than overloading strings.
+### Slices completed in this follow-up: 2a
+
+- Implemented tangent-foot projection `H = r + ((P − r)·T)T` and tangent-line orthotomic `Q = 2H − P`, with an independent bounded 3D pole. This slice stands alone: sphere inversion needs separate center-crossing guards and an explicit supported-derived-evaluator contract.
+- Added `engine3/projection.go` and typed projection paths, feet, pole, and representative contact/foot/image records. Only the base's first derivative is required. Collapsed images remain points; nulls and shared interval breaks preserve gaps; each family and the pole frame independently.
+- Added scalar pole controls, three pole animation tracks, per-construction layers, explanations, two presets, and regenerated thumbnails. Reveal preserves sample identities, and the shared renderer handles live views and exports.
+- Workload: 240–2400 sample intervals, 12–240 representative constructions, two paths of at most 2401 points, and three pole coordinates within ±100000. No new runtime dependency or resource category. Durable definitions and guidance are in `mathematics.md`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: `make check` passed, including Go race tests (engine3 coverage 99.7%), the analytic projection WASM checks, TypeScript, formatting, vet and production notices. `make thumbnails` regenerated the gallery. `make test-browser` passed all 465 Chromium tests; `make test-webkit` passed all eight WebKit tests, including PNG/H.264 exports of both new projection presets. New tests cover geometric identities, planar agreement, rigid motion and parameter reversal, line collapse, gaps, finite bounds, all pole scalar fields, reveal identities, playback cancellation/restoration and all four cameras, decoded MP4 timing, and SVG metadata/resolution. Paired-help sweeps include both new presets at desktop/phone widths. Light/dark desktop and narrow drawings plus the new thumbnails were visually inspected.
+- Limits: uniform sampling and conservative base interval guards remain; no spatial contrapedal, derived-input composition, inversion sphere, or optical-source semantics are introduced.
+
+Recommended next step: **2b, sphere inversion**. Begin with base-curve inversion and bounded center-crossing detection between samples. For derived inputs, expose the pointwise tangent-foot/orthotomic evaluator rather than differentiating the displayed paths; explicitly bound supported composition. Keep inversion center/radius separate from the projection pole, and test involution and line/circle cases before wiring the UI.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

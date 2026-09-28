@@ -677,3 +677,31 @@ test("spatial involute anchor and string lengths share the bounded scalar parser
     await expect(page.getByRole("alert")).toHaveCount(0);
   }
 });
+
+for (const construction of ["tangent-foot", "orthotomic"])
+  test(`spatial ${construction} pole coordinates share the bounded scalar parser`, async ({
+    page,
+  }) => {
+    await page.goto("/?study=3d");
+    await page
+      .getByLabel("Construction", { exact: true })
+      .selectOption(construction);
+    const stage = page.locator(".spatial-stage");
+    for (const [axis, expression, value] of [
+      ["x", "pi/2", Math.PI / 2],
+      ["y", "-e", -Math.E],
+      ["z", "phi", phi],
+    ] as const) {
+      await field(page, `Pole ${axis}`).fill(expression);
+      await expect
+        .poll(async () => (await spatialConfig(stage))?.pole?.[axis])
+        .toBe(value);
+      await expect(field(page, `Pole ${axis}`)).toHaveValue(expression);
+      for (const variable of ["t", "x", "a"]) {
+        await field(page, `Pole ${axis}`).fill(variable);
+        await expect(page.getByRole("alert")).toBeVisible();
+      }
+      await field(page, `Pole ${axis}`).fill(expression);
+      await expect(page.getByRole("alert")).toHaveCount(0);
+    }
+  });

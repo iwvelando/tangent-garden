@@ -14,7 +14,7 @@ async function settled(page: Page) {
 
 for (const [path, count] of [
   ["/", 43],
-  ["/?study=3d", 7],
+  ["/?study=3d", 9],
 ] as const)
   test(`the ${path === "/" ? "2D" : "3D"} gallery shows every example with a current thumbnail`, async ({
     page,

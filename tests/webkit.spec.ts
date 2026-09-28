@@ -130,39 +130,44 @@ test("PNG export works in WebKit", async ({ page }) => {
   ]);
 });
 
-test("spatial custom curves render and export through WebKit WebGL and H.264", async ({
-  page,
-}) => {
-  await page.goto("/?study=3d");
-  await choosePreset(page, "3");
-  await expect(page.locator(".spatial-stage")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  const image = page.waitForEvent("download");
-  await exportImage(page, "PNG");
-  const bytes = await readFile((await (await image).path())!);
-  expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
-    2000, 1520,
-  ]);
-  await page.locator("#spatial-animation-section > summary").click();
-  await page.getByLabel("Duration (seconds)").fill("0.4");
-  await page.locator("#spatial-export-settings > summary").click();
-  await page.getByLabel("Export frame rate").selectOption("15");
-  await page
-    .getByRole("slider", { name: "Export resolution", exact: true })
-    .fill("0.5");
-  const path = (await save(page))!;
-  const data = probe(path);
-  if (data) {
-    expect(data.frames).toBe(6);
-    expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
-  }
-  const video = await decodeVideo(page, await readFile(path));
-  expect(video.duration).toBeCloseTo(0.4, 3);
-  expect(video.first.hash).not.toBe(video.last.hash);
-});
+for (const [preset, name] of [
+  ["3", "custom developable"],
+  ["7", "tangent-foot projection"],
+  ["8", "tangent-line orthotomic"],
+])
+  test(`spatial ${name} renders and exports through WebKit WebGL and H.264`, async ({
+    page,
+  }) => {
+    await page.goto("/?study=3d");
+    await choosePreset(page, preset);
+    await expect(page.locator(".spatial-stage")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const image = page.waitForEvent("download");
+    await exportImage(page, "PNG");
+    const bytes = await readFile((await (await image).path())!);
+    expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
+      2000, 1520,
+    ]);
+    await page.locator("#spatial-animation-section > summary").click();
+    await page.getByLabel("Duration (seconds)").fill("0.4");
+    await page.locator("#spatial-export-settings > summary").click();
+    await page.getByLabel("Export frame rate").selectOption("15");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("0.5");
+    const path = (await save(page))!;
+    const data = probe(path);
+    if (data) {
+      expect(data.frames).toBe(6);
+      expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    }
+    const video = await decodeVideo(page, await readFile(path));
+    expect(video.duration).toBeCloseTo(0.4, 3);
+    expect(video.first.hash).not.toBe(video.last.hash);
+  });
 
 // An iterated map's density is a PNG embedded in the SVG; drawing that SVG
 // to a canvas must keep it and must not taint the canvas.
