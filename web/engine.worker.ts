@@ -1,5 +1,15 @@
 /// <reference lib="webworker" />
-import { usesPole, type Bounds, type Config, type Result } from "./types";
+// No import or export statements: the dev server serves this classic worker
+// unbundled, and either would stop it from starting. Reference types inline
+// (scripts/test-dev-worker.mjs checks this).
+
+// Mirrors usesPole in types.ts; the Record type fails to compile if they drift.
+const poleKinds: Record<import("./types").PoleKind, true> = {
+  pedal: true,
+  contrapedal: true,
+  orthotomic: true,
+};
+const usesPole = (kind: string) => Object.hasOwn(poleKinds, kind);
 declare const Go: new () => {
   importObject: WebAssembly.Imports;
   run(instance: WebAssembly.Instance): Promise<void>;
@@ -25,8 +35,8 @@ self.onmessage = async ({
   data,
 }: MessageEvent<{
   id: number;
-  config: Config;
-  bounds?: Bounds;
+  config: import("./types").Config;
+  bounds?: import("./types").Bounds;
   expressions?: string[];
   action: "compute" | "scalars" | "spatial";
   spatial?: import("./spatial/types").SpatialConfig;
@@ -220,7 +230,7 @@ self.onmessage = async ({
       throw new Error("Grid cells and iterate counts must be whole numbers.");
     if (stacked && !Number.isInteger(config.stack.count))
       throw new Error("The number of offsets must be a whole number.");
-    const result: Result | { error: string } = JSON.parse(
+    const result: import("./types").Result | { error: string } = JSON.parse(
       tangentGardenCompute(JSON.stringify(config)),
     );
     if (!("error" in result) && result.sourcePosition)
