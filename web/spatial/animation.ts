@@ -52,10 +52,13 @@ type NamedTarget =
   | "shift"
   | "sphereRadius"
   | "meridians"
-  | "escape";
+  | "escape"
+  | "capture";
 // One coordinate of a vector field's seed, numbered from 1.
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
-export type Target = NamedTarget | HarmonicTarget | SeedTarget;
+// A pursuer's starting coordinate or speed, numbered from 1.
+export type PursuerTarget = `pursuer${number}${"X" | "Y" | "Z" | "Speed"}`;
+export type Target = NamedTarget | HarmonicTarget | SeedTarget | PursuerTarget;
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
 export type AnimationView = {
@@ -104,6 +107,7 @@ export const targetLabels: Record<NamedTarget, string> = {
   sphereRadius: "Tube radius R",
   meridians: "Meridians",
   escape: "Escape radius R",
+  capture: "Capture distance ε",
 };
 const subscript = (n: number) =>
   String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
@@ -116,6 +120,23 @@ const seedTarget = (t: Target) => {
     ? {
         index: +match[1] - 1,
         axis: match[2].toLowerCase() as "x" | "y" | "z",
+      }
+    : null;
+};
+export const spatialPursuerLabels = {
+  X: (n: number) => `Start x${subscript(n)}`,
+  Y: (n: number) => `Start y${subscript(n)}`,
+  Z: (n: number) => `Start z${subscript(n)}`,
+  Speed: (n: number) => `Speed v${subscript(n)}`,
+};
+const isPursuer = (t: Target): t is PursuerTarget => t.startsWith("pursuer");
+const pursuerTarget = (t: Target) => {
+  const match = /^pursuer(\d+)(X|Y|Z|Speed)$/.exec(t);
+  return match
+    ? {
+        index: +match[1] - 1,
+        field: match[2] as keyof typeof spatialPursuerLabels,
+        key: match[2].toLowerCase() as "x" | "y" | "z" | "speed",
       }
     : null;
 };
@@ -157,10 +178,14 @@ export const targetLabel = (c: SpatialConfig, t: Target): string => {
       : harmonicLabels[h.field](h.index + 1, h.axis!);
   const seed = seedTarget(t);
   if (seed) return seedLabel(seed.index + 1, seed.axis);
+  const pursuer = pursuerTarget(t);
+  if (pursuer) return spatialPursuerLabels[pursuer.field](pursuer.index + 1);
   return t === "lines" && c.construction === "none"
     ? c.format === "field"
       ? "Field arrows"
-      : "Representative samples"
+      : c.format === "pursuit"
+        ? "Connecting polygons"
+        : "Representative samples"
     : t === "lines" && c.construction === "canal"
       ? "Contact circles"
       : t === "lines" && c.construction === "ruled"
@@ -252,20 +277,31 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
             "min",
             "max",
           ]
-        : c.format === "harmonic"
+        : c.format === "pursuit"
           ? [
-              "c0x",
-              "c0y",
-              "c0z",
-              ...c.harmonic.terms.flatMap((_, k) =>
-                (
-                  ["Frequency", "Ax", "Ay", "Az", "Bx", "By", "Bz"] as const
-                ).map((field) => `harmonic${k + 1}${field}` as const),
+              ...c.pursuit.pursuers.flatMap((_, k) =>
+                (["X", "Y", "Z", "Speed"] as const).map(
+                  (field) => `pursuer${k + 1}${field}` as const,
+                ),
               ),
+              "capture",
               "min",
               "max",
             ]
-          : ["radius", "tube"];
+          : c.format === "harmonic"
+            ? [
+                "c0x",
+                "c0y",
+                "c0z",
+                ...c.harmonic.terms.flatMap((_, k) =>
+                  (
+                    ["Frequency", "Ax", "Ay", "Az", "Bx", "By", "Bz"] as const
+                  ).map((field) => `harmonic${k + 1}${field}` as const),
+                ),
+                "min",
+                "max",
+              ]
+            : ["radius", "tube"];
   return c.format === "parametric" || c.format === "field"
     ? [curve[0], ...construction, ...curve.slice(1), "samples", "lines"]
     : [...construction, ...curve, "samples", "lines"];
@@ -298,6 +334,13 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   }
   if (t === "escape") return c.field.escape;
   if (isCurve(t) && c.format === "field") return c.field[t];
+  if (isPursuer(t)) {
+    const pursuer = pursuerTarget(t)!;
+    return c.pursuit.pursuers[pursuer.index]?.[pursuer.key] ?? NaN;
+  }
+  if (t === "capture") return c.pursuit.capture;
+  if ((t === "min" || t === "max") && c.format === "pursuit")
+    return c.pursuit[t];
   if (isCurve(t)) return c.curve[t];
   if (t === "anchor" || t === "offset") return c.involute[t];
   if (isInvolute(t)) return c.involute.family[t];
@@ -348,6 +391,16 @@ export function applyTracks(
     } else if (t.target === "escape") config.field.escape = v;
     else if (isCurve(t.target) && config.format === "field")
       config.field[t.target] = v;
+    else if (isPursuer(t.target)) {
+      const pursuer = pursuerTarget(t.target)!;
+      if (config.pursuit.pursuers[pursuer.index])
+        config.pursuit.pursuers[pursuer.index][pursuer.key] = v;
+    } else if (t.target === "capture") config.pursuit.capture = v;
+    else if (
+      (t.target === "min" || t.target === "max") &&
+      config.format === "pursuit"
+    )
+      config.pursuit[t.target] = v;
     else if (isCurve(t.target)) config.curve[t.target] = v;
     else if (t.target === "anchor" || t.target === "offset")
       config.involute[t.target] = v;
@@ -497,7 +550,19 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       reached(result.field!.paths[k]) ? e : { ...e, point: null },
     ),
   };
-  const generating = [...harmonicFamilies(harmonic), ...(field?.paths ?? [])];
+  // The chase stops for everyone at once: its final positions are marked
+  // once the reveal passes the stop.
+  const pursuit = result.pursuit && {
+    ...result.pursuit,
+    paths: result.pursuit.paths.map((p) => p.slice(0, last + 1)),
+    polygons: result.pursuit.polygons.filter((g) => g.sampleIndex <= last),
+    final: reached(result.pursuit.paths[0]) ? result.pursuit.final : [],
+  };
+  const generating = [
+    ...harmonicFamilies(harmonic),
+    ...(field?.paths ?? []),
+    ...(pursuit?.paths ?? []),
+  ];
   return {
     ...result,
     base,
@@ -511,6 +576,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     inversion,
     harmonic,
     field,
+    pursuit,
     frame,
     ruled,
     canal,

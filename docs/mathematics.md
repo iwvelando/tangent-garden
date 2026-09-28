@@ -439,6 +439,38 @@ Samples after a trajectory's end are gaps, never joined or extrapolated. A seed 
 
 Mutations that drop the escape bisection or the timed-field rule for resting seeds each fail. The WebAssembly bridge test checks the helices, an escape time, a timed field and refusals.
 
+## Spatial cyclic pursuit
+
+`n` pursuers (`2 ≤ n ≤ 16`) start at points `pᵢ` (coordinates within ±10⁵) at `t = t₀`, the interval start, and each runs straight at the next, the last at the first, at its own constant speed `0 ≤ vᵢ ≤ 100000`:
+
+`pᵢ′ = vᵢ (pᵢ₊₁ − pᵢ) / |pᵢ₊₁ − pᵢ|`.
+
+`t` is time. The first pursuer's path is the base curve on which every construction is built; every path is returned separately, indexed like the base samples, with the connecting polygon of all positions, in chase order and closed, at each representative sample.
+
+**Capture policy.** The planar policy is kept exactly, and its step control and budget are shared code (`engine/cyclic`, dimension-free; the planar pursuit uses it with two coordinates). The chase stops, for every pursuer, the first time any pursuer comes within the capture distance `0 < ε ≤ 100000` of its own target; the result reports the time and pair (the closest, then the lowest index), and every pursuer's final position. Later samples are gaps. Nobody merges or changes target, and pursuers that are not chasing one another may pass through each other; no merger topology is invented. A pursuer that starts within ε of its target ends the chase at once: alone, the starts are drawn; under a construction, pursuer 1's single start sample is used if it is regular.
+
+**Integration.** The whole chase is one system, integrated with Dormand–Prince 5(4) steps whose local error is held to `10⁻¹²` of the smallest gap at the step's start (plus a rounding floor of `10⁻¹⁴` times each coordinate), so a scaled chase is the same chase in scaled time. Each step is at most `(g − ε)/(2 v_max)`, so no pursuer can come within ε of its target inside a step, however briefly; the chase stops when the remaining difference is below `10⁻¹²ε` plus the rounding floor of that pair's coordinates. The budget is 40,000 attempted steps; when it runs out the result is marked exhausted with the time reached.
+
+**Derivatives from the law.** The base's velocity is the pursuit law itself, `v₁u` with `u` the unit vector from pursuer 1 to pursuer 2 at gap `d`. Its acceleration is the law's exact derivative, `(v₁/d)(w − (u·w)u)` for the closing velocity `w = p₂′ − p₁′`, evaluated from the dense state. Nothing is differentiated from the integrated positions. A still first pursuer has no tangent: its samples are invalid, so a construction on it is refused, while the chase alone is still drawn unless nobody moves.
+
+**Exact cases.**
+
+- Equal speeds `v` from a regular polygon of circumradius `r₀`, in any plane: every path is the planar logarithmic spiral `r = r₀ − vt sin(π/n)`, `θ = θ₀ + cot(π/n) ln(r₀/r)` carried into that plane, captured when `r = ε/(2 sin(π/n))`. Its speed is constant and its acceleration is normal, `v² cos(π/n)/r`, so its tangent developable lies in the plane.
+- Four equal pursuers from a regular tetrahedron, `(±1, 0, h)` and `(0, ±1, −h)` with `h = 1/√2`, taken in turn. The rotoreflection `S(x, y, z) = (−y, x, −z)` carries each to the next, and the chase keeps that symmetry. In cylindrical coordinates about the axis, `ρ′ = −vρ/d`, `θ′ = v/d`, and `z′ = −2vz/d` with `d = √2 ρ √(1 + ρ²)`, so `z = hρ²` and `θ = θ₀ + ln(1/ρ)`: a logarithmic spiral on a paraboloid, reached at time `t = (F(1) − F(ρ))/v` with `F(ρ) = (ρ√(1 + ρ²) + asinh ρ)/√2`.
+- Two pursuers chasing each other along a skew line close at the sum of their speeds; a pursuer runs straight at a still target.
+
+**Checks.** Native tests verify:
+
+- the planar reduction: a spatial chase in `z = 0` matches the planar engine's capture exactly and its paths to 10⁻¹²;
+- the regular polygon in a tilted plane (n = 2, 3, 7) at every sample to 10⁻⁹, its capture time, final gaps of exactly ε, and regular polygons;
+- the tetrahedral chase against its closed form at every sample, with the rotoreflection;
+- the two-body and still-target chases, and a capture in passing on a line offset in y and z, located to 10⁻¹²;
+- rigid motions, including a reflection, and scaling of space and time;
+- every pursuer's velocity against the law, and the base's velocity and acceleration against differences of the positions;
+- tolerances `10⁻⁶`, `10⁻⁹`, `10⁻¹²` converging with more steps, captures at the start, a chase outlasting the interval, an exhausted budget, still pursuers, every construction on pursuer 1, and validation.
+
+Mutations that drop the acceleration's projection or the capture step bound each fail. The WebAssembly bridge test checks a triangle's spirals and capture time, a construction, and refusals.
+
 ## Reference studies
 
 Each of these recipes is a preset, framed independently with equal axis scale. They are mathematical descriptions, not pixel specifications.
@@ -449,6 +481,7 @@ Each of these recipes is a preset, framed independently with equal axis scale. T
 - Chords: circle angles t and 4t joined at 200 evenly spaced phases; the chords are drawn, and their envelope is solved separately (**Chords of four**).
 - Pursuit: seven equal-speed pursuers starting on the unit regular heptagon. The exact paths are `exp(−tan(π/7)θ)(cos(θ + 2πj/7), sin(θ + 2πj/7))`, where θ is an angle, not time; the connecting polygons are drawn (**Seven pursuers & an evolute**).
 - Involute family: the helix `(2 cos t, 2 sin t, t)`, t ∈ [−π, π], anchored at t₀ = 0 with nine string lengths c = −4, −3, …, 4. Each member is a lifted circle involute in the plane `z = c/√5` (**Unwinding a staircase**).
+- Spatial pursuit: four unit-speed pursuers from the regular tetrahedron `(±1, 0, 1/√2)`, `(0, ±1, −1/√2)`, ε = 0.005, t ∈ [0, 1.75]. Each path is `(ρ cos θ, ρ sin θ, ρ²/√2)` with `θ = θ₀ + ln(1/ρ)`, captured near t = 1.62 (**Four pursuers on a tetrahedron**).
 - Clifford density: (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from (0.1, 0.1), discarding 1,000 iterates and accumulating the next 800,000, shaded logarithmically. It illustrates, and does not prove, chaotic dynamics (**Clifford attractor**).
 
 ## References

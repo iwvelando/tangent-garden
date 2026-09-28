@@ -1408,4 +1408,61 @@ const spatialField = (field, construction = "none") =>
   assert.match(spatialField({ escape: -1 }).error, /escape radius/);
 }
 console.log("WASM vector field: helices, escape and validation passed");
+const spatialPursuit = (pursuit, construction = "none") =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "pursuit",
+        construction,
+        pursuit: {
+          pursuers: [
+            { x: 1, y: 0, z: 0, speed: 1 },
+            { x: -0.5, y: Math.sqrt(3) / 2, z: 0, speed: 1 },
+            { x: -0.5, y: -Math.sqrt(3) / 2, z: 0, speed: 1 },
+          ],
+          capture: 0.01,
+          min: 0,
+          max: 2,
+          ...pursuit,
+        },
+        length: 1,
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+{
+  // Three equal pursuers from the unit triangle close to ε = 0.01, the gap
+  // √3 r, at r = 0.01/√3, which takes (1 − r)/(v sin(π/3)).
+  const triangle = spatialPursuit({});
+  const q = triangle.pursuit;
+  const capture = (1 - 0.01 / Math.sqrt(3)) / Math.sin(Math.PI / 3);
+  assert.equal(q.paths.length, 3);
+  assert.ok(Math.abs(q.capture.time - capture) < 1e-9);
+  assert.equal(q.capture.target, (q.capture.pursuer + 1) % 3);
+  assert.equal(q.end, q.capture.time);
+  assert.equal(q.exhausted, false);
+  assert.equal(q.final.length, 3);
+  assert.deepEqual(triangle.base, q.paths[0]);
+  q.paths.forEach((path) =>
+    path.forEach((p, i) => {
+      const t = (2 * i) / 480;
+      if (t > q.end) assert.equal(p, null);
+      else
+        assert.ok(
+          p.z === 0 &&
+            Math.abs(Math.hypot(p.x, p.y) - (1 - t * Math.sin(Math.PI / 3))) <
+              1e-9,
+        );
+    }),
+  );
+  assert.ok(
+    q.polygons.length > 12 && q.polygons.every((p) => p.points.length === 3),
+  );
+  assert.ok(spatialPursuit({}, "developable").mesh.length > 0);
+  assert.equal(spatialPursuit({ max: 0.5 }).pursuit.capture, null);
+  assert.match(spatialPursuit({ pursuers: [] }).error, /2–16 pursuers/);
+  assert.match(spatialPursuit({ capture: 0 }).error, /capture distance/);
+}
+console.log("WASM spatial pursuit: triangle, capture and validation passed");
 process.exit(0);

@@ -50,7 +50,9 @@ export async function imageFile(
       none:
         frame.config.format === "field"
           ? "spatial vector-field trajectories"
-          : "spatial curve",
+          : frame.config.format === "pursuit"
+            ? "spatial cyclic pursuit"
+            : "spatial curve",
     };
     return new Blob(
       [

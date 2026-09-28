@@ -146,25 +146,37 @@ self.onmessage = async ({
                   data.spatial.field.escape,
                   ...data.spatial.field.seeds.flatMap((v) => [v.x, v.y, v.z]),
                 ]
-              : data.spatial.format === "harmonic"
+              : data.spatial.format === "pursuit"
                 ? [
-                    data.spatial.harmonic.min,
-                    data.spatial.harmonic.max,
-                    ...[
-                      data.spatial.harmonic.center,
-                      ...data.spatial.harmonic.terms.flatMap((t) => [
-                        t.cosine,
-                        t.sine,
-                      ]),
-                    ].flatMap((v) => [v.x, v.y, v.z]),
-                    ...data.spatial.harmonic.terms.map((t) => t.frequency),
+                    data.spatial.pursuit.min,
+                    data.spatial.pursuit.max,
+                    data.spatial.pursuit.capture,
+                    ...data.spatial.pursuit.pursuers.flatMap((p) => [
+                      p.x,
+                      p.y,
+                      p.z,
+                      p.speed,
+                    ]),
                   ]
-                : [
-                    data.spatial.radius,
-                    data.spatial.tube,
-                    data.spatial.p,
-                    data.spatial.q,
-                  ]),
+                : data.spatial.format === "harmonic"
+                  ? [
+                      data.spatial.harmonic.min,
+                      data.spatial.harmonic.max,
+                      ...[
+                        data.spatial.harmonic.center,
+                        ...data.spatial.harmonic.terms.flatMap((t) => [
+                          t.cosine,
+                          t.sine,
+                        ]),
+                      ].flatMap((v) => [v.x, v.y, v.z]),
+                      ...data.spatial.harmonic.terms.map((t) => t.frequency),
+                    ]
+                  : [
+                      data.spatial.radius,
+                      data.spatial.tube,
+                      data.spatial.p,
+                      data.spatial.q,
+                    ]),
         ].every(Number.isFinite)
       )
         throw new Error("Fill in each spatial parameter with a finite number.");

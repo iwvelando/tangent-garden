@@ -31,7 +31,7 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 - [x] 4a. Two-curve ruled surfaces and chord families.
 - [x] 4b. Constant-radius tube envelopes, followed by variable-radius canal surfaces.
 - [x] 5a. Bounded 3D vector-field trajectories and curated continuous attractors.
-- [ ] 5b. Spatial cyclic pursuit with explicit capture events and multiple paths.
+- [x] 5b. Spatial cyclic pursuit with explicit capture events and multiple paths.
 - [ ] 6a. Parametric surface studies with normal congruences and signed offsets.
 - [ ] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
 - [ ] 7a. Single-interaction reflected ray families and their caustic sets.
@@ -265,6 +265,27 @@ Slices 1a and 1b (branch `claude/spatial-involutes`) landed together, because a 
 
 - Limits: uniform time sampling, so fast excursions have fewer points (adaptive sampling remains in the backlog); constructions only on the first trajectory; an escape sphere about the origin only; no 3D direction lattice; no Poincaré sections or visitation densities; explicit integration, so stiff fields may exhaust the budget.
 
-Recommended next step: **5b, spatial cyclic pursuit** with explicit capture events and multiple paths. It can reuse `engine/ode`, the field's multi-path result shape (paths indexed like the base, per-path ends), its reveal rule for early stops, and the trajectory layers; begin from the planar capture policy and planar reductions.
+### Slice completed in this follow-up: 5b
+
+- Implemented spatial cyclic pursuit as a spatial definition, `format: "pursuit"` (branch `claude/spatial-pursuit`): `pᵢ′ = vᵢ(pᵢ₊₁ − pᵢ)/|pᵢ₊₁ − pᵢ|` for 2–16 pursuers, with separate paths indexed like the base, closed connecting polygons, and an explicit capture event. It stood alone: 6a starts a different evaluator.
+- Capture policy, decided before the UI: the planar policy is kept exactly, not re-derived. The planar chase's integrator, step bound `(g − ε)/(2 v_max)`, gap-relative error control, capture rule and budget moved into a dimension-free `engine/cyclic` package. The planar pursuit now runs on it with two coordinates, and its tests pass unchanged apart from renamed fields. The chase stops for everyone at the first capture; nobody merges or changes target, and no merger topology is invented. A capture at the start still draws the starts alone rather than refusing them.
+- Evaluator decision: as for a field, the first pursuer's path is the base curve on which every construction runs. Its velocity is the pursuit law and its acceleration the law's exact derivative, `(v₁/d)(w − (u·w)u)`, never a difference of positions. `compile` now receives a prepared evaluator for either integrated definition.
+- Added `engine3/pursuit.go` with `SpatialPursuer`, `PursuitRequest`, `PursuitPolygon`, and `PursuitResult` (paths, polygons, capture, exhausted, end, final). The interface adds pursuer groups of start x, y, z and speed (`.pair.quad`) with add/remove, the interval, **Capture distance ε**, a note (`web/spatial/pursuit.ts`), and **End the interval at the capture**. It reuses the trajectories and seeds layers as **Other pursuers** and **Starts & capture**, and adds **Connecting polygons**. The tracks are `pursuer{k}{X,Y,Z,Speed}`, `capture`, `min`, and `max`. There are three presets (four pursuers on a tetrahedron, a chase untangling a trefoil, a crown of six with a tangent ribbon), a "Spatial pursuit" gallery family, and regenerated thumbnails. Adding `pursuit` to the preset base changed every 3D fingerprint; existing images re-rendered byte-identically. An unequal-speed ribbon preset was tried first and dropped: its early capture left a short, cluttered drawing.
+- Exact 3D case found for verification: four equal pursuers from a regular tetrahedron keep its rotoreflection symmetry and follow `z = hρ²`, `θ = θ₀ + ln(1/ρ)`, with a closed-form time. It is tested at every sample to 10⁻⁹.
+- Workload: at most 40,000 attempted steps of one 48-dimensional system, and 16 paths of 2401 points; every preset computes in milliseconds natively. There is no new runtime dependency or resource category. Durable definitions are in `mathematics.md#spatial-cyclic-pursuit`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: `make check` passed: formatting, vet, Go race tests (engine3 coverage 99.6%, `engine/cyclic` 96.0%, planar engine 98.2%), the WASM bridge, TypeScript, and the production build and notices. `make thumbnails` regenerated the gallery. The full Chromium run passed 547 of 548 tests. The failure was the planar heptagon preset's note: the shared chase had replaced `math.Hypot` with a square root of summed squares, and with all seven gaps equal, rounding named a different pair. `Hypot` was restored (folded across coordinates, so a z = 0 chase rounds exactly as the planar one), a Go guard now fails the old form, and the planar pursuit, spatial pursuit, planar field and gallery specs passed again (52 tests). All 15 WebKit tests passed, including a PNG and H.264 export of the tetrahedron. Go tests cover the list in `mathematics.md#spatial-cyclic-pursuit`, and `engine/cyclic` has its own tests in one to four dimensions. Mutations that drop the acceleration's projection or the capture step bound each fail. Browser tests cover:
+  - layers and validation, with pursuers added to sixteen and removed to two;
+  - notes on captures, no capture, a capture at the start, and the carried construction, plus the capture button;
+  - a still first pursuer refused under a construction and drawn alone;
+  - reveal, pause, resume and edit invalidation;
+  - all four cameras on a start track;
+  - a decoded MP4 with a capture track;
+  - reveal and track unit tests, and the new scalar fields.
+
+  The layout sweep includes the crown, and WebKit exports the tetrahedron.
+
+- Limits: uniform time sampling; constructions only on the first pursuer; polygons share the construction's line count; no pursuit with changing targets, merging, or obstacles; pursuers pass through one another when not chasing each other.
+
+Recommended next step: **6a, parametric surface studies** with normal congruences and signed offsets. It needs a new evaluator (a surface `S(u, v)` rather than a curve), so begin with an analytic prototype (sphere, torus) and its normals before any UI.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.
