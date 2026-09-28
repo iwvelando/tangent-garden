@@ -78,16 +78,23 @@ func compile(c Request) (evaluation, float64, float64, bool, error) {
 		expressions[i] = e
 	}
 	f := func(t float64) Vec3 { return Vec3{expressions[0](t), expressions[1](t), expressions[2](t)} }
+	return sampled(f, q.Min, q.Max, span), q.Min, q.Max, false, nil
+}
+
+// sampled differentiates expressions numerically on [lo, hi] (which may be
+// unbounded) with steps scaled to span, reporting whether the velocity is
+// stable under a halved step and discarding an unstable acceleration.
+func sampled(f func(float64) Vec3, lo, hi, span float64) evaluation {
 	return func(t float64) (Vec3, Vec3, Vec3, bool) {
 		r := f(t)
-		v, a := derivatives(f, t, q.Min, q.Max, span*1e-4)
-		v2, a2 := derivatives(f, t, q.Min, q.Max, span*5e-5)
+		v, a := derivatives(f, t, lo, hi, span*1e-4)
+		v2, a2 := derivatives(f, t, lo, hi, span*5e-5)
 		stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*math.Max(v.norm(), v2.norm())+1e-8
 		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(1, v.norm()/span) {
 			a = Vec3{math.NaN(), 0, 0}
 		}
 		return r, v, a, stable
-	}, q.Min, q.Max, false, nil
+	}
 }
 
 // Bounded five-point Lagrange stencils, including one-sided endpoints. Subtract

@@ -13,7 +13,9 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // projections; inverse, correspondences, sphere and source to sphere
 // inversion; vectors and ellipses to a harmonic curve under any
 // construction; strands, frames and seam to the framed construction, whose
-// ribbon reuses surface, rulings and edges. The base curve is always drawn.
+// ribbon reuses surface, rulings and edges; and the ruled construction reuses
+// surface, rulings and edges, its partner thread drawn as the edge. The base
+// curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -232,7 +234,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     );
     base = path(result.base, result.breaks, 2);
     // A framed ribbon's edges are also broken where a Frenet normal reverses.
-    const edgeBreaks = result.frame?.breaks ?? result.breaks;
+    // A ruled surface's partner thread (its plus) is broken where the
+    // partner is missing or jumps.
+    const edgeBreaks =
+      result.frame?.breaks ?? result.ruled?.breaks ?? result.breaks;
     minus = path(result.minus, edgeBreaks, 2);
     plus = path(result.plus, edgeBreaks, 2);
     rulings = batch(

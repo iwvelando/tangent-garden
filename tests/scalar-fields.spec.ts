@@ -823,3 +823,31 @@ test("spatial frame reference, angle, twist, width and distance share the bounde
     await expect(page.getByRole("alert")).toHaveCount(0);
   }
 });
+
+test("spatial ruled shift and rate share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page.getByLabel("Construction", { exact: true }).selectOption("ruled");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly string[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  for (const [name, text, value, path] of [
+    ["Shift δ", "-pi/3", -Math.PI / 3, ["ruled", "shift"]],
+    ["Rate m", "phi", phi, ["ruled", "rate"]],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(path)).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});

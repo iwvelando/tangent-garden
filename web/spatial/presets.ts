@@ -44,6 +44,14 @@ const base: SpatialConfig = {
     strands: 1,
     closure: "seam",
   },
+  // Chords of the curve itself, one radian of parameter ahead; the thread
+  // is a ring above the trefoil, used when the partner is switched to it.
+  ruled: {
+    partner: "chord",
+    thread: { x: "2.4*cos(t)", y: "2.4*sin(t)", z: "1.6" },
+    rate: 1,
+    shift: 1,
+  },
   radius: 2.4,
   tube: 0.85,
   length: 2.3,
@@ -350,6 +358,69 @@ export const spatialPresets: {
       tube: 1.1,
       lines: 48,
       frame: { ...base.frame, width: 0.3, strands: 0 },
+    },
+  },
+  {
+    name: "A harmonic loom",
+    detail:
+      "Two rippling rings, joined across a phase shift by straight threads",
+    config: {
+      ...base,
+      format: "harmonic",
+      construction: "ruled",
+      lines: 120,
+      harmonic: {
+        center: { x: 0, y: 0, z: -0.9 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 2, y: 0, z: 0 },
+            sine: { x: 0, y: 2, z: 0 },
+          },
+          {
+            frequency: 5,
+            cosine: { x: 0, y: 0, z: 0.25 },
+            sine: { x: 0, y: 0, z: 0 },
+          },
+        ],
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      ruled: {
+        partner: "thread",
+        thread: { x: "2*cos(t)", y: "2*sin(t)", z: "0.9+0.25*sin(4*t)" },
+        rate: 1,
+        shift: 2.4,
+      },
+    },
+  },
+  {
+    name: "Chords across the trefoil",
+    detail: "Each point joined to the point a third of the knot ahead",
+    config: {
+      ...base,
+      construction: "ruled",
+      lines: 120,
+      ruled: { ...base.ruled, shift: (2 * Math.PI) / 3 },
+    },
+  },
+  {
+    name: "Chords of a rising helix",
+    detail: "Half-turn chords through the axis, stopping where the helix ends",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "ruled",
+      lines: 96,
+      ruled: { ...base.ruled, shift: Math.PI },
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t/3",
+        a: 1,
+        min: -3 * Math.PI,
+        max: 3 * Math.PI,
+      },
     },
   },
 ];

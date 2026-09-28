@@ -45,6 +45,7 @@ export async function imageFile(
       orthotomic: "spatial tangent-line orthotomic",
       inversion: "spatial sphere inversion",
       framed: "spatial framed ribbon",
+      ruled: "spatial ruled surface",
     };
     return new Blob(
       [
