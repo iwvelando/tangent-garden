@@ -84,14 +84,28 @@ export function fitBounds(...families: (Vec3 | null)[][]): Bounds3 {
   }
   if (!Number.isFinite(lo[0]))
     return { center: { x: 0, y: 0, z: 0 }, radius: 1 };
-  return {
-    center: {
-      x: (lo[0] + hi[0]) / 2,
-      y: (lo[1] + hi[1]) / 2,
-      z: (lo[2] + hi[2]) / 2,
-    },
-    radius: Math.max(1e-4, Math.hypot(...lo.map((v, i) => hi[i] - v)) / 2),
+  const center = {
+    x: (lo[0] + hi[0]) / 2,
+    y: (lo[1] + hi[1]) / 2,
+    z: (lo[2] + hi[2]) / 2,
   };
+  let radius = 1e-4;
+  for (const family of families)
+    for (const p of family)
+      if (
+        p &&
+        p.x >= lo[0] &&
+        p.x <= hi[0] &&
+        p.y >= lo[1] &&
+        p.y <= hi[1] &&
+        p.z >= lo[2] &&
+        p.z <= hi[2]
+      )
+        radius = Math.max(
+          radius,
+          Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z),
+        );
+  return { center, radius };
 }
 export function reveal(result: SpatialResult, p: number): SpatialResult {
   const last = Math.floor(

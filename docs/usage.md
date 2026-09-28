@@ -73,3 +73,10 @@ The export button (**Export animated WebP** or **Export MP4 video**) saves the e
 Export shows progress and can be canceled. Parameter-animation exports calculate several frames at once on multi-core devices (at most two at a time on phones and tablets, to limit memory) and discard those extra calculations on cancel. Editing a simulation input also cancels it without saving a partial file. Limits are 7,200 frames (two minutes at 60 fps, four at 30, or eight at 15) and 256 MiB of compressed output. A browser that can encode neither format disables the export button and says so; single frames can still be saved as SVG. No file is ever mislabeled as a format it is not. Everything stays local, and static hosting remains sufficient.
 
 This is a **mathematical construction explorer**, not a scene renderer. Every regular sampled point participates; there is no occlusion, solid-medium topology, or multiple-bounce tracing. A closed curve can therefore display ray families that would not all be illuminated in a physical object.
+
+
+## 3D curves
+
+The header's **2D curves / 3D curves** switch keeps both edited studies on the same page. Spatial studies offer tangent ribbons around torus knots and custom `x(t), y(t), z(t)` expressions. Start with one of five presets, then edit expressions and scalar parameters. Drag to orbit, shift-drag to pan, scroll to zoom, or use the drawing's keyboard controls. Surface, tangent lines and boundary curves can be shown independently.
+
+Animation supports progressive reveal, parameter tracks and a camera orbit, with pause/scrub, the four camera modes, and MP4/WebP export. **Export image** saves PNG or an SVG with an embedded shaded image. The [spatial guide](spatial-study.md) has examples and numerical limits.

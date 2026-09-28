@@ -84,6 +84,20 @@ for (const width of [1440, 390]) {
         .getByRole("combobox", { name: "Source coordinates" })
         .selectOption("polar");
     });
+    for (const preset of ["0", "3", "4"])
+      setups.push(async () => {
+        await page.goto("/?study=3d");
+        await page.getByLabel("Starting curve").selectOption(preset);
+        if (
+          (await page
+            .locator("#spatial-animation-section")
+            .getAttribute("open")) === null
+        )
+          await page.locator("#spatial-animation-section > summary").click();
+        await page
+          .getByLabel("Animate", { exact: true })
+          .selectOption("parameters");
+      });
     let checked = 0;
     for (const setup of setups) {
       await setup();

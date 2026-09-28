@@ -808,11 +808,6 @@ h1 {
 }
 
 /* Shared notebook navigation. */
-.spatial-back {
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 12px;
-}
 
 .notebook-mode {
   display: flex;
@@ -851,7 +846,7 @@ h1 {
   }
   .notebook-mode button {
     padding: 7px;
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 

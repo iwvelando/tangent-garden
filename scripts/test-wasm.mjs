@@ -624,4 +624,29 @@ assert.ok(
   ).error,
 );
 console.log("Spatial WASM bridge: knot, mesh, closure, and validation passed.");
+const spatialCustom = JSON.parse(
+  globalThis.tangentGardenSpatial(
+    JSON.stringify({
+      format: "parametric",
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t",
+        a: 0.25,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      length: 1,
+      samples: 480,
+      lines: 48,
+    }),
+  ),
+);
+assert.equal(spatialCustom.invalid, 0);
+assert.equal(spatialCustom.base.length, 481);
+assert.ok(Math.abs(spatialCustom.base.at(-1).z - Math.PI / 2) < 1e-12);
+assert.equal(spatialCustom.mesh.at(-1).sampleIndex, 480);
+assert.equal(spatialCustom.rulings.at(-1).sampleIndex, 480);
+assert.ok(spatialCustom.bounds.radius > 2);
+console.log("Spatial custom-expression WASM bridge passed.");
 process.exit(0);

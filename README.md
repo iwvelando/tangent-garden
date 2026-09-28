@@ -75,11 +75,13 @@ The live site is **https://tangent-garden.isaacvelando.com**. Every push to `mai
 
 A shared link unfurls into a card (Open Graph and Twitter tags in `index.html`) showing `public/og-image.png`. Those tags and the canonical link name the production URL, since link scrapers need absolute URLs; change them if you host it elsewhere. The card and `public/apple-touch-icon.png` are rendered from the built site by `make share-card` and committed; re-render them, check them by eye, and commit when the site's look changes.
 
-## Experimental spatial study
+## Spatial tangent ribbons
 
-Choose **Explore 3D** in the header, or open `?study=3d`, for a tangent developable of a torus knot: two folded sheets swept out by straight tangent lines. Three knot presets, scalar-expression controls, independent surface/ruling/edge layers, and orbit/zoom controls explore one construction class. The experiment uses a separate pure Go `engine3` package in the same worker and a lazily loaded WebGL renderer. The planar notebook opens the experiment in another tab to preserve the current study.
+Choose **3D curves** beside **2D curves** in the notebook header. Both studies stay on the same page, retaining their controls and manual camera when you switch. `?study=3d` opens directly to the spatial notebook.
 
-Drag to orbit, scroll to zoom, or focus the drawing and use the arrow keys, +/−, and Home. **Rotate view** turns only the camera; **Reset view** restores its initial orientation and scale. This first prototype does not include spatial expression editing, geometry animation, or export. See [the 3D investigation](docs/spatial-study.md) for rationale, mathematics, and limits.
+Explore tangent developables: folded sheets swept out by a space curve's straight tangent lines. Start with Trefoil, Cinquefoil, Woven orbit, a helix, or a spatial Lissajous curve. Use the torus generator or enter your own `x(t)`, `y(t)`, and `z(t)` expressions, domain, and shape parameter `a`. Scalar controls accept constants such as `pi`, `e`, and `phi`. Go evaluates curves in the browser worker; a separate WebGL renderer draws the geometry.
+
+Drag to orbit, shift-drag to pan, and scroll to zoom. Keyboard equivalents are arrows, shift-arrows, +/−, and Home. Surface, tangent lines, and boundary curves have independent visibility controls. Animate a progressive reveal, multiple parameters, or one camera orbit; pause, scrub, and choose the same four camera modes as in 2D. Save PNG images, SVG files containing the shaded PNG view, or MP4/animated WebP where the browser supports encoding. Exports render at their target resolution and retain the chosen theme, layers, and camera. See [the spatial study](docs/spatial-study.md) for examples, mathematics, and numerical limits.
 
 ## Mathematical scope
 

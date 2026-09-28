@@ -496,3 +496,31 @@ test("spatial radii and tangent reach accept constants and reject variables", as
     )
     .toBe(Math.PI / 2);
 });
+
+test("spatial custom domain and shape fields share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page.getByLabel("Starting curve").selectOption("3");
+  const stage = page.locator(".spatial-stage");
+  for (const [name, text, key, value] of [
+    ["t from", "-pi", "min", -Math.PI],
+    ["to", "2*pi", "max", 2 * Math.PI],
+    ["Shape parameter a", "phi", "a", phi],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect
+      .poll(
+        async () =>
+          JSON.parse((await stage.getAttribute("data-config"))!).curve[key],
+      )
+      .toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+  }
+  for (const name of ["t from", "to", "Shape parameter a"]) {
+    await field(page, name).fill("t");
+    await expect(page.getByRole("alert")).toBeVisible();
+    await field(page, name).fill(name === "t from" ? "-pi" : "pi");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});

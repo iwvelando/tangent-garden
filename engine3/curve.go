@@ -159,5 +159,14 @@ func fit(families ...[]*Vec3) Bounds {
 	if !found {
 		return Bounds{Vec3{}, 1}
 	}
-	return Bounds{low.add(high).mul(0.5), math.Max(1e-4, high.sub(low).norm()/2)}
+	center := low.add(high).mul(0.5)
+	radius := 1e-4
+	for _, family := range families {
+		for _, p := range family {
+			if p != nil && p.X >= low.X && p.X <= high.X && p.Y >= low.Y && p.Y <= high.Y && p.Z >= low.Z && p.Z <= high.Z {
+				radius = math.Max(radius, p.sub(center).norm())
+			}
+		}
+	}
+	return Bounds{center, radius}
 }

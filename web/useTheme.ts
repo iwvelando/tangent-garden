@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 type Theme = "system" | "light" | "dark";
 const key = "tangent-garden.theme";
+// Shared by lazily mounted notebooks when browser storage is unavailable.
+let memory: Theme = "system";
 const valid = (value: string | null): Theme =>
   value === "light" || value === "dark" ? value : "system";
 export function useTheme() {
   const [preference, setPreference] = useState<Theme>(() => {
     try {
-      return valid(localStorage.getItem(key));
+      return (memory = valid(localStorage.getItem(key)));
     } catch {
-      return "system";
+      return memory;
     }
   });
   const [systemDark, setSystemDark] = useState(
@@ -21,7 +23,7 @@ export function useTheme() {
     media.addEventListener("change", change);
     const storage = (event: StorageEvent) => {
       if (event.key === key || event.key === null)
-        setPreference(valid(event.newValue));
+        setPreference((memory = valid(event.newValue)));
     };
     const local = (event: Event) =>
       setPreference((event as CustomEvent<Theme>).detail);
@@ -38,6 +40,7 @@ export function useTheme() {
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
   }, [dark]);
   const choose = (theme: Theme) => {
+    memory = theme;
     setPreference(theme);
     window.dispatchEvent(
       new CustomEvent("tangent-garden-theme", { detail: theme }),

@@ -46,6 +46,10 @@ export async function imageFile(
     );
   } finally {
     renderer.dispose();
+    canvas
+      .getContext("webgl")
+      ?.getExtension("WEBGL_lose_context")
+      ?.loseContext();
   }
 }
 export async function exportAnimation(options: {
@@ -57,7 +61,6 @@ export async function exportAnimation(options: {
   dark: boolean;
   layers: Layers;
   signal: AbortSignal;
-  lookahead: number;
   sample: (progress: number) => Promise<AnimationView>;
   onProgress: (completed: number, total: number) => void;
 }): Promise<Blob> {
@@ -95,5 +98,9 @@ export async function exportAnimation(options: {
   } finally {
     sink?.close();
     renderer.dispose();
+    canvas
+      .getContext("webgl")
+      ?.getExtension("WEBGL_lose_context")
+      ?.loseContext();
   }
 }

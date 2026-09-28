@@ -104,7 +104,11 @@ func Compute(c Request) (Result, error) {
 		if c.Format != "parametric" {
 			scale = float64(c.P*c.P)*(c.Radius+c.Tube) + float64(2*c.P*c.Q+c.Q*c.Q)*c.Tube
 		}
-		valid[i] = a.valid() && b.norm() > 1e-8*v.norm()*scale
+		tolerance := 1e-8
+		if c.Format == "parametric" {
+			tolerance = 1e-6
+		} // numerical second derivatives have a finite noise floor
+		valid[i] = a.valid() && b.norm() > tolerance*v.norm()*scale
 		if valid[i] {
 			normals[i] = b.unit()
 		}

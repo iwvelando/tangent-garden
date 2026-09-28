@@ -37,6 +37,7 @@ export function SpatialPlot({
       ...state.current.result.bounds,
     };
   const draw = () => {
+    if (!canvas.current?.clientWidth) return;
     const v = current();
     renderer.current?.draw(v, state.current.layers, state.current.dark);
     state.current.onViewport(v);

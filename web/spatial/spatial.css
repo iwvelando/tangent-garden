@@ -4,11 +4,6 @@
 .spatial-app header {
   height: 76px;
 }
-.spatial-back {
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 13px;
-}
 .spatial-layout {
   display: grid;
   grid-template-columns: 302px minmax(0, 1fr);
@@ -36,28 +31,8 @@
   line-height: 1.7;
   color: var(--muted);
 }
-.spatial-badge {
-  display: inline-block;
-  font-size: 9px;
-  letter-spacing: 1.8px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 6px 10px;
-  margin: 4px 0 20px;
-}
-.spatial-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 17px 0 0;
-  font-size: 12px;
-}
-.spatial-field input,
-.spatial-field select {
-  width: 100%;
-}
 .spatial-caption {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--muted);
 }
@@ -91,7 +66,7 @@
 }
 .spatial-status {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   margin-top: 25px;
 }
 .spatial-stage {
@@ -111,7 +86,7 @@
   display: flex;
   justify-content: space-between;
   padding: 27px 34px 0;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 2px;
   color: var(--muted);
 }
@@ -143,20 +118,19 @@
   gap: 12px;
   padding: 16px 34px 25px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .spatial-toolbar small {
   display: inline-block;
   margin-top: 5px;
-  font-size: 10px;
-  opacity: 0.7;
+  font-size: 12px;
 }
 .spatial-toolbar > div {
   display: flex;
   gap: 8px;
 }
 .spatial-toolbar button {
-  font-size: 11px;
+  font-size: 12px;
   padding: 9px 13px;
 }
 .spatial-toolbar button[aria-pressed="true"] {
@@ -190,7 +164,7 @@
   margin-top: 15px;
 }
 .spatial-formula span {
-  font: 11px sans-serif;
+  font: 12px sans-serif;
   color: var(--muted);
   margin-left: 16px;
   white-space: nowrap;
@@ -228,9 +202,6 @@
     width: 28px;
     height: 28px;
   }
-  .spatial-app .spatial-back {
-    font-size: 11px;
-  }
 
   .spatial-app header {
     height: auto;
@@ -258,7 +229,7 @@
   }
   .spatial-stage-heading {
     padding: 24px 20px 0;
-    font-size: 8px;
+    font-size: 11px;
     letter-spacing: 1.4px;
   }
   .spatial-canvas-wrap {
@@ -285,9 +256,6 @@
 
 .spatial-controls .field {
   min-width: 0;
-}
-.spatial-controls .pair {
-  align-items: start;
 }
 #spatial-animation-section > summary {
   margin-bottom: 14px;

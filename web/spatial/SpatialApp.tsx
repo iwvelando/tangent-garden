@@ -20,9 +20,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const client = useRef<EngineClient | null>(null),
     generation = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
-  const [config, setConfig] = useState<SpatialConfig>(spatialPresets[0].config),
-    latest = useRef(config);
-  latest.current = config;
+  const [config, setConfig] = useState<SpatialConfig>(spatialPresets[0].config);
+  const [customOpened, setCustomOpened] = useState(false);
   const [preset, setPreset] = useState("0"),
     [states, setStates] = useState<Record<string, ScalarState>>({});
   const [frame, setFrame] = useState<Frame | null>(null),
@@ -117,6 +116,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     generation.current++;
     setStates({});
     setPreset(index);
+    setCustomOpened(spatialPresets[+index].config.format === "parametric");
     setConfig(structuredClone(spatialPresets[+index].config));
     setReset((n) => n + 1);
   };
@@ -128,7 +128,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       if (format === "torus") return { ...c, format };
       // Preserve an edited custom definition. A generated knot can also be opened
       // as expressions, with every pending scalar resolved before conversion.
-      if (c.format === "parametric") return c;
+      if (c.format === "parametric" || customOpened) return { ...c, format };
       const h = `(${c.radius}+${c.tube}*cos(${c.q}*t))`;
       return {
         ...c,
@@ -143,6 +143,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
         },
       };
     });
+    if (format === "parametric") setCustomOpened(true);
     setPreset("");
   }
   const failure = scalarError

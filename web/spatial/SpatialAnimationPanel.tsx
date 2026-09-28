@@ -386,9 +386,7 @@ export function SpatialAnimationPanel({
         if (epoch.current !== token) return;
         // Spatial meshes are larger than planar paths. Keep one numerical
         // frame and one GPU upload in flight, including during export.
-        const engines = [client.current];
-        const release = () => {};
-        let next = 0;
+        const engine = client.current;
         const blob = await exportAnimation({
           format: chosen,
           duration,
@@ -398,14 +396,13 @@ export function SpatialAnimationPanel({
           dark,
           layers: { ...layers },
           signal: controller.signal,
-          lookahead: 1,
-          sample: (p) => sample(s, p, engines[next++ % engines.length]),
+          sample: (p) => sample(s, p, engine),
           onProgress: (completed, total) => {
             if (epoch.current !== token) return;
             setProgress(completed / total);
             setLive(`Rendering frame ${completed} of ${total}`);
           },
-        }).finally(release);
+        });
         if (epoch.current !== token) return;
         saveFile(blob, `tangent-garden-spatial-${mode}.${text.extension}`);
         exportAbort.current = null;
@@ -796,8 +793,8 @@ export function SpatialAnimationPanel({
                 {status === "exporting"
                   ? "Cancel export discards the file; your study stays as it was."
                   : status === "complete"
-                    ? "Scrub the timeline or export this frame as SVG. Reset view restores your study and manual view."
-                    : "Pause to scrub or export this frame as SVG. Stop restores your study and manual view."}
+                    ? "Scrub the timeline or save this frame as an image. Reset view restores your study and manual view."
+                    : "Pause to scrub or save this frame as an image. Stop restores your study and manual view."}
               </p>
             </div>
           )}
