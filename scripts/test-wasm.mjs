@@ -1197,4 +1197,75 @@ const spatialFrame = (frame) =>
 console.log(
   "WASM framed ribbon: transported frame, twist, seam and validation passed",
 );
+// Two unit rings, a(t) at z = −1 and b(t + δ) at z = 1, span the hyperboloid
+// x² + y² = cos²(δ/2) + z² sin²(δ/2).
+const spatialRuled = (ruled) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "harmonic",
+        construction: "ruled",
+        harmonic: {
+          center: { x: 0, y: 0, z: -1 },
+          terms: [
+            {
+              frequency: 1,
+              cosine: { x: 1, y: 0, z: 0 },
+              sine: { x: 0, y: 1, z: 0 },
+            },
+          ],
+          min: 0,
+          max: 2 * Math.PI,
+        },
+        ruled: {
+          partner: "thread",
+          thread: { x: "cos(t)", y: "sin(t)", z: "1" },
+          rate: 1,
+          shift: 1.3,
+          ...ruled,
+        },
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+{
+  const loom = spatialRuled({});
+  const q = loom.ruled;
+  assert.equal(q.partner, "thread");
+  assert.equal(q.closed, true);
+  assert.equal(q.developable, false);
+  assert.equal(q.breaks.length, 481);
+  assert.equal(loom.minus.length, 0);
+  assert.equal(loom.plus.length, 481);
+  assert.equal(loom.rulings.length, 24);
+  assert.equal(loom.mesh.length, 480 * 4 * 6);
+  const k = Math.sin(0.65) ** 2;
+  for (const v of loom.mesh) {
+    const p = v.position;
+    assert.ok(
+      Math.abs(p.x * p.x + p.y * p.y - Math.cos(0.65) ** 2 - p.z * p.z * k) <
+        1e-12,
+    );
+  }
+  // Chords of the circle itself, a quarter turn apart, lie in its plane.
+  const chord = spatialRuled({ partner: "chord", shift: Math.PI / 2 });
+  assert.equal(chord.ruled.closed, true);
+  for (const r of chord.rulings)
+    assert.ok(Math.abs(r.to.z + 1) < 1e-12 && Math.abs(r.from.z + 1) < 1e-12);
+  // A zero shift collapses every chord.
+  assert.equal(
+    spatialRuled({ partner: "chord", shift: 0 }).ruled.coincident,
+    480,
+  );
+  assert.match(spatialRuled({ partner: "loom" }).error, /second thread/);
+  assert.match(spatialRuled({ rate: 101 }).error, /rate m/);
+  assert.match(
+    spatialRuled({ thread: { x: "a", y: "0", z: "0" } }).error,
+    /b x\(t\)/,
+  );
+}
+console.log(
+  "WASM ruled surface: hyperboloid, chords, collapse and validation passed",
+);
 process.exit(0);

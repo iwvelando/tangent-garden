@@ -29,7 +29,8 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // "involute" for the filaments described by Involute, or "tangent-foot" /
 // "orthotomic" for projections from Pole, or "inversion" for the sphere
 // inversion described by Inversion, or "framed" for the ribbon and offset
-// strands described by Frame. Length applies only to the developable.
+// strands described by Frame, or "ruled" for the surface joining the curve to
+// the partner described by Ruled. Length applies only to the developable.
 type Request struct {
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
@@ -38,6 +39,7 @@ type Request struct {
 	Harmonic     HarmonicCurve    `json:"harmonic"`
 	Inversion    InversionRequest `json:"inversion"`
 	Frame        FrameRequest     `json:"frame"`
+	Ruled        RuledRequest     `json:"ruled"`
 	Curve        Curve            `json:"curve"`
 	Radius       float64          `json:"radius"`
 	Tube         float64          `json:"tube"`
@@ -77,6 +79,9 @@ type Result struct {
 	// Frame is present only for the framed construction, whose ribbon uses
 	// Mesh, Minus, Plus, and Rulings with the frame's own breaks.
 	Frame *FrameResult `json:"frame,omitempty"`
+	// Ruled is present only for the ruled construction, whose surface uses
+	// Mesh and Rulings, with the partner thread in Plus and Minus empty.
+	Ruled *RuledResult `json:"ruled,omitempty"`
 	// Harmonic is present only for a harmonic curve, under any construction.
 	Harmonic *HarmonicResult `json:"harmonic,omitempty"`
 }
@@ -93,6 +98,15 @@ func knot(c Request, t float64) (Vec3, Vec3, Vec3) {
 		Vec3{(ddh-p*p*h)*cp - 2*p*dh*sp, (ddh-p*p*h)*sp + 2*p*dh*cp, -c.Tube * q * q * sq}
 }
 
+// jumps reports a chord from a to b, one parameter step apart, that the
+// midpoint velocity cannot account for: an asymptote, not a local segment.
+// Comparing displacement with midpoint speed also catches sub-grid poles.
+func jumps(a, b, middle Vec3, step float64) bool {
+	displacement := b.sub(a)
+	chord := displacement.norm()
+	return chord > 8*middle.norm()*step+1e-7 || displacement.dot(middle) < -1e-8*chord*middle.norm()
+}
+
 func Compute(c Request) (Result, error) {
 	if c.Samples < 240 || c.Samples > 2400 || c.Lines < 12 || c.Lines > 240 {
 		return Result{}, fmt.Errorf("use 240–2400 samples and 12–240 rulings")
@@ -101,8 +115,9 @@ func Compute(c Request) (Result, error) {
 	projection := c.Construction == "tangent-foot" || c.Construction == "orthotomic"
 	inversion := c.Construction == "inversion"
 	framed := c.Construction == "framed"
+	ruled := c.Construction == "ruled"
 	developable := c.Construction == "" || c.Construction == "developable"
-	if !involute && !projection && !inversion && !framed && !developable {
+	if !involute && !projection && !inversion && !framed && !ruled && !developable {
 		return Result{}, fmt.Errorf("unknown spatial construction")
 	}
 	if developable && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
@@ -121,9 +136,20 @@ func Compute(c Request) (Result, error) {
 			return Result{}, err
 		}
 	}
+	if ruled {
+		if err := c.Ruled.validate(); err != nil {
+			return Result{}, err
+		}
+	}
 	evaluate, lo, hi, closed, err := compile(c)
 	if err != nil {
 		return Result{}, err
+	}
+	var partner func(float64) (Vec3, Vec3, bool, bool)
+	if ruled {
+		if partner, err = c.Ruled.partner(evaluate, lo, hi, closed); err != nil {
+			return Result{}, err
+		}
 	}
 	n := c.Samples
 	out := Result{Base: make([]*Vec3, n+1), Minus: make([]*Vec3, n+1), Plus: make([]*Vec3, n+1), Breaks: make([]bool, n+1), Mesh: make([]Vertex, 0, n*12), Rulings: make([]Ruling, 0, c.Lines)}
@@ -179,11 +205,8 @@ func Compute(c Request) (Result, error) {
 		}
 		disconnected := out.Base[i] == nil || out.Base[i+1] == nil || !ok || !middle.valid() || middle.norm() < 1e-9 || tangents[i].dot(tangents[i+1]) < 0
 		if !disconnected && c.Format == "parametric" {
-			// A chord through an asymptote is not a local tangent segment. Comparing
-			// displacement with midpoint speed also catches sub-grid rational poles.
-			displacement := out.Base[i+1].sub(*out.Base[i])
-			chord := displacement.norm()
-			disconnected = chord > 8*middle.norm()*(hi-lo)/float64(n)+1e-7 || displacement.dot(middle) < -1e-8*chord*middle.norm()
+			// A chord through an asymptote is not a local tangent segment.
+			disconnected = jumps(*out.Base[i], *out.Base[i+1], middle, (hi-lo)/float64(n))
 		}
 		out.Breaks[i+1] = disconnected
 		if !developable {
@@ -219,6 +242,14 @@ func Compute(c Request) (Result, error) {
 		families := [][]*Vec3{out.Base, out.Minus, out.Plus}
 		families = append(families, out.Frame.Strands...)
 		out.Bounds = fit(append(families, generating...)...)
+		out.Radius = out.Bounds.Radius
+		return out, nil
+	}
+	if ruled {
+		if err := ruledSurface(c, &out, partner, tangents, speeds, lo, hi, closed); err != nil {
+			return Result{}, err
+		}
+		out.Bounds = fit(append([][]*Vec3{out.Base, out.Plus}, generating...)...)
 		out.Radius = out.Bounds.Radius
 		return out, nil
 	}

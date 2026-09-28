@@ -49,6 +49,18 @@ export type FrameConfig = {
   closure: FrameClosure;
 };
 export const maxFrameStrands = 12;
+// Straight rulings join a(t) to its partner at φ(t) = rate·t + shift, S(t, u)
+// = (1 − u) a(t) + u b(φ(t)). A "chord" partner is the curve itself (wrapping
+// on a closed curve, stopping outside an open domain); a "thread" partner is
+// b(t) = (x, y, z), written in t, evaluated wherever φ sends it. Mirrors
+// engine3.RuledRequest.
+export type RuledPartner = "chord" | "thread";
+export type RuledConfig = {
+  partner: RuledPartner;
+  thread: { x: string; y: string; z: string };
+  rate: number;
+  shift: number;
+};
 export type SpatialConfig = {
   format: "torus" | "parametric" | "harmonic";
   // `length` is the tangent reach, used only by the developable.
@@ -58,12 +70,14 @@ export type SpatialConfig = {
     | "tangent-foot"
     | "orthotomic"
     | "inversion"
-    | "framed";
+    | "framed"
+    | "ruled";
   pole: Vec3;
   inversion: InversionConfig;
   involute: InvoluteConfig;
   harmonic: HarmonicCurve;
   frame: FrameConfig;
+  ruled: RuledConfig;
   curve: {
     x: string;
     y: string;
@@ -102,6 +116,9 @@ export type SpatialResult = {
   // Present only for the framed construction; its ribbon fills mesh, minus,
   // plus, and rulings, joined across frame.breaks rather than breaks.
   frame?: FrameResult;
+  // Present only for the ruled construction: the partner fills plus (minus
+  // is empty), and mesh and rulings are joined across ruled.breaks.
+  ruled?: RuledResult;
 };
 export type InvoluteResult = {
   members: { offset: number; points: (Vec3 | null)[]; collapsed: boolean }[];
@@ -183,4 +200,19 @@ export type FrameResult = {
   correction: number;
   // Where a closed loop's offset direction fails to return.
   seam?: { point: Vec3; start: Vec3; end: Vec3; angle: number };
+};
+// Mirrors engine3.RuledResult. Breaks add the partner's gaps and jumps to the
+// base's. Gap is the distance between the partner's ends on a closed curve
+// whose surface does not close. Deviation is the largest scale-free
+// det(a′, d, d′) over regular samples; developable within 10⁻⁶.
+export type RuledResult = {
+  partner: RuledPartner;
+  breaks: boolean[];
+  closed: boolean;
+  gap: number;
+  outside: number;
+  coincident: number;
+  singular: number;
+  developable: boolean;
+  deviation: number;
 };

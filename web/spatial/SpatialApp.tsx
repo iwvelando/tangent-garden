@@ -21,6 +21,7 @@ import {
   maxHarmonicTerms,
   usesSpatialPole,
   type FrameConfig,
+  type RuledConfig,
   type HarmonicCurve,
   type SpatialConfig,
   type Frame,
@@ -33,6 +34,7 @@ import {
 } from "./harmonic";
 import { periodText } from "../harmonic";
 import { frameNote } from "./frame";
+import { ruledNote } from "./ruled";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -167,6 +169,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const involute = config.construction === "involute";
   const inversion = config.construction === "inversion";
   const framed = config.construction === "framed";
+  const ruled = config.construction === "ruled";
+  const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
+    update((c) => ({ ...c, ruled: change(c.ruled) }));
   const setFraming = (change: (f: FrameConfig) => FrameConfig) =>
     update((c) => ({ ...c, frame: change(c.frame) }));
   const projection =
@@ -494,6 +499,70 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </p>
     </>
   );
+  const ruledShown =
+    shown?.config.construction === "ruled" ? shown.result : undefined;
+  const ruledControls = (
+    <>
+      <Field
+        label="Partner"
+        help="Join each point to another point of the same curve, or to a second thread b(t)."
+      >
+        <select
+          value={config.ruled.partner}
+          onChange={(e) => {
+            const partner = e.target.value as RuledConfig["partner"];
+            setRuling((r) => ({ ...r, partner }));
+          }}
+        >
+          <option value="chord">The curve itself (chords)</option>
+          <option value="thread">A second thread b(t)</option>
+        </select>
+      </Field>
+      {config.ruled.partner === "thread" &&
+        (["x", "y", "z"] as const).map((axis) => (
+          <Field
+            label={`b ${axis}(t)`}
+            key={axis}
+            help={
+              axis === "x"
+                ? "The second thread, in t only, evaluated wherever the correspondence sends it."
+                : undefined
+            }
+          >
+            <input
+              value={config.ruled.thread[axis]}
+              spellCheck={false}
+              onChange={(e) => {
+                const text = e.target.value;
+                setRuling((r) => ({
+                  ...r,
+                  thread: { ...r.thread, [axis]: text },
+                }));
+              }}
+            />
+          </Field>
+        ))}
+      <div className="pair">
+        {vector(
+          "Shift δ",
+          config.ruled.shift,
+          (shift) => setRuling((r) => ({ ...r, shift })),
+          "The partner of a(t) sits at parameter mt + δ, with δ within ±1000000.",
+        )}
+        {vector(
+          "Rate m",
+          config.ruled.rate,
+          (rate) => setRuling((r) => ({ ...r, rate })),
+          "How fast the partner's parameter runs, within ±100. On a closed curve a whole number keeps the surface closed.",
+        )}
+      </div>
+      <p className="note" data-testid="ruled-note">
+        {ruledShown?.ruled
+          ? ruledNote(ruledShown).join(" ")
+          : "Stringing the rulings…"}
+      </p>
+    </>
+  );
   const poleFields = (
     <>
       <div className="pair">
@@ -530,7 +599,40 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </Field>
     </>
   );
-  const behind = framed ? (
+  const behind = ruled ? (
+    <StudyExplanation
+      label="BEHIND THE RULINGS"
+      title="A surface strung from straight threads."
+      formula={
+        <>
+          S(t, u) = (1 − u) a(t) + u b(mt + δ) <span>0 ≤ u ≤ 1</span>
+        </>
+      }
+      note="Straight lines join corresponding points at representative samples. Hide the surface for a drawing of threads alone."
+      diagnostics={
+        shown &&
+        (shown.result.invalid > 0 || shown.result.omitted > 0) && (
+          <p className="bottom-note">
+            {shown.result.invalid} invalid samples · {shown.result.omitted}{" "}
+            intervals without a surface. The surface is never joined where
+            either thread is missing, leaves its domain, or jumps.
+          </p>
+        )
+      }
+    >
+      <p>
+        Pair every point a(t) of the curve with a partner and join the two by a
+        straight segment. The pairing is part of the definition: here the
+        partner of t sits at parameter mt + δ, on the same curve for a family of
+        chords or on a second thread. Sliding δ turns one thread against the
+        other, and the rulings cross to weave a curved surface. Shading uses the
+        true surface normal S<sub>t</sub> × S<sub>u</sub>, which turns along a
+        ruling unless the surface is developable, as a cylinder or cone is.
+        Nothing is trimmed: where neighbouring rulings pass through one another,
+        as at the waist of the harmonic loom, the sheet crosses itself.
+      </p>
+    </StudyExplanation>
+  ) : framed ? (
     <StudyExplanation
       label="BEHIND THE FRAME"
       title="A ribbon carried without twisting."
@@ -880,9 +982,14 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <option value="orthotomic">Tangent-line orthotomic</option>
                   <option value="inversion">Sphere inversion</option>
                   <option value="framed">Framed ribbon · offset strands</option>
+                  <option value="ruled">
+                    Ruled surface · chords & threads
+                  </option>
                 </select>
               </Field>
-              {framed ? (
+              {ruled ? (
+                ruledControls
+              ) : framed ? (
                 frameControls
               ) : inversion ? (
                 <>
@@ -1113,42 +1220,48 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           <fieldset className="spatial-layers">
             <legend>Reveal the construction</legend>
             {[
-              ...(framed
+              ...(ruled
                 ? ([
-                    ["surface", "Ribbon surface"],
-                    ["rulings", "Cross-lines"],
-                    ["edges", "Ribbon edges"],
-                    ["strands", "Strands"],
-                    ["frames", "Frames"],
-                    ...(frameResult?.closed
-                      ? ([["seam", "Seam"]] as const)
-                      : []),
+                    ["surface", "Ruled surface"],
+                    ["rulings", "Rulings"],
+                    ["edges", "Partner thread"],
                   ] as const)
-                : inversion
+                : framed
                   ? ([
-                      ["inverse", "Inverted curve"],
-                      ["correspondences", "Correspondence segments"],
-                      ["sphere", "Inversion sphere & center"],
-                      ...(config.inversion.input === "base"
-                        ? []
-                        : ([["source", "Projection & pole"]] as const)),
+                      ["surface", "Ribbon surface"],
+                      ["rulings", "Cross-lines"],
+                      ["edges", "Ribbon edges"],
+                      ["strands", "Strands"],
+                      ["frames", "Frames"],
+                      ...(frameResult?.closed
+                        ? ([["seam", "Seam"]] as const)
+                        : []),
                     ] as const)
-                  : projection
+                  : inversion
                     ? ([
-                        ["projection", projectionName],
-                        ["connectors", "Perpendiculars & tangent feet"],
-                        ["pole", "Pole marker"],
+                        ["inverse", "Inverted curve"],
+                        ["correspondences", "Correspondence segments"],
+                        ["sphere", "Inversion sphere & center"],
+                        ...(config.inversion.input === "base"
+                          ? []
+                          : ([["source", "Projection & pole"]] as const)),
                       ] as const)
-                    : involute
+                    : projection
                       ? ([
-                          ["filaments", "Involute filaments"],
-                          ["strings", "Unwinding strings"],
+                          ["projection", projectionName],
+                          ["connectors", "Perpendiculars & tangent feet"],
+                          ["pole", "Pole marker"],
                         ] as const)
-                      : ([
-                          ["surface", "Ribbon surface"],
-                          ["rulings", "Tangent rulings"],
-                          ["edges", "Ribbon edges"],
-                        ] as const)),
+                      : involute
+                        ? ([
+                            ["filaments", "Involute filaments"],
+                            ["strings", "Unwinding strings"],
+                          ] as const)
+                        : ([
+                            ["surface", "Ribbon surface"],
+                            ["rulings", "Tangent rulings"],
+                            ["edges", "Ribbon edges"],
+                          ] as const)),
               ...(config.format === "harmonic"
                 ? ([
                     ["vectors", "Vector sums"],
@@ -1184,15 +1297,17 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             </Field>
             <Field
               label={
-                framed
-                  ? "Frames & cross-lines"
-                  : inversion
-                    ? "Correspondences"
-                    : projection
-                      ? "Projection constructions"
-                      : involute
-                        ? "Unwinding strings"
-                        : "Tangent lines"
+                ruled
+                  ? "Rulings"
+                  : framed
+                    ? "Frames & cross-lines"
+                    : inversion
+                      ? "Correspondences"
+                      : projection
+                        ? "Projection constructions"
+                        : involute
+                          ? "Unwinding strings"
+                          : "Tangent lines"
               }
             >
               <input
@@ -1214,7 +1329,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               arc length that spreads a frame's twist. A transported frame is
               carried between samples by two reflections. A harmonic curve's
               vector sums sit at the same evenly spaced samples as the
-              construction lines, and its derivatives are exact.
+              construction lines, and its derivatives are exact. A ruled
+              surface's partner is evaluated at mt + δ for the same samples, and
+              a second thread is differentiated like a custom curve.
             </p>
           </details>
           {failure && (
@@ -1227,7 +1344,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} ${framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
+                : `${config.samples.toLocaleString()} samples · ${config.lines} ${ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -1262,15 +1379,17 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {framed
-                  ? "A ribbon carried by a frame"
-                  : inversion
-                    ? "A curve inverted in a sphere"
-                    : projection
-                      ? projectionName
-                      : involute
-                        ? "Filaments unwound from a curve"
-                        : "A ribbon of tangent lines"}
+                {ruled
+                  ? "A surface of straight threads"
+                  : framed
+                    ? "A ribbon carried by a frame"
+                    : inversion
+                      ? "A curve inverted in a sphere"
+                      : projection
+                        ? projectionName
+                        : involute
+                          ? "Filaments unwound from a curve"
+                          : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -1321,15 +1440,17 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               <div className="legend">
                 <span className="thread-dot" /> Base curve{" "}
                 <span className="ribbon-dot" />{" "}
-                {framed
-                  ? "Framed ribbon"
-                  : inversion
-                    ? "Inverted curve"
-                    : projection
-                      ? projectionName
-                      : involute
-                        ? "Involute filaments"
-                        : "Tangent developable"}
+                {ruled
+                  ? "Ruled surface"
+                  : framed
+                    ? "Framed ribbon"
+                    : inversion
+                      ? "Inverted curve"
+                      : projection
+                        ? projectionName
+                        : involute
+                          ? "Involute filaments"
+                          : "Tangent developable"}
               </div>
               <span>
                 {animation

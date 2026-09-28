@@ -68,7 +68,8 @@ self.onmessage = async ({
       const involute = data.spatial?.construction === "involute",
         family = data.spatial?.involute.family,
         framed = data.spatial?.construction === "framed",
-        frame = data.spatial?.frame;
+        frame = data.spatial?.frame,
+        ruled = data.spatial?.construction === "ruled";
       if (
         !data.spatial ||
         ![
@@ -79,41 +80,43 @@ self.onmessage = async ({
                   ? [family!.from, family!.to, family!.count]
                   : [data.spatial.involute.offset]),
               ]
-            : framed
-              ? [
-                  frame!.angle,
-                  frame!.twist,
-                  frame!.offset,
-                  frame!.width,
-                  frame!.strands,
-                  // A Frenet frame never reads N₀.
-                  ...(frame!.kind === "rotation-minimizing"
-                    ? [
-                        frame!.reference.x,
-                        frame!.reference.y,
-                        frame!.reference.z,
-                      ]
-                    : []),
-                ]
-              : projection || inversion
+            : ruled
+              ? [data.spatial.ruled.rate, data.spatial.ruled.shift]
+              : framed
                 ? [
-                    ...(inversion
+                    frame!.angle,
+                    frame!.twist,
+                    frame!.offset,
+                    frame!.width,
+                    frame!.strands,
+                    // A Frenet frame never reads N₀.
+                    ...(frame!.kind === "rotation-minimizing"
                       ? [
-                          data.spatial.inversion.center.x,
-                          data.spatial.inversion.center.y,
-                          data.spatial.inversion.center.z,
-                          data.spatial.inversion.radius,
-                        ]
-                      : []),
-                    ...(projection
-                      ? [
-                          data.spatial.pole.x,
-                          data.spatial.pole.y,
-                          data.spatial.pole.z,
+                          frame!.reference.x,
+                          frame!.reference.y,
+                          frame!.reference.z,
                         ]
                       : []),
                   ]
-                : [data.spatial.length]),
+                : projection || inversion
+                  ? [
+                      ...(inversion
+                        ? [
+                            data.spatial.inversion.center.x,
+                            data.spatial.inversion.center.y,
+                            data.spatial.inversion.center.z,
+                            data.spatial.inversion.radius,
+                          ]
+                        : []),
+                      ...(projection
+                        ? [
+                            data.spatial.pole.x,
+                            data.spatial.pole.y,
+                            data.spatial.pole.z,
+                          ]
+                        : []),
+                    ]
+                  : [data.spatial.length]),
           data.spatial.samples,
           data.spatial.lines,
           ...(data.spatial.format === "parametric"
