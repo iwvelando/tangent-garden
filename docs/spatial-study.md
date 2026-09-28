@@ -34,3 +34,7 @@ The engine retains the singular spine and self-intersections, leaves gaps at inv
 Analytic derivative checks, torus and speed identities, ruling length/tangency, opposite sheet normals, closure, zero-curvature gaps, convergence, bounded inputs, and the WASM bridge verify the mathematics. Browser checks cover custom expressions, scalars, playback endpoints and cameras, image dimensions, independently decoded animation timing, cancellation, layers, themes, and responsive paired-field layout.
 
 A later mathematical class could be a family of spatial involutes, reusing space curves and the camera while giving derived curves their own result type.
+
+## Future work
+
+The [spatial expansion roadmap](spatial-expansion-roadmap.md) records proposed constructions, deferred numerical and rendering work, notebook/media improvements, and the acceptance gates for future slices.
