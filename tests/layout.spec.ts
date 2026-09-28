@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { choosePreset, exampleTitles } from "./helpers";
 
 const closing = "An open notebook for mathematical beauty.";
 
@@ -69,24 +70,19 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/");
     await expect(page.locator("#artwork")).toBeVisible();
-    const study = page.getByRole("combobox", {
-      name: "Start with a notebook example",
-    });
-    const labels = (await study.locator("option").allTextContents()).filter(
-      (l) => l !== "Custom study",
-    );
+    const labels = await exampleTitles(page);
     const setups: (() => Promise<unknown>)[] = labels.map(
-      (label) => () => study.selectOption({ label }),
+      (label) => () => choosePreset(page, { label }),
     );
     setups.push(async () => {
-      await study.selectOption({ label: "Light inside a circle" });
+      await choosePreset(page, { label: "Light inside a circle" });
       await page
         .getByRole("combobox", { name: "Source coordinates" })
         .selectOption("polar");
     });
     // An iterated map's window appears only when it is not fitted.
     setups.push(async () => {
-      await study.selectOption({ label: "Clifford attractor" });
+      await choosePreset(page, { label: "Clifford attractor" });
       await page
         .getByRole("checkbox", { name: "Fit the window to the iterates" })
         .uncheck();
@@ -94,9 +90,7 @@ for (const width of [1440, 390]) {
     for (const preset of ["0", "3", "4"])
       setups.push(async () => {
         await page.goto("/?study=3d");
-        await page
-          .getByLabel("Start with a notebook example")
-          .selectOption(preset);
+        await choosePreset(page, preset);
         if (
           (await page
             .locator("#spatial-animation-section")

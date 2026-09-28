@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { exportImage, openExportSettings } from "./helpers";
+import { exportImage, openExportSettings, choosePreset } from "./helpers";
 import { decodeVideo, probe } from "./video";
 import { exportTiming } from "../web/export-quality";
 
@@ -62,9 +62,7 @@ test("a 10 s parameter animation exports every frame with exact timing", async (
 }) => {
   test.setTimeout(180000);
   await ready(page);
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption("2");
+  await choosePreset(page, "2");
   await page
     .getByRole("combobox", { name: "Source coordinates" })
     .selectOption("polar");
@@ -136,7 +134,7 @@ test("spatial custom curves render and export through WebKit WebGL and H.264", a
   page,
 }) => {
   await page.goto("/?study=3d");
-  await page.getByLabel("Start with a notebook example").selectOption("3");
+  await choosePreset(page, "3");
   await expect(page.locator(".spatial-stage")).toHaveAttribute(
     "aria-busy",
     "false",
@@ -173,9 +171,7 @@ test("PNG export keeps an iterated map's embedded density in WebKit", async ({
 }) => {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: "Clifford attractor" });
+  await choosePreset(page, { label: "Clifford attractor" });
   await expect(page.getByTestId("attractor-density")).toHaveCount(1);
   await expect(page.locator(".plot-wrap")).toHaveAttribute(
     "aria-busy",

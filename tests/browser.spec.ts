@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { exportImage, imageButton } from "./helpers";
+import { exportImage, imageButton, choosePreset } from "./helpers";
 
 test("a failed WASM download can recover on the next input change", async ({
   page,
@@ -33,7 +33,7 @@ test("WASM loads, all notebook studies compute, and SVG exports geometry", async
   await expect(imageButton(page)).toBeEnabled();
   expect(await page.locator("#artwork line").count()).toBeGreaterThan(20);
   for (const preset of ["1", "2", "3", "4", "5", "6", "7", "0"]) {
-    await page.getByLabel("Start with a notebook example").selectOption(preset);
+    await choosePreset(page, preset);
     await expect(page.locator(".plot-wrap")).toHaveAttribute(
       "aria-busy",
       "false",
@@ -117,7 +117,7 @@ test("narrow view has no horizontal overflow and retains controls", async ({
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
-  await page.getByLabel("Start with a notebook example").selectOption("1");
+  await choosePreset(page, "1");
   await expect(page.locator(".plot-wrap")).toHaveAttribute(
     "aria-busy",
     "false",

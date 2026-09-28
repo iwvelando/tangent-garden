@@ -11,7 +11,7 @@ import { endNote, nextSeed } from "../web/flow";
 import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { FieldResult, Result, Vec } from "../web/types";
-import { exportImage, openAnimation } from "./helpers";
+import { exportImage, openAnimation, choosePreset } from "./helpers";
 
 const vanDerPol = "Van der Pol limit cycle";
 const pendulum = "Pendulum phase portrait";
@@ -20,9 +20,7 @@ const preset = (title: string) =>
 async function ready(page: Page, title: string) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption({ label: title });
+  await choosePreset(page, { label: title });
   await settled(page);
 }
 async function settled(page: Page) {

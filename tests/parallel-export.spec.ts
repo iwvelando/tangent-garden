@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { openExportSettings } from "./helpers";
+import { openExportSettings, choosePreset } from "./helpers";
 import { probe } from "./video";
 import { exportEngineCount } from "../web/engine-client";
 
@@ -42,9 +42,7 @@ async function parameterStudy(page: Page, format: "webp" | "mp4") {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
   await openExportSettings(page);
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption("2");
+  await choosePreset(page, "2");
   await page
     .getByRole("combobox", { name: "Animate", exact: true })
     .selectOption("parameters");
@@ -101,9 +99,7 @@ test("a parallel MP4 export keeps exact timing and the app engine keeps working"
   }
   expect(await workers(page)).toMatchObject({ created: 4, terminated: 3 });
   const title = await page.locator("#artwork title").textContent();
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption("0");
+  await choosePreset(page, "0");
   await expect(page.locator("#artwork title")).not.toHaveText(title!);
   await expect(page.locator(".plot-wrap")).toHaveAttribute(
     "aria-busy",
@@ -137,9 +133,7 @@ test("canceling or editing during a parallel export discards it and stops the ex
   await expect(exportButton(page)).toBeEnabled();
   await exportButton(page).click();
   await expect.poll(async () => (await workers(page)).created).toBe(7);
-  await page
-    .getByRole("combobox", { name: "Start with a notebook example" })
-    .selectOption("0");
+  await choosePreset(page, "0");
   await expect.poll(async () => (await workers(page)).terminated).toBe(6);
   await page.waitForTimeout(300);
   expect(downloads).toEqual([]);

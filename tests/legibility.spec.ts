@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openExportSettings } from "./helpers";
+import { openExportSettings, choosePreset, examplesButton } from "./helpers";
 
 // Every visible, enabled run of text on the page, with its rendered size and
 // its contrast against the nearest opaque background behind it.
@@ -78,6 +78,9 @@ for (const scheme of ["light", "dark"] as const) {
       await page.goto("/");
       await expect(page.locator("#artwork")).toBeVisible();
       await expectLegible(page);
+      await examplesButton(page).click();
+      await expectLegible(page);
+      await page.keyboard.press("Escape");
       await page
         .getByRole("button", { name: "diacaustic", exact: true })
         .click();
@@ -89,9 +92,7 @@ for (const scheme of ["light", "dark"] as const) {
       await page.getByText("How the refractive indices work").click();
       await openExportSettings(page);
       await expectLegible(page);
-      await page
-        .getByRole("combobox", { name: "Start with a notebook example" })
-        .selectOption("2");
+      await choosePreset(page, "2");
       await page.locator(".diagnostics > summary").click();
       await expectLegible(page);
       await page
@@ -115,7 +116,7 @@ for (const scheme of ["light", "dark"] as const)
       await page.locator("#spatial-animation-section > summary").click();
       await page.locator("#spatial-export-settings > summary").click();
       await expectLegible(page);
-      await page.getByLabel("Start with a notebook example").selectOption("3");
+      await choosePreset(page, "3");
       await page
         .getByLabel("Animate", { exact: true })
         .selectOption("parameters");
