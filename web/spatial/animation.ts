@@ -39,7 +39,15 @@ type NamedTarget =
   | "lines"
   | "c0x"
   | "c0y"
-  | "c0z";
+  | "c0z"
+  | "angle"
+  | "twist"
+  | "width"
+  | "distance"
+  | "strands"
+  | "normalX"
+  | "normalY"
+  | "normalZ";
 export type Target = NamedTarget | HarmonicTarget;
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
@@ -76,7 +84,28 @@ export const targetLabels: Record<NamedTarget, string> = {
   c0x: harmonicLabels.center("x"),
   c0y: harmonicLabels.center("y"),
   c0z: harmonicLabels.center("z"),
+  angle: "Angle θ₀",
+  twist: "Twist (turns)",
+  width: "Half-width w",
+  distance: "Offset d",
+  strands: "Offset strands",
+  normalX: "N₀ x",
+  normalY: "N₀ y",
+  normalZ: "N₀ z",
 };
+// Framed-construction targets and the FrameConfig field each one moves.
+const frameFields = {
+  angle: "angle",
+  twist: "twist",
+  width: "width",
+  distance: "offset",
+  strands: "strands",
+} as const;
+const isFrame = (t: Target): t is keyof typeof frameFields => t in frameFields;
+const isReference = (t: Target): t is "normalX" | "normalY" | "normalZ" =>
+  t === "normalX" || t === "normalY" || t === "normalZ";
+const referenceAxis = (t: "normalX" | "normalY" | "normalZ") =>
+  t.slice(6).toLowerCase() as "x" | "y" | "z";
 const harmonicTarget = (t: Target) => {
   const match = /^harmonic(\d+)(Frequency|A|B)([xyz])?$/.exec(t);
   if (!match) return null;
@@ -100,15 +129,22 @@ export const targetLabel = (c: SpatialConfig, t: Target): string => {
     return h.field === "frequency"
       ? harmonicLabels.frequency(h.index + 1)
       : harmonicLabels[h.field](h.index + 1, h.axis!);
-  return t === "lines" && c.construction === "involute"
-    ? "Unwinding strings"
-    : t === "lines" && c.construction === "inversion"
-      ? "Correspondences"
-      : t === "lines" && usesSpatialPole(c)
-        ? "Projection constructions"
-        : targetLabels[t as NamedTarget];
+  return t === "lines" && c.construction === "framed"
+    ? "Frames & cross-lines"
+    : t === "lines" && c.construction === "involute"
+      ? "Unwinding strings"
+      : t === "lines" && c.construction === "inversion"
+        ? "Correspondences"
+        : t === "lines" && usesSpatialPole(c)
+          ? "Projection constructions"
+          : targetLabels[t as NamedTarget];
 };
-export const integerTargets: Target[] = ["samples", "lines", "count"];
+export const integerTargets: Target[] = [
+  "samples",
+  "lines",
+  "count",
+  "strands",
+];
 const curveTargets = ["a", "min", "max"] as const;
 const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
 type CurveTarget = (typeof curveTargets)[number];
@@ -121,23 +157,35 @@ const isInvolute = (t: Target): t is InvoluteTarget =>
 // frame, so a track never reuses a prefix measured from another anchor.
 export const availableTargets = (c: SpatialConfig): Target[] => {
   const construction: Target[] =
-    c.construction === "involute"
-      ? c.involute.family.enabled
-        ? ["from", "to", "count", "anchor"]
-        : ["offset", "anchor"]
-      : c.construction === "inversion"
-        ? [
-            "centerX",
-            "centerY",
-            "centerZ",
-            "sphere",
-            ...(usesSpatialPole(c)
-              ? (["poleX", "poleY", "poleZ"] as const)
-              : []),
-          ]
-        : usesSpatialPole(c)
-          ? ["poleX", "poleY", "poleZ"]
-          : ["length"];
+    c.construction === "framed"
+      ? [
+          "angle",
+          "twist",
+          "width",
+          "distance",
+          "strands",
+          // N₀ only starts the transported frame; Frenet ignores it.
+          ...(c.frame.kind === "rotation-minimizing"
+            ? (["normalX", "normalY", "normalZ"] as const)
+            : []),
+        ]
+      : c.construction === "involute"
+        ? c.involute.family.enabled
+          ? ["from", "to", "count", "anchor"]
+          : ["offset", "anchor"]
+        : c.construction === "inversion"
+          ? [
+              "centerX",
+              "centerY",
+              "centerZ",
+              "sphere",
+              ...(usesSpatialPole(c)
+                ? (["poleX", "poleY", "poleZ"] as const)
+                : []),
+            ]
+          : usesSpatialPole(c)
+            ? ["poleX", "poleY", "poleZ"]
+            : ["length"];
   const curve: Target[] =
     c.format === "parametric"
       ? ["a", "min", "max"]
@@ -168,6 +216,8 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (t === "centerZ") return c.inversion.center.z;
   if (t === "sphere") return c.inversion.radius;
   if (isCenter(t)) return c.harmonic.center[centerAxis(t)];
+  if (isFrame(t)) return c.frame[frameFields[t]];
+  if (isReference(t)) return c.frame.reference[referenceAxis(t)];
   if (isHarmonic(t)) {
     const h = harmonicTarget(t)!,
       term = c.harmonic.terms[h.index];
@@ -201,6 +251,9 @@ export function applyTracks(
     else if (t.target === "sphere") config.inversion.radius = v;
     else if (isCenter(t.target))
       config.harmonic.center[centerAxis(t.target)] = v;
+    else if (isFrame(t.target)) config.frame[frameFields[t.target]] = v;
+    else if (isReference(t.target))
+      config.frame.reference[referenceAxis(t.target)] = v;
     else if (isHarmonic(t.target)) {
       const h = harmonicTarget(t.target)!,
         term = config.harmonic.terms[h.index];
@@ -326,6 +379,15 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     ...result.harmonic,
     positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
   };
+  // The seam compares the last sample with the first, so it appears only
+  // once the whole curve is shown.
+  const frame = result.frame && {
+    ...result.frame,
+    frames: result.frame.frames.filter((g) => g.sampleIndex <= last),
+    strands: result.frame.strands.map((s) => s.slice(0, last + 1)),
+    breaks: result.frame.breaks.slice(0, last + 1),
+    seam: last === result.base.length - 1 ? result.frame.seam : undefined,
+  };
   const generating = harmonicFamilies(harmonic);
   return {
     ...result,
@@ -339,6 +401,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     projection,
     inversion,
     harmonic,
+    frame,
     bounds: inversion
       ? fitBounds(
           base,
@@ -361,7 +424,13 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
               ...involute.members.map((m) => m.points),
               ...generating,
             )
-          : fitBounds(base, minus, plus, ...generating),
+          : fitBounds(
+              base,
+              minus,
+              plus,
+              ...(frame?.strands ?? []),
+              ...generating,
+            ),
   };
 }
 export function animationCamera(view: AnimationView): View {

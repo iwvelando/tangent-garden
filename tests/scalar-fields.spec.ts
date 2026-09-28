@@ -790,3 +790,36 @@ test("spatial harmonic center, term, and domain fields share the bounded scalar 
     await expect(page.getByRole("alert")).toHaveCount(0);
   }
 });
+
+test("spatial frame reference, angle, twist, width and distance share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page.getByLabel("Construction", { exact: true }).selectOption("framed");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly string[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  for (const [name, text, value, path] of [
+    ["N₀ x", "pi/2", Math.PI / 2, ["frame", "reference", "x"]],
+    ["N₀ y", "-e", -Math.E, ["frame", "reference", "y"]],
+    ["N₀ z", "phi", phi, ["frame", "reference", "z"]],
+    ["Angle θ₀", "-pi/3", -Math.PI / 3, ["frame", "angle"]],
+    ["Twist (turns)", "e", Math.E, ["frame", "twist"]],
+    ["Half-width w", "1/phi", 1 / phi, ["frame", "width"]],
+    ["Offset d", "pi/5", Math.PI / 5, ["frame", "offset"]],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(path)).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
