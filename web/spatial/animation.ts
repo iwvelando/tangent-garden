@@ -14,6 +14,10 @@ export type Target =
   | "poleX"
   | "poleY"
   | "poleZ"
+  | "centerX"
+  | "centerY"
+  | "centerZ"
+  | "sphere"
   | "a"
   | "min"
   | "max"
@@ -42,6 +46,10 @@ export const targetLabels: Record<Target, string> = {
   poleX: "Pole x",
   poleY: "Pole y",
   poleZ: "Pole z",
+  centerX: "Inversion center x",
+  centerY: "Inversion center y",
+  centerZ: "Inversion center z",
+  sphere: "Inversion radius R",
   a: "Shape parameter a",
   min: "Domain start",
   max: "Domain end",
@@ -59,9 +67,11 @@ export const targetLabels: Record<Target, string> = {
 export const targetLabel = (c: SpatialConfig, t: Target) =>
   t === "lines" && c.construction === "involute"
     ? "Unwinding strings"
-    : t === "lines" && usesSpatialPole(c)
-      ? "Projection constructions"
-      : targetLabels[t];
+    : t === "lines" && c.construction === "inversion"
+      ? "Correspondences"
+      : t === "lines" && usesSpatialPole(c)
+        ? "Projection constructions"
+        : targetLabels[t];
 export const integerTargets: Target[] = ["samples", "lines", "count"];
 const curveTargets = ["a", "min", "max"] as const;
 const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
@@ -79,9 +89,19 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
       ? c.involute.family.enabled
         ? ["from", "to", "count", "anchor"]
         : ["offset", "anchor"]
-      : usesSpatialPole(c)
-        ? ["poleX", "poleY", "poleZ"]
-        : ["length"];
+      : c.construction === "inversion"
+        ? [
+            "centerX",
+            "centerY",
+            "centerZ",
+            "sphere",
+            ...(usesSpatialPole(c)
+              ? (["poleX", "poleY", "poleZ"] as const)
+              : []),
+          ]
+        : usesSpatialPole(c)
+          ? ["poleX", "poleY", "poleZ"]
+          : ["length"];
   const curve: Target[] =
     c.format === "parametric" ? ["a", "min", "max"] : ["radius", "tube"];
   return c.format === "parametric"
@@ -92,6 +112,10 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (t === "poleX") return c.pole.x;
   if (t === "poleY") return c.pole.y;
   if (t === "poleZ") return c.pole.z;
+  if (t === "centerX") return c.inversion.center.x;
+  if (t === "centerY") return c.inversion.center.y;
+  if (t === "centerZ") return c.inversion.center.z;
+  if (t === "sphere") return c.inversion.radius;
   if (isCurve(t)) return c.curve[t];
   if (t === "anchor" || t === "offset") return c.involute[t];
   if (isInvolute(t)) return c.involute.family[t];
@@ -111,6 +135,10 @@ export function applyTracks(
     if (t.target === "poleX") config.pole.x = v;
     else if (t.target === "poleY") config.pole.y = v;
     else if (t.target === "poleZ") config.pole.z = v;
+    else if (t.target === "centerX") config.inversion.center.x = v;
+    else if (t.target === "centerY") config.inversion.center.y = v;
+    else if (t.target === "centerZ") config.inversion.center.z = v;
+    else if (t.target === "sphere") config.inversion.radius = v;
     else if (isCurve(t.target)) config.curve[t.target] = v;
     else if (t.target === "anchor" || t.target === "offset")
       config.involute[t.target] = v;
@@ -194,6 +222,15 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       (c) => c.sampleIndex <= last,
     ),
   };
+  const inversion = result.inversion && {
+    ...result.inversion,
+    source: result.inversion.source.slice(0, last + 1),
+    points: result.inversion.points.slice(0, last + 1),
+    breaks: result.inversion.breaks.slice(0, last + 1),
+    correspondences: result.inversion.correspondences.filter(
+      (c) => c.sampleIndex <= last,
+    ),
+  };
   return {
     ...result,
     base,
@@ -204,11 +241,14 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     rulings: result.rulings.filter((r) => r.sampleIndex <= last),
     involute,
     projection,
-    bounds: projection
-      ? fitBounds(base, projection.points, projection.feet, [projection.pole])
-      : involute
-        ? fitBounds(base, ...involute.members.map((m) => m.points))
-        : fitBounds(base, minus, plus),
+    inversion,
+    bounds: inversion
+      ? fitBounds(base, inversion.source, inversion.points, [inversion.center])
+      : projection
+        ? fitBounds(base, projection.points, projection.feet, [projection.pole])
+        : involute
+          ? fitBounds(base, ...involute.members.map((m) => m.points))
+          : fitBounds(base, minus, plus),
   };
 }
 export function animationCamera(view: AnimationView): View {

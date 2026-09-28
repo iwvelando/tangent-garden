@@ -45,14 +45,17 @@
     "offsets-of-an-evolute": "5fb87797"
   },
   "3d": {
-    "trefoil-2-3": "927d1ff8",
-    "cinquefoil-2-5": "8a7d8704",
-    "woven-orbit-3-4": "743edf1d",
-    "helix-a-ribbon-staircase": "2d7c9bd0",
-    "lissajous-a-spatial-weave": "abe02652",
-    "unwinding-a-staircase": "0041c23d",
-    "a-knot-shedding-filaments": "9efe838e",
-    "a-knot-through-perpendiculars": "70148768",
-    "half-turns-around-a-helix": "e11edca6"
+    "trefoil-2-3": "00f74256",
+    "cinquefoil-2-5": "771ab2b6",
+    "woven-orbit-3-4": "211ddabf",
+    "helix-a-ribbon-staircase": "4a60fd2c",
+    "lissajous-a-spatial-weave": "64caafce",
+    "unwinding-a-staircase": "ed49461f",
+    "a-knot-shedding-filaments": "e914f4fa",
+    "a-knot-through-perpendiculars": "fa8d8bc2",
+    "half-turns-around-a-helix": "37643a22",
+    "a-staircase-drawn-into-a-sphere": "2c943a5e",
+    "a-trefoil-turned-inside-out": "0e8af415",
+    "inverted-perpendiculars": "39a40d99"
   }
 }

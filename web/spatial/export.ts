@@ -43,6 +43,7 @@ export async function imageFile(
       involute: "spatial involutes",
       "tangent-foot": "spatial tangent-foot projection",
       orthotomic: "spatial tangent-line orthotomic",
+      inversion: "spatial sphere inversion",
     };
     return new Blob(
       [

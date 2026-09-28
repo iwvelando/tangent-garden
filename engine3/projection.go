@@ -22,6 +22,17 @@ type ProjectionResult struct {
 	Invalid       int                      `json:"invalid"`
 }
 
+// project is the pointwise evaluator of both projections, from a contact
+// point r and its unit tangent. Sphere inversion composes with it directly
+// instead of differentiating a displayed path.
+func project(kind string, pole, r, tangent Vec3) Vec3 {
+	h := r.add(tangent.mul(pole.sub(r).dot(tangent)))
+	if kind == "orthotomic" {
+		return h.mul(2).sub(pole)
+	}
+	return h
+}
+
 // Only the base's stable first derivative is required. A vanishing derivative
 // of the image (including a collapsed line image) does not invalidate it.
 func projections(c Request, base []*Vec3, tangents []Vec3) *ProjectionResult {
@@ -32,11 +43,8 @@ func projections(c Request, base []*Vec3, tangents []Vec3) *ProjectionResult {
 		if r == nil {
 			continue
 		}
-		h := r.add(tangents[i].mul(c.Pole.sub(*r).dot(tangents[i])))
-		p := h
-		if c.Construction == "orthotomic" {
-			p = h.mul(2).sub(c.Pole)
-		}
+		h := project("tangent-foot", c.Pole, *r, tangents[i])
+		p := project(c.Construction, c.Pole, *r, tangents[i])
 		if !h.valid() || !p.valid() {
 			out.Invalid++
 			continue

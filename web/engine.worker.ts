@@ -60,9 +60,11 @@ self.onmessage = async ({
     }
     if (data.action === "spatial") {
       // JSON turns NaN into null, which Go would read as zero: refuse it here.
+      const inversion = data.spatial?.construction === "inversion";
       const projection =
         data.spatial?.construction === "tangent-foot" ||
-        data.spatial?.construction === "orthotomic";
+        data.spatial?.construction === "orthotomic" ||
+        (inversion && data.spatial?.inversion.input !== "base");
       const involute = data.spatial?.construction === "involute",
         family = data.spatial?.involute.family;
       if (
@@ -75,8 +77,24 @@ self.onmessage = async ({
                   ? [family!.from, family!.to, family!.count]
                   : [data.spatial.involute.offset]),
               ]
-            : projection
-              ? [data.spatial.pole.x, data.spatial.pole.y, data.spatial.pole.z]
+            : projection || inversion
+              ? [
+                  ...(inversion
+                    ? [
+                        data.spatial.inversion.center.x,
+                        data.spatial.inversion.center.y,
+                        data.spatial.inversion.center.z,
+                        data.spatial.inversion.radius,
+                      ]
+                    : []),
+                  ...(projection
+                    ? [
+                        data.spatial.pole.x,
+                        data.spatial.pole.y,
+                        data.spatial.pole.z,
+                      ]
+                    : []),
+                ]
               : [data.spatial.length]),
           data.spatial.samples,
           data.spatial.lines,

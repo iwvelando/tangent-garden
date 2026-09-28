@@ -27,20 +27,22 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 //
 // Construction is "developable" (or empty) for the tangent developable, or
 // "involute" for the filaments described by Involute, or "tangent-foot" /
-// "orthotomic" for projections from Pole. Length applies only to the developable.
+// "orthotomic" for projections from Pole, or "inversion" for the sphere
+// inversion described by Inversion. Length applies only to the developable.
 type Request struct {
-	Format       string          `json:"format"`
-	Construction string          `json:"construction"`
-	Involute     InvoluteRequest `json:"involute"`
-	Pole         Vec3            `json:"pole"`
-	Curve        Curve           `json:"curve"`
-	Radius       float64         `json:"radius"`
-	Tube         float64         `json:"tube"`
-	Length       float64         `json:"length"`
-	P            int             `json:"p"`
-	Q            int             `json:"q"`
-	Samples      int             `json:"samples"`
-	Lines        int             `json:"lines"`
+	Format       string           `json:"format"`
+	Construction string           `json:"construction"`
+	Involute     InvoluteRequest  `json:"involute"`
+	Pole         Vec3             `json:"pole"`
+	Inversion    InversionRequest `json:"inversion"`
+	Curve        Curve            `json:"curve"`
+	Radius       float64          `json:"radius"`
+	Tube         float64          `json:"tube"`
+	Length       float64          `json:"length"`
+	P            int              `json:"p"`
+	Q            int              `json:"q"`
+	Samples      int              `json:"samples"`
+	Lines        int              `json:"lines"`
 }
 type Vertex struct {
 	SampleIndex int     `json:"sampleIndex"`
@@ -68,6 +70,7 @@ type Result struct {
 	// the developable's Minus, Plus, Mesh, and Rulings empty.
 	Involute   *InvoluteResult   `json:"involute,omitempty"`
 	Projection *ProjectionResult `json:"projection,omitempty"`
+	Inversion  *InversionResult  `json:"inversion,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -88,8 +91,9 @@ func Compute(c Request) (Result, error) {
 	}
 	involute := c.Construction == "involute"
 	projection := c.Construction == "tangent-foot" || c.Construction == "orthotomic"
+	inversion := c.Construction == "inversion"
 	developable := c.Construction == "" || c.Construction == "developable"
-	if !involute && !projection && !developable {
+	if !involute && !projection && !inversion && !developable {
 		return Result{}, fmt.Errorf("unknown spatial construction")
 	}
 	if developable && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
@@ -97,6 +101,11 @@ func Compute(c Request) (Result, error) {
 	}
 	if projection && (!c.Pole.valid() || math.Max(math.Abs(c.Pole.X), math.Max(math.Abs(c.Pole.Y), math.Abs(c.Pole.Z))) > 1e5) {
 		return Result{}, fmt.Errorf("pole coordinates must be finite and within ±100000")
+	}
+	if inversion {
+		if err := c.Inversion.validate(c.Pole); err != nil {
+			return Result{}, err
+		}
 	}
 	evaluate, lo, hi, closed, err := compile(c)
 	if err != nil {
@@ -187,6 +196,15 @@ func Compute(c Request) (Result, error) {
 		out.Projection = projections(c, out.Base, tangents)
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
 		out.Bounds = fit(out.Base, out.Projection.Points, out.Projection.Feet, []*Vec3{&out.Projection.Pole})
+		out.Radius = out.Bounds.Radius
+		return out, nil
+	}
+	if inversion {
+		q := inversions(c, evaluate, lo, hi, out.Base, tangents, out.Breaks)
+		out.Inversion = q
+		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
+		// A base source repeats the base, which leaves the fit unchanged.
+		out.Bounds = fit(out.Base, q.Source, q.Points, []*Vec3{&q.Center})
 		out.Radius = out.Bounds.Radius
 		return out, nil
 	}

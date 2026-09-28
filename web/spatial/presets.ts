@@ -3,6 +3,7 @@ const base: SpatialConfig = {
   format: "torus",
   construction: "developable",
   pole: { x: 1.5, y: 0, z: 1 },
+  inversion: { center: { x: 0, y: 0, z: 0 }, radius: 2, input: "base" },
   involute: {
     anchor: 0,
     offset: 0,
@@ -145,6 +146,50 @@ export const spatialPresets: {
         min: -2 * Math.PI,
         max: 2 * Math.PI,
       },
+    },
+  },
+  {
+    name: "A staircase drawn into a sphere",
+    detail: "Inversion pulls every distant turn toward the center",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "inversion",
+      inversion: { center: { x: 0, y: 0, z: 0 }, radius: 2, input: "base" },
+      lines: 48,
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t/3",
+        a: 1,
+        min: -6 * Math.PI,
+        max: 6 * Math.PI,
+      },
+    },
+  },
+  {
+    name: "A trefoil turned inside out",
+    detail: "Inside and outside trade places across one sphere",
+    config: {
+      ...base,
+      construction: "inversion",
+      inversion: { center: { x: 0, y: 0, z: 0 }, radius: 2.4, input: "base" },
+      lines: 48,
+    },
+  },
+  {
+    name: "Inverted perpendiculars",
+    detail: "A knot's tangent feet, inverted in a sphere",
+    config: {
+      ...base,
+      construction: "inversion",
+      pole: { x: 0, y: 0, z: 2 },
+      inversion: {
+        center: { x: 0, y: 0, z: 0 },
+        radius: 2,
+        input: "tangent-foot",
+      },
+      lines: 48,
     },
   },
 ];

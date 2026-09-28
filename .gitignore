@@ -25,3 +25,7 @@ coverage/
 CLAUDE.local.md
 *.swp
 *~
+
+# Claude Code runtime state
+.claude/scheduled_tasks.lock
+.claude/settings.local.json

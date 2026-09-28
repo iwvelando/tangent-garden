@@ -149,11 +149,19 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     setPreset("");
   }
   const involute = config.construction === "involute";
-  const projection = usesSpatialPole(config);
+  const inversion = config.construction === "inversion";
+  const projection =
+    config.construction === "tangent-foot" ||
+    config.construction === "orthotomic";
   const orthotomic = config.construction === "orthotomic";
   const projectionName = orthotomic
     ? "Tangent-line orthotomic"
     : "Tangent-foot curve";
+  const inversionSource = {
+    base: "the base curve",
+    "tangent-foot": "the tangent-foot curve",
+    orthotomic: "the tangent-line orthotomic",
+  }[config.inversion.input];
   const failure = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
     : error;
@@ -204,7 +212,80 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const unreached = shown?.result.involute?.unreached ?? 0;
-  const behind = projection ? (
+  const inverted = shown?.result.inversion;
+  const poleFields = (
+    <>
+      <div className="pair">
+        {(["x", "y"] as const).map((axis) => (
+          <Field
+            key={axis}
+            label={`Pole ${axis}`}
+            help={`Independent pole coordinate ${axis}, within ±100000. The pole is a geometric point, not a light source.`}
+          >
+            <ScalarInput
+              name={`Pole ${axis}`}
+              value={config.pole[axis]}
+              onChange={(value) =>
+                update((c) => ({
+                  ...c,
+                  pole: { ...c.pole, [axis]: value },
+                }))
+              }
+            />
+          </Field>
+        ))}
+      </div>
+      <Field
+        label="Pole z"
+        help="Height of the independent pole, within ±100000. All three coordinates accept constant expressions."
+      >
+        <ScalarInput
+          name="Pole z"
+          value={config.pole.z}
+          onChange={(value) =>
+            update((c) => ({ ...c, pole: { ...c.pole, z: value } }))
+          }
+        />
+      </Field>
+    </>
+  );
+  const behind = inversion ? (
+    <StudyExplanation
+      label="BEHIND THE SPHERE"
+      title="Space turned inside out around one point."
+      formula={
+        <>
+          J(p) = O + R² (p − O) / |p − O|² <span>|OJ| · |Op| = R²</span>
+        </>
+      }
+      note="Each segment joins a point to its image; both lie on one ray from the center O. Three great circles mark the sphere."
+      diagnostics={
+        shown &&
+        (shown.result.invalid > 0 ||
+          (inverted?.invalid ?? 0) > 0 ||
+          (inverted?.crossings ?? 0) > 0 ||
+          inverted?.collapsed) && (
+          <p className="bottom-note">
+            {shown.result.invalid} invalid base samples ·{" "}
+            {inverted?.invalid ?? 0} points without a finite image ·{" "}
+            {inverted?.crossings ?? 0} passages through the center. The image
+            leaves through infinity there, so it is never joined across.
+            {inverted?.collapsed &&
+              " The image collapses to a point, shown as a cross."}
+          </p>
+        )
+      }
+    >
+      <p>
+        Sphere inversion sends each point p along the ray from the center O to
+        the point J whose distance from O is R² divided by that of p. The sphere
+        stays fixed, its inside and outside trade places, and O itself goes to
+        infinity. Here it inverts {inversionSource}: circles and lines become
+        circles or lines, and a curve through O opens out into branches that run
+        off to infinity.
+      </p>
+    </StudyExplanation>
+  ) : projection ? (
     <StudyExplanation
       label="BEHIND THE PERPENDICULARS"
       title={
@@ -478,43 +559,100 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <option value="involute">Involute · unwinding strings</option>
                   <option value="tangent-foot">Tangent-foot projection</option>
                   <option value="orthotomic">Tangent-line orthotomic</option>
+                  <option value="inversion">Sphere inversion</option>
                 </select>
               </Field>
-              {projection ? (
+              {inversion ? (
                 <>
+                  <Field
+                    label="Curve to invert"
+                    help="Invert the base curve, or one of its tangent projections from the pole."
+                  >
+                    <select
+                      value={config.inversion.input}
+                      onChange={(e) => {
+                        const input = e.target
+                          .value as SpatialConfig["inversion"]["input"];
+                        update((c) => ({
+                          ...c,
+                          inversion: { ...c.inversion, input },
+                        }));
+                      }}
+                    >
+                      <option value="base">Base curve</option>
+                      <option value="tangent-foot">
+                        Tangent-foot projection
+                      </option>
+                      <option value="orthotomic">
+                        Tangent-line orthotomic
+                      </option>
+                    </select>
+                  </Field>
                   <div className="pair">
                     {(["x", "y"] as const).map((axis) => (
                       <Field
                         key={axis}
-                        label={`Pole ${axis}`}
-                        help={`Independent pole coordinate ${axis}, within ±100000. The pole is a geometric point, not a light source.`}
+                        label={`Center ${axis}`}
+                        help={`Inversion center coordinate ${axis}, within ±100000. The center itself has no image.`}
                       >
                         <ScalarInput
-                          name={`Pole ${axis}`}
-                          value={config.pole[axis]}
+                          name={`Center ${axis}`}
+                          value={config.inversion.center[axis]}
                           onChange={(value) =>
                             update((c) => ({
                               ...c,
-                              pole: { ...c.pole, [axis]: value },
+                              inversion: {
+                                ...c.inversion,
+                                center: {
+                                  ...c.inversion.center,
+                                  [axis]: value,
+                                },
+                              },
                             }))
                           }
                         />
                       </Field>
                     ))}
                   </div>
-                  <Field
-                    label="Pole z"
-                    help="Height of the independent pole, within ±100000. All three coordinates accept constant expressions."
-                  >
-                    <ScalarInput
-                      name="Pole z"
-                      value={config.pole.z}
-                      onChange={(value) =>
-                        update((c) => ({ ...c, pole: { ...c.pole, z: value } }))
-                      }
-                    />
-                  </Field>
+                  <div className="pair">
+                    <Field
+                      label="Center z"
+                      help="Height of the inversion center, within ±100000."
+                    >
+                      <ScalarInput
+                        name="Center z"
+                        value={config.inversion.center.z}
+                        onChange={(value) =>
+                          update((c) => ({
+                            ...c,
+                            inversion: {
+                              ...c.inversion,
+                              center: { ...c.inversion.center, z: value },
+                            },
+                          }))
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label="Sphere radius R"
+                      help="Radius of the inversion sphere, greater than 0 and at most 100000. Points on it stay fixed."
+                    >
+                      <ScalarInput
+                        name="Sphere radius R"
+                        value={config.inversion.radius}
+                        onChange={(value) =>
+                          update((c) => ({
+                            ...c,
+                            inversion: { ...c.inversion, radius: value },
+                          }))
+                        }
+                      />
+                    </Field>
+                  </div>
+                  {config.inversion.input !== "base" && poleFields}
                 </>
+              ) : projection ? (
+                poleFields
               ) : involute ? (
                 <>
                   <Field
@@ -652,22 +790,31 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           </p>
           <fieldset className="spatial-layers">
             <legend>Reveal the construction</legend>
-            {(projection
+            {(inversion
               ? ([
-                  ["projection", projectionName],
-                  ["connectors", "Perpendiculars & tangent feet"],
-                  ["pole", "Pole marker"],
+                  ["inverse", "Inverted curve"],
+                  ["correspondences", "Correspondence segments"],
+                  ["sphere", "Inversion sphere & center"],
+                  ...(config.inversion.input === "base"
+                    ? []
+                    : ([["source", "Projection & pole"]] as const)),
                 ] as const)
-              : involute
+              : projection
                 ? ([
-                    ["filaments", "Involute filaments"],
-                    ["strings", "Unwinding strings"],
+                    ["projection", projectionName],
+                    ["connectors", "Perpendiculars & tangent feet"],
+                    ["pole", "Pole marker"],
                   ] as const)
-                : ([
-                    ["surface", "Ribbon surface"],
-                    ["rulings", "Tangent rulings"],
-                    ["edges", "Ribbon edges"],
-                  ] as const)
+                : involute
+                  ? ([
+                      ["filaments", "Involute filaments"],
+                      ["strings", "Unwinding strings"],
+                    ] as const)
+                  : ([
+                      ["surface", "Ribbon surface"],
+                      ["rulings", "Tangent rulings"],
+                      ["edges", "Ribbon edges"],
+                    ] as const)
             ).map(([key, label]) => (
               <label key={key}>
                 <input
@@ -697,11 +844,13 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             </Field>
             <Field
               label={
-                projection
-                  ? "Projection constructions"
-                  : involute
-                    ? "Unwinding strings"
-                    : "Tangent lines"
+                inversion
+                  ? "Correspondences"
+                  : projection
+                    ? "Projection constructions"
+                    : involute
+                      ? "Unwinding strings"
+                      : "Tangent lines"
               }
             >
               <input
@@ -732,7 +881,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} ${projection ? "projections" : involute ? "strings" : "tangents"}`}
+                : `${config.samples.toLocaleString()} samples · ${config.lines} ${inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -767,11 +916,13 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {projection
-                  ? projectionName
-                  : involute
-                    ? "Filaments unwound from a curve"
-                    : "A ribbon of tangent lines"}
+                {inversion
+                  ? "A curve inverted in a sphere"
+                  : projection
+                    ? projectionName
+                    : involute
+                      ? "Filaments unwound from a curve"
+                      : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -822,11 +973,13 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               <div className="legend">
                 <span className="thread-dot" /> Base curve{" "}
                 <span className="ribbon-dot" />{" "}
-                {projection
-                  ? projectionName
-                  : involute
-                    ? "Involute filaments"
-                    : "Tangent developable"}
+                {inversion
+                  ? "Inverted curve"
+                  : projection
+                    ? projectionName
+                    : involute
+                      ? "Involute filaments"
+                      : "Tangent developable"}
               </div>
               <span>
                 {animation
