@@ -115,6 +115,22 @@ const base: SpatialConfig = {
     length: 2,
     receiver: { plane: "none", at: 0, c1: 0, c2: 0, size: 3, bins: 96 },
   },
+  // The unit sphere in a slightly larger box, with five circles of latitude.
+  implicit: {
+    f: "x^2 + y^2 + z^2",
+    a: 1,
+    level: 1,
+    box: {
+      xMin: -1.3,
+      xMax: 1.3,
+      yMin: -1.3,
+      yMax: 1.3,
+      zMin: -1.3,
+      zMax: 1.3,
+    },
+    cells: 48,
+    sections: { normal: { x: 0, y: 0, z: 1 }, from: -0.8, to: 0.8, count: 5 },
+  },
   radius: 2.4,
   tube: 0.85,
   length: 2.3,
@@ -1013,6 +1029,211 @@ export const spatialPresets: {
         elevation: -25,
         length: 1.5,
         receiver: { plane: "z", at: -0.5, c1: 0, c2: 0, size: 3.2, bins: 160 },
+      },
+    },
+  },
+  {
+    name: "A sphere and its latitudes",
+    detail:
+      "The level set x² + y² + z² = 1, meshed on a grid, cut by seven parallel planes in circles of latitude",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        ...base.implicit,
+        sections: {
+          normal: { x: 0, y: 0, z: 1 },
+          from: -0.9,
+          to: 0.9,
+          count: 7,
+        },
+      },
+    },
+  },
+  {
+    name: "The spiric sections of Perseus",
+    detail:
+      "Planes parallel to a torus's axis cut it in two circles, two ovals, a lemniscate of Bernoulli, a peanut and an oval",
+    config: {
+      ...base,
+      format: "implicit",
+      // A torus of radii R = a = 1 and r = 0.5 (c = r²). The plane x = d
+      // touches its inner equator at d = R − r, where, since R = 2r, the
+      // section is Bernoulli's lemniscate; it misses the torus past 1.5.
+      implicit: {
+        f: "(sqrt(x^2 + y^2) - a)^2 + z^2",
+        a: 1,
+        level: 0.25,
+        box: {
+          xMin: -1.6,
+          xMax: 1.6,
+          yMin: -1.6,
+          yMax: 1.6,
+          zMin: -0.6,
+          zMax: 0.6,
+        },
+        cells: 64,
+        sections: {
+          normal: { x: 1, y: 0, z: 0 },
+          from: 0,
+          to: 1.25,
+          count: 6,
+        },
+      },
+    },
+  },
+  {
+    name: "Villarceau circles",
+    detail:
+      "A plane tangent to a torus at two points cuts it in two circles, each as wide as the torus's core",
+    config: {
+      ...base,
+      format: "implicit",
+      // The bitangent plane through the centre, tilted by asin(r/R) = 30°:
+      // two circles of radius R = 1 about (0, ±r, 0).
+      implicit: {
+        f: "(sqrt(x^2 + y^2) - a)^2 + z^2",
+        a: 1,
+        level: 0.25,
+        box: {
+          xMin: -1.6,
+          xMax: 1.6,
+          yMin: -1.6,
+          yMax: 1.6,
+          zMin: -0.6,
+          zMax: 0.6,
+        },
+        cells: 64,
+        sections: {
+          normal: { x: -0.5, y: 0, z: Math.sqrt(3) / 2 },
+          from: 0,
+          to: 0,
+          count: 1,
+        },
+      },
+    },
+  },
+  {
+    name: "Two drops meeting",
+    detail:
+      "Points whose distances to two foci multiply to a constant: two drops that join through a saddle as the constant grows",
+    config: {
+      ...base,
+      format: "implicit",
+      // Foci at (±a, 0, 0); the drops touch at the origin when c = a⁴, and
+      // the plane z = 0 cuts them in Cassini ovals.
+      implicit: {
+        f: "((x - a)^2 + y^2 + z^2) * ((x + a)^2 + y^2 + z^2)",
+        a: 1,
+        level: 0.9,
+        // Wide enough for the joined drop up to c = 1.4, which reaches
+        // |x| ≈ 1.48 and |y|, |z| ≈ 0.59.
+        box: {
+          xMin: -1.6,
+          xMax: 1.6,
+          yMin: -0.8,
+          yMax: 0.8,
+          zMin: -0.8,
+          zMax: 0.8,
+        },
+        cells: 64,
+        sections: {
+          normal: { x: 0, y: 0, z: 1 },
+          from: 0,
+          to: 0.4,
+          count: 3,
+        },
+      },
+    },
+  },
+  {
+    name: "A double torus",
+    detail:
+      "A thickened figure eight: a closed surface of genus two, cut through its middle to show both holes",
+    config: {
+      ...base,
+      format: "implicit",
+      // Points within √c of the lemniscate (x² + y²)² = x² − y², in the
+      // sense of G² + z² = c.
+      implicit: {
+        f: "((x^2 + y^2)^2 - x^2 + y^2)^2 + z^2",
+        a: 1,
+        level: 0.02,
+        box: {
+          xMin: -1.3,
+          xMax: 1.3,
+          yMin: -0.7,
+          yMax: 0.7,
+          zMin: -0.3,
+          zMax: 0.3,
+        },
+        cells: 96,
+        sections: {
+          normal: { x: 0, y: 0, z: 1 },
+          from: 0,
+          to: 0,
+          count: 1,
+        },
+      },
+    },
+  },
+  {
+    name: "The tanglecube",
+    detail:
+      "x⁴ − 5x² + y⁴ − 5y² + z⁴ − 5z² = −11.8: a closed cage of genus five, cut by planes across its diagonal",
+    config: {
+      ...base,
+      format: "implicit",
+      // Each term has minimum −6.25; the eight drops around the minima join
+      // along the cube's twelve edges once c passes −12.5, so genus 12 − 8 + 1.
+      implicit: {
+        f: "x^4 - 5*x^2 + y^4 - 5*y^2 + z^4 - 5*z^2",
+        a: 1,
+        level: -11.8,
+        box: {
+          xMin: -2.6,
+          xMax: 2.6,
+          yMin: -2.6,
+          yMax: 2.6,
+          zMin: -2.6,
+          zMax: 2.6,
+        },
+        cells: 48,
+        sections: {
+          normal: { x: 1, y: 1, z: 1 },
+          from: -2,
+          to: 2,
+          count: 5,
+        },
+      },
+    },
+  },
+  {
+    name: "A gyroid, cut open",
+    detail:
+      "sin x cos y + sin y cos z + sin z cos x = 0 over one period: a surface that fills space, cut open by its box and by a diagonal plane",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)",
+        a: 1,
+        level: 0,
+        box: {
+          xMin: -Math.PI,
+          xMax: Math.PI,
+          yMin: -Math.PI,
+          yMax: Math.PI,
+          zMin: -Math.PI,
+          zMax: Math.PI,
+        },
+        cells: 48,
+        sections: {
+          normal: { x: 1, y: 1, z: 1 },
+          from: 0,
+          to: 0,
+          count: 1,
+        },
       },
     },
   },

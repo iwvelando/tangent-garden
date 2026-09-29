@@ -4,6 +4,7 @@ import type {
   Vec3,
   Bounds3,
   ReceiverResult,
+  ImplicitResult,
 } from "./types";
 
 export type View = Bounds3 & {
@@ -32,7 +33,11 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // as a focal sheet; its incident rays (with the source), outgoing rays
 // (reflected, transmitted, or totally reflected), and virtual rays with the
 // caustics' virtual parts, as lines; and its receiver's irradiance, each
-// as their own layers. The base curve is always drawn.
+// as their own layers. An implicit surface draws its level set as the
+// surface; its section curves, the planes they lie on, and the box with the
+// edges where the box cuts the surface open and where it stops beside cells
+// left out (with crosses at poles and jumps) as their own layers. The base
+// curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -66,6 +71,9 @@ export type Layers = {
   reflected: boolean;
   virtual: boolean;
   receiver: boolean;
+  sections: boolean;
+  planes: boolean;
+  box: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -100,6 +108,9 @@ export const defaultLayers: Layers = {
   reflected: true,
   virtual: true,
   receiver: true,
+  sections: true,
+  planes: true,
+  box: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -208,6 +219,65 @@ function receiverVertices(g: ReceiverResult | null | undefined) {
   return out;
 }
 
+// An implicit surface's triangles, each corner with its normal, or the
+// triangle's own where ∇F gives none; a triangle without area is skipped.
+// The phase is the height in the box (decorative, not a measured quantity).
+function implicitVertices(m: ImplicitResult | undefined) {
+  if (!m) return [];
+  const out: number[] = [];
+  const low = m.box.zMin,
+    span = m.box.zMax - m.box.zMin;
+  const p = m.positions,
+    n = m.normals;
+  for (let k = 0; k < m.triangles.length; k += 3) {
+    const [a, b, c] = [0, 1, 2].map((d) => 3 * m.triangles[k + d]);
+    const e = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]],
+      f = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]];
+    const flat = [
+      e[1] * f[2] - e[2] * f[1],
+      e[2] * f[0] - e[0] * f[2],
+      e[0] * f[1] - e[1] * f[0],
+    ];
+    const size = Math.hypot(flat[0], flat[1], flat[2]);
+    if (!(size > 0)) continue;
+    for (const v of [a, b, c]) {
+      const own = n[v] !== 0 || n[v + 1] !== 0 || n[v + 2] !== 0;
+      out.push(
+        p[v],
+        p[v + 1],
+        p[v + 2],
+        ...(own ? [n[v], n[v + 1], n[v + 2]] : flat.map((x) => x / size)),
+        (p[v + 2] - low) / span,
+      );
+    }
+  }
+  return out;
+}
+// The box's twelve edges.
+function boxEdges(m: ImplicitResult | undefined): Vec3[] {
+  if (!m) return [];
+  const b = m.box;
+  const corner = (c: number) => ({
+    x: c & 1 ? b.xMax : b.xMin,
+    y: c & 2 ? b.yMax : b.yMin,
+    z: c & 4 ? b.zMax : b.zMin,
+  });
+  const out: Vec3[] = [];
+  for (let c = 0; c < 8; c++)
+    for (const bit of [1, 2, 4])
+      if (!(c & bit)) out.push(corner(c), corner(c | bit));
+  return out;
+}
+// Pairs of vertex indices as segments.
+function indexed(m: ImplicitResult | undefined, pairs: number[] | undefined) {
+  if (!m || !pairs) return [];
+  return pairs.map((v) => ({
+    x: m.positions[3 * v],
+    y: m.positions[3 * v + 1],
+    z: m.positions[3 * v + 2],
+  }));
+}
+
 // Rendering only: all curve samples, analytic normals and mesh topology come
 // from Go. The camera is orthographic with identical scale on all three axes.
 export function createRenderer(canvas: HTMLCanvasElement) {
@@ -295,7 +365,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     lamp: Batch,
     virtualCaustics: Batch[],
     receiverSheet: Batch,
-    receiverFrame: Batch;
+    receiverFrame: Batch,
+    levelSheet: Batch,
+    sectionLines: Batch,
+    planeLines: Batch,
+    boxLines: Batch,
+    cutLines: Batch,
+    openLines: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -861,6 +937,50 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       2,
     );
+    // A level surface, its sections (each closed curve back to its start),
+    // the planes they lie on, the box, and the edges where the surface is
+    // cut open by the box or stops beside cells left out, with crosses at
+    // poles and jumps.
+    const level = result.implicit;
+    levelSheet = batch(implicitVertices(level), gl!.TRIANGLES, 0);
+    sectionLines = batch(
+      vertices(
+        (level?.sections ?? []).flatMap((s) =>
+          s.paths.flatMap((path) =>
+            path.points.flatMap((p, k, all) =>
+              k + 1 < all.length
+                ? [p, all[k + 1]]
+                : path.closed && all.length > 2
+                  ? [p, all[0]]
+                  : [],
+            ),
+          ),
+        ),
+      ),
+      gl!.LINES,
+      2,
+    );
+    planeLines = batch(
+      vertices(
+        (level?.sections ?? []).flatMap((s) =>
+          s.polygon.flatMap((p, k, all) => [p, all[(k + 1) % all.length]]),
+        ),
+      ),
+      gl!.LINES,
+      4,
+    );
+    boxLines = batch(vertices(boxEdges(level)), gl!.LINES, 4);
+    cutLines = batch(vertices(indexed(level, level?.cut)), gl!.LINES, 1);
+    openLines = batch(
+      vertices([
+        ...indexed(level, level?.open),
+        ...(level?.marks ?? []).flatMap((p) =>
+          cross(p, result.bounds.radius * 0.008),
+        ),
+      ]),
+      gl!.LINES,
+      5,
+    );
     // Each connecting polygon closes, the last pursuer back to the first.
     polygons = batch(
       vertices(
@@ -945,7 +1065,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       sheets.forEach(render);
       gl!.disable(gl!.POLYGON_OFFSET_FILL);
     };
-    shaded(layers.surface, mesh, sheet);
+    shaded(layers.surface, mesh, sheet, levelSheet);
     shaded(layers.offset, offsetSheet);
     focalSheets.forEach((f, k) =>
       shaded(k === 0 ? layers.focal1 : layers.focal2, f),
@@ -966,6 +1086,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (layers.receiver) {
       shaded(true, receiverSheet);
       render(receiverFrame);
+    }
+    if (layers.sections) render(sectionLines);
+    if (layers.planes) render(planeLines);
+    if (layers.box) {
+      render(boxLines);
+      render(cutLines);
+      render(openLines);
     }
     if (layers.virtual) {
       render(virtualRays);

@@ -139,7 +139,7 @@ func (v Implicit) validate() error {
 
 // sheet is F sampled on the grid.
 type sheet struct {
-	f         expr.Field
+	f         func(x, y float64) float64
 	w         Window
 	nx, ny    int
 	hx, hy    float64
@@ -162,7 +162,7 @@ func (s *sheet) node(i, j int) Vec {
 	return Vec{s.w.XMin + (s.w.XMax-s.w.XMin)*float64(i)/float64(s.nx), s.w.YMin + (s.w.YMax-s.w.YMin)*float64(j)/float64(s.ny)}
 }
 
-func (s *sheet) at(p Vec) float64 { return s.f(p.X, p.Y, 0) }
+func (s *sheet) at(p Vec) float64 { return s.f(p.X, p.Y) }
 
 // gradient differentiates F with a five-point stencil a thousandth of a
 // cell wide.
@@ -182,10 +182,15 @@ func newSheet(v Implicit, a float64) (*sheet, error) {
 	if timed {
 		return nil, fmt.Errorf("F(x, y) cannot use t; animate a or the level instead")
 	}
-	w := v.Window
+	return sample(func(x, y float64) float64 { return f(x, y, 0) }, v.Window, v.Cells), nil
+}
+
+// sample evaluates f on the grid of cells cells along the window's longer
+// side.
+func sample(f func(x, y float64) float64, w Window, cells int) *sheet {
 	width, height := w.XMax-w.XMin, w.YMax-w.YMin
 	s := &sheet{f: f, w: w, rejected: map[int]Vec{}}
-	s.nx, s.ny = gridShape(w, v.Cells)
+	s.nx, s.ny = gridShape(w, cells)
 	s.hx, s.hy = width/float64(s.nx), height/float64(s.ny)
 	s.scale = math.Max(width, height) + math.Max(math.Max(math.Abs(w.XMin), math.Abs(w.XMax)), math.Max(math.Abs(w.YMin), math.Abs(w.YMax)))
 	s.values = make([]float64, (s.nx+1)*(s.ny+1))
@@ -199,7 +204,35 @@ func newSheet(v Implicit, a float64) (*sheet, error) {
 			s.values[j*(s.nx+1)+i] = g
 		}
 	}
-	return s, nil
+	return s
+}
+
+// ContourBudget carries the budgets of grid edges bisected and contour
+// points from one trace to the next, as a family's levels share them.
+type ContourBudget struct {
+	Crossings int
+	Points    int
+	// Truncated is set once refinement stops at the point budget.
+	Truncated bool
+}
+
+// TraceLevel traces and refines the level set f = c exactly as an implicit
+// curve's, for a field given as a function rather than an expression, such
+// as a section of a spatial field. The window, of cells cells along its
+// longer side, must be valid; a grid point where f is not finite leaves
+// out the cells beside it. It returns the discontinuities found, in edge
+// order, or reports false and traces nothing when the crossings would
+// exceed the budget left after b.
+func TraceLevel(f func(x, y float64) float64, w Window, cells int, c float64, b *ContourBudget) (LevelSet, []Vec, bool) {
+	s := sample(f, w, cells)
+	s.crossings, s.points = b.Crossings, b.Points
+	set, ok := s.level(c)
+	if !ok {
+		return set, nil, false
+	}
+	s.refine(&set)
+	b.Crossings, b.Points, b.Truncated = s.crossings, s.points, b.Truncated || s.truncated
+	return set, s.discontinuities(), true
 }
 
 // Grid edges: the horizontal edge from node (i, j) is 2k and the vertical
@@ -517,6 +550,21 @@ func (s *sheet) normals(set LevelSet, n int) []Normal {
 	return out
 }
 
+// discontinuities returns where F changes sign without crossing the level,
+// in edge order.
+func (s *sheet) discontinuities() []Vec {
+	edges := make([]int, 0, len(s.rejected))
+	for e := range s.rejected {
+		edges = append(edges, e)
+	}
+	sort.Ints(edges)
+	out := make([]Vec, len(edges))
+	for k, e := range edges {
+		out[k] = s.rejected[e]
+	}
+	return out
+}
+
 // contours traces the curve and its family, with lines normals.
 func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, error) {
 	if err := v.validate(); err != nil {
@@ -556,15 +604,7 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 		warnings = append(warnings, fmt.Sprintf("Contours stopped being refined at %d points; they are drawn with straighter chords.", maxContourPoints))
 	}
 	out.Normals = s.normals(out.Curve, lines)
-	edges := make([]int, 0, len(s.rejected))
-	for e := range s.rejected {
-		edges = append(edges, e)
-	}
-	sort.Ints(edges)
-	out.Discontinuities = make([]Vec, len(edges))
-	for k, e := range edges {
-		out.Discontinuities[k] = s.rejected[e]
-	}
+	out.Discontinuities = s.discontinuities()
 	out.Nonfinite = s.nonfinite
 	return out, warnings, nil
 }

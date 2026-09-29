@@ -131,7 +131,41 @@ self.onmessage = async ({
         data.spatial?.format === "surface" || mirror
           ? data.spatial!.surface
           : undefined;
-      if (surface) {
+      // An implicit surface reads only its own fields, and its section
+      // normal and offsets only when it has sections.
+      const level =
+        data.spatial?.format === "implicit" ? data.spatial.implicit : undefined;
+      if (level) {
+        const { box, sections } = level;
+        if (
+          ![
+            level.a,
+            level.level,
+            box.xMin,
+            box.xMax,
+            box.yMin,
+            box.yMax,
+            box.zMin,
+            box.zMax,
+            level.cells,
+            sections.count,
+            ...(sections.count > 0
+              ? [
+                  sections.normal.x,
+                  sections.normal.y,
+                  sections.normal.z,
+                  sections.from,
+                  sections.to,
+                ]
+              : []),
+          ].every(Number.isFinite)
+        )
+          throw new Error(
+            "Fill in each spatial parameter with a finite number.",
+          );
+        if (![level.cells, sections.count].every(Number.isInteger))
+          throw new Error("Cell and plane counts must be whole numbers.");
+      } else if (surface) {
         const { uSamples, vSamples, curves } = surface;
         if (
           ![

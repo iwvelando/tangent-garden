@@ -242,7 +242,11 @@ export function SpatialAnimationPanel({
     s.progress = view.progress;
     setProgress(view.progress);
     onView(view);
-    if (
+    if (s.mode === "reveal" && s.original.config.format === "implicit") {
+      // A level surface reveals upward through its box.
+      const { zMin, zMax } = s.original.config.implicit.box;
+      setLive(`z = ${(zMin + (zMax - zMin) * view.progress).toPrecision(6)}`);
+    } else if (
       s.mode === "reveal" &&
       (s.original.config.format === "surface" ||
         s.original.config.format === "rays")
@@ -494,7 +498,11 @@ export function SpatialAnimationPanel({
               mode === "orbit" ? (
                 "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
               ) : mode === "reveal" ? (
-                "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
+                frame?.config.format === "implicit" ? (
+                  "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
+                ) : (
+                  "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
+                )
               ) : (
                 <>
                   Tracks vary together, linearly. Use <var>a</var> in a curve
@@ -512,7 +520,11 @@ export function SpatialAnimationPanel({
               value={mode}
               onChange={(e) => parameterMode(e.target.value as typeof mode)}
             >
-              <option value="reveal">Draw along the curve</option>
+              <option value="reveal">
+                {frame?.config.format === "implicit"
+                  ? "Rise through the box"
+                  : "Draw along the curve"}
+              </option>
               <option value="parameters">Vary parameters</option>
               <option value="orbit">Orbit the study</option>
             </select>

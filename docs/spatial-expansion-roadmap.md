@@ -36,7 +36,7 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 - [x] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
 - [x] 7a. Single-interaction reflected ray families and their caustic sets.
 - [x] 7b. Refraction and separately defined receiver-plane intersection/density studies.
-- [ ] 8. Bounded implicit surfaces and section curves, after a topology and memory-budget prototype.
+- [x] 8. Bounded implicit surfaces and section curves, after a topology and memory-budget prototype.
 
 Slices 1–3 offer the closest continuation of the existing curve-first notebook. Slice 4 broadens surface output without requiring a general surface editor. Slices 6–8 introduce substantially different evaluators and singularity problems: begin each with an analytic prototype and an attractive, legible study before committing to a full UI. A new formula preset alone is not a new visualization class.
 
@@ -416,6 +416,31 @@ Next step at the time: 7b, below.
   - the default oblique camera shows a small receiver small;
   - presets cannot set the camera or layers.
 
-Recommended next step: **8, bounded implicit surfaces and section curves**, starting with the topology and memory-budget prototype its contract requires.
+### Slice completed in this follow-up: 8
+
+- Implemented bounded implicit surfaces and their sections (branch `claude/spatial-implicit`). The topology and memory-budget prototype came first, as Go tests and a native workload probe, before any UI.
+- Conventions:
+  - `format: "implicit"` meshes `F(x, y, z) = c`, an expression in x, y, z and `a` through the existing `expr.ParseSpatialField` binding, refusing `t`, inside a declared box of 4–128 cells along its longest side and at most 262,144 cells.
+  - Meshing is marching tetrahedra on the Kuhn subdivision, the same in every cube, so there is no ambiguous tetrahedron. Grid faces whose corners alternate are counted and reported, since there the split decides the topology.
+  - Vertices are solved on F (Illinois false position with a bisection safeguard, to 10⁻¹² of the edge), shared through an edge-to-vertex map, so the result is an indexed mesh. A sign change that does not shrink with its bracket (the 2D notebook's test) is a pole or jump: marked, counted, and its tetrahedron left out. Cubes touching an undefined grid point are left out.
+  - Normals are `∇F/|∇F|` by five-point differences; a vanishing or undefined gradient leaves a vertex without one, counted. Triangles face larger F.
+  - The note reports pieces, closedness and Euler characteristic (genus when closed), and the box's cut edges apart from open edges beside cells left out.
+  - Sections are planes `n̂·p = d` traced by the planar implicit-curve tracer itself, through a new `engine.TraceLevel` with a shared `ContourBudget`, on a grid of four times the box's cells, at most 256.
+- UI and presets: **Implicit surface · F(x, y, z) = c** with its expression, level, a, box, and section planes; **Cells** under sampling; four layers; a reveal that rises through the box; tracks for the level, a, section offsets, cells and plane count. Seven presets form an "Implicit surfaces and sections" gallery family: a sphere and its latitudes, the spiric sections of Perseus, Villarceau circles, two drops meeting, a double torus, the tanglecube, and a gyroid cut open.
+- Workload: at most 200,000 triangles and 400,000 grid edges searched, both refused beyond, not truncated. Measured natively: a one-period gyroid at 64³, 0.12 s and 8.8 MB of JSON; the tanglecube at 64³, 0.2 s (0.48 s and 13.4 MB with 24 sections); a 128 × 128 × 9 box with 24 sections, 0.35 s and 20 MB. Section grids were capped at 256 cells after the probe showed 512 doubled the time for no visible gain. There is no new dependency or resource category.
+- Permanent docs: `mathematics.md#spatial-implicit-surfaces-and-sections` (with a tanglecube reference study), `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: see the pull request and `mathematics.md` for the tests and mutations.
+- Limits:
+  - uniform grids only, so topology is resolved at the grid: a neck or piece thinner than a cell can be pinched or missed, and a singular point on a grid point joins pieces by one vertex;
+  - a tilted section stops within one of its cells of the box;
+  - the mesh is a picture and feeds no curvature, focal or optical construction;
+  - JSON transport of the largest meshes reaches 20 MB, so a level track on a large study plays slowly;
+  - presets cannot set the camera or layers.
+
+Every numbered slice is now complete. The backlog below remains open. Recommended next steps, for the user to choose between:
+
+- **Saved studies and portable links**, which every notebook would use;
+- **Adaptive meshes**, starting with bounded octree refinement of implicit surfaces near thin necks and alternating faces, reporting budget exhaustion;
+- **Mesh identities and efficiency**: the implicit study's indexed mesh is the first shared-vertex result, and typed transport would shrink its JSON.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.
