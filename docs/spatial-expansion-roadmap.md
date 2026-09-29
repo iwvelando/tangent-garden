@@ -31,10 +31,10 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 - [x] 4a. Two-curve ruled surfaces and chord families.
 - [x] 4b. Constant-radius tube envelopes, followed by variable-radius canal surfaces.
 - [x] 5a. Bounded 3D vector-field trajectories and curated continuous attractors.
-- [ ] 5b. Spatial cyclic pursuit with explicit capture events and multiple paths.
-- [ ] 6a. Parametric surface studies with normal congruences and signed offsets.
-- [ ] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
-- [ ] 7a. Single-interaction reflected ray families and their caustic sets.
+- [x] 5b. Spatial cyclic pursuit with explicit capture events and multiple paths.
+- [x] 6a. Parametric surface studies with normal congruences and signed offsets.
+- [x] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
+- [x] 7a. Single-interaction reflected ray families and their caustic sets.
 - [ ] 7b. Refraction and separately defined receiver-plane intersection/density studies.
 - [ ] 8. Bounded implicit surfaces and section curves, after a topology and memory-budget prototype.
 
@@ -265,6 +265,121 @@ Slices 1a and 1b (branch `claude/spatial-involutes`) landed together, because a 
 
 - Limits: uniform time sampling, so fast excursions have fewer points (adaptive sampling remains in the backlog); constructions only on the first trajectory; an escape sphere about the origin only; no 3D direction lattice; no Poincaré sections or visitation densities; explicit integration, so stiff fields may exhaust the budget.
 
-Recommended next step: **5b, spatial cyclic pursuit** with explicit capture events and multiple paths. It can reuse `engine/ode`, the field's multi-path result shape (paths indexed like the base, per-path ends), its reveal rule for early stops, and the trajectory layers; begin from the planar capture policy and planar reductions.
+### Slice completed in this follow-up: 5b
+
+- Implemented spatial cyclic pursuit as a spatial definition, `format: "pursuit"` (branch `claude/spatial-pursuit`): `pᵢ′ = vᵢ(pᵢ₊₁ − pᵢ)/|pᵢ₊₁ − pᵢ|` for 2–16 pursuers, with separate paths indexed like the base, closed connecting polygons, and an explicit capture event. It stood alone: 6a starts a different evaluator.
+- Capture policy, decided before the UI: the planar policy is kept exactly, not re-derived. The planar chase's integrator, step bound `(g − ε)/(2 v_max)`, gap-relative error control, capture rule and budget moved into a dimension-free `engine/cyclic` package. The planar pursuit now runs on it with two coordinates, and its tests pass unchanged apart from renamed fields. The chase stops for everyone at the first capture; nobody merges or changes target, and no merger topology is invented. A capture at the start still draws the starts alone rather than refusing them.
+- Evaluator decision: as for a field, the first pursuer's path is the base curve on which every construction runs. Its velocity is the pursuit law and its acceleration the law's exact derivative, `(v₁/d)(w − (u·w)u)`, never a difference of positions. `compile` now receives a prepared evaluator for either integrated definition.
+- Added `engine3/pursuit.go` with `SpatialPursuer`, `PursuitRequest`, `PursuitPolygon`, and `PursuitResult` (paths, polygons, capture, exhausted, end, final). The interface adds pursuer groups of start x, y, z and speed (`.pair.quad`) with add/remove, the interval, **Capture distance ε**, a note (`web/spatial/pursuit.ts`), and **End the interval at the capture**. It reuses the trajectories and seeds layers as **Other pursuers** and **Starts & capture**, and adds **Connecting polygons**. The tracks are `pursuer{k}{X,Y,Z,Speed}`, `capture`, `min`, and `max`. There are three presets (four pursuers on a tetrahedron, a chase untangling a trefoil, a crown of six with a tangent ribbon), a "Spatial pursuit" gallery family, and regenerated thumbnails. Adding `pursuit` to the preset base changed every 3D fingerprint; existing images re-rendered byte-identically. An unequal-speed ribbon preset was tried first and dropped: its early capture left a short, cluttered drawing.
+- Exact 3D case found for verification: four equal pursuers from a regular tetrahedron keep its rotoreflection symmetry and follow `z = hρ²`, `θ = θ₀ + ln(1/ρ)`, with a closed-form time. It is tested at every sample to 10⁻⁹.
+- Workload: at most 40,000 attempted steps of one 48-dimensional system, and 16 paths of 2401 points; every preset computes in milliseconds natively. There is no new runtime dependency or resource category. Durable definitions are in `mathematics.md#spatial-cyclic-pursuit`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: `make check` passed: formatting, vet, Go race tests (engine3 coverage 99.6%, `engine/cyclic` 96.0%, planar engine 98.2%), the WASM bridge, TypeScript, and the production build and notices. `make thumbnails` regenerated the gallery. The full Chromium run passed 547 of 548 tests. The failure was the planar heptagon preset's note: the shared chase had replaced `math.Hypot` with a square root of summed squares, and with all seven gaps equal, rounding named a different pair. `Hypot` was restored (folded across coordinates, so a z = 0 chase rounds exactly as the planar one), a Go guard now fails the old form, and the planar pursuit, spatial pursuit, planar field and gallery specs passed again (52 tests). All 15 WebKit tests passed, including a PNG and H.264 export of the tetrahedron. Go tests cover the list in `mathematics.md#spatial-cyclic-pursuit`, and `engine/cyclic` has its own tests in one to four dimensions. Mutations that drop the acceleration's projection or the capture step bound each fail. Browser tests cover:
+  - layers and validation, with pursuers added to sixteen and removed to two;
+  - notes on captures, no capture, a capture at the start, and the carried construction, plus the capture button;
+  - a still first pursuer refused under a construction and drawn alone;
+  - reveal, pause, resume and edit invalidation;
+  - all four cameras on a start track;
+  - a decoded MP4 with a capture track;
+  - reveal and track unit tests, and the new scalar fields.
+
+  The layout sweep includes the crown, and WebKit exports the tetrahedron.
+
+- Limits: uniform time sampling; constructions only on the first pursuer; polygons share the construction's line count; no pursuit with changing targets, merging, or obstacles; pursuers pass through one another when not chasing each other.
+
+### Slices completed in this follow-up: 6a and 6b
+
+- Implemented analytic surface studies as a spatial definition, `format: "surface"` (branch `claude/spatial-surfaces`), with:
+  - normal lines;
+  - a signed offset `X + dn`;
+  - both focal sheets `X + n/κᵢ` from the principal curvatures.
+
+  6a and 6b landed together, as 1a/1b and 4b's tube and canal did. An offset folds exactly where `d = 1/κᵢ`, so honest offsets already need the principal curvatures, and the "surface revealing its centers" recipe needs both. The two parts share one evaluator, one request, and one grid-sheet result type, and each has its own tests (sphere offsets, Steiner area and folds for 6a; curvatures, focal collapse, continuity and degeneracies for 6b).
+
+- Evaluator decision, made before the UI: a surface is not a curve. `Compute` hands it to `surfaces` before anything else, every curve and construction field is ignored and not validated, and the curve fields of the result are empty. The patches are analytic with exact first and second derivatives: ellipsoid (sphere), torus (spindle torus when R < r), elliptic cylinder, paraboloid (saddle, plane), and monkey saddle. Arbitrary `X(u, v)` expressions were not added, as the roadmap asked for analytic patches first.
+- Conventions: `n = X_u × X_v/|X_u × X_v|` (reversible) and `A = −dn`, so a sphere's outward normal gives `κ = −1/R` and its focal sheets collapse to the centre. Principal curvatures come from the symmetric second fundamental form in an orthonormal tangent frame, `κ = (p + s)/2 ± √(((p − s)/2)² + q²)`, which keeps a sphere's curvatures equal to rounding. Branches are numbered by `κ₁ ≥ κ₂`; reversing the normal swaps the numbers, not the geometry.
+- Degeneracy policy:
+  - A chart singularity (`|X_u × X_v| ≤ 10⁻⁹ max(|X_u|, |X_v|)²`) has a point but no normal, offset or focal point, and is counted.
+  - Umbilics are counted, and there the focal sheets have no normal.
+  - A centre beyond 100 surface radii is treated as at infinity and counted as clipped.
+  - A focal edge is joined only when κᵢ keeps its sign and the focal point at the edge's midpoint is finite and does not turn back, so a sheet is never joined through infinity, even between samples.
+  - A face needs four joined edges and area, so a collapsed branch is never forced into triangles. Each branch is labelled a surface, a curve, a point, or none, and drawn by its parameter curves or as a cross.
+  - Offset samples beyond one focal sheet are counted as folded and drawn, not trimmed.
+- Added `engine3/surface.go` with `SurfaceRequest`, `SurfaceSheet` (nullable `points` and `normals` indexed by u and v sample, `alongU`, `alongV`, `faces`), `FocalSheet` (`shape`, `clipped`), `SurfaceNormal`, and `SurfaceResult`. Grid sheets keep parameter identities, as the architecture notes asked for surfaces; Go decides every edge and face, and the renderer only splits faces into triangles. The interface adds:
+  - **Spatial definition · Surface patch**, with the kind, its shape fields, and the u and v domains;
+  - **Normal**, **Offset d**, **Normal reach ℓ** (a signed segment from X to X + ℓn), and a note (`web/spatial/surface.ts`);
+  - grid controls (**u samples**, **v samples**, **Parameter curves**);
+  - the layers **Surface patch**, **Parameter curves**, **Normal lines**, **Offset surface**, **Focal sheet 1 · κ₁** (rust) and **Focal sheet 2 · κ₂** (slate), with new shader inks;
+  - tracks for the shape, offset, reach, domain and grid, and a reveal that grows every sheet along u;
+  - four presets (a torus revealing its centers, a sphere collapsing to one focus, the focal sheets of an ellipsoid, an elliptic cylinder and its evolute) in a new "Surface normals and focal sheets" gallery family, with thumbnails.
+
+  Normal lines began as segments ±ℓ; a signed one-sided reach replaced them, so inward normals run to their centres. A saddle preset was tried and dropped: from the default camera one focal sheet always stands between the viewer and the saddle. Adding `surface` to the preset base changed every 3D fingerprint; existing images re-rendered byte-identically.
+
+- Workload: at most 240 samples each way and 14,400 cells, three extra evaluations per sample for the focal edges' midpoints, and four sheets. The largest ellipsoid grid with an offset, normal lines and 48 curves each way took about 20 ms natively and about 10 MB of JSON. There is no new runtime dependency or resource category. Durable definitions are in `mathematics.md#spatial-surfaces-normals-offsets-and-focal-sheets`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: `make check` passed: formatting, vet, Go race tests (engine3 coverage 99.6%), the WASM bridge (sphere offsets, focus, singularities and lines, a torus's core circle, refusals), TypeScript, and the production build and notices. `make thumbnails` regenerated the gallery. The full Chromium run passed all 559 tests, and all 16 WebKit tests passed, including a PNG and H.264 export of the ellipsoid preset. Go tests cover the list in `mathematics.md#spatial-surfaces-normals-offsets-and-focal-sheets`. Mutations that drop the midpoint test, the sign test, the degenerate-face test, or the stable eigenvalue formula each fail. Browser tests cover:
+  - controls, layers and validation, including grid counts, a kind change, and a return to a curve that keeps the surface;
+  - notes on collapsed, surface and infinite branches, chart singularities, umbilics, folded offsets, a reversed normal and a plane;
+  - reveal along u, pause, resume and edit invalidation;
+  - all four cameras on a shape track;
+  - a decoded MP4 with an offset track;
+  - reveal and track unit tests, and every new scalar field.
+
+  The layout sweep includes the torus and ellipsoid presets. Light and dark desktop drawings, the thumbnails, and the phone-width page and controls in both themes (scroll width 390) were inspected.
+
+- Limits:
+  - analytic patches only, with no surface expressions or surfaces from the curve constructions;
+  - uniform parameter grids, so a focal sheet's fast flaring near a parabolic curve is sampled coarsely;
+  - branches are classified as a whole, not region by region, and cuspidal edges are drawn but not located or counted;
+  - no ridge, umbilic, or line-of-curvature tracing;
+  - opaque sheets, so interior focal sheets need an opened domain or a hidden surface;
+  - presets cannot set the camera or layers.
+
+Recommended next step: **7a, single-interaction reflected ray families and their caustic sets**. It can reuse this slice's surface evaluator and normals: begin with parallel rays on a paraboloid and a spherical reflector, checking the reflection law and the exact focal points, before any UI.
+
+### Slice completed in this follow-up: 7a
+
+- Implemented single reflections from the analytic surface patches as a spatial definition, `format: "rays"` (branch `claude/spatial-mirrors`): the reflected ray family, its two caustic branches, and representative incident, reflected and virtual rays. 7a shipped alone. 7b's refraction needs explicit indices and total internal reflection, and its receiver-plane density needs its own result type with emitted weights, area normalization and energy accounting; neither shares 7a's caustic result.
+- Evaluator decision, made before the UI: the mirror is the surface study's patch, not a new surface type. `rays` reuses `SurfaceRequest.patch` and the grid, sheet, classification and continuity helpers, validates only the patch (`validatePatch`), and ignores the surface study's offset and normal reach.
+- Conventions:
+  - Parallel light travels along `(cos β cos α, cos β sin α, sin β)` in degrees, exact at right angles, which reduces to the planar `(cos θ, sin θ)` at β = 0. A point source gives `I = (X − S)/|X − S|`.
+  - The declared normal is the mirror side: a sample is lit only where `I·n < −10⁻⁹`. Nothing is occluded and there is no second bounce.
+  - `R = I − 2(I·n)n`, with exact derivatives from the patch's second derivatives.
+  - The caustic condition `det(Y_u, Y_v, R) = 0` is solved as the eigenproblem of the reflected wavefront's shape operator `W = −B̄Ā⁻¹` across R, so `C = X + R/μ` in the focal sheets' sign convention. μ > 0 is real, ahead of the mirror; μ < 0 is virtual.
+  - The eigenvalues come from W's symmetric part, as κ's do. Its antisymmetric part, the twist, vanishes by Malus–Dupin and is a test residual.
+  - Branches are ordered μ₁ ≥ μ₂, which stays continuous where a branch passes through infinity; ordering by λ would not.
+- Degeneracy policy:
+  - Unlit (grazing or from behind), at-source and chart-singular samples have no reflection and are counted.
+  - Stigmatic samples (μ₁ = μ₂) are counted and have no caustic normal.
+  - A caustic point beyond 100 surface radii is at infinity and counted as clipped.
+  - Each branch is split into real and virtual parts, and edges follow the focal sheets' rule (same sign, a lit finite midpoint that does not turn back). A caustic is therefore never joined through infinity, from real to virtual, past the edge of the light, or across its own cusps.
+- Added `engine3/rays.go` with `RaysRequest`, `Ray` (`start`, `point`, `end`, `back`, `virtual`), `CausticSheet` (a grid sheet with `branch`, `virtual`, `shape`) and `RaysResult`. The interface adds:
+  - **Spatial definition · Mirror · reflected rays**, sharing the surface controls, with **Mirror side**;
+  - **Light** (**Parallel light** with **Azimuth α (°)** and **Elevation β (°)**, or **Point source** with **Source x/y/z**), **Ray length ℓ**, and a note (`web/spatial/rays.ts`);
+  - the layers **Mirror**, **Parameter curves**, **Incident rays** (with the source), **Reflected rays**, **Caustic 1 · μ₁** (rust), **Caustic 2 · μ₂** (slate), and **Virtual rays & caustics**, where virtual parts are drawn only as lines;
+  - tracks for the shape, direction or source, ray length, domain and grid, and a reveal along u;
+  - five presets (a paraboloid gathering light, a tilted beam folding into coma, a spherical bowl's cusped caustic, an ellipsoid refocusing its lamp, a cup's nephroid) in a new "Mirrors and caustics" gallery family, with thumbnails.
+
+  Virtual extensions were first drawn behind every ray and swamped the concave mirrors, whose caustics are all real. Go now marks a ray virtual only where one of its caustic points is, and only those extensions are drawn. Adding `rays` to the preset base changed every 3D fingerprint; existing images re-rendered byte-identically.
+
+- Workload: the surface study's limits (at most 240 samples each way and 14,400 cells), one extra reflection per edge for the midpoint test, and four caustic sheets. The largest torus grid under oblique light, with 48 curves each way and 1,159 rays, took about 11 ms natively and about 6.3 MB of JSON. There is no new runtime dependency or resource category. Durable definitions are in `mathematics.md#spatial-mirrors-reflected-rays-and-caustics`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: `make check` passed: formatting, vet, Go race tests (engine3 coverage 99.6%), the WASM bridge (a paraboloid's focus and rays through it, a plane mirror's virtual image and virtual rays, unlit samples, refusals), TypeScript, and the production build and notices. `make thumbnails` regenerated the gallery. The full Chromium run passed all 570 tests, and all 17 WebKit tests passed, including a PNG and H.264 export of the coma preset. Go tests cover the list in `mathematics.md#spatial-mirrors-reflected-rays-and-caustics`. Mutations that join every caustic edge or drop the grazing tolerance each fail. Symmetrizing W survives, as expected: the twist test shows it is already symmetric to rounding. Browser tests cover:
+  - controls, layers and validation, including a point source, the shared patch when switching to a surface study, and an empty virtual layer when every caustic is real;
+  - notes on point, surface and curve caustics, a dome's virtual focus, a saddle's real and virtual parabolas, a plane's image, a sample at the source, unlit, singular, stigmatic and clipped samples;
+  - reveal along u, pause, resume and edit invalidation;
+  - all four cameras on an elevation track;
+  - a decoded MP4 with a moving source;
+  - reveal and track unit tests, and every new scalar field.
+
+  The layout sweep includes the coma and ellipsoid presets. Light and dark drawings, the thumbnails, and the phone-width controls and explanation in both themes (scroll width 390) were inspected.
+
+- Limits:
+  - analytic patches only, one reflection, and no occlusion, so a ray may pass through another part of the mirror (the bowl preset's lowest axis caustic is reached that way);
+  - no refraction, receiver plane, or intensity, all of which belong to 7b;
+  - uniform parameter grids, so a caustic's fast flaring near grazing light is sampled coarsely;
+  - cuspidal edges break the sheet but are not located or counted;
+  - the virtual layer is shared by both branches;
+  - opaque sheets, so a virtual caustic inside a convex mirror needs the mirror hidden;
+  - presets cannot set the camera or layers.
+
+Recommended next step: **7b, refraction and a separately defined receiver-plane study**. Refraction can reuse `SurfaceRequest.ray` with the transmitted direction for explicit indices n₁/n₂ (reporting total internal reflection per sample), and the caustic machinery is unchanged: W stays symmetric for a refracted normal congruence. The receiver plane is a new result type with its own energy model and should be designed before any UI.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

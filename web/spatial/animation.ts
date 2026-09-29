@@ -1,5 +1,6 @@
 import { usesSpatialPole } from "./types";
 import { harmonicLabels } from "./harmonic";
+import { surfaceShape } from "./surface";
 import type {
   SpatialConfig,
   SpatialResult,
@@ -7,6 +8,7 @@ import type {
   Vec3,
   Bounds3,
   SpatialHarmonicResult,
+  SurfaceSheet,
 } from "./types";
 import type { View } from "./renderer";
 export type { Frame };
@@ -52,10 +54,31 @@ type NamedTarget =
   | "shift"
   | "sphereRadius"
   | "meridians"
-  | "escape";
+  | "escape"
+  | "capture"
+  | "surfaceA"
+  | "surfaceB"
+  | "surfaceC"
+  | "uMin"
+  | "uMax"
+  | "vMin"
+  | "vMax"
+  | "surfaceOffset"
+  | "reach"
+  | "uSamples"
+  | "vSamples"
+  | "curves"
+  | "azimuth"
+  | "elevation"
+  | "sourceX"
+  | "sourceY"
+  | "sourceZ"
+  | "rayLength";
 // One coordinate of a vector field's seed, numbered from 1.
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
-export type Target = NamedTarget | HarmonicTarget | SeedTarget;
+// A pursuer's starting coordinate or speed, numbered from 1.
+export type PursuerTarget = `pursuer${number}${"X" | "Y" | "Z" | "Speed"}`;
+export type Target = NamedTarget | HarmonicTarget | SeedTarget | PursuerTarget;
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
 export type AnimationView = {
@@ -104,6 +127,26 @@ export const targetLabels: Record<NamedTarget, string> = {
   sphereRadius: "Tube radius R",
   meridians: "Meridians",
   escape: "Escape radius R",
+  capture: "Capture distance ε",
+  // A surface's shape fields are named by its kind (see targetLabel).
+  surfaceA: "Shape a",
+  surfaceB: "Shape b",
+  surfaceC: "Shape c",
+  uMin: "u from",
+  uMax: "u to",
+  vMin: "v from",
+  vMax: "v to",
+  surfaceOffset: "Offset d",
+  reach: "Normal reach ℓ",
+  uSamples: "u samples",
+  vSamples: "v samples",
+  curves: "Parameter curves",
+  azimuth: "Azimuth α (°)",
+  elevation: "Elevation β (°)",
+  sourceX: "Source x",
+  sourceY: "Source y",
+  sourceZ: "Source z",
+  rayLength: "Ray length ℓ",
 };
 const subscript = (n: number) =>
   String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
@@ -119,6 +162,51 @@ const seedTarget = (t: Target) => {
       }
     : null;
 };
+export const spatialPursuerLabels = {
+  X: (n: number) => `Start x${subscript(n)}`,
+  Y: (n: number) => `Start y${subscript(n)}`,
+  Z: (n: number) => `Start z${subscript(n)}`,
+  Speed: (n: number) => `Speed v${subscript(n)}`,
+};
+const isPursuer = (t: Target): t is PursuerTarget => t.startsWith("pursuer");
+const pursuerTarget = (t: Target) => {
+  const match = /^pursuer(\d+)(X|Y|Z|Speed)$/.exec(t);
+  return match
+    ? {
+        index: +match[1] - 1,
+        field: match[2] as keyof typeof spatialPursuerLabels,
+        key: match[2].toLowerCase() as "x" | "y" | "z" | "speed",
+      }
+    : null;
+};
+// Surface targets and the SurfaceConfig field each one moves.
+const surfaceFields = {
+  surfaceA: "a",
+  surfaceB: "b",
+  surfaceC: "c",
+  uMin: "uMin",
+  uMax: "uMax",
+  vMin: "vMin",
+  vMax: "vMax",
+  surfaceOffset: "offset",
+  reach: "reach",
+  uSamples: "uSamples",
+  vSamples: "vSamples",
+  curves: "curves",
+} as const;
+const isSurface = (t: Target): t is keyof typeof surfaceFields =>
+  t in surfaceFields;
+// Light targets and the RaysConfig field each one moves.
+const raysFields = {
+  azimuth: "azimuth",
+  elevation: "elevation",
+  rayLength: "length",
+} as const;
+const isRays = (t: Target): t is keyof typeof raysFields => t in raysFields;
+const isSource = (t: Target): t is "sourceX" | "sourceY" | "sourceZ" =>
+  t === "sourceX" || t === "sourceY" || t === "sourceZ";
+const sourceAxis = (t: "sourceX" | "sourceY" | "sourceZ") =>
+  t.slice(6).toLowerCase() as "x" | "y" | "z";
 // Framed-construction targets and the FrameConfig field each one moves.
 const frameFields = {
   angle: "angle",
@@ -157,10 +245,18 @@ export const targetLabel = (c: SpatialConfig, t: Target): string => {
       : harmonicLabels[h.field](h.index + 1, h.axis!);
   const seed = seedTarget(t);
   if (seed) return seedLabel(seed.index + 1, seed.axis);
+  const pursuer = pursuerTarget(t);
+  if (pursuer) return spatialPursuerLabels[pursuer.field](pursuer.index + 1);
+  const shape = surfaceShape[c.surface.kind].find(
+    (f) => `surface${f.key.toUpperCase()}` === t,
+  );
+  if (shape) return shape.label;
   return t === "lines" && c.construction === "none"
     ? c.format === "field"
       ? "Field arrows"
-      : "Representative samples"
+      : c.format === "pursuit"
+        ? "Connecting polygons"
+        : "Representative samples"
     : t === "lines" && c.construction === "canal"
       ? "Contact circles"
       : t === "lines" && c.construction === "ruled"
@@ -181,6 +277,9 @@ export const integerTargets: Target[] = [
   "count",
   "strands",
   "meridians",
+  "uSamples",
+  "vSamples",
+  "curves",
 ];
 const curveTargets = ["a", "min", "max"] as const;
 const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
@@ -193,6 +292,24 @@ const isInvolute = (t: Target): t is InvoluteTarget =>
 // Animating the anchor or c recomputes the whole arc length in Go for every
 // frame, so a track never reuses a prefix measured from another anchor.
 export const availableTargets = (c: SpatialConfig): Target[] => {
+  if (c.format === "surface" || c.format === "rays")
+    return [
+      ...surfaceShape[c.surface.kind].map(
+        (f) => `surface${f.key.toUpperCase()}` as Target,
+      ),
+      ...(c.format === "surface"
+        ? (["surfaceOffset", "reach"] as const)
+        : c.rays.light === "point"
+          ? (["sourceX", "sourceY", "sourceZ", "rayLength"] as const)
+          : (["azimuth", "elevation", "rayLength"] as const)),
+      "uMin",
+      "uMax",
+      "vMin",
+      "vMax",
+      "uSamples",
+      "vSamples",
+      "curves",
+    ];
   const construction: Target[] =
     c.construction === "none"
       ? []
@@ -252,25 +369,39 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
             "min",
             "max",
           ]
-        : c.format === "harmonic"
+        : c.format === "pursuit"
           ? [
-              "c0x",
-              "c0y",
-              "c0z",
-              ...c.harmonic.terms.flatMap((_, k) =>
-                (
-                  ["Frequency", "Ax", "Ay", "Az", "Bx", "By", "Bz"] as const
-                ).map((field) => `harmonic${k + 1}${field}` as const),
+              ...c.pursuit.pursuers.flatMap((_, k) =>
+                (["X", "Y", "Z", "Speed"] as const).map(
+                  (field) => `pursuer${k + 1}${field}` as const,
+                ),
               ),
+              "capture",
               "min",
               "max",
             ]
-          : ["radius", "tube"];
+          : c.format === "harmonic"
+            ? [
+                "c0x",
+                "c0y",
+                "c0z",
+                ...c.harmonic.terms.flatMap((_, k) =>
+                  (
+                    ["Frequency", "Ax", "Ay", "Az", "Bx", "By", "Bz"] as const
+                  ).map((field) => `harmonic${k + 1}${field}` as const),
+                ),
+                "min",
+                "max",
+              ]
+            : ["radius", "tube"];
   return c.format === "parametric" || c.format === "field"
     ? [curve[0], ...construction, ...curve.slice(1), "samples", "lines"]
     : [...construction, ...curve, "samples", "lines"];
 };
 export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
+  if (isSurface(t)) return c.surface[surfaceFields[t]];
+  if (isRays(t)) return c.rays[raysFields[t]];
+  if (isSource(t)) return c.rays.source[sourceAxis(t)];
   if (t === "poleX") return c.pole.x;
   if (t === "poleY") return c.pole.y;
   if (t === "poleZ") return c.pole.z;
@@ -298,6 +429,13 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   }
   if (t === "escape") return c.field.escape;
   if (isCurve(t) && c.format === "field") return c.field[t];
+  if (isPursuer(t)) {
+    const pursuer = pursuerTarget(t)!;
+    return c.pursuit.pursuers[pursuer.index]?.[pursuer.key] ?? NaN;
+  }
+  if (t === "capture") return c.pursuit.capture;
+  if ((t === "min" || t === "max") && c.format === "pursuit")
+    return c.pursuit[t];
   if (isCurve(t)) return c.curve[t];
   if (t === "anchor" || t === "offset") return c.involute[t];
   if (isInvolute(t)) return c.involute.family[t];
@@ -314,6 +452,18 @@ export function applyTracks(
   for (const t of tracks) {
     let v = t.from * (1 - p) + t.to * p;
     if (integerTargets.includes(t.target)) v = Math.round(v);
+    if (isSurface(t.target)) {
+      config.surface[surfaceFields[t.target]] = v;
+      continue;
+    }
+    if (isRays(t.target)) {
+      config.rays[raysFields[t.target]] = v;
+      continue;
+    }
+    if (isSource(t.target)) {
+      config.rays.source[sourceAxis(t.target)] = v;
+      continue;
+    }
     if (t.target === "poleX") config.pole.x = v;
     else if (t.target === "poleY") config.pole.y = v;
     else if (t.target === "poleZ") config.pole.z = v;
@@ -348,6 +498,16 @@ export function applyTracks(
     } else if (t.target === "escape") config.field.escape = v;
     else if (isCurve(t.target) && config.format === "field")
       config.field[t.target] = v;
+    else if (isPursuer(t.target)) {
+      const pursuer = pursuerTarget(t.target)!;
+      if (config.pursuit.pursuers[pursuer.index])
+        config.pursuit.pursuers[pursuer.index][pursuer.key] = v;
+    } else if (t.target === "capture") config.pursuit.capture = v;
+    else if (
+      (t.target === "min" || t.target === "max") &&
+      config.format === "pursuit"
+    )
+      config.pursuit[t.target] = v;
     else if (isCurve(t.target)) config.curve[t.target] = v;
     else if (t.target === "anchor" || t.target === "offset")
       config.involute[t.target] = v;
@@ -406,6 +566,27 @@ export function fitBounds(...families: (Vec3 | null)[][]): Bounds3 {
         );
   return { center, radius };
 }
+// A surface frames as Go frames it: its points with the normal lines' ends,
+// then the offset and each focal sheet on their own.
+export function surfaceBounds(s: NonNullable<SpatialResult["surface"]>) {
+  return fitBounds(
+    [...s.surface.points.flat(), ...s.lines.map((l) => l.end)],
+    ...(s.offset ? [s.offset.points.flat()] : []),
+    ...s.focal.map((f) => f.points.flat()),
+  );
+}
+// A mirror frames as Go frames it: its points with the rays and the source,
+// then each caustic part on its own.
+export function raysBounds(r: NonNullable<SpatialResult["rays"]>) {
+  return fitBounds(
+    [
+      ...r.surface.points.flat(),
+      ...r.lines.flatMap((l) => [l.start, l.end, l.back]),
+      ...(r.source ? [r.source] : []),
+    ],
+    ...r.caustics.map((c) => c.points.flat()),
+  );
+}
 // A harmonic curve's joints and ellipse axis extents, one pair of families
 // per term, as Go frames them.
 export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
@@ -424,7 +605,47 @@ export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
     return [joints, extents];
   });
 }
+// A surface or mirror reveals column by column in u: every sheet keeps the
+// samples up to u_last, the edges and faces between them, and the normal
+// lines or rays there.
+function revealSheet<S extends SurfaceSheet>(sheet: S, last: number): S {
+  return {
+    ...sheet,
+    points: sheet.points.slice(0, last + 1),
+    normals: sheet.normals.slice(0, last + 1),
+    alongU: sheet.alongU.slice(0, last),
+    alongV: sheet.alongV.slice(0, last + 1),
+    faces: sheet.faces.slice(0, last),
+  };
+}
 export function reveal(result: SpatialResult, p: number): SpatialResult {
+  if (result.surface) {
+    const s = result.surface,
+      last = Math.floor(
+        Math.max(0, Math.min(1, p)) * (s.surface.points.length - 1),
+      );
+    const surface = {
+      ...s,
+      surface: revealSheet(s.surface, last),
+      offset: s.offset && revealSheet(s.offset, last),
+      focal: s.focal.map((f) => revealSheet(f, last)),
+      lines: s.lines.filter((l) => l.i <= last),
+    };
+    return { ...result, surface, bounds: surfaceBounds(surface) };
+  }
+  if (result.rays) {
+    const r = result.rays,
+      last = Math.floor(
+        Math.max(0, Math.min(1, p)) * (r.surface.points.length - 1),
+      );
+    const rays = {
+      ...r,
+      surface: revealSheet(r.surface, last),
+      caustics: r.caustics.map((c) => revealSheet(c, last)),
+      lines: r.lines.filter((l) => l.i <= last),
+    };
+    return { ...result, rays, bounds: raysBounds(rays) };
+  }
   const last = Math.floor(
     Math.max(0, Math.min(1, p)) * (result.base.length - 1),
   );
@@ -497,7 +718,19 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       reached(result.field!.paths[k]) ? e : { ...e, point: null },
     ),
   };
-  const generating = [...harmonicFamilies(harmonic), ...(field?.paths ?? [])];
+  // The chase stops for everyone at once: its final positions are marked
+  // once the reveal passes the stop.
+  const pursuit = result.pursuit && {
+    ...result.pursuit,
+    paths: result.pursuit.paths.map((p) => p.slice(0, last + 1)),
+    polygons: result.pursuit.polygons.filter((g) => g.sampleIndex <= last),
+    final: reached(result.pursuit.paths[0]) ? result.pursuit.final : [],
+  };
+  const generating = [
+    ...harmonicFamilies(harmonic),
+    ...(field?.paths ?? []),
+    ...(pursuit?.paths ?? []),
+  ];
   return {
     ...result,
     base,
@@ -511,6 +744,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     inversion,
     harmonic,
     field,
+    pursuit,
     frame,
     ruled,
     canal,

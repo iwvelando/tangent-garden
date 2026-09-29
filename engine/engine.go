@@ -214,7 +214,7 @@ func Compute(q Request) (Result, error) {
 	if q.Curve.Format == "pursuit" {
 		chaser = newChase(q.Curve.Pursuit, lo, hi, chaseTolerance)
 		out.Pursuit = newPursuitResult(chaser, q.Samples)
-		if chaser.exhausted {
+		if chaser.Exhausted {
 			out.Warnings = append(out.Warnings, fmt.Sprintf("The chase ran out of integration steps at t = %.6g; later samples are left empty.", chaser.End))
 		}
 	}

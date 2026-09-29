@@ -150,7 +150,7 @@ test("each 3D example names itself above a shared construction title", async ({
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
-  expect(titles).toHaveLength(27);
+  expect(titles).toHaveLength(39);
   // The construction, not the example, titles the drawing.
   const involutes = ["Unwinding a staircase", "A knot shedding filaments"];
   const inversions = [
@@ -173,6 +173,19 @@ test("each 3D example names itself above a shared construction title", async ({
     "A necklace of spheres",
     "Beads that lose their envelope",
   ];
+  const surfaces = [
+    "A torus revealing its centers",
+    "A sphere collapsing to one focus",
+    "The focal sheets of an ellipsoid",
+    "An elliptic cylinder and its evolute",
+  ];
+  const mirrors = [
+    "A paraboloid gathering light",
+    "A tilted beam folding into coma",
+    "A spherical bowl's cusped caustic",
+    "An ellipsoid refocusing its lamp",
+    "A cup's nephroid",
+  ];
   const eyebrows = new Set<string>();
   for (const label of titles) {
     await choosePreset(page, { label });
@@ -194,11 +207,18 @@ test("each 3D example names itself above a shared construction title", async ({
                     ? "A surface enveloping spheres"
                     : label === "Lorenz's two wings"
                       ? "Paths that follow a field"
-                      : "A ribbon of tangent lines",
+                      : label === "Four pursuers on a tetrahedron" ||
+                          label === "A chase untangling a trefoil"
+                        ? "Pursuers closing in space"
+                        : surfaces.includes(label)
+                          ? "A surface and its centers of curvature"
+                          : mirrors.includes(label)
+                            ? "A mirror and its caustics"
+                            : "A ribbon of tangent lines",
     );
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
-  expect(eyebrows.size).toBe(27);
+  expect(eyebrows.size).toBe(39);
   expect(eyebrows).toContain("THREE HARMONICS; THE THREAD PAUSES TWICE");
   await choosePreset(page, { label: titles[4] });
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");

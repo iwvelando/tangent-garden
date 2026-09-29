@@ -297,9 +297,9 @@ func fieldGeometry(c Request, f spatialField, timed bool, flows []*trajectory) (
 	return out, out.Paths
 }
 
-// moves reports whether any trajectory has two distinct positions.
-func (q *FieldResult) moves() bool {
-	for _, path := range q.Paths {
+// moves reports whether any path has two distinct positions.
+func moves(paths [][]*Vec3) bool {
+	for _, path := range paths {
 		var first *Vec3
 		for _, p := range path {
 			if p == nil {

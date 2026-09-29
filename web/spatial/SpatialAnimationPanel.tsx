@@ -196,9 +196,15 @@ export function SpatialAnimationPanel({
           ? Math.min(240, from + 20)
           : target === "count"
             ? Math.min(24, from + 4)
-            : target === "tube"
-              ? from * 0.75
-              : from + 1;
+            : target === "uSamples" || target === "vSamples"
+              ? Math.max(12, Math.round(from / 2))
+              : target === "curves"
+                ? Math.min(48, from + 4)
+                : target === "azimuth"
+                  ? from + 45
+                  : target === "tube"
+                    ? from * 0.75
+                    : from + 1;
     return { target, from: String(from), to: String(to) };
   }
   function parameterMode(next: "reveal" | "parameters" | "orbit") {
@@ -236,7 +242,15 @@ export function SpatialAnimationPanel({
     s.progress = view.progress;
     setProgress(view.progress);
     onView(view);
-    if (s.mode === "reveal")
+    if (
+      s.mode === "reveal" &&
+      (s.original.config.format === "surface" ||
+        s.original.config.format === "rays")
+    ) {
+      // A surface or mirror reveals along u.
+      const { uMin, uMax } = s.original.config.surface;
+      setLive(`u = ${(uMin + (uMax - uMin) * view.progress).toPrecision(6)}`);
+    } else if (s.mode === "reveal")
       setLive(
         `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`,
       );

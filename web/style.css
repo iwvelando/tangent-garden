@@ -883,6 +883,10 @@ h1 {
 .pair.trio {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+/* A spatial pursuer: its start x, y, z and its speed side by side. */
+.pair.quad {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .term-heading {
   display: flex;
   justify-content: space-between;

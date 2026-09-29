@@ -139,3 +139,23 @@
     padding-bottom: 160px;
   }
 }
+/* A surface study's swatches match its sheet and focal inks. */
+.surface-dot {
+  background: #4d9e8f;
+}
+.focal-dot {
+  background: #b85c42;
+  margin-left: 12px;
+}
+.focal-dot.second {
+  background: #5466a8;
+}
+.dark .surface-dot {
+  background: #3bb3ab;
+}
+.dark .focal-dot {
+  background: #e68c6b;
+}
+.dark .focal-dot.second {
+  background: #94a8eb;
+}

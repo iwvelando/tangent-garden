@@ -123,7 +123,44 @@ self.onmessage = async ({
         frame = data.spatial?.frame,
         ruled = data.spatial?.construction === "ruled",
         canal = data.spatial?.construction === "canal";
-      if (
+      // A surface or ray study reads only its own fields; Go ignores the
+      // curve's, and a ray study the surface's offset and normal reach.
+      const mirror = data.spatial?.format === "rays",
+        rays = data.spatial?.rays;
+      const surface =
+        data.spatial?.format === "surface" || mirror
+          ? data.spatial!.surface
+          : undefined;
+      if (surface) {
+        const { uSamples, vSamples, curves } = surface;
+        if (
+          ![
+            surface.a,
+            surface.b,
+            surface.c,
+            surface.uMin,
+            surface.uMax,
+            surface.vMin,
+            surface.vMax,
+            ...(mirror
+              ? [
+                  rays!.length,
+                  ...(rays!.light === "point"
+                    ? [rays!.source.x, rays!.source.y, rays!.source.z]
+                    : [rays!.azimuth, rays!.elevation]),
+                ]
+              : [surface.offset, surface.reach]),
+            uSamples,
+            vSamples,
+            curves,
+          ].every(Number.isFinite)
+        )
+          throw new Error(
+            "Fill in each spatial parameter with a finite number.",
+          );
+        if (![uSamples, vSamples, curves].every(Number.isInteger))
+          throw new Error("Sample and curve counts must be whole numbers.");
+      } else if (
         !data.spatial ||
         ![
           ...(involute
@@ -198,38 +235,50 @@ self.onmessage = async ({
                   data.spatial.field.escape,
                   ...data.spatial.field.seeds.flatMap((v) => [v.x, v.y, v.z]),
                 ]
-              : data.spatial.format === "harmonic"
+              : data.spatial.format === "pursuit"
                 ? [
-                    data.spatial.harmonic.min,
-                    data.spatial.harmonic.max,
-                    ...[
-                      data.spatial.harmonic.center,
-                      ...data.spatial.harmonic.terms.flatMap((t) => [
-                        t.cosine,
-                        t.sine,
-                      ]),
-                    ].flatMap((v) => [v.x, v.y, v.z]),
-                    ...data.spatial.harmonic.terms.map((t) => t.frequency),
+                    data.spatial.pursuit.min,
+                    data.spatial.pursuit.max,
+                    data.spatial.pursuit.capture,
+                    ...data.spatial.pursuit.pursuers.flatMap((p) => [
+                      p.x,
+                      p.y,
+                      p.z,
+                      p.speed,
+                    ]),
                   ]
-                : [
-                    data.spatial.radius,
-                    data.spatial.tube,
-                    data.spatial.p,
-                    data.spatial.q,
-                  ]),
+                : data.spatial.format === "harmonic"
+                  ? [
+                      data.spatial.harmonic.min,
+                      data.spatial.harmonic.max,
+                      ...[
+                        data.spatial.harmonic.center,
+                        ...data.spatial.harmonic.terms.flatMap((t) => [
+                          t.cosine,
+                          t.sine,
+                        ]),
+                      ].flatMap((v) => [v.x, v.y, v.z]),
+                      ...data.spatial.harmonic.terms.map((t) => t.frequency),
+                    ]
+                  : [
+                      data.spatial.radius,
+                      data.spatial.tube,
+                      data.spatial.p,
+                      data.spatial.q,
+                    ]),
         ].every(Number.isFinite)
       )
         throw new Error("Fill in each spatial parameter with a finite number.");
-      if (
+      else if (
         !Number.isInteger(data.spatial.samples) ||
         !Number.isInteger(data.spatial.lines)
       )
         throw new Error("Sample and line counts must be whole numbers.");
-      if (involute && family!.enabled && !Number.isInteger(family!.count))
+      else if (involute && family!.enabled && !Number.isInteger(family!.count))
         throw new Error("The number of involutes must be a whole number.");
-      if (framed && !Number.isInteger(frame!.strands))
+      else if (framed && !Number.isInteger(frame!.strands))
         throw new Error("The number of offset strands must be a whole number.");
-      if (canal && !Number.isInteger(data.spatial.canal.meridians))
+      else if (canal && !Number.isInteger(data.spatial.canal.meridians))
         throw new Error("The number of meridians must be a whole number.");
       const result = JSON.parse(
         tangentGardenSpatial(JSON.stringify(data.spatial)),

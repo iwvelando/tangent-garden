@@ -439,6 +439,143 @@ Samples after a trajectory's end are gaps, never joined or extrapolated. A seed 
 
 Mutations that drop the escape bisection or the timed-field rule for resting seeds each fail. The WebAssembly bridge test checks the helices, an escape time, a timed field and refusals.
 
+## Spatial cyclic pursuit
+
+`n` pursuers (`2 ≤ n ≤ 16`) start at points `pᵢ` (coordinates within ±10⁵) at `t = t₀`, the interval start, and each runs straight at the next, the last at the first, at its own constant speed `0 ≤ vᵢ ≤ 100000`:
+
+`pᵢ′ = vᵢ (pᵢ₊₁ − pᵢ) / |pᵢ₊₁ − pᵢ|`.
+
+`t` is time. The first pursuer's path is the base curve on which every construction is built; every path is returned separately, indexed like the base samples, with the connecting polygon of all positions, in chase order and closed, at each representative sample.
+
+**Capture policy.** The planar policy is kept exactly, and its step control and budget are shared code (`engine/cyclic`, dimension-free; the planar pursuit uses it with two coordinates). The chase stops, for every pursuer, the first time any pursuer comes within the capture distance `0 < ε ≤ 100000` of its own target; the result reports the time and pair (the closest, then the lowest index), and every pursuer's final position. Later samples are gaps. Nobody merges or changes target, and pursuers that are not chasing one another may pass through each other; no merger topology is invented. A pursuer that starts within ε of its target ends the chase at once: alone, the starts are drawn; under a construction, pursuer 1's single start sample is used if it is regular.
+
+**Integration.** The whole chase is one system, integrated with Dormand–Prince 5(4) steps whose local error is held to `10⁻¹²` of the smallest gap at the step's start (plus a rounding floor of `10⁻¹⁴` times each coordinate), so a scaled chase is the same chase in scaled time. Each step is at most `(g − ε)/(2 v_max)`, so no pursuer can come within ε of its target inside a step, however briefly; the chase stops when the remaining difference is below `10⁻¹²ε` plus the rounding floor of that pair's coordinates. The budget is 40,000 attempted steps; when it runs out the result is marked exhausted with the time reached.
+
+**Derivatives from the law.** The base's velocity is the pursuit law itself, `v₁u` with `u` the unit vector from pursuer 1 to pursuer 2 at gap `d`. Its acceleration is the law's exact derivative, `(v₁/d)(w − (u·w)u)` for the closing velocity `w = p₂′ − p₁′`, evaluated from the dense state. Nothing is differentiated from the integrated positions. A still first pursuer has no tangent: its samples are invalid, so a construction on it is refused, while the chase alone is still drawn unless nobody moves.
+
+**Exact cases.**
+
+- Equal speeds `v` from a regular polygon of circumradius `r₀`, in any plane: every path is the planar logarithmic spiral `r = r₀ − vt sin(π/n)`, `θ = θ₀ + cot(π/n) ln(r₀/r)` carried into that plane, captured when `r = ε/(2 sin(π/n))`. Its speed is constant and its acceleration is normal, `v² cos(π/n)/r`, so its tangent developable lies in the plane.
+- Four equal pursuers from a regular tetrahedron, `(±1, 0, h)` and `(0, ±1, −h)` with `h = 1/√2`, taken in turn. The rotoreflection `S(x, y, z) = (−y, x, −z)` carries each to the next, and the chase keeps that symmetry. In cylindrical coordinates about the axis, `ρ′ = −vρ/d`, `θ′ = v/d`, and `z′ = −2vz/d` with `d = √2 ρ √(1 + ρ²)`, so `z = hρ²` and `θ = θ₀ + ln(1/ρ)`: a logarithmic spiral on a paraboloid, reached at time `t = (F(1) − F(ρ))/v` with `F(ρ) = (ρ√(1 + ρ²) + asinh ρ)/√2`.
+- Two pursuers chasing each other along a skew line close at the sum of their speeds; a pursuer runs straight at a still target.
+
+**Checks.** Native tests verify:
+
+- the planar reduction: a spatial chase in `z = 0` matches the planar engine's capture exactly and its paths to 10⁻¹²;
+- the regular polygon in a tilted plane (n = 2, 3, 7) at every sample to 10⁻⁹, its capture time, final gaps of exactly ε, and regular polygons;
+- the tetrahedral chase against its closed form at every sample, with the rotoreflection;
+- the two-body and still-target chases, and a capture in passing on a line offset in y and z, located to 10⁻¹²;
+- rigid motions, including a reflection, and scaling of space and time;
+- every pursuer's velocity against the law, and the base's velocity and acceleration against differences of the positions;
+- tolerances `10⁻⁶`, `10⁻⁹`, `10⁻¹²` converging with more steps, captures at the start, a chase outlasting the interval, an exhausted budget, still pursuers, every construction on pursuer 1, and validation.
+
+Mutations that drop the acceleration's projection or the capture step bound each fail. The WebAssembly bridge test checks a triangle's spirals and capture time, a construction, and refusals.
+
+## Spatial surfaces, normals, offsets and focal sheets
+
+A surface study is not a curve: `format: "surface"` samples an analytic patch `X(u, v)` over `[u₀, u₁] × [v₀, v₁]` on a grid of 12–240 cells each way (at most 14,400 cells), and every curve and construction field is ignored. Each patch has exact first and second partial derivatives:
+
+- ellipsoid `(a cos v cos u, b cos v sin u, c sin v)`, with semi-axes `a, b, c > 0` (a sphere when equal);
+- torus `((R + r cos v) cos u, (R + r cos v) sin u, r sin v)`, with `R ≥ 0` and `r > 0` (a spindle torus through its axis when `R < r`);
+- elliptic cylinder `(a cos u, b sin u, v)`;
+- paraboloid `(u, v, (k₁u² + k₂v²)/2)`, whose principal curvatures at the vertex are `k₁` and `k₂` (a saddle when their signs differ, a plane when both are 0);
+- monkey saddle `(u, v, k(u³ − 3uv²))`, with a flat umbilic at the origin.
+
+Shape values are within 10⁵ in magnitude and each domain within ±10⁶, 10⁻⁶–10⁵ wide. The chart is part of the study: a domain spanning a whole period samples its seam twice, once at each end, and joins nothing across it.
+
+**Normal and sign convention.** `n = X_u × X_v / |X_u × X_v|`, or its opposite when reversed. The shape operator is `A = −dn`, so `dn(e) = −κe` along a principal direction `e`, and `κ > 0` where the surface bends towards `n`. A sphere of radius R with its outward normal has `κ₁ = κ₂ = −1/R`; a paraboloid's vertex, with the upward normal, has `κ = k₁, k₂`. A chart singularity is a sample where `|X_u × X_v| ≤ 10⁻⁹ max(|X_u|, |X_v|)²`, such as an ellipsoid's poles or the circle where a spindle torus meets its axis. It has a point but no normal, offset, or focal point, and it is counted.
+
+**Principal curvatures.** In the orthonormal tangent frame `e_a = X_u/|X_u|`, `e_b = n × e_a`, the second fundamental form `(X_uu·n, X_uv·n, X_vv·n)` becomes a symmetric matrix `[[p, q], [q, s]]`. Its eigenvalues are `κ = (p + s)/2 ± √(((p − s)/2)² + q²)`, with `κ₁ ≥ κ₂` and principal directions at the angle `½ atan2(2q, p − s)` from `e_a`. This avoids the cancellation in `H² − K`: a sphere's two curvatures agree to rounding. A sample is an umbilic when `√(((p − s)/2)² + q²) ≤ 10⁻⁹(|H| + 1/S)`, where `S` is the fitted radius of the sampled surface. There the principal directions are undefined.
+
+**Offsets.** `X_d = X + d n` for a signed `d` within ±10⁵. It shares its normals with the surface, and `dX_d = (I − dA) dX` has eigenvalues `1 − dκᵢ`: where `(1 − dκ₁)(1 − dκ₂) < 0` the offset lies beyond one focal sheet and has turned inside out. Those samples are counted as folded. The offset is drawn, not trimmed, including its cuspidal edges. Reversing `n` together with `d` leaves it unchanged.
+
+**Focal sheets.** Branch `i` is `Fᵢ = X + n/κᵢ` where `κᵢ ≠ 0`. Its tangent plane is spanned by `n` and the other principal direction, so its normal is `eᵢ` (none at an umbilic). A centre farther than `100 S` from its point (`|κᵢ| S ≤ 1/100`) is treated as at infinity and counted as clipped. The branches are numbered by the ordering `κ₁ ≥ κ₂`, which is continuous. Reversing `n` negates both curvatures and swaps the numbers, not the geometry. A focal edge is joined only when:
+
+- `κᵢ` has the same sign at both ends;
+- the focal point at the edge's parameter midpoint is finite;
+- that midpoint does not turn back, `(M − P₀)·(P₁ − M) ≥ −10⁻¹⁸ S²`.
+
+The midpoint test catches a curvature that touches zero between samples; the sign test catches a crossing whose midpoint happens to lie between the ends. A finite sample is therefore never joined to a branch that passed through infinity. Each branch is classified by what it actually spans:
+
+- none: no finite point;
+- a point: every focal point within `10⁻⁹ S` of one;
+- a surface: at least one face;
+- a curve: otherwise.
+
+A face is a cell whose four edges are joined and whose area exceeds `10⁻⁹ S` times its diagonal, so a collapsed branch is never forced into triangles. It is drawn by its representative parameter curves, or as a cross.
+
+**Representative geometry.** Parameter curves are drawn at `m` evenly spaced indices each way (2–48, without repeats), and normal lines at their crossings run from `X` to `X + ℓn` for a signed reach ℓ within ±10⁵. Base faces need only four joined corners; a corner without a normal is shaded by its triangle's own normal. The bounds fit the surface with the normal lines, then the offset and each focal sheet independently, so fences trim only a focal sheet's asymptotic tails.
+
+**Exact cases.**
+
+- Sphere of radius R: `κ = −1/R` everywhere (outward), every regular sample umbilic, both focal branches the centre, and offsets spheres of radius `R + d`.
+- Torus: the meridian curvature `−1/r` and the parallel curvature `−cos v/(R + r cos v)`. The second is the larger (for `R ≥ 0`), so branch 1 is the axis, `z = −R tan v`, reached through infinity at the top and bottom circles, and branch 2 is the core circle. Both collapse to curves.
+- Circular cylinder of radius ρ: branch 1 at infinity along the rulings, branch 2 the axis. An elliptic cylinder's branch 2 is its ellipse's evolute `(ax)^⅔ + (by)^⅔ = (a² − b²)^⅔` swept along the axis, a surface.
+- Paraboloid vertex: `κ = k₁, k₂` along the axes, focal points at heights `1/k₁` and `1/k₂`. A plane has no focal points; a monkey saddle's centre is a flat umbilic with both centres at infinity.
+
+**Checks.** Native tests verify:
+
+- patch derivatives against central differences;
+- the sphere's curvatures, umbilics, point focus, offset radii and pole singularities, with faces beside the poles on the surface but not on the offset;
+- normal reversal with a reversed offset and reach (identical offsets, lines and focal geometry with swapped branches) on an ellipsoid, a torus and a saddle;
+- the torus's curvatures, principal directions, axis and core circle, and no axis edge across `cos v = 0`;
+- circular and elliptic cylinders against the axis and the evolute;
+- the paraboloid vertex and the plane;
+- orthonormal principal directions satisfying the Weingarten equation `dn(eᵢ) = −κᵢeᵢ` by finite differences, and focal sheets perpendicular to their own `eᵢ`, on every kind with either orientation;
+- Gauss–Bonnet, `∬ K dA = 4π` for an ellipsoid, converging at second order under refinement in both directions;
+- Steiner's area of a torus offset, `4π²R(r + d)`, approached at second order by the faces;
+- folded offsets past the core circle and beyond the axis;
+- a monkey saddle's flat umbilic and an edge over its centre broken by the midpoint test alone;
+- the continuity rule directly, including a sign change whose midpoint lies between its ends;
+- a spindle torus's singular circles, representative curves and normal lines ending on the core circle, sheet sizes and bounds, and validation.
+
+Mutations that drop the midpoint test, the sign test, the degenerate-face test, or the stable eigenvalue formula each fail. The WebAssembly bridge test checks a sphere's offsets, focus, singularities and lines, a torus's core circle, and refusals.
+
+## Spatial mirrors, reflected rays and caustics
+
+A ray study lights one of the surface study's analytic patches as a mirror: `format: "rays"` reads the patch, its domain, grid, parameter curves and normal orientation from `surface`, and its light from `rays`. Every curve and construction field is ignored, and so are the surface study's offset and normal reach. The light reflects once.
+
+**Light and sign convention.** Parallel light travels along `I = (cos β cos α, cos β sin α, sin β)`, with azimuth α and elevation β in degrees within ±10⁵ (exact at multiples of 90°, so β = −90 is straight down); it reduces to the planar convention `(cos θ, sin θ)` at β = 0. A point source S (each coordinate within ±10⁵) gives `I = (X − S)/|X − S|`; a sample within `10⁻⁹ S_fit` of it has no incident direction and is counted as at the source. The patch's normal `n` declares the mirror side: a sample is lit only where `I·n < −10⁻⁹`. Grazing light, and light arriving from behind, is counted as unlit and has no reflection. Nothing is inferred about inside and outside, and nothing is occluded: every lit sample reflects once, whether or not another part of the surface stands in the way of its incident or reflected ray. There is no second bounce. A chart singularity has no normal and no reflection.
+
+**Reflection.** `R = I − 2(I·n)n`. It does not depend on the sign of n, only on which samples are lit. Its derivatives are exact, from the patch's second derivatives: with `c = ±X_u × X_v`, `n_u = (c_u − n(n·c_u))/|c|`, `c_u = X_uu × X_v + X_u × X_uv`; for a point source `I_u = (X_u − I(I·X_u))/|X − S|`; and `R_u = I_u − 2[(I_u·n + I·n_u)n + (I·n)n_u]`, likewise in v.
+
+**Caustics.** The reflected rays form the two-parameter family `Y(u, v, λ) = X + λR`. A caustic point is where neighbouring rays meet, `det(Y_u, Y_v, R) = 0`; the one-parameter planar envelope formula does not apply. Take an orthonormal basis `f₁, f₂` of the plane across R. A step (du, dv) moves the ray's foot across R by `Ā(du, dv)` and turns the ray by `B̄(du, dv)`, with `Ā = [f·X_u, f·X_v]` and `B̄ = [f·R_u, f·R_v]` (R_u is already across R, since |R| = 1). The determinant vanishes where `det(Ā + λB̄) = 0`, so `λ = 1/μ` for each eigenvalue μ of `W = −B̄Ā⁻¹`. Ā is invertible wherever the light is not grazing, since `det Ā = ±|X_u × X_v| (R·n)`. W is the reflected wavefront's shape operator, `dR = −W dP`, in the focal sheets' sign convention: μ is the wavefront's principal curvature, and the caustic is its focal set, `C = X + R/μ`. The reflected rays are a normal congruence (Malus and Dupin), so W is symmetric; its eigenvalues come from its symmetric part as κ's do, `μ = (p + s)/2 ± √(((p − s)/2)² + q²)`, and its antisymmetric part, the twist, is a test residual. The two branches are ordered `μ₁ ≥ μ₂`, which is continuous through the point where a branch passes through infinity (μ = 0); ordering by λ is not. Branch k's normal is the wavefront's principal direction at the angle `½ atan2(2q, p − s)` from f₁.
+
+**Real, virtual, repeated and degenerate.** Each branch is classified at every lit sample:
+
+- real, ahead of the mirror, where μ > 0 and the reflected rays converge;
+- virtual, behind the mirror, where μ < 0 and they only appear to diverge from it;
+- at infinity where `|μ| S_fit ≤ 1/100`, counted as clipped (a plane under parallel light, a cylinder's rulings);
+- stigmatic where `√(((p − s)/2)² + q²) ≤ 10⁻⁹(|mean| + 1/S_fit)`: the wavefront bends equally every way and both branches meet, with no normal there (a paraboloid's focus, the other focus of an ellipsoid of revolution lit from one, a plane mirror's image of a point source).
+
+Each branch is split into its real part and its virtual part, four sheets in all. An edge is joined, as a focal edge is, only when μ keeps its sign and the caustic point at the edge's parameter midpoint is lit, finite, and does not turn back. So a caustic is never joined through infinity, from real to virtual, past the edge of the light, or across its own cuspidal edge, where it folds back. Each part is classified by what it spans (none, a point, a curve or a surface), as a focal sheet is.
+
+**Representative geometry.** Rays stand where the representative parameter curves cross, at lit samples only. The incident ray runs from S, or from `X − ℓI` for parallel light; the reflected ray from X to `X + ℓR`; and its virtual extension from X back to `X − ℓR`, for a length `0 ≤ ℓ ≤ 10⁵` (0 draws none). A ray is marked virtual where either of its caustic points is, and only then is its extension drawn. The bounds fit the mirror with the rays and the source, then each caustic part independently.
+
+**Exact cases.**
+
+- Paraboloid `z = k(x² + y²)/2` under light along its axis: every ray passes through the focus `(0, 0, 1/(2k))`, both branches collapse to it, and every sample is stigmatic. A dome (k < 0) spreads the light from the same point, virtually.
+- Prolate spheroid lit from one focus, on its inside: both branches collapse to the other focus.
+- Concave sphere of radius R under parallel light, at angle of incidence θ: Coddington's tangential focus at `R cos θ/2` along the ray (branch 1, a surface of revolution whose meridian is the nephroid `(R/4)(3 cos θ − cos 3θ, 3 sin θ − sin 3θ)`) and sagittal focus at `R/(2 cos θ)`, on the axis (branch 2, a curve). Its outside, under the same light, has both branches virtual.
+- Saddle `z = (x² − y²)/2` under light along its axis: the rays from each row y pass through `(0, 2y, ½ − y²)` and those from each column x appear to leave `(2x, 0, x² − ½)`, so branch 1 is a real parabola and branch 2 a virtual one.
+- Plane: a point source's virtual image, both branches, every sample stigmatic; parallel light has no caustic at all.
+
+**Checks.** Native tests verify:
+
+- the direction's exactness at right angles, and the law of reflection (unit R, `R·n = −I·n`, coplanarity) on every representative ray of an ellipsoid, a torus and a monkey saddle;
+- each exact case above, point for point;
+- every caustic point on its own ray, with `det(Y_u, Y_v, R)` vanishing when Y's derivatives come from independent central differences of the reflection, its normal perpendicular to R and to the caustic's own tangents, and no twist, on five kinds under both kinds of light;
+- the ordering and sign split on a torus's upper half, where branch 1 changes sign, and on the saddle;
+- the monkey saddle's stigmatic flat centre, with its caustics at infinity;
+- unlit, grazing and at-source samples, including a sample that rounds a hair onto the lit side, and no edge across the terminator;
+- the break at a cusp, on the bowl's chief-ray meridian under oblique light;
+- the nephroid's arc `3R(cos θ₀ − cos θ₁)/2`, approached at second order by the sampled meridian;
+- virtual rays, bounds, sheet order and validation.
+
+Mutations that join every caustic edge or drop the grazing tolerance each fail. The WebAssembly bridge test checks the paraboloid's focus, a plane mirror's virtual image, unlit samples and refusals.
+
+Receiver planes, intensity, and refraction are not part of this study. A caustic is a geometric set: it says where rays gather, not how bright the light there is, and a real caustic's irradiance diverges without a finite model of the light.
+
 ## Reference studies
 
 Each of these recipes is a preset, framed independently with equal axis scale. They are mathematical descriptions, not pixel specifications.
@@ -449,6 +586,9 @@ Each of these recipes is a preset, framed independently with equal axis scale. T
 - Chords: circle angles t and 4t joined at 200 evenly spaced phases; the chords are drawn, and their envelope is solved separately (**Chords of four**).
 - Pursuit: seven equal-speed pursuers starting on the unit regular heptagon. The exact paths are `exp(−tan(π/7)θ)(cos(θ + 2πj/7), sin(θ + 2πj/7))`, where θ is an angle, not time; the connecting polygons are drawn (**Seven pursuers & an evolute**).
 - Involute family: the helix `(2 cos t, 2 sin t, t)`, t ∈ [−π, π], anchored at t₀ = 0 with nine string lengths c = −4, −3, …, 4. Each member is a lifted circle involute in the plane `z = c/√5` (**Unwinding a staircase**).
+- Spatial pursuit: four unit-speed pursuers from the regular tetrahedron `(±1, 0, 1/√2)`, `(0, ±1, −1/√2)`, ε = 0.005, t ∈ [0, 1.75]. Each path is `(ρ cos θ, ρ sin θ, ρ²/√2)` with `θ = θ₀ + ln(1/ρ)`, captured near t = 1.62 (**Four pursuers on a tetrahedron**).
+- Surface focal set: the torus R = 2, r = 0.8 on its outer band `v ∈ [−π/3, π/3]`, with inward normals of reach 2.8. Branch 1 is the axis `z = −2 tan v` and branch 2 the core circle of radius 2; both collapse to curves (**A torus revealing its centers**).
+- Caustic: the sphere of radius 1.5 on its inside, below 70° from its lowest point, under light falling straight down. Branch 1 is the surface of revolution of the nephroid, with its cusp at the paraxial focus 0.75 below the centre, and branch 2 the axis from there down to `1.5/(2 cos 70°) ≈ 2.19` below the centre. The steepest rays reach the lower part of the axis only through the mirror itself, since nothing is occluded (**A spherical bowl's cusped caustic**).
 - Clifford density: (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from (0.1, 0.1), discarding 1,000 iterates and accumulating the next 800,000, shaded logarithmically. It illustrates, and does not prove, chaotic dynamics (**Clifford attractor**).
 
 ## References

@@ -1455,4 +1455,234 @@ for (const mode of ["perspective", "orthographic", "stereo"])
   );
 console.log("Tesseract WASM contract passed");
 
+const spatialPursuit = (pursuit, construction = "none") =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "pursuit",
+        construction,
+        pursuit: {
+          pursuers: [
+            { x: 1, y: 0, z: 0, speed: 1 },
+            { x: -0.5, y: Math.sqrt(3) / 2, z: 0, speed: 1 },
+            { x: -0.5, y: -Math.sqrt(3) / 2, z: 0, speed: 1 },
+          ],
+          capture: 0.01,
+          min: 0,
+          max: 2,
+          ...pursuit,
+        },
+        length: 1,
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+{
+  // Three equal pursuers from the unit triangle close to ε = 0.01, the gap
+  // √3 r, at r = 0.01/√3, which takes (1 − r)/(v sin(π/3)).
+  const triangle = spatialPursuit({});
+  const q = triangle.pursuit;
+  const capture = (1 - 0.01 / Math.sqrt(3)) / Math.sin(Math.PI / 3);
+  assert.equal(q.paths.length, 3);
+  assert.ok(Math.abs(q.capture.time - capture) < 1e-9);
+  assert.equal(q.capture.target, (q.capture.pursuer + 1) % 3);
+  assert.equal(q.end, q.capture.time);
+  assert.equal(q.exhausted, false);
+  assert.equal(q.final.length, 3);
+  assert.deepEqual(triangle.base, q.paths[0]);
+  q.paths.forEach((path) =>
+    path.forEach((p, i) => {
+      const t = (2 * i) / 480;
+      if (t > q.end) assert.equal(p, null);
+      else
+        assert.ok(
+          p.z === 0 &&
+            Math.abs(Math.hypot(p.x, p.y) - (1 - t * Math.sin(Math.PI / 3))) <
+              1e-9,
+        );
+    }),
+  );
+  assert.ok(
+    q.polygons.length > 12 && q.polygons.every((p) => p.points.length === 3),
+  );
+  assert.ok(spatialPursuit({}, "developable").mesh.length > 0);
+  assert.equal(spatialPursuit({ max: 0.5 }).pursuit.capture, null);
+  assert.match(spatialPursuit({ pursuers: [] }).error, /2–16 pursuers/);
+  assert.match(spatialPursuit({ capture: 0 }).error, /capture distance/);
+}
+console.log("WASM spatial pursuit: triangle, capture and validation passed");
+const spatialSurface = (surface) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "surface",
+        // The curve's own fields are ignored for a surface.
+        construction: "developable",
+        length: -1,
+        samples: 0,
+        lines: 0,
+        surface: {
+          kind: "ellipsoid",
+          a: 1.5,
+          b: 1.5,
+          c: 1.5,
+          uMin: 0,
+          uMax: 2 * Math.PI,
+          vMin: -Math.PI / 2,
+          vMax: Math.PI / 2,
+          uSamples: 36,
+          vSamples: 18,
+          curves: 7,
+          reverse: false,
+          offset: 0.5,
+          reach: 1,
+          ...surface,
+        },
+      }),
+    ),
+  );
+{
+  // A sphere of radius 1.5: its offset by 0.5 is the sphere of radius 2,
+  // both focal sheets collapse to the centre, and its poles are chart
+  // singularities.
+  const round = spatialSurface({});
+  const q = round.surface;
+  assert.deepEqual(round.base, []);
+  assert.equal(q.surface.points.length, 37);
+  assert.equal(q.surface.points[0].length, 19);
+  assert.equal(q.singular, 2 * 37);
+  assert.equal(q.umbilics, 37 * 17);
+  assert.deepEqual(
+    q.focal.map((f) => f.shape),
+    ["point", "point"],
+  );
+  q.offset.points.flat().forEach((p) => {
+    if (p) assert.ok(Math.abs(Math.hypot(p.x, p.y, p.z) - 2) < 1e-12);
+  });
+  q.focal[0].points.flat().forEach((p) => {
+    if (p) assert.ok(Math.hypot(p.x, p.y, p.z) < 1e-12);
+  });
+  assert.equal(q.lines.length, 49 - 14);
+  assert.equal(q.offset.normals[0][0], null);
+  // A torus: the axis and the core circle.
+  const ring = spatialSurface({
+    kind: "torus",
+    a: 2,
+    b: 0.8,
+    vMin: 0,
+    vMax: 2 * Math.PI,
+    offset: 0,
+  }).surface;
+  assert.equal(ring.offset, null);
+  assert.deepEqual(
+    ring.focal.map((f) => f.shape),
+    ["curve", "curve"],
+  );
+  ring.focal[1].points.flat().forEach((p) => {
+    assert.ok(
+      Math.abs(Math.hypot(p.x, p.y) - 2) < 1e-12 && Math.abs(p.z) < 1e-12,
+    );
+  });
+  assert.match(spatialSurface({ kind: "klein" }).error, /unknown surface/);
+  assert.match(spatialSurface({ a: 0 }).error, /semi-axes/);
+  assert.match(spatialSurface({ uSamples: 240, vSamples: 61 }).error, /14,400/);
+  assert.match(spatialSurface({ curves: 1 }).error, /parameter curves/);
+}
+console.log("WASM surface: sphere, torus and validation passed");
+const spatialRays = (surface, rays) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "rays",
+        // The curve's fields and the surface study's offset and normal reach
+        // are ignored for a ray study.
+        samples: 0,
+        lines: 0,
+        surface: {
+          kind: "paraboloid",
+          a: 0.5,
+          b: 0.5,
+          c: 0,
+          uMin: -1.5,
+          uMax: 1.5,
+          vMin: -1.5,
+          vMax: 1.5,
+          uSamples: 24,
+          vSamples: 24,
+          curves: 5,
+          reverse: false,
+          offset: -1e9,
+          reach: -1e9,
+          ...surface,
+        },
+        rays: {
+          light: "parallel",
+          azimuth: 0,
+          elevation: -90,
+          source: { x: 0, y: 0, z: 0 },
+          length: 2,
+          ...rays,
+        },
+      }),
+    ),
+  );
+{
+  // Axial light reflects through the paraboloid's focus, 1/(2k) = 1 above
+  // its vertex: both branches collapse to that real point.
+  const dish = spatialRays({}, {});
+  const q = dish.rays;
+  assert.deepEqual(dish.base, []);
+  assert.equal(dish.surface, undefined);
+  assert.deepEqual(
+    q.caustics.map((c) => [c.branch, c.virtual, c.shape]),
+    [
+      [1, false, "point"],
+      [1, true, "none"],
+      [2, false, "point"],
+      [2, true, "none"],
+    ],
+  );
+  assert.equal(q.stigmatic, 25 * 25);
+  assert.equal(q.source, null);
+  q.caustics[0].points.flat().forEach((p) => {
+    assert.ok(Math.hypot(p.x, p.y, p.z - 1) < 1e-12);
+  });
+  assert.equal(q.lines.length, 25);
+  // Every reflected ray passes through the focus.
+  q.lines.forEach((l) => {
+    const d = {
+      x: l.end.x - l.point.x,
+      y: l.end.y - l.point.y,
+      z: l.end.z - l.point.z,
+    };
+    const w = { x: -l.point.x, y: -l.point.y, z: 1 - l.point.z };
+    const along = (w.x * d.x + w.y * d.y + w.z * d.z) / 4;
+    assert.ok(
+      Math.hypot(w.x - along * d.x, w.y - along * d.y, w.z - along * d.z) <
+        1e-12,
+    );
+  });
+  // A plane mirror images a point source, virtually, behind it.
+  const plane = spatialRays(
+    { a: 0, b: 0 },
+    { light: "point", source: { x: 0.2, y: -0.1, z: 1.5 } },
+  ).rays;
+  assert.deepEqual(plane.source, { x: 0.2, y: -0.1, z: 1.5 });
+  assert.ok(plane.lines.length > 0 && plane.lines.every((l) => l.virtual));
+  assert.ok(q.lines.every((l) => !l.virtual));
+  assert.equal(plane.caustics[1].shape, "point");
+  plane.caustics[1].points.flat().forEach((p) => {
+    assert.ok(Math.hypot(p.x - 0.2, p.y + 0.1, p.z + 1.5) < 1e-12);
+  });
+  // Behind the mirror, nothing is lit.
+  assert.equal(spatialRays({ reverse: true }, {}).rays.unlit, 25 * 25);
+  assert.match(
+    spatialRays({}, { light: "laser" }).error,
+    /parallel or a point/,
+  );
+  assert.match(spatialRays({}, { length: -1 }).error, /ray length/);
+  assert.match(spatialRays({ kind: "klein" }, {}).error, /unknown surface/);
+}
+console.log("WASM rays: paraboloid focus, plane mirror and validation passed");
 process.exit(0);

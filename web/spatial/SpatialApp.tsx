@@ -15,7 +15,12 @@ import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
-import { animationCamera, seedLabel, type AnimationView } from "./animation";
+import {
+  animationCamera,
+  seedLabel,
+  spatialPursuerLabels,
+  type AnimationView,
+} from "./animation";
 import {
   maxFrameStrands,
   maxHarmonicTerms,
@@ -24,8 +29,15 @@ import {
   type RuledConfig,
   type CanalConfig,
   type FieldConfig,
+  type SpatialPursuitConfig,
+  type SurfaceConfig,
+  type SurfaceKind,
+  type RaysConfig,
+  maxSurfaceCells,
+  maxSurfaceCurves,
   maxMeridians,
   maxSpatialSeeds,
+  maxSpatialPursuers,
   type HarmonicCurve,
   type SpatialConfig,
   type Frame,
@@ -41,6 +53,15 @@ import { frameNote } from "./frame";
 import { ruledNote } from "./ruled";
 import { canalNote } from "./canal";
 import { fieldNote, nextSpatialSeed } from "./field";
+import { nextSpatialPursuer, pursuitNote } from "./pursuit";
+import {
+  surfaceCharts,
+  surfaceDefaults,
+  surfaceNames,
+  surfaceNote,
+  surfaceShape,
+} from "./surface";
+import { raysNote } from "./rays";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -151,7 +172,14 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     await Promise.allSettled([...jobs.current]);
     if (token !== generation.current) return;
     setConfig((c) => {
-      if (format === "torus" || format === "harmonic" || format === "field")
+      if (
+        format === "torus" ||
+        format === "harmonic" ||
+        format === "field" ||
+        format === "pursuit" ||
+        format === "surface" ||
+        format === "rays"
+      )
         return { ...c, format };
       // Preserve an edited custom definition. A generated knot can also be opened
       // as expressions, with every pending scalar resolved before conversion.
@@ -180,6 +208,13 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const canal = config.construction === "canal";
   const none = config.construction === "none";
   const flowing = config.format === "field";
+  const chasing = config.format === "pursuit";
+  // A surface is not a curve: no construction applies to it.
+  const surfacing = config.format === "surface";
+  // A mirror is a surface patch lit for a single reflection; it shares the
+  // patch's controls but not its offset or normal lines.
+  const mirroring = config.format === "rays";
+  const patched = surfacing || mirroring;
   const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
     update((c) => ({ ...c, canal: change(c.canal) }));
   const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
@@ -469,6 +504,301 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             )
           : "Integrating…"}
       </p>
+    </>
+  );
+  const setPursuit = (
+    change: (q: SpatialPursuitConfig) => SpatialPursuitConfig,
+  ) => update((c) => ({ ...c, pursuit: change(c.pursuit) }));
+  // Adding or removing a pursuer renumbers the fields after it, so
+  // evaluations still pending for them land first; a preset chosen meanwhile
+  // wins.
+  async function editPursuers(
+    change: (
+      pursuers: SpatialPursuitConfig["pursuers"],
+    ) => SpatialPursuitConfig["pursuers"],
+  ) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    setPursuit((q) => ({ ...q, pursuers: change(q.pursuers) }));
+  }
+  const chase =
+    frame?.config.format === "pursuit" ? frame.result.pursuit : undefined;
+  const captured =
+    chase?.capture && chase.capture.time > frame!.config.pursuit.min
+      ? chase.capture
+      : undefined;
+  const pursuitControls = (
+    <>
+      <p className="note">
+        Each pursuer starts at (x, y, z) (within ±100,000) when t is at the
+        interval start and runs straight at the next one, the last at the first,
+        at its own speed v (0–100,000). The first pursuer&rsquo;s path is the
+        curve a construction uses.
+      </p>
+      {config.pursuit.pursuers.map((pursuer, i, all) => (
+        <div
+          className="term"
+          role="group"
+          aria-labelledby={`spatial-pursuer-${i}`}
+          key={i}
+        >
+          <div className="term-heading">
+            <span id={`spatial-pursuer-${i}`}>
+              Pursuer {i + 1}, chasing {i + 1 === all.length ? 1 : i + 2}
+            </span>
+            <button
+              type="button"
+              aria-label={`Remove pursuer ${i + 1}`}
+              disabled={all.length === 2}
+              onClick={() =>
+                void editPursuers((p) => p.filter((_, j) => j !== i))
+              }
+            >
+              Remove
+            </button>
+          </div>
+          <div className="pair quad">
+            {(["X", "Y", "Z", "Speed"] as const).map((field) => {
+              const key = field.toLowerCase() as "x" | "y" | "z" | "speed";
+              return vector(
+                spatialPursuerLabels[field](i + 1),
+                pursuer[key],
+                (value) =>
+                  setPursuit((q) => ({
+                    ...q,
+                    pursuers: q.pursuers.map((p, j) =>
+                      j === i ? { ...p, [key]: value } : p,
+                    ),
+                  })),
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <button
+        className="closure"
+        type="button"
+        disabled={config.pursuit.pursuers.length >= maxSpatialPursuers}
+        onClick={() => void editPursuers((p) => [...p, nextSpatialPursuer(p)])}
+      >
+        {config.pursuit.pursuers.length >= maxSpatialPursuers
+          ? "At most 16 pursuers"
+          : "Add a pursuer"}
+      </button>
+      <div className="pair">
+        {(
+          [
+            ["min", "t from"],
+            ["max", "to"],
+          ] as const
+        ).map(([key, label]) => (
+          <Field label={label} key={key}>
+            <ScalarInput
+              name={label}
+              value={config.pursuit[key]}
+              onChange={(value) => setPursuit((q) => ({ ...q, [key]: value }))}
+            />
+          </Field>
+        ))}
+      </div>
+      {vector(
+        "Capture distance ε",
+        config.pursuit.capture,
+        (value) => setPursuit((q) => ({ ...q, capture: value })),
+        "A pursuer’s direction is undefined on its target, so the chase stops, for everyone, the first time any pursuer comes this close to its own target (0–100,000). Nobody merges or changes target.",
+      )}
+      <p className="note" data-testid="pursuit-note">
+        {chase
+          ? pursuitNote(
+              chase,
+              frame!.config.pursuit.min,
+              frame!.config.construction !== "none",
+            )
+          : "Chasing…"}
+      </p>
+      {captured && (
+        <button
+          className="closure"
+          type="button"
+          onClick={() => {
+            setPreset("");
+            setPursuit((q) => ({ ...q, max: captured.time }));
+          }}
+        >
+          End the interval at the capture
+        </button>
+      )}
+    </>
+  );
+  const setSurface = (change: (s: SurfaceConfig) => SurfaceConfig) =>
+    update((c) => ({ ...c, surface: change(c.surface) }));
+  // Each kind's shape fields mean something different, so choosing a kind
+  // starts from its own shape and whole chart; evaluations still pending
+  // land first, and a preset chosen meanwhile wins.
+  async function chooseSurface(kind: SurfaceKind) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    setSurface((s) => ({ ...s, kind, ...surfaceDefaults[kind] }));
+  }
+  const patch =
+    frame?.config.format === "surface" ? frame.result.surface : undefined;
+  const mirror =
+    frame?.config.format === "rays" ? frame.result.rays : undefined;
+  const setRays = (change: (r: RaysConfig) => RaysConfig) =>
+    update((c) => ({ ...c, rays: change(c.rays) }));
+  const lightControls = (
+    <>
+      <Field
+        label="Light"
+        help="Parallel light, as from a distant source, or a point source. Either reflects once; nothing blocks it on the way in or out."
+      >
+        <select
+          value={config.rays.light}
+          onChange={(e) => {
+            const light = e.target.value as RaysConfig["light"];
+            setRays((r) => ({ ...r, light }));
+          }}
+        >
+          <option value="parallel">Parallel light</option>
+          <option value="point">Point source</option>
+        </select>
+      </Field>
+      {config.rays.light === "parallel" ? (
+        <div className="pair">
+          {vector(
+            "Azimuth α (°)",
+            config.rays.azimuth,
+            (azimuth) => setRays((r) => ({ ...r, azimuth })),
+            "The light travels along (cos β cos α, cos β sin α, sin β), in degrees within ±100000: β = −90 is straight down.",
+          )}
+          {vector("Elevation β (°)", config.rays.elevation, (elevation) =>
+            setRays((r) => ({ ...r, elevation })),
+          )}
+        </div>
+      ) : (
+        <div className="pair trio">
+          {(["x", "y", "z"] as const).map((axis) =>
+            vector(
+              `Source ${axis}`,
+              config.rays.source[axis],
+              (value) =>
+                setRays((r) => ({
+                  ...r,
+                  source: { ...r.source, [axis]: value },
+                })),
+              axis === "x"
+                ? "Where the light leaves, each coordinate within ±100000."
+                : undefined,
+            ),
+          )}
+        </div>
+      )}
+      {vector(
+        "Ray length ℓ",
+        config.rays.length,
+        (length) => setRays((r) => ({ ...r, length })),
+        "Each reflected ray runs ℓ from the mirror, and its virtual extension ℓ back behind it; parallel light arrives from ℓ away. 0–100000; 0 hides the rays.",
+      )}
+      <p className="note" data-testid="rays-note">
+        {mirror ? raysNote(mirror).join(" ") : "Following the light…"}
+      </p>
+    </>
+  );
+  const shapeFields = surfaceShape[config.surface.kind].map((f) =>
+    vector(
+      f.label,
+      config.surface[f.key],
+      (value) => setSurface((s) => ({ ...s, [f.key]: value })),
+      f.help,
+    ),
+  );
+  const surfaceControls = (
+    <>
+      <Field
+        label="Surface"
+        help="An analytic patch with exact first and second derivatives. Choosing one starts from its own shape and whole chart."
+      >
+        <select
+          value={config.surface.kind}
+          onChange={(e) => void chooseSurface(e.target.value as SurfaceKind)}
+        >
+          {(Object.keys(surfaceNames) as SurfaceKind[]).map((kind) => (
+            <option key={kind} value={kind}>
+              {surfaceNames[kind]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <p className="note">
+        {surfaceCharts[config.surface.kind]}. A domain shorter than the whole
+        chart opens the surface, so what lies inside it shows.
+      </p>
+      {shapeFields.length === 1 ? (
+        shapeFields
+      ) : (
+        <div className={shapeFields.length === 3 ? "pair trio" : "pair"}>
+          {shapeFields}
+        </div>
+      )}
+      {(["u", "v"] as const).map((axis) => (
+        <div className="pair" key={axis}>
+          {vector(
+            `${axis} from`,
+            config.surface[`${axis}Min`],
+            (value) => setSurface((s) => ({ ...s, [`${axis}Min`]: value })),
+            axis === "u"
+              ? "The parameter intervals the patch covers, each within ±1000000 and 0.000001–100000 wide."
+              : undefined,
+          )}
+          {vector(`${axis} to`, config.surface[`${axis}Max`], (value) =>
+            setSurface((s) => ({ ...s, [`${axis}Max`]: value })),
+          )}
+        </div>
+      ))}
+      <Field
+        label={mirroring ? "Mirror side" : "Normal"}
+        help={
+          mirroring
+            ? "The mirror reflects on the side n points to: light arriving against n reflects, and light from behind it is unlit. Nothing is inferred about inside and outside."
+            : "Which side n points to. Reversing it negates both curvatures and swaps the focal sheets' numbers; the geometry stays."
+        }
+      >
+        <select
+          value={config.surface.reverse ? "reverse" : "forward"}
+          onChange={(e) => {
+            const reverse = e.target.value === "reverse";
+            setSurface((s) => ({ ...s, reverse }));
+          }}
+        >
+          <option value="forward">Along X_u × X_v</option>
+          <option value="reverse">Reversed</option>
+        </select>
+      </Field>
+      {mirroring ? (
+        lightControls
+      ) : (
+        <>
+          <div className="pair">
+            {vector(
+              "Offset d",
+              config.surface.offset,
+              (offset) => setSurface((s) => ({ ...s, offset })),
+              "The offset surface X + d n, signed along n, within ±100000; 0 hides it.",
+            )}
+            {vector(
+              "Normal reach ℓ",
+              config.surface.reach,
+              (reach) => setSurface((s) => ({ ...s, reach })),
+              "Each normal line runs from X to X + ℓn: signed along n, within ±100000. 0 hides them.",
+            )}
+          </div>
+          <p className="note" data-testid="surface-note">
+            {patch ? surfaceNote(patch).join(" ") : "Measuring the curvature…"}
+          </p>
+        </>
+      )}
     </>
   );
   const failure = scalarError
@@ -797,8 +1127,107 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </Field>
     </>
   );
-  const behind = none ? (
-    flowing ? (
+  const behind = mirroring ? (
+    <StudyExplanation
+      label="BEHIND THE MIRROR"
+      title="A geometric fold of rays."
+      formula={
+        <>
+          R = I − 2(I·n) n <span>C = X + R / μ</span>
+        </>
+      }
+      note="Gold lines are reflected rays where the parameter curves cross, grey their incident rays and, where a caustic point lies behind the mirror, their virtual extensions. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross."
+      diagnostics={
+        mirror &&
+        (mirror.unlit > 0 ||
+          mirror.singular > 0 ||
+          mirror.clipped.some((n) => n > 0)) && (
+          <p className="bottom-note">
+            A caustic is never joined through infinity, from real to virtual, or
+            past the edge of the light.
+          </p>
+        )
+      }
+    >
+      <p>
+        Light meets the mirror at X travelling along I and leaves along its
+        reflection R. Neighbouring reflected rays cross, nearly, at up to two
+        places along each ray: the centres of curvature of the reflected
+        wavefront, where it bends by μ₁ and μ₂. Together those points form the{" "}
+        <em>caustic</em>, the bright fold where reflected light gathers.
+        Converging rays (μ &gt; 0) cross ahead of the mirror, in a real caustic;
+        diverging rays only appear to leave a virtual caustic behind it. A
+        paraboloid sends light along its axis through one focus; a sphere
+        cannot, and folds it into a cusped sheet and a line on the axis. Each
+        lit sample reflects once, whatever may stand in the way.
+      </p>
+    </StudyExplanation>
+  ) : surfacing ? (
+    <StudyExplanation
+      label="BEHIND THE NORMALS"
+      title="A surface revealing its centers."
+      formula={
+        <>
+          Fᵢ = X + n / κᵢ <span>X_d = X + d n</span>
+        </>
+      }
+      note="Grey lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross."
+      diagnostics={
+        shown?.result.surface &&
+        (shown.result.surface.singular > 0 ||
+          shown.result.surface.focal.some((f) => f.clipped > 0)) && (
+          <p className="bottom-note">
+            A focal sheet is never joined through infinity, and nothing is drawn
+            where the chart has no normal.
+          </p>
+        )
+      }
+    >
+      <p>
+        At each point of a surface the normal line stands square to it, and
+        nearby normals cross it at up to two places: the centres of the two
+        principal curvatures κ₁ and κ₂, the most and least the surface bends
+        there. Together they form the two <em>focal sheets</em>. A
+        sphere&rsquo;s normals all meet at its centre; a torus&rsquo;s meet its
+        core circle and its axis, so both sheets collapse to curves. Where a
+        curvature vanishes its centre runs off to infinity. The offset X + d n
+        keeps the same normals, and turns inside out wherever it passes a focal
+        sheet.
+      </p>
+    </StudyExplanation>
+  ) : none ? (
+    chasing ? (
+      <StudyExplanation
+        label="BEHIND THE CHASE"
+        title="Pursuers closing in space."
+        formula={
+          <>
+            pᵢ′ = vᵢ (pᵢ₊₁ − pᵢ) / |pᵢ₊₁ − pᵢ| <span>pᵢ(t₀) = start</span>
+          </>
+        }
+        note="Grey polygons join the pursuers, in chase order, at evenly spaced times; crosses mark the starts and, when the chase stops early, where everyone stood."
+        diagnostics={
+          shown?.result.pursuit &&
+          (shown.result.pursuit.capture || shown.result.pursuit.exhausted) && (
+            <p className="bottom-note">
+              The chase is never continued past a capture or its step budget:
+              later samples are left empty, and nobody merges or changes target.
+            </p>
+          )
+        }
+      >
+        <p>
+          Each pursuer runs straight at the next, the last at the first, each at
+          its own speed. From a regular polygon the chase keeps its shape as it
+          turns and shrinks, tracing logarithmic spirals; from a regular
+          tetrahedron the four spiral down a paraboloid, carried each to the
+          next by a quarter turn and a reflection. Out of any plane, the paths
+          twist through space. A pursuer&rsquo;s direction is undefined on its
+          target, so the chase stops the moment anyone comes within the capture
+          distance of their own.
+        </p>
+      </StudyExplanation>
+    ) : flowing ? (
       <StudyExplanation
         label="BEHIND THE FLOW"
         title="Paths that follow a field."
@@ -1136,12 +1565,21 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <option value="field">
                     Vector field · trajectories r′ = V
                   </option>
+                  <option value="pursuit">
+                    Pursuit · each chases the next
+                  </option>
+                  <option value="surface">Surface patch · X(u, v)</option>
+                  <option value="rays">Mirror · reflected rays</option>
                 </select>
               </Field>
               {config.format === "harmonic" ? (
                 harmonicControls
+              ) : patched ? (
+                surfaceControls
               ) : flowing ? (
                 fieldControls
+              ) : chasing ? (
+                pursuitControls
               ) : config.format === "torus" ? (
                 <>
                   {(
@@ -1255,188 +1693,88 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   </details>
                 </>
               )}
-              <Field label="Construction">
-                <select
-                  value={config.construction}
-                  onChange={(e) => {
-                    const construction = e.target
-                      .value as SpatialConfig["construction"];
-                    update((c) => ({ ...c, construction }));
-                  }}
-                >
-                  <option value="developable">Tangent developable</option>
-                  <option value="involute">Involute · unwinding strings</option>
-                  <option value="tangent-foot">Tangent-foot projection</option>
-                  <option value="orthotomic">Tangent-line orthotomic</option>
-                  <option value="inversion">Sphere inversion</option>
-                  <option value="framed">Framed ribbon · offset strands</option>
-                  <option value="ruled">
-                    Ruled surface · chords & threads
-                  </option>
-                  <option value="canal">Tube · canal surface</option>
-                  <option value="none">None · the curve alone</option>
-                </select>
-              </Field>
-              {canal ? (
-                canalControls
-              ) : ruled ? (
-                ruledControls
-              ) : framed ? (
-                frameControls
-              ) : inversion ? (
+              {!patched && (
                 <>
-                  <Field
-                    label="Curve to invert"
-                    help="Invert the base curve, or one of its tangent projections from the pole."
-                  >
+                  <Field label="Construction">
                     <select
-                      value={config.inversion.input}
+                      value={config.construction}
                       onChange={(e) => {
-                        const input = e.target
-                          .value as SpatialConfig["inversion"]["input"];
-                        update((c) => ({
-                          ...c,
-                          inversion: { ...c.inversion, input },
-                        }));
+                        const construction = e.target
+                          .value as SpatialConfig["construction"];
+                        update((c) => ({ ...c, construction }));
                       }}
                     >
-                      <option value="base">Base curve</option>
+                      <option value="developable">Tangent developable</option>
+                      <option value="involute">
+                        Involute · unwinding strings
+                      </option>
                       <option value="tangent-foot">
                         Tangent-foot projection
                       </option>
                       <option value="orthotomic">
                         Tangent-line orthotomic
                       </option>
+                      <option value="inversion">Sphere inversion</option>
+                      <option value="framed">
+                        Framed ribbon · offset strands
+                      </option>
+                      <option value="ruled">
+                        Ruled surface · chords & threads
+                      </option>
+                      <option value="canal">Tube · canal surface</option>
+                      <option value="none">None · the curve alone</option>
                     </select>
                   </Field>
-                  <div className="pair">
-                    {(["x", "y"] as const).map((axis) => (
+                  {canal ? (
+                    canalControls
+                  ) : ruled ? (
+                    ruledControls
+                  ) : framed ? (
+                    frameControls
+                  ) : inversion ? (
+                    <>
                       <Field
-                        key={axis}
-                        label={`Center ${axis}`}
-                        help={`Inversion center coordinate ${axis}, within ±100000. The center itself has no image.`}
+                        label="Curve to invert"
+                        help="Invert the base curve, or one of its tangent projections from the pole."
                       >
-                        <ScalarInput
-                          name={`Center ${axis}`}
-                          value={config.inversion.center[axis]}
-                          onChange={(value) =>
+                        <select
+                          value={config.inversion.input}
+                          onChange={(e) => {
+                            const input = e.target
+                              .value as SpatialConfig["inversion"]["input"];
                             update((c) => ({
                               ...c,
-                              inversion: {
-                                ...c.inversion,
-                                center: {
-                                  ...c.inversion.center,
-                                  [axis]: value,
-                                },
-                              },
-                            }))
-                          }
-                        />
+                              inversion: { ...c.inversion, input },
+                            }));
+                          }}
+                        >
+                          <option value="base">Base curve</option>
+                          <option value="tangent-foot">
+                            Tangent-foot projection
+                          </option>
+                          <option value="orthotomic">
+                            Tangent-line orthotomic
+                          </option>
+                        </select>
                       </Field>
-                    ))}
-                  </div>
-                  <div className="pair">
-                    <Field
-                      label="Center z"
-                      help="Height of the inversion center, within ±100000."
-                    >
-                      <ScalarInput
-                        name="Center z"
-                        value={config.inversion.center.z}
-                        onChange={(value) =>
-                          update((c) => ({
-                            ...c,
-                            inversion: {
-                              ...c.inversion,
-                              center: { ...c.inversion.center, z: value },
-                            },
-                          }))
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label="Sphere radius R"
-                      help="Radius of the inversion sphere, greater than 0 and at most 100000. Points on it stay fixed."
-                    >
-                      <ScalarInput
-                        name="Sphere radius R"
-                        value={config.inversion.radius}
-                        onChange={(value) =>
-                          update((c) => ({
-                            ...c,
-                            inversion: { ...c.inversion, radius: value },
-                          }))
-                        }
-                      />
-                    </Field>
-                  </div>
-                  {config.inversion.input !== "base" && poleFields}
-                </>
-              ) : projection ? (
-                poleFields
-              ) : involute ? (
-                <>
-                  <Field
-                    label="Anchor t₀"
-                    help="Where arc length s starts, as a parameter value inside the domain. The string there has length c."
-                  >
-                    <ScalarInput
-                      name="Anchor t₀"
-                      value={config.involute.anchor}
-                      onChange={(value) =>
-                        update((c) => ({
-                          ...c,
-                          involute: { ...c.involute, anchor: value },
-                        }))
-                      }
-                    />
-                  </Field>
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={config.involute.family.enabled}
-                      onChange={(e) => {
-                        const enabled = e.target.checked;
-                        update((c) => ({
-                          ...c,
-                          involute: {
-                            ...c.involute,
-                            family: { ...c.involute.family, enabled },
-                          },
-                        }));
-                      }}
-                    />
-                    Family of involutes
-                  </label>
-                  {config.involute.family.enabled ? (
-                    <>
                       <div className="pair">
-                        {(
-                          [
-                            ["from", "c from"],
-                            ["to", "c to"],
-                          ] as const
-                        ).map(([key, label]) => (
+                        {(["x", "y"] as const).map((axis) => (
                           <Field
-                            label={label}
-                            key={key}
-                            help={
-                              key === "from"
-                                ? "String length of the first filament, within ±100000."
-                                : "String length of the last; members are evenly spaced."
-                            }
+                            key={axis}
+                            label={`Center ${axis}`}
+                            help={`Inversion center coordinate ${axis}, within ±100000. The center itself has no image.`}
                           >
                             <ScalarInput
-                              name={label}
-                              value={config.involute.family[key]}
+                              name={`Center ${axis}`}
+                              value={config.inversion.center[axis]}
                               onChange={(value) =>
                                 update((c) => ({
                                   ...c,
-                                  involute: {
-                                    ...c.involute,
-                                    family: {
-                                      ...c.involute.family,
-                                      [key]: value,
+                                  inversion: {
+                                    ...c.inversion,
+                                    center: {
+                                      ...c.inversion.center,
+                                      [axis]: value,
                                     },
                                   },
                                 }))
@@ -1445,64 +1783,176 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                           </Field>
                         ))}
                       </div>
+                      <div className="pair">
+                        <Field
+                          label="Center z"
+                          help="Height of the inversion center, within ±100000."
+                        >
+                          <ScalarInput
+                            name="Center z"
+                            value={config.inversion.center.z}
+                            onChange={(value) =>
+                              update((c) => ({
+                                ...c,
+                                inversion: {
+                                  ...c.inversion,
+                                  center: { ...c.inversion.center, z: value },
+                                },
+                              }))
+                            }
+                          />
+                        </Field>
+                        <Field
+                          label="Sphere radius R"
+                          help="Radius of the inversion sphere, greater than 0 and at most 100000. Points on it stay fixed."
+                        >
+                          <ScalarInput
+                            name="Sphere radius R"
+                            value={config.inversion.radius}
+                            onChange={(value) =>
+                              update((c) => ({
+                                ...c,
+                                inversion: { ...c.inversion, radius: value },
+                              }))
+                            }
+                          />
+                        </Field>
+                      </div>
+                      {config.inversion.input !== "base" && poleFields}
+                    </>
+                  ) : projection ? (
+                    poleFields
+                  ) : involute ? (
+                    <>
                       <Field
-                        label="Involutes"
-                        help="From 2 to 24 filaments, and at most 48,000 points in all (involutes × samples)."
+                        label="Anchor t₀"
+                        help="Where arc length s starts, as a parameter value inside the domain. The string there has length c."
                       >
-                        <input
-                          type="number"
-                          min="2"
-                          max="24"
-                          step="1"
-                          value={
-                            Number.isNaN(config.involute.family.count)
-                              ? ""
-                              : config.involute.family.count
+                        <ScalarInput
+                          name="Anchor t₀"
+                          value={config.involute.anchor}
+                          onChange={(value) =>
+                            update((c) => ({
+                              ...c,
+                              involute: { ...c.involute, anchor: value },
+                            }))
                           }
+                        />
+                      </Field>
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={config.involute.family.enabled}
                           onChange={(e) => {
-                            const count = e.target.valueAsNumber;
+                            const enabled = e.target.checked;
                             update((c) => ({
                               ...c,
                               involute: {
                                 ...c.involute,
-                                family: { ...c.involute.family, count },
+                                family: { ...c.involute.family, enabled },
                               },
                             }));
                           }}
                         />
-                      </Field>
+                        Family of involutes
+                      </label>
+                      {config.involute.family.enabled ? (
+                        <>
+                          <div className="pair">
+                            {(
+                              [
+                                ["from", "c from"],
+                                ["to", "c to"],
+                              ] as const
+                            ).map(([key, label]) => (
+                              <Field
+                                label={label}
+                                key={key}
+                                help={
+                                  key === "from"
+                                    ? "String length of the first filament, within ±100000."
+                                    : "String length of the last; members are evenly spaced."
+                                }
+                              >
+                                <ScalarInput
+                                  name={label}
+                                  value={config.involute.family[key]}
+                                  onChange={(value) =>
+                                    update((c) => ({
+                                      ...c,
+                                      involute: {
+                                        ...c.involute,
+                                        family: {
+                                          ...c.involute.family,
+                                          [key]: value,
+                                        },
+                                      },
+                                    }))
+                                  }
+                                />
+                              </Field>
+                            ))}
+                          </div>
+                          <Field
+                            label="Involutes"
+                            help="From 2 to 24 filaments, and at most 48,000 points in all (involutes × samples)."
+                          >
+                            <input
+                              type="number"
+                              min="2"
+                              max="24"
+                              step="1"
+                              value={
+                                Number.isNaN(config.involute.family.count)
+                                  ? ""
+                                  : config.involute.family.count
+                              }
+                              onChange={(e) => {
+                                const count = e.target.valueAsNumber;
+                                update((c) => ({
+                                  ...c,
+                                  involute: {
+                                    ...c.involute,
+                                    family: { ...c.involute.family, count },
+                                  },
+                                }));
+                              }}
+                            />
+                          </Field>
+                        </>
+                      ) : (
+                        <Field
+                          label="String length c"
+                          help="Signed length of the string at the anchor, within ±100000. The filament touches the curve where s = c."
+                        >
+                          <ScalarInput
+                            name="String length c"
+                            value={config.involute.offset}
+                            onChange={(value) =>
+                              update((c) => ({
+                                ...c,
+                                involute: { ...c.involute, offset: value },
+                              }))
+                            }
+                          />
+                        </Field>
+                      )}
                     </>
-                  ) : (
+                  ) : none ? null : (
                     <Field
-                      label="String length c"
-                      help="Signed length of the string at the anchor, within ±100000. The filament touches the curve where s = c."
+                      label="Tangent reach L"
+                      help="Half-length of each straight tangent segment, in world units. Greater than 0 and at most 20."
                     >
                       <ScalarInput
-                        name="String length c"
-                        value={config.involute.offset}
+                        name="Tangent reach L"
+                        value={config.length}
                         onChange={(value) =>
-                          update((c) => ({
-                            ...c,
-                            involute: { ...c.involute, offset: value },
-                          }))
+                          update((c) => ({ ...c, length: value }))
                         }
                       />
                     </Field>
                   )}
                 </>
-              ) : none ? null : (
-                <Field
-                  label="Tangent reach L"
-                  help="Half-length of each straight tangent segment, in world units. Greater than 0 and at most 20."
-                >
-                  <ScalarInput
-                    name="Tangent reach L"
-                    value={config.length}
-                    onChange={(value) =>
-                      update((c) => ({ ...c, length: value }))
-                    }
-                  />
-                </Field>
               )}
             </div>
           </ScalarStatus.Provider>
@@ -1510,78 +1960,124 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             Constant expressions welcome: pi, e, phi.
           </p>
           {/* The curve alone, unless a field or harmonic, has no layers. */}
-          {!(none && !flowing && config.format !== "harmonic") && (
+          {(patched ||
+            !(
+              none &&
+              !flowing &&
+              !chasing &&
+              config.format !== "harmonic"
+            )) && (
             <fieldset className="spatial-layers">
               <legend>Reveal the construction</legend>
-              {[
-                ...(none
-                  ? []
-                  : canal
-                    ? ([
-                        ["surface", "Canal surface"],
-                        ["circles", "Contact circles"],
-                        ["meridians", "Meridians"],
-                        ["frames", "Frames"],
-                        ...(canalShown?.frame?.closed
-                          ? ([["seam", "Seam"]] as const)
-                          : []),
-                      ] as const)
-                    : ruled
-                      ? ([
-                          ["surface", "Ruled surface"],
-                          ["rulings", "Rulings"],
-                          ["edges", "Partner thread"],
-                        ] as const)
-                      : framed
-                        ? ([
-                            ["surface", "Ribbon surface"],
-                            ["rulings", "Cross-lines"],
-                            ["edges", "Ribbon edges"],
-                            ["strands", "Strands"],
-                            ["frames", "Frames"],
-                            ...(frameResult?.closed
-                              ? ([["seam", "Seam"]] as const)
-                              : []),
-                          ] as const)
-                        : inversion
+              {(mirroring
+                ? ([
+                    ["surface", "Mirror"],
+                    ["curves", "Parameter curves"],
+                    [
+                      "incident",
+                      config.rays.light === "point"
+                        ? "Incident rays & source"
+                        : "Incident rays",
+                    ],
+                    ["reflected", "Reflected rays"],
+                    ["focal1", "Caustic 1 · μ₁"],
+                    ["focal2", "Caustic 2 · μ₂"],
+                    ["virtual", "Virtual rays & caustics"],
+                  ] as const)
+                : surfacing
+                  ? ([
+                      ["surface", "Surface patch"],
+                      ["curves", "Parameter curves"],
+                      ["normals", "Normal lines"],
+                      ["offset", "Offset surface"],
+                      ["focal1", "Focal sheet 1 · κ₁"],
+                      ["focal2", "Focal sheet 2 · κ₂"],
+                    ] as const)
+                  : [
+                      ...(none
+                        ? []
+                        : canal
                           ? ([
-                              ["inverse", "Inverted curve"],
-                              ["correspondences", "Correspondence segments"],
-                              ["sphere", "Inversion sphere & center"],
-                              ...(config.inversion.input === "base"
-                                ? []
-                                : ([["source", "Projection & pole"]] as const)),
+                              ["surface", "Canal surface"],
+                              ["circles", "Contact circles"],
+                              ["meridians", "Meridians"],
+                              ["frames", "Frames"],
+                              ...(canalShown?.frame?.closed
+                                ? ([["seam", "Seam"]] as const)
+                                : []),
                             ] as const)
-                          : projection
+                          : ruled
                             ? ([
-                                ["projection", projectionName],
-                                ["connectors", "Perpendiculars & tangent feet"],
-                                ["pole", "Pole marker"],
+                                ["surface", "Ruled surface"],
+                                ["rulings", "Rulings"],
+                                ["edges", "Partner thread"],
                               ] as const)
-                            : involute
+                            : framed
                               ? ([
-                                  ["filaments", "Involute filaments"],
-                                  ["strings", "Unwinding strings"],
-                                ] as const)
-                              : ([
                                   ["surface", "Ribbon surface"],
-                                  ["rulings", "Tangent rulings"],
+                                  ["rulings", "Cross-lines"],
                                   ["edges", "Ribbon edges"],
-                                ] as const)),
-                ...(config.format === "harmonic"
-                  ? ([
-                      ["vectors", "Vector sums"],
-                      ["ellipses", "Generating ellipses"],
-                    ] as const)
-                  : []),
-                ...(flowing
-                  ? ([
-                      ["trajectories", "Other trajectories"],
-                      ["arrows", "Field directions"],
-                      ["seeds", "Seeds & early stops"],
-                    ] as const)
-                  : []),
-              ].map(([key, label]) => (
+                                  ["strands", "Strands"],
+                                  ["frames", "Frames"],
+                                  ...(frameResult?.closed
+                                    ? ([["seam", "Seam"]] as const)
+                                    : []),
+                                ] as const)
+                              : inversion
+                                ? ([
+                                    ["inverse", "Inverted curve"],
+                                    [
+                                      "correspondences",
+                                      "Correspondence segments",
+                                    ],
+                                    ["sphere", "Inversion sphere & center"],
+                                    ...(config.inversion.input === "base"
+                                      ? []
+                                      : ([
+                                          ["source", "Projection & pole"],
+                                        ] as const)),
+                                  ] as const)
+                                : projection
+                                  ? ([
+                                      ["projection", projectionName],
+                                      [
+                                        "connectors",
+                                        "Perpendiculars & tangent feet",
+                                      ],
+                                      ["pole", "Pole marker"],
+                                    ] as const)
+                                  : involute
+                                    ? ([
+                                        ["filaments", "Involute filaments"],
+                                        ["strings", "Unwinding strings"],
+                                      ] as const)
+                                    : ([
+                                        ["surface", "Ribbon surface"],
+                                        ["rulings", "Tangent rulings"],
+                                        ["edges", "Ribbon edges"],
+                                      ] as const)),
+                      ...(config.format === "harmonic"
+                        ? ([
+                            ["vectors", "Vector sums"],
+                            ["ellipses", "Generating ellipses"],
+                          ] as const)
+                        : []),
+                      ...(flowing
+                        ? ([
+                            ["trajectories", "Other trajectories"],
+                            ["arrows", "Field directions"],
+                            ["seeds", "Seeds & early stops"],
+                          ] as const)
+                        : []),
+                      ...(chasing
+                        ? ([
+                            ["trajectories", "Other pursuers"],
+                            ["polygons", "Connecting polygons"],
+                            ["seeds", "Starts & capture"],
+                          ] as const)
+                        : []),
+                    ]
+              ).map(([key, label]) => (
                 <label key={key}>
                   <input
                     type="checkbox"
@@ -1597,69 +2093,167 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           )}
           <details className="spatial-details">
             <summary>Sampling & definition</summary>
-            <Field label="Curve samples">
-              <input
-                type="number"
-                min="240"
-                max="2400"
-                step="1"
-                value={Number.isNaN(config.samples) ? "" : config.samples}
-                onChange={(e) =>
-                  update((c) => ({ ...c, samples: e.target.valueAsNumber }))
-                }
-              />
-            </Field>
-            <Field
-              label={
-                none
-                  ? flowing
-                    ? "Field arrows"
-                    : "Representative samples"
-                  : canal
-                    ? "Contact circles"
-                    : ruled
-                      ? "Rulings"
-                      : framed
-                        ? "Frames & cross-lines"
-                        : inversion
-                          ? "Correspondences"
-                          : projection
-                            ? "Projection constructions"
-                            : involute
-                              ? "Unwinding strings"
-                              : "Tangent lines"
-              }
-            >
-              <input
-                type="number"
-                min="12"
-                max="240"
-                step="1"
-                value={Number.isNaN(config.lines) ? "" : config.lines}
-                onChange={(e) =>
-                  update((c) => ({ ...c, lines: e.target.valueAsNumber }))
-                }
-              />
-            </Field>
-            <p>
-              Finite sampling can miss fine detail. Compare resolutions near
-              poles, stationary points, and tight folds. Invalid samples and
-              unresolved tangent or normal intervals leave gaps. Involute arc
-              length uses Simpson's rule on each sample interval, as does the
-              arc length that spreads a frame's twist. A transported frame is
-              carried between samples by two reflections. A harmonic curve's
-              vector sums sit at the same evenly spaced samples as the
-              construction lines, and its derivatives are exact. A ruled
-              surface's partner is evaluated at mt + δ for the same samples, and
-              a second thread is differentiated like a custom curve. A canal
-              surface's profile ρ(t) is differentiated the same way, checked at
-              each interval's midpoint, and drawn on at most 480 contact
-              circles, always including those beside a gap. A vector
-              field&rsquo;s trajectories are integrated with adaptive
-              Dormand&ndash;Prince steps, each to its own error tolerance and
-              within 50,000 steps, and sampled at the same evenly spaced times;
-              the first one&rsquo;s velocity is the field itself.
-            </p>
+            {patched ? (
+              <>
+                <div className="pair">
+                  {(
+                    [
+                      ["uSamples", "u samples"],
+                      ["vSamples", "v samples"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <Field
+                      key={key}
+                      label={label}
+                      help={
+                        key === "uSamples"
+                          ? `12–240 cells each way, and at most ${maxSurfaceCells.toLocaleString()} in all.`
+                          : undefined
+                      }
+                    >
+                      <input
+                        type="number"
+                        min="12"
+                        max="240"
+                        step="1"
+                        value={
+                          Number.isNaN(config.surface[key])
+                            ? ""
+                            : config.surface[key]
+                        }
+                        onChange={(e) => {
+                          const value = e.target.valueAsNumber;
+                          setSurface((s) => ({ ...s, [key]: value }));
+                        }}
+                      />
+                    </Field>
+                  ))}
+                </div>
+                <Field
+                  label="Parameter curves"
+                  help={
+                    mirroring
+                      ? `2–${maxSurfaceCurves} curves each way, drawn on the mirror and its caustics; rays stand where they cross.`
+                      : `2–${maxSurfaceCurves} curves each way, drawn on the surface and its focal sheets; normal lines stand where they cross.`
+                  }
+                >
+                  <input
+                    type="number"
+                    min="2"
+                    max={maxSurfaceCurves}
+                    step="1"
+                    value={
+                      Number.isNaN(config.surface.curves)
+                        ? ""
+                        : config.surface.curves
+                    }
+                    onChange={(e) => {
+                      const curves = e.target.valueAsNumber;
+                      setSurface((s) => ({ ...s, curves }));
+                    }}
+                  />
+                </Field>
+                {mirroring ? (
+                  <p>
+                    Positions, normals and their derivatives come from each
+                    patch&rsquo;s exact first and second derivatives at every
+                    grid sample, and so do the reflected rays&rsquo; directions
+                    and derivatives. Caustic points are the centres of curvature
+                    of the reflected wavefront, from its shape operator across
+                    each ray. A caustic edge is joined only when its curvature
+                    keeps its sign and the caustic point halfway along it is
+                    lit, finite, and between its ends, so a caustic is never
+                    joined through infinity, past the edge of the light, or
+                    across its own cusps. Caustic points beyond 100 surface
+                    radii are treated as at infinity.
+                  </p>
+                ) : (
+                  <p>
+                    Positions, normals and principal curvatures come from each
+                    patch&rsquo;s exact first and second derivatives at every
+                    grid sample. Where X_u × X_v vanishes the chart is singular
+                    and has no normal. A focal edge is joined only when its
+                    curvature keeps its sign and the focal point halfway along
+                    it is finite and lies between its ends, so a sheet is never
+                    joined through infinity, even between samples. Centres of
+                    curvature beyond 100 surface radii are treated as at
+                    infinity.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <Field label="Curve samples">
+                  <input
+                    type="number"
+                    min="240"
+                    max="2400"
+                    step="1"
+                    value={Number.isNaN(config.samples) ? "" : config.samples}
+                    onChange={(e) =>
+                      update((c) => ({ ...c, samples: e.target.valueAsNumber }))
+                    }
+                  />
+                </Field>
+                <Field
+                  label={
+                    none
+                      ? flowing
+                        ? "Field arrows"
+                        : chasing
+                          ? "Connecting polygons"
+                          : "Representative samples"
+                      : canal
+                        ? "Contact circles"
+                        : ruled
+                          ? "Rulings"
+                          : framed
+                            ? "Frames & cross-lines"
+                            : inversion
+                              ? "Correspondences"
+                              : projection
+                                ? "Projection constructions"
+                                : involute
+                                  ? "Unwinding strings"
+                                  : "Tangent lines"
+                  }
+                >
+                  <input
+                    type="number"
+                    min="12"
+                    max="240"
+                    step="1"
+                    value={Number.isNaN(config.lines) ? "" : config.lines}
+                    onChange={(e) =>
+                      update((c) => ({ ...c, lines: e.target.valueAsNumber }))
+                    }
+                  />
+                </Field>
+                <p>
+                  Finite sampling can miss fine detail. Compare resolutions near
+                  poles, stationary points, and tight folds. Invalid samples and
+                  unresolved tangent or normal intervals leave gaps. Involute
+                  arc length uses Simpson's rule on each sample interval, as
+                  does the arc length that spreads a frame's twist. A
+                  transported frame is carried between samples by two
+                  reflections. A harmonic curve's vector sums sit at the same
+                  evenly spaced samples as the construction lines, and its
+                  derivatives are exact. A ruled surface's partner is evaluated
+                  at mt + δ for the same samples, and a second thread is
+                  differentiated like a custom curve. A canal surface's profile
+                  ρ(t) is differentiated the same way, checked at each
+                  interval's midpoint, and drawn on at most 480 contact circles,
+                  always including those beside a gap. A vector field&rsquo;s
+                  trajectories are integrated with adaptive Dormand&ndash;Prince
+                  steps, each to its own error tolerance and within 50,000
+                  steps, and sampled at the same evenly spaced times; the first
+                  one&rsquo;s velocity is the field itself. A chase is
+                  integrated the same way, as one system, within 40,000 steps,
+                  and the first pursuer&rsquo;s velocity and acceleration come
+                  from the pursuit law itself.
+                </p>
+              </>
+            )}
           </details>
           {failure && (
             <p className="error" role="alert">
@@ -1671,7 +2265,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
+                : patched
+                  ? `${config.surface.uSamples} × ${config.surface.vSamples} cells · ${config.surface.curves} parameter curves`
+                  : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -1706,23 +2302,29 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {none
-                  ? flowing
-                    ? "Paths that follow a field"
-                    : "A curve in space"
-                  : canal
-                    ? "A surface enveloping spheres"
-                    : ruled
-                      ? "A surface of straight threads"
-                      : framed
-                        ? "A ribbon carried by a frame"
-                        : inversion
-                          ? "A curve inverted in a sphere"
-                          : projection
-                            ? projectionName
-                            : involute
-                              ? "Filaments unwound from a curve"
-                              : "A ribbon of tangent lines"}
+                {mirroring
+                  ? "A mirror and its caustics"
+                  : surfacing
+                    ? "A surface and its centers of curvature"
+                    : none
+                      ? flowing
+                        ? "Paths that follow a field"
+                        : chasing
+                          ? "Pursuers closing in space"
+                          : "A curve in space"
+                      : canal
+                        ? "A surface enveloping spheres"
+                        : ruled
+                          ? "A surface of straight threads"
+                          : framed
+                            ? "A ribbon carried by a frame"
+                            : inversion
+                              ? "A curve inverted in a sphere"
+                              : projection
+                                ? projectionName
+                                : involute
+                                  ? "Filaments unwound from a curve"
+                                  : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -1770,28 +2372,51 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               )}
             </div>
             <div className="plot-meta">
-              <div className="legend">
-                <span className="thread-dot" />{" "}
-                {flowing ? "Trajectory 1" : "Base curve"}{" "}
-                {!(none && !flowing) && <span className="ribbon-dot" />}{" "}
-                {none
-                  ? flowing
-                    ? "Other trajectories"
-                    : ""
-                  : canal
-                    ? "Canal surface"
-                    : ruled
-                      ? "Ruled surface"
-                      : framed
-                        ? "Framed ribbon"
-                        : inversion
-                          ? "Inverted curve"
-                          : projection
-                            ? projectionName
-                            : involute
-                              ? "Involute filaments"
-                              : "Tangent developable"}
-              </div>
+              {mirroring ? (
+                <div className="legend">
+                  <span className="surface-dot" /> Mirror{" "}
+                  <span className="thread-dot" /> Reflected rays{" "}
+                  <span className="focal-dot" /> Caustic 1{" "}
+                  <span className="focal-dot second" /> Caustic 2
+                </div>
+              ) : surfacing ? (
+                <div className="legend">
+                  <span className="surface-dot" /> Surface{" "}
+                  <span className="focal-dot" /> Focal sheet 1{" "}
+                  <span className="focal-dot second" /> Focal sheet 2
+                </div>
+              ) : (
+                <div className="legend">
+                  <span className="thread-dot" />{" "}
+                  {flowing
+                    ? "Trajectory 1"
+                    : chasing
+                      ? "Pursuer 1"
+                      : "Base curve"}{" "}
+                  {!(none && !flowing && !chasing) && (
+                    <span className="ribbon-dot" />
+                  )}{" "}
+                  {none
+                    ? flowing
+                      ? "Other trajectories"
+                      : chasing
+                        ? "Other pursuers"
+                        : ""
+                    : canal
+                      ? "Canal surface"
+                      : ruled
+                        ? "Ruled surface"
+                        : framed
+                          ? "Framed ribbon"
+                          : inversion
+                            ? "Inverted curve"
+                            : projection
+                              ? projectionName
+                              : involute
+                                ? "Involute filaments"
+                                : "Tangent developable"}
+                </div>
+              )}
               <span>
                 {animation
                   ? "Animation camera · Stop or Reset view restores manual framing"

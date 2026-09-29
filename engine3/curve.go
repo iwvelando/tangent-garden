@@ -36,9 +36,10 @@ func domain(lo, hi float64) error {
 	return nil
 }
 
-// compile returns the base curve's evaluator. A vector field's base is its
-// first trajectory, from flow, which Compute integrates beforehand.
-func compile(c Request, flow *flowCurve) (evaluation, float64, float64, bool, error) {
+// compile returns the base curve's evaluator. The base of a vector field or
+// a pursuit is its first path, which Compute integrates beforehand and
+// passes as integrated.
+func compile(c Request, integrated evaluation) (evaluation, float64, float64, bool, error) {
 	if c.Format == "" || c.Format == "torus" {
 		gcd := func(a, b int) int {
 			for b != 0 {
@@ -66,8 +67,10 @@ func compile(c Request, flow *flowCurve) (evaluation, float64, float64, bool, er
 		return h.evaluate, h.Min, h.Max, closed, nil
 	}
 	if c.Format == "field" {
-		v := c.Field
-		return flow.flows[0].evaluation(flow.f, v.Max-v.Min), v.Min, v.Max, false, nil
+		return integrated, c.Field.Min, c.Field.Max, false, nil
+	}
+	if c.Format == "pursuit" {
+		return integrated, c.Pursuit.Min, c.Pursuit.Max, false, nil
 	}
 	if c.Format != "parametric" {
 		return nil, 0, 0, false, fmt.Errorf("unknown spatial curve definition")

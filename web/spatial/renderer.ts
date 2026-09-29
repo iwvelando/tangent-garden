@@ -1,4 +1,4 @@
-import type { SpatialResult, Vec3, Bounds3 } from "./types";
+import type { SpatialResult, SurfaceSheet, Vec3, Bounds3 } from "./types";
 
 export type View = Bounds3 & {
   yaw: number;
@@ -17,7 +17,15 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // surface, rulings and edges, its partner thread drawn as the edge; and the
 // canal construction reuses surface, frames and seam, with its own contact
 // circles and meridians; trajectories, arrows and seeds to a vector field
-// under any construction. The base curve is always drawn.
+// under any construction, and trajectories, polygons and seeds to a pursuit,
+// whose other paths and starts they draw. A surface study draws its patch
+// as the surface, with its parameter curves, normal lines, offset, and each
+// focal sheet (its faces, its parameter curves, and a cross when it is a
+// point) as their own layers. A ray study draws its mirror as the surface,
+// with its parameter curves; each caustic branch's real part as a focal
+// sheet; and its incident rays (with the source), reflected rays, and
+// virtual rays with the caustics' virtual parts, as lines, as their own
+// layers. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -41,6 +49,15 @@ export type Layers = {
   trajectories: boolean;
   arrows: boolean;
   seeds: boolean;
+  polygons: boolean;
+  curves: boolean;
+  normals: boolean;
+  offset: boolean;
+  focal1: boolean;
+  focal2: boolean;
+  incident: boolean;
+  reflected: boolean;
+  virtual: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -65,6 +82,15 @@ export const defaultLayers: Layers = {
   trajectories: true,
   arrows: true,
   seeds: true,
+  polygons: true,
+  curves: true,
+  normals: true,
+  offset: true,
+  focal1: true,
+  focal2: true,
+  incident: true,
+  reflected: true,
+  virtual: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -95,7 +121,14 @@ void main() {
   vec3 teal = mix(vec3(0.30,0.62,0.56),vec3(0.23,0.70,0.67),dark);
   vec3 gold = mix(vec3(0.90,0.66,0.36),vec3(0.94,0.65,0.31),dark);
   vec3 color = mix(teal,gold,blend);
-  if (ink > 3.5) {
+  // A surface's focal sheets: rust for the first, slate for the second.
+  vec3 rust = mix(vec3(0.72,0.36,0.26),vec3(0.90,0.55,0.42),dark);
+  vec3 slate = mix(vec3(0.33,0.40,0.66),vec3(0.58,0.66,0.92),dark);
+  if (ink > 5.5) {
+    color = slate;
+  } else if (ink > 4.5) {
+    color = rust;
+  } else if (ink > 3.5) {
     // Unwinding strings recede toward the background behind the filaments.
     color = mix(vec3(0.58,0.66,0.63),vec3(0.24,0.37,0.37),dark);
   } else if (ink > 2.5) {
@@ -107,6 +140,11 @@ void main() {
     if (ink < 1.5) color = mix(vec3(0.10,0.30,0.29),vec3(0.63,0.89,0.83),dark);
     else color = mix(vec3(0.50,0.25,0.09),vec3(1.0,0.87,0.58),dark);
   } else {
+    // Shaded sheets: a surface's offset in sage, its focal sheets in rust
+    // and slate, anything else in the decorative teal and gold.
+    if (ink < -2.5) color = slate;
+    else if (ink < -1.5) color = rust;
+    else if (ink < -0.5) color = mix(vec3(0.58,0.66,0.58),vec3(0.42,0.54,0.50),dark);
     vec3 n = normalize(N);
     if (!gl_FrontFacing) n = -n;
     float key = abs(dot(n,normalize(vec3(-0.4,0.7,1.0))));
@@ -188,7 +226,19 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     meridians: Batch,
     trajectories: Batch,
     arrows: Batch,
-    seeds: Batch;
+    seeds: Batch,
+    polygons: Batch,
+    sheet: Batch,
+    sheetCurves: Batch,
+    normalLines: Batch,
+    offsetSheet: Batch,
+    focalSheets: Batch[],
+    focalCurves: Batch[],
+    incidentRays: Batch,
+    reflectedRays: Batch,
+    virtualRays: Batch,
+    lamp: Batch,
+    virtualCaustics: Batch[];
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -229,6 +279,69 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       return vertices(pairs(m.points, result.breaks), phase);
     });
     return batch(data, gl!.LINES, 3);
+  }
+  // A sheet's faces as two triangles each. Where a corner has no normal
+  // (a chart singularity, an umbilic or cuspidal edge of a focal sheet), the
+  // triangle's own normal shades it; a triangle without area is skipped.
+  function sheetBatch(sheet: SurfaceSheet, ink: number) {
+    const data: number[] = [];
+    const last = Math.max(1, sheet.points.length - 1);
+    sheet.faces.forEach((column, i) =>
+      column.forEach((face, j) => {
+        if (!face) return;
+        const corners: [number, number][] = [
+          [i, j],
+          [i + 1, j],
+          [i + 1, j + 1],
+          [i, j + 1],
+        ];
+        for (const [a, b, c] of [
+          [0, 1, 2],
+          [0, 2, 3],
+        ]) {
+          const at = [a, b, c].map((k) => corners[k]);
+          const [p, q, r] = at.map(([u, v]) => sheet.points[u][v]!);
+          const e = { x: q.x - p.x, y: q.y - p.y, z: q.z - p.z },
+            f = { x: r.x - p.x, y: r.y - p.y, z: r.z - p.z };
+          const flat = {
+            x: e.y * f.z - e.z * f.y,
+            y: e.z * f.x - e.x * f.z,
+            z: e.x * f.y - e.y * f.x,
+          };
+          const size = Math.hypot(flat.x, flat.y, flat.z);
+          const missing = at.some(([u, v]) => !sheet.normals[u][v]);
+          if (missing && !(size > 0)) continue;
+          at.forEach(([u, v]) => {
+            const point = sheet.points[u][v]!,
+              n = sheet.normals[u][v] ?? {
+                x: flat.x / size,
+                y: flat.y / size,
+                z: flat.z / size,
+              };
+            data.push(point.x, point.y, point.z, n.x, n.y, n.z, u / last);
+          });
+        }
+      }),
+    );
+    return batch(data, gl!.TRIANGLES, ink);
+  }
+  // The representative parameter curves on a sheet, joined where its edges
+  // are.
+  function sheetLines(
+    sheet: SurfaceSheet,
+    uCurves: number[],
+    vCurves: number[],
+  ): Vec3[] {
+    const out: Vec3[] = [];
+    for (const j of uCurves)
+      sheet.alongU.forEach((column, i) => {
+        if (column[j]) out.push(sheet.points[i][j]!, sheet.points[i + 1][j]!);
+      });
+    for (const i of vCurves)
+      (sheet.alongV[i] ?? []).forEach((joined, j) => {
+        if (joined) out.push(sheet.points[i][j]!, sheet.points[i][j + 1]!);
+      });
+    return out;
   }
   const cross = (at: Vec3, arm: number): Vec3[] =>
     (["x", "y", "z"] as const).flatMap((axis) => [
@@ -537,11 +650,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       4,
     );
-    // The first trajectory is the base, drawn as such. The others shade from
-    // teal to gold by seed order (decorative), joined wherever both ends of
-    // an interval are known; a trajectory has no break before its end.
+    // The first trajectory or pursuer is the base, drawn as such. The others
+    // shade from teal to gold by order (decorative), joined wherever both
+    // ends of an interval are known; a path has no break before its end.
     const flow = result.field;
-    const paths = flow?.paths ?? [];
+    const chase = result.pursuit;
+    const paths = flow?.paths ?? chase?.paths ?? [];
     trajectories = batch(
       paths
         .slice(1)
@@ -574,18 +688,110 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       4,
     );
-    // Seeds, and where a trajectory stopped before the end of the interval.
+    // Seeds or starts, and where a trajectory stopped, or the whole chase
+    // stopped, before the end of the interval.
+    const early =
+      chase && (chase.capture || chase.exhausted) ? chase.final : [];
     seeds = batch(
       vertices([
-        ...(flow ? result.field!.paths.map((p) => p[0]) : [])
+        ...paths
+          .map((p) => p[0])
           .filter((p): p is Vec3 => !!p)
           .flatMap((p) => cross(p, result.bounds.radius * 0.02)),
-        ...(flow?.ends ?? [])
-          .filter((e) => e.reason !== "end" && e.point)
-          .flatMap((e) => cross(e.point!, result.bounds.radius * 0.012)),
+        ...[
+          ...(flow?.ends ?? [])
+            .filter((e) => e.reason !== "end" && e.point)
+            .map((e) => e.point!),
+          ...early,
+        ].flatMap((p) => cross(p, result.bounds.radius * 0.012)),
       ]),
       gl!.LINES,
       1,
+    );
+    const surface = result.surface,
+      rays = result.rays,
+      patch = surface ?? rays;
+    const empty: SurfaceSheet = {
+      points: [],
+      normals: [],
+      alongU: [],
+      alongV: [],
+      faces: [],
+    };
+    sheet = sheetBatch(patch?.surface ?? empty, 0);
+    sheetCurves = batch(
+      vertices(
+        patch ? sheetLines(patch.surface, patch.uCurves, patch.vCurves) : [],
+      ),
+      gl!.LINES,
+      1,
+    );
+    normalLines = batch(
+      vertices((surface?.lines ?? []).flatMap((l) => [l.point, l.end])),
+      gl!.LINES,
+      4,
+    );
+    offsetSheet = sheetBatch(surface?.offset ?? empty, -1);
+    // A branch drawn as lines: its parameter curves, or a cross when it is
+    // a point.
+    const branchLines = (f: SurfaceSheet & { shape: string }, k: number) => {
+      const at = f.points.flat().find((p) => p);
+      return batch(
+        vertices(
+          f.shape === "point" && at
+            ? cross(at, result.bounds.radius * 0.04)
+            : sheetLines(f, patch!.uCurves, patch!.vCurves),
+        ),
+        gl!.LINES,
+        5 + k,
+      );
+    };
+    // A caustic's real parts are shaded like focal sheets; its virtual
+    // parts, behind the mirror, are drawn only as lines.
+    const part = (virtual: boolean) =>
+      ([1, 2] as const).map((b) =>
+        rays!.caustics.find((c) => c.branch === b && c.virtual === virtual)!,
+      );
+    const realParts = rays ? part(false) : (surface?.focal ?? []);
+    focalSheets = realParts.map((f, k) => sheetBatch(f, -2 - k));
+    focalCurves = realParts.map(branchLines);
+    virtualCaustics = rays ? part(true).map(branchLines) : [];
+    const rayLines = rays?.lines ?? [];
+    incidentRays = batch(
+      vertices(rayLines.flatMap((l) => [l.start, l.point])),
+      gl!.LINES,
+      4,
+    );
+    reflectedRays = batch(
+      vertices(rayLines.flatMap((l) => [l.point, l.end])),
+      gl!.LINES,
+      2,
+    );
+    virtualRays = batch(
+      // Only a ray with a virtual caustic point leads anywhere behind the
+      // mirror.
+      vertices(
+        rayLines.filter((l) => l.virtual).flatMap((l) => [l.point, l.back]),
+      ),
+      gl!.LINES,
+      4,
+    );
+    lamp = batch(
+      vertices(
+        rays?.source ? cross(rays.source, result.bounds.radius * 0.03) : [],
+      ),
+      gl!.LINES,
+      2,
+    );
+    // Each connecting polygon closes, the last pursuer back to the first.
+    polygons = batch(
+      vertices(
+        (chase?.polygons ?? []).flatMap((g) =>
+          g.points.flatMap((p, j) => [p, g.points[(j + 1) % g.points.length]]),
+        ),
+      ),
+      gl!.LINES,
+      4,
     );
   }
   function draw(
@@ -654,11 +860,31 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.uniform1f(uniforms.ink, v.ink);
       gl!.drawArrays(v.mode, 0, v.count);
     };
-    if (layers.surface) {
+    const shaded = (on: boolean, ...sheets: Batch[]) => {
+      if (!on) return;
       gl!.enable(gl!.POLYGON_OFFSET_FILL);
       gl!.polygonOffset(1, 1);
-      render(mesh);
+      sheets.forEach(render);
       gl!.disable(gl!.POLYGON_OFFSET_FILL);
+    };
+    shaded(layers.surface, mesh, sheet);
+    shaded(layers.offset, offsetSheet);
+    focalSheets.forEach((f, k) =>
+      shaded(k === 0 ? layers.focal1 : layers.focal2, f),
+    );
+    focalCurves.forEach((f, k) => {
+      if (k === 0 ? layers.focal1 : layers.focal2) render(f);
+    });
+    if (layers.curves) render(sheetCurves);
+    if (layers.normals) render(normalLines);
+    if (layers.incident) {
+      render(incidentRays);
+      render(lamp);
+    }
+    if (layers.reflected) render(reflectedRays);
+    if (layers.virtual) {
+      render(virtualRays);
+      virtualCaustics.forEach(render);
     }
     if (layers.rulings) render(rulings);
     if (layers.edges) {
@@ -692,6 +918,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (layers.vectors) render(vectors);
     if (layers.ellipses) render(ellipses);
     if (layers.arrows) render(arrows);
+    if (layers.polygons) render(polygons);
     if (layers.trajectories) render(trajectories);
     render(base);
     if (layers.seeds) render(seeds);

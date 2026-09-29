@@ -50,11 +50,13 @@ export async function imageFile(
       none:
         frame.config.format === "field"
           ? "spatial vector-field trajectories"
-          : "spatial curve",
+          : frame.config.format === "pursuit"
+            ? "spatial cyclic pursuit"
+            : "spatial curve",
     };
     return new Blob(
       [
-        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${title[frame.config.construction]}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${frame.config.format === "surface" ? "spatial surface normals and focal sheets" : frame.config.format === "rays" ? "spatial mirror rays and caustics" : title[frame.config.construction]}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
       ],
       { type: "image/svg+xml" },
     );

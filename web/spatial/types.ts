@@ -88,8 +88,71 @@ export type FieldConfig = {
   a: number;
 };
 export const maxSpatialSeeds = 12;
+// A pursuer starts at (x, y, z) at t = min and runs straight at the next,
+// the last at the first, at its own constant speed.
+export type SpatialPursuer = Vec3 & { speed: number };
+// A spatial cyclic pursuit from t = min to max. The chase stops for everyone
+// the first time any pursuer comes within `capture` of its own target. The
+// first pursuer's path is the base curve. Mirrors engine3.PursuitRequest.
+export type SpatialPursuitConfig = {
+  pursuers: SpatialPursuer[];
+  capture: number;
+  min: number;
+  max: number;
+};
+export const maxSpatialPursuers = 16;
+// An analytic patch X(u, v) on a uSamples × vSamples grid of cells. a, b
+// and c are an ellipsoid's semi-axes; a torus's major radius R and minor
+// radius r; an elliptic cylinder's semi-axes; the curvatures k₁ and k₂ of
+// the paraboloid z = (k₁x² + k₂y²)/2 at its vertex; or the height k of the
+// monkey saddle z = k(x³ − 3xy²). The normal is X_u × X_v normalized, or its
+// opposite when `reverse` is set; the shape operator is −dn, so κ > 0 where
+// the surface bends towards n. The offset is X + offset·n (none at 0), and
+// each normal line runs from X to X + reach·n. Mirrors engine3.SurfaceRequest.
+export type SurfaceKind =
+  "ellipsoid" | "torus" | "cylinder" | "paraboloid" | "monkey";
+export type SurfaceConfig = {
+  kind: SurfaceKind;
+  a: number;
+  b: number;
+  c: number;
+  uMin: number;
+  uMax: number;
+  vMin: number;
+  vMax: number;
+  uSamples: number;
+  vSamples: number;
+  curves: number;
+  reverse: boolean;
+  offset: number;
+  reach: number;
+};
+export const maxSurfaceCells = 14400;
+export const maxSurfaceCurves = 48;
+// The light on a mirror, for one reflection. Parallel light travels along
+// (cos β cos α, cos β sin α, sin β), azimuth α and elevation β in degrees; a
+// point source sits at `source`. The surface's normal declares the mirror
+// side: a sample is lit only where the light arrives against n. Each
+// representative ray is drawn `length` along its reflection and as far back
+// behind the mirror; parallel light arrives from `length` away. Mirrors
+// engine3.RaysRequest.
+export type RaysLight = "parallel" | "point";
+export type RaysConfig = {
+  light: RaysLight;
+  azimuth: number;
+  elevation: number;
+  source: Vec3;
+  length: number;
+};
 export type SpatialConfig = {
-  format: "torus" | "parametric" | "harmonic" | "field";
+  format:
+    | "torus"
+    | "parametric"
+    | "harmonic"
+    | "field"
+    | "pursuit"
+    | "surface"
+    | "rays";
   // `length` is the tangent reach, used only by the developable.
   construction:
     | "developable"
@@ -109,6 +172,13 @@ export type SpatialConfig = {
   ruled: RuledConfig;
   canal: CanalConfig;
   field: FieldConfig;
+  pursuit: SpatialPursuitConfig;
+  // Read only when the format is "surface", which ignores every curve and
+  // construction field, or "rays", which reads the patch as a mirror but
+  // not its offset or normal reach.
+  surface: SurfaceConfig;
+  // Read only when the format is "rays".
+  rays: RaysConfig;
   curve: {
     x: string;
     y: string;
@@ -146,6 +216,12 @@ export type SpatialResult = {
   harmonic?: SpatialHarmonicResult;
   // Present for a vector field under any construction.
   field?: SpatialFieldResult;
+  // Present for a pursuit under any construction.
+  pursuit?: SpatialPursuitResult;
+  // Present only for a surface study, whose curve fields are all empty.
+  surface?: SurfaceResult;
+  // Present only for a ray study, whose curve fields are all empty.
+  rays?: RaysResult;
   // Present only for the framed construction; its ribbon fills mesh, minus,
   // plus, and rulings, joined across frame.breaks rather than breaks.
   frame?: FrameResult;
@@ -300,4 +376,81 @@ export type SpatialFieldResult = {
   }[];
   resting: boolean[];
   timed: boolean;
+};
+// Mirrors engine3.PursuitResult. Paths are indexed like base, the first
+// being the base; polygons join every pursuer, in chase order, at the
+// representative samples. The chase is known from min to end: max, the
+// capture (pursuer and target from 0), or where the step budget ran out.
+// Final is every pursuer's position at end.
+export type SpatialPursuitResult = {
+  paths: (Vec3 | null)[][];
+  polygons: { sampleIndex: number; points: Vec3[] }[];
+  capture: { time: number; pursuer: number; target: number } | null;
+  exhausted: boolean;
+  end: number;
+  final: Vec3[];
+};
+// Mirrors engine3.SurfaceSheet: points[i][j] at u_i, v_j (null where
+// undefined), normals likewise (null where the sheet has none, shaded by its
+// faces). alongU[i][j] joins (i, j) to (i + 1, j), alongV[i][j] joins (i, j)
+// to (i, j + 1), and faces[i][j] is the cell from (i, j) to (i + 1, j + 1).
+export type SurfaceSheet = {
+  points: (Vec3 | null)[][];
+  normals: (Vec3 | null)[][];
+  alongU: boolean[][];
+  alongV: boolean[][];
+  faces: boolean[][];
+};
+// A focal branch X + n/κᵢ, κ₁ ≥ κ₂, by what it actually spans. Clipped
+// samples have a normal but a focal point beyond 100 surface radii.
+export type FocalShape = "surface" | "curve" | "point" | "none";
+export type FocalSheet = SurfaceSheet & { shape: FocalShape; clipped: number };
+// Mirrors engine3.SurfaceResult. uCurves are the v indices of the curves
+// along which u runs, vCurves the u indices of those along which v runs;
+// normal lines stand where they cross.
+export type SurfaceResult = {
+  surface: SurfaceSheet;
+  offset: SurfaceSheet | null;
+  focal: FocalSheet[];
+  lines: { i: number; j: number; point: Vec3; end: Vec3 }[];
+  uCurves: number[];
+  vCurves: number[];
+  singular: number;
+  umbilics: number;
+  folded: number;
+};
+// Mirrors engine3.CausticSheet: the real (μ > 0, ahead of the mirror) or
+// virtual (μ < 0, behind it) part of caustic branch 1 or 2, the points X +
+// R/μ for the reflected wavefront's principal curvatures μ₁ ≥ μ₂.
+export type CausticSheet = SurfaceSheet & {
+  branch: 1 | 2;
+  virtual: boolean;
+  shape: FocalShape;
+};
+// Mirrors engine3.RaysResult: the mirror, the caustic parts (branch 1 real
+// and virtual, then branch 2), and representative rays where the parameter
+// curves cross, each incident from start to point, reflected to end, and
+// extended virtually back to back; `virtual` says whether either of its
+// caustic points lies behind the mirror. clipped[k] counts lit samples whose
+// branch k + 1 point is beyond 100 surface radii, treated as at infinity.
+export type RaysResult = {
+  surface: SurfaceSheet;
+  caustics: CausticSheet[];
+  lines: {
+    i: number;
+    j: number;
+    start: Vec3;
+    point: Vec3;
+    end: Vec3;
+    back: Vec3;
+    virtual: boolean;
+  }[];
+  uCurves: number[];
+  vCurves: number[];
+  source: Vec3 | null;
+  singular: number;
+  unlit: number;
+  atSource: number;
+  stigmatic: number;
+  clipped: number[];
 };
