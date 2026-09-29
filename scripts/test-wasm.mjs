@@ -1465,4 +1465,82 @@ const spatialPursuit = (pursuit, construction = "none") =>
   assert.match(spatialPursuit({ capture: 0 }).error, /capture distance/);
 }
 console.log("WASM spatial pursuit: triangle, capture and validation passed");
+const spatialSurface = (surface) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "surface",
+        // The curve's own fields are ignored for a surface.
+        construction: "developable",
+        length: -1,
+        samples: 0,
+        lines: 0,
+        surface: {
+          kind: "ellipsoid",
+          a: 1.5,
+          b: 1.5,
+          c: 1.5,
+          uMin: 0,
+          uMax: 2 * Math.PI,
+          vMin: -Math.PI / 2,
+          vMax: Math.PI / 2,
+          uSamples: 36,
+          vSamples: 18,
+          curves: 7,
+          reverse: false,
+          offset: 0.5,
+          reach: 1,
+          ...surface,
+        },
+      }),
+    ),
+  );
+{
+  // A sphere of radius 1.5: its offset by 0.5 is the sphere of radius 2,
+  // both focal sheets collapse to the centre, and its poles are chart
+  // singularities.
+  const round = spatialSurface({});
+  const q = round.surface;
+  assert.deepEqual(round.base, []);
+  assert.equal(q.surface.points.length, 37);
+  assert.equal(q.surface.points[0].length, 19);
+  assert.equal(q.singular, 2 * 37);
+  assert.equal(q.umbilics, 37 * 17);
+  assert.deepEqual(
+    q.focal.map((f) => f.shape),
+    ["point", "point"],
+  );
+  q.offset.points.flat().forEach((p) => {
+    if (p) assert.ok(Math.abs(Math.hypot(p.x, p.y, p.z) - 2) < 1e-12);
+  });
+  q.focal[0].points.flat().forEach((p) => {
+    if (p) assert.ok(Math.hypot(p.x, p.y, p.z) < 1e-12);
+  });
+  assert.equal(q.lines.length, 49 - 14);
+  assert.equal(q.offset.normals[0][0], null);
+  // A torus: the axis and the core circle.
+  const ring = spatialSurface({
+    kind: "torus",
+    a: 2,
+    b: 0.8,
+    vMin: 0,
+    vMax: 2 * Math.PI,
+    offset: 0,
+  }).surface;
+  assert.equal(ring.offset, null);
+  assert.deepEqual(
+    ring.focal.map((f) => f.shape),
+    ["curve", "curve"],
+  );
+  ring.focal[1].points.flat().forEach((p) => {
+    assert.ok(
+      Math.abs(Math.hypot(p.x, p.y) - 2) < 1e-12 && Math.abs(p.z) < 1e-12,
+    );
+  });
+  assert.match(spatialSurface({ kind: "klein" }).error, /unknown surface/);
+  assert.match(spatialSurface({ a: 0 }).error, /semi-axes/);
+  assert.match(spatialSurface({ uSamples: 240, vSamples: 61 }).error, /14,400/);
+  assert.match(spatialSurface({ curves: 1 }).error, /parameter curves/);
+}
+console.log("WASM surface: sphere, torus and validation passed");
 process.exit(0);

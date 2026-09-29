@@ -471,6 +471,66 @@ Mutations that drop the escape bisection or the timed-field rule for resting see
 
 Mutations that drop the acceleration's projection or the capture step bound each fail. The WebAssembly bridge test checks a triangle's spirals and capture time, a construction, and refusals.
 
+## Spatial surfaces, normals, offsets and focal sheets
+
+A surface study is not a curve: `format: "surface"` samples an analytic patch `X(u, v)` over `[u₀, u₁] × [v₀, v₁]` on a grid of 12–240 cells each way (at most 14,400 cells), and every curve and construction field is ignored. Each patch has exact first and second partial derivatives:
+
+- ellipsoid `(a cos v cos u, b cos v sin u, c sin v)`, with semi-axes `a, b, c > 0` (a sphere when equal);
+- torus `((R + r cos v) cos u, (R + r cos v) sin u, r sin v)`, with `R ≥ 0` and `r > 0` (a spindle torus through its axis when `R < r`);
+- elliptic cylinder `(a cos u, b sin u, v)`;
+- paraboloid `(u, v, (k₁u² + k₂v²)/2)`, whose principal curvatures at the vertex are `k₁` and `k₂` (a saddle when their signs differ, a plane when both are 0);
+- monkey saddle `(u, v, k(u³ − 3uv²))`, with a flat umbilic at the origin.
+
+Shape values are within 10⁵ in magnitude and each domain within ±10⁶, 10⁻⁶–10⁵ wide. The chart is part of the study: a domain spanning a whole period samples its seam twice, once at each end, and joins nothing across it.
+
+**Normal and sign convention.** `n = X_u × X_v / |X_u × X_v|`, or its opposite when reversed. The shape operator is `A = −dn`, so `dn(e) = −κe` along a principal direction `e`, and `κ > 0` where the surface bends towards `n`. A sphere of radius R with its outward normal has `κ₁ = κ₂ = −1/R`; a paraboloid's vertex, with the upward normal, has `κ = k₁, k₂`. A chart singularity is a sample where `|X_u × X_v| ≤ 10⁻⁹ max(|X_u|, |X_v|)²`, such as an ellipsoid's poles or the circle where a spindle torus meets its axis. It has a point but no normal, offset, or focal point, and it is counted.
+
+**Principal curvatures.** In the orthonormal tangent frame `e_a = X_u/|X_u|`, `e_b = n × e_a`, the second fundamental form `(X_uu·n, X_uv·n, X_vv·n)` becomes a symmetric matrix `[[p, q], [q, s]]`. Its eigenvalues are `κ = (p + s)/2 ± √(((p − s)/2)² + q²)`, with `κ₁ ≥ κ₂` and principal directions at the angle `½ atan2(2q, p − s)` from `e_a`. This avoids the cancellation in `H² − K`: a sphere's two curvatures agree to rounding. A sample is an umbilic when `√(((p − s)/2)² + q²) ≤ 10⁻⁹(|H| + 1/S)`, where `S` is the fitted radius of the sampled surface. There the principal directions are undefined.
+
+**Offsets.** `X_d = X + d n` for a signed `d` within ±10⁵. It shares its normals with the surface, and `dX_d = (I − dA) dX` has eigenvalues `1 − dκᵢ`: where `(1 − dκ₁)(1 − dκ₂) < 0` the offset lies beyond one focal sheet and has turned inside out. Those samples are counted as folded. The offset is drawn, not trimmed, including its cuspidal edges. Reversing `n` together with `d` leaves it unchanged.
+
+**Focal sheets.** Branch `i` is `Fᵢ = X + n/κᵢ` where `κᵢ ≠ 0`. Its tangent plane is spanned by `n` and the other principal direction, so its normal is `eᵢ` (none at an umbilic). A centre farther than `100 S` from its point (`|κᵢ| S ≤ 1/100`) is treated as at infinity and counted as clipped. The branches are numbered by the ordering `κ₁ ≥ κ₂`, which is continuous. Reversing `n` negates both curvatures and swaps the numbers, not the geometry. A focal edge is joined only when:
+
+- `κᵢ` has the same sign at both ends;
+- the focal point at the edge's parameter midpoint is finite;
+- that midpoint does not turn back, `(M − P₀)·(P₁ − M) ≥ −10⁻¹⁸ S²`.
+
+The midpoint test catches a curvature that touches zero between samples; the sign test catches a crossing whose midpoint happens to lie between the ends. A finite sample is therefore never joined to a branch that passed through infinity. Each branch is classified by what it actually spans:
+
+- none: no finite point;
+- a point: every focal point within `10⁻⁹ S` of one;
+- a surface: at least one face;
+- a curve: otherwise.
+
+A face is a cell whose four edges are joined and whose area exceeds `10⁻⁹ S` times its diagonal, so a collapsed branch is never forced into triangles. It is drawn by its representative parameter curves, or as a cross.
+
+**Representative geometry.** Parameter curves are drawn at `m` evenly spaced indices each way (2–48, without repeats), and normal lines at their crossings run from `X` to `X + ℓn` for a signed reach ℓ within ±10⁵. Base faces need only four joined corners; a corner without a normal is shaded by its triangle's own normal. The bounds fit the surface with the normal lines, then the offset and each focal sheet independently, so fences trim only a focal sheet's asymptotic tails.
+
+**Exact cases.**
+
+- Sphere of radius R: `κ = −1/R` everywhere (outward), every regular sample umbilic, both focal branches the centre, and offsets spheres of radius `R + d`.
+- Torus: the meridian curvature `−1/r` and the parallel curvature `−cos v/(R + r cos v)`. The second is the larger (for `R ≥ 0`), so branch 1 is the axis, `z = −R tan v`, reached through infinity at the top and bottom circles, and branch 2 is the core circle. Both collapse to curves.
+- Circular cylinder of radius ρ: branch 1 at infinity along the rulings, branch 2 the axis. An elliptic cylinder's branch 2 is its ellipse's evolute `(ax)^⅔ + (by)^⅔ = (a² − b²)^⅔` swept along the axis, a surface.
+- Paraboloid vertex: `κ = k₁, k₂` along the axes, focal points at heights `1/k₁` and `1/k₂`. A plane has no focal points; a monkey saddle's centre is a flat umbilic with both centres at infinity.
+
+**Checks.** Native tests verify:
+
+- patch derivatives against central differences;
+- the sphere's curvatures, umbilics, point focus, offset radii and pole singularities, with faces beside the poles on the surface but not on the offset;
+- normal reversal with a reversed offset and reach (identical offsets, lines and focal geometry with swapped branches) on an ellipsoid, a torus and a saddle;
+- the torus's curvatures, principal directions, axis and core circle, and no axis edge across `cos v = 0`;
+- circular and elliptic cylinders against the axis and the evolute;
+- the paraboloid vertex and the plane;
+- orthonormal principal directions satisfying the Weingarten equation `dn(eᵢ) = −κᵢeᵢ` by finite differences, and focal sheets perpendicular to their own `eᵢ`, on every kind with either orientation;
+- Gauss–Bonnet, `∬ K dA = 4π` for an ellipsoid, converging at second order under refinement in both directions;
+- Steiner's area of a torus offset, `4π²R(r + d)`, approached at second order by the faces;
+- folded offsets past the core circle and beyond the axis;
+- a monkey saddle's flat umbilic and an edge over its centre broken by the midpoint test alone;
+- the continuity rule directly, including a sign change whose midpoint lies between its ends;
+- a spindle torus's singular circles, representative curves and normal lines ending on the core circle, sheet sizes and bounds, and validation.
+
+Mutations that drop the midpoint test, the sign test, the degenerate-face test, or the stable eigenvalue formula each fail. The WebAssembly bridge test checks a sphere's offsets, focus, singularities and lines, a torus's core circle, and refusals.
+
 ## Reference studies
 
 Each of these recipes is a preset, framed independently with equal axis scale. They are mathematical descriptions, not pixel specifications.
@@ -482,6 +542,7 @@ Each of these recipes is a preset, framed independently with equal axis scale. T
 - Pursuit: seven equal-speed pursuers starting on the unit regular heptagon. The exact paths are `exp(−tan(π/7)θ)(cos(θ + 2πj/7), sin(θ + 2πj/7))`, where θ is an angle, not time; the connecting polygons are drawn (**Seven pursuers & an evolute**).
 - Involute family: the helix `(2 cos t, 2 sin t, t)`, t ∈ [−π, π], anchored at t₀ = 0 with nine string lengths c = −4, −3, …, 4. Each member is a lifted circle involute in the plane `z = c/√5` (**Unwinding a staircase**).
 - Spatial pursuit: four unit-speed pursuers from the regular tetrahedron `(±1, 0, 1/√2)`, `(0, ±1, −1/√2)`, ε = 0.005, t ∈ [0, 1.75]. Each path is `(ρ cos θ, ρ sin θ, ρ²/√2)` with `θ = θ₀ + ln(1/ρ)`, captured near t = 1.62 (**Four pursuers on a tetrahedron**).
+- Surface focal set: the torus R = 2, r = 0.8 on its outer band `v ∈ [−π/3, π/3]`, with inward normals of reach 2.8. Branch 1 is the axis `z = −2 tan v` and branch 2 the core circle of radius 2; both collapse to curves (**A torus revealing its centers**).
 - Clifford density: (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from (0.1, 0.1), discarding 1,000 iterates and accumulating the next 800,000, shaded logarithmically. It illustrates, and does not prove, chaotic dynamics (**Clifford attractor**).
 
 ## References

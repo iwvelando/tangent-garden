@@ -71,7 +71,33 @@ self.onmessage = async ({
         frame = data.spatial?.frame,
         ruled = data.spatial?.construction === "ruled",
         canal = data.spatial?.construction === "canal";
-      if (
+      // A surface study reads only its own fields; Go ignores the curve's.
+      const surface =
+        data.spatial?.format === "surface" ? data.spatial.surface : undefined;
+      if (surface) {
+        const { uSamples, vSamples, curves } = surface;
+        if (
+          ![
+            surface.a,
+            surface.b,
+            surface.c,
+            surface.uMin,
+            surface.uMax,
+            surface.vMin,
+            surface.vMax,
+            surface.offset,
+            surface.reach,
+            uSamples,
+            vSamples,
+            curves,
+          ].every(Number.isFinite)
+        )
+          throw new Error(
+            "Fill in each spatial parameter with a finite number.",
+          );
+        if (![uSamples, vSamples, curves].every(Number.isInteger))
+          throw new Error("Sample and curve counts must be whole numbers.");
+      } else if (
         !data.spatial ||
         ![
           ...(involute
@@ -180,16 +206,16 @@ self.onmessage = async ({
         ].every(Number.isFinite)
       )
         throw new Error("Fill in each spatial parameter with a finite number.");
-      if (
+      else if (
         !Number.isInteger(data.spatial.samples) ||
         !Number.isInteger(data.spatial.lines)
       )
         throw new Error("Sample and line counts must be whole numbers.");
-      if (involute && family!.enabled && !Number.isInteger(family!.count))
+      else if (involute && family!.enabled && !Number.isInteger(family!.count))
         throw new Error("The number of involutes must be a whole number.");
-      if (framed && !Number.isInteger(frame!.strands))
+      else if (framed && !Number.isInteger(frame!.strands))
         throw new Error("The number of offset strands must be a whole number.");
-      if (canal && !Number.isInteger(data.spatial.canal.meridians))
+      else if (canal && !Number.isInteger(data.spatial.canal.meridians))
         throw new Error("The number of meridians must be a whole number.");
       const result = JSON.parse(
         tangentGardenSpatial(JSON.stringify(data.spatial)),

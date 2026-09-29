@@ -32,8 +32,8 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 - [x] 4b. Constant-radius tube envelopes, followed by variable-radius canal surfaces.
 - [x] 5a. Bounded 3D vector-field trajectories and curated continuous attractors.
 - [x] 5b. Spatial cyclic pursuit with explicit capture events and multiple paths.
-- [ ] 6a. Parametric surface studies with normal congruences and signed offsets.
-- [ ] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
+- [x] 6a. Parametric surface studies with normal congruences and signed offsets.
+- [x] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
 - [ ] 7a. Single-interaction reflected ray families and their caustic sets.
 - [ ] 7b. Refraction and separately defined receiver-plane intersection/density studies.
 - [ ] 8. Bounded implicit surfaces and section curves, after a topology and memory-budget prototype.
@@ -286,6 +286,53 @@ Slices 1a and 1b (branch `claude/spatial-involutes`) landed together, because a 
 
 - Limits: uniform time sampling; constructions only on the first pursuer; polygons share the construction's line count; no pursuit with changing targets, merging, or obstacles; pursuers pass through one another when not chasing each other.
 
-Recommended next step: **6a, parametric surface studies** with normal congruences and signed offsets. It needs a new evaluator (a surface `S(u, v)` rather than a curve), so begin with an analytic prototype (sphere, torus) and its normals before any UI.
+### Slices completed in this follow-up: 6a and 6b
+
+- Implemented analytic surface studies as a spatial definition, `format: "surface"` (branch `claude/spatial-surfaces`), with:
+  - normal lines;
+  - a signed offset `X + dn`;
+  - both focal sheets `X + n/κᵢ` from the principal curvatures.
+
+  6a and 6b landed together, as 1a/1b and 4b's tube and canal did. An offset folds exactly where `d = 1/κᵢ`, so honest offsets already need the principal curvatures, and the "surface revealing its centers" recipe needs both. The two parts share one evaluator, one request, and one grid-sheet result type, and each has its own tests (sphere offsets, Steiner area and folds for 6a; curvatures, focal collapse, continuity and degeneracies for 6b).
+
+- Evaluator decision, made before the UI: a surface is not a curve. `Compute` hands it to `surfaces` before anything else, every curve and construction field is ignored and not validated, and the curve fields of the result are empty. The patches are analytic with exact first and second derivatives: ellipsoid (sphere), torus (spindle torus when R < r), elliptic cylinder, paraboloid (saddle, plane), and monkey saddle. Arbitrary `X(u, v)` expressions were not added, as the roadmap asked for analytic patches first.
+- Conventions: `n = X_u × X_v/|X_u × X_v|` (reversible) and `A = −dn`, so a sphere's outward normal gives `κ = −1/R` and its focal sheets collapse to the centre. Principal curvatures come from the symmetric second fundamental form in an orthonormal tangent frame, `κ = (p + s)/2 ± √(((p − s)/2)² + q²)`, which keeps a sphere's curvatures equal to rounding. Branches are numbered by `κ₁ ≥ κ₂`; reversing the normal swaps the numbers, not the geometry.
+- Degeneracy policy:
+  - A chart singularity (`|X_u × X_v| ≤ 10⁻⁹ max(|X_u|, |X_v|)²`) has a point but no normal, offset or focal point, and is counted.
+  - Umbilics are counted, and there the focal sheets have no normal.
+  - A centre beyond 100 surface radii is treated as at infinity and counted as clipped.
+  - A focal edge is joined only when κᵢ keeps its sign and the focal point at the edge's midpoint is finite and does not turn back, so a sheet is never joined through infinity, even between samples.
+  - A face needs four joined edges and area, so a collapsed branch is never forced into triangles. Each branch is labelled a surface, a curve, a point, or none, and drawn by its parameter curves or as a cross.
+  - Offset samples beyond one focal sheet are counted as folded and drawn, not trimmed.
+- Added `engine3/surface.go` with `SurfaceRequest`, `SurfaceSheet` (nullable `points` and `normals` indexed by u and v sample, `alongU`, `alongV`, `faces`), `FocalSheet` (`shape`, `clipped`), `SurfaceNormal`, and `SurfaceResult`. Grid sheets keep parameter identities, as the architecture notes asked for surfaces; Go decides every edge and face, and the renderer only splits faces into triangles. The interface adds:
+  - **Spatial definition · Surface patch**, with the kind, its shape fields, and the u and v domains;
+  - **Normal**, **Offset d**, **Normal reach ℓ** (a signed segment from X to X + ℓn), and a note (`web/spatial/surface.ts`);
+  - grid controls (**u samples**, **v samples**, **Parameter curves**);
+  - the layers **Surface patch**, **Parameter curves**, **Normal lines**, **Offset surface**, **Focal sheet 1 · κ₁** (rust) and **Focal sheet 2 · κ₂** (slate), with new shader inks;
+  - tracks for the shape, offset, reach, domain and grid, and a reveal that grows every sheet along u;
+  - four presets (a torus revealing its centers, a sphere collapsing to one focus, the focal sheets of an ellipsoid, an elliptic cylinder and its evolute) in a new "Surface normals and focal sheets" gallery family, with thumbnails.
+
+  Normal lines began as segments ±ℓ; a signed one-sided reach replaced them, so inward normals run to their centres. A saddle preset was tried and dropped: from the default camera one focal sheet always stands between the viewer and the saddle. Adding `surface` to the preset base changed every 3D fingerprint; existing images re-rendered byte-identically.
+
+- Workload: at most 240 samples each way and 14,400 cells, three extra evaluations per sample for the focal edges' midpoints, and four sheets. The largest ellipsoid grid with an offset, normal lines and 48 curves each way took about 20 ms natively and about 10 MB of JSON. There is no new runtime dependency or resource category. Durable definitions are in `mathematics.md#spatial-surfaces-normals-offsets-and-focal-sheets`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: `make check` passed: formatting, vet, Go race tests (engine3 coverage 99.6%), the WASM bridge (sphere offsets, focus, singularities and lines, a torus's core circle, refusals), TypeScript, and the production build and notices. `make thumbnails` regenerated the gallery. The full Chromium run passed all 559 tests, and all 16 WebKit tests passed, including a PNG and H.264 export of the ellipsoid preset. Go tests cover the list in `mathematics.md#spatial-surfaces-normals-offsets-and-focal-sheets`. Mutations that drop the midpoint test, the sign test, the degenerate-face test, or the stable eigenvalue formula each fail. Browser tests cover:
+  - controls, layers and validation, including grid counts, a kind change, and a return to a curve that keeps the surface;
+  - notes on collapsed, surface and infinite branches, chart singularities, umbilics, folded offsets, a reversed normal and a plane;
+  - reveal along u, pause, resume and edit invalidation;
+  - all four cameras on a shape track;
+  - a decoded MP4 with an offset track;
+  - reveal and track unit tests, and every new scalar field.
+
+  The layout sweep includes the torus and ellipsoid presets. Light and dark desktop drawings, the thumbnails, and the phone-width page and controls in both themes (scroll width 390) were inspected.
+
+- Limits:
+  - analytic patches only, with no surface expressions or surfaces from the curve constructions;
+  - uniform parameter grids, so a focal sheet's fast flaring near a parabolic curve is sampled coarsely;
+  - branches are classified as a whole, not region by region, and cuspidal edges are drawn but not located or counted;
+  - no ridge, umbilic, or line-of-curvature tracing;
+  - opaque sheets, so interior focal sheets need an opened domain or a hidden surface;
+  - presets cannot set the camera or layers.
+
+Recommended next step: **7a, single-interaction reflected ray families and their caustic sets**. It can reuse this slice's surface evaluator and normals: begin with parallel rays on a paraboloid and a spherical reflector, checking the reflection law and the exact focal points, before any UI.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.
