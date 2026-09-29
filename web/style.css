@@ -899,3 +899,30 @@ h1 {
   font-size: 12px;
   padding: 2px 8px;
 }
+
+/* Every header control shares one height, whatever its label: the notebook
+   menu, the theme toggle, Follow system, and each notebook's export menu. */
+header {
+  --header-control: 38px;
+}
+.header-actions button {
+  height: var(--header-control);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1.15;
+}
+.header-actions [role="menu"] button {
+  height: auto;
+  justify-content: space-between;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+@media (max-width: 700px) {
+  header {
+    --header-control: 34px;
+  }
+}

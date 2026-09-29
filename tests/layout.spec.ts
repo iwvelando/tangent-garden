@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { choosePreset, exampleTitles } from "./helpers";
+import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
 
 const closing = "An open notebook for mathematical beauty.";
 
@@ -198,3 +198,42 @@ for (const width of [1440, 390]) {
     }
   });
 }
+
+test("every header control is the same height in every notebook", async ({
+  page,
+}) => {
+  const heights = async () =>
+    page
+      .locator(".app:visible header button:visible")
+      .evaluateAll((buttons) =>
+        buttons.map((b) => [
+          b.textContent?.trim(),
+          b.getBoundingClientRect().height,
+        ]),
+      );
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await expect(page.locator("#artwork")).toBeVisible();
+    // A fixed theme shows Follow system beside the toggle.
+    await page
+      .locator(".app:visible header button[aria-label*='background']")
+      .click();
+    for (const dimension of ["2d", "3d", "4d"] as const) {
+      if (dimension !== "2d") await chooseNotebook(page, dimension);
+      await expect(
+        page.locator(".app:visible header .system-theme"),
+      ).toBeVisible();
+      const found = await heights();
+      expect(found.length, `${dimension} at ${width}px`).toBeGreaterThanOrEqual(
+        4,
+      );
+      const first = found[0][1] as number;
+      for (const [name, height] of found)
+        expect(
+          Math.abs((height as number) - first),
+          `${name} in ${dimension} at ${width}px: ${JSON.stringify(found)}`,
+        ).toBeLessThan(0.5);
+    }
+  }
+});
