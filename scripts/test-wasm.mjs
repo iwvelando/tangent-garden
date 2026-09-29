@@ -1617,11 +1617,15 @@ const spatialRays = (surface, rays) =>
           ...surface,
         },
         rays: {
+          interaction: "reflect",
+          n1: 1,
+          n2: 1.5,
           light: "parallel",
           azimuth: 0,
           elevation: -90,
           source: { x: 0, y: 0, z: 0 },
           length: 2,
+          receiver: { plane: "none", at: 0, c1: 0, c2: 0, size: 2, bins: 32 },
           ...rays,
         },
       }),
@@ -1683,6 +1687,74 @@ const spatialRays = (surface, rays) =>
   );
   assert.match(spatialRays({}, { length: -1 }).error, /ray length/);
   assert.match(spatialRays({ kind: "klein" }, {}).error, /unknown surface/);
+  assert.equal(q.receiver, null);
+  // A lamp 1 below the water's surface z = 0, shining up from n₁ = 1.33
+  // into air, is totally reflected outside Snell's window, a disc of
+  // radius tan θ_c where sin θ_c = 1/1.33.
+  const water = spatialRays(
+    { a: 0, b: 0, reverse: true },
+    {
+      interaction: "refract",
+      n1: 1.33,
+      n2: 1,
+      light: "point",
+      source: { x: 0, y: 0, z: -1 },
+    },
+  ).rays;
+  const snell = Math.tan(Math.asin(1 / 1.33));
+  let beyond = 0;
+  for (let i = 0; i <= 24; i++)
+    for (let j = 0; j <= 24; j++)
+      if (Math.hypot(-1.5 + i / 8, -1.5 + j / 8) >= snell) beyond++;
+  assert.equal(water.total, beyond);
+  assert.ok(water.lines.some((l) => l.total));
+  water.lines.forEach((l) => {
+    const r = Math.hypot(l.point.x, l.point.y);
+    assert.equal(l.total, r >= snell);
+    // Transmitted rays leave upward; totally reflected ones back down.
+    assert.equal(l.end.z > 0, !l.total);
+  });
+  assert.ok(water.caustics.every((c) => !c.virtual || c.shape !== "none"));
+  // Parallel light at 30° from the normal crossing a flat interface
+  // delivers cos 30° of its irradiance to every bin of a parallel receiver.
+  const floor = spatialRays(
+    { a: 0, b: 0 },
+    {
+      interaction: "refract",
+      elevation: -60,
+      receiver: { plane: "z", at: -1, c1: 0.1, c2: 0, size: 1, bins: 16 },
+    },
+  ).rays.receiver;
+  const cos = Math.sqrt(3) / 2;
+  assert.equal(floor.irradiance.length, 16);
+  floor.irradiance.flat().forEach((e) => assert.ok(Math.abs(e - cos) < 1e-12));
+  assert.ok(Math.abs(floor.emitted - 9 * cos) < 1e-12);
+  assert.ok(
+    Math.abs(
+      floor.received +
+        floor.outside +
+        floor.away +
+        floor.total +
+        floor.edge -
+        floor.emitted,
+    ) < 1e-12,
+  );
+  const [corner] = floor.corners;
+  assert.ok(Math.hypot(corner.x + 0.4, corner.y + 0.5, corner.z + 1) < 1e-15);
+  assert.match(
+    spatialRays({}, { interaction: "absorb" }).error,
+    /reflect or refract/,
+  );
+  assert.match(
+    spatialRays({}, { interaction: "refract", n2: 0 }).error,
+    /refractive indices/,
+  );
+  assert.match(
+    spatialRays({}, { receiver: { plane: "z", size: 1, bins: 4 } }).error,
+    /bins/,
+  );
 }
-console.log("WASM rays: paraboloid focus, plane mirror and validation passed");
+console.log(
+  "WASM rays: paraboloid focus, plane mirror, Snell's window, receiver and validation passed",
+);
 process.exit(0);

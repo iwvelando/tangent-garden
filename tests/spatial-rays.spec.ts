@@ -141,7 +141,7 @@ test("notes report caustic shapes, virtual parts, and samples without a reflecti
   await choosePreset(page, dish);
   await settled(page);
   await expect(note(page)).toHaveText(
-    "Caustic 1 (μ₁) is real, ahead of the mirror: a point. Caustic 2 (μ₂) is real, ahead of the mirror: a point. 2,401 samples are stigmatic (μ₁ = μ₂): the reflected wavefront bends equally every way there, and the two caustics meet.",
+    "Caustic 1 (μ₁) is real, ahead of the mirror: a point. Caustic 2 (μ₂) is real, ahead of the mirror: a point. 2,401 samples are stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.",
   );
   // From behind the mirror nothing is lit.
   await page.getByLabel("Mirror side", { exact: true }).selectOption("reverse");
@@ -379,6 +379,7 @@ test("mirror reveal grows the mirror, caustics and rays along u", () => {
         end: at(i, 1),
         back: at(i, -1),
         virtual: false,
+        total: false,
       })),
       uCurves: [0, 1],
       vCurves: [0, 2],
@@ -387,7 +388,9 @@ test("mirror reveal grows the mirror, caustics and rays along u", () => {
       unlit: 0,
       atSource: 0,
       stigmatic: 0,
+      total: 0,
       clipped: [0, 0],
+      receiver: null,
     },
   };
   const early = reveal(input, 0.5).rays!;

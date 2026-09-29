@@ -33,6 +33,9 @@ import {
   type SurfaceConfig,
   type SurfaceKind,
   type RaysConfig,
+  type ReceiverConfig,
+  minReceiverBins,
+  maxReceiverBins,
   maxSurfaceCells,
   maxSurfaceCurves,
   maxMeridians,
@@ -61,7 +64,7 @@ import {
   surfaceNote,
   surfaceShape,
 } from "./surface";
-import { raysNote } from "./rays";
+import { raysNote, receiverAxes } from "./rays";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -214,6 +217,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   // A mirror is a surface patch lit for a single reflection; it shares the
   // patch's controls but not its offset or normal lines.
   const mirroring = config.format === "rays";
+  // Refracting, the same patch is an interface between two media; either
+  // may add a receiver plane.
+  const refracting = mirroring && config.rays.interaction === "refract";
+  const receiving = mirroring && config.rays.receiver.plane !== "none";
+  const face = refracting ? "interface" : "mirror";
   const patched = surfacing || mirroring;
   const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
     update((c) => ({ ...c, canal: change(c.canal) }));
@@ -648,11 +656,116 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     frame?.config.format === "rays" ? frame.result.rays : undefined;
   const setRays = (change: (r: RaysConfig) => RaysConfig) =>
     update((c) => ({ ...c, rays: change(c.rays) }));
+  const setReceiver = (change: (r: ReceiverConfig) => ReceiverConfig) =>
+    setRays((r) => ({ ...r, receiver: change(r.receiver) }));
+  const interactionControls = (
+    <>
+      <Field
+        label="Interaction"
+        help="One reflection, from a mirror, or one refraction, through an interface between two media. Either happens once: the outgoing light never meets the surface again."
+      >
+        <select
+          value={config.rays.interaction}
+          onChange={(e) => {
+            const interaction = e.target.value as RaysConfig["interaction"];
+            setRays((r) => ({ ...r, interaction }));
+          }}
+        >
+          <option value="reflect">Reflection · a mirror</option>
+          <option value="refract">Refraction · an interface</option>
+        </select>
+      </Field>
+      {refracting && (
+        <div className="pair">
+          {vector(
+            "Index n₁",
+            config.rays.n1,
+            (n1) => setRays((r) => ({ ...r, n1 })),
+            "Refractive indices on the incident side, where n points, and beyond it; each positive and at most 100. The ratio is η = n₁/n₂, and light leaving the denser side beyond its critical angle is totally reflected.",
+          )}
+          {vector("Index n₂", config.rays.n2, (n2) =>
+            setRays((r) => ({ ...r, n2 })),
+          )}
+        </div>
+      )}
+    </>
+  );
+  const [first, second] =
+    receiverAxes[
+      config.rays.receiver.plane === "none" ? "z" : config.rays.receiver.plane
+    ];
+  const receiverControls = (
+    <>
+      <Field
+        label="Receiver"
+        help="A plane that collects the outgoing rays and measures the irradiance they deliver to a square window, as a study separate from the caustics."
+      >
+        <select
+          value={config.rays.receiver.plane}
+          onChange={(e) => {
+            const plane = e.target.value as ReceiverConfig["plane"];
+            setReceiver((r) => ({ ...r, plane }));
+          }}
+        >
+          <option value="none">None</option>
+          <option value="x">Plane x = c</option>
+          <option value="y">Plane y = c</option>
+          <option value="z">Plane z = c</option>
+        </select>
+      </Field>
+      {receiving && (
+        <>
+          <div className="pair">
+            {vector(
+              "Plane at c",
+              config.rays.receiver.at,
+              (at) => setReceiver((r) => ({ ...r, at })),
+              "Where the plane stands, within ±100000, and the side of its square window, positive and at most 100000.",
+            )}
+            {vector("Window size s", config.rays.receiver.size, (size) =>
+              setReceiver((r) => ({ ...r, size })),
+            )}
+          </div>
+          <div className="pair">
+            {vector(
+              `Centre ${first}`,
+              config.rays.receiver.c1,
+              (c1) => setReceiver((r) => ({ ...r, c1 })),
+              "The window's centre on the plane, each coordinate within ±100000.",
+            )}
+            {vector(`Centre ${second}`, config.rays.receiver.c2, (c2) =>
+              setReceiver((r) => ({ ...r, c2 })),
+            )}
+          </div>
+          <Field
+            label="Bins"
+            help={`${minReceiverBins}–${maxReceiverBins} bins each way; each shows the mean irradiance over its square.`}
+          >
+            <input
+              type="number"
+              min={minReceiverBins}
+              max={maxReceiverBins}
+              step="1"
+              value={
+                Number.isNaN(config.rays.receiver.bins)
+                  ? ""
+                  : config.rays.receiver.bins
+              }
+              onChange={(e) => {
+                const bins = e.target.valueAsNumber;
+                setReceiver((r) => ({ ...r, bins }));
+              }}
+            />
+          </Field>
+        </>
+      )}
+    </>
+  );
   const lightControls = (
     <>
       <Field
         label="Light"
-        help="Parallel light, as from a distant source, or a point source. Either reflects once; nothing blocks it on the way in or out."
+        help={`Parallel light, as from a distant source, or a point source. Either ${refracting ? "refracts" : "reflects"} once; nothing blocks it on the way in or out.`}
       >
         <select
           value={config.rays.light}
@@ -699,10 +812,13 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
         "Ray length ℓ",
         config.rays.length,
         (length) => setRays((r) => ({ ...r, length })),
-        "Each reflected ray runs ℓ from the mirror, and its virtual extension ℓ back behind it; parallel light arrives from ℓ away. 0–100000; 0 hides the rays.",
+        `Each ${refracting ? "transmitted" : "reflected"} ray runs ℓ from the ${face}, and its virtual extension ℓ back behind it; parallel light arrives from ℓ away. 0–100000; 0 hides the rays.`,
       )}
+      {receiverControls}
       <p className="note" data-testid="rays-note">
-        {mirror ? raysNote(mirror).join(" ") : "Following the light…"}
+        {mirror && frame
+          ? raysNote(mirror, frame.config.rays).join(" ")
+          : "Following the light…"}
       </p>
     </>
   );
@@ -757,12 +873,17 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           )}
         </div>
       ))}
+      {mirroring && interactionControls}
       <Field
-        label={mirroring ? "Mirror side" : "Normal"}
+        label={
+          refracting ? "Incident side" : mirroring ? "Mirror side" : "Normal"
+        }
         help={
-          mirroring
-            ? "The mirror reflects on the side n points to: light arriving against n reflects, and light from behind it is unlit. Nothing is inferred about inside and outside."
-            : "Which side n points to. Reversing it negates both curvatures and swaps the focal sheets' numbers; the geometry stays."
+          refracting
+            ? "The light arrives on the side n points to, in index n₁, and crosses into n₂; light from behind is unlit. Nothing is inferred about inside and outside."
+            : mirroring
+              ? "The mirror reflects on the side n points to: light arriving against n reflects, and light from behind it is unlit. Nothing is inferred about inside and outside."
+              : "Which side n points to. Reversing it negates both curvatures and swaps the focal sheets' numbers; the geometry stays."
         }
       >
         <select
@@ -1129,18 +1250,25 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   );
   const behind = mirroring ? (
     <StudyExplanation
-      label="BEHIND THE MIRROR"
+      label={refracting ? "BEHIND THE INTERFACE" : "BEHIND THE MIRROR"}
       title="A geometric fold of rays."
       formula={
-        <>
-          R = I − 2(I·n) n <span>C = X + R / μ</span>
-        </>
+        refracting ? (
+          <>
+            T = ηI + (ηc − √k) n <span>C = X + T / μ</span>
+          </>
+        ) : (
+          <>
+            R = I − 2(I·n) n <span>C = X + R / μ</span>
+          </>
+        )
       }
-      note="Gold lines are reflected rays where the parameter curves cross, grey their incident rays and, where a caustic point lies behind the mirror, their virtual extensions. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross."
+      note={`Gold lines are ${refracting ? "transmitted" : "reflected"} rays where the parameter curves cross, grey their incident rays and, where a caustic point lies behind the ${face}, their virtual extensions${refracting ? "; beyond the critical angle, grey rays are totally reflected" : ""}. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross.${receiving ? " The receiver's shade is irradiance, darker (lighter in the dark theme) where more light lands." : ""}`}
       diagnostics={
         mirror &&
         (mirror.unlit > 0 ||
           mirror.singular > 0 ||
+          mirror.total > 0 ||
           mirror.clipped.some((n) => n > 0)) && (
           <p className="bottom-note">
             A caustic is never joined through infinity, from real to virtual, or
@@ -1149,18 +1277,46 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
         )
       }
     >
-      <p>
-        Light meets the mirror at X travelling along I and leaves along its
-        reflection R. Neighbouring reflected rays cross, nearly, at up to two
-        places along each ray: the centres of curvature of the reflected
-        wavefront, where it bends by μ₁ and μ₂. Together those points form the{" "}
-        <em>caustic</em>, the bright fold where reflected light gathers.
-        Converging rays (μ &gt; 0) cross ahead of the mirror, in a real caustic;
-        diverging rays only appear to leave a virtual caustic behind it. A
-        paraboloid sends light along its axis through one focus; a sphere
-        cannot, and folds it into a cusped sheet and a line on the axis. Each
-        lit sample reflects once, whatever may stand in the way.
-      </p>
+      {refracting ? (
+        <p>
+          Light meets the interface at X travelling along I, in a medium of
+          index n₁ on the side n points to, and crosses into index n₂ along T,
+          bent by Snell&rsquo;s law, n₁ sin θ₁ = n₂ sin θ₂, with η = n₁/n₂, c =
+          −I·n and k = 1 − η²(1 − c²). Where k &lt; 0, light leaving the denser
+          side beyond the critical angle cannot cross and is totally reflected.
+          Neighbouring transmitted rays cross, nearly, at the centres of
+          curvature of the transmitted wavefront, which form the{" "}
+          <em>caustic</em>, real ahead of the interface (μ &gt; 0) or virtual
+          behind it. An ellipsoid whose eccentricity is 1/n brings a parallel
+          beam to one focus; a plane seen from a lamp only images it virtually,
+          smeared into two caustics. Each lit sample refracts once, and the
+          transmitted light never meets the surface again.
+        </p>
+      ) : (
+        <p>
+          Light meets the mirror at X travelling along I and leaves along its
+          reflection R. Neighbouring reflected rays cross, nearly, at up to two
+          places along each ray: the centres of curvature of the reflected
+          wavefront, where it bends by μ₁ and μ₂. Together those points form the{" "}
+          <em>caustic</em>, the bright fold where reflected light gathers.
+          Converging rays (μ &gt; 0) cross ahead of the mirror, in a real
+          caustic; diverging rays only appear to leave a virtual caustic behind
+          it. A paraboloid sends light along its axis through one focus; a
+          sphere cannot, and folds it into a cusped sheet and a line on the
+          axis. Each lit sample reflects once, whatever may stand in the way.
+        </p>
+      )}
+      {receiving && (
+        <p>
+          The caustic is a geometric set, not a brightness. The receiver is a
+          separate study of flux: each cell of the surface sends the light it
+          intercepts, |I·n| dA for parallel light of unit irradiance or |I·n| dA
+          / d² for a lamp of unit intensity, spread evenly over where its rays
+          cross the plane. Each bin shows the mean irradiance over its square,
+          with nothing absorbed, no Fresnel losses and no shadows, and the note
+          accounts for every part of the light.
+        </p>
+      )}
     </StudyExplanation>
   ) : surfacing ? (
     <StudyExplanation
@@ -1569,7 +1725,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     Pursuit · each chases the next
                   </option>
                   <option value="surface">Surface patch · X(u, v)</option>
-                  <option value="rays">Mirror · reflected rays</option>
+                  <option value="rays">Mirror or interface · rays</option>
                 </select>
               </Field>
               {config.format === "harmonic" ? (
@@ -1971,7 +2127,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               <legend>Reveal the construction</legend>
               {(mirroring
                 ? ([
-                    ["surface", "Mirror"],
+                    ["surface", refracting ? "Interface" : "Mirror"],
                     ["curves", "Parameter curves"],
                     [
                       "incident",
@@ -1979,10 +2135,16 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                         ? "Incident rays & source"
                         : "Incident rays",
                     ],
-                    ["reflected", "Reflected rays"],
+                    [
+                      "reflected",
+                      refracting ? "Transmitted rays" : "Reflected rays",
+                    ],
                     ["focal1", "Caustic 1 · μ₁"],
                     ["focal2", "Caustic 2 · μ₂"],
                     ["virtual", "Virtual rays & caustics"],
+                    ...(receiving
+                      ? ([["receiver", "Receiver irradiance"]] as const)
+                      : []),
                   ] as const)
                 : surfacing
                   ? ([
@@ -2133,7 +2295,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   label="Parameter curves"
                   help={
                     mirroring
-                      ? `2–${maxSurfaceCurves} curves each way, drawn on the mirror and its caustics; rays stand where they cross.`
+                      ? `2–${maxSurfaceCurves} curves each way, drawn on the ${face} and its caustics; rays stand where they cross.`
                       : `2–${maxSurfaceCurves} curves each way, drawn on the surface and its focal sheets; normal lines stand where they cross.`
                   }
                 >
@@ -2157,15 +2319,18 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   <p>
                     Positions, normals and their derivatives come from each
                     patch&rsquo;s exact first and second derivatives at every
-                    grid sample, and so do the reflected rays&rsquo; directions
+                    grid sample, and so do the outgoing rays&rsquo; directions
                     and derivatives. Caustic points are the centres of curvature
-                    of the reflected wavefront, from its shape operator across
+                    of the outgoing wavefront, from its shape operator across
                     each ray. A caustic edge is joined only when its curvature
                     keeps its sign and the caustic point halfway along it is
                     lit, finite, and between its ends, so a caustic is never
                     joined through infinity, past the edge of the light, or
                     across its own cusps. Caustic points beyond 100 surface
-                    radii are treated as at infinity.
+                    radii are treated as at infinity. A receiver takes each
+                    cell&rsquo;s flux from its midpoint, spreads it evenly over
+                    the two triangles its corners&rsquo; rays make on the plane,
+                    and gives every bin the flux inside it, by exact area.
                   </p>
                 ) : (
                   <p>
@@ -2302,29 +2467,31 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {mirroring
-                  ? "A mirror and its caustics"
-                  : surfacing
-                    ? "A surface and its centers of curvature"
-                    : none
-                      ? flowing
-                        ? "Paths that follow a field"
-                        : chasing
-                          ? "Pursuers closing in space"
-                          : "A curve in space"
-                      : canal
-                        ? "A surface enveloping spheres"
-                        : ruled
-                          ? "A surface of straight threads"
-                          : framed
-                            ? "A ribbon carried by a frame"
-                            : inversion
-                              ? "A curve inverted in a sphere"
-                              : projection
-                                ? projectionName
-                                : involute
-                                  ? "Filaments unwound from a curve"
-                                  : "A ribbon of tangent lines"}
+                {refracting
+                  ? "An interface and its caustics"
+                  : mirroring
+                    ? "A mirror and its caustics"
+                    : surfacing
+                      ? "A surface and its centers of curvature"
+                      : none
+                        ? flowing
+                          ? "Paths that follow a field"
+                          : chasing
+                            ? "Pursuers closing in space"
+                            : "A curve in space"
+                        : canal
+                          ? "A surface enveloping spheres"
+                          : ruled
+                            ? "A surface of straight threads"
+                            : framed
+                              ? "A ribbon carried by a frame"
+                              : inversion
+                                ? "A curve inverted in a sphere"
+                                : projection
+                                  ? projectionName
+                                  : involute
+                                    ? "Filaments unwound from a curve"
+                                    : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -2374,8 +2541,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             <div className="plot-meta">
               {mirroring ? (
                 <div className="legend">
-                  <span className="surface-dot" /> Mirror{" "}
-                  <span className="thread-dot" /> Reflected rays{" "}
+                  <span className="surface-dot" />{" "}
+                  {refracting ? "Interface" : "Mirror"}{" "}
+                  <span className="thread-dot" />{" "}
+                  {refracting ? "Transmitted rays" : "Reflected rays"}{" "}
                   <span className="focal-dot" /> Caustic 1{" "}
                   <span className="focal-dot second" /> Caustic 2
                 </div>

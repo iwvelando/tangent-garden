@@ -148,6 +148,18 @@ self.onmessage = async ({
                   ...(rays!.light === "point"
                     ? [rays!.source.x, rays!.source.y, rays!.source.z]
                     : [rays!.azimuth, rays!.elevation]),
+                  ...(rays!.interaction === "refract"
+                    ? [rays!.n1, rays!.n2]
+                    : []),
+                  ...(rays!.receiver.plane !== "none"
+                    ? [
+                        rays!.receiver.at,
+                        rays!.receiver.c1,
+                        rays!.receiver.c2,
+                        rays!.receiver.size,
+                        rays!.receiver.bins,
+                      ]
+                    : []),
                 ]
               : [surface.offset, surface.reach]),
             uSamples,
@@ -158,8 +170,19 @@ self.onmessage = async ({
           throw new Error(
             "Fill in each spatial parameter with a finite number.",
           );
-        if (![uSamples, vSamples, curves].every(Number.isInteger))
-          throw new Error("Sample and curve counts must be whole numbers.");
+        if (
+          ![
+            uSamples,
+            vSamples,
+            curves,
+            ...(mirror && rays!.receiver.plane !== "none"
+              ? [rays!.receiver.bins]
+              : []),
+          ].every(Number.isInteger)
+        )
+          throw new Error(
+            "Sample, curve and bin counts must be whole numbers.",
+          );
       } else if (
         !data.spatial ||
         ![

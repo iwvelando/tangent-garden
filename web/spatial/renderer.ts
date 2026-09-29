@@ -1,4 +1,10 @@
-import type { SpatialResult, SurfaceSheet, Vec3, Bounds3 } from "./types";
+import type {
+  SpatialResult,
+  SurfaceSheet,
+  Vec3,
+  Bounds3,
+  ReceiverResult,
+} from "./types";
 
 export type View = Bounds3 & {
   yaw: number;
@@ -21,11 +27,12 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // whose other paths and starts they draw. A surface study draws its patch
 // as the surface, with its parameter curves, normal lines, offset, and each
 // focal sheet (its faces, its parameter curves, and a cross when it is a
-// point) as their own layers. A ray study draws its mirror as the surface,
-// with its parameter curves; each caustic branch's real part as a focal
-// sheet; and its incident rays (with the source), reflected rays, and
-// virtual rays with the caustics' virtual parts, as lines, as their own
-// layers. The base curve is always drawn.
+// point) as their own layers. A ray study draws its mirror or interface as
+// the surface, with its parameter curves; each caustic branch's real part
+// as a focal sheet; its incident rays (with the source), outgoing rays
+// (reflected, transmitted, or totally reflected), and virtual rays with the
+// caustics' virtual parts, as lines; and its receiver's irradiance, each
+// as their own layers. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -58,6 +65,7 @@ export type Layers = {
   incident: boolean;
   reflected: boolean;
   virtual: boolean;
+  receiver: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -91,6 +99,7 @@ export const defaultLayers: Layers = {
   incident: true,
   reflected: true,
   virtual: true,
+  receiver: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -124,7 +133,15 @@ void main() {
   // A surface's focal sheets: rust for the first, slate for the second.
   vec3 rust = mix(vec3(0.72,0.36,0.26),vec3(0.90,0.55,0.42),dark);
   vec3 slate = mix(vec3(0.33,0.40,0.66),vec3(0.58,0.66,0.92),dark);
-  if (ink > 5.5) {
+  if (ink > 6.5) {
+    // A receiver's irradiance on a logarithmic ramp, unshaded and without
+    // hue, since it is a measured quantity: ink on paper, or light on the
+    // dark theme. U < 0 marks a bin no light reaches.
+    vec3 empty = mix(vec3(0.91,0.90,0.86),vec3(0.12,0.14,0.14),dark);
+    vec3 faint = mix(vec3(0.84,0.83,0.79),vec3(0.21,0.23,0.23),dark);
+    vec3 full = mix(vec3(0.08,0.09,0.10),vec3(0.98,0.97,0.92),dark);
+    color = U < 0.0 ? empty : mix(faint,full,U);
+  } else if (ink > 5.5) {
     color = slate;
   } else if (ink > 4.5) {
     color = rust;
@@ -153,6 +170,43 @@ void main() {
   }
   gl_FragColor = vec4(color,1.0);
 }`;
+
+// Each receiver bin as two flat triangles whose phase is its shade: the
+// irradiance's log over three decades below the peak, from 0 to 1, or −1
+// where no light lands.
+export function receiverShade(e: number, peak: number) {
+  return e > 0 && peak > 0
+    ? Math.max(0, Math.min(1, 1 + Math.log10(e / peak) / 3))
+    : -1;
+}
+function receiverVertices(g: ReceiverResult | null | undefined) {
+  if (!g) return [];
+  const n = g.irradiance.length,
+    [o, a, , b] = g.corners;
+  const at = (s: number, t: number) => ({
+    x: o.x + (s * (a.x - o.x) + t * (b.x - o.x)) / n,
+    y: o.y + (s * (a.y - o.y) + t * (b.y - o.y)) / n,
+    z: o.z + (s * (a.z - o.z) + t * (b.z - o.z)) / n,
+  });
+  const out: number[] = [];
+  g.irradiance.forEach((column, i) =>
+    column.forEach((e, j) => {
+      const shade = receiverShade(e, g.peak);
+      for (const [s, t] of [
+        [i, j],
+        [i + 1, j],
+        [i + 1, j + 1],
+        [i, j],
+        [i + 1, j + 1],
+        [i, j + 1],
+      ]) {
+        const p = at(s, t);
+        out.push(p.x, p.y, p.z, 0, 0, 1, shade);
+      }
+    }),
+  );
+  return out;
+}
 
 // Rendering only: all curve samples, analytic normals and mesh topology come
 // from Go. The camera is orthographic with identical scale on all three axes.
@@ -237,8 +291,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     incidentRays: Batch,
     reflectedRays: Batch,
     virtualRays: Batch,
+    totalRays: Batch,
     lamp: Batch,
-    virtualCaustics: Batch[];
+    virtualCaustics: Batch[],
+    receiverSheet: Batch,
+    receiverFrame: Batch;
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -763,9 +820,30 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       4,
     );
     reflectedRays = batch(
-      vertices(rayLines.flatMap((l) => [l.point, l.end])),
+      vertices(
+        rayLines.filter((l) => !l.total).flatMap((l) => [l.point, l.end]),
+      ),
       gl!.LINES,
       2,
+    );
+    // Beyond the critical angle nothing is transmitted: the totally
+    // reflected rays recede in grey.
+    totalRays = batch(
+      vertices(
+        rayLines.filter((l) => l.total).flatMap((l) => [l.point, l.end]),
+      ),
+      gl!.LINES,
+      4,
+    );
+    receiverSheet = batch(receiverVertices(rays?.receiver), gl!.TRIANGLES, 7);
+    receiverFrame = batch(
+      vertices(
+        rays?.receiver
+          ? rays.receiver.corners.flatMap((p, k, all) => [p, all[(k + 1) % 4]])
+          : [],
+      ),
+      gl!.LINES,
+      4,
     );
     virtualRays = batch(
       // Only a ray with a virtual caustic point leads anywhere behind the
@@ -881,7 +959,14 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       render(incidentRays);
       render(lamp);
     }
-    if (layers.reflected) render(reflectedRays);
+    if (layers.reflected) {
+      render(reflectedRays);
+      render(totalRays);
+    }
+    if (layers.receiver) {
+      shaded(true, receiverSheet);
+      render(receiverFrame);
+    }
     if (layers.virtual) {
       render(virtualRays);
       virtualCaustics.forEach(render);
