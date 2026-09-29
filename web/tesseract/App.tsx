@@ -83,6 +83,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
   const [ready, setReady] = useState(false),
     [settled, setSettled] = useState("");
   const [exporting, setExporting] = useState(""),
+    [exportProgress, setExportProgress] = useState(0),
     [exportError, setExportError] = useState("");
   const controller = useRef<AbortController | null>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -260,6 +261,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     const abort = new AbortController();
     controller.current = abort;
     setExporting("Preparing…");
+    setExportProgress(0);
     try {
       const { exportMotion } = await import("./export");
       const blob = await exportMotion({
@@ -271,7 +273,11 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
         duration,
         ...options,
         signal: abort.signal,
-        onProgress: (n, total) => setExporting(`${n} / ${total} frames`),
+        onProgress: (n, total) => {
+          if (controller.current !== abort) return;
+          setExporting(`${n} / ${total} frames`);
+          setExportProgress(n / total);
+        },
       });
       abort.signal.throwIfAborted();
       saveFile(blob, `tangent-garden-tesseract.${options.format}`);
@@ -474,11 +480,13 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                 config,
                 motion,
                 duration,
-                progress,
                 preview,
                 playing,
                 exporting,
               }}
+              // Export renders frames apart from the live preview, whose
+              // progress would otherwise resample the drawing on every frame.
+              progress={exporting ? exportProgress : progress}
               error={exportError}
               disabled={!ready || !!error || !!scalarError || scalarBusy}
               onMotion={(m) => {

@@ -311,6 +311,25 @@ for (const format of ["mp4", "webp"] as const)
     ).toBeEnabled();
   });
 
+test("the timeline follows rendered export frames, like 2D and 3D", async ({
+  page,
+}) => {
+  await ready(page);
+  await openShapeExport(page);
+  await page
+    .getByRole("button", { name: /^Export (MP4 video|animated WebP)/ })
+    .click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  await expect
+    .poll(async () => +(await slider.inputValue()))
+    .toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Cancel export" }).click();
+  await expect(page.getByRole("button", { name: "Cancel export" })).toHaveCount(
+    0,
+  );
+  await expect(slider).toHaveCount(0);
+});
+
 test("cancellation and edits discard motion exports", async ({ page }) => {
   await ready(page);
   await openShapeExport(page);
