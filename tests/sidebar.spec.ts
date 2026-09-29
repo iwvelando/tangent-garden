@@ -30,14 +30,12 @@ test("explanations are available on demand instead of always visible", async ({
   await expect(aside.getByText(/Ratio n₁\/n₂ = /)).toBeVisible();
 });
 
-test("animation and its export settings start collapsed with a summary", async ({
+test("animation starts open, and its export settings collapsed with a summary", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
   const play = page.getByRole("button", { name: "Play animation" });
-  await expect(play).toBeHidden();
-  await openAnimation(page);
   await expect(play).toBeVisible();
   const fps = page.getByRole("combobox", { name: "Export frame rate" });
   await expect(fps).toBeHidden();
@@ -219,4 +217,18 @@ test("playback controls stay in the sidebar on a wide screen", async ({
   await expect(
     page.getByRole("complementary").getByRole("group", { name: "Playback" }),
   ).toBeVisible();
+});
+
+test("the animation panel starts open in every notebook, export settings closed", async ({
+  page,
+}) => {
+  for (const [study, panel, exports] of [
+    ["2d", "#animation-section", "#export-settings"],
+    ["3d", "#spatial-animation-section", "#spatial-export-settings"],
+    ["4d", "#shape-animation-section", "#shape-export-settings"],
+  ]) {
+    await page.goto(`/?study=${study}`);
+    await expect(page.locator(panel)).toHaveAttribute("open");
+    await expect(page.locator(exports)).not.toHaveAttribute("open");
+  }
 });

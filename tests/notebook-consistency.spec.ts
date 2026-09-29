@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { choosePreset, exampleTitles } from "./helpers";
+import { choosePreset, exampleTitles, open } from "./helpers";
 
 for (const width of [1440, 390]) {
   for (const colorScheme of ["light", "dark"] as const) {
@@ -284,10 +284,12 @@ test("playing on a phone snaps the drawing into view in both notebooks", async (
     await page.goto(spatial ? "/?study=3d" : "/");
     const app = page.locator(".app:visible");
     await expect(app.locator(".plot-wrap")).toBeVisible();
-    await app
-      .locator(spatial ? "#spatial-animation-section" : "#animation-section")
-      .locator(":scope > summary")
-      .click();
+    await open(
+      page,
+      spatial
+        ? ".app:visible #spatial-animation-section"
+        : ".app:visible #animation-section",
+    );
     await app.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("5");
     const play = app.getByRole("button", { name: "Play animation" });
     await play.scrollIntoViewIfNeeded();

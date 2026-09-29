@@ -66,7 +66,7 @@ export function AnimationPanel(p: {
   onSeek: (n: number) => void;
   onExport: (options: MotionExport) => void;
 }) {
-  const section = useDisclosure("shape-animation"),
+  const section = useDisclosure("shape-animation", true),
     exportSection = useDisclosure("shape-export");
   const [format, setFormat] = useState<ExportFormat>("mp4"),
     [fps, setFPS] = useState(30),

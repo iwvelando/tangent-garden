@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openExportSettings, choosePreset, examplesButton } from "./helpers";
+import {
+  openExportSettings,
+  choosePreset,
+  examplesButton,
+  open,
+} from "./helpers";
 
 // Every visible, enabled run of text on the page, with its rendered size and
 // its contrast against the nearest opaque background behind it.
@@ -113,8 +118,8 @@ for (const scheme of ["light", "dark"] as const)
       await page.emulateMedia({ colorScheme: scheme });
       await page.goto("/?study=3d");
       await expect(page.locator("#spatial-artwork")).toBeVisible();
-      await page.locator("#spatial-animation-section > summary").click();
-      await page.locator("#spatial-export-settings > summary").click();
+      await open(page, "#spatial-animation-section");
+      await open(page, "#spatial-export-settings");
       await expectLegible(page);
       await choosePreset(page, "3");
       await page

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { exportImage, openExportSettings, choosePreset } from "./helpers";
+import { exportImage, openExportSettings, choosePreset, open } from "./helpers";
 import { decodeVideo, probe } from "./video";
 import { exportTiming } from "../web/export-quality";
 
@@ -162,9 +162,9 @@ for (const [preset, name] of [
     expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
       2000, 1520,
     ]);
-    await page.locator("#spatial-animation-section > summary").click();
+    await open(page, "#spatial-animation-section");
     await page.getByLabel("Duration (seconds)").fill("0.4");
-    await page.locator("#spatial-export-settings > summary").click();
+    await open(page, "#spatial-export-settings");
     await page.getByLabel("Export frame rate").selectOption("15");
     await page
       .getByRole("slider", { name: "Export resolution", exact: true })

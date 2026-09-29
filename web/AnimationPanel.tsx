@@ -84,7 +84,7 @@ export function AnimationPanel({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [live, setLive] = useState("");
-  const section = useDisclosure("animation");
+  const section = useDisclosure("animation", true);
   const exportSection = useDisclosure("export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);

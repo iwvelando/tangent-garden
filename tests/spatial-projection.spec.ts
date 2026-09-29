@@ -2,7 +2,7 @@ import { applyTracks, reveal } from "../web/spatial/animation";
 import { spatialPresets } from "../web/spatial/presets";
 import type { SpatialResult } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
-import { choosePreset } from "./helpers";
+import { choosePreset, open } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
 const stage = (page: Page) => page.locator(".spatial-stage");
@@ -79,7 +79,7 @@ test("projection reveal, pause/resume and edits preserve the original study", as
   await settled(page);
   const original = await config(page),
     full = await pixels(page);
-  await page.locator("#spatial-animation-section > summary").click();
+  await open(page, "#spatial-animation-section");
   await page.getByLabel("Duration (seconds)").fill("5");
   await page
     .getByRole("button", { name: "Play animation", exact: true })
@@ -177,7 +177,7 @@ test("a tangent-foot MP4 decodes with exact duration and changing pole projectio
   await page.getByLabel("Track 1 from").fill("0");
   await page.getByLabel("Track 1 to").fill("-4");
   await page.getByLabel("Duration (seconds)").fill("0.4");
-  await page.locator("#spatial-export-settings > summary").click();
+  await open(page, "#spatial-export-settings");
   await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
   await page.getByLabel("Export frame rate").selectOption("15");
   await page

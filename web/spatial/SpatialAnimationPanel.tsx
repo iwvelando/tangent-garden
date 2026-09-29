@@ -88,7 +88,7 @@ export function SpatialAnimationPanel({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [live, setLive] = useState("");
-  const section = useDisclosure("spatial-animation");
+  const section = useDisclosure("spatial-animation", true);
   const exportSection = useDisclosure("spatial-export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
