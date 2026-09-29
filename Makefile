@@ -1,4 +1,4 @@
-.PHONY: install wasm test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev preview check clean share-card thumbnails
+.PHONY: install wasm test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev dev-lan preview check clean share-card thumbnails
 
 install:
 	npm ci
@@ -32,6 +32,9 @@ share-card: build
 check: format-check vet test build
 dev:
 	npm run dev
+# Reachable from other devices on the local network, such as a phone.
+dev-lan:
+	npm run dev:lan
 preview:
 	npm run preview
 clean:
