@@ -84,6 +84,9 @@ export type AnimationView = {
   length: number;
   progress: number;
   mode: "reveal" | "parameters";
+  // A finished animation releases the camera: its final frame stays, and pan
+  // and zoom start from the animation's own framing.
+  complete: boolean;
 };
 const targetLabels: Record<FixedTarget, string> = {
   a: "Shape parameter a",

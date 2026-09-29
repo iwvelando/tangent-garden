@@ -198,7 +198,9 @@ for (const [width, height] of [
     await expect(slider).toHaveValue("1");
     await expect(page.locator(".plot-wrap .computing")).toHaveCount(0);
     expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
-    await page.getByRole("button", { name: "Reset view", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Back to study", exact: true })
+      .click();
     await expect(bar).not.toHaveCSS("position", "fixed");
   });
 }

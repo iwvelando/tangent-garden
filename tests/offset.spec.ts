@@ -176,7 +176,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     ).toBeVisible();
     expect((await definition(page)).distance).toBe(Math.PI / 5);
     expect((await definition(page)).kind).toBe("offset");
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).distance).toBe(original);
   });
 }

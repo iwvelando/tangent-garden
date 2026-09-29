@@ -617,7 +617,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     expect(terms[1].phase).toBe(Math.PI / 5);
     expect(terms[2].radius).toBeCloseTo(2 / (1 + Math.sqrt(5)), 14);
     await expect(epicycles(page)).toHaveAttribute("data-sample", "1999");
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).curve.terms).toEqual(original);
   });
 }

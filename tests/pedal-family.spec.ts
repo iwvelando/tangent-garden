@@ -198,7 +198,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     ).toBeVisible();
     expect((await definition(page)).pole.x).toBe(-(1 + Math.sqrt(5)) / 2);
     expect((await definition(page)).kind).toBe("orthotomic");
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).pole).toEqual(original);
   });
 }

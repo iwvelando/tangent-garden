@@ -263,6 +263,7 @@ export function AnimationPanel({
       length: s.mode === "reveal" ? s.length : values.length,
       progress: p,
       mode: s.mode,
+      complete: p === 1,
     };
   }
   function display(s: Session, view: AnimationView) {
@@ -812,7 +813,7 @@ export function AnimationPanel({
               {status === "exporting"
                 ? "Cancel export"
                 : status === "complete"
-                  ? "Reset view"
+                  ? "Back to study"
                   : "Stop"}
             </button>
           </div>
@@ -849,7 +850,7 @@ export function AnimationPanel({
                 {status === "exporting"
                   ? "Cancel export discards the file; your study stays as it was."
                   : status === "complete"
-                    ? "Scrub the timeline or export this frame as SVG. Reset view restores your study and manual view."
+                    ? "Pan and zoom the finished drawing, scrub the timeline, or export this frame as SVG. Back to study restores your study and manual view."
                     : "Pause to scrub or export this frame as SVG. Stop restores your study and manual view."}
               </p>
             </div>

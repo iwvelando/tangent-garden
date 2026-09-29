@@ -236,6 +236,7 @@ export function SpatialAnimationPanel({
       length: s.mode === "reveal" ? s.length : values.length,
       progress: p,
       mode: s.mode,
+      complete: p === 1,
     };
   }
   function display(s: Session, view: AnimationView) {
@@ -784,7 +785,7 @@ export function SpatialAnimationPanel({
               {status === "exporting"
                 ? "Cancel export"
                 : status === "complete"
-                  ? "Reset view"
+                  ? "Back to study"
                   : "Stop"}
             </button>
           </div>
@@ -821,7 +822,7 @@ export function SpatialAnimationPanel({
                 {status === "exporting"
                   ? "Cancel export discards the file; your study stays as it was."
                   : status === "complete"
-                    ? "Scrub the timeline or save this frame as an image. Reset view restores your study and manual view."
+                    ? "Orbit the finished drawing, scrub the timeline, or save this frame as an image. Back to study restores your study and manual view."
                     : "Pause to scrub or save this frame as an image. Stop restores your study and manual view."}
               </p>
             </div>

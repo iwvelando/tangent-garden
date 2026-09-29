@@ -300,7 +300,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     ).toBeVisible();
     expect((await definition(page)).curve.a).toBe(2 * Math.PI);
     await expect(branches(page)).toHaveCount(2);
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     const restored = await definition(page);
     expect(restored.curve).toEqual(original.curve);
     expect(restored.envelope).toEqual(original.envelope);

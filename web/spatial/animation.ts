@@ -99,6 +99,8 @@ export type AnimationView = {
   length: number;
   progress: number;
   mode: "reveal" | "parameters" | "orbit";
+  // A finished animation releases the camera, starting from its own.
+  complete: boolean;
 };
 export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",

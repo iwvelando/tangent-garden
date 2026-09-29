@@ -403,3 +403,48 @@ test("a newly opened notebook inherits the chosen theme when storage is denied",
   await chooseNotebook(page, "3d");
   await expect(page.locator(".spatial-app")).not.toHaveClass(/dark/);
 });
+
+test("a completed 3D animation releases the orbit camera without Back to study", async ({
+  page,
+}) => {
+  await ready(page);
+  await animation(page);
+  const canvas = page.locator("#spatial-artwork");
+  const pixels = () => canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL());
+  await page.getByLabel("Animate", { exact: true }).selectOption("orbit");
+  await page.getByLabel("Duration (seconds)").fill("0.1");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeVisible();
+  const final = await pixels();
+  const released = await view(page);
+  // Orbit, pan, and zoom start from the animation's final camera.
+  await expect(page.getByRole("button", { name: "Reset view" })).toBeEnabled();
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect.poll(pixels).not.toBe(final);
+  await page.getByRole("button", { name: "Reset view" }).click();
+  await expect.poll(pixels).toBe(final);
+  await canvas.hover();
+  await page.mouse.wheel(0, -200);
+  await expect.poll(pixels).not.toBe(final);
+  // Scrubbing holds the animation camera again.
+  await seek(page, "0.5");
+  const middle = await pixels();
+  await page.mouse.wheel(0, -200);
+  expect(await pixels()).toBe(middle);
+  await seek(page, "1");
+  expect(await view(page)).toEqual(released);
+  await expect.poll(pixels).toBe(final);
+  await page
+    .getByRole("button", { name: "Back to study", exact: true })
+    .click();
+  await expect(stage(page)).not.toHaveAttribute("data-progress");
+});

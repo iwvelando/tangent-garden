@@ -91,7 +91,7 @@ test("help, branding, and completed animation settings are usable without stoppi
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".1");
   await page.getByRole("button", { name: "Play animation" }).click();
   await expect(
-    page.getByRole("button", { name: "Reset view", exact: true }),
+    page.getByRole("button", { name: "Back to study", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "Animation camera" }),

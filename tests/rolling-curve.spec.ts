@@ -300,7 +300,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     expect(rolled.point.x).toBe((1 + Math.sqrt(5)) / 2);
     expect(rolled.curve.start).toBe(Math.PI / 7);
     await expect(rolling(page)).toHaveAttribute("data-sample", "1999");
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).rolling).toEqual(original);
   });
 }

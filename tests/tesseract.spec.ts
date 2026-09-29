@@ -85,7 +85,7 @@ test("all constructions, empty and tangent sections, finite curves, and exact mo
   await expect(slider).toHaveValue("1");
   await page
     .locator("#shape-playback")
-    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
     .click();
   await settle(page);
   expect(await definition(page)).toEqual(base);
@@ -469,7 +469,7 @@ test("phone playback brings the drawing into view and keeps controls reachable",
   expect((await definition(page)).angles[3]).toBeCloseTo(Math.PI);
   await page
     .locator("#shape-playback")
-    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
     .click();
   await expect(page.locator(".tesseract-playback.active")).toHaveCount(0);
 });
@@ -515,4 +515,33 @@ test("early animation clocks never move behind the scrubbed start", async ({
   expect(seen.length).toBeGreaterThan(1);
   expect(Math.min(...seen)).toBeGreaterThanOrEqual(0.73);
   expect(Math.max(...seen)).toBe(1);
+});
+
+test("a completed 4D animation frees the view buttons without Back to study", async ({
+  page,
+}) => {
+  await ready(page);
+  await openShapeAnimation(page);
+  await page
+    .getByRole("spinbutton", { name: "Duration (seconds)" })
+    .fill("0.2");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeVisible();
+  await settle(page);
+  const art = page.locator("#tesseract-artwork");
+  const final = await art.innerHTML();
+  await expect(page.getByRole("button", { name: "Reset view" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Rotate view" })).toBeEnabled();
+  await art.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => art.innerHTML()).not.toBe(final);
+  await page.getByRole("button", { name: "Reset view" }).click();
+  await expect.poll(() => art.innerHTML()).toBe(final);
+  // Scrubbing is playback again, with the view buttons held.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(page.getByRole("button", { name: "Reset view" })).toBeDisabled();
 });

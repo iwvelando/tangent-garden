@@ -122,7 +122,7 @@ test("unwinding holds final framing, pauses, scrubs, exports, and restores the m
     original!,
   );
   await page
-    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
     .click();
   await expect(page.locator("#artwork path").first()).toHaveAttribute(
     "d",
@@ -205,7 +205,7 @@ test("multiple moving-light tracks reach exact endpoints and stop restores the s
     original,
   );
   await page
-    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
     .click();
   await expect(page.locator("#artwork path").nth(1)).toHaveAttribute(
     "d",
@@ -235,12 +235,12 @@ test("parallel-light direction, scalar endpoints, and invalid track recovery", a
   ).toBeVisible();
   expect((await definition(page)).source.angle).toBeCloseTo(180 / Math.PI, 12);
   await page
-    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
     .click();
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("30");
   await page.getByRole("button", { name: "Play animation" }).click();
   await page
-    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
     .click();
   await page
     .getByRole("textbox", { name: "Travel direction (degrees)" })
@@ -332,3 +332,57 @@ for (const mode of ["reveal", "parameters"] as const) {
     ).toBeVisible();
   });
 }
+
+test("a completed animation releases pan and zoom without Reset view", async ({
+  page,
+}) => {
+  await ready(page);
+  const artwork = page.locator("#artwork");
+  await artwork.hover();
+  await page.mouse.wheel(0, -300);
+  const manual = await artwork.locator("path").first().getAttribute("d");
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".2");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeVisible();
+  // Nothing moves at the moment the camera is released.
+  const held = {
+    scale: await artwork.getAttribute("data-camera-scale"),
+    center: await artwork.getAttribute("data-camera-center"),
+  };
+  await expect(page.getByRole("button", { name: "↔ Fit view" })).toBeEnabled();
+  await artwork.hover();
+  await page.mouse.wheel(0, -300);
+  await expect(artwork).not.toHaveAttribute("data-camera-scale", held.scale!);
+  const box = (await artwork.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect(artwork).not.toHaveAttribute("data-camera-center", held.center!);
+  // The final frame is still shown, and Fit view returns to its framing.
+  expect(await progress(page)).toBe(1);
+  await page.getByRole("button", { name: "↔ Fit view" }).click();
+  await expect(artwork).toHaveAttribute("data-camera-scale", held.scale!);
+  await expect(artwork).toHaveAttribute("data-camera-center", held.center!);
+  // Scrubbing holds the animation camera again.
+  await page.mouse.wheel(0, -300);
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .press("Home");
+  await expect.poll(() => progress(page)).toBe(0);
+  await expect(artwork).toHaveAttribute("data-camera-scale", held.scale!);
+  await artwork.hover();
+  await page.mouse.wheel(0, -300);
+  await expect(artwork).toHaveAttribute("data-camera-scale", held.scale!);
+  // Reset view still restores the manual view from before the animation.
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .press("End");
+  await expect.poll(() => progress(page)).toBe(1);
+  await page
+    .getByRole("button", { name: "Back to study", exact: true })
+    .click();
+  await expect(artwork.locator("path").first()).toHaveAttribute("d", manual!);
+});

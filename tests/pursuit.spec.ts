@@ -423,7 +423,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     // describing the study itself.
     await expect.poll(() => polygons(page).count()).toBeLessThan(39);
     expect(await polygons(page).count()).toBeGreaterThan(5);
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).curve.pursuit).toEqual(original);
   });
 }

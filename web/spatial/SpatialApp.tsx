@@ -90,6 +90,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     [renderError, setRenderError] = useState(""),
     [imageBusy, setImageBusy] = useState(false);
   const [reset, setReset] = useState(0),
+    [refit, setRefit] = useState(0),
     [spinning, setSpinning] = useState(false);
   const [animation, setAnimation] = useState<AnimationView | null>(null),
     [running, setRunning] = useState(false);
@@ -1057,7 +1058,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     ? `${scalarError.name}: ${scalarError.error}`
     : error;
   const shown = animation?.frame ?? frame,
-    override = animation ? animationCamera(animation) : undefined;
+    camera = animation ? animationCamera(animation) : undefined,
+    // A finished animation hands its camera over to be explored.
+    override = animation?.complete ? undefined : camera,
+    released = animation?.complete ? camera : undefined;
   const ready = !!frame && !busy && !failure && !renderError;
   async function save(format: "png" | "svg") {
     if (!shown || !viewport.current) return;
@@ -2680,7 +2684,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           data-config={shown ? JSON.stringify(shown.config) : undefined}
           data-progress={animation?.progress}
           data-mode={animation?.mode}
-          data-camera={override ? JSON.stringify(override) : undefined}
+          data-camera={camera ? JSON.stringify(camera) : undefined}
         >
           <div className="plot-heading">
             <div>
@@ -2722,7 +2726,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             <div className="view-buttons">
               <button
                 className="fit"
-                disabled={!!animation || running || !!renderError}
+                disabled={!!override || running || !!renderError}
                 aria-pressed={spinning}
                 onClick={() => setSpinning((s) => !s)}
               >
@@ -2730,8 +2734,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               </button>
               <button
                 className="fit"
-                disabled={!!animation || running}
-                onClick={() => setReset((n) => n + 1)}
+                disabled={!!override || running}
+                onClick={() =>
+                  released ? setRefit((n) => n + 1) : setReset((n) => n + 1)
+                }
               >
                 Reset view
               </button>
@@ -2747,6 +2753,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   reset={reset}
                   spinning={spinning && active}
                   override={override}
+                  released={released}
+                  refit={refit}
                   onViewport={(v) => {
                     viewport.current = v;
                   }}
@@ -2817,9 +2825,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 </div>
               )}
               <span>
-                {animation
-                  ? "Animation camera · Stop or Reset view restores manual framing"
-                  : "Orthographic · drag to orbit · shift-drag to pan · scroll to zoom · keys: arrows, + / −, Home"}
+                {released
+                  ? "Drag to orbit · shift-drag to pan · scroll to zoom · Back to study restores your view"
+                  : animation
+                    ? "Animation camera · Stop restores manual framing"
+                    : "Orthographic · drag to orbit · shift-drag to pan · scroll to zoom · keys: arrows, + / −, Home"}
               </span>
             </div>
           </div>

@@ -13,6 +13,8 @@ export function SpatialPlot({
   reset,
   spinning,
   override,
+  released,
+  refit = 0,
   onViewport,
   onError,
 }: {
@@ -22,17 +24,25 @@ export function SpatialPlot({
   reset: number;
   spinning: boolean;
   override?: View;
+  // A finished animation's camera, explored in place of the manual one,
+  // which is kept for when the study returns. refit restores it.
+  released?: View;
+  refit?: number;
   onViewport: (view: View) => void;
   onError: (message: string) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
   const manual = useRef({ ...initialView });
+  const explored = useRef<View | null>(null);
+  // Orbit, pan, and zoom act on whichever camera is shown.
+  const target = () => explored.current ?? manual.current;
   const state = useRef({ dark, layers, result, override, onViewport });
   state.current = { dark, layers, result, override, onViewport };
   const [error, setError] = useState("");
   const current = (): View =>
-    state.current.override ?? {
+    state.current.override ??
+    explored.current ?? {
       ...manual.current,
       ...state.current.result.bounds,
     };
@@ -60,10 +70,8 @@ export function SpatialPlot({
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       if (state.current.override) return;
-      manual.current.zoom = Math.max(
-        0.2,
-        Math.min(8, manual.current.zoom * Math.exp(-e.deltaY * 0.001)),
-      );
+      const v = target();
+      v.zoom = Math.max(0.2, Math.min(8, v.zoom * Math.exp(-e.deltaY * 0.001)));
       draw();
     };
     const lost = (e: Event) => {
@@ -93,11 +101,15 @@ export function SpatialPlot({
     draw();
   }, [reset]);
   useEffect(() => {
+    explored.current = released ? { ...released } : null;
+    draw();
+  }, [!!released, refit]);
+  useEffect(() => {
     if (!spinning || override) return;
     let id = 0,
       last = 0;
     const tick = (now: number) => {
-      if (last) manual.current.yaw += Math.min(now - last, 50) * 0.00018;
+      if (last) target().yaw += Math.min(now - last, 50) * 0.00018;
       last = now;
       draw();
       id = requestAnimationFrame(tick);
@@ -136,19 +148,19 @@ export function SpatialPlot({
             dy = e.clientY - d.y;
           if (d.pan) {
             const unit =
-              (2 * result.bounds.radius * 1.16) /
+              (2 * current().radius * 1.16) /
               (Math.min(
                 e.currentTarget.clientWidth,
                 e.currentTarget.clientHeight,
               ) *
-                manual.current.zoom);
-            manual.current.panX += dx * unit;
-            manual.current.panY -= dy * unit;
+                target().zoom);
+            target().panX += dx * unit;
+            target().panY -= dy * unit;
           } else {
-            manual.current.yaw += dx * 0.008;
-            manual.current.pitch = Math.max(
+            target().yaw += dx * 0.008;
+            target().pitch = Math.max(
               -1.5,
-              Math.min(1.5, manual.current.pitch + dy * 0.008),
+              Math.min(1.5, target().pitch + dy * 0.008),
             );
           }
           drag.current = { ...d, x: e.clientX, y: e.clientY };
@@ -165,8 +177,8 @@ export function SpatialPlot({
         }}
         onKeyDown={(e) => {
           if (override) return;
-          const v = manual.current,
-            delta = (result.bounds.radius * 0.05) / v.zoom;
+          const v = target(),
+            delta = (current().radius * 0.05) / v.zoom;
           switch (e.key) {
             case "ArrowLeft":
               if (e.shiftKey) v.panX -= delta;
@@ -192,7 +204,9 @@ export function SpatialPlot({
               v.zoom = Math.max(0.2, v.zoom / 1.1);
               break;
             case "Home":
-              manual.current = { ...initialView };
+              if (explored.current && released)
+                explored.current = { ...released };
+              else manual.current = { ...initialView };
               break;
             default:
               return;

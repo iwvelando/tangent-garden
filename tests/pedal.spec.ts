@@ -148,7 +148,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
       .press("Home");
     await expect.poll(() => progress(page)).toBe(0);
     expect((await definition(page)).pole).toEqual({ x: 1.65, y: 0.3 });
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).pole).toEqual({ x: 1.65, y: 0.3 });
   });
 }
@@ -170,7 +170,7 @@ test("pedal reveal pauses and resumes, and editing cancels moving-pole playback"
     page.getByRole("button", { name: "Replay", exact: true }),
   ).toBeVisible();
   await expect(page.locator("#artwork line")).toHaveCount(128);
-  await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+  await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
   await page
     .getByRole("combobox", { name: "Animate", exact: true })
     .selectOption("parameters");

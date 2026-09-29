@@ -25,6 +25,8 @@ type Props = {
   dark: boolean;
   length: number;
   reset: number;
+  // Fit view after an animation completes: reframes only its exploration.
+  refit?: number;
   animation?: AnimationView | null;
   onViewport?: (view: Viewport) => void;
   pixelRatio?: number;
@@ -66,27 +68,41 @@ export function Plot({
   dark,
   length,
   reset,
+  refit = 0,
   animation,
   onViewport,
   pixelRatio = 1,
 }: Props) {
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1, reset });
+  // A completed animation is explored with its own camera, offset from the
+  // animation's framing, so the manual one is intact when the study returns.
+  const [explore, setExplore] = useState({ x: 0, y: 0, zoom: 1, reset: refit });
+  const exploring = !!animation?.complete;
+  const locked = !!animation && !exploring;
+  useEffect(() => {
+    if (!exploring) setExplore({ x: 0, y: 0, zoom: 1, reset: refit });
+  }, [exploring]);
+  const current = exploring ? explore : camera;
+  const setCurrent = exploring ? setExplore : setCamera;
+  const key = exploring ? refit : reset;
   const cam =
-    !animation && camera.reset === reset
-      ? camera
-      : { x: 0, y: 0, zoom: 1, reset };
+    !locked && current.reset === key
+      ? current
+      : { x: 0, y: 0, zoom: 1, reset: key };
   const drag = useRef<{ x: number; y: number; cx: number; cy: number } | null>(
     null,
   );
   const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     const svg = svgRef.current;
-    if (!svg || animation) return;
+    if (!svg || locked) return;
     const zoom = (e: WheelEvent) => {
       e.preventDefault();
-      setCamera((previous) => {
+      setCurrent((previous) => {
         const c =
-          previous.reset === reset ? previous : { x: 0, y: 0, zoom: 1, reset };
+          previous.reset === key
+            ? previous
+            : { x: 0, y: 0, zoom: 1, reset: key };
         return {
           ...c,
           zoom: Math.max(
@@ -98,7 +114,7 @@ export function Plot({
     };
     svg.addEventListener("wheel", zoom, { passive: false });
     return () => svg.removeEventListener("wheel", zoom);
-  }, [reset, !!animation]);
+  }, [key, locked, exploring]);
   const palette = plotPalette(dark);
   const currentFrame = useMemo(
     () => fitFrame(result, config),
@@ -323,7 +339,7 @@ export function Plot({
       }
       style={{ background: palette.bg, touchAction: "none" }}
       onPointerDown={(e) => {
-        if (animation) return;
+        if (locked) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         drag.current = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
       }}
@@ -331,7 +347,7 @@ export function Plot({
         if (!drag.current) return;
         const r = e.currentTarget.getBoundingClientRect();
         const ratio = Math.max(W / r.width, H / r.height);
-        setCamera({
+        setCurrent({
           ...cam,
           x: drag.current.cx + (e.clientX - drag.current.x) * ratio,
           y: drag.current.cy + (e.clientY - drag.current.y) * ratio,

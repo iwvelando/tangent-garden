@@ -450,7 +450,7 @@ for (const mode of ["hold", "current", "follow", "fit"]) {
       2 * Math.PI * (await scale(page)),
       6,
     );
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).curve).toEqual(original);
   });
 }

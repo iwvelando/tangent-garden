@@ -241,6 +241,7 @@ function App({ active }: { active: boolean }) {
   const theme = useTheme();
   const { dark, preference } = theme;
   const [reset, setReset] = useState(0);
+  const [refit, setRefit] = useState(0);
   const [length, setLength] = useState(0.8);
   const [layers, setLayers] = useState<Layers>({
     base: true,
@@ -1976,8 +1977,10 @@ function App({ active }: { active: boolean }) {
             </div>
             <button
               className="fit"
-              disabled={!!animation}
-              onClick={() => setReset(reset + 1)}
+              disabled={!!animation && !animation.complete}
+              onClick={() =>
+                animation ? setRefit(refit + 1) : setReset(reset + 1)
+              }
             >
               ↔ Fit view
             </button>
@@ -1999,6 +2002,7 @@ function App({ active }: { active: boolean }) {
                 dark={dark}
                 length={animation?.length ?? length}
                 reset={reset}
+                refit={refit}
                 animation={animation}
               />
             ) : (
@@ -2022,9 +2026,11 @@ function App({ active }: { active: boolean }) {
                 )}
               </div>
               <span>
-                {animation
-                  ? "Animation camera · Stop or Reset view restores manual framing"
-                  : "Drag to pan · scroll to zoom"}
+                {animation?.complete
+                  ? "Drag to pan · scroll to zoom · Reset view restores your study"
+                  : animation
+                    ? "Animation camera · Stop restores manual framing"
+                    : "Drag to pan · scroll to zoom"}
               </span>
             </div>
           </div>
