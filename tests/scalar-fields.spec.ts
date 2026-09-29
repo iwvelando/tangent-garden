@@ -1077,3 +1077,55 @@ test("spatial ruled shift and rate share the bounded scalar parser", async ({
     await expect(page.getByRole("alert")).toHaveCount(0);
   }
 });
+
+test("tesseract parameters accept constants, reject variables, and discard stale edits", async ({
+  page,
+}) => {
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  await settle();
+  for (const name of ["xy", "xz", "yz", "xw", "yw", "zw"]) {
+    await page
+      .getByRole("textbox", { name: `${name} angle`, exact: true })
+      .fill("pi/4");
+  }
+  await page
+    .getByRole("textbox", { name: "4D eye distance", exact: true })
+    .fill("2*e");
+  await settle();
+  let q = JSON.parse((await stage.getAttribute("data-config"))!);
+  expect(q.angles).toEqual(Array(6).fill(Math.PI / 4));
+  expect(q.distance).toBe(2 * Math.E);
+  await page
+    .getByRole("combobox", { name: "View of the tesseract" })
+    .selectOption("stereo");
+  await page
+    .getByRole("textbox", { name: "Projection window radius" })
+    .fill("2*phi");
+  await settle();
+  q = JSON.parse((await stage.getAttribute("data-config"))!);
+  expect(q.clip).toBe(2 * phi);
+  await page
+    .getByRole("combobox", { name: "View of the tesseract" })
+    .selectOption("section");
+  await page.getByRole("textbox", { name: "Slice offset h" }).fill("1/phi");
+  await page.getByRole("textbox", { name: "Section spread" }).fill("pi");
+  await settle();
+  q = JSON.parse((await stage.getAttribute("data-config"))!);
+  expect(q.slice).toBe(1 / phi);
+  expect(q.spread).toBe(Math.PI);
+  for (const bad of ["t", "x", "a", "1/0"]) {
+    await page.getByRole("textbox", { name: "Slice offset h" }).fill(bad);
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Export image" }),
+    ).toBeDisabled();
+  }
+  await page.getByRole("textbox", { name: "Slice offset h" }).fill("pi/8");
+  await choosePreset(page, { label: "A cube beyond a cube" });
+  await settle();
+  q = JSON.parse((await stage.getAttribute("data-config"))!);
+  expect(q.slice).toBe(0);
+  expect(q.angles).toEqual([0, 0, 0, 0, 0, 0]);
+});

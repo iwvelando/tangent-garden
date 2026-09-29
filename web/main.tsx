@@ -2036,38 +2036,41 @@ function App({ active }: { active: boolean }) {
   );
 }
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
+const TesseractApp = lazy(() => import("./tesseract/App"));
+type NotebookKind = "2d" | "3d" | "4d";
+const notebookKind = (): NotebookKind => {
+  const study = new URLSearchParams(location.search).get("study");
+  return study === "3d" || study === "4d" ? study : "2d";
+};
 function Notebook() {
-  const initial =
-    new URLSearchParams(location.search).get("study") === "3d" ? "3d" : "2d";
-  const [mode, setMode] = useState<"2d" | "3d">(initial);
+  const focusRequest = useRef(false);
+  const initial = notebookKind();
+  const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
     "2d": initial === "2d",
     "3d": initial === "3d",
+    "4d": initial === "4d",
   });
-  const show = (next: "2d" | "3d") => {
+  const show = (next: NotebookKind) => {
     setSeen((s) => ({ ...s, [next]: true }));
     setMode(next);
   };
-  const choose = (next: "2d" | "3d") => {
+  const choose = (next: NotebookKind) => {
     if (next === mode) return;
+    focusRequest.current = true;
     show(next);
     const url = new URL(location.href);
-    if (next === "3d") url.searchParams.set("study", "3d");
-    else url.searchParams.delete("study");
+    if (next === "2d") url.searchParams.delete("study");
+    else url.searchParams.set("study", next);
     history.pushState(null, "", url);
   };
   useEffect(() => {
-    const pop = () =>
-      show(
-        new URLSearchParams(location.search).get("study") === "3d"
-          ? "3d"
-          : "2d",
-      );
+    const pop = () => show(notebookKind());
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
   }, []);
   return (
-    <NotebookContext.Provider value={{ mode, choose }}>
+    <NotebookContext.Provider value={{ mode, choose, focusRequest }}>
       {seen["2d"] && (
         <div hidden={mode !== "2d"}>
           <App active={mode === "2d"} />
@@ -2081,6 +2084,17 @@ function Notebook() {
             }
           >
             <SpatialApp active={mode === "3d"} />
+          </Suspense>
+        </div>
+      )}
+      {seen["4d"] && (
+        <div hidden={mode !== "4d"}>
+          <Suspense
+            fallback={
+              <div className="loading">Opening the fourth dimension…</div>
+            }
+          >
+            <TesseractApp active={mode === "4d"} />
           </Suspense>
         </div>
       )}

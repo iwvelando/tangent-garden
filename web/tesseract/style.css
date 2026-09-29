@@ -1,0 +1,96 @@
+.tesseract-canvas-wrap {
+  background: var(--paper);
+  position: relative;
+  height: calc(100vh - 330px);
+  min-height: 390px;
+  max-height: 840px;
+}
+#tesseract-artwork {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+#tesseract-artwork:active {
+  cursor: grabbing;
+}
+#tesseract-artwork:focus-visible {
+  outline: 2px solid #74a89a;
+  outline-offset: -3px;
+}
+.tesseract-controls .field {
+  min-width: 0;
+}
+#shape-animation-section > summary {
+  margin-bottom: 0;
+}
+#shape-animation-section[open] > summary {
+  margin-bottom: 14px;
+}
+.tesseract-controls .animation-section {
+  margin-top: 24px;
+}
+.tesseract-controls .animation-buttons {
+  flex-wrap: wrap;
+}
+.tesseract-controls .subsection .field-label {
+  flex-wrap: wrap;
+}
+.tesseract-app .plot-heading {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.tesseract-explanation {
+  padding: 22px 4px;
+  max-width: 780px;
+  line-height: 1.65;
+  font-size: 13px;
+  color: var(--muted);
+}
+.tesseract-explanation h2 {
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--text);
+  margin: 0 0 10px;
+}
+.tesseract-explanation code {
+  display: block;
+  margin: 18px 0;
+  font-size: 12px;
+  white-space: normal;
+}
+.tesseract-legend {
+  display: flex;
+  gap: 18px;
+}
+.tesseract-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tesseract-legend i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.tesseract-error {
+  position: absolute;
+  inset: 0;
+  background: var(--panel);
+  opacity: 0.96;
+}
+@media (max-width: 700px) {
+  .tesseract-canvas-wrap {
+    height: calc((100vw - 36px) * 0.85);
+    min-height: 0;
+  }
+  .tesseract-app .plot-meta {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .tesseract-app .plot-heading h1 {
+    font-size: 26px;
+  }
+}

@@ -15,6 +15,7 @@ declare const Go: new () => {
   run(instance: WebAssembly.Instance): Promise<void>;
 };
 declare const tangentGardenCompute: (json: string) => string;
+declare const tangentGardenTesseract: (json: string) => string;
 declare const tangentGardenSpatial: (json: string) => string;
 declare const tangentGardenScalars: (json: string) => string;
 let ready: Promise<void> | undefined;
@@ -38,7 +39,8 @@ self.onmessage = async ({
   config: import("./types").Config;
   bounds?: import("./types").Bounds;
   expressions?: string[];
-  action: "compute" | "scalars" | "spatial";
+  action: "compute" | "scalars" | "spatial" | "tesseract";
+  tesseract?: import("./tesseract/types").Config;
   spatial?: import("./spatial/types").SpatialConfig;
   base: string;
 }>) => {
@@ -56,6 +58,56 @@ self.onmessage = async ({
     };
     if (data.action === "scalars") {
       self.postMessage({ id: data.id, values: scalar(data.expressions ?? []) });
+      return;
+    }
+    if (data.action === "tesseract") {
+      const q = data.tesseract;
+      if (!q || !Array.isArray(q.angles) || q.angles.length !== 6)
+        throw new Error("Enter six tesseract rotation angles.");
+      const counts =
+        q.mode === "section"
+          ? [q.count]
+          : q.mode === "stereo"
+            ? [q.grid, q.samples]
+            : [q.grid];
+      const values =
+        q.mode === "perspective"
+          ? [q.distance]
+          : q.mode === "section"
+            ? [q.slice, q.spread]
+            : q.mode === "stereo"
+              ? [q.clip]
+              : [];
+      if (![...q.angles, ...values, ...counts].every(Number.isFinite))
+        throw new Error(
+          "Fill in every active tesseract parameter with a finite constant.",
+        );
+      if (!counts.every(Number.isInteger))
+        throw new Error(
+          "Section, face-line and sample counts must be whole numbers.",
+        );
+      // Inactive unfinished integer fields must not fail Go JSON decoding.
+      const request = {
+        mode: q.mode,
+        angles: q.angles,
+        ...(q.mode === "section"
+          ? { count: q.count, slice: q.slice, spread: q.spread }
+          : {
+              grid: q.grid,
+              ...(q.mode === "perspective"
+                ? { distance: q.distance }
+                : q.mode === "stereo"
+                  ? { samples: q.samples, clip: q.clip }
+                  : {}),
+            }),
+      };
+      const result = JSON.parse(
+        tangentGardenTesseract(JSON.stringify(request)),
+      );
+      self.postMessage({
+        id: data.id,
+        ...("error" in result ? result : { result }),
+      });
       return;
     }
     if (data.action === "spatial") {

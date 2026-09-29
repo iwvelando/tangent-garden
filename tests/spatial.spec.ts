@@ -155,14 +155,17 @@ test("narrow screens retain artwork, touch orbit, and controls without overflow"
   ).toBeLessThanOrEqual(390);
   const canvas = page.locator("canvas");
   const original = await pixels(page);
+  const box = (await canvas.boundingBox())!;
+  const x = box.x + box.width / 2,
+    y = box.y + box.height / 2;
   const touch = await page.context().newCDPSession(page);
   await touch.send("Input.dispatchTouchEvent", {
     type: "touchStart",
-    touchPoints: [{ x: 180, y: 250 }],
+    touchPoints: [{ x, y }],
   });
   await touch.send("Input.dispatchTouchEvent", {
     type: "touchMove",
-    touchPoints: [{ x: 230, y: 290 }],
+    touchPoints: [{ x: x + 50, y: y + 40 }],
   });
   await touch.send("Input.dispatchTouchEvent", {
     type: "touchEnd",

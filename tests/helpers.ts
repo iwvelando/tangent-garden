@@ -60,3 +60,26 @@ export async function exampleTitles(page: Page) {
   await gallery.waitFor({ state: "hidden" });
   return titles;
 }
+
+export async function chooseNotebook(
+  page: Page,
+  dimension: "2d" | "3d" | "4d",
+) {
+  await page.locator(".app:visible .notebook-mode > button").click();
+  await page
+    .getByRole("menuitemradio", {
+      name: { "2d": "2D curves", "3d": "3D curves", "4d": "4D shapes" }[
+        dimension
+      ],
+      exact: true,
+    })
+    .click();
+}
+
+export async function openShapeAnimation(page: Page) {
+  await open(page, "#shape-animation-section");
+}
+export async function openShapeExport(page: Page) {
+  await openShapeAnimation(page);
+  await open(page, "#shape-export-settings");
+}

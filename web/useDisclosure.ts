@@ -10,7 +10,9 @@ export type Section =
   | "indices"
   | "diagnostics"
   | "spatial-animation"
-  | "spatial-export";
+  | "spatial-export"
+  | "shape-animation"
+  | "shape-export";
 
 function read(): Partial<Record<Section, boolean>> {
   try {

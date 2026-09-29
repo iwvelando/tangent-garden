@@ -1,3 +1,4 @@
+import { chooseNotebook } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
@@ -55,10 +56,10 @@ test("custom definitions, errors, and both notebooks preserve edits and views", 
   await canvas.focus();
   await page.keyboard.press("ArrowRight");
   const before = await canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL());
-  await page.getByRole("button", { name: "2D curves", exact: true }).click();
+  await chooseNotebook(page, "2d");
   await expect(page.locator("#artwork")).toBeVisible();
   await choosePreset(page, { label: "Flower & its offset" });
-  await page.getByRole("button", { name: "3D curves", exact: true }).click();
+  await chooseNotebook(page, "3d");
   await expect(canvas).toBeVisible();
   await expect(
     page.getByRole("textbox", { name: "z(t)", exact: true }),
@@ -71,7 +72,7 @@ test("custom definitions, errors, and both notebooks preserve edits and views", 
     )
     .toBe(true);
   await page.getByRole("button", { name: "Use dark background" }).click();
-  await page.getByRole("button", { name: "2D curves", exact: true }).click();
+  await chooseNotebook(page, "2d");
   await expect(page.locator(".app:visible")).toHaveClass(/dark/);
   await expect(page.locator(".app:visible .example-current")).toHaveText(
     "Flower & its offset",
@@ -131,8 +132,8 @@ for (const camera of ["hold", "current", "follow", "fit"])
     await page
       .getByRole("button", { name: "Play animation", exact: true })
       .click();
-    await page.getByRole("button", { name: "2D curves", exact: true }).click();
-    await page.getByRole("button", { name: "3D curves", exact: true }).click();
+    await chooseNotebook(page, "2d");
+    await chooseNotebook(page, "3d");
     await expect(
       page.getByRole("button", { name: "Play animation", exact: true }),
     ).toBeEnabled();
@@ -394,11 +395,11 @@ test("a newly opened notebook inherits the chosen theme when storage is denied",
   await page.emulateMedia({ colorScheme: "light" });
   await ready(page);
   await page.getByRole("button", { name: "Use dark background" }).click();
-  await page.getByRole("button", { name: "2D curves", exact: true }).click();
+  await chooseNotebook(page, "2d");
   await expect(page.locator(".app:visible")).toHaveClass(/dark/);
   await page
     .getByRole("button", { name: "Follow system", exact: true })
     .click();
-  await page.getByRole("button", { name: "3D curves", exact: true }).click();
+  await chooseNotebook(page, "3d");
   await expect(page.locator(".spatial-app")).not.toHaveClass(/dark/);
 });

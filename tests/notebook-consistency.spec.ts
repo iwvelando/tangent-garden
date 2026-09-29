@@ -91,7 +91,10 @@ for (const width of [1440, 390]) {
         const header = page.locator(".app:visible header");
         const brand = header.locator(".brand-name");
         const headerShape = {
-          text: await header.innerText(),
+          text: (await header.innerText()).replace(
+            /[23]D curves/,
+            "Study dimension",
+          ),
           height: (await header.boundingBox())!.height,
           brandLines: Math.round(
             (await brand.boundingBox())!.height /
@@ -322,8 +325,8 @@ for (const width of [280, 320]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 700 });
-    for (const spatial of [false, true]) {
-      await page.goto(spatial ? "/?study=3d" : "/");
+    for (const notebook of ["2d", "3d", "4d"]) {
+      await page.goto(notebook === "2d" ? "/" : `/?study=${notebook}`);
       const button = page.getByRole("button", {
         name: "Export image",
         exact: true,
@@ -342,7 +345,7 @@ for (const width of [280, 320]) {
         expect(itemBox.x).toBeGreaterThanOrEqual(0);
         expect(itemBox.x + itemBox.width).toBeLessThanOrEqual(width);
       }
-      if (spatial) continue;
+      if (notebook !== "2d") continue;
       // An export error hangs from the same place and must fit too.
       await page.evaluate(() => {
         HTMLCanvasElement.prototype.toBlob = function (callback) {
