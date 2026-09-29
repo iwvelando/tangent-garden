@@ -303,7 +303,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
       page.getByRole("button", { name: "Replay", exact: true }),
     ).toBeVisible();
     expect((await definition(page)).curve.a).toBe(1 + (1 + Math.sqrt(5)) / 2);
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     const restored = await definition(page);
     expect(restored.curve).toEqual(original.curve);
     expect(restored.envelope).toEqual(original.envelope);

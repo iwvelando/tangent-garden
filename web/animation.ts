@@ -8,6 +8,11 @@ import {
   type Result,
 } from "./types";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
+// Draw along the curve, vary parameters, or trace light from its source to
+// the caustic (catacaustics and diacaustics only).
+export type AnimationMode = "reveal" | "parameters" | "trace";
+export const canTrace = (config: Config) =>
+  config.kind === "catacaustic" || config.kind === "diacaustic";
 export type Viewport = { cx: number; cy: number; scale: number; span: number };
 // A Fourier term's frequency, radius, or phase, numbered from 1.
 export type TermTarget = `term${number}${"Frequency" | "Radius" | "Phase"}`;
@@ -83,7 +88,10 @@ export type AnimationView = {
   heldView?: Viewport;
   length: number;
   progress: number;
-  mode: "reveal" | "parameters";
+  mode: AnimationMode;
+  // A finished animation releases the camera: its final frame stays, and pan
+  // and zoom start from the animation's own framing.
+  complete: boolean;
 };
 const targetLabels: Record<FixedTarget, string> = {
   a: "Shape parameter a",

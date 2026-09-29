@@ -89,6 +89,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
   const stage = useRef<HTMLDivElement>(null);
   const scalarBusy = Object.values(scalars).some((s) => s.pending),
     scalarError = Object.values(scalars).find((s) => s.error)?.error;
+  // Playback holds the view buttons; a finished animation hands them back.
+  const held = preview && (playing || progress < 1);
   const request = preview ? sample(config, motion, progress) : config,
     key = JSON.stringify(request);
   const busy = !ready || scalarBusy || (!playing && key !== settled);
@@ -532,14 +534,14 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
               <button
                 className="fit"
                 aria-pressed={spinning}
-                disabled={preview || !!exporting}
+                disabled={held || !!exporting}
                 onClick={() => setSpinning((s) => !s)}
               >
                 {spinning ? "Pause rotation" : "Rotate view"}
               </button>
               <button
                 className="fit"
-                disabled={preview || !!exporting}
+                disabled={held || !!exporting}
                 onClick={() => {
                   setSpinning(false);
                   setView({ ...initialView });
@@ -563,7 +565,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   config={frame.config}
                   {...{ view, layers, dark }}
                   onView={(v) => {
-                    if (preview || exporting) return;
+                    if (held || exporting) return;
                     controller.current?.abort();
                     setView(v);
                   }}
@@ -590,8 +592,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                 ))}
               </div>
               <span>
-                Orthographic · drag to orbit · shift-drag to pan · scroll to
-                zoom · keys: arrows, + / −, Home
+                Orthographic · drag to orbit · shift-drag or two fingers to pan
+                · scroll or pinch to zoom · keys: arrows, + / −, Home
               </span>
             </div>
           </div>

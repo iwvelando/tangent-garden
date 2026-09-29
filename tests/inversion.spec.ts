@@ -299,7 +299,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     ).toBeVisible();
     expect((await definition(page)).inversion.radius).toBe(Math.SQRT2);
     await expect(page.getByTestId("inversion-circle")).toHaveCount(1);
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).inversion).toEqual(original.inversion);
   });
 }

@@ -354,7 +354,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     expect(stack.from).toBe(-Math.PI / 4);
     expect(stack.count).toBe(12);
     await expect(members(page)).toHaveCount(12);
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).stack).toEqual(original);
     await expect(members(page)).toHaveCount(18);
   });

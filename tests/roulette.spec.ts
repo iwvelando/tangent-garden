@@ -416,7 +416,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     expect(roulette.phase).toBe(Math.PI / 5);
     expect(roulette.arm).toBeCloseTo((1 + Math.sqrt(5)) / 2, 14);
     await expect(rolling(page)).toHaveAttribute("data-sample", "1999");
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).curve.roulette).toEqual(original);
   });
 }

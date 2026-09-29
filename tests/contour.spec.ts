@@ -511,7 +511,7 @@ for (const mode of ["hold", "current", "follow", "fit"]) {
     expect(
       Number(await page.getByTestId("contour-window").getAttribute("width")),
     ).toBeCloseTo((2 + Math.E) * (await scale(page)), 6);
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).curve).toEqual(original);
   });
 }

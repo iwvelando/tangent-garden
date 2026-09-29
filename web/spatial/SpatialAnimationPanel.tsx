@@ -7,6 +7,7 @@ import {
   reveal,
   targetLabel,
   targetValue,
+  type AnimationMode,
   type AnimationView,
   type CameraMode,
   type NumericTrack,
@@ -16,6 +17,7 @@ import {
 } from "./animation";
 import type { Frame } from "./types";
 import type { Layers } from "./renderer";
+import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "../export-quality";
 import {
   defaultQuality,
@@ -35,7 +37,9 @@ type Session = {
   first: Frame;
   final: Frame;
   tracks: NumericTrack[];
-  mode: "reveal" | "parameters" | "orbit";
+  mode: AnimationMode;
+  // Present only while tracing rays.
+  timeline?: Timeline;
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
@@ -70,7 +74,13 @@ export function SpatialAnimationPanel({
   onRunning,
   onPlay,
 }: Props) {
-  const [mode, setMode] = useState<"reveal" | "parameters" | "orbit">("reveal");
+  const [mode, setMode] = useState<AnimationMode>("reveal");
+  const traceable = frame?.config.format === "rays";
+  // Light is traced only in a mirror or interface study; another falls back
+  // to revealing.
+  useEffect(() => {
+    if (!traceable && mode === "trace") setMode("reveal");
+  }, [traceable, mode]);
   const [camera, setCamera] = useState<CameraMode>("hold");
   const [duration, setDuration] = useState(10);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -78,7 +88,7 @@ export function SpatialAnimationPanel({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [live, setLive] = useState("");
-  const section = useDisclosure("spatial-animation");
+  const section = useDisclosure("spatial-animation", true);
   const exportSection = useDisclosure("spatial-export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
@@ -207,8 +217,11 @@ export function SpatialAnimationPanel({
                     : from + 1;
     return { target, from: String(from), to: String(to) };
   }
-  function parameterMode(next: "reveal" | "parameters" | "orbit") {
+  function parameterMode(next: AnimationMode) {
     setMode(next);
+    // Traced light enters a fixed view; a moving camera would chase it.
+    if (next === "trace" && (camera === "follow" || camera === "fit"))
+      setCamera("hold");
     if (next === "parameters" && !tracks.length && targets.length)
       setTracks([defaultTrack(targets[0])]);
   }
@@ -225,6 +238,11 @@ export function SpatialAnimationPanel({
         result: reveal(s.original.result, p),
       };
     else if (s.mode === "orbit") current = s.original;
+    else if (s.mode === "trace")
+      current = {
+        config: s.original.config,
+        result: trace(s.original.result, s.timeline!, p),
+      };
     else if (p === 0) current = s.first;
     else if (p === 1) current = s.final;
     else current = await engine.computeSpatial(values.config);
@@ -233,9 +251,10 @@ export function SpatialAnimationPanel({
       final: s.final,
       camera: s.camera,
       heldView: s.heldView,
-      length: s.mode === "reveal" ? s.length : values.length,
+      length: s.mode === "parameters" ? values.length : s.length,
       progress: p,
       mode: s.mode,
+      complete: p === 1,
     };
   }
   function display(s: Session, view: AnimationView) {
@@ -257,6 +276,15 @@ export function SpatialAnimationPanel({
     } else if (s.mode === "reveal")
       setLive(
         `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`,
+      );
+    else if (s.mode === "trace")
+      setLive(
+        `Optical path τ = ${(view.progress * s.timeline!.total).toPrecision(4)} · ${view.frame.result
+          .rays!.caustics.reduce(
+            (n, c) => n + c.points.flat().filter((q) => q).length,
+            0,
+          )
+          .toLocaleString("en-US")} caustic points reached`,
       );
     else if (s.mode === "orbit")
       setLive(`Camera rotation · ${Math.round(view.progress * 360)}°`);
@@ -383,8 +411,20 @@ export function SpatialAnimationPanel({
         [first, final] = results;
       }
       if (epoch.current !== token) return;
+      // Light enters the sphere the animation camera frames.
+      const timeline =
+        mode === "trace"
+          ? traceTimeline(
+              frame.result,
+              frame.config,
+              camera === "current" && heldView
+                ? { center: heldView.center, radius: heldView.radius }
+                : frame.result.bounds,
+            )
+          : undefined;
       const s: Session = {
         original: frame,
+        timeline,
         first,
         final,
         tracks: numeric,
@@ -495,7 +535,9 @@ export function SpatialAnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "orbit" ? (
+              mode === "trace" ? (
+                "Send light from the source, or in from past the edge of the view for parallel light, to the surface and on. Each caustic point appears as its ray reaches it. Light slows to c/n in each medium, so wavefronts stay together."
+              ) : mode === "orbit" ? (
                 "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
               ) : mode === "reveal" ? (
                 frame?.config.format === "implicit" ? (
@@ -527,6 +569,7 @@ export function SpatialAnimationPanel({
               </option>
               <option value="parameters">Vary parameters</option>
               <option value="orbit">Orbit the study</option>
+              {traceable && <option value="trace">Trace rays</option>}
             </select>
           </Field>
           {mode === "parameters" && (
@@ -636,8 +679,12 @@ export function SpatialAnimationPanel({
             >
               <option value="hold">Hold final view</option>
               <option value="current">Hold current view</option>
-              <option value="follow">Follow center, fixed zoom</option>
-              <option value="fit">Fit each frame</option>
+              {mode !== "trace" && (
+                <>
+                  <option value="follow">Follow center, fixed zoom</option>
+                  <option value="fit">Fit each frame</option>
+                </>
+              )}
             </select>
           </Field>
           <details
@@ -784,7 +831,7 @@ export function SpatialAnimationPanel({
               {status === "exporting"
                 ? "Cancel export"
                 : status === "complete"
-                  ? "Reset view"
+                  ? "Back to study"
                   : "Stop"}
             </button>
           </div>
@@ -821,7 +868,7 @@ export function SpatialAnimationPanel({
                 {status === "exporting"
                   ? "Cancel export discards the file; your study stays as it was."
                   : status === "complete"
-                    ? "Scrub the timeline or save this frame as an image. Reset view restores your study and manual view."
+                    ? "Orbit the finished drawing, scrub the timeline, or save this frame as an image. Back to study restores your study and manual view."
                     : "Pause to scrub or save this frame as an image. Stop restores your study and manual view."}
               </p>
             </div>

@@ -475,7 +475,7 @@ for (const mode of ["hold", "current", "follow", "fit"]) {
     expect(curve.attractor.a).toBe(-Math.PI / 2);
     expect(curve.attractor.iterates).toBe(30001);
     expect(await accumulated(page)).toBe(30001);
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).curve).toEqual(original);
     expect(await accumulated(page)).toBe(100000);
   });

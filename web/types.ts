@@ -213,6 +213,10 @@ export type Ray = {
   tir: boolean;
   // A chord's far endpoint; absent for other lines.
   end?: Vec;
+  // Only while rays are traced, never from Go: the incident ray drawn from
+  // `from` to `to`, and the outgoing ray to `out` with its virtual extension
+  // back to `back`, once it has left the curve.
+  traced?: { from: Vec; to: Vec; out: Vec | null; back: Vec | null };
 };
 
 // An offset stack member at its distance, or a circle envelope's branch to

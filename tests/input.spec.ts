@@ -276,7 +276,7 @@ for (const camera of ["hold", "current", "follow", "fit"]) {
     ).toBeVisible();
     expect((await definition(page)).pole.x).toBe(Math.PI / 10);
     await expect(inputCurve(page)).toHaveCount(1);
-    await page.getByRole("button", { name: /^(Stop|Reset view)$/ }).click();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
     expect((await definition(page)).pole).toEqual(original.pole);
   });
 }

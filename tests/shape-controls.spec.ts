@@ -46,9 +46,9 @@ for (const width of [320, 390, 1440]) {
           ),
         );
       expect(Math.max(...row) - Math.min(...row)).toBeLessThan(2);
-      await expect(
-        page.locator("#shape-animation-section"),
-      ).not.toHaveAttribute("open");
+      await expect(page.locator("#shape-animation-section")).toHaveAttribute(
+        "open",
+      );
       const paper = colorScheme === "dark" ? "#0b1517" : "#f3f1ea";
       await expect(
         page.locator("#tesseract-artwork > rect").first(),

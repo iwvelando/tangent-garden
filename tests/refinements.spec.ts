@@ -114,7 +114,7 @@ test("hold current view captures pan and zoom through playback, scrubbing and SV
   await exportImage(page, "SVG");
   expect((await download).suggestedFilename()).toMatch(/\.svg$/);
   await page
-    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
     .click();
   await expect(svg.locator("path").first()).toHaveAttribute("d", path!);
 });
@@ -169,7 +169,7 @@ test("polar light source follows a circular orbit, accepts scalar angle endpoint
   expect(source.position.x).toBeCloseTo(Math.cos(Math.PI / 2000), 12);
   expect(source.position.y).toBeCloseTo(Math.sin(Math.PI / 2000), 12);
   await page
-    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
     .click();
   await page
     .getByRole("textbox", { name: "Source theta θ (radians)" })

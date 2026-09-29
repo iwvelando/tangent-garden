@@ -1,11 +1,11 @@
 import { StudyExplanation } from "../StudyExplanation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { EngineClient } from "../engine-client";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
 import { useMediaQuery } from "../useMediaQuery";
 import { useTheme } from "../useTheme";
 import { useDisclosure } from "../useDisclosure";
-import { Field } from "../Field";
+import { Field, HelpText, HelpToggle, useHelp } from "../Field";
 import { AppHeader } from "../AppHeader";
 import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
@@ -73,6 +73,20 @@ import {
 import { raysNote, receiverAxes } from "./rays";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
+// How a study is sampled is for the curious: a heading and an info toggle
+// keep the detail out of the way until it is asked for.
+function SamplingNote({ children }: { children: ReactNode }) {
+  const help = useHelp();
+  return (
+    <div className="sampling-note">
+      <div className="field-label">
+        <span>How it&rsquo;s sampled</span>
+        <HelpToggle topic="how it’s sampled" help={help} />
+      </div>
+      <HelpText help={help}>{children}</HelpText>
+    </div>
+  );
+}
 export default function SpatialApp({ active = true }: { active?: boolean }) {
   const theme = useTheme(),
     narrow = useMediaQuery("(max-width: 700px)"),
@@ -90,6 +104,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     [renderError, setRenderError] = useState(""),
     [imageBusy, setImageBusy] = useState(false);
   const [reset, setReset] = useState(0),
+    [refit, setRefit] = useState(0),
     [spinning, setSpinning] = useState(false);
   const [animation, setAnimation] = useState<AnimationView | null>(null),
     [running, setRunning] = useState(false);
@@ -1057,7 +1072,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     ? `${scalarError.name}: ${scalarError.error}`
     : error;
   const shown = animation?.frame ?? frame,
-    override = animation ? animationCamera(animation) : undefined;
+    camera = animation ? animationCamera(animation) : undefined,
+    // A finished animation hands its camera over to be explored.
+    override = animation?.complete ? undefined : camera,
+    released = animation?.complete ? camera : undefined;
   const ready = !!frame && !busy && !failure && !renderError;
   async function save(format: "png" | "svg") {
     if (!shown || !viewport.current) return;
@@ -2456,7 +2474,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     }}
                   />
                 </Field>
-                <p>
+                <SamplingNote>
                   F is evaluated at every grid point, and every cube is split
                   into six tetrahedra around its diagonal, the same way in every
                   cube, so neighbours agree on their shared faces. Within a
@@ -2474,7 +2492,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   a cell. The mesh is limited to 200,000 triangles and 400,000
                   grid edges searched; the sections share 65,536 bisected edges
                   and 131,072 points.
-                </p>
+                </SamplingNote>
               </>
             ) : patched ? (
               <>
@@ -2537,7 +2555,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   />
                 </Field>
                 {mirroring ? (
-                  <p>
+                  <SamplingNote>
                     Positions, normals and their derivatives come from each
                     patch&rsquo;s exact first and second derivatives at every
                     grid sample, and so do the outgoing rays&rsquo; directions
@@ -2552,9 +2570,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     cell&rsquo;s flux from its midpoint, spreads it evenly over
                     the two triangles its corners&rsquo; rays make on the plane,
                     and gives every bin the flux inside it, by exact area.
-                  </p>
+                  </SamplingNote>
                 ) : (
-                  <p>
+                  <SamplingNote>
                     Positions, normals and principal curvatures come from each
                     patch&rsquo;s exact first and second derivatives at every
                     grid sample. Where X_u × X_v vanishes the chart is singular
@@ -2564,7 +2582,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     joined through infinity, even between samples. Centres of
                     curvature beyond 100 surface radii are treated as at
                     infinity.
-                  </p>
+                  </SamplingNote>
                 )}
               </>
             ) : (
@@ -2615,7 +2633,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     }
                   />
                 </Field>
-                <p>
+                <SamplingNote>
                   Finite sampling can miss fine detail. Compare resolutions near
                   poles, stationary points, and tight folds. Invalid samples and
                   unresolved tangent or normal intervals leave gaps. Involute
@@ -2637,7 +2655,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   integrated the same way, as one system, within 40,000 steps,
                   and the first pursuer&rsquo;s velocity and acceleration come
                   from the pursuit law itself.
-                </p>
+                </SamplingNote>
               </>
             )}
           </details>
@@ -2680,7 +2698,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           data-config={shown ? JSON.stringify(shown.config) : undefined}
           data-progress={animation?.progress}
           data-mode={animation?.mode}
-          data-camera={override ? JSON.stringify(override) : undefined}
+          data-camera={camera ? JSON.stringify(camera) : undefined}
         >
           <div className="plot-heading">
             <div>
@@ -2722,7 +2740,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             <div className="view-buttons">
               <button
                 className="fit"
-                disabled={!!animation || running || !!renderError}
+                disabled={!!override || running || !!renderError}
                 aria-pressed={spinning}
                 onClick={() => setSpinning((s) => !s)}
               >
@@ -2730,8 +2748,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               </button>
               <button
                 className="fit"
-                disabled={!!animation || running}
-                onClick={() => setReset((n) => n + 1)}
+                disabled={!!override || running}
+                onClick={() =>
+                  released ? setRefit((n) => n + 1) : setReset((n) => n + 1)
+                }
               >
                 Reset view
               </button>
@@ -2747,6 +2767,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   reset={reset}
                   spinning={spinning && active}
                   override={override}
+                  released={released}
+                  refit={refit}
                   onViewport={(v) => {
                     viewport.current = v;
                   }}
@@ -2817,9 +2839,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 </div>
               )}
               <span>
-                {animation
-                  ? "Animation camera · Stop or Reset view restores manual framing"
-                  : "Orthographic · drag to orbit · shift-drag to pan · scroll to zoom · keys: arrows, + / −, Home"}
+                {released
+                  ? "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · Back to study restores your view"
+                  : animation
+                    ? "Animation camera · Stop restores manual framing"
+                    : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home"}
               </span>
             </div>
           </div>

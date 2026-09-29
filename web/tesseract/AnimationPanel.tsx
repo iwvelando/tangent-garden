@@ -66,7 +66,7 @@ export function AnimationPanel(p: {
   onSeek: (n: number) => void;
   onExport: (options: MotionExport) => void;
 }) {
-  const section = useDisclosure("shape-animation"),
+  const section = useDisclosure("shape-animation", true),
     exportSection = useDisclosure("shape-export");
   const [format, setFormat] = useState<ExportFormat>("mp4"),
     [fps, setFPS] = useState(30),
@@ -276,7 +276,7 @@ export function AnimationPanel(p: {
               {p.exporting
                 ? "Cancel export"
                 : p.preview && p.progress >= 1
-                  ? "Reset view"
+                  ? "Back to study"
                   : "Stop"}
             </button>
           </div>
@@ -310,7 +310,7 @@ export function AnimationPanel(p: {
                 {p.exporting
                   ? "Cancel export discards the file; your study stays as it was."
                   : p.progress >= 1
-                    ? "Scrub the timeline or save this frame as an image. Reset view restores your study and manual view."
+                    ? "Orbit the finished drawing, scrub the timeline, or save this frame as an image. Back to study restores your study."
                     : "Pause to scrub or save this frame as an image. Stop restores your study and manual view."}
               </p>
             </div>
