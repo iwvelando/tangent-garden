@@ -34,7 +34,7 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 - [x] 5b. Spatial cyclic pursuit with explicit capture events and multiple paths.
 - [x] 6a. Parametric surface studies with normal congruences and signed offsets.
 - [x] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
-- [ ] 7a. Single-interaction reflected ray families and their caustic sets.
+- [x] 7a. Single-interaction reflected ray families and their caustic sets.
 - [ ] 7b. Refraction and separately defined receiver-plane intersection/density studies.
 - [ ] 8. Bounded implicit surfaces and section curves, after a topology and memory-budget prototype.
 
@@ -334,5 +334,52 @@ Slices 1a and 1b (branch `claude/spatial-involutes`) landed together, because a 
   - presets cannot set the camera or layers.
 
 Recommended next step: **7a, single-interaction reflected ray families and their caustic sets**. It can reuse this slice's surface evaluator and normals: begin with parallel rays on a paraboloid and a spherical reflector, checking the reflection law and the exact focal points, before any UI.
+
+### Slice completed in this follow-up: 7a
+
+- Implemented single reflections from the analytic surface patches as a spatial definition, `format: "rays"` (branch `claude/spatial-mirrors`): the reflected ray family, its two caustic branches, and representative incident, reflected and virtual rays. 7a shipped alone. 7b's refraction needs explicit indices and total internal reflection, and its receiver-plane density needs its own result type with emitted weights, area normalization and energy accounting; neither shares 7a's caustic result.
+- Evaluator decision, made before the UI: the mirror is the surface study's patch, not a new surface type. `rays` reuses `SurfaceRequest.patch` and the grid, sheet, classification and continuity helpers, validates only the patch (`validatePatch`), and ignores the surface study's offset and normal reach.
+- Conventions:
+  - Parallel light travels along `(cos β cos α, cos β sin α, sin β)` in degrees, exact at right angles, which reduces to the planar `(cos θ, sin θ)` at β = 0. A point source gives `I = (X − S)/|X − S|`.
+  - The declared normal is the mirror side: a sample is lit only where `I·n < −10⁻⁹`. Nothing is occluded and there is no second bounce.
+  - `R = I − 2(I·n)n`, with exact derivatives from the patch's second derivatives.
+  - The caustic condition `det(Y_u, Y_v, R) = 0` is solved as the eigenproblem of the reflected wavefront's shape operator `W = −B̄Ā⁻¹` across R, so `C = X + R/μ` in the focal sheets' sign convention. μ > 0 is real, ahead of the mirror; μ < 0 is virtual.
+  - The eigenvalues come from W's symmetric part, as κ's do. Its antisymmetric part, the twist, vanishes by Malus–Dupin and is a test residual.
+  - Branches are ordered μ₁ ≥ μ₂, which stays continuous where a branch passes through infinity; ordering by λ would not.
+- Degeneracy policy:
+  - Unlit (grazing or from behind), at-source and chart-singular samples have no reflection and are counted.
+  - Stigmatic samples (μ₁ = μ₂) are counted and have no caustic normal.
+  - A caustic point beyond 100 surface radii is at infinity and counted as clipped.
+  - Each branch is split into real and virtual parts, and edges follow the focal sheets' rule (same sign, a lit finite midpoint that does not turn back). A caustic is therefore never joined through infinity, from real to virtual, past the edge of the light, or across its own cusps.
+- Added `engine3/rays.go` with `RaysRequest`, `Ray` (`start`, `point`, `end`, `back`, `virtual`), `CausticSheet` (a grid sheet with `branch`, `virtual`, `shape`) and `RaysResult`. The interface adds:
+  - **Spatial definition · Mirror · reflected rays**, sharing the surface controls, with **Mirror side**;
+  - **Light** (**Parallel light** with **Azimuth α (°)** and **Elevation β (°)**, or **Point source** with **Source x/y/z**), **Ray length ℓ**, and a note (`web/spatial/rays.ts`);
+  - the layers **Mirror**, **Parameter curves**, **Incident rays** (with the source), **Reflected rays**, **Caustic 1 · μ₁** (rust), **Caustic 2 · μ₂** (slate), and **Virtual rays & caustics**, where virtual parts are drawn only as lines;
+  - tracks for the shape, direction or source, ray length, domain and grid, and a reveal along u;
+  - five presets (a paraboloid gathering light, a tilted beam folding into coma, a spherical bowl's cusped caustic, an ellipsoid refocusing its lamp, a cup's nephroid) in a new "Mirrors and caustics" gallery family, with thumbnails.
+
+  Virtual extensions were first drawn behind every ray and swamped the concave mirrors, whose caustics are all real. Go now marks a ray virtual only where one of its caustic points is, and only those extensions are drawn. Adding `rays` to the preset base changed every 3D fingerprint; existing images re-rendered byte-identically.
+
+- Workload: the surface study's limits (at most 240 samples each way and 14,400 cells), one extra reflection per edge for the midpoint test, and four caustic sheets. The largest torus grid under oblique light, with 48 curves each way and 1,159 rays, took about 11 ms natively and about 6.3 MB of JSON. There is no new runtime dependency or resource category. Durable definitions are in `mathematics.md#spatial-mirrors-reflected-rays-and-caustics`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: `make check` passed: formatting, vet, Go race tests (engine3 coverage 99.6%), the WASM bridge (a paraboloid's focus and rays through it, a plane mirror's virtual image and virtual rays, unlit samples, refusals), TypeScript, and the production build and notices. `make thumbnails` regenerated the gallery. The full Chromium run passed all 570 tests, and all 17 WebKit tests passed, including a PNG and H.264 export of the coma preset. Go tests cover the list in `mathematics.md#spatial-mirrors-reflected-rays-and-caustics`. Mutations that join every caustic edge or drop the grazing tolerance each fail. Symmetrizing W survives, as expected: the twist test shows it is already symmetric to rounding. Browser tests cover:
+  - controls, layers and validation, including a point source, the shared patch when switching to a surface study, and an empty virtual layer when every caustic is real;
+  - notes on point, surface and curve caustics, a dome's virtual focus, a saddle's real and virtual parabolas, a plane's image, a sample at the source, unlit, singular, stigmatic and clipped samples;
+  - reveal along u, pause, resume and edit invalidation;
+  - all four cameras on an elevation track;
+  - a decoded MP4 with a moving source;
+  - reveal and track unit tests, and every new scalar field.
+
+  The layout sweep includes the coma and ellipsoid presets. Light and dark drawings, the thumbnails, and the phone-width controls and explanation in both themes (scroll width 390) were inspected.
+
+- Limits:
+  - analytic patches only, one reflection, and no occlusion, so a ray may pass through another part of the mirror (the bowl preset's lowest axis caustic is reached that way);
+  - no refraction, receiver plane, or intensity, all of which belong to 7b;
+  - uniform parameter grids, so a caustic's fast flaring near grazing light is sampled coarsely;
+  - cuspidal edges break the sheet but are not located or counted;
+  - the virtual layer is shared by both branches;
+  - opaque sheets, so a virtual caustic inside a convex mirror needs the mirror hidden;
+  - presets cannot set the camera or layers.
+
+Recommended next step: **7b, refraction and a separately defined receiver-plane study**. Refraction can reuse `SurfaceRequest.ray` with the transmitted direction for explicit indices n₁/n₂ (reporting total internal reflection per sample), and the caustic machinery is unchanged: W stays symmetric for a refracted normal congruence. The receiver plane is a new result type with its own energy model and should be designed before any UI.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

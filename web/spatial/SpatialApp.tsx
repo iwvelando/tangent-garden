@@ -32,6 +32,7 @@ import {
   type SpatialPursuitConfig,
   type SurfaceConfig,
   type SurfaceKind,
+  type RaysConfig,
   maxSurfaceCells,
   maxSurfaceCurves,
   maxMeridians,
@@ -60,6 +61,7 @@ import {
   surfaceNote,
   surfaceShape,
 } from "./surface";
+import { raysNote } from "./rays";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
 export default function SpatialApp({ active = true }: { active?: boolean }) {
@@ -175,7 +177,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
         format === "harmonic" ||
         format === "field" ||
         format === "pursuit" ||
-        format === "surface"
+        format === "surface" ||
+        format === "rays"
       )
         return { ...c, format };
       // Preserve an edited custom definition. A generated knot can also be opened
@@ -208,6 +211,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const chasing = config.format === "pursuit";
   // A surface is not a curve: no construction applies to it.
   const surfacing = config.format === "surface";
+  // A mirror is a surface patch lit for a single reflection; it shares the
+  // patch's controls but not its offset or normal lines.
+  const mirroring = config.format === "rays";
+  const patched = surfacing || mirroring;
   const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
     update((c) => ({ ...c, canal: change(c.canal) }));
   const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
@@ -637,6 +644,68 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   }
   const patch =
     frame?.config.format === "surface" ? frame.result.surface : undefined;
+  const mirror =
+    frame?.config.format === "rays" ? frame.result.rays : undefined;
+  const setRays = (change: (r: RaysConfig) => RaysConfig) =>
+    update((c) => ({ ...c, rays: change(c.rays) }));
+  const lightControls = (
+    <>
+      <Field
+        label="Light"
+        help="Parallel light, as from a distant source, or a point source. Either reflects once; nothing blocks it on the way in or out."
+      >
+        <select
+          value={config.rays.light}
+          onChange={(e) => {
+            const light = e.target.value as RaysConfig["light"];
+            setRays((r) => ({ ...r, light }));
+          }}
+        >
+          <option value="parallel">Parallel light</option>
+          <option value="point">Point source</option>
+        </select>
+      </Field>
+      {config.rays.light === "parallel" ? (
+        <div className="pair">
+          {vector(
+            "Azimuth α (°)",
+            config.rays.azimuth,
+            (azimuth) => setRays((r) => ({ ...r, azimuth })),
+            "The light travels along (cos β cos α, cos β sin α, sin β), in degrees within ±100000: β = −90 is straight down.",
+          )}
+          {vector("Elevation β (°)", config.rays.elevation, (elevation) =>
+            setRays((r) => ({ ...r, elevation })),
+          )}
+        </div>
+      ) : (
+        <div className="pair trio">
+          {(["x", "y", "z"] as const).map((axis) =>
+            vector(
+              `Source ${axis}`,
+              config.rays.source[axis],
+              (value) =>
+                setRays((r) => ({
+                  ...r,
+                  source: { ...r.source, [axis]: value },
+                })),
+              axis === "x"
+                ? "Where the light leaves, each coordinate within ±100000."
+                : undefined,
+            ),
+          )}
+        </div>
+      )}
+      {vector(
+        "Ray length ℓ",
+        config.rays.length,
+        (length) => setRays((r) => ({ ...r, length })),
+        "Each reflected ray runs ℓ from the mirror, and its virtual extension ℓ back behind it; parallel light arrives from ℓ away. 0–100000; 0 hides the rays.",
+      )}
+      <p className="note" data-testid="rays-note">
+        {mirror ? raysNote(mirror).join(" ") : "Following the light…"}
+      </p>
+    </>
+  );
   const shapeFields = surfaceShape[config.surface.kind].map((f) =>
     vector(
       f.label,
@@ -689,8 +758,12 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
         </div>
       ))}
       <Field
-        label="Normal"
-        help="Which side n points to. Reversing it negates both curvatures and swaps the focal sheets' numbers; the geometry stays."
+        label={mirroring ? "Mirror side" : "Normal"}
+        help={
+          mirroring
+            ? "The mirror reflects on the side n points to: light arriving against n reflects, and light from behind it is unlit. Nothing is inferred about inside and outside."
+            : "Which side n points to. Reversing it negates both curvatures and swaps the focal sheets' numbers; the geometry stays."
+        }
       >
         <select
           value={config.surface.reverse ? "reverse" : "forward"}
@@ -703,23 +776,29 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           <option value="reverse">Reversed</option>
         </select>
       </Field>
-      <div className="pair">
-        {vector(
-          "Offset d",
-          config.surface.offset,
-          (offset) => setSurface((s) => ({ ...s, offset })),
-          "The offset surface X + d n, signed along n, within ±100000; 0 hides it.",
-        )}
-        {vector(
-          "Normal reach ℓ",
-          config.surface.reach,
-          (reach) => setSurface((s) => ({ ...s, reach })),
-          "Each normal line runs from X to X + ℓn: signed along n, within ±100000. 0 hides them.",
-        )}
-      </div>
-      <p className="note" data-testid="surface-note">
-        {patch ? surfaceNote(patch).join(" ") : "Measuring the curvature…"}
-      </p>
+      {mirroring ? (
+        lightControls
+      ) : (
+        <>
+          <div className="pair">
+            {vector(
+              "Offset d",
+              config.surface.offset,
+              (offset) => setSurface((s) => ({ ...s, offset })),
+              "The offset surface X + d n, signed along n, within ±100000; 0 hides it.",
+            )}
+            {vector(
+              "Normal reach ℓ",
+              config.surface.reach,
+              (reach) => setSurface((s) => ({ ...s, reach })),
+              "Each normal line runs from X to X + ℓn: signed along n, within ±100000. 0 hides them.",
+            )}
+          </div>
+          <p className="note" data-testid="surface-note">
+            {patch ? surfaceNote(patch).join(" ") : "Measuring the curvature…"}
+          </p>
+        </>
+      )}
     </>
   );
   const failure = scalarError
@@ -1048,7 +1127,42 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </Field>
     </>
   );
-  const behind = surfacing ? (
+  const behind = mirroring ? (
+    <StudyExplanation
+      label="BEHIND THE MIRROR"
+      title="A geometric fold of rays."
+      formula={
+        <>
+          R = I − 2(I·n) n <span>C = X + R / μ</span>
+        </>
+      }
+      note="Gold lines are reflected rays where the parameter curves cross, grey their incident rays and, where a caustic point lies behind the mirror, their virtual extensions. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross."
+      diagnostics={
+        mirror &&
+        (mirror.unlit > 0 ||
+          mirror.singular > 0 ||
+          mirror.clipped.some((n) => n > 0)) && (
+          <p className="bottom-note">
+            A caustic is never joined through infinity, from real to virtual, or
+            past the edge of the light.
+          </p>
+        )
+      }
+    >
+      <p>
+        Light meets the mirror at X travelling along I and leaves along its
+        reflection R. Neighbouring reflected rays cross, nearly, at up to two
+        places along each ray: the centres of curvature of the reflected
+        wavefront, where it bends by μ₁ and μ₂. Together those points form the{" "}
+        <em>caustic</em>, the bright fold where reflected light gathers.
+        Converging rays (μ &gt; 0) cross ahead of the mirror, in a real caustic;
+        diverging rays only appear to leave a virtual caustic behind it. A
+        paraboloid sends light along its axis through one focus; a sphere
+        cannot, and folds it into a cusped sheet and a line on the axis. Each
+        lit sample reflects once, whatever may stand in the way.
+      </p>
+    </StudyExplanation>
+  ) : surfacing ? (
     <StudyExplanation
       label="BEHIND THE NORMALS"
       title="A surface revealing its centers."
@@ -1455,11 +1569,12 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     Pursuit · each chases the next
                   </option>
                   <option value="surface">Surface patch · X(u, v)</option>
+                  <option value="rays">Mirror · reflected rays</option>
                 </select>
               </Field>
               {config.format === "harmonic" ? (
                 harmonicControls
-              ) : surfacing ? (
+              ) : patched ? (
                 surfaceControls
               ) : flowing ? (
                 fieldControls
@@ -1578,7 +1693,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   </details>
                 </>
               )}
-              {!surfacing && (
+              {!patched && (
                 <>
                   <Field label="Construction">
                     <select
@@ -1845,7 +1960,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             Constant expressions welcome: pi, e, phi.
           </p>
           {/* The curve alone, unless a field or harmonic, has no layers. */}
-          {(surfacing ||
+          {(patched ||
             !(
               none &&
               !flowing &&
@@ -1854,99 +1969,114 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             )) && (
             <fieldset className="spatial-layers">
               <legend>Reveal the construction</legend>
-              {(surfacing
+              {(mirroring
                 ? ([
-                    ["surface", "Surface patch"],
+                    ["surface", "Mirror"],
                     ["curves", "Parameter curves"],
-                    ["normals", "Normal lines"],
-                    ["offset", "Offset surface"],
-                    ["focal1", "Focal sheet 1 · κ₁"],
-                    ["focal2", "Focal sheet 2 · κ₂"],
+                    [
+                      "incident",
+                      config.rays.light === "point"
+                        ? "Incident rays & source"
+                        : "Incident rays",
+                    ],
+                    ["reflected", "Reflected rays"],
+                    ["focal1", "Caustic 1 · μ₁"],
+                    ["focal2", "Caustic 2 · μ₂"],
+                    ["virtual", "Virtual rays & caustics"],
                   ] as const)
-                : [
-                    ...(none
-                      ? []
-                      : canal
-                        ? ([
-                            ["surface", "Canal surface"],
-                            ["circles", "Contact circles"],
-                            ["meridians", "Meridians"],
-                            ["frames", "Frames"],
-                            ...(canalShown?.frame?.closed
-                              ? ([["seam", "Seam"]] as const)
-                              : []),
-                          ] as const)
-                        : ruled
+                : surfacing
+                  ? ([
+                      ["surface", "Surface patch"],
+                      ["curves", "Parameter curves"],
+                      ["normals", "Normal lines"],
+                      ["offset", "Offset surface"],
+                      ["focal1", "Focal sheet 1 · κ₁"],
+                      ["focal2", "Focal sheet 2 · κ₂"],
+                    ] as const)
+                  : [
+                      ...(none
+                        ? []
+                        : canal
                           ? ([
-                              ["surface", "Ruled surface"],
-                              ["rulings", "Rulings"],
-                              ["edges", "Partner thread"],
+                              ["surface", "Canal surface"],
+                              ["circles", "Contact circles"],
+                              ["meridians", "Meridians"],
+                              ["frames", "Frames"],
+                              ...(canalShown?.frame?.closed
+                                ? ([["seam", "Seam"]] as const)
+                                : []),
                             ] as const)
-                          : framed
+                          : ruled
                             ? ([
-                                ["surface", "Ribbon surface"],
-                                ["rulings", "Cross-lines"],
-                                ["edges", "Ribbon edges"],
-                                ["strands", "Strands"],
-                                ["frames", "Frames"],
-                                ...(frameResult?.closed
-                                  ? ([["seam", "Seam"]] as const)
-                                  : []),
+                                ["surface", "Ruled surface"],
+                                ["rulings", "Rulings"],
+                                ["edges", "Partner thread"],
                               ] as const)
-                            : inversion
+                            : framed
                               ? ([
-                                  ["inverse", "Inverted curve"],
-                                  [
-                                    "correspondences",
-                                    "Correspondence segments",
-                                  ],
-                                  ["sphere", "Inversion sphere & center"],
-                                  ...(config.inversion.input === "base"
-                                    ? []
-                                    : ([
-                                        ["source", "Projection & pole"],
-                                      ] as const)),
+                                  ["surface", "Ribbon surface"],
+                                  ["rulings", "Cross-lines"],
+                                  ["edges", "Ribbon edges"],
+                                  ["strands", "Strands"],
+                                  ["frames", "Frames"],
+                                  ...(frameResult?.closed
+                                    ? ([["seam", "Seam"]] as const)
+                                    : []),
                                 ] as const)
-                              : projection
+                              : inversion
                                 ? ([
-                                    ["projection", projectionName],
+                                    ["inverse", "Inverted curve"],
                                     [
-                                      "connectors",
-                                      "Perpendiculars & tangent feet",
+                                      "correspondences",
+                                      "Correspondence segments",
                                     ],
-                                    ["pole", "Pole marker"],
+                                    ["sphere", "Inversion sphere & center"],
+                                    ...(config.inversion.input === "base"
+                                      ? []
+                                      : ([
+                                          ["source", "Projection & pole"],
+                                        ] as const)),
                                   ] as const)
-                                : involute
+                                : projection
                                   ? ([
-                                      ["filaments", "Involute filaments"],
-                                      ["strings", "Unwinding strings"],
+                                      ["projection", projectionName],
+                                      [
+                                        "connectors",
+                                        "Perpendiculars & tangent feet",
+                                      ],
+                                      ["pole", "Pole marker"],
                                     ] as const)
-                                  : ([
-                                      ["surface", "Ribbon surface"],
-                                      ["rulings", "Tangent rulings"],
-                                      ["edges", "Ribbon edges"],
-                                    ] as const)),
-                    ...(config.format === "harmonic"
-                      ? ([
-                          ["vectors", "Vector sums"],
-                          ["ellipses", "Generating ellipses"],
-                        ] as const)
-                      : []),
-                    ...(flowing
-                      ? ([
-                          ["trajectories", "Other trajectories"],
-                          ["arrows", "Field directions"],
-                          ["seeds", "Seeds & early stops"],
-                        ] as const)
-                      : []),
-                    ...(chasing
-                      ? ([
-                          ["trajectories", "Other pursuers"],
-                          ["polygons", "Connecting polygons"],
-                          ["seeds", "Starts & capture"],
-                        ] as const)
-                      : []),
-                  ]
+                                  : involute
+                                    ? ([
+                                        ["filaments", "Involute filaments"],
+                                        ["strings", "Unwinding strings"],
+                                      ] as const)
+                                    : ([
+                                        ["surface", "Ribbon surface"],
+                                        ["rulings", "Tangent rulings"],
+                                        ["edges", "Ribbon edges"],
+                                      ] as const)),
+                      ...(config.format === "harmonic"
+                        ? ([
+                            ["vectors", "Vector sums"],
+                            ["ellipses", "Generating ellipses"],
+                          ] as const)
+                        : []),
+                      ...(flowing
+                        ? ([
+                            ["trajectories", "Other trajectories"],
+                            ["arrows", "Field directions"],
+                            ["seeds", "Seeds & early stops"],
+                          ] as const)
+                        : []),
+                      ...(chasing
+                        ? ([
+                            ["trajectories", "Other pursuers"],
+                            ["polygons", "Connecting polygons"],
+                            ["seeds", "Starts & capture"],
+                          ] as const)
+                        : []),
+                    ]
               ).map(([key, label]) => (
                 <label key={key}>
                   <input
@@ -1963,7 +2093,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           )}
           <details className="spatial-details">
             <summary>Sampling & definition</summary>
-            {surfacing ? (
+            {patched ? (
               <>
                 <div className="pair">
                   {(
@@ -2001,7 +2131,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                 </div>
                 <Field
                   label="Parameter curves"
-                  help={`2–${maxSurfaceCurves} curves each way, drawn on the surface and its focal sheets; normal lines stand where they cross.`}
+                  help={
+                    mirroring
+                      ? `2–${maxSurfaceCurves} curves each way, drawn on the mirror and its caustics; rays stand where they cross.`
+                      : `2–${maxSurfaceCurves} curves each way, drawn on the surface and its focal sheets; normal lines stand where they cross.`
+                  }
                 >
                   <input
                     type="number"
@@ -2019,16 +2153,33 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     }}
                   />
                 </Field>
-                <p>
-                  Positions, normals and principal curvatures come from each
-                  patch&rsquo;s exact first and second derivatives at every grid
-                  sample. Where X_u × X_v vanishes the chart is singular and has
-                  no normal. A focal edge is joined only when its curvature
-                  keeps its sign and the focal point halfway along it is finite
-                  and lies between its ends, so a sheet is never joined through
-                  infinity, even between samples. Centres of curvature beyond
-                  100 surface radii are treated as at infinity.
-                </p>
+                {mirroring ? (
+                  <p>
+                    Positions, normals and their derivatives come from each
+                    patch&rsquo;s exact first and second derivatives at every
+                    grid sample, and so do the reflected rays&rsquo; directions
+                    and derivatives. Caustic points are the centres of curvature
+                    of the reflected wavefront, from its shape operator across
+                    each ray. A caustic edge is joined only when its curvature
+                    keeps its sign and the caustic point halfway along it is
+                    lit, finite, and between its ends, so a caustic is never
+                    joined through infinity, past the edge of the light, or
+                    across its own cusps. Caustic points beyond 100 surface
+                    radii are treated as at infinity.
+                  </p>
+                ) : (
+                  <p>
+                    Positions, normals and principal curvatures come from each
+                    patch&rsquo;s exact first and second derivatives at every
+                    grid sample. Where X_u × X_v vanishes the chart is singular
+                    and has no normal. A focal edge is joined only when its
+                    curvature keeps its sign and the focal point halfway along
+                    it is finite and lies between its ends, so a sheet is never
+                    joined through infinity, even between samples. Centres of
+                    curvature beyond 100 surface radii are treated as at
+                    infinity.
+                  </p>
+                )}
               </>
             ) : (
               <>
@@ -2114,7 +2265,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : surfacing
+                : patched
                   ? `${config.surface.uSamples} × ${config.surface.vSamples} cells · ${config.surface.curves} parameter curves`
                   : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
@@ -2151,27 +2302,29 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {surfacing
-                  ? "A surface and its centers of curvature"
-                  : none
-                    ? flowing
-                      ? "Paths that follow a field"
-                      : chasing
-                        ? "Pursuers closing in space"
-                        : "A curve in space"
-                    : canal
-                      ? "A surface enveloping spheres"
-                      : ruled
-                        ? "A surface of straight threads"
-                        : framed
-                          ? "A ribbon carried by a frame"
-                          : inversion
-                            ? "A curve inverted in a sphere"
-                            : projection
-                              ? projectionName
-                              : involute
-                                ? "Filaments unwound from a curve"
-                                : "A ribbon of tangent lines"}
+                {mirroring
+                  ? "A mirror and its caustics"
+                  : surfacing
+                    ? "A surface and its centers of curvature"
+                    : none
+                      ? flowing
+                        ? "Paths that follow a field"
+                        : chasing
+                          ? "Pursuers closing in space"
+                          : "A curve in space"
+                      : canal
+                        ? "A surface enveloping spheres"
+                        : ruled
+                          ? "A surface of straight threads"
+                          : framed
+                            ? "A ribbon carried by a frame"
+                            : inversion
+                              ? "A curve inverted in a sphere"
+                              : projection
+                                ? projectionName
+                                : involute
+                                  ? "Filaments unwound from a curve"
+                                  : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -2219,7 +2372,14 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               )}
             </div>
             <div className="plot-meta">
-              {surfacing ? (
+              {mirroring ? (
+                <div className="legend">
+                  <span className="surface-dot" /> Mirror{" "}
+                  <span className="thread-dot" /> Reflected rays{" "}
+                  <span className="focal-dot" /> Caustic 1{" "}
+                  <span className="focal-dot second" /> Caustic 2
+                </div>
+              ) : surfacing ? (
                 <div className="legend">
                   <span className="surface-dot" /> Surface{" "}
                   <span className="focal-dot" /> Focal sheet 1{" "}

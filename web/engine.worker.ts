@@ -71,9 +71,14 @@ self.onmessage = async ({
         frame = data.spatial?.frame,
         ruled = data.spatial?.construction === "ruled",
         canal = data.spatial?.construction === "canal";
-      // A surface study reads only its own fields; Go ignores the curve's.
+      // A surface or ray study reads only its own fields; Go ignores the
+      // curve's, and a ray study the surface's offset and normal reach.
+      const mirror = data.spatial?.format === "rays",
+        rays = data.spatial?.rays;
       const surface =
-        data.spatial?.format === "surface" ? data.spatial.surface : undefined;
+        data.spatial?.format === "surface" || mirror
+          ? data.spatial!.surface
+          : undefined;
       if (surface) {
         const { uSamples, vSamples, curves } = surface;
         if (
@@ -85,8 +90,14 @@ self.onmessage = async ({
             surface.uMax,
             surface.vMin,
             surface.vMax,
-            surface.offset,
-            surface.reach,
+            ...(mirror
+              ? [
+                  rays!.length,
+                  ...(rays!.light === "point"
+                    ? [rays!.source.x, rays!.source.y, rays!.source.z]
+                    : [rays!.azimuth, rays!.elevation]),
+                ]
+              : [surface.offset, surface.reach]),
             uSamples,
             vSamples,
             curves,

@@ -36,7 +36,9 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // the base the first trajectory of the vector field described by Field, and
 // "pursuit" the first pursuer's path in the chase described by Pursuit.
 // Format "surface" is not a curve: it studies the patch described by
-// Surface, and every other field is ignored.
+// Surface, and every other field is ignored. Format "rays" lights that
+// patch, as a mirror, with the light described by Rays; the surface study's
+// offset and normal reach are ignored too.
 type Request struct {
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
@@ -50,6 +52,7 @@ type Request struct {
 	Field        FieldRequest     `json:"field"`
 	Pursuit      PursuitRequest   `json:"pursuit"`
 	Surface      SurfaceRequest   `json:"surface"`
+	Rays         RaysRequest      `json:"rays"`
 	Curve        Curve            `json:"curve"`
 	Radius       float64          `json:"radius"`
 	Tube         float64          `json:"tube"`
@@ -105,6 +108,9 @@ type Result struct {
 	// Surface is present only for a surface study, which leaves every
 	// curve field empty.
 	Surface *SurfaceResult `json:"surface,omitempty"`
+	// Rays is present only for a ray study, which leaves every curve field
+	// empty.
+	Rays *RaysResult `json:"rays,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -131,6 +137,9 @@ func jumps(a, b, middle Vec3, step float64) bool {
 func Compute(c Request) (Result, error) {
 	if c.Format == "surface" {
 		return surfaces(c.Surface)
+	}
+	if c.Format == "rays" {
+		return rays(c.Surface, c.Rays)
 	}
 	if c.Samples < 240 || c.Samples > 2400 || c.Lines < 12 || c.Lines > 240 {
 		return Result{}, fmt.Errorf("use 240–2400 samples and 12–240 rulings")

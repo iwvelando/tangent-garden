@@ -67,7 +67,13 @@ type NamedTarget =
   | "reach"
   | "uSamples"
   | "vSamples"
-  | "curves";
+  | "curves"
+  | "azimuth"
+  | "elevation"
+  | "sourceX"
+  | "sourceY"
+  | "sourceZ"
+  | "rayLength";
 // One coordinate of a vector field's seed, numbered from 1.
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
 // A pursuer's starting coordinate or speed, numbered from 1.
@@ -135,6 +141,12 @@ export const targetLabels: Record<NamedTarget, string> = {
   uSamples: "u samples",
   vSamples: "v samples",
   curves: "Parameter curves",
+  azimuth: "Azimuth α (°)",
+  elevation: "Elevation β (°)",
+  sourceX: "Source x",
+  sourceY: "Source y",
+  sourceZ: "Source z",
+  rayLength: "Ray length ℓ",
 };
 const subscript = (n: number) =>
   String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
@@ -184,6 +196,17 @@ const surfaceFields = {
 } as const;
 const isSurface = (t: Target): t is keyof typeof surfaceFields =>
   t in surfaceFields;
+// Light targets and the RaysConfig field each one moves.
+const raysFields = {
+  azimuth: "azimuth",
+  elevation: "elevation",
+  rayLength: "length",
+} as const;
+const isRays = (t: Target): t is keyof typeof raysFields => t in raysFields;
+const isSource = (t: Target): t is "sourceX" | "sourceY" | "sourceZ" =>
+  t === "sourceX" || t === "sourceY" || t === "sourceZ";
+const sourceAxis = (t: "sourceX" | "sourceY" | "sourceZ") =>
+  t.slice(6).toLowerCase() as "x" | "y" | "z";
 // Framed-construction targets and the FrameConfig field each one moves.
 const frameFields = {
   angle: "angle",
@@ -269,13 +292,16 @@ const isInvolute = (t: Target): t is InvoluteTarget =>
 // Animating the anchor or c recomputes the whole arc length in Go for every
 // frame, so a track never reuses a prefix measured from another anchor.
 export const availableTargets = (c: SpatialConfig): Target[] => {
-  if (c.format === "surface")
+  if (c.format === "surface" || c.format === "rays")
     return [
       ...surfaceShape[c.surface.kind].map(
         (f) => `surface${f.key.toUpperCase()}` as Target,
       ),
-      "surfaceOffset",
-      "reach",
+      ...(c.format === "surface"
+        ? (["surfaceOffset", "reach"] as const)
+        : c.rays.light === "point"
+          ? (["sourceX", "sourceY", "sourceZ", "rayLength"] as const)
+          : (["azimuth", "elevation", "rayLength"] as const)),
       "uMin",
       "uMax",
       "vMin",
@@ -374,6 +400,8 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
 };
 export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (isSurface(t)) return c.surface[surfaceFields[t]];
+  if (isRays(t)) return c.rays[raysFields[t]];
+  if (isSource(t)) return c.rays.source[sourceAxis(t)];
   if (t === "poleX") return c.pole.x;
   if (t === "poleY") return c.pole.y;
   if (t === "poleZ") return c.pole.z;
@@ -426,6 +454,14 @@ export function applyTracks(
     if (integerTargets.includes(t.target)) v = Math.round(v);
     if (isSurface(t.target)) {
       config.surface[surfaceFields[t.target]] = v;
+      continue;
+    }
+    if (isRays(t.target)) {
+      config.rays[raysFields[t.target]] = v;
+      continue;
+    }
+    if (isSource(t.target)) {
+      config.rays.source[sourceAxis(t.target)] = v;
       continue;
     }
     if (t.target === "poleX") config.pole.x = v;
@@ -539,6 +575,18 @@ export function surfaceBounds(s: NonNullable<SpatialResult["surface"]>) {
     ...s.focal.map((f) => f.points.flat()),
   );
 }
+// A mirror frames as Go frames it: its points with the rays and the source,
+// then each caustic part on its own.
+export function raysBounds(r: NonNullable<SpatialResult["rays"]>) {
+  return fitBounds(
+    [
+      ...r.surface.points.flat(),
+      ...r.lines.flatMap((l) => [l.start, l.end, l.back]),
+      ...(r.source ? [r.source] : []),
+    ],
+    ...r.caustics.map((c) => c.points.flat()),
+  );
+}
 // A harmonic curve's joints and ellipse axis extents, one pair of families
 // per term, as Go frames them.
 export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
@@ -557,8 +605,9 @@ export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
     return [joints, extents];
   });
 }
-// A surface reveals column by column in u: every sheet keeps the samples up
-// to u_last, the edges and faces between them, and the normal lines there.
+// A surface or mirror reveals column by column in u: every sheet keeps the
+// samples up to u_last, the edges and faces between them, and the normal
+// lines or rays there.
 function revealSheet<S extends SurfaceSheet>(sheet: S, last: number): S {
   return {
     ...sheet,
@@ -583,6 +632,19 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       lines: s.lines.filter((l) => l.i <= last),
     };
     return { ...result, surface, bounds: surfaceBounds(surface) };
+  }
+  if (result.rays) {
+    const r = result.rays,
+      last = Math.floor(
+        Math.max(0, Math.min(1, p)) * (r.surface.points.length - 1),
+      );
+    const rays = {
+      ...r,
+      surface: revealSheet(r.surface, last),
+      caustics: r.caustics.map((c) => revealSheet(c, last)),
+      lines: r.lines.filter((l) => l.i <= last),
+    };
+    return { ...result, rays, bounds: raysBounds(rays) };
   }
   const last = Math.floor(
     Math.max(0, Math.min(1, p)) * (result.base.length - 1),
