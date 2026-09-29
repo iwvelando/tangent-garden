@@ -588,3 +588,60 @@ func TestContourResultJSON(t *testing.T) {
 		t.Fatal("a parametric curve has contours")
 	}
 }
+
+// TraceLevel traces a field given as a function exactly as an implicit
+// curve's expression, and carries its budget from call to call.
+func TestTraceLevel(t *testing.T) {
+	w := Window{-1.3, 1.7, -1.1, 1.2}
+	res := contours(t, implicitRequest("x^2+y^2 - 0.4*x*y", 1, w, 37))
+	f, _, err := expr.ParseField("x^2+y^2 - 0.4*x*y", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &ContourBudget{}
+	set, discontinuities, ok := TraceLevel(func(x, y float64) float64 { return f(x, y, 0) }, w, 37, 1, b)
+	if !ok || len(discontinuities) != 0 || b.Crossings == 0 || b.Points == 0 || b.Truncated {
+		t.Fatalf("ok %v, discontinuities %v, budget %+v", ok, discontinuities, b)
+	}
+	got, _ := json.Marshal(set)
+	want, _ := json.Marshal(res.Curve)
+	if string(got) != string(want) {
+		t.Fatalf("traced %s, implicit curve %s", got, want)
+	}
+	// A pole is located and not traced.
+	b = &ContourBudget{}
+	set, discontinuities, ok = TraceLevel(func(x, y float64) float64 { return 1 / (x - .0501) }, Window{-2, 2, -1, 1}, 20, 0, b)
+	if !ok || len(set.Contours) != 0 || len(discontinuities) != 11 {
+		t.Fatalf("contours %v, discontinuities %v", set.Contours, discontinuities)
+	}
+	for _, p := range discontinuities {
+		if math.Abs(p.X-.0501) > 1e-12 {
+			t.Fatalf("discontinuity at %v", p)
+		}
+	}
+	// Grid points where the field is not finite leave their cells out.
+	b = &ContourBudget{}
+	set, _, _ = TraceLevel(func(x, y float64) float64 {
+		if x < 0 {
+			return math.NaN()
+		}
+		return x*x + y*y
+	}, square(2), 40, 1, b)
+	for _, c := range set.Contours {
+		if c.Closed {
+			t.Fatal("a contour beside undefined cells closed")
+		}
+		for _, p := range c.Points {
+			if p.X < 0 {
+				t.Fatalf("point %v in the undefined half", p)
+			}
+		}
+	}
+	// The budget spent before a call counts against it.
+	defer func(c int) { maxContourCrossings = c }(maxContourCrossings)
+	maxContourCrossings = 1000
+	b = &ContourBudget{Crossings: 990}
+	if set, _, ok = TraceLevel(func(x, y float64) float64 { return x*x + y*y }, square(2), 100, 1, b); ok || len(set.Contours) != 0 || b.Crossings != 990 {
+		t.Fatalf("ok %v, %d contours, budget %+v", ok, len(set.Contours), b)
+	}
+}

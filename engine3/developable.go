@@ -38,7 +38,8 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // Format "surface" is not a curve: it studies the patch described by
 // Surface, and every other field is ignored. Format "rays" lights that
 // patch, as a mirror, with the light described by Rays; the surface study's
-// offset and normal reach are ignored too.
+// offset and normal reach are ignored too. Format "implicit" is the level
+// set described by Implicit, and every other field is ignored.
 type Request struct {
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
@@ -53,6 +54,7 @@ type Request struct {
 	Pursuit      PursuitRequest   `json:"pursuit"`
 	Surface      SurfaceRequest   `json:"surface"`
 	Rays         RaysRequest      `json:"rays"`
+	Implicit     ImplicitRequest  `json:"implicit"`
 	Curve        Curve            `json:"curve"`
 	Radius       float64          `json:"radius"`
 	Tube         float64          `json:"tube"`
@@ -111,6 +113,9 @@ type Result struct {
 	// Rays is present only for a ray study, which leaves every curve field
 	// empty.
 	Rays *RaysResult `json:"rays,omitempty"`
+	// Implicit is present only for an implicit surface, which leaves every
+	// curve field empty.
+	Implicit *ImplicitResult `json:"implicit,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -140,6 +145,9 @@ func Compute(c Request) (Result, error) {
 	}
 	if c.Format == "rays" {
 		return rays(c.Surface, c.Rays)
+	}
+	if c.Format == "implicit" {
+		return implicit(c.Implicit)
 	}
 	if c.Samples < 240 || c.Samples > 2400 || c.Lines < 12 || c.Lines > 240 {
 		return Result{}, fmt.Errorf("use 240–2400 samples and 12–240 rulings")

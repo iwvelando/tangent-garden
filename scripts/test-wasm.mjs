@@ -1757,4 +1757,89 @@ const spatialRays = (surface, rays) =>
 console.log(
   "WASM rays: paraboloid focus, plane mirror, Snell's window, receiver and validation passed",
 );
+const spatialImplicit = (implicit) =>
+  JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "implicit",
+        // The curve's fields are ignored for an implicit surface.
+        samples: 0,
+        lines: 0,
+        implicit: {
+          f: "x^2 + y^2 + z^2 - a",
+          a: 1,
+          level: 0,
+          box: {
+            xMin: -1.3,
+            xMax: 1.3,
+            yMin: -1.3,
+            yMax: 1.3,
+            zMin: -1.3,
+            zMax: 1.3,
+          },
+          cells: 24,
+          sections: {
+            normal: { x: 0, y: 0, z: 1 },
+            from: -0.5,
+            to: 0.5,
+            count: 3,
+          },
+          ...implicit,
+        },
+      }),
+    ),
+  );
+{
+  // The unit sphere: every vertex on it, its normal outward, one closed
+  // piece of Euler characteristic 2, and circles of latitude.
+  const ball = spatialImplicit({});
+  const m = ball.implicit;
+  assert.deepEqual(ball.base, []);
+  assert.equal(ball.surface, undefined);
+  assert.deepEqual(m.grid, [24, 24, 24]);
+  assert.ok(m.triangles.length > 0 && m.triangles.length % 3 === 0);
+  for (let k = 0; k < m.positions.length; k += 3) {
+    const [x, y, z] = m.positions.slice(k, k + 3);
+    assert.ok(Math.abs(x * x + y * y + z * z - 1) < 1e-12);
+    assert.ok(
+      Math.hypot(m.normals[k] - x, m.normals[k + 1] - y, m.normals[k + 2] - z) <
+        1e-8,
+    );
+  }
+  assert.deepEqual(m.components, [
+    { triangles: m.triangles.length / 3, euler: 2, closed: true },
+  ]);
+  assert.deepEqual(m.cut, []);
+  assert.deepEqual(m.open, []);
+  assert.equal(m.sections.length, 3);
+  m.sections.forEach((s, k) => {
+    assert.equal(s.offset, [-0.5, 0, 0.5][k]);
+    assert.equal(s.paths.length, 1);
+    assert.equal(s.paths[0].closed, true);
+    s.paths[0].points.forEach((p) => {
+      assert.equal(p.z, s.offset);
+      assert.ok(
+        Math.abs(Math.hypot(p.x, p.y) - Math.sqrt(1 - s.offset ** 2)) < 1e-12,
+      );
+    });
+  });
+  // A pole is counted and marked, never meshed.
+  const pole = spatialImplicit({
+    f: "1/(x - 0.0501)",
+    cells: 10,
+    box: { xMin: -1, xMax: 1, yMin: -1, yMax: 1, zMin: -1, zMax: 1 },
+  }).implicit;
+  assert.equal(pole.triangles.length, 0);
+  assert.equal(pole.discontinuities, 441);
+  pole.marks.forEach((p) => assert.ok(Math.abs(p.x - 0.0501) < 1e-12));
+  assert.match(spatialImplicit({ f: "x + t" }).error, /cannot use t/);
+  assert.match(spatialImplicit({ cells: 128 }).error, /262,144 cells/);
+  assert.match(
+    spatialImplicit({
+      sections: { normal: { x: 0, y: 0, z: 0 }, from: 0, to: 0, count: 1 },
+    }).error,
+    /section normal/,
+  );
+}
+console.log("WASM implicit: sphere, sections, pole and validation passed");
 process.exit(0);

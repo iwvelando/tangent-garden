@@ -167,6 +167,33 @@ export type RaysConfig = {
   length: number;
   receiver: ReceiverConfig;
 };
+// The level set F(x, y, z) = level of an expression in x, y, z and a (not
+// t), within the box, on a grid of `cells` cells along the box's longest
+// side and as many along the others as keeps them nearest to cubes. Its
+// sections are `count` planes n̂·p = d with n̂ the normal made a unit vector
+// and d evenly from `from` to `to`, both included (one plane stands at
+// `from`; none at 0); the normal and offsets are read only then. Mirrors
+// engine3.ImplicitRequest.
+export type ImplicitBox = {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  zMin: number;
+  zMax: number;
+};
+export type ImplicitConfig = {
+  f: string;
+  a: number;
+  level: number;
+  box: ImplicitBox;
+  cells: number;
+  sections: { normal: Vec3; from: number; to: number; count: number };
+};
+export const minImplicitCells = 4;
+export const maxImplicitCells = 128;
+export const maxImplicitGrid = 262144;
+export const maxSections = 24;
 export type SpatialConfig = {
   format:
     | "torus"
@@ -175,7 +202,8 @@ export type SpatialConfig = {
     | "field"
     | "pursuit"
     | "surface"
-    | "rays";
+    | "rays"
+    | "implicit";
   // `length` is the tangent reach, used only by the developable.
   construction:
     | "developable"
@@ -202,6 +230,9 @@ export type SpatialConfig = {
   surface: SurfaceConfig;
   // Read only when the format is "rays".
   rays: RaysConfig;
+  // Read only when the format is "implicit", which ignores every other
+  // field.
+  implicit: ImplicitConfig;
   curve: {
     x: string;
     y: string;
@@ -245,6 +276,8 @@ export type SpatialResult = {
   surface?: SurfaceResult;
   // Present only for a ray study, whose curve fields are all empty.
   rays?: RaysResult;
+  // Present only for an implicit surface, whose curve fields are all empty.
+  implicit?: ImplicitResult;
   // Present only for the framed construction; its ribbon fills mesh, minus,
   // plus, and rulings, joined across frame.breaks rather than breaks.
   frame?: FrameResult;
@@ -504,4 +537,37 @@ export type RaysResult = {
   total: number;
   clipped: number[];
   receiver: ReceiverResult | null;
+};
+// Mirrors engine3.ImplicitResult: an indexed mesh with three coordinates per
+// vertex in positions and normals (a normal is ∇F/|∇F|, toward larger F, or
+// zero where ∇F vanishes or is not finite) and three vertex indices per
+// triangle, counterclockwise seen from larger F. Cut and open are pairs of
+// vertex indices: boundary edges on the box's faces, and beside cells left
+// out. Marks are where F changes sign without crossing the level, up to
+// 4,096 of them; discontinuities counts them all.
+export type ImplicitPath = { points: Vec3[]; closed: boolean };
+export type ImplicitSection = {
+  offset: number;
+  polygon: Vec3[];
+  paths: ImplicitPath[];
+  skipped: boolean;
+};
+export type ImplicitResult = {
+  box: ImplicitBox;
+  grid: [number, number, number];
+  positions: number[];
+  normals: number[];
+  triangles: number[];
+  cut: number[];
+  open: number[];
+  components: { triangles: number; euler: number; closed: boolean }[];
+  sections: ImplicitSection[];
+  marks: Vec3[];
+  nonfinite: number;
+  discontinuities: number;
+  ambiguous: number;
+  singular: number;
+  sectionDiscontinuities: number;
+  sectionsSkipped: number;
+  truncated: boolean;
 };

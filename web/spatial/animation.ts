@@ -77,7 +77,13 @@ type NamedTarget =
   | "n1"
   | "n2"
   | "receiverAt"
-  | "receiverSize";
+  | "receiverSize"
+  | "level"
+  | "implicitA"
+  | "sectionFrom"
+  | "sectionTo"
+  | "cells"
+  | "sectionCount";
 // One coordinate of a vector field's seed, numbered from 1.
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
 // A pursuer's starting coordinate or speed, numbered from 1.
@@ -155,6 +161,12 @@ export const targetLabels: Record<NamedTarget, string> = {
   n2: "Index n₂",
   receiverAt: "Plane at c",
   receiverSize: "Window size s",
+  level: "Level c",
+  implicitA: "Shape parameter a",
+  sectionFrom: "First offset d₀",
+  sectionTo: "Last offset d₁",
+  cells: "Cells",
+  sectionCount: "Section planes",
 };
 const subscript = (n: number) =>
   String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
@@ -217,6 +229,21 @@ const isRays = (t: Target): t is keyof typeof raysFields => t in raysFields;
 const receiverFields = { receiverAt: "at", receiverSize: "size" } as const;
 const isReceiver = (t: Target): t is keyof typeof receiverFields =>
   t in receiverFields;
+// Implicit-surface targets and the ImplicitConfig field each one moves.
+const implicitFields = {
+  level: "level",
+  implicitA: "a",
+  cells: "cells",
+} as const;
+const isImplicit = (t: Target): t is keyof typeof implicitFields =>
+  t in implicitFields;
+const sectionFields = {
+  sectionFrom: "from",
+  sectionTo: "to",
+  sectionCount: "count",
+} as const;
+const isSection = (t: Target): t is keyof typeof sectionFields =>
+  t in sectionFields;
 const isSource = (t: Target): t is "sourceX" | "sourceY" | "sourceZ" =>
   t === "sourceX" || t === "sourceY" || t === "sourceZ";
 const sourceAxis = (t: "sourceX" | "sourceY" | "sourceZ") =>
@@ -294,6 +321,8 @@ export const integerTargets: Target[] = [
   "uSamples",
   "vSamples",
   "curves",
+  "cells",
+  "sectionCount",
 ];
 const curveTargets = ["a", "min", "max"] as const;
 const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
@@ -306,6 +335,16 @@ const isInvolute = (t: Target): t is InvoluteTarget =>
 // Animating the anchor or c recomputes the whole arc length in Go for every
 // frame, so a track never reuses a prefix measured from another anchor.
 export const availableTargets = (c: SpatialConfig): Target[] => {
+  if (c.format === "implicit")
+    return [
+      "level",
+      "implicitA",
+      ...(c.implicit.sections.count > 0
+        ? (["sectionFrom", "sectionTo"] as const)
+        : []),
+      "cells",
+      "sectionCount",
+    ];
   if (c.format === "surface" || c.format === "rays")
     return [
       ...surfaceShape[c.surface.kind].map(
@@ -420,6 +459,8 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
     : [...construction, ...curve, "samples", "lines"];
 };
 export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
+  if (isImplicit(t)) return c.implicit[implicitFields[t]];
+  if (isSection(t)) return c.implicit.sections[sectionFields[t]];
   if (isSurface(t)) return c.surface[surfaceFields[t]];
   if (isRays(t)) return c.rays[raysFields[t]];
   if (isReceiver(t)) return c.rays.receiver[receiverFields[t]];
@@ -474,6 +515,14 @@ export function applyTracks(
   for (const t of tracks) {
     let v = t.from * (1 - p) + t.to * p;
     if (integerTargets.includes(t.target)) v = Math.round(v);
+    if (isImplicit(t.target)) {
+      config.implicit[implicitFields[t.target]] = v;
+      continue;
+    }
+    if (isSection(t.target)) {
+      config.implicit.sections[sectionFields[t.target]] = v;
+      continue;
+    }
     if (isSurface(t.target)) {
       config.surface[surfaceFields[t.target]] = v;
       continue;
@@ -645,7 +694,61 @@ function revealSheet<S extends SurfaceSheet>(sheet: S, last: number): S {
     faces: sheet.faces.slice(0, last),
   };
 }
+// An implicit surface reveals upward through its box: the triangles, cut and
+// open edges and crosses at or below the rising height, and the parts of
+// its sections below it.
+function revealImplicit(
+  m: NonNullable<SpatialResult["implicit"]>,
+  p: number,
+): NonNullable<SpatialResult["implicit"]> {
+  const top =
+    m.box.zMin + Math.max(0, Math.min(1, p)) * (m.box.zMax - m.box.zMin);
+  if (top >= m.box.zMax) return m;
+  const z = (v: number) => m.positions[3 * v + 2];
+  const triangles: number[] = [];
+  for (let k = 0; k < m.triangles.length; k += 3)
+    if ([0, 1, 2].every((d) => z(m.triangles[k + d]) <= top))
+      triangles.push(m.triangles[k], m.triangles[k + 1], m.triangles[k + 2]);
+  const pairs = (edges: number[]) => {
+    const out: number[] = [];
+    for (let k = 0; k < edges.length; k += 2)
+      if (z(edges[k]) <= top && z(edges[k + 1]) <= top)
+        out.push(edges[k], edges[k + 1]);
+    return out;
+  };
+  // A path is split where it rises above the height; a closed path that
+  // is split is no longer closed.
+  const sections = m.sections.map((s) => ({
+    ...s,
+    paths: s.paths.flatMap((path) => {
+      if (path.points.every((q) => q.z <= top)) return [path];
+      const runs: { points: Vec3[]; closed: boolean }[] = [];
+      let run: Vec3[] = [];
+      const start = path.closed ? path.points.findIndex((q) => q.z > top) : 0;
+      for (let k = 0; k < path.points.length; k++) {
+        const q = path.points[(start + k) % path.points.length];
+        if (q.z <= top) run.push(q);
+        else if (run.length) {
+          runs.push({ points: run, closed: false });
+          run = [];
+        }
+      }
+      if (run.length) runs.push({ points: run, closed: false });
+      return runs.filter((r) => r.points.length > 1);
+    }),
+  }));
+  return {
+    ...m,
+    triangles,
+    cut: pairs(m.cut),
+    open: pairs(m.open),
+    marks: m.marks.filter((q) => q.z <= top),
+    sections,
+  };
+}
 export function reveal(result: SpatialResult, p: number): SpatialResult {
+  if (result.implicit)
+    return { ...result, implicit: revealImplicit(result.implicit, p) };
   if (result.surface) {
     const s = result.surface,
       last = Math.floor(

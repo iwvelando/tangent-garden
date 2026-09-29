@@ -44,7 +44,13 @@ import {
   type HarmonicCurve,
   type SpatialConfig,
   type Frame,
+  type ImplicitConfig,
+  minImplicitCells,
+  maxImplicitCells,
+  maxImplicitGrid,
+  maxSections,
 } from "./types";
+import { implicitGrid, implicitNote } from "./implicit";
 import {
   harmonicClosureKey,
   harmonicClosureNote,
@@ -181,7 +187,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
         format === "field" ||
         format === "pursuit" ||
         format === "surface" ||
-        format === "rays"
+        format === "rays" ||
+        format === "implicit"
       )
         return { ...c, format };
       // Preserve an edited custom definition. A generated knot can also be opened
@@ -223,6 +230,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
   const receiving = mirroring && config.rays.receiver.plane !== "none";
   const face = refracting ? "interface" : "mirror";
   const patched = surfacing || mirroring;
+  // A level set is found in a box, not drawn from a parameter: no
+  // construction applies to it either.
+  const leveled = config.format === "implicit";
+  const curveless = patched || leveled;
   const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
     update((c) => ({ ...c, canal: change(c.canal) }));
   const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
@@ -922,6 +933,126 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       )}
     </>
   );
+  const setImplicit = (change: (q: ImplicitConfig) => ImplicitConfig) =>
+    update((c) => ({ ...c, implicit: change(c.implicit) }));
+  const setSections = (
+    change: (s: ImplicitConfig["sections"]) => ImplicitConfig["sections"],
+  ) => setImplicit((q) => ({ ...q, sections: change(q.sections) }));
+  const levelSet =
+    frame?.config.format === "implicit" ? frame.result.implicit : undefined;
+  const implicitControls = (
+    <>
+      <Field
+        label="F(x, y, z)"
+        help="An expression in x, y, z and a, but not t. The surface is where F = c, meshed within the box; ∇F points to larger F."
+      >
+        <input
+          value={config.implicit.f}
+          spellCheck={false}
+          onChange={(e) => {
+            const f = e.target.value;
+            setImplicit((q) => ({ ...q, f }));
+          }}
+        />
+      </Field>
+      <div className="pair">
+        {vector(
+          "Level c",
+          config.implicit.level,
+          (level) => setImplicit((q) => ({ ...q, level })),
+          "The level, and a shape parameter a free for the expression; both finite. Animating either sweeps a family of surfaces.",
+        )}
+        {vector("Shape parameter a", config.implicit.a, (a) =>
+          setImplicit((q) => ({ ...q, a })),
+        )}
+      </div>
+      {(["x", "y", "z"] as const).map((axis) => (
+        <div className="pair" key={axis}>
+          {vector(
+            `${axis} from`,
+            config.implicit.box[`${axis}Min`],
+            (value) =>
+              setImplicit((q) => ({
+                ...q,
+                box: { ...q.box, [`${axis}Min`]: value },
+              })),
+            axis === "x"
+              ? "The box the surface is sought in: each bound within ±100000, each side at least 0.000001 wide. Where the surface meets the box, it is cut open."
+              : undefined,
+          )}
+          {vector(`${axis} to`, config.implicit.box[`${axis}Max`], (value) =>
+            setImplicit((q) => ({
+              ...q,
+              box: { ...q.box, [`${axis}Max`]: value },
+            })),
+          )}
+        </div>
+      ))}
+      <Field
+        label="Section planes"
+        help={`From 0 to ${maxSections} parallel planes, evenly spaced; each cuts the surface in the planar level set of F on it.`}
+      >
+        <input
+          type="number"
+          min="0"
+          max={maxSections}
+          step="1"
+          value={
+            Number.isNaN(config.implicit.sections.count)
+              ? ""
+              : config.implicit.sections.count
+          }
+          onChange={(e) => {
+            const count = e.target.valueAsNumber;
+            setSections((s) => ({ ...s, count }));
+          }}
+        />
+      </Field>
+      {config.implicit.sections.count > 0 && (
+        <>
+          <div className="pair trio">
+            {(["x", "y", "z"] as const).map((axis) =>
+              vector(
+                `Normal ${axis}`,
+                config.implicit.sections.normal[axis],
+                (value) =>
+                  setSections((s) => ({
+                    ...s,
+                    normal: { ...s.normal, [axis]: value },
+                  })),
+                axis === "x"
+                  ? "The planes' normal n, not zero, each coordinate within ±100000. It is made a unit vector n̂."
+                  : undefined,
+              ),
+            )}
+          </div>
+          <div className="pair">
+            {vector(
+              "First offset d₀",
+              config.implicit.sections.from,
+              (from) => setSections((s) => ({ ...s, from })),
+              "The planes n̂·p = d, with d evenly from d₀ to d₁, both included; a single plane stands at d₀. Each within ±100000.",
+            )}
+            {vector("Last offset d₁", config.implicit.sections.to, (to) =>
+              setSections((s) => ({ ...s, to })),
+            )}
+          </div>
+        </>
+      )}
+      <p className="note" data-testid="implicit-note">
+        {levelSet ? implicitNote(levelSet).join(" ") : "Meshing the level set…"}
+      </p>
+      <details {...expressions} className="spatial-details">
+        <summary>Expression reference</summary>
+        <p>
+          Use x, y, z, a, pi, e, phi; + − * / ^; sin, cos, tan, asin, acos,
+          atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt, abs. Trigonometry
+          uses radians. Write multiplication explicitly, such as 2*x*y.
+          Constants only in numeric controls.
+        </p>
+      </details>
+    </>
+  );
   const failure = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
     : error;
@@ -1248,7 +1379,43 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       </Field>
     </>
   );
-  const behind = mirroring ? (
+  const behind = leveled ? (
+    <StudyExplanation
+      label="BEHIND THE LEVEL SET"
+      title="A surface where a field takes one value."
+      formula={
+        <>
+          F(x, y, z) = c <span>n = ∇F / |∇F|</span>
+        </>
+      }
+      note="Gold curves are the sections, on planes outlined in grey with the box. Teal edges are where the box cuts the surface open; rust edges and crosses mark where it stops beside cells left out, and where F changes sign across a pole or a jump."
+      diagnostics={
+        levelSet &&
+        (levelSet.discontinuities > 0 ||
+          levelSet.nonfinite > 0 ||
+          levelSet.ambiguous > 0) && (
+          <p className="bottom-note">
+            The surface is never joined across a pole, a jump, or a point where
+            F is undefined, and its topology is only as fine as its grid.
+          </p>
+        )
+      }
+    >
+      <p>
+        An expression F gives every point of space a number, and the points
+        where it equals c form a <em>level surface</em>. It has no parameters,
+        so it is found rather than traced: F is sampled on a grid, and the
+        surface passes wherever F − c changes sign between neighbouring points,
+        with ∇F square to it, pointing to larger F. Sweeping c sweeps a family
+        of surfaces whose shape changes as c passes a critical value: two drops
+        join through a saddle, a torus closes its hole. A plane cuts the surface
+        in a planar level set, the kind of curve the 2D notebook draws for F(x,
+        y) = c. The note counts the mesh&rsquo;s pieces and their Euler
+        characteristic V − E + F: 2 for a sphere, 0 for a torus, −2 for a double
+        torus.
+      </p>
+    </StudyExplanation>
+  ) : mirroring ? (
     <StudyExplanation
       label={refracting ? "BEHIND THE INTERFACE" : "BEHIND THE MIRROR"}
       title="A geometric fold of rays."
@@ -1726,12 +1893,17 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   </option>
                   <option value="surface">Surface patch · X(u, v)</option>
                   <option value="rays">Mirror or interface · rays</option>
+                  <option value="implicit">
+                    Implicit surface · F(x, y, z) = c
+                  </option>
                 </select>
               </Field>
               {config.format === "harmonic" ? (
                 harmonicControls
               ) : patched ? (
                 surfaceControls
+              ) : leveled ? (
+                implicitControls
               ) : flowing ? (
                 fieldControls
               ) : chasing ? (
@@ -1849,7 +2021,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   </details>
                 </>
               )}
-              {!patched && (
+              {!curveless && (
                 <>
                   <Field label="Construction">
                     <select
@@ -2116,7 +2288,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             Constant expressions welcome: pi, e, phi.
           </p>
           {/* The curve alone, unless a field or harmonic, has no layers. */}
-          {(patched ||
+          {(curveless ||
             !(
               none &&
               !flowing &&
@@ -2125,120 +2297,127 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             )) && (
             <fieldset className="spatial-layers">
               <legend>Reveal the construction</legend>
-              {(mirroring
+              {(leveled
                 ? ([
-                    ["surface", refracting ? "Interface" : "Mirror"],
-                    ["curves", "Parameter curves"],
-                    [
-                      "incident",
-                      config.rays.light === "point"
-                        ? "Incident rays & source"
-                        : "Incident rays",
-                    ],
-                    [
-                      "reflected",
-                      refracting ? "Transmitted rays" : "Reflected rays",
-                    ],
-                    ["focal1", "Caustic 1 · μ₁"],
-                    ["focal2", "Caustic 2 · μ₂"],
-                    ["virtual", "Virtual rays & caustics"],
-                    ...(receiving
-                      ? ([["receiver", "Receiver irradiance"]] as const)
-                      : []),
+                    ["surface", "Level surface"],
+                    ["sections", "Section curves"],
+                    ["planes", "Section planes"],
+                    ["box", "Box, cuts & open edges"],
                   ] as const)
-                : surfacing
+                : mirroring
                   ? ([
-                      ["surface", "Surface patch"],
+                      ["surface", refracting ? "Interface" : "Mirror"],
                       ["curves", "Parameter curves"],
-                      ["normals", "Normal lines"],
-                      ["offset", "Offset surface"],
-                      ["focal1", "Focal sheet 1 · κ₁"],
-                      ["focal2", "Focal sheet 2 · κ₂"],
+                      [
+                        "incident",
+                        config.rays.light === "point"
+                          ? "Incident rays & source"
+                          : "Incident rays",
+                      ],
+                      [
+                        "reflected",
+                        refracting ? "Transmitted rays" : "Reflected rays",
+                      ],
+                      ["focal1", "Caustic 1 · μ₁"],
+                      ["focal2", "Caustic 2 · μ₂"],
+                      ["virtual", "Virtual rays & caustics"],
+                      ...(receiving
+                        ? ([["receiver", "Receiver irradiance"]] as const)
+                        : []),
                     ] as const)
-                  : [
-                      ...(none
-                        ? []
-                        : canal
-                          ? ([
-                              ["surface", "Canal surface"],
-                              ["circles", "Contact circles"],
-                              ["meridians", "Meridians"],
-                              ["frames", "Frames"],
-                              ...(canalShown?.frame?.closed
-                                ? ([["seam", "Seam"]] as const)
-                                : []),
-                            ] as const)
-                          : ruled
+                  : surfacing
+                    ? ([
+                        ["surface", "Surface patch"],
+                        ["curves", "Parameter curves"],
+                        ["normals", "Normal lines"],
+                        ["offset", "Offset surface"],
+                        ["focal1", "Focal sheet 1 · κ₁"],
+                        ["focal2", "Focal sheet 2 · κ₂"],
+                      ] as const)
+                    : [
+                        ...(none
+                          ? []
+                          : canal
                             ? ([
-                                ["surface", "Ruled surface"],
-                                ["rulings", "Rulings"],
-                                ["edges", "Partner thread"],
+                                ["surface", "Canal surface"],
+                                ["circles", "Contact circles"],
+                                ["meridians", "Meridians"],
+                                ["frames", "Frames"],
+                                ...(canalShown?.frame?.closed
+                                  ? ([["seam", "Seam"]] as const)
+                                  : []),
                               ] as const)
-                            : framed
+                            : ruled
                               ? ([
-                                  ["surface", "Ribbon surface"],
-                                  ["rulings", "Cross-lines"],
-                                  ["edges", "Ribbon edges"],
-                                  ["strands", "Strands"],
-                                  ["frames", "Frames"],
-                                  ...(frameResult?.closed
-                                    ? ([["seam", "Seam"]] as const)
-                                    : []),
+                                  ["surface", "Ruled surface"],
+                                  ["rulings", "Rulings"],
+                                  ["edges", "Partner thread"],
                                 ] as const)
-                              : inversion
+                              : framed
                                 ? ([
-                                    ["inverse", "Inverted curve"],
-                                    [
-                                      "correspondences",
-                                      "Correspondence segments",
-                                    ],
-                                    ["sphere", "Inversion sphere & center"],
-                                    ...(config.inversion.input === "base"
-                                      ? []
-                                      : ([
-                                          ["source", "Projection & pole"],
-                                        ] as const)),
+                                    ["surface", "Ribbon surface"],
+                                    ["rulings", "Cross-lines"],
+                                    ["edges", "Ribbon edges"],
+                                    ["strands", "Strands"],
+                                    ["frames", "Frames"],
+                                    ...(frameResult?.closed
+                                      ? ([["seam", "Seam"]] as const)
+                                      : []),
                                   ] as const)
-                                : projection
+                                : inversion
                                   ? ([
-                                      ["projection", projectionName],
+                                      ["inverse", "Inverted curve"],
                                       [
-                                        "connectors",
-                                        "Perpendiculars & tangent feet",
+                                        "correspondences",
+                                        "Correspondence segments",
                                       ],
-                                      ["pole", "Pole marker"],
+                                      ["sphere", "Inversion sphere & center"],
+                                      ...(config.inversion.input === "base"
+                                        ? []
+                                        : ([
+                                            ["source", "Projection & pole"],
+                                          ] as const)),
                                     ] as const)
-                                  : involute
+                                  : projection
                                     ? ([
-                                        ["filaments", "Involute filaments"],
-                                        ["strings", "Unwinding strings"],
+                                        ["projection", projectionName],
+                                        [
+                                          "connectors",
+                                          "Perpendiculars & tangent feet",
+                                        ],
+                                        ["pole", "Pole marker"],
                                       ] as const)
-                                    : ([
-                                        ["surface", "Ribbon surface"],
-                                        ["rulings", "Tangent rulings"],
-                                        ["edges", "Ribbon edges"],
-                                      ] as const)),
-                      ...(config.format === "harmonic"
-                        ? ([
-                            ["vectors", "Vector sums"],
-                            ["ellipses", "Generating ellipses"],
-                          ] as const)
-                        : []),
-                      ...(flowing
-                        ? ([
-                            ["trajectories", "Other trajectories"],
-                            ["arrows", "Field directions"],
-                            ["seeds", "Seeds & early stops"],
-                          ] as const)
-                        : []),
-                      ...(chasing
-                        ? ([
-                            ["trajectories", "Other pursuers"],
-                            ["polygons", "Connecting polygons"],
-                            ["seeds", "Starts & capture"],
-                          ] as const)
-                        : []),
-                    ]
+                                    : involute
+                                      ? ([
+                                          ["filaments", "Involute filaments"],
+                                          ["strings", "Unwinding strings"],
+                                        ] as const)
+                                      : ([
+                                          ["surface", "Ribbon surface"],
+                                          ["rulings", "Tangent rulings"],
+                                          ["edges", "Ribbon edges"],
+                                        ] as const)),
+                        ...(config.format === "harmonic"
+                          ? ([
+                              ["vectors", "Vector sums"],
+                              ["ellipses", "Generating ellipses"],
+                            ] as const)
+                          : []),
+                        ...(flowing
+                          ? ([
+                              ["trajectories", "Other trajectories"],
+                              ["arrows", "Field directions"],
+                              ["seeds", "Seeds & early stops"],
+                            ] as const)
+                          : []),
+                        ...(chasing
+                          ? ([
+                              ["trajectories", "Other pursuers"],
+                              ["polygons", "Connecting polygons"],
+                              ["seeds", "Starts & capture"],
+                            ] as const)
+                          : []),
+                      ]
               ).map(([key, label]) => (
                 <label key={key}>
                   <input
@@ -2255,7 +2434,49 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           )}
           <details className="spatial-details">
             <summary>Sampling & definition</summary>
-            {patched ? (
+            {leveled ? (
+              <>
+                <Field
+                  label="Cells"
+                  help={`${minImplicitCells}–${maxImplicitCells} cells along the box's longest side, as many along the others as keeps them nearest to cubes, and at most ${maxImplicitGrid.toLocaleString()} in all.`}
+                >
+                  <input
+                    type="number"
+                    min={minImplicitCells}
+                    max={maxImplicitCells}
+                    step="1"
+                    value={
+                      Number.isNaN(config.implicit.cells)
+                        ? ""
+                        : config.implicit.cells
+                    }
+                    onChange={(e) => {
+                      const cells = e.target.valueAsNumber;
+                      setImplicit((q) => ({ ...q, cells }));
+                    }}
+                  />
+                </Field>
+                <p>
+                  F is evaluated at every grid point, and every cube is split
+                  into six tetrahedra around its diagonal, the same way in every
+                  cube, so neighbours agree on their shared faces. Within a
+                  tetrahedron the surface is one triangle or two, with no
+                  ambiguous case; a grid face whose corners alternate is
+                  counted, since there the split, not F, decides whether the
+                  surface joins. Each vertex is found on F itself, by false
+                  position with bisection, to 10⁻¹² of its edge, and a sign
+                  change whose value does not shrink with its bracket is a pole
+                  or a jump, never meshed. Cubes touching a point where F is not
+                  finite are left out. Normals are ∇F by five-point differences,
+                  not the mesh&rsquo;s. Sections are traced as the 2D notebook
+                  traces implicit curves, on their own grid of four times the
+                  box&rsquo;s cells, at most 256, and refined to a thousandth of
+                  a cell. The mesh is limited to 200,000 triangles and 400,000
+                  grid edges searched; the sections share 65,536 bisected edges
+                  and 131,072 points.
+                </p>
+              </>
+            ) : patched ? (
               <>
                 <div className="pair">
                   {(
@@ -2430,9 +2651,11 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               ? "Growing the spatial study…"
               : failure
                 ? "Resolve the input to update the study."
-                : patched
-                  ? `${config.surface.uSamples} × ${config.surface.vSamples} cells · ${config.surface.curves} parameter curves`
-                  : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
+                : leveled
+                  ? `${implicitGrid(config.implicit.box, config.implicit.cells).join(" × ")} cells · ${config.implicit.sections.count} section ${config.implicit.sections.count === 1 ? "plane" : "planes"}`
+                  : patched
+                    ? `${config.surface.uSamples} × ${config.surface.vSamples} cells · ${config.surface.curves} parameter curves`
+                    : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <SpatialAnimationPanel
             frame={frame}
@@ -2467,31 +2690,33 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {refracting
-                  ? "An interface and its caustics"
-                  : mirroring
-                    ? "A mirror and its caustics"
-                    : surfacing
-                      ? "A surface and its centers of curvature"
-                      : none
-                        ? flowing
-                          ? "Paths that follow a field"
-                          : chasing
-                            ? "Pursuers closing in space"
-                            : "A curve in space"
-                        : canal
-                          ? "A surface enveloping spheres"
-                          : ruled
-                            ? "A surface of straight threads"
-                            : framed
-                              ? "A ribbon carried by a frame"
-                              : inversion
-                                ? "A curve inverted in a sphere"
-                                : projection
-                                  ? projectionName
-                                  : involute
-                                    ? "Filaments unwound from a curve"
-                                    : "A ribbon of tangent lines"}
+                {leveled
+                  ? "A level surface and its sections"
+                  : refracting
+                    ? "An interface and its caustics"
+                    : mirroring
+                      ? "A mirror and its caustics"
+                      : surfacing
+                        ? "A surface and its centers of curvature"
+                        : none
+                          ? flowing
+                            ? "Paths that follow a field"
+                            : chasing
+                              ? "Pursuers closing in space"
+                              : "A curve in space"
+                          : canal
+                            ? "A surface enveloping spheres"
+                            : ruled
+                              ? "A surface of straight threads"
+                              : framed
+                                ? "A ribbon carried by a frame"
+                                : inversion
+                                  ? "A curve inverted in a sphere"
+                                  : projection
+                                    ? projectionName
+                                    : involute
+                                      ? "Filaments unwound from a curve"
+                                      : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons">
@@ -2539,7 +2764,12 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               )}
             </div>
             <div className="plot-meta">
-              {mirroring ? (
+              {leveled ? (
+                <div className="legend">
+                  <span className="surface-dot" /> Level surface{" "}
+                  <span className="thread-dot" /> Section curves
+                </div>
+              ) : mirroring ? (
                 <div className="legend">
                   <span className="surface-dot" />{" "}
                   {refracting ? "Interface" : "Mirror"}{" "}

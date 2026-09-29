@@ -1050,6 +1050,47 @@ test("spatial mirror light, source and ray length share the bounded scalar parse
     await check(name, text, value, path);
 });
 
+test("spatial implicit fields share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("implicit");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly string[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  for (const [name, text, value, path] of [
+    ["Level c", "e/2", Math.E / 2, ["level"]],
+    ["Shape parameter a", "sqrt(3)", Math.sqrt(3), ["a"]],
+    ["x from", "-pi/2", -Math.PI / 2, ["box", "xMin"]],
+    ["x to", "phi", phi, ["box", "xMax"]],
+    ["y from", "-e/2", -Math.E / 2, ["box", "yMin"]],
+    ["y to", "sqrt(2)", Math.SQRT2, ["box", "yMax"]],
+    ["z from", "-1/phi", -1 / phi, ["box", "zMin"]],
+    ["z to", "e/2", Math.E / 2, ["box", "zMax"]],
+    ["Normal x", "1/e", 1 / Math.E, ["sections", "normal", "x"]],
+    ["Normal y", "phi", phi, ["sections", "normal", "y"]],
+    ["Normal z", "pi", Math.PI, ["sections", "normal", "z"]],
+    ["First offset d₀", "-1/phi", -1 / phi, ["sections", "from"]],
+    ["Last offset d₁", "pi/4", Math.PI / 4, ["sections", "to"]],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(["implicit", ...path])).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
+
 test("spatial ruled shift and rate share the bounded scalar parser", async ({
   page,
 }) => {
