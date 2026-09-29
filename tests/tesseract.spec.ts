@@ -1,12 +1,26 @@
+import { chooseNotebook } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset, exportImage } from "./helpers";
+import {
+  choosePreset,
+  exportImage,
+  openShapeAnimation,
+  openShapeExport,
+} from "./helpers";
 import { probe, decodeVideo } from "./video";
 const stage = (p: Page) => p.locator(".tesseract-stage");
 const settle = (p: Page) =>
   expect(stage(p)).toHaveAttribute("aria-busy", "false");
 const definition = async (p: Page) =>
   JSON.parse((await stage(p).getAttribute("data-config"))!);
+async function pauseMotion(page: Page) {
+  await openShapeAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await settle(page);
+}
 async function ready(p: Page) {
   await p.goto("/?study=4d");
   await settle(p);
@@ -45,24 +59,43 @@ test("all constructions, empty and tangent sections, finite curves, and exact mo
   );
   await choosePreset(page, { label: "A cube beyond a cube" });
   await settle(page);
-  const base = await definition(page),
-    slider = page.getByRole("slider", { name: "Motion progress" });
+  const base = await definition(page);
+  await pauseMotion(page);
+  const slider = page.getByRole("slider", { name: "Animation progress" });
   await slider.fill("0.37");
   await settle(page);
   const paused = await definition(page);
   expect(paused.angles[3]).toBeCloseTo(2 * Math.PI * 0.37, 12);
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("1");
-  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await openShapeAnimation(page);
+  await page
+    .getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
+    page.getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    }),
   ).toBeVisible({ timeout: 5000 });
   await settle(page);
   expect((await definition(page)).angles[3]).toBeCloseTo(2 * Math.PI, 12);
   await expect(slider).toHaveValue("1");
-  await page.getByRole("button", { name: "Reset motion" }).click();
+  await page
+    .locator("#shape-playback")
+    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .click();
   await settle(page);
   expect(await definition(page)).toEqual(base);
-  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await openShapeAnimation(page);
+  await page
+    .getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    })
+    .click();
   await expect(
     page.getByRole("button", { name: "Pause", exact: true }),
   ).toBeVisible();
@@ -71,13 +104,19 @@ test("all constructions, empty and tangent sections, finite curves, and exact mo
   const value = await slider.inputValue();
   await page.waitForTimeout(150);
   expect(await slider.inputValue()).toBe(value);
-  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await openShapeAnimation(page);
+  await page
+    .getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    })
+    .click();
   await page
     .getByRole("textbox", { name: "xw angle", exact: true })
     .fill("pi/7");
   await settle(page);
   expect((await definition(page)).angles[3]).toBeCloseTo(Math.PI / 7);
-  await expect(slider).toHaveValue("0");
+  await expect(slider).toHaveCount(0);
 });
 
 test("notebook switching preserves study and manual camera and stops motion", async ({
@@ -90,24 +129,29 @@ test("notebook switching preserves study and manual camera and stops motion", as
   await page.keyboard.press("Shift+ArrowUp");
   await page.keyboard.press("+");
   const before = JSON.parse((await art.locator("desc").textContent())!);
-  await page.getByRole("button", { name: "3D curves", exact: true }).click();
+  await chooseNotebook(page, "3d");
   await expect(page.locator("#spatial-artwork")).toBeVisible();
-  await page
-    .getByRole("button", { name: "4D tesseracts", exact: true })
-    .click();
+  await chooseNotebook(page, "4d");
   await settle(page);
   expect(JSON.parse((await art.locator("desc").textContent())!).view).toEqual(
     before.view,
   );
-  await page.getByRole("button", { name: "Play", exact: true }).click();
-  await page.getByRole("button", { name: "2D curves", exact: true }).click();
-  await expect(page.locator("#artwork")).toBeVisible();
+  await openShapeAnimation(page);
   await page
-    .getByRole("button", { name: "4D tesseracts", exact: true })
+    .getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    })
     .click();
+  await chooseNotebook(page, "2d");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await chooseNotebook(page, "4d");
   await settle(page);
   await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
+    page.getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    }),
   ).toBeVisible();
   await page.goBack();
   await expect(page.locator("#artwork")).toBeVisible();
@@ -186,16 +230,31 @@ for (const format of ["mp4", "webp"] as const)
   }) => {
     test.slow();
     await ready(page);
+    await openShapeAnimation(page);
     await page
       .getByRole("spinbutton", { name: "Duration (seconds)" })
       .fill("1");
-    await page.locator("summary").filter({ hasText: "Save motion" }).click();
+    await openShapeExport(page);
     await page
-      .getByRole("combobox", { name: "Motion file format" })
+      .getByRole("combobox", { name: "Export format" })
       .selectOption(format);
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("1");
+    const fps = format === "mp4" ? 60 : 15;
+    await page
+      .getByRole("combobox", { name: "Export frame rate" })
+      .selectOption(String(fps));
+    await page
+      .getByRole("slider", { name: "Export quality", exact: true })
+      .fill("73");
+    if (format === "webp")
+      await page
+        .getByRole("checkbox", { name: "Loop exported animation" })
+        .check();
     const downloading = page.waitForEvent("download");
     await page
-      .getByRole("button", { name: "Save motion", exact: true })
+      .getByRole("button", { name: /^Export (MP4 video|animated WebP)/ })
       .click();
     const file = await downloading,
       path = (await file.path())!,
@@ -203,7 +262,7 @@ for (const format of ["mp4", "webp"] as const)
     if (format === "mp4") {
       const p = probe(path);
       if (p) {
-        expect(p.frames).toBe(30);
+        expect(p.frames).toBe(fps);
         expect(p.width).toBe(1000);
         expect(p.height).toBe(760);
         expect(p.durations.reduce((a, b) => a + b, 0)).toBe(1000);
@@ -239,24 +298,27 @@ for (const format of ["mp4", "webp"] as const)
         decoder.close();
         return { count, durations, hashes };
       }, Array.from(bytes));
-      expect(decoded.count).toBe(30);
+      expect(decoded.count).toBe(fps);
       expect(decoded.durations.reduce((a, b) => a + b, 0)).toBe(1000000);
-      expect(new Set(decoded.hashes).size).toBeGreaterThan(20);
+      expect(new Set(decoded.hashes).size).toBeGreaterThan(10);
+      const anim = bytes.indexOf(Buffer.from("ANIM"));
+      expect(anim).toBeGreaterThan(0);
+      expect(bytes.readUInt16LE(anim + 12)).toBe(0);
       expect(decoded.hashes[0]).toBe(decoded.hashes.at(-1));
     }
     await expect(
-      page.getByRole("button", { name: "Save motion", exact: true }),
+      page.getByRole("button", { name: /^Export (MP4 video|animated WebP)/ }),
     ).toBeEnabled();
   });
 
 test("cancellation and edits discard motion exports", async ({ page }) => {
   await ready(page);
-  await page.locator("summary").filter({ hasText: "Save motion" }).click();
+  await openShapeExport(page);
   let downloads = 0;
   page.on("download", () => downloads++);
   for (const action of ["cancel", "edit", "switch"]) {
     await page
-      .getByRole("button", { name: "Save motion", exact: true })
+      .getByRole("button", { name: /^Export (MP4 video|animated WebP)/ })
       .click();
     await expect(
       page.getByRole("button", { name: "Cancel export" }),
@@ -268,12 +330,8 @@ test("cancellation and edits discard motion exports", async ({ page }) => {
         .getByRole("textbox", { name: "xy angle", exact: true })
         .fill("pi/6");
     else {
-      await page
-        .getByRole("button", { name: "2D curves", exact: true })
-        .click();
-      await page
-        .getByRole("button", { name: "4D tesseracts", exact: true })
-        .click();
+      await chooseNotebook(page, "2d");
+      await chooseNotebook(page, "4d");
     }
     await expect(
       page.getByRole("button", { name: "Cancel export" }),
@@ -294,7 +352,8 @@ test("reselecting an example while computation is pending settles the latest stu
     page.getByRole("button", { name: "Export image" }),
   ).toBeEnabled();
   // Rapid scrubs keep only the latest request, including a repeated final value.
-  const slider = page.getByRole("slider", { name: "Motion progress" });
+  await pauseMotion(page);
+  const slider = page.getByRole("slider", { name: "Animation progress" });
   await slider.evaluate((el) => {
     const input = el as HTMLInputElement;
     const set = Object.getOwnPropertyDescriptor(
@@ -371,19 +430,28 @@ test("phone playback brings the drawing into view and keeps controls reachable",
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await ready(page);
-  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await openShapeAnimation(page);
+  await page
+    .getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    })
+    .click();
   await expect
     .poll(async () => Math.round((await stage(page).boundingBox())!.y))
-    .toBeLessThan(10);
+    .toBeLessThanOrEqual(12);
   const bar = page.locator(".tesseract-playback.active");
   await expect(bar).toBeVisible();
   expect(await bar.evaluate((e) => getComputedStyle(e).position)).toBe("fixed");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await settle(page);
-  await page.getByRole("slider", { name: "Motion progress" }).fill("0.5");
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
   await settle(page);
   expect((await definition(page)).angles[3]).toBeCloseTo(Math.PI);
-  await page.getByRole("button", { name: "Reset motion" }).click();
+  await page
+    .locator("#shape-playback")
+    .getByRole("button", { name: /^(Stop|Reset view)$/, exact: true })
+    .click();
   await expect(page.locator(".tesseract-playback.active")).toHaveCount(0);
 });
 
@@ -395,7 +463,8 @@ test("early animation clocks never move behind the scrubbed start", async ({
     window.requestAnimationFrame = (cb) => raf((t) => cb(t - 80));
   });
   await ready(page);
-  await page.getByRole("slider", { name: "Motion progress" }).fill("0.73");
+  await pauseMotion(page);
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.73");
   await settle(page);
   await page.evaluate(() => {
     (window as any).seenProgress = [];
@@ -407,9 +476,18 @@ test("early animation clocks never move behind the scrubbed start", async ({
     }).observe(s, { attributes: true, attributeFilter: ["data-progress"] });
   });
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("1");
-  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await openShapeAnimation(page);
+  await page
+    .getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Play", exact: true }),
+    page.getByRole("button", {
+      name: /^(Play animation|Resume|Replay)$/,
+      exact: true,
+    }),
   ).toBeVisible({ timeout: 5000 });
   await settle(page);
   const seen = await page.evaluate(

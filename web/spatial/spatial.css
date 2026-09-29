@@ -40,12 +40,6 @@
 }
 /* The stage is an article like the planar one: the same heading, bordered
    frame, footer, and drawing height; only the drawing itself differs. */
-.view-buttons {
-  display: flex;
-}
-.view-buttons .fit[aria-pressed="true"] {
-  border-color: #7aa898;
-}
 .spatial-canvas-wrap {
   position: relative;
   height: calc(100vh - 325px);

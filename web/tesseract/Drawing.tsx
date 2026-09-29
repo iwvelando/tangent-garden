@@ -1,3 +1,4 @@
+import { plotPalette } from "../palette";
 import type { Config, Result, View, Layers, Vec3 } from "./types";
 export const inks = (dark: boolean) =>
   dark
@@ -69,7 +70,7 @@ export function Drawing({
           rendering: "transparent vector construction",
         })}
       </desc>
-      <rect width="1000" height="760" fill={dark ? "#101f22" : "#faf8f2"} />
+      <rect width="1000" height="760" fill={plotPalette(dark).bg} />
       {faces.map((f, i) => (
         <path
           key={`f${i}`}

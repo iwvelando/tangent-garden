@@ -8,11 +8,7 @@ import { ExampleGallery } from "../ExampleGallery";
 import { tesseractExamples, tesseractThumbnail } from "../examples";
 import { ExportImageMenu } from "../ExportImageMenu";
 import { saveFile, pngFile, svgFile } from "../export-image";
-import {
-  detectFormats,
-  type Formats,
-  type ExportFormat,
-} from "../export-formats";
+import { AnimationPanel, type MotionExport } from "./AnimationPanel";
 import { Plot } from "./Plot";
 import { inks } from "./Drawing";
 import { Sampler } from "./sampler";
@@ -61,7 +57,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     structuredClone(tesseractPresets[0].config),
   );
   const [preset, setPreset] = useState<number | null>(0),
-    [view, setView] = useState({ ...initialView });
+    [view, setView] = useState({ ...initialView }),
+    [spinning, setSpinning] = useState(false);
   const [layers, setLayers] = useState<Layers>({
     edges: true,
     guides: true,
@@ -86,9 +83,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
   const [ready, setReady] = useState(false),
     [settled, setSettled] = useState("");
   const [exporting, setExporting] = useState(""),
-    [exportError, setExportError] = useState(""),
-    [format, setFormat] = useState<ExportFormat>("mp4"),
-    [formats, setFormats] = useState<Formats>({ mp4: "no", webp: "no" });
+    [exportError, setExportError] = useState("");
   const controller = useRef<AbortController | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const scalarBusy = Object.values(scalars).some((s) => s.pending),
@@ -108,18 +103,6 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
       controller.current?.abort();
     };
   }, []);
-  useEffect(() => {
-    let live = true;
-    void detectFormats({ scale: 1, quality: 85 }, 30).then((f) => {
-      if (live) {
-        setFormats(f);
-        if (f.mp4 !== "yes" && f.webp === "yes") setFormat("webp");
-      }
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
   const stop = () => {
     epoch.current++;
     setRevision((r) => r + 1);
@@ -128,7 +111,10 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     controller.current?.abort();
   };
   useEffect(() => {
-    if (!active) stop();
+    if (!active) {
+      stop();
+      setSpinning(false);
+    }
   }, [active]);
   useEffect(() => {
     if (!ready || playing || !active || scalarBusy) return;
@@ -189,6 +175,24 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
       cancelAnimationFrame(raf);
     };
   }, [playing, ready, active]);
+  useEffect(() => {
+    if (!spinning || !active || preview || exporting) return;
+    let raf = 0,
+      last = performance.now();
+    const tick = (now: number) => {
+      const delta = Math.max(0, Math.min(50, now - last));
+      last = now;
+      setView((v) => ({ ...v, yaw: v.yaw + delta * 0.00018 }));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [spinning, active, preview, exporting]);
+  const resetMotion = () => {
+    stop();
+    setProgress(0);
+    setPreview(false);
+  };
   const update = (change: (c: Config) => Config) => {
     stop();
     setProgress(0);
@@ -241,6 +245,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     setProgress(0);
     setPreview(false);
     setView({ ...initialView });
+    setSpinning(false);
     setError("");
   };
   const editTimeline = (p: number) => {
@@ -248,8 +253,9 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     setPreview(true);
     setProgress(p);
   };
-  const save = async () => {
+  const save = async (options: MotionExport) => {
     stop();
+    setSpinning(false);
     setExportError("");
     const abort = new AbortController();
     controller.current = abort;
@@ -263,12 +269,12 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
         layers: { ...layers },
         dark,
         duration,
-        format,
+        ...options,
         signal: abort.signal,
         onProgress: (n, total) => setExporting(`${n} / ${total} frames`),
       });
       abort.signal.throwIfAborted();
-      saveFile(blob, `tangent-garden-tesseract.${format}`);
+      saveFile(blob, `tangent-garden-tesseract.${options.format}`);
     } catch (e) {
       if (!abort.signal.aborted) setExportError((e as Error).message);
     } finally {
@@ -463,149 +469,42 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   ))}
               </div>
             </section>
-            <section>
-              <div className="section-label">04 / MOTION</div>
-              <Field label="Tesseract motion">
-                <select
-                  value={motion}
-                  onChange={(e) => {
-                    stop();
-                    setProgress(0);
-                    setPreview(false);
-                    setMotion(e.target.value as Motion);
-                  }}
-                >
-                  <option value="double">Double rotation · xw + yz</option>
-                  <option value="xw">One plane · xw</option>
-                  {config.mode === "section" && (
-                    <option value="slice">Slice passage · −2.05 to 2.05</option>
-                  )}
-                </select>
-              </Field>
-              <Field label="Duration (seconds)">
-                <input
-                  type="number"
-                  min="1"
-                  max="60"
-                  step="1"
-                  value={Number.isNaN(duration) ? "" : duration}
-                  onChange={(e) => {
-                    stop();
-                    setDuration(e.target.value === "" ? NaN : +e.target.value);
-                  }}
-                />
-              </Field>
-              <div className={`tesseract-playback ${preview ? "active" : ""}`}>
-                <div className="animation-buttons">
-                  <button
-                    disabled={
-                      !ready ||
-                      !!error ||
-                      !!scalarError ||
-                      scalarBusy ||
-                      !!exporting ||
-                      !Number.isFinite(duration) ||
-                      duration < 1 ||
-                      duration > 60
-                    }
-                    onClick={() => {
-                      if (playing) stop();
-                      else {
-                        if (progress >= 1) setProgress(0);
-                        setPreview(false);
-                        setPreview(true);
-                        setPlaying(true);
-                        if (matchMedia("(max-width: 700px)").matches)
-                          stage.current?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                      }
-                    }}
-                  >
-                    {playing ? "Pause" : "Play"}
-                  </button>
-                  <button
-                    onClick={() => {
-                      stop();
-                      setProgress(0);
-                      setPreview(false);
-                    }}
-                  >
-                    Reset motion
-                  </button>
-                </div>
-                <Field
-                  label="Motion progress"
-                  value={`${Math.round(progress * 100)}%`}
-                >
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.001"
-                    value={progress}
-                    onChange={(e) => editTimeline(+e.target.value)}
-                  />
-                </Field>
-              </div>
-              <p className="note">
-                One passage, including both endpoints. Camera framing stays
-                fixed through motion; pause or scrub to inspect. Reset restores
-                the entered angles.
-              </p>
-              <details>
-                <summary>Save motion</summary>
-                <p className="note">
-                  1000 × 760 · 30 fps · current camera, layers and theme. Saves
-                  the whole passage.
-                </p>
-                <Field label="Motion file format">
-                  <select
-                    value={format}
-                    onChange={(e) => setFormat(e.target.value as ExportFormat)}
-                    disabled={!!exporting}
-                  >
-                    <option value="mp4" disabled={formats.mp4 !== "yes"}>
-                      MP4 video
-                    </option>
-                    <option value="webp" disabled={formats.webp !== "yes"}>
-                      Animated WebP
-                    </option>
-                  </select>
-                </Field>
-                <button
-                  disabled={
-                    busy ||
-                    !!error ||
-                    !!scalarError ||
-                    !!exporting ||
-                    formats[format] !== "yes" ||
-                    !Number.isFinite(duration) ||
-                    duration < 1 ||
-                    duration > 60
-                  }
-                  onClick={() => void save()}
-                >
-                  Save motion
-                </button>
-                {exporting && (
-                  <>
-                    <button onClick={() => controller.current?.abort()}>
-                      Cancel export
-                    </button>
-                    <p role="status">{exporting}</p>
-                  </>
-                )}
-                {exportError && <p role="alert">{exportError}</p>}
-                {formats.mp4 !== "yes" && formats.webp !== "yes" && (
-                  <p className="note">
-                    This browser cannot encode motion. Still-image exports are
-                    available.
-                  </p>
-                )}
-              </details>
-            </section>
+            <AnimationPanel
+              {...{
+                config,
+                motion,
+                duration,
+                progress,
+                preview,
+                playing,
+                exporting,
+              }}
+              error={exportError}
+              disabled={!ready || !!error || !!scalarError || scalarBusy}
+              onMotion={(m) => {
+                resetMotion();
+                setMotion(m);
+              }}
+              onDuration={(n) => {
+                stop();
+                setDuration(n);
+              }}
+              onPause={stop}
+              onStop={exporting ? stop : resetMotion}
+              onSeek={editTimeline}
+              onPlay={() => {
+                if (progress >= 1) setProgress(0);
+                setSpinning(false);
+                setPreview(true);
+                setPlaying(true);
+                if (matchMedia("(max-width: 700px)").matches)
+                  stage.current?.scrollIntoView({
+                    behavior: "instant",
+                    block: "start",
+                  });
+              }}
+              onExport={(options) => void save(options)}
+            />
           </aside>
         </ScalarStatus.Provider>
         <article>
@@ -621,24 +520,24 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   : tesseractPresets[preset].name}
               </h1>
             </div>
-            <div className="tesseract-view-buttons">
+            <div className="view-buttons">
               <button
                 className="fit"
-                onClick={() => {
-                  controller.current?.abort();
-                  setView({ ...initialView });
-                }}
+                aria-pressed={spinning}
+                disabled={preview || !!exporting}
+                onClick={() => setSpinning((s) => !s)}
               >
-                ↔ Fit view
+                {spinning ? "Pause rotation" : "Rotate view"}
               </button>
               <button
                 className="fit"
+                disabled={preview || !!exporting}
                 onClick={() => {
-                  controller.current?.abort();
-                  setView({ ...initialView, yaw: 0, pitch: 0 });
+                  setSpinning(false);
+                  setView({ ...initialView });
                 }}
               >
-                Front view
+                Reset view
               </button>
             </div>
           </div>
@@ -656,6 +555,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   config={frame.config}
                   {...{ view, layers, dark }}
                   onView={(v) => {
+                    if (preview || exporting) return;
                     controller.current?.abort();
                     setView(v);
                   }}
@@ -681,7 +581,10 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   </span>
                 ))}
               </div>
-              <span>Drag to orbit · shift-drag to pan · scroll to zoom</span>
+              <span>
+                Orthographic · drag to orbit · shift-drag to pan · scroll to
+                zoom · keys: arrows, + / −, Home
+              </span>
             </div>
           </div>
           <div className="tesseract-explanation">

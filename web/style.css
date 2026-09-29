@@ -829,23 +829,31 @@ h1 {
 
 /* Shared notebook navigation. */
 
-.notebook-mode {
-  display: flex;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 3px;
-  gap: 3px;
-}
-.notebook-mode button {
-  border: 0;
-  background: transparent;
-  padding: 7px 10px;
+.notebook-mode > button {
   white-space: nowrap;
-  font-size: 12px;
 }
-.notebook-mode button[aria-pressed="true"] {
-  background: #367e78;
-  color: #fff;
+.notebook-mode .export-image-options {
+  min-width: 155px;
+}
+.notebook-mode [role="menuitemradio"] {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.view-buttons {
+  display: flex;
+}
+.view-buttons .fit[aria-pressed="true"] {
+  border-color: #7aa898;
+}
+@media (max-width: 700px) {
+  .plot-heading:has(.view-buttons) {
+    flex-wrap: wrap;
+    row-gap: 14px;
+  }
+  .view-buttons .fit:first-child {
+    margin-left: 0;
+  }
 }
 @media (max-width: 1200px) {
   .header-actions .local-note {
@@ -886,20 +894,4 @@ h1 {
 .term-heading button {
   font-size: 12px;
   padding: 2px 8px;
-}
-
-/* Three notebooks occupy their own row on phones. Keep export anchored at
-   the right so its menu and errors have the full row available to the left. */
-@media (max-width: 700px) {
-  .header-actions {
-    width: 100%;
-  }
-  .notebook-mode {
-    flex: 1 0 100%;
-    justify-content: center;
-    box-sizing: border-box;
-  }
-  .header-actions .export-menu {
-    margin-left: auto;
-  }
 }

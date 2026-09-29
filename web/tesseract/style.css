@@ -1,5 +1,5 @@
 .tesseract-canvas-wrap {
-  background: #faf8f2;
+  background: var(--paper);
   position: relative;
   height: calc(100vh - 330px);
   min-height: 390px;
@@ -22,25 +22,20 @@
 .tesseract-controls .field {
   min-width: 0;
 }
-.tesseract-controls details {
-  margin-top: 20px;
-  font-size: 12px;
-  line-height: 1.7;
+#shape-animation-section > summary {
+  margin-bottom: 0;
 }
-.tesseract-controls summary {
-  cursor: pointer;
+#shape-animation-section[open] > summary {
   margin-bottom: 14px;
 }
-.tesseract-controls .animation-buttons {
-  margin-bottom: 16px;
+.tesseract-controls .animation-section {
+  margin-top: 24px;
 }
-.tesseract-view-buttons {
-  display: flex;
-  gap: 6px;
+.tesseract-controls .animation-buttons {
   flex-wrap: wrap;
 }
-.tesseract-view-buttons .fit {
-  margin-left: 0;
+.tesseract-controls .subsection .field-label {
+  flex-wrap: wrap;
 }
 .tesseract-app .plot-heading {
   flex-wrap: wrap;
@@ -97,32 +92,5 @@
   }
   .tesseract-app .plot-heading h1 {
     font-size: 26px;
-  }
-}
-
-.dark .tesseract-canvas-wrap {
-  background: #101f22;
-}
-
-@media (max-width: 700px) {
-  .tesseract-playback.active {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 10;
-    padding: 8px 20px;
-    background: var(--panel);
-    border-top: 1px solid var(--border);
-    box-shadow: 0 -4px 16px #0002;
-  }
-  .tesseract-playback.active .animation-buttons {
-    margin: 0 0 8px;
-  }
-  .tesseract-playback.active .field {
-    margin: 0;
-  }
-  .tesseract-app:has(.tesseract-playback.active) {
-    padding-bottom: 160px;
   }
 }

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { NotebookMode } from "./NotebookMode";
 import type { useTheme } from "./useTheme";
 
-// Shared by both notebooks so switching between them never changes the
+// Shared by all notebooks so switching between them never changes the
 // header; each notebook supplies only its own export menu.
 export function AppHeader({
   theme: { dark, preference, toggle, followSystem },

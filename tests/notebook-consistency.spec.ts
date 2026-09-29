@@ -91,7 +91,10 @@ for (const width of [1440, 390]) {
         const header = page.locator(".app:visible header");
         const brand = header.locator(".brand-name");
         const headerShape = {
-          text: await header.innerText(),
+          text: (await header.innerText()).replace(
+            /[23]D curves/,
+            "Study dimension",
+          ),
           height: (await header.boundingBox())!.height,
           brandLines: Math.round(
             (await brand.boundingBox())!.height /

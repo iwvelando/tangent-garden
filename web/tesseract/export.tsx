@@ -3,7 +3,7 @@ import { Drawing } from "./Drawing";
 import { EngineClient } from "../engine-client";
 import { mp4Sink, webpSink } from "../export-sinks";
 import { exportEncoding, exportTiming } from "../export-quality";
-import type { ExportFormat } from "../export-formats";
+import type { MotionExport } from "./AnimationPanel";
 import {
   sample,
   type Config,
@@ -11,19 +11,22 @@ import {
   type View,
   type Layers,
 } from "./types";
-export async function exportMotion(o: {
-  config: Config;
-  motion: Motion;
-  view: View;
-  layers: Layers;
-  dark: boolean;
-  duration: number;
-  format: ExportFormat;
-  signal: AbortSignal;
-  onProgress: (n: number, total: number) => void;
-}) {
-  const timing = exportTiming(o.duration, 30),
-    encoding = exportEncoding({ scale: 1, quality: 85 });
+export async function exportMotion(
+  o: MotionExport & {
+    config: Config;
+    motion: Motion;
+    view: View;
+    layers: Layers;
+    dark: boolean;
+    duration: number;
+    signal: AbortSignal;
+    onProgress: (n: number, total: number) => void;
+  },
+) {
+  if (o.format === "webp" && o.fps === 60)
+    throw new Error("Animated WebP supports 15 or 30 frames per second.");
+  const timing = exportTiming(o.duration, o.fps),
+    encoding = exportEncoding(o.settings);
   const client = new EngineClient(),
     canvas = document.createElement("canvas");
   canvas.width = encoding.width;
@@ -36,7 +39,9 @@ export async function exportMotion(o: {
   let sink: ReturnType<typeof mp4Sink> | undefined;
   try {
     sink =
-      o.format === "mp4" ? mp4Sink(encoding, 30) : webpSink(encoding, false);
+      o.format === "mp4"
+        ? mp4Sink(encoding, o.fps)
+        : webpSink(encoding, o.loop);
     for (let i = 0; i < timing.length; i++) {
       o.signal.throwIfAborted();
       const config = sample(o.config, o.motion, timing[i].progress),

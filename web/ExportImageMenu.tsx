@@ -29,10 +29,9 @@ export function ExportImageMenu({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
-  // The menu and error hang below the button's right edge. When the header
-  // wraps the button to the start of its row on a narrow screen, that leaves
-  // no room to the left, so they align with the button's left edge instead.
-  const [alignStart, setAlignStart] = useState(false);
+  // Keep the right-edge anchor where it fits, and clamp wider popups to the
+  // viewport when a compact header leaves too little room on either side.
+  const [offset, setOffset] = useState(0);
   const popup = useRef<HTMLElement | null>(null);
   const setPopup = (element: HTMLElement | null) => {
     popup.current = element;
@@ -41,9 +40,21 @@ export function ExportImageMenu({
   const button = useRef<HTMLButtonElement>(null);
   const items = useRef<HTMLButtonElement[]>([]);
   useLayoutEffect(() => {
-    if (!open && !error) return setAlignStart(false);
-    if (popup.current && popup.current.getBoundingClientRect().left < 0)
-      setAlignStart(true);
+    if (!open && !error) return setOffset(0);
+    const position = () => {
+      if (!popup.current || !wrap.current) return;
+      const width = popup.current.getBoundingClientRect().width;
+      const left = wrap.current.getBoundingClientRect().right - width;
+      setOffset(
+        Math.max(
+          0,
+          Math.min(left, document.documentElement.clientWidth - width),
+        ) - left,
+      );
+    };
+    position();
+    window.addEventListener("resize", position);
+    return () => window.removeEventListener("resize", position);
   }, [open, error]);
   useEffect(() => {
     if (open) items.current[0]?.focus();
@@ -124,9 +135,8 @@ export function ExportImageMenu({
       {open && (
         <div
           ref={setPopup}
-          className={
-            alignStart ? "export-image-options start" : "export-image-options"
-          }
+          className="export-image-options"
+          style={{ transform: `translateX(${offset}px)` }}
           id={menuId}
           role="menu"
           aria-label="Export image"
@@ -153,9 +163,8 @@ export function ExportImageMenu({
       {error && (
         <p
           ref={setPopup}
-          className={
-            alignStart ? "export-menu-error start" : "export-menu-error"
-          }
+          className="export-menu-error"
+          style={{ transform: `translateX(${offset}px)` }}
           role="alert"
         >
           {error}

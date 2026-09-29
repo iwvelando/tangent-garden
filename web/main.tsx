@@ -2043,6 +2043,7 @@ const notebookKind = (): NotebookKind => {
   return study === "3d" || study === "4d" ? study : "2d";
 };
 function Notebook() {
+  const focusRequest = useRef(false);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -2056,6 +2057,7 @@ function Notebook() {
   };
   const choose = (next: NotebookKind) => {
     if (next === mode) return;
+    focusRequest.current = true;
     show(next);
     const url = new URL(location.href);
     if (next === "2d") url.searchParams.delete("study");
@@ -2068,7 +2070,7 @@ function Notebook() {
     return () => window.removeEventListener("popstate", pop);
   }, []);
   return (
-    <NotebookContext.Provider value={{ mode, choose }}>
+    <NotebookContext.Provider value={{ mode, choose, focusRequest }}>
       {seen["2d"] && (
         <div hidden={mode !== "2d"}>
           <App active={mode === "2d"} />
