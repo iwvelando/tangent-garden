@@ -129,20 +129,43 @@ export type SurfaceConfig = {
 };
 export const maxSurfaceCells = 14400;
 export const maxSurfaceCurves = 48;
-// The light on a mirror, for one reflection. Parallel light travels along
-// (cos β cos α, cos β sin α, sin β), azimuth α and elevation β in degrees; a
-// point source sits at `source`. The surface's normal declares the mirror
-// side: a sample is lit only where the light arrives against n. Each
-// representative ray is drawn `length` along its reflection and as far back
-// behind the mirror; parallel light arrives from `length` away. Mirrors
-// engine3.RaysRequest.
+// The light on a surface, for one reflection ("reflect", a mirror) or one
+// refraction ("refract", an interface from index n1 on the normal's side
+// into n2 beyond, η = n1/n2; n1 and n2 are read only then). Parallel light
+// travels along (cos β cos α, cos β sin α, sin β), azimuth α and elevation
+// β in degrees; a point source sits at `source`. The surface's normal
+// declares the side the light arrives from: a sample is lit only where the
+// light arrives against n. Each representative ray is drawn `length` along
+// its outgoing direction and as far back behind the surface; parallel light
+// arrives from `length` away. Mirrors engine3.RaysRequest.
 export type RaysLight = "parallel" | "point";
+export type RaysInteraction = "reflect" | "refract";
+// A receiver on the plane `plane` = at, with a square window of side `size`
+// centred on (c1, c2) in the plane's cyclic coordinates ((y, z) on x = at,
+// (z, x) on y = at, (x, y) on z = at), divided into bins × bins bins; the
+// other fields are read only when the plane is not "none". Mirrors
+// engine3.ReceiverRequest.
+export type ReceiverPlane = "none" | "x" | "y" | "z";
+export type ReceiverConfig = {
+  plane: ReceiverPlane;
+  at: number;
+  c1: number;
+  c2: number;
+  size: number;
+  bins: number;
+};
+export const minReceiverBins = 8;
+export const maxReceiverBins = 240;
 export type RaysConfig = {
+  interaction: RaysInteraction;
+  n1: number;
+  n2: number;
   light: RaysLight;
   azimuth: number;
   elevation: number;
   source: Vec3;
   length: number;
+  receiver: ReceiverConfig;
 };
 export type SpatialConfig = {
   format:
@@ -419,20 +442,45 @@ export type SurfaceResult = {
   umbilics: number;
   folded: number;
 };
-// Mirrors engine3.CausticSheet: the real (μ > 0, ahead of the mirror) or
+// Mirrors engine3.CausticSheet: the real (μ > 0, ahead of the surface) or
 // virtual (μ < 0, behind it) part of caustic branch 1 or 2, the points X +
-// R/μ for the reflected wavefront's principal curvatures μ₁ ≥ μ₂.
+// R/μ for the outgoing wavefront's principal curvatures μ₁ ≥ μ₂.
 export type CausticSheet = SurfaceSheet & {
   branch: 1 | 2;
   virtual: boolean;
   shape: FocalShape;
 };
-// Mirrors engine3.RaysResult: the mirror, the caustic parts (branch 1 real
+// Mirrors engine3.Receiver: the irradiance the outgoing rays deliver to
+// each bin of the window, irradiance[a][b] with a along the plane's first
+// coordinate, and where all the emitted flux went. Parallel light has unit
+// irradiance across its beam (fluxes are areas of beam, irradiances
+// multiples of the beam's); a point source has unit intensity (fluxes are
+// solid angles, irradiances per unit area). Each cell's flux is spread
+// evenly over its corners' crossings, and each bin averages it, with no
+// Fresnel losses and no occlusion. Corners run (lo, lo), (hi, lo), (hi,
+// hi), (lo, hi).
+export type ReceiverResult = {
+  plane: Exclude<ReceiverPlane, "none">;
+  corners: [Vec3, Vec3, Vec3, Vec3];
+  size: number;
+  irradiance: number[][];
+  peak: number;
+  emitted: number;
+  received: number;
+  outside: number;
+  away: number;
+  total: number;
+  edge: number;
+};
+// Mirrors engine3.RaysResult: the surface, the caustic parts (branch 1 real
 // and virtual, then branch 2), and representative rays where the parameter
-// curves cross, each incident from start to point, reflected to end, and
-// extended virtually back to back; `virtual` says whether either of its
-// caustic points lies behind the mirror. clipped[k] counts lit samples whose
-// branch k + 1 point is beyond 100 surface radii, treated as at infinity.
+// curves cross, each incident from start to point, reflected or
+// transmitted to end, and extended virtually back to back; `virtual` says
+// whether either of its caustic points lies behind the surface, and
+// `total` that the light is beyond the critical angle, its end along the
+// totally reflected ray. clipped[k] counts traced samples whose branch
+// k + 1 point is beyond 100 surface radii, treated as at infinity; total
+// counts samples beyond the critical angle.
 export type RaysResult = {
   surface: SurfaceSheet;
   caustics: CausticSheet[];
@@ -444,6 +492,7 @@ export type RaysResult = {
     end: Vec3;
     back: Vec3;
     virtual: boolean;
+    total: boolean;
   }[];
   uCurves: number[];
   vCurves: number[];
@@ -452,5 +501,7 @@ export type RaysResult = {
   unlit: number;
   atSource: number;
   stigmatic: number;
+  total: number;
   clipped: number[];
+  receiver: ReceiverResult | null;
 };

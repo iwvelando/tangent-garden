@@ -64,7 +64,10 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
     p.config.format === "surface"
       ? "Surface normals and focal sheets"
       : p.config.format === "rays"
-        ? "Mirrors and caustics"
+        ? p.config.rays.interaction === "refract" ||
+          p.config.rays.receiver.plane !== "none"
+          ? "Refraction and receivers"
+          : "Mirrors and caustics"
         : p.config.format === "pursuit"
           ? "Spatial pursuit"
           : p.config.format === "field"
