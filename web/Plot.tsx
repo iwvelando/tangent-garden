@@ -33,6 +33,15 @@ type Props = {
 };
 const W = 1000,
   H = 760;
+// The world rectangle a view shows, for light entering from its edge.
+export function viewRect(view: { cx: number; cy: number; scale: number }) {
+  return {
+    x0: view.cx - W / 2 / view.scale,
+    x1: view.cx + W / 2 / view.scale,
+    y0: view.cy - H / 2 / view.scale,
+    y1: view.cy + H / 2 / view.scale,
+  };
+}
 // An arrow along a direction in plot coordinates, drawn in screen pixels: a
 // shaft of the given length from `behind` pixels before (x, y), and a head
 // of the given size at its tip. A zero-length shaft leaves a chevron at
@@ -443,14 +452,24 @@ export function Plot({
             )
           );
         }
+        // A traced ray is drawn as far as its light has travelled.
+        const traced = ray.traced;
         return (
           <g key={i}>
             {optical &&
               layers.incident &&
-              line(incoming, ray.origin, palette.incident, 0.3)}
+              (traced
+                ? line(traced.from, traced.to, palette.incident, 0.3)
+                : line(incoming, ray.origin, palette.incident, 0.3))}
             {layers.lines &&
               (optical
-                ? line(ray.origin, end, ray.tir ? "#c18b32" : palette.line, 0.5)
+                ? (!traced || traced.out) &&
+                  line(
+                    ray.origin,
+                    traced?.out ?? end,
+                    ray.tir ? "#c18b32" : palette.line,
+                    0.5,
+                  )
                 : foot && line(ray.origin, foot, palette.line, 0.52))}
             {usesPole(config.kind) &&
               layers.lines &&
@@ -464,7 +483,8 @@ export function Plot({
             {optical &&
               layers.lines &&
               layers.virtual &&
-              line(ray.origin, back, palette.line, 0.23, true)}
+              (!traced || traced.back) &&
+              line(ray.origin, traced?.back ?? back, palette.line, 0.23, true)}
           </g>
         );
       })}
@@ -961,6 +981,7 @@ export function Plot({
       )}
       {dashed && layers.derived && layers.virtual && (
         <path
+          data-testid="virtual-derived-curve"
           d={path(result.derived, true)}
           fill="none"
           stroke={palette.derived}
