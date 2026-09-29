@@ -592,8 +592,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                 ))}
               </div>
               <span>
-                Orthographic · drag to orbit · shift-drag to pan · scroll to
-                zoom · keys: arrows, + / −, Home
+                Orthographic · drag to orbit · shift-drag or two fingers to pan
+                · scroll or pinch to zoom · keys: arrows, + / −, Home
               </span>
             </div>
           </div>

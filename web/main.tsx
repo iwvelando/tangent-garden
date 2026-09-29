@@ -2027,10 +2027,10 @@ function App({ active }: { active: boolean }) {
               </div>
               <span>
                 {animation?.complete
-                  ? "Drag to pan · scroll to zoom · Reset view restores your study"
+                  ? "Drag to pan · scroll or pinch to zoom · Back to study restores your study"
                   : animation
                     ? "Animation camera · Stop restores manual framing"
-                    : "Drag to pan · scroll to zoom"}
+                    : "Drag to pan · scroll or pinch to zoom"}
               </span>
             </div>
           </div>

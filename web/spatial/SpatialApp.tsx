@@ -2840,10 +2840,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
               )}
               <span>
                 {released
-                  ? "Drag to orbit · shift-drag to pan · scroll to zoom · Back to study restores your view"
+                  ? "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · Back to study restores your view"
                   : animation
                     ? "Animation camera · Stop restores manual framing"
-                    : "Orthographic · drag to orbit · shift-drag to pan · scroll to zoom · keys: arrows, + / −, Home"}
+                    : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home"}
               </span>
             </div>
           </div>

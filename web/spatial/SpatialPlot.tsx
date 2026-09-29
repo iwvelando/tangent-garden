@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpatialResult } from "./types";
+import { createGesture } from "../gestures";
 import {
   createRenderer,
   initialView,
@@ -50,6 +51,8 @@ export function SpatialPlot({
     if (!canvas.current?.clientWidth) return;
     const v = current();
     renderer.current?.draw(v, state.current.layers, state.current.dark);
+    // The shown camera, for tests and inspection, without a re-render.
+    canvas.current.dataset.view = JSON.stringify(v);
     state.current.onViewport(v);
   };
   useEffect(() => {
@@ -117,64 +120,53 @@ export function SpatialPlot({
     id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
   }, [spinning, override]);
-  const drag = useRef<{
-    id: number;
-    x: number;
-    y: number;
-    pan: boolean;
-  } | null>(null);
+  const gesture = useRef(createGesture()),
+    // Shift held as a mouse drag begins makes it a pan.
+    panning = useRef(false);
   return (
     <>
       <canvas
         ref={canvas}
         id="spatial-artwork"
         role="img"
-        aria-label="Interactive 3D curve construction. Drag to orbit, shift-drag to pan, scroll to zoom. Arrow keys orbit; shift-arrows pan; plus and minus zoom."
+        aria-label="Interactive 3D curve construction. Drag to orbit, shift-drag or two fingers to pan, scroll or pinch to zoom. Arrow keys orbit; shift-arrows pan; plus and minus zoom."
         tabIndex={0}
         onPointerDown={(e) => {
           if (override) return;
           e.currentTarget.setPointerCapture(e.pointerId);
-          drag.current = {
-            id: e.pointerId,
-            x: e.clientX,
-            y: e.clientY,
-            pan: e.shiftKey,
-          };
+          if (!gesture.current.count) panning.current = e.shiftKey;
+          gesture.current.down(e);
         }}
         onPointerMove={(e) => {
-          const d = drag.current;
-          if (!d || d.id !== e.pointerId || override) return;
-          const dx = e.clientX - d.x,
-            dy = e.clientY - d.y;
-          if (d.pan) {
+          const motion = gesture.current.move(e);
+          if (!motion || override) return;
+          const v = target();
+          // One finger or the mouse orbits, or pans with shift; two fingers
+          // pinch to zoom and pan together.
+          if (motion.kind === "pinch")
+            v.zoom = Math.max(0.2, Math.min(8, v.zoom * motion.scale));
+          if (motion.kind === "pinch" || panning.current) {
             const unit =
               (2 * current().radius * 1.16) /
               (Math.min(
                 e.currentTarget.clientWidth,
                 e.currentTarget.clientHeight,
               ) *
-                target().zoom);
-            target().panX += dx * unit;
-            target().panY -= dy * unit;
+                v.zoom);
+            v.panX += motion.dx * unit;
+            v.panY -= motion.dy * unit;
           } else {
-            target().yaw += dx * 0.008;
-            target().pitch = Math.max(
+            v.yaw += motion.dx * 0.008;
+            v.pitch = Math.max(
               -1.5,
-              Math.min(1.5, target().pitch + dy * 0.008),
+              Math.min(1.5, v.pitch + motion.dy * 0.008),
             );
           }
-          drag.current = { ...d, x: e.clientX, y: e.clientY };
           draw();
         }}
-        onPointerUp={() => {
-          drag.current = null;
-        }}
-        onPointerCancel={() => {
-          drag.current = null;
-        }}
-        onLostPointerCapture={() => {
-          drag.current = null;
-        }}
+        onPointerUp={(e) => gesture.current.up(e)}
+        onPointerCancel={(e) => gesture.current.up(e)}
+        onLostPointerCapture={(e) => gesture.current.up(e)}
         onKeyDown={(e) => {
           if (override) return;
           const v = target(),

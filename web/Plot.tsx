@@ -10,6 +10,7 @@ import {
 import type { AnimationView, Viewport } from "./animation";
 import { densityImage } from "./attractor";
 import { plotPalette } from "./palette";
+import { createGesture } from "./gestures";
 export type Layers = {
   base: boolean;
   derived: boolean;
@@ -98,9 +99,7 @@ export function Plot({
     !locked && current.reset === key
       ? current
       : { x: 0, y: 0, zoom: 1, reset: key };
-  const drag = useRef<{ x: number; y: number; cx: number; cy: number } | null>(
-    null,
-  );
+  const gesture = useRef(createGesture());
   const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     const svg = svgRef.current;
@@ -350,24 +349,42 @@ export function Plot({
       onPointerDown={(e) => {
         if (locked) return;
         e.currentTarget.setPointerCapture(e.pointerId);
-        drag.current = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
+        gesture.current.down(e);
       }}
       onPointerMove={(e) => {
-        if (!drag.current) return;
+        const motion = gesture.current.move(e);
+        if (!motion || locked) return;
         const r = e.currentTarget.getBoundingClientRect();
         const ratio = Math.max(W / r.width, H / r.height);
-        setCurrent({
-          ...cam,
-          x: drag.current.cx + (e.clientX - drag.current.x) * ratio,
-          y: drag.current.cy + (e.clientY - drag.current.y) * ratio,
+        // Moves can outpace renders, so each applies to the latest camera.
+        setCurrent((previous) => {
+          const c =
+            previous.reset === key
+              ? previous
+              : { x: 0, y: 0, zoom: 1, reset: key };
+          if (motion.kind === "drag")
+            return {
+              ...c,
+              x: c.x + motion.dx * ratio,
+              y: c.y + motion.dy * ratio,
+            };
+          // A pinch zooms about the point between the fingers, which stays
+          // where it is, and their shared movement pans.
+          const zoom = Math.max(0.1, Math.min(20, c.zoom * motion.scale));
+          const k = zoom / c.zoom;
+          const u = (motion.mid.x - (r.left + r.width / 2)) * ratio,
+            v = (motion.mid.y - (r.top + r.height / 2)) * ratio;
+          return {
+            ...c,
+            zoom,
+            x: u - (u - motion.dx * ratio - c.x) * k,
+            y: v - (v - motion.dy * ratio - c.y) * k,
+          };
         });
       }}
-      onPointerUp={() => {
-        drag.current = null;
-      }}
-      onPointerCancel={() => {
-        drag.current = null;
-      }}
+      onPointerUp={(e) => gesture.current.up(e)}
+      onPointerCancel={(e) => gesture.current.up(e)}
+      onLostPointerCapture={(e) => gesture.current.up(e)}
     >
       <title>Tangent Garden · {kind}</title>
       <desc>

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createGesture } from "../gestures";
 import { Drawing } from "./Drawing";
 import {
   initialView,
@@ -41,12 +42,9 @@ export function Plot({
     el.addEventListener("wheel", wheel, { passive: false });
     return () => el.removeEventListener("wheel", wheel);
   }, []);
-  const drag = useRef<{
-    id: number;
-    x: number;
-    y: number;
-    pan: boolean;
-  } | null>(null);
+  const gesture = useRef(createGesture()),
+    // Shift held as a mouse drag begins makes it a pan.
+    panning = useRef(false);
   return (
     <svg
       ref={ref}
@@ -54,44 +52,48 @@ export function Plot({
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 1000 760"
       role="img"
-      aria-label="Interactive tesseract construction. Drag to orbit; shift-drag to pan; scroll to zoom. Arrow keys orbit, shift-arrows pan, plus and minus zoom, Home resets."
+      aria-label="Interactive tesseract construction. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom. Arrow keys orbit, shift-arrows pan, plus and minus zoom, Home resets."
       tabIndex={0}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
-        drag.current = {
-          id: e.pointerId,
-          x: e.clientX,
-          y: e.clientY,
-          pan: e.shiftKey,
-        };
+        if (!gesture.current.count) panning.current = e.shiftKey;
+        gesture.current.down(e);
       }}
       onPointerMove={(e) => {
-        const d = drag.current;
-        if (!d || d.id !== e.pointerId) return;
-        const dx = e.clientX - d.x,
-          dy = e.clientY - d.y;
+        const motion = gesture.current.move(e);
+        if (!motion) return;
         const scale = Math.min(
           e.currentTarget.clientWidth / 1000,
           e.currentTarget.clientHeight / 760,
         );
-        onView(
-          d.pan
+        // Moves can outpace renders, so each builds on the latest view.
+        const view = state.current.view;
+        const zoom =
+          motion.kind === "pinch"
+            ? Math.max(0.2, Math.min(8, view.zoom * motion.scale))
+            : view.zoom;
+        const next =
+          motion.kind === "pinch" || panning.current
             ? {
                 ...view,
-                panX: view.panX + dx / scale,
-                panY: view.panY + dy / scale,
+                zoom,
+                panX: view.panX + motion.dx / scale,
+                panY: view.panY + motion.dy / scale,
               }
             : {
                 ...view,
-                yaw: view.yaw + dx * 0.008,
-                pitch: Math.max(-1.5, Math.min(1.5, view.pitch + dy * 0.008)),
-              },
-        );
-        drag.current = { ...d, x: e.clientX, y: e.clientY };
+                yaw: view.yaw + motion.dx * 0.008,
+                pitch: Math.max(
+                  -1.5,
+                  Math.min(1.5, view.pitch + motion.dy * 0.008),
+                ),
+              };
+        state.current.view = next;
+        onView(next);
       }}
-      onPointerUp={() => (drag.current = null)}
-      onPointerCancel={() => (drag.current = null)}
-      onLostPointerCapture={() => (drag.current = null)}
+      onPointerUp={(e) => gesture.current.up(e)}
+      onPointerCancel={(e) => gesture.current.up(e)}
+      onLostPointerCapture={(e) => gesture.current.up(e)}
       onKeyDown={(e) => {
         const v = { ...view };
         switch (e.key) {
