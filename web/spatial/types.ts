@@ -129,8 +129,30 @@ export type SurfaceConfig = {
 };
 export const maxSurfaceCells = 14400;
 export const maxSurfaceCurves = 48;
+// The light on a mirror, for one reflection. Parallel light travels along
+// (cos β cos α, cos β sin α, sin β), azimuth α and elevation β in degrees; a
+// point source sits at `source`. The surface's normal declares the mirror
+// side: a sample is lit only where the light arrives against n. Each
+// representative ray is drawn `length` along its reflection and as far back
+// behind the mirror; parallel light arrives from `length` away. Mirrors
+// engine3.RaysRequest.
+export type RaysLight = "parallel" | "point";
+export type RaysConfig = {
+  light: RaysLight;
+  azimuth: number;
+  elevation: number;
+  source: Vec3;
+  length: number;
+};
 export type SpatialConfig = {
-  format: "torus" | "parametric" | "harmonic" | "field" | "pursuit" | "surface";
+  format:
+    | "torus"
+    | "parametric"
+    | "harmonic"
+    | "field"
+    | "pursuit"
+    | "surface"
+    | "rays";
   // `length` is the tangent reach, used only by the developable.
   construction:
     | "developable"
@@ -152,8 +174,11 @@ export type SpatialConfig = {
   field: FieldConfig;
   pursuit: SpatialPursuitConfig;
   // Read only when the format is "surface", which ignores every curve and
-  // construction field.
+  // construction field, or "rays", which reads the patch as a mirror but
+  // not its offset or normal reach.
   surface: SurfaceConfig;
+  // Read only when the format is "rays".
+  rays: RaysConfig;
   curve: {
     x: string;
     y: string;
@@ -195,6 +220,8 @@ export type SpatialResult = {
   pursuit?: SpatialPursuitResult;
   // Present only for a surface study, whose curve fields are all empty.
   surface?: SurfaceResult;
+  // Present only for a ray study, whose curve fields are all empty.
+  rays?: RaysResult;
   // Present only for the framed construction; its ribbon fills mesh, minus,
   // plus, and rulings, joined across frame.breaks rather than breaks.
   frame?: FrameResult;
@@ -391,4 +418,39 @@ export type SurfaceResult = {
   singular: number;
   umbilics: number;
   folded: number;
+};
+// Mirrors engine3.CausticSheet: the real (μ > 0, ahead of the mirror) or
+// virtual (μ < 0, behind it) part of caustic branch 1 or 2, the points X +
+// R/μ for the reflected wavefront's principal curvatures μ₁ ≥ μ₂.
+export type CausticSheet = SurfaceSheet & {
+  branch: 1 | 2;
+  virtual: boolean;
+  shape: FocalShape;
+};
+// Mirrors engine3.RaysResult: the mirror, the caustic parts (branch 1 real
+// and virtual, then branch 2), and representative rays where the parameter
+// curves cross, each incident from start to point, reflected to end, and
+// extended virtually back to back; `virtual` says whether either of its
+// caustic points lies behind the mirror. clipped[k] counts lit samples whose
+// branch k + 1 point is beyond 100 surface radii, treated as at infinity.
+export type RaysResult = {
+  surface: SurfaceSheet;
+  caustics: CausticSheet[];
+  lines: {
+    i: number;
+    j: number;
+    start: Vec3;
+    point: Vec3;
+    end: Vec3;
+    back: Vec3;
+    virtual: boolean;
+  }[];
+  uCurves: number[];
+  vCurves: number[];
+  source: Vec3 | null;
+  singular: number;
+  unlit: number;
+  atSource: number;
+  stigmatic: number;
+  clipped: number[];
 };

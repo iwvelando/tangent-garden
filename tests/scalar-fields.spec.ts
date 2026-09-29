@@ -991,6 +991,53 @@ test("spatial surface shape, domain, offset and reach share the bounded scalar p
     await check(name, text, value, ["surface", key]);
 });
 
+test("spatial mirror light, source and ray length share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("rays");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly string[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  const check = async (
+    name: string,
+    text: string,
+    value: number,
+    path: readonly string[],
+  ) => {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(path)).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  };
+  for (const [name, text, value, path] of [
+    ["Major radius R", "phi", phi, ["surface", "a"]],
+    ["u to", "3*pi/2", (3 * Math.PI) / 2, ["surface", "uMax"]],
+    ["Azimuth α (°)", "180/pi", 180 / Math.PI, ["rays", "azimuth"]],
+    ["Elevation β (°)", "-60-e", -60 - Math.E, ["rays", "elevation"]],
+    ["Ray length ℓ", "sqrt(2)", Math.SQRT2, ["rays", "length"]],
+  ] as const)
+    await check(name, text, value, path);
+  await page.getByLabel("Light", { exact: true }).selectOption("point");
+  for (const [name, text, value, key] of [
+    ["Source x", "-pi/4", -Math.PI / 4, "x"],
+    ["Source y", "1/e", 1 / Math.E, "y"],
+    ["Source z", "2*phi", 2 * phi, "z"],
+  ] as const)
+    await check(name, text, value, ["rays", "source", key]);
+});
+
 test("spatial ruled shift and rate share the bounded scalar parser", async ({
   page,
 }) => {

@@ -102,8 +102,24 @@ func lerp(lo, hi float64, i, n int) float64 {
 }
 
 func (q SurfaceRequest) validate() error {
+	if err := q.validatePatch(); err != nil {
+		return err
+	}
+	if !bounded(q.Offset) {
+		return fmt.Errorf("the offset distance d must be finite and within ±100000")
+	}
+	if !bounded(q.Reach) {
+		return fmt.Errorf("the normal reach ℓ must be finite and within ±100000")
+	}
+	return nil
+}
+
+func bounded(v float64) bool { return finite(v) && math.Abs(v) <= 1e5 }
+
+// validatePatch checks the patch, its domain, and its grid, which a ray
+// study shares.
+func (q SurfaceRequest) validatePatch() error {
 	shape := func(v float64) bool { return finite(v) && v > 0 && v <= 1e5 }
-	signed := func(v float64) bool { return finite(v) && math.Abs(v) <= 1e5 }
 	switch q.Kind {
 	case "ellipsoid":
 		if !shape(q.A) || !shape(q.B) || !shape(q.C) {
@@ -121,11 +137,11 @@ func (q SurfaceRequest) validate() error {
 			return fmt.Errorf("the semi-axes a and b must be finite, positive, and at most 100000")
 		}
 	case "paraboloid":
-		if !signed(q.A) || !signed(q.B) {
+		if !bounded(q.A) || !bounded(q.B) {
 			return fmt.Errorf("the curvatures k₁ and k₂ must be finite and within ±100000")
 		}
 	case "monkey":
-		if !signed(q.A) {
+		if !bounded(q.A) {
 			return fmt.Errorf("the height k must be finite and within ±100000")
 		}
 	default:
@@ -142,12 +158,6 @@ func (q SurfaceRequest) validate() error {
 	}
 	if q.Curves < 2 || q.Curves > maxSurfaceCurves {
 		return fmt.Errorf("use 2–48 parameter curves in each direction")
-	}
-	if !signed(q.Offset) {
-		return fmt.Errorf("the offset distance d must be finite and within ±100000")
-	}
-	if !signed(q.Reach) {
-		return fmt.Errorf("the normal reach ℓ must be finite and within ±100000")
 	}
 	return nil
 }
@@ -295,6 +305,27 @@ func sheet(points, normals [][]*Vec3, join func(i, j, di, dj int) bool, scale fl
 	return s
 }
 
+// at returns the parameters of sample (i, j).
+func (q SurfaceRequest) at(i, j int) (float64, float64) {
+	return lerp(q.UMin, q.UMax, i, q.USamples), lerp(q.VMin, q.VMax, j, q.VSamples)
+}
+
+// positions samples the patch's points and returns them with the surface's
+// size, which sets the tolerances.
+func (q SurfaceRequest) positions() ([]*Vec3, float64, error) {
+	positions := make([]*Vec3, 0, (q.USamples+1)*(q.VSamples+1))
+	for i := 0; i <= q.USamples; i++ {
+		for j := 0; j <= q.VSamples; j++ {
+			x, _, _, _, _, _ := q.patch(q.at(i, j))
+			if !x.valid() {
+				return nil, 0, fmt.Errorf("the surface has no finite point at sample (%d, %d)", i, j)
+			}
+			positions = append(positions, &x)
+		}
+	}
+	return positions, fit(positions).Radius, nil
+}
+
 // surfaces samples the patch, its offset and focal sheets, and the
 // representative parameter curves and normal lines.
 func surfaces(q SurfaceRequest) (Result, error) {
@@ -302,19 +333,11 @@ func surfaces(q SurfaceRequest) (Result, error) {
 		return Result{}, err
 	}
 	nu, nv := q.USamples, q.VSamples
-	at := func(i, j int) (float64, float64) { return lerp(q.UMin, q.UMax, i, nu), lerp(q.VMin, q.VMax, j, nv) }
-	// The surface's size, from its positions alone, sets the tolerances.
-	positions := make([]*Vec3, 0, (nu+1)*(nv+1))
-	for i := 0; i <= nu; i++ {
-		for j := 0; j <= nv; j++ {
-			x, _, _, _, _, _ := q.patch(at(i, j))
-			if !x.valid() {
-				return Result{}, fmt.Errorf("the surface has no finite point at sample (%d, %d)", i, j)
-			}
-			positions = append(positions, &x)
-		}
+	at := q.at
+	positions, scale, err := q.positions()
+	if err != nil {
+		return Result{}, err
 	}
-	scale := fit(positions).Radius
 	reach := focalReach * scale
 	out := &SurfaceResult{UCurves: representatives(nv, q.Curves), VCurves: representatives(nu, q.Curves), Lines: []SurfaceNormal{}}
 	samples := grid2[surfacePoint](nu+1, nv+1)

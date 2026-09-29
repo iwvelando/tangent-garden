@@ -21,7 +21,11 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // whose other paths and starts they draw. A surface study draws its patch
 // as the surface, with its parameter curves, normal lines, offset, and each
 // focal sheet (its faces, its parameter curves, and a cross when it is a
-// point) as their own layers. The base curve is always drawn.
+// point) as their own layers. A ray study draws its mirror as the surface,
+// with its parameter curves; each caustic branch's real part as a focal
+// sheet; and its incident rays (with the source), reflected rays, and
+// virtual rays with the caustics' virtual parts, as lines, as their own
+// layers. The base curve is always drawn.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -51,6 +55,9 @@ export type Layers = {
   offset: boolean;
   focal1: boolean;
   focal2: boolean;
+  incident: boolean;
+  reflected: boolean;
+  virtual: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -81,6 +88,9 @@ export const defaultLayers: Layers = {
   offset: true,
   focal1: true,
   focal2: true,
+  incident: true,
+  reflected: true,
+  virtual: true,
 };
 const vertexSource = `
 attribute vec3 position;
@@ -223,7 +233,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     normalLines: Batch,
     offsetSheet: Batch,
     focalSheets: Batch[],
-    focalCurves: Batch[];
+    focalCurves: Batch[],
+    incidentRays: Batch,
+    reflectedRays: Batch,
+    virtualRays: Batch,
+    lamp: Batch,
+    virtualCaustics: Batch[];
 
   function batch(data: number[], mode: number, ink: number): Batch {
     const buffer = gl!.createBuffer()!;
@@ -693,7 +708,9 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.LINES,
       1,
     );
-    const surface = result.surface;
+    const surface = result.surface,
+      rays = result.rays,
+      patch = surface ?? rays;
     const empty: SurfaceSheet = {
       points: [],
       normals: [],
@@ -701,12 +718,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       alongV: [],
       faces: [],
     };
-    sheet = sheetBatch(surface?.surface ?? empty, 0);
+    sheet = sheetBatch(patch?.surface ?? empty, 0);
     sheetCurves = batch(
       vertices(
-        surface
-          ? sheetLines(surface.surface, surface.uCurves, surface.vCurves)
-          : [],
+        patch ? sheetLines(patch.surface, patch.uCurves, patch.vCurves) : [],
       ),
       gl!.LINES,
       1,
@@ -717,19 +732,57 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       4,
     );
     offsetSheet = sheetBatch(surface?.offset ?? empty, -1);
-    focalSheets = (surface?.focal ?? []).map((f, k) => sheetBatch(f, -2 - k));
-    focalCurves = (surface?.focal ?? []).map((f, k) => {
+    // A branch drawn as lines: its parameter curves, or a cross when it is
+    // a point.
+    const branchLines = (f: SurfaceSheet & { shape: string }, k: number) => {
       const at = f.points.flat().find((p) => p);
       return batch(
         vertices(
           f.shape === "point" && at
             ? cross(at, result.bounds.radius * 0.04)
-            : sheetLines(f, surface!.uCurves, surface!.vCurves),
+            : sheetLines(f, patch!.uCurves, patch!.vCurves),
         ),
         gl!.LINES,
         5 + k,
       );
-    });
+    };
+    // A caustic's real parts are shaded like focal sheets; its virtual
+    // parts, behind the mirror, are drawn only as lines.
+    const part = (virtual: boolean) =>
+      ([1, 2] as const).map((b) =>
+        rays!.caustics.find((c) => c.branch === b && c.virtual === virtual)!,
+      );
+    const realParts = rays ? part(false) : (surface?.focal ?? []);
+    focalSheets = realParts.map((f, k) => sheetBatch(f, -2 - k));
+    focalCurves = realParts.map(branchLines);
+    virtualCaustics = rays ? part(true).map(branchLines) : [];
+    const rayLines = rays?.lines ?? [];
+    incidentRays = batch(
+      vertices(rayLines.flatMap((l) => [l.start, l.point])),
+      gl!.LINES,
+      4,
+    );
+    reflectedRays = batch(
+      vertices(rayLines.flatMap((l) => [l.point, l.end])),
+      gl!.LINES,
+      2,
+    );
+    virtualRays = batch(
+      // Only a ray with a virtual caustic point leads anywhere behind the
+      // mirror.
+      vertices(
+        rayLines.filter((l) => l.virtual).flatMap((l) => [l.point, l.back]),
+      ),
+      gl!.LINES,
+      4,
+    );
+    lamp = batch(
+      vertices(
+        rays?.source ? cross(rays.source, result.bounds.radius * 0.03) : [],
+      ),
+      gl!.LINES,
+      2,
+    );
     // Each connecting polygon closes, the last pursuer back to the first.
     polygons = batch(
       vertices(
@@ -824,6 +877,15 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     });
     if (layers.curves) render(sheetCurves);
     if (layers.normals) render(normalLines);
+    if (layers.incident) {
+      render(incidentRays);
+      render(lamp);
+    }
+    if (layers.reflected) render(reflectedRays);
+    if (layers.virtual) {
+      render(virtualRays);
+      virtualCaustics.forEach(render);
+    }
     if (layers.rulings) render(rulings);
     if (layers.edges) {
       render(minus);
