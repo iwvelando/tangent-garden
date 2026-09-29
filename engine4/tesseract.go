@@ -1,4 +1,4 @@
-// Package engine4 constructs projections and sections of the genuine 4-cube.
+// Package engine4 constructs projections and sections of the four-dimensional solids.
 // It is independent of the curve engines and of any rendering or UI library.
 package engine4
 
@@ -11,6 +11,10 @@ import (
 type Vec4 [4]float64
 type Vec3 [3]float64
 type Request struct {
+	Object   string     `json:"object"` // empty retains the legacy tesseract contract
+	Radius   float64    `json:"radius"`
+	Tube     float64    `json:"tube"`
+	Curves   int        `json:"curves"`
 	Mode     string     `json:"mode"`
 	Angles   [6]float64 `json:"angles"` // xy, xz, yz, xw, yw, zw, radians, in this order
 	Distance float64    `json:"distance"`
@@ -22,28 +26,39 @@ type Request struct {
 	Clip     float64    `json:"clip"`
 }
 type Path struct {
-	Points []Vec3 `json:"points"`
-	Family int    `json:"family"` // original edge direction, or cell axis for a section
-	Guide  bool   `json:"guide"`
+	Source    string `json:"source,omitempty"`
+	SectionID string `json:"sectionId,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Points    []Vec3 `json:"points"`
+	Family    int    `json:"family"` // original edge direction, or cell axis for a section
+	Guide     bool   `json:"guide"`
 }
 type Face struct {
 	Points []Vec3 `json:"points"`
 	Family int    `json:"family"`
 }
 type Section struct {
+	ID        string  `json:"id,omitempty"`
+	Kind      string  `json:"kind,omitempty"`
+	Radius    float64 `json:"radius,omitempty"`
 	Level     float64 `json:"level"`
-	Vertices  int     `json:"vertices"`
-	Edges     int     `json:"edges"`
-	Faces     int     `json:"faces"`
+	Vertices  int     `json:"vertices,omitempty"`
+	Edges     int     `json:"edges,omitempty"`
+	Faces     int     `json:"faces,omitempty"`
 	Dimension int     `json:"dimension"` // -1 empty; 0 point; 1 segment; 2 polygon; 3 solid
 }
 type Result struct {
-	Paths    []Path    `json:"paths"`
-	Faces    []Face    `json:"faces"`
-	Points   []Vec3    `json:"points"`
-	Sections []Section `json:"sections"`
-	Clipped  int       `json:"clipped"` // source curves cut by the stereographic window
-	Radius   float64   `json:"radius"`  // fixed, rotation-independent framing sphere
+	Object        string    `json:"object"`
+	Operation     string    `json:"operation"`
+	EmittedPoints int       `json:"emittedPoints"`
+	Evaluations   int       `json:"evaluations"`
+	Paths         []Path    `json:"paths"`
+	Faces         []Face    `json:"faces"`
+	Points        []Vec3    `json:"points"`
+	Sections      []Section `json:"sections"`
+	Clipped       int       `json:"clipped"` // source curves cut by the stereographic window
+	Radius        float64   `json:"radius"`  // fixed, rotation-independent framing sphere
 }
 
 var planes = [6][2]int{{0, 1}, {0, 2}, {1, 2}, {0, 3}, {1, 3}, {2, 3}}
@@ -79,8 +94,35 @@ func norm(v Vec4) float64 {
 	return math.Sqrt(s)
 }
 func finite(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) }
-func Compute(q Request) (Result, error) {
-	r := Result{Paths: []Path{}, Faces: []Face{}, Points: []Vec3{}, Sections: []Section{}, Radius: 2}
+func Compute(q Request) (r Result, err error) {
+	r = Result{Paths: []Path{}, Faces: []Face{}, Points: []Vec3{}, Sections: []Section{}, Radius: 2}
+	if q.Object == "" {
+		q.Object = "tesseract"
+	}
+	r.Object, r.Operation = q.Object, q.Mode
+	defer func() {
+		for i := range r.Paths {
+			p := &r.Paths[i]
+			if p.Source == "" {
+				p.Source = fmt.Sprintf("tesseract/curve/%d", i)
+				p.Branch = "0"
+				p.Role = "base"
+				if q.Mode == "section" {
+					p.Role = "section"
+				} else if p.Guide {
+					p.Role = "guide"
+				}
+			}
+			r.EmittedPoints += len(p.Points)
+		}
+		r.EmittedPoints += len(r.Points)
+	}()
+	if q.Object == "ball" || q.Object == "tube" {
+		return curved(q, r)
+	}
+	if q.Object != "tesseract" {
+		return r, fmt.Errorf("choose tesseract, ball, or tube")
+	}
 	if q.Mode != "perspective" && q.Mode != "orthographic" && q.Mode != "stereo" && q.Mode != "section" {
 		return r, fmt.Errorf("choose a tesseract projection or section")
 	}
@@ -122,7 +164,13 @@ func Compute(q Request) (Result, error) {
 			if q.Count > 1 {
 				level += q.Spread * (float64(i)/float64(q.Count-1) - .5)
 			}
+			start := len(r.Paths)
 			section(&r, vs, level, q.Count == 1)
+			id := fmt.Sprintf("section/%d", i)
+			r.Sections[len(r.Sections)-1].ID = id
+			for j := start; j < len(r.Paths); j++ {
+				r.Paths[j].SectionID = id
+			}
 		}
 		return r, nil
 	}
@@ -139,7 +187,7 @@ func Compute(q Request) (Result, error) {
 				r.Clipped++
 			}
 			for _, points := range paths {
-				r.Paths = append(r.Paths, Path{points, family, guide})
+				r.Paths = append(r.Paths, Path{Points: points, Family: family, Guide: guide})
 			}
 		} else {
 			project := func(v Vec4) Vec3 {
@@ -149,7 +197,7 @@ func Compute(q Request) (Result, error) {
 				}
 				return Vec3{s * v[0], s * v[1], s * v[2]}
 			}
-			r.Paths = append(r.Paths, Path{[]Vec3{project(a), project(b)}, family, guide})
+			r.Paths = append(r.Paths, Path{Points: []Vec3{project(a), project(b)}, Family: family, Guide: guide})
 		}
 	}
 	for i, a := range vs {
@@ -390,7 +438,7 @@ func section(r *Result, vs [16]Vec4, level float64, fill bool) {
 				}
 				if !found {
 					edges = append(edges, [2]Vec3{a, b})
-					r.Paths = append(r.Paths, Path{[]Vec3{a, b}, axis, false})
+					r.Paths = append(r.Paths, Path{Points: []Vec3{a, b}, Family: axis})
 				}
 			}
 		}
@@ -410,8 +458,8 @@ func section(r *Result, vs [16]Vec4, level float64, fill bool) {
 				}
 			}
 		}
-		r.Paths = append(r.Paths, Path{[]Vec3{a, b}, 0, false})
+		r.Paths = append(r.Paths, Path{Points: []Vec3{a, b}})
 		edges = append(edges, [2]Vec3{a, b})
 	}
-	r.Sections = append(r.Sections, Section{level, len(all), len(edges), len(faces), dim})
+	r.Sections = append(r.Sections, Section{Level: level, Vertices: len(all), Edges: len(edges), Faces: len(faces), Dimension: dim})
 }

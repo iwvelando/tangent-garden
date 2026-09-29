@@ -696,3 +696,7 @@ Conventions here were checked against these sources rather than copied from thei
 ## Tesseract projections and sections
 
 The independent `engine4` package models [−1, 1]⁴ with genuine four-dimensional rotations, linear and perspective projections, exact cell-edge intersections with w = h, and stereographic projections after radial normalization onto S³. See [Tesseract studies](tesseracts.md#mathematics-and-numerical-limits) for rotation order, formulas, analytic clipping, tolerance conventions, workload bounds, and numerical checks. The planar and spatial curve engines retain their existing definitions.
+
+## Four-dimensional curved solids
+
+The independent `engine4` evaluator supports exact axis-aligned sections of a centered 4-ball and the circular tubular solid `(sqrt(x²+y²)−R)²+z²+w² ≤ r²`, with `0 < r < R`. The former has 3-ball sections; the latter has solid-torus sections with fixed core radius R. Their boundary radii are `sqrt(R²−h²)` and `sqrt(r²−h²)`. At support tangency they collapse respectively to a point and a core circle, then become empty. Representative boundary circles are polylines; they do not reduce the section's dimension to one or describe its entire interior. [The 4D study](tesseracts.md#exact-curved-sections) defines formulas, tangency tolerances, source identities, limits and motion. General tilted curved sections and implicit 4D fields are outside this evaluator.

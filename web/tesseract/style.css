@@ -62,7 +62,8 @@
 }
 .tesseract-legend {
   display: flex;
-  gap: 18px;
+  gap: 8px 18px;
+  flex-wrap: wrap;
 }
 .tesseract-legend span {
   display: flex;
@@ -74,6 +75,24 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
+}
+/* Changing signs, magnitudes and stroke labels must not reflow the footer. */
+.tesseract-app .section-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.section-meta .tesseract-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 28ch), 1fr));
+}
+.section-meta .tesseract-legend > span {
+  display: grid;
+  grid-template-columns: 7px 6ch 10ch 1fr;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.section-meta .tesseract-legend > span > span {
+  display: block;
 }
 .tesseract-error {
   position: absolute;

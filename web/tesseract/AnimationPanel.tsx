@@ -13,7 +13,8 @@ import {
   type ExportFormat,
   type Formats,
 } from "../export-formats";
-import type { Config, Motion } from "./types";
+import { objects } from "./objects";
+import { passageExtent, type Config, type Motion } from "./types";
 
 export type MotionExport = {
   format: ExportFormat;
@@ -26,7 +27,7 @@ export type MotionExport = {
 function motions(
   config: Config,
 ): { value: Motion; label: string; help: string }[] {
-  return [
+  const choices: { value: Motion; label: string; help: string }[] = [
     {
       value: "double",
       label: "Double rotation · xw + yz",
@@ -42,11 +43,14 @@ function motions(
           {
             value: "slice" as const,
             label: "Slice passage",
-            help: "Move the section from w = −2.05 to 2.05, including both empty endpoints. Multiple sections travel together at their entered spacing.",
+            help: `Move h from −${passageExtent(config).toPrecision(4)} to ${passageExtent(config).toPrecision(4)}, including empty endpoints. ${objects[config.object].passageHelp}`,
           },
         ]
       : []),
   ];
+  return choices.filter(
+    (choice) => choice.value === "slice" || objects[config.object].rotations,
+  );
 }
 export function AnimationPanel(p: {
   config: Config;

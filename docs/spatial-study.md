@@ -15,7 +15,7 @@ The first implementation chooses a **tangent developable of a space curve**, sta
 
 ## What to try
 
-Choose **3D curves** in the notebook header, or open `?study=3d`. Switching to **2D curves** preserves both studies and their manual views. Start with Trefoil, orbit slowly, then hide **Ribbon surface** to see how straight tangents build the folds. Change **Tangent reach L** from a small positive value to 3 to watch those lines form broader intersecting sheets. Try Cinquefoil and Woven orbit for more intricate arrangements.
+Choose **3D studies** in the notebook header, or open `?study=3d`. Switching to **2D studies** preserves both studies and their manual views. Start with Trefoil, orbit slowly, then hide **Ribbon surface** to see how straight tangents build the folds. Change **Tangent reach L** from a small positive value to 3 to watch those lines form broader intersecting sheets. Try Cinquefoil and Woven orbit for more intricate arrangements.
 
 The torus presets use coprime windings (2,3), (2,5), and (3,4). R is the major torus radius, r its minor radius, and L the half-length of each unit-tangent segment. R lies in [0.1,20], r in [0.01,R), and L in (0,20]. Samples range from 240 to 2400 and representative tangent lines from 12 to 240.
 

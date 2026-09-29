@@ -1,15 +1,6 @@
 import type { Config, Motion } from "./types";
-const base: Config = {
-  mode: "perspective",
-  angles: [0, 0, 0, 0, 0, 0],
-  distance: 4,
-  slice: 0,
-  spread: 3.4,
-  count: 1,
-  grid: 0,
-  samples: 64,
-  clip: 4,
-};
+import { defaultConfig } from "./objects";
+const base = defaultConfig;
 const diagonal: Config["angles"] = [
   0,
   0,
@@ -78,5 +69,33 @@ export const tesseractPresets: {
       grid: 2,
     },
     motion: "double",
+  },
+  {
+    name: "A sphere in passing",
+    detail:
+      "Sections of a 4-ball shrink from a 3-ball to a point, then disappear. Circles illustrate each boundary sphere.",
+    config: {
+      ...base,
+      object: "ball",
+      mode: "section",
+      count: 5,
+      spread: 3.2,
+      curves: 3,
+    },
+    motion: "slice",
+  },
+  {
+    name: "A ring in passing",
+    detail:
+      "Each outline is a section of one four-dimensional tube. As the slice moves, the tube narrows to its central circle and disappears. The drawing samples its depth; it does not show an infinity of layers.",
+    config: {
+      ...base,
+      object: "tube",
+      mode: "section",
+      count: 5,
+      spread: 1.1,
+      curves: 4,
+    },
+    motion: "slice",
   },
 ];

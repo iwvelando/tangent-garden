@@ -64,14 +64,22 @@ self.onmessage = async ({
       const q = data.tesseract;
       if (!q || !Array.isArray(q.angles) || q.angles.length !== 6)
         throw new Error("Enter six tesseract rotation angles.");
-      const counts =
-        q.mode === "section"
+      const curved = q.object === "ball" || q.object === "tube";
+      const counts = curved
+        ? [q.count, q.curves, q.samples]
+        : q.mode === "section"
           ? [q.count]
           : q.mode === "stereo"
             ? [q.grid, q.samples]
             : [q.grid];
-      const values =
-        q.mode === "perspective"
+      const values = curved
+        ? [
+            q.radius,
+            ...(q.object === "tube" ? [q.tube] : []),
+            q.slice,
+            q.spread,
+          ]
+        : q.mode === "perspective"
           ? [q.distance]
           : q.mode === "section"
             ? [q.slice, q.spread]
@@ -88,6 +96,15 @@ self.onmessage = async ({
         );
       // Inactive unfinished integer fields must not fail Go JSON decoding.
       const request = {
+        object: q.object,
+        ...(curved
+          ? {
+              radius: q.radius,
+              tube: q.tube,
+              curves: q.curves,
+              samples: q.samples,
+            }
+          : {}),
         mode: q.mode,
         angles: q.angles,
         ...(q.mode === "section"

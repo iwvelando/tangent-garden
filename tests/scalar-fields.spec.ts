@@ -1170,3 +1170,58 @@ test("tesseract parameters accept constants, reject variables, and discard stale
   expect(q.slice).toBe(0);
   expect(q.angles).toEqual([0, 0, 0, 0, 0, 0]);
 });
+
+test("curved 4D radii share scalar parsing and invalidate superseded definitions", async ({
+  page,
+}) => {
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  await settle();
+  await choosePreset(page, { label: "A ring in passing" });
+  await page
+    .getByRole("textbox", { name: "Core radius R", exact: true })
+    .fill("phi");
+  await page
+    .getByRole("textbox", { name: "Tube radius r", exact: true })
+    .fill("pi/8");
+  await page
+    .getByRole("textbox", { name: "Slice offset h", exact: true })
+    .fill("1/e");
+  await page
+    .getByRole("textbox", { name: "Section spread", exact: true })
+    .fill("phi/4");
+  await settle();
+  let q = JSON.parse((await stage.getAttribute("data-config"))!);
+  expect(q.radius).toBe(phi);
+  expect(q.tube).toBe(Math.PI / 8);
+  expect(q.slice).toBe(1 / Math.E);
+  expect(q.spread).toBe(phi / 4);
+  for (const name of ["Core radius R", "Tube radius r"]) {
+    for (const bad of ["t", "x", "a", "1/0"]) {
+      await page.getByRole("textbox", { name, exact: true }).fill(bad);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await page
+      .getByRole("textbox", { name, exact: true })
+      .fill(name === "Core radius R" ? "phi" : "pi/8");
+  }
+  await page
+    .getByRole("textbox", { name: "Core radius R", exact: true })
+    .fill("e");
+  await choosePreset(page, { label: "A sphere in passing" });
+  await page
+    .getByRole("textbox", { name: "4-ball radius R", exact: true })
+    .fill("2*phi");
+  await settle();
+  q = JSON.parse((await stage.getAttribute("data-config"))!);
+  expect(q.object).toBe("ball");
+  expect(q.radius).toBe(2 * phi);
+  await page
+    .getByRole("textbox", { name: "4-ball radius R", exact: true })
+    .fill("a");
+  await expect(page.getByRole("alert")).toBeVisible();
+  await choosePreset(page, { label: "A sphere in passing" });
+  await settle();
+  expect(JSON.parse((await stage.getAttribute("data-config"))!).radius).toBe(2);
+});
