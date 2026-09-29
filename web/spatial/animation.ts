@@ -1,5 +1,6 @@
 import { usesSpatialPole } from "./types";
 import { harmonicLabels } from "./harmonic";
+import { surfaceShape } from "./surface";
 import type {
   SpatialConfig,
   SpatialResult,
@@ -7,6 +8,7 @@ import type {
   Vec3,
   Bounds3,
   SpatialHarmonicResult,
+  SurfaceSheet,
 } from "./types";
 import type { View } from "./renderer";
 export type { Frame };
@@ -53,7 +55,19 @@ type NamedTarget =
   | "sphereRadius"
   | "meridians"
   | "escape"
-  | "capture";
+  | "capture"
+  | "surfaceA"
+  | "surfaceB"
+  | "surfaceC"
+  | "uMin"
+  | "uMax"
+  | "vMin"
+  | "vMax"
+  | "surfaceOffset"
+  | "reach"
+  | "uSamples"
+  | "vSamples"
+  | "curves";
 // One coordinate of a vector field's seed, numbered from 1.
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
 // A pursuer's starting coordinate or speed, numbered from 1.
@@ -108,6 +122,19 @@ export const targetLabels: Record<NamedTarget, string> = {
   meridians: "Meridians",
   escape: "Escape radius R",
   capture: "Capture distance ε",
+  // A surface's shape fields are named by its kind (see targetLabel).
+  surfaceA: "Shape a",
+  surfaceB: "Shape b",
+  surfaceC: "Shape c",
+  uMin: "u from",
+  uMax: "u to",
+  vMin: "v from",
+  vMax: "v to",
+  surfaceOffset: "Offset d",
+  reach: "Normal reach ℓ",
+  uSamples: "u samples",
+  vSamples: "v samples",
+  curves: "Parameter curves",
 };
 const subscript = (n: number) =>
   String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
@@ -140,6 +167,23 @@ const pursuerTarget = (t: Target) => {
       }
     : null;
 };
+// Surface targets and the SurfaceConfig field each one moves.
+const surfaceFields = {
+  surfaceA: "a",
+  surfaceB: "b",
+  surfaceC: "c",
+  uMin: "uMin",
+  uMax: "uMax",
+  vMin: "vMin",
+  vMax: "vMax",
+  surfaceOffset: "offset",
+  reach: "reach",
+  uSamples: "uSamples",
+  vSamples: "vSamples",
+  curves: "curves",
+} as const;
+const isSurface = (t: Target): t is keyof typeof surfaceFields =>
+  t in surfaceFields;
 // Framed-construction targets and the FrameConfig field each one moves.
 const frameFields = {
   angle: "angle",
@@ -180,6 +224,10 @@ export const targetLabel = (c: SpatialConfig, t: Target): string => {
   if (seed) return seedLabel(seed.index + 1, seed.axis);
   const pursuer = pursuerTarget(t);
   if (pursuer) return spatialPursuerLabels[pursuer.field](pursuer.index + 1);
+  const shape = surfaceShape[c.surface.kind].find(
+    (f) => `surface${f.key.toUpperCase()}` === t,
+  );
+  if (shape) return shape.label;
   return t === "lines" && c.construction === "none"
     ? c.format === "field"
       ? "Field arrows"
@@ -206,6 +254,9 @@ export const integerTargets: Target[] = [
   "count",
   "strands",
   "meridians",
+  "uSamples",
+  "vSamples",
+  "curves",
 ];
 const curveTargets = ["a", "min", "max"] as const;
 const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
@@ -218,6 +269,21 @@ const isInvolute = (t: Target): t is InvoluteTarget =>
 // Animating the anchor or c recomputes the whole arc length in Go for every
 // frame, so a track never reuses a prefix measured from another anchor.
 export const availableTargets = (c: SpatialConfig): Target[] => {
+  if (c.format === "surface")
+    return [
+      ...surfaceShape[c.surface.kind].map(
+        (f) => `surface${f.key.toUpperCase()}` as Target,
+      ),
+      "surfaceOffset",
+      "reach",
+      "uMin",
+      "uMax",
+      "vMin",
+      "vMax",
+      "uSamples",
+      "vSamples",
+      "curves",
+    ];
   const construction: Target[] =
     c.construction === "none"
       ? []
@@ -307,6 +373,7 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
     : [...construction, ...curve, "samples", "lines"];
 };
 export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
+  if (isSurface(t)) return c.surface[surfaceFields[t]];
   if (t === "poleX") return c.pole.x;
   if (t === "poleY") return c.pole.y;
   if (t === "poleZ") return c.pole.z;
@@ -357,6 +424,10 @@ export function applyTracks(
   for (const t of tracks) {
     let v = t.from * (1 - p) + t.to * p;
     if (integerTargets.includes(t.target)) v = Math.round(v);
+    if (isSurface(t.target)) {
+      config.surface[surfaceFields[t.target]] = v;
+      continue;
+    }
     if (t.target === "poleX") config.pole.x = v;
     else if (t.target === "poleY") config.pole.y = v;
     else if (t.target === "poleZ") config.pole.z = v;
@@ -459,6 +530,15 @@ export function fitBounds(...families: (Vec3 | null)[][]): Bounds3 {
         );
   return { center, radius };
 }
+// A surface frames as Go frames it: its points with the normal lines' ends,
+// then the offset and each focal sheet on their own.
+export function surfaceBounds(s: NonNullable<SpatialResult["surface"]>) {
+  return fitBounds(
+    [...s.surface.points.flat(), ...s.lines.map((l) => l.end)],
+    ...(s.offset ? [s.offset.points.flat()] : []),
+    ...s.focal.map((f) => f.points.flat()),
+  );
+}
 // A harmonic curve's joints and ellipse axis extents, one pair of families
 // per term, as Go frames them.
 export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
@@ -477,7 +557,33 @@ export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
     return [joints, extents];
   });
 }
+// A surface reveals column by column in u: every sheet keeps the samples up
+// to u_last, the edges and faces between them, and the normal lines there.
+function revealSheet<S extends SurfaceSheet>(sheet: S, last: number): S {
+  return {
+    ...sheet,
+    points: sheet.points.slice(0, last + 1),
+    normals: sheet.normals.slice(0, last + 1),
+    alongU: sheet.alongU.slice(0, last),
+    alongV: sheet.alongV.slice(0, last + 1),
+    faces: sheet.faces.slice(0, last),
+  };
+}
 export function reveal(result: SpatialResult, p: number): SpatialResult {
+  if (result.surface) {
+    const s = result.surface,
+      last = Math.floor(
+        Math.max(0, Math.min(1, p)) * (s.surface.points.length - 1),
+      );
+    const surface = {
+      ...s,
+      surface: revealSheet(s.surface, last),
+      offset: s.offset && revealSheet(s.offset, last),
+      focal: s.focal.map((f) => revealSheet(f, last)),
+      lines: s.lines.filter((l) => l.i <= last),
+    };
+    return { ...result, surface, bounds: surfaceBounds(surface) };
+  }
   const last = Math.floor(
     Math.max(0, Math.min(1, p)) * (result.base.length - 1),
   );

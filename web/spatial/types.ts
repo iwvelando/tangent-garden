@@ -101,8 +101,36 @@ export type SpatialPursuitConfig = {
   max: number;
 };
 export const maxSpatialPursuers = 16;
+// An analytic patch X(u, v) on a uSamples × vSamples grid of cells. a, b
+// and c are an ellipsoid's semi-axes; a torus's major radius R and minor
+// radius r; an elliptic cylinder's semi-axes; the curvatures k₁ and k₂ of
+// the paraboloid z = (k₁x² + k₂y²)/2 at its vertex; or the height k of the
+// monkey saddle z = k(x³ − 3xy²). The normal is X_u × X_v normalized, or its
+// opposite when `reverse` is set; the shape operator is −dn, so κ > 0 where
+// the surface bends towards n. The offset is X + offset·n (none at 0), and
+// each normal line runs from X to X + reach·n. Mirrors engine3.SurfaceRequest.
+export type SurfaceKind =
+  "ellipsoid" | "torus" | "cylinder" | "paraboloid" | "monkey";
+export type SurfaceConfig = {
+  kind: SurfaceKind;
+  a: number;
+  b: number;
+  c: number;
+  uMin: number;
+  uMax: number;
+  vMin: number;
+  vMax: number;
+  uSamples: number;
+  vSamples: number;
+  curves: number;
+  reverse: boolean;
+  offset: number;
+  reach: number;
+};
+export const maxSurfaceCells = 14400;
+export const maxSurfaceCurves = 48;
 export type SpatialConfig = {
-  format: "torus" | "parametric" | "harmonic" | "field" | "pursuit";
+  format: "torus" | "parametric" | "harmonic" | "field" | "pursuit" | "surface";
   // `length` is the tangent reach, used only by the developable.
   construction:
     | "developable"
@@ -123,6 +151,9 @@ export type SpatialConfig = {
   canal: CanalConfig;
   field: FieldConfig;
   pursuit: SpatialPursuitConfig;
+  // Read only when the format is "surface", which ignores every curve and
+  // construction field.
+  surface: SurfaceConfig;
   curve: {
     x: string;
     y: string;
@@ -162,6 +193,8 @@ export type SpatialResult = {
   field?: SpatialFieldResult;
   // Present for a pursuit under any construction.
   pursuit?: SpatialPursuitResult;
+  // Present only for a surface study, whose curve fields are all empty.
+  surface?: SurfaceResult;
   // Present only for the framed construction; its ribbon fills mesh, minus,
   // plus, and rulings, joined across frame.breaks rather than breaks.
   frame?: FrameResult;
@@ -329,4 +362,33 @@ export type SpatialPursuitResult = {
   exhausted: boolean;
   end: number;
   final: Vec3[];
+};
+// Mirrors engine3.SurfaceSheet: points[i][j] at u_i, v_j (null where
+// undefined), normals likewise (null where the sheet has none, shaded by its
+// faces). alongU[i][j] joins (i, j) to (i + 1, j), alongV[i][j] joins (i, j)
+// to (i, j + 1), and faces[i][j] is the cell from (i, j) to (i + 1, j + 1).
+export type SurfaceSheet = {
+  points: (Vec3 | null)[][];
+  normals: (Vec3 | null)[][];
+  alongU: boolean[][];
+  alongV: boolean[][];
+  faces: boolean[][];
+};
+// A focal branch X + n/κᵢ, κ₁ ≥ κ₂, by what it actually spans. Clipped
+// samples have a normal but a focal point beyond 100 surface radii.
+export type FocalShape = "surface" | "curve" | "point" | "none";
+export type FocalSheet = SurfaceSheet & { shape: FocalShape; clipped: number };
+// Mirrors engine3.SurfaceResult. uCurves are the v indices of the curves
+// along which u runs, vCurves the u indices of those along which v runs;
+// normal lines stand where they cross.
+export type SurfaceResult = {
+  surface: SurfaceSheet;
+  offset: SurfaceSheet | null;
+  focal: FocalSheet[];
+  lines: { i: number; j: number; point: Vec3; end: Vec3 }[];
+  uCurves: number[];
+  vCurves: number[];
+  singular: number;
+  umbilics: number;
+  folded: number;
 };
