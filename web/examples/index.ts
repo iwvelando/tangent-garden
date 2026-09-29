@@ -123,7 +123,7 @@ export const tesseractExamples: Example[] = tesseractPresets.map((p) => ({
       : p.config.mode === "stereo"
         ? "Stereographic curves"
         : "Shadows",
-  keywords: "tesseract 4D hypercube " + p.config.mode,
+  keywords: `${p.config.object} 4D ${p.config.mode}`,
   fingerprint: fingerprint(p.config),
 }));
 const hyperImages = import.meta.glob<string>("./4d/*.webp", {

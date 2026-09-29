@@ -9,9 +9,9 @@ import {
 } from "react";
 type Dimension = "2d" | "3d" | "4d";
 const notebooks: { value: Dimension; label: string }[] = [
-  { value: "2d", label: "2D curves" },
-  { value: "3d", label: "3D curves" },
-  { value: "4d", label: "4D shapes" },
+  { value: "2d", label: "2D studies" },
+  { value: "3d", label: "3D studies" },
+  { value: "4d", label: "4D studies" },
 ];
 export const NotebookContext = createContext<{
   mode: Dimension;

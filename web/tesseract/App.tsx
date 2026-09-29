@@ -10,7 +10,7 @@ import { ExportImageMenu } from "../ExportImageMenu";
 import { saveFile, pngFile, svgFile } from "../export-image";
 import { AnimationPanel, type MotionExport } from "./AnimationPanel";
 import { Plot } from "./Plot";
-import { inks } from "./Drawing";
+import { inks, sectionInk } from "./Drawing";
 import { Sampler } from "./sampler";
 import { tesseractPresets } from "./presets";
 import {
@@ -21,41 +21,17 @@ import {
   type Layers,
   type Motion,
 } from "./types";
+import { objects, modes } from "./objects";
 import "./style.css";
-const modes = {
-  perspective: "Perspective shadow",
-  orthographic: "Orthogonal shadow",
-  stereo: "Stereographic loom",
-  section: "Parallel cross-sections",
-};
-const explanations = {
-  perspective: [
-    "A shadow from four dimensions",
-    "The vertices of [−1, 1]⁴ are joined when they differ in one coordinate. Look from the fourth axis toward w = 0: nearer cells grow, farther cells shrink. The nested cubes are a projection of eight connected cubic cells.",
-    "P(x, y, z, w) = d(x, y, z) / (d − w)",
-  ],
-  orthographic: [
-    "Four directions, one shadow",
-    "Rotate in four dimensions, then drop w. Edge lengths change in the shadow, although every edge in four dimensions remains exactly 2 units long. Dragging changes only your 3D viewpoint; the six angle fields rotate the tesseract itself.",
-    "P(x, y, z, w) = (x, y, z)",
-  ],
-  stereo: [
-    "A sphere woven from a cube",
-    "First carry the edges and face grids radially onto the unit 3-sphere in four dimensions. Stereographic projection opens that sphere into space: straight face lines become circular arcs or lines. Every thread comes from a line on a square face.",
-    "p = v / |v|,   P(p) = (pₓ, pᵧ, p_z) / (1 − p_w)",
-  ],
-  section: [
-    "A world passing through ours",
-    "Intersect the rotated tesseract with w = h. Each cubic cell contributes a polygonal face. A diagonal passage grows from a point through tetrahedra to an octahedron, then shrinks again. Multiple slices share the same xyz coordinates; they are superimposed, not spaced into a new solid.",
-    "R[−1, 1]⁴ ∩ {w = h}",
-  ],
-};
 export default function TesseractApp({ active = true }: { active?: boolean }) {
   const theme = useTheme(),
     { dark } = theme;
   const [config, setConfig] = useState<Config>(() =>
     structuredClone(tesseractPresets[0].config),
   );
+  const remembered = useRef<Partial<Record<Config["object"], Config>>>({
+    tesseract: structuredClone(tesseractPresets[0].config),
+  });
   const [preset, setPreset] = useState<number | null>(0),
     [view, setView] = useState({ ...initialView }),
     [spinning, setSpinning] = useState(false);
@@ -63,6 +39,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     edges: true,
     guides: true,
     faces: true,
+    selectedSection: 0,
   });
   const [motion, setMotion] = useState<Motion>("double"),
     [progress, setProgress] = useState(0),
@@ -127,6 +104,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
         .current!.request(request)
         .then((result) => {
           if (ticket !== epoch.current || !result) return;
+          if (!preview)
+            remembered.current[request.object] = structuredClone(request);
           setFrame({ config: request, result });
           setSettled(key);
           setError("");
@@ -295,7 +274,16 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
   useEffect(() => {
     controller.current?.abort();
   }, [dark]);
-  const info = explanations[config.mode];
+  const descriptor = objects[config.object];
+  const curved = descriptor.legend === "sections";
+  const info = descriptor.explanation(config);
+  const selected =
+    frame?.result.sections[
+      Math.min(
+        layers.selectedSection ?? 0,
+        (frame?.result.sections.length ?? 1) - 1,
+      )
+    ];
   return (
     <div className={`app tesseract-app ${dark ? "dark" : ""}`}>
       <AppHeader theme={theme}>
@@ -343,7 +331,31 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                 thumbnail={tesseractThumbnail}
                 dark={dark}
               />
-              <Field label="View of the tesseract">
+              <Field label="4D object">
+                <select
+                  value={config.object}
+                  onChange={(e) => {
+                    const object = e.target.value as Config["object"];
+                    // An object replacement invalidates scalar jobs from the previous definition.
+                    stop();
+                    generation.current++;
+                    setScalars({});
+                    setMotion(objects[object].motion);
+                    update((c) => {
+                      const saved = remembered.current[object];
+                      if (saved) return structuredClone(saved);
+                      return objects[object].defaults(c);
+                    });
+                  }}
+                >
+                  {Object.entries(objects).map(([key, object]) => (
+                    <option key={key} value={key}>
+                      {object.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={descriptor.viewLabel}>
                 <select
                   value={config.mode}
                   onChange={(e) => {
@@ -353,45 +365,87 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                     update((c) => ({ ...c, mode }));
                   }}
                 >
-                  {Object.entries(modes).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
+                  {descriptor.modes.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {modes[mode]}
                     </option>
                   ))}
                 </select>
               </Field>
-              <p className="note">
-                16 vertices · 32 edges · 24 squares · 8 cubes
-              </p>
+              <p className="note">{descriptor.selectorNote}</p>
             </section>
-            <section>
-              <div className="section-label">02 / TURN IN FOUR DIMENSIONS</div>
-              {[0, 2, 4].map((i) => (
-                <div className="pair" key={i}>
-                  {[i, i + 1].map((k) =>
-                    cloneElement(
-                      scalar(
-                        `${["xy", "xz", "yz", "xw", "yw", "zw"][k]} angle`,
-                        config.angles[k],
-                        (c, n) => {
-                          const angles = [...c.angles] as Config["angles"];
-                          angles[k] = n;
-                          return { ...c, angles };
-                        },
-                        "Radians; pi/2 is a quarter turn. Applied in order xy, xz, yz, xw, yw, zw. Positive turns carry the first named axis toward the second.",
-                      ),
-                      { key: k },
-                    ),
-                  )}
+            {descriptor.rotations && (
+              <section>
+                <div className="section-label">
+                  02 / TURN IN FOUR DIMENSIONS
                 </div>
-              ))}
-              <p className="note">
-                The w planes turn through the fourth dimension. Drag the drawing
-                to change your viewpoint in 3D.
-              </p>
-            </section>
+                {[0, 2, 4].map((i) => (
+                  <div className="pair" key={i}>
+                    {[i, i + 1].map((k) =>
+                      cloneElement(
+                        scalar(
+                          `${["xy", "xz", "yz", "xw", "yw", "zw"][k]} angle`,
+                          config.angles[k],
+                          (c, n) => {
+                            const angles = [...c.angles] as Config["angles"];
+                            angles[k] = n;
+                            return { ...c, angles };
+                          },
+                          "Radians; pi/2 is a quarter turn. Applied in order xy, xz, yz, xw, yw, zw. Positive turns carry the first named axis toward the second.",
+                        ),
+                        { key: k },
+                      ),
+                    )}
+                  </div>
+                ))}
+                <p className="note">
+                  The w planes turn through the fourth dimension. Drag the
+                  drawing to change your viewpoint in 3D.
+                </p>
+              </section>
+            )}
             <section>
-              <div className="section-label">03 / THE CONSTRUCTION</div>
+              <div className="section-label">
+                {descriptor.constructionNumber} / THE CONSTRUCTION
+              </div>
+              {curved && (
+                <>
+                  <div className="pair">
+                    {descriptor.radiusFields.map((field) =>
+                      cloneElement(
+                        scalar(
+                          field.label,
+                          config[field.key],
+                          (c, n) => ({ ...c, [field.key]: n }),
+                          field.help,
+                        ),
+                        { key: field.key },
+                      ),
+                    )}
+                  </div>
+                  <div className="pair">
+                    {count(
+                      "Curves per direction",
+                      config.curves,
+                      3,
+                      16,
+                      (c, curves) => ({ ...c, curves }),
+                    )}
+                    {count(
+                      "Curve samples",
+                      config.samples,
+                      8,
+                      256,
+                      (c, samples) => ({ ...c, samples }),
+                    )}
+                  </div>
+                  <p className="note">
+                    Finite boundary linework. Families share a budget of 512
+                    curves and 65,536 points; reduce counts if the budget is
+                    exceeded.
+                  </p>
+                </>
+              )}
               {config.mode === "perspective" &&
                 scalar(
                   "4D eye distance",
@@ -412,7 +466,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                     "Slice offset h",
                     config.slice,
                     (c, slice) => ({ ...c, slice }),
-                    "Intersect w = h after rotation. From −3 to 3; beyond the rotated cube there is no section.",
+                    descriptor.sliceHelp,
                   )}
                   <div className="pair">
                     {count(
@@ -426,9 +480,35 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                       "Section spread",
                       config.spread,
                       (c, spread) => ({ ...c, spread }),
-                      "Total distance between first and last slice, from 0 to 4. A single slice ignores spread.",
+                      descriptor.spreadHelp,
                     )}
                   </div>
+                  {curved && (
+                    <Field
+                      label="Selected section"
+                      help="Section numbers follow the ordered slice family. The selected outline is stronger; negative h uses dashes and nonnegative h uses solid strokes. Selection stays fixed during passage and exports."
+                    >
+                      <input
+                        type="number"
+                        min="1"
+                        max={config.count}
+                        step="1"
+                        value={
+                          Math.min(
+                            layers.selectedSection ?? 0,
+                            config.count - 1,
+                          ) + 1
+                        }
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (!Number.isInteger(n) || n < 1 || n > config.count)
+                            return;
+                          controller.current?.abort();
+                          setLayers((l) => ({ ...l, selectedSection: n - 1 }));
+                        }}
+                      />
+                    </Field>
+                  )}
                 </>
               ) : (
                 <>
@@ -452,7 +532,9 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                     (k) =>
                       k === "edges" ||
                       (k === "faces"
-                        ? config.mode === "section" && config.count === 1
+                        ? !curved &&
+                          config.mode === "section" &&
+                          config.count === 1
                         : config.mode !== "section"),
                   )
                   .map((k) => (
@@ -582,14 +664,28 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
               )}
               {busy && frame && <span className="computing">Computing…</span>}
             </div>
-            <div className="plot-meta">
+            <div className={`plot-meta ${curved ? "section-meta" : ""}`}>
               <div className="tesseract-legend">
-                {inks(dark).map((color, i) => (
-                  <span key={i}>
-                    <i style={{ background: color }} />
-                    {["x", "y", "z", "w"][i]}
-                  </span>
-                ))}
+                {curved &&
+                  frame?.result.sections.map((s, i) => (
+                    <span key={s.id} data-section={s.id}>
+                      <i style={{ background: sectionInk(i, dark) }} />
+                      <span className="section-number">{i + 1}: h = </span>
+                      <span className="section-level">
+                        {s.level.toPrecision(3).replace("-", "−")}
+                      </span>
+                      <span className="section-stroke">
+                        {s.level < 0 ? " (dashed)" : " (solid)"}
+                      </span>
+                    </span>
+                  ))}
+                {!curved &&
+                  inks(dark).map((color, i) => (
+                    <span key={i}>
+                      <i style={{ background: color }} />
+                      {["x", "y", "z", "w"][i]}
+                    </span>
+                  ))}
               </div>
               <span>
                 Orthographic · drag to orbit · shift-drag or two fingers to pan
@@ -601,22 +697,19 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
             <h2>{info[0]}</h2>
             <p>{info[1]}</p>
             <code>{info[2]}</code>
-            <p className="note">
-              {config.mode === "section"
-                ? "Colours identify the original cell axis. Faces are translucent; all contours remain visible."
-                : "Colours identify the original edge direction, before 4D rotation. Thin threads subdivide square faces; they are construction lines, not additional tesseract edges."}
-            </p>
+            <p className="note">{descriptor.colorNote(config)}</p>
+            {curved && selected ? (
+              <p className="section-identity" data-section={selected.id}>
+                Selected section{" "}
+                {Math.min(
+                  layers.selectedSection ?? 0,
+                  frame!.result.sections.length - 1,
+                ) + 1}{" "}
+                · {descriptor.sectionDetail(selected)}
+              </p>
+            ) : null}
             <p className="tesseract-diagnostics" role="status">
-              {frame?.result.sections.map((s, i) => (
-                <span key={i}>
-                  {frame.result.sections.length === 1
-                    ? `h = ${s.level.toFixed(3)} · ${s.dimension === -1 ? "Empty section" : s.dimension === 0 ? "Point contact" : s.dimension === 1 ? "Line contact" : `${s.vertices} vertices · ${s.edges} edges · ${s.faces} faces`}`
-                    : ""}
-                </span>
-              ))}
-              {frame && frame.result.sections.length > 1
-                ? `${frame.result.sections.filter((s) => s.dimension >= 0).length} of ${frame.result.sections.length} sections intersect the tesseract.`
-                : ""}
+              {frame && descriptor.diagnostics(frame.result)}
               {frame && config.mode === "stereo"
                 ? `${frame.result.clipped} source curves clipped at the projection window. Open ends are intentional.`
                 : ""}

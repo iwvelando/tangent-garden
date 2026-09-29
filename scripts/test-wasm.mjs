@@ -1423,6 +1423,7 @@ const hyper = {
 };
 const h = JSON.parse(globalThis.tangentGardenTesseract(JSON.stringify(hyper)));
 assert.deepEqual(h.sections[0], {
+  id: "section/0",
   level: 0,
   vertices: 8,
   edges: 12,
@@ -1842,4 +1843,45 @@ const spatialImplicit = (implicit) =>
   );
 }
 console.log("WASM implicit: sphere, sections, pole and validation passed");
+
+// Curved solids use the same real WASM bridge, without polyhedral counts.
+for (const object of ["ball", "tube"]) {
+  const request = { ...hyper, object, radius: 2, tube: 0.6, curves: 5 };
+  const compute = (change = {}) =>
+    JSON.parse(
+      tangentGardenTesseract(JSON.stringify({ ...request, ...change })),
+    );
+  const support = object === "ball" ? 2 : 0.6;
+  const result = compute({ slice: support * 0.6 });
+  assert.equal(result.object, object);
+  assert.equal(result.operation, "section");
+  assert.equal(result.sections[0].dimension, 3);
+  assert.ok(Math.abs(result.sections[0].radius - support * 0.8) < 1e-12);
+  assert.equal(result.sections[0].vertices, undefined);
+  assert.equal(
+    compute({ slice: support }).sections[0].kind,
+    object === "ball" ? "point" : "core-circle",
+  );
+  assert.equal(compute({ slice: 1.025 * support }).sections[0].kind, "empty");
+  assert.ok(compute({ mode: "perspective" }).error);
+  assert.ok(compute({ angles: [0, 0, 0, 0.1, 0, 0] }).error);
+  const largest = {
+    ...request,
+    object: "tube",
+    count: 16,
+    curves: 16,
+    samples: 127,
+    spread: 0,
+  };
+  const start = performance.now();
+  const json = tangentGardenTesseract(JSON.stringify(largest));
+  const parsed = JSON.parse(json);
+  assert.equal(parsed.emittedPoints, 65536);
+  assert.equal(parsed.evaluations, 65024);
+  console.log(
+    `Curved WASM ${object}: largest tube ${(performance.now() - start).toFixed(1)} ms including JSON parse, ${Buffer.byteLength(json)} JSON bytes, ${instance.exports.mem.buffer.byteLength} bytes WASM linear-memory high-water`,
+  );
+}
+console.log("Curved sections WASM contract passed");
+
 process.exit(0);

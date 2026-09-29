@@ -131,6 +131,8 @@ for (const width of [1440, 390]) {
       "Spherical loom",
       "An octahedron within",
       "Section garden",
+      "A sphere in passing",
+      "A ring in passing",
     ])
       setups.push(async () => {
         await page.goto("/?study=4d");

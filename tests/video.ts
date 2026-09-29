@@ -147,3 +147,122 @@ function decode(page: Page, bytes: Buffer) {
     };
   }, Array.from(bytes));
 }
+
+// Decode every actual frame independently; allow codec colour rounding rather
+// than requiring lossy H.264 endpoint hashes to match an intra-coded frame.
+export function frameCoverage(
+  path: string,
+  width: number,
+  height: number,
+): number[] | null {
+  if (!available) return null;
+  const bytes = execFileSync(
+    "ffmpeg",
+    ["-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    { maxBuffer: 32 * 1024 * 1024 },
+  );
+  const size = width * height * 3;
+  if (bytes.length % size !== 0)
+    throw new Error(
+      "Decoded frame dimensions differ from expected export dimensions",
+    );
+  const coverage: number[] = [];
+  for (let from = 0; from < bytes.length; from += size) {
+    const bg = [bytes[from], bytes[from + 1], bytes[from + 2]];
+    let ink = 0;
+    for (let i = from; i < from + size; i += 3)
+      if (
+        Math.abs(bytes[i] - bg[0]) +
+          Math.abs(bytes[i + 1] - bg[1]) +
+          Math.abs(bytes[i + 2] - bg[2]) >
+        30
+      )
+        ink++;
+    coverage.push(ink / (width * height));
+  }
+  return coverage;
+}
+
+export function frameDifference(
+  path: string,
+  width: number,
+  height: number,
+  index: number,
+  reference: number[],
+): { meanDifference: number; unmatchedInk: number } | null {
+  if (!available) return null;
+  const pixels = execFileSync(
+    "ffmpeg",
+    [
+      "-v",
+      "error",
+      "-i",
+      path,
+      "-vf",
+      `select=eq(n\\,${index})`,
+      "-frames:v",
+      "1",
+      "-f",
+      "rawvideo",
+      "-pix_fmt",
+      "rgb24",
+      "-",
+    ],
+    { maxBuffer: width * height * 3 + 1024 },
+  );
+  if (
+    pixels.length !== width * height * 3 ||
+    reference.length !== width * height * 4
+  )
+    throw new Error("Frame parity dimensions differ");
+  let difference = 0;
+  for (let i = 0; i < width * height; i++)
+    for (let channel = 0; channel < 3; channel++)
+      difference += Math.abs(
+        pixels[i * 3 + channel] - reference[i * 4 + channel],
+      );
+  const mask = (data: ArrayLike<number>, stride: number, threshold: number) => {
+    const out = new Uint8Array(width * height);
+    for (let i = 0; i < out.length; i++) {
+      let contrast = 0;
+      for (let c = 0; c < 3; c++)
+        contrast += Math.abs(data[i * stride + c] - data[c]);
+      out[i] = Number(contrast > threshold);
+    }
+    return out;
+  };
+  const weakActual = mask(pixels, 3, 30),
+    strongActual = mask(pixels, 3, 90),
+    weakReference = mask(reference, 4, 30),
+    strongReference = mask(reference, 4, 90);
+  const unmatched = (strong: Uint8Array, weak: Uint8Array) => {
+    let total = 0,
+      missed = 0;
+    for (let i = 0; i < strong.length; i++)
+      if (strong[i]) {
+        total++;
+        const x = i % width,
+          y = Math.floor(i / width);
+        let found = false;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++)
+            if (
+              x + dx >= 0 &&
+              x + dx < width &&
+              y + dy >= 0 &&
+              y + dy < height &&
+              weak[(y + dy) * width + x + dx]
+            )
+              found = true;
+        if (!found) missed++;
+      }
+    return total ? missed / total : 1;
+  };
+  return {
+    meanDifference: difference / (width * height * 3),
+    unmatchedInk: Math.max(
+      unmatched(strongActual, weakReference),
+      unmatched(strongReference, weakActual),
+    ),
+  };
+}

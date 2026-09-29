@@ -69,7 +69,7 @@ export async function chooseNotebook(
   await page.locator(".app:visible .notebook-mode > button").click();
   await page
     .getByRole("menuitemradio", {
-      name: { "2d": "2D curves", "3d": "3D curves", "4d": "4D shapes" }[
+      name: { "2d": "2D studies", "3d": "3D studies", "4d": "4D studies" }[
         dimension
       ],
       exact: true,

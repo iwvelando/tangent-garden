@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { exportImage, openExportSettings, choosePreset, open } from "./helpers";
-import { decodeVideo, probe } from "./video";
+import { decodeVideo, probe, frameCoverage } from "./video";
 import { exportTiming } from "../web/export-quality";
 
 // Safari's engine, which every iOS browser also uses: no canvas WebP, and its
@@ -213,3 +213,43 @@ test("PNG export keeps an iterated map's embedded density in WebKit", async ({
   }, Array.from(bytes));
   expect(shaded).toBeGreaterThan(0.1);
 });
+
+for (const name of ["A sphere in passing", "A ring in passing"])
+  test(`curved 4D ${name} renders and exports through WebKit`, async ({
+    page,
+  }) => {
+    await page.goto("/?study=4d");
+    await choosePreset(page, { label: name });
+    await expect(page.locator(".tesseract-stage")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const image = page.waitForEvent("download");
+    await exportImage(page, "PNG");
+    const bytes = await readFile((await (await image).path())!);
+    expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
+      2000, 1520,
+    ]);
+    await page.getByLabel("Duration (seconds)").fill(".4");
+    await open(page, "#shape-export-settings");
+    await page.getByLabel("Export frame rate").selectOption("15");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("0.5");
+    const path = (await save(page))!;
+    const data = probe(path);
+    if (data) {
+      expect(data.frames).toBe(6);
+      expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    }
+    const video = await decodeVideo(page, await readFile(path));
+    expect(video.duration).toBeCloseTo(0.4, 3);
+    const coverage = frameCoverage(path, 500, 380);
+    if (coverage) {
+      console.log("WebKit curved decoded coverage", coverage);
+      expect(coverage[0]).toBeLessThan(0.001);
+      expect(coverage.at(-1)!).toBeLessThan(0.001);
+      expect(coverage[2]).toBeGreaterThan(0.005);
+    }
+  });

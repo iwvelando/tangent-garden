@@ -92,7 +92,7 @@ for (const width of [1440, 390]) {
         const brand = header.locator(".brand-name");
         const headerShape = {
           text: (await header.innerText()).replace(
-            /[23]D curves/,
+            /[23]D studies/,
             "Study dimension",
           ),
           height: (await header.boundingBox())!.height,
