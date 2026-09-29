@@ -574,7 +574,45 @@ Each branch is split into its real part and its virtual part, four sheets in all
 
 Mutations that join every caustic edge or drop the grazing tolerance each fail. The WebAssembly bridge test checks the paraboloid's focus, a plane mirror's virtual image, unlit samples and refusals.
 
-Receiver planes, intensity, and refraction are not part of this study. A caustic is a geometric set: it says where rays gather, not how bright the light there is, and a real caustic's irradiance diverges without a finite model of the light.
+A caustic is a geometric set: it says where rays gather, not how bright the light there is, and a real caustic's irradiance diverges without a finite model of the light. Brightness belongs to the separately defined receiver below.
+
+## Spatial refraction and caustics
+
+The same study refracts instead of reflecting when `rays.interaction` is `"refract"` (it is `"reflect"` for a mirror, and must be one of the two). The patch is then an interface between a medium of refractive index `n₁` on the side its normal points to and `n₂` beyond it, each positive and at most 100, with the ratio `η = n₁/n₂`. The normal declares the incident side exactly as it declares a mirror side: a sample is lit only where `I·n < −10⁻⁹`, and light arriving from the `n₂` side is unlit, not refracted the other way. Nothing is inferred about which side is inside a solid. The light crosses once: the transmitted ray never meets the surface again, and no reflected share is followed.
+
+**Snell's law.** With `c = −I·n > 0` and `k = 1 − η²(1 − c²)`, the transmitted direction is `T = ηI + (ηc − √k)n`, a unit vector in the plane of I and n, continuing through the interface (`T·n < 0`), with `n₁ sin θ₁ = n₂ sin θ₂`. `√k = cos θ₂`. Where `√k ≤ 10⁻⁹`, at or beyond the critical angle (only possible when `n₁ > n₂`), nothing is transmitted: the sample is counted as totally reflected, has no caustic point, and its representative ray is drawn along the reflection `I − 2(I·n)n` and flagged, with no virtual extension. Reflection and refraction share one form, `D = aI + bn` with `a = 1, b = 2c` for a mirror and `a = η, b = ηc − √k` for an interface, so the exact derivatives are `D_u = aI_u + b_u n + bn_u`, with `c_u = −(I_u·n + I·n_u)` and, refracting, `b_u = ηc_u(1 − ηc/√k)`, which diverges at the critical angle as the transmitted wavefront does.
+
+**Caustics.** Everything else is the mirror's construction with T in place of R: the transmitted rays are again a normal congruence (Malus and Dupin), so `W = −B̄Ā⁻¹` across T is symmetric, `C = X + T/μ`, real ahead of the interface where μ > 0 and virtual behind it, on the incident side, where μ < 0. The same ordering, splitting into four parts, joining rule, clipping and classification apply, and an edge whose midpoint is beyond the critical angle is not joined, so a caustic never runs across the edge of total internal reflection.
+
+**Exact cases.**
+
+- Plane, point source at slant distance s: Coddington's equations with no power give two virtual caustics, `μ_s = −n₁/(n₂s)` on the normal through the source (sagittal) and `μ_t = −n₁cos²θ₁/(n₂s cos²θ₂)` (tangential), meeting at the foot of that normal. Parallel light passes a plane unfocused.
+- Sphere of radius R under axial parallel light, from `n₁` outside into `n₂`: with the power `P = (n₂cos θ₂ − n₁cos θ₁)/R`, `μ_s = P/n₂` on the axis and `μ_t = P/(n₂cos²θ₂)`, both real, meeting at the paraxial focus `n₂R/(n₂ − n₁)` beyond the pole.
+- Ellipsoid of revolution with eccentricity `n₁/n₂` (semi-axes `c√(1 − n₁²/n₂²)` across, c along the axis): axial light converges exactly to its far focus, `c n₁/n₂` from the centre, and every sample is stigmatic.
+- Equal indices: nothing bends; a point source's transmitted rays appear to leave the source itself.
+- A lamp at depth h beneath a plane, leaving glass: total internal reflection wherever the foot is more than `h tan θ_c` away, `sin θ_c = n₂/n₁` (Snell's window).
+
+**Checks.** Native tests verify Snell's law and the refraction formula on every representative ray (unit T, coplanarity, continuation, `n₁ sin θ₁ = n₂ sin θ₂`, against an independent tangential construction) and the totally reflected rays; each exact case above point for point, in both directions across the plane; the count beyond the critical angle against the grid, with no caustic point or edge beyond it; `det(Y_u, Y_v, T) = 0` by independent central differences, caustic normals across T and the caustic's tangents, and no twist, on five kinds; and validation. Dropping the factor `1 − ηc/√k` from the derivative makes five tests fail. The WebAssembly bridge test checks Snell's window.
+
+## Spatial receiver planes and irradiance
+
+A receiver is a separate study of where the outgoing light lands, defined alongside the ray family and never mixed with its caustic set. `rays.receiver` declares the plane `x`, `y` or `z = c` (or `"none"`), and on it a square window of side s centred on `(c₁, c₂)` in the plane's cyclic coordinates, `(y, z)`, `(z, x)` or `(x, y)`, divided into 8–240 bins each way. Positions are within ±10⁵ and `0 < s ≤ 10⁵`. The outgoing family is the reflected or transmitted one; totally reflected light is not followed.
+
+**Emitted weights and units.** Parallel light has unit irradiance across its beam and a point source unit intensity. Each parameter cell emits the flux its midpoint receives, `E |I·n| |X_u × X_v| Δu Δv`, with `E = 1` for parallel light and `1/|X − S|²` for a point source: a flux is an area of beam, or a solid angle in steradians, and the midpoint rule converges to either at second order. A cell whose midpoint is unlit, singular or at the source emits nothing. Nothing is absorbed: a mirror reflects everything and an interface transmits everything short of the critical angle. There are no Fresnel losses, no polarization or wavelength, and no shadows: a ray crosses the receiver whatever lies between.
+
+**Transport and filtering.** When all four corners of a cell send rays that cross the plane ahead of them (`λ > 0`, with `|D·m| > 10⁻¹²` for the plane's normal m), the cell's flux is spread evenly over the two triangles its corners' crossings make, half to each. This is the piecewise-linear interpolation of the ray map on the grid: where the map folds, across a caustic, a triangle turns over and still carries its flux. Each bin then receives the exact area of every triangle inside it times the triangle's density, a box filter with no further smoothing. The rasterizer sums each triangle edge's signed area coverage into per-row differences and turns them into bins by a running sum along each row. An edge is split where it crosses the window's sides and clamped into them, which leaves every bin's coverage unchanged, so a triangle costs the bins its edges cross, not those it covers. A triangle with no area (below 10⁻¹² bin²) puts its flux at its centroid, as at a perfect focus. A bin whose running sum is within 10⁻¹² of the magnitudes added along its row holds only rounding and is set to zero. The irradiance is each bin's flux over its area; its logarithmic shade, over three decades up to the peak, is labelled as such.
+
+**Energy accounting.** The emitted flux is exactly the sum of:
+
+- received, in the window's bins;
+- outside, on the plane beyond the window;
+- away, from cells whose corners' rays do not all cross the plane ahead of them, or cross it more than 10⁶ bins from the window;
+- totally reflected, from cells whose midpoint is beyond the critical angle;
+- edge, from cells whose midpoint is lit but whose corners are not all traced, at the edge of the light, total internal reflection or a chart singularity; it shrinks as the grid is refined.
+
+**Convergence.** Away from folds, bin averages converge at second order in the grid. At a fold the irradiance is infinite on a line but integrable, and bins stay finite; at a point focus they grow as the bins shrink. A geometric caustic is therefore visible as bright bins, but no bin is a pointwise brightness.
+
+**Checks.** Native tests verify: `cos θ₁` in every bin behind a flat interface or above a flat mirror under oblique parallel light, and nothing behind the mirror; the solid angle of a square mirror seen from a lamp, and the image source's irradiance `|z − S′_z|/|Y − S′|³` averaged over bins, both converging at second order; a paraboloid's focal plane collecting everything in one bin; a sphere intercepting πR² and a lamp inside a glass ball 4π, with the edge share shrinking under refinement; every bin's exact clipped triangle area against independent polygon clipping, in both orientations and across the window's sides; empty bins holding exactly zero, and a glass dome's ring brighter than its centre; the corner order in each plane and framing; and validation. Dropping the area weight, the inverse square, the triangle split, the backward-crossing test, the edge splitting, or the exact span coverage each makes a test fail. The WebAssembly bridge test checks the uniform case and its accounting.
 
 ## Reference studies
 
@@ -589,6 +627,7 @@ Each of these recipes is a preset, framed independently with equal axis scale. T
 - Spatial pursuit: four unit-speed pursuers from the regular tetrahedron `(±1, 0, 1/√2)`, `(0, ±1, −1/√2)`, ε = 0.005, t ∈ [0, 1.75]. Each path is `(ρ cos θ, ρ sin θ, ρ²/√2)` with `θ = θ₀ + ln(1/ρ)`, captured near t = 1.62 (**Four pursuers on a tetrahedron**).
 - Surface focal set: the torus R = 2, r = 0.8 on its outer band `v ∈ [−π/3, π/3]`, with inward normals of reach 2.8. Branch 1 is the axis `z = −2 tan v` and branch 2 the core circle of radius 2; both collapse to curves (**A torus revealing its centers**).
 - Caustic: the sphere of radius 1.5 on its inside, below 70° from its lowest point, under light falling straight down. Branch 1 is the surface of revolution of the nephroid, with its cusp at the paraxial focus 0.75 below the centre, and branch 2 the axis from there down to `1.5/(2 cos 70°) ≈ 2.19` below the centre. The steepest rays reach the lower part of the axis only through the mirror itself, since nothing is occluded (**A spherical bowl's cusped caustic**).
+- Refracted caustic ring: the sphere of radius 1.5 on its cap within 55° of its pole, refracting light falling straight down from air into glass (n = 1.5). Branch 2 is the axis, down to the paraxial focus 4.5 below the pole; the receiver on `z = −1.9` crosses branch 1's cusped sheet in a ring brighter than the light inside it, and collects all but under 0.1% of the 4.82 units of beam the cap intercepts (**A glass dome's ring of light**).
 - Clifford density: (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from (0.1, 0.1), discarding 1,000 iterates and accumulating the next 800,000, shaded logarithmically. It illustrates, and does not prove, chaotic dynamics (**Clifford attractor**).
 
 ## References

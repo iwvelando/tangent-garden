@@ -102,13 +102,18 @@ const base: SpatialConfig = {
     offset: 0,
     reach: 0.5,
   },
-  // Light falling straight down, or from a lamp above the origin.
+  // Light falling straight down, or from a lamp above the origin, onto a
+  // mirror, or through air into glass; no receiver.
   rays: {
+    interaction: "reflect",
+    n1: 1,
+    n2: 1.5,
     light: "parallel",
     azimuth: 0,
     elevation: -90,
     source: { x: 0, y: 0, z: 3 },
     length: 2,
+    receiver: { plane: "none", at: 0, c1: 0, c2: 0, size: 3, bins: 96 },
   },
   radius: 2.4,
   tube: 0.85,
@@ -885,6 +890,130 @@ export const spatialPresets: {
         curves: 13,
       },
       rays: { ...base.rays, azimuth: -90, elevation: -25, length: 1.5 },
+    },
+  },
+  {
+    name: "A glass ellipsoid focusing a beam",
+    detail:
+      "An ellipsoid of eccentricity 1/n refracts a parallel beam exactly through its far focus",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        // Semi-axes c√(1 − 1/n²) across and c along the axis, n = 1.5: the
+        // far focus is c/n below the centre.
+        a: 1.5 * Math.sqrt(5 / 9),
+        b: 1.5 * Math.sqrt(5 / 9),
+        c: 1.5,
+        // The far half of the upper cap, open towards the default view.
+        uMin: Math.PI,
+        uMax: 2 * Math.PI,
+        vMin: 0.1,
+        vMax: Math.PI / 2,
+        uSamples: 72,
+        vSamples: 36,
+        curves: 9,
+      },
+      rays: { ...base.rays, interaction: "refract", length: 2.9 },
+    },
+  },
+  {
+    name: "A glass dome's ring of light",
+    detail:
+      "A spherical cap focuses its rim short of its centre; a plane across the caustic catches a bright ring",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1.5,
+        c: 1.5,
+        // A cap 55° about the pole.
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: 0.6,
+        vMax: Math.PI / 2,
+        uSamples: 120,
+        vSamples: 60,
+        curves: 9,
+      },
+      rays: {
+        ...base.rays,
+        interaction: "refract",
+        length: 3.2,
+        // Between the rim's focus and the paraxial focus, 3 below the
+        // pole: the tangential caustic crosses it in a ring.
+        receiver: { plane: "z", at: -1.9, c1: 0, c2: 0, size: 0.5, bins: 100 },
+      },
+    },
+  },
+  {
+    name: "A lamp in water over air",
+    detail:
+      "Only a cone of the lamp's light escapes the water; the rest is totally reflected, and what escapes seems to leave a smeared virtual lamp",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        // The plane z = 0, water (n₁ = 1.33) above, where its normal points,
+        // and air (n₂ = 1) beneath.
+        kind: "paraboloid",
+        a: 0,
+        b: 0,
+        c: 0,
+        uMin: -1.8,
+        uMax: 1.8,
+        vMin: -1.8,
+        vMax: 1.8,
+        uSamples: 96,
+        vSamples: 96,
+        curves: 9,
+      },
+      rays: {
+        ...base.rays,
+        interaction: "refract",
+        n1: 1.33,
+        n2: 1,
+        light: "point",
+        source: { x: 0, y: 0, z: 1 },
+        length: 1.2,
+      },
+    },
+  },
+  {
+    name: "A cup's nephroid on its floor",
+    detail:
+      "The light a cup's wall reflects gathers on the floor in a bright cusped curve",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "cylinder",
+        a: 1.5,
+        b: 1.5,
+        c: 0,
+        reverse: true,
+        uMin: Math.PI,
+        uMax: 2 * Math.PI,
+        vMin: -0.5,
+        vMax: 0.5,
+        uSamples: 120,
+        vSamples: 12,
+        curves: 13,
+      },
+      rays: {
+        ...base.rays,
+        azimuth: -90,
+        elevation: -25,
+        length: 1.5,
+        receiver: { plane: "z", at: -0.5, c1: 0, c2: 0, size: 3.2, bins: 160 },
+      },
     },
   },
 ];

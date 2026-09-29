@@ -35,7 +35,7 @@ These checkmarks describe the implemented branch, not a deployment claim. The ba
 - [x] 6a. Parametric surface studies with normal congruences and signed offsets.
 - [x] 6b. Focal surfaces from principal curvature, with explicit degeneracy handling.
 - [x] 7a. Single-interaction reflected ray families and their caustic sets.
-- [ ] 7b. Refraction and separately defined receiver-plane intersection/density studies.
+- [x] 7b. Refraction and separately defined receiver-plane intersection/density studies.
 - [ ] 8. Bounded implicit surfaces and section curves, after a topology and memory-budget prototype.
 
 Slices 1–3 offer the closest continuation of the existing curve-first notebook. Slice 4 broadens surface output without requiring a general surface editor. Slices 6–8 introduce substantially different evaluators and singularity problems: begin each with an analytic prototype and an attractive, legible study before committing to a full UI. A new formula preset alone is not a new visualization class.
@@ -380,6 +380,42 @@ Recommended next step: **7a, single-interaction reflected ray families and their
   - opaque sheets, so a virtual caustic inside a convex mirror needs the mirror hidden;
   - presets cannot set the camera or layers.
 
-Recommended next step: **7b, refraction and a separately defined receiver-plane study**. Refraction can reuse `SurfaceRequest.ray` with the transmitted direction for explicit indices n₁/n₂ (reporting total internal reflection per sample), and the caustic machinery is unchanged: W stays symmetric for a refracted normal congruence. The receiver plane is a new result type with its own energy model and should be designed before any UI.
+Next step at the time: 7b, below.
+
+### Slice completed in this follow-up: 7b
+
+- Implemented refraction and a receiver plane together (branch `claude/spatial-refraction`), as the two halves of one roadmap slice: both act on the same outgoing ray family, and the receiver serves reflection and refraction alike. They stay separate types. Refraction only changes the outgoing direction; the receiver is its own request and result (`ReceiverRequest`, `Receiver`) with its own energy model, designed and tested in Go before any UI.
+- Conventions:
+  - `rays.interaction` is `"reflect"` or `"refract"`, with no default. The declared normal marks the incident medium n₁, and `η = n₁/n₂`. Light from the n₂ side is unlit, so no inside or outside is inferred.
+  - `T = ηI + (ηc − √k)n`. At or beyond the critical angle (`√k ≤ 10⁻⁹`) the sample is counted as totally reflected, has no caustic point, and its representative ray is drawn along the reflection in grey.
+  - Both interactions are `D = aI + bn` with exact derivatives, so W, the caustics, the joins and the classification are the mirror's, with T in place of R.
+  - Receiver: an axis-aligned plane with a square window and 8–240 bins each way.
+    - Each cell emits its midpoint flux, `E|I·n||X_u × X_v|ΔuΔv`, with unit beam irradiance or unit intensity.
+    - Each traced cell's flux is spread evenly over its corners' two crossing triangles, and bins take exact areas (a box filter of the piecewise-linear ray map).
+    - Every emitted unit is received, outside, away, totally reflected, or at the edge.
+    - There are no Fresnel losses and no shadows.
+    - The shade is a labelled logarithmic ramp over three decades, without hue.
+- UI and presets:
+  - The definition became **Mirror or interface · rays**, and **Interaction** chooses between them.
+  - A refracting study adds **Index n₁**/**Index n₂**, and its normal is labelled **Incident side**.
+  - **Receiver** adds the plane's position, window size, centre, bins, and the **Receiver irradiance** layer.
+  - New tracks: the indices, the plane's position and the window's size. A reveal withholds the receiver until complete.
+  - Four presets form a "Refraction and receivers" gallery family: a glass ellipsoid focusing a beam, a glass dome's ring of light, a lamp in water over air, and a cup's nephroid on its floor.
+  - Two drafts were dropped after rendering:
+    - a monkey-saddle pool, whose caustics reach 100 radii from its flat centre and swamp the framing;
+    - Snell's window seen from above, where the opaque plane hides everything behind it.
+  - A lamp in a glass ball was also dropped: its tangential caustic runs far out near the critical angle.
+- Workload: the surface study's grid limits, one extra ray per cell for the receiver's midpoint, and at most 57,600 bins. The rasterizer's work grows with the bins that triangle edges cross. A 240 × 60 torus refracting onto 240² bins took about 25 ms natively (11 ms without the receiver) and 7.2 MB of JSON. There is no new dependency or resource category.
+- Permanent docs: `mathematics.md#spatial-refraction-and-caustics` and `#spatial-receiver-planes-and-irradiance`, `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: see the pull request and `mathematics.md` for the tests; mutations of the refraction derivative, the receiver's area weight, inverse square, triangle split, backward-crossing test, edge splitting and span coverage each fail.
+- Limits:
+  - one interaction, with no reflected share of refracted light, second interface, Fresnel weights, dispersion or occlusion;
+  - axis-aligned receiver planes with square windows;
+  - the receiver's resolution is bounded by the surface grid, since each cell's image carries a constant density;
+  - a real caustic's bins are bright but finite, and no bin is a pointwise brightness;
+  - the default oblique camera shows a small receiver small;
+  - presets cannot set the camera or layers.
+
+Recommended next step: **8, bounded implicit surfaces and section curves**, starting with the topology and memory-budget prototype its contract requires.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

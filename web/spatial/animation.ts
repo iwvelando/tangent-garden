@@ -73,7 +73,11 @@ type NamedTarget =
   | "sourceX"
   | "sourceY"
   | "sourceZ"
-  | "rayLength";
+  | "rayLength"
+  | "n1"
+  | "n2"
+  | "receiverAt"
+  | "receiverSize";
 // One coordinate of a vector field's seed, numbered from 1.
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
 // A pursuer's starting coordinate or speed, numbered from 1.
@@ -147,6 +151,10 @@ export const targetLabels: Record<NamedTarget, string> = {
   sourceY: "Source y",
   sourceZ: "Source z",
   rayLength: "Ray length ℓ",
+  n1: "Index n₁",
+  n2: "Index n₂",
+  receiverAt: "Plane at c",
+  receiverSize: "Window size s",
 };
 const subscript = (n: number) =>
   String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
@@ -201,8 +209,14 @@ const raysFields = {
   azimuth: "azimuth",
   elevation: "elevation",
   rayLength: "length",
+  n1: "n1",
+  n2: "n2",
 } as const;
 const isRays = (t: Target): t is keyof typeof raysFields => t in raysFields;
+// Receiver targets and the ReceiverConfig field each one moves.
+const receiverFields = { receiverAt: "at", receiverSize: "size" } as const;
+const isReceiver = (t: Target): t is keyof typeof receiverFields =>
+  t in receiverFields;
 const isSource = (t: Target): t is "sourceX" | "sourceY" | "sourceZ" =>
   t === "sourceX" || t === "sourceY" || t === "sourceZ";
 const sourceAxis = (t: "sourceX" | "sourceY" | "sourceZ") =>
@@ -299,9 +313,16 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
       ),
       ...(c.format === "surface"
         ? (["surfaceOffset", "reach"] as const)
-        : c.rays.light === "point"
-          ? (["sourceX", "sourceY", "sourceZ", "rayLength"] as const)
-          : (["azimuth", "elevation", "rayLength"] as const)),
+        : ([
+            ...(c.rays.interaction === "refract" ? ["n1", "n2"] : []),
+            ...(c.rays.light === "point"
+              ? ["sourceX", "sourceY", "sourceZ"]
+              : ["azimuth", "elevation"]),
+            "rayLength",
+            ...(c.rays.receiver.plane !== "none"
+              ? ["receiverAt", "receiverSize"]
+              : []),
+          ] as Target[])),
       "uMin",
       "uMax",
       "vMin",
@@ -401,6 +422,7 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
 export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (isSurface(t)) return c.surface[surfaceFields[t]];
   if (isRays(t)) return c.rays[raysFields[t]];
+  if (isReceiver(t)) return c.rays.receiver[receiverFields[t]];
   if (isSource(t)) return c.rays.source[sourceAxis(t)];
   if (t === "poleX") return c.pole.x;
   if (t === "poleY") return c.pole.y;
@@ -458,6 +480,10 @@ export function applyTracks(
     }
     if (isRays(t.target)) {
       config.rays[raysFields[t.target]] = v;
+      continue;
+    }
+    if (isReceiver(t.target)) {
+      config.rays.receiver[receiverFields[t.target]] = v;
       continue;
     }
     if (isSource(t.target)) {
@@ -575,8 +601,8 @@ export function surfaceBounds(s: NonNullable<SpatialResult["surface"]>) {
     ...s.focal.map((f) => f.points.flat()),
   );
 }
-// A mirror frames as Go frames it: its points with the rays and the source,
-// then each caustic part on its own.
+// A ray study frames as Go frames it: its points with the rays and the
+// source, then each caustic part on its own, then the receiver's corners.
 export function raysBounds(r: NonNullable<SpatialResult["rays"]>) {
   return fitBounds(
     [
@@ -585,6 +611,7 @@ export function raysBounds(r: NonNullable<SpatialResult["rays"]>) {
       ...(r.source ? [r.source] : []),
     ],
     ...r.caustics.map((c) => c.points.flat()),
+    ...(r.receiver ? [r.receiver.corners] : []),
   );
 }
 // A harmonic curve's joints and ellipse axis extents, one pair of families
@@ -638,11 +665,14 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       last = Math.floor(
         Math.max(0, Math.min(1, p)) * (r.surface.points.length - 1),
       );
+    // The receiver collects the whole family, so it appears only once
+    // every column is revealed.
     const rays = {
       ...r,
       surface: revealSheet(r.surface, last),
       caustics: r.caustics.map((c) => revealSheet(c, last)),
       lines: r.lines.filter((l) => l.i <= last),
+      receiver: last === r.surface.points.length - 1 ? r.receiver : null,
     };
     return { ...result, rays, bounds: raysBounds(rays) };
   }

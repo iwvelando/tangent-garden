@@ -16,11 +16,11 @@ func mirror(kind string, a, b, c, u0, u1, v0, v1 float64, nu, nv int, light Rays
 }
 
 func parallel(azimuth, elevation float64) RaysRequest {
-	return RaysRequest{Light: "parallel", Azimuth: azimuth, Elevation: elevation, Length: 1}
+	return RaysRequest{Interaction: "reflect", Light: "parallel", Azimuth: azimuth, Elevation: elevation, Length: 1, Receiver: ReceiverRequest{Plane: "none"}}
 }
 
 func lamp(s Vec3) RaysRequest {
-	return RaysRequest{Light: "point", Source: s, Length: 1}
+	return RaysRequest{Interaction: "reflect", Light: "point", Source: s, Length: 1, Receiver: ReceiverRequest{Plane: "none"}}
 }
 
 // bowl is the lower half of a sphere of radius r with its inward normal, a
@@ -668,10 +668,10 @@ func TestRaysValidation(t *testing.T) {
 
 func TestRaysJSON(t *testing.T) {
 	var c Request
-	if err := json.Unmarshal([]byte(`{"format":"rays","surface":{"kind":"paraboloid","a":0.5,"b":0.5,"uMin":-1,"uMax":1,"vMin":-1,"vMax":1,"uSamples":12,"vSamples":12,"curves":3},"rays":{"light":"point","azimuth":10,"elevation":-20,"source":{"x":0,"y":0,"z":2},"length":1.5}}`), &c); err != nil {
+	if err := json.Unmarshal([]byte(`{"format":"rays","surface":{"kind":"paraboloid","a":0.5,"b":0.5,"uMin":-1,"uMax":1,"vMin":-1,"vMax":1,"uSamples":12,"vSamples":12,"curves":3},"rays":{"interaction":"reflect","n1":1,"n2":1.5,"light":"point","azimuth":10,"elevation":-20,"source":{"x":0,"y":0,"z":2},"length":1.5,"receiver":{"plane":"none"}}}`), &c); err != nil {
 		t.Fatal(err)
 	}
-	if want := (RaysRequest{"point", 10, -20, Vec3{0, 0, 2}, 1.5}); c.Rays != want {
+	if want := (RaysRequest{"reflect", 1, 1.5, "point", 10, -20, Vec3{0, 0, 2}, 1.5, ReceiverRequest{Plane: "none"}}); c.Rays != want {
 		t.Fatalf("%+v", c.Rays)
 	}
 	out, err := Compute(c)
@@ -679,7 +679,7 @@ func TestRaysJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(out)
-	for _, key := range []string{`"rays":{"surface":{"points":`, `"caustics":[{"points":`, `"branch":1,"virtual":false,"shape":`, `"lines":[{"i":0,"j":0,"start":`, `"point":`, `"end":`, `"back":`, `"virtual":`, `"uCurves":`, `"vCurves":`, `"source":{"x":0,"y":0,"z":2}`, `"singular":`, `"unlit":`, `"atSource":`, `"stigmatic":`, `"clipped":[`} {
+	for _, key := range []string{`"rays":{"surface":{"points":`, `"caustics":[{"points":`, `"branch":1,"virtual":false,"shape":`, `"lines":[{"i":0,"j":0,"start":`, `"point":`, `"end":`, `"back":`, `"virtual":`, `"uCurves":`, `"vCurves":`, `"source":{"x":0,"y":0,"z":2}`, `"singular":`, `"unlit":`, `"atSource":`, `"stigmatic":`, `"total":`, `"clipped":[`, `"receiver":null`} {
 		if !strings.Contains(string(b), key) {
 			t.Fatalf("missing %s", key)
 		}

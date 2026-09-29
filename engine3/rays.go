@@ -5,27 +5,37 @@ import (
 	"math"
 )
 
-// RaysRequest lights a surface patch, as a mirror, for a single reflection.
-// Light "parallel" travels along (cos β cos α, cos β sin α, sin β), with
-// azimuth α and elevation β in degrees; light "point" leaves Source. The
-// patch's normal declares its mirror side: a sample is lit only when the
-// light arrives against the normal, I·n < 0. Nothing else is inferred:
-// every lit sample reflects, whether or not another part of the surface
-// stands in the way of its incident or reflected ray. Each representative
-// ray is drawn Length along the reflected direction, and as far back behind
-// the mirror; parallel light arrives from Length away.
+// RaysRequest lights a surface patch for a single interaction: Interaction
+// "reflect" makes it a mirror, and "refract" an interface between a medium
+// of refractive index N1, on the normal's side, and N2 beyond, with the
+// ratio η = N1/N2. Light "parallel" travels along (cos β cos α, cos β sin α,
+// sin β), with azimuth α and elevation β in degrees; light "point" leaves
+// Source. The patch's normal declares the side the light arrives from: a
+// sample is lit only when the light arrives against the normal, I·n < 0.
+// Nothing else is inferred: every lit sample reflects or refracts, whether
+// or not another part of the surface stands in the way of its incident or
+// outgoing ray, and a transmitted ray never meets the surface again. Each
+// representative ray is drawn Length along the outgoing direction, and as
+// far back behind the surface; parallel light arrives from Length away.
+// Receiver optionally collects the outgoing rays on a plane.
 type RaysRequest struct {
-	Light     string  `json:"light"`
-	Azimuth   float64 `json:"azimuth"`
-	Elevation float64 `json:"elevation"`
-	Source    Vec3    `json:"source"`
-	Length    float64 `json:"length"`
+	Interaction string          `json:"interaction"`
+	N1          float64         `json:"n1"`
+	N2          float64         `json:"n2"`
+	Light       string          `json:"light"`
+	Azimuth     float64         `json:"azimuth"`
+	Elevation   float64         `json:"elevation"`
+	Source      Vec3            `json:"source"`
+	Length      float64         `json:"length"`
+	Receiver    ReceiverRequest `json:"receiver"`
 }
 
 // Ray is a representative ray at sample (I, J): incident from Start to
-// Point, reflected from Point to End, and its virtual extension from Point
-// back to Back. Virtual says whether either of its caustic points lies
-// behind the mirror, where the extension leads.
+// Point, reflected or transmitted from Point to End, and its virtual
+// extension from Point back to Back. Virtual says whether either of its
+// caustic points lies behind the surface, where the extension leads. Total
+// marks light beyond the critical angle: nothing is transmitted, End is
+// along the totally reflected ray, and Back is Point.
 type Ray struct {
 	I       int  `json:"i"`
 	J       int  `json:"j"`
@@ -34,11 +44,12 @@ type Ray struct {
 	End     Vec3 `json:"end"`
 	Back    Vec3 `json:"back"`
 	Virtual bool `json:"virtual"`
+	Total   bool `json:"total"`
 }
 
 // CausticSheet is the real or virtual part of caustic branch Branch (1 or
-// 2): the points X + R/μ where μ, the reflected wavefront's principal
-// curvature, is positive (real, ahead of the mirror) or negative (virtual,
+// 2): the points X + R/μ where μ, the outgoing wavefront's principal
+// curvature, is positive (real, ahead of the surface) or negative (virtual,
 // behind it). Its normal is the wavefront's principal direction, and Shape
 // is classified as a focal sheet's is.
 type CausticSheet struct {
@@ -48,13 +59,15 @@ type CausticSheet struct {
 	Shape   string `json:"shape"`
 }
 
-// RaysResult holds the mirror, the four caustic parts (branch 1 real and
+// RaysResult holds the surface, the four caustic parts (branch 1 real and
 // virtual, then branch 2), and representative rays where the parameter
 // curves cross. Source is the point source, or nil. Singular counts chart
 // singularities, AtSource samples at the source, Unlit samples where the
-// light grazes the mirror or arrives behind it, and Stigmatic samples where
-// μ₁ = μ₂ and the two branches meet. Clipped[k] counts lit samples whose
-// branch k+1 caustic point is beyond focalReach surface radii, at infinity.
+// light grazes the surface or arrives behind it, Total lit samples beyond
+// the critical angle, and Stigmatic samples where μ₁ = μ₂ and the two
+// branches meet. Clipped[k] counts traced samples whose branch k+1 caustic
+// point is beyond focalReach surface radii, at infinity. Receiver is the
+// receiver plane's study, or nil.
 type RaysResult struct {
 	Surface   SurfaceSheet   `json:"surface"`
 	Caustics  []CausticSheet `json:"caustics"`
@@ -66,10 +79,21 @@ type RaysResult struct {
 	Unlit     int            `json:"unlit"`
 	AtSource  int            `json:"atSource"`
 	Stigmatic int            `json:"stigmatic"`
+	Total     int            `json:"total"`
 	Clipped   []int          `json:"clipped"`
+	Receiver  *Receiver      `json:"receiver"`
 }
 
 func (r RaysRequest) validate() error {
+	switch r.Interaction {
+	case "reflect":
+	case "refract":
+		if !index(r.N1) || !index(r.N2) {
+			return fmt.Errorf("the refractive indices n₁ and n₂ must be finite, positive and at most 100")
+		}
+	default:
+		return fmt.Errorf("the interaction must be reflect or refract")
+	}
 	switch r.Light {
 	case "parallel":
 		if !bounded(r.Azimuth) || !bounded(r.Elevation) {
@@ -85,8 +109,10 @@ func (r RaysRequest) validate() error {
 	if !finite(r.Length) || r.Length < 0 || r.Length > 1e5 {
 		return fmt.Errorf("the ray length ℓ must be finite and within 0–100000")
 	}
-	return nil
+	return r.Receiver.validate()
 }
+
+func index(n float64) bool { return finite(n) && n > 0 && n <= 100 }
 
 // sincosDegrees is exact at multiples of a right angle.
 func sincosDegrees(d float64) (float64, float64) {
@@ -122,6 +148,7 @@ type mirrorPoint struct {
 	Normal    bool
 	AtSource  bool
 	Lit       bool
+	Total     bool
 	I, R      Vec3
 	Mu        [2]float64
 	Dir       [2]Vec3
@@ -182,9 +209,27 @@ func (q SurfaceRequest) ray(r RaysRequest, u, v, scale float64) mirrorPoint {
 		return p
 	}
 	p.Lit = true
-	d := in.sub(n.mul(2 * cos))
-	du := iu.sub(n.mul(2 * (iu.dot(n) + in.dot(nu)))).sub(nu.mul(2 * cos))
-	dv := iv.sub(n.mul(2 * (iv.dot(n) + in.dot(nv)))).sub(nv.mul(2 * cos))
+	// Reflection is R = I + 2c n and refraction T = ηI + (ηc − √k) n, with
+	// c = −I·n and k = 1 − η²(1 − c²); so D = aI + b n, with derivatives
+	// D_u = a I_u + b_u n + b n_u, c_u = −(I_u·n + I·n_u), and (√k)_u =
+	// η²c c_u/√k. √k is the transmitted ray's cosine: at or below 10⁻⁹ the
+	// light is at or beyond the critical angle, totally reflected.
+	c0 := -cos
+	cu0, cv0 := -(iu.dot(n) + in.dot(nu)), -(iv.dot(n) + in.dot(nv))
+	a, b, bu, bv := 1.0, 2*c0, 2*cu0, 2*cv0
+	if r.Interaction == "refract" {
+		eta := r.N1 / r.N2
+		root := math.Sqrt(math.Max(0, 1-eta*eta*(1-c0*c0)))
+		if !(root > 1e-9) {
+			p.Total = true
+			return p
+		}
+		a, b = eta, eta*c0-root
+		bu, bv = eta*cu0*(1-eta*c0/root), eta*cv0*(1-eta*c0/root)
+	}
+	d := in.mul(a).add(n.mul(b))
+	du := iu.mul(a).add(n.mul(bu)).add(nu.mul(b))
+	dv := iv.mul(a).add(n.mul(bv)).add(nv.mul(b))
 	p.R = d
 	f1 := xu.sub(d.mul(d.dot(xu)))
 	if g := xv.sub(d.mul(d.dot(xv))); g.norm() > f1.norm() {
@@ -215,8 +260,12 @@ func (q SurfaceRequest) ray(r RaysRequest, u, v, scale float64) mirrorPoint {
 func (p mirrorPoint) caustic(k int) Vec3 { return p.X.add(p.R.mul(1 / p.Mu[k])) }
 
 func (p mirrorPoint) finite(k int, reach float64) bool {
-	return p.Lit && math.Abs(p.Mu[k])*reach > 1
+	return p.traced() && math.Abs(p.Mu[k])*reach > 1
 }
+
+// traced says whether the light leaves the sample along R: it is lit and,
+// refracting, not totally reflected.
+func (p mirrorPoint) traced() bool { return p.Lit && !p.Total }
 
 // rays samples the mirror, its caustic parts, and representative rays.
 func rays(q SurfaceRequest, r RaysRequest) (Result, error) {
@@ -263,7 +312,10 @@ func rays(q SurfaceRequest, r RaysRequest) (Result, error) {
 				out.Unlit++
 			}
 			normals[i][j] = &n
-			if !s.Lit {
+			if s.Total {
+				out.Total++
+			}
+			if !s.traced() {
 				continue
 			}
 			if s.Stigmatic {
@@ -319,22 +371,36 @@ func rays(q SurfaceRequest, r RaysRequest) (Result, error) {
 				if out.Source != nil {
 					start = *out.Source
 				}
+				if s.Total {
+					reflected := s.I.sub(s.N.mul(2 * s.I.dot(s.N)))
+					out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(reflected.mul(r.Length)), s.X, false, true})
+					continue
+				}
 				virtual := false
 				for k := range s.Mu {
 					virtual = virtual || s.Mu[k] < 0 && s.finite(k, reach)
 				}
-				out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(s.R.mul(r.Length)), s.X.sub(s.R.mul(r.Length)), virtual})
+				out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(s.R.mul(r.Length)), s.X.sub(s.R.mul(r.Length)), virtual, false})
 			}
 		}
 	}
-	// The rays and the source fit with the mirror; each caustic part fits on
-	// its own, so the fences trim only its asymptotic tails.
+	// The rays and the source fit with the surface; each caustic part fits
+	// on its own, so the fences trim only its asymptotic tails, and the
+	// receiver's four corners are never trimmed.
 	for k := range out.Lines {
 		l := &out.Lines[k]
 		families[0] = append(families[0], &l.Start, &l.End, &l.Back)
 	}
 	if out.Source != nil {
 		families[0] = append(families[0], out.Source)
+	}
+	if r.Receiver.Plane != "none" {
+		out.Receiver = q.receive(r, samples, scale)
+		corners := []*Vec3{}
+		for k := range out.Receiver.Corners {
+			corners = append(corners, &out.Receiver.Corners[k])
+		}
+		families = append(families, corners)
 	}
 	bounds := fit(families...)
 	return Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Rays: out}, nil

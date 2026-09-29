@@ -143,6 +143,7 @@ for (const [preset, name] of [
   ["27", "spatial cyclic pursuit with connecting polygons"],
   ["32", "surface with its focal sheets"],
   ["35", "mirror with its caustic sheets"],
+  ["40", "refracting dome with its receiver"],
 ])
   test(`spatial ${name} renders and exports through WebKit WebGL and H.264`, async ({
     page,
