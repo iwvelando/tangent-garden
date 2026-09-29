@@ -1,11 +1,11 @@
 import { StudyExplanation } from "../StudyExplanation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { EngineClient } from "../engine-client";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
 import { useMediaQuery } from "../useMediaQuery";
 import { useTheme } from "../useTheme";
 import { useDisclosure } from "../useDisclosure";
-import { Field } from "../Field";
+import { Field, HelpText, HelpToggle, useHelp } from "../Field";
 import { AppHeader } from "../AppHeader";
 import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
@@ -73,6 +73,20 @@ import {
 import { raysNote, receiverAxes } from "./rays";
 import { defaultLayers, type Layers, type View } from "./renderer";
 import "./spatial.css";
+// How a study is sampled is for the curious: a heading and an info toggle
+// keep the detail out of the way until it is asked for.
+function SamplingNote({ children }: { children: ReactNode }) {
+  const help = useHelp();
+  return (
+    <div className="sampling-note">
+      <div className="field-label">
+        <span>How it&rsquo;s sampled</span>
+        <HelpToggle topic="how it’s sampled" help={help} />
+      </div>
+      <HelpText help={help}>{children}</HelpText>
+    </div>
+  );
+}
 export default function SpatialApp({ active = true }: { active?: boolean }) {
   const theme = useTheme(),
     narrow = useMediaQuery("(max-width: 700px)"),
@@ -2460,7 +2474,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     }}
                   />
                 </Field>
-                <p>
+                <SamplingNote>
                   F is evaluated at every grid point, and every cube is split
                   into six tetrahedra around its diagonal, the same way in every
                   cube, so neighbours agree on their shared faces. Within a
@@ -2478,7 +2492,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   a cell. The mesh is limited to 200,000 triangles and 400,000
                   grid edges searched; the sections share 65,536 bisected edges
                   and 131,072 points.
-                </p>
+                </SamplingNote>
               </>
             ) : patched ? (
               <>
@@ -2541,7 +2555,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   />
                 </Field>
                 {mirroring ? (
-                  <p>
+                  <SamplingNote>
                     Positions, normals and their derivatives come from each
                     patch&rsquo;s exact first and second derivatives at every
                     grid sample, and so do the outgoing rays&rsquo; directions
@@ -2556,9 +2570,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     cell&rsquo;s flux from its midpoint, spreads it evenly over
                     the two triangles its corners&rsquo; rays make on the plane,
                     and gives every bin the flux inside it, by exact area.
-                  </p>
+                  </SamplingNote>
                 ) : (
-                  <p>
+                  <SamplingNote>
                     Positions, normals and principal curvatures come from each
                     patch&rsquo;s exact first and second derivatives at every
                     grid sample. Where X_u × X_v vanishes the chart is singular
@@ -2568,7 +2582,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     joined through infinity, even between samples. Centres of
                     curvature beyond 100 surface radii are treated as at
                     infinity.
-                  </p>
+                  </SamplingNote>
                 )}
               </>
             ) : (
@@ -2619,7 +2633,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     }
                   />
                 </Field>
-                <p>
+                <SamplingNote>
                   Finite sampling can miss fine detail. Compare resolutions near
                   poles, stationary points, and tight folds. Invalid samples and
                   unresolved tangent or normal intervals leave gaps. Involute
@@ -2641,7 +2655,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                   integrated the same way, as one system, within 40,000 steps,
                   and the first pursuer&rsquo;s velocity and acceleration come
                   from the pursuit law itself.
-                </p>
+                </SamplingNote>
               </>
             )}
           </details>

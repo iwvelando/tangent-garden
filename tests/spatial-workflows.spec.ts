@@ -448,3 +448,41 @@ test("a completed 3D animation releases the orbit camera without Back to study",
     .click();
   await expect(stage(page)).not.toHaveAttribute("data-progress");
 });
+
+test("each sampling explainer waits behind an info toggle", async ({
+  page,
+}) => {
+  await ready(page);
+  const sampling = page.locator("summary", {
+    hasText: "Sampling & definition",
+  });
+  for (const [preset, words] of [
+    ["0", "Finite sampling can miss fine detail"],
+    ["30", "Positions, normals and principal curvatures"],
+    ["34", "Positions, normals and their derivatives"],
+    ["43", "F is evaluated at every grid point"],
+  ]) {
+    await choosePreset(page, preset);
+    await expect(stage(page)).toHaveAttribute("aria-busy", "false");
+    if ((await sampling.locator("..").getAttribute("open")) === null)
+      await sampling.click();
+    const text = page.locator(".sampling-note").getByText(words);
+    await expect(text).toBeHidden();
+    const toggle = page.getByRole("button", {
+      name: "About how it’s sampled",
+      exact: true,
+    });
+    await expect(
+      page.getByText("How it’s sampled", { exact: true }),
+    ).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await expect(text).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(await text.getAttribute("id")).toBe(
+      await toggle.getAttribute("aria-controls"),
+    );
+    await toggle.click();
+    await expect(text).toBeHidden();
+  }
+});
