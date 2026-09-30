@@ -110,15 +110,21 @@ jobs:
       # stalled at ~100 KB/s long enough to time a shard out. The downloaded
       # packages are cached per runner image, so a warm shard installs them
       # from the cache with the image's own package lists and no download.
+      # ImageOS and ImageVersion are the runner's environment, not the `env`
+      # context, so the key is written from the shell.
+      - id: image
+        run: echo "key=apt-ffmpeg-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-ffmpeg-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
+          key: ${{ steps.image.outputs.key }}
       - name: Install ffmpeg
         timeout-minutes: 5
         run: |
           archives="$HOME/apt-archives"
           mkdir -p "$archives/partial"
+          # apt downloads as its sandbox user.
+          sudo chown _apt "$archives/partial"
           install() {
             sudo apt-get install -y --no-install-recommends \
               -o Dir::Cache::Archives="$archives" \
