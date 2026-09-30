@@ -280,8 +280,8 @@ func TestLiftCircleTangenciesAndContactIdentity(t *testing.T) {
 	}
 	q.Lift.Center = Vec3{0, 0, .5}
 	q.Lift.Support = 1.75 / math.Sqrt(.75)
-	if len(sourcePaths(liftResult(t, q), "lift/circle")) != 1 {
-		t.Fatal("coincident boundary circle lost")
+	if c := sourcePaths(liftResult(t, q), "lift/circle"); len(c) != 1 || c[0].Parameters[0] != 0 || c[0].Parameters[len(c[0].Parameters)-1] != 1 {
+		t.Fatal("coincident boundary circle lost", c)
 	}
 	q.Lift.Center = Vec3{1.75, 0, .5}
 	q.Lift.Support = .05
@@ -427,6 +427,48 @@ func BenchmarkLiftMaximumSamples(b *testing.B) {
 	for b.Loop() {
 		if _, err := Compute(q); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// The present set is closed. Rounding at a tangency or along a coincident
+// boundary must not open spurious gaps, whatever the orientation.
+func TestLiftBoundaryContactsSurviveRounding(t *testing.T) {
+	whole := func(p []Path) bool {
+		return len(p) == 1 && p[0].Parameters[0] == 0 && p[0].Parameters[len(p[0].Parameters)-1] == 1
+	}
+	for i := 1; i <= 800; i++ {
+		// Large holes, then holes near 1e-6, where rounding is linear in r.
+		support, height := .1+float64(i)*.0437, .32+float64(i%17)*.113
+		if i > 400 {
+			support, height = .05+float64(i%50)*.01, .02*(1+1e-9*float64(1+i%977))
+		}
+		hole := support * math.Sqrt(1-math.Sqrt(.02/height)) // independent of missingRadius
+		s, c := math.Sincos(float64(i) * .7123)
+		// Line y = .5 (thread 3) touched from an arbitrary direction in yz.
+		q := liftRequest(t, "reference", Vec3{-2 + float64(i%9)*.4, .5 + hole*c, hole * s}, support, height)
+		if p := sourcePaths(liftResult(t, q), "lift/thread/3"); !whole(p) {
+			t.Fatal("tangent thread split", i, len(p))
+		}
+		// A genuine chord only 1e-7 hole inside still opens a gap.
+		q.Lift.Center = Vec3{q.Lift.Center[0], .5 + (1-1e-7)*hole*c, (1 - 1e-7) * hole * s}
+		if p := sourcePaths(liftResult(t, q), "lift/thread/3"); i <= 400 && len(p) != 2 {
+			t.Fatal("shallow chord bridged", i, len(p))
+		}
+		// Circle touched externally at an arbitrary phase.
+		q.Lift.Center = Vec3{(1.75 + hole) * c, (1.75 + hole) * s, .5}
+		if p := sourcePaths(liftResult(t, q), "lift/circle"); !whole(p) {
+			t.Fatal("externally tangent circle split", i, len(p))
+		}
+		if i > 400 {
+			continue // a coincident circle would need L > 20
+		}
+		// Circle lying wholly on the missing boundary.
+		cz := -3 + float64(i)*.015
+		q.Lift.Center = Vec3{0, 0, cz}
+		q.Lift.Support = math.Hypot(1.75, .5-cz) / math.Sqrt(1-math.Sqrt(.02/height))
+		if p := sourcePaths(liftResult(t, q), "lift/circle"); !whole(p) || len(p[0].Points) != 9 {
+			t.Fatal("coincident boundary circle collapsed", i, len(p))
 		}
 	}
 }

@@ -56,7 +56,6 @@ export type ObjectDescriptor = {
     label: string;
     help: string;
     group?: string;
-    presentation?: boolean;
     endpoint?: boolean;
     visible?: (c: Config) => boolean;
   }[];
@@ -314,7 +313,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         key: "angle",
         label: "Presentation xw angle",
         help: "Radians within ±1000000. A positive turn carries x toward w; x′ = x cos θ − w sin θ. This explanatory rotation never changes reference-slice membership.",
-        presentation: true,
+        visible: (c) => c.mode === "lifted",
       },
       ...(["from", "to"] as const).flatMap((key) =>
         ["x", "y", "z"].map((axis, index) => ({
@@ -354,8 +353,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     ],
     diagnostics: () =>
       "6 connected source curves; reference-slice gaps do not cut the lifted curves.",
-    colorNote: () =>
-      "The guide marks the derived missing region, not the lift's whole support. Connectors explain displacement along w; they are not material threads. Apparent screen crossings add no connections.",
+    colorNote: (c) =>
+      `The guide marks the derived missing region, not the lift's whole support. ${c.mode === "lifted" ? "Connectors explain displacement along w; they are not material threads. " : ""}Apparent screen crossings add no connections.`,
     title: (c) => `Tangent Garden — ${modes[c.mode]}`,
     explanation: (c) =>
       c.mode === "reference"

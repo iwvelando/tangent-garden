@@ -311,11 +311,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     number | number[]
   >;
   const liftFields =
-    descriptor.numericFields?.filter(
-      (f) =>
-        (!f.presentation || config.mode === "lifted") &&
-        (!f.visible || f.visible(config)),
-    ) ?? [];
+    descriptor.numericFields?.filter((f) => !f.visible || f.visible(config)) ??
+    [];
   const renderNumericFields = (endpoints: boolean) => {
     const fields = liftFields.filter((f) => !!f.endpoint === endpoints);
     const rows: (typeof fields)[] = [];

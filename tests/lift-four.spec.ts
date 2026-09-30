@@ -606,3 +606,26 @@ test("lift playback edits and cancellations suppress stale output", async ({
   }
   expect(downloads).toBe(0);
 });
+
+test("lift note describes only the layers the current view offers", async ({
+  page,
+}) => {
+  await page.goto("/?study=4d");
+  await settle(page);
+  await choosePreset(page, { label: "The missing middle" });
+  await settle(page);
+  const note = page.locator(".tesseract-explanation p.note");
+  const connectors = page.getByRole("checkbox", {
+    name: "Displacement connectors",
+    exact: true,
+  });
+  await expect(connectors).toHaveCount(0);
+  await expect(note).toContainText("derived missing region");
+  await expect(note).not.toContainText("Connectors");
+  await page
+    .getByRole("combobox", { name: "View operation", exact: true })
+    .selectOption("lifted");
+  await settle(page);
+  await expect(connectors).toHaveCount(1);
+  await expect(note).toContainText("Connectors explain displacement along w");
+});
