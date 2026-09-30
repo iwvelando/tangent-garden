@@ -431,3 +431,42 @@ for (const width of [1440, 390])
     expect(video.duration).toBeCloseTo(0.4, 3);
     expect(video.first.hash).not.toBe(video.last.hash);
   });
+
+test("WebKit opens a study link made elsewhere and copies its own", async ({
+  page,
+}) => {
+  // Encoded by Node's zlib, as another browser's deflate-raw stream would be.
+  const { deflateRawSync } = await import("node:zlib");
+  const { presets } = await import("../web/presets");
+  const config = structuredClone(presets[1].config);
+  config.curve.a = 1.25;
+  const token = deflateRawSync(
+    Buffer.from(
+      JSON.stringify({
+        v: 1,
+        notebook: "2d",
+        study: { config, bounds: { min: "0", max: "2*pi" } },
+      }),
+    ),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const shown = JSON.parse(
+    (await page.locator("#artwork desc").textContent())!,
+  );
+  expect(shown.curve.a).toBe(1.25);
+  expect(new URL(page.url()).hash).toBe("");
+  // Its own encoder round-trips through its decoder.
+  const reopened = await page.evaluate(async () => {
+    const stream = new Blob([new TextEncoder().encode('{"v":1}')])
+      .stream()
+      .pipeThrough(new CompressionStream("deflate-raw"))
+      .pipeThrough(new DecompressionStream("deflate-raw"));
+    return new Response(stream).text();
+  });
+  expect(reopened).toBe('{"v":1}');
+});

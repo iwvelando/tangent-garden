@@ -14,8 +14,8 @@ import {
   type ExportFormat,
   type Formats,
 } from "../export-formats";
-import { objects, rotationMotions } from "./objects";
-import { passageExtent, type Config, type Motion } from "./types";
+import { objects } from "./objects";
+import { motions, type Config, type Motion } from "./types";
 
 export type MotionExport = {
   format: ExportFormat;
@@ -24,28 +24,6 @@ export type MotionExport = {
   loop: boolean;
 };
 
-// Choices describe the mathematical study, independently of the notebook name.
-function motions(
-  config: Config,
-): { value: Motion; label: string; help: string }[] {
-  if (objects[config.object].motionChoices)
-    return objects[config.object].motionChoices!;
-  const choices: { value: Motion; label: string; help: string }[] = [
-    ...rotationMotions,
-    ...(config.mode === "section"
-      ? [
-          {
-            value: "slice" as const,
-            label: "Slice passage",
-            help: `Move h from −${passageExtent(config).toPrecision(4)} to ${passageExtent(config).toPrecision(4)}, including empty endpoints. ${objects[config.object].passageHelp}`,
-          },
-        ]
-      : []),
-  ];
-  return choices.filter(
-    (choice) => choice.value === "slice" || objects[config.object].rotations,
-  );
-}
 export function AnimationPanel(p: {
   config: Config;
   layout?: ExportLayout;

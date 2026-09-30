@@ -8,6 +8,7 @@ import {
   type Vec,
 } from "./types";
 import type { AnimationView, Viewport } from "./animation";
+import type { PlotCamera } from "./planar-link";
 import { densityImage } from "./attractor";
 import { plotPalette } from "./palette";
 import { createGesture } from "./gestures";
@@ -30,6 +31,10 @@ type Props = {
   refit?: number;
   animation?: AnimationView | null;
   onViewport?: (view: Viewport) => void;
+  // A manual camera to start from at this reset, as a shared link restores.
+  initialCamera?: { reset: number; camera: PlotCamera } | null;
+  // The manual camera, offset from the fitted framing, whenever it changes.
+  onCamera?: (camera: PlotCamera) => void;
   pixelRatio?: number;
 };
 const W = 1000,
@@ -81,9 +86,15 @@ export function Plot({
   refit = 0,
   animation,
   onViewport,
+  initialCamera,
+  onCamera,
   pixelRatio = 1,
 }: Props) {
-  const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1, reset });
+  const [camera, setCamera] = useState(() =>
+    initialCamera?.reset === reset
+      ? { ...initialCamera.camera, reset }
+      : { x: 0, y: 0, zoom: 1, reset },
+  );
   // A completed animation is explored with its own camera, offset from the
   // animation's framing, so the manual one is intact when the study returns.
   const [explore, setExplore] = useState({ x: 0, y: 0, zoom: 1, reset: refit });
@@ -95,10 +106,12 @@ export function Plot({
   const current = exploring ? explore : camera;
   const setCurrent = exploring ? setExplore : setCamera;
   const key = exploring ? refit : reset;
-  const cam =
-    !locked && current.reset === key
-      ? current
-      : { x: 0, y: 0, zoom: 1, reset: key };
+  // The camera a reset starts from: fitted, or the one a link restored.
+  const fresh = (k: number) =>
+    !exploring && initialCamera?.reset === k
+      ? { ...initialCamera.camera, reset: k }
+      : { x: 0, y: 0, zoom: 1, reset: k };
+  const cam = !locked && current.reset === key ? current : fresh(key);
   const gesture = useRef(createGesture());
   const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -107,10 +120,7 @@ export function Plot({
     const zoom = (e: WheelEvent) => {
       e.preventDefault();
       setCurrent((previous) => {
-        const c =
-          previous.reset === key
-            ? previous
-            : { x: 0, y: 0, zoom: 1, reset: key };
+        const c = previous.reset === key ? previous : fresh(key);
         return {
           ...c,
           zoom: Math.max(
@@ -163,6 +173,9 @@ export function Plot({
     cam.zoom,
     onViewport,
   ]);
+  useEffect(() => {
+    if (!animation) onCamera?.({ x: cam.x, y: cam.y, zoom: cam.zoom });
+  }, [animation, cam.x, cam.y, cam.zoom, onCamera]);
   const xy = (p: Vec): Vec => ({
     x: W / 2 + (p.x - frame.cx) * scale + cam.x,
     y: H / 2 - (p.y - frame.cy) * scale + cam.y,
@@ -358,10 +371,7 @@ export function Plot({
         const ratio = Math.max(W / r.width, H / r.height);
         // Moves can outpace renders, so each applies to the latest camera.
         setCurrent((previous) => {
-          const c =
-            previous.reset === key
-              ? previous
-              : { x: 0, y: 0, zoom: 1, reset: key };
+          const c = previous.reset === key ? previous : fresh(key);
           if (motion.kind === "drag")
             return {
               ...c,

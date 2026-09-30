@@ -1,4 +1,4 @@
-import { objects } from "./objects";
+import { objects, rotationMotions } from "./objects";
 export type Vec3 = [number, number, number];
 export type Object4 =
   "tesseract" | "ball" | "tube" | "lift" | "bypass" | "weave";
@@ -208,5 +208,27 @@ export function passageExtent(config: Config): number {
   return (
     1.025 * descriptor.support(config) +
     (descriptor.familyPassage && config.count > 1 ? config.spread / 2 : 0)
+  );
+}
+// Choices describe the mathematical study, independently of the notebook name.
+export function motions(
+  config: Config,
+): { value: Motion; label: string; help: string }[] {
+  if (objects[config.object].motionChoices)
+    return objects[config.object].motionChoices!;
+  const choices: { value: Motion; label: string; help: string }[] = [
+    ...rotationMotions,
+    ...(config.mode === "section"
+      ? [
+          {
+            value: "slice" as const,
+            label: "Slice passage",
+            help: `Move h from −${passageExtent(config).toPrecision(4)} to ${passageExtent(config).toPrecision(4)}, including empty endpoints. ${objects[config.object].passageHelp}`,
+          },
+        ]
+      : []),
+  ];
+  return choices.filter(
+    (choice) => choice.value === "slice" || objects[config.object].rotations,
   );
 }

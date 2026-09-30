@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import type { PlanarAnimation } from "./planar-link";
 import { EngineClient, exportEngineCount } from "./engine-client";
 import {
   applyTracks,
@@ -61,6 +62,12 @@ type Props = {
   onRunning: (running: boolean) => void;
   // Called when playback starts or resumes, so the drawing can be shown.
   onPlay: () => void;
+  // The animation setup, kept current for a study link.
+  settings?: { current: PlanarAnimation | null };
+  // A setup from a study link, applied once per id. The notebook passes it
+  // only once the frame belongs to the linked study, so neither its tracks
+  // nor a trace mode is judged against the previous study.
+  restore?: { id: number; settings: PlanarAnimation } | null;
 };
 
 export function AnimationPanel({
@@ -75,6 +82,8 @@ export function AnimationPanel({
   onView,
   onRunning,
   onPlay,
+  settings,
+  restore,
 }: Props) {
   const [mode, setMode] = useState<AnimationMode>("reveal");
   const [camera, setCamera] = useState<CameraMode>("hold");
@@ -153,6 +162,18 @@ export function AnimationPanel({
           : [];
     });
   }, [targets.join(",")]);
+  if (settings) settings.current = { mode, camera, duration, tracks };
+  // After the retention and trace fallbacks above, which then see the
+  // linked study's own frame.
+  const restored = useRef(-1);
+  useEffect(() => {
+    if (!restore || restore.id === restored.current) return;
+    restored.current = restore.id;
+    setMode(restore.settings.mode);
+    setCamera(restore.settings.camera);
+    setDuration(restore.settings.duration);
+    setTracks(restore.settings.tracks);
+  }, [restore]);
   const running =
     status === "playing" || status === "preparing" || status === "exporting";
   const active = status !== "idle";

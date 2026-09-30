@@ -71,7 +71,16 @@ import {
   surfaceShape,
 } from "./surface";
 import { raysNote, receiverAxes } from "./rays";
-import { defaultLayers, type Layers, type View } from "./renderer";
+import { defaultLayers, initialView, type Layers, type View } from "./renderer";
+import { LinkNotice, ShareLink } from "../ShareLink";
+import { LinkError, type SharedStudy } from "../study-link";
+import {
+  defaultAnimation,
+  spatialStudy,
+  type SpatialAnimation,
+  type SpatialCamera,
+  type SpatialStudy,
+} from "./link";
 import "./spatial.css";
 // How a study is sampled is for the curious: a heading and an info toggle
 // keep the detail out of the way until it is asked for.
@@ -87,7 +96,13 @@ function SamplingNote({ children }: { children: ReactNode }) {
     </div>
   );
 }
-export default function SpatialApp({ active = true }: { active?: boolean }) {
+export default function SpatialApp({
+  active = true,
+  shared,
+}: {
+  active?: boolean;
+  shared?: SharedStudy;
+}) {
   const theme = useTheme(),
     narrow = useMediaQuery("(max-width: 700px)"),
     expressions = useDisclosure("expressions");
@@ -191,6 +206,48 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
     setConfig(structuredClone(spatialPresets[+index].config));
     setReset((n) => n + 1);
   };
+  // A shared study replaces the whole study, as a preset does, and restores
+  // the sender's layers, camera, and animation setup.
+  const [linkNotice, setLinkNotice] = useState("");
+  const manualCamera = useRef<SpatialCamera>({ ...initialView });
+  const [restoredView, setRestoredView] = useState<{
+    reset: number;
+    view: SpatialCamera;
+  } | null>(null);
+  const animationSettings = useRef<SpatialAnimation | null>(null);
+  const [restoredAnimation, setRestoredAnimation] = useState<{
+    id: number;
+    settings: SpatialAnimation;
+  } | null>(null);
+  const openStudy = (id: number, study: SpatialStudy) => {
+    generation.current++;
+    setStates({});
+    setPreset("");
+    setCustomOpened(study.config.format === "parametric");
+    setConfig(study.config);
+    setLayers(study.layers);
+    setRestoredView({ reset: reset + 1, view: study.view });
+    setReset(reset + 1);
+    setRestoredAnimation({ id, settings: study.animation });
+  };
+  useEffect(() => {
+    if (!shared) return;
+    setLinkNotice(shared.error ?? "");
+    if (shared.error !== undefined) return;
+    try {
+      openStudy(shared.id, spatialStudy(shared.study));
+    } catch (e) {
+      setLinkNotice(
+        e instanceof LinkError ? e.message : "This link could not be read.",
+      );
+    }
+  }, [shared?.id]);
+  const snapshot = (): SpatialStudy => ({
+    config,
+    layers,
+    view: manualCamera.current,
+    animation: animationSettings.current ?? defaultAnimation,
+  });
   async function definition(format: SpatialConfig["format"]) {
     const token = generation.current;
     await Promise.allSettled([...jobs.current]);
@@ -1866,6 +1923,7 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
       data-theme-preference={theme.preference}
     >
       <AppHeader theme={theme}>
+        <ShareLink notebook="3d" study={snapshot} disabled={!ready} />
         <ExportImageMenu
           disabled={!ready || running || imageBusy}
           kind="spatial"
@@ -1879,6 +1937,9 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
           className="spatial-controls"
           aria-label="Spatial study parameters"
         >
+          {linkNotice && (
+            <LinkNotice text={linkNotice} onDismiss={() => setLinkNotice("")} />
+          )}
           <div className="section-label">01 / THE STUDY</div>
           <ExampleGallery
             examples={spatialExamples}
@@ -2689,6 +2750,8 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
             onView={setAnimation}
             onRunning={setRunning}
             onPlay={showPlot}
+            settings={animationSettings}
+            restore={busy ? null : restoredAnimation}
           />
         </aside>
         <article
@@ -2773,6 +2836,10 @@ export default function SpatialApp({ active = true }: { active?: boolean }) {
                     viewport.current = v;
                   }}
                   onError={setRenderError}
+                  restored={restoredView}
+                  onCamera={(c) => {
+                    manualCamera.current = c;
+                  }}
                 />
               ) : (
                 <div className="loading">
