@@ -16,7 +16,16 @@ declare const Go: new () => {
 };
 declare const tangentGardenCompute: (json: string) => string;
 declare const tangentGardenTesseract: (json: string) => string;
-declare const tangentGardenSpatial: (json: string) => string;
+// An implicit surface's mesh arrives beside its JSON, as typed views on one
+// buffer (cmd/wasm/mesh.go); every other reply is JSON alone.
+declare const tangentGardenSpatial: (
+  json: string,
+) =>
+  | string
+  | ({ json: string } & Pick<
+      import("./spatial/types").ImplicitResult,
+      "positions" | "normals" | "triangles" | "cut" | "open"
+    >);
 declare const tangentGardenScalars: (json: string) => string;
 let ready: Promise<void> | undefined;
 async function init(base: string) {
@@ -500,9 +509,16 @@ self.onmessage = async ({
         throw new Error("The number of offset strands must be a whole number.");
       else if (canal && !Number.isInteger(data.spatial.canal.meridians))
         throw new Error("The number of meridians must be a whole number.");
-      const result = JSON.parse(
-        tangentGardenSpatial(JSON.stringify(data.spatial)),
-      );
+      const reply = tangentGardenSpatial(JSON.stringify(data.spatial));
+      if (typeof reply !== "string") {
+        // Transfer the mesh's buffer rather than copying it.
+        const { json, ...mesh } = reply;
+        const result = JSON.parse(json);
+        Object.assign(result.implicit, mesh);
+        self.postMessage({ id: data.id, result }, [mesh.positions.buffer]);
+        return;
+      }
+      const result = JSON.parse(reply);
       self.postMessage({
         id: data.id,
         ...("error" in result ? result : { result }),

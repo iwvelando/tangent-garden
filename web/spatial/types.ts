@@ -543,8 +543,9 @@ export type RaysResult = {
 // zero where ∇F vanishes or is not finite) and three vertex indices per
 // triangle, counterclockwise seen from larger F. Cut and open are pairs of
 // vertex indices: boundary edges on the box's faces, and beside cells left
-// out. Marks are where F changes sign without crossing the level, up to
-// 4,096 of them; discontinuities counts them all.
+// out. The engine sends these five arrays typed, not as JSON (see
+// cmd/wasm/mesh.go). Marks are where F changes sign without crossing the
+// level, up to 4,096 of them; discontinuities counts them all.
 export type ImplicitPath = { points: Vec3[]; closed: boolean };
 export type ImplicitSection = {
   offset: number;
@@ -555,11 +556,11 @@ export type ImplicitSection = {
 export type ImplicitResult = {
   box: ImplicitBox;
   grid: [number, number, number];
-  positions: number[];
-  normals: number[];
-  triangles: number[];
-  cut: number[];
-  open: number[];
+  positions: Float64Array;
+  normals: Float64Array;
+  triangles: Int32Array;
+  cut: Int32Array;
+  open: Int32Array;
   components: { triangles: number; euler: number; closed: boolean }[];
   sections: ImplicitSection[];
   marks: Vec3[];

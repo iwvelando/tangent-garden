@@ -1,4 +1,4 @@
-.PHONY: install wasm test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev dev-lan preview check clean share-card thumbnails
+.PHONY: install wasm bench test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev dev-lan preview check clean share-card thumbnails
 
 install:
 	npm ci
@@ -9,6 +9,9 @@ test-go:
 test-wasm: wasm
 	node scripts/test-wasm.mjs
 	node scripts/test-dev-worker.mjs
+# Times large implicit surfaces; ARGS="--compare <site or directory>" adds another engine.
+bench: wasm
+	node scripts/bench-implicit.mjs $(ARGS)
 typecheck:
 	npx tsc --noEmit
 vet:

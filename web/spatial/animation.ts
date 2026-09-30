@@ -710,17 +710,19 @@ function revealImplicit(
     m.box.zMin + Math.max(0, Math.min(1, p)) * (m.box.zMax - m.box.zMin);
   if (top >= m.box.zMax) return m;
   const z = (v: number) => m.positions[3 * v + 2];
-  const triangles: number[] = [];
-  for (let k = 0; k < m.triangles.length; k += 3)
-    if ([0, 1, 2].every((d) => z(m.triangles[k + d]) <= top))
-      triangles.push(m.triangles[k], m.triangles[k + 1], m.triangles[k + 2]);
-  const pairs = (edges: number[]) => {
-    const out: number[] = [];
-    for (let k = 0; k < edges.length; k += 2)
-      if (z(edges[k]) <= top && z(edges[k + 1]) <= top)
-        out.push(edges[k], edges[k + 1]);
-    return out;
+  // Keep the groups of `size` indices whose vertices all lie at or below it.
+  const below = (indices: Int32Array, size: number) => {
+    const out = new Int32Array(indices.length);
+    let n = 0;
+    for (let k = 0; k < indices.length; k += size) {
+      let low = true;
+      for (let d = 0; d < size; d++) low &&= z(indices[k + d]) <= top;
+      if (low) for (let d = 0; d < size; d++) out[n++] = indices[k + d];
+    }
+    return out.slice(0, n);
   };
+  const triangles = below(m.triangles, 3);
+  const pairs = (edges: Int32Array) => below(edges, 2);
   // A path is split where it rises above the height; a closed path that
   // is split is no longer closed.
   const sections = m.sections.map((s) => ({

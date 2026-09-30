@@ -6,6 +6,7 @@ import {
 } from "../web/spatial/animation";
 import { spatialPresets } from "../web/spatial/presets";
 import { implicitGrid, implicitNote } from "../web/spatial/implicit";
+import { implicitMesh } from "../web/spatial/renderer";
 import type { ImplicitResult, SpatialResult } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
@@ -389,11 +390,11 @@ function study(): SpatialResult {
   const implicit: ImplicitResult = {
     box: { xMin: 0, xMax: 1, yMin: 0, yMax: 1, zMin: 0, zMax: 1 },
     grid: [4, 4, 4],
-    positions: [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1],
-    normals: new Array(15).fill(0),
-    triangles: [0, 1, 2, 0, 2, 3, 0, 1, 4],
-    cut: [0, 1, 1, 4],
-    open: [2, 3],
+    positions: new Float64Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1]),
+    normals: new Float64Array(15),
+    triangles: new Int32Array([0, 1, 2, 0, 2, 3, 0, 1, 4]),
+    cut: new Int32Array([0, 1, 1, 4]),
+    open: new Int32Array([2, 3]),
     components: [{ triangles: 3, euler: 1, closed: false }],
     sections: [
       {
@@ -444,9 +445,9 @@ test("reveal keeps what lies below its height and splits sections there", () => 
   const input = study();
   expect(reveal(input, 1).implicit).toBe(input.implicit);
   const half = reveal(input, 0.5).implicit!;
-  expect(half.triangles).toEqual([0, 1, 2, 0, 2, 3]);
-  expect(half.cut).toEqual([0, 1]);
-  expect(half.open).toEqual([2, 3]);
+  expect(half.triangles).toEqual(new Int32Array([0, 1, 2, 0, 2, 3]));
+  expect(half.cut).toEqual(new Int32Array([0, 1]));
+  expect(half.open).toEqual(new Int32Array([2, 3]));
   expect(half.marks).toEqual([{ x: 0, y: 0, z: 0 }]);
   // The closed path, cut above 0.5, becomes one open run from 0.1 around
   // to 0.4; the open path keeps only one point, which is not a curve.
@@ -458,7 +459,38 @@ test("reveal keeps what lies below its height and splits sections there", () => 
   ]);
   expect(reveal(input, 0.5).bounds).toBe(input.bounds);
   // Nothing lies below the floor but the floor.
-  expect(reveal(input, 0).implicit!.triangles).toEqual([0, 1, 2, 0, 2, 3]);
+  expect(reveal(input, 0).implicit!.triangles).toEqual(
+    new Int32Array([0, 1, 2, 0, 2, 3]),
+  );
+});
+
+// The GPU mesh keeps the engine's shared vertices. A corner without a
+// normal (∇F vanished) is drawn with its triangle's own normal, so only such
+// corners are copied; a triangle without area is left out.
+test("an implicit mesh is drawn from shared vertices", () => {
+  const m = study().implicit!;
+  // Vertices 0–3 carry the normal +z, 4 (raised to z = 2) has none, and 5
+  // lies on the line through 0 and 1, so the triangle 0, 1, 5 has no area.
+  // The box runs from z = −1 to 3, so the phase is (z + 1)/4.
+  m.box = { ...m.box, zMin: -1, zMax: 3 };
+  m.positions = new Float64Array([...m.positions, 2, 0, 0]);
+  m.positions[14] = 2;
+  m.normals = new Float64Array(18);
+  for (const v of [0, 1, 2, 3, 5]) m.normals[3 * v + 2] = 1;
+  m.triangles = new Int32Array([0, 1, 2, 0, 2, 3, 0, 1, 4, 0, 1, 5]);
+  const { vertices, indices } = implicitMesh(m);
+  expect(indices).toBeInstanceOf(Uint32Array);
+  // Six shared vertices and one copy of vertex 4 with the normal of 0, 1, 4.
+  expect(vertices.length).toBe(7 * 7);
+  expect(Array.from(indices)).toEqual([0, 1, 2, 0, 2, 3, 0, 1, 6]);
+  const corner = (i: number) => Array.from(vertices.slice(7 * i, 7 * i + 7));
+  for (const v of [0, 1, 2, 3, 5]) {
+    const [x, y, z] = m.positions.slice(3 * v, 3 * v + 3);
+    // Position, normal, and the height in the box as phase.
+    expect(corner(v)).toEqual([x, y, z, 0, 0, 1, (z + 1) / 4]);
+  }
+  // The unit normal of 0, 1, 4, whose cross product has length 2.
+  expect(corner(6)).toEqual([0, 0, 2, 0, -1, 0, 0.75]);
 });
 
 test("implicit tracks move the level, a, sections and cells", () => {

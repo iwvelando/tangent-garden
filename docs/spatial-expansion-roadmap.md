@@ -122,7 +122,7 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 
 - [ ] **Adaptive curves and meshes.** Replace uniform-only sampling where needed with bounded refinement driven by geometric error and derivative stability. Retain a quality-controlled world-space definition shared by playback and export; optional view-dependent drawing refinement must not change the mathematical study. Report budget exhaustion. Test narrow folds, rapidly oscillating curves, and poles between samples; do not promise certified topology from heuristics.
 - [ ] **Scale and translation robustness.** Establish error budgets across tiny/large studies and translated coordinates. Rebase GPU positions before Float32 upload where needed, retain meaningful camera clipping, and test explicit export equivalence. Current finite-value guards and robust bounds are not a proof of scale independence.
-- [ ] **Mesh identities and efficiency.** Introduce indexed/shared vertices when a concrete surface needs them, preserving branch boundaries and normals. Profile WASM serialization, worker transfer, GPU upload and canceled work before adopting typed transport or worker pools. Bound memory and keep the UI responsive.
+- [x] **Mesh identities and efficiency.** Done for the implicit surface, the one shared-vertex result: its mesh travels as typed arrays and is drawn by index; see the follow-up notes below and `architecture.md` (**Measuring**). Worker pools and other result types remain open, to be profiled when a study needs them.
 - [ ] **Transparent and hidden geometry.** Investigate restrained transparency, cutaway planes, and hidden-line modes as ways to inspect folds. Triangle sorting alone fails for intersecting sheets. Evaluate a documented transparency method and support fallback; do not change the opaque default until both live and exported views agree reliably.
 - [ ] **Line rendering quality.** Stable screen-space strokes, antialiasing, and depth bias at high export resolutions; prevent construction lines from flickering or vanishing without making hidden lines falsely visible. Device-dependent WebGL line width is not a portable stroke system.
 - [ ] **Context recovery and capability limits.** The MVP reports missing/lost WebGL. Later restore resources from the current study after context restoration, preserve camera state, and validate actual device limits for export sizes. Keep the 2D notebook available throughout.
@@ -132,7 +132,7 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 
 - [x] **Portable links.** Done: **Copy link** in every notebook, described in `usage.md#share-a-study` and `architecture.md`. The link carries the study, layers, manual camera and animation setup as versioned, size-bounded JSON in the URL fragment, validated by a typed schema per notebook.
   - Decisions: the viewer's theme, playback position and export settings stay out. Scalar fields reopen as exact values, not their entered text. A newer version is reported, and older links take defaults for fields they lack.
-- [ ] **Saved study files.** Versioned local JSON save/open, reusing the link payload and validation (`web/study-link.ts`) with a file size bound instead of a URL one. Consider carrying scalar field text as entered.
+- [ ] ~~**Saved study files.**~~ Declined (2026-09-30): portable links are sufficient, and no downloadable study file is planned.
 - [ ] **Camera affordances.** Named front/side/top/isometric views, a small orientation indicator, touch pinch/pan, and keyboard parity. The MVP already supports orbit/pan/zoom; this is refinement, not replacement. Any perspective option must be explicitly labelled and retain orthographic defaults and reproducible export framing.
 - [ ] **Authored camera animation.** Named snapshots, a target/orbit center, start/end orientation, and deliberate interpolation. Specify full-turn versus shortest-rotation behavior and avoid quaternion sign flips. Geometry tracks and camera tracks remain separate; Stop restores the manual camera.
 - [ ] **Composition and study comparison.** Allow only evaluator-compatible derived inputs, with bounded depth and clear provenance. A later side-by-side 2D/3D comparison or declared planar embedding could help explain reductions, but 2D and 3D studies should not silently overwrite one another.
@@ -436,13 +436,20 @@ Next step at the time: 7b, below.
   - uniform grids only, so topology is resolved at the grid: a neck or piece thinner than a cell can be pinched or missed, and a singular point on a grid point joins pieces by one vertex;
   - a tilted section stops within one of its cells of the box;
   - the mesh is a picture and feeds no curvature, focal or optical construction;
-  - JSON transport of the largest meshes reaches 20 MB, so a level track on a large study plays slowly;
+  - a level track on a large study plays slowly (see the efficiency follow-up below);
   - presets cannot set the camera or layers.
 
-Every numbered slice is now complete. The backlog below remains open. Recommended next steps, for the user to choose between:
+Every numbered slice is now complete.
 
-- **Saved study files**, reusing the portable link payload (links are done);
-- **Adaptive meshes**, starting with bounded octree refinement of implicit surfaces near thin necks and alternating faces, reporting budget exhaustion;
-- **Mesh identities and efficiency**: the implicit study's indexed mesh is the first shared-vertex result, and typed transport would shrink its JSON.
+### Follow-up completed: implicit mesh efficiency
+
+- Profiled first (the production WASM engine in Node, and native `pprof`). JSON transport (Go marshal, parse, structured clone, de-indexing) was 10–20% of a large implicit frame; Go's evaluation was the rest, with `math.Pow` for small whole powers the largest single cost and section tracing the next. Garbage collection was not a factor.
+- `expr` evaluates a constant whole exponent from 2 to 64 by `math.Pow`'s own successive squarings, identical bit for bit, within a range where every product is normal (`mathematics.md`). Tested against `math.Pow` over edge values and random bit patterns, with a fuzz target; mutations of the guard, product order, constant detection and exponent range each fail.
+- The mesh's five arrays travel as typed views on one transferred buffer (`cmd/wasm/mesh.go`, the worker), and the renderer draws the engine's shared vertices by index, copying only corners without a normal.
+- Every 2D and 3D preset and the benchmark studies (97 results) reassemble bit for bit identical to the previous engine.
+- Measured with `make bench` against the previous engine (median of 5): tanglecube 64³ with 24 sections 1.60 → 1.09 s per frame; two drops 141 → 96 ms; double torus 290 → 180 ms; gyroid 64³ 528 → 461 ms; gyroid slab with 24 sections 1.47 → 1.45 s. Transfers halve or better for meshes.
+- Limits: trigonometric fields and sections are bound by evaluation in the shared 2D contour tracer, and gain little; playback still keeps one calculation in flight, so a second worker pipelining frames is the next lever if large studies must animate smoothly.
+
+Recommended next step, for the user to choose: **adaptive meshes**, starting with bounded octree refinement of implicit surfaces near thin necks and alternating faces, reporting budget exhaustion. Otherwise the remaining backlog can be reconciled and this roadmap retired.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

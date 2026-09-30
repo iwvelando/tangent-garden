@@ -26,8 +26,9 @@ type parser struct {
 	pos, depth int
 	// The argument each variable name reads; nil in a constant expression.
 	variables map[string]int
-	// The variables the expression reads.
+	// The variables the expression reads, and how many times.
 	used      map[string]bool
+	reads     int
 	parameter *float64
 }
 
@@ -189,6 +190,7 @@ func (p *parser) expression(min int) (node, error) {
 				return nil, fmt.Errorf("unknown name %q", name)
 			}
 			p.used[name] = true
+			p.reads++
 			switch k {
 			case 0:
 				left = func(v0, _, _, _ float64) float64 { return v0 }
@@ -258,25 +260,53 @@ func (p *parser) expression(min int) (node, error) {
 		if op == '^' {
 			next = prec
 		}
+		reads := p.reads
 		right, err := p.expression(next)
 		if err != nil {
 			return nil, err
 		}
 		a, b := left, right
-		left = func(v0, v1, v2, v3 float64) float64 {
-			switch op {
-			case '+':
-				return a(v0, v1, v2, v3) + b(v0, v1, v2, v3)
-			case '-':
-				return a(v0, v1, v2, v3) - b(v0, v1, v2, v3)
-			case '*':
-				return a(v0, v1, v2, v3) * b(v0, v1, v2, v3)
-			case '/':
-				return a(v0, v1, v2, v3) / b(v0, v1, v2, v3)
-			default:
-				return math.Pow(a(v0, v1, v2, v3), b(v0, v1, v2, v3))
+		switch op {
+		case '+':
+			left = func(v0, v1, v2, v3 float64) float64 { return a(v0, v1, v2, v3) + b(v0, v1, v2, v3) }
+		case '-':
+			left = func(v0, v1, v2, v3 float64) float64 { return a(v0, v1, v2, v3) - b(v0, v1, v2, v3) }
+		case '*':
+			left = func(v0, v1, v2, v3 float64) float64 { return a(v0, v1, v2, v3) * b(v0, v1, v2, v3) }
+		case '/':
+			left = func(v0, v1, v2, v3 float64) float64 { return a(v0, v1, v2, v3) / b(v0, v1, v2, v3) }
+		default:
+			left = func(v0, v1, v2, v3 float64) float64 { return math.Pow(a(v0, v1, v2, v3), b(v0, v1, v2, v3)) }
+			// A constant whole exponent, such as the 4 of x^4, is fixed now.
+			if n := b(0, 0, 0, 0); p.reads == reads && n >= 2 && n <= 64 && n == math.Trunc(n) {
+				power := integerPower(int(n))
+				left = func(v0, v1, v2, v3 float64) float64 { return power(a(v0, v1, v2, v3)) }
 			}
 		}
 	}
 	return left, nil
+}
+
+// integerPower returns x ↦ x^n for a whole n from 2 to 64, equal to
+// math.Pow(x, n) bit for bit but without its general path. Pow multiplies
+// x's mantissa by successive squarings for each set bit of n, keeping the
+// powers of two apart; here the same products are taken in the same order
+// on x itself. While |x| lies within 2^±⌊1000/n⌋, every product used is a
+// normal number, so the powers of two scale it exactly and each rounding is
+// Pow's. Beyond that, and for zero, infinities and NaN, Pow decides.
+func integerPower(n int) func(float64) float64 {
+	limit := math.Ldexp(1, 1000/n)
+	return func(x float64) float64 {
+		if a := math.Abs(x); !(a > 1/limit && a < limit) {
+			return math.Pow(x, float64(n))
+		}
+		r, b := 1.0, x
+		for i := n; i != 0; i >>= 1 {
+			if i&1 == 1 {
+				r *= b
+			}
+			b *= b
+		}
+		return r
+	}
 }
