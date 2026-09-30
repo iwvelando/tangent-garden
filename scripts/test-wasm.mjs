@@ -878,6 +878,52 @@ const spatialCustom = JSON.parse(
 assert.equal(spatialCustom.invalid, 0);
 assert.equal(spatialCustom.base.length, 481);
 assert.ok(Math.abs(spatialCustom.base.at(-1).z - Math.PI / 2) < 1e-12);
+assert.equal(spatialCustom.diagnostics, undefined);
+// The helix r = (2 cos t, 2 sin t, t/4): κ = 2/(4 + 1/16), τ = (1/4)/(4 + 1/16).
+const probed = JSON.parse(
+  globalThis.tangentGardenSpatial(
+    JSON.stringify({
+      format: "parametric",
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t",
+        a: 0.25,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      construction: "none",
+      length: 1,
+      samples: 480,
+      lines: 48,
+      diagnostics: true,
+    }),
+  ),
+).diagnostics;
+assert.equal(probed.curvature.length, 481);
+assert.equal(probed.min, 0);
+assert.ok(Math.abs(probed.max - 2 * Math.PI) < 1e-15);
+for (const k of probed.curvature) assert.ok(Math.abs(k - 2 / 4.0625) < 1e-6);
+for (const k of probed.torsion) assert.ok(Math.abs(k - 0.25 / 4.0625) < 1e-5);
+assert.ok(Math.hypot(probed.center[0].x, probed.center[0].y) < 0.1);
+assert.deepEqual([probed.flat, probed.unknown, probed.clipped], [0, 0, 0]);
+const flat = JSON.parse(
+  globalThis.tangentGardenSpatial(
+    JSON.stringify({
+      format: "parametric",
+      curve: { x: "t", y: "2*t", z: "0", a: 1, min: -1, max: 1 },
+      construction: "none",
+      length: 1,
+      samples: 240,
+      lines: 12,
+      diagnostics: true,
+    }),
+  ),
+).diagnostics;
+assert.equal(flat.flat, 241);
+assert.ok(
+  flat.normal.every((n) => n === null) && flat.torsion.every((t) => t === null),
+);
 assert.equal(spatialCustom.mesh.at(-1).sampleIndex, 480);
 assert.equal(spatialCustom.rulings.at(-1).sampleIndex, 480);
 assert.ok(spatialCustom.bounds.radius > 2);

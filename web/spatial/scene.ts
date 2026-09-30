@@ -926,13 +926,18 @@ export type Scene = ReturnType<typeof buildScene>;
 // always shown), and whether it is a shaded sheet, drawn pushed back so that
 // lines lying on it stay in front.
 export type Pass = {
-  layer: keyof Layers | "base";
+  layer: keyof Layers | "base" | "probe";
   batch: Batch;
   sheet: boolean;
 };
 
-// What the drawing shows of a scene with these layers, in drawing order.
-export function scenePasses(s: Scene, layers: Layers): Pass[] {
+// What the drawing shows of a scene with these layers, in drawing order,
+// with the parameter probe's batches (see probe.ts), if any, drawn last.
+export function scenePasses(
+  s: Scene,
+  layers: Layers,
+  probe: Batch[] = [],
+): Pass[] {
   const out: Pass[] = [];
   const add = (
     layer: Pass["layer"],
@@ -982,6 +987,7 @@ export function scenePasses(s: Scene, layers: Layers): Pass[] {
   add("seam", layers.seam, false, s.seam);
   add("pole", layers.pole, false, s.pole);
   add("sphere", layers.sphere, false, s.center);
+  add("probe", true, false, ...probe);
   return out;
 }
 

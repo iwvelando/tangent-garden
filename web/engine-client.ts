@@ -62,13 +62,25 @@ export class EngineClient {
     });
     return { result, config: resolved };
   }
+  // With diagnostics, the result also describes the base curve at every
+  // sample: its curvature, torsion, and Frenet frame.
   async computeSpatial(
     config: SpatialConfig,
+    options: { diagnostics?: boolean } = {},
   ): Promise<import("./spatial/types").Frame> {
-    return { config, result: await this.spatial(config) };
+    return { config, result: await this.spatial(config, options) };
   }
-  async spatial(config: SpatialConfig): Promise<SpatialResult> {
-    return (await this.request({ action: "spatial", spatial: config })).result;
+  async spatial(
+    config: SpatialConfig,
+    options: { diagnostics?: boolean } = {},
+  ): Promise<SpatialResult> {
+    return (
+      await this.request({
+        action: "spatial",
+        spatial: config,
+        ...(options.diagnostics ? { diagnostics: true } : {}),
+      })
+    ).result;
   }
   async tesseract(
     config: import("./tesseract/types").Config,

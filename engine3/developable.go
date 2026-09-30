@@ -63,6 +63,9 @@ type Request struct {
 	Q            int              `json:"q"`
 	Samples      int              `json:"samples"`
 	Lines        int              `json:"lines"`
+	// Diagnostics asks for the base curve's curvature, torsion, and Frenet
+	// frame at every sample. Surface, ray, and implicit studies ignore it.
+	Diagnostics bool `json:"diagnostics"`
 }
 type Vertex struct {
 	SampleIndex int     `json:"sampleIndex"`
@@ -116,6 +119,8 @@ type Result struct {
 	// Implicit is present only for an implicit surface, which leaves every
 	// curve field empty.
 	Implicit *ImplicitResult `json:"implicit,omitempty"`
+	// Diagnostics is present only when requested, for a curve.
+	Diagnostics *DiagnosticsResult `json:"diagnostics,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -140,6 +145,14 @@ func jumps(a, b, middle Vec3, step float64) bool {
 }
 
 func Compute(c Request) (Result, error) {
+	out, err := compute(c)
+	if err == nil && out.Diagnostics != nil {
+		out.Diagnostics.clip(out.Bounds.Radius)
+	}
+	return out, err
+}
+
+func compute(c Request) (Result, error) {
 	if c.Format == "surface" {
 		return surfaces(c.Surface)
 	}
@@ -231,6 +244,10 @@ func Compute(c Request) (Result, error) {
 	normals, tangents := make([]Vec3, n+1), make([]Vec3, n+1)
 	speeds, middles := make([]float64, n+1), make([]float64, n)
 	valid := make([]bool, n+1)
+	var velocities, accelerations []Vec3
+	if c.Diagnostics {
+		velocities, accelerations = make([]Vec3, n+1), make([]Vec3, n+1)
+	}
 	for i := 0; i <= n; i++ {
 		t := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
 		r, v, a, ok := evaluate(t)
@@ -241,6 +258,9 @@ func Compute(c Request) (Result, error) {
 		tangent := v.unit()
 		tangents[i] = tangent
 		speeds[i] = v.norm()
+		if c.Diagnostics {
+			velocities[i], accelerations[i] = v, a
+		}
 		minus, plus := r.sub(tangent.mul(c.Length)), r.add(tangent.mul(c.Length))
 		out.Base[i] = &r
 		out.Minus[i] = &minus
@@ -269,6 +289,9 @@ func Compute(c Request) (Result, error) {
 		tangents[n] = tangents[0]
 		speeds[n] = speeds[0]
 		valid[n] = valid[0]
+	}
+	if c.Diagnostics {
+		out.Diagnostics = diagnose(c, evaluate, lo, hi, out.Base, velocities, accelerations, normals, valid, closed)
 	}
 	for i := 0; i < n; i++ {
 		// Check inside every interval as well as at sample points, so a pole or

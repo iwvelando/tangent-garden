@@ -51,6 +51,8 @@ self.onmessage = async ({
   action: "compute" | "scalars" | "spatial" | "tesseract";
   tesseract?: import("./tesseract/types").Config;
   spatial?: import("./spatial/types").SpatialConfig;
+  // Asks Go for the base curve's diagnostics (see engine3.DiagnosticsResult).
+  diagnostics?: boolean;
   base: string;
 }>) => {
   try {
@@ -511,7 +513,13 @@ self.onmessage = async ({
         throw new Error("The number of offset strands must be a whole number.");
       else if (canal && !Number.isInteger(data.spatial.canal.meridians))
         throw new Error("The number of meridians must be a whole number.");
-      const reply = tangentGardenSpatial(JSON.stringify(data.spatial));
+      const reply = tangentGardenSpatial(
+        JSON.stringify(
+          data.diagnostics
+            ? { ...data.spatial, diagnostics: true }
+            : data.spatial,
+        ),
+      );
       if (typeof reply !== "string") {
         // Transfer the mesh's buffer rather than copying it.
         const { json, ...mesh } = reply;

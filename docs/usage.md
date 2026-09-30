@@ -107,6 +107,7 @@ This is a **mathematical construction explorer**, not a scene renderer. Every re
 - the manual camera (2D pan and zoom; 3D and 4D orbit, pan, and zoom, including the coordinate diagram's view beside a 4D shadow);
 - the animation setup: what is animated, its camera mode, duration, and parameter tracks with their endpoints as entered. The 4D notebook carries its motion and duration.
 - In 2D, the interval bounds as entered (such as `2*pi`), the ray length, and the remembered pole construction.
+- In 3D, whether the parameter probe is on and where along the curve it stands.
 
 It leaves out your theme, which stays each viewer's own, the playback position, and export settings. A numeric field reopens with its exact value, written as a whole multiple or simple fraction of π where it is one, as for examples. Another constant expression reopens as a decimal (`2*e` becomes `5.43656365691809`), which draws the same study. Framing follows the drawing: the 2D view is exact, while a 3D or 4D view keeps its angles and zoom and adapts to the viewer's window shape.
 
@@ -152,5 +153,7 @@ Choose **Spatial definition · Implicit surface · F(x, y, z) = c** for a level 
 - **The tanglecube** (animate c down to −14)
 - **A gyroid, cut open**
 - **A thread between two drops** (set **Refinement levels** to 0 to see what the grid alone misses)
+
+Every curve study, whatever its construction, has **Probe the curve**. Check **Frame, curvature & torsion at a point** and move the **Point** slider (or its arrow, Home and End keys) along the curve's samples: the drawing marks the point with its Frenet frame (T red, N green, B blue), its osculating circle and its own construction lines (for a tangent ruling, involute strings, tangent projections, an inversion's correspondence, a framed ribbon's cross-line, a ruling, or a pursuit's polygon), all in their own colors, while the panel reads out t, **Curvature κ**, **Radius 1/κ** and **Torsion τ** to four significant figures and plots κ and τ along the whole curve, with the point marked. The probe describes the curve itself, not a surface built on it. Where the curve is flat, N, B, τ and the circle are undefined and not drawn, and a straight curve, such as the axis of **Beads that lose their envelope**, says so; where τ cannot be found reliably it says so; a circle too large to draw keeps its radius. Canal, harmonic and vector-field studies show the frame and circle without a construction highlight, and surface, mirror and implicit studies have no probe. More samples give finer steps. The probe stays out of animation playback and animation exports, and returns when the animation stops; still images include it and record where it stood.
 
 Animation supports progressive reveal, parameter tracks and a camera orbit, with pause/scrub, the four camera modes, and MP4/WebP export. **Export image** saves PNG, an SVG with an embedded shaded image, or a line drawing: true SVG paths of the shown lines, either every line or only the lines not hidden behind a surface (sampled at the page's resolution, not exact hidden-line removal). The [spatial guide](spatial-study.md) has examples and numerical limits.

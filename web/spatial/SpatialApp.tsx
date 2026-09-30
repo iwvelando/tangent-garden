@@ -84,6 +84,15 @@ import {
   type SpatialStudy,
 } from "./link";
 import type { ImageFormat } from "./export";
+import {
+  defaultProbe,
+  probeBatches,
+  probeIndex,
+  probeReadout,
+  probeSupport,
+  type Probe,
+} from "./probe";
+import { ProbePanel } from "./ProbePanel";
 import "./spatial.css";
 
 // Saved image files, by format.
@@ -136,13 +145,17 @@ export default function SpatialApp({
   const [animation, setAnimation] = useState<AnimationView | null>(null),
     [running, setRunning] = useState(false);
   const [layers, setLayers] = useState<Layers>(defaultLayers);
+  // The parameter probe asks Go for diagnostics only while it is on.
+  const [probe, setProbe] = useState<Probe>(defaultProbe);
+  const probing = probe.enabled && probeSupport(config).available;
   const viewport = useRef<View | undefined>(undefined),
     plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
   const pending = Object.values(states).some((s) => s.pending),
     scalarError = Object.values(states).find((s) => s.error);
   const key = JSON.stringify(config),
-    busy = settled !== key || pending;
+    request = probing ? `${key}\u0000probe` : key,
+    busy = settled !== request || pending;
   const revision = JSON.stringify([key, states, active]);
   useEffect(() => {
     client.current = new EngineClient();
@@ -157,22 +170,22 @@ export default function SpatialApp({
     let current = true;
     setError("");
     if (pending || scalarError) {
-      setSettled(key);
+      setSettled(request);
       return;
     }
     const timer = setTimeout(() => {
       client
-        .current!.computeSpatial(config)
+        .current!.computeSpatial(config, { diagnostics: probing })
         .then((value) => {
           if (current) {
             setFrame(value);
-            setSettled(key);
+            setSettled(request);
           }
         })
         .catch((e: Error) => {
           if (current) {
             setError(e.message);
-            setSettled(key);
+            setSettled(request);
           }
         });
     }, 140);
@@ -180,7 +193,7 @@ export default function SpatialApp({
       current = false;
       clearTimeout(timer);
     };
-  }, [key, pending, scalarError]);
+  }, [request, pending, scalarError]);
   useEffect(() => {
     imageAbort.current?.abort();
     setImageBusy(false);
@@ -216,6 +229,7 @@ export default function SpatialApp({
     setPreset(index);
     setCustomOpened(spatialPresets[+index].config.format === "parametric");
     setConfig(structuredClone(spatialPresets[+index].config));
+    setProbe((p) => ({ ...p, position: defaultProbe.position }));
     setReset((n) => n + 1);
   };
   // A shared study replaces the whole study, as a preset does, and restores
@@ -238,6 +252,7 @@ export default function SpatialApp({
     setCustomOpened(study.config.format === "parametric");
     setConfig(study.config);
     setLayers(study.layers);
+    setProbe(study.probe);
     setRestoredView({ reset: reset + 1, view: study.view });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -259,6 +274,7 @@ export default function SpatialApp({
     layers,
     view: manualCamera.current,
     animation: animationSettings.current ?? defaultAnimation,
+    probe,
   });
   async function definition(format: SpatialConfig["format"]) {
     const token = generation.current;
@@ -1146,6 +1162,19 @@ export default function SpatialApp({
     override = animation?.complete ? undefined : camera,
     released = animation?.complete ? camera : undefined;
   const ready = !!frame && !busy && !failure && !renderError;
+  // The probe draws on the study's own result, never an animation frame.
+  const probeFrame =
+    !animation && probing && frame?.result.diagnostics ? frame : null;
+  const probeAt = probeFrame
+    ? probeIndex(probe.position, probeFrame.result.base.length - 1)
+    : 0;
+  const probeDrawing = useMemo(
+    () =>
+      probeFrame
+        ? probeBatches(probeFrame.result, probeFrame.config, probeAt)
+        : [],
+    [probeFrame, probeAt],
+  );
   async function save(format: string) {
     if (!shown || !viewport.current) return;
     imageAbort.current?.abort();
@@ -1168,6 +1197,13 @@ export default function SpatialApp({
         snapshot.dark,
         format as ImageFormat,
         controller.signal,
+        probeFrame && probeDrawing.length && shown === probeFrame
+          ? {
+              batches: probeDrawing,
+              index: probeAt,
+              t: probeReadout(probeFrame.result, probeAt)!.t,
+            }
+          : undefined,
       );
       controller.signal.throwIfAborted();
       saveFile(
@@ -2533,6 +2569,14 @@ export default function SpatialApp({
               ))}
             </fieldset>
           )}
+          <ProbePanel
+            config={config}
+            frame={probeFrame}
+            probe={probe}
+            onProbe={setProbe}
+            animating={!!animation}
+            dark={theme.dark}
+          />
           <details className="spatial-details">
             <summary>Sampling & definition</summary>
             {leveled ? (
@@ -2892,6 +2936,7 @@ export default function SpatialApp({
                   onCamera={(c) => {
                     manualCamera.current = c;
                   }}
+                  probe={probeDrawing}
                 />
               ) : (
                 <div className="loading">

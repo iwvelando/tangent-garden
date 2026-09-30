@@ -50,7 +50,13 @@ void main() {
   // A surface's focal sheets: rust for the first, slate for the second.
   vec3 rust = ${glsl(palette.rust)};
   vec3 slate = ${glsl(palette.slate)};
-  if (ink > 6.5) {
+  if (ink > 7.5) {
+    // The parameter probe: its point, circle and construction, then T, N, B.
+    if (ink > 10.5) color = ${glsl(palette.probeBinormal)};
+    else if (ink > 9.5) color = ${glsl(palette.probeNormal)};
+    else if (ink > 8.5) color = ${glsl(palette.probeTangent)};
+    else color = ${glsl(palette.probe)};
+  } else if (ink > 6.5) {
     // A receiver's irradiance on a logarithmic ramp, unshaded and without
     // hue, since it is a measured quantity: ink on paper, or light on the
     // dark theme. U < 0 marks a bin no light reaches.
@@ -135,8 +141,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     elements?: WebGLBuffer;
   };
   let scene: Scene | undefined;
+  // The parameter probe's few batches have their own buffers, so moving it
+  // never re-uploads the scene.
+  let probe: Batch[] = [];
+  const probeBuffers: WebGLBuffer[] = [];
   const uploaded = new Map<Batch, Uploaded>();
-  function put(batch: Batch) {
+  function put(batch: Batch, into = buffers) {
     // Indices past 65,535 need 32-bit elements, universal in practice;
     // without them a mesh is drawn corner by corner.
     let data = batch.data,
@@ -150,13 +160,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       indices = undefined;
     }
     const buffer = gl!.createBuffer()!;
-    buffers.push(buffer);
+    into.push(buffer);
     gl!.bindBuffer(gl!.ARRAY_BUFFER, buffer);
     gl!.bufferData(gl!.ARRAY_BUFFER, data, gl!.STATIC_DRAW);
     const drawn: Uploaded = { batch, buffer, count: data.length / 7 };
     if (indices) {
       const elements = gl!.createBuffer()!;
-      buffers.push(elements);
+      into.push(elements);
       gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, elements);
       gl!.bufferData(gl!.ELEMENT_ARRAY_BUFFER, indices, gl!.STATIC_DRAW);
       drawn.count = indices.length;
@@ -164,12 +174,21 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     }
     uploaded.set(batch, drawn);
   }
+  // Replaces the probe's batches (none to hide it).
+  function setProbe(batches: Batch[]) {
+    probeBuffers.splice(0).forEach((b) => gl!.deleteBuffer(b));
+    probe.forEach((b) => uploaded.delete(b));
+    probe = batches;
+    probe.forEach((b) => put(b, probeBuffers));
+  }
+  // A new result drops the probe, whose batches belong to the old one.
   function upload(result: SpatialResult) {
+    setProbe([]);
     buffers.splice(0).forEach((b) => gl!.deleteBuffer(b));
     uploaded.clear();
     scene = buildScene(result);
     for (const value of Object.values(scene))
-      (Array.isArray(value) ? value : [value]).forEach(put);
+      (Array.isArray(value) ? value : [value]).forEach((b) => put(b));
   }
   function draw(
     view: View,
@@ -228,7 +247,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         gl!.drawElements(mode, v.count, gl!.UNSIGNED_INT, 0);
       } else gl!.drawArrays(mode, 0, v.count);
     };
-    for (const pass of scenePasses(scene, layers)) {
+    for (const pass of scenePasses(scene, layers, probe)) {
       const v = uploaded.get(pass.batch)!;
       if (!pass.sheet) {
         render(v);
@@ -242,9 +261,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   }
   return {
     upload,
+    setProbe,
     draw,
     dispose: () => {
       buffers.forEach((b) => gl.deleteBuffer(b));
+      probeBuffers.forEach((b) => gl.deleteBuffer(b));
       shaders.forEach((s) => gl.deleteShader(s));
       gl.deleteProgram(program);
     },

@@ -8,6 +8,8 @@ import {
   type Layers,
   type View,
 } from "./renderer";
+import type { Batch } from "./scene";
+const noProbe: Batch[] = [];
 export function SpatialPlot({
   result,
   dark,
@@ -21,6 +23,7 @@ export function SpatialPlot({
   onError,
   restored,
   onCamera,
+  probe = noProbe,
 }: {
   result: SpatialResult;
   dark: boolean;
@@ -38,6 +41,8 @@ export function SpatialPlot({
   restored?: { reset: number; view: SpatialCamera } | null;
   // The manual camera whenever it is drawn, for a study link.
   onCamera?: (camera: SpatialCamera) => void;
+  // The parameter probe's batches for this result (see probe.ts).
+  probe?: Batch[];
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
@@ -52,8 +57,17 @@ export function SpatialPlot({
     override,
     onViewport,
     onCamera,
+    probe,
   });
-  state.current = { dark, layers, result, override, onViewport, onCamera };
+  state.current = {
+    dark,
+    layers,
+    result,
+    override,
+    onViewport,
+    onCamera,
+    probe,
+  };
   const [error, setError] = useState("");
   const current = (): View =>
     state.current.override ??
@@ -111,8 +125,13 @@ export function SpatialPlot({
   }, []);
   useEffect(() => {
     renderer.current?.upload(result);
+    renderer.current?.setProbe(state.current.probe);
     draw();
   }, [result]);
+  useEffect(() => {
+    renderer.current?.setProbe(probe);
+    draw();
+  }, [probe]);
   useEffect(draw, [dark, layers, override]);
   useEffect(() => {
     manual.current =
