@@ -96,6 +96,15 @@ test("every preset round-trips through a link unchanged", async () => {
   }
 });
 
+test("a link carries probe playback with its probe", async () => {
+  const study: SpatialStudy = {
+    ...spatial(),
+    animation: { mode: "probe", camera: "current", duration: 4, tracks: [] },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+});
+
 test("links are compact, url-safe, and readable by an independent decoder", async () => {
   let longest = 0;
   for (const [i] of spatialPresets.entries()) {
@@ -241,6 +250,20 @@ test("3D and 4D fields are refused by name", async () => {
     ["probe.glow", (s) => (s.probe.glow = true)],
     ["layers.glow", (s) => (s.layers.glow = true)],
     ["animation.mode", (s) => (s.animation.mode = "spin")],
+    [
+      "animation.mode",
+      (s) => {
+        s.animation.mode = "probe";
+        s.probe.enabled = false;
+      },
+    ],
+    [
+      "animation.mode",
+      (s) => {
+        s.animation.mode = "probe";
+        s.config.format = "surface";
+      },
+    ],
     [
       "animation.tracks[0].target",
       (s) =>
