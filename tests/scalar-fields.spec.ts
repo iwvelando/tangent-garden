@@ -1338,3 +1338,48 @@ test("every shell bypass geometric field shares scalar parsing and supersedes st
     JSON.parse((await stage.getAttribute("data-config"))!).bypass.height,
   ).toBe(1.2);
 });
+
+test("every spherical weave geometric field shares scalar parsing and supersedes stale edits", async ({
+  page,
+}) => {
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  await settle();
+  await choosePreset(page, { label: "Tori between two circles" });
+  await settle();
+  await page.getByText("Latitude motion endpoints", { exact: true }).click();
+  const config = async () =>
+    JSON.parse((await stage.getAttribute("data-config"))!);
+  const fields: [string, string, (c: any) => number, number][] = [
+    [
+      "Central latitude α",
+      "pi/4 + 1/e/10",
+      (c) => c.weave.alpha,
+      Math.PI / 4 + 1 / Math.E / 10,
+    ],
+    ["Latitude spread", "1/phi", (c) => c.weave.spread, 1 / phi],
+    ["Latitude start", "pi/6", (c) => c.weave.alphaFrom, Math.PI / 6],
+    ["Latitude end", "pi/3", (c) => c.weave.alphaTo, Math.PI / 3],
+    ["Projection window radius", "e", (c) => c.clip, Math.E],
+    ["xw angle", "pi/5", (c) => c.angles[3], Math.PI / 5],
+  ];
+  for (const [name, expression, read, value] of fields) {
+    const input = page.getByRole("textbox", { name, exact: true });
+    await input.fill(expression);
+    await settle();
+    expect(read(await config())).toBe(value);
+    for (const bad of ["t", "x", "a", "1/0"]) {
+      await input.fill(bad);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await input.fill(expression);
+    await settle();
+  }
+  await page
+    .getByRole("textbox", { name: "Central latitude α", exact: true })
+    .fill("pi/3");
+  await choosePreset(page, { label: "Tori between two circles" });
+  await settle();
+  expect((await config()).weave.alpha).toBe(Math.PI / 4);
+});

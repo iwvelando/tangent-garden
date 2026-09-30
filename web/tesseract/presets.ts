@@ -126,4 +126,31 @@ export const tesseractPresets: {
     config: objects.bypass.defaults(base),
     motion: "route",
   },
+  {
+    name: "Rings from a sphere",
+    detail:
+      "These curves lie on a sphere in four dimensions. Stereographic projection turns them into a weave of circles and open arcs. Open ends mark the drawing's finite window, not broken connections.",
+    config: objects.weave.defaults(base),
+    motion: "double",
+  },
+  {
+    name: "Tori between two circles",
+    detail:
+      "Nested tori on the 3-sphere, each drawn by two families of circles. Sweep the latitudes and an end torus collapses to a single circle.",
+    config: {
+      ...objects.weave.defaults(base),
+      count: 3,
+      curves: 12,
+      samples: 96,
+      clip: 5,
+      weave: {
+        family: "tori",
+        alpha: Math.PI / 4,
+        spread: 1,
+        alphaFrom: 0.5,
+        alphaTo: Math.PI / 2 - 0.5,
+      },
+    },
+    motion: "latitude",
+  },
 ];

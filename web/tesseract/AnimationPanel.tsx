@@ -14,7 +14,7 @@ import {
   type ExportFormat,
   type Formats,
 } from "../export-formats";
-import { objects } from "./objects";
+import { objects, rotationMotions } from "./objects";
 import { passageExtent, type Config, type Motion } from "./types";
 
 export type MotionExport = {
@@ -31,16 +31,7 @@ function motions(
   if (objects[config.object].motionChoices)
     return objects[config.object].motionChoices!;
   const choices: { value: Motion; label: string; help: string }[] = [
-    {
-      value: "double",
-      label: "Double rotation · xw + yz",
-      help: "Turn through one full revolution in two independent planes. The three-dimensional camera stays fixed while the shape rotates in four dimensions.",
-    },
-    {
-      value: "xw",
-      label: "One plane · xw",
-      help: "Turn through one full revolution in the xw plane. The three-dimensional camera stays fixed.",
-    },
+    ...rotationMotions,
     ...(config.mode === "section"
       ? [
           {

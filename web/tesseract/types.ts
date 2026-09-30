@@ -1,6 +1,14 @@
 import { objects } from "./objects";
 export type Vec3 = [number, number, number];
-export type Object4 = "tesseract" | "ball" | "tube" | "lift" | "bypass";
+export type Object4 =
+  "tesseract" | "ball" | "tube" | "lift" | "bypass" | "weave";
+export type Weave = {
+  family: "tori" | "fibers";
+  alpha: number;
+  spread: number;
+  alphaFrom: number;
+  alphaTo: number;
+};
 export type Bypass = {
   inner: number;
   outer: number;
@@ -39,6 +47,7 @@ export type Config = {
     | "paired";
   lift?: Lift;
   bypass?: Bypass;
+  weave?: Weave;
   angles: [number, number, number, number, number, number];
   distance: number;
   slice: number;
@@ -69,7 +78,12 @@ export type Result = {
       | "route-traveled"
       | "collision"
       | "shell"
-      | "axes";
+      | "axes"
+      | "fixed-u"
+      | "fixed-v"
+      | "fiber"
+      | "collapsed"
+      | "window";
     dashed?: boolean;
     parameters?: number[];
     fourPoints?: [number, number, number, number][];
@@ -82,7 +96,7 @@ export type Result = {
   points: Vec3[];
   sections: {
     id: string;
-    kind?: "empty" | "point" | "core-circle" | "solid";
+    kind?: "empty" | "point" | "core-circle" | "solid" | "torus" | "circle";
     radius?: number;
     level: number;
     vertices?: number;
@@ -108,6 +122,17 @@ export type Result = {
     fourPoint: [number, number, number, number];
     family: number;
   }[];
+  weave?: {
+    family: Weave["family"];
+    sources: number;
+    completeCircles: number;
+    retainedArcs: number;
+    contacts: number;
+    absentSources: number;
+    collapsed: number;
+    window: number;
+    projection: string;
+  };
   lift?: {
     thickness: number;
     missingRadius: number;
@@ -141,7 +166,14 @@ export type Layers = {
   comparison?: boolean;
 };
 export type Motion =
-  "double" | "xw" | "slice" | "drift" | "support" | "route" | "return";
+  | "double"
+  | "xw"
+  | "slice"
+  | "drift"
+  | "support"
+  | "route"
+  | "return"
+  | "latitude";
 // Playback and export use this exact sampler. The base definition is immutable.
 export function sample(
   config: Config,
@@ -150,7 +182,9 @@ export function sample(
 ): Config {
   const q = structuredClone(config),
     p = Math.max(0, Math.min(1, progress));
-  if (q.bypass && (motion === "route" || motion === "return")) {
+  if (q.weave && motion === "latitude") {
+    q.weave.alpha = q.weave.alphaFrom * (1 - p) + q.weave.alphaTo * p;
+  } else if (q.bypass && (motion === "route" || motion === "return")) {
     q.bypass.position = motion === "route" ? p : 1 - p;
   } else if (q.lift && objects[config.object].linkedViews) {
     if (motion === "drift")

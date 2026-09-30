@@ -135,6 +135,8 @@ for (const width of [1440, 390]) {
       "A ring in passing",
       "The missing middle",
       "Beside the wall",
+      "Rings from a sphere",
+      "Tori between two circles",
     ])
       setups.push(async () => {
         await page.goto("/?study=4d");
@@ -147,6 +149,13 @@ for (const width of [1440, 390]) {
         .getByRole("combobox", { name: "View operation", exact: true })
         .selectOption("lifted");
       await page.getByText("Lift motion endpoints", { exact: true }).click();
+    });
+    setups.push(async () => {
+      await page.goto("/?study=4d");
+      await choosePreset(page, { label: "Tori between two circles" });
+      await page
+        .getByText("Latitude motion endpoints", { exact: true })
+        .click();
     });
     let checked = 0;
     for (const setup of setups) {

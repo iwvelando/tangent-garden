@@ -2093,4 +2093,100 @@ console.log("Curved sections WASM contract passed");
   );
 }
 
+// Spherical weave: Clifford tori and Hopf fibers through the real bridge.
+{
+  const request = {
+    object: "weave",
+    mode: "stereo",
+    angles: [0, 0, 0, 0, 0, 0],
+    count: 3,
+    curves: 4,
+    samples: 64,
+    clip: 4,
+    weave: {
+      family: "fibers",
+      alpha: Math.PI / 4,
+      spread: Math.PI / 2,
+      alphaFrom: Math.PI / 4,
+      alphaTo: Math.PI / 4,
+    },
+  };
+  const compute = (change = {}, weave = {}) =>
+    JSON.parse(
+      tangentGardenTesseract(
+        JSON.stringify({
+          ...request,
+          ...change,
+          weave: { ...request.weave, ...weave },
+        }),
+      ),
+    );
+  const result = compute();
+  assert.equal(result.object, "weave");
+  assert.equal(result.radius, 4);
+  assert.deepEqual(
+    result.sections.map((s) => [s.id, s.kind, s.dimension]),
+    [
+      ["weave/latitude/0", "circle", 1],
+      ["weave/latitude/1", "torus", 2],
+      ["weave/latitude/2", "circle", 1],
+    ],
+  );
+  assert.equal(result.weave.family, "fibers");
+  assert.equal(result.weave.collapsed, 2);
+  assert.equal(result.weave.sources, 6);
+  assert.ok(Math.abs(result.weave.window - 15 / 17) < 1e-15);
+  const hopf = ([x, y, z, w]) => [
+    2 * (x * z + y * w),
+    2 * (y * z - x * w),
+    x * x + y * y - z * z - w * w,
+  ];
+  for (const path of result.paths.filter((p) => p.role === "fiber")) {
+    assert.equal(path.sectionId, "weave/latitude/1");
+    const base = hopf(path.fourPoints[0]);
+    for (const [i, q] of path.fourPoints.entries()) {
+      assert.ok(Math.abs(Math.hypot(...q) - 1) < 1e-14);
+      hopf(q).forEach((h, c) => assert.ok(Math.abs(h - base[c]) < 1e-14));
+      const [x, y, z] = path.points[i];
+      assert.ok(Math.abs(x * (1 - q[3]) - q[0]) < 1e-14);
+      assert.ok(Math.abs(y * (1 - q[3]) - q[1]) < 1e-14);
+      assert.ok(Math.abs(z * (1 - q[3]) - q[2]) < 1e-14);
+    }
+  }
+  // The zw circle crosses the pole: one open segment with ends on the window.
+  const pole = result.paths.find(
+    (p) => p.sectionId === "weave/latitude/2" && !p.guide,
+  );
+  assert.equal(pole.role, "collapsed");
+  for (const end of [pole.points[0], pole.points.at(-1)])
+    assert.ok(Math.abs(Math.hypot(...end) - 4) < 1e-12);
+  assert.equal(result.clipped, 1);
+  assert.equal(result.paths.filter((p) => p.role === "window").length, 3);
+  assert.equal(
+    compute({}, { family: "tori" }).paths.filter((p) => p.role === "fixed-u")
+      .length,
+    4,
+  );
+  assert.match(compute({}, { alpha: 1 }).error, /Central latitude α/);
+  assert.match(compute({}, { alphaTo: -1 }).error, /Latitude end/);
+  assert.match(compute({ clip: 13 }).error, /window radius/);
+  const largest = {
+    ...request,
+    count: 9,
+    curves: 13,
+    samples: 256,
+    clip: 12,
+    weave: { ...request.weave, family: "tori", spread: 1.2 },
+  };
+  const start = performance.now();
+  const json = tangentGardenTesseract(JSON.stringify(largest));
+  const max = JSON.parse(json);
+  // Every one of the 234 source circles is complete: the true maximum.
+  assert.equal(max.weave.completeCircles, 234);
+  assert.equal(max.emittedPoints, 237 * 257);
+  console.log(
+    `Spherical weave WASM: ${max.paths.length} paths, ${max.emittedPoints} points, ${max.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${Buffer.byteLength(json)} JSON bytes; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
+  );
+}
+
 process.exit(0);
