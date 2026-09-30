@@ -1,33 +1,37 @@
-import type { Config, Object4, Result, Motion } from "./types";
+import type { Config, Object4, Result, Motion, Lift } from "./types";
 export const modes = {
   perspective: "Perspective shadow",
   orthographic: "Orthogonal shadow",
   stereo: "Stereographic loom",
   section: "Parallel cross-sections",
+  reference: "Reference slice",
+  lifted: "Lifted construction",
 };
-const explanations: Record<Config["mode"], readonly [string, string, string]> =
-  {
-    perspective: [
-      "A shadow from four dimensions",
-      "The vertices of [−1, 1]⁴ are joined when they differ in one coordinate. Look from the fourth axis toward w = 0: nearer cells grow, farther cells shrink. The nested cubes are a projection of eight connected cubic cells.",
-      "P(x, y, z, w) = d(x, y, z) / (d − w)",
-    ],
-    orthographic: [
-      "Four directions, one shadow",
-      "Rotate in four dimensions, then drop w. Edge lengths change in the shadow, although every edge in four dimensions remains exactly 2 units long. Dragging changes only your 3D viewpoint; the six angle fields rotate the tesseract itself.",
-      "P(x, y, z, w) = (x, y, z)",
-    ],
-    stereo: [
-      "A sphere woven from a cube",
-      "First carry the edges and face grids radially onto the unit 3-sphere in four dimensions. Stereographic projection opens that sphere into space: straight face lines become circular arcs or lines. Every thread comes from a line on a square face.",
-      "p = v / |v|,   P(p) = (pₓ, pᵧ, p_z) / (1 − p_w)",
-    ],
-    section: [
-      "A world passing through ours",
-      "Intersect the rotated tesseract with w = h. Each cubic cell contributes a polygonal face. A diagonal passage grows from a point through tetrahedra to an octahedron, then shrinks again. Multiple slices share the same xyz coordinates; they are superimposed, not spaced into a new solid.",
-      "R[−1, 1]⁴ ∩ {w = h}",
-    ],
-  };
+const explanations: Record<
+  "perspective" | "orthographic" | "stereo" | "section",
+  readonly [string, string, string]
+> = {
+  perspective: [
+    "A shadow from four dimensions",
+    "The vertices of [−1, 1]⁴ are joined when they differ in one coordinate. Look from the fourth axis toward w = 0: nearer cells grow, farther cells shrink. The nested cubes are a projection of eight connected cubic cells.",
+    "P(x, y, z, w) = d(x, y, z) / (d − w)",
+  ],
+  orthographic: [
+    "Four directions, one shadow",
+    "Rotate in four dimensions, then drop w. Edge lengths change in the shadow, although every edge in four dimensions remains exactly 2 units long. Dragging changes only your 3D viewpoint; the six angle fields rotate the tesseract itself.",
+    "P(x, y, z, w) = (x, y, z)",
+  ],
+  stereo: [
+    "A sphere woven from a cube",
+    "First carry the edges and face grids radially onto the unit 3-sphere in four dimensions. Stereographic projection opens that sphere into space: straight face lines become circular arcs or lines. Every thread comes from a line on a square face.",
+    "p = v / |v|,   P(p) = (pₓ, pᵧ, p_z) / (1 − p_w)",
+  ],
+  section: [
+    "A world passing through ours",
+    "Intersect the rotated tesseract with w = h. Each cubic cell contributes a polygonal face. A diagonal passage grows from a point through tetrahedra to an octahedron, then shrinks again. Multiple slices share the same xyz coordinates; they are superimposed, not spaced into a new solid.",
+    "R[−1, 1]⁴ ∩ {w = h}",
+  ],
+};
 
 type Section = Result["sections"][number];
 type Explanation = readonly [string, string, string];
@@ -36,6 +40,25 @@ export type ObjectDescriptor = {
   noun: string;
   modes: readonly Config["mode"][];
   rotations: boolean;
+  controls: "polyhedral" | "curved" | "lift";
+  linkedViews?: boolean;
+  motionChoices?: { value: Motion; label: string; help: string }[];
+  legendItems?: { label: string; family: number }[];
+  liftFields?: {
+    key: keyof Lift;
+    index?: number;
+    label: string;
+    help: string;
+    group?: string;
+    presentation?: boolean;
+    endpoint?: boolean;
+  }[];
+  layerOptions?: (
+    c: Config,
+  ) => { key: "edges" | "missingGuide" | "connectors"; label: string }[];
+  readouts?: (r: Result) => { label: string; value: string }[];
+  sampleLabel?: string;
+  motionEndpointsLabel?: string;
   viewLabel: string;
   selectorNote: string;
   constructionNumber: string;
@@ -47,7 +70,7 @@ export type ObjectDescriptor = {
   passageHelp: string;
   sliceHelp: string;
   spreadHelp: string;
-  legend: "directions" | "sections";
+  legend: "directions" | "sections" | "threads";
   sectionDetail: (section: Section) => string;
   diagnostics: (result: Result) => string;
   title: (config: Config) => string;
@@ -103,6 +126,7 @@ function curvedDefaults(object: Object4, support: (c: Config) => number) {
 const ballSupport = (c: Config) => c.radius;
 const tubeSupport = (c: Config) => c.tube;
 const curvedCommon = {
+  controls: "curved" as const,
   modes: ["section"] as const,
   rotations: false,
   viewLabel: "View operation",
@@ -129,6 +153,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     noun: "tesseract",
     modes: ["perspective", "orthographic", "stereo", "section"],
     rotations: true,
+    controls: "polyhedral",
     viewLabel: "View of the tesseract",
     selectorNote: "16 vertices · 32 edges · 24 squares · 8 cubes",
     constructionNumber: "03",
@@ -141,7 +166,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       "Intersect w = h after rotation. From −3 to 3; beyond the rotated cube there is no section.",
     spreadHelp:
       "Total distance between first and last slice, from 0 to 4. A single slice ignores spread.",
-    explanation: (c) => explanations[c.mode],
+    explanation: (c) => explanations[c.mode as keyof typeof explanations],
     colorNote: (c) =>
       c.mode === "section"
         ? "Colours identify the original cell axis. Faces are translucent; all contours remain visible."
@@ -200,6 +225,156 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       "A ring with depth",
       "This circular 4D tube is the solid (√(x² + y²) − R)² + z² + w² ≤ r², with 0 < r < R. Its axis-aligned section is a solid torus. Representative fixed-u and fixed-v circles illustrate its boundary. At |h| = r the section becomes its core circle, then disappears. Coincident outlines at opposite offsets retain different slice identities; the drawing omits interior points and unsampled levels.",
       "ρ(h) = √(r² − h²),   p(u,v) = ((R + ρ cos v) cos u, (R + ρ cos v) sin u, ρ sin v)",
+    ],
+  },
+  lift: {
+    name: "Localized thread lift",
+    noun: "lifted threads",
+    controls: "lift",
+    modes: ["reference", "lifted"],
+    rotations: false,
+    linkedViews: true,
+    sampleLabel: "Thread samples",
+    motionEndpointsLabel: "Lift motion endpoints",
+    readouts: (r) =>
+      r.lift
+        ? [
+            {
+              label: "Missing radius",
+              value: r.lift.missingRadius.toPrecision(5),
+            },
+            { label: "Slab half-thickness ε", value: String(r.lift.thickness) },
+            {
+              label: "Present intervals",
+              value: String(r.lift.visibleIntervals),
+            },
+            { label: "Absent sources", value: String(r.lift.absentSources) },
+          ]
+        : [],
+    viewLabel: "View operation",
+    selectorNote:
+      "Six connected curves · two linked representations · fixed slab half-thickness ε = 0.02",
+    constructionNumber: "02",
+    radiusFields: [],
+    support: (c) => c.lift!.support,
+    familyPassage: false,
+    passageHelp: "",
+    sliceHelp: "",
+    spreadHelp: "",
+    legend: "threads",
+    sectionDetail: () => "",
+    legendItems: [
+      { label: "Straight threads", family: 0 },
+      { label: "Circular strand", family: 1 },
+      { label: "Missing-region guide", family: 2 },
+      { label: "Displacement connectors", family: 3 },
+    ],
+    liftFields: [
+      ...["x", "y", "z"].map((axis, index) => ({
+        key: "center" as const,
+        index,
+        label: `Lift center ${axis}`,
+        group: "Lift center",
+        help: "From −20 to 20. Moving the center changes which source intervals meet the reference slice.",
+      })),
+      {
+        key: "support",
+        label: "Lift support radius L",
+        help: "From 0.05 to 20. The bump vanishes outside L; the derived missing radius is smaller.",
+      },
+      {
+        key: "height",
+        label: "Lift height A",
+        help: "From 0 to 10. Fixed slab half-thickness ε = 0.02: nothing is missing when A ≤ ε. Lifting changes lengths.",
+      },
+      {
+        key: "angle",
+        label: "Presentation xw angle",
+        help: "Radians within ±1000000. A positive turn carries x toward w; x′ = x cos θ − w sin θ. This explanatory rotation never changes reference-slice membership.",
+        presentation: true,
+      },
+      ...(["from", "to"] as const).flatMap((key) =>
+        ["x", "y", "z"].map((axis, index) => ({
+          key,
+          index,
+          label: `Drift ${key === "from" ? "start" : "end"} ${axis}`,
+          group: `Drift ${key === "from" ? "start" : "end"}`,
+          help: "From −20 to 20. Playback interpolates the center between the entered endpoints with A and ε held fixed.",
+          endpoint: true,
+        })),
+      ),
+      {
+        key: "radiusFrom",
+        label: "Support start",
+        help: "From 0.05 to 20. The first value of L for Change lift support.",
+        endpoint: true,
+      },
+      {
+        key: "radiusTo",
+        label: "Support end",
+        help: "From 0.05 to 20. The final value of L for Change lift support; descending ranges reverse the same construction.",
+        endpoint: true,
+      },
+    ],
+    layerOptions: (c) => [
+      {
+        key: "edges",
+        label:
+          c.mode === "reference"
+            ? "Present thread intervals"
+            : "Lifted centerlines",
+      },
+      { key: "missingGuide", label: "Missing-region guide" },
+      ...(c.mode === "lifted"
+        ? [{ key: "connectors" as const, label: "Displacement connectors" }]
+        : []),
+    ],
+    diagnostics: () =>
+      "6 connected source curves; reference-slice gaps do not cut the lifted curves.",
+    colorNote: () =>
+      "The guide marks the derived missing region, not the lift's whole support. Connectors explain displacement along w; they are not material threads. Apparent screen crossings add no connections.",
+    title: (c) => `Tangent Garden — ${modes[c.mode]}`,
+    explanation: (c) =>
+      c.mode === "reference"
+        ? [
+            "The missing middle",
+            "The middle of each thread has left the reference slice. The drawing keeps the parts of its slab present at w = 0, with ε = 0.02. The lift's support radius L is larger than the missing radius. Changing the boundary changes what appears without cutting the connected centerline. This declared embedding is a connectivity model; it does not preserve lengths or model physical tension.",
+            "H(p) = A(1 − |p − c|²/L²)² inside L; present when H(p) ≤ ε",
+          ]
+        : [
+            "Still attached to both ends",
+            "This explanatory projection shows the entire lifted centerline (p, H(p)). A declared xw rotation exposes the displacement before dropping w. It is additional mathematical information unavailable in the reference slice. The slab can meet w = 0 even when its centerline is up to ε away; the projection is not the intersection. Switching views keeps the same animation position.",
+            "x′ = x cos θ − H(p) sin θ,   y′ = y,   z′ = z",
+          ],
+    limitations:
+      "fixed analytic threads and circle; reference slab w = 0 only; explanatory xw projection; no physical dynamics or length preservation",
+    defaults: () => ({
+      ...structuredClone(defaultConfig),
+      object: "lift",
+      mode: "reference",
+      lift: {
+        center: [0, 0, 0],
+        support: 2,
+        height: 0.32,
+        angle: Math.PI / 4,
+        from: [-1.5, 0, 0],
+        to: [1.5, 0, 0],
+        radiusFrom: 0.05,
+        radiusTo: 2,
+      },
+    }),
+    motion: "drift",
+    motionChoices: [
+      {
+        value: "drift",
+        label: "Move lift center",
+        help: "Interpolate the center from Drift start to Drift end. Height A and slab half-thickness ε stay fixed; Stop restores your entered center.",
+      },
+      {
+        value: "support",
+        label: "Change lift support",
+        help: "Interpolate L from Support start to Support end. Center, height A and slab half-thickness ε stay fixed. The apparent missing radius follows from L; Stop restores your entered support.",
+      },
     ],
   },
 };

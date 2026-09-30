@@ -98,4 +98,25 @@ export const tesseractPresets: {
     },
     motion: "slice",
   },
+  {
+    name: "The missing middle",
+    detail:
+      "The middle of each thread leaves the reference slice. Its lifted centerline stays attached to both ends.",
+    config: {
+      ...base,
+      object: "lift",
+      mode: "reference",
+      lift: {
+        center: [0, 0, 0],
+        support: 2,
+        height: 0.32,
+        angle: Math.PI / 4,
+        from: [-1.5, 0, 0],
+        to: [1.5, 0, 0],
+        radiusFrom: 0.05,
+        radiusTo: 2,
+      },
+    },
+    motion: "drift",
+  },
 ];

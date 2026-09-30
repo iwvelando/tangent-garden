@@ -133,11 +133,20 @@ for (const width of [1440, 390]) {
       "Section garden",
       "A sphere in passing",
       "A ring in passing",
+      "The missing middle",
     ])
       setups.push(async () => {
         await page.goto("/?study=4d");
         await choosePreset(page, { label: preset });
       });
+    setups.push(async () => {
+      await page.goto("/?study=4d");
+      await choosePreset(page, { label: "The missing middle" });
+      await page
+        .getByRole("combobox", { name: "View operation", exact: true })
+        .selectOption("lifted");
+      await page.getByText("Lift motion endpoints", { exact: true }).click();
+    });
     let checked = 0;
     for (const setup of setups) {
       await setup();

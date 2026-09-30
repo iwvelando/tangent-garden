@@ -5,6 +5,7 @@ import {
   passageExtent as extent,
   type Config,
 } from "../web/tesseract/types";
+import { objects } from "../web/tesseract/objects";
 test("4D sampler preserves definitions and exact support-relative endpoints", () => {
   const base: Config = {
     object: "ball",
@@ -61,4 +62,29 @@ test("4D sampler preserves definitions and exact support-relative endpoints", ()
   assert.equal(sampler(cube, "double", 0.5).angles[2], Math.PI);
   assert.equal(sampler(cube, "double", 0.5).angles[3], Math.PI);
   assert.equal(sampler(cube, "xw", 0.5).angles[2], 0);
+});
+test("localized lift sampler shares immutable linked views and exact entered endpoints", () => {
+  const base = objects.lift.defaults(objects.tesseract.defaults({} as Config));
+  base.lift!.from = [3, -2, 1];
+  base.lift!.to = [-4, 5, -6];
+  base.lift!.radiusFrom = 4;
+  base.lift!.radiusTo = 0.05;
+  const original = structuredClone(base);
+  for (const mode of ["reference", "lifted"] as const)
+    for (const p of [0, 0.25, 0.5, 1]) {
+      const q = { ...base, mode };
+      const drift = sampler(q, "drift", p),
+        support = sampler(q, "support", p);
+      assert.deepEqual(drift.lift!.center, [
+        3 * (1 - p) - 4 * p,
+        -2 * (1 - p) + 5 * p,
+        1 * (1 - p) - 6 * p,
+      ]);
+      assert.equal(support.lift!.support, 4 * (1 - p) + 0.05 * p);
+      assert.equal(drift.lift!.height, 0.32);
+      assert.equal(support.lift!.height, 0.32);
+      assert.deepEqual(base, original);
+    }
+  assert.deepEqual(sampler(base, "drift", -1).lift!.center, base.lift!.from);
+  assert.deepEqual(sampler(base, "drift", 2).lift!.center, base.lift!.to);
 });

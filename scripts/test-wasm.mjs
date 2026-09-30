@@ -1884,4 +1884,90 @@ for (const object of ["ball", "tube"]) {
 }
 console.log("Curved sections WASM contract passed");
 
+// Localized lift: observe actual clipped and connected geometry through WASM.
+{
+  const request = {
+    object: "lift",
+    mode: "reference",
+    samples: 256,
+    lift: {
+      center: [0, 0, 0],
+      support: 2,
+      height: 0.32,
+      angle: Math.PI / 4,
+      from: [-5, 0, 0],
+      to: [5, 0, 0],
+      radiusFrom: 0.05,
+      radiusTo: 2.5,
+    },
+  };
+  const compute = (q) => JSON.parse(tangentGardenTesseract(JSON.stringify(q)));
+  const sliced = compute(request);
+  assert.equal(sliced.object, "lift");
+  assert.equal(sliced.lift.thickness, 0.02);
+  assert.ok(Math.abs(sliced.lift.missingRadius - Math.sqrt(3)) < 1e-12);
+  const paths = sliced.paths.filter(
+    (p) => p.source === "lift/thread/2" && !p.guide,
+  );
+  assert.equal(paths.length, 2);
+  assert.equal(paths[0].role, "reference");
+  assert.ok(Math.abs(paths[0].points.at(-1)[0] + Math.sqrt(3)) < 1e-12);
+  assert.ok(Math.abs(paths[1].points[0][0] - Math.sqrt(3)) < 1e-12);
+  const liftedRequest = { ...request, mode: "lifted" };
+  const start = performance.now();
+  const json = tangentGardenTesseract(JSON.stringify(liftedRequest));
+  const full = JSON.parse(json);
+  assert.equal(full.paths.filter((p) => !p.guide).length, 6);
+  for (const p of full.paths.filter((p) => !p.guide))
+    for (let i = 0; i < p.points.length; i++) {
+      const v = p.fourPoints[i],
+        s2 = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) / 4;
+      assert.ok(Math.abs(v[3] - (s2 < 1 ? 0.32 * (1 - s2) ** 2 : 0)) < 1e-12);
+      assert.ok(
+        Math.abs(p.points[i][0] - (v[0] - v[3]) / Math.sqrt(2)) < 1e-12,
+      );
+    }
+  assert.ok(full.emittedPoints < 2500);
+  assert.ok(full.evaluations < 2700);
+  assert.equal(
+    compute({ ...request, lift: { ...request.lift, height: 0.02 } }).lift
+      .missingRadius,
+    0,
+  );
+  assert.match(
+    compute({ ...request, lift: { ...request.lift, support: 0 } }).error,
+    /support radius/,
+  );
+  const seam = compute({
+    ...request,
+    lift: {
+      ...request.lift,
+      center: [-1.75, 0, 0.5],
+      support: 3.5 / Math.sqrt(0.75),
+    },
+  });
+  const contacts = seam.paths.filter(
+    (p) => p.source === "lift/circle" && !p.guide,
+  );
+  assert.equal(contacts.length, 1);
+  assert.deepEqual(contacts[0].parameters, [0, 0]);
+  assert.deepEqual(contacts[0].points, [
+    [1.75, 0, 0.5],
+    [1.75, 0, 0.5],
+  ]);
+  assert.equal(seam.lift.visibleIntervals, 6);
+  const wrapped = compute({
+    ...request,
+    lift: { ...request.lift, center: [-1.75, 0, 0.5], support: 1 },
+  });
+  assert.equal(
+    wrapped.paths.filter((p) => p.source === "lift/circle" && !p.guide).length,
+    2,
+  );
+  assert.equal(wrapped.lift.visibleIntervals, 9);
+  console.log(
+    `Localized lift WASM: ${full.paths.length} paths, ${full.emittedPoints} points, ${full.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${Buffer.byteLength(json)} JSON bytes; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
+  );
+}
+
 process.exit(0);
