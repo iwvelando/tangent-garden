@@ -1,7 +1,8 @@
 import type { SpatialConfig, SpatialResult } from "./spatial/types";
 import type { Bounds, Config, Frame } from "./types";
 
-// One worker per app, plus temporary ones during parameter-animation export.
+// One worker per app, plus temporary ones during parameter-animation export
+// and 3D parameter playback.
 // Callers own cancellation; stale responses settle their
 // promises but never replace a newer study or animation session.
 export class EngineClient {
@@ -99,6 +100,16 @@ export function exportEngineCount(
   touch = matchMedia("(pointer: coarse)").matches,
 ) {
   return 1 + Math.max(0, Math.min(touch ? 1 : 3, cores - 2));
+}
+
+// Engines used for live 3D parameter playback: the app's own plus one helper
+// that calculates the next frame while the current one is drawn, wherever an
+// export could add one.
+export function playbackEngineCount(
+  cores = navigator.hardwareConcurrency || 1,
+  touch = matchMedia("(pointer: coarse)").matches,
+) {
+  return Math.min(2, exportEngineCount(cores, touch));
 }
 
 export function boundText(value: number) {

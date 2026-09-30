@@ -347,6 +347,129 @@ for (const camera of ["hold", "current", "follow", "fit"])
     expect(await config(page)).toEqual(base);
   });
 
+// Numbers each engine worker and records its spatial requests and
+// termination, with the core count the browser reports.
+async function workers(page: Page, cores: number) {
+  await page.addInitScript((cores) => {
+    Object.defineProperty(navigator, "hardwareConcurrency", {
+      get: () => cores,
+    });
+    const log: { spatial: number; terminated: boolean; first?: number }[] = [];
+    (window as any).engines = log;
+    const Base = window.Worker;
+    window.Worker = class extends Base {
+      private entry = { spatial: 0, terminated: false };
+      constructor(...args: ConstructorParameters<typeof Worker>) {
+        super(...args);
+        log.push(this.entry);
+      }
+      terminate() {
+        this.entry.terminated = true;
+        super.terminate();
+      }
+      postMessage(message: any, ...rest: any[]) {
+        if (message?.action === "spatial" && !this.entry.spatial++)
+          (this.entry as any).first = message.spatial.implicit?.level;
+        (super.postMessage as any)(message, ...rest);
+      }
+    };
+  }, cores);
+}
+const engines = (page: Page) =>
+  page.evaluate(() =>
+    (
+      (window as any).engines as {
+        spatial: number;
+        terminated: boolean;
+        first?: number;
+      }[]
+    ).map((e) => ({ ...e })),
+  );
+async function levelTrack(page: Page, seconds: string) {
+  await openAnimation(page);
+  await page.getByLabel("Animate", { exact: true }).selectOption("parameters");
+  await page.getByLabel("Parameter 1", { exact: true }).selectOption("level");
+  await page.getByLabel("Track 1 from").fill("0.8");
+  await page.getByLabel("Track 1 to").fill("1.3");
+  await page.getByLabel("Duration (seconds)").fill(seconds);
+}
+const button = (page: Page, name: string) =>
+  page.getByRole("button", { name, exact: true });
+
+test("parameter playback shares frames with a second engine for its duration", async ({
+  page,
+}) => {
+  await workers(page, 8);
+  await ready(page);
+  await choosePreset(page, drops);
+  await settled(page);
+  const before = (await engines(page)).length;
+  await levelTrack(page, "4");
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-progress", "1", {
+    timeout: 20000,
+  });
+  expect((await config(page)).implicit.level).toBe(1.3);
+  let all = await engines(page);
+  // One helper, released once playback completes; both engines calculated.
+  expect(all).toHaveLength(before + 1);
+  const helper = all.at(-1)!,
+    app = all.filter((e) => e.spatial && e !== helper);
+  expect(helper.terminated).toBe(true);
+  expect(helper.spatial).toBeGreaterThan(1);
+  // The helper prepares the end while the app's engine prepares the start.
+  expect(helper.first).toBe(1.3);
+  expect(app.some((e) => e.spatial > 1 && !e.terminated)).toBe(true);
+
+  // Pause and Stop release the helper; Resume starts a fresh one.
+  await button(page, "Replay").click();
+  await expect(button(page, "Pause")).toBeVisible();
+  await expect.poll(async () => (await engines(page)).length).toBe(before + 2);
+  await button(page, "Pause").click();
+  all = await engines(page);
+  expect(all.at(-1)!.terminated).toBe(true);
+  // Scrubbing calculates on the app's engine alone.
+  const scrubbed = all.map((e) => e.spatial);
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  for (const p of ["0.3", "0.6", "0.45"]) await slider.fill(p);
+  await expect(stage(page)).toHaveAttribute("data-progress", "0.45");
+  all = await engines(page);
+  expect(all).toHaveLength(before + 2);
+  const grew = all.flatMap((e, i) => (e.spatial > scrubbed[i] ? [i] : []));
+  expect(grew).toHaveLength(1);
+  expect(all[grew[0]].terminated).toBe(false);
+  await button(page, "Resume").click();
+  await expect.poll(async () => (await engines(page)).length).toBe(before + 3);
+  await button(page, "Stop").click();
+  await expect(stage(page)).not.toHaveAttribute("data-progress");
+  all = await engines(page);
+  expect(all.at(-1)!.terminated).toBe(true);
+  expect(all.filter((e) => !e.terminated).length).toBe(
+    all.slice(0, before).filter((e) => !e.terminated).length,
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("two cores, and playback without calculation, keep a single engine", async ({
+  page,
+}) => {
+  await workers(page, 2);
+  await ready(page);
+  await choosePreset(page, drops);
+  await settled(page);
+  const before = (await engines(page)).length;
+  await levelTrack(page, "0.5");
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  expect((await config(page)).implicit.level).toBe(1.3);
+  await button(page, "Back to study").click();
+  // Rising through the box reuses the drawn mesh.
+  await page.getByLabel("Animate", { exact: true }).selectOption("reveal");
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  expect(await engines(page)).toHaveLength(before);
+});
+
 test("a level-set MP4 decodes with exact duration and a changing surface", async ({
   page,
 }) => {
