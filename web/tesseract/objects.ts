@@ -1,4 +1,12 @@
-import type { Config, Object4, Result, Motion, Lift, Bypass } from "./types";
+import type {
+  Config,
+  Object4,
+  Result,
+  Motion,
+  Lift,
+  Bypass,
+  Weave,
+} from "./types";
 export const modes = {
   perspective: "Perspective shadow",
   orthographic: "Orthogonal shadow",
@@ -37,21 +45,36 @@ const explanations: Record<
 };
 
 type Section = Result["sections"][number];
+// Rotation choices shared by every study that turns in four dimensions.
+export const rotationMotions: { value: Motion; label: string; help: string }[] =
+  [
+    {
+      value: "double",
+      label: "Double rotation · xw + yz",
+      help: "Turn through one full revolution in two independent planes. The three-dimensional camera stays fixed while the shape rotates in four dimensions.",
+    },
+    {
+      value: "xw",
+      label: "One plane · xw",
+      help: "Turn through one full revolution in the xw plane. The three-dimensional camera stays fixed.",
+    },
+  ];
 type Explanation = readonly [string, string, string];
 export type ObjectDescriptor = {
   name: string;
   noun: string;
   modes: readonly Config["mode"][];
   rotations: boolean;
-  controls: "polyhedral" | "curved" | "lift" | "route";
+  controls: "polyhedral" | "curved" | "lift" | "route" | "weave";
   linkedViews?: boolean;
   motionChoices?: { value: Motion; label: string; help: string }[];
   legendItems?:
     | { label: string; family: number }[]
     | ((c: Config) => { label: string; family: number }[]);
-  parameterKey?: "lift" | "bypass";
+  parameterKey?: "lift" | "bypass" | "weave";
   numericFields?: {
-    key: keyof Lift | keyof Omit<Bypass, "obstacle">;
+    key:
+      keyof Lift | keyof Omit<Bypass, "obstacle"> | keyof Omit<Weave, "family">;
     index?: number;
     label: string;
     help: string;
@@ -59,8 +82,17 @@ export type ObjectDescriptor = {
     endpoint?: boolean;
     visible?: (c: Config) => boolean;
   }[];
+  // Whole-number counts; studies without them use one sample count.
+  countFields?: (c: Config) => {
+    key: "count" | "curves" | "samples";
+    label: string;
+    min: number;
+    max: number;
+  }[];
+  countNote?: string;
+  choicesFirst?: boolean;
   choices?: {
-    key: "obstacle";
+    key: "obstacle" | "family";
     label: string;
     help: string;
     values: { value: string; label: string }[];
@@ -91,7 +123,9 @@ export type ObjectDescriptor = {
   passageHelp: string;
   sliceHelp: string;
   spreadHelp: string;
-  legend: "directions" | "sections" | "threads";
+  legend: "directions" | "sections" | "threads" | "latitudes";
+  // Number, level and suffix columns of an indexed section or latitude key.
+  sectionKey?: (s: Section, index: number) => readonly [string, string, string];
   sectionDetail: (section: Section) => string;
   diagnostics: (result: Result) => string;
   title: (config: Config) => string;
@@ -155,6 +189,12 @@ const curvedCommon = {
   constructionNumber: "02",
   legend: "sections" as const,
   sectionDetail: curvedSectionDetail,
+  sectionKey: (s: Section, i: number) =>
+    [
+      `${i + 1}: h = `,
+      s.level.toPrecision(3).replace("-", "−"),
+      s.level < 0 ? " (dashed)" : " (solid)",
+    ] as const,
   familyPassage: true,
   motion: "slice" as const,
   passageHelp:
@@ -194,7 +234,10 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         : "Colours identify the original edge direction, before 4D rotation. Thin threads subdivide square faces; they are construction lines, not additional tesseract edges.",
     legend: "directions",
     sectionDetail: tesseractSectionDetail,
-    diagnostics: diagnostics("tesseract", tesseractSectionDetail),
+    diagnostics: (r) =>
+      r.operation === "stereo"
+        ? `${r.clipped} source curves clipped at the projection window. Open ends are intentional.`
+        : diagnostics("tesseract", tesseractSectionDetail)(r),
     title: (c) =>
       `Tangent Garden — ${c.mode === "section" ? "tesseract cross-sections" : c.mode === "stereo" ? "stereographic tesseract" : "tesseract projection"}`,
     limitations: "transparent illustrative faces; no opaque visibility",
@@ -596,6 +639,157 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         value: "return",
         label: "Return along route",
         help: "Reverse the same route from the origin to the outside point. Height and shell parameters stay fixed; Stop restores the entered route position.",
+      },
+    ],
+  },
+  weave: {
+    name: "Spherical ring weave",
+    noun: "spherical ring weave",
+    controls: "weave",
+    parameterKey: "weave",
+    modes: ["stereo"],
+    rotations: true,
+    viewLabel: "View operation",
+    selectorNote:
+      "Circles on the unit 3-sphere · stereographic projection through a fixed window",
+    constructionNumber: "03",
+    radiusFields: [],
+    support: (c) => c.clip,
+    familyPassage: false,
+    passageHelp: "",
+    sliceHelp: "",
+    spreadHelp: "",
+    sectionDetail: () => "",
+    legend: "latitudes",
+    sectionKey: (s, i) =>
+      [
+        `${i + 1}: α = `,
+        s.level.toPrecision(3),
+        s.kind === "circle" ? " (one circle)" : " (torus)",
+      ] as const,
+    countFields: (c) => [
+      { key: "count", label: "Latitudes", min: 1, max: 9 },
+      {
+        key: "curves",
+        label:
+          c.weave!.family === "fibers"
+            ? "Fibers per latitude"
+            : "Curves per direction",
+        min: 1,
+        max: 16,
+      },
+      { key: "samples", label: "Arc samples", min: 8, max: 256 },
+    ],
+    countNote:
+      "Arc samples subdivide each full circle; exact window crossings are added. A study may emit at most 65,536 points: latitudes × circles per latitude × (samples + 2), plus the window guides. Reduce counts if the budget is exceeded.",
+    choicesFirst: true,
+    choices: [
+      {
+        key: "family",
+        label: "Weave family",
+        help: "Clifford tori: fixed-u and fixed-v circles on each latitude torus. Hopf fibers: great circles (e^{it}z₁, e^{it}z₂) spaced evenly in phase around each latitude.",
+        values: [
+          { value: "tori", label: "Clifford tori" },
+          { value: "fibers", label: "Hopf fibers" },
+        ],
+      },
+    ],
+    numericFields: [
+      {
+        key: "alpha",
+        label: "Central latitude α",
+        help: "Radians. Every latitude α ± spread/2 must lie within 0 and π/2 (pi/2). At 0 or π/2 a torus collapses to one circle; pi/4 gives the Clifford torus with equal radii.",
+      },
+      {
+        key: "spread",
+        label: "Latitude spread",
+        help: "Radians from 0 to π/2 between the first and last latitude, positive when there is more than one. A single latitude ignores spread.",
+      },
+      {
+        key: "alphaFrom",
+        label: "Latitude start",
+        help: "Radians. The first central α for Sweep latitudes; the whole family must stay within 0 and π/2 here too.",
+        endpoint: true,
+      },
+      {
+        key: "alphaTo",
+        label: "Latitude end",
+        help: "Radians. The final central α for Sweep latitudes; the whole family must stay within 0 and π/2 here too.",
+        endpoint: true,
+      },
+    ],
+    motionEndpointsLabel: "Latitude motion endpoints",
+    layerOptions: () => [
+      { key: "edges", label: "Circles and open arcs" },
+      { key: "guides", label: "Projection window" },
+    ],
+    diagnostics: (r) =>
+      r.weave
+        ? `${r.weave.sources} source circles on the unit 3-sphere. Open ends mark the projection window, not broken curves.`
+        : "",
+    readouts: (r) =>
+      r.weave
+        ? [
+            {
+              label: "Complete circles",
+              value: String(r.weave.completeCircles),
+            },
+            { label: "Open arcs", value: String(r.weave.retainedArcs) },
+            { label: "Window contacts", value: String(r.weave.contacts) },
+            {
+              label: "Outside the window",
+              value: String(r.weave.absentSources),
+            },
+            {
+              label: "Retained where w ≤",
+              value: r.weave.window.toPrecision(5),
+            },
+          ]
+        : [],
+    colorNote: (c) =>
+      `Each numbered latitude has its own colour and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
+    explanation: (c) =>
+      c.weave!.family === "tori"
+        ? [
+            "Tori on a sphere",
+            "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or becomes a line through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
+            "q(u, v, α) = (cos α cos u, cos α sin u, sin α cos v, sin α sin v),   P(q) = q_xyz / (1 − q_w)",
+          ]
+        : [
+            "Rings from a sphere",
+            "These curves lie on a sphere in four dimensions. Stereographic projection turns them into a weave of circles and open arcs. Open ends mark the drawing's finite window, not broken connections. Each Hopf fiber is a great circle that the Hopf map sends to a single point of S², and any two distinct fibers link once. Fibers over one latitude lie on its torus; at α = 0 or π/2 they coincide and are drawn once. The declared 4D rotation turns the whole sphere before projection. Fibers are circles, not sealed solids.",
+            "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   z₁ = x + iy, z₂ = z + iw",
+          ],
+    title: (c) =>
+      `Tangent Garden — ${c.weave!.family === "fibers" ? "Hopf fibers" : "Clifford tori"} on the 3-sphere`,
+    limitations:
+      "finite selected circles on the unit 3-sphere; analytic stereographic window clipping; transparent linework; screen crossings are not intersections; clipped arcs do not carry the complete circles' linking",
+    defaults: () => ({
+      ...structuredClone(defaultConfig),
+      object: "weave",
+      mode: "stereo",
+      count: 4,
+      curves: 10,
+      samples: 96,
+      clip: 3.2,
+      weave: {
+        family: "fibers",
+        alpha: 0.72,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+      },
+    }),
+    motion: "double",
+    motionChoices: [
+      ...rotationMotions.map((m) => ({
+        ...m,
+        help: `${m.help} The projection window stays fixed, so circles open into arcs as they pass the pole.`,
+      })),
+      {
+        value: "latitude",
+        label: "Sweep latitudes",
+        help: "Move the central α from Latitude start to Latitude end with spread and rotation fixed. A latitude reaching 0 or π/2 collapses to one circle. Stop restores your entered α.",
       },
     ],
   },

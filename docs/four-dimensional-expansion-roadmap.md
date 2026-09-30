@@ -63,7 +63,7 @@ An idealized 4D projection produces a three-dimensional image that still has to 
 - [x] **1. Curved sections:** introduce the minimal object/view distinction, then ship a 4-ball calibration and a circular 4D tube together with finite section families.
 - [x] **2. A thread missing from a slice:** one localized lift, analytic clipping, connected source identities, and drift/shrink animation.
 - [x] **3. A route beside the wall:** an embedded shell, a verified path along the fourth coordinate, and the small hidden-coordinate comparison.
-- [ ] **4. Spherical ring weaves:** optional Clifford-torus and Hopf-fiber studies using explicit curved-source projection and clipping.
+- [x] **4. Spherical ring weaves:** optional Clifford-torus and Hopf-fiber studies using explicit curved-source projection and clipping.
 - [ ] **5. General implicit 4D sections:** a separate, conditional numerical project only if the analytic studies expose a concrete need.
 
 Passes 1–3 are the recommended scope. Pass 4 is a strong art-oriented continuation but is not needed to explain the bubble or entry into an extra dimension. Pass 5 is not a prerequisite for any earlier pass.
@@ -399,3 +399,30 @@ Targeted mutation refinement (temporary edits, since restored; no scratch toolin
 Not changed: displacement connectors remain at nine fixed source parameters, so they appear and disappear as the lift drifts, as documented. The lift performance fixture remains a representative maximum-sampling case rather than the analytic worst case. Its asserted whole-study bounds still hold for the worst case.
 
 Verification: `gofmt` clean; **`make check` passed** (engine4 coverage **99.1%**), including race checks and real WASM/served-worker transport. **`make test-browser` passed 745/745 Chromium tests** and **`make test-webkit` passed 27/27**.
+
+### Pass 4 handoff — spherical ring weaves (2026-09-30)
+
+Branched from the Passes 1–2 remediation branch and rebased onto the latest main (**1135fc9**, PR #57) before committing. Implemented **Spherical ring weave** with **Clifford tori** and **Hopf fibers**, projected through the existing **Stereographic loom** operation. It adds the **Rings from a sphere** and **Tori between two circles** presets and **Sweep latitudes** motion alongside the tesseract's rotation motions. No later pass was regrouped into this one. See [the permanent weave guide](tesseracts.md#spherical-ring-weave), [mathematical definition](mathematics.md#spherical-ring-weaves) and [architecture](architecture.md#tesseract-notebook).
+
+Go (`engine4/weave.go`) owns the latitude family, collapsed endpoints, 4D rotation, analytic window classification, sampling, identities, framing and the count budget. Each source is a circle `c + a cos t + b sin t`, so `q_w` is one sinusoid and the window `q_w ≤ (C²−1)/(C²+1)` is decided before sampling. The outcomes are complete, open arc, window contact (a round-capped point) or outside. A closed-set tolerance of 10⁻¹² in `q_w` coalesces crossings near a tangency instead of leaving slivers. Latitudes within 10⁻¹² of 0 or π/2 snap to the endpoint, where the torus collapses to a single circle drawn once, merging duplicate endpoint fibers. Descriptors own the family choice, counts, latitude key, notes, readouts, layers and motions. Each latitude has its own colour and α in the key, the viewport and exports contain geometry only, and the live summary is constant for a definition. The tesseract's clipped-count sentence moved from a component mode check into its descriptor, with identical text. Existing presets and thumbnails are unchanged.
+
+Observed red tests: all 11 native weave tests failed against the initial stub, which only recognised the object. The browser, WASM and worker tests were written against the unsupported object and preset. Native tests use independent observations of returned geometry:
+
+- **Identities:** unit norm, Clifford-torus radii, and fixed angles.
+- **Hopf map:** unit norm and invariance along each fiber, including after independently undoing the declared rotation.
+- **Stereographic inverse:** the inverse of each projected point recovers its four-dimensional coordinates.
+- **Window:** open ends lie on the window sphere. The omitted arc of each clipped circle, reconstructed from three returned points, lies beyond the window.
+- **Pole between samples:** both neighbouring samples lie inside the window.
+- **Tangency sweeps:** 400 rotations for internal tangency and 1,200 for external tangency.
+- **Short arcs:** a retained arc shorter than one subdivision keeps an interior sample.
+- **Endpoints:** collapsed latitudes and snapping on both sides of each endpoint.
+- **Chord convergence:** second order against a circumcircle of returned points.
+- **Linking:** a convergent Gauss-integral linking number of ±1 for two complete projected fibers, and 0 for parallel torus circles.
+
+Mutation refinement (temporary edits, restored; scratch tooling discarded) detected **26 of 26** targeted Go faults after strengthening. The first run left three survivors: endpoint snapping (only negative rounding was tested), contacts omitted from the clipped count, and the midpoint for arcs shorter than one subdivision. Each gained a test and was detected on repeat. **Five UI faults** were also detected: the latitude sampler, single-latitude spread validation, latitude colouring, the moved tesseract diagnostic and family-choice order. The last initially survived and gained an order assertion. This is bounded refinement, not an exhaustive mutation score.
+
+The largest accepted study is nine uncollapsed torus latitudes at 13 curves per direction and 256 samples, with all 234 circles complete. It emits 237 paths and 60,909 points, with the same number of evaluations. Native runs took 1.0 ms and allocated about 5.0 MB. WASM took about 86 ms including JSON and produced a 9.6 MB result. Chromium took 214–311 ms control-to-drawing with about 10.5 MB retained heap. The guide records measurement scope; physical-phone performance and total browser memory are unmeasured.
+
+Verification: `gofmt` clean; **`make check` passed** (engine4 coverage **99.1%**), including race checks and the real WASM and served-worker contracts. **`make test-browser` passed 757/757 Chromium tests**. The first full run failed only the 4D gallery's hard-coded example count, which was updated to 12. **`make test-webkit` passed 29/29**, including actual MP4 timing and distinct endpoints for both weave presets. Independent FFmpeg/ffprobe and ImageDecoder checks verify MP4/WebP duration, dimensions and start/midpoint/end parity with live rendering for the latitude sweep. The MP4 comparison uses export quality 100, because this dense thin linework exceeded the ink-overlap bound at quality 60. SVG metadata and paths match the live drawing. Visual inspection covered both presets at 1440 px and 390 px in light and dark themes. `make thumbnails` passed; only the two new presets' assets and fingerprints were added. `git diff --check` passes.
+
+Limits: finite selected circles only, with one latitude parameterization and evenly spaced phases. There is no surface shading, no opaque visibility and no arbitrary circle editor. The window is fixed per study, and screen crossings are not intersections. No new runtime dependency or resource type was added, and nothing was published or deployed. Pass 5 remains conditional on a concrete need.

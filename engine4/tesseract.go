@@ -26,6 +26,7 @@ type Request struct {
 	Clip     float64           `json:"clip"`
 	Lift     *LiftParameters   `json:"lift,omitempty"`
 	Bypass   *BypassParameters `json:"bypass,omitempty"`
+	Weave    *WeaveParameters  `json:"weave,omitempty"`
 }
 type Path struct {
 	Source     string    `json:"source,omitempty"`
@@ -67,6 +68,7 @@ type Result struct {
 	Lift          *LiftDiagnostics   `json:"lift,omitempty"`
 	Bypass        *BypassDiagnostics `json:"bypass,omitempty"`
 	Markers       []Marker           `json:"markers,omitempty"`
+	Weave         *WeaveDiagnostics  `json:"weave,omitempty"`
 	Companion     *Result            `json:"companion,omitempty"`
 }
 
@@ -138,6 +140,9 @@ func Compute(q Request) (r Result, err error) {
 	if q.Object == "bypass" {
 		return bypass(q, r)
 	}
+	if q.Object == "weave" {
+		return weave(q, r)
+	}
 	if q.Object == "lift" {
 		return lifted(q, r)
 	}
@@ -145,7 +150,7 @@ func Compute(q Request) (r Result, err error) {
 		return curved(q, r)
 	}
 	if q.Object != "tesseract" {
-		return r, fmt.Errorf("choose tesseract, ball, tube, lift, or bypass")
+		return r, fmt.Errorf("choose tesseract, ball, tube, lift, bypass, or weave")
 	}
 	if q.Mode != "perspective" && q.Mode != "orthographic" && q.Mode != "stereo" && q.Mode != "section" {
 		return r, fmt.Errorf("choose a tesseract projection or section")

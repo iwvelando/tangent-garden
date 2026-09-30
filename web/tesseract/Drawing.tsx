@@ -27,6 +27,8 @@ export function Drawing({
     scale = (310 * view.zoom) / result.radius;
   const descriptor = objects[config.object];
   const curved = descriptor.legend === "sections";
+  // Latitude studies share the section key's colours, without its selection.
+  const latitudes = descriptor.legend === "latitudes";
   const flat = descriptor.flat?.(config);
   const selected = Math.min(
     layers.selectedSection ?? 0,
@@ -100,7 +102,7 @@ export function Drawing({
           object: result.object,
           operation: result.operation,
           emittedPoints: result.emittedPoints,
-          ...(result.lift || result.bypass
+          ...(result.lift || result.bypass || result.weave
             ? { framingRadius: result.radius }
             : {}),
           evaluations: result.evaluations,
@@ -112,6 +114,21 @@ export function Drawing({
                 representation: flat
                   ? "radial-position/w coordinate diagram"
                   : "orthographic XYZ shadow",
+              }
+            : {}),
+          ...(result.weave
+            ? {
+                weave: result.weave,
+                clipped: result.clipped,
+                arcs: result.paths
+                  .filter((p) => !p.guide)
+                  .map((p) => ({
+                    source: p.source,
+                    latitude: p.sectionId,
+                    role: p.role,
+                    from: p.parameters?.[0],
+                    to: p.parameters?.at(-1),
+                  })),
               }
             : {}),
           ...(result.lift
@@ -156,7 +173,7 @@ export function Drawing({
           d={d(p.points)}
           fill="none"
           stroke={
-            curved
+            curved || (latitudes && p.sectionId)
               ? sectionInk(sectionIndex(p.sectionId), dark)
               : colors[p.family]
           }

@@ -72,6 +72,44 @@ self.onmessage = async ({
       const curved = q.object === "ball" || q.object === "tube";
       const lift = q.object === "lift" ? q.lift : undefined;
       const route = q.object === "bypass" ? q.bypass : undefined;
+      const weave = q.object === "weave" ? q.weave : undefined;
+      if (q.object === "weave" && !weave)
+        throw new Error("Enter spherical weave parameters.");
+      if (weave) {
+        for (const [i, value] of q.angles.entries())
+          if (!Number.isFinite(value))
+            throw new Error(
+              `${["xy", "xz", "yz", "xw", "yw", "zw"][i]} angle must be a finite constant.`,
+            );
+        const fields: [string, number][] = [
+          ["Central latitude α", weave.alpha],
+          // A single latitude ignores spread.
+          ...(q.count === 1
+            ? []
+            : [["Latitude spread", weave.spread] as [string, number]]),
+          ["Latitude start", weave.alphaFrom],
+          ["Latitude end", weave.alphaTo],
+          ["Projection window radius", q.clip],
+        ];
+        for (const [label, value] of fields)
+          if (!Number.isFinite(value))
+            throw new Error(`${label} must be a finite constant.`);
+        for (const [label, value] of [
+          ["Latitudes", q.count],
+          [
+            weave.family === "fibers"
+              ? "Fibers per latitude"
+              : "Curves per direction",
+            q.curves,
+          ],
+          ["Arc samples", q.samples],
+        ] as [string, number][]) {
+          if (!Number.isFinite(value))
+            throw new Error(`${label} must be a finite whole number.`);
+          if (!Number.isInteger(value))
+            throw new Error(`${label} must be a whole number.`);
+        }
+      }
       if (q.object === "bypass" && !route)
         throw new Error("Enter shell bypass parameters.");
       if (route) {
@@ -136,8 +174,9 @@ self.onmessage = async ({
         if (!Number.isInteger(q.samples))
           throw new Error("Thread samples must be a whole number.");
       }
-      const counts =
-        lift || route
+      const counts = weave
+        ? [q.count, q.curves, q.samples]
+        : lift || route
           ? [q.samples]
           : curved
             ? [q.count, q.curves, q.samples]
@@ -146,23 +185,26 @@ self.onmessage = async ({
               : q.mode === "stereo"
                 ? [q.grid, q.samples]
                 : [q.grid];
-      const values = curved
-        ? [
-            q.radius,
-            ...(q.object === "tube" ? [q.tube] : []),
-            q.slice,
-            q.spread,
-          ]
-        : q.mode === "perspective"
-          ? [q.distance]
-          : q.mode === "section"
-            ? [q.slice, q.spread]
-            : q.mode === "stereo"
-              ? [q.clip]
-              : [];
+      const values = weave
+        ? [q.clip]
+        : curved
+          ? [
+              q.radius,
+              ...(q.object === "tube" ? [q.tube] : []),
+              q.slice,
+              q.spread,
+            ]
+          : q.mode === "perspective"
+            ? [q.distance]
+            : q.mode === "section"
+              ? [q.slice, q.spread]
+              : q.mode === "stereo"
+                ? [q.clip]
+                : [];
       if (
         !lift &&
         !route &&
+        !weave &&
         ![...q.angles, ...values, ...counts].every(Number.isFinite)
       )
         throw new Error(
@@ -175,6 +217,15 @@ self.onmessage = async ({
       // Inactive unfinished integer fields must not fail Go JSON decoding.
       const request = {
         object: q.object,
+        ...(weave
+          ? {
+              weave: { ...weave, spread: q.count === 1 ? 0 : weave.spread },
+              count: q.count,
+              curves: q.curves,
+              samples: q.samples,
+              clip: q.clip,
+            }
+          : {}),
         ...(route
           ? {
               bypass: {
@@ -200,7 +251,7 @@ self.onmessage = async ({
           : {}),
         mode: q.mode,
         angles: lift || route ? [0, 0, 0, 0, 0, 0] : q.angles,
-        ...(lift || route
+        ...(lift || route || weave
           ? {}
           : q.mode === "section"
             ? { count: q.count, slice: q.slice, spread: q.spread }

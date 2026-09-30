@@ -303,8 +303,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
       : "columns"
     : undefined;
   const curved = descriptor.legend === "sections";
-  const numericStudy =
-    descriptor.controls === "lift" || descriptor.controls === "route";
+  const indexed = curved || descriptor.legend === "latitudes";
+  const numericStudy = descriptor.parameterKey !== undefined;
   const parameterKey = descriptor.parameterKey ?? "lift";
   const parameters = config[parameterKey] as unknown as Record<
     string,
@@ -380,6 +380,29 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
       </div>
     ));
   };
+  const choices = descriptor.choices?.map((choice) => (
+    <Field key={choice.key} label={choice.label} help={choice.help}>
+      <select
+        value={(parameters as unknown as Record<string, string>)[choice.key]}
+        onChange={(e) => {
+          const value = e.target.value;
+          update((c) => ({
+            ...c,
+            [parameterKey]: {
+              ...c[parameterKey],
+              [choice.key]: value,
+            },
+          }));
+        }}
+      >
+        {choice.values.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </Field>
+  ));
   const info = descriptor.explanation(config);
   const selected =
     frame?.result.sections[
@@ -580,13 +603,40 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
               )}
               {numericStudy && (
                 <>
+                  {descriptor.choicesFirst && choices}
                   {renderNumericFields(false)}
-                  {count(
-                    descriptor.sampleLabel!,
-                    config.samples,
-                    8,
-                    256,
-                    (c, samples) => ({ ...c, samples }),
+                  {descriptor.countFields ? (
+                    <>
+                      {[0, 2].map((start) => (
+                        <div className="pair" key={start}>
+                          {descriptor.countFields!(config)
+                            .slice(start, start + 2)
+                            .map((f) =>
+                              cloneElement(
+                                count(
+                                  f.label,
+                                  config[f.key],
+                                  f.min,
+                                  f.max,
+                                  (c, n) => ({ ...c, [f.key]: n }),
+                                ),
+                                { key: f.key },
+                              ),
+                            )}
+                        </div>
+                      ))}
+                      {descriptor.countNote && (
+                        <p className="note">{descriptor.countNote}</p>
+                      )}
+                    </>
+                  ) : (
+                    count(
+                      descriptor.sampleLabel!,
+                      config.samples,
+                      8,
+                      256,
+                      (c, samples) => ({ ...c, samples }),
+                    )
                   )}
                   {descriptor.motionEndpointsLabel && (
                     <details className="subsection">
@@ -594,37 +644,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                       {renderNumericFields(true)}
                     </details>
                   )}
-                  {descriptor.choices?.map((choice) => (
-                    <Field
-                      key={choice.key}
-                      label={choice.label}
-                      help={choice.help}
-                    >
-                      <select
-                        value={
-                          (parameters as unknown as Record<string, string>)[
-                            choice.key
-                          ]
-                        }
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          update((c) => ({
-                            ...c,
-                            [parameterKey]: {
-                              ...c[parameterKey],
-                              [choice.key]: value,
-                            },
-                          }));
-                        }}
-                      >
-                        {choice.values.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                  ))}
+                  {!descriptor.choicesFirst && choices}
                 </>
               )}
               {config.mode === "perspective" &&
@@ -891,23 +911,25 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
               {busy && frame && <span className="computing">Computing…</span>}
             </div>
             <div
-              className={`plot-meta ${curved ? "section-meta" : descriptor.legend === "threads" ? "thread-meta" : ""}`}
+              className={`plot-meta ${indexed ? "section-meta" : descriptor.legend === "threads" ? "thread-meta" : ""}`}
             >
               <div className="tesseract-legend">
-                {curved &&
-                  frame?.result.sections.map((s, i) => (
-                    <span key={s.id} data-section={s.id}>
-                      <i style={{ background: sectionInk(i, dark) }} />
-                      <span className="section-number">{i + 1}: h = </span>
-                      <span className="section-level">
-                        {s.level.toPrecision(3).replace("-", "−")}
+                {indexed &&
+                  frame?.result.sections.map((s, i) => {
+                    const [number, level, suffix] = descriptor.sectionKey!(
+                      s,
+                      i,
+                    );
+                    return (
+                      <span key={s.id} data-section={s.id}>
+                        <i style={{ background: sectionInk(i, dark) }} />
+                        <span className="section-number">{number}</span>
+                        <span className="section-level">{level}</span>
+                        <span className="section-stroke">{suffix}</span>
                       </span>
-                      <span className="section-stroke">
-                        {s.level < 0 ? " (dashed)" : " (solid)"}
-                      </span>
-                    </span>
-                  ))}
-                {!curved &&
+                    );
+                  })}
+                {!indexed &&
                   (
                     (typeof descriptor.legendItems === "function"
                       ? descriptor.legendItems(config)
@@ -972,9 +994,6 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
             ) : null}
             <p className="tesseract-diagnostics" role="status">
               {frame && descriptor.diagnostics(frame.result)}
-              {frame && config.mode === "stereo"
-                ? `${frame.result.clipped} source curves clipped at the projection window. Open ends are intentional.`
-                : ""}
             </p>
           </div>
         </article>
