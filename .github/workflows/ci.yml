@@ -82,16 +82,19 @@ jobs:
 
   # The Chromium suite, split across runners. Each shard builds its own copy of
   # the production app, which takes seconds, rather than waiting on `check`.
+  # Shards get whole spec files, so they are uneven; six keep the slowest near
+  # the `check` and `webkit` jobs while setup stays a small share of each.
   browser:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
-    name: chromium (${{ matrix.shard }}/4)
+    name: chromium (${{ matrix.shard }}/${{ matrix.total }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
+        total: [6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -106,9 +109,36 @@ jobs:
       - run: make build
       - run: npx playwright install --with-deps chromium
       # ffprobe independently decodes exported MP4 files in the browser tests.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # Its ~50 packages come from the runner image's Ubuntu mirror, which has
+      # stalled at ~100 KB/s long enough to time a shard out. The downloaded
+      # packages are cached per runner image, so a warm shard installs them
+      # from the cache with the image's own package lists and no download.
+      # ImageOS and ImageVersion are the runner's environment, not the `env`
+      # context, so the key is written from the shell.
+      - id: image
+        run: echo "key=apt-ffmpeg-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.image.outputs.key }}
+      - name: Install ffmpeg
+        timeout-minutes: 5
+        run: |
+          archives="$HOME/apt-archives"
+          mkdir -p "$archives/partial"
+          # apt downloads as its sandbox user.
+          sudo chown _apt "$archives/partial"
+          install() {
+            sudo apt-get install -y --no-install-recommends \
+              -o Dir::Cache::Archives="$archives" \
+              -o APT::Keep-Downloaded-Packages=true ffmpeg
+          }
+          # Without cached packages, or if the image's lists are stale, refresh.
+          install || { sudo apt-get update && install; }
+          # apt leaves the archive root-owned; the cache is saved as the runner.
+          sudo chown -R "$(id -u):$(id -g)" "$archives"
       # Runs against the production build in dist/, under the production CSP.
-      - run: npx playwright test --shard=${{ matrix.shard }}/4
+      - run: npx playwright test --shard=${{ matrix.shard }}/${{ matrix.total }}
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -274,8 +304,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      # ffprobe independently decodes exported MP4 files in the browser tests.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # The @smoke tests export no video, so this job needs no ffmpeg.
       - run: npx playwright test --grep @smoke
         env:
           BASE_URL: https://tangent-garden.isaacvelando.com
