@@ -17,6 +17,7 @@ import {
 import { spatialPresets } from "./presets";
 import { defaultLayers, initialView, type Layers } from "./renderer";
 import { availableTargets, type AnimationMode, type Target } from "./animation";
+import { defaultProbe, type Probe } from "./probe";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
@@ -27,6 +28,8 @@ export type SpatialStudy = {
   layers: Layers;
   view: SpatialCamera;
   animation: SpatialAnimation;
+  // The parameter probe, off in links made before it.
+  probe: Probe;
 };
 export const defaultAnimation: SpatialAnimation = {
   mode: "reveal",
@@ -244,6 +247,11 @@ const view: SchemaOf<SpatialCamera> = {
   },
 };
 
+// The probe's place, as a fraction of the base's samples.
+const probe: SchemaOf<Probe> = {
+  fields: { enabled: "boolean", position: { range: [0, 1] } },
+};
+
 export function spatialStudy(value: unknown): SpatialStudy {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new LinkError(
@@ -252,7 +260,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
     );
   const raw = value as Record<string, unknown>;
   for (const key of Object.keys(raw))
-    if (!["config", "layers", "view", "animation"].includes(key))
+    if (!["config", "layers", "view", "animation", "probe"].includes(key))
       throw new LinkError(key, `${key} is not a known field.`);
   const study = {
     config: conform(raw.config, config, spatialPresets[0].config, "config"),
@@ -270,5 +278,9 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode traces light only in a mirror or interface study.",
     );
-  return { ...study, animation };
+  return {
+    ...study,
+    animation,
+    probe: conform(raw.probe, probe, defaultProbe, "probe"),
+  };
 }

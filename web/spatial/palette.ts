@@ -68,6 +68,25 @@ export const palette = {
     [0.58, 0.66, 0.58],
     [0.42, 0.54, 0.5],
   ],
+  // The parameter probe (inks 8–11), diagnostic rather than decorative: its
+  // point, osculating circle and highlighted construction in magenta, and
+  // the Frenet frame's T, N and B in red, green and blue.
+  probe: [
+    [0.72, 0.1, 0.46],
+    [1, 0.47, 0.77],
+  ],
+  probeTangent: [
+    [0.8, 0.16, 0.12],
+    [1, 0.45, 0.38],
+  ],
+  probeNormal: [
+    [0.1, 0.5, 0.18],
+    [0.45, 0.9, 0.5],
+  ],
+  probeBinormal: [
+    [0.13, 0.3, 0.82],
+    [0.52, 0.68, 1],
+  ],
 } satisfies Record<string, Pair>;
 
 // A color as a GLSL literal, and a pair chosen by the shader's `dark`
@@ -84,6 +103,10 @@ const mixed = (a: RGB, b: RGB, t: number): RGB =>
 // covered: shaded sheets (ink 0 and below) and receiver bins (7) are not.
 export function lineColor(ink: number, phase: number, dark: boolean): RGB {
   const k = dark ? 1 : 0;
+  if (ink > 10.5) return palette.probeBinormal[k];
+  if (ink > 9.5) return palette.probeNormal[k];
+  if (ink > 8.5) return palette.probeTangent[k];
+  if (ink > 7.5) return palette.probe[k];
   if (ink > 5.5) return palette.slate[k];
   if (ink > 4.5) return palette.rust[k];
   if (ink > 3.5) return palette.recede[k];

@@ -293,6 +293,29 @@ export type SpatialResult = {
   // carries its angle. Its surface fills mesh; minus, plus and rulings are
   // empty, and meridians are joined across canal.breaks.
   canal?: CanalResult;
+  // Present only when diagnostics were requested, for a curve.
+  diagnostics?: DiagnosticsResult;
+};
+// Mirrors engine3.DiagnosticsResult, indexed like base; sample i is at t =
+// min + (max − min)·i/n. κ = |r′ × r″|/|r′|³, B = (r′ × r″)/|r′ × r″|, N =
+// B × T, τ = (r′ × r″)·r‴/|r′ × r″|² (positive for a right-handed helix),
+// and the osculating centre r + N/κ. Curvature is null where r″ is unknown
+// and 0 at a flat sample (|r′ × r″| below the developable's binormal guard),
+// where N, B, τ and the centre are null; torsion is null also where r‴ is
+// unknown; a centre beyond 100 study radii is null (at infinity). Counts
+// leave out a closed curve's repeated last sample.
+export type DiagnosticsResult = {
+  min: number;
+  max: number;
+  curvature: (number | null)[];
+  torsion: (number | null)[];
+  tangent: (Vec3 | null)[];
+  normal: (Vec3 | null)[];
+  binormal: (Vec3 | null)[];
+  center: (Vec3 | null)[];
+  flat: number;
+  unknown: number;
+  clipped: number;
 };
 export type InvoluteResult = {
   members: { offset: number; points: (Vec3 | null)[]; collapsed: boolean }[];

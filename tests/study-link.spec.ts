@@ -64,6 +64,7 @@ const spatial = (i = 0): SpatialStudy => ({
   layers: { ...defaultLayers, rulings: false },
   view: { yaw: 1.1, pitch: -0.4, zoom: 2.5, panX: 0.3, panY: -0.2 },
   animation: { mode: "orbit", camera: "fit", duration: 7.5, tracks: [] },
+  probe: { enabled: true, position: 0.25 },
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
@@ -235,6 +236,9 @@ test("3D and 4D fields are refused by name", async () => {
     ["config.implicit.refine", (s) => (s.config.implicit.refine = "2")],
     ["view.pitch", (s) => (s.view.pitch = 2)],
     ["view.zoom", (s) => (s.view.zoom = 9)],
+    ["probe.position", (s) => (s.probe.position = 1.5)],
+    ["probe.enabled", (s) => (s.probe.enabled = "yes")],
+    ["probe.glow", (s) => (s.probe.glow = true)],
     ["layers.glow", (s) => (s.layers.glow = true)],
     ["animation.mode", (s) => (s.animation.mode = "spin")],
     [
@@ -396,6 +400,8 @@ test("links made by version 1 keep opening", async () => {
   assert.equal(s.animation.mode, "orbit");
   // Links made before refinement mesh the grid alone.
   assert.equal(s.config.implicit.refine, 0);
+  // Links made before the parameter probe open without it.
+  assert.deepEqual(s.probe, { enabled: false, position: 0.5 });
 
   const fourLink = await readStudyLink(v1["4d"]);
   assert.equal(fourLink.notebook, "4d");

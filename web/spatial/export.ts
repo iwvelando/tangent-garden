@@ -1,6 +1,6 @@
 import type { Frame } from "./types";
 import { createRenderer, type View, type Layers } from "./renderer";
-import { buildScene } from "./scene";
+import { buildScene, type Batch } from "./scene";
 import { linework, linesSvg, sampleStep } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
 import { mp4Sink, webpSink } from "../export-sinks";
@@ -51,14 +51,21 @@ export async function imageFile(
   dark: boolean,
   format: ImageFormat,
   signal: AbortSignal,
+  // The parameter probe as drawn live, recorded in the metadata as its
+  // sample index and parameter.
+  probe?: { batches: Batch[]; index: number; t: number },
 ): Promise<Blob> {
+  const probed = probe ? { probe: { index: probe.index, t: probe.t } } : {};
   if (format === "svg-lines" || format === "svg-visible") {
     const occlusion = format === "svg-lines" ? "none" : "sampled";
-    const groups = linework(buildScene(frame.result), view, layers, dark, {
-      ...page,
-      occlusion,
-      signal,
-    });
+    const groups = linework(
+      buildScene(frame.result),
+      view,
+      layers,
+      dark,
+      { ...page, occlusion, signal },
+      probe?.batches,
+    );
     signal.throwIfAborted();
     const svg = linesSvg(groups, {
       ...page,
@@ -69,6 +76,7 @@ export async function imageFile(
         view,
         layers,
         dark,
+        ...probed,
         rendering: "vector linework",
         occlusion: {
           mode: occlusion,
@@ -85,6 +93,7 @@ export async function imageFile(
     renderer = createRenderer(canvas);
   try {
     renderer.upload(frame.result);
+    renderer.setProbe(probe?.batches ?? []);
     renderer.draw(view, layers, dark, page);
     signal.throwIfAborted();
     const png = await new Promise<Blob>((resolve, reject) =>
@@ -99,7 +108,7 @@ export async function imageFile(
     // claim a painter-sorted mesh is an exact vector hidden-surface solution.
     return new Blob(
       [
-        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, ...probed, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
       ],
       { type: "image/svg+xml" },
     );

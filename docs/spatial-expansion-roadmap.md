@@ -127,7 +127,8 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 - [ ] **Transparent and hidden geometry.** Investigate restrained transparency, cutaway planes, and hidden-line modes as ways to inspect folds. Triangle sorting alone fails for intersecting sheets. Evaluate a documented transparency method and support fallback; do not change the opaque default until both live and exported views agree reliably.
 - [ ] **Line rendering quality.** Stable screen-space strokes, antialiasing, and depth bias at high export resolutions; prevent construction lines from flickering or vanishing without making hidden lines falsely visible. Device-dependent WebGL line width is not a portable stroke system.
 - [ ] **Context recovery and capability limits.** The MVP reports missing/lost WebGL. Later restore resources from the current study after context restoration, preserve camera state, and validate actual device limits for export sizes. Keep the 2D notebook available throughout.
-- [ ] **Geometric diagnostics.** Optional tangent/normal/binormal glyphs, curvature/torsion plots, and a parameter probe linking a curve point to its construction. Mark undefined curvature/torsion honestly. Distinguish diagnostic coloring from the existing decorative phase palette.
+- [x] **Geometric diagnostics.** Done for curves: **Probe the curve** in the 3D notebook, described in `mathematics.md`, `spatial-study.md`, `usage.md` and `architecture.md`. It shows T/N/B glyphs, the osculating circle and the point's construction lines in diagnostic inks, with κ, 1/κ and τ read out and plotted along the curve. Flat samples, unknown τ and centres at infinity are marked, not guessed; see the follow-up notes below.
+- [ ] **Probe follow-ups.** A surface probe (principal directions, the two centres and their focal points), a probe track that moves along t during playback, construction highlights for canal, harmonic and field studies, and an exact probe between samples if snapping proves too coarse.
 
 ## Notebook, camera, and media backlog
 
@@ -522,5 +523,54 @@ Recommended next step, for the user to choose: **adaptive curves** (above), or r
   - Lines never hide lines, and surfaces are not drawn.
   - The page size is fixed, like the PNG's (see **Still-export controls**).
   - Independent decoders: files were parsed with Python's XML parser (all well-formed, stroke lengths measured from the parsed paths) and rasterized by Chromium, which the browser tests compare with the PNG. Exports of the necklace of spheres, in the dark theme, were then rendered by librsvg (`rsvg-convert`) and Inkscape at 2000 × 1520. The two renderers agreed pixel for pixel within a 25% color tolerance, for both every line and visible only. (ImageMagick's built-in SVG renderer, without librsvg, drew nothing at all, not even a hand-written line.)
+
+### Follow-up completed: parameter probe and curve diagnostics
+
+- Implemented **Probe the curve** for every curve format and construction.
+  - Go computes the base's κ, τ, Frenet frame and osculating centre at every sample when a request sets `diagnostics` (`engine3/diagnostics.go`).
+  - The 3D notebook draws one sample's frame, osculating circle and construction lines in new diagnostic inks, and reads out and plots κ and τ (`web/spatial/probe.ts`, `ProbePanel.tsx`).
+  - Study links carry `probe: { enabled, position }`, and older links open with the probe off.
+- Decisions:
+  - The probe snaps to samples, so moving it never recomputes.
+  - Diagnostics are requested only while the probe is on: studies without it are byte-identical, which a Go test asserts for each curve format and a surface.
+  - Animation playback and animation export leave the probe out, because their frames carry no diagnostics. Still PNG, SVG and line exports include it and record `{ index, t }`.
+  - "Frame undefined" reuses the developable's binormal guard, so it agrees with **Framed ribbon · Frenet**.
+  - r‴ is analytic for knots and harmonic sums. Elsewhere it is a two-step difference of the evaluator's own r″, reported as unknown where the two steps disagree.
+  - Highlights cover the developable, involute, tangent-foot, orthotomic, inversion, framed and ruled constructions, and a pursuit's polygon. Canal, harmonic and field studies show only the frame and circle.
+- A straight base (every known κ zero) says so, and names the surface built on it that the probe does not describe; the help says the probe describes the curve itself. Added after testing **Beads that lose their envelope**, whose readout was correctly undefined but read like a fault.
+- Numerical conventions: τ is positive for a right-handed helix. A flat sample reports κ = 0, with N, B, τ and the circle null. A centre whose radius exceeds 100 study radii is at infinity. A closed curve's repeated last sample is counted once.
+- Measured accuracy (largest relative errors):
+  - twisted cubic: κ 2·10⁻⁹, τ 9·10⁻⁶;
+  - example helix: κ 10⁻¹⁰, τ 3·10⁻⁵;
+  - vortex helix: τ 3·10⁻⁶.
+  
+  The readout therefore shows four significant figures. The numerical r‴ error falls fourfold per halved step, centrally and one-sided.
+- Permanent docs: `mathematics.md`, `spatial-study.md`, `usage.md`, `architecture.md`, README.
+- Verification:
+  - `engine3/diagnostics_test.go` (16 tests). Twelve were written before the implementation and observed failing against a stub; the four for the clip threshold, unstable r‴, harmonic r‴ and closed seam were added when the mutation run exposed gaps. They cover:
+    - analytic helices of both handedness, the twisted cubic, a planar ellipse and its evolute, the vortex trajectory;
+    - knot and harmonic curves against the same curves as expressions;
+    - rigid motion and reparameterization invariance;
+    - agreement with the Frenet glyphs;
+    - a line, an inflection, clipping at the 100-radius threshold, an unstable r‴, the closed seam;
+    - byte-identical results with the flag off;
+    - r‴ convergence.
+  - `scripts/test-wasm.mjs` checks the flag through the real bridge.
+  - `tests/spatial-probe.spec.ts` (21 tests):
+    - probe geometry, support table, readout, plot scaling and pass order, on hand-built results;
+    - the helix's analytic readout through the notebook, including edits through pending scalar evaluation;
+    - presets, formats and surfaces;
+    - still exports (Lines SVG groups, colors and metadata, PNG ink);
+    - absence during playback and return after Stop;
+    - the dark theme;
+    - a straight base curve's note, without plots or a flat-sample count;
+    - link round trip and old links.
+  - `tests/study-link.spec.ts` covers the schema's refusals and defaults.
+  - Mutation run: 14 targeted faults in the Go diagnostics (τ sign, N direction, flat guard, clip threshold, r‴ agreement and stencils, analytic r‴, closed-curve repeat and counts) and 16 in `probe.ts` (index rounding, circle side and plane, fences, pinning, breaks, highlights, readout, support). Five Go and three TypeScript faults survived the first run. The tests were strengthened until all 30 were detected.
+- Limits:
+  - The probe steps between samples.
+  - τ from expressions and integrated paths is good to about 10⁻⁵ relative, and worse near flat samples, where it divides by a vanishing |r′ × r″|².
+  - Probe glyphs are drawn with the depth test, so a surface can hide them, and on a developable T lies in the ribbon.
+  - Remaining work is under **Probe follow-ups**.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

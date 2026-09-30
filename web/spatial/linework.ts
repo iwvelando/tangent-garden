@@ -42,9 +42,10 @@ export function linework(
   layers: Layers,
   dark: boolean,
   options: LineworkOptions,
+  probe: Batch[] = [],
 ): LineGroup[] {
   const k = camera(view, options),
-    passes = scenePasses(scene, layers);
+    passes = scenePasses(scene, layers, probe);
   const work = { done: 0, limit: options.limit ?? workLimit };
   const raster =
     options.occlusion === "sampled"
