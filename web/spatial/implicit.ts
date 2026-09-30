@@ -1,4 +1,8 @@
-import type { ImplicitBox, ImplicitResult } from "./types";
+import {
+  maxRefinedTetrahedra,
+  type ImplicitBox,
+  type ImplicitResult,
+} from "./types";
 
 const count = (n: number, one: string, many: string) =>
   `${n.toLocaleString()} ${n === 1 ? one : many}`;
@@ -61,13 +65,30 @@ export function implicitNote(r: ImplicitResult): string[] {
       `It has ${count(triangles, "triangle", "triangles")} on ${count(r.positions.length / 3, "vertex", "vertices")}, from a ${r.grid.join(" × ")} grid.`,
     );
   }
+  const { levels, reached, bisected, unresolved, exhausted } = r.refinement;
+  if (levels > 0) {
+    const of = `${levels} ${levels === 1 ? "level" : "levels"}`;
+    out.push(
+      bisected
+        ? `Refinement bisected ${count(bisected, "tetrahedron", "tetrahedra")}, reaching ${reached} of ${of}, where an edge's midpoint lay across the level from both its ends.`
+        : `Refinement up to ${of} split nothing: no edge's midpoint lay across the level from both its ends.`,
+    );
+    if (exhausted)
+      out.push(
+        `Refinement stopped at its budget of ${maxRefinedTetrahedra.toLocaleString()} tetrahedra with ${unresolved.toLocaleString()} still disagreeing with a sample: use fewer cells or a smaller box.`,
+      );
+    else if (unresolved)
+      out.push(
+        `${count(unresolved, "tetrahedron", "tetrahedra")} at the deepest level still ${unresolved === 1 ? "disagrees" : "disagree"} with a sample: the surface there is finer than refinement reaches.`,
+      );
+  }
   if (r.cut.length)
     out.push(
       `The box cuts it open along ${count(r.cut.length / 2, "edge", "edges")}.`,
     );
   if (r.nonfinite)
     out.push(
-      `F is not finite at ${count(r.nonfinite, "grid point", "grid points")}: the cells beside them are left out${r.open.length ? ", and the mesh stops there" : ""}.`,
+      `F is not finite at ${levels > 0 ? count(r.nonfinite, "point sampled", "points sampled") : count(r.nonfinite, "grid point", "grid points")}: the cells beside them are left out${r.open.length ? ", and the mesh stops there" : ""}.`,
     );
   else if (r.open.length)
     out.push(
@@ -83,7 +104,9 @@ export function implicitNote(r: ImplicitResult): string[] {
     );
   if (r.ambiguous)
     out.push(
-      `${count(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; there the grid's diagonal, not F, decides whether the surface joins across, so compare a finer grid.`,
+      levels > 0
+        ? `${count(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; refinement samples each face's centre, and splits the face where the grid's diagonal disagrees with it.`
+        : `${count(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; there the grid's diagonal, not F, decides whether the surface joins across, so compare a finer grid.`,
     );
   if (r.sections.length) {
     const paths = r.sections.flatMap((s) => s.paths);

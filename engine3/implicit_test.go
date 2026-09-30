@@ -492,6 +492,8 @@ func TestImplicitValidation(t *testing.T) {
 		{func(q *ImplicitRequest) { q.Cells = 3 }, "4–128 cells"},
 		{func(q *ImplicitRequest) { q.Cells = 129 }, "4–128 cells"},
 		{func(q *ImplicitRequest) { q.Cells = 128 }, "262,144 cells"},
+		{func(q *ImplicitRequest) { q.Refine = -1 }, "0–3 refinement levels"},
+		{func(q *ImplicitRequest) { q.Refine = 4 }, "0–3 refinement levels"},
 		{func(q *ImplicitRequest) { q.Sections.Count = 25 }, "0–24 section planes"},
 		{func(q *ImplicitRequest) { q.Sections.Count = -1 }, "0–24 section planes"},
 		{func(q *ImplicitRequest) { q.Sections = SectionRequest{Count: 1} }, "section normal"},
@@ -533,7 +535,7 @@ func TestImplicitJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"implicit":{`, `"grid":[12,12,12]`, `"positions":[`, `"normals":[`, `"triangles":[`, `"cut":[]`, `"open":[]`, `"components":[{"triangles":`, `"euler":2`, `"closed":true`, `"sections":[{"offset":0,"polygon":[`, `"paths":[{"points":[`, `"skipped":false`, `"marks":[]`, `"nonfinite":0`, `"discontinuities":0`, `"ambiguous":0`, `"singular":0`, `"sectionDiscontinuities":0`, `"sectionsSkipped":0`, `"truncated":false`} {
+	for _, key := range []string{`"implicit":{`, `"grid":[12,12,12]`, `"positions":[`, `"normals":[`, `"triangles":[`, `"cut":[]`, `"open":[]`, `"components":[{"triangles":`, `"euler":2`, `"closed":true`, `"sections":[{"offset":0,"polygon":[`, `"paths":[{"points":[`, `"skipped":false`, `"marks":[]`, `"nonfinite":0`, `"discontinuities":0`, `"ambiguous":0`, `"singular":0`, `"sectionDiscontinuities":0`, `"sectionsSkipped":0`, `"truncated":false`, `"refinement":{"levels":0,"reached":0,"bisected":0,"unresolved":0,"exhausted":false}`} {
 		if !strings.Contains(string(b), key) {
 			t.Fatalf("JSON lacks %s", key)
 		}

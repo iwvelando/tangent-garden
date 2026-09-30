@@ -232,6 +232,7 @@ test("3D and 4D fields are refused by name", async () => {
     ["config.format", (s) => (s.config.format = "knot")],
     ["config.pole.w", (s) => (s.config.pole.w = 0)],
     ["config.surface.kind", (s) => (s.config.surface.kind = "klein")],
+    ["config.implicit.refine", (s) => (s.config.implicit.refine = "2")],
     ["view.pitch", (s) => (s.view.pitch = 2)],
     ["view.zoom", (s) => (s.view.zoom = 9)],
     ["layers.glow", (s) => (s.layers.glow = true)],
@@ -393,6 +394,8 @@ test("links made by version 1 keep opening", async () => {
     panY: -0.3,
   });
   assert.equal(s.animation.mode, "orbit");
+  // Links made before refinement mesh the grid alone.
+  assert.equal(s.config.implicit.refine, 0);
 
   const fourLink = await readStudyLink(v1["4d"]);
   assert.equal(fourLink.notebook, "4d");

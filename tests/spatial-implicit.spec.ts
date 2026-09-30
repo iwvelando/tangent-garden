@@ -47,7 +47,8 @@ const latitudes = "43",
   drops = "46",
   double = "47",
   tangle = "48",
-  gyroid = "49";
+  gyroid = "49",
+  thread = "50";
 const note = (page: Page) => page.getByTestId("implicit-note");
 const layer = (page: Page, name: string) =>
   page.getByRole("checkbox", { name, exact: true });
@@ -208,6 +209,69 @@ test("notes report each surface's pieces, genus and sections", async ({
   await expect(note(page)).toContainText(
     "open curves; an open curve ends at the box or beside cells left out.",
   );
+});
+
+test("refinement joins a neck the grid misses, within its levels", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, thread);
+  await settled(page);
+  const status = page.locator(".spatial-status");
+  await expect(status).toHaveText(
+    "20 × 13 × 13 cells · 3 section planes · up to 3 refinement levels",
+  );
+  await expect(note(page)).toContainText(
+    "The mesh is one piece, closed, of genus 0",
+  );
+  await expect(note(page)).toContainText(
+    "Refinement bisected 582 tetrahedra, reaching 2 of 3 levels, where an edge's midpoint lay across the level from both its ends.",
+  );
+  await openSampling(page);
+  const refinement = page.getByLabel("Refinement levels", { exact: true });
+  await expect(refinement).toHaveValue("3");
+  const refined = await pixels(page);
+  // The grid alone misses the waist, which the section at x = 0 finds.
+  await refinement.fill("0");
+  await settled(page);
+  await expect(note(page)).toContainText(
+    "The mesh has two pieces, each closed, of genus 0",
+  );
+  await expect(note(page)).not.toContainText("Refinement");
+  await expect(status).toHaveText("20 × 13 × 13 cells · 3 section planes");
+  expect((await config(page)).implicit.refine).toBe(0);
+  expect(await pixels(page)).not.toBe(refined);
+  for (const [text, message] of [
+    ["4", "0–3 refinement levels"],
+    ["-1", "0–3 refinement levels"],
+    ["1.5", "Refinement levels must be a whole number."],
+    ["", "Refinement levels must be a whole number."],
+  ] as const) {
+    await refinement.fill(text);
+    await expect(page.getByRole("alert")).toContainText(message);
+  }
+  await refinement.fill("1");
+  await settled(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(note(page)).toContainText(
+    "Refinement bisected 402 tetrahedra, reaching 1 of 1 level, where an edge's midpoint lay across the level from both its ends.",
+  );
+  await expect(note(page)).toContainText(
+    "16 tetrahedra at the deepest level still disagree with a sample: the surface there is finer than refinement reaches.",
+  );
+  // Other edits keep the levels.
+  await page.getByLabel("Cells", { exact: true }).fill("16");
+  await settled(page);
+  expect((await config(page)).implicit).toMatchObject({ cells: 16, refine: 1 });
+  await expect(status).toHaveText(
+    "16 × 11 × 11 cells · 3 section planes · up to 1 refinement level",
+  );
+  // A preset brings its own levels.
+  await choosePreset(page, drops);
+  await settled(page);
+  expect((await config(page)).implicit.refine).toBe(0);
+  await expect(note(page)).not.toContainText("Refinement");
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
 test("poles, undefined regions and ambiguous faces are reported, never meshed", async ({
@@ -548,6 +612,13 @@ function study(): SpatialResult {
     sectionDiscontinuities: 0,
     sectionsSkipped: 0,
     truncated: false,
+    refinement: {
+      levels: 0,
+      reached: 0,
+      bisected: 0,
+      unresolved: 0,
+      exhausted: false,
+    },
   };
   return {
     base: [],
@@ -695,4 +766,31 @@ test("the grid and the note follow Go's shapes and wording", () => {
   expect(implicitNote(mixed)[0]).toBe(
     "The mesh has three pieces: two closed, of genus 0 (Euler characteristic 2); one closed, of genus 2 (Euler characteristic −2).",
   );
+  // Refinement, when asked for, and how it ended.
+  const levels = (refinement: ImplicitResult["refinement"], more = {}) =>
+    implicitNote({ ...r, ...more, sections: [], refinement });
+  expect(levels({ ...r.refinement, levels: 2 })).toContain(
+    "Refinement up to 2 levels split nothing: no edge's midpoint lay across the level from both its ends.",
+  );
+  expect(
+    levels(
+      {
+        levels: 3,
+        reached: 1,
+        bisected: 12,
+        unresolved: 30,
+        exhausted: true,
+      },
+      { nonfinite: 7, ambiguous: 2 },
+    ),
+  ).toEqual([
+    "The mesh is one piece, open, with Euler characteristic 1.",
+    "It has 3 triangles on 5 vertices, from a 4 × 4 × 4 grid.",
+    "Refinement bisected 12 tetrahedra, reaching 1 of 3 levels, where an edge's midpoint lay across the level from both its ends.",
+    "Refinement stopped at its budget of 100,000 tetrahedra with 30 still disagreeing with a sample: use fewer cells or a smaller box.",
+    "The box cuts it open along 2 edges.",
+    "F is not finite at 7 points sampled: the cells beside them are left out, and the mesh stops there.",
+    "2 grid edges change sign across a pole or a jump rather than a root: they are marked with crosses and never meshed.",
+    "2 grid faces have corners alternating in sign; refinement samples each face's centre, and splits the face where the grid's diagonal disagrees with it.",
+  ]);
 });
