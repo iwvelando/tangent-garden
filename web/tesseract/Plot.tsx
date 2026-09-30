@@ -1,5 +1,11 @@
 import { useEffect, useRef } from "react";
 import { createGesture } from "../gestures";
+import {
+  Composition,
+  type CompositionProps,
+  type PanelViewport,
+} from "./Composition";
+import { exportBaseSize } from "../export-quality";
 import { Drawing } from "./Drawing";
 import { objects } from "./objects";
 import {
@@ -16,6 +22,8 @@ export function Plot({
   layers,
   view,
   onView,
+  id = "tesseract-artwork",
+  viewport,
 }: {
   result: Result;
   config: Config;
@@ -23,6 +31,8 @@ export function Plot({
   layers: Layers;
   view: View;
   onView: (v: View) => void;
+  id?: string;
+  viewport?: PanelViewport;
 }) {
   const ref = useRef<SVGSVGElement>(null),
     state = useRef({ view, onView });
@@ -50,7 +60,11 @@ export function Plot({
   return (
     <svg
       ref={ref}
-      id="tesseract-artwork"
+      id={id}
+      {...viewport}
+      className={viewport ? "tesseract-panel" : undefined}
+      data-representation={config.mode}
+      overflow="hidden"
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 1000 760"
       role="img"
@@ -67,10 +81,11 @@ export function Plot({
       onPointerMove={(e) => {
         const motion = gesture.current.move(e);
         if (!motion) return;
-        const scale = Math.min(
-          e.currentTarget.clientWidth / 1000,
-          e.currentTarget.clientHeight / 760,
-        );
+        // Nested SVG panels can have zero clientWidth/clientHeight. Their
+        // screen rectangle gives the actual scale for pan and pinch gestures.
+        const box = e.currentTarget.getBoundingClientRect();
+        const scale = Math.min(box.width / 1000, box.height / 760);
+        if (!(scale > 0)) return;
         // Moves can outpace renders, so each builds on the latest view.
         const view = state.current.view;
         const zoom =
@@ -136,6 +151,38 @@ export function Plot({
       }}
     >
       <Drawing {...{ result, config, view, layers, dark }} />
+    </svg>
+  );
+}
+
+export function StudyPlot(
+  p: CompositionProps & {
+    onView: (v: View) => void;
+    onDiagramView: (v: View) => void;
+  },
+) {
+  if (!p.result.companion) return <Plot {...p} />;
+  const size = exportBaseSize(p.layout ?? "columns");
+  return (
+    <svg
+      id="tesseract-artwork"
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox={`0 0 ${size.width} ${size.height}`}
+      data-layout={p.layout ?? "columns"}
+      role="group"
+      aria-label="Synchronized XYZ shadow and coordinate diagram"
+    >
+      <Composition
+        {...p}
+        renderPanel={(panel, viewport, index) => (
+          <Plot
+            {...panel}
+            viewport={viewport}
+            id={`tesseract-${panel.config.mode}`}
+            onView={index === 0 ? p.onView : p.onDiagramView}
+          />
+        )}
+      />
     </svg>
   );
 }

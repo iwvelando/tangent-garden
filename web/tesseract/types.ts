@@ -35,7 +35,8 @@ export type Config = {
     | "reference"
     | "lifted"
     | "shadow"
-    | "diagram";
+    | "diagram"
+    | "paired";
   lift?: Lift;
   bypass?: Bypass;
   angles: [number, number, number, number, number, number];
@@ -48,6 +49,7 @@ export type Config = {
   clip: number;
 };
 export type Result = {
+  companion?: Result;
   paths: {
     points: Vec3[];
     family: number;

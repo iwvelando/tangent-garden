@@ -2045,6 +2045,31 @@ console.log("Curved sections WASM contract passed");
           Math.hypot(...v) >= 1 - 1e-10 && Math.hypot(...v) <= 2 + 1e-10,
         );
   }
+  for (const position of [0, 1 / 3, 0.5, 2 / 3, 1]) {
+    const paired = compute({
+      ...request,
+      mode: "paired",
+      bypass: { ...request.bypass, position },
+    });
+    const shadow = compute({
+      ...request,
+      bypass: { ...request.bypass, position },
+    });
+    const diagram = compute({
+      ...request,
+      mode: "diagram",
+      bypass: { ...request.bypass, position },
+    });
+    assert.deepEqual(paired.companion, diagram);
+    assert.deepEqual(paired.paths, shadow.paths);
+    assert.deepEqual(paired.bypass, paired.companion.bypass);
+    assert.equal(
+      paired.emittedPoints,
+      shadow.emittedPoints + diagram.emittedPoints,
+    );
+    assert.equal(paired.evaluations, shadow.evaluations + diagram.evaluations);
+    assert.ok(paired.emittedPoints < 4000 && paired.evaluations < 5000);
+  }
   assert.match(
     compute({ ...request, bypass: { ...request.bypass, height: 21 } }).error,
     /Route height/,

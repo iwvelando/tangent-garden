@@ -345,3 +345,45 @@ for (const mode of ["shadow", "diagram"])
     expect(video.duration).toBeCloseTo(0.4, 3);
     expect(video.first.hash).not.toBe(video.last.hash);
   });
+
+for (const width of [1440, 390])
+  test(`paired bypass ${width}px exports synchronized geometry through WebKit`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/?study=4d");
+    await choosePreset(page, { label: "Beside the wall" });
+    const settle = () =>
+      expect(page.locator(".tesseract-stage")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+    await settle();
+    await page
+      .getByRole("combobox", { name: "View operation", exact: true })
+      .selectOption("paired");
+    await settle();
+    await expect(
+      page.locator("#tesseract-artwork svg[data-representation]"),
+    ).toHaveCount(2);
+    await expect(page.locator("#tesseract-artwork text")).toHaveCount(0);
+    await page
+      .getByRole("spinbutton", { name: "Duration (seconds)" })
+      .fill(".4");
+    await open(page, "#shape-export-settings");
+    await page.getByLabel("Export frame rate").selectOption("15");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("0.5");
+    const path = (await save(page))!,
+      data = probe(path);
+    if (data) {
+      expect([data.width, data.height, data.frames]).toEqual(
+        width > 700 ? [1000, 380, 6] : [500, 760, 6],
+      );
+      expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    }
+    const video = await decodeVideo(page, await readFile(path));
+    expect(video.duration).toBeCloseTo(0.4, 3);
+    expect(video.first.hash).not.toBe(video.last.hash);
+  });

@@ -8,6 +8,7 @@ export const modes = {
   lifted: "Lifted construction",
   shadow: "XYZ shadow",
   diagram: "Coordinate diagram",
+  paired: "Side-by-side views",
 };
 const explanations: Record<
   "perspective" | "orthographic" | "stereo" | "section",
@@ -45,7 +46,9 @@ export type ObjectDescriptor = {
   controls: "polyhedral" | "curved" | "lift" | "route";
   linkedViews?: boolean;
   motionChoices?: { value: Motion; label: string; help: string }[];
-  legendItems?: { label: string; family: number }[];
+  legendItems?:
+    | { label: string; family: number }[]
+    | ((c: Config) => { label: string; family: number }[]);
   parameterKey?: "lift" | "bypass";
   numericFields?: {
     key: keyof Lift | keyof Omit<Bypass, "obstacle">;
@@ -64,6 +67,8 @@ export type ObjectDescriptor = {
     values: { value: string; label: string }[];
   }[];
   flat?: (c: Config) => boolean;
+  pairedModes?: readonly [Config["mode"], Config["mode"]];
+  animationFramingHelp?: (c: Config) => string;
   viewingHelp?: (c: Config) => string;
   viewingLabel?: (c: Config) => string;
   comparisonReadouts?: (r: Result) => { label: string; value: string }[];
@@ -400,7 +405,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     noun: "shell bypass",
     controls: "route",
     parameterKey: "bypass",
-    modes: ["shadow", "diagram"],
+    modes: ["shadow", "diagram", "paired"],
+    pairedModes: ["shadow", "diagram"],
     rotations: false,
     linkedViews: true,
     viewLabel: "View operation",
@@ -416,18 +422,30 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     sectionDetail: () => "",
     legend: "threads",
     sampleLabel: "Shell samples",
-    legendItems: [
-      { label: "Route (solid clear / dashed blocked)", family: 0 },
-      { label: "Inner boundary", family: 1 },
-      { label: "Outer boundary", family: 2 },
-      { label: "Coordinate guides", family: 2 },
-      { label: "Collision intervals", family: 3 },
-    ],
+    // The radial shell's XYZ shadow is a filled ball: no inner boundary.
+    legendItems: (c) =>
+      [
+        { label: "Route (solid clear / dashed blocked)", family: 0 },
+        { label: "Inner boundary", family: 1 },
+        { label: "Outer boundary", family: 2 },
+        { label: "Coordinate guides", family: 2 },
+        { label: "Collision intervals", family: 3 },
+      ].filter(
+        (item) =>
+          item.family !== 1 ||
+          !(c.mode === "shadow" && c.bypass!.obstacle === "radial"),
+      ),
     flat: (c) => c.mode === "diagram",
+    animationFramingHelp: (c) =>
+      c.mode === "paired"
+        ? "Both views share one timeline. Orbit the XYZ shadow and pan the coordinate diagram independently before playback; animation holds both views."
+        : "Animation holds your current view. Drag, pan, or zoom before playback to choose the framing.",
     viewingHelp: (c) =>
-      c.mode === "diagram"
-        ? "Coordinate diagram · horizontal: radial position |p| · vertical: w · drag or arrows to pan · scroll or pinch to zoom"
-        : "XYZ shadow · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home",
+      c.mode === "paired"
+        ? "1: XYZ shadow · drag to orbit · shift-drag to pan · 2: diagram · drag or arrows to pan · horizontal: |p| · vertical: w · each view zooms independently"
+        : c.mode === "diagram"
+          ? "Coordinate diagram · horizontal: radial position |p| · vertical: w · drag or arrows to pan · scroll or pinch to zoom"
+          : "XYZ shadow · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home",
     viewingLabel: (c) =>
       c.mode === "diagram"
         ? "Radial position and fourth coordinate diagram. Drag or arrow keys to pan; scroll or pinch to zoom; Home resets."
@@ -529,10 +547,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
             { label: "4D separation", value: r.bypass.distance.toPrecision(5) },
           ]
         : [],
-    colorNote: (c) =>
-      c.mode === "diagram"
-        ? "A coordinate diagram, not another 3D camera. Horizontal distance is radial position |p|; vertical distance is w, at equal scale. Shell outlines represent the defining inequalities. Dashed route and red intervals indicate contact or crossing."
-        : "The shadow drops w. Sparse boundary circles show the shell's w = 0 section, not every point of a 4D obstacle. The full route may look as though it crosses the wall; dashed styling and the state readout report its actual 4D intersections.",
+    colorNote: (c) => {
+      const shadow =
+        c.bypass!.obstacle === "radial"
+          ? "The radial shell's shadow fills the ball |p| ≤ b, because every cavity point lifts in w into the shell; only its outer boundary is drawn."
+          : "Boundary circles outline the embedded shell's shadow, a ≤ |p| ≤ b, which is also its w = 0 section.";
+      return c.mode === "paired"
+        ? `Both panels show the same route position. Panel 1, the XYZ shadow, drops w. ${shadow} Panel 2, the coordinate diagram, retains radial position |p| and w at equal scale; its outlines represent the defining inequalities. Each view has its own framing. Solid means clear; dashed route and red intervals indicate contact or crossing.`
+        : c.mode === "diagram"
+          ? `A coordinate diagram, not another 3D camera. Horizontal distance is radial position |p|; vertical distance is w, at equal scale. Shell outlines represent the defining inequalities. In the XYZ shadow, ${c.bypass!.obstacle === "radial" ? "this shell fills the ball |p| ≤ b" : "this shell covers a ≤ |p| ≤ b"}. Dashed route and red intervals indicate contact or crossing.`
+          : `The shadow drops w. ${shadow} The full route may look as though it crosses the wall; dashed styling and the state readout report its actual 4D intersections.`;
+    },
     explanation: (c) => [
       "Beside the wall",
       c.bypass!.obstacle === "embedded"

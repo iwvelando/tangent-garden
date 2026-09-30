@@ -38,31 +38,25 @@ type Marker struct {
 	Family    int    `json:"family"`
 }
 
-// The obstacle is expressed in an orthonormal frame. Production uses the
-// canonical frame; the same classifier supports common rigid-motion checks.
+// The canonical obstacle. Membership depends only on |p| and w for K, or |q|
+// for K₄, so the classifier works directly in world coordinates.
 type shellObstacle struct {
 	inner, outer, extent float64
 	radial               bool
-	origin               Vec4
-	axes                 [4]Vec4
 }
 
 func newShellObstacle(l BypassParameters) shellObstacle {
-	o := shellObstacle{inner: l.Inner, outer: l.Outer, extent: l.Extent, radial: l.Obstacle == "radial"}
-	for i := range o.axes {
-		o.axes[i][i] = 1
-	}
-	return o
+	return shellObstacle{inner: l.Inner, outer: l.Outer, extent: l.Extent, radial: l.Obstacle == "radial"}
 }
-func (o shellObstacle) local(v Vec4) Vec4 {
-	q := Vec4{}
-	for i := range q {
-		for j := range v {
-			q[i] += (v[j] - o.origin[j]) * o.axes[i][j]
-		}
-	}
-	return q
+
+// A hit is a closed parameter interval of one segment. Crossing marks a
+// positive-length passage through the obstacle's interior; otherwise the
+// segment only meets its closed boundary.
+type shellHit struct {
+	lo, hi   float64
+	crossing bool
 }
+
 func interpolate4(a, b Vec4, t float64) Vec4 {
 	if t == 0 {
 		return a
@@ -91,6 +85,14 @@ func (o shellObstacle) contains(v Vec4, tolerance float64) bool {
 	r := shellRadius(v, o.radial)
 	return r >= o.inner-tolerance && r <= o.outer+tolerance && (o.radial || math.Abs(v[3]) <= o.extent+tolerance)
 }
+
+// Interior points are strictly between the radii and, for K, strictly within
+// the slab. With ε = 0 the embedded shell has no 4D interior; a positive-length
+// passage through a < |p| < b inside w = 0 is still reported as a crossing.
+func (o shellObstacle) interior(v Vec4) bool {
+	r := shellRadius(v, o.radial)
+	return r > o.inner && r < o.outer && (o.radial || o.extent == 0 || math.Abs(v[3]) < o.extent)
+}
 func sphereCrossings(a, b Vec4, r float64, radial bool) []float64 {
 	n := 3
 	if radial {
@@ -116,14 +118,19 @@ func sphereCrossings(a, b Vec4, r float64, radial bool) []float64 {
 	if residual < -tol {
 		return nil
 	}
-	h := math.Sqrt(math.Max(0, residual) / dd)
+	// The root half-width grows like sqrt(residual), so rounding alone would
+	// split a tangency into a spurious chord. Within the residual resolution
+	// the line is tangent: one event, never a positive-length crossing.
+	if residual <= tol {
+		return []float64{mid}
+	}
+	h := math.Sqrt(residual / dd)
 	return []float64{mid - h, mid + h}
 }
 
 // Every sphere/slab event partitions the complete segment before membership
 // classification. No sample count enters the collision decision.
-func shellSegment(a, b Vec4, o shellObstacle, operations *int) []interval {
-	a, b = o.local(a), o.local(b)
+func shellSegment(a, b Vec4, o shellObstacle, operations *int) []shellHit {
 	cuts := []float64{0, 1}
 	cuts = append(cuts, sphereCrossings(a, b, o.inner, o.radial)...)
 	cuts = append(cuts, sphereCrossings(a, b, o.outer, o.radial)...)
@@ -134,16 +141,20 @@ func shellSegment(a, b Vec4, o shellObstacle, operations *int) []interval {
 	}
 	cuts = sortedParameters(cuts)
 	inside := func(t, tol float64) bool { *operations++; return o.contains(interpolate4(a, b, t), tol) }
-	pieces := []interval{}
+	// Classify each event-bounded piece at its own midpoint before merging;
+	// a merged interval's midpoint can be an event such as a tangency.
+	pieces := []shellHit{}
 	for i := 1; i < len(cuts); i++ {
 		lo, hi := cuts[i-1], cuts[i]
 		if !inside((lo+hi)/2, 0) {
 			continue
 		}
+		crossing := o.interior(interpolate4(a, b, (lo+hi)/2))
 		if len(pieces) > 0 && pieces[len(pieces)-1].hi == lo {
 			pieces[len(pieces)-1].hi = hi
+			pieces[len(pieces)-1].crossing = pieces[len(pieces)-1].crossing || crossing
 		} else {
-			pieces = append(pieces, interval{lo, hi})
+			pieces = append(pieces, shellHit{lo: lo, hi: hi, crossing: crossing})
 		}
 	}
 	tolerance := 1e-12 + 1e-10*o.outer
@@ -159,15 +170,33 @@ func shellSegment(a, b Vec4, o shellObstacle, operations *int) []interval {
 			}
 		}
 		if !covered {
-			pieces = append(pieces, interval{t, t})
+			pieces = append(pieces, shellHit{lo: t, hi: t})
 		}
 	}
 	sort.Slice(pieces, func(i, j int) bool { return pieces[i].lo < pieces[j].lo })
 	return pieces
 }
 func bypass(q Request, r Result) (Result, error) {
+	// One worker request produces both views before committing a frame. The
+	// two evaluators receive the same immutable parameters and route position.
+	if q.Mode == "paired" {
+		shadow, diagram := q, q
+		shadow.Mode, diagram.Mode = "shadow", "diagram"
+		primary, err := bypass(shadow, r)
+		if err != nil {
+			return r, err
+		}
+		companionBase := r
+		companionBase.Operation = "diagram"
+		companion, err := bypass(diagram, companionBase)
+		if err != nil {
+			return r, err
+		}
+		primary.Companion = &companion
+		return primary, nil
+	}
 	if q.Mode != "shadow" && q.Mode != "diagram" {
-		return r, fmt.Errorf("choose XYZ shadow or Coordinate diagram")
+		return r, fmt.Errorf("choose XYZ shadow, Coordinate diagram, or Side-by-side views")
 	}
 	if q.Bypass == nil {
 		return r, fmt.Errorf("shell bypass parameters are required")
@@ -220,17 +249,17 @@ func bypass(q Request, r Result) (Result, error) {
 	t := 3*l.Position - leg
 	current := interpolate4(vertices[k], vertices[k+1], t)
 	o := newShellObstacle(l)
-	d := &BypassDiagnostics{State: "clear", Current: current, Position: l.Position, Distance: math.Abs(l.W2 - l.W1), ShadowDistance: 0, Hits: []RouteHit{}}
+	// The comparison readouts are measured from the returned points.
+	q1, q2 := Vec4{l.Inner / 2, 0, 0, l.W1}, Vec4{l.Inner / 2, 0, 0, l.W2}
+	delta := Vec4{q2[0] - q1[0], q2[1] - q1[1], q2[2] - q1[2], q2[3] - q1[3]}
+	d := &BypassDiagnostics{State: "clear", Current: current, Position: l.Position, Distance: norm(delta), ShadowDistance: norm(Vec4{delta[0], delta[1], delta[2]}), Hits: []RouteHit{}}
 	for i := 0; i < 3; i++ {
 		for _, hit := range shellSegment(vertices[i], vertices[i+1], o, &r.Evaluations) {
 			d.Hits = append(d.Hits, RouteHit{(float64(i) + hit.lo) / 3, (float64(i) + hit.hi) / 3})
-			if d.State == "clear" {
-				d.State = "contact"
-			}
-			v := interpolate4(vertices[i], vertices[i+1], (hit.lo+hit.hi)/2)
-			rho := shellRadius(v, o.radial)
-			if hit.hi > hit.lo && rho > l.Inner && rho < l.Outer && (o.radial || l.Extent == 0 || math.Abs(v[3]) < l.Extent) {
+			if hit.crossing {
 				d.State = "crossing"
+			} else if d.State == "clear" {
+				d.State = "contact"
 			}
 		}
 	}
@@ -311,7 +340,13 @@ func bypass(q Request, r Result) (Result, error) {
 		add("bypass/radial-axis", "axes", 2, true, true, []Vec4{{0, 0, 0, 0}, {outside, 0, 0, 0}}, nil)
 		add("bypass/w-axis", "axes", 2, true, true, []Vec4{{0, 0, 0, wLo}, {0, 0, 0, wHi}}, nil)
 	} else {
+		// Draw the obstacle's XYZ shadow, not a section. K's shadow is the
+		// 3D shell a ≤ |p| ≤ b; K₄'s is the ball |p| ≤ b, because every cavity
+		// point lifts in w into the shell. Indices keep stable identities.
 		for i, radius := range []float64{l.Inner, l.Outer} {
+			if o.radial && i == 0 {
+				continue
+			}
 			for plane := 0; plane < 3; plane++ {
 				vs := []Vec4{}
 				for j := 0; j <= q.Samples; j++ {
@@ -332,7 +367,7 @@ func bypass(q Request, r Result) (Result, error) {
 		id, role string
 		v        Vec4
 		family   int
-	}{{"bypass/moving", "moving", current, family}, {"bypass/q1", "comparison", Vec4{l.Inner / 2, 0, 0, l.W1}, 1}, {"bypass/q2", "comparison", Vec4{l.Inner / 2, 0, 0, l.W2}, 2}} {
+	}{{"bypass/moving", "moving", current, family}, {"bypass/q1", "comparison", q1, 1}, {"bypass/q2", "comparison", q2, 2}} {
 		r.Markers = append(r.Markers, Marker{m.id, m.role, project(m.v), m.v, m.family})
 		r.Evaluations++
 	}

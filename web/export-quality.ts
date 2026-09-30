@@ -1,4 +1,17 @@
-export type ExportSettings = { scale: number; quality: number };
+export type ExportLayout = "columns" | "rows";
+export type ExportSettings = {
+  scale: number;
+  quality: number;
+  layout?: ExportLayout;
+};
+// Optional paired compositions preserve each panel's 1000 × 760 coordinate scale.
+export function exportBaseSize(layout?: ExportLayout) {
+  if (layout === "columns") return { width: 2000, height: 760 };
+  if (layout === "rows") return { width: 1000, height: 1520 };
+  if (layout !== undefined)
+    throw new Error("Choose a columns or rows export layout.");
+  return { width: 1000, height: 760 };
+}
 
 // Animated WebP is limited to 15 and 30; 60 fps is offered for MP4 only.
 export const frameRates = [15, 30, 60];
@@ -8,14 +21,15 @@ export const frameRates = [15, 30, 60];
 // their colour and soften; at twice the size they stay crisp.
 export const defaultScale = 2;
 
-export function exportEncoding({ scale, quality }: ExportSettings) {
+export function exportEncoding({ scale, quality, layout }: ExportSettings) {
   if (!Number.isFinite(scale) || scale < 0.5 || scale > 2)
     throw new Error("Export resolution must be between 50% and 200%.");
   if (!Number.isInteger(quality) || quality < 1 || quality > 100)
     throw new Error("Export quality must be a whole number from 1 to 100.");
+  const size = exportBaseSize(layout);
   return {
-    width: Math.round(1000 * scale),
-    height: Math.round(760 * scale),
+    width: Math.round(size.width * scale),
+    height: Math.round(size.height * scale),
     scale,
     compression: quality / 100,
   };

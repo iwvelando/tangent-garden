@@ -114,6 +114,7 @@ try {
   };
   cases.push(
     [bypass, undefined],
+    [{ ...bypass, mode: "paired" }, undefined],
     [
       {
         ...bypass,
@@ -160,7 +161,7 @@ try {
     cases.map(([, error]) => error),
     "worker validation must name active study fields and preserve tesseract wording",
   );
-  assert.equal(requests.length, 5);
+  assert.equal(requests.length, 6);
   for (const request of requests) {
     assert.deepEqual(request.angles, [0, 0, 0, 0, 0, 0]);
   }
@@ -168,9 +169,11 @@ try {
   assert.equal(requests[1].lift.angle, 0);
   assert.equal(requests[2].lift.angle, Math.PI / 7);
   assert.deepEqual(requests[3].bypass, bypass.bypass);
-  assert.equal(requests[4].bypass.extent, 0);
-  assert.equal(requests[4].grid, undefined);
-  assert.equal(requests[4].distance, undefined);
+  assert.equal(requests[4].mode, "paired");
+  assert.deepEqual(requests[4].bypass, bypass.bypass);
+  assert.equal(requests[5].bypass.extent, 0);
+  assert.equal(requests[5].grid, undefined);
+  assert.equal(requests[5].distance, undefined);
 } finally {
   await server.close();
 }

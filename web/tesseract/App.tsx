@@ -9,7 +9,8 @@ import { tesseractExamples, tesseractThumbnail } from "../examples";
 import { ExportImageMenu } from "../ExportImageMenu";
 import { saveFile, pngFile, svgFile } from "../export-image";
 import { AnimationPanel, type MotionExport } from "./AnimationPanel";
-import { Plot } from "./Plot";
+import { StudyPlot } from "./Plot";
+import { exportEncoding, type ExportLayout } from "../export-quality";
 import { inks, sectionInk } from "./Drawing";
 import { Sampler } from "./sampler";
 import { tesseractPresets } from "./presets";
@@ -20,6 +21,7 @@ import {
   type Result,
   type Layers,
   type Motion,
+  type View,
 } from "./types";
 import { objects, modes } from "./objects";
 import "./style.css";
@@ -34,7 +36,18 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
   });
   const [preset, setPreset] = useState<number | null>(0),
     [view, setView] = useState({ ...initialView }),
-    [spinning, setSpinning] = useState(false);
+    [spinning, setSpinning] = useState(false),
+    [diagramView, setDiagramView] = useState<View>({ ...initialView }),
+    [stacked, setStacked] = useState(
+      () => matchMedia("(max-width: 700px)").matches,
+    );
+  const pairedShadow = useRef<View | null>(null);
+  useEffect(() => {
+    const media = matchMedia("(max-width: 700px)");
+    const change = () => setStacked(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
   const [layers, setLayers] = useState<Layers>({
     edges: true,
     guides: true,
@@ -227,6 +240,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     setProgress(0);
     setPreview(false);
     setView({ ...initialView });
+    setDiagramView({ ...initialView });
+    pairedShadow.current = null;
     setSpinning(false);
     setError("");
   };
@@ -249,6 +264,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
         config: structuredClone(config),
         motion,
         view: { ...view },
+        diagramView: { ...diagramView },
         layers: { ...layers },
         dark,
         duration,
@@ -275,6 +291,17 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     controller.current?.abort();
   }, [dark]);
   const descriptor = objects[config.object];
+  const layout: ExportLayout | undefined =
+    config.mode === "paired" && descriptor.pairedModes
+      ? stacked
+        ? "rows"
+        : "columns"
+      : undefined;
+  const liveLayout: ExportLayout | undefined = frame?.result.companion
+    ? stacked
+      ? "rows"
+      : "columns"
+    : undefined;
   const curved = descriptor.legend === "sections";
   const numericStudy =
     descriptor.controls === "lift" || descriptor.controls === "route";
@@ -375,8 +402,15 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
             const svg = document.getElementById(
               "tesseract-artwork",
             ) as unknown as SVGSVGElement;
+            const size = exportEncoding({
+              scale: 2,
+              quality: 100,
+              layout: liveLayout,
+            });
             const blob =
-              format === "svg" ? svgFile(svg) : await pngFile(svg, 2000, 1520);
+              format === "svg"
+                ? svgFile(svg)
+                : await pngFile(svg, size.width, size.height);
             saveFile(blob, `tangent-garden-tesseract.${format}`);
           }}
         />
@@ -442,6 +476,19 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                     const mode = e.target.value as Config["mode"];
                     if (descriptor.linkedViews) {
                       stop();
+                      // The paired shadow camera is kept only across a
+                      // paired → diagram → paired excursion.
+                      if (config.mode === "paired" && mode === "diagram") {
+                        pairedShadow.current = { ...view };
+                        setView({ ...diagramView });
+                      } else {
+                        if (mode === "paired" && config.mode === "diagram") {
+                          setDiagramView({ ...view });
+                          if (pairedShadow.current)
+                            setView({ ...pairedShadow.current });
+                        }
+                        pairedShadow.current = null;
+                      }
                       if (descriptor.flat?.({ ...config, mode }))
                         setSpinning(false);
                       setPreset(null);
@@ -711,6 +758,7 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
             <AnimationPanel
               {...{
                 config,
+                layout,
                 motion,
                 duration,
                 preview,
@@ -753,11 +801,13 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
             <div>
               <div className="eyebrow">
                 FOUR DIMENSIONS /{" "}
-                {config.mode === "diagram"
-                  ? "A COORDINATE DIAGRAM"
-                  : config.mode === "section" || config.mode === "reference"
-                    ? "A CROSS-SECTION"
-                    : "A PROJECTION"}
+                {config.mode === "paired"
+                  ? "TWO LINKED VIEWS"
+                  : config.mode === "diagram"
+                    ? "A COORDINATE DIAGRAM"
+                    : config.mode === "section" || config.mode === "reference"
+                      ? "A CROSS-SECTION"
+                      : "A PROJECTION"}
               </div>
               <h1>
                 {preset === null
@@ -780,6 +830,8 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                 onClick={() => {
                   setSpinning(false);
                   setView({ ...initialView });
+                  setDiagramView({ ...initialView });
+                  pairedShadow.current = null;
                 }}
               >
                 Reset view
@@ -793,12 +845,36 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
             data-config={frame ? JSON.stringify(frame.config) : undefined}
             data-progress={progress}
           >
-            <div className="tesseract-canvas-wrap">
+            {frame?.result.companion && (
+              <div className="paired-view-labels" data-layout={liveLayout}>
+                {objects[frame.config.object].pairedModes?.map(
+                  (mode, index) => (
+                    <span key={mode}>
+                      {`${index + 1} / ${modes[mode]} (${
+                        liveLayout === "rows"
+                          ? ["top", "bottom"][index]
+                          : ["left", "right"][index]
+                      })`}
+                    </span>
+                  ),
+                )}
+              </div>
+            )}
+            <div
+              className={`tesseract-canvas-wrap ${liveLayout ? "paired-canvas" : ""}`}
+              data-layout={liveLayout}
+            >
               {frame && (
-                <Plot
+                <StudyPlot
                   result={frame.result}
                   config={frame.config}
-                  {...{ view, layers, dark }}
+                  {...{ view, diagramView, layers, dark }}
+                  layout={liveLayout}
+                  onDiagramView={(v) => {
+                    if (held || exporting) return;
+                    controller.current?.abort();
+                    setDiagramView(v);
+                  }}
                   onView={(v) => {
                     if (held || exporting) return;
                     controller.current?.abort();
@@ -836,7 +912,9 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   ))}
                 {!curved &&
                   (
-                    descriptor.legendItems ??
+                    (typeof descriptor.legendItems === "function"
+                      ? descriptor.legendItems(config)
+                      : descriptor.legendItems) ??
                     inks(dark).map((_, i) => ({
                       label: ["x", "y", "z", "w"][i],
                       family: i,

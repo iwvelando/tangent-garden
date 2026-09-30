@@ -79,7 +79,7 @@ func TestBypassInvalidMiddleAndBoundary(t *testing.T) {
 		}
 	}
 }
-func TestBypassFourDimensionalShellObstructsEveryRoute(t *testing.T) {
+func TestBypassFourDimensionalShellObstructsCanonicalRoutes(t *testing.T) {
 	for _, height := range []float64{0, .1, 1.2, 4, 20} {
 		d := bypassDiagnostic(t, bypassResult(t, bypassRequest(t, "diagram", "radial", height, 1)))
 		if d.State != "crossing" || d.Clearance != 0 || len(d.Hits) == 0 {
@@ -148,54 +148,116 @@ func TestBypassInvalidFields(t *testing.T) {
 	}
 }
 
-func TestBypassCompleteSegmentTangencyReversalAndRigidMotion(t *testing.T) {
-	l := BypassParameters{Inner: 1, Outer: 2, Extent: .15, Obstacle: "embedded"}
-	base := newShellObstacle(l)
-	fixtures := []struct {
+// The obstacles are canonical, so a common rigid motion of route and obstacle
+// is tested through the obstacle's own symmetries: those motions move the
+// route while leaving the obstacle fixed. K is preserved by rotations of xyz
+// and by w ↦ −w; K₄ by every rotation of R⁴. Each moved segment has nonzero
+// coordinates on every affected axis, and an independent membership test
+// checks every returned interval and every gap between them.
+func TestBypassCompleteSegmentsUnderReversalAndObstacleSymmetries(t *testing.T) {
+	type fixture struct {
 		a, b Vec4
-		hits []interval
-	}{
-		{Vec4{-3, 0, 0, 0}, Vec4{3, 0, 0, 0}, []interval{{1. / 6, 1. / 3}, {2. / 3, 5. / 6}}},
-		{Vec4{-3, 2, 0, 0}, Vec4{3, 2, 0, 0}, []interval{{.5, .5}}},
-		{Vec4{-3, 0, 0, .5}, Vec4{3, 0, 0, .5}, nil},
-		{Vec4{0, 0, 0, 0}, Vec4{0, 0, 0, 1}, nil},
-		{Vec4{1.5, 0, 0, -1}, Vec4{1.5, 0, 0, 1}, []interval{{.425, .575}}},
-		{Vec4{2, 0, 0, 0}, Vec4{3, 0, 0, 0}, []interval{{0, 0}}},
+		hits []shellHit
+		// A positive-length piece lying exactly on a curved boundary is
+		// moved off it by rotation rounding, below the documented
+		// resolution; such fixtures use only the exact w reflection.
+		exactBoundary bool
 	}
-	for _, f := range fixtures {
-		for _, reversed := range []bool{false, true} {
-			a, b := f.a, f.b
-			if reversed {
-				a, b = b, a
+	cases := []struct {
+		obstacle BypassParameters
+		fixtures []fixture
+	}{
+		{BypassParameters{Inner: 1, Outer: 2, Extent: .15, Obstacle: "embedded"}, []fixture{
+			{Vec4{-3, 0, 0, 0}, Vec4{3, 0, 0, 0}, []shellHit{{1. / 6, 1. / 3, true}, {2. / 3, 5. / 6, true}}, false},
+			{Vec4{-3, 2, 0, 0}, Vec4{3, 2, 0, 0}, []shellHit{{.5, .5, false}}, false},
+			{Vec4{-3, 0, 0, .5}, Vec4{3, 0, 0, .5}, nil, false},
+			{Vec4{0, 0, 0, 0}, Vec4{0, 0, 0, 1}, nil, false},
+			{Vec4{1.5, 0, 0, -1}, Vec4{1.5, 0, 0, 1}, []shellHit{{.425, .575, true}}, false},
+			{Vec4{2, 0, 0, 0}, Vec4{3, 0, 0, 0}, []shellHit{{0, 0, false}}, false},
+			// Tangent to the inner sphere: the whole segment passes through
+			// the interior, touching the cavity boundary only at t = 1/2.
+			{Vec4{-1.5, 1, 0, 0}, Vec4{1.5, 1, 0, 0}, []shellHit{{0, 1, true}}, false},
+			// Along the slab face |w| = ε: closed-boundary contact only.
+			{Vec4{-3, 0, 0, .15}, Vec4{3, 0, 0, .15}, []shellHit{{1. / 6, 1. / 3, false}, {2. / 3, 5. / 6, false}}, false},
+			// Coordinate fibers along the cavity and outer walls touch K
+			// along a positive length without entering its interior.
+			{Vec4{1, 0, 0, -1}, Vec4{1, 0, 0, 1}, []shellHit{{.425, .575, false}}, true},
+			{Vec4{0, 2, 0, -1}, Vec4{0, 2, 0, 1}, []shellHit{{.425, .575, false}}, true},
+		}},
+		{BypassParameters{Inner: 1, Outer: 2, Obstacle: "radial"}, []fixture{
+			{Vec4{0, 0, 0, 3}, Vec4{}, []shellHit{{1. / 3, 2. / 3, true}}, false},
+			{Vec4{-1.5, 0, 0, 1}, Vec4{1.5, 0, 0, 1}, []shellHit{{0, 1, true}}, false},
+			{Vec4{-3, 0, 0, 2}, Vec4{3, 0, 0, 2}, []shellHit{{.5, .5, false}}, false},
+		}},
+	}
+	for _, c := range cases {
+		o := newShellObstacle(c.obstacle)
+		radial := c.obstacle.Obstacle == "radial"
+		// Independent closed membership, with a resolution far above rounding.
+		member := func(v Vec4, slack float64) bool {
+			r := math.Hypot(math.Hypot(v[0], v[1]), v[2])
+			if radial {
+				r = math.Hypot(r, v[3])
+				return r >= 1-slack && r <= 2+slack
 			}
-			for _, angles := range [][6]float64{{}, {.23, -.47, .31, .71, -.2, .19}} {
-				o := base
-				o.origin = Vec4{2, -3, .7, -1.1}
-				transform := func(v Vec4) Vec4 {
-					v = rotate(v, angles)
-					for i := range v {
-						v[i] += o.origin[i]
+			return r >= 1-slack && r <= 2+slack && math.Abs(v[3]) <= .15+slack
+		}
+		motions := []func(Vec4) Vec4{func(v Vec4) Vec4 { return v }}
+		xyz := [6]float64{.23, -.47, .31}
+		if radial {
+			xyz = [6]float64{.23, -.47, .31, .71, -.2, .19}
+		}
+		motions = append(motions,
+			func(v Vec4) Vec4 { return rotate(v, xyz) },
+			func(v Vec4) Vec4 { v = rotate(v, xyz); v[3] = -v[3]; return v })
+		for _, f := range c.fixtures {
+			for _, reversed := range []bool{false, true} {
+				for m, move := range motions {
+					if f.exactBoundary && m == 1 {
+						continue
 					}
-					return v
-				}
-				for i := range o.axes {
-					unit := Vec4{}
-					unit[i] = 1
-					o.axes[i] = rotate(unit, angles)
-				}
-				count := 0
-				hits := shellSegment(transform(a), transform(b), o, &count)
-				if len(hits) != len(f.hits) {
-					t.Fatal("complete segment/rigid-motion classification", hits, f.hits)
-				}
-				for i, h := range hits {
-					want := f.hits[i]
+					if f.exactBoundary && m == 2 {
+						move = func(v Vec4) Vec4 { v[3] = -v[3]; return v }
+					}
+					a, b := move(f.a), move(f.b)
 					if reversed {
-						old := f.hits[len(f.hits)-1-i]
-						want = interval{1 - old.hi, 1 - old.lo}
+						a, b = b, a
 					}
-					if math.Abs(h.lo-want.lo) > 1e-12 || math.Abs(h.hi-want.hi) > 1e-12 {
-						t.Fatal("intersection moved under reversal/rigid motion", h, want)
+					count := 0
+					hits := shellSegment(a, b, o, &count)
+					if len(hits) != len(f.hits) {
+						t.Fatal("complete-segment classification", c.obstacle.Obstacle, f, m, reversed, hits)
+					}
+					for i, h := range hits {
+						want := f.hits[i]
+						if reversed {
+							old := f.hits[len(f.hits)-1-i]
+							want = shellHit{1 - old.hi, 1 - old.lo, old.crossing}
+						}
+						if math.Abs(h.lo-want.lo) > 1e-12 || math.Abs(h.hi-want.hi) > 1e-12 || h.crossing != want.crossing {
+							t.Fatal("intersection changed under reversal/symmetry", c.obstacle.Obstacle, f, m, h, want)
+						}
+					}
+					// Every point of a returned hit is a member; every point
+					// strictly between hits (away from their ends) is not.
+					edges := []float64{0}
+					for _, h := range hits {
+						for k := 1; k < 16; k++ {
+							if tt := h.lo + (h.hi-h.lo)*float64(k)/16; !member(interpolate4(a, b, tt), 1e-9) {
+								t.Fatal("returned hit contains a nonmember", f, tt)
+							}
+						}
+						edges = append(edges, h.lo, h.hi)
+					}
+					edges = append(edges, 1)
+					for k := 0; k+1 < len(edges); k += 2 {
+						lo, hi := edges[k], edges[k+1]
+						for j := 1; j < 16; j++ {
+							tt := lo + (hi-lo)*float64(j)/16
+							if hi-lo > 1e-6 && member(interpolate4(a, b, tt), -1e-9) {
+								t.Fatal("classifier missed a member between hits", f, tt)
+							}
+						}
 					}
 				}
 			}
@@ -268,7 +330,7 @@ func TestBypassCircleChordConvergence(t *testing.T) {
 	}
 }
 func BenchmarkBypassMaximumSamples(b *testing.B) {
-	q := Request{Object: "bypass", Mode: "shadow", Samples: 256, Bypass: &BypassParameters{Inner: 1, Outer: 2, Extent: .15, Outside: Vec3{3, 0, 0}, Height: 20, Position: .5, Obstacle: "radial", W1: -20, W2: 20}}
+	q := Request{Object: "bypass", Mode: "shadow", Samples: 256, Bypass: &BypassParameters{Inner: 1, Outer: 2, Extent: .15, Outside: Vec3{3, 0, 0}, Height: .1, Position: .5, Obstacle: "embedded", W1: -20, W2: 20}}
 	for b.Loop() {
 		if _, e := Compute(q); e != nil {
 			b.Fatal(e)
@@ -345,6 +407,12 @@ func TestBypassReturnedMarkerProjectionAndFraming(t *testing.T) {
 		if dist != r.Bypass.Distance || dist != 40 {
 			t.Fatal("actual marker separation", dist, r.Bypass)
 		}
+		if mode == "shadow" {
+			shadow := math.Sqrt(dot(sub(first.Point, second.Point), sub(first.Point, second.Point)))
+			if shadow != r.Bypass.ShadowDistance || shadow != 0 {
+				t.Fatal("XYZ separation must be measured from the shadow markers", shadow, r.Bypass)
+			}
+		}
 		for _, m := range r.Markers {
 			if math.Sqrt(dot(m.Point, m.Point)) > r.Radius+1e-10 {
 				t.Fatal("marker outside whole-study framing", m, r.Radius)
@@ -363,7 +431,7 @@ func TestBypassRadialSegmentDependsOnFourthCoordinate(t *testing.T) {
 	o := newShellObstacle(BypassParameters{Inner: 1, Outer: 2, Obstacle: "radial"})
 	count := 0
 	hits := shellSegment(Vec4{0, 0, 0, 3}, Vec4{}, o, &count)
-	if len(hits) != 1 || math.Abs(hits[0].lo-1./3) > 1e-12 || math.Abs(hits[0].hi-2./3) > 1e-12 {
+	if len(hits) != 1 || !hits[0].crossing || math.Abs(hits[0].lo-1./3) > 1e-12 || math.Abs(hits[0].hi-2./3) > 1e-12 {
 		t.Fatal("radial shell must contain fourth-axis interval", hits)
 	}
 }
@@ -381,6 +449,165 @@ func TestBypassBoundaryToleranceRemainsConservative(t *testing.T) {
 		}
 		if f.state == "clear" && math.Abs(r.Bypass.Clearance-(f.height-.15)) > 1e-15 {
 			t.Fatal("clearance beyond contact tolerance", r.Bypass)
+		}
+	}
+}
+
+func TestBypassPairedResultIsOneSynchronizedBoundedSnapshot(t *testing.T) {
+	for _, obstacle := range []string{"embedded", "radial"} {
+		for _, s := range []float64{0, 1. / 3, .5, 2. / 3, 1} {
+			q := bypassRequest(t, "paired", obstacle, 1.2, s)
+			q.Samples = 256
+			r := bypassResult(t, q)
+			raw, e := json.Marshal(r)
+			if e != nil {
+				t.Fatal(e)
+			}
+			var observed struct {
+				Companion *Result `json:"companion"`
+			}
+			if e = json.Unmarshal(raw, &observed); e != nil {
+				t.Fatal(e)
+			}
+			d := observed.Companion
+			if d == nil || d.Operation != "diagram" {
+				t.Fatal("missing coordinate companion", d)
+			}
+			q.Mode = "shadow"
+			shadow := bypassResult(t, q)
+			q.Mode = "diagram"
+			diagram := bypassResult(t, q)
+			if !reflect.DeepEqual(r.Paths, shadow.Paths) || !reflect.DeepEqual(r.Markers, shadow.Markers) || !reflect.DeepEqual(*d, diagram) {
+				t.Fatal("paired geometry changed an existing single view")
+			}
+			if !reflect.DeepEqual(r.Bypass, d.Bypass) || r.Bypass.Position != s {
+				t.Fatal("companion sampled a different moment", r.Bypass, d.Bypass)
+			}
+			if r.EmittedPoints != shadow.EmittedPoints+diagram.EmittedPoints || r.Evaluations != shadow.Evaluations+diagram.Evaluations || r.EmittedPoints > 4000 || r.Evaluations > 5000 {
+				t.Fatal("whole paired-study cost", r.EmittedPoints, r.Evaluations)
+			}
+		}
+	}
+}
+
+func BenchmarkBypassPairedMaximumSamples(b *testing.B) {
+	q := Request{Object: "bypass", Mode: "paired", Samples: 256, Bypass: &BypassParameters{Inner: 1, Outer: 2, Extent: .15, Outside: Vec3{3, 0, 0}, Height: .1, Position: .5, Obstacle: "embedded", W1: -20, W2: 20}}
+	for b.Loop() {
+		if _, e := Compute(q); e != nil {
+			b.Fatal(e)
+		}
+	}
+}
+
+// The XYZ shadow of K₄ is the solid ball |p| ≤ b: every cavity point lifts in w
+// into the shell. Only the outer boundary may be drawn; the embedded shell's
+// shadow is its own 3D shell, bounded at both radii.
+func TestBypassShadowDrawsTheObstacleShadow(t *testing.T) {
+	for _, obstacle := range []string{"embedded", "radial"} {
+		r := bypassResult(t, bypassRequest(t, "shadow", obstacle, 1.2, .5))
+		radii := map[float64]int{}
+		for _, p := range r.Paths {
+			if p.Role != "shell" {
+				continue
+			}
+			for _, v := range p.FourPoints {
+				radius := math.Round(math.Sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])*1e9) / 1e9
+				radii[radius]++
+				if v[3] != 0 {
+					t.Fatal("shadow boundary carries a lifted point", v)
+				}
+			}
+		}
+		want := map[float64]bool{1: obstacle == "embedded", 2: true}
+		for radius, drawn := range want {
+			if (radii[radius] > 0) != drawn {
+				t.Fatal("shadow boundary radii", obstacle, radii)
+			}
+		}
+		if len(radii) != 1+map[bool]int{true: 1}[obstacle == "embedded"] {
+			t.Fatal("unexpected shadow boundary radius", obstacle, radii)
+		}
+	}
+}
+
+// Clearance is the reported minimum Euclidean distance from the complete route
+// to the closed shell K. Measure that distance independently: the distance
+// from (p,w) to K is hypot(max(a−|p|, |p|−b, 0), max(|w|−ε, 0)).
+func TestBypassClearanceIsTheMeasuredDistanceToK(t *testing.T) {
+	for _, f := range []struct {
+		inner, outer, extent, height float64
+		outside                      Vec3
+	}{
+		{1, 2, .15, 1.2, Vec3{3, 0, 0}},
+		{1, 2, .15, .16, Vec3{1.7, -2.2, 1.1}},
+		{.4, 2.5, 0, .3, Vec3{-1, 2, 2}},
+		{1.5, 3, .5, 4, Vec3{2.2, 2.2, -.3}},
+		{.05, 1, 1, 3, Vec3{-.4, .5, -.9}},
+		{1, 2, .15, .15, Vec3{0, -2.5, 1}},
+		{1, 2, .15, .05, Vec3{2, 1, -2}},
+	} {
+		q := bypassRequest(t, "shadow", "embedded", f.height, 0)
+		q.Bypass.Inner, q.Bypass.Outer, q.Bypass.Extent, q.Bypass.Outside = f.inner, f.outer, f.extent, f.outside
+		r := bypassResult(t, q)
+		route := sourcePaths(r, "bypass/route")[0].FourPoints
+		measured := math.Inf(1)
+		for leg := 0; leg < 3; leg++ {
+			for k := 0; k <= 6000; k++ {
+				tt := float64(k) / 6000
+				v := Vec4{}
+				for i := range v {
+					v[i] = route[leg][i] + (route[leg+1][i]-route[leg][i])*tt
+				}
+				rp := math.Hypot(math.Hypot(v[0], v[1]), v[2])
+				dr := math.Max(0, math.Max(f.inner-rp, rp-f.outer))
+				dw := math.Max(0, math.Abs(v[3])-f.extent)
+				measured = math.Min(measured, math.Hypot(dr, dw))
+			}
+		}
+		if math.Abs(measured-r.Bypass.Clearance) > 1e-9 {
+			t.Fatal("clearance differs from the measured distance to K", f, measured, r.Bypass)
+		}
+		if (measured > 1e-9) != (r.Bypass.State == "clear") {
+			t.Fatal("route state disagrees with the measured distance", f, measured, r.Bypass.State)
+		}
+	}
+}
+
+// Every continuous path from outside K₄ to the origin meets it, not only the
+// canonical route: its 4D radius passes through [a,b]. Deterministic polylines
+// with arbitrary intermediate corners check the complete-segment classifier.
+func TestBypassFourDimensionalShellObstructsArbitraryPolylines(t *testing.T) {
+	o := newShellObstacle(BypassParameters{Inner: 1, Outer: 2, Obstacle: "radial"})
+	seed := uint64(0x9e3779b97f4a7c15)
+	next := func() float64 {
+		seed ^= seed << 13
+		seed ^= seed >> 7
+		seed ^= seed << 17
+		return float64(seed>>11)/float64(1<<53)*10 - 5
+	}
+	for route := 0; route < 200; route++ {
+		start := Vec4{next(), next(), next(), next()}
+		for norm(start) <= 2.01 {
+			start = Vec4{next(), next(), next(), next()}
+		}
+		corners := []Vec4{start}
+		for i := 0; i < route%4; i++ {
+			corners = append(corners, Vec4{next(), next(), next(), next()})
+		}
+		corners = append(corners, Vec4{})
+		met := false
+		count := 0
+		for i := 0; i+1 < len(corners); i++ {
+			for _, h := range shellSegment(corners[i], corners[i+1], o, &count) {
+				v := interpolate4(corners[i], corners[i+1], (h.lo+h.hi)/2)
+				if r := math.Sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2] + v[3]*v[3]); r < 1-1e-9 || r > 2+1e-9 {
+					t.Fatal("reported hit is not in K₄", corners, h, r)
+				}
+				met = true
+			}
+		}
+		if !met {
+			t.Fatal("outside-to-origin polyline evaded K₄", corners)
 		}
 	}
 }

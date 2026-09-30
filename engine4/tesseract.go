@@ -67,6 +67,7 @@ type Result struct {
 	Lift          *LiftDiagnostics   `json:"lift,omitempty"`
 	Bypass        *BypassDiagnostics `json:"bypass,omitempty"`
 	Markers       []Marker           `json:"markers,omitempty"`
+	Companion     *Result            `json:"companion,omitempty"`
 }
 
 var planes = [6][2]int{{0, 1}, {0, 2}, {1, 2}, {0, 3}, {1, 3}, {2, 3}}
@@ -125,6 +126,14 @@ func Compute(q Request) (r Result, err error) {
 		}
 		r.EmittedPoints += len(r.Points)
 		r.EmittedPoints += len(r.Markers)
+		if r.Companion != nil {
+			for _, p := range r.Companion.Paths {
+				r.Companion.EmittedPoints += len(p.Points)
+			}
+			r.Companion.EmittedPoints += len(r.Companion.Points) + len(r.Companion.Markers)
+			r.EmittedPoints += r.Companion.EmittedPoints
+			r.Evaluations += r.Companion.Evaluations
+		}
 	}()
 	if q.Object == "bypass" {
 		return bypass(q, r)

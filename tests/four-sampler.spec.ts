@@ -92,7 +92,7 @@ test("localized lift sampler shares immutable linked views and exact entered end
 test("bypass sampler preserves the study and clamps synchronized forward/reverse route position", () => {
   const base = objects.bypass.defaults({} as Config),
     before = structuredClone(base);
-  for (const mode of ["shadow", "diagram"] as const)
+  for (const mode of ["shadow", "diagram", "paired"] as const)
     for (const p of [-1, 0, 1 / 3, 0.5, 2 / 3, 1, 2]) {
       const clamped = Math.max(0, Math.min(1, p));
       for (const motion of ["route", "return"] as const) {
