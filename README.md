@@ -27,6 +27,7 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - Signed normal offsets (parallel curves) that keep their cusps and swallowtails, with distance animation, evenly spaced offset stacks, and optional generating circles whose envelope is the offsets ±R.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.
 - Curve-reveal and multi-parameter animations with four camera modes.
+- **Copy link** in every notebook: a link that reopens your study, layers, view, and animation setup for anyone, carried in the URL fragment with no server.
 - PNG and vector SVG image exports; animation exports as MP4 video (the default) or animated WebP, whichever the browser can encode, with resolution, quality, and up to 60 fps for MP4.
 - Expert sampling controls and an engine designed for independent mathematical testing.
 

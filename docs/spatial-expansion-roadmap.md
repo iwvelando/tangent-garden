@@ -130,7 +130,9 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 
 ## Notebook, camera, and media backlog
 
-- [ ] **Saved studies and portable links.** Versioned local JSON import/export containing dimension, generator, construction, expressions, scalar values/text, theme choice, layers, animation tracks and effective camera. Validate untrusted files through bounded schemas/parser inputs. Later add size-bounded URL sharing without a server; report incompatible versions. Keep model definitions independent of transient playback state.
+- [x] **Portable links.** Done: **Copy link** in every notebook, described in `usage.md#share-a-study` and `architecture.md`. The link carries the study, layers, manual camera and animation setup as versioned, size-bounded JSON in the URL fragment, validated by a typed schema per notebook.
+  - Decisions: the viewer's theme, playback position and export settings stay out. Scalar fields reopen as exact values, not their entered text. A newer version is reported, and older links take defaults for fields they lack.
+- [ ] **Saved study files.** Versioned local JSON save/open, reusing the link payload and validation (`web/study-link.ts`) with a file size bound instead of a URL one. Consider carrying scalar field text as entered.
 - [ ] **Camera affordances.** Named front/side/top/isometric views, a small orientation indicator, touch pinch/pan, and keyboard parity. The MVP already supports orbit/pan/zoom; this is refinement, not replacement. Any perspective option must be explicitly labelled and retain orthographic defaults and reproducible export framing.
 - [ ] **Authored camera animation.** Named snapshots, a target/orbit center, start/end orientation, and deliberate interpolation. Specify full-turn versus shortest-rotation behavior and avoid quaternion sign flips. Geometry tracks and camera tracks remain separate; Stop restores the manual camera.
 - [ ] **Composition and study comparison.** Allow only evaluator-compatible derived inputs, with bounded depth and clear provenance. A later side-by-side 2D/3D comparison or declared planar embedding could help explain reductions, but 2D and 3D studies should not silently overwrite one another.
@@ -439,7 +441,7 @@ Next step at the time: 7b, below.
 
 Every numbered slice is now complete. The backlog below remains open. Recommended next steps, for the user to choose between:
 
-- **Saved studies and portable links**, which every notebook would use;
+- **Saved study files**, reusing the portable link payload (links are done);
 - **Adaptive meshes**, starting with bounded octree refinement of implicit surfaces near thin necks and alternating faces, reporting budget exhaustion;
 - **Mesh identities and efficiency**: the implicit study's indexed mesh is the first shared-vertex result, and typed transport would shrink its JSON.
 

@@ -39,6 +39,19 @@ import { AnimationPanel } from "./AnimationPanel";
 import { AppHeader } from "./AppHeader";
 import { revealDrawing } from "./revealDrawing";
 import { ExportImageMenu } from "./ExportImageMenu";
+import { LinkNotice, ShareLink } from "./ShareLink";
+import {
+  LinkError,
+  linkToken,
+  readStudyLink,
+  type SharedStudy,
+} from "./study-link";
+import {
+  planarStudy,
+  type PlanarAnimation,
+  type PlanarStudy,
+  type PlotCamera,
+} from "./planar-link";
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
@@ -210,7 +223,7 @@ function setIn(config: Config, path: string[], value: number): Config {
   parent[path.at(-1)!] = value;
   return next;
 }
-function App({ active }: { active: boolean }) {
+function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const [config, setConfig] = useState<Config>(presets[0].config);
   const [preset, setPreset] = useState("0");
   // Remembers the pole construction while another tab is selected.
@@ -1049,12 +1062,68 @@ function App({ active }: { active: boolean }) {
     });
     setReset(reset + 1);
   };
+  // A shared study replaces the whole study, as a preset does, and restores
+  // the sender's layers, framing, and animation setup.
+  const [linkNotice, setLinkNotice] = useState("");
+  const camera = useRef<PlotCamera>({ x: 0, y: 0, zoom: 1 });
+  const [restoredCamera, setRestoredCamera] = useState<{
+    reset: number;
+    camera: PlotCamera;
+  } | null>(null);
+  const animationSettings = useRef<PlanarAnimation | null>(null);
+  const [restoredAnimation, setRestoredAnimation] = useState<{
+    id: number;
+    settings: PlanarAnimation;
+  } | null>(null);
+  const openStudy = (id: number, study: PlanarStudy) => {
+    setPreset("custom");
+    scalarGeneration.current++;
+    setPoleKind(study.poleKind);
+    setConfig(study.config);
+    setBounds(study.bounds);
+    setLength(study.length);
+    setLayers(study.layers);
+    setRestoredCamera({ reset: reset + 1, camera: study.camera });
+    setReset(reset + 1);
+    setRestoredAnimation({ id, settings: study.animation });
+  };
+  useEffect(() => {
+    if (!shared) return;
+    setLinkNotice(shared.error ?? "");
+    if (shared.error !== undefined) return;
+    try {
+      openStudy(shared.id, planarStudy(shared.study));
+    } catch (e) {
+      setLinkNotice(
+        e instanceof LinkError ? e.message : "This link could not be read.",
+      );
+    }
+  }, [shared?.id]);
+  const snapshot = (): PlanarStudy => ({
+    config,
+    bounds,
+    length,
+    poleKind,
+    layers,
+    camera: camera.current,
+    animation: animationSettings.current ?? {
+      mode: "reveal",
+      camera: "hold",
+      duration: 10,
+      tracks: [],
+    },
+  });
   return (
     <div
       className={dark ? "app dark" : "app"}
       data-theme-preference={preference}
     >
       <AppHeader theme={theme}>
+        <ShareLink
+          notebook="2d"
+          study={snapshot}
+          disabled={!result || busy || !!error}
+        />
         <ExportImageMenu
           disabled={!result || busy || !!error || animationRunning}
           kind={studyName(config)}
@@ -1063,6 +1132,12 @@ function App({ active }: { active: boolean }) {
       <main>
         <ScalarStatus.Provider value={scalarStatus}>
           <aside aria-label="Study parameters">
+            {linkNotice && (
+              <LinkNotice
+                text={linkNotice}
+                onDismiss={() => setLinkNotice("")}
+              />
+            )}
             <div className="section-label">01 / THE STUDY</div>
             <ExampleGallery
               examples={planarExamples}
@@ -1962,6 +2037,8 @@ function App({ active }: { active: boolean }) {
               onView={setAnimation}
               onRunning={setAnimationRunning}
               onPlay={revealPlot}
+              settings={animationSettings}
+              restore={busy ? null : restoredAnimation}
             />
           </aside>
         </ScalarStatus.Provider>
@@ -1995,6 +2072,10 @@ function App({ active }: { active: boolean }) {
               <Plot
                 onViewport={(view) => {
                   manualView.current = view;
+                }}
+                initialCamera={restoredCamera}
+                onCamera={(c) => {
+                  camera.current = c;
                 }}
                 result={result}
                 config={shown.config}
@@ -2075,11 +2156,45 @@ function Notebook() {
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
   }, []);
+  // A study link in the fragment opens in its notebook. The fragment is then
+  // removed, so later edits never sit under a link to the original.
+  const [shared, setShared] = useState<
+    Partial<Record<NotebookKind, SharedStudy>>
+  >({});
+  const links = useRef(0);
+  useEffect(() => {
+    const receive = async () => {
+      const token = linkToken(location.hash);
+      if (token === null) return;
+      const id = ++links.current;
+      let next: { notebook: NotebookKind; link: SharedStudy };
+      try {
+        const { notebook, study } = await readStudyLink(token);
+        next = { notebook, link: { id, study } };
+      } catch (e) {
+        const error =
+          e instanceof LinkError ? e.message : "This link could not be read.";
+        next = { notebook: notebookKind(), link: { id, error } };
+      }
+      // A later link replaces one still being read.
+      if (id !== links.current) return;
+      const url = new URL(location.href);
+      url.hash = "";
+      if (next.notebook === "2d") url.searchParams.delete("study");
+      else url.searchParams.set("study", next.notebook);
+      history.replaceState(null, "", url);
+      show(next.notebook);
+      setShared((s) => ({ ...s, [next.notebook]: next.link }));
+    };
+    void receive();
+    window.addEventListener("hashchange", receive);
+    return () => window.removeEventListener("hashchange", receive);
+  }, []);
   return (
     <NotebookContext.Provider value={{ mode, choose, focusRequest }}>
       {seen["2d"] && (
         <div hidden={mode !== "2d"}>
-          <App active={mode === "2d"} />
+          <App active={mode === "2d"} shared={shared["2d"]} />
         </div>
       )}
       {seen["3d"] && (
@@ -2089,7 +2204,7 @@ function Notebook() {
               <div className="loading">Opening the spatial notebook…</div>
             }
           >
-            <SpatialApp active={mode === "3d"} />
+            <SpatialApp active={mode === "3d"} shared={shared["3d"]} />
           </Suspense>
         </div>
       )}
@@ -2100,7 +2215,7 @@ function Notebook() {
               <div className="loading">Opening the fourth dimension…</div>
             }
           >
-            <TesseractApp active={mode === "4d"} />
+            <TesseractApp active={mode === "4d"} shared={shared["4d"]} />
           </Suspense>
         </div>
       )}

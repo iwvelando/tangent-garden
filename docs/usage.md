@@ -98,6 +98,22 @@ Export shows progress and can be canceled. Parameter-animation exports calculate
 
 This is a **mathematical construction explorer**, not a scene renderer. Every regular sampled point participates; there is no occlusion, solid-medium topology, or multiple-bounce tracing. A closed curve can therefore display ray families that would not all be illuminated in a physical object.
 
+## Share a study
+
+**Copy link** in the header of every notebook (a chain icon on the narrowest screens) copies a link that reopens the current study for anyone who follows it. The link carries:
+
+- the whole definition: expressions, every parameter, sampling, and the construction, including values not shown by the current definition;
+- the visible layers;
+- the manual camera (2D pan and zoom; 3D and 4D orbit, pan, and zoom, including the coordinate diagram's view beside a 4D shadow);
+- the animation setup: what is animated, its camera mode, duration, and parameter tracks with their endpoints as entered. The 4D notebook carries its motion and duration.
+- In 2D, the interval bounds as entered (such as `2*pi`), the ray length, and the remembered pole construction.
+
+It leaves out your theme, which stays each viewer's own, the playback position, and export settings. A numeric field reopens with its exact value, written as a whole multiple or simple fraction of π where it is one, as for examples. Another constant expression reopens as a decimal (`2*e` becomes `5.43656365691809`), which draws the same study. Framing follows the drawing: the 2D view is exact, while a 3D or 4D view keeps its angles and zoom and adapts to the viewer's window shape.
+
+The study travels in the part of the address after `#`, which browsers never send to a server; no study is uploaded or stored anywhere. A typical link is 1–2 KB. A study whose link would exceed 32 KB, which only very long expressions reach, is refused with a message. Opening a link replaces the notebook's study as choosing an example does, then removes it from the address bar, so later edits never sit under the original link. Copy is unavailable while the study has an error or is still resolving. Where the browser refuses clipboard access, the link appears selected for copying by hand.
+
+A damaged or edited link leaves the current study unchanged and names the field it could not use. A link made by a newer version of the site asks you to reload. Links made before a field existed keep opening with that field's default.
+
 ## 3D curves
 
 The header’s study dropdown keeps both edited studies on the same page. Spatial studies offer tangent ribbons, involute filaments, tangent-foot projections, tangent-line orthotomics, sphere inversions, framed ribbons, ruled surfaces, and tubes and canal surfaces of torus knots, custom `x(t), y(t), z(t)` expressions, harmonic sums, and vector-field trajectories, or show the curve alone. Start with one of twenty-seven presets, then edit expressions and scalar parameters. Drag to orbit, shift-drag to pan, scroll to zoom, or use the drawing's keyboard controls; on a touch screen, pinch to zoom and move two fingers together to pan. Surface, tangent lines and boundary curves can be shown independently. Choose **Construction · Involute** to unwind taut strings from the curve instead: set the anchor t₀ where arc length starts and the string length c, or enable **Family of involutes** for 2–24 evenly spaced lengths. Filaments and strings are separate layers, and the anchor, c, family range and count are animation tracks.

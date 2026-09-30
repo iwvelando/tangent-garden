@@ -24,8 +24,17 @@ import {
   type View,
 } from "./types";
 import { objects, modes } from "./objects";
+import { LinkNotice, ShareLink } from "../ShareLink";
+import { LinkError, type SharedStudy } from "../study-link";
+import { tesseractStudy, type TesseractStudy } from "./link";
 import "./style.css";
-export default function TesseractApp({ active = true }: { active?: boolean }) {
+export default function TesseractApp({
+  active = true,
+  shared,
+}: {
+  active?: boolean;
+  shared?: SharedStudy;
+}) {
   const theme = useTheme(),
     { dark } = theme;
   const [config, setConfig] = useState<Config>(() =>
@@ -245,6 +254,46 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
     setSpinning(false);
     setError("");
   };
+  // A shared study replaces the whole study, as a preset does, and restores
+  // the sender's layers, views, and motion.
+  const [linkNotice, setLinkNotice] = useState("");
+  const openStudy = (study: TesseractStudy) => {
+    stop();
+    generation.current++;
+    setScalars({});
+    setConfig(study.config);
+    setPreset(null);
+    setLayers(study.layers);
+    setMotion(study.motion);
+    setDuration(study.duration);
+    setProgress(0);
+    setPreview(false);
+    setView(study.view);
+    setDiagramView(study.diagramView);
+    pairedShadow.current = null;
+    setSpinning(false);
+    setError("");
+  };
+  useEffect(() => {
+    if (!shared) return;
+    setLinkNotice(shared.error ?? "");
+    if (shared.error !== undefined) return;
+    try {
+      openStudy(tesseractStudy(shared.study));
+    } catch (e) {
+      setLinkNotice(
+        e instanceof LinkError ? e.message : "This link could not be read.",
+      );
+    }
+  }, [shared?.id]);
+  const snapshot = (): TesseractStudy => ({
+    config,
+    layers,
+    view,
+    diagramView,
+    motion,
+    duration,
+  });
   const editTimeline = (p: number) => {
     stop();
     setPreview(true);
@@ -414,6 +463,11 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
   return (
     <div className={`app tesseract-app ${dark ? "dark" : ""}`}>
       <AppHeader theme={theme}>
+        <ShareLink
+          notebook="4d"
+          study={snapshot}
+          disabled={busy || !!error || !!scalarError}
+        />
         <ExportImageMenu
           menuId="tesseract-export-image"
           kind="tesseract"
@@ -457,6 +511,12 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
         >
           <aside className="tesseract-controls">
             <section>
+              {linkNotice && (
+                <LinkNotice
+                  text={linkNotice}
+                  onDismiss={() => setLinkNotice("")}
+                />
+              )}
               <div className="section-label">01 / BEYOND THREE DIMENSIONS</div>
               <ExampleGallery
                 examples={tesseractExamples}

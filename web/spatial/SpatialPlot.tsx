@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpatialResult } from "./types";
+import type { SpatialCamera } from "./link";
 import { createGesture } from "../gestures";
 import {
   createRenderer,
@@ -18,6 +19,8 @@ export function SpatialPlot({
   refit = 0,
   onViewport,
   onError,
+  restored,
+  onCamera,
 }: {
   result: SpatialResult;
   dark: boolean;
@@ -31,6 +34,10 @@ export function SpatialPlot({
   refit?: number;
   onViewport: (view: View) => void;
   onError: (message: string) => void;
+  // A manual camera to start from at this reset, as a shared link restores.
+  restored?: { reset: number; view: SpatialCamera } | null;
+  // The manual camera whenever it is drawn, for a study link.
+  onCamera?: (camera: SpatialCamera) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
@@ -38,8 +45,15 @@ export function SpatialPlot({
   const explored = useRef<View | null>(null);
   // Orbit, pan, and zoom act on whichever camera is shown.
   const target = () => explored.current ?? manual.current;
-  const state = useRef({ dark, layers, result, override, onViewport });
-  state.current = { dark, layers, result, override, onViewport };
+  const state = useRef({
+    dark,
+    layers,
+    result,
+    override,
+    onViewport,
+    onCamera,
+  });
+  state.current = { dark, layers, result, override, onViewport, onCamera };
   const [error, setError] = useState("");
   const current = (): View =>
     state.current.override ??
@@ -54,6 +68,7 @@ export function SpatialPlot({
     // The shown camera, for tests and inspection, without a re-render.
     canvas.current.dataset.view = JSON.stringify(v);
     state.current.onViewport(v);
+    state.current.onCamera?.({ ...manual.current });
   };
   useEffect(() => {
     const element = canvas.current!;
@@ -100,7 +115,8 @@ export function SpatialPlot({
   }, [result]);
   useEffect(draw, [dark, layers, override]);
   useEffect(() => {
-    manual.current = { ...initialView };
+    manual.current =
+      restored?.reset === reset ? { ...restored.view } : { ...initialView };
     draw();
   }, [reset]);
   useEffect(() => {
