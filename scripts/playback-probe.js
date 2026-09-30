@@ -1,22 +1,27 @@
 // Playback probe: paste into the browser console on any build of the site,
-// deployed or local, to time the 3D notebook's engine during an animation.
+// deployed or local, to time the 3D notebook's engines during an animation.
 // It changes nothing: it watches the messages between the page and its
-// engine worker. Paste it, press Play, and when playback stops (or pauses)
+// engine workers. Paste it, press Play, and when playback stops (or pauses)
 // it prints how many frames were drawn per second and how long each took.
 //
-//   request → reply   the worker: Go's work, encoding and the transfer back
+//   drawn → drawn     the interval between frames on screen
+//   request → reply   one engine's round trip: Go's work, encoding, transfer
 //   reply → drawn     the page: receiving it, building GPU buffers, drawing
 //
-// Playback keeps one calculation in flight, so these two add up to the time
-// between drawn frames. Call tangentGardenProbe.report() at any point, or
-// tangentGardenProbe.stop() to detach.
+// With one engine the round trip and the page's time add up to the interval.
+// Where playback has a second engine, their calculations overlap and the
+// interval can be shorter than a round trip; "engines" says how many
+// answered. Call tangentGardenProbe.report() at any point, or
+// tangentGardenProbe.stop() to detach; report() also returns the numbers.
 (() => {
   if (globalThis.tangentGardenProbe) globalThis.tangentGardenProbe.stop();
   const sent = new Map(),
     frames = [],
+    trips = [],
+    answered = new Set(),
     watched = new WeakSet();
   let quiet = 0,
-    // A reply waiting for the page to draw it.
+    // The latest reply, waiting for the page to draw it.
     waiting = null;
   const post = Worker.prototype.postMessage;
   const gl = WebGLRenderingContext.prototype,
@@ -42,44 +47,63 @@
     [...v].sort((a, b) => a - b)[
       Math.min(v.length - 1, Math.floor(v.length * 0.9))
     ];
+  const row = (v) => ({
+    median: Math.round(median(v)),
+    p90: Math.round(p90(v)),
+  });
   function report(automatic = false) {
     if (frames.length < 2) {
       if (!automatic) console.info("Probe: no frames yet.");
-      return;
+      return null;
     }
     const span = (frames.at(-1).drawn - frames[0].sent) / 1000;
-    const worker = frames.map((f) => f.replied - f.sent),
-      page = frames.map((f) => f.drawn - f.replied);
+    const intervals = frames.slice(1).map((f, i) => f.drawn - frames[i].drawn);
     console.info(
-      `Probe: ${frames.length} frames in ${span.toFixed(1)} s, ${(frames.length / span).toFixed(2)} frames per second`,
+      `Probe: ${frames.length} frames in ${span.toFixed(1)} s, ${(frames.length / span).toFixed(2)} frames per second, ${answered.size} engine${answered.size === 1 ? "" : "s"}`,
     );
-    console.table({
-      "request → reply (ms)": {
-        median: Math.round(median(worker)),
-        p90: Math.round(p90(worker)),
-      },
-      "reply → drawn (ms)": {
-        median: Math.round(median(page)),
-        p90: Math.round(p90(page)),
-      },
-    });
+    const times = {
+      "drawn → drawn (ms)": row(intervals),
+      "request → reply (ms)": row(trips),
+      "reply → drawn (ms)": row(frames.map((f) => f.drawn - f.replied)),
+    };
+    console.table(times);
+    const summary = {
+      frames: frames.length,
+      seconds: span,
+      fps: frames.length / span,
+      engines: answered.size,
+      ...times,
+    };
     frames.length = 0;
+    trips.length = 0;
+    answered.clear();
+    return summary;
   }
   function listen(worker) {
     if (watched.has(worker)) return;
     watched.add(worker);
     worker.addEventListener("message", ({ data }) => {
-      const start = sent.get(data?.id);
+      const start = sent.get(data?.id + ":" + workerId(worker));
       if (start === undefined) return;
-      sent.delete(data.id);
-      waiting = { sent: start, replied: performance.now() };
+      sent.delete(data.id + ":" + workerId(worker));
+      const now = performance.now();
+      trips.push(now - start);
+      answered.add(worker);
+      waiting = { sent: start, replied: now };
     });
   }
+  // Each engine numbers its own requests, so key them by worker too.
+  const ids = new WeakMap();
+  let workers = 0;
+  const workerId = (worker) => {
+    if (!ids.has(worker)) ids.set(worker, ++workers);
+    return ids.get(worker);
+  };
   Worker.prototype.postMessage = function (message, ...rest) {
     if (message?.action === "spatial") {
       listen(this);
       clearTimeout(quiet);
-      sent.set(message.id, performance.now());
+      sent.set(message.id + ":" + workerId(this), performance.now());
     }
     return post.call(this, message, ...rest);
   };

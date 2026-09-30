@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { SpatialAnimation } from "./link";
-import { EngineClient } from "../engine-client";
+import { EngineClient, playbackEngineCount } from "../engine-client";
+import { play } from "../playback";
 import {
   applyTracks,
   availableTargets,
@@ -144,8 +145,14 @@ export function SpatialAnimationPanel({
   const seekTarget = useRef<number | null>(null),
     scrubbing = useRef(-1);
   const epoch = useRef(0),
-    raf = useRef(0),
+    playing = useRef<(() => void) | null>(null),
     session = useRef<Session | null>(null);
+  // A second engine for parameter playback, alive only while it plays.
+  const helper = useRef<EngineClient | null>(null);
+  const release = () => {
+    helper.current?.dispose();
+    helper.current = null;
+  };
   const targets = frame ? availableTargets(frame.config) : [];
   useEffect(() => {
     setTracks((previous) => {
@@ -181,10 +188,12 @@ export function SpatialAnimationPanel({
       next === "playing" || next === "preparing" || next === "exporting",
     );
   };
-  const cancel = () => {
+  const cancel = (keepHelper = false) => {
     epoch.current++;
     seekTarget.current = null;
-    cancelAnimationFrame(raf.current);
+    playing.current?.();
+    playing.current = null;
+    if (!keepHelper) release();
     exportAbort.current?.abort();
     exportAbort.current = null;
   };
@@ -204,7 +213,8 @@ export function SpatialAnimationPanel({
   useEffect(
     () => () => {
       epoch.current++;
-      cancelAnimationFrame(raf.current);
+      playing.current?.();
+      release();
       exportAbort.current?.abort();
     },
     [],
@@ -329,42 +339,37 @@ export function SpatialAnimationPanel({
     );
   }
   function schedule(s: Session, from: number) {
-    cancel();
+    cancel(true);
     const token = epoch.current;
-    const began = performance.now();
-    let last = -Infinity;
     changeStatus("playing");
-    const tick = async (now: number) => {
-      if (epoch.current !== token) return;
-      if (now - last < 1000 / 30) {
-        raf.current = requestAnimationFrame(tick);
-        return;
-      }
-      last = now;
-      // A frame's timestamp marks the start of the frame and can precede
-      // `began`, so clamp at the starting point: extrapolating before it
-      // would overshoot the entered endpoint, such as rounding a count of 2
-      // down to 1, and a resumed animation would step backward.
-      const p = Math.min(
-        1,
-        Math.max(from, from + (now - began) / (s.duration * 1000)),
-      );
-      try {
-        // At most one calculation is in flight. Slow devices skip intermediate
-        // times instead of queuing work or lengthening a 30-second animation.
-        const view = await sample(s, p);
+    // Parameter frames are calculated; while one engine calculates, a helper
+    // can calculate the next. Other modes draw from the prepared study.
+    if (s.mode === "parameters" && !helper.current && playbackEngineCount() > 1)
+      helper.current = new EngineClient();
+    const engines =
+      s.mode === "parameters" && helper.current
+        ? [client.current!, helper.current]
+        : [client.current!];
+    // Each engine holds at most one calculation. Slow devices skip
+    // intermediate times instead of queuing work or lengthening a 30-second
+    // animation.
+    playing.current = play({
+      from,
+      duration: s.duration * 1000,
+      lanes: engines.map((engine) => (p: number) => sample(s, p, engine)),
+      show: (view) => {
+        if (epoch.current === token) display(s, view);
+      },
+      end: () => {
         if (epoch.current !== token) return;
-        display(s, view);
-        if (p === 1) {
-          changeStatus("complete");
-          return;
-        }
-        raf.current = requestAnimationFrame(tick);
-      } catch (error) {
+        playing.current = null;
+        release();
+        changeStatus("complete");
+      },
+      fail: (error) => {
         if (epoch.current === token) fail(error);
-      }
-    };
-    raf.current = requestAnimationFrame(tick);
+      },
+    });
   }
   async function start(save = false) {
     if (!frame || !client.current) return;
@@ -413,6 +418,10 @@ export function SpatialAnimationPanel({
       let first = frame,
         final = frame;
       if (mode === "parameters") {
+        // Playback's helper engine prepares the end while the app's engine
+        // prepares the start.
+        if (!save && playbackEngineCount() > 1)
+          helper.current = new EngineClient();
         const results = await Promise.all([
           client.current
             .computeSpatial(
@@ -421,7 +430,7 @@ export function SpatialAnimationPanel({
             .catch((reason) => {
               throw new Error(`At animation start: ${reason.message}`);
             }),
-          client.current
+          (helper.current ?? client.current)
             .computeSpatial(
               applyTracks(frame.config, numeric, 1, length).config,
             )

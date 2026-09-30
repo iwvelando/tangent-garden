@@ -448,7 +448,13 @@ Every numbered slice is now complete.
 - The mesh's five arrays travel as typed views on one transferred buffer (`cmd/wasm/mesh.go`, the worker), and the renderer draws the engine's shared vertices by index, copying only corners without a normal.
 - Every 2D and 3D preset and the benchmark studies (97 results) reassemble bit for bit identical to the previous engine.
 - Measured with `make bench` against the previous engine (median of 5): tanglecube 64³ with 24 sections 1.60 → 1.09 s per frame; two drops 141 → 96 ms; double torus 290 → 180 ms; gyroid 64³ 528 → 461 ms; gyroid slab with 24 sections 1.47 → 1.45 s. Transfers halve or better for meshes.
-- Limits: trigonometric fields and sections are bound by evaluation in the shared 2D contour tracer, and gain little; playback still keeps one calculation in flight, so a second worker pipelining frames is the next lever if large studies must animate smoothly.
+- Limits: trigonometric fields and sections are bound by evaluation in the shared 2D contour tracer, and gain little.
+
+### Follow-up completed: pipelined parameter playback
+
+- 3D parameter playback adds a helper engine where an export could add one (more than two cores). The two engines alternate, spaced by half the measured round trip, and a reply older than the frame on screen is dropped; the helper also prepares the final endpoint beside the first. Reveal, orbit, tracing, scrubbing and export are unchanged.
+- Measured with `scripts/playback-probe.js` in headless Chromium on 10-second level or `a` tracks, frames per second, the deployed single-engine site → this build: tanglecube 64³ with 24 sections 0.70 → 1.26; double torus 3.85 → 6.58; two drops 5.96 → 10.82; gyroid 64³ 1.72 → 2.91. Each engine's round trip is unchanged, and the final frame is pixel-identical.
+- Limits: each frame still lags its request by one round trip, and a third engine was not added: each holds on the order of 100 MB.
 
 Recommended next step, for the user to choose: **adaptive meshes**, starting with bounded octree refinement of implicit surfaces near thin necks and alternating faces, reporting budget exhaustion. Otherwise the remaining backlog can be reconciled and this roadmap retired.
 
