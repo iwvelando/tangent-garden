@@ -82,16 +82,19 @@ jobs:
 
   # The Chromium suite, split across runners. Each shard builds its own copy of
   # the production app, which takes seconds, rather than waiting on `check`.
+  # Shards get whole spec files, so they are uneven; six keep the slowest near
+  # the `check` and `webkit` jobs while setup stays a small share of each.
   browser:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
-    name: chromium (${{ matrix.shard }}/4)
+    name: chromium (${{ matrix.shard }}/${{ matrix.total }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
+        total: [6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -135,7 +138,7 @@ jobs:
           # apt leaves the archive root-owned; the cache is saved as the runner.
           sudo chown -R "$(id -u):$(id -g)" "$archives"
       # Runs against the production build in dist/, under the production CSP.
-      - run: npx playwright test --shard=${{ matrix.shard }}/4
+      - run: npx playwright test --shard=${{ matrix.shard }}/${{ matrix.total }}
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
