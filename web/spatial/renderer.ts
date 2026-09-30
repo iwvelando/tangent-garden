@@ -219,39 +219,65 @@ function receiverVertices(g: ReceiverResult | null | undefined) {
   return out;
 }
 
-// An implicit surface's triangles, each corner with its normal, or the
-// triangle's own where ∇F gives none; a triangle without area is skipped.
-// The phase is the height in the box (decorative, not a measured quantity).
-function implicitVertices(m: ImplicitResult | undefined) {
-  if (!m) return [];
-  const out: number[] = [];
+// An implicit surface as the engine's shared vertices, each with its normal
+// and phase, and three indices per triangle. A corner whose vertex has no
+// normal (∇F gave none) takes the triangle's own, as a copy of the vertex;
+// a triangle without area is left out. The phase is the height in the box
+// (decorative, not a measured quantity).
+export function implicitMesh(m: ImplicitResult | undefined) {
+  if (!m) return { vertices: new Float32Array(), indices: new Uint32Array() };
+  const p = m.positions,
+    n = m.normals,
+    t = m.triangles;
   const low = m.box.zMin,
     span = m.box.zMax - m.box.zMin;
-  const p = m.positions,
-    n = m.normals;
-  for (let k = 0; k < m.triangles.length; k += 3) {
-    const [a, b, c] = [0, 1, 2].map((d) => 3 * m.triangles[k + d]);
-    const e = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]],
-      f = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]];
-    const flat = [
-      e[1] * f[2] - e[2] * f[1],
-      e[2] * f[0] - e[0] * f[2],
-      e[0] * f[1] - e[1] * f[0],
-    ];
-    const size = Math.hypot(flat[0], flat[1], flat[2]);
+  const count = p.length / 3;
+  const own = (v: number) => n[v] !== 0 || n[v + 1] !== 0 || n[v + 2] !== 0;
+  let copies = 0;
+  for (let k = 0; k < t.length; k++) if (!own(3 * t[k])) copies++;
+  const vertices = new Float32Array(7 * (count + copies));
+  const put = (i: number, v: number, a: number, b: number, c: number) => {
+    const o = 7 * i;
+    vertices[o] = p[v];
+    vertices[o + 1] = p[v + 1];
+    vertices[o + 2] = p[v + 2];
+    vertices[o + 3] = a;
+    vertices[o + 4] = b;
+    vertices[o + 5] = c;
+    vertices[o + 6] = (p[v + 2] - low) / span;
+  };
+  for (let i = 0; i < count; i++)
+    put(i, 3 * i, n[3 * i], n[3 * i + 1], n[3 * i + 2]);
+  const indices = new Uint32Array(t.length);
+  let used = 0,
+    next = count;
+  for (let k = 0; k < t.length; k += 3) {
+    const a = 3 * t[k],
+      b = 3 * t[k + 1],
+      c = 3 * t[k + 2];
+    const e0 = p[b] - p[a],
+      e1 = p[b + 1] - p[a + 1],
+      e2 = p[b + 2] - p[a + 2],
+      f0 = p[c] - p[a],
+      f1 = p[c + 1] - p[a + 1],
+      f2 = p[c + 2] - p[a + 2];
+    const x = e1 * f2 - e2 * f1,
+      y = e2 * f0 - e0 * f2,
+      z = e0 * f1 - e1 * f0;
+    const size = Math.hypot(x, y, z);
     if (!(size > 0)) continue;
     for (const v of [a, b, c]) {
-      const own = n[v] !== 0 || n[v + 1] !== 0 || n[v + 2] !== 0;
-      out.push(
-        p[v],
-        p[v + 1],
-        p[v + 2],
-        ...(own ? [n[v], n[v + 1], n[v + 2]] : flat.map((x) => x / size)),
-        (p[v + 2] - low) / span,
-      );
+      if (own(v)) indices[used++] = v / 3;
+      else {
+        put(next, v, x / size, y / size, z / size);
+        indices[used++] = next++;
+      }
     }
   }
-  return out;
+  return {
+    vertices: vertices.slice(0, 7 * next),
+    indices: indices.slice(0, used),
+  };
 }
 // The box's twelve edges.
 function boxEdges(m: ImplicitResult | undefined): Vec3[] {
@@ -269,9 +295,9 @@ function boxEdges(m: ImplicitResult | undefined): Vec3[] {
   return out;
 }
 // Pairs of vertex indices as segments.
-function indexed(m: ImplicitResult | undefined, pairs: number[] | undefined) {
+function indexed(m: ImplicitResult | undefined, pairs: Int32Array | undefined) {
   if (!m || !pairs) return [];
-  return pairs.map((v) => ({
+  return Array.from(pairs, (v) => ({
     x: m.positions[3 * v],
     y: m.positions[3 * v + 1],
     z: m.positions[3 * v + 2],
@@ -316,12 +342,17 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl.getUniformLocation(program, n),
     ]),
   );
+  // A batch drawn by index has an element buffer; count is then its indices.
   type Batch = {
     buffer: WebGLBuffer;
     count: number;
     mode: number;
     ink: number;
+    elements?: WebGLBuffer;
   };
+  // Indices past 65,535 need 32-bit elements, universal in practice; without
+  // them a mesh is drawn corner by corner.
+  const wideIndices = !!gl.getExtension("OES_element_index_uint");
   let mesh: Batch,
     base: Batch,
     minus: Batch,
@@ -373,12 +404,36 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     cutLines: Batch,
     openLines: Batch;
 
-  function batch(data: number[], mode: number, ink: number): Batch {
+  function batch(
+    data: number[] | Float32Array,
+    mode: number,
+    ink: number,
+  ): Batch {
     const buffer = gl!.createBuffer()!;
     buffers.push(buffer);
     gl!.bindBuffer(gl!.ARRAY_BUFFER, buffer);
-    gl!.bufferData(gl!.ARRAY_BUFFER, new Float32Array(data), gl!.STATIC_DRAW);
+    gl!.bufferData(
+      gl!.ARRAY_BUFFER,
+      data instanceof Float32Array ? data : new Float32Array(data),
+      gl!.STATIC_DRAW,
+    );
     return { buffer, count: data.length / 7, mode, ink };
+  }
+  function meshBatch(m: ImplicitResult | undefined, ink: number): Batch {
+    const { vertices, indices } = implicitMesh(m);
+    if (!wideIndices) {
+      const corners = new Float32Array(7 * indices.length);
+      indices.forEach((v, i) =>
+        corners.set(vertices.subarray(7 * v, 7 * v + 7), 7 * i),
+      );
+      return batch(corners, gl!.TRIANGLES, ink);
+    }
+    const drawn = batch(vertices, gl!.TRIANGLES, ink);
+    const elements = gl!.createBuffer()!;
+    buffers.push(elements);
+    gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, elements);
+    gl!.bufferData(gl!.ELEMENT_ARRAY_BUFFER, indices, gl!.STATIC_DRAW);
+    return { ...drawn, count: indices.length, elements };
   }
   function pairs(points: (Vec3 | null)[], breaks: boolean[]) {
     const out: Vec3[] = [];
@@ -942,7 +997,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     // cut open by the box or stops beside cells left out, with crosses at
     // poles and jumps.
     const level = result.implicit;
-    levelSheet = batch(implicitVertices(level), gl!.TRIANGLES, 0);
+    levelSheet = meshBatch(level, 0);
     sectionLines = batch(
       vertices(
         (level?.sections ?? []).flatMap((s) =>
@@ -1056,7 +1111,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         );
       });
       gl!.uniform1f(uniforms.ink, v.ink);
-      gl!.drawArrays(v.mode, 0, v.count);
+      if (v.elements) {
+        gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, v.elements);
+        gl!.drawElements(v.mode, v.count, gl!.UNSIGNED_INT, 0);
+      } else gl!.drawArrays(v.mode, 0, v.count);
     };
     const shaded = (on: boolean, ...sheets: Batch[]) => {
       if (!on) return;

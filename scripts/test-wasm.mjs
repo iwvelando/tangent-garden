@@ -1758,41 +1758,62 @@ const spatialRays = (surface, rays) =>
 console.log(
   "WASM rays: paraboloid focus, plane mirror, Snell's window, receiver and validation passed",
 );
-const spatialImplicit = (implicit) =>
-  JSON.parse(
-    tangentGardenSpatial(
-      JSON.stringify({
-        format: "implicit",
-        // The curve's fields are ignored for an implicit surface.
-        samples: 0,
-        lines: 0,
-        implicit: {
-          f: "x^2 + y^2 + z^2 - a",
-          a: 1,
-          level: 0,
-          box: {
-            xMin: -1.3,
-            xMax: 1.3,
-            yMin: -1.3,
-            yMax: 1.3,
-            zMin: -1.3,
-            zMax: 1.3,
-          },
-          cells: 24,
-          sections: {
-            normal: { x: 0, y: 0, z: 1 },
-            from: -0.5,
-            to: 0.5,
-            count: 3,
-          },
-          ...implicit,
+// An implicit result arrives as its JSON and the mesh's five arrays, typed
+// views on one buffer; an error is JSON alone.
+const meshArrays = {
+  positions: Float64Array,
+  normals: Float64Array,
+  triangles: Int32Array,
+  cut: Int32Array,
+  open: Int32Array,
+};
+const implicitReply = (implicit) =>
+  tangentGardenSpatial(
+    JSON.stringify({
+      format: "implicit",
+      // The curve's fields are ignored for an implicit surface.
+      samples: 0,
+      lines: 0,
+      implicit: {
+        f: "x^2 + y^2 + z^2 - a",
+        a: 1,
+        level: 0,
+        box: {
+          xMin: -1.3,
+          xMax: 1.3,
+          yMin: -1.3,
+          yMax: 1.3,
+          zMin: -1.3,
+          zMax: 1.3,
         },
-      }),
-    ),
+        cells: 24,
+        sections: {
+          normal: { x: 0, y: 0, z: 1 },
+          from: -0.5,
+          to: 0.5,
+          count: 3,
+        },
+        ...implicit,
+      },
+    }),
   );
+const spatialImplicit = (implicit) => {
+  const reply = implicitReply(implicit);
+  if (typeof reply === "string") return JSON.parse(reply);
+  const result = JSON.parse(reply.json);
+  for (const [name, type] of Object.entries(meshArrays)) {
+    // The JSON leaves the arrays out; they arrive typed, on one buffer.
+    assert.equal(result.implicit[name], null, name);
+    assert.ok(reply[name] instanceof type, name);
+    assert.equal(reply[name].buffer, reply.positions.buffer, name);
+    result.implicit[name] = reply[name];
+  }
+  return result;
+};
 {
   // The unit sphere: every vertex on it, its normal outward, one closed
   // piece of Euler characteristic 2, and circles of latitude.
+  assert.equal(typeof implicitReply({}), "object");
   const ball = spatialImplicit({});
   const m = ball.implicit;
   assert.deepEqual(ball.base, []);
@@ -1810,8 +1831,57 @@ const spatialImplicit = (implicit) =>
   assert.deepEqual(m.components, [
     { triangles: m.triangles.length / 3, euler: 2, closed: true },
   ]);
-  assert.deepEqual(m.cut, []);
-  assert.deepEqual(m.open, []);
+  assert.equal(m.cut.length, 0);
+  assert.equal(m.open.length, 0);
+  // The typed arrays describe the mesh the JSON reports: every index names a
+  // vertex, and V − E + F counted from them is Go's Euler characteristic.
+  const vertices = m.positions.length / 3;
+  assert.equal(m.normals.length, m.positions.length);
+  assert.ok(m.triangles.every((v) => v >= 0 && v < vertices));
+  const edges = new Set();
+  for (let k = 0; k < m.triangles.length; k += 3)
+    for (const [u, w] of [
+      [0, 1],
+      [1, 2],
+      [2, 0],
+    ]) {
+      const [a, b] = [m.triangles[k + u], m.triangles[k + w]].sort(
+        (p, q) => p - q,
+      );
+      edges.add(a * vertices + b);
+    }
+  assert.equal(vertices - edges.size + m.triangles.length / 3, 2);
+  // On a sphere of radius 2 the positions and unit normals differ, so each
+  // array must arrive in its own place.
+  const wide = spatialImplicit({
+    a: 4,
+    box: {
+      xMin: -2.3,
+      xMax: 2.3,
+      yMin: -2.3,
+      yMax: 2.3,
+      zMin: -2.3,
+      zMax: 2.3,
+    },
+  }).implicit;
+  for (let k = 0; k < wide.positions.length; k += 3) {
+    const [x, y, z] = wide.positions.slice(k, k + 3);
+    assert.ok(Math.abs(Math.hypot(x, y, z) - 2) < 1e-12);
+    assert.ok(
+      Math.hypot(
+        wide.normals[k] - x / 2,
+        wide.normals[k + 1] - y / 2,
+        wide.normals[k + 2] - z / 2,
+      ) < 1e-8,
+    );
+  }
+  // An open drop, cut by the box: cut edges pair real vertices.
+  const drop = spatialImplicit({
+    box: { xMin: -1.3, xMax: 1.3, yMin: -1.3, yMax: 1.3, zMin: 0.2, zMax: 1.3 },
+  }).implicit;
+  assert.ok(drop.cut.length > 0 && drop.cut.length % 2 === 0);
+  assert.ok(drop.cut.every((v) => v >= 0 && v < drop.positions.length / 3));
+  assert.equal(drop.open.length, 0);
   assert.equal(m.sections.length, 3);
   m.sections.forEach((s, k) => {
     assert.equal(s.offset, [-0.5, 0, 0.5][k]);
@@ -1831,8 +1901,10 @@ const spatialImplicit = (implicit) =>
     box: { xMin: -1, xMax: 1, yMin: -1, yMax: 1, zMin: -1, zMax: 1 },
   }).implicit;
   assert.equal(pole.triangles.length, 0);
+  assert.ok(pole.triangles instanceof Int32Array);
   assert.equal(pole.discontinuities, 441);
   pole.marks.forEach((p) => assert.ok(Math.abs(p.x - 0.0501) < 1e-12));
+  assert.equal(typeof implicitReply({ f: "x + t" }), "string");
   assert.match(spatialImplicit({ f: "x + t" }).error, /cannot use t/);
   assert.match(spatialImplicit({ cells: 128 }).error, /262,144 cells/);
   assert.match(

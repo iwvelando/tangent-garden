@@ -23,14 +23,38 @@ try {
   // Exercise the served production validation/transport code. Geometry stays
   // in the real WASM tests; this bridge stub records only what the worker sends.
   const replies = [],
+    transfers = [],
     requests = [];
+  // An implicit mesh returns as JSON plus typed views on one buffer.
+  const buffer = new ArrayBuffer(8 * 6 + 4 * 5);
+  const mesh = {
+    positions: new Float64Array(buffer, 0, 3),
+    normals: new Float64Array(buffer, 24, 3),
+    triangles: new Int32Array(buffer, 48, 3),
+    cut: new Int32Array(buffer, 60, 2),
+    open: new Int32Array(buffer, 68, 0),
+  };
+  mesh.positions.set([1, 2, 3]);
+  mesh.triangles.set([0, 0, 0]);
   const context = createContext({
     importScripts: () => {}, // Vite's development environment prelude.
-    self: { postMessage: (reply) => replies.push(reply) },
+    self: {
+      postMessage: (reply, transfer) => {
+        replies.push(reply);
+        transfers.push(transfer);
+      },
+    },
     tangentGardenTesseract: (json) => {
       requests.push(JSON.parse(json));
       return '{"transported":true}';
     },
+    tangentGardenSpatial: (json) =>
+      JSON.parse(json).format === "implicit"
+        ? {
+            json: '{"implicit":{"grid":[4,4,4],"positions":null,"normals":null,"triangles":null,"cut":null,"open":null}}',
+            ...mesh,
+          }
+        : '{"base":[]}',
   });
   new Script(`${worker.code}\nready = Promise.resolve();`).runInContext(
     context,
@@ -174,6 +198,21 @@ try {
   assert.equal(requests[5].bypass.extent, 0);
   assert.equal(requests[5].grid, undefined);
   assert.equal(requests[5].distance, undefined);
+  // The worker puts the typed arrays back into the result and transfers
+  // their buffer instead of copying it.
+  const { spatialPresets } = await server.ssrLoadModule(
+    "/web/spatial/presets.ts",
+  );
+  const implicit = spatialPresets.find(
+    (p) => p.config.format === "implicit",
+  ).config;
+  await context.self.onmessage({
+    data: { id: 90, action: "spatial", spatial: implicit },
+  });
+  const level = replies.at(-1).result.implicit;
+  assert.deepEqual(Array.from(level.grid), [4, 4, 4]);
+  for (const name of Object.keys(mesh)) assert.equal(level[name], mesh[name]);
+  assert.deepEqual(Array.from(transfers.at(-1)), [buffer]);
 } finally {
   await server.close();
 }

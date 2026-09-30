@@ -48,11 +48,18 @@ func main() {
 			b, _ := json.Marshal(map[string]string{"error": err.Error()})
 			return string(b)
 		}
-		b, err := json.Marshal(result)
-		if err != nil {
-			return `{"error":"non-finite spatial result"}`
+		encode := func() (string, error) {
+			b, err := json.Marshal(result)
+			if err != nil {
+				return `{"error":"non-finite spatial result"}`, err
+			}
+			return string(b), nil
 		}
-		return string(b)
+		if result.Implicit != nil {
+			return meshReply(result.Implicit, encode)
+		}
+		text, _ := encode()
+		return text
 	})
 	js.Global().Set("tangentGardenSpatial", spatial)
 

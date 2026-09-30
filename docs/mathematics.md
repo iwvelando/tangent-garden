@@ -2,7 +2,7 @@
 
 Coordinates are ordinary mathematical coordinates: x right, y up. SVG's y reversal happens only in the renderer. Parameters increase from the lower to upper bound. All expression trigonometry uses radians; the parallel-source control uses degrees.
 
-Scalar bounds accept the same numeric constants as curves: `pi`, `e`, and the positive golden ratio `phi=(1+sqrt(5))/2`. Scalar expressions reject curve variables rather than silently evaluating them at zero. Curve expressions may also use an externally bound shape coefficient `a`; it is fixed during each numerical evaluation, including derivative stencils.
+Scalar bounds accept the same numeric constants as curves: `pi`, `e`, and the positive golden ratio `phi=(1+sqrt(5))/2`. Scalar expressions reject curve variables rather than silently evaluating them at zero. Curve expressions may also use an externally bound shape coefficient `a`; it is fixed during each numerical evaluation, including derivative stencils. A power `u^v` is Go's `math.Pow(u, v)`. When `v` is a constant whole number from 2 to 64, such as the 4 in `x^4`, the parser takes the same successive squarings as `math.Pow` directly on `u` while `|u|` lies within `2^±⌊1000/v⌋`, where every product is a normal number; the value is identical bit for bit, and outside that range `math.Pow` decides.
 
 Let `r(t)=(x(t),y(t))`, `v=r′`, `a=r″`, `T=v/|v|`, and `J(x,y)=(-y,x)`. Curves must be sufficiently smooth and regular locally for the requested construction.
 
