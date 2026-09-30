@@ -138,7 +138,8 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 - [ ] **Authored camera animation.** Named snapshots, a target/orbit center, start/end orientation, and deliberate interpolation. Specify full-turn versus shortest-rotation behavior and avoid quaternion sign flips. Geometry tracks and camera tracks remain separate; Stop restores the manual camera.
 - [ ] **Composition and study comparison.** Allow only evaluator-compatible derived inputs, with bounded depth and clear provenance. A later side-by-side 2D/3D comparison or declared planar embedding could help explain reductions, but 2D and 3D studies should not silently overwrite one another.
 - [ ] **Still-export controls.** User-selected dimensions/aspect, quality where applicable, and optional transparent backgrounds with correctly composited antialiasing. The current PNG is opaque and fixed at 2000 × 1520; animation resolution is already adjustable. Keep theme/layers/camera snapshots and actual target-resolution rendering.
-- [ ] **True vector linework export.** Project mathematical paths/rulings to SVG for line-only studies, with an explicit choice about occlusion. An all-lines drawing is distinct from exact hidden-line removal. Keep the existing shaded SVG honestly labelled as an embedded image; never call a raster or painter-sorted intersecting mesh exact vector output.
+- [x] **True vector linework export.** Done: **Lines (SVG)** in the 3D notebook's export menu, described in `spatial-study.md` and `architecture.md`. It projects the drawing's own line batches (`web/spatial/scene.ts`) with the drawing's camera and colors into SVG paths, one group per layer.
+  - Decisions: two named versions, **every line** and **visible only, sampled**, each recorded in the file's metadata. Sampled hiding tests lines against a CPU raster of the shown surfaces at the page's resolution, with the live drawing's polygon offset; it is not exact hidden-line removal. Surfaces are not drawn, and lines do not hide lines. The embedded-image SVG and the PNG are unchanged.
 - [ ] **Geometry export, if useful.** Curves/meshes in a documented interoperable format with units, normals, branch boundaries and source metadata. Warn in the file/documentation that ribbons can be open, singular, self-intersecting and nonmanifold; do not describe them as print-ready solids. Select a format only when a real downstream use is chosen.
 - [ ] **Animation polish.** Optional easing, ping-pong, explicit seamless-loop settings and coordinated camera/geometry tracks. Defaults remain linear and exact. A copied first frame is not a substitute for a continuous periodic study; preserve duration, endpoints, cancellation and decoder verification.
 
@@ -484,5 +485,42 @@ Every numbered slice is now complete.
   - A refined mesh is still only a picture.
 
 Recommended next step, for the user to choose: **adaptive curves** (above), or reconcile the remaining backlog and retire this roadmap.
+
+### Follow-up completed: vector linework export
+
+- Implemented **Lines (SVG)** exports for 3D studies (branch `claude/vector-linework`), with two items in **Export image**: every line, and visible only, sampled. Files are `tangent-garden-spatial-lines.svg` and `tangent-garden-spatial-visible-lines.svg`, on the PNG's 2000 × 1520 page.
+- Structure:
+  - The renderer's geometry assembly moved, unchanged, to `web/spatial/scene.ts`: `buildScene` (line pairs and triangles), `scenePasses` (layers and drawing order), and `camera`/`clip`/`page` (the vertex shader's arithmetic). The renderer uploads a scene.
+  - `web/spatial/palette.ts` holds the colors; the fragment shader is written from them with its expressions unchanged.
+  - `web/spatial/linework.ts` projects, clips (Liang–Barsky against the clip volume), joins, hides and serializes. It needs no WebGL.
+- Conventions:
+  - A segment continues a path only when it starts exactly where the path ends, so breaks, gaps, clipping and hiding start a new path.
+  - Hiding rasterizes the shown sheets on the CPU at the page size and keeps the nearest triangle at each pixel center. Line samples, half a pixel apart, are tested against the triangles nearest at the nine surrounding pixel centers that contain them, with the drawing's polygon offset (the triangle's steepest depth change per pixel, plus 10⁻⁶). The fallback, when none contains the sample, is the center's triangle with a second offset.
+  - A first version extended the pixel-center triangle's plane to the sample. On the harmonic loom's thin, twisted triangles that dashed rulings lying on the sheet, which the live drawing shows whole. The test *rulings on a twisted, thinly meshed sheet* reproduced it (188 pieces for 161 rulings) before the fix.
+  - Visibility changes halfway between samples that disagree.
+  - Rasterized pixels and line samples share a work count, capped at 200 million.
+- Existing studies are unchanged: every 3D gallery thumbnail redraws byte-identical after the refactor. A deliberate palette mutation changed 47 of them, so the check is live.
+- Measured in headless Chromium, from menu click to download, the sampled export takes 0.21 s for the trefoil, 0.34 s for the loom, and 0.18 s for the tube and the necklace. The implicit tanglecube and gyroid presets take 0.15 s and 0.13 s, against 0.24 s and 0.23 s for their PNGs. Hiding keeps 61% of the trefoil's stroke length, 50% of the loom's, 39% of the tube's and 27% of the necklace's. Files are 23–50 kB.
+- Permanent docs: `spatial-study.md`, `usage.md`, `architecture.md`, README.
+- Verification:
+  - `tests/spatial-linework.spec.ts` (15 tests, in Node on hand-built results) covers:
+    - projection;
+    - breaks;
+    - layer gating;
+    - clipping;
+    - colors;
+    - hiding by a flat, a steep and a sub-pixel sheet;
+    - lines within the drawing's offset;
+    - an edge-on cylinder and a twisted thin mesh, the latter with an independent on-page fold check;
+    - the work limit;
+    - the SVG's structure.
+  - `tests/spatial-linework-export.spec.ts` (5 tests) goes through the menu, worker and engine. It covers menu order and keyboard, file names and metadata, and hiding measured by stroke length. It also compares ink with the PNG in both themes (over 95% of each image's ink within 2 px of the other's), and checks that a paused reveal exports its partial frame.
+  - Mutation run: 17 targeted faults in joining, clipping, offset, sampling, raster, fallback, work limit, gating, colors, the y flip, pan and aspect. All were detected but one: moving the visibility split from halfway between samples to the later sample, a quarter-pixel shift within the method's resolution.
+  - The 3D labels were shortened after the 280 px export-menu test failed on the first labels.
+- Limits:
+  - Sampled hiding is an approximation at the page's resolution. A line can be cut up to about a pixel early or late near a silhouette, and a surface triangle nearest at no pixel center cannot hide anything.
+  - Lines never hide lines, and surfaces are not drawn.
+  - The page size is fixed, like the PNG's (see **Still-export controls**).
+  - Independent decoders: files were parsed with Python's XML parser (all well-formed, stroke lengths measured from the parsed paths) and rasterized by Chromium, which the browser tests compare with the PNG. Exports of the necklace of spheres, in the dark theme, were then rendered by librsvg (`rsvg-convert`) and Inkscape at 2000 × 1520. The two renderers agreed pixel for pixel within a 25% color tolerance, for both every line and visible only. (ImageMagick's built-in SVG renderer, without librsvg, drew nothing at all, not even a hand-written line.)
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

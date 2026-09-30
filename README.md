@@ -28,7 +28,7 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.
 - Curve-reveal and multi-parameter animations with four camera modes.
 - **Copy link** in every notebook: a link that reopens your study, layers, view, and animation setup for anyone, carried in the URL fragment with no server.
-- PNG and vector SVG image exports; animation exports as MP4 video (the default) or animated WebP, whichever the browser can encode, with resolution, quality, and up to 60 fps for MP4.
+- PNG and vector SVG image exports, and for 3D studies a vector line drawing of every line or of the lines not hidden by a surface; animation exports as MP4 video (the default) or animated WebP, whichever the browser can encode, with resolution, quality, and up to 60 fps for MP4.
 - Expert sampling controls and an engine designed for independent mathematical testing.
 
 See the **[usage guide](docs/usage.md)** for controls, examples, animations, camera behavior, and export limits.
