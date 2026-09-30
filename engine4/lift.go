@@ -9,6 +9,12 @@ import (
 // The slab has a fixed modelling half-thickness, in the source's units.
 const liftThickness = .02
 
+// The circular strand is (circleRadius cos 2πt, circleRadius sin 2πt,
+// circleHeight). Every source point lies within sourceExtent = |(3, 1, 0)|.
+const circleRadius, circleHeight = 1.75, .5
+
+var sourceExtent = math.Sqrt(10)
+
 type LiftParameters struct {
 	Center     Vec3    `json:"center"`
 	Support    float64 `json:"support"`
@@ -70,14 +76,14 @@ func lineEvents(a, b, c Vec3, r float64) []float64 {
 	return roots
 }
 func circleEvents(c Vec3, r float64) []float64 {
-	// C(u)=(1.75 cos u,1.75 sin u,.5). Distance squared is
-	// constant minus 3.5*(cx cos u+cy sin u).
+	// Distance squared to the strand is constant minus
+	// 2 circleRadius (cx cos u + cy sin u).
 	length := math.Hypot(c[0], c[1])
 	if length == 0 {
 		return nil
 	}
 	phase := math.Atan2(c[1], c[0])
-	k := (1.75*1.75 + length*length + (.5-c[2])*(.5-c[2]) - r*r) / (3.5 * length)
+	k := (circleRadius*circleRadius + length*length + (circleHeight-c[2])*(circleHeight-c[2]) - r*r) / (2 * circleRadius * length)
 	angles := []float64{phase, phase + math.Pi}
 	if k >= -1-1e-12 && k <= 1+1e-12 {
 		a := math.Acos(math.Max(-1, math.Min(1, k)))
@@ -107,7 +113,7 @@ func liftSources() []liftCurve {
 			t = 0
 		}
 		a := 2 * math.Pi * t
-		return Vec3{1.75 * math.Cos(a), 1.75 * math.Sin(a), .5}
+		return Vec3{circleRadius * math.Cos(a), circleRadius * math.Sin(a), circleHeight}
 	}, events: circleEvents, closed: true})
 	return sources
 }
@@ -128,18 +134,19 @@ func presentIntervals(source liftCurve, c Vec3, r float64) []interval {
 		return []interval{{0, 1}}
 	}
 	cuts := sortedParameters(append([]float64{0, 1}, source.events(c, r)...))
-	present := func(t float64, contact bool) bool {
+	// The present set is closed. Its squared-distance tolerance scales with the
+	// rounding of |C(t)−c|² near the boundary, about r times the coordinate
+	// magnitude (|c| ≤ sourceExtent + r wherever contact is possible), so a
+	// tangency or coincident boundary arc is not split a few ulps inside.
+	tolerance := 1e-12 * r * (r + sourceExtent)
+	present := func(t float64) bool {
 		d := sub(source.point(t), c)
-		tolerance := 0.
-		if contact {
-			tolerance = 1e-24 + 1e-12*r*r
-		}
 		return dot(d, d) >= r*r-tolerance
 	}
 	out := []interval{}
 	for i := 1; i < len(cuts); i++ {
 		lo, hi := cuts[i-1], cuts[i]
-		if !present((lo+hi)/2, false) {
+		if !present((lo + hi) / 2) {
 			continue
 		}
 		if len(out) > 0 && out[len(out)-1].hi == lo {
@@ -149,7 +156,7 @@ func presentIntervals(source liftCurve, c Vec3, r float64) []interval {
 		}
 	}
 	for _, t := range cuts {
-		if !present(t, true) {
+		if !present(t) {
 			continue
 		}
 		covered := false
@@ -225,7 +232,7 @@ func lifted(q Request, r Result) (Result, error) {
 	for _, c := range []Vec3{l.Center, l.From, l.To} {
 		bound = math.Max(bound, math.Sqrt(dot(c, c))+math.Max(l.Support, math.Max(l.RadiusFrom, l.RadiusTo)))
 	}
-	r.Radius = math.Max(math.Hypot(math.Sqrt(10), l.Height), bound)
+	r.Radius = math.Max(math.Hypot(sourceExtent, l.Height), bound)
 	hole := missingRadius(l)
 	sources := liftSources()
 	diag := &LiftDiagnostics{Thickness: liftThickness, MissingRadius: hole, Sources: len(sources), Projection: "reference slice w = 0; no presentation rotation"}
