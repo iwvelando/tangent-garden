@@ -1,8 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { Drawing } from "./Drawing";
+import { Composition } from "./Composition";
 import { EngineClient } from "../engine-client";
 import { mp4Sink, webpSink } from "../export-sinks";
-import { exportEncoding, exportTiming } from "../export-quality";
+import {
+  exportBaseSize,
+  exportEncoding,
+  exportTiming,
+} from "../export-quality";
 import type { MotionExport } from "./AnimationPanel";
 import {
   sample,
@@ -16,6 +20,7 @@ export async function exportMotion(
     config: Config;
     motion: Motion;
     view: View;
+    diagramView?: View;
     layers: Layers;
     dark: boolean;
     duration: number;
@@ -26,7 +31,8 @@ export async function exportMotion(
   if (o.format === "webp" && o.fps === 60)
     throw new Error("Animated WebP supports 15 or 30 frames per second.");
   const timing = exportTiming(o.duration, o.fps),
-    encoding = exportEncoding(o.settings);
+    encoding = exportEncoding(o.settings),
+    size = exportBaseSize(o.settings.layout);
   const client = new EngineClient(),
     canvas = document.createElement("canvas");
   canvas.width = encoding.width;
@@ -52,9 +58,14 @@ export async function exportMotion(
           xmlns="http://www.w3.org/2000/svg"
           width={encoding.width}
           height={encoding.height}
-          viewBox="0 0 1000 760"
+          viewBox={`0 0 ${size.width} ${size.height}`}
         >
-          <Drawing {...o} config={config} result={result} />
+          <Composition
+            {...o}
+            layout={o.settings.layout}
+            config={config}
+            result={result}
+          />
         </svg>,
       );
       const url = URL.createObjectURL(

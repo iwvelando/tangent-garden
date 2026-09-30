@@ -95,6 +95,60 @@ try {
       "Lift center requires three coordinates.",
     ],
   ];
+  const bypass = {
+    ...base,
+    object: "bypass",
+    mode: "shadow",
+    angles: undefined,
+    bypass: {
+      inner: 1,
+      outer: 2,
+      extent: 0.15,
+      outside: [3, 0, 0],
+      height: 1.2,
+      position: 0.5,
+      obstacle: "embedded",
+      w1: 0,
+      w2: 1.2,
+    },
+  };
+  cases.push(
+    [bypass, undefined],
+    [{ ...bypass, mode: "paired" }, undefined],
+    [
+      {
+        ...bypass,
+        mode: "diagram",
+        angles: [NaN],
+        distance: NaN,
+        grid: NaN,
+        bypass: { ...bypass.bypass, obstacle: "radial", extent: NaN },
+      },
+      undefined,
+    ],
+    [{ ...bypass, bypass: undefined }, "Enter shell bypass parameters."],
+    [
+      { ...bypass, bypass: { ...bypass.bypass, height: NaN } },
+      "Route height H must be a finite constant.",
+    ],
+    [
+      { ...bypass, bypass: { ...bypass.bypass, extent: NaN } },
+      "Fourth-coordinate extent ε must be a finite constant.",
+    ],
+    [
+      { ...bypass, bypass: { ...bypass.bypass, outside: [3, NaN, 0] } },
+      "Outside point y must be a finite constant.",
+    ],
+    [
+      { ...bypass, bypass: { ...bypass.bypass, outside: [3, 0] } },
+      "Outside point requires three coordinates.",
+    ],
+    [
+      { ...bypass, samples: NaN },
+      "Shell samples must be a finite whole number.",
+    ],
+    [{ ...bypass, samples: 8.5 }, "Shell samples must be a whole number."],
+  );
   const actual = [];
   for (const [q] of cases) {
     await context.self.onmessage({
@@ -105,15 +159,21 @@ try {
   assert.deepEqual(
     actual,
     cases.map(([, error]) => error),
-    "worker validation must name active lift fields and preserve tesseract wording",
+    "worker validation must name active study fields and preserve tesseract wording",
   );
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 6);
   for (const request of requests) {
     assert.deepEqual(request.angles, [0, 0, 0, 0, 0, 0]);
   }
   assert.equal(requests[0].lift.angle, 0);
   assert.equal(requests[1].lift.angle, 0);
   assert.equal(requests[2].lift.angle, Math.PI / 7);
+  assert.deepEqual(requests[3].bypass, bypass.bypass);
+  assert.equal(requests[4].mode, "paired");
+  assert.deepEqual(requests[4].bypass, bypass.bypass);
+  assert.equal(requests[5].bypass.extent, 0);
+  assert.equal(requests[5].grid, undefined);
+  assert.equal(requests[5].distance, undefined);
 } finally {
   await server.close();
 }

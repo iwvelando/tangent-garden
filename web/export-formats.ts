@@ -80,7 +80,10 @@ export async function detectFormats(
   let mp4: Availability = "no";
   if (typeof VideoEncoder !== "undefined") {
     if (await encodes(settings, fps)) mp4 = "yes";
-    else if (await encodes({ scale: 0.5, quality: 1 }, 15)) mp4 = "size";
+    else if (
+      await encodes({ scale: 0.5, quality: 1, layout: settings.layout }, 15)
+    )
+      mp4 = "size";
   }
   return { webp: canvasWebP() ? "yes" : "no", mp4 };
 }

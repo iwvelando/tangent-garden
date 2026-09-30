@@ -134,6 +134,7 @@ for (const width of [1440, 390]) {
       "A sphere in passing",
       "A ring in passing",
       "The missing middle",
+      "Beside the wall",
     ])
       setups.push(async () => {
         await page.goto("/?study=4d");

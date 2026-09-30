@@ -5,6 +5,7 @@ import {
   defaultScale,
   exportEncoding,
   type ExportSettings,
+  type ExportLayout,
 } from "../export-quality";
 import {
   defaultQuality,
@@ -56,6 +57,7 @@ function motions(
 }
 export function AnimationPanel(p: {
   config: Config;
+  layout?: ExportLayout;
   motion: Motion;
   duration: number;
   progress: number;
@@ -83,13 +85,16 @@ export function AnimationPanel(p: {
   useEffect(() => {
     let live = true;
     setFormats(null);
-    void detectFormats({ scale, quality: qualities.mp4 }, fps).then((f) => {
+    void detectFormats(
+      { scale, quality: qualities.mp4, layout: p.layout },
+      fps,
+    ).then((f) => {
       if (live) setFormats(f);
     });
     return () => {
       live = false;
     };
-  }, [scale, qualities.mp4, fps]);
+  }, [scale, qualities.mp4, fps, p.layout]);
   const offered = (["mp4", "webp"] as const).filter(
     (f) => formats?.[f] !== "no",
   );
@@ -97,7 +102,12 @@ export function AnimationPanel(p: {
   const exportFps = chosen === "webp" && fps === 60 ? 30 : fps;
   const quality = qualities[chosen],
     text = formatText[chosen];
-  const size = exportEncoding({ scale, quality });
+  const size = exportEncoding({ scale, quality, layout: p.layout }),
+    defaultSize = exportEncoding({
+      scale: defaultScale,
+      quality,
+      layout: p.layout,
+    });
   const setQuality = (n: number) =>
     setQualities((q) => ({ ...q, [chosen]: n }));
   const active = p.preview || !!p.exporting,
@@ -146,8 +156,8 @@ export function AnimationPanel(p: {
             />
           </Field>
           <p className="hint">
-            Animation holds your current view. Drag, pan, or zoom before
-            playback to choose the framing.
+            {objects[p.config.object].animationFramingHelp?.(p.config) ??
+              "Animation holds your current view. Drag, pan, or zoom before playback to choose the framing."}
           </p>
           <details
             id="shape-export-settings"
@@ -244,8 +254,8 @@ export function AnimationPanel(p: {
                 setQuality(defaultQuality[chosen]);
               }}
             >
-              Reset export settings to 2000 × 1520 · quality{" "}
-              {defaultQuality[chosen]}
+              Reset export settings to {defaultSize.width} ×{" "}
+              {defaultSize.height} · quality {defaultQuality[chosen]}
             </button>
             <p className="hint">
               Export renders every frame in your browser with the current theme,
@@ -335,7 +345,11 @@ export function AnimationPanel(p: {
             p.onExport({
               format: chosen,
               fps: exportFps,
-              settings: { scale, quality },
+              settings: {
+                scale,
+                quality,
+                ...(p.layout ? { layout: p.layout } : {}),
+              },
               loop,
             })
           }

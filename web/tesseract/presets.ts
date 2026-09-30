@@ -1,5 +1,5 @@
 import type { Config, Motion } from "./types";
-import { defaultConfig } from "./objects";
+import { defaultConfig, objects } from "./objects";
 const base = defaultConfig;
 const diagonal: Config["angles"] = [
   0,
@@ -118,5 +118,12 @@ export const tesseractPresets: {
       },
     },
     motion: "drift",
+  },
+  {
+    name: "Beside the wall",
+    detail:
+      "Leave the reference slice, pass beside an embedded shell, and return inside. The shadow crosses the wall; the four-dimensional route is clear.",
+    config: objects.bypass.defaults(base),
+    motion: "route",
   },
 ];

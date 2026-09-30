@@ -27,6 +27,7 @@ export function Drawing({
     scale = (310 * view.zoom) / result.radius;
   const descriptor = objects[config.object];
   const curved = descriptor.legend === "sections";
+  const flat = descriptor.flat?.(config);
   const selected = Math.min(
     layers.selectedSection ?? 0,
     result.sections.length - 1,
@@ -34,6 +35,12 @@ export function Drawing({
   const sectionIndex = (id?: string) =>
     result.sections.findIndex((s) => s.id === id);
   const project = (p: Vec3) => {
+    if (flat)
+      return [
+        500 + scale * p[0] + view.panX,
+        380 - scale * p[1] + view.panY,
+        p[2],
+      ];
     const cy = Math.cos(view.yaw),
       sy = Math.sin(view.yaw),
       cp = Math.cos(view.pitch),
@@ -93,9 +100,20 @@ export function Drawing({
           object: result.object,
           operation: result.operation,
           emittedPoints: result.emittedPoints,
-          ...(result.lift ? { framingRadius: result.radius } : {}),
+          ...(result.lift || result.bypass
+            ? { framingRadius: result.radius }
+            : {}),
           evaluations: result.evaluations,
           sections: result.sections,
+          ...(result.bypass
+            ? {
+                bypass: result.bypass,
+                markers: result.markers,
+                representation: flat
+                  ? "radial-position/w coordinate diagram"
+                  : "orthographic XYZ shadow",
+              }
+            : {}),
           ...(result.lift
             ? {
                 lift: result.lift,
@@ -143,10 +161,12 @@ export function Drawing({
               : colors[p.family]
           }
           strokeDasharray={
-            curved &&
-            (result.sections[sectionIndex(p.sectionId)]?.level ?? 0) < 0
+            p.dashed
               ? "7 5"
-              : undefined
+              : curved &&
+                  (result.sections[sectionIndex(p.sectionId)]?.level ?? 0) < 0
+                ? "7 5"
+                : undefined
           }
           strokeWidth={
             curved
@@ -158,20 +178,42 @@ export function Drawing({
                 : 2.1
           }
           strokeOpacity={
-            curved
-              ? sectionIndex(p.sectionId) === selected
-                ? 1
-                : 0.65
-              : p.guide
-                ? dark
-                  ? 0.6
-                  : 0.5
-                : 0.94
+            p.role === "route-context"
+              ? 0.35
+              : curved
+                ? sectionIndex(p.sectionId) === selected
+                  ? 1
+                  : 0.65
+                : p.guide
+                  ? dark
+                    ? 0.6
+                    : 0.5
+                  : 0.94
           }
           strokeLinejoin="round"
           strokeLinecap="round"
         />
       ))}
+      {result.markers
+        ?.filter((m) =>
+          m.role === "comparison" ? layers.comparison : layers.edges,
+        )
+        .map((m) => {
+          const [x, y] = project(m.point);
+          return (
+            <circle
+              key={m.id}
+              data-marker={m.id}
+              data-role={m.role}
+              cx={x}
+              cy={y}
+              r={m.role === "comparison" ? (m.family === 2 ? 9 : 6) : 5}
+              fill={m.role === "comparison" ? "none" : colors[m.family]}
+              stroke={colors[m.family]}
+              strokeWidth="2.5"
+            />
+          );
+        })}
       {layers.edges &&
         result.points.map((p, i) => {
           const [x, y] = project(p);
