@@ -1162,12 +1162,20 @@ export default function SpatialApp({
     override = animation?.complete ? undefined : camera,
     released = animation?.complete ? camera : undefined;
   const ready = !!frame && !busy && !failure && !renderError;
-  // The probe draws on the study's own result, never an animation frame.
-  const probeFrame =
-    !animation && probing && frame?.result.diagnostics ? frame : null;
-  const probeAt = probeFrame
-    ? probeIndex(probe.position, probeFrame.result.base.length - 1)
-    : 0;
+  // The probe draws on the study's own result, or where an animation that
+  // moves it has taken it; other animation frames go without it. The
+  // user's position is kept for when the animation stops.
+  const moving = animation?.probe !== undefined ? animation : null;
+  const probeFrame = moving
+    ? moving.frame
+    : !animation && probing && frame?.result.diagnostics
+      ? frame
+      : null;
+  const probeAt = moving
+    ? moving.probe!
+    : probeFrame
+      ? probeIndex(probe.position, probeFrame.result.base.length - 1)
+      : 0;
   const probeDrawing = useMemo(
     () =>
       probeFrame
@@ -2574,7 +2582,8 @@ export default function SpatialApp({
             frame={probeFrame}
             probe={probe}
             onProbe={setProbe}
-            animating={!!animation}
+            animating={!!animation && !moving}
+            at={moving?.probe}
             dark={theme.dark}
           />
           <details className="spatial-details">
@@ -2838,6 +2847,7 @@ export default function SpatialApp({
             length={config.length}
             revision={revision}
             disabled={!ready || !active || imageBusy}
+            probing={probing}
             dark={theme.dark}
             layers={layers}
             getCurrentView={() =>

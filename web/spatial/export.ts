@@ -3,6 +3,7 @@ import { createRenderer, type View, type Layers } from "./renderer";
 import { buildScene, type Batch } from "./scene";
 import { linework, linesSvg, sampleStep } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
+import { probeBatches } from "./probe";
 import { mp4Sink, webpSink } from "../export-sinks";
 import {
   exportEncoding,
@@ -149,6 +150,12 @@ export async function exportAnimation(options: {
       const view = await options.sample(timing[i].progress);
       options.signal.throwIfAborted();
       renderer.upload(view.frame.result);
+      // The probe as playback draws it, when the animation moves it.
+      renderer.setProbe(
+        view.probe === undefined
+          ? []
+          : probeBatches(view.frame.result, view.frame.config, view.probe),
+      );
       renderer.draw(
         animationCamera(view),
         options.layers,

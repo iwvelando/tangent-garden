@@ -13,9 +13,11 @@ import type {
 import type { View } from "./renderer";
 export type { Frame };
 export type Viewport = View;
-// Reveal, vary parameters, orbit the camera, or trace light from its source
-// to the caustics (mirror and interface studies only).
-export type AnimationMode = "reveal" | "parameters" | "orbit" | "trace";
+// Reveal, vary parameters, orbit the camera, trace light from its source to
+// the caustics (mirror and interface studies only), or move the parameter
+// probe along the curve (while the probe is on).
+export type AnimationMode =
+  "reveal" | "parameters" | "orbit" | "trace" | "probe";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 // A harmonic term's frequency or one coordinate of its vector A or B,
 // numbered from 1 in term order.
@@ -104,6 +106,9 @@ export type AnimationView = {
   mode: AnimationMode;
   // A finished animation releases the camera, starting from its own.
   complete: boolean;
+  // The probe's sample in the frame's diagnostics, when the animation moves
+  // it.
+  probe?: number;
 };
 export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",

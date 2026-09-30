@@ -17,7 +17,7 @@ import {
 import { spatialPresets } from "./presets";
 import { defaultLayers, initialView, type Layers } from "./renderer";
 import { availableTargets, type AnimationMode, type Target } from "./animation";
-import { defaultProbe, type Probe } from "./probe";
+import { defaultProbe, probeSupport, type Probe } from "./probe";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
@@ -269,7 +269,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
   };
   const animation = animationSettings(
     raw.animation,
-    { reveal: true, parameters: true, orbit: true, trace: true },
+    { reveal: true, parameters: true, orbit: true, trace: true, probe: true },
     availableTargets(study.config),
     defaultAnimation,
   );
@@ -278,9 +278,14 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode traces light only in a mirror or interface study.",
     );
-  return {
-    ...study,
-    animation,
-    probe: conform(raw.probe, probe, defaultProbe, "probe"),
-  };
+  const probed = conform(raw.probe, probe, defaultProbe, "probe");
+  if (
+    animation.mode === "probe" &&
+    !(probed.enabled && probeSupport(study.config).available)
+  )
+    throw new LinkError(
+      "animation.mode",
+      "animation.mode moves the probe only while it is on in a curve study.",
+    );
+  return { ...study, animation, probe: probed };
 }

@@ -18,6 +18,7 @@ import {
   type Viewport,
 } from "./animation";
 import type { Frame } from "./types";
+import { probeIndex, probeReadout } from "./probe";
 import type { Layers } from "./renderer";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "../export-quality";
@@ -54,6 +55,8 @@ type Props = {
   length: number;
   revision: string;
   disabled: boolean;
+  // Whether the parameter probe is on in a study that offers it.
+  probing: boolean;
   dark: boolean;
   layers: Layers;
   getCurrentView: () => Viewport | undefined;
@@ -75,6 +78,7 @@ export function SpatialAnimationPanel({
   length,
   revision,
   disabled,
+  probing,
   dark,
   layers,
   getCurrentView,
@@ -91,6 +95,11 @@ export function SpatialAnimationPanel({
   useEffect(() => {
     if (!traceable && mode === "trace") setMode("reveal");
   }, [traceable, mode]);
+  // The probe moves only while it is on; another study falls back to
+  // revealing.
+  useEffect(() => {
+    if (!probing && mode === "probe") setMode("reveal");
+  }, [probing, mode]);
   const [camera, setCamera] = useState<CameraMode>("hold");
   const [duration, setDuration] = useState(10);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -210,6 +219,10 @@ export function SpatialAnimationPanel({
   useEffect(() => {
     stop();
   }, [revision]);
+  // Turning the probe off ends an animation that moves it.
+  useEffect(() => {
+    if (!probing && session.current?.mode === "probe") stop();
+  }, [probing]);
   useEffect(
     () => () => {
       epoch.current++;
@@ -268,7 +281,7 @@ export function SpatialAnimationPanel({
         config: s.original.config,
         result: reveal(s.original.result, p),
       };
-    else if (s.mode === "orbit") current = s.original;
+    else if (s.mode === "orbit" || s.mode === "probe") current = s.original;
     else if (s.mode === "trace")
       current = {
         config: s.original.config,
@@ -286,6 +299,13 @@ export function SpatialAnimationPanel({
       progress: p,
       mode: s.mode,
       complete: p === 1,
+      // Sample 0 at the start and the last sample at the end, exactly.
+      ...(s.mode === "probe" && {
+        probe: probeIndex(
+          p,
+          s.original.result.diagnostics!.curvature.length - 1,
+        ),
+      }),
     };
   }
   function display(s: Session, view: AnimationView) {
@@ -319,6 +339,10 @@ export function SpatialAnimationPanel({
       );
     else if (s.mode === "orbit")
       setLive(`Camera rotation · ${Math.round(view.progress * 360)}°`);
+    else if (s.mode === "probe")
+      setLive(
+        `Probe at t = ${Number(probeReadout(view.frame.result, view.probe!)!.t.toPrecision(6))}`,
+      );
     else
       setLive(
         s.tracks
@@ -415,8 +439,17 @@ export function SpatialAnimationPanel({
         }
       }
       if (epoch.current !== token) return;
-      let first = frame,
-        final = frame;
+      // The probe moves over the study's own diagnostics, fetched here only
+      // if the study was drawn without them.
+      let original = frame;
+      if (mode === "probe" && !frame.result.diagnostics) {
+        original = await client.current.computeSpatial(frame.config, {
+          diagnostics: true,
+        });
+        if (epoch.current !== token) return;
+      }
+      let first = original,
+        final = original;
       if (mode === "parameters") {
         // Playback's helper engine prepares the end while the app's engine
         // prepares the start.
@@ -453,7 +486,7 @@ export function SpatialAnimationPanel({
             )
           : undefined;
       const s: Session = {
-        original: frame,
+        original,
         timeline,
         first,
         final,
@@ -565,7 +598,9 @@ export function SpatialAnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "trace" ? (
+              mode === "probe" ? (
+                "Move the probe from the start of the curve to its end, one sample at a time, with its frame, osculating circle and readout. Geometry stays fixed."
+              ) : mode === "trace" ? (
                 "Send light from the source, or in from past the edge of the view for parallel light, to the surface and on. Each caustic point appears as its ray reaches it. Light slows to c/n in each medium, so wavefronts stay together."
               ) : mode === "orbit" ? (
                 "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
@@ -600,6 +635,9 @@ export function SpatialAnimationPanel({
               <option value="parameters">Vary parameters</option>
               <option value="orbit">Orbit the study</option>
               {traceable && <option value="trace">Trace rays</option>}
+              {probing && (
+                <option value="probe">Move the probe along the curve</option>
+              )}
             </select>
           </Field>
           {mode === "parameters" && (

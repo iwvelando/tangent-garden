@@ -111,7 +111,7 @@ export function probeHelp(c: SpatialConfig) {
   const { highlight } = probeSupport(c);
   return `Describes the curve itself, not the surface or curves built on it. Moves between the curve's samples (more samples give finer steps) and shows the Frenet frame there: tangent T, principal normal N and binormal B, with the osculating circle of radius 1/κ in the plane of T and N${
     highlight ? `, and ${highlight}` : ""
-  }. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Not shown during animation playback or in animation exports; still images include it.`;
+  }. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it only when they move it along the curve ("Move the probe along the curve"); still images include it.`;
 }
 
 const vertices = (points: Vec3[]) =>

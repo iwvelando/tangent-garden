@@ -128,7 +128,7 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 - [ ] **Line rendering quality.** Stable screen-space strokes, antialiasing, and depth bias at high export resolutions; prevent construction lines from flickering or vanishing without making hidden lines falsely visible. Device-dependent WebGL line width is not a portable stroke system.
 - [ ] **Context recovery and capability limits.** The MVP reports missing/lost WebGL. Later restore resources from the current study after context restoration, preserve camera state, and validate actual device limits for export sizes. Keep the 2D notebook available throughout.
 - [x] **Geometric diagnostics.** Done for curves: **Probe the curve** in the 3D notebook, described in `mathematics.md`, `spatial-study.md`, `usage.md` and `architecture.md`. It shows T/N/B glyphs, the osculating circle and the point's construction lines in diagnostic inks, with κ, 1/κ and τ read out and plotted along the curve. Flat samples, unknown τ and centres at infinity are marked, not guessed; see the follow-up notes below.
-- [ ] **Probe follow-ups.** A surface probe (principal directions, the two centres and their focal points), a probe track that moves along t during playback, construction highlights for canal, harmonic and field studies, and an exact probe between samples if snapping proves too coarse.
+- [ ] **Probe follow-ups.** A surface probe (principal directions, the two centres and their focal points), the probe moving while parameters vary (which needs diagnostics for every frame), construction highlights for canal, harmonic and field studies, and an exact probe between samples if snapping proves too coarse.
 
 ## Notebook, camera, and media backlog
 
@@ -572,5 +572,27 @@ Recommended next step, for the user to choose: **adaptive curves** (above), or r
   - τ from expressions and integrated paths is good to about 10⁻⁵ relative, and worse near flat samples, where it divides by a vanishing |r′ × r″|².
   - Probe glyphs are drawn with the depth test, so a surface can hide them, and on a developable T lies in the ribbon.
   - Remaining work is under **Probe follow-ups**.
+
+### Follow-up completed: moving the probe along t
+
+- Implemented **Animate → Move the probe along the curve**, offered while the probe is on (animation mode `probe`).
+  - It sweeps the probe over the study's own diagnostics, sample round(p·n) at progress p. The study never changes, so there is no per-frame engine work.
+  - The probe panel follows the animated sample with its slider locked. Stop restores the user's point, which the animation never writes.
+  - Animation export draws each frame's probe with the same batches as playback.
+  - Links accept the mode only with the probe on in a curve study.
+- Decisions:
+  - A new mode, not an overlay on other modes: combining it with parameter tracks would need diagnostics for every frame, and remains under **Probe follow-ups**.
+  - No from/to fields: the sweep always covers the whole domain.
+  - The four camera modes keep their meaning; with fixed geometry, hold, follow and fit frame the study alike.
+  - Turning the probe off falls back to revealing and ends a probe animation.
+- Verification:
+  - `tests/spatial-probe-playback.spec.ts`, written before the implementation and observed failing (eight of nine; the ninth guards existing reveal exports), covers:
+    - availability and fallbacks;
+    - exact endpoints, nearest-sample stepping, pause, resume and scrubbing;
+    - restoration on Stop, and turning the probe off mid-playback;
+    - all four cameras.
+  - The export test decodes a 2000 × 1520 MP4 with ffprobe and compares its first and last frames with still PNGs of the probe at the first and last samples: they match, leaving at most 6·10⁻⁶ of their ink unmatched, while swapping the ends leaves 0.7% unmatched. A reveal export with the probe on still matches a still image without it.
+  - `tests/study-link.spec.ts` covers the round trip and both refusals.
+  - Targeted mutations: 8 faults (floor and off-by-one sample index, no mode fallback, no stop when the probe is turned off, export without the probe, the user's position drawn instead of the animated one, and two weakened link checks). The missing fallback survived the first run, because the menu still read reveal while the mode stayed probe; the availability test now plays after turning the probe off, and all 8 are detected.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

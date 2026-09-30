@@ -82,13 +82,15 @@ function Plot({
 
 // The parameter probe's controls and readout. `frame` is the study's own
 // result with diagnostics, or null while they are computed or while an
-// animation plays.
+// animation that does not move the probe plays. `at` is the sample an
+// animation has moved the probe to; the slider waits until it stops.
 export function ProbePanel({
   config,
   frame,
   probe,
   onProbe,
   animating,
+  at: moving,
   dark,
 }: {
   config: SpatialConfig;
@@ -96,13 +98,14 @@ export function ProbePanel({
   probe: Probe;
   onProbe: (change: (p: Probe) => Probe) => void;
   animating: boolean;
+  at?: number;
   dark: boolean;
 }) {
   const help = useHelp();
   if (!probeSupport(config).available) return null;
   const d = frame?.result.diagnostics;
   const n = d ? d.curvature.length - 1 : 0;
-  const at = probeIndex(probe.position, n);
+  const at = moving ?? probeIndex(probe.position, n);
   const readout = frame && d ? probeReadout(frame.result, at) : null;
   const swatch = (ink: number) => ({
     background: hex(lineColor(ink, 0, dark)),
@@ -150,6 +153,7 @@ export function ProbePanel({
                 max={n}
                 step={1}
                 value={at}
+                disabled={moving !== undefined}
                 aria-valuetext={`t = ${short(readout.t)}, sample ${at} of ${n}`}
                 onChange={(e) => {
                   const position = e.target.valueAsNumber / n;
