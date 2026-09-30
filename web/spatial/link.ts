@@ -202,6 +202,7 @@ const config: SchemaOf<SpatialConfig> = {
           },
         },
         cells: "number",
+        refine: "number",
         sections: {
           fields: {
             normal: vec3,

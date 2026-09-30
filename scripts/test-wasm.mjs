@@ -1851,6 +1851,44 @@ const spatialImplicit = (implicit) => {
       edges.add(a * vertices + b);
     }
   assert.equal(vertices - edges.size + m.triangles.length / 3, 2);
+  // Without refinement, the result says so.
+  assert.deepEqual(ball.implicit.refinement, {
+    levels: 0,
+    reached: 0,
+    bisected: 0,
+    unresolved: 0,
+    exhausted: false,
+  });
+  // Just past c = 1 the Cassini drops join by a waist no grid point meets:
+  // the grid alone finds two pieces, and refinement one, closed.
+  const thread = (refine) =>
+    spatialImplicit({
+      f: "((x - a)^2 + y^2 + z^2) * ((x + a)^2 + y^2 + z^2)",
+      level: 1.01,
+      box: {
+        xMin: -1.75,
+        xMax: 1.85,
+        yMin: -1.18,
+        yMax: 1.22,
+        zMin: -1.19,
+        zMax: 1.21,
+      },
+      cells: 20,
+      refine,
+    }).implicit;
+  assert.equal(thread(0).components.length, 2);
+  const joined = thread(3);
+  assert.deepEqual(joined.components, [
+    { triangles: joined.triangles.length / 3, euler: 2, closed: true },
+  ]);
+  assert.equal(joined.refinement.levels, 3);
+  assert.ok(joined.refinement.bisected > 0 && !joined.refinement.exhausted);
+  for (let k = 0; k < joined.positions.length; k += 3) {
+    const [x, y, z] = joined.positions.slice(k, k + 3);
+    const f = ((x - 1) ** 2 + y * y + z * z) * ((x + 1) ** 2 + y * y + z * z);
+    assert.ok(Math.abs(f - 1.01) < 1e-12);
+  }
+  assert.match(spatialImplicit({ refine: 4 }).error, /0–3 refinement levels/);
   // On a sphere of radius 2 the positions and unit normals differ, so each
   // array must arrive in its own place.
   const wide = spatialImplicit({

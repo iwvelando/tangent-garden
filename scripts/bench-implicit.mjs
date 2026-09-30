@@ -72,6 +72,29 @@ const studies = [
     cells: 128,
     sections: { normal: { x: 0, y: 0, z: 1 }, from: -0.4, to: 0.4, count: 24 },
   }),
+  // Refinement: its samples across a large study, and a refined preset.
+  study("tangle-refined", "64³ cells, 3 refinement levels", {
+    f: tanglecube,
+    level: -11.8,
+    box: box(2.6),
+    cells: 64,
+    refine: 3,
+  }),
+  study("thread", "the preset, 3 refinement levels", {
+    f: "((x - a)^2 + y^2 + z^2) * ((x + a)^2 + y^2 + z^2)",
+    level: 1.01,
+    box: {
+      xMin: -1.75,
+      xMax: 1.85,
+      yMin: -1.18,
+      yMax: 1.22,
+      zMin: -1.19,
+      zMax: 1.21,
+    },
+    cells: 20,
+    refine: 3,
+    sections: { normal: { x: 1, y: 0, z: 0 }, from: -0.6, to: 0.6, count: 3 },
+  }),
 ];
 
 const options = { runs: 5, engine: "public/", compare: "", study: "" };
@@ -198,6 +221,11 @@ else {
     console.log("\nSpeedup per frame (total), and transfer size");
     for (const r of local) {
       const o = other.find((x) => x.name === r.name);
+      // An engine without refinement ignores it and meshes the grid alone.
+      if (studies.find((s) => s.name === r.name).request.implicit.refine) {
+        console.log(`${r.name.padEnd(14)}   not compared: refined`);
+        continue;
+      }
       if (o.triangles !== r.triangles || o.vertices !== r.vertices)
         throw new Error(`${r.name}: the engines drew different meshes`);
       console.log(

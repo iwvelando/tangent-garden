@@ -30,13 +30,16 @@ type SectionRequest struct {
 
 // ImplicitRequest is the level set F(x, y, z) = Level within Box, sought on
 // a grid of Cells cells along the box's longest side and as many along the
-// others as keeps them nearest to cubes. F may use a, but not t.
+// others as keeps them nearest to cubes, refined up to Refine octree
+// levels where samples of F disagree with the grid (see adaptive.go). F
+// may use a, but not t.
 type ImplicitRequest struct {
 	F        string         `json:"f"`
 	A        float64        `json:"a"`
 	Level    float64        `json:"level"`
 	Box      Box            `json:"box"`
 	Cells    int            `json:"cells"`
+	Refine   int            `json:"refine"`
 	Sections SectionRequest `json:"sections"`
 }
 
@@ -77,7 +80,8 @@ type ImplicitComponent struct {
 // where F changes sign without crossing the level (a pole or a jump), in
 // edge order; Discontinuities counts them all. Nonfinite counts the grid
 // points where F is not a finite number, and Ambiguous the grid faces
-// whose corners alternate in sign.
+// whose corners alternate in sign; with refinement, Nonfinite also counts
+// the points sampled between grid points.
 type ImplicitResult struct {
 	Box                    Box                 `json:"box"`
 	Grid                   [3]int              `json:"grid"`
@@ -96,6 +100,7 @@ type ImplicitResult struct {
 	SectionDiscontinuities int                 `json:"sectionDiscontinuities"`
 	SectionsSkipped        int                 `json:"sectionsSkipped"`
 	Truncated              bool                `json:"truncated"`
+	Refinement             ImplicitRefinement  `json:"refinement"`
 }
 
 const (
@@ -104,6 +109,7 @@ const (
 	maxSections                        = 24
 	maxSectionCells                    = 256
 	maxImplicitMarks                   = 4096
+	maxImplicitRefine                  = 3
 )
 
 // Work bounds: the triangles of the mesh, and the grid edges searched for a
@@ -166,6 +172,9 @@ func (q ImplicitRequest) validate() error {
 	}
 	if n := q.Box.shape(q.Cells); n[0]*n[1]*n[2] > maxImplicitGrid {
 		return cellsError
+	}
+	if q.Refine < 0 || q.Refine > maxImplicitRefine {
+		return fmt.Errorf("use 0–%d refinement levels", maxImplicitRefine)
 	}
 	s := q.Sections
 	if s.Count < 0 || s.Count > maxSections {
@@ -353,19 +362,58 @@ func (s *field) vertex(p, bits int) (int32, bool) {
 	return v, true
 }
 
+// newVertex adds a vertex at x with its normal, ∇F/|∇F|, or none where
+// |∇F| is below 10⁻⁹ of the slope of F along the edge it was found on.
+// field.vertex keeps its own copy of these steps: calling this instead
+// changes how the compiler fuses their multiplications and additions,
+// and with it the last bit of some normals of existing studies.
+func (s *field) newVertex(x Vec3, slope float64) int32 {
+	v := int32(len(s.positions) / 3)
+	s.positions = append(s.positions, x.X, x.Y, x.Z)
+	n := s.gradient(x)
+	if l := n.norm(); finite(l) && l > 1e-9*slope {
+		n = n.mul(1 / l)
+	} else {
+		n = Vec3{}
+		s.singular++
+	}
+	s.normals = append(s.normals, n.X, n.Y, n.Z)
+	return v
+}
+
 // The six tetrahedra of a cube, each a path from corner 0 to corner 7 along
 // the cube's edges, in the bits x + 2y + 4z of its corners. Neighbouring
 // cubes split each shared face along the same diagonal.
 var tetrahedra = [6][4]int{{0, 1, 3, 7}, {0, 1, 5, 7}, {0, 2, 3, 7}, {0, 2, 6, 7}, {0, 4, 5, 7}, {0, 4, 6, 7}}
 
 // march adds the triangles of one tetrahedron, whose corners are grid
-// points in the cube whose first corner is point p, oriented to face the
-// corners on the larger side. A tetrahedron with an edge that is not a
-// crossing is left out.
+// points in the cube whose first corner is point p.
 func (s *field) march(p int, corners [8]int, tet [4]int) {
+	var g [4]float64
+	for c, bits := range tet {
+		g[c] = s.values[corners[bits]]
+	}
+	if (g[0] >= 0) == (g[1] >= 0) && (g[1] >= 0) == (g[2] >= 0) && (g[2] >= 0) == (g[3] >= 0) {
+		return
+	}
+	var at [4]Vec3
+	for c, bits := range tet {
+		i, j, k := s.point(corners[bits])
+		at[c] = s.node(i, j, k)
+	}
+	s.marchTet(g, at, func(u, w int) (int32, bool) {
+		return s.vertex(corners[tet[u]], tet[w]-tet[u])
+	})
+}
+
+// marchTet adds the triangles of a tetrahedron with values g of F − c at
+// its corners, oriented to face the corners on the larger side. crossing
+// returns the vertex on its edge from corner u to corner w > u, or false
+// where it is not a crossing; a tetrahedron with such an edge is left out.
+func (s *field) marchTet(g [4]float64, at [4]Vec3, crossing func(u, w int) (int32, bool)) {
 	var positive, negative []int
-	for _, c := range tet {
-		if s.values[corners[c]] >= 0 {
+	for c := range 4 {
+		if g[c] >= 0 {
 			positive = append(positive, c)
 		} else {
 			negative = append(negative, c)
@@ -374,16 +422,13 @@ func (s *field) march(p int, corners [8]int, tet [4]int) {
 	if len(positive) == 0 || len(negative) == 0 {
 		return
 	}
+	var ring []int32
+	ok := true
 	// Every sign-changing edge is sought, so each discontinuity is counted.
-	crossing := func(u, w int) (int32, bool) {
+	add := func(u, w int) {
 		if u > w {
 			u, w = w, u
 		}
-		return s.vertex(corners[u], w-u)
-	}
-	var ring []int32
-	ok := true
-	add := func(u, w int) {
 		v, found := crossing(u, w)
 		ok = ok && found
 		ring = append(ring, v)
@@ -409,8 +454,7 @@ func (s *field) march(p int, corners [8]int, tet [4]int) {
 	centroid := func(cs []int) Vec3 {
 		var sum Vec3
 		for _, c := range cs {
-			i, j, k := s.point(corners[c])
-			sum = sum.add(s.node(i, j, k))
+			sum = sum.add(at[c])
 		}
 		return sum.mul(1 / float64(len(cs)))
 	}
@@ -655,18 +699,17 @@ func (s *field) section(q ImplicitRequest, d float64, cells int, budget *engine.
 	return section, true
 }
 
-// implicit meshes the level set by marching tetrahedra and traces its
-// sections.
-func implicit(q ImplicitRequest) (Result, error) {
+// sample validates the request, parses F and samples F − c on the grid.
+func sample(q ImplicitRequest) (*field, error) {
 	if err := q.validate(); err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	f, timed, err := expr.ParseSpatialField(q.F, q.A)
 	if err != nil {
-		return Result{}, fmt.Errorf("F(x, y, z): %w", err)
+		return nil, fmt.Errorf("F(x, y, z): %w", err)
 	}
 	if timed {
-		return Result{}, fmt.Errorf("F(x, y, z) cannot use t; animate a or the level instead")
+		return nil, fmt.Errorf("F(x, y, z) cannot use t; animate a or the level instead")
 	}
 	s := &field{f: func(p Vec3) float64 { return f(p.X, p.Y, p.Z, 0) }, c: q.Level, box: q.Box, n: q.Box.shape(q.Cells),
 		vertices: map[int]int32{}, rejected: map[int]Vec3{}, positions: []float64{}, normals: []float64{}, triangles: []int32{}}
@@ -687,41 +730,84 @@ func implicit(q ImplicitRequest) (Result, error) {
 			}
 		}
 	}
-	for k := 0; k < s.n[2]; k++ {
-		for j := 0; j < s.n[1]; j++ {
-			for i := 0; i < s.n[0]; i++ {
-				var corners [8]int
-				defined := true
-				for c := range 8 {
-					corners[c] = s.index(i+c&1, j+c>>1&1, k+c>>2&1)
-					defined = defined && !math.IsNaN(s.values[corners[c]])
-				}
-				if !defined {
-					continue
-				}
-				for _, tet := range tetrahedra {
-					s.march(corners[0], corners, tet)
-					if s.overflowed {
-						return Result{}, fmt.Errorf("the level set crosses more than %s grid edges; use fewer cells", grouped(maxImplicitCrossings))
+	return s, nil
+}
+
+// implicit meshes the level set by marching tetrahedra, refined where
+// asked, and traces its sections.
+func implicit(q ImplicitRequest) (Result, error) {
+	s, err := sample(q)
+	if err != nil {
+		return Result{}, err
+	}
+	fewer := "use fewer cells"
+	if q.Refine > 0 {
+		fewer = "use fewer cells or refinement levels"
+	}
+	fail := func() error {
+		if s.overflowed {
+			return fmt.Errorf("the level set crosses more than %s grid edges; %s", grouped(maxImplicitCrossings), fewer)
+		}
+		if len(s.triangles) > 3*maxImplicitTriangles {
+			return fmt.Errorf("the level set needs more than %s triangles; %s", grouped(maxImplicitTriangles), fewer)
+		}
+		return nil
+	}
+	refinement := ImplicitRefinement{Levels: q.Refine}
+	var marks []Vec3
+	discontinuities := 0
+	if q.Refine > 0 {
+		a := newAdaptive(s, q.Refine)
+		unresolved, err := a.refine()
+		if err != nil {
+			return Result{}, err
+		}
+		if err := a.mesh(fail); err != nil {
+			return Result{}, err
+		}
+		marks, discontinuities = a.marks()
+		refinement.Reached, refinement.Unresolved, refinement.Exhausted = a.reached(), unresolved, a.exhausted
+		for _, x := range a.r.tets {
+			if x.kids[0] >= 0 {
+				refinement.Bisected++
+			}
+		}
+	} else {
+		for k := 0; k < s.n[2]; k++ {
+			for j := 0; j < s.n[1]; j++ {
+				for i := 0; i < s.n[0]; i++ {
+					var corners [8]int
+					defined := true
+					for c := range 8 {
+						corners[c] = s.index(i+c&1, j+c>>1&1, k+c>>2&1)
+						defined = defined && !math.IsNaN(s.values[corners[c]])
 					}
-					if len(s.triangles) > 3*maxImplicitTriangles {
-						return Result{}, fmt.Errorf("the level set needs more than %s triangles; use fewer cells", grouped(maxImplicitTriangles))
+					if !defined {
+						continue
+					}
+					for _, tet := range tetrahedra {
+						s.march(corners[0], corners, tet)
+						if err := fail(); err != nil {
+							return Result{}, err
+						}
 					}
 				}
 			}
 		}
+		edges := make([]int, 0, len(s.rejected))
+		for e := range s.rejected {
+			edges = append(edges, e)
+		}
+		sort.Ints(edges)
+		marks = []Vec3{}
+		for _, e := range edges[:min(len(edges), maxImplicitMarks)] {
+			marks = append(marks, s.rejected[e])
+		}
+		discontinuities = len(edges)
 	}
 	out := &ImplicitResult{Box: q.Box, Grid: s.n, Positions: s.positions, Normals: s.normals, Triangles: s.triangles,
-		Cut: []int32{}, Open: []int32{}, Components: []ImplicitComponent{}, Sections: []ImplicitSection{}, Marks: []Vec3{},
-		Nonfinite: s.nonfinite, Discontinuities: len(s.rejected), Ambiguous: s.ambiguous(), Singular: s.singular}
-	edges := make([]int, 0, len(s.rejected))
-	for e := range s.rejected {
-		edges = append(edges, e)
-	}
-	sort.Ints(edges)
-	for _, e := range edges[:min(len(edges), maxImplicitMarks)] {
-		out.Marks = append(out.Marks, s.rejected[e])
-	}
+		Cut: []int32{}, Open: []int32{}, Components: []ImplicitComponent{}, Sections: []ImplicitSection{}, Marks: marks,
+		Nonfinite: s.nonfinite, Discontinuities: discontinuities, Ambiguous: s.ambiguous(), Singular: s.singular, Refinement: refinement}
 	out.topology()
 	budget := &engine.ContourBudget{}
 	cells := min(maxSectionCells, 4*q.Cells)

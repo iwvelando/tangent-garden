@@ -129,6 +129,7 @@ const base: SpatialConfig = {
       zMax: 1.3,
     },
     cells: 48,
+    refine: 0,
     sections: { normal: { x: 0, y: 0, z: 1 }, from: -0.8, to: 0.8, count: 5 },
   },
   radius: 2.4,
@@ -1073,6 +1074,7 @@ export const spatialPresets: {
           zMax: 0.6,
         },
         cells: 64,
+        refine: 0,
         sections: {
           normal: { x: 1, y: 0, z: 0 },
           from: 0,
@@ -1104,6 +1106,7 @@ export const spatialPresets: {
           zMax: 0.6,
         },
         cells: 64,
+        refine: 0,
         sections: {
           normal: { x: -0.5, y: 0, z: Math.sqrt(3) / 2 },
           from: 0,
@@ -1137,6 +1140,7 @@ export const spatialPresets: {
           zMax: 0.8,
         },
         cells: 64,
+        refine: 0,
         sections: {
           normal: { x: 0, y: 0, z: 1 },
           from: 0,
@@ -1168,6 +1172,7 @@ export const spatialPresets: {
           zMax: 0.3,
         },
         cells: 96,
+        refine: 0,
         sections: {
           normal: { x: 0, y: 0, z: 1 },
           from: 0,
@@ -1199,6 +1204,7 @@ export const spatialPresets: {
           zMax: 2.6,
         },
         cells: 48,
+        refine: 0,
         sections: {
           normal: { x: 1, y: 1, z: 1 },
           from: -2,
@@ -1228,11 +1234,45 @@ export const spatialPresets: {
           zMax: Math.PI,
         },
         cells: 48,
+        refine: 0,
         sections: {
           normal: { x: 1, y: 1, z: 1 },
           from: 0,
           to: 0,
           count: 1,
+        },
+      },
+    },
+  },
+  {
+    name: "A thread between two drops",
+    detail:
+      "Just past c = 1 the Cassini drops join by a waist thinner than a cell: the grid alone sees two drops, and refinement finds the thread",
+    config: {
+      ...base,
+      format: "implicit",
+      // The waist has radius √(√c − 1) ≈ 0.07, and no point of the 20-cell
+      // grid, whose box is set off the axes, lies inside it. The section at
+      // x = 0 finds it on its own finer grid.
+      implicit: {
+        f: "((x - a)^2 + y^2 + z^2) * ((x + a)^2 + y^2 + z^2)",
+        a: 1,
+        level: 1.01,
+        box: {
+          xMin: -1.75,
+          xMax: 1.85,
+          yMin: -1.18,
+          yMax: 1.22,
+          zMin: -1.19,
+          zMax: 1.21,
+        },
+        cells: 20,
+        refine: 3,
+        sections: {
+          normal: { x: 1, y: 0, z: 0 },
+          from: -0.6,
+          to: 0.6,
+          count: 3,
         },
       },
     },

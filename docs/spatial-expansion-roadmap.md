@@ -120,7 +120,8 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 
 ## Numerical and rendering work deferred from the MVP
 
-- [ ] **Adaptive curves and meshes.** Replace uniform-only sampling where needed with bounded refinement driven by geometric error and derivative stability. Retain a quality-controlled world-space definition shared by playback and export; optional view-dependent drawing refinement must not change the mathematical study. Report budget exhaustion. Test narrow folds, rapidly oscillating curves, and poles between samples; do not promise certified topology from heuristics.
+- [x] **Adaptive meshes.** Done for implicit surfaces, the one mesh found rather than sampled on a parameter grid: bounded, crack-free refinement where samples disagree with the grid, reporting budget exhaustion; see the follow-up notes below and `mathematics.md#spatial-implicit-surfaces-and-sections` (**Refinement**). Surface patches keep their uniform parameter grids.
+- [ ] **Adaptive curves.** Replace uniform-only curve sampling where needed with bounded refinement driven by geometric error and derivative stability. Retain a quality-controlled world-space definition shared by playback and export; optional view-dependent drawing refinement must not change the mathematical study. Report budget exhaustion. Test narrow folds, rapidly oscillating curves, and poles between samples; do not promise certified topology from heuristics.
 - [ ] **Scale and translation robustness.** Establish error budgets across tiny/large studies and translated coordinates. Rebase GPU positions before Float32 upload where needed, retain meaningful camera clipping, and test explicit export equivalence. Current finite-value guards and robust bounds are not a proof of scale independence.
 - [x] **Mesh identities and efficiency.** Done for the implicit surface, the one shared-vertex result: its mesh travels as typed arrays and is drawn by index; see the follow-up notes below and `architecture.md` (**Measuring**). Worker pools and other result types remain open, to be profiled when a study needs them.
 - [ ] **Transparent and hidden geometry.** Investigate restrained transparency, cutaway planes, and hidden-line modes as ways to inspect folds. Triangle sorting alone fails for intersecting sheets. Evaluate a documented transparency method and support fallback; do not change the opaque default until both live and exported views agree reliably.
@@ -456,6 +457,32 @@ Every numbered slice is now complete.
 - Measured with `scripts/playback-probe.js` in headless Chromium on 10-second level or `a` tracks, frames per second, the deployed single-engine site → this build: tanglecube 64³ with 24 sections 0.70 → 1.26; double torus 3.85 → 6.58; two drops 5.96 → 10.82; gyroid 64³ 1.72 → 2.91. Each engine's round trip is unchanged, and the final frame is pixel-identical.
 - Limits: each frame still lags its request by one round trip, and a third engine was not added: each holds on the order of 100 MB.
 
-Recommended next step, for the user to choose: **adaptive meshes**, starting with bounded octree refinement of implicit surfaces near thin necks and alternating faces, reporting budget exhaustion. Otherwise the remaining backlog can be reconciled and this roadmap retired.
+### Follow-up completed: adaptive implicit meshes
+
+- Implemented bounded octree refinement of implicit surfaces (branch `claude/adaptive-implicit`). The request gained `refine`, 0–3 levels; a level is three generations of newest-vertex bisection of the grid's Kuhn tetrahedra. Refinement is recursively closed, so the mesh stays conforming.
+  - An octree with hanging vertices was rejected: it needs crack patching wherever cells of different sizes meet. Bisection needs none, and three generations are exactly one octree level.
+- Conventions:
+  - A tetrahedron is flagged when an edge's ends share a side of the level and its midpoint does not. That covers necks thinner than a cell, gaps the grid bridges, threads between grid points, and alternating faces whose diagonal contradicts the face's centre.
+  - Every tetrahedron is tested. A first band limited to tetrahedra near the surface missed an isolated thread whose cells have equal corners; a mutation run found this.
+  - Refinement runs generation by generation, in grid order, on an integer lattice `2^(levels+1)` times finer than the grid.
+  - Refinement stops before its closure could exceed 100,000 tetrahedra, and reports the flagged tetrahedra it left.
+  - `ambiguous` keeps its grid meaning.
+- UI and presets: **Refinement levels** is paired with **Cells** under sampling, and the readout adds the levels. The note reports the bisections, the depth reached, the unresolved tetrahedra, and budget exhaustion. Links carry `refine`, and older links take 0. The new preset **A thread between two drops** is missed by its 20-cell grid and joined by refinement. Refinement is not an animation track.
+- Workload, native:
+  - Sampling every grid edge's midpoint makes a large study's meshing two to eight times slower: the tanglecube at 64³ goes from 0.10 s to 0.30 s, the gyroid at 64³ from 0.10 s to 0.31 s, and a sphere at 64³ from 0.05 s to 0.19 s.
+  - Refinement adds up to about 30 MB, and a study that exhausts the budget peaks near 50 MB.
+  - `make bench` gained two refined studies. In WASM, the refined tanglecube (no sections) takes about 1.3 s, and the preset about 36 ms.
+  - Checking signs before corner positions made unrefined studies 1–17% faster than before (median of 7, against a local build of the previous engine).
+  - There is no new dependency or resource category.
+- Existing studies are unchanged: every spatial preset and the benchmark studies produce the same JSON bit for bit as before, and every 3D gallery thumbnail redraws byte-identical.
+- Permanent docs: `mathematics.md` (**Refinement**), `architecture.md`, `usage.md`, `spatial-study.md`, and README.
+- Verification: see the pull request for tests and mutations.
+- Limits:
+  - Refinement is a heuristic of samples, not a certificate: a piece between every sample is missed.
+  - A singular point on a lattice point still joins pieces by one vertex.
+  - Sections are not refined.
+  - A refined mesh is still only a picture.
+
+Recommended next step, for the user to choose: **adaptive curves** (above), or reconcile the remaining backlog and retire this roadmap.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

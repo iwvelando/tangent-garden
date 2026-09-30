@@ -337,6 +337,8 @@ self.onmessage = async ({
           );
         if (![level.cells, sections.count].every(Number.isInteger))
           throw new Error("Cell and plane counts must be whole numbers.");
+        if (!Number.isInteger(level.refine))
+          throw new Error("Refinement levels must be a whole number.");
       } else if (surface) {
         const { uSamples, vSamples, curves } = surface;
         if (

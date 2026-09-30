@@ -48,6 +48,8 @@ import {
   minImplicitCells,
   maxImplicitCells,
   maxImplicitGrid,
+  maxImplicitRefine,
+  maxRefinedTetrahedra,
   maxSections,
 } from "./types";
 import { implicitGrid, implicitNote } from "./implicit";
@@ -2515,26 +2517,48 @@ export default function SpatialApp({
             <summary>Sampling & definition</summary>
             {leveled ? (
               <>
-                <Field
-                  label="Cells"
-                  help={`${minImplicitCells}–${maxImplicitCells} cells along the box's longest side, as many along the others as keeps them nearest to cubes, and at most ${maxImplicitGrid.toLocaleString()} in all.`}
-                >
-                  <input
-                    type="number"
-                    min={minImplicitCells}
-                    max={maxImplicitCells}
-                    step="1"
-                    value={
-                      Number.isNaN(config.implicit.cells)
-                        ? ""
-                        : config.implicit.cells
-                    }
-                    onChange={(e) => {
-                      const cells = e.target.valueAsNumber;
-                      setImplicit((q) => ({ ...q, cells }));
-                    }}
-                  />
-                </Field>
+                <div className="pair">
+                  <Field
+                    label="Cells"
+                    help={`${minImplicitCells}–${maxImplicitCells} cells along the box's longest side, as many along the others as keeps them nearest to cubes, and at most ${maxImplicitGrid.toLocaleString()} in all.`}
+                  >
+                    <input
+                      type="number"
+                      min={minImplicitCells}
+                      max={maxImplicitCells}
+                      step="1"
+                      value={
+                        Number.isNaN(config.implicit.cells)
+                          ? ""
+                          : config.implicit.cells
+                      }
+                      onChange={(e) => {
+                        const cells = e.target.valueAsNumber;
+                        setImplicit((q) => ({ ...q, cells }));
+                      }}
+                    />
+                  </Field>
+                  <Field
+                    label="Refinement levels"
+                    help={`0–${maxImplicitRefine} octree levels; 0 meshes the grid alone. Where an edge of the grid's tetrahedra has both ends on one side of the level and its midpoint on the other, every tetrahedron around it is halved, and the halves are tested in turn, each level halving the cell, up to ${maxRefinedTetrahedra.toLocaleString()} tetrahedra.`}
+                  >
+                    <input
+                      type="number"
+                      min={0}
+                      max={maxImplicitRefine}
+                      step="1"
+                      value={
+                        Number.isNaN(config.implicit.refine)
+                          ? ""
+                          : config.implicit.refine
+                      }
+                      onChange={(e) => {
+                        const refine = e.target.valueAsNumber;
+                        setImplicit((q) => ({ ...q, refine }));
+                      }}
+                    />
+                  </Field>
+                </div>
                 <SamplingNote>
                   F is evaluated at every grid point, and every cube is split
                   into six tetrahedra around its diagonal, the same way in every
@@ -2552,7 +2576,15 @@ export default function SpatialApp({
                   box&rsquo;s cells, at most 256, and refined to a thousandth of
                   a cell. The mesh is limited to 200,000 triangles and 400,000
                   grid edges searched; the sections share 65,536 bisected edges
-                  and 131,072 points.
+                  and 131,072 points. Refinement samples F at the midpoint of
+                  every edge of the tetrahedra, and halves those around an edge
+                  whose midpoint lies across the level from both its ends: a
+                  neck, gap or thread thinner than a cell, or a face whose
+                  diagonal joins what its centre separates. Tetrahedra are
+                  halved by newest-vertex bisection, together with every one on
+                  the same edge, so the mesh never cracks where sizes meet.
+                  Refinement only follows what its samples see: a piece that
+                  falls between all of them is still missed.
                 </SamplingNote>
               </>
             ) : patched ? (
@@ -2731,7 +2763,7 @@ export default function SpatialApp({
               : failure
                 ? "Resolve the input to update the study."
                 : leveled
-                  ? `${implicitGrid(config.implicit.box, config.implicit.cells).join(" × ")} cells · ${config.implicit.sections.count} section ${config.implicit.sections.count === 1 ? "plane" : "planes"}`
+                  ? `${implicitGrid(config.implicit.box, config.implicit.cells).join(" × ")} cells · ${config.implicit.sections.count} section ${config.implicit.sections.count === 1 ? "plane" : "planes"}${config.implicit.refine > 0 ? ` · up to ${config.implicit.refine} refinement ${config.implicit.refine === 1 ? "level" : "levels"}` : ""}`
                   : patched
                     ? `${config.surface.uSamples} × ${config.surface.vSamples} cells · ${config.surface.curves} parameter curves`
                     : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}

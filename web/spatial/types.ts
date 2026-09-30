@@ -169,7 +169,9 @@ export type RaysConfig = {
 };
 // The level set F(x, y, z) = level of an expression in x, y, z and a (not
 // t), within the box, on a grid of `cells` cells along the box's longest
-// side and as many along the others as keeps them nearest to cubes. Its
+// side and as many along the others as keeps them nearest to cubes,
+// refined up to `refine` octree levels where samples of F disagree with
+// the grid (0 meshes the grid alone). Its
 // sections are `count` planes n̂·p = d with n̂ the normal made a unit vector
 // and d evenly from `from` to `to`, both included (one plane stands at
 // `from`; none at 0); the normal and offsets are read only then. Mirrors
@@ -188,11 +190,14 @@ export type ImplicitConfig = {
   level: number;
   box: ImplicitBox;
   cells: number;
+  refine: number;
   sections: { normal: Vec3; from: number; to: number; count: number };
 };
 export const minImplicitCells = 4;
 export const maxImplicitCells = 128;
 export const maxImplicitGrid = 262144;
+export const maxImplicitRefine = 3;
+export const maxRefinedTetrahedra = 100000;
 export const maxSections = 24;
 export type SpatialConfig = {
   format:
@@ -545,7 +550,10 @@ export type RaysResult = {
 // vertex indices: boundary edges on the box's faces, and beside cells left
 // out. The engine sends these five arrays typed, not as JSON (see
 // cmd/wasm/mesh.go). Marks are where F changes sign without crossing the
-// level, up to 4,096 of them; discontinuities counts them all.
+// level, up to 4,096 of them; discontinuities counts them all. Refinement
+// reports the levels asked for and the deepest reached, the tetrahedra
+// bisected, those still flagged but left unsplit, and whether the budget
+// of maxRefinedTetrahedra ran out.
 export type ImplicitPath = { points: Vec3[]; closed: boolean };
 export type ImplicitSection = {
   offset: number;
@@ -571,4 +579,11 @@ export type ImplicitResult = {
   sectionDiscontinuities: number;
   sectionsSkipped: number;
   truncated: boolean;
+  refinement: {
+    levels: number;
+    reached: number;
+    bisected: number;
+    unresolved: number;
+    exhausted: boolean;
+  };
 };
