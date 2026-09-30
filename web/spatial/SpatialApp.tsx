@@ -83,7 +83,17 @@ import {
   type SpatialCamera,
   type SpatialStudy,
 } from "./link";
+import type { ImageFormat } from "./export";
 import "./spatial.css";
+
+// Saved image files, by format.
+const imageNames: Record<ImageFormat, string> = {
+  png: ".png",
+  svg: ".svg",
+  "svg-lines": "-lines.svg",
+  "svg-visible": "-visible-lines.svg",
+};
+
 // How a study is sampled is for the curious: a heading and an info toggle
 // keep the detail out of the way until it is asked for.
 function SamplingNote({ children }: { children: ReactNode }) {
@@ -1136,7 +1146,7 @@ export default function SpatialApp({
     override = animation?.complete ? undefined : camera,
     released = animation?.complete ? camera : undefined;
   const ready = !!frame && !busy && !failure && !renderError;
-  async function save(format: "png" | "svg") {
+  async function save(format: string) {
     if (!shown || !viewport.current) return;
     imageAbort.current?.abort();
     const controller = new AbortController();
@@ -1156,11 +1166,14 @@ export default function SpatialApp({
         snapshot.view,
         snapshot.layers,
         snapshot.dark,
-        format,
+        format as ImageFormat,
         controller.signal,
       );
       controller.signal.throwIfAborted();
-      saveFile(blob, `tangent-garden-spatial.${format}`);
+      saveFile(
+        blob,
+        `tangent-garden-spatial${imageNames[format as ImageFormat]}`,
+      );
     } catch (e) {
       if (!controller.signal.aborted) throw e;
     } finally {
@@ -1931,6 +1944,13 @@ export default function SpatialApp({
           kind="spatial"
           menuId="spatial-export-image-menu"
           svgLabel="SVG · embedded 3D image"
+          extraItems={[
+            { format: "svg-lines", label: "Lines (SVG) · every line" },
+            {
+              format: "svg-visible",
+              label: "Lines (SVG) · visible only, sampled",
+            },
+          ]}
           onSave={save}
         />
       </AppHeader>

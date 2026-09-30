@@ -1,5 +1,7 @@
 import type { Frame } from "./types";
 import { createRenderer, type View, type Layers } from "./renderer";
+import { buildScene } from "./scene";
+import { linework, linesSvg, sampleStep } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
 import { mp4Sink, webpSink } from "../export-sinks";
 import {
@@ -9,19 +11,81 @@ import {
 } from "../export-quality";
 import type { ExportFormat } from "../export-formats";
 
+// The study's name, for a file's title.
+function studyTitle(frame: Frame) {
+  const format = frame.config.format;
+  if (format === "implicit") return "spatial implicit surface and sections";
+  if (format === "surface") return "spatial surface normals and focal sheets";
+  if (format === "rays") return "spatial mirror rays and caustics";
+  const title: Record<Frame["config"]["construction"], string> = {
+    developable: "spatial tangent developable",
+    involute: "spatial involutes",
+    "tangent-foot": "spatial tangent-foot projection",
+    orthotomic: "spatial tangent-line orthotomic",
+    inversion: "spatial sphere inversion",
+    framed: "spatial framed ribbon",
+    ruled: "spatial ruled surface",
+    canal: "spatial canal surface",
+    none:
+      format === "field"
+        ? "spatial vector-field trajectories"
+        : format === "pursuit"
+          ? "spatial cyclic pursuit"
+          : "spatial curve",
+  };
+  return title[frame.config.construction];
+}
+const xml = (s: string) =>
+  s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+
+// PNG, the shaded drawing as an SVG-wrapped PNG, or the drawing's lines as
+// vector paths: every line ("svg-lines") or the lines not hidden by a shown
+// sheet, by sampling ("svg-visible").
+export type ImageFormat = "png" | "svg" | "svg-lines" | "svg-visible";
+const page = { width: 2000, height: 1520 };
+
 export async function imageFile(
   frame: Frame,
   view: View,
   layers: Layers,
   dark: boolean,
-  format: "png" | "svg",
+  format: ImageFormat,
   signal: AbortSignal,
 ): Promise<Blob> {
+  if (format === "svg-lines" || format === "svg-visible") {
+    const occlusion = format === "svg-lines" ? "none" : "sampled";
+    const groups = linework(buildScene(frame.result), view, layers, dark, {
+      ...page,
+      occlusion,
+      signal,
+    });
+    signal.throwIfAborted();
+    const svg = linesSvg(groups, {
+      ...page,
+      dark,
+      title: `Tangent Garden — ${studyTitle(frame)} (lines)`,
+      metadata: {
+        config: frame.config,
+        view,
+        layers,
+        dark,
+        rendering: "vector linework",
+        occlusion: {
+          mode: occlusion,
+          statement:
+            occlusion === "none"
+              ? "Every shown line is drawn, including lines behind surfaces. Shaded surfaces are not drawn."
+              : `Lines behind a shown surface are left out where sampled every ${sampleStep} px against a ${page.width} × ${page.height} depth raster of the surfaces, with the drawing's polygon offset. This approximates hidden lines; it is not exact hidden-line removal. Lines do not hide lines, and shaded surfaces are not drawn.`,
+        },
+      },
+    });
+    return new Blob([svg], { type: "image/svg+xml" });
+  }
   const canvas = document.createElement("canvas"),
     renderer = createRenderer(canvas);
   try {
     renderer.upload(frame.result);
-    renderer.draw(view, layers, dark, { width: 2000, height: 1520 });
+    renderer.draw(view, layers, dark, page);
     signal.throwIfAborted();
     const png = await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(
@@ -33,30 +97,9 @@ export async function imageFile(
     if (format === "png") return png;
     // A 3D shaded/depth-tested view is raster content. Label it honestly; do not
     // claim a painter-sorted mesh is an exact vector hidden-surface solution.
-    const xml = (s: string) =>
-      s
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
-    const title: Record<Frame["config"]["construction"], string> = {
-      developable: "spatial tangent developable",
-      involute: "spatial involutes",
-      "tangent-foot": "spatial tangent-foot projection",
-      orthotomic: "spatial tangent-line orthotomic",
-      inversion: "spatial sphere inversion",
-      framed: "spatial framed ribbon",
-      ruled: "spatial ruled surface",
-      canal: "spatial canal surface",
-      none:
-        frame.config.format === "field"
-          ? "spatial vector-field trajectories"
-          : frame.config.format === "pursuit"
-            ? "spatial cyclic pursuit"
-            : "spatial curve",
-    };
     return new Blob(
       [
-        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${frame.config.format === "implicit" ? "spatial implicit surface and sections" : frame.config.format === "surface" ? "spatial surface normals and focal sheets" : frame.config.format === "rays" ? "spatial mirror rays and caustics" : title[frame.config.construction]}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
       ],
       { type: "image/svg+xml" },
     );

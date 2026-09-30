@@ -153,4 +153,4 @@ Choose **Spatial definition · Implicit surface · F(x, y, z) = c** for a level 
 - **A gyroid, cut open**
 - **A thread between two drops** (set **Refinement levels** to 0 to see what the grid alone misses)
 
-Animation supports progressive reveal, parameter tracks and a camera orbit, with pause/scrub, the four camera modes, and MP4/WebP export. **Export image** saves PNG or an SVG with an embedded shaded image. The [spatial guide](spatial-study.md) has examples and numerical limits.
+Animation supports progressive reveal, parameter tracks and a camera orbit, with pause/scrub, the four camera modes, and MP4/WebP export. **Export image** saves PNG, an SVG with an embedded shaded image, or a line drawing: true SVG paths of the shown lines, either every line or only the lines not hidden behind a surface (sampled at the page's resolution, not exact hidden-line removal). The [spatial guide](spatial-study.md) has examples and numerical limits.

@@ -13,8 +13,10 @@ const png = { width: 2000, height: 1520 };
 type Props = {
   disabled: boolean;
   kind: string;
-  onSave?: (format: "png" | "svg") => Promise<void>;
+  onSave?: (format: string) => Promise<void>;
   svgLabel?: string;
+  // Further formats a notebook saves itself, listed after SVG.
+  extraItems?: { format: string; label: string }[];
   menuId?: string;
 };
 
@@ -25,6 +27,7 @@ export function ExportImageMenu({
   svgLabel = kind === "attractor"
     ? "SVG · vectors, density as an embedded PNG"
     : "SVG · vector, scalable",
+  extraItems = [],
   menuId = "export-image-menu",
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -86,7 +89,7 @@ export function ExportImageMenu({
       close();
     } else if (e.key === "Tab") setOpen(false);
   }
-  async function save(format: "png" | "svg") {
+  async function save(format: string) {
     close();
     setError("");
     if (onSave) {
@@ -158,6 +161,17 @@ export function ExportImageMenu({
           >
             {svgLabel}
           </button>
+          {extraItems.map((extra, i) => (
+            <button
+              key={extra.format}
+              ref={item(2 + i)}
+              role="menuitem"
+              tabIndex={-1}
+              onClick={() => void save(extra.format)}
+            >
+              {extra.label}
+            </button>
+          ))}
         </div>
       )}
       {error && (
