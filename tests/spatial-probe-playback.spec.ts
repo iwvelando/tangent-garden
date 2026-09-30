@@ -197,25 +197,29 @@ for (const camera of ["hold", "current", "follow", "fit"])
     expect(await pixels(page)).toBe(study);
   });
 
-// A still PNG's pixels, as RGBA.
+// A still PNG's pixels, as RGBA. The page decodes it; 12 million values
+// cross as base64, since a JSON array of them takes most of a minute.
 async function still(page: Page) {
   await button(page, "Export image").click();
   const event = page.waitForEvent("download");
   await page.getByRole("menuitem", { name: /^PNG image/ }).click();
-  const bytes = await readFile((await (await event).path())!);
-  return page.evaluate(async (input) => {
+  const png = await readFile((await (await event).path())!);
+  const rgba = await page.evaluate(async (input) => {
     const image = new Image();
-    image.src = URL.createObjectURL(
-      new Blob([new Uint8Array(input)], { type: "image/png" }),
-    );
+    image.src = `data:image/png;base64,${input}`;
     await image.decode();
     const c = document.createElement("canvas");
     c.width = image.width;
     c.height = image.height;
     const g = c.getContext("2d")!;
     g.drawImage(image, 0, 0);
-    return Array.from(g.getImageData(0, 0, c.width, c.height).data);
-  }, Array.from(bytes));
+    const data = g.getImageData(0, 0, c.width, c.height).data;
+    let text = "";
+    for (let i = 0; i < data.length; i += 0x8000)
+      text += String.fromCharCode(...data.subarray(i, i + 0x8000));
+    return btoa(text);
+  }, png.toString("base64"));
+  return Buffer.from(rgba, "base64");
 }
 // An MP4 at the still images' 2000 × 1520, six frames over 0.4 s.
 async function exportVideo(page: Page) {

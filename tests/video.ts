@@ -188,7 +188,7 @@ export function frameDifference(
   width: number,
   height: number,
   index: number,
-  reference: number[],
+  reference: ArrayLike<number>,
 ): { meanDifference: number; unmatchedInk: number } | null {
   if (!available) return null;
   const pixels = execFileSync(
