@@ -276,6 +276,75 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
   }, [dark]);
   const descriptor = objects[config.object];
   const curved = descriptor.legend === "sections";
+  const liftStudy = descriptor.controls === "lift";
+  const liftFields =
+    descriptor.liftFields?.filter(
+      (f) => !f.presentation || config.mode === "lifted",
+    ) ?? [];
+  const renderLiftFields = (endpoints: boolean) => {
+    const fields = liftFields.filter((f) => !!f.endpoint === endpoints);
+    const rows: (typeof fields)[] = [];
+    for (const f of fields) {
+      const previous = rows.at(-1);
+      if (
+        previous &&
+        (f.group
+          ? previous[0].group === f.group
+          : !previous[0].group && previous.length < 2)
+      )
+        previous.push(f);
+      else rows.push([f]);
+    }
+    return rows.map((row) => (
+      <div
+        key={row[0].label}
+        role={row[0].group ? "group" : undefined}
+        aria-label={row[0].group}
+      >
+        {row[0].group && <div className="term-heading">{row[0].group}</div>}
+        <div className={row[0].group ? "pair trio" : "pair"}>
+          {row.map((f) =>
+            cloneElement(
+              scalar(
+                f.label,
+                f.index === undefined
+                  ? (config.lift![f.key] as number)
+                  : (config.lift![f.key] as number[])[f.index],
+                (c, n) => {
+                  const lift = { ...c.lift! };
+                  if (f.index === undefined)
+                    Object.assign(lift, { [f.key]: n });
+                  else {
+                    const values = [...(lift[f.key] as number[])];
+                    values[f.index] = n;
+                    Object.assign(lift, { [f.key]: values });
+                  }
+                  return { ...c, lift };
+                },
+                f.help,
+              ),
+              {
+                key: f.label,
+                ...(f.group
+                  ? {
+                      label: (
+                        <>
+                          <span className="lift-coordinate-context">
+                            {f.group}{" "}
+                          </span>
+                          {["x", "y", "z"][f.index!]}
+                        </>
+                      ),
+                      topic: f.label,
+                    }
+                  : {}),
+              },
+            ),
+          )}
+        </div>
+      </div>
+    ));
+  };
   const info = descriptor.explanation(config);
   const selected =
     frame?.result.sections[
@@ -360,6 +429,12 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   value={config.mode}
                   onChange={(e) => {
                     const mode = e.target.value as Config["mode"];
+                    if (descriptor.linkedViews) {
+                      stop();
+                      setPreset(null);
+                      setConfig((c) => ({ ...c, mode }));
+                      return;
+                    }
                     if (mode !== "section" && motion === "slice")
                       setMotion("double");
                     update((c) => ({ ...c, mode }));
@@ -446,6 +521,22 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   </p>
                 </>
               )}
+              {liftStudy && (
+                <>
+                  {renderLiftFields(false)}
+                  {count(
+                    descriptor.sampleLabel!,
+                    config.samples,
+                    8,
+                    256,
+                    (c, samples) => ({ ...c, samples }),
+                  )}
+                  <details className="subsection">
+                    <summary>{descriptor.motionEndpointsLabel}</summary>
+                    {renderLiftFields(true)}
+                  </details>
+                </>
+              )}
               {config.mode === "perspective" &&
                 scalar(
                   "4D eye distance",
@@ -511,52 +602,64 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                   )}
                 </>
               ) : (
-                <>
-                  {count("Face grid lines", config.grid, 0, 12, (c, grid) => ({
-                    ...c,
-                    grid,
-                  }))}
-                  {config.mode === "stereo" &&
-                    count(
-                      "Arc samples",
-                      config.samples,
-                      8,
-                      256,
-                      (c, samples) => ({ ...c, samples }),
+                !liftStudy && (
+                  <>
+                    {count(
+                      "Face grid lines",
+                      config.grid,
+                      0,
+                      12,
+                      (c, grid) => ({
+                        ...c,
+                        grid,
+                      }),
                     )}
-                </>
+                    {config.mode === "stereo" &&
+                      count(
+                        "Arc samples",
+                        config.samples,
+                        8,
+                        256,
+                        (c, samples) => ({ ...c, samples }),
+                      )}
+                  </>
+                )
               )}
               <div className="layer-grid">
-                {(["edges", "guides", "faces"] as const)
-                  .filter(
-                    (k) =>
-                      k === "edges" ||
-                      (k === "faces"
-                        ? !curved &&
-                          config.mode === "section" &&
-                          config.count === 1
-                        : config.mode !== "section"),
-                  )
-                  .map((k) => (
-                    <label className="check" key={k}>
-                      <input
-                        type="checkbox"
-                        checked={layers[k]}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          controller.current?.abort();
-                          setLayers((l) => ({ ...l, [k]: checked }));
-                        }}
-                      />
-                      {
-                        {
-                          edges: "Edges & section contours",
-                          guides: "Face lattice",
-                          faces: "Translucent section faces",
-                        }[k]
-                      }
-                    </label>
-                  ))}
+                {(
+                  descriptor.layerOptions?.(config) ??
+                  (["edges", "guides", "faces"] as const)
+                    .filter(
+                      (k) =>
+                        k === "edges" ||
+                        (k === "faces"
+                          ? !curved &&
+                            config.mode === "section" &&
+                            config.count === 1
+                          : config.mode !== "section"),
+                    )
+                    .map((k) => ({
+                      key: k,
+                      label: {
+                        edges: "Edges & section contours",
+                        guides: "Face lattice",
+                        faces: "Translucent section faces",
+                      }[k],
+                    }))
+                ).map(({ key: k, label }) => (
+                  <label className="check" key={k}>
+                    <input
+                      type="checkbox"
+                      checked={!!layers[k]}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        controller.current?.abort();
+                        setLayers((l) => ({ ...l, [k]: checked }));
+                      }}
+                    />
+                    {label}
+                  </label>
+                ))}
               </div>
             </section>
             <AnimationPanel
@@ -604,7 +707,9 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
             <div>
               <div className="eyebrow">
                 FOUR DIMENSIONS /{" "}
-                {config.mode === "section" ? "A CROSS-SECTION" : "A PROJECTION"}
+                {config.mode === "section" || config.mode === "reference"
+                  ? "A CROSS-SECTION"
+                  : "A PROJECTION"}
               </div>
               <h1>
                 {preset === null
@@ -664,7 +769,9 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
               )}
               {busy && frame && <span className="computing">Computing…</span>}
             </div>
-            <div className={`plot-meta ${curved ? "section-meta" : ""}`}>
+            <div
+              className={`plot-meta ${curved ? "section-meta" : liftStudy ? "thread-meta" : ""}`}
+            >
               <div className="tesseract-legend">
                 {curved &&
                   frame?.result.sections.map((s, i) => (
@@ -680,10 +787,16 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
                     </span>
                   ))}
                 {!curved &&
-                  inks(dark).map((color, i) => (
-                    <span key={i}>
-                      <i style={{ background: color }} />
-                      {["x", "y", "z", "w"][i]}
+                  (
+                    descriptor.legendItems ??
+                    inks(dark).map((_, i) => ({
+                      label: ["x", "y", "z", "w"][i],
+                      family: i,
+                    }))
+                  ).map(({ label, family }) => (
+                    <span key={label}>
+                      <i style={{ background: inks(dark)[family] }} />
+                      {label}
                     </span>
                   ))}
               </div>
@@ -698,6 +811,15 @@ export default function TesseractApp({ active = true }: { active?: boolean }) {
             <p>{info[1]}</p>
             <code>{info[2]}</code>
             <p className="note">{descriptor.colorNote(config)}</p>
+            {frame && descriptor.readouts && (
+              <div className="lift-readout">
+                {descriptor.readouts(frame.result).map(({ label, value }) => (
+                  <span key={label}>
+                    {label}: <b>{value}</b>
+                  </span>
+                ))}
+              </div>
+            )}
             {curved && selected ? (
               <p className="section-identity" data-section={selected.id}>
                 Selected section{" "}

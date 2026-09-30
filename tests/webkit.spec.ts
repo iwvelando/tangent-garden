@@ -253,3 +253,51 @@ for (const name of ["A sphere in passing", "A ring in passing"])
       expect(coverage[2]).toBeGreaterThan(0.005);
     }
   });
+
+for (const mode of ["reference", "lifted"])
+  test(`localized lift ${mode} renders and exports through WebKit`, async ({
+    page,
+  }) => {
+    await page.goto("/?study=4d");
+    await choosePreset(page, { label: "The missing middle" });
+    const settle = () =>
+      expect(page.locator(".tesseract-stage")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+    await settle();
+    await page
+      .getByRole("combobox", { name: "View operation", exact: true })
+      .selectOption(mode);
+    await settle();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.locator("#tesseract-artwork text")).toHaveCount(0);
+    await page
+      .getByRole("checkbox", { name: "Missing-region guide", exact: true })
+      .check();
+    if (mode === "lifted")
+      await page
+        .getByRole("checkbox", { name: "Displacement connectors", exact: true })
+        .check();
+    const image = page.waitForEvent("download");
+    await exportImage(page, "PNG");
+    const bytes = await readFile((await (await image).path())!);
+    expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
+      2000, 1520,
+    ]);
+    await page.getByLabel("Duration (seconds)").fill(".4");
+    await open(page, "#shape-export-settings");
+    await page.getByLabel("Export frame rate").selectOption("15");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("0.5");
+    const path = (await save(page))!,
+      data = probe(path);
+    if (data) {
+      expect(data.frames).toBe(6);
+      expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    }
+    const video = await decodeVideo(page, await readFile(path));
+    expect(video.duration).toBeCloseTo(0.4, 3);
+    expect(video.first.hash).not.toBe(video.last.hash);
+  });

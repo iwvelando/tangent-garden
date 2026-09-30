@@ -27,6 +27,8 @@ export type MotionExport = {
 function motions(
   config: Config,
 ): { value: Motion; label: string; help: string }[] {
+  if (objects[config.object].motionChoices)
+    return objects[config.object].motionChoices!;
   const choices: { value: Motion; label: string; help: string }[] = [
     {
       value: "double",

@@ -48,7 +48,15 @@ export function Drawing({
     ];
   };
   const mapped = result.paths
-    .filter((p) => (p.guide ? layers.guides : layers.edges))
+    .filter((p) =>
+      p.role === "missing-guide"
+        ? layers.missingGuide
+        : p.role === "displacement"
+          ? layers.connectors
+          : p.guide
+            ? layers.guides
+            : layers.edges,
+    )
     .map((p) => ({ ...p, points: p.points.map(project) }));
   if (curved)
     mapped.sort((a, b) => {
@@ -85,8 +93,23 @@ export function Drawing({
           object: result.object,
           operation: result.operation,
           emittedPoints: result.emittedPoints,
+          ...(result.lift ? { framingRadius: result.radius } : {}),
           evaluations: result.evaluations,
           sections: result.sections,
+          ...(result.lift
+            ? {
+                lift: result.lift,
+                intervals: result.paths
+                  .filter((p) => !p.guide)
+                  .map((p) => ({
+                    source: p.source,
+                    branch: p.branch,
+                    role: p.role,
+                    from: p.parameters?.[0],
+                    to: p.parameters?.at(-1),
+                  })),
+              }
+            : {}),
           limitations: descriptor.limitations,
           rendering: "transparent vector construction",
         })}
@@ -103,7 +126,7 @@ export function Drawing({
       ))}
       {mapped.map((p) => (
         <path
-          key={`${p.sectionId ?? "base"}/${p.source}/${p.branch}`}
+          key={`${p.sectionId ?? "base"}/${p.source}/${p.role}/${p.branch}`}
           data-source={p.source}
           data-section={p.sectionId}
           data-role={p.role}

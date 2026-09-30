@@ -11,28 +11,31 @@ import (
 type Vec4 [4]float64
 type Vec3 [3]float64
 type Request struct {
-	Object   string     `json:"object"` // empty retains the legacy tesseract contract
-	Radius   float64    `json:"radius"`
-	Tube     float64    `json:"tube"`
-	Curves   int        `json:"curves"`
-	Mode     string     `json:"mode"`
-	Angles   [6]float64 `json:"angles"` // xy, xz, yz, xw, yw, zw, radians, in this order
-	Distance float64    `json:"distance"`
-	Slice    float64    `json:"slice"`
-	Spread   float64    `json:"spread"`
-	Count    int        `json:"count"`
-	Grid     int        `json:"grid"`
-	Samples  int        `json:"samples"`
-	Clip     float64    `json:"clip"`
+	Object   string          `json:"object"` // empty retains the legacy tesseract contract
+	Radius   float64         `json:"radius"`
+	Tube     float64         `json:"tube"`
+	Curves   int             `json:"curves"`
+	Mode     string          `json:"mode"`
+	Angles   [6]float64      `json:"angles"` // xy, xz, yz, xw, yw, zw, radians, in this order
+	Distance float64         `json:"distance"`
+	Slice    float64         `json:"slice"`
+	Spread   float64         `json:"spread"`
+	Count    int             `json:"count"`
+	Grid     int             `json:"grid"`
+	Samples  int             `json:"samples"`
+	Clip     float64         `json:"clip"`
+	Lift     *LiftParameters `json:"lift,omitempty"`
 }
 type Path struct {
-	Source    string `json:"source,omitempty"`
-	SectionID string `json:"sectionId,omitempty"`
-	Branch    string `json:"branch,omitempty"`
-	Role      string `json:"role,omitempty"`
-	Points    []Vec3 `json:"points"`
-	Family    int    `json:"family"` // original edge direction, or cell axis for a section
-	Guide     bool   `json:"guide"`
+	Source     string    `json:"source,omitempty"`
+	SectionID  string    `json:"sectionId,omitempty"`
+	Branch     string    `json:"branch,omitempty"`
+	Role       string    `json:"role,omitempty"`
+	Points     []Vec3    `json:"points"`
+	Family     int       `json:"family"` // original edge direction, or cell axis for a section
+	Guide      bool      `json:"guide"`
+	Parameters []float64 `json:"parameters,omitempty"`
+	FourPoints []Vec4    `json:"fourPoints,omitempty"`
 }
 type Face struct {
 	Points []Vec3 `json:"points"`
@@ -49,16 +52,17 @@ type Section struct {
 	Dimension int     `json:"dimension"` // -1 empty; 0 point; 1 segment; 2 polygon; 3 solid
 }
 type Result struct {
-	Object        string    `json:"object"`
-	Operation     string    `json:"operation"`
-	EmittedPoints int       `json:"emittedPoints"`
-	Evaluations   int       `json:"evaluations"`
-	Paths         []Path    `json:"paths"`
-	Faces         []Face    `json:"faces"`
-	Points        []Vec3    `json:"points"`
-	Sections      []Section `json:"sections"`
-	Clipped       int       `json:"clipped"` // source curves cut by the stereographic window
-	Radius        float64   `json:"radius"`  // fixed, rotation-independent framing sphere
+	Object        string           `json:"object"`
+	Operation     string           `json:"operation"`
+	EmittedPoints int              `json:"emittedPoints"`
+	Evaluations   int              `json:"evaluations"`
+	Paths         []Path           `json:"paths"`
+	Faces         []Face           `json:"faces"`
+	Points        []Vec3           `json:"points"`
+	Sections      []Section        `json:"sections"`
+	Clipped       int              `json:"clipped"` // source curves cut by the stereographic window
+	Radius        float64          `json:"radius"`  // fixed, rotation-independent framing sphere
+	Lift          *LiftDiagnostics `json:"lift,omitempty"`
 }
 
 var planes = [6][2]int{{0, 1}, {0, 2}, {1, 2}, {0, 3}, {1, 3}, {2, 3}}
@@ -117,11 +121,14 @@ func Compute(q Request) (r Result, err error) {
 		}
 		r.EmittedPoints += len(r.Points)
 	}()
+	if q.Object == "lift" {
+		return lifted(q, r)
+	}
 	if q.Object == "ball" || q.Object == "tube" {
 		return curved(q, r)
 	}
 	if q.Object != "tesseract" {
-		return r, fmt.Errorf("choose tesseract, ball, or tube")
+		return r, fmt.Errorf("choose tesseract, ball, tube, or lift")
 	}
 	if q.Mode != "perspective" && q.Mode != "orthographic" && q.Mode != "stereo" && q.Mode != "section" {
 		return r, fmt.Errorf("choose a tesseract projection or section")

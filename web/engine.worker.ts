@@ -62,16 +62,56 @@ self.onmessage = async ({
     }
     if (data.action === "tesseract") {
       const q = data.tesseract;
-      if (!q || !Array.isArray(q.angles) || q.angles.length !== 6)
+      if (!q) throw new Error("Enter a 4D study definition.");
+      if (
+        q.object !== "lift" &&
+        (!Array.isArray(q.angles) || q.angles.length !== 6)
+      )
         throw new Error("Enter six tesseract rotation angles.");
       const curved = q.object === "ball" || q.object === "tube";
-      const counts = curved
-        ? [q.count, q.curves, q.samples]
-        : q.mode === "section"
-          ? [q.count]
-          : q.mode === "stereo"
-            ? [q.grid, q.samples]
-            : [q.grid];
+      const lift = q.object === "lift" ? q.lift : undefined;
+      if (q.object === "lift" && !lift)
+        throw new Error("Enter localized lift parameters.");
+      if (lift) {
+        for (const [key, label] of [
+          ["center", "Lift center"],
+          ["from", "Drift start"],
+          ["to", "Drift end"],
+        ] as const) {
+          if (!Array.isArray(lift[key]) || lift[key].length !== 3)
+            throw new Error(`${label} requires three coordinates.`);
+          for (const [i, value] of lift[key].entries())
+            if (!Number.isFinite(value))
+              throw new Error(
+                `${label} ${["x", "y", "z"][i]} must be a finite constant.`,
+              );
+        }
+        const fields: [string, number][] = [
+          ["Lift support radius L", lift.support],
+          ["Lift height A", lift.height],
+          ["Support start", lift.radiusFrom],
+          ["Support end", lift.radiusTo],
+          ...(q.mode === "lifted"
+            ? [["Presentation xw angle", lift.angle] as [string, number]]
+            : []),
+        ];
+        for (const [label, value] of fields)
+          if (!Number.isFinite(value))
+            throw new Error(`${label} must be a finite constant.`);
+        if (!Number.isFinite(q.samples))
+          throw new Error("Thread samples must be a finite whole number.");
+        if (!Number.isInteger(q.samples))
+          throw new Error("Thread samples must be a whole number.");
+      }
+      const counts = lift
+        ? [q.samples]
+        : curved
+          ? [q.count, q.curves, q.samples]
+          : q.mode === "section"
+            ? [q.count]
+            : q.mode === "stereo"
+              ? [q.grid, q.samples]
+              : [q.grid];
       const values = curved
         ? [
             q.radius,
@@ -86,7 +126,7 @@ self.onmessage = async ({
             : q.mode === "stereo"
               ? [q.clip]
               : [];
-      if (![...q.angles, ...values, ...counts].every(Number.isFinite))
+      if (!lift && ![...q.angles, ...values, ...counts].every(Number.isFinite))
         throw new Error(
           "Fill in every active tesseract parameter with a finite constant.",
         );
@@ -97,6 +137,12 @@ self.onmessage = async ({
       // Inactive unfinished integer fields must not fail Go JSON decoding.
       const request = {
         object: q.object,
+        ...(lift
+          ? {
+              lift: { ...lift, angle: q.mode === "lifted" ? lift.angle : 0 },
+              samples: q.samples,
+            }
+          : {}),
         ...(curved
           ? {
               radius: q.radius,
@@ -106,17 +152,19 @@ self.onmessage = async ({
             }
           : {}),
         mode: q.mode,
-        angles: q.angles,
-        ...(q.mode === "section"
-          ? { count: q.count, slice: q.slice, spread: q.spread }
-          : {
-              grid: q.grid,
-              ...(q.mode === "perspective"
-                ? { distance: q.distance }
-                : q.mode === "stereo"
-                  ? { samples: q.samples, clip: q.clip }
-                  : {}),
-            }),
+        angles: lift ? [0, 0, 0, 0, 0, 0] : q.angles,
+        ...(lift
+          ? {}
+          : q.mode === "section"
+            ? { count: q.count, slice: q.slice, spread: q.spread }
+            : {
+                grid: q.grid,
+                ...(q.mode === "perspective"
+                  ? { distance: q.distance }
+                  : q.mode === "stereo"
+                    ? { samples: q.samples, clip: q.clip }
+                    : {}),
+              }),
       };
       const result = JSON.parse(
         tangentGardenTesseract(JSON.stringify(request)),

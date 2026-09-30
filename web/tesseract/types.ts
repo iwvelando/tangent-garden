@@ -1,12 +1,29 @@
 import { objects } from "./objects";
 export type Vec3 = [number, number, number];
-export type Object4 = "tesseract" | "ball" | "tube";
+export type Object4 = "tesseract" | "ball" | "tube" | "lift";
+export type Lift = {
+  center: Vec3;
+  support: number;
+  height: number;
+  angle: number;
+  from: Vec3;
+  to: Vec3;
+  radiusFrom: number;
+  radiusTo: number;
+};
 export type Config = {
   object: Object4;
   radius: number;
   tube: number;
   curves: number;
-  mode: "perspective" | "orthographic" | "stereo" | "section";
+  mode:
+    | "perspective"
+    | "orthographic"
+    | "stereo"
+    | "section"
+    | "reference"
+    | "lifted";
+  lift?: Lift;
   angles: [number, number, number, number, number, number];
   distance: number;
   slice: number;
@@ -24,7 +41,16 @@ export type Result = {
     source: string;
     sectionId?: string;
     branch: string;
-    role: "base" | "guide" | "section";
+    role:
+      | "base"
+      | "guide"
+      | "section"
+      | "reference"
+      | "lifted"
+      | "displacement"
+      | "missing-guide";
+    parameters?: number[];
+    fourPoints?: [number, number, number, number][];
   }[];
   object: Object4;
   operation: Config["mode"];
@@ -44,6 +70,14 @@ export type Result = {
   }[];
   clipped: number;
   radius: number;
+  lift?: {
+    thickness: number;
+    missingRadius: number;
+    sources: number;
+    visibleIntervals: number;
+    absentSources: number;
+    projection: string;
+  };
 };
 export type View = {
   yaw: number;
@@ -64,8 +98,10 @@ export type Layers = {
   guides: boolean;
   faces: boolean;
   selectedSection?: number;
+  missingGuide?: boolean;
+  connectors?: boolean;
 };
-export type Motion = "double" | "xw" | "slice";
+export type Motion = "double" | "xw" | "slice" | "drift" | "support";
 // Playback and export use this exact sampler. The base definition is immutable.
 export function sample(
   config: Config,
@@ -74,7 +110,14 @@ export function sample(
 ): Config {
   const q = structuredClone(config),
     p = Math.max(0, Math.min(1, progress));
-  if (motion === "slice") {
+  if (q.lift && objects[config.object].linkedViews) {
+    if (motion === "drift")
+      q.lift.center = q.lift.from.map(
+        (n, i) => n * (1 - p) + q.lift!.to[i] * p,
+      ) as Vec3;
+    if (motion === "support")
+      q.lift.support = q.lift.radiusFrom * (1 - p) + q.lift.radiusTo * p;
+  } else if (motion === "slice") {
     const extent = passageExtent(config);
     q.slice = extent * (2 * p - 1);
   } else if (objects[config.object].rotations) {

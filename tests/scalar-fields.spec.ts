@@ -1225,3 +1225,72 @@ test("curved 4D radii share scalar parsing and invalidate superseded definitions
   await settle();
   expect(JSON.parse((await stage.getAttribute("data-config"))!).radius).toBe(2);
 });
+
+test("every localized lift geometric field accepts constants and rejects variables", async ({
+  page,
+}) => {
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  await settle();
+  await choosePreset(page, { label: "The missing middle" });
+  await settle();
+  await page
+    .getByRole("combobox", { name: "View operation", exact: true })
+    .selectOption("lifted");
+  await settle();
+  await page.getByText("Lift motion endpoints", { exact: true }).click();
+  const fields: [string, string, string, number?][] = [
+    ["Lift center x", "phi", "center", 0],
+    ["Lift center y", "-1/e", "center", 1],
+    ["Lift center z", "pi/8", "center", 2],
+    ["Lift support radius L", "pi/2", "support"],
+    ["Lift height A", "1/e", "height"],
+    ["Presentation xw angle", "pi/6", "angle"],
+    ["Drift start x", "-pi", "from", 0],
+    ["Drift start y", "1/e", "from", 1],
+    ["Drift start z", "phi/4", "from", 2],
+    ["Drift end x", "pi", "to", 0],
+    ["Drift end y", "-1/e", "to", 1],
+    ["Drift end z", "-phi/4", "to", 2],
+    ["Support start", "1/e", "radiusFrom"],
+    ["Support end", "phi", "radiusTo"],
+  ];
+  const expected = [
+    phi,
+    -1 / Math.E,
+    Math.PI / 8,
+    Math.PI / 2,
+    1 / Math.E,
+    Math.PI / 6,
+    -Math.PI,
+    1 / Math.E,
+    phi / 4,
+    Math.PI,
+    -1 / Math.E,
+    -phi / 4,
+    1 / Math.E,
+    phi,
+  ];
+  for (const [i, [name, expression, key, index]] of fields.entries()) {
+    const input = page.getByRole("textbox", { name, exact: true });
+    await input.fill(expression);
+    await settle();
+    const l = JSON.parse((await stage.getAttribute("data-config"))!).lift;
+    expect(index === undefined ? l[key] : l[key][index]).toBe(expected[i]);
+    for (const bad of ["t", "x", "a", "1/0"]) {
+      await input.fill(bad);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await input.fill(expression);
+    await settle();
+  }
+  await page
+    .getByRole("textbox", { name: "Lift height A", exact: true })
+    .fill("pi");
+  await choosePreset(page, { label: "The missing middle" });
+  await settle();
+  expect(
+    JSON.parse((await stage.getAttribute("data-config"))!).lift.height,
+  ).toBe(0.32);
+});

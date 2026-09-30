@@ -118,11 +118,13 @@ export const tesseractExamples: Example[] = tesseractPresets.map((p) => ({
   title: p.name,
   caption: p.detail,
   family:
-    p.config.mode === "section"
-      ? "Sections"
-      : p.config.mode === "stereo"
-        ? "Stereographic curves"
-        : "Shadows",
+    p.config.mode === "reference" || p.config.mode === "lifted"
+      ? "Lifted threads"
+      : p.config.mode === "section"
+        ? "Sections"
+        : p.config.mode === "stereo"
+          ? "Stereographic curves"
+          : "Shadows",
   keywords: `${p.config.object} 4D ${p.config.mode}`,
   fingerprint: fingerprint(p.config),
 }));
