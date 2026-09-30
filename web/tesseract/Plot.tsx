@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createGesture } from "../gestures";
 import { Drawing } from "./Drawing";
+import { objects } from "./objects";
 import {
   initialView,
   type View,
@@ -26,6 +27,7 @@ export function Plot({
   const ref = useRef<SVGSVGElement>(null),
     state = useRef({ view, onView });
   state.current = { view, onView };
+  const flat = objects[config.object].flat?.(config);
   useEffect(() => {
     const el = ref.current!;
     const wheel = (e: WheelEvent) => {
@@ -52,11 +54,14 @@ export function Plot({
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 1000 760"
       role="img"
-      aria-label="Interactive tesseract construction. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom. Arrow keys orbit, shift-arrows pan, plus and minus zoom, Home resets."
+      aria-label={
+        objects[config.object].viewingLabel?.(config) ??
+        "Interactive tesseract construction. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom. Arrow keys orbit, shift-arrows pan, plus and minus zoom, Home resets."
+      }
       tabIndex={0}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
-        if (!gesture.current.count) panning.current = e.shiftKey;
+        if (!gesture.current.count) panning.current = e.shiftKey || !!flat;
         gesture.current.down(e);
       }}
       onPointerMove={(e) => {
@@ -98,19 +103,19 @@ export function Plot({
         const v = { ...view };
         switch (e.key) {
           case "ArrowLeft":
-            if (e.shiftKey) v.panX -= 20;
+            if (e.shiftKey || flat) v.panX -= 20;
             else v.yaw -= 0.1;
             break;
           case "ArrowRight":
-            if (e.shiftKey) v.panX += 20;
+            if (e.shiftKey || flat) v.panX += 20;
             else v.yaw += 0.1;
             break;
           case "ArrowUp":
-            if (e.shiftKey) v.panY -= 20;
+            if (e.shiftKey || flat) v.panY -= 20;
             else v.pitch = Math.max(-1.5, v.pitch - 0.1);
             break;
           case "ArrowDown":
-            if (e.shiftKey) v.panY += 20;
+            if (e.shiftKey || flat) v.panY += 20;
             else v.pitch = Math.min(1.5, v.pitch + 0.1);
             break;
           case "+":

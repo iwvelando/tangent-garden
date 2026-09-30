@@ -1294,3 +1294,47 @@ test("every localized lift geometric field accepts constants and rejects variabl
     JSON.parse((await stage.getAttribute("data-config"))!).lift.height,
   ).toBe(0.32);
 });
+
+test("every shell bypass geometric field shares scalar parsing and supersedes stale edits", async ({
+  page,
+}) => {
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  await settle();
+  await choosePreset(page, { label: "Beside the wall" });
+  await settle();
+  const fields: [string, string, string, number, number?][] = [
+    ["Inner radius a", "1/phi", "inner", 1 / phi],
+    ["Outer radius b", "phi", "outer", phi],
+    ["Fourth-coordinate extent ε", "1/e", "extent", 1 / Math.E],
+    ["Route height H", "pi", "height", Math.PI],
+    ["Outside point x", "pi", "outside", Math.PI, 0],
+    ["Outside point y", "phi", "outside", phi, 1],
+    ["Outside point z", "e", "outside", Math.E, 2],
+    ["Route position s", "1/phi", "position", 1 / phi],
+    ["First comparison w", "pi", "w1", Math.PI],
+    ["Second comparison w", "-e", "w2", -Math.E],
+  ];
+  for (const [name, expression, key, value, index] of fields) {
+    const input = page.getByRole("textbox", { name, exact: true });
+    await input.fill(expression);
+    await settle();
+    const q = JSON.parse((await stage.getAttribute("data-config"))!).bypass;
+    expect(index === undefined ? q[key] : q[key][index]).toBe(value);
+    for (const bad of ["t", "x", "a", "1/0"]) {
+      await input.fill(bad);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await input.fill(expression);
+    await settle();
+  }
+  await page
+    .getByRole("textbox", { name: "Route height H", exact: true })
+    .fill("phi");
+  await choosePreset(page, { label: "Beside the wall" });
+  await settle();
+  expect(
+    JSON.parse((await stage.getAttribute("data-config"))!).bypass.height,
+  ).toBe(1.2);
+});

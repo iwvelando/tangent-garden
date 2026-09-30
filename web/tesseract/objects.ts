@@ -1,4 +1,4 @@
-import type { Config, Object4, Result, Motion, Lift } from "./types";
+import type { Config, Object4, Result, Motion, Lift, Bypass } from "./types";
 export const modes = {
   perspective: "Perspective shadow",
   orthographic: "Orthogonal shadow",
@@ -6,6 +6,8 @@ export const modes = {
   section: "Parallel cross-sections",
   reference: "Reference slice",
   lifted: "Lifted construction",
+  shadow: "XYZ shadow",
+  diagram: "Coordinate diagram",
 };
 const explanations: Record<
   "perspective" | "orthographic" | "stereo" | "section",
@@ -40,22 +42,37 @@ export type ObjectDescriptor = {
   noun: string;
   modes: readonly Config["mode"][];
   rotations: boolean;
-  controls: "polyhedral" | "curved" | "lift";
+  controls: "polyhedral" | "curved" | "lift" | "route";
   linkedViews?: boolean;
   motionChoices?: { value: Motion; label: string; help: string }[];
   legendItems?: { label: string; family: number }[];
-  liftFields?: {
-    key: keyof Lift;
+  parameterKey?: "lift" | "bypass";
+  numericFields?: {
+    key: keyof Lift | keyof Omit<Bypass, "obstacle">;
     index?: number;
     label: string;
     help: string;
     group?: string;
     presentation?: boolean;
     endpoint?: boolean;
+    visible?: (c: Config) => boolean;
   }[];
-  layerOptions?: (
-    c: Config,
-  ) => { key: "edges" | "missingGuide" | "connectors"; label: string }[];
+  choices?: {
+    key: "obstacle";
+    label: string;
+    help: string;
+    values: { value: string; label: string }[];
+  }[];
+  flat?: (c: Config) => boolean;
+  viewingHelp?: (c: Config) => string;
+  viewingLabel?: (c: Config) => string;
+  comparisonReadouts?: (r: Result) => { label: string; value: string }[];
+  comparisonLabel?: string;
+  comparisonNote?: string;
+  layerOptions?: (c: Config) => {
+    key: "edges" | "guides" | "missingGuide" | "connectors" | "comparison";
+    label: string;
+  }[];
   readouts?: (r: Result) => { label: string; value: string }[];
   sampleLabel?: string;
   motionEndpointsLabel?: string;
@@ -231,6 +248,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     name: "Localized thread lift",
     noun: "lifted threads",
     controls: "lift",
+    parameterKey: "lift",
     modes: ["reference", "lifted"],
     rotations: false,
     linkedViews: true,
@@ -269,7 +287,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       { label: "Missing-region guide", family: 2 },
       { label: "Displacement connectors", family: 3 },
     ],
-    liftFields: [
+    numericFields: [
       ...["x", "y", "z"].map((axis, index) => ({
         key: "center" as const,
         index,
@@ -374,6 +392,186 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         value: "support",
         label: "Change lift support",
         help: "Interpolate L from Support start to Support end. Center, height A and slab half-thickness ε stay fixed. The apparent missing radius follows from L; Stop restores your entered support.",
+      },
+    ],
+  },
+  bypass: {
+    name: "Shell bypass",
+    noun: "shell bypass",
+    controls: "route",
+    parameterKey: "bypass",
+    modes: ["shadow", "diagram"],
+    rotations: false,
+    linkedViews: true,
+    viewLabel: "View operation",
+    selectorNote:
+      "One closed shell · three complete route legs · two linked representations",
+    constructionNumber: "03",
+    radiusFields: [],
+    support: (c) => c.bypass!.outer,
+    familyPassage: false,
+    passageHelp: "",
+    sliceHelp: "",
+    spreadHelp: "",
+    sectionDetail: () => "",
+    legend: "threads",
+    sampleLabel: "Shell samples",
+    legendItems: [
+      { label: "Route (solid clear / dashed blocked)", family: 0 },
+      { label: "Inner boundary", family: 1 },
+      { label: "Outer boundary", family: 2 },
+      { label: "Coordinate guides", family: 2 },
+      { label: "Collision intervals", family: 3 },
+    ],
+    flat: (c) => c.mode === "diagram",
+    viewingHelp: (c) =>
+      c.mode === "diagram"
+        ? "Coordinate diagram · horizontal: radial position |p| · vertical: w · drag or arrows to pan · scroll or pinch to zoom"
+        : "XYZ shadow · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home",
+    viewingLabel: (c) =>
+      c.mode === "diagram"
+        ? "Radial position and fourth coordinate diagram. Drag or arrow keys to pan; scroll or pinch to zoom; Home resets."
+        : "Interactive shell bypass XYZ shadow. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom.",
+    numericFields: [
+      {
+        key: "inner",
+        label: "Inner radius a",
+        help: "From 0.05 to 10. The cavity is |p| < a in the embedded shell.",
+      },
+      {
+        key: "outer",
+        label: "Outer radius b",
+        help: "At most 20, exceeding a by at least 0.001. The outside point must have radius greater than b.",
+      },
+      {
+        key: "extent",
+        label: "Fourth-coordinate extent ε",
+        help: "From 0 to 5. The embedded shell occupies |w| ≤ ε. The radial 4D shell ignores this field.",
+        visible: (c) => c.bypass!.obstacle === "embedded",
+      },
+      {
+        key: "height",
+        label: "Route height H",
+        help: "From 0 to 20. H > ε clears the embedded shell; equality is contact. A radial 4D shell still blocks the route.",
+      },
+      ...["x", "y", "z"].map((axis, index) => ({
+        key: "outside" as const,
+        index,
+        group: "Outside point",
+        label: `Outside point ${axis}`,
+        help: "Each coordinate is within ±20. The point's radius must exceed b and be at most 40; it stays fixed throughout traversal.",
+      })),
+      {
+        key: "position",
+        label: "Route position s",
+        help: "From 0 to 1. Equal thirds traverse the three linear legs; the exact corners occur at 1/3 and 2/3. The full route is checked at every position.",
+      },
+      {
+        key: "w1",
+        label: "First comparison w",
+        help: "Within ±20. q₁ = (a/2, 0, 0, w₁) and q₂ share xyz; their fourth coordinates determine their 4D separation.",
+      },
+      {
+        key: "w2",
+        label: "Second comparison w",
+        help: "Within ±20. q₂ = (a/2, 0, 0, w₂). Their XYZ shadows coincide even when their actual positions differ.",
+      },
+    ],
+    choices: [
+      {
+        key: "obstacle",
+        label: "Obstacle",
+        help: "Embedded shell: a ≤ |p| ≤ b and |w| ≤ ε. Radial 4D shell: a ≤ |q| ≤ b, which every outside-to-origin path must meet.",
+        values: [
+          { value: "embedded", label: "Embedded 3D shell" },
+          { value: "radial", label: "Radial 4D shell" },
+        ],
+      },
+    ],
+    layerOptions: () => [
+      { key: "edges", label: "Route and moving point" },
+      { key: "guides", label: "Shell and coordinate guides" },
+      { key: "comparison", label: "Comparison points" },
+    ],
+    diagnostics: (r) =>
+      r.bypass?.state === "clear"
+        ? "Complete route is clear of the embedded shell."
+        : r.bypass?.state === "contact"
+          ? "Complete route contacts the shell boundary."
+          : "Complete route crosses the shell.",
+    readouts: (r) =>
+      r.bypass
+        ? [
+            { label: "Current w", value: r.bypass.current[3].toPrecision(5) },
+            { label: "Route state", value: r.bypass.state },
+            { label: "4D clearance", value: r.bypass.clearance.toPrecision(5) },
+          ]
+        : [],
+    comparisonLabel: "Same shadow, different points",
+    comparisonNote:
+      "q₁ is the small ring; q₂ is the larger ring. Both have xyz = (a/2, 0, 0). Coincident rings in the XYZ shadow retain separate identities; the coordinate diagram reveals their w separation.",
+    comparisonReadouts: (r) =>
+      r.bypass && r.markers
+        ? [
+            {
+              label: "q₁: w",
+              value: r.markers
+                .find((m) => m.id === "bypass/q1")!
+                .fourPoint[3].toPrecision(5),
+            },
+            {
+              label: "q₂: w",
+              value: r.markers
+                .find((m) => m.id === "bypass/q2")!
+                .fourPoint[3].toPrecision(5),
+            },
+            { label: "XYZ separation", value: String(r.bypass.shadowDistance) },
+            { label: "4D separation", value: r.bypass.distance.toPrecision(5) },
+          ]
+        : [],
+    colorNote: (c) =>
+      c.mode === "diagram"
+        ? "A coordinate diagram, not another 3D camera. Horizontal distance is radial position |p|; vertical distance is w, at equal scale. Shell outlines represent the defining inequalities. Dashed route and red intervals indicate contact or crossing."
+        : "The shadow drops w. Sparse boundary circles show the shell's w = 0 section, not every point of a 4D obstacle. The full route may look as though it crosses the wall; dashed styling and the state readout report its actual 4D intersections.",
+    explanation: (c) => [
+      "Beside the wall",
+      c.bypass!.obstacle === "embedded"
+        ? "This wall encloses the center within its three-dimensional slice. The route (p_out,0) → (p_out,H) → (0,H) → (0,0) leaves that slice, travels beside the wall along a fourth coordinate, and returns inside. It clears the complete shell exactly when H > ε. This is a geometric path, with no collision simulation or physical passage model."
+        : "A genuinely four-dimensional shell surrounds the origin in all four coordinates. Its radial distance must pass from greater than b to zero, so it must cross [a,b]. Increasing route height cannot evade this shell. The defining inequality establishes containment; a wireframe alone does not.",
+      c.bypass!.obstacle === "embedded"
+        ? "K = {(p,w): a ≤ |p| ≤ b, |w| ≤ ε}"
+        : "K₄ = {q: a ≤ |q| ≤ b}",
+    ],
+    title: (c) => `Tangent Garden — Shell bypass / ${modes[c.mode]}`,
+    limitations:
+      "one fixed three-leg route; canonical embedded or radial shell; exact segment events; sparse linework; coordinate diagram is not a camera; no general obstacle editor or physical collision simulation",
+    defaults: () => ({
+      ...structuredClone(defaultConfig),
+      object: "bypass",
+      mode: "shadow",
+      bypass: {
+        inner: 1,
+        outer: 2,
+        extent: 0.15,
+        outside: [3, 0, 0],
+        height: 1.2,
+        position: 0.5,
+        obstacle: "embedded",
+        w1: 0,
+        w2: 1.2,
+      },
+    }),
+    motion: "route",
+    motionChoices: [
+      {
+        value: "route",
+        label: "Traverse route",
+        help: "Move from the entered outside point to the origin. Each linear leg receives one third of the progress. Both representations show the same exact point; Stop restores the entered route position.",
+      },
+      {
+        value: "return",
+        label: "Return along route",
+        help: "Reverse the same route from the origin to the outside point. Height and shell parameters stay fixed; Stop restores the entered route position.",
       },
     ],
   },

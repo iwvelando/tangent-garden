@@ -1,6 +1,17 @@
 import { objects } from "./objects";
 export type Vec3 = [number, number, number];
-export type Object4 = "tesseract" | "ball" | "tube" | "lift";
+export type Object4 = "tesseract" | "ball" | "tube" | "lift" | "bypass";
+export type Bypass = {
+  inner: number;
+  outer: number;
+  extent: number;
+  outside: Vec3;
+  height: number;
+  position: number;
+  obstacle: "embedded" | "radial";
+  w1: number;
+  w2: number;
+};
 export type Lift = {
   center: Vec3;
   support: number;
@@ -22,8 +33,11 @@ export type Config = {
     | "stereo"
     | "section"
     | "reference"
-    | "lifted";
+    | "lifted"
+    | "shadow"
+    | "diagram";
   lift?: Lift;
+  bypass?: Bypass;
   angles: [number, number, number, number, number, number];
   distance: number;
   slice: number;
@@ -48,7 +62,13 @@ export type Result = {
       | "reference"
       | "lifted"
       | "displacement"
-      | "missing-guide";
+      | "missing-guide"
+      | "route-context"
+      | "route-traveled"
+      | "collision"
+      | "shell"
+      | "axes";
+    dashed?: boolean;
     parameters?: number[];
     fourPoints?: [number, number, number, number][];
   }[];
@@ -70,6 +90,22 @@ export type Result = {
   }[];
   clipped: number;
   radius: number;
+  bypass?: {
+    state: "clear" | "contact" | "crossing";
+    clearance: number;
+    current: [number, number, number, number];
+    position: number;
+    distance: number;
+    shadowDistance: number;
+    hits: { from: number; to: number }[];
+  };
+  markers?: {
+    id: string;
+    role: "moving" | "comparison";
+    point: Vec3;
+    fourPoint: [number, number, number, number];
+    family: number;
+  }[];
   lift?: {
     thickness: number;
     missingRadius: number;
@@ -100,8 +136,10 @@ export type Layers = {
   selectedSection?: number;
   missingGuide?: boolean;
   connectors?: boolean;
+  comparison?: boolean;
 };
-export type Motion = "double" | "xw" | "slice" | "drift" | "support";
+export type Motion =
+  "double" | "xw" | "slice" | "drift" | "support" | "route" | "return";
 // Playback and export use this exact sampler. The base definition is immutable.
 export function sample(
   config: Config,
@@ -110,7 +148,9 @@ export function sample(
 ): Config {
   const q = structuredClone(config),
     p = Math.max(0, Math.min(1, progress));
-  if (q.lift && objects[config.object].linkedViews) {
+  if (q.bypass && (motion === "route" || motion === "return")) {
+    q.bypass.position = motion === "route" ? p : 1 - p;
+  } else if (q.lift && objects[config.object].linkedViews) {
     if (motion === "drift")
       q.lift.center = q.lift.from.map(
         (n, i) => n * (1 - p) + q.lift!.to[i] * p,

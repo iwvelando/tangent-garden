@@ -1970,4 +1970,102 @@ console.log("Curved sections WASM contract passed");
   );
 }
 
+// Complete route classification is independent of displayed sampling/reveal.
+{
+  const request = {
+    object: "bypass",
+    mode: "shadow",
+    samples: 256,
+    bypass: {
+      inner: 1,
+      outer: 2,
+      extent: 0.15,
+      outside: [3, 0, 0],
+      height: 1.2,
+      position: 0.5,
+      obstacle: "embedded",
+      w1: -0.5,
+      w2: 1.25,
+    },
+  };
+  const compute = (q) => JSON.parse(tangentGardenTesseract(JSON.stringify(q)));
+  const full = compute(request);
+  assert.equal(full.bypass.state, "clear");
+  assert.equal(full.bypass.clearance, 1);
+  assert.equal(full.bypass.distance, 1.75);
+  assert.equal(full.bypass.shadowDistance, 0);
+  const route = full.paths.find((p) => p.source === "bypass/route");
+  assert.deepEqual(route.fourPoints, [
+    [3, 0, 0, 0],
+    [3, 0, 0, 1.2],
+    [0, 0, 0, 1.2],
+    [0, 0, 0, 0],
+  ]);
+  assert.deepEqual(route.parameters, [0, 1 / 3, 2 / 3, 1]);
+  for (const [height, state] of [
+    [0, "crossing"],
+    [0.1, "crossing"],
+    [0.15, "contact"],
+  ]) {
+    const r = compute({
+      ...request,
+      samples: 8,
+      bypass: { ...request.bypass, height, position: 0 },
+    });
+    assert.equal(r.bypass.state, state);
+    assert.equal(r.bypass.clearance, 0);
+    assert.ok(Math.abs(r.bypass.hits[0].from - 4 / 9) < 1e-12);
+    assert.ok(Math.abs(r.bypass.hits[0].to - 5 / 9) < 1e-12);
+  }
+  for (const position of [0, 1 / 3, 0.5, 2 / 3, 1]) {
+    const a = compute({ ...request, bypass: { ...request.bypass, position } });
+    const b = compute({
+      ...request,
+      mode: "diagram",
+      bypass: { ...request.bypass, position },
+    });
+    assert.deepEqual(a.bypass, b.bypass);
+    const moving = a.markers.find((m) => m.role === "moving");
+    assert.deepEqual(moving.fourPoint, a.bypass.current);
+    assert.deepEqual(moving.point, a.bypass.current.slice(0, 3));
+    const traveled = a.paths.find((p) => p.role === "route-traveled");
+    assert.deepEqual(traveled.fourPoints.at(-1), moving.fourPoint);
+  }
+  for (const height of [0, 1.2, 4, 20]) {
+    const r = compute({
+      ...request,
+      bypass: { ...request.bypass, obstacle: "radial", height },
+    });
+    assert.equal(r.bypass.state, "crossing");
+    assert.equal(r.bypass.clearance, 0);
+    assert.ok(r.emittedPoints < 2000 && r.evaluations < 2500);
+    for (const p of r.paths.filter((p) => p.role === "collision"))
+      for (const v of p.fourPoints)
+        assert.ok(
+          Math.hypot(...v) >= 1 - 1e-10 && Math.hypot(...v) <= 2 + 1e-10,
+        );
+  }
+  assert.match(
+    compute({ ...request, bypass: { ...request.bypass, height: 21 } }).error,
+    /Route height/,
+  );
+  const start = performance.now();
+  const json = tangentGardenTesseract(
+    JSON.stringify({
+      ...request,
+      bypass: {
+        ...request.bypass,
+        obstacle: "radial",
+        height: 20,
+        w1: -20,
+        w2: 20,
+      },
+    }),
+  );
+  const max = JSON.parse(json);
+  console.log(
+    `Shell bypass WASM: ${max.paths.length} paths, ${max.emittedPoints} points, ${max.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${Buffer.byteLength(json)} JSON bytes; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
+  );
+}
+
 process.exit(0);

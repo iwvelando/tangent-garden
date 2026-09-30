@@ -88,3 +88,21 @@ test("localized lift sampler shares immutable linked views and exact entered end
   assert.deepEqual(sampler(base, "drift", -1).lift!.center, base.lift!.from);
   assert.deepEqual(sampler(base, "drift", 2).lift!.center, base.lift!.to);
 });
+
+test("bypass sampler preserves the study and clamps synchronized forward/reverse route position", () => {
+  const base = objects.bypass.defaults({} as Config),
+    before = structuredClone(base);
+  for (const mode of ["shadow", "diagram"] as const)
+    for (const p of [-1, 0, 1 / 3, 0.5, 2 / 3, 1, 2]) {
+      const clamped = Math.max(0, Math.min(1, p));
+      for (const motion of ["route", "return"] as const) {
+        const q = sampler({ ...base, mode }, motion, p);
+        assert.equal(
+          q.bypass!.position,
+          motion === "route" ? clamped : 1 - clamped,
+        );
+        assert.equal(q.bypass!.height, 1.2);
+        assert.deepEqual(base, before);
+      }
+    }
+});

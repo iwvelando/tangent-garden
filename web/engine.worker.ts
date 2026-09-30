@@ -65,11 +65,44 @@ self.onmessage = async ({
       if (!q) throw new Error("Enter a 4D study definition.");
       if (
         q.object !== "lift" &&
+        q.object !== "bypass" &&
         (!Array.isArray(q.angles) || q.angles.length !== 6)
       )
         throw new Error("Enter six tesseract rotation angles.");
       const curved = q.object === "ball" || q.object === "tube";
       const lift = q.object === "lift" ? q.lift : undefined;
+      const route = q.object === "bypass" ? q.bypass : undefined;
+      if (q.object === "bypass" && !route)
+        throw new Error("Enter shell bypass parameters.");
+      if (route) {
+        if (!Array.isArray(route.outside) || route.outside.length !== 3)
+          throw new Error("Outside point requires three coordinates.");
+        const fields: [string, number][] = [
+          ...route.outside.map(
+            (value, i) =>
+              [`Outside point ${["x", "y", "z"][i]}`, value] as [
+                string,
+                number,
+              ],
+          ),
+          ["Inner radius a", route.inner],
+          ["Outer radius b", route.outer],
+          ["Route height H", route.height],
+          ["Route position s", route.position],
+          ["First comparison w", route.w1],
+          ["Second comparison w", route.w2],
+          ...(route.obstacle === "embedded"
+            ? [["Fourth-coordinate extent ε", route.extent] as [string, number]]
+            : []),
+        ];
+        for (const [label, value] of fields)
+          if (!Number.isFinite(value))
+            throw new Error(`${label} must be a finite constant.`);
+        if (!Number.isFinite(q.samples))
+          throw new Error("Shell samples must be a finite whole number.");
+        if (!Number.isInteger(q.samples))
+          throw new Error("Shell samples must be a whole number.");
+      }
       if (q.object === "lift" && !lift)
         throw new Error("Enter localized lift parameters.");
       if (lift) {
@@ -103,15 +136,16 @@ self.onmessage = async ({
         if (!Number.isInteger(q.samples))
           throw new Error("Thread samples must be a whole number.");
       }
-      const counts = lift
-        ? [q.samples]
-        : curved
-          ? [q.count, q.curves, q.samples]
-          : q.mode === "section"
-            ? [q.count]
-            : q.mode === "stereo"
-              ? [q.grid, q.samples]
-              : [q.grid];
+      const counts =
+        lift || route
+          ? [q.samples]
+          : curved
+            ? [q.count, q.curves, q.samples]
+            : q.mode === "section"
+              ? [q.count]
+              : q.mode === "stereo"
+                ? [q.grid, q.samples]
+                : [q.grid];
       const values = curved
         ? [
             q.radius,
@@ -126,7 +160,11 @@ self.onmessage = async ({
             : q.mode === "stereo"
               ? [q.clip]
               : [];
-      if (!lift && ![...q.angles, ...values, ...counts].every(Number.isFinite))
+      if (
+        !lift &&
+        !route &&
+        ![...q.angles, ...values, ...counts].every(Number.isFinite)
+      )
         throw new Error(
           "Fill in every active tesseract parameter with a finite constant.",
         );
@@ -137,6 +175,15 @@ self.onmessage = async ({
       // Inactive unfinished integer fields must not fail Go JSON decoding.
       const request = {
         object: q.object,
+        ...(route
+          ? {
+              bypass: {
+                ...route,
+                extent: route.obstacle === "embedded" ? route.extent : 0,
+              },
+              samples: q.samples,
+            }
+          : {}),
         ...(lift
           ? {
               lift: { ...lift, angle: q.mode === "lifted" ? lift.angle : 0 },
@@ -152,8 +199,8 @@ self.onmessage = async ({
             }
           : {}),
         mode: q.mode,
-        angles: lift ? [0, 0, 0, 0, 0, 0] : q.angles,
-        ...(lift
+        angles: lift || route ? [0, 0, 0, 0, 0, 0] : q.angles,
+        ...(lift || route
           ? {}
           : q.mode === "section"
             ? { count: q.count, slice: q.slice, spread: q.spread }
