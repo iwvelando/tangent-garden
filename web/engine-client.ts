@@ -1,6 +1,12 @@
 import type { SpatialConfig, SpatialResult } from "./spatial/types";
 import type { Bounds, Config, Frame } from "./types";
 
+// What a spatial study asks Go for beside the study itself.
+export type SpatialOptions = {
+  diagnostics?: boolean;
+  surfaceDiagnostics?: boolean;
+};
+
 // One worker per app, plus temporary ones during parameter-animation export
 // and 3D parameter playback.
 // Callers own cancellation; stale responses settle their
@@ -63,22 +69,25 @@ export class EngineClient {
     return { result, config: resolved };
   }
   // With diagnostics, the result also describes the base curve at every
-  // sample: its curvature, torsion, and Frenet frame.
+  // sample: its curvature, torsion, and Frenet frame. With surface
+  // diagnostics, it describes a surface patch or canal on the surface
+  // probe's grid: its principal curvatures, directions, and focal points.
   async computeSpatial(
     config: SpatialConfig,
-    options: { diagnostics?: boolean } = {},
+    options: SpatialOptions = {},
   ): Promise<import("./spatial/types").Frame> {
     return { config, result: await this.spatial(config, options) };
   }
   async spatial(
     config: SpatialConfig,
-    options: { diagnostics?: boolean } = {},
+    options: SpatialOptions = {},
   ): Promise<SpatialResult> {
     return (
       await this.request({
         action: "spatial",
         spatial: config,
         ...(options.diagnostics ? { diagnostics: true } : {}),
+        ...(options.surfaceDiagnostics ? { surfaceDiagnostics: true } : {}),
       })
     ).result;
   }

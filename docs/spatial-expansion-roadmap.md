@@ -128,7 +128,12 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 - [ ] **Line rendering quality.** Stable screen-space strokes, antialiasing, and depth bias at high export resolutions; prevent construction lines from flickering or vanishing without making hidden lines falsely visible. Device-dependent WebGL line width is not a portable stroke system.
 - [ ] **Context recovery and capability limits.** The MVP reports missing/lost WebGL. Later restore resources from the current study after context restoration, preserve camera state, and validate actual device limits for export sizes. Keep the 2D notebook available throughout.
 - [x] **Geometric diagnostics.** Done for curves: **Probe the curve** in the 3D notebook, described in `mathematics.md`, `spatial-study.md`, `usage.md` and `architecture.md`. It shows T/N/B glyphs, the osculating circle and the point's construction lines in diagnostic inks, with κ, 1/κ and τ read out and plotted along the curve. Flat samples, unknown τ and centres at infinity are marked, not guessed; see the follow-up notes below.
-- [ ] **Probe follow-ups.** A surface probe (principal directions, the two centres and their focal points), the probe moving while parameters vary (which needs diagnostics for every frame), construction highlights for canal, harmonic and field studies, and an exact probe between samples if snapping proves too coarse.
+- [x] **Surface probe.** Done for surface patches and canal surfaces: **Principal curvatures & centres at a point**, with **Describe** choosing the curve or the surface in a canal study. It shows the normal, both principal directions, their normal-section circles and centres, and reads out κ for each branch, 1/κ, K and H, plotted along the row. See `mathematics.md#spatial-principal-curvatures-and-the-surface-probe` and the follow-up notes below.
+- [ ] **Probe follow-ups.**
+  - A surface probe on developable, framed and ruled surfaces and on mirrors.
+  - The probe moving while parameters vary, which needs diagnostics for every frame.
+  - Construction highlights for the curve probe on canal, harmonic and field studies. The canal's contact circle is drawn by the surface probe, not the curve probe.
+  - An exact probe between samples, if snapping proves too coarse.
 
 ## Notebook, camera, and media backlog
 
@@ -594,5 +599,59 @@ Recommended next step, for the user to choose: **adaptive curves** (above), or r
   - The export test decodes a 2000 × 1520 MP4 with ffprobe and compares its first and last frames with still PNGs of the probe at the first and last samples: they match, leaving at most 6·10⁻⁶ of their ink unmatched, while swapping the ends leaves 0.7% unmatched. A reveal export with the probe on still matches a still image without it.
   - `tests/study-link.spec.ts` covers the round trip and both refusals.
   - Targeted mutations: 8 faults (floor and off-by-one sample index, no mode fallback, no stop when the probe is turned off, export without the probe, the user's position drawn instead of the animated one, and two weakened link checks). The missing fallback survived the first run, because the menu still read reveal while the mode stayed probe; the availability test now plays after turning the probe off, and all 8 are detected.
+
+### Follow-up completed: the surface probe
+
+- Implemented **Principal curvatures & centres at a point** for surface patches and canal surfaces. A canal study chooses **Describe → The curve / The surface**; a surface study probes its surface.
+  - Go computes the grid when a request sets `surfaceDiagnostics` (`engine3/surfaceprobe.go`): points, normals, both principal curvatures, directions and focal points, and counts of singular points, umbilics, unknown curvatures and clipped centres.
+  - The notebook draws the point, the normal line through both centres, each branch's direction, centre and normal-section circle, and a canal's contact circle. It reads out κ for each branch, 1/κ, K and H, and plots both curvatures along the row (`probe.ts`, `ProbePanel.tsx`).
+  - **Move the probe along the surface** sweeps the rows at the probe's column, in playback and export.
+  - Study links carry `probe: { enabled, position, target, across }`.
+- Decisions:
+  - Done one follow-up at a time, the surface probe first, because the four follow-ups share little code. The curve probe's canal highlight was not added: the contact circle belongs to the surface probe, which draws it.
+  - Patches reuse the evaluations of their focal sheets, κ₁ ≥ κ₂, clipped at the same reach, so the probe and the sheets cannot disagree.
+  - A canal's branches are named by line of curvature rather than numbered, which would swap across the surface: around the contact circle, κ = −1/R, centred on the curve; across it, κ = −q_s·w/w·w. The second is computed in arc length from the curve's c″ and the profile's R″, so it does not depend on the curve's speed. A canal has no umbilic at a regular point (proof in `canalProbe`'s comment and `mathematics.md`), so none is tested for.
+  - The canal grid is the mesh's rings (≤ 481) × 24 turns from θ₀ in the meridians' frame, so moving the probe never recomputes. A row's t is reported as min + (max − min)·(i/n), as the curve probe's is: the canal's own `hi·i/n` rounds the middle of a symmetric domain to −4·10⁻¹⁶, and changing it would move existing geometry.
+  - Branch inks reuse the focal sheets' rust and slate; the normal and mark use the probe's inks. `lineColor` is unchanged.
+  - The panel never moves the controls below it:
+    - The readout always has its four rows, with "—" where there is no surface or normal.
+    - Gaps, singular points, umbilics and centres at infinity share one status line that reserves two lines.
+    - The panel's changing content sits inside a wrapper, because Chromium ends a slider's drag when a child is inserted directly into its fieldset. Without the wrapper, dragging **Along t** stuck at the first row past a gap.
+  - Links made before the field open with the curve target and the middle column. An older link to a surface study, which had no probe then, opens with it off.
+  - Existing curve studies are unchanged: same request without the flag (Go test, byte-identical), same labels, the curve as a canal's default target. The straight-curve note on a canal now adds where to probe the surface.
+- Measured accuracy:
+  - Beads: the curvature across each circle matches the surface-of-revolution closed form to a relative 1.2·10⁻⁹.
+  - Tube around a circle: matches the torus's −cos v/(R + r cos v) to 10⁻⁶ absolute, and the torus patch exactly.
+  - Euler's formula from the drawn meridians' second differences converges fourfold per doubling: 1.9·10⁻³, 4.7·10⁻⁴, 1.2·10⁻⁴.
+- Workload: the grid adds about 5.5 MB of JSON to a canal (6–11 ms natively at 960–2400 samples) and up to about 7 MB to the largest patch. It is sent only while the surface probe is on.
+- Permanent docs: `mathematics.md#spatial-principal-curvatures-and-the-surface-probe`, `spatial-study.md` (**Probing a surface**), `usage.md`, `architecture.md`, README.
+- Verification:
+  - `engine3/surfaceprobe_test.go` (12 tests). Nine were written against a stub and observed failing.
+    - Torus tube against the closed form and the torus patch.
+    - Patch probe against its focal sheets.
+    - Sphere umbilics and normal reversal.
+    - Beads against a surface of revolution.
+    - Cone and collapse, cusp and unknown R″.
+    - Orthonormal frame and focal points.
+    - Meridian convergence.
+    - Byte-identical studies without the flag.
+    - Row bounds.
+  - The cusp and unknown test was added with the proof that a canal has no regular umbilic. A spine of varying speed, the clip threshold and evenly spaced rows were added after the Go mutation run exposed gaps.
+  - `scripts/test-wasm.mjs` checks the flag through the real bridge for a canal and a patch.
+  - `tests/spatial-surface-probe.spec.ts` (12 tests) failed to load on `main` (missing exports) before the change. It covers:
+    - support and targets, snapping and wrapping;
+    - geometry, degeneracies, the readout and dispatch, on hand-built grids;
+    - the Beads and torus readouts against closed forms through the notebook, including a reversed normal and edits through pending scalar evaluation;
+    - export metadata, a link round trip, the probe animation's endpoints and Stop, and the dark theme.
+  - `tests/study-link.spec.ts` covers the new fields' refusals, older links, and surface probe playback. `tests/layout.spec.ts` sweeps the new pair on a canal and a patch at both widths.
+  - `make check` passed, and `make thumbnails` left `web/examples/` unchanged. The full Chromium run (849 tests) and all 30 WebKit tests passed. Light, dark and phone-width drawings and panels of the Beads probe were inspected.
+  - Mutation runs:
+    - Go: 22 targeted faults: R̈, Ṙ and σ̇ terms, projection, sign, the v′ term, the tangential part of the curvature vector, clip reach, row stride, closed rows, collapse, cusp and unknown guards, column angle, and the flag's plumbing. Four survived the first run; the tests above were added and all 22 are detected.
+    - TypeScript: 25 faults in `probe.ts` and `link.ts`, covering column wrap, normal reach, circle side and radius, canal ring, K, H, flags, target fallback, steps, export column, glyph direction and the old-link rule. One survived, an unknown curvature reported as at infinity; the readout test now covers it, and all 25 are detected.
+- Limits:
+  - Only patches and canals: developable, framed and ruled surfaces, mirrors and implicit meshes have no surface probe.
+  - The probe snaps to the grid: at most 481 rows on a canal, 24 turns around each circle.
+  - Plots run along the row only, not around the circle.
+  - The probe's lines are depth-tested, so a centre or circle inside a closed surface is hidden by it, as the rust circle around a bead is.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

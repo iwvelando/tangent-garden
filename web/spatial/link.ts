@@ -247,9 +247,15 @@ const view: SchemaOf<SpatialCamera> = {
   },
 };
 
-// The probe's place, as a fraction of the base's samples.
+// The probe's place, as fractions along the base's samples (or a
+// surface's rows) and across a surface's columns, and what it describes.
 const probe: SchemaOf<Probe> = {
-  fields: { enabled: "boolean", position: { range: [0, 1] } },
+  fields: {
+    enabled: "boolean",
+    position: { range: [0, 1] },
+    target: { options: { curve: true, surface: true } },
+    across: { range: [0, 1] },
+  },
 };
 
 export function spatialStudy(value: unknown): SpatialStudy {
@@ -279,13 +285,22 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode traces light only in a mirror or interface study.",
     );
   const probed = conform(raw.probe, probe, defaultProbe, "probe");
+  // A surface patch offered no probe before the probe had a target, so a
+  // link from then opens without it, as it drew.
+  if (
+    study.config.format === "surface" &&
+    typeof raw.probe === "object" &&
+    raw.probe !== null &&
+    !("target" in raw.probe)
+  )
+    probed.enabled = false;
   if (
     animation.mode === "probe" &&
     !(probed.enabled && probeSupport(study.config).available)
   )
     throw new LinkError(
       "animation.mode",
-      "animation.mode moves the probe only while it is on in a curve study.",
+      "animation.mode moves the probe only while it is on in a study that offers it.",
     );
   return { ...study, animation, probe: probed };
 }

@@ -106,9 +106,10 @@ export type AnimationView = {
   mode: AnimationMode;
   // A finished animation releases the camera, starting from its own.
   complete: boolean;
-  // The probe's sample in the frame's diagnostics, when the animation moves
-  // it.
+  // The probe's sample in the frame's diagnostics (a surface's row), and
+  // its setup, when the animation moves it.
   probe?: number;
+  probeSetup?: import("./probe").Probe;
 };
 export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",

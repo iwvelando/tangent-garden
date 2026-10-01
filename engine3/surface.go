@@ -328,7 +328,7 @@ func (q SurfaceRequest) positions() ([]*Vec3, float64, error) {
 
 // surfaces samples the patch, its offset and focal sheets, and the
 // representative parameter curves and normal lines.
-func surfaces(q SurfaceRequest) (Result, error) {
+func surfaces(q SurfaceRequest, probe bool) (Result, error) {
 	if err := q.validate(); err != nil {
 		return Result{}, err
 	}
@@ -432,7 +432,11 @@ func surfaces(q SurfaceRequest) (Result, error) {
 		families = append(families, flatten(f.Points))
 	}
 	bounds := fit(families...)
-	return Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Surface: out}, nil
+	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Surface: out}
+	if probe {
+		result.Probe = patchProbe(q, samples, scale)
+	}
+	return result, nil
 }
 
 // continues reports whether a focal branch runs from p0 to p1 without

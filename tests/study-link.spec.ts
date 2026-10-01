@@ -64,7 +64,7 @@ const spatial = (i = 0): SpatialStudy => ({
   layers: { ...defaultLayers, rulings: false },
   view: { yaw: 1.1, pitch: -0.4, zoom: 2.5, panX: 0.3, panY: -0.2 },
   animation: { mode: "orbit", camera: "fit", duration: 7.5, tracks: [] },
-  probe: { enabled: true, position: 0.25 },
+  probe: { enabled: true, position: 0.25, target: "curve", across: 0.5 },
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
@@ -103,6 +103,43 @@ test("a link carries probe playback with its probe", async () => {
   };
   const read = await readStudyLink(await writeStudyLink("3d", study));
   assert.deepEqual(spatialStudy(read.study), study);
+  // On a surface, too: a canal's or a patch's.
+  const beads = spatialPresets.findIndex(
+    (p) => p.name === "Beads that lose their envelope",
+  );
+  const torus = spatialPresets.findIndex(
+    (p) => p.name === "A torus revealing its centers",
+  );
+  for (const i of [beads, torus]) {
+    const surface: SpatialStudy = {
+      ...spatial(i),
+      animation: { mode: "probe", camera: "hold", duration: 4, tracks: [] },
+      probe: { enabled: true, position: 0.7, target: "surface", across: 0.1 },
+    };
+    const back = await readStudyLink(await writeStudyLink("3d", surface));
+    assert.deepEqual(spatialStudy(back.study), surface);
+  }
+});
+
+test("links made before the surface probe keep their probe as it was", async () => {
+  // A curve study's probe gains the defaults: the curve, half way across.
+  const curve = structuredClone(spatial()) as any;
+  curve.probe = { enabled: true, position: 0.25 };
+  assert.deepEqual(spatialStudy(curve).probe, {
+    enabled: true,
+    position: 0.25,
+    target: "curve",
+    across: 0.5,
+  });
+  // A surface patch had no probe then, so its link opens without one.
+  const torus = spatialPresets.findIndex(
+    (p) => p.name === "A torus revealing its centers",
+  );
+  const patch = structuredClone(spatial(torus)) as any;
+  patch.probe = { enabled: true, position: 0.25 };
+  assert.equal(spatialStudy(patch).probe.enabled, false);
+  patch.probe.target = "surface";
+  assert.equal(spatialStudy(patch).probe.enabled, true);
 });
 
 test("links are compact, url-safe, and readable by an independent decoder", async () => {
@@ -248,6 +285,8 @@ test("3D and 4D fields are refused by name", async () => {
     ["probe.position", (s) => (s.probe.position = 1.5)],
     ["probe.enabled", (s) => (s.probe.enabled = "yes")],
     ["probe.glow", (s) => (s.probe.glow = true)],
+    ["probe.target", (s) => (s.probe.target = "ribbon")],
+    ["probe.across", (s) => (s.probe.across = -0.1)],
     ["layers.glow", (s) => (s.layers.glow = true)],
     ["animation.mode", (s) => (s.animation.mode = "spin")],
     [
@@ -261,7 +300,7 @@ test("3D and 4D fields are refused by name", async () => {
       "animation.mode",
       (s) => {
         s.animation.mode = "probe";
-        s.config.format = "surface";
+        s.config.format = "rays";
       },
     ],
     [
@@ -424,7 +463,12 @@ test("links made by version 1 keep opening", async () => {
   // Links made before refinement mesh the grid alone.
   assert.equal(s.config.implicit.refine, 0);
   // Links made before the parameter probe open without it.
-  assert.deepEqual(s.probe, { enabled: false, position: 0.5 });
+  assert.deepEqual(s.probe, {
+    enabled: false,
+    position: 0.5,
+    target: "curve",
+    across: 0.5,
+  });
 
   const fourLink = await readStudyLink(v1["4d"]);
   assert.equal(fourLink.notebook, "4d");

@@ -108,7 +108,19 @@ Its **Lines (SVG)** items save the drawing's lines: true SVG paths, suited to ed
 
 ## Probing a curve
 
-**Probe the curve** turns any curve study into an explanation of itself. Its slider picks a point and shows the Frenet frame there (T, N and B in red, green and blue), the osculating circle in magenta, and that point's own construction lines, while the sidebar reads out κ, 1/κ and τ and plots both along the whole curve. On **Helix · a ribbon staircase** they stay at 18/37 and 3/37 everywhere, as a helix's must. On **A knot shedding filaments** the four deepest curvature dips, where κ falls to 0.17 and the knot almost straightens, are exactly where τ spikes to −4: there the osculating plane swings round fastest. On **Beads that lose their envelope** the spheres roll along a straight line, so the probe draws no frame and says the curve is straight: it describes the curve a surface is built on, never the surface. The probe is diagnostic: its colors are not the decorative palette, and it never changes the study. With the probe on, **Animate → Move the probe along the curve** sweeps it from the first sample to the last over the unchanged study, in playback and in MP4 or WebP exports. Other animations leave it out, and still images include it.
+**Probe the curve** turns any curve study into an explanation of itself. Its slider picks a point and shows the Frenet frame there (T, N and B in red, green and blue), the osculating circle in magenta, and that point's own construction lines, while the sidebar reads out κ, 1/κ and τ and plots both along the whole curve. On **Helix · a ribbon staircase** they stay at 18/37 and 3/37 everywhere, as a helix's must. On **A knot shedding filaments** the four deepest curvature dips, where κ falls to 0.17 and the knot almost straightens, are exactly where τ spikes to −4: there the osculating plane swings round fastest. On **Beads that lose their envelope** the spheres roll along a straight line, so the curve probe draws no frame and says the curve is straight: it describes the curve a surface is built on, never the surface (see the next section for the surface). The probe is diagnostic: its colors are not the decorative palette, and it never changes the study. With the probe on, **Animate → Move the probe along the curve** sweeps it from the first sample to the last over the unchanged study, in playback and in MP4 or WebP exports. Other animations leave it out, and still images include it.
+
+## Probing a surface
+
+A surface patch, and a canal built on any curve (choose **Describe → The surface**), can be probed the same way with **Principal curvatures & centres at a point**. Two sliders pick a point on the surface's grid, and the drawing shows its normal, its two principal directions, and the two normal-section circles through it, each centred on its focal point on the normal line. Each branch takes its focal sheet's color, rust and slate. The sidebar reads out both principal curvatures with their radii, and the Gaussian and mean curvatures, and plots both curvatures along the row through the point.
+
+On a canal the branches are its two lines of curvature. **Around the circle**, the curvature is always −1/R, centred on the sphere's centre on the curve, which is why a canal's first focal set is the curve itself. **Across it**, the curvature tells the shape of the envelope:
+
+- On **Beads that lose their envelope**, a bead's widest point at t = π/4 reads −0.7937 and −0.586: both negative, so K is positive and the bead is convex there.
+- At a neck, t = −π/4, the curvature across turns positive (3.263), so K is negative: the neck is a saddle, and its second centre lies outside the surface.
+- Towards each gap, where the spheres stop having an envelope, the curvature across grows without bound and its plot is pinned to the edge. At t = 0, between the beads, there is no surface at all, and the panel says so.
+
+On a torus patch, κ₁ = −cos v/(R + r cos v) and κ₂ = −1/r, and its centres trace the focal sheets drawn beside it: the core circle and the axis.
 
 ## Deliberate limits
 

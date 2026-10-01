@@ -86,10 +86,13 @@ import {
 import type { ImageFormat } from "./export";
 import {
   defaultProbe,
-  probeBatches,
+  probeDrawing as drawProbe,
   probeIndex,
-  probeReadout,
+  probeRecord,
+  probeSteps,
   probeSupport,
+  probeTarget,
+  surfaceProbeAt,
   type Probe,
 } from "./probe";
 import { ProbePanel } from "./ProbePanel";
@@ -145,16 +148,18 @@ export default function SpatialApp({
   const [animation, setAnimation] = useState<AnimationView | null>(null),
     [running, setRunning] = useState(false);
   const [layers, setLayers] = useState<Layers>(defaultLayers);
-  // The parameter probe asks Go for diagnostics only while it is on.
+  // The parameter probe asks Go for diagnostics only while it is on, and
+  // only for what it describes: the curve or the surface.
   const [probe, setProbe] = useState<Probe>(defaultProbe);
-  const probing = probe.enabled && probeSupport(config).available;
+  const probing = probe.enabled && probeSupport(config).available,
+    target = probeTarget(config, probe);
   const viewport = useRef<View | undefined>(undefined),
     plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
   const pending = Object.values(states).some((s) => s.pending),
     scalarError = Object.values(states).find((s) => s.error);
   const key = JSON.stringify(config),
-    request = probing ? `${key}\u0000probe` : key,
+    request = probing ? `${key}\u0000probe:${target}` : key,
     busy = settled !== request || pending;
   const revision = JSON.stringify([key, states, active]);
   useEffect(() => {
@@ -175,7 +180,10 @@ export default function SpatialApp({
     }
     const timer = setTimeout(() => {
       client
-        .current!.computeSpatial(config, { diagnostics: probing })
+        .current!.computeSpatial(config, {
+          diagnostics: probing && target === "curve",
+          surfaceDiagnostics: probing && target === "surface",
+        })
         .then((value) => {
           if (current) {
             setFrame(value);
@@ -229,7 +237,11 @@ export default function SpatialApp({
     setPreset(index);
     setCustomOpened(spatialPresets[+index].config.format === "parametric");
     setConfig(structuredClone(spatialPresets[+index].config));
-    setProbe((p) => ({ ...p, position: defaultProbe.position }));
+    setProbe((p) => ({
+      ...p,
+      position: defaultProbe.position,
+      across: defaultProbe.across,
+    }));
     setReset((n) => n + 1);
   };
   // A shared study replaces the whole study, as a preset does, and restores
@@ -1168,20 +1180,32 @@ export default function SpatialApp({
   const moving = animation?.probe !== undefined ? animation : null;
   const probeFrame = moving
     ? moving.frame
-    : !animation && probing && frame?.result.diagnostics
+    : !animation &&
+        probing &&
+        frame &&
+        probeSteps(frame.result, probeTarget(frame.config, probe)) !== null
       ? frame
       : null;
+  // The sample (or a surface's row) the probe stands at; a surface probe's
+  // column follows probe.across.
   const probeAt = moving
     ? moving.probe!
     : probeFrame
-      ? probeIndex(probe.position, probeFrame.result.base.length - 1)
+      ? probeTarget(probeFrame.config, probe) === "surface"
+        ? surfaceProbeAt(
+            probeFrame.result.surfaceDiagnostics!,
+            probe.position,
+            probe.across,
+          ).row
+        : probeIndex(probe.position, probeFrame.result.base.length - 1)
       : 0;
+  const probeSetup = moving?.probeSetup ?? probe;
   const probeDrawing = useMemo(
     () =>
       probeFrame
-        ? probeBatches(probeFrame.result, probeFrame.config, probeAt)
+        ? drawProbe(probeFrame.result, probeFrame.config, probeSetup, probeAt)
         : [],
-    [probeFrame, probeAt],
+    [probeFrame, probeAt, probeSetup.target, probeSetup.across],
   );
   async function save(format: string) {
     if (!shown || !viewport.current) return;
@@ -1208,8 +1232,12 @@ export default function SpatialApp({
         probeFrame && probeDrawing.length && shown === probeFrame
           ? {
               batches: probeDrawing,
-              index: probeAt,
-              t: probeReadout(probeFrame.result, probeAt)!.t,
+              record: probeRecord(
+                probeFrame.result,
+                probeFrame.config,
+                probeSetup,
+                probeAt,
+              ),
             }
           : undefined,
       );
@@ -2847,7 +2875,7 @@ export default function SpatialApp({
             length={config.length}
             revision={revision}
             disabled={!ready || !active || imageBusy}
-            probing={probing}
+            probe={probing ? probe : null}
             dark={theme.dark}
             layers={layers}
             getCurrentView={() =>

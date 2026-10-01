@@ -3,7 +3,7 @@ import { createRenderer, type View, type Layers } from "./renderer";
 import { buildScene, type Batch } from "./scene";
 import { linework, linesSvg, sampleStep } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
-import { probeBatches } from "./probe";
+import { probeDrawing } from "./probe";
 import { mp4Sink, webpSink } from "../export-sinks";
 import {
   exportEncoding,
@@ -52,11 +52,11 @@ export async function imageFile(
   dark: boolean,
   format: ImageFormat,
   signal: AbortSignal,
-  // The parameter probe as drawn live, recorded in the metadata as its
-  // sample index and parameter.
-  probe?: { batches: Batch[]; index: number; t: number },
+  // The parameter probe as drawn live, recorded in the metadata as where
+  // it stands (see probeRecord).
+  probe?: { batches: Batch[]; record: object },
 ): Promise<Blob> {
-  const probed = probe ? { probe: { index: probe.index, t: probe.t } } : {};
+  const probed = probe ? { probe: probe.record } : {};
   if (format === "svg-lines" || format === "svg-visible") {
     const occlusion = format === "svg-lines" ? "none" : "sampled";
     const groups = linework(
@@ -154,7 +154,12 @@ export async function exportAnimation(options: {
       renderer.setProbe(
         view.probe === undefined
           ? []
-          : probeBatches(view.frame.result, view.frame.config, view.probe),
+          : probeDrawing(
+              view.frame.result,
+              view.frame.config,
+              view.probeSetup!,
+              view.probe,
+            ),
       );
       renderer.draw(
         animationCamera(view),
