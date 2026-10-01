@@ -64,7 +64,14 @@ const spatial = (i = 0): SpatialStudy => ({
   layers: { ...defaultLayers, rulings: false },
   view: { yaw: 1.1, pitch: -0.4, zoom: 2.5, panX: 0.3, panY: -0.2 },
   animation: { mode: "orbit", camera: "fit", duration: 7.5, tracks: [] },
-  probe: { enabled: true, position: 0.25, target: "curve", across: 0.5 },
+  // A mirror's probe describes its light; a curve probe there is from a
+  // link made before it had one.
+  probe: {
+    enabled: true,
+    position: 0.25,
+    target: spatialPresets[i].config.format === "rays" ? "light" : "curve",
+    across: 0.5,
+  },
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
@@ -164,6 +171,46 @@ test("links made before the surface probe keep their probe as it was", async () 
       across: 0.5,
     });
   }
+});
+
+test("a mirror's link carries the light or mirror probe; older ones open without it", async () => {
+  const named = (name: string) =>
+    spatialPresets.findIndex((p) => p.name === name);
+  for (const name of [
+    "A spherical bowl's cusped caustic",
+    "A lamp in water over air",
+  ])
+    for (const target of ["light", "mirror"] as const) {
+      const study: SpatialStudy = {
+        ...spatial(named(name)),
+        animation: { mode: "probe", camera: "hold", duration: 4, tracks: [] },
+        probe: { enabled: true, position: 0.3, target, across: 0.6 },
+      };
+      const back = await readStudyLink(await writeStudyLink("3d", study));
+      assert.deepEqual(spatialStudy(back.study), study, `${name}: ${target}`);
+    }
+  // A mirror or interface offered no probe before, so a link from then,
+  // whose probe named the curve or a surface, or nothing, opens without it.
+  for (const target of ["curve", "surface", undefined]) {
+    const old = structuredClone(
+      spatial(named("A paraboloid gathering light")),
+    ) as any;
+    old.probe = { enabled: true, position: 0.25, ...(target && { target }) };
+    assert.equal(spatialStudy(old).probe.enabled, false, String(target));
+    // Probe playback needs the probe on.
+    old.animation = {
+      mode: "probe",
+      camera: "hold",
+      duration: 4,
+      tracks: [],
+    };
+    await refused(() => Promise.resolve(spatialStudy(old)), "animation.mode");
+  }
+  // The light and the mirror name nothing in another study, whose probe
+  // falls back to its own first target.
+  const curve = structuredClone(spatial()) as any;
+  curve.probe = { enabled: true, position: 0.25, target: "light", across: 0 };
+  assert.equal(spatialStudy(curve).probe.enabled, true);
 });
 
 test("links are compact, url-safe, and readable by an independent decoder", async () => {

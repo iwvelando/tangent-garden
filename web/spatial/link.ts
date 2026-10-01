@@ -253,7 +253,9 @@ const probe: SchemaOf<Probe> = {
   fields: {
     enabled: "boolean",
     position: { range: [0, 1] },
-    target: { options: { curve: true, surface: true } },
+    target: {
+      options: { curve: true, surface: true, light: true, mirror: true },
+    },
     across: { range: [0, 1] },
   },
 };
@@ -292,6 +294,15 @@ export function spatialStudy(value: unknown): SpatialStudy {
     typeof raw.probe === "object" &&
     raw.probe !== null &&
     !("target" in raw.probe)
+  )
+    probed.enabled = false;
+  // A mirror or interface had no probe before it could describe the light
+  // or the mirror, so a link from then, whose probe describes something
+  // else, opens without it, as it drew.
+  if (
+    study.config.format === "rays" &&
+    probed.target !== "light" &&
+    probed.target !== "mirror"
   )
     probed.enabled = false;
   if (

@@ -71,6 +71,10 @@ type Request struct {
 	// ruled surface or framed ribbon (with a width) built on a curve; other
 	// studies ignore it.
 	SurfaceDiagnostics bool `json:"surfaceDiagnostics"`
+	// LightDiagnostics asks a ray study for its outgoing wavefront's
+	// principal curvatures, directions and foci at every sample, in place
+	// of the surface's (see lightProbe); other studies ignore it.
+	LightDiagnostics bool `json:"lightDiagnostics"`
 }
 type Vertex struct {
 	SampleIndex int     `json:"sampleIndex"`
@@ -157,7 +161,9 @@ func Compute(c Request) (Result, error) {
 	if err == nil && out.Diagnostics != nil {
 		out.Diagnostics.clip(out.Bounds.Radius)
 	}
-	if err == nil && out.Probe != nil && out.Probe.Kind != "patch" {
+	// A patch and a wavefront place their own focal points: the patch as
+	// its focal sheets, the wavefront as its caustics.
+	if err == nil && out.Probe != nil && out.Probe.Kind != "patch" && out.Probe.Kind != "wavefront" {
 		out.Probe.clip(out.Bounds.Radius)
 	}
 	return out, err
@@ -168,7 +174,7 @@ func compute(c Request) (Result, error) {
 		return surfaces(c.Surface, c.SurfaceDiagnostics)
 	}
 	if c.Format == "rays" {
-		return rays(c.Surface, c.Rays)
+		return rays(c.Surface, c.Rays, c.SurfaceDiagnostics, c.LightDiagnostics)
 	}
 	if c.Format == "implicit" {
 		return implicit(c.Implicit)

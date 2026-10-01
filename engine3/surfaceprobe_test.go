@@ -442,7 +442,7 @@ func TestSurfaceDiagnosticsOffLeaveResultsUnchanged(t *testing.T) {
 			}
 			curveStudy := c.Format != "surface" && c.Format != "rays"
 			surface := c.Construction == "canal" || c.Construction == "" || c.Construction == "developable" || c.Construction == "ruled" || c.Construction == "framed" && c.Frame.Width > 0
-			want := c.Format == "surface" || curveStudy && surface
+			want := c.Format == "surface" || c.Format == "rays" || curveStudy && surface
 			if (after.Probe != nil) != want {
 				t.Fatalf("%s/%s: surface diagnostics %v", c.Format, c.Construction, after.Probe != nil)
 			}

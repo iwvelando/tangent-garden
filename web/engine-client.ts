@@ -5,6 +5,7 @@ import type { Bounds, Config, Frame } from "./types";
 export type SpatialOptions = {
   diagnostics?: boolean;
   surfaceDiagnostics?: boolean;
+  lightDiagnostics?: boolean;
 };
 
 // One worker per app, plus temporary ones during parameter-animation export
@@ -88,6 +89,7 @@ export class EngineClient {
         spatial: config,
         ...(options.diagnostics ? { diagnostics: true } : {}),
         ...(options.surfaceDiagnostics ? { surfaceDiagnostics: true } : {}),
+        ...(options.lightDiagnostics ? { lightDiagnostics: true } : {}),
       })
     ).result;
   }

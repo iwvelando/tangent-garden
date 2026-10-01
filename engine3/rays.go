@@ -268,12 +268,18 @@ func (p mirrorPoint) finite(k int, reach float64) bool {
 func (p mirrorPoint) traced() bool { return p.Lit && !p.Total }
 
 // rays samples the mirror, its caustic parts, and representative rays.
-func rays(q SurfaceRequest, r RaysRequest) (Result, error) {
+// With surfaceProbe it also returns the mirror's own surface probe, as a
+// surface study of the patch would; with lightProbe, the outgoing
+// wavefront's (see lightProbe).
+func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool) (Result, error) {
 	if err := q.validatePatch(); err != nil {
 		return Result{}, err
 	}
 	if err := r.validate(); err != nil {
 		return Result{}, err
+	}
+	if surfaceProbe && light {
+		return Result{}, fmt.Errorf("probe the mirror (surfaceDiagnostics) or the light (lightDiagnostics), not both")
 	}
 	positions, scale, err := q.positions()
 	if err != nil {
@@ -403,5 +409,121 @@ func rays(q SurfaceRequest, r RaysRequest) (Result, error) {
 		families = append(families, corners)
 	}
 	bounds := fit(families...)
-	return Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Rays: out}, nil
+	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Rays: out}
+	switch {
+	case light:
+		result.Probe = lightProbe(q, r, samples, reach)
+	case surfaceProbe:
+		patch := grid2[surfacePoint](nu+1, nv+1)
+		for i := range patch {
+			for j := range patch[i] {
+				u, v := q.at(i, j)
+				patch[i][j] = q.point(u, v, scale)
+			}
+		}
+		result.Probe = patchProbe(q, patch, scale)
+	}
+	return result, nil
+}
+
+// The light probe's state at a sample: traced along its outgoing ray, unlit
+// (the light grazes it or arrives behind it), beyond the critical angle
+// (totally reflected), at the point source, or a chart singularity.
+const (
+	lightTraced = iota
+	lightUnlit
+	lightTotal
+	lightAtSource
+	lightSingular
+)
+
+// LightDiagnostics is what the light probe adds to the outgoing wavefront's
+// SurfaceDiagnostics, on the same grid: the incident direction I (nil at a
+// singularity or the source), the surface's declared normal n (nil at a
+// singularity), the outgoing direction (the ray R where traced, the totally
+// reflected ray beyond the critical angle, otherwise nil), and each
+// sample's state (lightTraced … lightSingular). Length is the ray length ℓ
+// the representative rays are drawn with. Unlit, Total and AtSource count
+// samples as RaysResult does.
+type LightDiagnostics struct {
+	Length   float64   `json:"length"`
+	Incident [][]*Vec3 `json:"incident"`
+	Surface  [][]*Vec3 `json:"surface"`
+	Outgoing [][]*Vec3 `json:"outgoing"`
+	State    [][]int   `json:"state"`
+	Unlit    int       `json:"unlit"`
+	Total    int       `json:"total"`
+	AtSource int       `json:"atSource"`
+}
+
+// lightProbe describes the outgoing wavefront at the mirror's own samples,
+// as the surface probe describes a surface: its normal is the ray R, its
+// principal curvatures μ₁ ≥ μ₂ and directions are W's (see ray), and its
+// focal points X + R/μ are the caustic points, at infinity beyond reach as
+// the caustic sheets' are. A stigmatic sample has no principal directions
+// and is counted as an umbilic. Where nothing leaves along R the sample has
+// a point but no wavefront.
+func lightProbe(q SurfaceRequest, r RaysRequest, samples [][]mirrorPoint, reach float64) *SurfaceDiagnostics {
+	nu, nv := q.USamples, q.VSamples
+	d := newSurfaceDiagnostics("wavefront", nu+1, nv+1)
+	for i := 0; i <= nu; i++ {
+		d.Along[i], d.U[i] = i, lerp(q.UMin, q.UMax, i, nu)
+	}
+	for j := 0; j <= nv; j++ {
+		d.V[j] = lerp(q.VMin, q.VMax, j, nv)
+	}
+	l := &LightDiagnostics{Length: r.Length, Incident: grid2[*Vec3](nu+1, nv+1), Surface: grid2[*Vec3](nu+1, nv+1), Outgoing: grid2[*Vec3](nu+1, nv+1), State: grid2[int](nu+1, nv+1)}
+	d.Light = l
+	for i, row := range samples {
+		for j, s := range row {
+			x := s.X
+			d.Points[i][j] = &x
+			if !s.Normal {
+				l.State[i][j] = lightSingular
+				d.Singular++
+				continue
+			}
+			n := s.N
+			l.Surface[i][j] = &n
+			if s.AtSource {
+				l.State[i][j] = lightAtSource
+				l.AtSource++
+				continue
+			}
+			in := s.I
+			l.Incident[i][j] = &in
+			if !s.Lit {
+				l.State[i][j] = lightUnlit
+				l.Unlit++
+				continue
+			}
+			if s.Total {
+				reflected := in.sub(n.mul(2 * in.dot(n)))
+				l.Outgoing[i][j] = &reflected
+				l.State[i][j] = lightTotal
+				l.Total++
+				continue
+			}
+			ray := s.R
+			d.Normals[i][j], l.Outgoing[i][j] = &ray, &ray
+			if s.Stigmatic {
+				d.Umbilics++
+			}
+			for k := 0; k < 2; k++ {
+				mu := s.Mu[k]
+				d.Curvature[k][i][j] = &mu
+				if !s.Stigmatic {
+					e := s.Dir[k]
+					d.Direction[k][i][j] = &e
+				}
+				if !s.finite(k, reach) {
+					d.Clipped[k]++
+					continue
+				}
+				c := s.caustic(k)
+				d.Focal[k][i][j] = &c
+			}
+		}
+	}
+	return d
 }

@@ -1727,10 +1727,11 @@ const spatialSurface = (surface, study = {}) =>
   assert.match(spatialSurface({ curves: 1 }).error, /parameter curves/);
 }
 console.log("WASM surface: sphere, torus and validation passed");
-const spatialRays = (surface, rays) =>
+const spatialRays = (surface, rays, flags = {}) =>
   JSON.parse(
     tangentGardenSpatial(
       JSON.stringify({
+        ...flags,
         format: "rays",
         // The curve's fields and the surface study's offset and normal reach
         // are ignored for a ray study.
@@ -1891,8 +1892,59 @@ const spatialRays = (surface, rays) =>
     /bins/,
   );
 }
+{
+  // The light probe: the paraboloid's reflected wavefront is stigmatic,
+  // curving 1/|F − X| towards the focus F at every sample, and the plane
+  // mirror's diverges from the virtual image of its lamp.
+  assert.equal(spatialRays({}, {}).surfaceDiagnostics, undefined);
+  const light = spatialRays(
+    {},
+    {},
+    { lightDiagnostics: true },
+  ).surfaceDiagnostics;
+  assert.equal(light.kind, "wavefront");
+  assert.equal(light.umbilics, 25 * 25);
+  assert.equal(light.light.length, 2);
+  light.points.forEach((row, i) =>
+    row.forEach((p, j) => {
+      const mu = 1 / Math.hypot(p.x, p.y, p.z - 1);
+      for (const b of [0, 1]) {
+        assert.ok(Math.abs(light.curvature[b][i][j] - mu) < 1e-12 * mu);
+        const f = light.focal[b][i][j];
+        assert.ok(Math.hypot(f.x, f.y, f.z - 1) < 1e-12);
+      }
+      assert.equal(light.light.state[i][j], 0);
+      assert.deepEqual(light.light.incident[i][j], { x: 0, y: 0, z: -1 });
+    }),
+  );
+  const image = spatialRays(
+    { a: 0, b: 0 },
+    { light: "point", source: { x: 0.2, y: -0.1, z: 1.5 } },
+    { lightDiagnostics: true },
+  ).surfaceDiagnostics;
+  image.focal[1].flat().forEach((f) => {
+    assert.ok(Math.hypot(f.x - 0.2, f.y + 0.1, f.z + 1.5) < 1e-12);
+  });
+  assert.ok(image.curvature[1].flat().every((mu) => mu < 0));
+  // The mirror probe is the patch's own: z = k(x² + y²)/2 is umbilic at its
+  // vertex, with |κ| = k = 0.5 there.
+  const dish = spatialRays(
+    {},
+    {},
+    { surfaceDiagnostics: true },
+  ).surfaceDiagnostics;
+  assert.equal(dish.kind, "patch");
+  assert.equal(dish.light, undefined);
+  for (const b of [0, 1])
+    assert.ok(Math.abs(Math.abs(dish.curvature[b][12][12]) - 0.5) < 1e-12);
+  assert.match(
+    spatialRays({}, {}, { surfaceDiagnostics: true, lightDiagnostics: true })
+      .error,
+    /not both/,
+  );
+}
 console.log(
-  "WASM rays: paraboloid focus, plane mirror, Snell's window, receiver and validation passed",
+  "WASM rays: paraboloid focus, plane mirror, Snell's window, receiver, light and mirror probes, and validation passed",
 );
 // An implicit result arrives as its JSON and the mesh's five arrays, typed
 // views on one buffer; an error is JSON alone.

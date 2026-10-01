@@ -318,7 +318,7 @@ export type SpatialResult = {
 // an umbilic; a focal point is null at infinity (beyond 100 radii). Counts
 // leave out a closed surface's repeated last row.
 export type SurfaceDiagnostics = {
-  kind: "patch" | "canal" | "developable" | "framed" | "ruled";
+  kind: "patch" | "canal" | "developable" | "framed" | "ruled" | "wavefront";
   along: number[];
   u: number[];
   v: number[];
@@ -332,6 +332,27 @@ export type SurfaceDiagnostics = {
   umbilics: number;
   unknown: number;
   clipped: [number, number];
+  // Present only for the light leaving a mirror or interface.
+  light?: LightDiagnostics;
+};
+// Mirrors engine3.LightDiagnostics: on the wavefront's grid, the incident
+// direction (null at a singularity or the source), the surface's normal
+// (null at a singularity), the outgoing direction (the ray where traced,
+// the totally reflected ray beyond the critical angle, otherwise null) and
+// each point's state: 0 traced, 1 unlit, 2 beyond the critical angle, 3 at
+// the source, 4 a chart singularity. The wavefront itself is the
+// SurfaceDiagnostics it belongs to, with kind "wavefront": its normal is
+// the outgoing ray, its curvatures μ₁ ≥ μ₂ (X + R/μ is the focus, real for
+// μ > 0), and its umbilics the stigmatic points.
+export type LightDiagnostics = {
+  length: number;
+  incident: (Vec3 | null)[][];
+  surface: (Vec3 | null)[][];
+  outgoing: (Vec3 | null)[][];
+  state: number[][];
+  unlit: number;
+  total: number;
+  atSource: number;
 };
 // Mirrors engine3.DiagnosticsResult, indexed like base; sample i is at t =
 // min + (max − min)·i/n. κ = |r′ × r″|/|r′|³, B = (r′ × r″)/|r′ × r″|, N =
