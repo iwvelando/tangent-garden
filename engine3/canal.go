@@ -85,16 +85,17 @@ func (q CanalRequest) frame(f FrameRequest) FrameRequest {
 	return f
 }
 
-// radius returns R and R′ at t, and whether the slope is stable.
-func (q CanalRequest) radius(span float64) (func(float64) (float64, float64, bool), error) {
+// radius returns R, R′ and R″ at t, and whether the slope is stable; R″ is
+// NaN where it is unknown.
+func (q CanalRequest) radius(span float64) (func(float64) (float64, float64, float64, bool), error) {
 	e, err := expr.Parse(q.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("ρ(t): %w", err)
 	}
 	profile := sampled(func(s float64) Vec3 { return Vec3{e(s), 0, 0} }, math.Inf(-1), math.Inf(1), span)
-	return func(s float64) (float64, float64, bool) {
-		r, v, _, ok := profile(s)
-		return q.Radius * r.X, q.Radius * v.X, ok
+	return func(s float64) (float64, float64, float64, bool) {
+		r, v, a, ok := profile(s)
+		return q.Radius * r.X, q.Radius * v.X, q.Radius * a.X, ok
 	}, nil
 }
 
@@ -112,7 +113,7 @@ func contact(R, slope, speed float64) (axial, radius float64, ok, collapsed bool
 	return -R * k, R * math.Sqrt(1-k*k), true, false
 }
 
-func canalSurface(c Request, out *Result, radius func(float64) (float64, float64, bool), frame carried, tangents []Vec3, speeds, middles []float64, lo, hi float64, closed bool) error {
+func canalSurface(c Request, out *Result, radius func(float64) (float64, float64, float64, bool), frame carried, tangents, accelerations []Vec3, speeds, middles []float64, lo, hi float64, closed bool) error {
 	n := c.Samples
 	at := func(i float64) float64 { return lo*(1-i/float64(n)) + hi*i/float64(n) }
 	base := out.Base
@@ -128,7 +129,7 @@ func canalSurface(c Request, out *Result, radius func(float64) (float64, float64
 		if base[i] == nil {
 			continue
 		}
-		r, d, ok := radius(at(float64(i)))
+		r, d, _, ok := radius(at(float64(i)))
 		if !ok || !finite(r) || !finite(d) || r <= 0 {
 			if i <= last {
 				q.Undefined++
@@ -194,7 +195,7 @@ func canalSurface(c Request, out *Result, radius func(float64) (float64, float64
 	for i := 0; i < n; i++ {
 		broken := out.Breaks[i+1] || !circled[i] || !circled[i+1]
 		if !broken {
-			r, d, ok := radius(at(float64(i) + 0.5))
+			r, d, _, ok := radius(at(float64(i) + 0.5))
 			broken = !ok || !finite(r) || !finite(d) || r <= 0 || !(math.Abs(d) <= (1+1e-9)*middles[i])
 			if broken {
 				q.Between++
@@ -302,6 +303,9 @@ func canalSurface(c Request, out *Result, radius func(float64) (float64, float64
 		q.Circles = append(q.Circles, g)
 	}
 	out.Canal = q
+	if c.SurfaceDiagnostics {
+		out.Probe = canalProbe(n, closed && q.Closed, lo, hi, at, radius, base, R, slope, sphere, circled, frame, tangents, accelerations, speeds)
+	}
 	return nil
 }
 

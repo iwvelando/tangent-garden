@@ -295,6 +295,36 @@ export type SpatialResult = {
   canal?: CanalResult;
   // Present only when diagnostics were requested, for a curve.
   diagnostics?: DiagnosticsResult;
+  // Present only when surface diagnostics were requested, for a surface
+  // patch or a canal.
+  surfaceDiagnostics?: SurfaceDiagnostics;
+};
+// Mirrors engine3.SurfaceDiagnostics: a surface on the probe's grid, where
+// points[r][k] is at parameters u[r] and v[k]. A patch's grid is its own; a
+// canal's row r is base sample along[r], and its column k turns v[k] =
+// 2πk/K from θ₀ around the contact circle (periodic, not repeated). With
+// A = −dn, each sample has two principal curvatures with unit directions and
+// focal points x + n/κ: a patch numbers them κ₁ ≥ κ₂, and a canal by line
+// of curvature, 0 around the contact circle (κ = −1/R, focused on the base)
+// and 1 across it. A point is null without a surface there; a normal is null
+// at a singular point; a curvature is null where unknown; directions are
+// null at an umbilic; a focal point is null at infinity (beyond 100 radii).
+// Counts leave out a closed canal's repeated last row.
+export type SurfaceDiagnostics = {
+  kind: "patch" | "canal";
+  along: number[];
+  u: number[];
+  v: number[];
+  periodic: boolean;
+  points: (Vec3 | null)[][];
+  normals: (Vec3 | null)[][];
+  curvature: [(number | null)[][], (number | null)[][]];
+  direction: [(Vec3 | null)[][], (Vec3 | null)[][]];
+  focal: [(Vec3 | null)[][], (Vec3 | null)[][]];
+  singular: number;
+  umbilics: number;
+  unknown: number;
+  clipped: [number, number];
 };
 // Mirrors engine3.DiagnosticsResult, indexed like base; sample i is at t =
 // min + (max − min)·i/n. κ = |r′ × r″|/|r′|³, B = (r′ × r″)/|r′ × r″|, N =

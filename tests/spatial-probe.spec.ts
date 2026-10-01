@@ -309,7 +309,10 @@ test("the support table names each construction's highlight", () => {
   expect(
     probeSupport(config("developable", "harmonic")).highlight,
   ).toBeTruthy();
-  expect(probeSupport(config("none", "surface")).available).toBe(false);
+  // A surface patch offers the surface probe (see
+  // spatial-surface-probe.spec.ts), never the curve's highlight.
+  expect(probeSupport(config("none", "surface")).available).toBe(true);
+  expect(probeSupport(config("none", "surface")).highlight).toBeNull();
   expect(probeSupport(config("none", "rays")).available).toBe(false);
   expect(probeSupport(config("none", "implicit")).available).toBe(false);
   expect(probeSupport(config("canal", "field")).available).toBe(true);
@@ -579,7 +582,7 @@ test("a straight base curve says so, and a curved one does not", async ({
   await settled(page);
   const note = page.getByTestId("probe-straight");
   await expect(note).toHaveText(
-    "This curve is straight: its curvature is zero everywhere, so it has no normal, binormal, torsion or osculating circle. The probe describes the curve the canal surface is built on, not the surface.",
+    "This curve is straight: its curvature is zero everywhere, so it has no normal, binormal, torsion or osculating circle. The probe describes the curve the canal surface is built on, not the surface. Choose to describe the surface to probe the canal surface itself.",
   );
   await expect(readout(page)).toHaveText([
     "0 (flat: N, B and τ undefined)",
@@ -598,7 +601,7 @@ test("a straight base curve says so, and a curved one does not", async ({
   await expect(note).toHaveCount(0);
 });
 
-test("the probe follows presets and formats, and leaves surfaces alone", async ({
+test("the probe follows presets and formats, and describes a surface study's surface", async ({
   page,
 }) => {
   await ready(page);
@@ -614,10 +617,16 @@ test("the probe follows presets and formats, and leaves surfaces alone", async (
   await expect(probeSwitch(page)).toBeChecked();
   await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 3\.142, /);
   await expect(readout(page)).toHaveCount(3);
-  // A surface study has no probe.
+  // A surface study has no curve to probe: the probe describes its surface.
   await choosePreset(page, { label: "A torus revealing its centers" });
   await settled(page);
   await expect(probeSwitch(page)).toHaveCount(0);
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Principal curvatures & centres at a point",
+    }),
+  ).toBeChecked();
+  await expect(readout(page)).toHaveCount(4);
   // Back on a curve, it returns as it was.
   await choosePreset(page, { label: "Chords of a rising helix" });
   await settled(page);

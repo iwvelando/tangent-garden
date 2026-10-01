@@ -126,6 +126,26 @@ for (const width of [1440, 390]) {
           .getByLabel("Animate", { exact: true })
           .selectOption("parameters");
       });
+    // The surface probe's sliders pair only while it is on: a canal's and a
+    // patch's.
+    for (const [preset, canal] of [
+      ["Beads that lose their envelope", true],
+      ["A torus revealing its centers", false],
+    ] as const)
+      setups.push(async () => {
+        await page.goto("/?study=3d");
+        await choosePreset(page, { label: preset });
+        if (canal)
+          await page
+            .getByLabel("Describe", { exact: true })
+            .selectOption("surface");
+        await page
+          .getByRole("checkbox", {
+            name: "Principal curvatures & centres at a point",
+          })
+          .check();
+        await expect(page.locator(".spatial-probe .pair")).toBeVisible();
+      });
     for (const preset of [
       "A cube beyond a cube",
       "Spherical loom",

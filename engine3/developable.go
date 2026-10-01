@@ -66,6 +66,10 @@ type Request struct {
 	// Diagnostics asks for the base curve's curvature, torsion, and Frenet
 	// frame at every sample. Surface, ray, and implicit studies ignore it.
 	Diagnostics bool `json:"diagnostics"`
+	// SurfaceDiagnostics asks for the principal curvatures, directions and
+	// focal points of a surface patch or canal surface; other studies
+	// ignore it.
+	SurfaceDiagnostics bool `json:"surfaceDiagnostics"`
 }
 type Vertex struct {
 	SampleIndex int     `json:"sampleIndex"`
@@ -121,6 +125,8 @@ type Result struct {
 	Implicit *ImplicitResult `json:"implicit,omitempty"`
 	// Diagnostics is present only when requested, for a curve.
 	Diagnostics *DiagnosticsResult `json:"diagnostics,omitempty"`
+	// Probe is present only when requested, for a surface patch or a canal.
+	Probe *SurfaceDiagnostics `json:"surfaceDiagnostics,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -149,12 +155,15 @@ func Compute(c Request) (Result, error) {
 	if err == nil && out.Diagnostics != nil {
 		out.Diagnostics.clip(out.Bounds.Radius)
 	}
+	if err == nil && out.Probe != nil && out.Probe.Kind == "canal" {
+		out.Probe.clip(out.Bounds.Radius)
+	}
 	return out, err
 }
 
 func compute(c Request) (Result, error) {
 	if c.Format == "surface" {
-		return surfaces(c.Surface)
+		return surfaces(c.Surface, c.SurfaceDiagnostics)
 	}
 	if c.Format == "rays" {
 		return rays(c.Surface, c.Rays)
@@ -227,7 +236,7 @@ func compute(c Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	var radius func(float64) (float64, float64, bool)
+	var radius func(float64) (float64, float64, float64, bool)
 	if canal {
 		if radius, err = c.Canal.radius(hi - lo); err != nil {
 			return Result{}, err
@@ -245,7 +254,7 @@ func compute(c Request) (Result, error) {
 	speeds, middles := make([]float64, n+1), make([]float64, n)
 	valid := make([]bool, n+1)
 	var velocities, accelerations []Vec3
-	if c.Diagnostics {
+	if c.Diagnostics || canal && c.SurfaceDiagnostics {
 		velocities, accelerations = make([]Vec3, n+1), make([]Vec3, n+1)
 	}
 	for i := 0; i <= n; i++ {
@@ -258,7 +267,7 @@ func compute(c Request) (Result, error) {
 		tangent := v.unit()
 		tangents[i] = tangent
 		speeds[i] = v.norm()
-		if c.Diagnostics {
+		if velocities != nil {
 			velocities[i], accelerations[i] = v, a
 		}
 		minus, plus := r.sub(tangent.mul(c.Length)), r.add(tangent.mul(c.Length))
@@ -372,7 +381,7 @@ func compute(c Request) (Result, error) {
 		framing := c
 		framing.Frame = c.Canal.frame(c.Frame)
 		frame := frames(framing, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
-		if err := canalSurface(c, &out, radius, frame, tangents, speeds, middles, lo, hi, closed); err != nil {
+		if err := canalSurface(c, &out, radius, frame, tangents, accelerations, speeds, middles, lo, hi, closed); err != nil {
 			return Result{}, err
 		}
 		families := append([][]*Vec3{out.Base}, out.Canal.drawn()...)

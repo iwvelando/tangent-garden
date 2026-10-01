@@ -191,6 +191,13 @@
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
+/* Room for two lines whether or not there is a note, so the controls below
+   stay put as the probe moves. */
+.probe-status {
+  line-height: 1.5;
+  min-height: 3em;
+  margin: 0 0 12px;
+}
 .probe-plot {
   margin: 0 0 12px;
 }

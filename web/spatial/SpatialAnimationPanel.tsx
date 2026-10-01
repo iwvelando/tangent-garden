@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { ProgressSlider } from "../ProgressSlider";
 import type { SpatialAnimation } from "./link";
 import { EngineClient, playbackEngineCount } from "../engine-client";
 import { play } from "../playback";
@@ -18,7 +19,14 @@ import {
   type Viewport,
 } from "./animation";
 import type { Frame } from "./types";
-import { probeIndex, probeReadout } from "./probe";
+import {
+  probeIndex,
+  probeSteps,
+  probeTarget,
+  probeWhere,
+  surfaceTerms,
+  type Probe,
+} from "./probe";
 import type { Layers } from "./renderer";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "../export-quality";
@@ -43,6 +51,8 @@ type Session = {
   mode: AnimationMode;
   // Present only while tracing rays.
   timeline?: Timeline;
+  // Present only while moving the probe: its setup when playback began.
+  probe?: Probe;
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
@@ -55,8 +65,9 @@ type Props = {
   length: number;
   revision: string;
   disabled: boolean;
-  // Whether the parameter probe is on in a study that offers it.
-  probing: boolean;
+  // The parameter probe while it is on in a study that offers it, else
+  // null.
+  probe: Probe | null;
   dark: boolean;
   layers: Layers;
   getCurrentView: () => Viewport | undefined;
@@ -78,7 +89,7 @@ export function SpatialAnimationPanel({
   length,
   revision,
   disabled,
-  probing,
+  probe,
   dark,
   layers,
   getCurrentView,
@@ -89,6 +100,9 @@ export function SpatialAnimationPanel({
   restore,
 }: Props) {
   const [mode, setMode] = useState<AnimationMode>("reveal");
+  const probing = probe !== null;
+  // What a probe animation moves along: the curve, or a surface.
+  const target = frame && probe ? probeTarget(frame.config, probe) : "curve";
   const traceable = frame?.config.format === "rays";
   // Light is traced only in a mirror or interface study; another falls back
   // to revealing.
@@ -299,12 +313,16 @@ export function SpatialAnimationPanel({
       progress: p,
       mode: s.mode,
       complete: p === 1,
-      // Sample 0 at the start and the last sample at the end, exactly.
+      // Sample (or row) 0 at the start and the last at the end, exactly.
       ...(s.mode === "probe" && {
         probe: probeIndex(
           p,
-          s.original.result.diagnostics!.curvature.length - 1,
+          probeSteps(
+            s.original.result,
+            probeTarget(s.original.config, s.probe!),
+          )!,
         ),
+        probeSetup: s.probe,
       }),
     };
   }
@@ -341,7 +359,7 @@ export function SpatialAnimationPanel({
       setLive(`Camera rotation · ${Math.round(view.progress * 360)}°`);
     else if (s.mode === "probe")
       setLive(
-        `Probe at t = ${Number(probeReadout(view.frame.result, view.probe!)!.t.toPrecision(6))}`,
+        `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe!, view.probe!)}`,
       );
     else
       setLive(
@@ -442,10 +460,13 @@ export function SpatialAnimationPanel({
       // The probe moves over the study's own diagnostics, fetched here only
       // if the study was drawn without them.
       let original = frame;
-      if (mode === "probe" && !frame.result.diagnostics) {
-        original = await client.current.computeSpatial(frame.config, {
-          diagnostics: true,
-        });
+      if (mode === "probe" && probeSteps(frame.result, target) === null) {
+        original = await client.current.computeSpatial(
+          frame.config,
+          target === "curve"
+            ? { diagnostics: true }
+            : { surfaceDiagnostics: true },
+        );
         if (epoch.current !== token) return;
       }
       let first = original,
@@ -492,6 +513,7 @@ export function SpatialAnimationPanel({
         final,
         tracks: numeric,
         mode,
+        ...(mode === "probe" && { probe: probe! }),
         camera,
         heldView,
         duration,
@@ -599,7 +621,11 @@ export function SpatialAnimationPanel({
             topic="animation modes"
             help={
               mode === "probe" ? (
-                "Move the probe from the start of the curve to its end, one sample at a time, with its frame, osculating circle and readout. Geometry stays fixed."
+                target === "surface" && frame ? (
+                  `Move the probe along the ${surfaceTerms(frame.config).surface} from its first ${surfaceTerms(frame.config).along} to its last, one row at a time at its ${surfaceTerms(frame.config).around}, with its principal directions, circles and readout. Geometry stays fixed.`
+                ) : (
+                  "Move the probe from the start of the curve to its end, one sample at a time, with its frame, osculating circle and readout. Geometry stays fixed."
+                )
               ) : mode === "trace" ? (
                 "Send light from the source, or in from past the edge of the view for parallel light, to the surface and on. Each caustic point appears as its ray reaches it. Light slows to c/n in each medium, so wavefronts stay together."
               ) : mode === "orbit" ? (
@@ -636,7 +662,11 @@ export function SpatialAnimationPanel({
               <option value="orbit">Orbit the study</option>
               {traceable && <option value="trace">Trace rays</option>}
               {probing && (
-                <option value="probe">Move the probe along the curve</option>
+                <option value="probe">
+                  {target === "surface" && frame
+                    ? `Move the probe along the ${surfaceTerms(frame.config).surface}`
+                    : "Move the probe along the curve"}
+                </option>
               )}
             </select>
           </Field>
@@ -909,15 +939,10 @@ export function SpatialAnimationPanel({
                 label="Animation progress"
                 value={`${Math.round(progress * 100)}%`}
               >
-                <input
-                  aria-label="Animation progress"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step=".001"
-                  value={progress}
+                <ProgressSlider
+                  progress={progress}
                   disabled={running}
-                  onChange={(e) => void seek(+e.target.value)}
+                  onSeek={(p) => void seek(p)}
                 />
               </Field>
               <div className="note" role="status" aria-live="off">

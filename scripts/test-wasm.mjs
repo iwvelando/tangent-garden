@@ -1317,7 +1317,7 @@ console.log(
 // Canal surface: spheres of radius 0.5ρ(t) centred on a circle of radius 2.
 // With ρ = 1 the envelope is the torus (√(x² + y²) − 2)² + z² = 1/4; a
 // profile that grows faster than the centre moves has no real envelope.
-const spatialCanal = (canal, frame = {}) =>
+const spatialCanal = (canal, frame = {}, study = {}) =>
   JSON.parse(
     tangentGardenSpatial(
       JSON.stringify({
@@ -1349,12 +1349,42 @@ const spatialCanal = (canal, frame = {}) =>
         },
         samples: 480,
         lines: 24,
+        ...study,
       }),
     ),
   );
 {
   const torus = spatialCanal({});
   const q = torus.canal;
+  // The surface probe: around each contact circle κ = −1/R, focused on the
+  // core circle; across it, −cos v/(2 + 0.5 cos v) on the torus.
+  assert.equal(torus.surfaceDiagnostics, undefined);
+  const probe = spatialCanal(
+    {},
+    {},
+    { surfaceDiagnostics: true },
+  ).surfaceDiagnostics;
+  assert.equal(probe.kind, "canal");
+  assert.equal(probe.periodic, true);
+  assert.equal(probe.u.length, 481);
+  assert.equal(probe.v.length, 24);
+  probe.points.forEach((row, r) =>
+    row.forEach((p, k) => {
+      const cos = (Math.hypot(p.x, p.y) - 2) / 0.5;
+      assert.ok(Math.abs(probe.curvature[0][r][k] + 2) < 1e-9);
+      assert.ok(
+        Math.abs(probe.curvature[1][r][k] + cos / (2 + 0.5 * cos)) < 1e-6,
+      );
+      const f = probe.focal[0][r][k];
+      assert.ok(
+        Math.abs(Math.hypot(f.x, f.y) - 2) < 1e-9 && Math.abs(f.z) < 1e-9,
+      );
+    }),
+  );
+  assert.deepEqual(
+    [probe.singular, probe.umbilics, probe.unknown, probe.clipped[0]],
+    [0, 0, 0, 0],
+  );
   assert.equal(q.constant, true);
   assert.equal(q.closed, true);
   assert.equal(q.imaginary, 0);
@@ -1559,7 +1589,7 @@ const spatialPursuit = (pursuit, construction = "none") =>
   assert.match(spatialPursuit({ capture: 0 }).error, /capture distance/);
 }
 console.log("WASM spatial pursuit: triangle, capture and validation passed");
-const spatialSurface = (surface) =>
+const spatialSurface = (surface, study = {}) =>
   JSON.parse(
     tangentGardenSpatial(
       JSON.stringify({
@@ -1586,6 +1616,7 @@ const spatialSurface = (surface) =>
           reach: 1,
           ...surface,
         },
+        ...study,
       }),
     ),
   );
@@ -1595,6 +1626,18 @@ const spatialSurface = (surface) =>
   // singularities.
   const round = spatialSurface({});
   const q = round.surface;
+  // Every regular point of the sphere is an umbilic with κ = −1/1.5.
+  assert.equal(round.surfaceDiagnostics, undefined);
+  const umbilic = spatialSurface(
+    {},
+    { surfaceDiagnostics: true },
+  ).surfaceDiagnostics;
+  assert.equal(umbilic.kind, "patch");
+  assert.deepEqual([umbilic.singular, umbilic.umbilics], [74, 37 * 17]);
+  umbilic.curvature.flat(2).forEach((k) => {
+    if (k !== null) assert.ok(Math.abs(k + 1 / 1.5) < 1e-12);
+  });
+  assert.ok(umbilic.direction.flat(2).every((e) => e === null));
   assert.deepEqual(round.base, []);
   assert.equal(q.surface.points.length, 37);
   assert.equal(q.surface.points[0].length, 19);

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ProgressSlider } from "../ProgressSlider";
 import { Field } from "../Field";
 import { useDisclosure } from "../useDisclosure";
 import {
@@ -271,15 +272,10 @@ export function AnimationPanel(p: {
                 label="Animation progress"
                 value={`${Math.round(p.progress * 100)}%`}
               >
-                <input
-                  aria-label="Animation progress"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step=".001"
-                  value={p.progress}
+                <ProgressSlider
+                  progress={p.progress}
                   disabled={running}
-                  onChange={(e) => p.onSeek(+e.target.value)}
+                  onSeek={p.onSeek}
                 />
               </Field>
               <div className="note" role="status" aria-live="off">
