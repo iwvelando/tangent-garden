@@ -49,7 +49,9 @@ type SurfaceDiagnostics struct {
 	Umbilics  int             `json:"umbilics"`
 	Unknown   int             `json:"unknown"`
 	Clipped   [2]int          `json:"clipped"`
-	closed    bool
+	// Light is present only for the outgoing wavefront of a ray study.
+	Light  *LightDiagnostics `json:"light,omitempty"`
+	closed bool
 }
 
 // newSurfaceDiagnostics allocates a grid of rows × columns.

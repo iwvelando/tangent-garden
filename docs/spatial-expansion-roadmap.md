@@ -130,7 +130,7 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 - [x] **Geometric diagnostics.** Done for curves: **Probe the curve** in the 3D notebook, described in `mathematics.md`, `spatial-study.md`, `usage.md` and `architecture.md`. It shows T/N/B glyphs, the osculating circle and the point's construction lines in diagnostic inks, with κ, 1/κ and τ read out and plotted along the curve. Flat samples, unknown τ and centres at infinity are marked, not guessed; see the follow-up notes below.
 - [x] **Surface probe.** Done for surface patches, canal surfaces, and the tangent developable, framed ribbon and ruled surface built on a curve: **Principal curvatures & centres at a point**, with **Describe** choosing the curve or the surface in a canal study. It shows the normal, both principal directions, their normal-section circles and centres, and reads out κ for each branch, 1/κ, K and H, plotted along the row. See `mathematics.md#spatial-principal-curvatures-and-the-surface-probe` and the follow-up notes below.
 - [ ] **Probe follow-ups.**
-  - A surface probe on mirrors. (Done for developable, framed and ruled surfaces; see the follow-up notes below.)
+  - ~~A surface probe on mirrors.~~ Done: the light probe and the mirror probe on mirror and interface studies; see the follow-up notes below.
   - The probe moving while parameters vary, which needs diagnostics for every frame.
   - Construction highlights for the curve probe on canal, harmonic and field studies. The canal's contact circle is drawn by the surface probe, not the curve probe.
   - An exact probe between samples, if snapping proves too coarse.
@@ -706,5 +706,51 @@ Recommended next step, for the user to choose: **adaptive curves** (above), or r
   - On expression curves the differenced r‴ limits accuracy, most for Frenet ribbons, and near the domain's ends.
   - The probe still snaps to its grid, and plots run along t only.
   - Probe lines are depth-tested, so a probe inside a folded sheet, such as the chords' axis point, is mostly hidden.
+
+### Follow-up completed: the light probe on mirrors and interfaces
+
+- Implemented the probe on mirror and interface studies. **Describe → The light** (the default) shows **Wavefront, foci & rays at a point**; **The mirror** or **The interface** is the patch probe of the same surface.
+  - `engine3/rays.go`: `lightProbe` makes `SurfaceDiagnostics` of kind `wavefront` from the samples `rays` already evaluates. The outgoing ray is its normal, μ₁ ≥ μ₂ its curvatures, W's eigenvectors its directions, and the caustic points its focal points, clipped at the caustics' reach. A `LightDiagnostics` block adds incident directions, surface normals, outgoing directions (the totally reflected ray beyond the critical angle) and a state per sample.
+  - The request flag `lightDiagnostics` selects the light, and `surfaceDiagnostics` selects the mirror; both together are refused.
+  - `web/spatial/probe.ts`:
+    - new targets `light` and `mirror`, with `gridded` and `probeOptions`;
+    - a `wavefront` descriptor, with names from `surfaceTerms(config, target)`;
+    - the incident and outgoing rays in `surfaceProbeBatches`;
+    - `lightProbeReadout`, giving θ, θ′, the signed distances to the foci and the astigmatic interval from the returned vectors.
+  - `ProbePanel.tsx` shows that readout in place of K and H.
+- Decisions:
+  - The mirror target is a new value, not `surface`. An older link to a ray study, which had no probe, may carry `surface` from an earlier patch study; naming neither `light` nor `mirror`, it opens with the probe off, as it drew.
+  - Links record the target the probe describes (`probeTarget`), not the last one chosen elsewhere. Otherwise a mirror probed with the default target would have reopened without its probe. This also changes what a patch study's link records when its probe was last set to the curve elsewhere: `surface` instead of `curve`, which opens identically.
+  - A probe plot of a constant series (every value within its resolution) is captioned "constant at" its value. It used to give the ±10% range it is drawn in, which read as data on surfaces of revolution under axial light, where nothing changes along u. This changes existing captions too, such as a developable's "κ along the ruling", now "constant at 0".
+  - Foci are shown as signed distances 1/μ, negative for a virtual focus, rather than with words beside them: the words wrapped and would have moved the controls below as the probe moved.
+  - θ′ comes from the returned ray and normal, given only where the light continues through the surface (`T·n < 0`), so a mirror shows none.
+  - Intended changes to existing behaviour: mirror and interface studies now offer the probe; the curve probe's help says so; `surfaceTerms` and `surfaceProbeHelp` take the target. Requests without the new flags are byte-identical (Go test).
+- Workload: no new evaluation. The light probe reuses the caustics' samples, adding at most 241 × 241 grid entries for its vectors and states, sent only while it is on. The mirror probe evaluates the patch's shape once more per sample, as a surface study does.
+- Permanent docs: `mathematics.md#spatial-wavefronts-and-the-light-probe`, `spatial-study.md` (**Probing the light**), `usage.md`, `architecture.md`, README.
+- Verification:
+  - `engine3/raysprobe_test.go` (8 tests), written first and observed failing to build without the new fields. It covers:
+    - the bowl against Coddington's μ_t and μ_s and their directions;
+    - the paraboloid's stigmatic focus and its unlit back;
+    - the plane mirror's virtual image and a source on the mirror;
+    - the plane interface both ways against the closed form, with Snell's law from the returned rays;
+    - total internal reflection;
+    - foci equal to the caustic sheets' points with matching counts on a torus, a lamp in an ellipsoid and a refracting monkey saddle;
+    - the mirror target against the surface study's probe, byte for byte;
+    - the flags.
+  - `TestSurfaceDiagnosticsOffLeaveResultsUnchanged` now expects a ray study's probe.
+  - `scripts/test-wasm.mjs` checks the paraboloid's light probe, the plane mirror's image, the mirror probe and the refusal through the real bridge.
+  - `tests/spatial-surface-probe.spec.ts`:
+    - unit tests for targets, words and help, the drawing on a hand-built grid (rays, circles, a source, total reflection, unlit, singular and clipped points), the readout and steps/records;
+    - browser tests: the bowl against Coddington and its umbilic mirror, with export metadata and a link reopening the light; the lamp in water at the axis, off it against the plane's closed form and Snell's law, and beyond the critical angle; probe playback endpoints and Stop.
+    - The three browser tests were run against a build of `main` and failed there.
+  - `tests/study-link.spec.ts` covers round trips with both targets and older ray links. `tests/layout.spec.ts` sweeps the light and mirror pairs at both widths.
+  - `make check` passed (engine3 coverage 98.9%). The full Chromium run (873 tests) had three failures. Two were existing tests asserting that a mirror has no probe; they were updated to the intended behaviour. The third was the smoke test's compression check, which applies only to a deployed site and fired because the run pointed `BASE_URL` at a local preview. After the readout change, the affected specs (probe, playback, surface probe, layout, links, gallery: 93 tests) and the smoke test without `BASE_URL` all passed. Light and dark desktop and phone-width panels and drawings of the bowl and the lamp in water were inspected. WebKit was not run, since no rendering or encoding path changed.
+  - Mutation runs:
+    - Go, through compiler overlays: 15 faults (focus reach, μ sign, stigmatic directions, incident plumbing, total reflection, outgoing ray, stigmatic and singular counts, length, both flags, at-source and unlit states, the mirror's scale, clipping against the study radius, branch swap). 14 were detected. The survivor doubles the scale behind the mirror probe's umbilic tolerance, which no tested surface sits near.
+    - TypeScript: 14 faults in `probe.ts` and `link.ts` (target order, request flag, θ′ side, virtual side, stigmatic interval, source start, ray length, duplicated ray, the old-link rule, step kind, medium name, state order, unlit angle, record target). All were detected.
+- Limits:
+  - The probe snaps to the mirror's grid, as the caustics do.
+  - Its lines are depth-tested, so inside the bowl the opaque caustic sheet hides most of the rays; hide the caustics to see them.
+  - Only the light leaving the surface is described: the incident wavefront and the totally reflected wavefront have no curvatures here.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

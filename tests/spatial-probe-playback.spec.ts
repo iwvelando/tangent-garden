@@ -74,11 +74,12 @@ test("probe playback is offered only while the probe is on", async ({
   await seek(page, "0.5");
   await button(page, "Stop").click();
   await expect(stage(page)).not.toHaveAttribute("data-mode");
-  // So does a study without a probe, and it stays away there.
+  // So does a study without a probe, and it stays away there. A mirror
+  // now has a probe (its light), so an implicit surface stands in.
   await probeSwitch(page).check();
   await settled(page);
   await mode(page).selectOption("probe");
-  await choosePreset(page, { label: "A paraboloid gathering light" });
+  await choosePreset(page, { label: "A sphere and its latitudes" });
   await settled(page);
   await expect(mode(page)).toHaveValue("reveal");
   expect(await options(page)).not.toContain("probe");

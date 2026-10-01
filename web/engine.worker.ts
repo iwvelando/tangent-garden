@@ -55,6 +55,9 @@ self.onmessage = async ({
   diagnostics?: boolean;
   // Asks Go for a surface's diagnostics (see engine3.SurfaceDiagnostics).
   surfaceDiagnostics?: boolean;
+  // Asks Go for the light leaving a mirror or interface (see
+  // engine3.LightDiagnostics).
+  lightDiagnostics?: boolean;
   base: string;
 }>) => {
   try {
@@ -520,6 +523,7 @@ self.onmessage = async ({
           ...data.spatial,
           ...(data.diagnostics && { diagnostics: true }),
           ...(data.surfaceDiagnostics && { surfaceDiagnostics: true }),
+          ...(data.lightDiagnostics && { lightDiagnostics: true }),
         }),
       );
       if (typeof reply !== "string") {

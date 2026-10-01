@@ -13,9 +13,20 @@ import type {
   Vec3,
 } from "./types";
 
-// What the probe describes: the base curve, or a surface (a patch, or the
-// canal built on the curve).
-export type ProbeTarget = "curve" | "surface";
+// What the probe describes: the base curve, a surface (a patch, or the
+// canal built on the curve), or in a mirror or interface study the light
+// leaving it or the mirror itself.
+export type ProbeTarget = "curve" | "surface" | "light" | "mirror";
+// Whether the probe stands on a grid of rows and columns (a surface, the
+// light or the mirror) rather than on the curve's samples.
+export const gridded = (t: ProbeTarget) => t !== "curve";
+// What a study asks Go for to probe the target (see SpatialOptions).
+export const probeOptions = (t: ProbeTarget) =>
+  t === "curve"
+    ? { diagnostics: true }
+    : t === "light"
+      ? { lightDiagnostics: true }
+      : { surfaceDiagnostics: true };
 // The probe's place as fractions, so that it survives edits to the domain
 // and sample count: along the base's samples (or a surface's rows, along
 // t or u) and, on a surface, across its columns (around θ, or along v).
@@ -109,7 +120,8 @@ const surfaces: Partial<Record<SpatialConfig["construction"], string>> = {
 // The kind of surface the surface probe describes in a study, as Go names
 // it (engine3.SurfaceDiagnostics), or null where it describes none: a
 // patch, or the canal, tangent developable, ruled surface or framed ribbon
-// (while it has a width) built on a curve.
+// (while it has a width) built on a curve. A mirror or interface study
+// offers the light and the mirror instead (see raysKind).
 export function surfaceKind(c: SpatialConfig): SurfaceKind | null {
   if (c.format === "surface") return "patch";
   if (c.format === "rays" || c.format === "implicit") return null;
@@ -135,10 +147,13 @@ export function probeSupport(c: SpatialConfig): {
 } {
   const curve =
     c.format !== "surface" && c.format !== "rays" && c.format !== "implicit";
-  const targets: ProbeTarget[] = [
-    ...(curve ? (["curve"] as const) : []),
-    ...(surfaceKind(c) ? (["surface"] as const) : []),
-  ];
+  const targets: ProbeTarget[] =
+    c.format === "rays"
+      ? ["light", "mirror"]
+      : [
+          ...(curve ? (["curve"] as const) : []),
+          ...(surfaceKind(c) ? (["surface"] as const) : []),
+        ];
   const names = [
     constructions[c.construction]?.name,
     c.format === "pursuit" ? "the connecting polygon at its time" : undefined,
@@ -258,7 +273,10 @@ export function probeReadout(result: SpatialResult, j: number) {
 // range (for κ ≥ 0). A series whose range is within resolution (by default
 // none) is drawn as constant, so that rounding noise in a value known to be
 // fixed, such as the zero curvature along a developable's ruling, does not
-// fill the plot; within resolution of 0 it is drawn as zero.
+// fill the plot; within resolution of 0 it is drawn as zero. constant is
+// that value when every known value lies within resolution of the others
+// (or all are equal), so nothing is pinned, and null otherwise: a constant
+// series is drawn in a padded range, which is not the data's.
 export function plotScale(
   values: (number | null)[],
   fromZero: boolean,
@@ -269,6 +287,13 @@ export function plotScale(
     .sort((a, b) => a - b);
   let lo = known[0] ?? 0,
     hi = known.at(-1) ?? 1;
+  const centre = (lo + hi) / 2;
+  const constant =
+    known.length && hi - lo <= resolution
+      ? Math.abs(centre) <= resolution
+        ? 0
+        : centre
+      : null;
   if (known.length >= 8) {
     const q1 = known[Math.floor(known.length / 4)],
       q3 = known[Math.floor((3 * known.length) / 4)],
@@ -302,7 +327,7 @@ export function plotScale(
     run.push([i, Math.min(hi, Math.max(lo, v))]);
   });
   if (run.length) runs.push(run);
-  return { lo, hi, runs, pinned };
+  return { lo, hi, runs, pinned, constant };
 }
 
 // Whether the base is straight: every known curvature is zero, so no sample
@@ -334,8 +359,13 @@ type SurfaceKind = SurfaceDiagnostics["kind"];
 // and a ruled surface number κ₁ ≥ κ₂ and a canal and a developable name by
 // line of curvature, what it draws through the point (beside the point's
 // mark), where it has no point, why a curvature can be unknown, and help
-// stating the grid and conventions the engine uses.
+// stating the grid and conventions the engine uses. The switch, the normal
+// line's legend and each branch's legend name what is drawn: a surface's
+// principal curvatures, or the light's wavefront and foci.
 type SurfaceTerms = {
+  switch: string;
+  normal: string;
+  legend: string;
   surface: string;
   along: string;
   around: string;
@@ -348,7 +378,13 @@ type SurfaceTerms = {
   help: string;
 };
 const rows = "(at most 481, so more samples give finer steps up to that)";
+const curvatureWords = {
+  switch: "Principal curvatures & centres at a point",
+  normal: "Normal",
+  legend: "direction, circle & centre",
+} as const;
 const ruledTerms = {
+  ...curvatureWords,
   along: "t",
   around: "u",
   through: "ruling",
@@ -356,6 +392,7 @@ const ruledTerms = {
 } as const;
 const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
   patch: {
+    ...curvatureWords,
     surface: "surface",
     along: "u",
     around: "v",
@@ -368,6 +405,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     help: "Moves between the patch's own grid samples (more u and v samples give finer steps). Its principal curvatures are numbered κ₁ ≥ κ₂ with the chosen normal, as the focal sheets are",
   },
   canal: {
+    ...curvatureWords,
     surface: "canal surface",
     along: "t",
     around: "θ − θ₀",
@@ -407,16 +445,85 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     unknown: "where a thread's second derivative is unstable",
     help: `Moves between the surface's rows along t ${rows} and 25 points along each ruling, from the curve (u = 0) to its partner (u = 1). The normal is S_t × S_u, as drawn. A ruled surface has K ≤ 0, with K = 0 exactly where it is developable; where the threads meet the surface pinches and has no normal. Its principal curvatures are numbered κ₁ ≥ κ₂`,
   },
+  // The light leaving a mirror or interface, whose name surfaceTerms
+  // supplies. Its help is the whole of the switch's help (see
+  // surfaceProbeHelp).
+  wavefront: {
+    switch: "Wavefront, foci & rays at a point",
+    normal: "Rays in and out",
+    legend: "direction, wavefront circle & focus",
+    surface: "mirror",
+    along: "u",
+    around: "v",
+    branches: ["μ₁", "μ₂"],
+    sliders: ["Along u", "Along v"],
+    through: "",
+    missing: "The patch has no point here.",
+    unknownBranch: "μ₂ is",
+    unknown: "where its derivatives are unstable",
+    help: "",
+  },
 };
 
-// The surface probe's words for the study's surface.
-export function surfaceTerms(c: SpatialConfig): SurfaceTerms {
+// The mirror or interface a ray study lights.
+const medium = (c: SpatialConfig) =>
+  c.rays.interaction === "refract" ? "interface" : "mirror";
+
+// The surface probe's words for what it describes in the study: its
+// surface, or in a mirror or interface study the light leaving it or the
+// mirror itself, named as such.
+export function surfaceTerms(
+  c: SpatialConfig,
+  target: ProbeTarget,
+): SurfaceTerms {
+  if (c.format === "rays")
+    return {
+      ...surfaceTermsByKind[target === "light" ? "wavefront" : "patch"],
+      surface: medium(c),
+    };
   return surfaceTermsByKind[surfaceKind(c) ?? "patch"];
 }
 
-// The help beside the probe's switch for a surface.
-export function surfaceProbeHelp(c: SpatialConfig) {
-  const t = surfaceTerms(c);
+// What the Describe menu calls each target, and its help.
+export function targetName(c: SpatialConfig, t: ProbeTarget) {
+  return t === "curve"
+    ? "The curve"
+    : t === "light"
+      ? "The light"
+      : t === "mirror"
+        ? `The ${medium(c)}`
+        : "The surface";
+}
+export function describeHelp(c: SpatialConfig) {
+  return c.format === "rays"
+    ? `The light: the incident and outgoing rays, and the outgoing wavefront's principal directions, curvatures and foci, which lie on the caustics. The ${medium(c)}: its own principal directions, curvatures and centres. Both stand at the same sample.`
+    : `The curve: its Frenet frame, curvature and torsion. The surface: the ${surfaceTerms(c, "surface").surface}'s principal directions, curvatures and centres. Both stand at the same place along t.`;
+}
+
+// The probe's legend: what it can describe in the study.
+export function probeLegend(c: SpatialConfig, target: ProbeTarget) {
+  const { targets } = probeSupport(c);
+  if (c.format === "rays") return `Probe the light or ${medium(c)}`;
+  if (targets.length > 1) return "Probe the curve or surface";
+  return target === "surface" ? "Probe the surface" : "Probe the curve";
+}
+
+// The help beside the probe's switch for a surface, the light or a
+// mirror.
+export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
+  const t = surfaceTerms(c, target);
+  if (target === "light") {
+    const m = t.surface;
+    return `Describes the light leaving the ${m} at a point: its incident ray, its outgoing ray, and the outgoing wavefront there, which is perpendicular to the ray. Moves between the ${m}'s own grid samples (more u and v samples give finer steps), the samples its caustics are found at. The wavefront's principal curvatures are numbered μ₁ ≥ μ₂, each with its direction across the ray, and each focuses the light at X + R/μ, on the caustic of the same number: a real focus ahead of the ${m} where μ > 0, a virtual one behind it where μ < 0, on the ray's extension. The readout gives each focus's signed distance 1/μ along the ray, negative for a virtual focus, and the astigmatic interval between the two. Each branch's circle of radius 1/|μ| through the point, centred on its focus, is the wavefront's normal section. Where μ₁ = μ₂ the point is stigmatic: both foci coincide and no direction is drawn. A focus beyond 100 study radii is at infinity, as on the caustics, and its circle is not drawn. θ is the angle of incidence from the ${m}'s normal${
+      c.rays.interaction === "refract"
+        ? ", and θ′ the angle of transmission"
+        : ""
+    }. The source itself, unlit points (where the light grazes the ${m} or arrives behind it)${
+      c.rays.interaction === "refract"
+        ? " and points beyond the critical angle, where the light is totally reflected and nothing is transmitted,"
+        : ""
+    } have no outgoing wavefront. Animations and their exports show it only when they move it ("Move the probe along the ${m}"); still images include it.`;
+  }
   return `Describes the ${t.surface} at a point: its normal, its two principal directions, and their normal-section circles of radius 1/|κ| through the point, centred on the focal points (the centres of curvature) on the normal line. ${t.help}. Curvatures use A = −dn, so a sphere with its outward normal has κ = −1/R. Where a centre lies beyond 100 study radii it is at infinity and its circle is not drawn; at an umbilic every direction is principal and none is drawn; where the surface is singular there is no normal. Animations and their exports show it only when they move it ("Move the probe along the ${t.surface}"); still images include it.`;
 }
 
@@ -454,6 +561,10 @@ const plus = (p: Vec3, d: Vec3, s: number) => ({
 // the point and both finite focal points, and for each branch its direction
 // glyph, a cross at its focal point and its normal-section circle in the
 // plane of n and its direction. Nothing where the surface has no point.
+// The light's wavefront is drawn the same way about its normal, the
+// outgoing ray, which runs at least the study's ray length ℓ and back to a
+// virtual focus; the incident ray, from the source or ℓ back, joins it in
+// the same ink, as does a totally reflected ray.
 export function surfaceProbeBatches(
   result: SpatialResult,
   row: number,
@@ -483,10 +594,22 @@ export function surfaceProbeBatches(
     if (known.length > 1) marked.push(known[0], known.at(-1)!);
   }
   const out = [lines(marked, probeInk.mark)];
-  const n = d.normals[row][column];
+  const light = d.light,
+    n = d.normals[row][column];
+  if (light) {
+    const rays: Vec3[] = [],
+      length = light.length,
+      incident = light.incident[row][column],
+      outgoing = light.outgoing[row][column];
+    if (incident)
+      rays.push(result.rays?.source ?? plus(p, incident, -length), p);
+    if (outgoing && !n) rays.push(p, plus(p, outgoing, length));
+    if (rays.length) out.push(lines(rays, probeInk.normal));
+  }
   if (!n) return out;
-  // The normal line spans the point, its glyph and both finite centres.
-  const reach = [0, glyph];
+  // The normal line spans the point, its glyph and both finite centres;
+  // the outgoing ray also spans ℓ.
+  const reach = [0, glyph, ...(light ? [light.length] : [])];
   for (const b of [0, 1] as const) {
     const k = d.curvature[b][row][column];
     if (k && d.focal[b][row][column]) reach.push(1 / k);
@@ -557,12 +680,68 @@ export function surfaceProbeReadout(
   };
 }
 
+// The light's numbers at grid sample (row, column): its state (see
+// engine3.LightDiagnostics), each branch's μ and signed distance 1/μ along
+// the outgoing ray to its focus (null where μ is 0; infinite where the
+// focus is at infinity; virtual where it lies behind the surface), whether
+// the point is stigmatic, the astigmatic interval |1/μ₁ − 1/μ₂| between
+// the foci (0 where stigmatic, null where a focus is at infinity), the
+// angle of incidence θ from the surface's normal and, refracting, the
+// angle of transmission θ′, in degrees. Null without the light's
+// diagnostics.
+export function lightProbeReadout(
+  result: SpatialResult,
+  row: number,
+  column: number,
+) {
+  const d = result.surfaceDiagnostics,
+    light = d?.light;
+  if (!d || !light) return null;
+  const state = lightStates[light.state[row]?.[column] ?? 4],
+    incident = light.incident[row]?.[column],
+    normal = light.surface[row]?.[column],
+    ray = d.normals[row]?.[column] ?? null;
+  const mu = [0, 1].map((b) => d.curvature[b][row]?.[column] ?? null);
+  const infinite = mu.map((m, b) => m !== null && !d.focal[b][row][column]);
+  const distance = mu.map((m) => (m ? 1 / m : null));
+  const stigmatic = ray !== null && !d.direction[0][row][column];
+  const degrees = (cos: number) =>
+    (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI;
+  return {
+    u: d.u[row],
+    v: d.v[column],
+    state,
+    curvature: mu,
+    distance,
+    infinite,
+    virtual: mu.map((m, b) => m !== null && m < 0 && !infinite[b]),
+    stigmatic,
+    interval: stigmatic
+      ? 0
+      : infinite.some(Boolean) || distance.some((x) => x === null)
+        ? null
+        : Math.abs(distance[0]! - distance[1]!),
+    theta:
+      incident && normal && state !== "unlit"
+        ? degrees(-dot(incident, normal))
+        : null,
+    // Light that continues through the interface leaves against its normal.
+    thetaPrime:
+      ray && normal && dot(ray, normal) < 0 ? degrees(-dot(ray, normal)) : null,
+  };
+}
+// engine3's light states, in order.
+const lightStates = ["traced", "unlit", "total", "source", "singular"] as const;
+const dot = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
+
 // The steps the probe moves through in a result: the base's samples or the
-// surface's rows. Null without the diagnostics it needs.
+// grid's rows. Null without the diagnostics the target needs: the light's
+// for the light, a surface's for a surface or mirror.
 export function probeSteps(result: SpatialResult, target: ProbeTarget) {
-  if (target === "surface")
-    return result.surfaceDiagnostics
-      ? result.surfaceDiagnostics.u.length - 1
+  const d = result.surfaceDiagnostics;
+  if (gridded(target))
+    return d && (target === "light") === (d.kind === "wavefront")
+      ? d.u.length - 1
       : null;
   return result.diagnostics ? result.diagnostics.curvature.length - 1 : null;
 }
@@ -598,7 +777,13 @@ export function probeRecord(
     return { index: i, t: probeReadout(result, i)!.t };
   const d = result.surfaceDiagnostics!,
     { column } = surfaceProbeAt(d, 0, probe.across);
-  return { target: "surface", row: i, column, u: d.u[i], v: d.v[column] };
+  return {
+    target: probeTarget(config, probe),
+    row: i,
+    column,
+    u: d.u[i],
+    v: d.v[column],
+  };
 }
 
 // Where the probe stands, by its parameter values, for a live summary.
@@ -612,6 +797,6 @@ export function probeWhere(
   if (probeTarget(config, probe) === "curve")
     return `t = ${short(probeReadout(result, i)!.t)}`;
   const r = probeRecord(result, config, probe, i) as { u: number; v: number },
-    t = surfaceTerms(config);
+    t = surfaceTerms(config, probeTarget(config, probe));
   return `${t.along} = ${short(r.u)}, ${t.around} = ${short(r.v)}`;
 }

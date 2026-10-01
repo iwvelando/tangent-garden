@@ -92,6 +92,8 @@ import {
   probeSteps,
   probeSupport,
   probeTarget,
+  gridded,
+  probeOptions,
   surfaceProbeAt,
   type Probe,
 } from "./probe";
@@ -181,8 +183,7 @@ export default function SpatialApp({
     const timer = setTimeout(() => {
       client
         .current!.computeSpatial(config, {
-          diagnostics: probing && target === "curve",
-          surfaceDiagnostics: probing && target === "surface",
+          ...(probing ? probeOptions(target) : {}),
         })
         .then((value) => {
           if (current) {
@@ -286,7 +287,9 @@ export default function SpatialApp({
     layers,
     view: manualCamera.current,
     animation: animationSettings.current ?? defaultAnimation,
-    probe,
+    // What the probe describes, not the target last chosen elsewhere, so
+    // that a mirror's link names the light or the mirror.
+    probe: { ...probe, target: probeTarget(config, probe) },
   });
   async function definition(format: SpatialConfig["format"]) {
     const token = generation.current;
@@ -1191,7 +1194,7 @@ export default function SpatialApp({
   const probeAt = moving
     ? moving.probe!
     : probeFrame
-      ? probeTarget(probeFrame.config, probe) === "surface"
+      ? gridded(probeTarget(probeFrame.config, probe))
         ? surfaceProbeAt(
             probeFrame.result.surfaceDiagnostics!,
             probe.position,

@@ -25,6 +25,8 @@ import {
   probeTarget,
   probeWhere,
   surfaceTerms,
+  gridded,
+  probeOptions,
   type Probe,
 } from "./probe";
 import type { Layers } from "./renderer";
@@ -463,9 +465,7 @@ export function SpatialAnimationPanel({
       if (mode === "probe" && probeSteps(frame.result, target) === null) {
         original = await client.current.computeSpatial(
           frame.config,
-          target === "curve"
-            ? { diagnostics: true }
-            : { surfaceDiagnostics: true },
+          probeOptions(target),
         );
         if (epoch.current !== token) return;
       }
@@ -621,8 +621,8 @@ export function SpatialAnimationPanel({
             topic="animation modes"
             help={
               mode === "probe" ? (
-                target === "surface" && frame ? (
-                  `Move the probe along the ${surfaceTerms(frame.config).surface} from its first ${surfaceTerms(frame.config).along} to its last, one row at a time at its ${surfaceTerms(frame.config).around}, with its principal directions, circles and readout. Geometry stays fixed.`
+                gridded(target) && frame ? (
+                  `Move the probe along the ${surfaceTerms(frame.config, target).surface} from its first ${surfaceTerms(frame.config, target).along} to its last, one row at a time at its ${surfaceTerms(frame.config, target).around}, with its principal directions, circles and readout. Geometry stays fixed.`
                 ) : (
                   "Move the probe from the start of the curve to its end, one sample at a time, with its frame, osculating circle and readout. Geometry stays fixed."
                 )
@@ -663,8 +663,8 @@ export function SpatialAnimationPanel({
               {traceable && <option value="trace">Trace rays</option>}
               {probing && (
                 <option value="probe">
-                  {target === "surface" && frame
-                    ? `Move the probe along the ${surfaceTerms(frame.config).surface}`
+                  {gridded(target) && frame
+                    ? `Move the probe along the ${surfaceTerms(frame.config, target).surface}`
                     : "Move the probe along the curve"}
                 </option>
               )}

@@ -1,7 +1,11 @@
 import { Field, HelpText, HelpToggle, useHelp } from "../Field";
 import { hex, lineColor } from "./palette";
 import {
+  describeHelp,
+  gridded,
+  lightProbeReadout,
   plotScale,
+  probeLegend,
   probeHelp,
   probeIndex,
   probeInk,
@@ -15,10 +19,11 @@ import {
   surfaceProbeHelp,
   surfaceProbeReadout,
   surfaceTerms,
+  targetName,
   type Probe,
   type ProbeTarget,
 } from "./probe";
-import type { Frame, SpatialConfig } from "./types";
+import type { Frame, SpatialConfig, SurfaceDiagnostics } from "./types";
 
 // Four significant figures: τ from expressions or an integrated path is
 // differenced numerically to about 10⁻⁵ relative accuracy.
@@ -46,7 +51,11 @@ function Plot({
   dark: boolean;
   resolution?: number;
 }) {
-  const { lo, hi, runs, pinned } = plotScale(values, fromZero, resolution);
+  const { lo, hi, runs, pinned, constant } = plotScale(
+    values,
+    fromZero,
+    resolution,
+  );
   if (!runs.length)
     return (
       <p className="spatial-caption">{label} is undefined at every sample.</p>
@@ -57,7 +66,9 @@ function Plot({
   return (
     <figure className="probe-plot">
       <figcaption>
-        {label} from {short(lo)} to {short(hi)}
+        {constant !== null
+          ? `${label}: constant at ${short(constant)}`
+          : `${label} from ${short(lo)} to ${short(hi)}`}
         {pinned > 0 &&
           `; ${count(pinned, "sample", "samples")} beyond, pinned to the edge`}
       </figcaption>
@@ -125,22 +136,13 @@ export function ProbePanel({
   });
   return (
     <fieldset className="spatial-probe">
-      <legend>
-        {both
-          ? "Probe the curve or surface"
-          : target === "surface"
-            ? "Probe the surface"
-            : "Probe the curve"}
-      </legend>
+      <legend>{probeLegend(config, target)}</legend>
       {/* Content that comes and goes stays inside this wrapper: Chromium
           ends a slider's drag when a child is inserted directly into its
           fieldset. */}
       <div>
         {both && (
-          <Field
-            label="Describe"
-            help={`The curve: its Frenet frame, curvature and torsion. The surface: the ${surfaceTerms(config).surface}'s principal directions, curvatures and centres. Both stand at the same place along t.`}
-          >
+          <Field label="Describe" help={describeHelp(config)}>
             <select
               value={target}
               disabled={moving !== undefined}
@@ -149,8 +151,11 @@ export function ProbePanel({
                 onProbe((p) => ({ ...p, target }));
               }}
             >
-              <option value="curve">The curve</option>
-              <option value="surface">The surface</option>
+              {support.targets.map((t) => (
+                <option key={t} value={t}>
+                  {targetName(config, t)}
+                </option>
+              ))}
             </select>
           </Field>
         )}
@@ -164,16 +169,18 @@ export function ProbePanel({
                 onProbe((p) => ({ ...p, enabled }));
               }}
             />
-            {target === "surface"
-              ? "Principal curvatures & centres at a point"
+            {gridded(target)
+              ? surfaceTerms(config, target).switch
               : "Frame, curvature & torsion at a point"}
           </label>
           <HelpToggle topic="the probe" help={help} />
         </div>
         <HelpText help={help}>
-          {target === "surface" ? surfaceProbeHelp(config) : probeHelp(config)}
+          {gridded(target)
+            ? surfaceProbeHelp(config, target)
+            : probeHelp(config)}
         </HelpText>
-        {probe.enabled && target === "surface" && (
+        {probe.enabled && gridded(target) && (
           <SurfaceProbe
             config={config}
             frame={frame}
@@ -343,13 +350,16 @@ function SurfaceProbe({
         The probe returns when the animation stops.
       </p>
     );
+  const target = probeTarget(config, probe);
   if (!frame || !d)
     return (
       <p className="spatial-caption">
-        Finding the principal curvatures and centres…
+        {target === "light"
+          ? "Finding the light's wavefront and foci…"
+          : "Finding the principal curvatures and centres…"}
       </p>
     );
-  const terms = surfaceTerms(frame.config);
+  const terms = surfaceTerms(frame.config, probeTarget(frame.config, probe));
   const rows = d.u.length - 1,
     columns = d.v.length;
   const place = surfaceProbeAt(d, probe.position, probe.across);
@@ -418,47 +428,194 @@ function SurfaceProbe({
           />
         </Field>
       </div>
-      {/* Always four rows and a two-line status, so that the controls
+      {d.light ? (
+        <LightReadout
+          frame={frame}
+          d={d}
+          row={row}
+          column={column}
+          dark={dark}
+        />
+      ) : (
+        <>
+          {/* Always four rows and a two-line status, so that the controls
           below never move as the probe crosses a gap or a singular point,
           as it does during probe playback. */}
+          <dl className="probe-readout">
+            <dt>{terms.branches[0]}</dt>
+            <dd>{value(r.curvature[0])}</dd>
+            <dt>{terms.branches[1]}</dt>
+            <dd>{value(r.curvature[1])}</dd>
+            <dt>Radii 1/κ</dt>
+            <dd>
+              {blank
+                ? "—"
+                : r.radius
+                    .map((x, b) =>
+                      r.curvature[b] === null
+                        ? "unknown"
+                        : x === null || r.infinite[b]
+                          ? "∞"
+                          : short(x),
+                    )
+                    .join(", ")}
+            </dd>
+            <dt>Gaussian K, mean H</dt>
+            <dd>
+              {blank
+                ? "—"
+                : r.gauss === null || r.mean === null
+                  ? "unknown here"
+                  : `${short(r.gauss)}, ${short(r.mean)}`}
+            </dd>
+          </dl>
+          <p
+            className="spatial-caption probe-status"
+            data-testid="probe-status"
+          >
+            {r.missing
+              ? terms.missing
+              : r.singular
+                ? "Singular here: no normal or principal curvatures."
+                : r.umbilic
+                  ? "An umbilic: every direction is principal, so none is drawn."
+                  : r.infinite.some(Boolean)
+                    ? "A centre lies beyond 100 study radii, at infinity: its circle is not drawn."
+                    : ""}
+          </p>
+          {[0, 1].map((b) => (
+            <Plot
+              key={b}
+              values={d.curvature[b].map((line) => line[column])}
+              fromZero={false}
+              at={row}
+              label={`${terms.branches[b]} along ${terms.along}`}
+              dark={dark}
+              resolution={resolution}
+            />
+          ))}
+          <ul className="probe-legend">
+            <li>
+              <span className="probe-dot" style={swatch(probeInk.normal)} />
+              Normal
+            </li>
+            {[0, 1].map((b) => (
+              <li key={b}>
+                <span className="probe-dot" style={swatch(surfaceInk[b])} />
+                {terms.branches[b]}: direction, circle & centre
+              </li>
+            ))}
+            <li>
+              <span className="probe-dot" style={swatch(probeInk.mark)} />
+              Point
+              {terms.through ? ` & ${terms.through}` : ""}
+            </li>
+          </ul>
+          {(d.singular > 0 ||
+            d.umbilics > 0 ||
+            d.unknown > 0 ||
+            d.clipped[0] > 0 ||
+            d.clipped[1] > 0) && (
+            <p className="spatial-caption probe-notes">
+              {[
+                d.singular > 0 &&
+                  `${count(d.singular, "point is", "points are")} singular, without a normal`,
+                d.umbilics > 0 &&
+                  `${count(d.umbilics, "point is an umbilic", "points are umbilics")}`,
+                d.unknown > 0 &&
+                  `${terms.unknownBranch} unknown at ${count(d.unknown, "point", "points")}, ${terms.unknown}`,
+                ...[0, 1].map(
+                  (b) =>
+                    d.clipped[b] > 0 &&
+                    `${count(d.clipped[b], "centre", "centres")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
+                ),
+              ]
+                .filter(Boolean)
+                .join("; ")}
+              .
+            </p>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+// The light probe's readout at grid sample (row, column): the outgoing
+// wavefront's curvatures, the signed distances along the ray to its foci,
+// the astigmatic interval between them and the angles at the surface,
+// then a status, the curvatures along the row, the legend and the
+// study's counts.
+function LightReadout({
+  frame,
+  d,
+  row,
+  column,
+  dark,
+}: {
+  frame: Frame;
+  d: SurfaceDiagnostics;
+  row: number;
+  column: number;
+  dark: boolean;
+}) {
+  const r = lightProbeReadout(frame.result, row, column)!,
+    light = d.light!,
+    terms = surfaceTerms(frame.config, "light"),
+    m = terms.surface,
+    refract = frame.config.rays.interaction === "refract";
+  const swatch = (ink: number) => ({
+    background: hex(lineColor(ink, 0, dark)),
+  });
+  // As the surface probe's plots, ignoring variation below 10⁻⁴ of the
+  // column's largest curvature.
+  const resolution =
+    1e-4 *
+    Math.max(
+      0,
+      ...[0, 1].flatMap((b) =>
+        d.curvature[b].map((line) => Math.abs(line[column] ?? 0)),
+      ),
+    );
+  // Nothing leaves the point: every value but the angle is blank.
+  const blank = r.state !== "traced";
+  // Signed along the ray: a virtual focus, behind the surface, is negative.
+  const focus = (b: number) =>
+    r.infinite[b] || r.distance[b] === null ? "∞" : short(r.distance[b]!);
+  const angle = (x: number | null) => (x === null ? "—" : `${short(x)}°`);
+  return (
+    <>
+      {/* Always five rows and a two-line status, as the surface probe's. */}
       <dl className="probe-readout">
         <dt>{terms.branches[0]}</dt>
-        <dd>{value(r.curvature[0])}</dd>
+        <dd>{blank ? "—" : short(r.curvature[0]!)}</dd>
         <dt>{terms.branches[1]}</dt>
-        <dd>{value(r.curvature[1])}</dd>
-        <dt>Radii 1/κ</dt>
+        <dd>{blank ? "—" : short(r.curvature[1]!)}</dd>
+        <dt>Foci 1/μ along the ray</dt>
+        <dd>{blank ? "—" : `${focus(0)}, ${focus(1)}`}</dd>
+        <dt>Astigmatic interval</dt>
+        <dd>{blank ? "—" : r.interval === null ? "∞" : short(r.interval)}</dd>
+        <dt>{refract ? "Angles θ, θ′" : "Angle of incidence θ"}</dt>
         <dd>
-          {blank
-            ? "—"
-            : r.radius
-                .map((x, b) =>
-                  r.curvature[b] === null
-                    ? "unknown"
-                    : x === null || r.infinite[b]
-                      ? "∞"
-                      : short(x),
-                )
-                .join(", ")}
-        </dd>
-        <dt>Gaussian K, mean H</dt>
-        <dd>
-          {blank
-            ? "—"
-            : r.gauss === null || r.mean === null
-              ? "unknown here"
-              : `${short(r.gauss)}, ${short(r.mean)}`}
+          {refract
+            ? `${angle(r.theta)}, ${angle(r.thetaPrime)}`
+            : angle(r.theta)}
         </dd>
       </dl>
       <p className="spatial-caption probe-status" data-testid="probe-status">
-        {r.missing
-          ? terms.missing
-          : r.singular
-            ? "Singular here: no normal or principal curvatures."
-            : r.umbilic
-              ? "An umbilic: every direction is principal, so none is drawn."
-              : r.infinite.some(Boolean)
-                ? "A centre lies beyond 100 study radii, at infinity: its circle is not drawn."
-                : ""}
+        {r.state === "singular"
+          ? `Singular here: the ${m} has no normal, so no ray leaves.`
+          : r.state === "source"
+            ? "The source is here: no ray arrives or leaves."
+            : r.state === "unlit"
+              ? `Unlit: the light grazes the ${m} here or arrives behind it.`
+              : r.state === "total"
+                ? "Beyond the critical angle: the light is totally reflected, and nothing is transmitted."
+                : r.stigmatic
+                  ? "Stigmatic: both foci coincide, so no direction is drawn."
+                  : r.infinite.some(Boolean)
+                    ? "A focus lies beyond 100 study radii, at infinity: its circle is not drawn."
+                    : ""}
       </p>
       {[0, 1].map((b) => (
         <Plot
@@ -474,23 +631,24 @@ function SurfaceProbe({
       <ul className="probe-legend">
         <li>
           <span className="probe-dot" style={swatch(probeInk.normal)} />
-          Normal
+          {terms.normal}
         </li>
         {[0, 1].map((b) => (
           <li key={b}>
             <span className="probe-dot" style={swatch(surfaceInk[b])} />
-            {terms.branches[b]}: direction, circle & centre
+            {terms.branches[b]}: {terms.legend}
           </li>
         ))}
         <li>
           <span className="probe-dot" style={swatch(probeInk.mark)} />
           Point
-          {terms.through ? ` & ${terms.through}` : ""}
         </li>
       </ul>
       {(d.singular > 0 ||
         d.umbilics > 0 ||
-        d.unknown > 0 ||
+        light.unlit > 0 ||
+        light.total > 0 ||
+        light.atSource > 0 ||
         d.clipped[0] > 0 ||
         d.clipped[1] > 0) && (
         <p className="spatial-caption probe-notes">
@@ -498,13 +656,17 @@ function SurfaceProbe({
             d.singular > 0 &&
               `${count(d.singular, "point is", "points are")} singular, without a normal`,
             d.umbilics > 0 &&
-              `${count(d.umbilics, "point is an umbilic", "points are umbilics")}`,
-            d.unknown > 0 &&
-              `${terms.unknownBranch} unknown at ${count(d.unknown, "point", "points")}, ${terms.unknown}`,
+              `${count(d.umbilics, "point is", "points are")} stigmatic`,
+            light.unlit > 0 &&
+              `${count(light.unlit, "point is", "points are")} unlit`,
+            light.total > 0 &&
+              `${count(light.total, "point is", "points are")} beyond the critical angle`,
+            light.atSource > 0 &&
+              `${count(light.atSource, "point is", "points are")} at the source`,
             ...[0, 1].map(
               (b) =>
                 d.clipped[b] > 0 &&
-                `${count(d.clipped[b], "centre", "centres")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
+                `${count(d.clipped[b], "focus", "foci")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
             ),
           ]
             .filter(Boolean)

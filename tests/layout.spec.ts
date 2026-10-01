@@ -152,6 +152,26 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
           .check();
         await expect(page.locator(".spatial-probe .pair")).toBeVisible();
       });
+    // On a mirror or interface, the light's and the mirror's.
+    for (const [preset, target, name] of [
+      [
+        "A spherical bowl's cusped caustic",
+        "light",
+        "Wavefront, foci & rays at a point",
+      ],
+      [
+        "A lamp in water over air",
+        "mirror",
+        "Principal curvatures & centres at a point",
+      ],
+    ] as const)
+      setups.push(async () => {
+        await page.goto("/?study=3d");
+        await choosePreset(page, { label: preset });
+        await page.getByLabel("Describe", { exact: true }).selectOption(target);
+        await page.getByRole("checkbox", { name }).check();
+        await expect(page.locator(".spatial-probe .pair")).toBeVisible();
+      });
     return setups;
   },
   "4D": async (page) => {

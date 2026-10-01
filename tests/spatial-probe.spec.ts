@@ -313,7 +313,9 @@ test("the support table names each construction's highlight", () => {
   // spatial-surface-probe.spec.ts), never the curve's highlight.
   expect(probeSupport(config("none", "surface")).available).toBe(true);
   expect(probeSupport(config("none", "surface")).highlight).toBeNull();
-  expect(probeSupport(config("none", "rays")).available).toBe(false);
+  // A mirror offers its light and itself, never a curve's highlight.
+  expect(probeSupport(config("none", "rays")).available).toBe(true);
+  expect(probeSupport(config("none", "rays")).highlight).toBeNull();
   expect(probeSupport(config("none", "implicit")).available).toBe(false);
   expect(probeSupport(config("canal", "field")).available).toBe(true);
 });
@@ -407,11 +409,28 @@ test("plots break at undefined samples and pin outliers to their edge", () => {
   // A zero series draws from 0 up, or around 0.
   expect(plotScale([0, 0, 0], true)).toMatchObject({ lo: 0, hi: 1 });
   expect(plotScale([0, 0, 0], false)).toMatchObject({ lo: -1, hi: 1 });
-  // A constant series still has a range to draw in.
-  const constant = plotScale([0.2, 0.2, 0.2], false);
+  // A constant series still has a range to draw in, but is reported as
+  // constant, at its value, not as the padded range.
+  const constant = plotScale([0.2, null, 0.2, 0.2], false);
   expect(constant.hi).toBeGreaterThan(constant.lo);
+  expect(constant.constant).toBe(0.2);
+  expect(plotScale([0, 0, 0], true).constant).toBe(0);
+  expect(plotScale([0, 0, 0], false).constant).toBe(0);
   // No values at all.
   expect(plotScale([null, null], false).runs).toEqual([]);
+  expect(plotScale([null, null], false).constant).toBeNull();
+  // A series that varies is not constant, nor is one whose outliers the
+  // fences trim: they are pinned, and the range says so.
+  expect(plotScale([1, 2, 3], false).constant).toBeNull();
+  // Jitter below the resolution with a spike: the trimmed range is drawn
+  // as constant, but the spike is not, so the series is not constant.
+  const spike = plotScale(
+    [...Array.from({ length: 8 }, (_, i) => 1 + i * 1e-6), 100],
+    false,
+    1e-4,
+  );
+  expect(spike.pinned).toBe(1);
+  expect(spike.constant).toBeNull();
   // Below a stated resolution a series is constant: rounding noise about
   // zero draws around 0, and jitter about a value within a tenth of it,
   // with nothing pinned. Without a resolution the noise fills the plot.
@@ -420,12 +439,15 @@ test("plots break at undefined samples and pin outliers to their edge", () => {
     lo: -1,
     hi: 1,
     pinned: 0,
+    constant: 0,
   });
   expect(plotScale(noise, false).hi).toBe(3.3e-16);
+  expect(plotScale(noise, false).constant).toBeNull();
   const jitter = plotScale([4 / 3, 4 / 3 + 1e-7, 4 / 3 - 1e-7], false, 1e-4);
   expect(jitter.lo).toBeCloseTo(1.2, 6);
   expect(jitter.hi).toBeCloseTo(1.4667, 4);
   expect(jitter.pinned).toBe(0);
+  expect(jitter.constant).toBeCloseTo(4 / 3, 12);
   // A series that varies by more than the resolution keeps its own range.
   expect(plotScale([1, 2, 3], false, 1e-4)).toMatchObject({ lo: 1, hi: 3 });
 });
