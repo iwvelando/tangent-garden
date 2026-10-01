@@ -103,14 +103,20 @@ test("a link carries probe playback with its probe", async () => {
   };
   const read = await readStudyLink(await writeStudyLink("3d", study));
   assert.deepEqual(spatialStudy(read.study), study);
-  // On a surface, too: a canal's or a patch's.
-  const beads = spatialPresets.findIndex(
-    (p) => p.name === "Beads that lose their envelope",
-  );
-  const torus = spatialPresets.findIndex(
-    (p) => p.name === "A torus revealing its centers",
-  );
-  for (const i of [beads, torus]) {
+  // On a surface, too: a canal's, a patch's, a tangent developable's, a
+  // framed ribbon's or a ruled surface's.
+  const named = (name: string) => {
+    const i = spatialPresets.findIndex((p) => p.name === name);
+    assert.ok(i >= 0, name);
+    return i;
+  };
+  for (const i of [
+    named("Beads that lose their envelope"),
+    named("A torus revealing its centers"),
+    named("Helix · a ribbon staircase"),
+    named("The seam of a carried frame"),
+    named("Chords of a rising helix"),
+  ]) {
     const surface: SpatialStudy = {
       ...spatial(i),
       animation: { mode: "probe", camera: "hold", duration: 4, tracks: [] },
@@ -140,6 +146,24 @@ test("links made before the surface probe keep their probe as it was", async () 
   assert.equal(spatialStudy(patch).probe.enabled, false);
   patch.probe.target = "surface";
   assert.equal(spatialStudy(patch).probe.enabled, true);
+  // A developable, framed or ruled study's probe then described its curve,
+  // so the link keeps the curve probe on, as it drew.
+  for (const name of [
+    "Helix · a ribbon staircase",
+    "The seam of a carried frame",
+    "Chords of a rising helix",
+  ]) {
+    const ruled = structuredClone(
+      spatial(spatialPresets.findIndex((p) => p.name === name)),
+    ) as any;
+    ruled.probe = { enabled: true, position: 0.25 };
+    assert.deepEqual(spatialStudy(ruled).probe, {
+      enabled: true,
+      position: 0.25,
+      target: "curve",
+      across: 0.5,
+    });
+  }
 });
 
 test("links are compact, url-safe, and readable by an independent decoder", async () => {

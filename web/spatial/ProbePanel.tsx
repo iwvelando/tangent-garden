@@ -30,20 +30,23 @@ const width = 240,
 
 // One diagnostic along the whole base, broken where it is undefined, with
 // the probe's sample marked. Geometry only: its range is stated beside it.
+// Variation within resolution is drawn as constant (see plotScale).
 function Plot({
   values,
   fromZero,
   at,
   label,
   dark,
+  resolution,
 }: {
   values: (number | null)[];
   fromZero: boolean;
   at: number;
   label: string;
   dark: boolean;
+  resolution?: number;
 }) {
-  const { lo, hi, runs, pinned } = plotScale(values, fromZero);
+  const { lo, hi, runs, pinned } = plotScale(values, fromZero, resolution);
   if (!runs.length)
     return (
       <p className="spatial-caption">{label} is undefined at every sample.</p>
@@ -356,6 +359,17 @@ function SurfaceProbe({
   const swatch = (ink: number) => ({
     background: hex(lineColor(ink, 0, dark)),
   });
+  // Both plots ignore variation below 10⁻⁴ of the column's largest
+  // curvature: rounding noise, as in a developable's zero curvature along
+  // its rulings, not geometry.
+  const resolution =
+    1e-4 *
+    Math.max(
+      0,
+      ...[0, 1].flatMap((b) =>
+        d.curvature[b].map((line) => Math.abs(line[column] ?? 0)),
+      ),
+    );
   // No surface or no normal here: every value is blank.
   const blank = r.missing || r.singular;
   const value = (k: number | null) =>
@@ -454,6 +468,7 @@ function SurfaceProbe({
           at={row}
           label={`${terms.branches[b]} along ${terms.along}`}
           dark={dark}
+          resolution={resolution}
         />
       ))}
       <ul className="probe-legend">
@@ -470,7 +485,7 @@ function SurfaceProbe({
         <li>
           <span className="probe-dot" style={swatch(probeInk.mark)} />
           Point
-          {d.kind === "canal" ? " & contact circle" : ""}
+          {terms.through ? ` & ${terms.through}` : ""}
         </li>
       </ul>
       {(d.singular > 0 ||
@@ -485,7 +500,7 @@ function SurfaceProbe({
             d.umbilics > 0 &&
               `${count(d.umbilics, "point is an umbilic", "points are umbilics")}`,
             d.unknown > 0 &&
-              `${terms.branches[1]} is unknown at ${count(d.unknown, "point", "points")}, where its derivatives are unstable`,
+              `${terms.unknownBranch} unknown at ${count(d.unknown, "point", "points")}, ${terms.unknown}`,
             ...[0, 1].map(
               (b) =>
                 d.clipped[b] > 0 &&

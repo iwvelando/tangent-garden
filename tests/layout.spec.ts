@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
 
 const closing = "An open notebook for mathematical beauty.";
@@ -61,17 +61,15 @@ test("the explanation follows the layout when the window is resized", async ({
 // Opening a field's help pushes down only what lies below it: the field
 // beside it in a pair keeps its place, and paired controls stay level even
 // when one label wraps. Every preset, both widths, and polar source
-// coordinates cover every pair with help.
-for (const width of [1440, 390]) {
-  test(`help text in paired fields moves neither neighbour at ${width}px`, async ({
-    page,
-  }) => {
-    test.slow();
-    await page.setViewportSize({ width, height: 1000 });
+// coordinates cover every pair with help. Each notebook is its own test, so
+// that the sweep's time grows per notebook as presets are added.
+type Setup = () => Promise<unknown>;
+const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
+  "2D": async (page) => {
     await page.goto("/");
     await expect(page.locator("#artwork")).toBeVisible();
     const labels = await exampleTitles(page);
-    const setups: (() => Promise<unknown>)[] = labels.map(
+    const setups: Setup[] = labels.map(
       (label) => () => choosePreset(page, { label }),
     );
     setups.push(async () => {
@@ -87,6 +85,10 @@ for (const width of [1440, 390]) {
         .getByRole("checkbox", { name: "Fit the window to the iterates" })
         .uncheck();
     });
+    return setups;
+  },
+  "3D": async (page) => {
+    const setups: Setup[] = [];
     for (const preset of [
       "0",
       "3",
@@ -126,16 +128,20 @@ for (const width of [1440, 390]) {
           .getByLabel("Animate", { exact: true })
           .selectOption("parameters");
       });
-    // The surface probe's sliders pair only while it is on: a canal's and a
-    // patch's.
-    for (const [preset, canal] of [
+    // The surface probe's sliders pair only while it is on: a canal's, a
+    // patch's, and a tangent developable's, framed ribbon's and ruled
+    // surface's.
+    for (const [preset, describes] of [
       ["Beads that lose their envelope", true],
       ["A torus revealing its centers", false],
+      ["Helix · a ribbon staircase", true],
+      ["The seam of a carried frame", true],
+      ["Chords of a rising helix", true],
     ] as const)
       setups.push(async () => {
         await page.goto("/?study=3d");
         await choosePreset(page, { label: preset });
-        if (canal)
+        if (describes)
           await page
             .getByLabel("Describe", { exact: true })
             .selectOption("surface");
@@ -146,6 +152,10 @@ for (const width of [1440, 390]) {
           .check();
         await expect(page.locator(".spatial-probe .pair")).toBeVisible();
       });
+    return setups;
+  },
+  "4D": async (page) => {
+    const setups: Setup[] = [];
     for (const preset of [
       "A cube beyond a cube",
       "Spherical loom",
@@ -177,41 +187,59 @@ for (const width of [1440, 390]) {
         .getByText("Latitude motion endpoints", { exact: true })
         .click();
     });
-    let checked = 0;
-    for (const setup of setups) {
-      await setup();
-      for (const pair of await page.locator("aside .pair").all()) {
-        if (!(await pair.isVisible())) continue;
-        const controls = pair.locator(":scope > .field > :is(input, select)");
-        const boxes = async () =>
-          (await controls.evaluateAll((els) =>
-            els.map((e) => {
-              // Relative to the pair, since clicking may scroll the sidebar.
-              const r = e.getBoundingClientRect();
-              const p = e.closest(".pair")!.getBoundingClientRect();
-              return [Math.round(r.x - p.x), Math.round(r.y - p.y)];
-            }),
-          )) as [number, number][];
-        const before = await boxes();
-        // Controls sharing a row are level.
-        for (const [x, y] of before)
-          for (const [x2, y2] of before)
-            if (x !== x2 && Math.abs(y - y2) < 30) expect(y2).toBe(y);
-        for (const toggle of await pair.locator(".help-toggle").all()) {
-          await toggle.click();
-          await expect(
-            page.locator(`#${await toggle.getAttribute("aria-controls")}`),
-          ).toBeVisible();
-          expect(await boxes()).toEqual(before);
-          await toggle.click();
-          checked++;
-        }
+    return setups;
+  },
+};
+
+// Opens every help toggle of every visible pair after each setup and
+// returns how many it opened.
+async function sweepPairs(page: Page, setups: Setup[]) {
+  let checked = 0;
+  for (const setup of setups) {
+    await setup();
+    for (const pair of await page.locator("aside .pair").all()) {
+      if (!(await pair.isVisible())) continue;
+      const controls = pair.locator(":scope > .field > :is(input, select)");
+      const boxes = async () =>
+        (await controls.evaluateAll((els) =>
+          els.map((e) => {
+            // Relative to the pair, since clicking may scroll the sidebar.
+            const r = e.getBoundingClientRect();
+            const p = e.closest(".pair")!.getBoundingClientRect();
+            return [Math.round(r.x - p.x), Math.round(r.y - p.y)];
+          }),
+        )) as [number, number][];
+      const before = await boxes();
+      // Controls sharing a row are level.
+      for (const [x, y] of before)
+        for (const [x2, y2] of before)
+          if (x !== x2 && Math.abs(y - y2) < 30) expect(y2).toBe(y);
+      for (const toggle of await pair.locator(".help-toggle").all()) {
+        await toggle.click();
+        await expect(
+          page.locator(`#${await toggle.getAttribute("aria-controls")}`),
+        ).toBeVisible();
+        expect(await boxes()).toEqual(before);
+        await toggle.click();
+        checked++;
       }
     }
-    // Guard against a sweep that silently finds nothing.
-    expect(checked).toBeGreaterThanOrEqual(10);
-  });
+  }
+  return checked;
 }
+
+for (const width of [1440, 390])
+  for (const [notebook, setups] of Object.entries(pairSetups))
+    test(`help text in paired fields moves neither neighbour at ${width}px in ${notebook}`, async ({
+      page,
+    }) => {
+      test.slow();
+      await page.setViewportSize({ width, height: 1000 });
+      // Guard against a sweep that silently finds nothing.
+      expect(await sweepPairs(page, await setups(page))).toBeGreaterThanOrEqual(
+        3,
+      );
+    });
 
 for (const width of [1440, 390]) {
   test(`construction tabs fill every row, with no gap, at ${width}px`, async ({

@@ -8,24 +8,32 @@ import "math"
 // (row r is u sample r), or "canal" for a canal surface, whose row r is base
 // sample Along[r] and whose column k is the turn V[k] = 2πk/K from θ₀ around
 // the contact circle, measured in the frame that carries the meridians;
-// Periodic is then set, and the columns do not repeat the first.
+// Periodic is then set, and the columns do not repeat the first. Kind is
+// "developable", "framed" or "ruled" for those surfaces built on a curve,
+// whose row r is also base sample Along[r] and whose column k is the point
+// u = V[k] along the ruling through it (see ruledProbe).
 //
 // With the normal n and A = −dn, as for the patch's focal sheets, each
 // sample has two principal curvatures with unit principal directions and
-// focal points X + n/κ. A patch numbers them κ₁ ≥ κ₂. A canal numbers them
-// by line of curvature: branch 0 runs around the contact circle, where
-// κ = −1/R and the focal point is the sphere's centre on the base; branch 1
-// runs across it.
+// focal points X + n/κ. A patch, framed ribbon and ruled surface number
+// them κ₁ ≥ κ₂. A canal numbers them by line of curvature: branch 0 runs
+// around the contact circle, where κ = −1/R and the focal point is the
+// sphere's centre on the base; branch 1 runs across it. A developable's
+// branch 0 runs along the ruling, where κ = 0, and branch 1 across it.
 //
-// A point is nil where the surface has none (no real contact circle). A
-// normal is nil where the surface is singular there, counted by Singular: a
-// patch's chart singularity, a canal's collapsed circle or its cuspidal
-// edge, where the surface turns back. A curvature is nil where it cannot be
-// found from stable derivatives, counted by Unknown. Directions are nil at
+// A point is nil where the surface has none (no real contact circle, no
+// partner, no frame). A normal is nil where the surface is singular there,
+// counted by Singular: a patch's chart singularity, a canal's collapsed
+// circle or its cuspidal edge, where the surface turns back, a ruling where
+// the threads meet, or a developable's ruling where the curve straightens.
+// A curvature is nil where it cannot be found from stable derivatives,
+// counted by Unknown; so is a ruled surface's normal where even its tangent
+// plane cannot be. Directions are nil at
 // an umbilic, counted by Umbilics, where every direction is principal (a
 // canal has none at a regular point; see canalProbe). A
 // focal point is nil at infinity, beyond 100 radii, counted per branch by
-// Clipped. A closed canal's last row repeats its first and is not counted.
+// Clipped. A closed surface's last row repeats its first and is not
+// counted.
 type SurfaceDiagnostics struct {
 	Kind      string          `json:"kind"`
 	Along     []int           `json:"along"`
@@ -144,9 +152,9 @@ func canalAcross(T, bent, e Vec3, R, dR, ddR float64) (kappa float64, dir Vec3, 
 	return -qs.dot(w) / w.dot(w), w.unit(), true
 }
 
-// canalRows returns the base samples the canal probe visits: every
+// probeRows returns the base samples the canal probe visits: every
 // stride-th, as the mesh's rings, and the last.
-func canalRows(n int) []int {
+func probeRows(n int) []int {
 	stride := (n + canalRings - 1) / canalRings
 	rows := []int{}
 	for i := 0; i < n; i += stride {
@@ -166,7 +174,7 @@ func canalRows(n int) []int {
 // dn(w) = (w − T − Ṙq)/R, which is w/R only where T = −Ṙq: where the
 // circle has collapsed.
 func canalProbe(n int, closed bool, lo, hi float64, at func(float64) float64, radius func(float64) (float64, float64, float64, bool), base []*Vec3, R, slope []float64, sphere, circled []bool, frame carried, tangents, accelerations []Vec3, speeds []float64) *SurfaceDiagnostics {
-	rows := canalRows(n)
+	rows := probeRows(n)
 	d := newSurfaceDiagnostics("canal", len(rows), canalSegments)
 	d.Periodic, d.closed = true, closed
 	for k := range d.V {

@@ -13,7 +13,9 @@ import {
   surfaceInk,
   surfaceProbeAt,
   surfaceProbeBatches,
+  surfaceProbeHelp,
   surfaceProbeReadout,
+  surfaceTerms,
 } from "../web/spatial/probe";
 import type { Batch } from "../web/spatial/scene";
 import { spatialPresets } from "../web/spatial/presets";
@@ -96,7 +98,7 @@ function grid(kind: "patch" | "canal" = "patch"): SpatialResult {
   };
 }
 
-test("the probe describes a patch's surface, a canal's curve or surface, and other curves", () => {
+test("the probe describes a patch's surface, the curve or surface built on it, and other curves", () => {
   expect(probeSupport(config("none", "surface")).targets).toEqual(["surface"]);
   expect(probeSupport(config("none", "surface")).available).toBe(true);
   expect(probeSupport(config("canal")).targets).toEqual(["curve", "surface"]);
@@ -104,20 +106,141 @@ test("the probe describes a patch's surface, a canal's curve or surface, and oth
     "curve",
     "surface",
   ]);
-  for (const c of ["developable", "framed", "ruled", "none"] as const)
+  // The ruled surfaces built on a curve: the developable, the ruled
+  // surface, and the framed ribbon while it has a width.
+  for (const c of ["developable", "framed", "ruled"] as const)
+    expect(probeSupport(config(c)).targets).toEqual(["curve", "surface"]);
+  const narrow = config("framed");
+  narrow.frame.width = 0;
+  expect(probeSupport(narrow).targets).toEqual(["curve"]);
+  for (const c of ["involute", "inversion", "none"] as const)
     expect(probeSupport(config(c)).targets).toEqual(["curve"]);
   for (const f of ["rays", "implicit"] as const)
     expect(probeSupport(config("canal", f)).available).toBe(false);
   // A target the study lacks falls back to its first.
   const surface = { ...defaultProbe, target: "surface" as const };
   expect(probeTarget(config("canal"), surface)).toBe("surface");
-  expect(probeTarget(config("developable"), surface)).toBe("curve");
+  expect(probeTarget(config("developable"), surface)).toBe("surface");
+  expect(probeTarget(narrow, surface)).toBe("curve");
+  expect(probeTarget(config("involute"), surface)).toBe("curve");
   expect(probeTarget(config("none", "surface"), defaultProbe)).toBe("surface");
   // A straight canal spine points to the surface probe.
   expect(straightNote(config("canal"))).toMatch(
     /Choose to describe the surface to probe the canal surface itself\.$/,
   );
-  expect(straightNote(config("ruled"))).not.toMatch(/Choose/);
+  expect(straightNote(config("ruled"))).toMatch(
+    /Choose to describe the surface to probe the ruled surface itself\.$/,
+  );
+  expect(straightNote(narrow)).not.toMatch(/Choose/);
+  expect(straightNote(config("involute"))).not.toMatch(/Choose/);
+});
+
+test("each surface names its parameters, branches and limits", () => {
+  const developable = surfaceTerms(config("developable"));
+  expect(developable.surface).toBe("tangent ribbon");
+  expect([developable.along, developable.around]).toEqual(["t", "u"]);
+  expect(developable.branches).toEqual(["κ along the ruling", "κ across it"]);
+  expect(developable.sliders).toEqual(["Along t", "Across the ruling"]);
+  for (const c of ["framed", "ruled"] as const) {
+    const terms = surfaceTerms(config(c));
+    expect(terms.branches).toEqual(["κ₁", "κ₂"]);
+    expect([terms.along, terms.around]).toEqual(["t", "u"]);
+  }
+  expect(surfaceTerms(config("framed")).surface).toBe("framed ribbon");
+  expect(surfaceTerms(config("ruled")).surface).toBe("ruled surface");
+  // The patch and the canal keep their words.
+  expect(surfaceTerms(config("none", "surface")).branches).toEqual([
+    "κ₁",
+    "κ₂",
+  ]);
+  expect(surfaceTerms(config("canal")).branches).toEqual([
+    "κ around the circle",
+    "κ across it",
+  ]);
+  // Help states the limits the engine enforces.
+  const help = surfaceProbeHelp(config("developable"));
+  expect(help).toMatch(/edge of regression/);
+  expect(help).toMatch(/u = ±L·k\/12/);
+  expect(help).toMatch(/binormal/);
+  expect(surfaceProbeHelp(config("framed"))).toMatch(/25 points across/);
+  expect(surfaceProbeHelp(config("framed"))).toMatch(/K ≤ 0/);
+  expect(surfaceProbeHelp(config("ruled"))).toMatch(/S_t × S_u/);
+  for (const c of ["developable", "framed", "ruled", "canal"] as const)
+    expect(surfaceTerms(config(c)).unknown).toMatch(/unstable/);
+});
+
+// A ruled grid of two rows along the x axis, whose rulings run along y
+// from y = −1 to y = 1; the second row's middle column has no point.
+function ruledGrid(kind: "developable" | "framed" | "ruled"): SpatialResult {
+  const result = grid();
+  const d = result.surfaceDiagnostics!;
+  const row = (x: number, gap: boolean) =>
+    [-1, -0.5, 0, 0.5, 1].map((y) => (gap && y === 0 ? null : at(x, y, 0)));
+  const n = at(0, 0, 1);
+  result.surfaceDiagnostics = {
+    ...d,
+    kind,
+    along: [0, 1],
+    u: [0, 1],
+    v: [-1, -0.5, 0, 0.5, 1],
+    periodic: false,
+    points: [row(0, false), row(1, true)],
+    normals: [Array(5).fill(n), Array(5).fill(n)],
+    curvature: [
+      [Array(5).fill(0), Array(5).fill(0)],
+      [Array(5).fill(-0.5), Array(5).fill(-0.5)],
+    ],
+    direction: [
+      [Array(5).fill(at(0, 1, 0)), Array(5).fill(at(0, 1, 0))],
+      [Array(5).fill(at(1, 0, 0)), Array(5).fill(at(1, 0, 0))],
+    ],
+    focal: [
+      [Array(5).fill(null), Array(5).fill(null)],
+      [Array(5).fill(at(0, 0, -2)), Array(5).fill(at(0, 0, -2))],
+    ],
+    singular: 0,
+    umbilics: 0,
+    clipped: [10, 0],
+  };
+  return result;
+}
+
+test("the readout shows a curvature lost in rounding as 0", () => {
+  const result = ruledGrid("developable");
+  const d = result.surfaceDiagnostics!;
+  d.curvature[0][0][2] = 6.9e-18;
+  d.curvature[1][0][2] = 0.5;
+  const r = surfaceProbeReadout(result, 0, 2)!;
+  expect(r.curvature).toEqual([0, 0.5]);
+  expect(r.radius).toEqual([null, 2]);
+  expect([r.gauss, r.mean]).toEqual([0, 0.25]);
+  // Small but resolved curvatures are kept, as is a flat point's zero.
+  d.curvature[0][0][2] = 1e-9;
+  expect(surfaceProbeReadout(result, 0, 2)!.curvature).toEqual([1e-9, 0.5]);
+  d.curvature[0][0][2] = 1e-20;
+  d.curvature[1][0][2] = -3e-20;
+  expect(surfaceProbeReadout(result, 0, 2)!.curvature).toEqual([1e-20, -3e-20]);
+});
+
+test("on a ruled surface the probe draws the ruling through the point", () => {
+  for (const kind of ["developable", "framed", "ruled"] as const) {
+    const marked = byInk(
+      surfaceProbeBatches(ruledGrid(kind), 0, 3),
+      probeInk.mark,
+    );
+    // The ruling runs from the row's first point to its last.
+    expect(marked).toContainEqual([at(0, -1, 0), at(0, 1, 0)]);
+    // Across a missing point it still joins the row's ends.
+    const gapped = byInk(
+      surfaceProbeBatches(ruledGrid(kind), 1, 1),
+      probeInk.mark,
+    );
+    expect(gapped).toContainEqual([at(1, -1, 0), at(1, 1, 0)]);
+  }
+  // A patch has no ruling to draw: only the point's cross.
+  expect(byInk(surfaceProbeBatches(grid(), 0, 0), probeInk.mark)).toHaveLength(
+    3,
+  );
 });
 
 test("the surface probe snaps to the nearest row and column, wrapping around a canal", () => {
@@ -598,4 +721,217 @@ test("the surface probe's colours hold in the dark theme", async ({ page }) => {
     "κ across it: direction, circle & centre",
     "Point & contact circle",
   ]);
+});
+
+// The ruled surfaces built on a curve, through the real notebook.
+const staircase = { label: "Helix · a ribbon staircase" };
+const seam = { label: "The seam of a carried frame" };
+const band = { label: "A band around the trefoil" };
+const halfTurns = { label: "Chords of a rising helix" };
+const gauss = async (page: Page) =>
+  Number((await readout(page).nth(3).textContent())!.split(", ")[0]);
+// The readout as numbers: both curvatures, K and H. A custom curve's r‴ is
+// differenced, so curvatures that need it hold to about 5·10⁻⁵ inside the
+// domain and less at its ends, and the readout's fourth digit can turn.
+async function numbers(page: Page) {
+  await expect(readout(page).first()).not.toHaveText("—");
+  const [k0, k1, , kh] = await readout(page).allTextContents();
+  const [K, H] = kh.split(", ").map(Number);
+  return { k0: Number(k0), k1: Number(k1), K, H };
+}
+const within = (got: number, want: number, tol = 1e-3) =>
+  expect(Math.abs(got - want)).toBeLessThanOrEqual(tol * Math.abs(want));
+async function probeSurface(page: Page, preset: { label: string }) {
+  await ready(page);
+  await choosePreset(page, preset);
+  await settled(page);
+  await expect(describe(page)).toHaveValue("curve");
+  await describe(page).selectOption("surface");
+  await surfaceSwitch(page).check();
+  await settled(page);
+}
+
+// The helix (2 cos t, 2 sin t, t/3): a = 2, b = 1/3, so across each tangent
+// ruling κ = τ/(κ_c|u|) = b/(a|u|) = 1/(6|u|), and along it κ = 0. The
+// ruling's columns are u = ±1.5k/12; the default is u = 0.125, next to the
+// edge of regression.
+test("a helix's tangent ribbon reads τ/(κ|u|) across its rulings and K = 0", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, staircase);
+  await settled(page);
+  const original = await pixels(page);
+  await describe(page).selectOption("surface");
+  await surfaceSwitch(page).check();
+  await settled(page);
+  await expect(along(page, "Along t")).toHaveAttribute(
+    "aria-valuetext",
+    "t = 0, row 240 of 480",
+  );
+  const across = along(page, "Across the ruling");
+  await expect(across).toHaveAttribute(
+    "aria-valuetext",
+    "u = 0.125, column 12 of 23",
+  );
+  await expect(readout(page).nth(2)).toHaveText("∞, 0.75");
+  let r = await numbers(page);
+  expect([r.k0, r.K]).toEqual([0, 0]);
+  within(r.k1, 4 / 3);
+  within(r.H, 2 / 3);
+  await expect(page.getByTestId("probe-status")).toHaveText(
+    "A centre lies beyond 100 study radii, at infinity: its circle is not drawn.",
+  );
+  expect(await pixels(page)).not.toBe(original);
+  // The far edge on the other sheet, u = −1.5: κ = 1/9, with the normal −B.
+  await across.fill("0");
+  await expect(across).toHaveAttribute(
+    "aria-valuetext",
+    "u = -1.5, column 0 of 23",
+  );
+  r = await numbers(page);
+  expect([r.k0, r.K]).toEqual([0, 0]);
+  within(r.k1, 1 / 9);
+  within(r.H, 1 / 18);
+  // The same along t: the helix is homogeneous.
+  await along(page, "Along t").fill("90");
+  within((await numbers(page)).k1, 1 / 9);
+  await expect(page.locator(".probe-plot figcaption")).toHaveText([
+    "κ along the ruling along t from -1 to 1",
+    `κ across it along t from ${short(0.9 / 9)} to ${short(1.1 / 9)}`,
+  ]);
+  await expect(page.locator(".probe-legend li")).toHaveText([
+    "Normal",
+    "κ along the ruling: direction, circle & centre",
+    "κ across it: direction, circle & centre",
+    "Point & ruling",
+  ]);
+  await expect(page.locator(".probe-notes")).toHaveText(
+    "11,544 centres of κ along the ruling lie beyond 100 study radii, at infinity.",
+  );
+  // Back to the curve: its probe stands at the same t, unchanged.
+  await describe(page).selectOption("curve");
+  await settled(page);
+  await expect(page.getByRole("slider", { name: "Point" })).toHaveAttribute(
+    "aria-valuetext",
+    `t = ${short(-3 * Math.PI + (6 * Math.PI * 180) / 960)}, sample 180 of 960`,
+  );
+  await page
+    .getByRole("checkbox", { name: "Frame, curvature & torsion at a point" })
+    .uncheck();
+  await settled(page);
+  expect(await pixels(page)).toBe(original);
+});
+
+// A rotation-minimizing frame turns only toward T, so an untwisted ribbon
+// is developable (K = 0); twisted, its rulings turn about T and K < 0.
+test("a framed ribbon is flat untwisted and negatively curved when twisted", async ({
+  page,
+}) => {
+  await probeSurface(page, seam);
+  await expect(along(page, "Across the ribbon")).toHaveAttribute(
+    "aria-valuetext",
+    "u = 0, column 12 of 24",
+  );
+  for (const row of ["40", "240", "400"]) {
+    await along(page, "Along t").fill(row);
+    for (const column of ["0", "12", "24"]) {
+      await along(page, "Across the ribbon").fill(column);
+      expect(Math.abs(await gauss(page))).toBeLessThan(1e-6);
+    }
+  }
+  await probeSurface(page, band);
+  for (const row of ["40", "240", "400"]) {
+    await along(page, "Along t").fill(row);
+    expect(await gauss(page)).toBeLessThan(-0.01);
+  }
+  // Without a ribbon there is only the curve to describe.
+  await page.getByLabel("Half-width w", { exact: true }).fill("0");
+  await settled(page);
+  await expect(describe(page)).toHaveCount(0);
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Frame, curvature & torsion at a point",
+    }),
+  ).toBeChecked();
+});
+
+// Half-turn chords of (2 cos t, 2 sin t, t/3) pass through the axis at
+// u = 1/2: S_t = (0, 0, 1/3), S_u = d = (−4 cos t, −4 sin t, π/3) and
+// S_tu = (4 sin t, −4 cos t, 0), S_tt = 0. With n along S_t × S_u,
+// EG − F² = 16/9, M = 4 and L = N = 0, so K = −M²/(EG − F²) = −9 and
+// H = −MF/(EG − F²) = −π/4 at every t.
+test("half-turn chords of a helix cross its axis with K = −9", async ({
+  page,
+}) => {
+  await probeSurface(page, halfTurns);
+  await expect(along(page, "Along the ruling")).toHaveAttribute(
+    "aria-valuetext",
+    "u = 0.5, column 12 of 24",
+  );
+  for (const row of ["100", "240"]) {
+    await along(page, "Along t").fill(row);
+    await expect(readout(page).nth(3)).toHaveText(`-9, ${short(-Math.PI / 4)}`);
+  }
+  // A ruled surface is never positively curved.
+  for (const column of ["0", "6", "18", "24"]) {
+    await along(page, "Along the ruling").fill(column);
+    expect(await gauss(page)).toBeLessThanOrEqual(1e-9);
+  }
+});
+
+test("a tangent ribbon's probe moves along t, returns on Stop, and travels in a link", async ({
+  page,
+  browser,
+}) => {
+  await probeSurface(page, staircase);
+  await along(page, "Across the ruling").fill("3");
+  const study = await pixels(page);
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  const mode = page.getByLabel("Animate", { exact: true });
+  await expect(mode.locator('option[value="probe"]')).toHaveText(
+    "Move the probe along the tangent ribbon",
+  );
+  await mode.selectOption("probe");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  for (const [p, valuetext] of [
+    ["0", `t = ${short(-3 * Math.PI)}, row 0 of 480`],
+    ["1", `t = ${short(3 * Math.PI)}, row 480 of 480`],
+  ]) {
+    await page.getByRole("slider", { name: "Animation progress" }).fill(p);
+    await expect(stage(page)).toHaveAttribute("data-progress", p);
+    await expect(along(page, "Along t")).toHaveAttribute(
+      "aria-valuetext",
+      valuetext,
+    );
+    // u = −1.5 + 3·0.125 = −1.125: κ across = 1/(6·1.125).
+    within((await numbers(page)).k1, 1 / 6.75);
+  }
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(stage(page)).not.toHaveAttribute("data-progress");
+  expect(await pixels(page)).toBe(study);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+  });
+  const other = await context.newPage();
+  await other.goto(link);
+  await settled(other);
+  await expect(describe(other)).toHaveValue("surface");
+  await expect(along(other, "Across the ruling")).toHaveAttribute(
+    "aria-valuetext",
+    "u = -1.125, column 3 of 23",
+  );
+  within((await numbers(other)).k1, 1 / 6.75);
+  await context.close();
 });

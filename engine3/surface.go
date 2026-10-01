@@ -217,6 +217,13 @@ type surfacePoint struct {
 // to rounding.
 func (q SurfaceRequest) point(u, v, scale float64) surfacePoint {
 	x, xu, xv, xuu, xuv, xvv := q.patch(u, v)
+	return shape(x, xu, xv, xuu, xuv, xvv, q.Reverse, scale)
+}
+
+// shape finds the local geometry at x from its first and second parameter
+// derivatives, with the normal X_u × X_v (reversed when flip is set), as
+// point describes.
+func shape(x, xu, xv, xuu, xuv, xvv Vec3, flip bool, scale float64) surfacePoint {
 	cross := xu.cross(xv)
 	area := cross.norm()
 	big := math.Max(xu.norm(), xv.norm())
@@ -224,7 +231,7 @@ func (q SurfaceRequest) point(u, v, scale float64) surfacePoint {
 		return surfacePoint{X: x}
 	}
 	n := cross.mul(1 / area)
-	if q.Reverse {
+	if flip {
 		n = n.mul(-1)
 	}
 	L, M, N := xuu.dot(n), xuv.dot(n), xvv.dot(n)

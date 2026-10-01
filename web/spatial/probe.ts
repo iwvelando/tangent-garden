@@ -106,10 +106,28 @@ const surfaces: Partial<Record<SpatialConfig["construction"], string>> = {
   canal: "canal surface",
 };
 
+// The kind of surface the surface probe describes in a study, as Go names
+// it (engine3.SurfaceDiagnostics), or null where it describes none: a
+// patch, or the canal, tangent developable, ruled surface or framed ribbon
+// (while it has a width) built on a curve.
+export function surfaceKind(c: SpatialConfig): SurfaceKind | null {
+  if (c.format === "surface") return "patch";
+  if (c.format === "rays" || c.format === "implicit") return null;
+  switch (c.construction) {
+    case "canal":
+    case "developable":
+    case "ruled":
+      return c.construction;
+    case "framed":
+      return c.frame.width > 0 ? "framed" : null;
+  }
+  return null;
+}
+
 // Whether a study offers the probe, what it can describe (a surface patch
-// only its surface, a canal its curve or its surface, another curve study
-// its curve), and what the curve probe's highlight shows (null when only
-// the frame and circle are drawn).
+// only its surface, a curve with a surface built on it either, another
+// curve study its curve), and what the curve probe's highlight shows (null
+// when only the frame and circle are drawn).
 export function probeSupport(c: SpatialConfig): {
   available: boolean;
   highlight: string | null;
@@ -119,9 +137,7 @@ export function probeSupport(c: SpatialConfig): {
     c.format !== "surface" && c.format !== "rays" && c.format !== "implicit";
   const targets: ProbeTarget[] = [
     ...(curve ? (["curve"] as const) : []),
-    ...(c.format === "surface" || (curve && c.construction === "canal")
-      ? (["surface"] as const)
-      : []),
+    ...(surfaceKind(c) ? (["surface"] as const) : []),
   ];
   const names = [
     constructions[c.construction]?.name,
@@ -239,8 +255,15 @@ export function probeReadout(result: SpatialResult, j: number) {
 // range is the values' own, trimmed by outer Tukey fences (3 IQR) so that
 // a few values that blow up (τ near a flat sample) do not flatten the rest;
 // those are pinned to the edge they pass and counted. fromZero keeps 0 in
-// range (for κ ≥ 0).
-export function plotScale(values: (number | null)[], fromZero: boolean) {
+// range (for κ ≥ 0). A series whose range is within resolution (by default
+// none) is drawn as constant, so that rounding noise in a value known to be
+// fixed, such as the zero curvature along a developable's ruling, does not
+// fill the plot; within resolution of 0 it is drawn as zero.
+export function plotScale(
+  values: (number | null)[],
+  fromZero: boolean,
+  resolution = 0,
+) {
   const known = values
     .filter((v): v is number => v !== null)
     .sort((a, b) => a - b);
@@ -254,6 +277,10 @@ export function plotScale(values: (number | null)[], fromZero: boolean) {
       lo = known.find((v) => v >= q1 - 3 * spread)!;
       hi = [...known].reverse().find((v) => v <= q3 + 3 * spread)!;
     }
+  }
+  if (hi - lo <= resolution && hi > lo) {
+    const middle = (lo + hi) / 2;
+    lo = hi = Math.abs(middle) <= resolution ? 0 : middle;
   }
   if (fromZero) lo = Math.min(lo, 0);
   if (!(hi > lo)) {
@@ -300,31 +327,91 @@ export function straightNote(c: SpatialConfig) {
   }`;
 }
 
-// The surface probe's words for each kind of surface: its parameters, and
-// its two principal branches, which a patch numbers κ₁ ≥ κ₂ (as its focal
-// sheets) and a canal names by line of curvature.
-export function surfaceTerms(c: SpatialConfig) {
-  return c.format === "surface"
-    ? {
-        surface: "surface",
-        along: "u",
-        around: "v",
-        branches: ["κ₁", "κ₂"],
-        lines: ["first principal direction", "second principal direction"],
-        sliders: ["Along u", "Along v"],
-        missing: "The patch has no point here.",
-        help: "Moves between the patch's own grid samples (more u and v samples give finer steps). Its principal curvatures are numbered κ₁ ≥ κ₂ with the chosen normal, as the focal sheets are",
-      }
-    : {
-        surface: "canal surface",
-        along: "t",
-        around: "θ − θ₀",
-        branches: ["κ around the circle", "κ across it"],
-        lines: ["contact circle", "across the contact circle"],
-        sliders: ["Along t", "Around"],
-        missing: "No surface here: no real contact circle at this t.",
-        help: "Moves between the canal's mesh rings along t (at most 481, so more samples give finer steps up to that) and 24 turns around each contact circle, measured from θ₀ (with any twist) as the meridians are. Around the circle the curvature is −1/R, centred on the sphere's centre on the curve, with the outward normal; across it, the other principal curvature has its own centre",
-      };
+type SurfaceKind = SurfaceDiagnostics["kind"];
+
+// What the surface probe says of each kind of surface: its name and
+// parameters, its two principal branches, which a patch, a framed ribbon
+// and a ruled surface number κ₁ ≥ κ₂ and a canal and a developable name by
+// line of curvature, what it draws through the point (beside the point's
+// mark), where it has no point, why a curvature can be unknown, and help
+// stating the grid and conventions the engine uses.
+type SurfaceTerms = {
+  surface: string;
+  along: string;
+  around: string;
+  branches: [string, string];
+  sliders: [string, string];
+  through: string;
+  missing: string;
+  unknownBranch: string;
+  unknown: string;
+  help: string;
+};
+const rows = "(at most 481, so more samples give finer steps up to that)";
+const ruledTerms = {
+  along: "t",
+  around: "u",
+  through: "ruling",
+  unknownBranch: "both curvatures are",
+} as const;
+const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
+  patch: {
+    surface: "surface",
+    along: "u",
+    around: "v",
+    branches: ["κ₁", "κ₂"],
+    sliders: ["Along u", "Along v"],
+    through: "",
+    missing: "The patch has no point here.",
+    unknownBranch: "κ₂ is",
+    unknown: "where its derivatives are unstable",
+    help: "Moves between the patch's own grid samples (more u and v samples give finer steps). Its principal curvatures are numbered κ₁ ≥ κ₂ with the chosen normal, as the focal sheets are",
+  },
+  canal: {
+    surface: "canal surface",
+    along: "t",
+    around: "θ − θ₀",
+    branches: ["κ around the circle", "κ across it"],
+    sliders: ["Along t", "Around"],
+    through: "contact circle",
+    missing: "No surface here: no real contact circle at this t.",
+    unknownBranch: "κ across it is",
+    unknown: "where its derivatives are unstable",
+    help: "Moves between the canal's mesh rings along t (at most 481, so more samples give finer steps up to that) and 24 turns around each contact circle, measured from θ₀ (with any twist) as the meridians are. Around the circle the curvature is −1/R, centred on the sphere's centre on the curve, with the outward normal; across it, the other principal curvature has its own centre",
+  },
+  developable: {
+    ...ruledTerms,
+    surface: "tangent ribbon",
+    branches: ["κ along the ruling", "κ across it"],
+    sliders: ["Along t", "Across the ruling"],
+    missing: "No surface here: the curve has no regular point at this t.",
+    unknown: "where the curve's third derivative is unstable",
+    help: `Moves between the ribbon's rows along t ${rows} and 24 points along each tangent ruling, at u = ±L·k/12 for k = 1…12 from the curve. It leaves out u = 0, the edge of regression, where the ribbon's two sheets meet in a cusp along the curve and it has no normal. The normal is the drawing's: the curve's binormal B where u > 0 and −B where u < 0. Along the ruling the curvature is 0, with its centre at infinity; across it, it is τ/(κ|u|), from the curve's curvature κ and torsion τ, so K = 0 and the ribbon is developable. Where the curve's curvature vanishes the whole ruling is singular`,
+  },
+  framed: {
+    ...ruledTerms,
+    surface: "framed ribbon",
+    branches: ["κ₁", "κ₂"],
+    sliders: ["Along t", "Across the ribbon"],
+    missing: "No ribbon here: the frame is undefined at this t.",
+    unknown:
+      "where the curve's third derivative, or a Frenet frame's τ′, is unstable",
+    help: `Moves between the ribbon's rows along t ${rows} and 25 points across each cross-line, from u = −w to w. Curvatures come from how the frame turns, not from the drawn strip. The normal is the drawing's, D × S_t. A ribbon is ruled, so K ≤ 0; an untwisted rotation-minimizing ribbon is developable, with K = 0. Its principal curvatures are numbered κ₁ ≥ κ₂`,
+  },
+  ruled: {
+    ...ruledTerms,
+    surface: "ruled surface",
+    branches: ["κ₁", "κ₂"],
+    sliders: ["Along t", "Along the ruling"],
+    missing: "No surface here: the partner is missing at this t.",
+    unknown: "where a thread's second derivative is unstable",
+    help: `Moves between the surface's rows along t ${rows} and 25 points along each ruling, from the curve (u = 0) to its partner (u = 1). The normal is S_t × S_u, as drawn. A ruled surface has K ≤ 0, with K = 0 exactly where it is developable; where the threads meet the surface pinches and has no normal. Its principal curvatures are numbered κ₁ ≥ κ₂`,
+  },
+};
+
+// The surface probe's words for the study's surface.
+export function surfaceTerms(c: SpatialConfig): SurfaceTerms {
+  return surfaceTermsByKind[surfaceKind(c) ?? "patch"];
 }
 
 // The help beside the probe's switch for a surface.
@@ -362,7 +449,8 @@ const plus = (p: Vec3, d: Vec3, s: number) => ({
 });
 
 // The surface probe's drawing at grid sample (row, column): a mark at the
-// point (with a canal's contact circle through it), the normal line through
+// point (with a canal's contact circle, or a ruled surface's ruling,
+// through it), the normal line through
 // the point and both finite focal points, and for each branch its direction
 // glyph, a cross at its focal point and its normal-section circle in the
 // plane of n and its direction. Nothing where the surface has no point.
@@ -389,6 +477,10 @@ export function surfaceProbeBatches(
       const next = ring[(k + 1) % ring.length];
       if (q && next) marked.push(q, next);
     });
+  } else if (d.kind !== "patch") {
+    // The ruling is straight: one segment between its ends on the grid.
+    const known = d.points[row].filter((q): q is Vec3 => !!q);
+    if (known.length > 1) marked.push(known[0], known.at(-1)!);
   }
   const out = [lines(marked, probeInk.mark)];
   const n = d.normals[row][column];
@@ -430,7 +522,7 @@ export function surfaceProbeBatches(
 }
 
 // The numbers at grid sample (row, column): its parameters, each branch's
-// curvature, radius 1/κ (null where κ is 0 or unknown) and whether its
+// curvature (0 where it is lost in rounding beside the other), radius 1/κ (null where κ is 0 or unknown) and whether its
 // centre is at infinity, the Gaussian and mean curvatures, and whether the
 // surface is missing, singular or umbilic there.
 export function surfaceProbeReadout(
@@ -442,7 +534,13 @@ export function surfaceProbeReadout(
   if (!d) return null;
   const point = d.points[row]?.[column] ?? null,
     normal = d.normals[row]?.[column] ?? null;
-  const curvature = [0, 1].map((b) => d.curvature[b][row]?.[column] ?? null);
+  const raw = [0, 1].map((b) => d.curvature[b][row]?.[column] ?? null);
+  // A curvature within 10⁻¹² of the other is rounding, as along a
+  // developable's ruling, where it is exactly 0: shown as 0.
+  const larger = Math.max(...raw.map((k) => Math.abs(k ?? 0)));
+  const curvature = raw.map((k) =>
+    k !== null && Math.abs(k) <= 1e-12 * larger ? 0 : k,
+  );
   const [k1, k2] = curvature;
   const known = k1 !== null && k2 !== null;
   return {

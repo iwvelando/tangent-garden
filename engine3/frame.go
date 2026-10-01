@@ -134,11 +134,16 @@ func start(reference, t Vec3) (Vec3, bool) {
 
 // carried is the frame field frames builds: U and V where ok, the arc length
 // at every sample, and the offset direction D turned by an extra angle.
+// Spin is the rate in arc length at which D turns about T within a
+// rotation-minimizing frame, (2π·Twist + Correction)/L; a Frenet frame's D
+// turns at τ + 2π·Twist/L, so its Spin leaves out τ.
 type carried struct {
 	us, vs    []Vec3
 	ok        []bool
 	arc       []float64
 	direction func(i int, turn float64) Vec3
+	spin      float64
+	closed    bool
 }
 
 // frames builds the frame at every sample, then the ribbon (in the result's
@@ -284,5 +289,10 @@ func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, 
 		}
 	}
 	out.Frame = q
-	return carried{us, vs, ok, arc, direction}
+	spin := 0.0
+	if q.Length > 0 {
+		spin = (2*math.Pi*f.Twist + q.Correction) / q.Length
+	}
+	// The ribbon closes where the frame returns to itself.
+	return carried{us, vs, ok, arc, direction, spin, q.Closed && q.Seam == nil}
 }

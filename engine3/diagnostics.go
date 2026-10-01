@@ -40,6 +40,39 @@ func knotJerk(c Request, t float64) Vec3 {
 	return Vec3{even*cp - odd*sp, even*sp + odd*cp, -c.Tube * q * q * q * cq}
 }
 
+// knotSnap is r⁗ of the torus knot, differentiating knotJerk analytically.
+func knotSnap(c Request, t float64) Vec3 {
+	p, q := float64(c.P), float64(c.Q)
+	cp, sp, cq, sq := math.Cos(p*t), math.Sin(p*t), math.Cos(q*t), math.Sin(q*t)
+	h := c.Radius + c.Tube*cq
+	dh, ddh, dddh, ddddh := -c.Tube*q*sq, -c.Tube*q*q*cq, c.Tube*q*q*q*sq, c.Tube*q*q*q*q*cq
+	even, odd := ddddh-6*p*p*ddh+p*p*p*p*h, 4*p*dddh-4*p*p*p*dh
+	return Vec3{even*cp - odd*sp, even*sp + odd*cp, c.Tube * q * q * q * q * sq}
+}
+
+// harmonicSnap is r⁗ of the harmonic curve, term by term.
+func harmonicSnap(h HarmonicCurve, u float64) Vec3 {
+	var j Vec3
+	for _, term := range h.Terms {
+		w := term.Frequency
+		w4 := w * w * w * w
+		j = j.add(term.Cosine.mul(w4 * math.Cos(w*u)).add(term.Sine.mul(w4 * math.Sin(w*u))))
+	}
+	return j
+}
+
+// snap returns r⁗ for a knot or a harmonic curve, and nil for a curve
+// without analytic derivatives.
+func snap(c Request) func(float64) Vec3 {
+	switch c.Format {
+	case "", "torus":
+		return func(t float64) Vec3 { return knotSnap(c, t) }
+	case "harmonic":
+		return func(t float64) Vec3 { return harmonicSnap(c.Harmonic, t) }
+	}
+	return nil
+}
+
 // harmonicJerk is r‴ of the harmonic curve, term by term.
 func harmonicJerk(h HarmonicCurve, u float64) Vec3 {
 	var j Vec3
@@ -51,11 +84,18 @@ func harmonicJerk(h HarmonicCurve, u float64) Vec3 {
 	return j
 }
 
-// jerkStep differences the evaluator's own r″ at step h: centrally where
-// the stencil fits in [lo, hi], otherwise one-sided over three points. The
-// next stencil is tried where one meets an unknown r″, as at a trajectory's
-// early end.
+// jerkStep differences the evaluator's own r″ at step h (see slope).
 func jerkStep(evaluate evaluation, t, lo, hi, h float64) (Vec3, bool) {
+	return slope(func(s float64) (Vec3, bool) {
+		_, _, a, ok := evaluate(s)
+		return a, ok && a.valid()
+	}, t, lo, hi, h)
+}
+
+// slope differences f at step h: centrally where the stencil fits in
+// [lo, hi], otherwise one-sided over three points. The next stencil is
+// tried where one meets an unknown value, as at a trajectory's early end.
+func slope(f func(float64) (Vec3, bool), t, lo, hi, h float64) (Vec3, bool) {
 	stencils := [][3]float64{{-1, 0, 1}, {-2, -1, 0}, {0, 1, 2}}
 	weights := [][3]float64{{-0.5, 0, 0.5}, {0.5, -2, 1.5}, {-1.5, 2, -0.5}}
 	for k, offsets := range stencils {
@@ -68,8 +108,8 @@ func jerkStep(evaluate evaluation, t, lo, hi, h float64) (Vec3, bool) {
 			if weights[k][m] == 0 {
 				continue
 			}
-			_, _, a, fine := evaluate(t + o*h)
-			if !fine || !a.valid() {
+			a, fine := f(t + o*h)
+			if !fine {
 				ok = false
 				break
 			}
