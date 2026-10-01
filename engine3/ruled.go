@@ -69,22 +69,23 @@ func (q RuledRequest) validate() error {
 	return nil
 }
 
-// partner returns b and its derivative in b's own parameter at s, whether
-// they are regular, and whether s lies where b is defined.
-func (q RuledRequest) partner(evaluate evaluation, lo, hi float64, closed bool) (func(float64) (Vec3, Vec3, bool, bool), error) {
+// partner returns b and its first and second derivatives in b's own
+// parameter at s, whether b and b′ are regular, and whether s lies where b
+// is defined. b″ is not checked: it is used only by the surface probe.
+func (q RuledRequest) partner(evaluate evaluation, lo, hi float64, closed bool) (func(float64) (Vec3, Vec3, Vec3, bool, bool), error) {
 	span := hi - lo
 	if q.Partner == "chord" {
-		return func(s float64) (Vec3, Vec3, bool, bool) {
+		return func(s float64) (Vec3, Vec3, Vec3, bool, bool) {
 			if closed {
 				s = lo + math.Mod(s-lo, span)
 				if s < lo {
 					s += span
 				}
 			} else if s < lo-1e-9*span || s > hi+1e-9*span {
-				return Vec3{}, Vec3{}, false, false
+				return Vec3{}, Vec3{}, Vec3{}, false, false
 			}
-			r, v, _, ok := evaluate(math.Max(lo, math.Min(hi, s)))
-			return r, v, ok && r.valid() && v.valid(), true
+			r, v, a, ok := evaluate(math.Max(lo, math.Min(hi, s)))
+			return r, v, a, ok && r.valid() && v.valid(), true
 		}, nil
 	}
 	expressions := make([]expr.Expr, 3)
@@ -101,19 +102,22 @@ func (q RuledRequest) partner(evaluate evaluation, lo, hi float64, closed bool) 
 		span *= math.Abs(q.Rate)
 	}
 	thread := sampled(f, math.Inf(-1), math.Inf(1), span)
-	return func(s float64) (Vec3, Vec3, bool, bool) {
-		r, v, _, ok := thread(s)
-		return r, v, ok, true
+	return func(s float64) (Vec3, Vec3, Vec3, bool, bool) {
+		r, v, a, ok := thread(s)
+		return r, v, a, ok, true
 	}, nil
 }
 
-func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, bool, bool), tangents []Vec3, speeds []float64, lo, hi float64, closed bool) error {
+// ruledSurface builds the surface, and its probe when surface diagnostics
+// are requested, from the base's accelerations.
+func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec3, bool, bool), tangents, accelerations []Vec3, speeds []float64, lo, hi float64, closed bool) error {
 	n, m := c.Samples, c.Ruled.Rate
 	step := (hi - lo) / float64(n)
 	at := func(i float64) float64 { return lo*(1-i/float64(n)) + hi*i/float64(n) }
 	q := &RuledResult{Partner: c.Ruled.Partner, Breaks: make([]bool, n+1)}
 	plus := make([]*Vec3, n+1)
-	velocity := make([]Vec3, n+1) // d/dt of b(φ(t)), that is m·b′(φ)
+	velocity := make([]Vec3, n+1)     // d/dt of b(φ(t)), that is m·b′(φ)
+	acceleration := make([]Vec3, n+1) // and m²·b″(φ)
 	// A closed curve's last sample is its first, so it is counted once.
 	last := n
 	if closed {
@@ -121,7 +125,7 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, boo
 	}
 	found := false
 	for i := 0; i <= n; i++ {
-		p, v, ok, inside := partner(m*at(float64(i)) + c.Ruled.Shift)
+		p, v, a, ok, inside := partner(m*at(float64(i)) + c.Ruled.Shift)
 		if !inside && i <= last {
 			q.Outside++
 		}
@@ -130,7 +134,7 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, boo
 		}
 		found = true
 		plus[i] = &p
-		velocity[i] = v.mul(m)
+		velocity[i], acceleration[i] = v.mul(m), a.mul(m*m)
 	}
 	if !found && q.Outside == 0 {
 		return fmt.Errorf("the second thread has no finite points; check its expressions")
@@ -154,13 +158,13 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, boo
 		q.Gap = plus[n].sub(*plus[0]).norm()
 		if q.Gap <= 1e-9*size {
 			q.Closed, q.Gap = true, 0
-			plus[n], velocity[n] = plus[0], velocity[0]
+			plus[n], velocity[n], acceleration[n] = plus[0], velocity[0], acceleration[0]
 		}
 	}
 	for i := 0; i < n; i++ {
 		broken := out.Breaks[i+1] || plus[i] == nil || plus[i+1] == nil
 		if !broken && m != 0 {
-			_, v, ok, inside := partner(m*at(float64(i)+0.5) + c.Ruled.Shift)
+			_, v, _, ok, inside := partner(m*at(float64(i)+0.5) + c.Ruled.Shift)
 			broken = !ok || !inside || jumps(*plus[i], *plus[i+1], v.mul(m), step)
 		}
 		q.Breaks[i+1] = broken
@@ -244,5 +248,23 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, boo
 		}
 	}
 	out.Minus, out.Plus, out.Ruled = []*Vec3{}, plus, q
+	if c.SurfaceDiagnostics {
+		// S = a + u d with d = b∘φ − a, so S_t = a′ + u d′, S_tt = a″ + u d″
+		// and S_tu = d′, regular by the drawing's own guards.
+		at := func(i int, u float64) ruledSample {
+			if out.Base[i] == nil || plus[i] == nil {
+				return ruledSample{}
+			}
+			a, d := *out.Base[i], plus[i].sub(*out.Base[i])
+			da := tangents[i].mul(speeds[i])
+			dd := velocity[i].sub(da)
+			st := da.add(dd.mul(u))
+			regular := d.norm() > 1e-9*size && st.norm() > 1e-9*(da.norm()+velocity[i].norm()) && st.cross(d).norm() > 1e-6*st.norm()*d.norm()
+			ddd := acceleration[i].sub(accelerations[i])
+			return ruledSample{X: a.add(d.mul(u)), St: st, Su: d, Stt: accelerations[i].add(ddd.mul(u)), Stu: dd,
+				Point: true, Regular: regular, Known: accelerations[i].valid() && acceleration[i].valid()}
+		}
+		out.Probe = ruledProbe("ruled", n, closed && q.Closed, lo, hi, spanned(0, 1), at, func(float64) bool { return false }, false)
+	}
 	return nil
 }

@@ -126,16 +126,20 @@ for (const width of [1440, 390]) {
           .getByLabel("Animate", { exact: true })
           .selectOption("parameters");
       });
-    // The surface probe's sliders pair only while it is on: a canal's and a
-    // patch's.
-    for (const [preset, canal] of [
+    // The surface probe's sliders pair only while it is on: a canal's, a
+    // patch's, and a tangent developable's, framed ribbon's and ruled
+    // surface's.
+    for (const [preset, describes] of [
       ["Beads that lose their envelope", true],
       ["A torus revealing its centers", false],
+      ["Helix · a ribbon staircase", true],
+      ["The seam of a carried frame", true],
+      ["Chords of a rising helix", true],
     ] as const)
       setups.push(async () => {
         await page.goto("/?study=3d");
         await choosePreset(page, { label: preset });
-        if (canal)
+        if (describes)
           await page
             .getByLabel("Describe", { exact: true })
             .selectOption("surface");

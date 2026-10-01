@@ -128,9 +128,9 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 - [ ] **Line rendering quality.** Stable screen-space strokes, antialiasing, and depth bias at high export resolutions; prevent construction lines from flickering or vanishing without making hidden lines falsely visible. Device-dependent WebGL line width is not a portable stroke system.
 - [ ] **Context recovery and capability limits.** The MVP reports missing/lost WebGL. Later restore resources from the current study after context restoration, preserve camera state, and validate actual device limits for export sizes. Keep the 2D notebook available throughout.
 - [x] **Geometric diagnostics.** Done for curves: **Probe the curve** in the 3D notebook, described in `mathematics.md`, `spatial-study.md`, `usage.md` and `architecture.md`. It shows T/N/B glyphs, the osculating circle and the point's construction lines in diagnostic inks, with κ, 1/κ and τ read out and plotted along the curve. Flat samples, unknown τ and centres at infinity are marked, not guessed; see the follow-up notes below.
-- [x] **Surface probe.** Done for surface patches and canal surfaces: **Principal curvatures & centres at a point**, with **Describe** choosing the curve or the surface in a canal study. It shows the normal, both principal directions, their normal-section circles and centres, and reads out κ for each branch, 1/κ, K and H, plotted along the row. See `mathematics.md#spatial-principal-curvatures-and-the-surface-probe` and the follow-up notes below.
+- [x] **Surface probe.** Done for surface patches, canal surfaces, and the tangent developable, framed ribbon and ruled surface built on a curve: **Principal curvatures & centres at a point**, with **Describe** choosing the curve or the surface in a canal study. It shows the normal, both principal directions, their normal-section circles and centres, and reads out κ for each branch, 1/κ, K and H, plotted along the row. See `mathematics.md#spatial-principal-curvatures-and-the-surface-probe` and the follow-up notes below.
 - [ ] **Probe follow-ups.**
-  - A surface probe on developable, framed and ruled surfaces and on mirrors.
+  - A surface probe on mirrors. (Done for developable, framed and ruled surfaces; see the follow-up notes below.)
   - The probe moving while parameters vary, which needs diagnostics for every frame.
   - Construction highlights for the curve probe on canal, harmonic and field studies. The canal's contact circle is drawn by the surface probe, not the curve probe.
   - An exact probe between samples, if snapping proves too coarse.
@@ -653,5 +653,58 @@ Recommended next step, for the user to choose: **adaptive curves** (above), or r
   - The probe snaps to the grid: at most 481 rows on a canal, 24 turns around each circle.
   - Plots run along the row only, not around the circle.
   - The probe's lines are depth-tested, so a centre or circle inside a closed surface is hidden by it, as the rust circle around a bead is.
+
+### Follow-up completed: the surface probe on ruled surfaces
+
+- Implemented **Principal curvatures & centres at a point** on the three surfaces built on a curve from straight lines: the tangent developable, the framed ribbon (while it has a width) and the ruled surface. Each offers **Describe → The curve / The surface**, with the curve as the default.
+  - `engine3/ruledprobe.go`: `ruledProbe` serves all three as S = a + u d. Each construction supplies S_t, S_u, S_tt and S_tu from its own derivatives, and the patch's shape solver, extracted as `shape`, finds the curvatures, so every surface shares one shape operator.
+  - The notebook draws the ruling through the point where a canal draws its contact circle. Each kind's names, branches, sliders, notes and help live in one descriptor table behind `surfaceTerms`, keyed by `surfaceKind`.
+- Decisions:
+  - Mirrors stay open: they are a different construction, and these three share one engine path.
+  - **Developable:** written r + w r′ (w = u/|r′|), so it needs only r‴, from the curve probe's `jerk`. Branches are named by line, **κ along the ruling** (0) and **κ across it** (τ/(κ|u|)), with the drawing's normal sign(u)·B. Its 24 columns at ±L·k/12 leave out the edge of regression u = 0: with it, the default place was that singular column, with an empty readout and blank plots.
+  - **Framed ribbon:** curvatures come from the frame's transport equations (D_s = −(bent·D)T + ΩP), not from differencing its transported samples. Ω is (2π·Twist + Correction)/L for a rotation-minimizing frame and τ + 2π·Twist/L for a Frenet frame.
+    - A Frenet ribbon's τ′ is exact for knots and harmonic sums, which gained an analytic r⁗ (`knotSnap`, `harmonicSnap`).
+    - Otherwise τ′ is differenced at two steps, and is unknown where they disagree. Differencing proved unusable at a trefoil's torsion peaks, which is why the analytic r⁗ was added.
+  - **Ruled surface:** the partner now also returns b″, so S_tt = (1 − u)a″ + u m²b″(φ). It uses the drawing's own singular guards.
+  - Framed ribbons and ruled surfaces number κ₁ ≥ κ₂, as patches do, because their rulings are not principal in general.
+  - Readout and plots: a curvature within 10⁻¹² of the other reads 0, and plots draw variation within 10⁻⁴ of the column's largest curvature as constant. Without this, a developable's exact zero read "6.9e-18" and its plot filled with rounding noise.
+  - Intended changes to existing behaviour:
+    - Developable, framed and ruled studies now offer **Describe**, and their straight-curve note says where to probe the surface.
+    - The same rounding rules apply to patch and canal readouts and plots. They change only values within rounding of a constant or of zero.
+    - Requests without the flag stay byte-identical (Go test), and the curve probe's help, readouts and drawings are unchanged.
+- Measured accuracy: see `mathematics.md#spatial-principal-curvatures-and-the-surface-probe` (**Accuracy of the ruled surfaces**).
+  - Knot developable against τ/(κ|u|): 10⁻⁹.
+  - Helix closed forms on expression curves: 5·10⁻⁵.
+  - Quadrics between rings against their level sets: 10⁻⁹.
+  - Frenet ribbon on the expression trefoil against the analytic knot: 5.8·10⁻³, with 350 of 12,025 points unknown.
+  - Euler's formula against the drawn surfaces converges fourfold per doubling for all four tested surfaces.
+- Workload: at 2400 samples the grid (481 rows × 24 or 25 columns) adds 4.6–5.7 MB of JSON and 10–15 ms natively. It is sent only while the surface probe is on.
+- Permanent docs: `mathematics.md` (**Ruled surfaces**), `spatial-study.md` (**Probing a surface**), `usage.md`, `architecture.md`, README.
+- Verification:
+  - `engine3/ruledprobe_test.go` (17 tests). The developable, framed and ruled tests were written first and observed failing with "no surface diagnostics". They cover:
+    - the helix and knot developable closed forms, a plane curve's flat umbilics, an inflection's singular ruling, rigid motion and reparameterization;
+    - untwisted rotation-minimizing ribbons that are developable, the helicoid from both frames, K = −Ω² at the spine with and without the distributed correction, and no probe without a ribbon;
+    - the analytic r⁗;
+    - hyperboloid, cylinder and cone against implicit K and H, including at rate 2; K ≤ 0; coincident and missing rulings;
+    - Euler convergence against the drawn surfaces, per-sample counting, and the expression-knot Frenet ribbon.
+  - `TestSurfaceDiagnosticsOffLeaveResultsUnchanged` now covers developable, framed (with and without a ribbon), ruled and involute studies.
+  - `scripts/test-wasm.mjs` checks a helix developable's probe through the real bridge.
+  - `tests/spatial-surface-probe.spec.ts`:
+    - unit tests for support, descriptors, the ruling drawing and readout rounding;
+    - browser tests through the notebook: the helix ribbon's closed form on both sheets, flat and twisted framed ribbons, K = −9 and H = −π/4 where half-turn chords cross the helix's axis, and a probe animation's endpoints, Stop and link round trip.
+  - `tests/spatial-probe.spec.ts` covers the plot resolution. `tests/study-link.spec.ts` covers round trips and older links for the three studies. `tests/layout.spec.ts` sweeps their new slider pairs at both widths.
+  - `make check` passed (engine3 coverage 98.9%). Full Chromium run: all 861 tests passed. Light/dark desktop and phone-width panels and drawings were inspected. WebKit was not run, since no rendering or encoding path changed.
+  - Mutation runs:
+    - Go, through compiler overlays: 29 targeted faults. 23 were detected on the first run. Three more were then caught by new tests: unknown tangent planes counted as singular, b″ scaled by m instead of m², and a ribbon with a seam counted as closed.
+    - Go survivors, all explained:
+      - dropping −Ω²D from D_ss, which is equivalent because the normal is perpendicular to D;
+      - taking τ′ at the coarse step, which stays within the method's accuracy (5.7·10⁻³ against 5.8·10⁻³);
+      - removing the ruled surface's singular guard, which `shape`'s own area test duplicates on every tested input.
+    - TypeScript: 10 faults in `probe.ts`. One survived, a noise series not snapped to zero, until the plot test's noise was made asymmetric.
+- Limits:
+  - The readout cannot tell a point whose tangent plane is unknown (counted unknown) from a singular one, and calls both singular. It is rare: it needs an unknown r″ or r‴ on a regular sample.
+  - On expression curves the differenced r‴ limits accuracy, most for Frenet ribbons, and near the domain's ends.
+  - The probe still snaps to its grid, and plots run along t only.
+  - Probe lines are depth-tested, so a probe inside a folded sheet, such as the chords' axis point, is mostly hidden.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

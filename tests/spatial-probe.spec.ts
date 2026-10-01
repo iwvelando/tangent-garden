@@ -412,6 +412,22 @@ test("plots break at undefined samples and pin outliers to their edge", () => {
   expect(constant.hi).toBeGreaterThan(constant.lo);
   // No values at all.
   expect(plotScale([null, null], false).runs).toEqual([]);
+  // Below a stated resolution a series is constant: rounding noise about
+  // zero draws around 0, and jitter about a value within a tenth of it,
+  // with nothing pinned. Without a resolution the noise fills the plot.
+  const noise = [1e-16, 3.3e-16, 0, 2.2e-16];
+  expect(plotScale(noise, false, 1e-6)).toMatchObject({
+    lo: -1,
+    hi: 1,
+    pinned: 0,
+  });
+  expect(plotScale(noise, false).hi).toBe(3.3e-16);
+  const jitter = plotScale([4 / 3, 4 / 3 + 1e-7, 4 / 3 - 1e-7], false, 1e-4);
+  expect(jitter.lo).toBeCloseTo(1.2, 6);
+  expect(jitter.hi).toBeCloseTo(1.4667, 4);
+  expect(jitter.pinned).toBe(0);
+  // A series that varies by more than the resolution keeps its own range.
+  expect(plotScale([1, 2, 3], false, 1e-4)).toMatchObject({ lo: 1, hi: 3 });
 });
 
 test("the probe adds passes last and changes nothing when absent", () => {

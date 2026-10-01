@@ -421,7 +421,11 @@ func TestSurfaceDiagnosticsOffLeaveResultsUnchanged(t *testing.T) {
 	mirror := surfaceStudy("paraboloid", 1, 1, 0, 0, 1, 0, 2*math.Pi, 24, 24)
 	mirror.Format = "rays"
 	mirror.Rays = RaysRequest{Interaction: "reflect", Light: "parallel", Azimuth: 0, Elevation: 90, Length: 1, Receiver: ReceiverRequest{Plane: "none"}}
-	for _, c := range []Request{canalled(circle(), 0.5, "1", 4), helixCanal(480), torusPatch(2, 0.7, 24, 24), custom("cos(t)", "sin(t)", "t", 0, 4), canalled(custom("t", "0", "0", -2*math.Pi, 2*math.Pi), 0.7, "1+0.8*sin(2*t)", 0), mirror} {
+	unwound := involuteStudy("cos(t)", "sin(t)", "t", 0, 4, 0, 0)
+	band := ribbon(study(), "rotation-minimizing", Vec3{0, 0, 1}, 0.3, 2, 0.35)
+	strands := ribbon(study(), "frenet", Vec3{}, 0, 1, 0)
+	strands.Frame.Offset, strands.Frame.Strands = 0.4, 3
+	for _, c := range []Request{canalled(circle(), 0.5, "1", 4), helixCanal(480), torusPatch(2, 0.7, 24, 24), custom("cos(t)", "sin(t)", "t", 0, 4), study(), unwound, band, strands, threaded(ring(-1), "cos(t)", "sin(t)", "1", 1, 1.3), chords(study(), 1, 2), canalled(custom("t", "0", "0", -2*math.Pi, 2*math.Pi), 0.7, "1+0.8*sin(2*t)", 0), mirror} {
 		for _, curve := range []bool{false, true} {
 			c.Diagnostics = curve
 			before, err := Compute(c)
@@ -436,7 +440,9 @@ func TestSurfaceDiagnosticsOffLeaveResultsUnchanged(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := c.Format == "surface" || c.Construction == "canal" && c.Format != "surface" && c.Format != "rays"
+			curveStudy := c.Format != "surface" && c.Format != "rays"
+			surface := c.Construction == "canal" || c.Construction == "" || c.Construction == "developable" || c.Construction == "ruled" || c.Construction == "framed" && c.Frame.Width > 0
+			want := c.Format == "surface" || curveStudy && surface
 			if (after.Probe != nil) != want {
 				t.Fatalf("%s/%s: surface diagnostics %v", c.Format, c.Construction, after.Probe != nil)
 			}

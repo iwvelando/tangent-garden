@@ -112,7 +112,7 @@ Its **Lines (SVG)** items save the drawing's lines: true SVG paths, suited to ed
 
 ## Probing a surface
 
-A surface patch, and a canal built on any curve (choose **Describe → The surface**), can be probed the same way with **Principal curvatures & centres at a point**. Two sliders pick a point on the surface's grid, and the drawing shows its normal, its two principal directions, and the two normal-section circles through it, each centred on its focal point on the normal line. Each branch takes its focal sheet's color, rust and slate. The sidebar reads out both principal curvatures with their radii, and the Gaussian and mean curvatures, and plots both curvatures along the row through the point.
+A surface patch, and a canal, tangent developable, framed ribbon or ruled surface built on any curve (choose **Describe → The surface**), can be probed the same way with **Principal curvatures & centres at a point**. Two sliders pick a point on the surface's grid, and the drawing shows its normal, its two principal directions, and the two normal-section circles through it, each centred on its focal point on the normal line. Each branch takes its focal sheet's color, rust and slate. The sidebar reads out both principal curvatures with their radii, and the Gaussian and mean curvatures, and plots both curvatures along the row through the point.
 
 On a canal the branches are its two lines of curvature. **Around the circle**, the curvature is always −1/R, centred on the sphere's centre on the curve, which is why a canal's first focal set is the curve itself. **Across it**, the curvature tells the shape of the envelope:
 
@@ -121,6 +121,12 @@ On a canal the branches are its two lines of curvature. **Around the circle**, t
 - Towards each gap, where the spheres stop having an envelope, the curvature across grows without bound and its plot is pinned to the edge. At t = 0, between the beads, there is no surface at all, and the panel says so.
 
 On a torus patch, κ₁ = −cos v/(R + r cos v) and κ₂ = −1/r, and its centres trace the focal sheets drawn beside it: the core circle and the axis.
+
+The developable, the framed ribbon and the ruled surface are all made of straight lines, and the probe draws the line through the point. A surface made of straight lines can never curve like a ball: K ≤ 0 everywhere on them, and K = 0 exactly where the surface could be unrolled flat.
+
+- On **Helix · a ribbon staircase**, the curvature along each tangent ruling is 0, with its centre at infinity, so K = 0: the ribbon is developable. Across the ruling it is τ/(κ|u|) = 1/(6|u|): 1.333 next to the curve, at u = 0.125, falling to 1/9 at the ribbon's edge, u = ±1.5. As the probe moves in toward the curve its centre rushes onto it: the curve is the ribbon's edge of regression, where its two sheets meet in a cusp, and the probe leaves that line out because the surface has no normal there.
+- On **The seam of a carried frame** the rotation-minimizing frame turns only toward the tangent, never about it, so the untwisted band is developable too: K reads 0 wherever the probe stands. On **A band around the trefoil** the frame is twisted twice around the knot, and K turns negative, −0.1714 halfway along the spine. At the spine, K = −Ω², where Ω is how fast the band turns about the curve.
+- On **Chords of a rising helix**, each half-turn chord crosses the helix's axis halfway along, at u = 0.5. There K = −9 and H = −π/4 at every t: the chords sweep an oblique helicoid, a saddle everywhere.
 
 ## Deliberate limits
 

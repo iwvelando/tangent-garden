@@ -296,22 +296,29 @@ export type SpatialResult = {
   // Present only when diagnostics were requested, for a curve.
   diagnostics?: DiagnosticsResult;
   // Present only when surface diagnostics were requested, for a surface
-  // patch or a canal.
+  // patch, or a canal, tangent developable, ruled surface or framed ribbon
+  // (with a width).
   surfaceDiagnostics?: SurfaceDiagnostics;
 };
 // Mirrors engine3.SurfaceDiagnostics: a surface on the probe's grid, where
 // points[r][k] is at parameters u[r] and v[k]. A patch's grid is its own; a
 // canal's row r is base sample along[r], and its column k turns v[k] =
-// 2πk/K from θ₀ around the contact circle (periodic, not repeated). With
-// A = −dn, each sample has two principal curvatures with unit directions and
-// focal points x + n/κ: a patch numbers them κ₁ ≥ κ₂, and a canal by line
+// 2πk/K from θ₀ around the contact circle (periodic, not repeated). A
+// developable, framed or ruled surface's row r is also base sample along[r],
+// and its column k is the point u = v[k] along the ruling: ±L·k/12 for
+// k = 1…12 on a developable (without its edge of regression u = 0), 25 from
+// −w to w across a framed ribbon, 25 from 0 to 1 on a ruled surface. With
+// A = −dn and the drawing's normal, each sample has two principal
+// curvatures with unit directions and focal points x + n/κ: a patch, framed
+// ribbon and ruled surface number them κ₁ ≥ κ₂; a canal names them by line
 // of curvature, 0 around the contact circle (κ = −1/R, focused on the base)
-// and 1 across it. A point is null without a surface there; a normal is null
-// at a singular point; a curvature is null where unknown; directions are
-// null at an umbilic; a focal point is null at infinity (beyond 100 radii).
-// Counts leave out a closed canal's repeated last row.
+// and 1 across it, and a developable 0 along the ruling (κ = 0) and 1 across
+// it. A point is null without a surface there; a normal is null at a
+// singular point; a curvature is null where unknown; directions are null at
+// an umbilic; a focal point is null at infinity (beyond 100 radii). Counts
+// leave out a closed surface's repeated last row.
 export type SurfaceDiagnostics = {
-  kind: "patch" | "canal";
+  kind: "patch" | "canal" | "developable" | "framed" | "ruled";
   along: number[];
   u: number[];
   v: number[];

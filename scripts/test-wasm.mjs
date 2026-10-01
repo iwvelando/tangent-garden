@@ -879,6 +879,53 @@ assert.equal(spatialCustom.invalid, 0);
 assert.equal(spatialCustom.base.length, 481);
 assert.ok(Math.abs(spatialCustom.base.at(-1).z - Math.PI / 2) < 1e-12);
 assert.equal(spatialCustom.diagnostics, undefined);
+assert.equal(spatialCustom.surfaceDiagnostics, undefined);
+// Its tangent developable, with the drawn normal sign(u)·B, has κ = 0 along
+// each ruling and κ = τ/(κ|u|) = (1/4)/(2|u|) across it, on columns ±k/12
+// either side of the edge of regression u = 0.
+const unrolled = JSON.parse(
+  globalThis.tangentGardenSpatial(
+    JSON.stringify({
+      format: "parametric",
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "a*t",
+        a: 0.25,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      length: 1,
+      samples: 480,
+      lines: 48,
+      surfaceDiagnostics: true,
+    }),
+  ),
+).surfaceDiagnostics;
+assert.equal(unrolled.kind, "developable");
+assert.equal(unrolled.u.length, 481);
+assert.deepEqual(
+  [
+    unrolled.v.length,
+    unrolled.v[0],
+    unrolled.v[11],
+    unrolled.v[12],
+    unrolled.v[23],
+  ],
+  [24, -1, -1 / 12, 1 / 12, 1],
+);
+unrolled.v.forEach((u, k) =>
+  unrolled.u.forEach((_, r) => {
+    const want = 0.25 / (2 * Math.abs(u));
+    assert.ok(Math.abs(unrolled.curvature[0][r][k]) < 1e-6);
+    assert.ok(Math.abs(unrolled.curvature[1][r][k] / want - 1) < 5e-5);
+    assert.equal(unrolled.focal[0][r][k], null);
+  }),
+);
+assert.deepEqual(
+  [unrolled.singular, unrolled.unknown, unrolled.umbilics, unrolled.clipped],
+  [0, 0, 0, [481 * 24, 0]],
+);
 // The helix r = (2 cos t, 2 sin t, t/4): κ = 2/(4 + 1/16), τ = (1/4)/(4 + 1/16).
 const probed = JSON.parse(
   globalThis.tangentGardenSpatial(

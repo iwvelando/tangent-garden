@@ -67,8 +67,9 @@ type Request struct {
 	// frame at every sample. Surface, ray, and implicit studies ignore it.
 	Diagnostics bool `json:"diagnostics"`
 	// SurfaceDiagnostics asks for the principal curvatures, directions and
-	// focal points of a surface patch or canal surface; other studies
-	// ignore it.
+	// focal points of a surface patch, or of the canal, tangent developable,
+	// ruled surface or framed ribbon (with a width) built on a curve; other
+	// studies ignore it.
 	SurfaceDiagnostics bool `json:"surfaceDiagnostics"`
 }
 type Vertex struct {
@@ -125,7 +126,8 @@ type Result struct {
 	Implicit *ImplicitResult `json:"implicit,omitempty"`
 	// Diagnostics is present only when requested, for a curve.
 	Diagnostics *DiagnosticsResult `json:"diagnostics,omitempty"`
-	// Probe is present only when requested, for a surface patch or a canal.
+	// Probe is present only when requested, for a surface patch, canal,
+	// developable, ruled surface or framed ribbon with a width.
 	Probe *SurfaceDiagnostics `json:"surfaceDiagnostics,omitempty"`
 }
 
@@ -155,7 +157,7 @@ func Compute(c Request) (Result, error) {
 	if err == nil && out.Diagnostics != nil {
 		out.Diagnostics.clip(out.Bounds.Radius)
 	}
-	if err == nil && out.Probe != nil && out.Probe.Kind == "canal" {
+	if err == nil && out.Probe != nil && out.Probe.Kind != "patch" {
 		out.Probe.clip(out.Bounds.Radius)
 	}
 	return out, err
@@ -242,7 +244,7 @@ func compute(c Request) (Result, error) {
 			return Result{}, err
 		}
 	}
-	var partner func(float64) (Vec3, Vec3, bool, bool)
+	var partner func(float64) (Vec3, Vec3, Vec3, bool, bool)
 	if ruled {
 		if partner, err = c.Ruled.partner(evaluate, lo, hi, closed); err != nil {
 			return Result{}, err
@@ -254,7 +256,7 @@ func compute(c Request) (Result, error) {
 	speeds, middles := make([]float64, n+1), make([]float64, n)
 	valid := make([]bool, n+1)
 	var velocities, accelerations []Vec3
-	if c.Diagnostics || canal && c.SurfaceDiagnostics {
+	if c.Diagnostics || c.SurfaceDiagnostics && (canal || developable || framed || ruled) {
 		velocities, accelerations = make([]Vec3, n+1), make([]Vec3, n+1)
 	}
 	for i := 0; i <= n; i++ {
@@ -370,7 +372,10 @@ func compute(c Request) (Result, error) {
 		return out, nil
 	}
 	if framed {
-		frames(c, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
+		frame := frames(c, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
+		if c.SurfaceDiagnostics && c.Frame.Width > 0 {
+			out.Probe = framedProbe(c, evaluate, lo, hi, out.Base, velocities, accelerations, frame)
+		}
 		families := [][]*Vec3{out.Base, out.Minus, out.Plus}
 		families = append(families, out.Frame.Strands...)
 		out.Bounds = fit(append(families, generating...)...)
@@ -390,7 +395,7 @@ func compute(c Request) (Result, error) {
 		return out, nil
 	}
 	if ruled {
-		if err := ruledSurface(c, &out, partner, tangents, speeds, lo, hi, closed); err != nil {
+		if err := ruledSurface(c, &out, partner, tangents, accelerations, speeds, lo, hi, closed); err != nil {
 			return Result{}, err
 		}
 		out.Bounds = fit(append([][]*Vec3{out.Base, out.Plus}, generating...)...)
@@ -433,6 +438,9 @@ func compute(c Request) (Result, error) {
 		if out.Base[j] != nil {
 			out.Rulings = append(out.Rulings, Ruling{j, *out.Minus[j], *out.Plus[j]})
 		}
+	}
+	if c.SurfaceDiagnostics {
+		out.Probe = developableProbe(c, evaluate, lo, hi, closed, out.Base, velocities, accelerations, valid)
 	}
 	out.Bounds = fit(append([][]*Vec3{out.Base, out.Minus, out.Plus}, generating...)...)
 	out.Radius = out.Bounds.Radius
