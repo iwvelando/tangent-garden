@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { ProgressSlider } from "../ProgressSlider";
 import type { SpatialAnimation } from "./link";
 import { EngineClient, playbackEngineCount } from "../engine-client";
 import { play } from "../playback";
@@ -938,15 +939,10 @@ export function SpatialAnimationPanel({
                 label="Animation progress"
                 value={`${Math.round(progress * 100)}%`}
               >
-                <input
-                  aria-label="Animation progress"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step=".001"
-                  value={progress}
+                <ProgressSlider
+                  progress={progress}
                   disabled={running}
-                  onChange={(e) => void seek(+e.target.value)}
+                  onSeek={(p) => void seek(p)}
                 />
               </Field>
               <div className="note" role="status" aria-live="off">
