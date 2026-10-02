@@ -1384,8 +1384,10 @@ export const spatialPresets: {
           zMin: -3.9,
           zMax: 3.9,
         },
-        cells: 72,
-        refine: 2,
+        // One refinement level closes the slits along the self-intersection
+        // as well as finer cells would, at about a third of their time.
+        cells: 48,
+        refine: 1,
         // Across the bottle's axis: where the neck is inside the body, a
         // plane meets both, one curve within the other.
         sections: {

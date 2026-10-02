@@ -21,7 +21,11 @@ import { defaultCut, type Cut } from "../web/spatial/cut";
 import { hex, lineColor, palette } from "../web/spatial/palette";
 
 // Seeing through the drawing. Studies drawn with opaque sheets and hidden
-// lines hidden must not change: these files were recorded before it existed.
+// lines hidden must not change. Their line drawings are computed on the CPU
+// and were recorded before seeing through existed. Their PNGs depend on the
+// machine's rasterizer (they matched main at 0e7ad8f on macOS, not on CI's
+// SwiftShader), so here each must come back byte-identical after the
+// setting has been changed and returned to plain.
 const stage = (page: Page) => page.locator(".spatial-stage");
 const settled = (page: Page) =>
   expect(stage(page)).toHaveAttribute("aria-busy", "false");
@@ -40,43 +44,37 @@ const png = "PNG image · 2000 × 1520",
   shown = "Lines (SVG) · visible only, sampled";
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
-// Recorded from main at 0e7ad8f, before seeing through.
-const recorded: Record<string, { png: string; shown: string }> = {
-  "The focal sheets of an ellipsoid": {
-    png: "916d8e6ac145566eea75f8e28a3fdd8e74aa04ffbe2eb4a6da2fb81f41dd3e81",
-    shown: "f7ef384c68a1ce46ed25942bb4691645c19a75b7024791881f10d3a785c3779f",
-  },
-  "A tube around the trefoil": {
-    png: "fb707b0668df3eef0a9accab1e983452f53a63e89ce5962216b7094471fbd2bb",
-    shown: "90d24495b3d7c85e94e564c1b1ac4aa7a1d741787be9f49bce99557c0f125ea5",
-  },
-  "A gyroid, cut open": {
-    png: "e633898ad9378b5c3694dd0995a8268238f4a9707725b655d7a968da1ce65ca7",
-    shown: "4c1a8b9fc31085e41e181039519499b93cb5c3fd42133356dc7e642715fff02f",
-  },
-  "A lamp sealed in an ellipsoid": {
-    png: "c35890fb5fd69d331cdad03175c1c37fc42f7574875256dca4bcab85f63f8abf",
-    shown: "8654adbeaf6abe349c7524cb54b11e86e23f8df6ec13b7537a8913525516fc99",
-  },
+// Line drawings recorded from main at 0e7ad8f, before seeing through.
+const recorded: Record<string, string> = {
+  "The focal sheets of an ellipsoid":
+    "f7ef384c68a1ce46ed25942bb4691645c19a75b7024791881f10d3a785c3779f",
+  "A tube around the trefoil":
+    "90d24495b3d7c85e94e564c1b1ac4aa7a1d741787be9f49bce99557c0f125ea5",
+  "A gyroid, cut open":
+    "4c1a8b9fc31085e41e181039519499b93cb5c3fd42133356dc7e642715fff02f",
+  "A lamp sealed in an ellipsoid":
+    "8654adbeaf6abe349c7524cb54b11e86e23f8df6ec13b7537a8913525516fc99",
 };
 
 test("studies drawn opaque with hidden lines hidden are unchanged", async ({
   page,
 }) => {
   await ready(page);
-  const seen: Record<string, { png: string; shown: string }> = {};
-  for (const label of [
-    "The focal sheets of an ellipsoid",
-    "A tube around the trefoil",
-    "A gyroid, cut open",
-    "A lamp sealed in an ellipsoid",
-  ]) {
+  const box = page.getByRole("group", { name: "See through" });
+  const sheets = box.getByLabel("Sheets", { exact: true }),
+    behind = box.getByLabel("Lines behind sheets", { exact: true });
+  const seen: Record<string, string> = {};
+  for (const label of Object.keys(recorded)) {
     await choosePreset(page, { label });
     await settled(page);
-    seen[label] = {
-      png: sha(await download(page, png)),
-      shown: sha(await download(page, shown)),
-    };
+    seen[label] = sha(await download(page, shown));
+    const plain = await download(page, png);
+    await sheets.selectOption("through");
+    await behind.selectOption("dashed");
+    expect((await download(page, png)).equals(plain), label).toBe(false);
+    await sheets.selectOption("opaque");
+    await behind.selectOption("hide");
+    expect((await download(page, png)).equals(plain), label).toBe(true);
   }
   expect(seen).toEqual(recorded);
 });
