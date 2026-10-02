@@ -43,6 +43,7 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 type Request struct {
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
+	Input        string           `json:"input"`
 	Involute     InvoluteRequest  `json:"involute"`
 	Pole         Vec3             `json:"pole"`
 	Harmonic     HarmonicCurve    `json:"harmonic"`
@@ -103,6 +104,9 @@ type Result struct {
 	Involute   *InvoluteResult   `json:"involute,omitempty"`
 	Projection *ProjectionResult `json:"projection,omitempty"`
 	Inversion  *InversionResult  `json:"inversion,omitempty"`
+	// Composition is present only when a construction acts on a derived
+	// input curve, which then fills Base.
+	Composition *CompositionResult `json:"composition,omitempty"`
 	// Frame is present only for the framed construction, whose ribbon uses
 	// Mesh, Minus, Plus, and Rulings with the frame's own breaks.
 	Frame *FrameResult `json:"frame,omitempty"`
@@ -193,6 +197,9 @@ func compute(c Request) (Result, error) {
 	if !involute && !projection && !inversion && !framed && !ruled && !canal && !developable && !none {
 		return Result{}, fmt.Errorf("unknown spatial construction")
 	}
+	if err := c.validateInput(); err != nil {
+		return Result{}, err
+	}
 	if developable && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
 		return Result{}, fmt.Errorf("tangent reach must be finite and between 0 (exclusive) and 20")
 	}
@@ -244,6 +251,16 @@ func compute(c Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	// A derived input replaces the curve every construction acts on, and
+	// is broken wherever the base is.
+	composed := c.composed()
+	var baseCurve []*Vec3
+	var baseTangents []Vec3
+	var baseBreaks []bool
+	if composed {
+		baseCurve, baseTangents, baseBreaks = baseSamples(c, evaluate, lo, hi, c.Samples, closed)
+		evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi)
+	}
 	var radius func(float64) (float64, float64, float64, bool)
 	if canal {
 		if radius, err = c.Canal.radius(hi - lo); err != nil {
@@ -284,15 +301,13 @@ func compute(c Request) (Result, error) {
 		out.Plus[i] = &plus
 		b := v.cross(a)
 		scale := math.Max(a.norm(), v.norm()/(hi-lo))
-		if c.Format == "harmonic" {
-			scale = c.Harmonic.curvatureScale()
-		} else if c.Format != "parametric" && !dynamic {
-			scale = float64(c.P*c.P)*(c.Radius+c.Tube) + float64(2*c.P*c.Q+c.Q*c.Q)*c.Tube
+		tolerance := 1e-6 // numerical second derivatives have a finite noise floor
+		switch c.analytic() {
+		case "harmonic":
+			scale, tolerance = c.Harmonic.curvatureScale(), 1e-8
+		case "torus":
+			scale, tolerance = float64(c.P*c.P)*(c.Radius+c.Tube)+float64(2*c.P*c.Q+c.Q*c.Q)*c.Tube, 1e-8
 		}
-		tolerance := 1e-8
-		if c.Format == "parametric" || dynamic {
-			tolerance = 1e-6
-		} // numerical second derivatives have a finite noise floor
 		valid[i] = a.valid() && b.norm() > tolerance*v.norm()*scale
 		if valid[i] {
 			normals[i] = b.unit()
@@ -319,10 +334,14 @@ func compute(c Request) (Result, error) {
 			middles[i] = middle.norm()
 		}
 		disconnected := out.Base[i] == nil || out.Base[i+1] == nil || !ok || !middle.valid() || middle.norm() < 1e-9 || tangents[i].dot(tangents[i+1]) < 0
-		if !disconnected && c.Format == "parametric" {
+		if !disconnected && c.Format == "parametric" && !composed {
 			// A chord through an asymptote is not a local tangent segment.
 			disconnected = jumps(*out.Base[i], *out.Base[i+1], middle, (hi-lo)/float64(n))
 		}
+		// A derived input has no asymptote of its own: each foot lies on
+		// the sphere with diameter from the base point to the pole, so it
+		// breaks where the base does.
+		disconnected = disconnected || composed && baseBreaks[i+1]
 		out.Breaks[i+1] = disconnected
 		if !developable {
 			continue
@@ -358,6 +377,8 @@ func compute(c Request) (Result, error) {
 	}
 	if out.Invalid == n+1 {
 		switch {
+		case composed:
+			return Result{}, fmt.Errorf("the input curve has no regular sample: it stands still or is undefined; move the pole or choose another input curve")
 		case !dynamic:
 			return Result{}, fmt.Errorf("no regular finite samples; check the expressions and domain")
 		case c.Format == "field" && !none:
@@ -370,6 +391,11 @@ func compute(c Request) (Result, error) {
 			// A chase caught at once is drawn as its starts; its note says why.
 			return Result{}, fmt.Errorf("no pursuer moves; give a pursuer a speed or lengthen the interval")
 		}
+	}
+	// The base under a derived input frames with the pole as its own family.
+	if composed {
+		out.Composition = composition(c, baseCurve, baseTangents, baseBreaks, closed, out.Base, out.Breaks)
+		generating = append(generating, out.Composition.Curve, []*Vec3{&out.Composition.Pole})
 	}
 	if none {
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}

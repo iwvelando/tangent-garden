@@ -1,4 +1,4 @@
-import type { Frame } from "./types";
+import { composes, type Frame } from "./types";
 import { createRenderer, type View, type Layers } from "./renderer";
 import { buildScene, type Batch } from "./scene";
 import { linework, linesSvg, sampleStep } from "./linework";
@@ -36,7 +36,12 @@ function studyTitle(frame: Frame) {
           ? "spatial cyclic pursuit"
           : "spatial curve",
   };
-  return title[frame.config.construction];
+  const on = {
+    base: "",
+    "tangent-foot": " on the tangent-foot curve",
+    orthotomic: " on the tangent-line orthotomic",
+  }[composes(frame.config) ? frame.config.input : "base"];
+  return title[frame.config.construction] + on;
 }
 const xml = (s: string) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");

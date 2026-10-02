@@ -169,6 +169,14 @@
 .dark .focal-dot.second {
   background: #94a8eb;
 }
+/* The base curve under a derived input: palette.recede. */
+.parent-dot {
+  background: #94a8a1;
+  margin-left: 12px;
+}
+.dark .parent-dot {
+  background: #3d5e5e;
+}
 /* The cut's edge: palette.cut. */
 .cut-dot {
   background: #212426;

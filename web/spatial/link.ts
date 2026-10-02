@@ -93,6 +93,7 @@ const config: SchemaOf<SpatialConfig> = {
       },
     },
     pole: vec3,
+    input: { options: { base: true, "tangent-foot": true, orthotomic: true } },
     inversion: {
       fields: {
         center: vec3,

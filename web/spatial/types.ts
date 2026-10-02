@@ -9,9 +9,12 @@ export type InvoluteConfig = {
   offset: number;
   family: { enabled: boolean; from: number; to: number; count: number };
 };
+// The base curve, or one of its tangent projections from the pole: the
+// curve a construction acts on, or the curve sphere inversion inverts.
+export type CurveInput = "base" | "tangent-foot" | "orthotomic";
 // Sphere inversion J(p) = O + R²(p − O)/|p − O|² of the base curve or of one
 // of its tangent projections from the pole. Mirrors engine3.InversionRequest.
-export type InversionInput = "base" | "tangent-foot" | "orthotomic";
+export type InversionInput = CurveInput;
 export type InversionConfig = {
   center: Vec3;
   radius: number;
@@ -221,6 +224,10 @@ export type SpatialConfig = {
     | "canal"
     | "none";
   pole: Vec3;
+  // The curve the developable, involute, framed ribbon, ruled surface or
+  // canal acts on; the other constructions ignore it. Mirrors
+  // engine3.Request.Input.
+  input: CurveInput;
   inversion: InversionConfig;
   involute: InvoluteConfig;
   harmonic: HarmonicCurve;
@@ -271,6 +278,9 @@ export type SpatialResult = {
   involute?: InvoluteResult;
   projection?: ProjectionResult;
   inversion?: InversionResult;
+  // Present only when a construction acts on a derived input curve, which
+  // then fills base; the base curve itself is composition.curve.
+  composition?: CompositionResult;
   // Present for a harmonic curve under any construction.
   harmonic?: SpatialHarmonicResult;
   // Present for a vector field under any construction.
@@ -425,6 +435,32 @@ export type SpatialHarmonicResult = {
   closed: boolean;
   positions: { sampleIndex: number; joints: Vec3[]; point: Vec3 }[];
 };
+// Mirrors engine3.CompositionResult: the base curve and its breaks, indexed
+// like the input curve in base, with representative constructions joining a
+// base point to its tangent foot and the input point (image). Cusps counts
+// the runs of intervals where the input curve stops or turns back while the
+// base continues: not at an open curve's ends, and once where a closed
+// curve's ends meet.
+export type CompositionResult = {
+  input: CurveInput;
+  pole: Vec3;
+  curve: (Vec3 | null)[];
+  breaks: boolean[];
+  constructions: ProjectionResult["constructions"];
+  cusps: number;
+};
+// The constructions built on a curve, which take an input curve.
+export const takesInput = (c: SpatialConfig) =>
+  c.format !== "surface" &&
+  c.format !== "rays" &&
+  c.format !== "implicit" &&
+  (c.construction === "developable" ||
+    c.construction === "involute" ||
+    c.construction === "framed" ||
+    c.construction === "ruled" ||
+    c.construction === "canal");
+export const composes = (c: SpatialConfig) =>
+  takesInput(c) && c.input !== "base";
 export const usesSpatialPole = (c: SpatialConfig) =>
   c.construction === "tangent-foot" ||
   c.construction === "orthotomic" ||

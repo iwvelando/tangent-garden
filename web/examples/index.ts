@@ -7,6 +7,7 @@ import {
 } from "../ExampleGallery";
 import { presets } from "../presets";
 import { spatialPresets } from "../spatial/presets";
+import { composes } from "../spatial/types";
 import type { Config } from "../types";
 import manifest from "./thumbnails.json";
 
@@ -75,25 +76,27 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
             ? "Spatial pursuit"
             : p.config.format === "field"
               ? "Vector-field trajectories"
-              : p.config.construction === "canal"
-                ? "Tubes and canal surfaces"
-                : p.config.construction === "ruled"
-                  ? "Ruled surfaces"
-                  : p.config.construction === "framed"
-                    ? "Framed ribbons"
-                    : p.config.format === "harmonic"
-                      ? "Harmonic generators"
-                      : p.config.construction === "involute"
-                        ? "Involute filaments"
-                        : p.config.construction === "tangent-foot" ||
-                            p.config.construction === "orthotomic"
-                          ? "Tangent projections"
-                          : p.config.construction === "inversion"
-                            ? "Sphere inversions"
-                            : p.config.format === "torus"
-                              ? "Torus knots"
-                              : "Parametric curves",
-  keywords: `${p.config.format} ${p.config.construction}${p.cut ? " cut" : ""}${p.sight ? " see-through" : ""}`,
+              : composes(p.config)
+                ? "Built on a derived curve"
+                : p.config.construction === "canal"
+                  ? "Tubes and canal surfaces"
+                  : p.config.construction === "ruled"
+                    ? "Ruled surfaces"
+                    : p.config.construction === "framed"
+                      ? "Framed ribbons"
+                      : p.config.format === "harmonic"
+                        ? "Harmonic generators"
+                        : p.config.construction === "involute"
+                          ? "Involute filaments"
+                          : p.config.construction === "tangent-foot" ||
+                              p.config.construction === "orthotomic"
+                            ? "Tangent projections"
+                            : p.config.construction === "inversion"
+                              ? "Sphere inversions"
+                              : p.config.format === "torus"
+                                ? "Torus knots"
+                                : "Parametric curves",
+  keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.sight ? " see-through" : ""}`,
   // A preset's cut and sight are part of its picture; presets without
   // either keep the fingerprints they had before those existed.
   fingerprint: fingerprint(

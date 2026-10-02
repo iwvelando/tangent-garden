@@ -43,6 +43,15 @@ async function download(page: Page, item: string) {
 const png = "PNG image · 2000 × 1520",
   shown = "Lines (SVG) · visible only, sampled";
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+// The recordings predate the metadata's construction input and its base
+// curve layer, which a study built on the base records as "base" and shown.
+const predating = (b: Buffer) =>
+  Buffer.from(
+    b
+      .toString("utf8")
+      .replace('"input":"base",', "")
+      .replace('"parent":true,', ""),
+  );
 
 // Line drawings recorded from main at 0e7ad8f, before seeing through.
 const recorded: Record<string, string> = {
@@ -67,7 +76,7 @@ test("studies drawn opaque with hidden lines hidden are unchanged", async ({
   for (const label of Object.keys(recorded)) {
     await choosePreset(page, { label });
     await settled(page);
-    seen[label] = sha(await download(page, shown));
+    seen[label] = sha(predating(await download(page, shown)));
     const plain = await download(page, png);
     await sheets.selectOption("through");
     await behind.selectOption("dashed");

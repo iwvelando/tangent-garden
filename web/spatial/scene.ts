@@ -37,7 +37,9 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // surface; its section curves, the planes they lie on, and the box with the
 // edges where the box cuts the surface open and where it stops beside cells
 // left out (with crosses at poles and jumps) as their own layers. The base
-// curve is always drawn.
+// curve is always drawn. When a construction is built on a derived input
+// curve, that curve is drawn as the base, and the base curve itself is the
+// parent, with the projection's connectors and pole.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -45,6 +47,7 @@ export type Layers = {
   filaments: boolean;
   strings: boolean;
   projection: boolean;
+  parent: boolean;
   connectors: boolean;
   pole: boolean;
   inverse: boolean;
@@ -82,6 +85,7 @@ export const defaultLayers: Layers = {
   filaments: true,
   strings: true,
   projection: true,
+  parent: true,
   connectors: true,
   pole: true,
   inverse: true,
@@ -392,13 +396,15 @@ export function buildScene(result: SpatialResult) {
     "lines",
     1,
   );
-  const q = result.projection;
-  const at = q?.points.find((p) => p);
+  // A projection's own connectors, or those of the projection a
+  // construction is built on.
+  const q = result.projection ?? result.composition;
+  const at = result.projection?.points.find((p) => p);
   const projection = batch(
     vertices(
-      q?.collapsed && at
+      result.projection?.collapsed && at
         ? cross(at, result.bounds.radius * 0.025)
-        : pairs(q?.points ?? [], result.breaks),
+        : pairs(result.projection?.points ?? [], result.breaks),
     ),
     "lines",
     3,
@@ -430,6 +436,12 @@ export function buildScene(result: SpatialResult) {
     vertices(q ? cross(q.pole, result.bounds.radius * 0.03) : []),
     "lines",
     1,
+  );
+  // The base curve under a derived input, with its own breaks.
+  const parent = path(
+    result.composition?.curve ?? [],
+    result.composition?.breaks ?? [],
+    4,
   );
   // The image uses its own breaks: the base's plus every passage through
   // the center, where the image leaves through infinity.
@@ -874,6 +886,7 @@ export function buildScene(result: SpatialResult) {
     plus,
     rulings,
     projection,
+    parent,
     connectors,
     feet,
     pole,
@@ -976,6 +989,7 @@ export function scenePasses(
   add("filaments", layers.filaments, false, s.filaments);
   add("connectors", layers.connectors, false, s.connectors, s.feet);
   add("projection", layers.projection, false, s.projection);
+  add("parent", layers.parent, false, s.parent);
   add("sphere", layers.sphere, false, s.sphere);
   add("correspondences", layers.correspondences, false, s.correspondences);
   add("source", layers.source, false, s.source, s.sourcePole);
