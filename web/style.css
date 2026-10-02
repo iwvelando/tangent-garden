@@ -489,7 +489,8 @@ input[type="range"] {
   background: #294744;
   color: #d9eeee;
 }
-/* Paired fields share rows through a subgrid: label, control, then help.
+/* Paired fields share rows through a subgrid: label, control, error, then
+   help.
    Labels align to the bottom of their row, so a wrapped label keeps the
    controls level, and help opens in its own row below both controls instead
    of pushing the neighbouring field down. */
@@ -500,15 +501,39 @@ input[type="range"] {
 }
 .pair > .field {
   display: grid;
-  grid-row: span 3;
+  grid-row: span 4;
   grid-template-rows: subgrid;
   row-gap: 0;
 }
 .pair > .field > .field-label {
   align-self: end;
 }
-.pair > .field > .hint {
+.pair > .field > .hint,
+.pair > .field > .field-error {
   align-self: start;
+}
+/* An error under the control it names: compact, unlike the drawing's. */
+.field-error {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #a4522f;
+}
+.dark .field-error {
+  color: #f3bc83;
+}
+input:not([type="range"]):not([type="checkbox"]):not(
+    [type="radio"]
+  )[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: #a4522f;
+}
+.dark
+  input:not([type="range"]):not([type="checkbox"]):not(
+    [type="radio"]
+  )[aria-invalid="true"],
+.dark select[aria-invalid="true"] {
+  border-color: #f3bc83;
 }
 section {
   border-top: 1px solid var(--border);

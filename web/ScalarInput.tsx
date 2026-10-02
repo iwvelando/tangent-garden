@@ -11,7 +11,14 @@ import { boundText, type EngineClient } from "./engine-client";
 
 // A field's resolution state: pending while Go evaluates its text, with the
 // parser's message when the text is not a finite constant.
-export type ScalarState = { name: string; pending: boolean; error?: string };
+// control is the id of the input whose text failed, so the error can be
+// shown under it.
+export type ScalarState = {
+  name: string;
+  pending: boolean;
+  error?: string;
+  control?: string;
+};
 export const ScalarStatus = createContext<{
   client: { current: EngineClient | null };
   track: (job: Promise<void>) => void;
@@ -87,7 +94,7 @@ export function ScalarInput({
       .catch((error: Error) => {
         if (!current()) return;
         setDraft({ text, value: NaN });
-        report({ name, pending: false, error: error.message });
+        report({ name, pending: false, error: error.message, control: id });
         onChange(NaN);
       });
     status.track(job);

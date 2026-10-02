@@ -40,6 +40,7 @@ function studyTitle(frame: Frame) {
     base: "",
     "tangent-foot": " on the tangent-foot curve",
     orthotomic: " on the tangent-line orthotomic",
+    involute: " on the involute",
   }[composes(frame.config) ? frame.config.input : "base"];
   return title[frame.config.construction] + on;
 }

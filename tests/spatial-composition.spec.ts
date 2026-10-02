@@ -43,6 +43,13 @@ const preset = (name: string) =>
 const cusp = preset("Filaments off a cusp"),
   horn = preset("A horn of perpendicular feet"),
   chords = preset("Chords across a knot's reflection");
+// The involute's own showcases, in the same gallery family (see
+// spatial-involute-input.spec.ts).
+const unwound = [
+  preset("Where a helix's tangents land"),
+  preset("A trefoil's string, unwound"),
+  preset("A sheet of Viviani's normals"),
+];
 const composedLayers = [
   "Base curve",
   "Perpendiculars & tangent feet",
@@ -169,7 +176,7 @@ test("constructions without an input hide the choice and ignore it", async ({
 test("earlier presets are built on the base and keep their layers", async ({
   page,
 }) => {
-  const added = new Set([+cusp, +horn, +chords]);
+  const added = new Set([+cusp, +horn, +chords, ...unwound.map(Number)]);
   spatialPresets.forEach((p, k) => {
     if (!added.has(k)) expect(p.config.input, p.name).toBe("base");
   });
@@ -196,14 +203,14 @@ test("the cusp preset reports its cusp, and every showcase builds on a derived c
     .getByRole("group", { name: "Example family" })
     .getByRole("button", { name: /Built on a derived curve/ })
     .click();
-  await expect(gallery.locator("[data-example]")).toHaveCount(3);
+  await expect(gallery.locator("[data-example]")).toHaveCount(6);
   expect(
     await gallery
       .locator("[data-example]")
       .evaluateAll((cards) =>
         cards.map((c) => (c as HTMLElement).dataset.example),
       ),
-  ).toEqual([cusp, horn, chords]);
+  ).toEqual([cusp, horn, chords, ...unwound]);
   await page.keyboard.press("Escape");
   await gallery.waitFor({ state: "hidden" });
   for (const [k, input, text] of [

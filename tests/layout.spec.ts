@@ -172,6 +172,15 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
         await page.getByRole("checkbox", { name }).check();
         await expect(page.locator(".spatial-probe .pair")).toBeVisible();
       });
+    // The involute input's anchor and string pair only while a
+    // construction is built on it.
+    setups.push(async () => {
+      await page.goto("/?study=3d");
+      await choosePreset(page, { label: "A trefoil's string, unwound" });
+      await expect(
+        page.getByRole("textbox", { name: "Input string c", exact: true }),
+      ).toBeVisible();
+    });
     // The cut's fields pair only while it is on, on a curve and a surface;
     // its refusal must not move them either.
     for (const preset of [

@@ -47,18 +47,24 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 			}
 			return a
 		}
-		if !finite(c.Radius) || !finite(c.Tube) || c.Radius < 0.1 || c.Radius > 20 || c.Tube < 0.01 || c.Tube >= c.Radius {
-			return nil, 0, 0, false, fmt.Errorf("require 0.1 ≤ radius ≤ 20 and 0.01 ≤ tube < radius")
+		if !finite(c.Radius) || c.Radius < 0.1 || c.Radius > 20 {
+			return nil, 0, 0, false, fieldErr("radius", "require 0.1 ≤ radius ≤ 20 and 0.01 ≤ tube < radius")
 		}
-		if c.P < 1 || c.P > 8 || c.Q < 1 || c.Q > 9 || gcd(c.P, c.Q) != 1 {
-			return nil, 0, 0, false, fmt.Errorf("windings must be coprime integers (p: 1–8, q: 1–9)")
+		if !finite(c.Tube) || c.Tube < 0.01 || c.Tube >= c.Radius {
+			return nil, 0, 0, false, fieldErr("tube", "require 0.1 ≤ radius ≤ 20 and 0.01 ≤ tube < radius")
+		}
+		if c.P < 1 || c.P > 8 {
+			return nil, 0, 0, false, fieldErr("p", "windings must be coprime integers (p: 1–8, q: 1–9)")
+		}
+		if c.Q < 1 || c.Q > 9 || gcd(c.P, c.Q) != 1 {
+			return nil, 0, 0, false, fieldErr("q", "windings must be coprime integers (p: 1–8, q: 1–9)")
 		}
 		return func(t float64) (Vec3, Vec3, Vec3, bool) { r, v, a := knot(c, t); return r, v, a, true }, 0, 2 * math.Pi, true, nil
 	}
 	if c.Format == "harmonic" {
 		h := c.Harmonic
 		if err := domain(h.Min, h.Max); err != nil {
-			return nil, 0, 0, false, err
+			return nil, 0, 0, false, named(ends("harmonic.min", "harmonic.max", h.Min), err)
 		}
 		if err := h.validate(); err != nil {
 			return nil, 0, 0, false, err
@@ -73,18 +79,18 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 		return integrated, c.Pursuit.Min, c.Pursuit.Max, false, nil
 	}
 	if c.Format != "parametric" {
-		return nil, 0, 0, false, fmt.Errorf("unknown spatial curve definition")
+		return nil, 0, 0, false, fieldErr("format", "unknown spatial curve definition")
 	}
 	q := c.Curve
 	span := q.Max - q.Min
 	if err := domain(q.Min, q.Max); err != nil {
-		return nil, 0, 0, false, err
+		return nil, 0, 0, false, named(ends("curve.min", "curve.max", q.Min), err)
 	}
 	expressions := make([]expr.Expr, 3)
 	for i, s := range []string{q.X, q.Y, q.Z} {
 		e, err := expr.ParseWithParameter(s, q.A)
 		if err != nil {
-			return nil, 0, 0, false, fmt.Errorf("%s(t): %w", []string{"x", "y", "z"}[i], err)
+			return nil, 0, 0, false, named("curve."+[]string{"x", "y", "z"}[i], fmt.Errorf("%s(t): %w", []string{"x", "y", "z"}[i], err))
 		}
 		expressions[i] = e
 	}

@@ -1,9 +1,6 @@
 package engine3
 
-import (
-	"fmt"
-	"math"
-)
+import "math"
 
 // InversionRequest inverts a source curve in the sphere of center O and
 // radius R: J(p) = O + R²(p − O)/|p − O|². Input names the source: the base
@@ -51,19 +48,19 @@ func (q InversionRequest) validate(pole Vec3) error {
 		return v.valid() && math.Max(math.Abs(v.X), math.Max(math.Abs(v.Y), math.Abs(v.Z))) <= 1e5
 	}
 	if !finite(q.Radius) || q.Radius <= 0 || q.Radius > 1e5 {
-		return fmt.Errorf("the inversion radius must be finite, positive, and at most 100000")
+		return fieldErr("inversion.radius", "the inversion radius must be finite, positive, and at most 100000")
 	}
 	if !bounded(q.Center) {
-		return fmt.Errorf("inversion center coordinates must be finite and within ±100000")
+		return fieldErr(axis("inversion.center", q.Center, scalarBounded), "inversion center coordinates must be finite and within ±100000")
 	}
 	switch q.Input {
 	case "base":
 	case "tangent-foot", "orthotomic":
 		if !bounded(pole) {
-			return fmt.Errorf("pole coordinates must be finite and within ±100000")
+			return fieldErr(axis("pole", pole, scalarBounded), "pole coordinates must be finite and within ±100000")
 		}
 	default:
-		return fmt.Errorf("sphere inversion supports the base curve, tangent-foot, or orthotomic input")
+		return fieldErr("inversion.input", "sphere inversion supports the base curve, tangent-foot, or orthotomic input")
 	}
 	return nil
 }

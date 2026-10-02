@@ -1,7 +1,6 @@
 package engine3
 
 import (
-	"fmt"
 	"math"
 	"sort"
 )
@@ -75,16 +74,22 @@ func (r ReceiverRequest) validate() error {
 		return nil
 	case "x", "y", "z":
 	default:
-		return fmt.Errorf("the receiver plane must be none, x, y or z")
+		return fieldErr("rays.receiver.plane", "the receiver plane must be none, x, y or z")
 	}
 	if !bounded(r.At) || !bounded(r.C1) || !bounded(r.C2) {
-		return fmt.Errorf("the receiver's position and centre must be finite and within ±100000")
+		field := "rays.receiver.c2"
+		if !bounded(r.At) {
+			field = "rays.receiver.at"
+		} else if !bounded(r.C1) {
+			field = "rays.receiver.c1"
+		}
+		return fieldErr(field, "the receiver's position and centre must be finite and within ±100000")
 	}
 	if !finite(r.Size) || r.Size <= 0 || r.Size > 1e5 {
-		return fmt.Errorf("the receiver's size must be finite, positive and at most 100000")
+		return fieldErr("rays.receiver.size", "the receiver's size must be finite, positive and at most 100000")
 	}
 	if r.Bins < minReceiverBins || r.Bins > maxReceiverBins {
-		return fmt.Errorf("the receiver needs %d–%d bins each way", minReceiverBins, maxReceiverBins)
+		return fieldErr("rays.receiver.bins", "the receiver needs %d–%d bins each way", minReceiverBins, maxReceiverBins)
 	}
 	return nil
 }

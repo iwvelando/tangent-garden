@@ -89,25 +89,25 @@ func (r RaysRequest) validate() error {
 	case "reflect":
 	case "refract":
 		if !index(r.N1) || !index(r.N2) {
-			return fmt.Errorf("the refractive indices n₁ and n₂ must be finite, positive and at most 100")
+			return fieldErr(map[bool]string{true: "rays.n2", false: "rays.n1"}[index(r.N1)], "the refractive indices n₁ and n₂ must be finite, positive and at most 100")
 		}
 	default:
-		return fmt.Errorf("the interaction must be reflect or refract")
+		return fieldErr("rays.interaction", "the interaction must be reflect or refract")
 	}
 	switch r.Light {
 	case "parallel":
 		if !bounded(r.Azimuth) || !bounded(r.Elevation) {
-			return fmt.Errorf("the azimuth α and elevation β must be finite and within ±100000 degrees")
+			return fieldErr(map[bool]string{true: "rays.elevation", false: "rays.azimuth"}[bounded(r.Azimuth)], "the azimuth α and elevation β must be finite and within ±100000 degrees")
 		}
 	case "point":
 		if !bounded(r.Source.X) || !bounded(r.Source.Y) || !bounded(r.Source.Z) {
-			return fmt.Errorf("the source must be finite and within ±100000 on each axis")
+			return fieldErr(axis("rays.source", r.Source, bounded), "the source must be finite and within ±100000 on each axis")
 		}
 	default:
-		return fmt.Errorf("the light must be parallel or a point source")
+		return fieldErr("rays.light", "the light must be parallel or a point source")
 	}
 	if !finite(r.Length) || r.Length < 0 || r.Length > 1e5 {
-		return fmt.Errorf("the ray length ℓ must be finite and within 0–100000")
+		return fieldErr("rays.length", "the ray length ℓ must be finite and within 0–100000")
 	}
 	return r.Receiver.validate()
 }

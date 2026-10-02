@@ -1,20 +1,21 @@
 package engine3
 
-import (
-	"fmt"
-	"math"
-)
+import "math"
 
 // CompositionResult describes the base curve under a construction that acts
 // on a derived input: the base's tangent-foot curve or orthotomic from Pole,
-// which then fills the Result's Base and is what the construction is built
-// on. Curve and Breaks are the base's own samples and breaks, indexed like
-// Base. Constructions join a representative base point (Contact) to the
-// foot of the pole's perpendicular on its tangent and to the input point
-// (Image), as the projections do. Cusps counts the runs of intervals where
-// the input curve stops or turns back while the base continues, and where a
+// or its involute (see UnwindingRequest), which then fills the Result's Base
+// and is what the construction is built on. Curve and Breaks are the base's
+// own samples and breaks, indexed like Base. Constructions join a
+// representative base point (Contact) to the foot of the pole's
+// perpendicular on its tangent and to the input point (Image), as the
+// projections do; for the involute, the foot is the contact itself and the
+// connector is the taut string. Cusps counts the runs of intervals where the
+// input curve stops or turns back while the base continues, and where a
 // construction on it is broken rather than joined across: not at an open
-// curve's ends, and once where a closed curve's ends meet.
+// curve's ends, and once where a closed curve's ends meet. Unreached counts
+// the base's samples that the involute's arc length cannot reach from its
+// anchor across a break; they are not cusps. The involute leaves Pole zero.
 type CompositionResult struct {
 	Input         string                   `json:"input"`
 	Pole          Vec3                     `json:"pole"`
@@ -22,6 +23,7 @@ type CompositionResult struct {
 	Breaks        []bool                   `json:"breaks"`
 	Constructions []ProjectionConstruction `json:"constructions"`
 	Cusps         int                      `json:"cusps"`
+	Unreached     int                      `json:"unreached"`
 }
 
 // composed reports whether the construction acts on a derived input. Only
@@ -30,19 +32,26 @@ type CompositionResult struct {
 func (c Request) composed() bool {
 	switch c.Construction {
 	case "", "developable", "involute", "framed", "ruled", "canal":
-		return c.Input == "tangent-foot" || c.Input == "orthotomic"
+		return c.Input == "tangent-foot" || c.Input == "orthotomic" || c.Input == "involute"
 	}
 	return false
 }
 
+// projected reports whether the construction acts on one of the base's
+// tangent projections from the pole.
+func (c Request) projected() bool { return c.composed() && c.Input != "involute" }
+
 func (c Request) validateInput() error {
 	switch c.Input {
-	case "", "base", "tangent-foot", "orthotomic":
+	case "", "base", "tangent-foot", "orthotomic", "involute":
 	default:
-		return fmt.Errorf("unknown input curve; use the base curve, its tangent-foot curve, or its orthotomic")
+		return fieldErr("input", "unknown input curve; use the base curve, its tangent-foot curve, its orthotomic, or its involute")
 	}
-	if c.composed() && (!c.Pole.valid() || math.Max(math.Abs(c.Pole.X), math.Max(math.Abs(c.Pole.Y), math.Abs(c.Pole.Z))) > 1e5) {
-		return fmt.Errorf("pole coordinates must be finite and within ±100000")
+	if c.composed() && c.Input == "involute" {
+		return c.Unwinding.validate()
+	}
+	if c.projected() && !poleBounded(c.Pole) {
+		return fieldErr(axis("pole", c.Pole, bounded), "pole coordinates must be finite and within ±100000")
 	}
 	return nil
 }
@@ -108,11 +117,23 @@ func baseSamples(c Request, base evaluation, lo, hi float64, n int, closed bool)
 
 // composition describes the base beneath the input curve, whose samples
 // and breaks (which include the base's) Compute has found.
-func composition(c Request, curve []*Vec3, tangents []Vec3, baseBreaks []bool, closed bool, input []*Vec3, breaks []bool) *CompositionResult {
+// reached marks the samples the involute's arc length reaches, and is nil
+// for the projections, which reach every sample.
+func composition(c Request, curve []*Vec3, tangents []Vec3, baseBreaks []bool, closed bool, input []*Vec3, breaks []bool, reached []bool) *CompositionResult {
 	n := len(input) - 1
-	out := &CompositionResult{Input: c.Input, Pole: c.Pole, Curve: curve, Breaks: baseBreaks, Constructions: make([]ProjectionConstruction, 0, c.Lines)}
+	out := &CompositionResult{Input: c.Input, Curve: curve, Breaks: baseBreaks, Constructions: make([]ProjectionConstruction, 0, c.Lines)}
+	if reached == nil {
+		out.Pole = c.Pole
+	}
+	for i := range curve {
+		if reached != nil && curve[i] != nil && !reached[i] {
+			out.Unreached++
+		}
+	}
 	// A run of intervals where the input is broken but the base is not; a
-	// missing input sample breaks both intervals beside it.
+	// missing input sample breaks both intervals beside it. The involute's
+	// unreached samples run from a break of the base to an end of its open
+	// domain, so they are never counted as a cusp.
 	var runs [][2]int
 	for i := 0; i < n; i++ {
 		if !breaks[i+1] || baseBreaks[i+1] {
@@ -138,6 +159,10 @@ func composition(c Request, curve []*Vec3, tangents []Vec3, baseBreaks []bool, c
 	for j := 0; j < c.Lines; j++ {
 		i := j * n / (c.Lines - 1)
 		if curve[i] != nil && input[i] != nil {
+			if reached != nil {
+				out.Constructions = append(out.Constructions, ProjectionConstruction{i, *curve[i], *curve[i], *input[i]})
+				continue
+			}
 			foot := project("tangent-foot", c.Pole, *curve[i], tangents[i])
 			out.Constructions = append(out.Constructions, ProjectionConstruction{i, *curve[i], foot, *input[i]})
 		}

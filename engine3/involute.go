@@ -1,9 +1,6 @@
 package engine3
 
-import (
-	"fmt"
-	"math"
-)
+import "math"
 
 // InvoluteRequest anchors arc length s at parameter Anchor, inside the curve's
 // domain, and unwinds a taut string of signed initial length Offset (c):
@@ -48,19 +45,19 @@ func (q InvoluteRequest) offsets(samples int) ([]float64, error) {
 	bounded := func(v float64) bool { return finite(v) && math.Abs(v) <= 1e5 }
 	if !q.Family.Enabled {
 		if !bounded(q.Offset) {
-			return nil, fmt.Errorf("string length c must be finite and within ±100000")
+			return nil, fieldErr("involute.offset", "string length c must be finite and within ±100000")
 		}
 		return []float64{q.Offset}, nil
 	}
 	f := q.Family
 	if !bounded(f.From) || !bounded(f.To) {
-		return nil, fmt.Errorf("family string lengths must be finite and within ±100000")
+		return nil, fieldErr(map[bool]string{true: "involute.family.to", false: "involute.family.from"}[bounded(f.From)], "family string lengths must be finite and within ±100000")
 	}
 	if f.Count < 2 || f.Count > maxInvoluteCount {
-		return nil, fmt.Errorf("an involute family needs 2–%d members", maxInvoluteCount)
+		return nil, fieldErr("involute.family.count", "an involute family needs 2–%d members", maxInvoluteCount)
 	}
 	if f.Count*(samples+1) > maxInvolutePoints {
-		return nil, fmt.Errorf("an involute family is limited to %d points in total (members × samples); use fewer members or samples", maxInvolutePoints)
+		return nil, fieldErr("involute.family.count", "an involute family is limited to %d points in total (members × samples); use fewer members or samples", maxInvolutePoints)
 	}
 	// Both entered endpoints are exact, and a descending range stays descending.
 	out := make([]float64, f.Count)
@@ -82,7 +79,7 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 	}
 	t0 := q.Anchor
 	if !finite(t0) || t0 < lo || t0 > hi {
-		return nil, fmt.Errorf("the anchor t₀ must lie within the domain [%.6g, %.6g]", lo, hi)
+		return nil, fieldErr("involute.anchor", "the anchor t₀ must lie within the domain [%.6g, %.6g]", lo, hi)
 	}
 	h := (hi - lo) / float64(n)
 	k := min(n-1, int(math.Floor((t0-lo)/h)))
@@ -98,7 +95,7 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 	left := (t0 - tk) / 6 * (speeds[k] + 4*speed((tk+t0)/2) + at)
 	right := (tk1 - t0) / 6 * (at + 4*speed((t0+tk1)/2) + speeds[k+1])
 	if base[k] == nil || base[k+1] == nil || breaks[k+1] || !finite(left) || !finite(right) {
-		return nil, fmt.Errorf("the anchor t₀ must lie on a regular, continuous stretch of the curve")
+		return nil, fieldErr("involute.anchor", "the anchor t₀ must lie on a regular, continuous stretch of the curve it unwinds, not on a cusp or break")
 	}
 	arc := make([]float64, n+1)
 	reached := make([]bool, n+1)

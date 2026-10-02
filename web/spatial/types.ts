@@ -9,12 +9,17 @@ export type InvoluteConfig = {
   offset: number;
   family: { enabled: boolean; from: number; to: number; count: number };
 };
-// The base curve, or one of its tangent projections from the pole: the
-// curve a construction acts on, or the curve sphere inversion inverts.
-export type CurveInput = "base" | "tangent-foot" | "orthotomic";
+// The base curve, one of its tangent projections from the pole, or its
+// involute (see UnwindingConfig): the curve a construction acts on.
+export type CurveInput = "base" | "tangent-foot" | "orthotomic" | "involute";
+// The involute a construction is built on, I = r + (c − s)T, with arc
+// length s from the anchor t₀ and signed string length c (offset). Read only
+// for the involute input, and separate from the involute construction's own
+// anchor and length. Mirrors engine3.UnwindingRequest.
+export type UnwindingConfig = { anchor: number; offset: number };
 // Sphere inversion J(p) = O + R²(p − O)/|p − O|² of the base curve or of one
 // of its tangent projections from the pole. Mirrors engine3.InversionRequest.
-export type InversionInput = CurveInput;
+export type InversionInput = Exclude<CurveInput, "involute">;
 export type InversionConfig = {
   center: Vec3;
   radius: number;
@@ -228,6 +233,7 @@ export type SpatialConfig = {
   // canal acts on; the other constructions ignore it. Mirrors
   // engine3.Request.Input.
   input: CurveInput;
+  unwinding: UnwindingConfig;
   inversion: InversionConfig;
   involute: InvoluteConfig;
   harmonic: HarmonicCurve;
@@ -437,10 +443,13 @@ export type SpatialHarmonicResult = {
 };
 // Mirrors engine3.CompositionResult: the base curve and its breaks, indexed
 // like the input curve in base, with representative constructions joining a
-// base point to its tangent foot and the input point (image). Cusps counts
-// the runs of intervals where the input curve stops or turns back while the
-// base continues: not at an open curve's ends, and once where a closed
-// curve's ends meet.
+// base point to its tangent foot and the input point (image); on an
+// involute the foot is the base point, and the connector is its string.
+// Cusps counts the runs of intervals where the input curve stops or turns
+// back while the base continues: not at an open curve's ends, and once
+// where a closed curve's ends meet. Unreached counts base samples the
+// involute's arc length cannot reach across a break, which are not cusps.
+// The involute uses no pole and leaves it zero.
 export type CompositionResult = {
   input: CurveInput;
   pole: Vec3;
@@ -448,6 +457,7 @@ export type CompositionResult = {
   breaks: boolean[];
   constructions: ProjectionResult["constructions"];
   cusps: number;
+  unreached: number;
 };
 // The constructions built on a curve, which take an input curve.
 export const takesInput = (c: SpatialConfig) =>
@@ -461,6 +471,27 @@ export const takesInput = (c: SpatialConfig) =>
     c.construction === "canal");
 export const composes = (c: SpatialConfig) =>
   takesInput(c) && c.input !== "base";
+// A construction built on one of the base's tangent projections from the
+// pole, rather than on its involute.
+export const projectsInput = (c: SpatialConfig) =>
+  composes(c) && c.input !== "involute";
+export const unwindsInput = (c: SpatialConfig) =>
+  composes(c) && c.input === "involute";
+// The parameter domain of a curve study, where an anchor must lie.
+export function curveDomain(c: SpatialConfig): [number, number] {
+  switch (c.format) {
+    case "parametric":
+      return [c.curve.min, c.curve.max];
+    case "harmonic":
+      return [c.harmonic.min, c.harmonic.max];
+    case "field":
+      return [c.field.min, c.field.max];
+    case "pursuit":
+      return [c.pursuit.min, c.pursuit.max];
+    default:
+      return [0, 2 * Math.PI];
+  }
+}
 export const usesSpatialPole = (c: SpatialConfig) =>
   c.construction === "tangent-foot" ||
   c.construction === "orthotomic" ||

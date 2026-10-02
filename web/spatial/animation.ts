@@ -1,4 +1,4 @@
-import { composes, usesSpatialPole } from "./types";
+import { projectsInput, unwindsInput, usesSpatialPole } from "./types";
 import { harmonicLabels } from "./harmonic";
 import { surfaceShape } from "./surface";
 import type {
@@ -42,6 +42,8 @@ type NamedTarget =
   | "length"
   | "anchor"
   | "offset"
+  | "inputAnchor"
+  | "inputOffset"
   | "from"
   | "to"
   | "count"
@@ -134,6 +136,8 @@ export const targetLabels: Record<NamedTarget, string> = {
   length: "Tangent reach L",
   anchor: "Anchor t₀",
   offset: "String length c",
+  inputAnchor: "Input anchor t₀",
+  inputOffset: "Input string c",
   from: "Family c from",
   to: "Family c to",
   count: "Involutes",
@@ -435,8 +439,10 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
                     c.construction === "orthotomic"
                   ? ["poleX", "poleY", "poleZ"]
                   : ["length"];
-  // A construction built on a derived input moves with its pole.
-  if (composes(c)) construction.push("poleX", "poleY", "poleZ");
+  // A construction built on a tangent projection moves with its pole, and
+  // one built on an involute with that involute's string and anchor.
+  if (projectsInput(c)) construction.push("poleX", "poleY", "poleZ");
+  if (unwindsInput(c)) construction.push("inputOffset", "inputAnchor");
   const curve: Target[] =
     c.format === "parametric"
       ? ["a", "min", "max"]
@@ -524,6 +530,8 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
     return c.pursuit[t];
   if (isCurve(t)) return c.curve[t];
   if (t === "anchor" || t === "offset") return c.involute[t];
+  if (t === "inputAnchor") return c.unwinding.anchor;
+  if (t === "inputOffset") return c.unwinding.offset;
   if (isInvolute(t)) return c.involute.family[t];
   return c[t];
 }
@@ -609,6 +617,8 @@ export function applyTracks(
     else if (isCurve(t.target)) config.curve[t.target] = v;
     else if (t.target === "anchor" || t.target === "offset")
       config.involute[t.target] = v;
+    else if (t.target === "inputAnchor") config.unwinding.anchor = v;
+    else if (t.target === "inputOffset") config.unwinding.offset = v;
     else if (isInvolute(t.target)) config.involute.family[t.target] = v;
     else config[t.target] = v;
   }

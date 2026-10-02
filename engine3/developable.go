@@ -32,7 +32,10 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // strands described by Frame, or "ruled" for the surface joining the curve to
 // the partner described by Ruled, or "canal" for the envelope of spheres
 // described by Canal, whose angle is carried by Frame, or "none" for the
-// curve alone. Length applies only to the developable. Format "field" makes
+// curve alone. The constructions built on a curve act on the curve Input
+// names (see composed): the base, its tangent-foot curve or orthotomic from
+// Pole, or its involute described by Unwinding. Length applies only to the
+// developable. Format "field" makes
 // the base the first trajectory of the vector field described by Field, and
 // "pursuit" the first pursuer's path in the chase described by Pursuit.
 // Format "surface" is not a curve: it studies the patch described by
@@ -45,6 +48,7 @@ type Request struct {
 	Construction string           `json:"construction"`
 	Input        string           `json:"input"`
 	Involute     InvoluteRequest  `json:"involute"`
+	Unwinding    UnwindingRequest `json:"unwinding"`
 	Pole         Vec3             `json:"pole"`
 	Harmonic     HarmonicCurve    `json:"harmonic"`
 	Inversion    InversionRequest `json:"inversion"`
@@ -183,8 +187,11 @@ func compute(c Request) (Result, error) {
 	if c.Format == "implicit" {
 		return implicit(c.Implicit)
 	}
-	if c.Samples < 240 || c.Samples > 2400 || c.Lines < 12 || c.Lines > 240 {
-		return Result{}, fmt.Errorf("use 240–2400 samples and 12–240 rulings")
+	if c.Samples < 240 || c.Samples > 2400 {
+		return Result{}, fieldErr("samples", "use 240–2400 samples and 12–240 rulings")
+	}
+	if c.Lines < 12 || c.Lines > 240 {
+		return Result{}, fieldErr("lines", "use 240–2400 samples and 12–240 rulings")
 	}
 	involute := c.Construction == "involute"
 	projection := c.Construction == "tangent-foot" || c.Construction == "orthotomic"
@@ -195,16 +202,16 @@ func compute(c Request) (Result, error) {
 	developable := c.Construction == "" || c.Construction == "developable"
 	none := c.Construction == "none"
 	if !involute && !projection && !inversion && !framed && !ruled && !canal && !developable && !none {
-		return Result{}, fmt.Errorf("unknown spatial construction")
+		return Result{}, fieldErr("construction", "unknown spatial construction")
 	}
 	if err := c.validateInput(); err != nil {
 		return Result{}, err
 	}
 	if developable && (!finite(c.Length) || c.Length <= 0 || c.Length > 20) {
-		return Result{}, fmt.Errorf("tangent reach must be finite and between 0 (exclusive) and 20")
+		return Result{}, fieldErr("length", "tangent reach must be finite and between 0 (exclusive) and 20")
 	}
-	if projection && (!c.Pole.valid() || math.Max(math.Abs(c.Pole.X), math.Max(math.Abs(c.Pole.Y), math.Abs(c.Pole.Z))) > 1e5) {
-		return Result{}, fmt.Errorf("pole coordinates must be finite and within ±100000")
+	if projection && !poleBounded(c.Pole) {
+		return Result{}, fieldErr(axis("pole", c.Pole, bounded), "pole coordinates must be finite and within ±100000")
 	}
 	if inversion {
 		if err := c.Inversion.validate(c.Pole); err != nil {
@@ -257,9 +264,19 @@ func compute(c Request) (Result, error) {
 	var baseCurve []*Vec3
 	var baseTangents []Vec3
 	var baseBreaks []bool
+	var reached []bool
 	if composed {
 		baseCurve, baseTangents, baseBreaks = baseSamples(c, evaluate, lo, hi, c.Samples, closed)
-		evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi)
+		if c.projected() {
+			evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi)
+		} else {
+			if evaluate, reached, err = c.Unwinding.evaluation(evaluate, lo, hi, baseCurve, baseBreaks); err != nil {
+				return Result{}, err
+			}
+			// A closed curve's involute ends a whole length of string from
+			// where it began.
+			closed = false
+		}
 	}
 	var radius func(float64) (float64, float64, float64, bool)
 	if canal {
@@ -339,8 +356,9 @@ func compute(c Request) (Result, error) {
 			disconnected = jumps(*out.Base[i], *out.Base[i+1], middle, (hi-lo)/float64(n))
 		}
 		// A derived input has no asymptote of its own: each foot lies on
-		// the sphere with diameter from the base point to the pole, so it
-		// breaks where the base does.
+		// the sphere with diameter from the base point to the pole, and an
+		// involute point lies |c − s| from the base point, so it breaks
+		// where the base does.
 		disconnected = disconnected || composed && baseBreaks[i+1]
 		out.Breaks[i+1] = disconnected
 		if !developable {
@@ -377,6 +395,8 @@ func compute(c Request) (Result, error) {
 	}
 	if out.Invalid == n+1 {
 		switch {
+		case composed && reached != nil:
+			return Result{}, fmt.Errorf("the input curve has no regular sample: the base curve is straight where its arc length reaches, so its involute stands still; choose another input curve")
 		case composed:
 			return Result{}, fmt.Errorf("the input curve has no regular sample: it stands still or is undefined; move the pole or choose another input curve")
 		case !dynamic:
@@ -394,8 +414,11 @@ func compute(c Request) (Result, error) {
 	}
 	// The base under a derived input frames with the pole as its own family.
 	if composed {
-		out.Composition = composition(c, baseCurve, baseTangents, baseBreaks, closed, out.Base, out.Breaks)
-		generating = append(generating, out.Composition.Curve, []*Vec3{&out.Composition.Pole})
+		out.Composition = composition(c, baseCurve, baseTangents, baseBreaks, closed, out.Base, out.Breaks, reached)
+		generating = append(generating, out.Composition.Curve)
+		if reached == nil {
+			generating = append(generating, []*Vec3{&out.Composition.Pole})
+		}
 	}
 	if none {
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}

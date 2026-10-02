@@ -58,13 +58,13 @@ const ruledStrips = 4
 
 func (q RuledRequest) validate() error {
 	if q.Partner != "chord" && q.Partner != "thread" {
-		return fmt.Errorf("join the curve to itself or to a second thread")
+		return fieldErr("ruled.partner", "join the curve to itself or to a second thread")
 	}
 	if !finite(q.Rate) || math.Abs(q.Rate) > 100 {
-		return fmt.Errorf("the rate m must be finite and within ±100")
+		return fieldErr("ruled.rate", "the rate m must be finite and within ±100")
 	}
 	if !finite(q.Shift) || math.Abs(q.Shift) > 1e6 {
-		return fmt.Errorf("the shift δ must be finite and within ±1000000")
+		return fieldErr("ruled.shift", "the shift δ must be finite and within ±1000000")
 	}
 	return nil
 }
@@ -92,7 +92,7 @@ func (q RuledRequest) partner(evaluate evaluation, lo, hi float64, closed bool) 
 	for i, s := range []string{q.Thread.X, q.Thread.Y, q.Thread.Z} {
 		e, err := expr.Parse(s)
 		if err != nil {
-			return nil, fmt.Errorf("b %s(t): %w", []string{"x", "y", "z"}[i], err)
+			return nil, named("ruled.thread."+[]string{"x", "y", "z"}[i], fmt.Errorf("b %s(t): %w", []string{"x", "y", "z"}[i], err))
 		}
 		expressions[i] = e
 	}

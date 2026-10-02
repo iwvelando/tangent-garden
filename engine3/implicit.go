@@ -129,13 +129,19 @@ func grouped(n int) string {
 }
 
 func (b Box) validate() error {
-	for _, v := range []float64{b.XMin, b.XMax, b.YMin, b.YMax, b.ZMin, b.ZMax} {
+	for k, v := range []float64{b.XMin, b.XMax, b.YMin, b.YMax, b.ZMin, b.ZMax} {
 		if !bounded(v) {
-			return fmt.Errorf("the box must be finite and within ±100000")
+			return fieldErr("implicit.box."+boxFields[k], "the box must be finite and within ±100000")
 		}
 	}
 	if !(b.XMax-b.XMin >= 1e-6) || !(b.YMax-b.YMin >= 1e-6) || !(b.ZMax-b.ZMin >= 1e-6) {
-		return fmt.Errorf("the box needs x, y and z ranges at least 0.000001 wide, each from below to above")
+		field := "implicit.box.zMax"
+		if !(b.XMax-b.XMin >= 1e-6) {
+			field = "implicit.box.xMax"
+		} else if !(b.YMax-b.YMin >= 1e-6) {
+			field = "implicit.box.yMax"
+		}
+		return fieldErr(field, "the box needs x, y and z ranges at least 0.000001 wide, each from below to above")
 	}
 	return nil
 }
@@ -158,15 +164,15 @@ func (b Box) shape(cells int) [3]int {
 
 func (q ImplicitRequest) validate() error {
 	if !finite(q.A) {
-		return fmt.Errorf("the shape parameter a must be finite")
+		return fieldErr("implicit.a", "the shape parameter a must be finite")
 	}
 	if !finite(q.Level) {
-		return fmt.Errorf("the level c must be finite")
+		return fieldErr("implicit.level", "the level c must be finite")
 	}
 	if err := q.Box.validate(); err != nil {
 		return err
 	}
-	cellsError := fmt.Errorf("use %d–%d cells along the box's longest side, with at most %s cells in all", minImplicitCells, maxImplicitCells, grouped(maxImplicitGrid))
+	cellsError := fieldErr("implicit.cells", "use %d–%d cells along the box's longest side, with at most %s cells in all", minImplicitCells, maxImplicitCells, grouped(maxImplicitGrid))
 	if q.Cells < minImplicitCells || q.Cells > maxImplicitCells {
 		return cellsError
 	}
@@ -174,18 +180,18 @@ func (q ImplicitRequest) validate() error {
 		return cellsError
 	}
 	if q.Refine < 0 || q.Refine > maxImplicitRefine {
-		return fmt.Errorf("use 0–%d refinement levels", maxImplicitRefine)
+		return fieldErr("implicit.refine", "use 0–%d refinement levels", maxImplicitRefine)
 	}
 	s := q.Sections
 	if s.Count < 0 || s.Count > maxSections {
-		return fmt.Errorf("use 0–%d section planes", maxSections)
+		return fieldErr("implicit.sections.count", "use 0–%d section planes", maxSections)
 	}
 	if s.Count > 0 {
 		if !bounded(s.Normal.X) || !bounded(s.Normal.Y) || !bounded(s.Normal.Z) || !(s.Normal.norm() > 1e-9) {
-			return fmt.Errorf("the section normal must be finite, nonzero, and within ±100000")
+			return fieldErr(axis("implicit.sections.normal", s.Normal, bounded), "the section normal must be finite, nonzero, and within ±100000")
 		}
 		if !bounded(s.From) || !bounded(s.To) {
-			return fmt.Errorf("the section offsets must be finite and within ±100000")
+			return fieldErr(map[bool]string{true: "implicit.sections.to", false: "implicit.sections.from"}[bounded(s.From)], "the section offsets must be finite and within ±100000")
 		}
 	}
 	return nil
@@ -706,10 +712,10 @@ func sample(q ImplicitRequest) (*field, error) {
 	}
 	f, timed, err := expr.ParseSpatialField(q.F, q.A)
 	if err != nil {
-		return nil, fmt.Errorf("F(x, y, z): %w", err)
+		return nil, named("implicit.f", fmt.Errorf("F(x, y, z): %w", err))
 	}
 	if timed {
-		return nil, fmt.Errorf("F(x, y, z) cannot use t; animate a or the level instead")
+		return nil, fieldErr("implicit.f", "F(x, y, z) cannot use t; animate a or the level instead")
 	}
 	s := &field{f: func(p Vec3) float64 { return f(p.X, p.Y, p.Z, 0) }, c: q.Level, box: q.Box, n: q.Box.shape(q.Cells),
 		vertices: map[int]int32{}, rejected: map[int]Vec3{}, positions: []float64{}, normals: []float64{}, triangles: []int32{}}

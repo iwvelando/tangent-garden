@@ -1,9 +1,6 @@
 package engine3
 
-import (
-	"fmt"
-	"math"
-)
+import "math"
 
 // FrameRequest chooses a frame (T, U, V) along the curve and the framed
 // geometry built from it. Kind is "rotation-minimizing" (parallel transport,
@@ -81,21 +78,21 @@ func (f FrameRequest) validate() error {
 	}
 	switch {
 	case f.Kind != "rotation-minimizing" && f.Kind != "frenet":
-		return fmt.Errorf("choose a rotation-minimizing or Frenet frame")
+		return fieldErr("frame.kind", "choose a rotation-minimizing or Frenet frame")
 	case f.Kind == "rotation-minimizing" && (!bounded(f.Reference) || f.Reference.norm() == 0):
-		return fmt.Errorf("the reference normal N₀ must be nonzero, finite, and within ±100000")
+		return fieldErr(axis("frame.reference", f.Reference, scalarBounded), "the reference normal N₀ must be nonzero, finite, and within ±100000")
 	case !finite(f.Angle) || math.Abs(f.Angle) > 1000:
-		return fmt.Errorf("the angle θ₀ must be finite and within ±1000 radians")
+		return fieldErr("frame.angle", "the angle θ₀ must be finite and within ±1000 radians")
 	case !finite(f.Twist) || math.Abs(f.Twist) > 100:
-		return fmt.Errorf("twist must be finite and within ±100 turns")
+		return fieldErr("frame.twist", "twist must be finite and within ±100 turns")
 	case !finite(f.Offset) || f.Offset < 0 || f.Offset > 1e5:
-		return fmt.Errorf("the offset distance d must be finite, from 0 to 100000")
+		return fieldErr("frame.offset", "the offset distance d must be finite, from 0 to 100000")
 	case !finite(f.Width) || f.Width < 0 || f.Width > 1e5:
-		return fmt.Errorf("the ribbon half-width w must be finite, from 0 to 100000")
+		return fieldErr("frame.width", "the ribbon half-width w must be finite, from 0 to 100000")
 	case f.Strands < 0 || f.Strands > maxFrameStrands:
-		return fmt.Errorf("use 0–12 offset strands")
+		return fieldErr("frame.strands", "use 0–12 offset strands")
 	case f.Closure != "seam" && f.Closure != "distribute":
-		return fmt.Errorf("closure must show the seam or distribute the correction")
+		return fieldErr("frame.closure", "closure must show the seam or distribute the correction")
 	}
 	return nil
 }

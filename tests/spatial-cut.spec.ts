@@ -44,12 +44,14 @@ const every = "Lines (SVG) · every line",
   shown = "Lines (SVG) · visible only, sampled";
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 // The recordings predate the metadata's construction input and its base
-// curve layer, which a study built on the base records as "base" and shown.
+// curve layer, which a study built on the base records as "base" and shown,
+// and the involute input's unwinding, which it records at its default.
 const predating = (b: Buffer) =>
   Buffer.from(
     b
       .toString("utf8")
       .replace('"input":"base",', "")
+      .replace('"unwinding":{"anchor":0,"offset":1},', "")
       .replace('"parent":true,', ""),
   );
 

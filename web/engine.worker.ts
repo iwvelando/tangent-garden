@@ -507,17 +507,31 @@ self.onmessage = async ({
         ].every(Number.isFinite)
       )
         throw new Error("Fill in each spatial parameter with a finite number.");
-      else if (
-        !Number.isInteger(data.spatial.samples) ||
-        !Number.isInteger(data.spatial.lines)
-      )
-        throw new Error("Sample and line counts must be whole numbers.");
+      else if (!Number.isInteger(data.spatial.samples))
+        throw fieldError(
+          "samples",
+          "Sample and line counts must be whole numbers.",
+        );
+      else if (!Number.isInteger(data.spatial.lines))
+        throw fieldError(
+          "lines",
+          "Sample and line counts must be whole numbers.",
+        );
       else if (involute && family!.enabled && !Number.isInteger(family!.count))
-        throw new Error("The number of involutes must be a whole number.");
+        throw fieldError(
+          "involute.family.count",
+          "The number of involutes must be a whole number.",
+        );
       else if (framed && !Number.isInteger(frame!.strands))
-        throw new Error("The number of offset strands must be a whole number.");
+        throw fieldError(
+          "frame.strands",
+          "The number of offset strands must be a whole number.",
+        );
       else if (canal && !Number.isInteger(data.spatial.canal.meridians))
-        throw new Error("The number of meridians must be a whole number.");
+        throw fieldError(
+          "canal.meridians",
+          "The number of meridians must be a whole number.",
+        );
       const reply = tangentGardenSpatial(
         JSON.stringify({
           ...data.spatial,
@@ -690,6 +704,13 @@ self.onmessage = async ({
     self.postMessage({
       id: data.id,
       error: error instanceof Error ? error.message : String(error),
+      // The field a 3D validation error names, as the engine's own do.
+      ...(error instanceof Error && "field" in error && { field: error.field }),
     });
   }
 };
+
+// An error about one field of a 3D study, named by its configuration path.
+function fieldError(field: string, message: string) {
+  return Object.assign(new Error(message), { field });
+}
