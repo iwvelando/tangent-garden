@@ -1145,6 +1145,61 @@ const sphereInversion = (inversion, extra = {}) =>
 console.log(
   "WASM sphere inversion: center passage, derived input and validation passed",
 );
+// Composition: an involute built on the tangent-foot curve of the unit
+// circle from a point on it, the cardioid, which stops at its cusp t = π.
+{
+  const composed = (extra) =>
+    JSON.parse(
+      tangentGardenSpatial(
+        JSON.stringify({
+          format: "parametric",
+          construction: "involute",
+          input: "tangent-foot",
+          pole: { x: -1, y: 0, z: 0 },
+          involute: {
+            anchor: 0,
+            offset: 1.5,
+            family: { enabled: false, from: 0, to: 1, count: 2 },
+          },
+          curve: {
+            x: "cos(t)",
+            y: "sin(t)",
+            z: "0",
+            min: 0,
+            max: 2 * Math.PI,
+            a: 1,
+          },
+          samples: 481,
+          lines: 24,
+          ...extra,
+        }),
+      ),
+    );
+  const q = composed({});
+  assert.equal(q.composition.input, "tangent-foot");
+  assert.equal(q.composition.cusps, 1);
+  assert.equal(q.composition.curve.length, 482);
+  assert.deepEqual(
+    q.breaks.flatMap((b, i) => (b ? [i] : [])),
+    [241],
+  );
+  assert.ok(q.composition.breaks.every((b) => !b));
+  q.base.forEach((p, i) => {
+    const t = (2 * Math.PI * i) / 481;
+    assert.ok(Math.abs(p.x - (Math.cos(t) - Math.sin(t) ** 2)) < 1e-9);
+    assert.ok(Math.abs(p.y - Math.sin(t) * (1 + Math.cos(t))) < 1e-9);
+  });
+  for (const s of q.composition.constructions) {
+    assert.deepEqual(s.contact, q.composition.curve[s.sampleIndex]);
+    assert.deepEqual(s.image, q.base[s.sampleIndex]);
+  }
+  assert.equal(q.involute.unreached, 241);
+  assert.equal(composed({ input: "base" }).composition, undefined);
+  assert.match(composed({ input: "evolute" }).error, /input curve/);
+}
+console.log(
+  "WASM composition: cardioid input, its cusp, connectors and validation passed",
+);
 // Spatial harmonic generator: one term traces the ellipse c₀ + A cos t +
 // B sin t, closed over 2π; an incommensurate pair is left open.
 const spatialHarmonic = (terms, min, max) =>

@@ -1,4 +1,4 @@
-import { usesSpatialPole } from "./types";
+import { composes, usesSpatialPole } from "./types";
 import { harmonicLabels } from "./harmonic";
 import { surfaceShape } from "./surface";
 import type {
@@ -326,7 +326,9 @@ export const targetLabel = (c: SpatialConfig, t: Target): string => {
             ? "Unwinding strings"
             : t === "lines" && c.construction === "inversion"
               ? "Correspondences"
-              : t === "lines" && usesSpatialPole(c)
+              : t === "lines" &&
+                  (c.construction === "tangent-foot" ||
+                    c.construction === "orthotomic")
                 ? "Projection constructions"
                 : targetLabels[t as NamedTarget];
 };
@@ -429,9 +431,12 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
                       ? (["poleX", "poleY", "poleZ"] as const)
                       : []),
                   ]
-                : usesSpatialPole(c)
+                : c.construction === "tangent-foot" ||
+                    c.construction === "orthotomic"
                   ? ["poleX", "poleY", "poleZ"]
                   : ["length"];
+  // A construction built on a derived input moves with its pole.
+  if (composes(c)) construction.push("poleX", "poleY", "poleZ");
   const curve: Target[] =
     c.format === "parametric"
       ? ["a", "min", "max"]
@@ -832,6 +837,15 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       (c) => c.sampleIndex <= last,
     ),
   };
+  // The base under a derived input is revealed with the curve built on it.
+  const composition = result.composition && {
+    ...result.composition,
+    curve: result.composition.curve.slice(0, last + 1),
+    breaks: result.composition.breaks.slice(0, last + 1),
+    constructions: result.composition.constructions.filter(
+      (c) => c.sampleIndex <= last,
+    ),
+  };
   const harmonic = result.harmonic && {
     ...result.harmonic,
     positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
@@ -883,6 +897,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     ...harmonicFamilies(harmonic),
     ...(field?.paths ?? []),
     ...(pursuit?.paths ?? []),
+    ...(composition ? [composition.curve, [composition.pole]] : []),
   ];
   return {
     ...result,
@@ -895,6 +910,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     involute,
     projection,
     inversion,
+    composition,
     harmonic,
     field,
     pursuit,

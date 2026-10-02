@@ -64,8 +64,8 @@ func harmonicSnap(h HarmonicCurve, u float64) Vec3 {
 // snap returns r⁗ for a knot or a harmonic curve, and nil for a curve
 // without analytic derivatives.
 func snap(c Request) func(float64) Vec3 {
-	switch c.Format {
-	case "", "torus":
+	switch c.analytic() {
+	case "torus":
 		return func(t float64) Vec3 { return knotSnap(c, t) }
 	case "harmonic":
 		return func(t float64) Vec3 { return harmonicSnap(c.Harmonic, t) }
@@ -126,8 +126,8 @@ func slope(f func(float64) (Vec3, bool), t, lo, hi, h float64) (Vec3, bool) {
 // curve, otherwise differenced from r″ at two steps scaled to the span and
 // discarded when they disagree.
 func jerk(c Request, evaluate evaluation, lo, hi float64) func(float64, Vec3) (Vec3, bool) {
-	switch c.Format {
-	case "", "torus":
+	switch c.analytic() {
+	case "torus":
 		return func(t float64, _ Vec3) (Vec3, bool) { return knotJerk(c, t), true }
 	case "harmonic":
 		return func(t float64, _ Vec3) (Vec3, bool) { return harmonicJerk(c.Harmonic, t), true }

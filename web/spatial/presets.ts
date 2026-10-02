@@ -6,6 +6,7 @@ const base: SpatialConfig = {
   format: "torus",
   construction: "developable",
   pole: { x: 1.5, y: 0, z: 1 },
+  input: "base",
   inversion: { center: { x: 0, y: 0, z: 0 }, radius: 2, input: "base" },
   involute: {
     anchor: 0,
@@ -1503,6 +1504,87 @@ export const spatialPresets: {
           },
         ],
       },
+    },
+  },
+  // Constructions built on a derived curve. A curve through its own pole
+  // has a tangent-foot curve with a cusp there (the foot of a perpendicular
+  // onto a tangent through the pole is the pole itself, and it stops): on
+  // this saddle loop (a closed harmonic curve, so its ends meet at the
+  // pole), a cardioid lifted into space, unwound by a family of strings
+  // that stop at the cusp from either side.
+  {
+    name: "Filaments off a cusp",
+    detail:
+      "The pole sits on the curve, so its perpendicular feet stop in a cusp",
+    config: {
+      ...base,
+      format: "harmonic",
+      construction: "involute",
+      input: "tangent-foot",
+      pole: { x: -1, y: 0, z: 0 },
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 1, y: 0, z: 0 },
+            sine: { x: 0, y: 1, z: 0 },
+          },
+          {
+            frequency: 2,
+            cosine: { x: 0, y: 0, z: 0 },
+            sine: { x: 0, y: 0, z: 0.35 },
+          },
+        ],
+        min: -Math.PI,
+        max: Math.PI,
+      },
+      involute: {
+        anchor: 0,
+        offset: 0,
+        family: { enabled: true, from: -4, to: 4, count: 9 },
+      },
+      samples: 1200,
+      lines: 48,
+    },
+  },
+  // The helix's tangent-foot curve from a point on its axis: the feet lean
+  // outward as the tangent climbs, H = r − (b²t/w²)W, so a tube around them
+  // flares like a horn while the helix itself stays inside.
+  {
+    name: "A horn of perpendicular feet",
+    detail:
+      "A tube around the helix's tangent-foot curve, flaring as it climbs",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      input: "tangent-foot",
+      pole: { x: 0, y: 0, z: 0 },
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "t/2",
+        min: -4 * Math.PI,
+        max: 4 * Math.PI,
+        a: 1,
+      },
+      canal: { radius: 0.22, profile: "1", meridians: 4 },
+      samples: 1200,
+      lines: 64,
+    },
+  },
+  // Reflect the knot's center in every tangent line of the cinquefoil, then
+  // string chords one radian ahead along that reflected curve.
+  {
+    name: "Chords across a knot's reflection",
+    detail: "Chords strung along the cinquefoil's orthotomic from its center",
+    config: {
+      ...base,
+      construction: "ruled",
+      input: "orthotomic",
+      q: 5,
+      pole: { x: 0, y: 0, z: 0 },
     },
   },
 ];

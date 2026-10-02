@@ -28,6 +28,8 @@ import {
 import {
   maxFrameStrands,
   maxHarmonicTerms,
+  composes,
+  takesInput,
   usesSpatialPole,
   type FrameConfig,
   type RuledConfig,
@@ -432,6 +434,14 @@ export default function SpatialApp({
   const projectionName = orthotomic
     ? "Tangent-line orthotomic"
     : "Tangent-foot curve";
+  // A construction built on a derived input draws that curve as its own,
+  // with the base curve beneath it.
+  const composing = composes(config);
+  const inputName = {
+    base: "Base curve",
+    "tangent-foot": "Tangent-foot curve",
+    orthotomic: "Tangent-line orthotomic",
+  }[config.input];
   const inversionSource = {
     base: "the base curve",
     "tangent-foot": "the tangent-foot curve",
@@ -1353,6 +1363,7 @@ export default function SpatialApp({
   // moves after them instead of separating the two.
   const unreached = shown?.result.involute?.unreached ?? 0;
   const inverted = shown?.result.inversion;
+  const composition = shown?.result.composition;
   const frameResult =
     shown?.config.construction === "framed" ? shown.result.frame : undefined;
   const transported = config.frame.kind === "rotation-minimizing";
@@ -1627,6 +1638,21 @@ export default function SpatialApp({
         />
       </Field>
     </>
+  );
+  // What the construction below is built on, when that is a derived curve.
+  const builtOn = composing && (
+    <p className="bottom-note composition-note">
+      Built on the{" "}
+      {config.input === "orthotomic"
+        ? "tangent-line orthotomic Q(t) = 2H(t) − P"
+        : "tangent-foot curve H(t) = r(t) + ((P − r(t)) · T(t)) T(t)"}{" "}
+      of the base curve r, drawn in grey with its perpendiculars from the pole
+      P. The construction below acts on that curve in place of r: it is
+      evaluated from the base at every sample, never redrawn from a polyline.
+      {composition && composition.cusps > 0
+        ? ` It stops or turns back at ${composition.cusps} ${composition.cusps === 1 ? "cusp" : "cusps"}, where the construction is broken rather than joined across.`
+        : ""}
+    </p>
   );
   const behind = leveled ? (
     <StudyExplanation
@@ -2313,6 +2339,32 @@ export default function SpatialApp({
                       <option value="none">None · the curve alone</option>
                     </select>
                   </Field>
+                  {takesInput(config) && (
+                    <>
+                      <Field
+                        label="Built on"
+                        help="Build the construction on the base curve, or on its tangent-foot curve or tangent-line orthotomic from the pole. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
+                      >
+                        <select
+                          value={config.input}
+                          onChange={(e) => {
+                            const input = e.target
+                              .value as SpatialConfig["input"];
+                            update((c) => ({ ...c, input }));
+                          }}
+                        >
+                          <option value="base">The base curve</option>
+                          <option value="tangent-foot">
+                            Its tangent-foot curve
+                          </option>
+                          <option value="orthotomic">
+                            Its tangent-line orthotomic
+                          </option>
+                        </select>
+                      </Field>
+                      {composing && poleFields}
+                    </>
+                  )}
                   {canal ? (
                     canalControls
                   ) : ruled ? (
@@ -2657,6 +2709,13 @@ export default function SpatialApp({
                                           ["rulings", "Tangent rulings"],
                                           ["edges", "Ribbon edges"],
                                         ] as const)),
+                        ...(composing
+                          ? ([
+                              ["parent", "Base curve"],
+                              ["connectors", "Perpendiculars & tangent feet"],
+                              ["pole", "Pole marker"],
+                            ] as const)
+                          : []),
                         ...(config.format === "harmonic"
                           ? ([
                               ["vectors", "Vector sums"],
@@ -3131,11 +3190,13 @@ export default function SpatialApp({
               ) : (
                 <div className="legend">
                   <span className="thread-dot" />{" "}
-                  {flowing
-                    ? "Trajectory 1"
-                    : chasing
-                      ? "Pursuer 1"
-                      : "Base curve"}{" "}
+                  {composing
+                    ? inputName
+                    : flowing
+                      ? "Trajectory 1"
+                      : chasing
+                        ? "Pursuer 1"
+                        : "Base curve"}{" "}
                   {!(none && !flowing && !chasing) && (
                     <span className="ribbon-dot" />
                   )}{" "}
@@ -3158,6 +3219,12 @@ export default function SpatialApp({
                               : involute
                                 ? "Involute filaments"
                                 : "Tangent developable"}
+                  {composing && (
+                    <>
+                      {" "}
+                      <span className="parent-dot" /> Base curve
+                    </>
+                  )}
                   {cutLegend}
                 </div>
               )}
@@ -3170,9 +3237,15 @@ export default function SpatialApp({
               </span>
             </div>
           </div>
+          {!narrow && builtOn}
           {!narrow && behind}
         </article>
-        {narrow && <div className="behind spatial-explanation">{behind}</div>}
+        {narrow && (
+          <div className="behind spatial-explanation">
+            {builtOn}
+            {behind}
+          </div>
+        )}
       </main>
     </div>
   );

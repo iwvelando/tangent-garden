@@ -795,3 +795,29 @@ test("a link carries a camera path and its flight; refuses turns, views and name
     keys,
   );
 });
+
+test("a link carries the curve a construction is built on; older links build on the base", async () => {
+  for (const input of ["base", "tangent-foot", "orthotomic"] as const) {
+    const study = spatial();
+    study.config = {
+      ...study.config,
+      construction: "involute",
+      input,
+      pole: { x: -1, y: 0.5, z: 2 },
+    };
+    study.layers = { ...study.layers, parent: false, connectors: false };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study), study);
+  }
+  // A link made before composition drew every construction on the base,
+  // with every layer it did not name shown.
+  const older = structuredClone(spatial()) as any;
+  delete older.config.input;
+  delete older.layers.parent;
+  const read = spatialStudy(older);
+  assert.equal(read.config.input, "base");
+  assert.equal(read.layers.parent, true);
+  const bad = structuredClone(spatial()) as any;
+  bad.config.input = "evolute";
+  await refused(() => spatialStudy(bad), "config.input");
+});
