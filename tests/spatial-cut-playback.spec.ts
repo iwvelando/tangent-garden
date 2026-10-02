@@ -301,10 +301,12 @@ test("a peel's export starts whole and ends with the surface gone; other exports
     console.log("Peel endpoints", { ends, crossed });
     // The first frame is the whole sphere. The last has almost no ink
     // left, so a share of unmatched ink means little there; its pixels
-    // match the still's instead.
+    // match the still's instead. H.264 can move a flat background by about
+    // one level per channel (1.0 measured on CI's encoder, 0.01 locally),
+    // so 3 allows that noise while the swapped ends below differ by over 20.
     expect(ends[0].meanDifference).toBeLessThan(6);
     expect(ends[0].unmatchedInk).toBeLessThan(0.02);
-    expect(ends[1].meanDifference).toBeLessThan(0.5);
+    expect(ends[1].meanDifference).toBeLessThan(3);
     // Swapped, the ends differ by the whole sphere.
     for (const d of crossed) {
       expect(d.meanDifference).toBeGreaterThan(20);
