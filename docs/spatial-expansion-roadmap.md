@@ -144,7 +144,9 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
   - Decisions: the viewer's theme, playback position and export settings stay out. Scalar fields reopen as exact values, not their entered text. A newer version is reported, and older links take defaults for fields they lack.
 - [ ] ~~**Saved study files.**~~ Declined (2026-09-30): portable links are sufficient, and no downloadable study file is planned.
 - [ ] **Camera affordances.** Named front/side/top/isometric views, a small orientation indicator, touch pinch/pan, and keyboard parity. The MVP already supports orbit/pan/zoom; this is refinement, not replacement. Any perspective option must be explicitly labelled and retain orthographic defaults and reproducible export framing.
-- [ ] **Authored camera animation.** Named snapshots, a target/orbit center, start/end orientation, and deliberate interpolation. Specify full-turn versus shortest-rotation behavior and avoid quaternion sign flips. Geometry tracks and camera tracks remain separate; Stop restores the manual camera.
+- [x] **Authored camera animation.** Done: **Fly through key views** in the 3D notebook, a camera path through 2–12 named views taken from the drawing, steady or smooth, with explicit added turns and a framed point the camera turns about; see the follow-up notes below and `mathematics.md#spatial-camera-paths`.
+  - Decisions: the turntable camera's yaw and pitch are interpolated directly (it never rolls and its pitch stops at ±1.5 rad, so there is no singularity and no quaternion sign to choose); each leg takes the shorter way unless turns are added, an exact half turn the negative way; views are equally spaced in time.
+  - Still open: running a camera path together with geometry tracks (under **Animation polish**), per-leg durations, and choosing the point to turn about from the geometry rather than the plane through the study's center.
 - [ ] **Composition and study comparison.** Allow only evaluator-compatible derived inputs, with bounded depth and clear provenance. A later side-by-side 2D/3D comparison or declared planar embedding could help explain reductions, but 2D and 3D studies should not silently overwrite one another.
 - [ ] **Still-export controls.** User-selected dimensions/aspect, quality where applicable, and optional transparent backgrounds with correctly composited antialiasing. The current PNG is opaque and fixed at 2000 × 1520; animation resolution is already adjustable. Keep theme/layers/camera snapshots and actual target-resolution rendering.
 - [x] **True vector linework export.** Done: **Lines (SVG)** in the 3D notebook's export menu, described in `spatial-study.md` and `architecture.md`. It projects the drawing's own line batches (`web/spatial/scene.ts`) with the drawing's camera and colors into SVG paths, one group per layer.
@@ -824,5 +826,36 @@ Recommended next step, for the user to choose: authored camera animation, or res
   - The Klein bottle's self-intersection, where ∇F vanishes, leaves small slits in the mesh.
 
 Recommended next step, for the user to choose: authored camera animation, which would let a preset like the Klein bottle open on the view that shows it best; or reconcile the remaining backlog and retire this roadmap.
+
+### Follow-up completed: authored camera paths
+
+- Implemented **Animate → Fly through key views** in the 3D notebook: a camera path through 2–12 key views taken from the drawing, each named, with whole turns added on the way to it, flown **Steady** or **Smooth**. Geometry stays fixed; geometry tracks remain separate, as decided for this slice.
+  - `web/spatial/path.ts` is the descriptor: types, limits, words, `pathError`, `keyFromView`, `pathView` and `pathLeg`. The panel's path editor reads it; `animationCamera` returns `pathView` for a path, so playback, scrubbing, the released camera and MP4/WebP exports share it.
+  - No Go, transport or CSP change, and no new runtime dependency.
+- Decisions:
+  - The camera is a turntable that never rolls and stops at pitch ±1.5 rad, so yaw and pitch are interpolated directly: no singularity, and no quaternion sign to choose. Each leg takes the shorter way round, an exact half turn the negative way, plus its added turns; positive turns as the orbit animation turns. Two equal unpanned views with one turn are the orbit animation.
+  - Views are equally spaced in time, and at a view's time the camera is that key view exactly. Steady is linear in yaw, pitch and log zoom; Smooth is monotone cubic (Fritsch–Carlson, `pchip` end conditions), so it never overshoots a view. With two views they agree; the default is Steady, keeping animation defaults linear.
+  - The camera turns about its framed point, the middle of the page on the plane through the study's center facing it, which moves linearly in 1/zoom while a leg zooms. With a fixed orientation that is the zoom-and-pan in which the page's points move straight through one fixed point, so a framed detail comes straight to the middle. The drawing stays a manual camera about the study's bounds, so depth keeps the study's range. A view taken from a finished animation's camera about other bounds is converted to draw every point where it was.
+  - Links carry the path inside `animation` as `path`; older links fly none. A preset may bring a `flight` (path and duration); choosing a preset sets it or clears the path, as with the cut and sight.
+  - One new preset, appended so indices hold: **Viviani's curve, from every side**, a thin tube on the curve where a sphere meets the cylinder touching it inside. Its 30-second smooth flight goes end-on (the circle), side-on (the lemniscate of Gerono), nearly overhead (the parabola traced twice, 4° short of straight down), then zooms on the right-angled crossing at (2a, 0, 0) and turns once around it, held in the middle of the page. No existing preset could show this: the orbit only turns about the study's center at a fixed zoom, so it cannot hold an off-center detail.
+- Workload: a path holds at most 12 views and ±8 turns per leg; a frame costs O(n) arithmetic and no engine work.
+- Permanent docs: `mathematics.md#spatial-camera-paths` and its reference study, `spatial-study.md` (**Flying the camera**), `usage.md`, `architecture.md`, README.
+- Verification:
+  - `tests/spatial-path.spec.ts` was written before `path.ts` and observed failing (missing module). It observes the path through the drawing's projection (`scene.ts`), not a copy of its formulas: exact views, orbit equivalence, the shorter way and the half-turn tie, monotone turns, continuity, smooth's continuous rate and no overshoot, the straight zoom, a turn holding its framed point, view conversion, refusals and the readout.
+  - The link cases in `study-link.spec.ts` were written first and observed failing (`animation.path is not a known field`). `tests/spatial-path-playback.spec.ts` was written before the panel and observed failing in 4 of its 5 cases; pause and resume already passed, since it uses no new control. The Viviani test was written after the preset. It checks the end-on line drawing is a circle to 0.05 px and the side-on one is the lemniscate, and that the crossing stays in the middle of the page. Also extended: `layout.spec.ts` (the path's paired fields with help and a refusal); `gallery.spec.ts` and `notebook-consistency.spec.ts` (54 → 55 examples, intended); the mode lists in `spatial-probe-playback.spec.ts` and `spatial-cut-playback.spec.ts` (now ending in `path`, intended).
+  - `make thumbnails` added the new pair and regenerated every existing thumbnail byte-identical.
+  - Targeted mutations: 29 faults over `path.ts`, the link checks, the panel and the notebook wiring.
+    - Three survived the first run: arithmetic-mean slopes, no end clamp, and turns allowed on the first view. A test of very unequal legs and a first-view refusal now detect them.
+    - All 29 are detected; one, removing `animationCamera`'s path branch, needed a variant that compiles.
+  - Results on the final tree: `make check` passed (engine3 coverage 98.9%, unchanged Go). `make test-browser` passed all 933 Chromium tests. `make test-webkit` passed all 35 WebKit tests; it has no path-specific case, since the path reuses the rendering and encoding path.
+  - The path editor was inspected at desktop width (dark) and at 390 px (both themes), with help open. The flight was scrubbed and inspected in the light theme.
+- Limits:
+  - Views are equally spaced in time.
+  - The framed point is taken on the plane through the study's center, so a turn holds a detail in the middle only when it lies on that plane; elsewhere it circles near the middle.
+  - Smooth's framed point can change its rate at a view.
+  - The camera cannot look straight down, so overhead projections are seen 4° short.
+  - Name and turns are kept per view, with no reordering.
+
+Recommended next step, for the user to choose: running a camera path together with geometry tracks (part of **Animation polish**); or reconcile the remaining backlog and retire this roadmap.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.

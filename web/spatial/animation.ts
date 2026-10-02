@@ -11,14 +11,16 @@ import type {
   SurfaceSheet,
 } from "./types";
 import type { View } from "./renderer";
+import { pathView, type CameraPath } from "./path";
 export type { Frame };
 export type Viewport = View;
 // Reveal, vary parameters, orbit the camera, trace light from its source to
 // the caustics (mirror and interface studies only), or move the parameter
 // probe along the curve (while the probe is on), or peel the drawing away
-// with the cut plane (while the cut is on).
+// with the cut plane (while the cut is on), or fly the camera through key
+// views (see path.ts).
 export type AnimationMode =
-  "reveal" | "parameters" | "orbit" | "trace" | "probe" | "cut";
+  "reveal" | "parameters" | "orbit" | "trace" | "probe" | "cut" | "path";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 // A harmonic term's frequency or one coordinate of its vector A or B,
 // numbered from 1 in term order.
@@ -113,6 +115,8 @@ export type AnimationView = {
   probeSetup?: import("./probe").Probe;
   // The cut as this frame draws it, when the animation moves it.
   cut?: import("./cut").CutSpec;
+  // The camera path, when the animation flies it.
+  path?: CameraPath;
 };
 export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",
@@ -931,6 +935,9 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
   };
 }
 export function animationCamera(view: AnimationView): View {
+  // A camera path is the whole camera, about the study's own bounds.
+  if (view.mode === "path" && view.path)
+    return pathView(view.path, view.frame.result.bounds, view.progress);
   const held = view.heldView!;
   const bounds =
     view.camera === "current"

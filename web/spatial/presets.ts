@@ -1,5 +1,6 @@
 import type { Cut } from "./cut";
 import type { Sight } from "./sight";
+import type { CameraPath } from "./path";
 import type { SpatialConfig } from "./types";
 const base: SpatialConfig = {
   format: "torus",
@@ -150,14 +151,16 @@ const base: SpatialConfig = {
     a: 1,
   },
 };
-// A preset may open with its own cut (see cut.ts) and its own sight (see
-// sight.ts); choosing one without turns them off.
+// A preset may open with its own cut (see cut.ts), its own sight (see
+// sight.ts) and its own camera path to fly, with its duration (see path.ts);
+// choosing one without turns them off.
 export const spatialPresets: {
   name: string;
   detail: string;
   config: SpatialConfig;
   cut?: Cut;
   sight?: Sight;
+  flight?: { path: CameraPath; duration: number };
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -1399,5 +1402,107 @@ export const spatialPresets: {
       },
     },
     sight: { sheets: "through", opacity: 0.3, hidden: "dashed" },
+  },
+  {
+    name: "Viviani's curve, from every side",
+    detail:
+      "One curve on a sphere: end-on a circle, side-on a figure-eight, from above a parabola traced twice; then around the point where it crosses itself",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      lines: 48,
+      canal: { radius: 0.12, profile: "1", meridians: 0 },
+      // Viviani's curve (1692): where the sphere x² + y² + z² = 4a² meets
+      // the cylinder (x − a)² + y² = a², which touches it inside at
+      // (2a, 0, 0). There the curve crosses itself at right angles. Seen
+      // along z it is the cylinder's circle; along x, the figure-eight
+      // (a lemniscate of Gerono) y² = z²(1 − (z / 2a)²); along y, the
+      // parabola x = 2a − z² / 2a, traced there and back.
+      curve: {
+        x: "a*(1+cos(t))",
+        y: "a*sin(t)",
+        z: "2*a*sin(t/2)",
+        a: 1.5,
+        min: -2 * Math.PI,
+        max: 2 * Math.PI,
+      },
+    },
+    // The camera's turntable axis is y, so the circle and the figure-eight
+    // are seen exactly, level; the parabola needs a view straight down,
+    // which the camera stops 4° short of. The crossing at (3, 0, 0) lies on
+    // the plane through the study's center (1.5, 0, 0) facing a camera at
+    // yaw 0, so panned to the middle there, the camera turns about it.
+    flight: {
+      duration: 30,
+      path: {
+        style: "smooth",
+        keys: [
+          {
+            name: "Oblique",
+            yaw: 0.6,
+            pitch: 0.45,
+            zoom: 1.1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "End-on: a circle",
+            yaw: 0,
+            pitch: 0,
+            zoom: 1.6,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Side-on: a figure-eight",
+            yaw: Math.PI / 2,
+            pitch: 0,
+            zoom: 1.3,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Nearly above: a parabola, twice",
+            yaw: Math.PI / 2,
+            pitch: 1.5,
+            zoom: 1.3,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "The crossing",
+            yaw: 0,
+            pitch: 0.35,
+            zoom: 3,
+            panX: -1.5,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Around the crossing",
+            yaw: 0,
+            pitch: 0.35,
+            zoom: 3,
+            panX: -1.5,
+            panY: 0,
+            turns: 1,
+          },
+          {
+            name: "Oblique again",
+            yaw: 0.6,
+            pitch: 0.45,
+            zoom: 1.1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+        ],
+      },
+    },
   },
 ];

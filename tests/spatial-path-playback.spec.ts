@@ -1,0 +1,432 @@
+import { test, expect, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { deflateRawSync } from "node:zlib";
+import { probe, decodeVideo, frameDifference } from "./video";
+import { open as openDetails } from "./helpers";
+import { spatialPresets } from "../web/spatial/presets";
+import { defaultLayers } from "../web/spatial/renderer";
+import { pathView, type CameraPath } from "../web/spatial/path";
+
+// Flying the camera through key views, through the real notebook, worker,
+// engine and exporter. The geometry stays fixed; only the camera moves.
+const stage = (page: Page) => page.locator(".spatial-stage");
+const canvas = (page: Page) => page.locator("#spatial-artwork");
+const settled = (page: Page) =>
+  expect(stage(page)).toHaveAttribute("aria-busy", "false");
+const mode = (page: Page) => page.getByLabel("Animate", { exact: true });
+const button = (page: Page, name: string) =>
+  page.getByRole("button", { name, exact: true });
+const views = (page: Page) => page.getByRole("group", { name: "Key views" });
+const shownView = async (page: Page) =>
+  JSON.parse((await canvas(page).getAttribute("data-view"))!);
+const animationCamera = async (page: Page) =>
+  JSON.parse((await stage(page).getAttribute("data-camera"))!);
+const pixels = (page: Page) =>
+  canvas(page).evaluate((c: HTMLCanvasElement) => c.toDataURL());
+async function seek(page: Page, p: string) {
+  await page.getByRole("slider", { name: "Animation progress" }).fill(p);
+  await expect(stage(page)).toHaveAttribute("data-progress", p);
+}
+async function openPanel(page: Page) {
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+}
+async function ready(page: Page) {
+  await page.goto("/?study=3d");
+  await expect(canvas(page)).toBeVisible();
+  await settled(page);
+  await openPanel(page);
+}
+async function open(page: Page, study: unknown) {
+  await page.goto(
+    `/?study=3d#s=${deflateRawSync(
+      Buffer.from(JSON.stringify({ v: 1, notebook: "3d", study })),
+    ).toString("base64url")}`,
+  );
+  await expect(canvas(page)).toBeVisible();
+  await settled(page);
+  await openPanel(page);
+}
+const manual = { yaw: -0.4, pitch: 0.2, zoom: 1.3, panX: 0.2, panY: 0.1 };
+const flight: CameraPath = {
+  style: "smooth",
+  keys: [
+    {
+      name: "Start",
+      yaw: 0.3,
+      pitch: 0.75,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      turns: 0,
+    },
+    {
+      name: "Side",
+      yaw: 1.9,
+      pitch: -0.3,
+      zoom: 2.4,
+      panX: 0.8,
+      panY: -0.5,
+      turns: 0,
+    },
+    {
+      name: "Away",
+      yaw: 0.3,
+      pitch: 1.1,
+      zoom: 0.7,
+      panX: 0,
+      panY: 0,
+      turns: 1,
+    },
+  ],
+};
+const study = (path: CameraPath = flight, duration = 5) => ({
+  config: spatialPresets[0].config,
+  layers: defaultLayers,
+  view: manual,
+  animation: { mode: "path", camera: "hold", duration, tracks: [], path },
+});
+const at = (bounds: object, key: CameraPath["keys"][number]) => ({
+  ...bounds,
+  yaw: key.yaw,
+  pitch: key.pitch,
+  zoom: key.zoom,
+  panX: key.panX,
+  panY: key.panY,
+});
+
+test("key views are taken from the drawing, shown, set again and removed", async ({
+  page,
+}) => {
+  await ready(page);
+  await mode(page).selectOption("path");
+  await expect(page.locator("#spatial-animation-section")).toContainText(
+    "Fly the camera through your key views",
+  );
+  // The path is the camera: there is no other to choose.
+  await expect(
+    page.getByLabel("Animation camera", { exact: true }),
+  ).toHaveCount(0);
+  await button(page, "Play animation").click();
+  await expect(page.locator(".animation-error")).toContainText(
+    "Key views need at least two views to fly between.",
+  );
+  const add = button(page, "+ Add the drawing's view");
+  await add.click();
+  await expect(views(page)).toContainText("yaw 17°, pitch 43°, zoom 1.00×");
+  // The first view has no leg before it, so no turns.
+  await expect(page.getByLabel("View 1 turns", { exact: true })).toHaveCount(0);
+  await canvas(page).focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("+");
+  await add.click();
+  await expect(views(page)).toContainText("yaw 46°, pitch 43°, zoom 1.10×");
+  await expect(page.getByLabel("View 2 turns", { exact: true })).toHaveValue(
+    "0",
+  );
+  // Showing a view puts the drawing's camera there, to adjust it.
+  await button(page, "Show view 1").click();
+  await expect.poll(async () => (await shownView(page)).yaw).toBe(0.3);
+  expect((await shownView(page)).zoom).toBe(1);
+  await canvas(page).focus();
+  await page.keyboard.press("ArrowDown");
+  await button(page, "Set view 2 to the drawing's view").click();
+  await expect(views(page)).toContainText("yaw 17°, pitch 49°, zoom 1.00×");
+  await page.getByLabel("View 2 name", { exact: true }).fill("Lower");
+  // A third view, two turns after the second.
+  await add.click();
+  await page.getByLabel("View 3 turns", { exact: true }).fill("2");
+  await page.getByLabel("View 3 turns", { exact: true }).fill("2.5");
+  await button(page, "Play animation").click();
+  await expect(page.locator(".animation-error")).toContainText(
+    "View 3 turns must be a whole number from −8 to 8.",
+  );
+  await page.getByLabel("View 3 turns", { exact: true }).fill("2");
+  // Removing the first view clears the turns of the one after it: the
+  // remaining two play.
+  await page.getByLabel("View 2 turns", { exact: true }).fill("3");
+  await button(page, "Remove view 1").click();
+  await expect(page.getByLabel("View 1 name", { exact: true })).toHaveValue(
+    "Lower",
+  );
+  await expect(page.getByLabel("View 1 turns", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("View 2 turns", { exact: true })).toHaveValue(
+    "2",
+  );
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "path");
+  await button(page, "Stop").click();
+  // Twelve views at most.
+  for (let k = 2; k < 12; k++) await add.click();
+  await expect(add).toBeDisabled();
+});
+
+test("the flight stands at each view exactly, passes between them, and Stop and Back to study restore the manual camera", async ({
+  page,
+}) => {
+  await open(page, study());
+  await expect(mode(page)).toHaveValue("path");
+  await expect(page.getByLabel("Path", { exact: true })).toHaveValue("smooth");
+  const idle = await shownView(page);
+  expect(idle).toMatchObject(manual);
+  const bounds = { center: idle.center, radius: idle.radius };
+  await page.keyboard.press("Escape");
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "path");
+  await button(page, "Pause").click();
+  // At each view, the camera is that view about the study's bounds, and the
+  // drawing is the one its manual camera draws.
+  const ends: string[] = [];
+  for (const [p, k] of [
+    ["0", 0],
+    ["0.5", 1],
+  ] as const) {
+    await seek(page, p);
+    expect(await animationCamera(page)).toEqual(at(bounds, flight.keys[k]));
+    await expect(page.locator(".animation-values")).toHaveText(
+      flight.keys[k].name,
+    );
+    ends.push(await pixels(page));
+  }
+  // Between views, the path's camera, named by its leg.
+  await seek(page, "0.25");
+  const between = await animationCamera(page),
+    expected = pathView(flight, bounds as never, 0.25);
+  for (const key of ["yaw", "pitch", "zoom", "panX", "panY"] as const)
+    expect(between[key]).toBeCloseTo(expected[key], 12);
+  await expect(page.locator(".animation-values")).toHaveText("Start → Side");
+  // Stop restores the manual camera.
+  await button(page, "Stop").click();
+  await expect.poll(async () => (await shownView(page)).yaw).toBe(manual.yaw);
+  expect(await shownView(page)).toEqual(idle);
+  // The drawing at a view, with the manual camera there.
+  for (const k of [0, 1]) {
+    await button(page, `Show view ${k + 1}`).click();
+    await expect
+      .poll(async () => (await shownView(page)).yaw)
+      .toBe(flight.keys[k].yaw);
+    expect(await pixels(page)).toBe(ends[k]);
+  }
+  // Playing to the end releases the last view to explore; Back to study
+  // restores the manual camera, here the second view as shown.
+  await page.getByLabel("Duration (seconds)").fill("0.4");
+  await button(page, "Play animation").click();
+  await expect(button(page, "Back to study")).toBeVisible();
+  expect(await shownView(page)).toEqual(at(bounds, flight.keys[2]));
+  await expect(page.locator(".animation-values")).toHaveText("Away");
+  await button(page, "Back to study").click();
+  await expect
+    .poll(async () => await shownView(page))
+    .toEqual(at(bounds, flight.keys[1]));
+});
+
+test("a path's export starts at its first view and ends at its last", async ({
+  page,
+}) => {
+  await open(page, study());
+  // Stills at the two ends, from the manual camera.
+  const stills: Buffer[] = [];
+  for (const k of [1, 3]) {
+    await button(page, `Show view ${k}`).click();
+    await expect
+      .poll(async () => (await shownView(page)).yaw)
+      .toBe(flight.keys[k - 1].yaw);
+    stills.push(await still(page));
+  }
+  await page.getByLabel("Duration (seconds)").fill("0.4");
+  await openDetails(page, "#spatial-export-settings");
+  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("2");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Export MP4/ }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("tangent-garden-spatial-path.mp4");
+  const path = (await file.path())!;
+  const data = probe(path);
+  if (data) {
+    expect(data.frames).toBe(6);
+    expect([data.width, data.height]).toEqual([2000, 1520]);
+    expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+  }
+  const video = await decodeVideo(page, await readFile(path));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  expect(video.first.hash).not.toBe(video.last.hash);
+  const match = (index: number, reference: Buffer) =>
+    frameDifference(path, 2000, 1520, index, reference);
+  const ends = [match(0, stills[0]), match(5, stills[1])];
+  const crossed = [match(0, stills[1]), match(5, stills[0])];
+  if (ends[0] && ends[1] && crossed[0] && crossed[1]) {
+    console.log("Path endpoints", { ends, crossed });
+    for (const d of ends) {
+      expect(d.meanDifference).toBeLessThan(3);
+      expect(d.unmatchedInk).toBeLessThan(0.05);
+    }
+    for (const d of crossed) expect(d.unmatchedInk).toBeGreaterThan(0.3);
+  }
+  // The export leaves the study and its manual camera as they were.
+  await expect(stage(page)).not.toHaveAttribute("data-progress");
+  expect((await shownView(page)).yaw).toBe(flight.keys[2].yaw);
+});
+
+async function still(page: Page) {
+  await button(page, "Export image").click();
+  const event = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: /^PNG image/ }).click();
+  const png = await readFile((await (await event).path())!);
+  const rgba = await page.evaluate(async (input) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${input}`;
+    await image.decode();
+    const c = document.createElement("canvas");
+    c.width = image.width;
+    c.height = image.height;
+    const g = c.getContext("2d")!;
+    g.drawImage(image, 0, 0);
+    const data = g.getImageData(0, 0, c.width, c.height).data;
+    let text = "";
+    for (let i = 0; i < data.length; i += 0x8000)
+      text += String.fromCharCode(...data.subarray(i, i + 0x8000));
+    return btoa(text);
+  }, png.toString("base64"));
+  return Buffer.from(rgba, "base64");
+}
+
+test("the path and its views travel in a copied link", async ({ page }) => {
+  await open(page, study());
+  await page.getByLabel("View 2 name", { exact: true }).fill("Edge on");
+  await page.getByLabel("Path", { exact: true }).selectOption("steady");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await button(page, "Copy link").click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const href = await page.evaluate(() => navigator.clipboard.readText());
+  const other = await page.context().newPage();
+  await other.goto(href);
+  await expect(canvas(other)).toBeVisible();
+  await settled(other);
+  await openPanel(other);
+  await expect(mode(other)).toHaveValue("path");
+  await expect(other.getByLabel("Path", { exact: true })).toHaveValue("steady");
+  await expect(other.getByLabel("View 2 name", { exact: true })).toHaveValue(
+    "Edge on",
+  );
+  await expect(other.getByLabel("View 3 turns", { exact: true })).toHaveValue(
+    "1",
+  );
+});
+
+test("pausing holds the camera, resuming continues, and a change of study stops the flight", async ({
+  page,
+}) => {
+  await open(page, study(flight, 3));
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "path");
+  await button(page, "Pause").click();
+  const held = await animationCamera(page);
+  const progress = await stage(page).getAttribute("data-progress");
+  await page.waitForTimeout(150);
+  expect(await animationCamera(page)).toEqual(held);
+  expect(await stage(page).getAttribute("data-progress")).toBe(progress);
+  await button(page, "Resume").click();
+  await expect
+    .poll(async () => Number(await stage(page).getAttribute("data-progress")))
+    .toBeGreaterThan(Number(progress));
+  // Editing the study stops the flight and restores the manual camera.
+  await page
+    .getByRole("textbox", { name: "Major radius R", exact: true })
+    .fill("2.5");
+  await expect(stage(page)).not.toHaveAttribute("data-mode", "path");
+  await expect.poll(async () => (await shownView(page)).yaw).toBe(manual.yaw);
+});
+
+// The base curve's vertices in a line drawing of the shown view, in page
+// pixels.
+async function baseCurve(page: Page) {
+  await button(page, "Export image").click();
+  const event = page.waitForEvent("download");
+  await page
+    .getByRole("menuitem", { name: "Lines (SVG) · every line", exact: true })
+    .click();
+  const svg = (await readFile((await (await event).path())!)).toString();
+  const group = svg.match(/<g id="base"[^>]*>(.*?)<\/g>/)![1];
+  return [...group.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map(
+    (m) => [+m[1], +m[2]] as const,
+  );
+}
+const extent = (values: number[]) => [Math.min(...values), Math.max(...values)];
+
+test("Viviani's curve flies from its circle to its figure-eight and around its crossing, as drawn", async ({
+  page,
+}) => {
+  await ready(page);
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page
+    .locator(`[data-example-title="Viviani's curve, from every side"]`)
+    .click();
+  await settled(page);
+  // The preset brings its flight.
+  await expect(mode(page)).toHaveValue("path");
+  await expect(page.getByLabel("Path", { exact: true })).toHaveValue("smooth");
+  await expect(page.getByLabel("Duration (seconds)")).toHaveValue("30");
+  await expect(page.getByLabel("View 7 name", { exact: true })).toHaveValue(
+    "Oblique again",
+  );
+  await expect(page.getByLabel("View 6 turns", { exact: true })).toHaveValue(
+    "1",
+  );
+  const a = 1.5;
+  // End-on, the curve is the cylinder's circle: every vertex at one
+  // distance from the middle of its extent.
+  await button(page, "Show view 2").click();
+  await expect.poll(async () => (await shownView(page)).zoom).toBe(1.6);
+  const circle = await baseCurve(page);
+  const [x0, x1] = extent(circle.map((p) => p[0])),
+    [y0, y1] = extent(circle.map((p) => p[1]));
+  const radius = (x1 - x0) / 2;
+  expect(radius).toBeGreaterThan(200);
+  for (const [x, y] of circle)
+    expect(
+      Math.abs(Math.hypot(x - (x0 + x1) / 2, y - (y0 + y1) / 2) - radius),
+    ).toBeLessThan(0.05);
+  // Side-on, the figure-eight y² = z²(1 − (z / 2a)²), with z across the
+  // page (4a wide) and y up it.
+  await button(page, "Show view 3").click();
+  await expect.poll(async () => (await shownView(page)).zoom).toBe(1.3);
+  const eight = await baseCurve(page);
+  const [u0, u1] = extent(eight.map((p) => p[0])),
+    [v0, v1] = extent(eight.map((p) => p[1]));
+  const scale = (u1 - u0) / (4 * a);
+  expect((v1 - v0) / scale).toBeCloseTo(2 * a, 2);
+  for (const [u, v] of eight) {
+    const z = (u - (u0 + u1) / 2) / scale,
+      y = ((v0 + v1) / 2 - v) / scale;
+    expect(Math.abs(y * y - z * z * (1 - (z / (2 * a)) ** 2))).toBeLessThan(
+      2e-3,
+    );
+  }
+  // Halfway around the crossing (3, 0, 0), it stays in the middle of the
+  // page: the curve passes through it there.
+  await page.keyboard.press("Escape");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  await seek(page, "0.75");
+  await expect(page.locator(".animation-values")).toHaveText(
+    "The crossing → Around the crossing",
+  );
+  const around = await baseCurve(page);
+  const nearest = Math.min(
+    ...around.map(([x, y]) => Math.hypot(x - 1000, y - 760)),
+  );
+  expect(nearest).toBeLessThan(3);
+  // Choosing another example clears the flight.
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator(`[data-example="0"]`).click();
+  await settled(page);
+  await expect(mode(page)).toHaveValue("reveal");
+  await mode(page).selectOption("path");
+  await expect(page.getByLabel("View 1 name", { exact: true })).toHaveCount(0);
+});

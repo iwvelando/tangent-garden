@@ -10,7 +10,11 @@ import {
   writeStudyLink,
 } from "../web/study-link";
 import { planarStudy, type PlanarStudy } from "../web/planar-link";
-import { spatialStudy, type SpatialStudy } from "../web/spatial/link";
+import {
+  defaultAnimation,
+  spatialStudy,
+  type SpatialStudy,
+} from "../web/spatial/link";
 import { tesseractStudy, type TesseractStudy } from "../web/tesseract/link";
 import { presets } from "../web/presets";
 import { spatialPresets } from "../web/spatial/presets";
@@ -18,6 +22,7 @@ import { tesseractPresets } from "../web/tesseract/presets";
 import { defaultLayers } from "../web/spatial/renderer";
 import { defaultCut } from "../web/spatial/cut";
 import { defaultSight } from "../web/spatial/sight";
+import { defaultPath, maxKeys } from "../web/spatial/path";
 import { initialView } from "../web/tesseract/types";
 
 // Links are encoded here independently of the app, with Node's zlib, so a
@@ -65,7 +70,36 @@ const spatial = (i = 0): SpatialStudy => ({
   config: structuredClone(spatialPresets[i].config),
   layers: { ...defaultLayers, rulings: false },
   view: { yaw: 1.1, pitch: -0.4, zoom: 2.5, panX: 0.3, panY: -0.2 },
-  animation: { mode: "orbit", camera: "fit", duration: 7.5, tracks: [] },
+  animation: {
+    mode: "orbit",
+    camera: "fit",
+    duration: 7.5,
+    tracks: [],
+    path: {
+      style: "smooth",
+      keys: [
+        {
+          name: "Above",
+          yaw: 0.3,
+          pitch: 1.5,
+          zoom: 0.2,
+          panX: 0,
+          panY: 0,
+          turns: 0,
+        },
+        {
+          name: "",
+          yaw: -7,
+          pitch: -1.5,
+          zoom: 8,
+          panX: 0.5,
+          panY: -2,
+          turns: -8,
+        },
+        { name: "Out", yaw: 2, pitch: 0, zoom: 1, panX: 0, panY: 0, turns: 8 },
+      ],
+    },
+  },
   // A mirror's probe describes its light; a curve probe there is from a
   // link made before it had one.
   probe: {
@@ -116,7 +150,7 @@ test("every preset round-trips through a link unchanged", async () => {
 test("a link carries probe playback with its probe", async () => {
   const study: SpatialStudy = {
     ...spatial(),
-    animation: { mode: "probe", camera: "current", duration: 4, tracks: [] },
+    animation: { ...spatial().animation, mode: "probe", camera: "current" },
   };
   const read = await readStudyLink(await writeStudyLink("3d", study));
   assert.deepEqual(spatialStudy(read.study), study);
@@ -136,7 +170,7 @@ test("a link carries probe playback with its probe", async () => {
   ]) {
     const surface: SpatialStudy = {
       ...spatial(i),
-      animation: { mode: "probe", camera: "hold", duration: 4, tracks: [] },
+      animation: { ...defaultAnimation, mode: "probe", duration: 4 },
       probe: { enabled: true, position: 0.7, target: "surface", across: 0.1 },
     };
     const back = await readStudyLink(await writeStudyLink("3d", surface));
@@ -193,7 +227,7 @@ test("a mirror's link carries the light or mirror probe; older ones open without
     for (const target of ["light", "mirror"] as const) {
       const study: SpatialStudy = {
         ...spatial(named(name)),
-        animation: { mode: "probe", camera: "hold", duration: 4, tracks: [] },
+        animation: { ...defaultAnimation, mode: "probe", duration: 4 },
         probe: { enabled: true, position: 0.3, target, across: 0.6 },
       };
       const back = await readStudyLink(await writeStudyLink("3d", study));
@@ -554,6 +588,8 @@ test("links made by version 1 keep opening", async () => {
   assert.deepEqual(s.cut, defaultCut);
   // Links made before seeing through open opaque, hiding hidden lines.
   assert.deepEqual(s.sight, defaultSight);
+  // Links made before camera paths fly none.
+  assert.deepEqual(s.animation.path, defaultPath);
 
   const fourLink = await readStudyLink(v1["4d"]);
   assert.equal(fourLink.notebook, "4d");
@@ -569,7 +605,7 @@ test("links made by version 1 keep opening", async () => {
 test("a link carries the cut and a peel; refuses a zero normal and a peel without the cut", async () => {
   const study: SpatialStudy = {
     ...spatial(),
-    animation: { mode: "cut", camera: "follow", duration: 6, tracks: [] },
+    animation: { ...spatial().animation, mode: "cut", camera: "follow" },
   };
   const read = await readStudyLink(await writeStudyLink("3d", study));
   assert.deepEqual(spatialStudy(read.study), study);
@@ -682,5 +718,80 @@ test("a link carries seeing through; refuses an opacity outside its range or an 
   await refused(
     bad((v) => (v.extra = 1)),
     "sight.extra",
+  );
+});
+
+test("a link carries a camera path and its flight; refuses turns, views and names outside their limits", async () => {
+  const study: SpatialStudy = {
+    ...spatial(),
+    animation: { ...spatial().animation, mode: "path", duration: 24 },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A path may be unfinished: no views, or one, while it is being made.
+  for (const keys of [[], study.animation.path.keys.slice(0, 1)]) {
+    const short = structuredClone(study);
+    short.animation.path.keys = keys;
+    assert.deepEqual(spatialStudy(structuredClone(short)), short);
+  }
+  // A path without a style flies steadily; an animation without a path
+  // flies none.
+  const partial = structuredClone(spatial()) as any;
+  delete partial.animation.path.style;
+  assert.equal(spatialStudy(partial).animation.path.style, "steady");
+  delete partial.animation.path;
+  assert.deepEqual(spatialStudy(partial).animation.path, defaultPath);
+  const bad = (change: (path: any) => void) => {
+    const s = structuredClone(study) as any;
+    change(s.animation.path);
+    return () => spatialStudy(s);
+  };
+  const keys = "animation.path.keys";
+  await refused(
+    bad((p) => (p.keys = Array.from({ length: maxKeys + 1 }, () => p.keys[0]))),
+    keys,
+  );
+  await refused(
+    bad((p) => (p.keys[1].turns = 1.5)),
+    `${keys}[1].turns`,
+    /whole/,
+  );
+  await refused(
+    bad((p) => (p.keys[1].turns = 9)),
+    `${keys}[1].turns`,
+  );
+  await refused(
+    bad((p) => (p.keys[0].turns = 1)),
+    `${keys}[0].turns`,
+    /first/,
+  );
+  await refused(
+    bad((p) => (p.keys[2].pitch = 1.6)),
+    `${keys}[2].pitch`,
+  );
+  await refused(
+    bad((p) => (p.keys[2].zoom = 0.1)),
+    `${keys}[2].zoom`,
+  );
+  await refused(
+    bad((p) => (p.keys[2].yaw = "1")),
+    `${keys}[2].yaw`,
+  );
+  await refused(
+    bad((p) => (p.keys[2].name = "x".repeat(61))),
+    `${keys}[2].name`,
+    /60/,
+  );
+  await refused(
+    bad((p) => (p.keys[2].roll = 0)),
+    `${keys}[2].roll`,
+  );
+  await refused(
+    bad((p) => (p.style = "bouncy")),
+    "animation.path.style",
+  );
+  await refused(
+    bad((p) => (p.keys = {})),
+    keys,
   );
 });

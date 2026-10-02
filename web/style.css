@@ -89,6 +89,15 @@ fieldset:disabled {
 .animation-track .pair .field {
   margin-top: 0;
 }
+/* A camera path's key view: its fields, where it stands, and its actions. */
+.path-view-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.path-view > .hint {
+  margin: 8px 0 6px;
+}
 .text-button {
   padding: 0;
   border: 0;

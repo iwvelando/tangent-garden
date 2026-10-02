@@ -43,8 +43,24 @@ import {
   type Formats,
 } from "../export-formats";
 import { saveFile } from "../export-image";
-import { Field } from "../Field";
+import { Field, HelpText, HelpToggle, useHelp } from "../Field";
 import { useDisclosure } from "../useDisclosure";
+import type { SpatialCamera } from "./link";
+import {
+  defaultPath,
+  keyFromView,
+  keyLabel,
+  maxKeyName,
+  maxKeys,
+  maxTurns,
+  pathError,
+  pathHelp,
+  pathLeg,
+  pathStyles,
+  type CameraPath,
+  type KeyView,
+  type PathStyle,
+} from "./path";
 
 type Status =
   "idle" | "preparing" | "playing" | "paused" | "complete" | "exporting";
@@ -64,6 +80,8 @@ type Session = {
   extent?: [number, number];
   // The sight when playback began, for an export.
   sight: Sight;
+  // Present only while flying a camera path: the path when playback began.
+  path?: CameraPath;
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
@@ -96,6 +114,14 @@ type Props = {
   // only once the frame belongs to the linked study, so neither its tracks
   // nor a trace mode is judged against the previous study.
   restore?: { id: number; settings: SpatialAnimation } | null;
+  // Shows a key view in the drawing as its manual camera, to adjust it.
+  onShowView: (view: SpatialCamera) => void;
+  // A chosen preset's camera path and duration, or none, applied once per
+  // id: a preset brings its own path, or clears the path.
+  flight?: {
+    id: number;
+    flight?: { path: CameraPath; duration: number };
+  } | null;
 };
 
 export function SpatialAnimationPanel({
@@ -115,6 +141,8 @@ export function SpatialAnimationPanel({
   onPlay,
   settings,
   restore,
+  onShowView,
+  flight,
 }: Props) {
   const [mode, setMode] = useState<AnimationMode>("reveal");
   const probing = probe !== null;
@@ -139,6 +167,8 @@ export function SpatialAnimationPanel({
   const [camera, setCamera] = useState<CameraMode>("hold");
   const [duration, setDuration] = useState(10);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [path, setPath] = useState<CameraPath>(defaultPath);
+  const keysHelp = useHelp();
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
@@ -212,7 +242,7 @@ export function SpatialAnimationPanel({
           : [];
     });
   }, [targets.join(",")]);
-  if (settings) settings.current = { mode, camera, duration, tracks };
+  if (settings) settings.current = { mode, camera, duration, tracks, path };
   // After the retention and trace fallbacks above, which then see the
   // linked study's own frame.
   const restored = useRef(-1);
@@ -223,7 +253,19 @@ export function SpatialAnimationPanel({
     setCamera(restore.settings.camera);
     setDuration(restore.settings.duration);
     setTracks(restore.settings.tracks);
+    setPath(restore.settings.path);
   }, [restore]);
+  const flown = useRef(-1);
+  useEffect(() => {
+    if (!flight || flight.id === flown.current) return;
+    flown.current = flight.id;
+    const brought = flight.flight;
+    setPath(brought ? structuredClone(brought.path) : defaultPath);
+    if (brought) {
+      setMode("path");
+      setDuration(brought.duration);
+    } else setMode((m) => (m === "path" ? "reveal" : m));
+  }, [flight]);
   const running =
     status === "playing" || status === "preparing" || status === "exporting";
   const active = status !== "idle";
@@ -321,7 +363,12 @@ export function SpatialAnimationPanel({
         config: s.original.config,
         result: reveal(s.original.result, p),
       };
-    else if (s.mode === "orbit" || s.mode === "probe" || s.mode === "cut")
+    else if (
+      s.mode === "orbit" ||
+      s.mode === "probe" ||
+      s.mode === "cut" ||
+      s.mode === "path"
+    )
       current = s.original;
     else if (s.mode === "trace")
       current = {
@@ -340,6 +387,7 @@ export function SpatialAnimationPanel({
       progress: p,
       mode: s.mode,
       complete: p === 1,
+      ...(s.mode === "path" && { path: s.path }),
       // Sample (or row) 0 at the start and the last at the end, exactly.
       ...(s.mode === "probe" && {
         probe: probeIndex(
@@ -391,6 +439,7 @@ export function SpatialAnimationPanel({
       );
     else if (s.mode === "orbit")
       setLive(`Camera rotation · ${Math.round(view.progress * 360)}°`);
+    else if (s.mode === "path") setLive(pathLeg(s.path!, view.progress));
     else if (s.mode === "cut")
       setLive(`Cut at d = ${view.cut!.plane.offset.toPrecision(6)}`);
     else if (s.mode === "probe")
@@ -492,6 +541,10 @@ export function SpatialAnimationPanel({
             );
         }
       }
+      if (mode === "path") {
+        const problem = pathError(path);
+        if (problem) throw new Error(`${problem.field} ${problem.message}`);
+      }
       if (epoch.current !== token) return;
       // The probe moves over the study's own diagnostics, fetched here only
       // if the study was drawn without them.
@@ -566,6 +619,7 @@ export function SpatialAnimationPanel({
         cut,
         extent,
         sight,
+        ...(mode === "path" && { path: structuredClone(path) }),
         camera,
         heldView,
         duration,
@@ -652,6 +706,161 @@ export function SpatialAnimationPanel({
       if (scrubbing.current === token) scrubbing.current = -1;
     }
   }
+  // The drawing's view as a key view about the study's bounds.
+  const drawn = (): KeyView | null => {
+    const view = getCurrentView();
+    return frame && view ? keyFromView(view, frame.result.bounds, "") : null;
+  };
+  const changeKey = (k: number, change: (key: KeyView) => KeyView) =>
+    setPath((p) => ({
+      ...p,
+      keys: p.keys.map((key, j) => (j === k ? change(key) : key)),
+    }));
+  const degrees = (x: number) => {
+    const d = Math.round((((x * 180) / Math.PI) % 360) + 360) % 360;
+    return d > 180 ? d - 360 : d;
+  };
+  const pathEditor = (
+    <>
+      <Field
+        label="Path"
+        help={path.style === "smooth" ? pathHelp.smooth : pathHelp.steady}
+      >
+        <select
+          value={path.style}
+          onChange={(e) => {
+            const style = e.target.value as PathStyle;
+            setPath((p) => ({ ...p, style }));
+          }}
+        >
+          {pathStyles.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="field path-views" role="group" aria-label="Key views">
+        <div className="field-label">
+          <span>Key views</span>
+          <HelpToggle topic="key views" help={keysHelp} />
+        </div>
+        <HelpText help={keysHelp}>{pathHelp.keys}</HelpText>
+        {path.keys.map((key, k) => {
+          const name = (
+            <Field label="Name">
+              <input
+                aria-label={`View ${k + 1} name`}
+                placeholder={`View ${k + 1}`}
+                maxLength={maxKeyName}
+                value={key.name}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  changeKey(k, (old) => ({ ...old, name }));
+                }}
+                spellCheck={false}
+              />
+            </Field>
+          );
+          return (
+            <div className="animation-track path-view" key={k}>
+              {k === 0 ? (
+                name
+              ) : (
+                <div className="pair">
+                  {name}
+                  <Field
+                    label="Turns"
+                    help={pathHelp.turns}
+                    topic={`view ${k + 1} turns`}
+                  >
+                    <input
+                      aria-label={`View ${k + 1} turns`}
+                      type="number"
+                      min={-maxTurns}
+                      max={maxTurns}
+                      step="1"
+                      value={Number.isNaN(key.turns) ? "" : key.turns}
+                      onChange={(e) => {
+                        const turns = e.target.valueAsNumber;
+                        changeKey(k, (old) => ({ ...old, turns }));
+                      }}
+                    />
+                  </Field>
+                </div>
+              )}
+              <p className="hint">
+                yaw {degrees(key.yaw)}°, pitch {degrees(key.pitch)}°, zoom{" "}
+                {key.zoom.toFixed(2)}×
+                {key.panX !== 0 || key.panY !== 0 ? ", panned" : ""}
+              </p>
+              <div className="path-view-buttons">
+                <button
+                  className="text-button"
+                  aria-label={`Show view ${k + 1}`}
+                  onClick={() => {
+                    if (status === "complete") stop();
+                    onShowView({
+                      yaw: key.yaw,
+                      pitch: key.pitch,
+                      zoom: key.zoom,
+                      panX: key.panX,
+                      panY: key.panY,
+                    });
+                  }}
+                >
+                  Show
+                </button>
+                <button
+                  className="text-button"
+                  aria-label={`Set view ${k + 1} to the drawing's view`}
+                  onClick={() => {
+                    const view = drawn();
+                    if (view)
+                      changeKey(k, (old) => ({
+                        ...view,
+                        name: old.name,
+                        turns: old.turns,
+                      }));
+                  }}
+                >
+                  Set to drawing
+                </button>
+                <button
+                  className="text-button"
+                  aria-label={`Remove view ${k + 1}`}
+                  onClick={() =>
+                    setPath((p) => {
+                      const keys = p.keys.filter((_, j) => j !== k);
+                      // The new first view has no leg before it.
+                      if (keys[0]) keys[0] = { ...keys[0], turns: 0 };
+                      return { ...p, keys };
+                    })
+                  }
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        <button
+          disabled={path.keys.length >= maxKeys}
+          onClick={() => {
+            const view = drawn();
+            if (view)
+              setPath((p) =>
+                p.keys.length >= maxKeys
+                  ? p
+                  : { ...p, keys: [...p.keys, view] },
+              );
+          }}
+        >
+          + Add the drawing's view
+        </button>
+      </div>
+    </>
+  );
   return (
     <section className="animation-section">
       <details id="spatial-animation-section" {...section}>
@@ -674,7 +883,9 @@ export function SpatialAnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "cut" ? (
+              mode === "path" ? (
+                `${pathHelp.mode} ${pathHelp.framing}`
+              ) : mode === "cut" ? (
                 "Move the cut plane along its normal from the farthest point it reaches to the nearest, so the drawing peels away from the side the normal points to until all it cuts is hidden. Flip the normal to peel from the other side. Geometry stays fixed."
               ) : mode === "probe" ? (
                 gridded(target) && frame ? (
@@ -725,6 +936,7 @@ export function SpatialAnimationPanel({
                 </option>
               )}
               {cutting && <option value="cut">Peel away with the cut</option>}
+              <option value="path">Fly through key views</option>
             </select>
           </Field>
           {mode === "parameters" && (
@@ -802,6 +1014,7 @@ export function SpatialAnimationPanel({
               </button>
             </>
           )}
+          {mode === "path" && pathEditor}
           <Field label="Duration (seconds)">
             <input
               type="number"
@@ -812,36 +1025,38 @@ export function SpatialAnimationPanel({
               onChange={(e) => setDuration(e.target.valueAsNumber)}
             />
           </Field>
-          <Field
-            label="Animation camera"
-            help={
-              <>
-                {camera === "current"
-                  ? "Keeps your current orbit, pan, and zoom throughout, including export."
-                  : camera === "hold"
-                    ? "Frames the final result once and holds that view."
-                    : camera === "follow"
-                      ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
-                      : "Recenters and zooms to fit the evolving geometry."}
-                {(camera === "fit" || camera === "follow") &&
-                  " Isolated points near asymptotes are ignored; use Hold current view to explore distant branches."}
-              </>
-            }
-          >
-            <select
-              value={camera}
-              onChange={(e) => setCamera(e.target.value as CameraMode)}
-            >
-              <option value="hold">Hold final view</option>
-              <option value="current">Hold current view</option>
-              {mode !== "trace" && (
+          {mode !== "path" && (
+            <Field
+              label="Animation camera"
+              help={
                 <>
-                  <option value="follow">Follow center, fixed zoom</option>
-                  <option value="fit">Fit each frame</option>
+                  {camera === "current"
+                    ? "Keeps your current orbit, pan, and zoom throughout, including export."
+                    : camera === "hold"
+                      ? "Frames the final result once and holds that view."
+                      : camera === "follow"
+                        ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
+                        : "Recenters and zooms to fit the evolving geometry."}
+                  {(camera === "fit" || camera === "follow") &&
+                    " Isolated points near asymptotes are ignored; use Hold current view to explore distant branches."}
                 </>
-              )}
-            </select>
-          </Field>
+              }
+            >
+              <select
+                value={camera}
+                onChange={(e) => setCamera(e.target.value as CameraMode)}
+              >
+                <option value="hold">Hold final view</option>
+                <option value="current">Hold current view</option>
+                {mode !== "trace" && (
+                  <>
+                    <option value="follow">Follow center, fixed zoom</option>
+                    <option value="fit">Fit each frame</option>
+                  </>
+                )}
+              </select>
+            </Field>
+          )}
           <details
             id="spatial-export-settings"
             className="subsection"
