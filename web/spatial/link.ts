@@ -19,6 +19,7 @@ import { defaultLayers, initialView, type Layers } from "./renderer";
 import { availableTargets, type AnimationMode, type Target } from "./animation";
 import { defaultProbe, probeSupport, type Probe } from "./probe";
 import { cutPlane, defaultCut, maxCutValue, type Cut } from "./cut";
+import { defaultSight, opacityRange, type Sight } from "./sight";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
@@ -33,6 +34,9 @@ export type SpatialStudy = {
   probe: Probe;
   // The cutaway plane, off in links made before it.
   cut: Cut;
+  // Seeing through sheets, opaque and hiding hidden lines in links made
+  // before it.
+  sight: Sight;
 };
 export const defaultAnimation: SpatialAnimation = {
   mode: "reveal",
@@ -277,6 +281,14 @@ const cut: SchemaOf<Cut> = {
   },
 };
 
+const sight: SchemaOf<Sight> = {
+  fields: {
+    sheets: { options: { opaque: true, through: true } },
+    opacity: { range: opacityRange },
+    hidden: { options: { hide: true, faint: true, dashed: true } },
+  },
+};
+
 export function spatialStudy(value: unknown): SpatialStudy {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new LinkError(
@@ -286,7 +298,15 @@ export function spatialStudy(value: unknown): SpatialStudy {
   const raw = value as Record<string, unknown>;
   for (const key of Object.keys(raw))
     if (
-      !["config", "layers", "view", "animation", "probe", "cut"].includes(key)
+      ![
+        "config",
+        "layers",
+        "view",
+        "animation",
+        "probe",
+        "cut",
+        "sight",
+      ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
   const study = {
@@ -347,5 +367,11 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode peels with the cut only while the cut is on.",
     );
-  return { ...study, animation, probe: probed, cut: cutting };
+  return {
+    ...study,
+    animation,
+    probe: probed,
+    cut: cutting,
+    sight: conform(raw.sight, sight, defaultSight, "sight"),
+  };
 }

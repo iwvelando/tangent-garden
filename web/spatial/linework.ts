@@ -11,6 +11,14 @@ import {
 } from "./scene";
 import { hex, lineColor, palette } from "./palette";
 import { cutEdges, isCut, type CutSpec, type Plane } from "./cut";
+import {
+  arcLengths,
+  dashOn,
+  dashedOpacity,
+  dashesPerUnit,
+  faintOpacity,
+  type HiddenLines,
+} from "./sight";
 
 // Vector linework: the lines the drawing shows, from the same scene, layers
 // and camera, as page paths. Sheets are not drawn. With occlusion "none"
@@ -20,15 +28,21 @@ import { cutEdges, isCut, type CutSpec, type Plane } from "./cut";
 // not exact hidden-line removal. Lines never hide other lines. A cut (see
 // cut.ts) hides what the drawing hides: sheet pixels beyond its plane leave
 // the raster, cut lines end exactly at the plane, and its edge is a layer.
+// With sampled occlusion, hidden lines drawn faint or dashed (see sight.ts)
+// are the parts the test leaves out, in groups of their own.
 export type Occlusion = "none" | "sampled";
 export type LineGroup = {
   layer: string;
+  // Set on a group of lines behind sheets.
+  hidden?: "faint" | "dashed";
   strokes: { color: string; paths: [number, number][][] }[];
 };
 export type LineworkOptions = {
   width: number;
   height: number;
   occlusion: Occlusion;
+  // Lines behind sheets, with sampled occlusion; hidden by default.
+  hidden?: HiddenLines;
   // Bounds visibility testing: rasterized pixels plus line samples.
   limit?: number;
   signal?: AbortSignal;
@@ -68,17 +82,32 @@ export function linework(
           cut?.plane,
         )
       : undefined;
-  const groups = new Map<string, Map<string, [number, number][][]>>();
+  const behind =
+    raster && options.hidden && options.hidden !== "hide"
+      ? options.hidden
+      : undefined;
+  const perUnit = dashesPerUnit(view);
+  type Strokes = Map<string, [number, number][][]>;
+  const groups = new Map<string, Strokes>(),
+    hiddenGroups = new Map<string, Strokes>();
+  const paths = (into: Map<string, Strokes>, layer: string, color: string) => {
+    let strokes = into.get(layer);
+    if (!strokes) into.set(layer, (strokes = new Map()));
+    let p = strokes.get(color);
+    if (!p) strokes.set(color, (p = []));
+    return p;
+  };
   for (const pass of passes) {
     if (pass.sheet) continue;
     options.signal?.throwIfAborted();
-    let strokes = groups.get(pass.layer);
-    if (!strokes) groups.set(pass.layer, (strokes = new Map()));
+    if (!groups.has(pass.layer)) groups.set(pass.layer, new Map());
     const data = pass.batch.data;
     const plane = cut && isCut(pass, cut.scope) ? cut.plane : undefined;
+    const arcs = behind === "dashed" ? arcLengths(data) : undefined;
     for (let i = 0; i + 13 < data.length; i += 14) {
-      const ends = plane ? kept(plane, data, i) : data.subarray(i, i + 14);
-      if (!ends) continue;
+      const part = plane ? kept(plane, data, i) : whole(data, i);
+      if (!part) continue;
+      const { ends } = part;
       const piece = clipped(
         k,
         clip(k, ends[0], ends[1], ends[2]),
@@ -86,32 +115,94 @@ export function linework(
       );
       if (!piece) continue;
       const color = hex(lineColor(pass.batch.ink, data[i + 6], dark));
-      let paths = strokes.get(color);
-      if (!paths) strokes.set(color, (paths = []));
-      for (const [a, b] of raster ? visible(raster, piece, work) : [piece])
-        extend(paths, a, b);
+      const shown = paths(groups, pass.layer, color);
+      if (!raster) {
+        extend(shown, piece[0], piece[1]);
+        continue;
+      }
+      for (const run of runs(raster, piece, work)) {
+        if (run.shown) extend(shown, run.from, run.to);
+        else if (behind === "faint")
+          extend(paths(hiddenGroups, pass.layer, color), run.from, run.to);
+        else if (arcs) {
+          // Arc length is affine along the segment in space, and so along
+          // the kept part, the clipped piece and the run on the page.
+          const v = i / 7,
+            [ka, kb] = part.range,
+            [t0, t1] = piece[2];
+          const phase = (r: number) => {
+            const u = ka + (kb - ka) * (t0 + (t1 - t0) * r);
+            return (arcs[v] + (arcs[v + 1] - arcs[v]) * u) * perUnit;
+          };
+          for (const [a, b] of dashes(
+            run.from,
+            run.to,
+            phase(run.r[0]),
+            phase(run.r[1]),
+          ))
+            extend(paths(hiddenGroups, pass.layer, color), a, b);
+        }
+      }
     }
   }
-  return [...groups]
-    .map(([layer, strokes]) => ({
-      layer,
-      strokes: [...strokes]
-        .filter(([, paths]) => paths.length)
-        .map(([color, paths]) => ({ color, paths })),
-    }))
-    .filter((g) => g.strokes.length);
+  const listed = (into: Map<string, Strokes>, hidden?: "faint" | "dashed") =>
+    [...into]
+      .map(([layer, strokes]) => ({
+        layer,
+        ...(hidden && { hidden }),
+        strokes: [...strokes]
+          .filter(([, paths]) => paths.length)
+          .map(([color, paths]) => ({ color, paths })),
+      }))
+      .filter((g) => g.strokes.length);
+  // Lines behind sheets lie beneath the rest.
+  return [...listed(hiddenGroups, behind), ...listed(groups)];
+}
+
+// The dashes of a page run whose dash phase runs from sa to sb: the parts
+// where the phase's fractional part is below dashOn.
+function dashes(from: Point, to: Point, sa: number, sb: number) {
+  const out: [Point, Point][] = [];
+  if (!(sb !== sa)) return out;
+  const at = (s: number): Point => {
+    const t = (s - sa) / (sb - sa);
+    if (t <= 0) return from;
+    if (t >= 1) return to;
+    return {
+      x: from.x + (to.x - from.x) * t,
+      y: from.y + (to.y - from.y) * t,
+      depth: from.depth + (to.depth - from.depth) * t,
+    };
+  };
+  const lo = Math.min(sa, sb),
+    hi = Math.max(sa, sb);
+  for (let k = Math.floor(lo); k < hi; k++) {
+    const a = Math.max(lo, k),
+      b = Math.min(hi, k + dashOn);
+    if (b <= a) continue;
+    const [p, q] = sa < sb ? [at(a), at(b)] : [at(b), at(a)];
+    out.push([p, q]);
+  }
+  if (sa > sb) out.reverse();
+  return out;
 }
 
 // The part of the segment at data[i] (two 7-float corners) on the kept
 // side of the plane, n̂·p ≤ d, or nothing. A segment crossing it ends
 // exactly on it.
-function kept(plane: Plane, data: Float32Array, i: number) {
+// Range is the kept part's ends as parameters along the segment.
+type Part = { ends: ArrayLike<number>; range: [number, number] };
+const whole = (data: Float32Array, i: number): Part => ({
+  ends: data.subarray(i, i + 14),
+  range: [0, 1],
+});
+function kept(plane: Plane, data: Float32Array, i: number): Part | undefined {
   const n = plane.normal;
   const side = (j: number) =>
     n.x * data[j] + n.y * data[j + 1] + n.z * data[j + 2] - plane.offset;
   const a = side(i),
     b = side(i + 7);
-  if (a <= 0 && b <= 0) return data.subarray(i, i + 14);
+  if (a <= 0 && b <= 0) return whole(data, i);
   if (!(a <= 0 || b <= 0)) return;
   const t = a / (a - b),
     out = Float64Array.from(data.subarray(i, i + 14));
@@ -119,7 +210,7 @@ function kept(plane: Plane, data: Float32Array, i: number) {
   const moved = a > 0 ? 0 : 7;
   for (let j = 0; j < 3; j++)
     out[moved + j] = data[i + j] + (data[i + 7 + j] - data[i + j]) * t;
-  return out;
+  return { ends: out, range: moved ? [0, t] : [t, 1] };
 }
 
 // A segment continues the last path when it starts exactly where that path
@@ -138,11 +229,13 @@ function extend(paths: [number, number][][], a: Point, b: Point) {
 
 // The part of a segment within the drawing's clip volume (Liang–Barsky), as
 // page points, or nothing.
+// The third element is the piece's ends as parameters along the segment.
+type Piece = [Point, Point, [number, number]];
 function clipped(
   k: Camera,
   a: [number, number, number],
   b: [number, number, number],
-): [Point, Point] | undefined {
+): Piece | undefined {
   let t0 = 0,
     t1 = 1;
   for (let axis = 0; axis < 3; axis++) {
@@ -163,7 +256,7 @@ function clipped(
   if (!(t0 <= t1)) return;
   const at = (t: number) =>
     page(k, t === 0 ? a : t === 1 ? b : a.map((v, i) => v + (b[i] - v) * t));
-  return [at(t0), at(t1)];
+  return [at(t0), at(t1), [t0, t1]];
 }
 
 // The shown sheets' triangles on the page, and which of them is nearest at
@@ -370,13 +463,15 @@ function hidden(r: Raster, x: number, y: number, depth: number) {
   );
 }
 
-// The visible parts of a page segment, sampled along it. Visibility changes
+// The visible and hidden parts of a page segment, in order, sampled along
+// it, each with its ends as fractions of the segment. Visibility changes
 // halfway between samples that disagree.
-function visible(
+type Run = { from: Point; to: Point; shown: boolean; r: [number, number] };
+function runs(
   r: Raster,
-  [a, b]: [Point, Point],
+  [a, b]: Piece,
   work: { done: number; limit: number },
-): [Point, Point][] {
+): Run[] {
   const n = Math.max(
     1,
     Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / sampleStep),
@@ -397,18 +492,18 @@ function visible(
     const p = at(t);
     return !hidden(r, p.x, p.y, p.depth);
   };
-  const out: [Point, Point][] = [];
-  let start: number | undefined = shown(0) ? 0 : undefined;
+  const out: Run[] = [];
+  let start = 0,
+    on = shown(0);
   for (let s = 1; s <= n; s++) {
-    const on = shown(s / n),
-      edge = (s - 0.5) / n;
-    if (on && start === undefined) start = edge;
-    else if (!on && start !== undefined) {
-      out.push([at(start), at(edge)]);
-      start = undefined;
-    }
+    const next = shown(s / n);
+    if (next === on) continue;
+    const edge = (s - 0.5) / n;
+    out.push({ from: at(start), to: at(edge), shown: on, r: [start, edge] });
+    start = edge;
+    on = next;
   }
-  if (start !== undefined) out.push([at(start), at(1)]);
+  out.push({ from: at(start), to: at(1), shown: on, r: [start, 1] });
   return out;
 }
 
@@ -433,7 +528,7 @@ export function linesSvg(
   const body = groups
     .map(
       (g) =>
-        `<g id="${g.layer}" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${g.strokes
+        `<g id="${g.hidden ? `hidden-${g.layer}` : g.layer}" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${g.hidden ? ` stroke-opacity="${g.hidden === "faint" ? faintOpacity : dashedOpacity}"` : ""}>${g.strokes
           .map(
             (s) =>
               `<path stroke="${s.color}" d="${s.paths

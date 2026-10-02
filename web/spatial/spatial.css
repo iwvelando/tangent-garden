@@ -7,14 +7,16 @@
 }
 .spatial-layers,
 .spatial-probe,
-.spatial-cut {
+.spatial-cut,
+.spatial-sight {
   border-top: 1px solid var(--border);
   padding: 18px 0 5px;
   margin: 25px 0 15px;
 }
 .spatial-layers legend,
 .spatial-probe legend,
-.spatial-cut legend {
+.spatial-cut legend,
+.spatial-sight legend {
   padding-right: 12px;
   font-size: 12px;
 }

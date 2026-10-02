@@ -5,6 +5,7 @@ import { linework, linesSvg, sampleStep } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
 import { probeDrawing } from "./probe";
 import { cutRecord, type CutSpec } from "./cut";
+import { defaultSight, sightRecord, type Sight } from "./sight";
 import { mp4Sink, webpSink } from "../export-sinks";
 import {
   exportEncoding,
@@ -59,6 +60,8 @@ export async function imageFile(
   // The cutaway plane as drawn, recorded in the metadata only when there is
   // one, so files without a cut are unchanged.
   cut?: CutSpec | null,
+  // Seeing through, recorded only when it changes the drawing.
+  sight: Sight = defaultSight,
 ): Promise<Blob> {
   const probed = {
     ...(probe ? { probe: probe.record } : {}),
@@ -71,10 +74,15 @@ export async function imageFile(
       view,
       layers,
       dark,
-      { ...page, occlusion, signal },
+      { ...page, occlusion, hidden: sight.hidden, signal },
       probe?.batches,
       cut,
     );
+    // Lines are all a line drawing has: its sight is how hidden ones are
+    // drawn, when they are tested at all.
+    const lined =
+      occlusion === "sampled" &&
+      sightRecord({ ...defaultSight, hidden: sight.hidden }, false);
     signal.throwIfAborted();
     const svg = linesSvg(groups, {
       ...page,
@@ -86,13 +94,14 @@ export async function imageFile(
         layers,
         dark,
         ...probed,
+        ...(lined ? { sight: lined } : {}),
         rendering: "vector linework",
         occlusion: {
           mode: occlusion,
           statement:
             occlusion === "none"
               ? "Every shown line is drawn, including lines behind surfaces. Shaded surfaces are not drawn."
-              : `Lines behind a shown surface are left out where sampled every ${sampleStep} px against a ${page.width} × ${page.height} depth raster of the surfaces, with the drawing's polygon offset. This approximates hidden lines; it is not exact hidden-line removal. Lines do not hide lines, and shaded surfaces are not drawn.`,
+              : `Lines behind a shown surface are ${lined ? `drawn ${sight.hidden}, in groups named hidden- and their layer,` : "left out"} where sampled every ${sampleStep} px against a ${page.width} × ${page.height} depth raster of the surfaces, with the drawing's polygon offset. This approximates hidden lines; it is not exact hidden-line removal. Lines do not hide lines, and shaded surfaces are not drawn.`,
         },
       },
     });
@@ -104,6 +113,11 @@ export async function imageFile(
     renderer.upload(frame.result);
     renderer.setProbe(probe?.batches ?? []);
     renderer.setCut(cut ?? null);
+    renderer.setSight(sight);
+    const seen = sightRecord(
+      sight,
+      sight.sheets === "through" && renderer.seeThrough(),
+    );
     renderer.draw(view, layers, dark, page);
     signal.throwIfAborted();
     const png = await new Promise<Blob>((resolve, reject) =>
@@ -118,7 +132,7 @@ export async function imageFile(
     // claim a painter-sorted mesh is an exact vector hidden-surface solution.
     return new Blob(
       [
-        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, ...probed, rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, ...probed, ...(seen ? { sight: seen } : {}), rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
       ],
       { type: "image/svg+xml" },
     );
@@ -141,6 +155,7 @@ export async function exportAnimation(options: {
   // The entered cut when playback began; a frame that moves it carries its
   // own.
   cut: CutSpec | null;
+  sight: Sight;
   signal: AbortSignal;
   sample: (progress: number) => Promise<AnimationView>;
   onProgress: (completed: number, total: number) => void;
@@ -174,6 +189,7 @@ export async function exportAnimation(options: {
             ),
       );
       renderer.setCut(view.cut ?? options.cut);
+      renderer.setSight(options.sight);
       renderer.draw(
         animationCamera(view),
         options.layers,

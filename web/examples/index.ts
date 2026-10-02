@@ -93,10 +93,18 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
                             : p.config.format === "torus"
                               ? "Torus knots"
                               : "Parametric curves",
-  keywords: `${p.config.format} ${p.config.construction}${p.cut ? " cut" : ""}`,
-  // A preset's cut is part of its picture; presets without one keep the
-  // fingerprints they had before the cut existed.
-  fingerprint: fingerprint(p.cut ? { config: p.config, cut: p.cut } : p.config),
+  keywords: `${p.config.format} ${p.config.construction}${p.cut ? " cut" : ""}${p.sight ? " see-through" : ""}`,
+  // A preset's cut and sight are part of its picture; presets without
+  // either keep the fingerprints they had before those existed.
+  fingerprint: fingerprint(
+    p.cut || p.sight
+      ? {
+          config: p.config,
+          ...(p.cut && { cut: p.cut }),
+          ...(p.sight && { sight: p.sight }),
+        }
+      : p.config,
+  ),
 }));
 
 export const planarThumbnail: ThumbnailSource = async (example) => {
