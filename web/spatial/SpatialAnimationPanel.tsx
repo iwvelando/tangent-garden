@@ -30,6 +30,8 @@ import {
   type Probe,
 } from "./probe";
 import type { Layers } from "./renderer";
+import { buildScene, scenePasses } from "./scene";
+import { sweepExtent, sweepOffset, type CutSpec } from "./cut";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "../export-quality";
 import {
@@ -55,6 +57,10 @@ type Session = {
   timeline?: Timeline;
   // Present only while moving the probe: its setup when playback began.
   probe?: Probe;
+  // The entered cut when playback began, drawn by every mode, and the
+  // range a peel moves it over.
+  cut: CutSpec | null;
+  extent?: [number, number];
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
@@ -70,6 +76,8 @@ type Props = {
   // The parameter probe while it is on in a study that offers it, else
   // null.
   probe: Probe | null;
+  // The entered cut while it is on and valid, else null.
+  cut: CutSpec | null;
   dark: boolean;
   layers: Layers;
   getCurrentView: () => Viewport | undefined;
@@ -92,6 +100,7 @@ export function SpatialAnimationPanel({
   revision,
   disabled,
   probe,
+  cut,
   dark,
   layers,
   getCurrentView,
@@ -116,6 +125,11 @@ export function SpatialAnimationPanel({
   useEffect(() => {
     if (!probing && mode === "probe") setMode("reveal");
   }, [probing, mode]);
+  // The cut peels only while it is on and valid.
+  const cutting = cut !== null;
+  useEffect(() => {
+    if (!cutting && mode === "cut") setMode("reveal");
+  }, [cutting, mode]);
   const [camera, setCamera] = useState<CameraMode>("hold");
   const [duration, setDuration] = useState(10);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -239,6 +253,10 @@ export function SpatialAnimationPanel({
   useEffect(() => {
     if (!probing && session.current?.mode === "probe") stop();
   }, [probing]);
+  // So does turning the cut off, or leaving it invalid, during a peel.
+  useEffect(() => {
+    if (!cutting && session.current?.mode === "cut") stop();
+  }, [cutting]);
   useEffect(
     () => () => {
       epoch.current++;
@@ -297,7 +315,8 @@ export function SpatialAnimationPanel({
         config: s.original.config,
         result: reveal(s.original.result, p),
       };
-    else if (s.mode === "orbit" || s.mode === "probe") current = s.original;
+    else if (s.mode === "orbit" || s.mode === "probe" || s.mode === "cut")
+      current = s.original;
     else if (s.mode === "trace")
       current = {
         config: s.original.config,
@@ -325,6 +344,13 @@ export function SpatialAnimationPanel({
           )!,
         ),
         probeSetup: s.probe,
+      }),
+      // The farthest extent at the start and the nearest at the end, exactly.
+      ...(s.mode === "cut" && {
+        cut: {
+          ...s.cut!,
+          plane: { ...s.cut!.plane, offset: sweepOffset(p, s.extent!) },
+        },
       }),
     };
   }
@@ -359,6 +385,8 @@ export function SpatialAnimationPanel({
       );
     else if (s.mode === "orbit")
       setLive(`Camera rotation · ${Math.round(view.progress * 360)}°`);
+    else if (s.mode === "cut")
+      setLive(`Cut at d = ${view.cut!.plane.offset.toPrecision(6)}`);
     else if (s.mode === "probe")
       setLive(
         `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe!, view.probe!)}`,
@@ -469,6 +497,21 @@ export function SpatialAnimationPanel({
         );
         if (epoch.current !== token) return;
       }
+      // A peel runs over what the cut reaches in the drawing as it stands.
+      let extent: [number, number] | undefined;
+      if (mode === "cut") {
+        if (!cut) throw new Error("Turn the cut on to peel with it.");
+        extent =
+          sweepExtent(
+            scenePasses(buildScene(frame.result), layers),
+            cut.plane,
+            cut.scope,
+          ) ?? undefined;
+        if (!extent)
+          throw new Error(
+            "The cut reaches nothing drawn. Show a sheet, or let the cut reach lines too.",
+          );
+      }
       let first = original,
         final = original;
       if (mode === "parameters") {
@@ -514,6 +557,8 @@ export function SpatialAnimationPanel({
         tracks: numeric,
         mode,
         ...(mode === "probe" && { probe: probe! }),
+        cut,
+        extent,
         camera,
         heldView,
         duration,
@@ -540,6 +585,7 @@ export function SpatialAnimationPanel({
           settings: { scale: exportScale, quality },
           dark,
           layers: { ...layers },
+          cut: s.cut,
           signal: controller.signal,
           sample: (p) => sample(s, p, engine),
           onProgress: (completed, total) => {
@@ -620,7 +666,9 @@ export function SpatialAnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "probe" ? (
+              mode === "cut" ? (
+                "Move the cut plane along its normal from the farthest point it reaches to the nearest, so the drawing peels away from the side the normal points to until all it cuts is hidden. Flip the normal to peel from the other side. Geometry stays fixed."
+              ) : mode === "probe" ? (
                 gridded(target) && frame ? (
                   `Move the probe along the ${surfaceTerms(frame.config, target).surface} from its first ${surfaceTerms(frame.config, target).along} to its last, one row at a time at its ${surfaceTerms(frame.config, target).around}, with its principal directions, circles and readout. Geometry stays fixed.`
                 ) : (
@@ -668,6 +716,7 @@ export function SpatialAnimationPanel({
                     : "Move the probe along the curve"}
                 </option>
               )}
+              {cutting && <option value="cut">Peel away with the cut</option>}
             </select>
           </Field>
           {mode === "parameters" && (

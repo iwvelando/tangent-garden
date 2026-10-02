@@ -16,6 +16,7 @@ import { presets } from "../web/presets";
 import { spatialPresets } from "../web/spatial/presets";
 import { tesseractPresets } from "../web/tesseract/presets";
 import { defaultLayers } from "../web/spatial/renderer";
+import { defaultCut } from "../web/spatial/cut";
 import { initialView } from "../web/tesseract/types";
 
 // Links are encoded here independently of the app, with Node's zlib, so a
@@ -71,6 +72,13 @@ const spatial = (i = 0): SpatialStudy => ({
     position: 0.25,
     target: spatialPresets[i].config.format === "rays" ? "light" : "curve",
     across: 0.5,
+  },
+  cut: {
+    enabled: true,
+    normal: { x: -0.25, y: 3, z: 1 / 3 },
+    offset: -0.75,
+    cuts: "surface",
+    edge: false,
   },
 });
 const tesseract = (i = 0): TesseractStudy => ({
@@ -540,6 +548,8 @@ test("links made by version 1 keep opening", async () => {
     target: "curve",
     across: 0.5,
   });
+  // Links made before the cut open without it.
+  assert.deepEqual(s.cut, defaultCut);
 
   const fourLink = await readStudyLink(v1["4d"]);
   assert.equal(fourLink.notebook, "4d");
@@ -550,4 +560,78 @@ test("links made by version 1 keep opening", async () => {
   assert.equal(f.view.zoom, 1.3);
   assert.equal(f.motion, "drift");
   assert.equal(f.duration, 4);
+});
+
+test("a link carries the cut and a peel; refuses a zero normal and a peel without the cut", async () => {
+  const study: SpatialStudy = {
+    ...spatial(),
+    animation: { mode: "cut", camera: "follow", duration: 6, tracks: [] },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // Every scope, and the limits themselves.
+  for (const cuts of ["surface", "sheets", "all"] as const) {
+    const edge: SpatialStudy = {
+      ...spatial(),
+      cut: {
+        enabled: true,
+        normal: { x: 100000, y: -100000, z: 0 },
+        offset: -100000,
+        cuts,
+        edge: true,
+      },
+    };
+    assert.deepEqual(spatialStudy(structuredClone(edge)), edge, cuts);
+  }
+  // A cut missing fields takes their defaults.
+  const partial = structuredClone(spatial()) as any;
+  partial.cut = { enabled: true, offset: 0.5 };
+  assert.deepEqual(spatialStudy(partial).cut, {
+    ...defaultCut,
+    enabled: true,
+    offset: 0.5,
+  });
+  const bad = (change: (cut: any, s: any) => void) => {
+    const s = structuredClone(study) as any;
+    change(s.cut, s);
+    return () => spatialStudy(s);
+  };
+  await refused(
+    bad((c) => (c.normal = { x: 0, y: 0, z: 0 })),
+    "cut.normal",
+    /not be zero/,
+  );
+  // An off cut may keep any plane it was left with.
+  assert.doesNotThrow(
+    bad((c, s) => {
+      c.normal = { x: 0, y: 0, z: 0 };
+      c.enabled = false;
+      s.animation.mode = "reveal";
+    }),
+  );
+  await refused(
+    bad((c) => (c.offset = 100001)),
+    "cut.offset",
+  );
+  await refused(
+    bad((c) => (c.normal.y = -1e6)),
+    "cut.normal.y",
+  );
+  await refused(
+    bad((c) => (c.cuts = "lines")),
+    "cut.cuts",
+  );
+  await refused(
+    bad((c) => (c.edge = "yes")),
+    "cut.edge",
+  );
+  await refused(
+    bad((c) => (c.extra = 1)),
+    "cut.extra",
+  );
+  await refused(
+    bad((c) => (c.enabled = false)),
+    "animation.mode",
+    /only while the cut is on/,
+  );
 });

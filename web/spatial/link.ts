@@ -18,6 +18,7 @@ import { spatialPresets } from "./presets";
 import { defaultLayers, initialView, type Layers } from "./renderer";
 import { availableTargets, type AnimationMode, type Target } from "./animation";
 import { defaultProbe, probeSupport, type Probe } from "./probe";
+import { cutPlane, defaultCut, maxCutValue, type Cut } from "./cut";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
@@ -30,6 +31,8 @@ export type SpatialStudy = {
   animation: SpatialAnimation;
   // The parameter probe, off in links made before it.
   probe: Probe;
+  // The cutaway plane, off in links made before it.
+  cut: Cut;
 };
 export const defaultAnimation: SpatialAnimation = {
   mode: "reveal",
@@ -260,6 +263,20 @@ const probe: SchemaOf<Probe> = {
   },
 };
 
+// The cutaway plane, within the limits its fields enforce.
+const bounded: { range: [number, number] } = {
+  range: [-maxCutValue, maxCutValue],
+};
+const cut: SchemaOf<Cut> = {
+  fields: {
+    enabled: "boolean",
+    normal: { fields: { x: bounded, y: bounded, z: bounded } },
+    offset: bounded,
+    cuts: { options: { surface: true, sheets: true, all: true } },
+    edge: "boolean",
+  },
+};
+
 export function spatialStudy(value: unknown): SpatialStudy {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new LinkError(
@@ -268,7 +285,9 @@ export function spatialStudy(value: unknown): SpatialStudy {
     );
   const raw = value as Record<string, unknown>;
   for (const key of Object.keys(raw))
-    if (!["config", "layers", "view", "animation", "probe"].includes(key))
+    if (
+      !["config", "layers", "view", "animation", "probe", "cut"].includes(key)
+    )
       throw new LinkError(key, `${key} is not a known field.`);
   const study = {
     config: conform(raw.config, config, spatialPresets[0].config, "config"),
@@ -277,7 +296,14 @@ export function spatialStudy(value: unknown): SpatialStudy {
   };
   const animation = animationSettings(
     raw.animation,
-    { reveal: true, parameters: true, orbit: true, trace: true, probe: true },
+    {
+      reveal: true,
+      parameters: true,
+      orbit: true,
+      trace: true,
+      probe: true,
+      cut: true,
+    },
     availableTargets(study.config),
     defaultAnimation,
   );
@@ -313,5 +339,13 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode moves the probe only while it is on in a study that offers it.",
     );
-  return { ...study, animation, probe: probed };
+  const cutting = conform(raw.cut, cut, defaultCut, "cut");
+  if (cutting.enabled && "message" in cutPlane(cutting))
+    throw new LinkError("cut.normal", "cut.normal must not be zero.");
+  if (animation.mode === "cut" && !cutting.enabled)
+    throw new LinkError(
+      "animation.mode",
+      "animation.mode peels with the cut only while the cut is on.",
+    );
+  return { ...study, animation, probe: probed, cut: cutting };
 }

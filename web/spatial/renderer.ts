@@ -9,6 +9,7 @@ import {
   type View,
 } from "./scene";
 import { glsl, palette, vec3 } from "./palette";
+import { cutEdges, isCut, type CutSpec } from "./cut";
 
 export {
   defaultLayers,
@@ -26,13 +27,18 @@ uniform mat3 rotation;
 uniform vec3 framing;
 uniform vec3 center;
 uniform vec2 pan;
+uniform vec4 cut;
 varying vec3 N;
 varying vec3 P;
 varying float U;
+varying float C;
 void main() {
   P = rotation * (position - center);
   N = rotation * normal;
   U = phase;
+  // (n̂·p − d) / radius, positive beyond the cut plane: computed here, at
+  // the vertex stage's precision, and linear across every primitive.
+  C = dot(cut.xyz, position - center) - cut.w;
   gl_Position = vec4((P.x + pan.x) * framing.x, (P.y + pan.y) * framing.y, -P.z * framing.z, 1.0);
 }`;
 const fragmentSource = `
@@ -40,9 +46,12 @@ precision mediump float;
 varying vec3 N;
 varying vec3 P;
 varying float U;
+varying float C;
 uniform float ink;
 uniform float dark;
+uniform float cutting;
 void main() {
+  if (cutting > 0.5 && C > 0.0) discard;
   float blend = 0.5 + 0.5 * cos(6.2831853 * U);
   vec3 teal = ${glsl(palette.teal)};
   vec3 gold = ${glsl(palette.gold)};
@@ -50,7 +59,10 @@ void main() {
   // A surface's focal sheets: rust for the first, slate for the second.
   vec3 rust = ${glsl(palette.rust)};
   vec3 slate = ${glsl(palette.slate)};
-  if (ink > 7.5) {
+  if (ink > 11.5) {
+    // The cut's edge.
+    color = ${glsl(palette.cut)};
+  } else if (ink > 7.5) {
     // The parameter probe: its point, circle and construction, then T, N, B.
     if (ink > 10.5) color = ${glsl(palette.probeBinormal)};
     else if (ink > 9.5) color = ${glsl(palette.probeNormal)};
@@ -127,10 +139,16 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl.getAttribLocation(program, n),
   );
   const uniforms = Object.fromEntries(
-    ["rotation", "framing", "center", "pan", "ink", "dark"].map((n) => [
-      n,
-      gl.getUniformLocation(program, n),
-    ]),
+    [
+      "rotation",
+      "framing",
+      "center",
+      "pan",
+      "ink",
+      "dark",
+      "cut",
+      "cutting",
+    ].map((n) => [n, gl.getUniformLocation(program, n)]),
   );
   const wideIndices = !!gl.getExtension("OES_element_index_uint");
   // Each batch's buffers, remade with every upload.
@@ -145,6 +163,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   // never re-uploads the scene.
   let probe: Batch[] = [];
   const probeBuffers: WebGLBuffer[] = [];
+  // The cut plane and its edge, remade when the plane, the scene or the
+  // layers change.
+  let cut: CutSpec | null = null;
+  let edge: { key: unknown[]; batch: Batch | null } | undefined;
+  const edgeBuffers: WebGLBuffer[] = [];
   const uploaded = new Map<Batch, Uploaded>();
   function put(batch: Batch, into = buffers) {
     // Indices past 65,535 need 32-bit elements, universal in practice;
@@ -180,6 +203,20 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     probe.forEach((b) => uploaded.delete(b));
     probe = batches;
     probe.forEach((b) => put(b, probeBuffers));
+  }
+  function setCut(spec: CutSpec | null) {
+    cut = spec;
+  }
+  function cutEdge(layers: Layers) {
+    if (!scene || !cut?.edge) return null;
+    const key = [scene, layers, cut];
+    if (edge && edge.key.every((k, i) => k === key[i])) return edge.batch;
+    edgeBuffers.splice(0).forEach((b) => gl!.deleteBuffer(b));
+    if (edge?.batch) uploaded.delete(edge.batch);
+    const batch = cutEdges(scenePasses(scene, layers), cut.plane, cut.scope);
+    if (batch) put(batch, edgeBuffers);
+    edge = { key, batch };
+    return batch;
   }
   // A new result drops the probe, whose batches belong to the old one.
   function upload(result: SpatialResult) {
@@ -227,7 +264,20 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl!.uniform2f(uniforms.pan, k.pan[0], k.pan[1]);
     gl!.uniform3f(uniforms.framing, ...k.framing);
     gl!.uniform1f(uniforms.dark, dark ? 1 : 0);
-    const render = (v: Uploaded) => {
+    // The plane relative to the view center, scaled by the radius.
+    if (cut) {
+      const n = cut.plane.normal,
+        c = k.center,
+        r = view.radius;
+      gl!.uniform4f(
+        uniforms.cut,
+        n.x / r,
+        n.y / r,
+        n.z / r,
+        (cut.plane.offset - (n.x * c.x + n.y * c.y + n.z * c.z)) / r,
+      );
+    }
+    const render = (v: Uploaded & { cut: boolean }) => {
       gl!.bindBuffer(gl!.ARRAY_BUFFER, v.buffer);
       attributes.forEach((loc, i) => {
         gl!.enableVertexAttribArray(loc);
@@ -241,14 +291,18 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         );
       });
       gl!.uniform1f(uniforms.ink, v.batch.ink);
+      gl!.uniform1f(uniforms.cutting, v.cut ? 1 : 0);
       const mode = v.batch.mode === "lines" ? gl!.LINES : gl!.TRIANGLES;
       if (v.elements) {
         gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, v.elements);
         gl!.drawElements(mode, v.count, gl!.UNSIGNED_INT, 0);
       } else gl!.drawArrays(mode, 0, v.count);
     };
-    for (const pass of scenePasses(scene, layers, probe)) {
-      const v = uploaded.get(pass.batch)!;
+    for (const pass of scenePasses(scene, layers, probe, cutEdge(layers))) {
+      const v = {
+        ...uploaded.get(pass.batch)!,
+        cut: !!cut && isCut(pass, cut.scope),
+      };
       if (!pass.sheet) {
         render(v);
         continue;
@@ -262,10 +316,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   return {
     upload,
     setProbe,
+    setCut,
     draw,
     dispose: () => {
       buffers.forEach((b) => gl.deleteBuffer(b));
       probeBuffers.forEach((b) => gl.deleteBuffer(b));
+      edgeBuffers.forEach((b) => gl.deleteBuffer(b));
       shaders.forEach((s) => gl.deleteShader(s));
       gl.deleteProgram(program);
     },

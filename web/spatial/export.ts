@@ -4,6 +4,7 @@ import { buildScene, type Batch } from "./scene";
 import { linework, linesSvg, sampleStep } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
 import { probeDrawing } from "./probe";
+import { cutRecord, type CutSpec } from "./cut";
 import { mp4Sink, webpSink } from "../export-sinks";
 import {
   exportEncoding,
@@ -55,8 +56,14 @@ export async function imageFile(
   // The parameter probe as drawn live, recorded in the metadata as where
   // it stands (see probeRecord).
   probe?: { batches: Batch[]; record: object },
+  // The cutaway plane as drawn, recorded in the metadata only when there is
+  // one, so files without a cut are unchanged.
+  cut?: CutSpec | null,
 ): Promise<Blob> {
-  const probed = probe ? { probe: probe.record } : {};
+  const probed = {
+    ...(probe ? { probe: probe.record } : {}),
+    ...(cut ? { cut: cutRecord(cut) } : {}),
+  };
   if (format === "svg-lines" || format === "svg-visible") {
     const occlusion = format === "svg-lines" ? "none" : "sampled";
     const groups = linework(
@@ -66,6 +73,7 @@ export async function imageFile(
       dark,
       { ...page, occlusion, signal },
       probe?.batches,
+      cut,
     );
     signal.throwIfAborted();
     const svg = linesSvg(groups, {
@@ -95,6 +103,7 @@ export async function imageFile(
   try {
     renderer.upload(frame.result);
     renderer.setProbe(probe?.batches ?? []);
+    renderer.setCut(cut ?? null);
     renderer.draw(view, layers, dark, page);
     signal.throwIfAborted();
     const png = await new Promise<Blob>((resolve, reject) =>
@@ -129,6 +138,9 @@ export async function exportAnimation(options: {
   settings: ExportSettings;
   dark: boolean;
   layers: Layers;
+  // The entered cut when playback began; a frame that moves it carries its
+  // own.
+  cut: CutSpec | null;
   signal: AbortSignal;
   sample: (progress: number) => Promise<AnimationView>;
   onProgress: (completed: number, total: number) => void;
@@ -161,6 +173,7 @@ export async function exportAnimation(options: {
               view.probe,
             ),
       );
+      renderer.setCut(view.cut ?? options.cut);
       renderer.draw(
         animationCamera(view),
         options.layers,

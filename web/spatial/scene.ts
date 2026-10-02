@@ -924,19 +924,22 @@ export type Scene = ReturnType<typeof buildScene>;
 
 // One step of the drawing: a batch, the layer that shows it (the base is
 // always shown), and whether it is a shaded sheet, drawn pushed back so that
-// lines lying on it stay in front.
+// lines lying on it stay in front. The cut's edge (see cut.ts) and the
+// parameter probe are drawn whenever they are given.
 export type Pass = {
-  layer: keyof Layers | "base" | "probe";
+  layer: keyof Layers | "base" | "probe" | "cut";
   batch: Batch;
   sheet: boolean;
 };
 
 // What the drawing shows of a scene with these layers, in drawing order,
-// with the parameter probe's batches (see probe.ts), if any, drawn last.
+// with the cut's edge and then the parameter probe's batches (see probe.ts),
+// if any, drawn last.
 export function scenePasses(
   s: Scene,
   layers: Layers,
   probe: Batch[] = [],
+  edge: Batch | null = null,
 ): Pass[] {
   const out: Pass[] = [];
   const add = (
@@ -987,6 +990,7 @@ export function scenePasses(
   add("seam", layers.seam, false, s.seam);
   add("pole", layers.pole, false, s.pole);
   add("sphere", layers.sphere, false, s.center);
+  if (edge) add("cut", true, false, edge);
   add("probe", true, false, ...probe);
   return out;
 }

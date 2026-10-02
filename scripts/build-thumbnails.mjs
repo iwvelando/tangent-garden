@@ -58,16 +58,22 @@ try {
       await button.click();
       await gallery.locator(`[data-example="${example.example}"]`).click();
       await gallery.waitFor({ state: "hidden" });
-      // The drawing is ready once it shows this example's definition.
+      // The drawing is ready once it shows this example's definition: a 3D
+      // study's with its cut, when it has one.
       await page.waitForFunction(
         ([notebook, want]) => {
+          const spatial = document.querySelector(
+            ".spatial-stage[aria-busy=false]",
+          )?.dataset;
           const text =
             notebook === "4d"
               ? document.querySelector(".tesseract-stage[aria-busy=false]")
                   ?.dataset.config
               : notebook === "3d"
-                ? document.querySelector(".spatial-stage[aria-busy=false]")
-                    ?.dataset.config
+                ? spatial?.config &&
+                  (spatial.cut
+                    ? `{"config":${spatial.config},"cut":${spatial.cut}}`
+                    : spatial.config)
                 : document.querySelector(".plot-wrap[aria-busy=false]") &&
                   document.querySelector("#artwork > desc")?.textContent;
           if (!text) return false;

@@ -15,9 +15,10 @@ export type { Frame };
 export type Viewport = View;
 // Reveal, vary parameters, orbit the camera, trace light from its source to
 // the caustics (mirror and interface studies only), or move the parameter
-// probe along the curve (while the probe is on).
+// probe along the curve (while the probe is on), or peel the drawing away
+// with the cut plane (while the cut is on).
 export type AnimationMode =
-  "reveal" | "parameters" | "orbit" | "trace" | "probe";
+  "reveal" | "parameters" | "orbit" | "trace" | "probe" | "cut";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 // A harmonic term's frequency or one coordinate of its vector A or B,
 // numbered from 1 in term order.
@@ -110,6 +111,8 @@ export type AnimationView = {
   // its setup, when the animation moves it.
   probe?: number;
   probeSetup?: import("./probe").Probe;
+  // The cut as this frame draws it, when the animation moves it.
+  cut?: import("./cut").CutSpec;
 };
 export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",

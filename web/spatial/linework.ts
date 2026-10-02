@@ -10,13 +10,16 @@ import {
   type View,
 } from "./scene";
 import { hex, lineColor, palette } from "./palette";
+import { cutEdges, isCut, type CutSpec, type Plane } from "./cut";
 
 // Vector linework: the lines the drawing shows, from the same scene, layers
 // and camera, as page paths. Sheets are not drawn. With occlusion "none"
 // every line is drawn, including those behind sheets. With "sampled", each
 // line is tested along its length against a depth raster of the shown
 // sheets at the page's resolution: a sampled approximation of hidden lines,
-// not exact hidden-line removal. Lines never hide other lines.
+// not exact hidden-line removal. Lines never hide other lines. A cut (see
+// cut.ts) hides what the drawing hides: sheet pixels beyond its plane leave
+// the raster, cut lines end exactly at the plane, and its edge is a layer.
 export type Occlusion = "none" | "sampled";
 export type LineGroup = {
   layer: string;
@@ -43,17 +46,26 @@ export function linework(
   dark: boolean,
   options: LineworkOptions,
   probe: Batch[] = [],
+  cut?: CutSpec | null,
 ): LineGroup[] {
-  const k = camera(view, options),
-    passes = scenePasses(scene, layers, probe);
+  const k = camera(view, options);
+  let passes = scenePasses(scene, layers, probe);
+  const edge = cut?.edge && cutEdges(passes, cut.plane, cut.scope);
+  if (edge) passes = scenePasses(scene, layers, probe, edge);
   const work = { done: 0, limit: options.limit ?? workLimit };
   const raster =
     options.occlusion === "sampled"
       ? depthRaster(
           k,
-          passes.filter((p) => p.sheet).map((p) => p.batch),
+          passes
+            .filter((p) => p.sheet)
+            .map((p) => ({
+              batch: p.batch,
+              cut: !!cut && isCut(p, cut.scope),
+            })),
           work,
           options.signal,
+          cut?.plane,
         )
       : undefined;
   const groups = new Map<string, Map<string, [number, number][][]>>();
@@ -63,11 +75,14 @@ export function linework(
     let strokes = groups.get(pass.layer);
     if (!strokes) groups.set(pass.layer, (strokes = new Map()));
     const data = pass.batch.data;
+    const plane = cut && isCut(pass, cut.scope) ? cut.plane : undefined;
     for (let i = 0; i + 13 < data.length; i += 14) {
+      const ends = plane ? kept(plane, data, i) : data.subarray(i, i + 14);
+      if (!ends) continue;
       const piece = clipped(
         k,
-        clip(k, data[i], data[i + 1], data[i + 2]),
-        clip(k, data[i + 7], data[i + 8], data[i + 9]),
+        clip(k, ends[0], ends[1], ends[2]),
+        clip(k, ends[7], ends[8], ends[9]),
       );
       if (!piece) continue;
       const color = hex(lineColor(pass.batch.ink, data[i + 6], dark));
@@ -85,6 +100,26 @@ export function linework(
         .map(([color, paths]) => ({ color, paths })),
     }))
     .filter((g) => g.strokes.length);
+}
+
+// The part of the segment at data[i] (two 7-float corners) on the kept
+// side of the plane, n̂·p ≤ d, or nothing. A segment crossing it ends
+// exactly on it.
+function kept(plane: Plane, data: Float32Array, i: number) {
+  const n = plane.normal;
+  const side = (j: number) =>
+    n.x * data[j] + n.y * data[j + 1] + n.z * data[j + 2] - plane.offset;
+  const a = side(i),
+    b = side(i + 7);
+  if (a <= 0 && b <= 0) return data.subarray(i, i + 14);
+  if (!(a <= 0 || b <= 0)) return;
+  const t = a / (a - b),
+    out = Float64Array.from(data.subarray(i, i + 14));
+  // Move the hidden end to the crossing.
+  const moved = a > 0 ? 0 : 7;
+  for (let j = 0; j < 3; j++)
+    out[moved + j] = data[i + j] + (data[i + 7 + j] - data[i + j]) * t;
+  return out;
 }
 
 // A segment continues the last path when it starts exactly where that path
@@ -133,7 +168,9 @@ function clipped(
 
 // The shown sheets' triangles on the page, and which of them is nearest at
 // each pixel center (−1 where there is none). Points hold each corner's page
-// x, y and depth; corners hold each triangle's three points.
+// x, y and depth; corners hold each triangle's three points. A cut
+// triangle's points also hold n̂·p − d in sides, and its pixels beyond the
+// plane are left out, as the drawing discards them.
 type Raster = {
   width: number;
   height: number;
@@ -141,17 +178,20 @@ type Raster = {
   nearest: Int32Array;
   points: Float64Array;
   corners: Uint32Array;
+  sides: Float64Array;
+  cut: Uint8Array;
 };
 function depthRaster(
   k: Camera,
-  sheets: Batch[],
+  sheets: { batch: Batch; cut: boolean }[],
   work: { done: number; limit: number },
   signal?: AbortSignal,
+  plane?: Plane,
 ): Raster {
   const { width, height } = k;
   let vertices = 0,
     triangles = 0;
-  for (const sheet of sheets) {
+  for (const { batch: sheet } of sheets) {
     vertices += sheet.data.length / 7;
     triangles += Math.floor(
       (sheet.indices?.length ?? sheet.data.length / 7) / 3,
@@ -164,10 +204,12 @@ function depthRaster(
     nearest: new Int32Array(width * height).fill(-1),
     points: new Float64Array(3 * vertices),
     corners: new Uint32Array(3 * triangles),
+    sides: new Float64Array(plane ? vertices : 0),
+    cut: new Uint8Array(triangles),
   };
   let base = 0,
     t = 0;
-  for (const sheet of sheets) {
+  for (const { batch: sheet, cut } of sheets) {
     signal?.throwIfAborted();
     const data = sheet.data,
       count = data.length / 7;
@@ -176,12 +218,19 @@ function depthRaster(
       r.points[3 * (base + v)] = p.x;
       r.points[3 * (base + v) + 1] = p.y;
       r.points[3 * (base + v) + 2] = p.depth;
+      if (plane && cut)
+        r.sides[base + v] =
+          plane.normal.x * data[7 * v] +
+          plane.normal.y * data[7 * v + 1] +
+          plane.normal.z * data[7 * v + 2] -
+          plane.offset;
     }
     const indices = sheet.indices;
     const corners = indices ? indices.length : count;
     for (let c = 0; c + 2 < corners; c += 3, t++) {
       for (let j = 0; j < 3; j++)
         r.corners[3 * t + j] = base + (indices ? indices[c + j] : c + j);
+      r.cut[t] = plane && cut ? 1 : 0;
       rasterize(r, t, work);
     }
     base += count;
@@ -218,11 +267,11 @@ function plane(r: Raster, t: number) {
     dy: ((cz - az) * (bx - ax) - (bz - az) * (cx - ax)) / area,
   };
 }
-type Plane = NonNullable<ReturnType<typeof plane>>;
+type Facet = NonNullable<ReturnType<typeof plane>>;
 // Where a page point lies against a triangle's edges: all three
 // non-negative (after the triangle's orientation) when it is inside or on
 // an edge.
-function inside(q: Plane, x: number, y: number, slack = 0) {
+function inside(q: Facet, x: number, y: number, slack = 0) {
   const s = q.area > 0 ? 1 : -1,
     e = slack * Math.abs(q.area);
   return (
@@ -231,8 +280,21 @@ function inside(q: Plane, x: number, y: number, slack = 0) {
     s * ((q.ax - x) * (q.by - y) - (q.ay - y) * (q.bx - x)) >= -e
   );
 }
-const depthAt = (q: Plane, x: number, y: number) =>
+const depthAt = (q: Facet, x: number, y: number) =>
   q.az + q.dx * (x - q.ax) + q.dy * (y - q.ay);
+// Whether a page point inside a cut triangle lies beyond the plane: n̂·p − d
+// is affine on the page, as depth is, so it is interpolated from the
+// corners like the drawing's varying.
+function beyond(r: Raster, t: number, q: Facet, x: number, y: number) {
+  if (!r.cut[t]) return false;
+  const [a, b, c] = [0, 1, 2].map((j) => r.corners[3 * t + j]);
+  const sa = r.sides[a],
+    sb = r.sides[b],
+    sc = r.sides[c];
+  const dx = ((sb - sa) * (q.cy - q.ay) - (sc - sa) * (q.by - q.ay)) / q.area,
+    dy = ((sc - sa) * (q.bx - q.ax) - (sb - sa) * (q.cx - q.ax)) / q.area;
+  return sa + dx * (x - q.ax) + dy * (y - q.ay) > 0;
+}
 function rasterize(
   r: Raster,
   t: number,
@@ -251,6 +313,7 @@ function rasterize(
     for (let x = x0; x <= x1; x++) {
       // Pixel centers on an edge count as inside, for both neighbors.
       if (!inside(q, x + 0.5, y + 0.5)) continue;
+      if (beyond(r, t, q, x + 0.5, y + 0.5)) continue;
       const z = depthAt(q, x + 0.5, y + 0.5);
       // The drawing clips depth to [0, 1] too.
       if (z < 0 || z > 1) continue;
@@ -288,7 +351,7 @@ function hidden(r: Raster, x: number, y: number, depth: number) {
       if (t < 0 || tried.includes(t)) continue;
       tried.push(t);
       const q = plane(r, t)!;
-      if (!inside(q, x, y, 1e-9)) continue;
+      if (!inside(q, x, y, 1e-9) || beyond(r, t, q, x, y)) continue;
       const z = depthAt(q, x, y);
       if (z < 0 || z > 1) continue;
       found = true;

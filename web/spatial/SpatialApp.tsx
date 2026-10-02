@@ -12,6 +12,8 @@ import { ExportImageMenu } from "../ExportImageMenu";
 import { saveFile } from "../export-image";
 import { SpatialPlot } from "./SpatialPlot";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
+import { CutPanel } from "./CutPanel";
+import { cutSpec, defaultCut, type Cut } from "./cut";
 import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
@@ -155,6 +157,9 @@ export default function SpatialApp({
   const [probe, setProbe] = useState<Probe>(defaultProbe);
   const probing = probe.enabled && probeSupport(config).available,
     target = probeTarget(config, probe);
+  // The cutaway plane: a drawing setting, never sent to Go.
+  const [cut, setCut] = useState<Cut>(defaultCut);
+  const userCut = useMemo(() => cutSpec(cut), [cut]);
   const viewport = useRef<View | undefined>(undefined),
     plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
@@ -238,6 +243,8 @@ export default function SpatialApp({
     setPreset(index);
     setCustomOpened(spatialPresets[+index].config.format === "parametric");
     setConfig(structuredClone(spatialPresets[+index].config));
+    // A preset brings its own cut, or none, so it draws as its picture.
+    setCut(structuredClone(spatialPresets[+index].cut ?? defaultCut));
     setProbe((p) => ({
       ...p,
       position: defaultProbe.position,
@@ -266,6 +273,7 @@ export default function SpatialApp({
     setConfig(study.config);
     setLayers(study.layers);
     setProbe(study.probe);
+    setCut(study.cut);
     setRestoredView({ reset: reset + 1, view: study.view });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -290,7 +298,50 @@ export default function SpatialApp({
     // What the probe describes, not the target last chosen elsewhere, so
     // that a mirror's link names the light or the mirror.
     probe: { ...probe, target: probeTarget(config, probe) },
+    cut,
   });
+  // The cut's buttons compute from its numeric fields, so they wait for
+  // evaluations still pending for them; a preset chosen meanwhile wins.
+  async function changeCut(change: (c: Cut) => Cut) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    setCut(change);
+  }
+  // Toward the viewer of the shown camera, to three decimals: only the
+  // direction counts.
+  const faceView = () => {
+    const v = viewport.current;
+    if (!v) return;
+    const round = (x: number) => Math.round(x * 1000) / 1000 + 0;
+    void changeCut((c) => ({
+      ...c,
+      normal: {
+        x: round(-Math.cos(v.pitch) * Math.sin(v.yaw)),
+        y: round(Math.sin(v.pitch)),
+        z: round(Math.cos(v.pitch) * Math.cos(v.yaw)),
+      },
+    }));
+  };
+  const centerCut = () => {
+    const center = viewport.current?.center;
+    if (!center) return;
+    void changeCut((c) => {
+      const { x, y, z } = c.normal,
+        length = Math.hypot(x, y, z);
+      if (!(length > 0) || !Number.isFinite(length)) return c;
+      return {
+        ...c,
+        offset: (x * center.x + y * center.y + z * center.z) / length + 0,
+      };
+    });
+  };
+  const flipCut = () =>
+    void changeCut((c) => ({
+      ...c,
+      normal: { x: -c.normal.x + 0, y: -c.normal.y + 0, z: -c.normal.z + 0 },
+      offset: -c.offset + 0,
+    }));
   async function definition(format: SpatialConfig["format"]) {
     const token = generation.current;
     await Promise.allSettled([...jobs.current]);
@@ -1203,6 +1254,16 @@ export default function SpatialApp({
         : probeIndex(probe.position, probeFrame.result.base.length - 1)
       : 0;
   const probeSetup = moving?.probeSetup ?? probe;
+  // The cut as drawn: where an animation that moves it has taken it, or the
+  // entered plane.
+  const drawnCut = animation?.cut ?? userCut.spec;
+  // The cut's edge in the legend while it is drawn.
+  const cutLegend = drawnCut?.edge ? (
+    <>
+      {" "}
+      <span className="cut-dot" /> Cut edge
+    </>
+  ) : null;
   const probeDrawing = useMemo(
     () =>
       probeFrame
@@ -1221,6 +1282,7 @@ export default function SpatialApp({
       view: viewport.current,
       layers,
       dark: theme.dark,
+      cut: drawnCut,
     });
     try {
       const { imageFile } = await import("./export");
@@ -1243,6 +1305,7 @@ export default function SpatialApp({
               ),
             }
           : undefined,
+        snapshot.cut,
       );
       controller.signal.throwIfAborted();
       saveFile(
@@ -2608,6 +2671,17 @@ export default function SpatialApp({
               ))}
             </fieldset>
           )}
+          <ScalarStatus.Provider value={scalarStatus}>
+            <CutPanel
+              cut={cut}
+              onCut={setCut}
+              error={userCut.error}
+              onFace={faceView}
+              onCenter={centerCut}
+              onFlip={flipCut}
+              peeling={animation?.cut !== undefined}
+            />
+          </ScalarStatus.Provider>
           <ProbePanel
             config={config}
             frame={probeFrame}
@@ -2879,6 +2953,7 @@ export default function SpatialApp({
             revision={revision}
             disabled={!ready || !active || imageBusy}
             probe={probing ? probe : null}
+            cut={userCut.spec}
             dark={theme.dark}
             layers={layers}
             getCurrentView={() =>
@@ -2896,6 +2971,9 @@ export default function SpatialApp({
           aria-label="Spatial artwork"
           aria-busy={busy}
           data-config={shown ? JSON.stringify(shown.config) : undefined}
+          // The entered cut while it is on, as a preset's fingerprint
+          // includes it (see examples/index.ts).
+          data-cut={cut.enabled ? JSON.stringify(cut) : undefined}
           data-progress={animation?.progress}
           data-mode={animation?.mode}
           data-camera={camera ? JSON.stringify(camera) : undefined}
@@ -2978,6 +3056,7 @@ export default function SpatialApp({
                     manualCamera.current = c;
                   }}
                   probe={probeDrawing}
+                  cut={drawnCut}
                 />
               ) : (
                 <div className="loading">
@@ -2995,6 +3074,7 @@ export default function SpatialApp({
                 <div className="legend">
                   <span className="surface-dot" /> Level surface{" "}
                   <span className="thread-dot" /> Section curves
+                  {cutLegend}
                 </div>
               ) : mirroring ? (
                 <div className="legend">
@@ -3003,13 +3083,13 @@ export default function SpatialApp({
                   <span className="thread-dot" />{" "}
                   {refracting ? "Transmitted rays" : "Reflected rays"}{" "}
                   <span className="focal-dot" /> Caustic 1{" "}
-                  <span className="focal-dot second" /> Caustic 2
+                  <span className="focal-dot second" /> Caustic 2{cutLegend}
                 </div>
               ) : surfacing ? (
                 <div className="legend">
                   <span className="surface-dot" /> Surface{" "}
                   <span className="focal-dot" /> Focal sheet 1{" "}
-                  <span className="focal-dot second" /> Focal sheet 2
+                  <span className="focal-dot second" /> Focal sheet 2{cutLegend}
                 </div>
               ) : (
                 <div className="legend">
@@ -3041,6 +3121,7 @@ export default function SpatialApp({
                               : involute
                                 ? "Involute filaments"
                                 : "Tangent developable"}
+                  {cutLegend}
                 </div>
               )}
               <span>

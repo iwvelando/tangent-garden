@@ -125,6 +125,8 @@ Prototype the treatment of ambiguous cells, nonfinite regions, poles masqueradin
 - [ ] **Scale and translation robustness.** Establish error budgets across tiny/large studies and translated coordinates. Rebase GPU positions before Float32 upload where needed, retain meaningful camera clipping, and test explicit export equivalence. Current finite-value guards and robust bounds are not a proof of scale independence.
 - [x] **Mesh identities and efficiency.** Done for the implicit surface, the one shared-vertex result: its mesh travels as typed arrays and is drawn by index; see the follow-up notes below and `architecture.md` (**Measuring**). Worker pools and other result types remain open, to be profiled when a study needs them.
 - [ ] **Transparent and hidden geometry.** Investigate restrained transparency, cutaway planes, and hidden-line modes as ways to inspect folds. Triangle sorting alone fails for intersecting sheets. Evaluate a documented transparency method and support fallback; do not change the opaque default until both live and exported views agree reliably.
+  - ~~Cutaway planes.~~ Done: **Cut away** in the 3D notebook, one world-space plane that hides a chosen scope of the drawing, with a mesh-derived edge and a peel animation; see the follow-up notes below and `mathematics.md#spatial-cutaway-plane`.
+  - Still open: restrained transparency and hidden-line modes. A cutaway box or several planes would extend the same discard test.
 - [ ] **Line rendering quality.** Stable screen-space strokes, antialiasing, and depth bias at high export resolutions; prevent construction lines from flickering or vanishing without making hidden lines falsely visible. Device-dependent WebGL line width is not a portable stroke system.
 - [ ] **Context recovery and capability limits.** The MVP reports missing/lost WebGL. Later restore resources from the current study after context restoration, preserve camera state, and validate actual device limits for export sizes. Keep the 2D notebook available throughout.
 - [x] **Geometric diagnostics.** Done for curves: **Probe the curve** in the 3D notebook, described in `mathematics.md`, `spatial-study.md`, `usage.md` and `architecture.md`. It shows T/N/B glyphs, the osculating circle and the point's construction lines in diagnostic inks, with κ, 1/κ and τ read out and plotted along the curve. Flat samples, unknown τ and centres at infinity are marked, not guessed; see the follow-up notes below.
@@ -752,5 +754,41 @@ Recommended next step, for the user to choose: **adaptive curves** (above), or r
   - The probe snaps to the mirror's grid, as the caustics do.
   - Its lines are depth-tested, so inside the bowl the opaque caustic sheet hides most of the rays; hide the caustics to see them.
   - Only the light leaving the surface is described: the incident wavefront and the totally reflected wavefront have no curvatures here.
+
+### Follow-up completed: the cutaway plane
+
+- Implemented **Cut away** in the 3D notebook (branch `claude/spatial-cutaway`): one world-space plane `n̂·p = d`, hiding `n̂·p > d` on **The surface**, **Every sheet**, or **Sheets and lines**, with **Face the view**, **Through the center** and **Flip**, an optional cut edge, and **Animate → Peel away with the cut**.
+  - `web/spatial/cut.ts` is the cut's descriptor: its fields, limits, words, validation, scopes, edge, peel range and export record. `CutPanel.tsx` reads it.
+  - The renderer discards fragments by a scaled signed distance computed per vertex. Linework applies the same test in its depth raster and visibility test, and clips cut lines in world space. Both draw the edge as the pass layer `cut` in ink 12 (graphite, or chalk on the dark theme), and the legend names it.
+  - No Go, transport or CSP change. Scalars still resolve in Go through `ScalarInput`.
+- Decisions:
+  - A drawing setting, not a study change. Counts, probe and links' config are unaffected, and the plane stays fixed under orbit and parameter tracks.
+  - The edge comes from the drawn triangles in TypeScript, for every surface, implicit ones included. It must match where the sheet visibly ends, and a peel recomputes it each frame. It is labelled as following the mesh, not a refined section. An implicit surface's Section curves stay the exact ones.
+  - The peel always runs over the drawn extent along `n̂`, from hiding nothing to hiding all, with no from/to fields, as the probe's sweep has none. Flip reverses it.
+  - A preset brings its own cut or turns it off, so every preset draws as its thumbnail. Links carry the cut, older links take it off, and a zero normal or a peel without the cut is refused.
+  - Exports add `cut` metadata only when there is one, so files without a cut are byte-identical to before.
+  - Two presets, appended so existing indices hold:
+    - **An ellipsoid hiding its centers** (1.2 : 1 : 0.9, a² < 2c², so its focal surface lies within 0.61 of the shell's quadratic form, while the existing 1.5 : 1 : 0.7 preset reaches 12.9);
+    - **A lamp sealed in an ellipsoid** (the whole spheroidal mirror, cut lengthwise).
+  - Existing presets that open by trimming their domain are unchanged.
+- Workload: the edge visits each cut triangle once, about 1 ms for 18,432 triangles and 5 ms for 204,800 per plane (Node, Apple M5 Max). The peel's extent is computed once per session.
+- Permanent docs: `mathematics.md#spatial-cutaway-plane`, `spatial-study.md` (**Cutting away**), `usage.md`, `architecture.md`, README.
+- Verification:
+  - A guard written first: SHA-256 of both line drawings of **The focal sheets of an ellipsoid** and **A spherical bowl's cusped caustic**, recorded from `main` at 672ef89, still match. `make thumbnails` regenerated every existing 3D thumbnail byte-identical.
+  - `tests/spatial-cut.spec.ts` unit tests (cube sections, degenerate corners, scopes, peel range, linework hiding, clipping and edge) were written before `cut.ts` and the linework changes and observed failing (missing module, then three linework failures). The browser tests were written before the panel and observed failing (three). They cover the sphere's section circle and its convergence (largest deficit 0.0042 → 0.0013 from 48 × 24 to 96 × 48 cells), analytically placed PNG pixels on an off-center half sphere, the edge in the PNG and the visible-only SVG, PNG equality with a plane beyond the study, the panel's controls and refusals, and the headline preset hiding every focal-sheet pixel until cut.
+  - `tests/spatial-cut-playback.spec.ts` covers availability and fallbacks, exact endpoints (float32 ±1.2 on a sphere), pause, resume, scrubbing, Stop, cut-off mid-peel, all four cameras, the entered cut through other modes, and an ffprobe-checked MP4 whose ends match stills. These tests were written after the playback code, so no red run was observed for them. The mutation run below stands in.
+  - Also extended: `study-link.spec.ts` (round trip, older links, refusals; also written after the link code), `scalar-fields.spec.ts`, `layout.spec.ts` (the cut pairs at both widths), `webkit.spec.ts` (cut PNG and an H.264 peel), and the example counts in `gallery.spec.ts` and `notebook-consistency.spec.ts` (51 → 53, intended).
+  - Results: `make check` passed (engine3 coverage 98.9%, unchanged). `make test-browser` passed all 898 Chromium tests. `make test-webkit` passed all 31 WebKit tests. Light and dark drawings of both presets, and the panel at 390 px with help open, were inspected.
+  - Targeted mutations, 32 faults over `cut.ts`, linework, the shader and its uniforms, links, playback, export and the panel's buttons:
+    - 30 were detected on the first run.
+    - "Shader ignores the view center" survived because the test sphere was centered at the origin. The test now uses an off-center half sphere and detects it.
+    - "Edge endpoints without coordinate order" survives. The edge is stored in float32, which absorbs the double-precision rounding difference except at rare float32 ties, so no realistic mesh separates the two. The ordering is kept as a cheap guarantee.
+- Limits:
+  - One plane, not a box or several planes.
+  - The edge follows the mesh.
+  - Fragment rounding near the plane can differ from the CPU raster by about a pixel.
+  - Lines drawn on a cut sheet stay unless **Sheets and lines** is chosen; that is deliberate, so the cage of a removed shell can remain.
+
+Recommended next step, for the user to choose: authored camera animation, or restrained transparency, which could reuse the cut's per-pass scope.
 
 Keep this roadmap while future work remains. As decisions become shipped behavior, move durable definitions and limitations into permanent docs. When every selected item has been completed or explicitly declined, reconcile remaining candidates and retire the roadmap and its inbound links rather than leaving a stale completed plan.
