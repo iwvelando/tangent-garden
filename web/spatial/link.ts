@@ -20,11 +20,24 @@ import { availableTargets, type AnimationMode, type Target } from "./animation";
 import { defaultProbe, probeSupport, type Probe } from "./probe";
 import { cutPlane, defaultCut, maxCutValue, type Cut } from "./cut";
 import { defaultSight, opacityRange, type Sight } from "./sight";
+import {
+  defaultPath,
+  maxKeyName,
+  maxKeys,
+  maxTurns,
+  pitchRange,
+  zoomRange,
+  type CameraPath,
+} from "./path";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
 export type SpatialCamera = typeof initialView;
-export type SpatialAnimation = AnimationSettings<AnimationMode, Target>;
+// The camera path, flown by the path mode, travels with the animation
+// setup; links made before it fly none.
+export type SpatialAnimation = AnimationSettings<AnimationMode, Target> & {
+  path: CameraPath;
+};
 export type SpatialStudy = {
   config: SpatialConfig;
   layers: Layers;
@@ -43,6 +56,7 @@ export const defaultAnimation: SpatialAnimation = {
   camera: "hold",
   duration: 10,
   tracks: [],
+  path: defaultPath,
 };
 
 const vec3 = {
@@ -281,6 +295,50 @@ const cut: SchemaOf<Cut> = {
   },
 };
 
+// Key views within the drawing's own orbit and zoom limits; turns are
+// checked to be whole below.
+const path: SchemaOf<CameraPath> = {
+  fields: {
+    style: { options: { steady: true, smooth: true } },
+    keys: {
+      list: {
+        fields: {
+          name: "text",
+          yaw: "number",
+          pitch: { range: pitchRange },
+          zoom: { range: zoomRange },
+          panX: "number",
+          panY: "number",
+          turns: { range: [-maxTurns, maxTurns] },
+        },
+      },
+      max: maxKeys,
+    },
+  },
+};
+function cameraPath(value: unknown): CameraPath {
+  const out = conform(value, path, defaultPath, "animation.path");
+  out.keys.forEach((key, k) => {
+    const field = `animation.path.keys[${k}]`;
+    if (key.name.length > maxKeyName)
+      throw new LinkError(
+        `${field}.name`,
+        `${field}.name is too long (at most ${maxKeyName} characters).`,
+      );
+    if (!Number.isInteger(key.turns))
+      throw new LinkError(
+        `${field}.turns`,
+        `${field}.turns must be a whole number.`,
+      );
+    if (k === 0 && key.turns !== 0)
+      throw new LinkError(
+        `${field}.turns`,
+        `${field}.turns must be 0: the first view has no leg before it.`,
+      );
+  });
+  return out;
+}
+
 const sight: SchemaOf<Sight> = {
   fields: {
     sheets: { options: { opaque: true, through: true } },
@@ -314,8 +372,16 @@ export function spatialStudy(value: unknown): SpatialStudy {
     layers: conform(raw.layers, flags(defaultLayers), defaultLayers, "layers"),
     view: conform(raw.view, view, initialView, "view"),
   };
-  const animation = animationSettings(
-    raw.animation,
+  // The path is the 3D notebook's own part of the animation setup.
+  const grouped =
+    typeof raw.animation === "object" &&
+    raw.animation !== null &&
+    !Array.isArray(raw.animation);
+  const { path: flight, ...shared } = grouped
+    ? (raw.animation as Record<string, unknown>)
+    : {};
+  const settings = animationSettings(
+    grouped ? shared : raw.animation,
     {
       reveal: true,
       parameters: true,
@@ -323,10 +389,15 @@ export function spatialStudy(value: unknown): SpatialStudy {
       trace: true,
       probe: true,
       cut: true,
+      path: true,
     },
     availableTargets(study.config),
     defaultAnimation,
   );
+  const animation: SpatialAnimation = {
+    ...settings,
+    path: cameraPath(flight),
+  };
   if (animation.mode === "trace" && study.config.format !== "rays")
     throw new LinkError(
       "animation.mode",

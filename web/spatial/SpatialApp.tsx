@@ -253,6 +253,11 @@ export default function SpatialApp({
     // A preset brings its own cut, or none, so it draws as its picture.
     setCut(structuredClone(spatialPresets[+index].cut ?? defaultCut));
     setSight(structuredClone(spatialPresets[+index].sight ?? defaultSight));
+    // And its own camera path, or none.
+    setPresetFlight((f) => ({
+      id: (f?.id ?? 0) + 1,
+      flight: spatialPresets[+index].flight,
+    }));
     setProbe((p) => ({
       ...p,
       position: defaultProbe.position,
@@ -269,6 +274,10 @@ export default function SpatialApp({
     view: SpatialCamera;
   } | null>(null);
   const animationSettings = useRef<SpatialAnimation | null>(null);
+  const [presetFlight, setPresetFlight] = useState<{
+    id: number;
+    flight?: (typeof spatialPresets)[number]["flight"];
+  } | null>(null);
   const [restoredAnimation, setRestoredAnimation] = useState<{
     id: number;
     settings: SpatialAnimation;
@@ -2983,6 +2992,11 @@ export default function SpatialApp({
             onPlay={showPlot}
             settings={animationSettings}
             restore={busy ? null : restoredAnimation}
+            flight={presetFlight}
+            onShowView={(view) => {
+              setRestoredView({ reset: reset + 1, view });
+              setReset(reset + 1);
+            }}
           />
         </aside>
         <article

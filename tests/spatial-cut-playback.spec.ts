@@ -87,7 +87,13 @@ test("peeling is offered only while the cut is on and valid", async ({
 }) => {
   await open(page, sphere(mine));
   await expect(mode(page)).toHaveValue("cut");
-  expect(await options(page)).toEqual(["reveal", "parameters", "orbit", "cut"]);
+  expect(await options(page)).toEqual([
+    "reveal",
+    "parameters",
+    "orbit",
+    "cut",
+    "path",
+  ]);
   await expect(page.locator("#spatial-animation-section")).toContainText(
     "Move the cut plane along its normal",
   );

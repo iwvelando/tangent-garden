@@ -184,6 +184,16 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
         await page.getByRole("checkbox", { name: "Cut with a plane" }).check();
         await expect(page.locator(".spatial-cut .pair").first()).toBeVisible();
       });
+    // A camera path's views pair their names and turns, here the preset's
+    // seven, with its turns refused.
+    setups.push(async () => {
+      await page.goto("/?study=3d");
+      await choosePreset(page, { label: "Viviani's curve, from every side" });
+      await page.getByLabel("View 6 turns", { exact: true }).fill("1.5");
+      await page.getByRole("button", { name: "Play animation" }).click();
+      await expect(page.locator(".animation-error")).toBeVisible();
+      await expect(page.locator(".path-view .pair").first()).toBeVisible();
+    });
     return setups;
   },
   "4D": async (page) => {
