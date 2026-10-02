@@ -147,6 +147,9 @@ for (const width of [1440, 390]) {
 test("each 3D example names itself above a shared construction title", async ({
   page,
 }) => {
+  // It opens every 3D example in turn, about 90 ms each locally but several
+  // times that on CI, where 61 examples outgrew the default 30 s.
+  test.slow();
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
