@@ -147,10 +147,13 @@ for (const width of [1440, 390]) {
 test("each 3D example names itself above a shared construction title", async ({
   page,
 }) => {
+  // It opens every 3D example in turn, about 90 ms each locally but several
+  // times that on CI, where 61 examples outgrew the default 30 s.
+  test.slow();
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
-  expect(titles).toHaveLength(58);
+  expect(titles).toHaveLength(61);
   // The construction, not the example, titles the drawing.
   const involutes = [
     "Unwinding a staircase",
@@ -179,6 +182,8 @@ test("each 3D example names itself above a shared construction title", async ({
     "Beads that lose their envelope",
     "Viviani's curve, from every side",
     "A horn of perpendicular feet",
+    "Where a helix's tangents land",
+    "A trefoil's string, unwound",
   ];
   const surfaces = [
     "A torus revealing its centers",
@@ -248,7 +253,7 @@ test("each 3D example names itself above a shared construction title", async ({
     );
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
-  expect(eyebrows.size).toBe(58);
+  expect(eyebrows.size).toBe(61);
   expect(eyebrows).toContain("THREE HARMONICS; THE THREAD PAUSES TWICE");
   await choosePreset(page, { label: titles[4] });
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");

@@ -1200,6 +1200,68 @@ console.log(
 console.log(
   "WASM composition: cardioid input, its cusp, connectors and validation passed",
 );
+// Composition on an involute: a developable built on the involute of the
+// helix (2 cos t, 2 sin t, t/2) from t₀ = 0.7 with c = 1.3. The involute is
+// an involute of a circle in the plane z = 0.35 + 0.65/w, w = √4.25, with
+// one cusp where s = w(t − t₀) = c; each string runs along the helix's
+// tangent, |c − s| long.
+{
+  const w = Math.hypot(2, 0.5);
+  const unwound = (extra) =>
+    JSON.parse(
+      tangentGardenSpatial(
+        JSON.stringify({
+          format: "parametric",
+          construction: "developable",
+          input: "involute",
+          unwinding: { anchor: 0.7, offset: 1.3 },
+          pole: { x: 0, y: 0, z: 0 },
+          length: 1,
+          curve: {
+            x: "2*cos(t)",
+            y: "2*sin(t)",
+            z: "t/2",
+            min: -2 * Math.PI,
+            max: 2 * Math.PI,
+            a: 1,
+          },
+          samples: 480,
+          lines: 24,
+          ...extra,
+        }),
+      ),
+    );
+  const q = unwound({});
+  assert.equal(q.composition.input, "involute");
+  assert.equal(q.composition.cusps, 1);
+  assert.equal(q.composition.unreached, 0);
+  q.base.forEach((p, i) => {
+    const t = -2 * Math.PI + (4 * Math.PI * i) / 480;
+    const length = 1.3 - w * (t - 0.7);
+    const x = 2 * Math.cos(t) - (length * 2 * Math.sin(t)) / w;
+    const y = 2 * Math.sin(t) + (length * 2 * Math.cos(t)) / w;
+    assert.ok(Math.hypot(p.x - x, p.y - y) < 1e-8, `involute sample ${i}`);
+    assert.ok(Math.abs(p.z - (0.35 + 0.65 / w)) < 1e-8);
+  });
+  for (const s of q.composition.constructions) {
+    assert.deepEqual(s.foot, s.contact);
+    assert.deepEqual(s.image, q.base[s.sampleIndex]);
+  }
+  const refused = unwound({ unwinding: { anchor: 9, offset: 1 } });
+  assert.match(refused.error, /input's anchor/);
+  // A validation error names the field it is about, for the notebook to
+  // show beside that control; an error about the whole study names none.
+  assert.equal(refused.field, "unwinding.anchor");
+  const still = unwound({
+    input: "base",
+    curve: { x: "0", y: "0", z: "0", min: 0, max: 1, a: 1 },
+  });
+  assert.match(still.error, /no regular finite samples/);
+  assert.equal("field" in still, false);
+}
+console.log(
+  "WASM composition on an involute: the helix's planar involute, its cusp, strings and validation passed",
+);
 // Spatial harmonic generator: one term traces the ellipse c₀ + A cos t +
 // B sin t, closed over 2π; an incommensurate pair is left open.
 const spatialHarmonic = (terms, min, max) =>

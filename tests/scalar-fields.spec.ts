@@ -706,6 +706,30 @@ for (const construction of ["tangent-foot", "orthotomic"])
     }
   });
 
+test("spatial involute input anchor and string share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page.getByLabel("Built on", { exact: true }).selectOption("involute");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const unwinding = async () => (await spatialConfig(stage))?.unwinding;
+  for (const [name, text, key, value] of [
+    ["Input anchor t₀", "pi/3", "anchor", Math.PI / 3],
+    ["Input string c", "-e/2", "offset", -Math.E / 2],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(async () => (await unwinding())?.[key]).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
+
 test("spatial inversion center, radius and derived pole share the bounded scalar parser", async ({
   page,
 }) => {

@@ -79,11 +79,11 @@ func (v FieldRequest) validate() error {
 	}
 	for i, s := range v.Seeds {
 		if !s.valid() || math.Max(math.Abs(s.X), math.Max(math.Abs(s.Y), math.Abs(s.Z))) > 1e5 {
-			return fmt.Errorf("seed %d: the coordinates must be finite and within ±100000", i+1)
+			return fieldErr(axis(fmt.Sprintf("field.seeds.%d", i), s, bounded), "seed %d: the coordinates must be finite and within ±100000", i+1)
 		}
 	}
 	if !finite(v.Escape) || v.Escape <= 0 || v.Escape > 1e5 {
-		return fmt.Errorf("the escape radius must be finite, positive, and at most 100000")
+		return fieldErr("field.escape", "the escape radius must be finite, positive, and at most 100000")
 	}
 	return nil
 }
@@ -95,7 +95,7 @@ func (v FieldRequest) system() (spatialField, bool, error) {
 	for i, s := range []string{v.X, v.Y, v.Z} {
 		f, reads, err := expr.ParseSpatialField(s, v.A)
 		if err != nil {
-			return nil, false, fmt.Errorf("d%s/dt: %w", []string{"x", "y", "z"}[i], err)
+			return nil, false, named("field."+[]string{"x", "y", "z"}[i], fmt.Errorf("d%s/dt: %w", []string{"x", "y", "z"}[i], err))
 		}
 		parts[i], timed = f, timed || reads
 	}
@@ -242,7 +242,7 @@ type flowCurve struct {
 
 func (v FieldRequest) compile() (*flowCurve, error) {
 	if err := domain(v.Min, v.Max); err != nil {
-		return nil, err
+		return nil, named(ends("field.min", "field.max", v.Min), err)
 	}
 	if err := v.validate(); err != nil {
 		return nil, err

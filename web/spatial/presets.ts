@@ -7,6 +7,7 @@ const base: SpatialConfig = {
   construction: "developable",
   pole: { x: 1.5, y: 0, z: 1 },
   input: "base",
+  unwinding: { anchor: 0, offset: 1 },
   inversion: { center: { x: 0, y: 0, z: 0 }, radius: 2, input: "base" },
   involute: {
     anchor: 0,
@@ -1585,6 +1586,75 @@ export const spatialPresets: {
       input: "orthotomic",
       q: 5,
       pole: { x: 0, y: 0, z: 0 },
+    },
+  },
+  // Constructions built on an involute. A string unwound from the helix
+  // (cos t, t, sin t) runs back along each tangent and drops exactly as far
+  // as it is long times the climb per unit length, so every string from
+  // t₀ = 0 with c = 0 ends on the floor y = 0: the helix's involute is a
+  // circle's involute lying flat, threaded here with a thin tube.
+  {
+    name: "Where a helix's tangents land",
+    detail: "Every string unwound from the helix ends on one flat spiral",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      input: "involute",
+      unwinding: { anchor: 0, offset: 0 },
+      curve: {
+        x: "cos(t)",
+        y: "t",
+        z: "sin(t)",
+        min: 0,
+        max: 2 * Math.PI,
+        a: 1,
+      },
+      canal: { radius: 0.06, profile: "1", meridians: 4 },
+      samples: 1200,
+      lines: 48,
+    },
+  },
+  // The whole trefoil unwound from t₀ = 0: the string grows to the knot's
+  // full length, so its involute spirals out around the knot, and the tube
+  // follows it.
+  {
+    name: "A trefoil's string, unwound",
+    detail: "A tube around the involute of the whole knot, spiraling outward",
+    config: {
+      ...base,
+      construction: "canal",
+      input: "involute",
+      unwinding: { anchor: 0, offset: 0 },
+      canal: { radius: 0.3, profile: "1", meridians: 4 },
+      samples: 1200,
+      lines: 48,
+    },
+  },
+  // Viviani's curve, where a cylinder meets a sphere, unwound both ways from
+  // t₀ = 2π. An involute's tangent is the base's principal normal, so the
+  // tangent developable built on it is ruled along Viviani's normals, with
+  // a cusp at the anchor where the string vanishes.
+  {
+    name: "A sheet of Viviani's normals",
+    detail: "A developable on an involute, ruled along the curve's normals",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "developable",
+      length: 1,
+      input: "involute",
+      unwinding: { anchor: 2 * Math.PI, offset: 0 },
+      curve: {
+        x: "1+cos(t)",
+        y: "sin(t)",
+        z: "2*sin(t/2)",
+        min: 0,
+        max: 4 * Math.PI,
+        a: 1,
+      },
+      samples: 1200,
+      lines: 48,
     },
   },
 ];

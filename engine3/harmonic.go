@@ -72,17 +72,17 @@ func (h HarmonicCurve) validate() error {
 		return fmt.Errorf("a spatial harmonic curve has 1–8 terms")
 	}
 	if !bounded(h.Center) {
-		return fmt.Errorf("the center c₀ coordinates must be finite and within ±100000")
+		return fieldErr(axis("harmonic.center", h.Center, scalarBounded), "the center c₀ coordinates must be finite and within ±100000")
 	}
 	moving := false
 	for k, term := range h.Terms {
 		switch {
 		case !finite(term.Frequency) || math.Abs(term.Frequency) > maxHarmonicFrequency:
-			return fmt.Errorf("term %d: the frequency must be finite and within ±1000", k+1)
+			return fieldErr(fmt.Sprintf("harmonic.terms.%d.frequency", k), "term %d: the frequency must be finite and within ±1000", k+1)
 		case !bounded(term.Cosine):
-			return fmt.Errorf("term %d: A coordinates must be finite and within ±100000", k+1)
+			return fieldErr(axis(fmt.Sprintf("harmonic.terms.%d.cosine", k), term.Cosine, scalarBounded), "term %d: A coordinates must be finite and within ±100000", k+1)
 		case !bounded(term.Sine):
-			return fmt.Errorf("term %d: B coordinates must be finite and within ±100000", k+1)
+			return fieldErr(axis(fmt.Sprintf("harmonic.terms.%d.sine", k), term.Sine, scalarBounded), "term %d: B coordinates must be finite and within ±100000", k+1)
 		}
 		moving = moving || term.moves()
 	}

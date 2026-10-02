@@ -39,7 +39,8 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // left out (with crosses at poles and jumps) as their own layers. The base
 // curve is always drawn. When a construction is built on a derived input
 // curve, that curve is drawn as the base, and the base curve itself is the
-// parent, with the projection's connectors and pole.
+// parent, with the projection's connectors and pole, or an involute's
+// strings as its connectors.
 export type Layers = {
   surface: boolean;
   rulings: boolean;
@@ -397,8 +398,10 @@ export function buildScene(result: SpatialResult) {
     1,
   );
   // A projection's own connectors, or those of the projection a
-  // construction is built on.
+  // construction is built on; an involute input has strings from the base
+  // instead, with no pole or feet.
   const q = result.projection ?? result.composition;
+  const strung = result.composition?.input === "involute";
   const at = result.projection?.points.find((p) => p);
   const projection = batch(
     vertices(
@@ -411,21 +414,18 @@ export function buildScene(result: SpatialResult) {
   );
   const connectors = batch(
     vertices(
-      (q?.constructions ?? []).flatMap((c) => [
-        c.contact,
-        c.foot,
-        q!.pole,
-        c.foot,
-        c.foot,
-        c.image,
-      ]),
+      (q?.constructions ?? []).flatMap((c) =>
+        strung
+          ? [c.contact, c.image]
+          : [c.contact, c.foot, q!.pole, c.foot, c.foot, c.image],
+      ),
     ),
     "lines",
     4,
   );
   const feet = batch(
     vertices(
-      (q?.constructions ?? []).flatMap((c) =>
+      (strung ? [] : (q?.constructions ?? [])).flatMap((c) =>
         cross(c.foot, result.bounds.radius * 0.006),
       ),
     ),
@@ -433,7 +433,7 @@ export function buildScene(result: SpatialResult) {
     1,
   );
   const pole = batch(
-    vertices(q ? cross(q.pole, result.bounds.radius * 0.03) : []),
+    vertices(q && !strung ? cross(q.pole, result.bounds.radius * 0.03) : []),
     "lines",
     1,
   );

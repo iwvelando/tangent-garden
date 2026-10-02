@@ -67,13 +67,13 @@ func (p PursuitRequest) validate() error {
 	for i, q := range p.Pursuers {
 		switch {
 		case !(Vec3{q.X, q.Y, q.Z}).valid() || math.Max(math.Abs(q.X), math.Max(math.Abs(q.Y), math.Abs(q.Z))) > 1e5:
-			return fmt.Errorf("pursuer %d: the coordinates must be finite and within ±100000", i+1)
+			return fieldErr(axis(fmt.Sprintf("pursuit.pursuers.%d", i), Vec3{q.X, q.Y, q.Z}, bounded), "pursuer %d: the coordinates must be finite and within ±100000", i+1)
 		case !finite(q.Speed) || q.Speed < 0 || q.Speed > 1e5:
-			return fmt.Errorf("pursuer %d: the speed must be finite and within 0–100000", i+1)
+			return fieldErr(fmt.Sprintf("pursuit.pursuers.%d.speed", i), "pursuer %d: the speed must be finite and within 0–100000", i+1)
 		}
 	}
 	if !finite(p.Capture) || p.Capture <= 0 || p.Capture > 1e5 {
-		return fmt.Errorf("the capture distance must be finite, positive, and at most 100000")
+		return fieldErr("pursuit.capture", "the capture distance must be finite, positive, and at most 100000")
 	}
 	return nil
 }
@@ -83,7 +83,7 @@ type spatialChase struct{ *cyclic.Chase }
 
 func (p PursuitRequest) compile() (*spatialChase, error) {
 	if err := domain(p.Min, p.Max); err != nil {
-		return nil, err
+		return nil, named(ends("pursuit.min", "pursuit.max", p.Min), err)
 	}
 	if err := p.validate(); err != nil {
 		return nil, err

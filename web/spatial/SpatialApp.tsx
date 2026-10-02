@@ -1,11 +1,26 @@
 import { StudyExplanation } from "../StudyExplanation";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { EngineClient } from "../engine-client";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { EngineClient, EngineError } from "../engine-client";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
 import { useMediaQuery } from "../useMediaQuery";
 import { useTheme } from "../useTheme";
 import { useDisclosure } from "../useDisclosure";
-import { Field, HelpText, HelpToggle, useHelp } from "../Field";
+import {
+  Field,
+  FieldErrorContext,
+  HelpText,
+  HelpToggle,
+  useHelp,
+  type FieldErrorTarget,
+} from "../Field";
+import { fieldLabel } from "./fields";
 import { AppHeader } from "../AppHeader";
 import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
@@ -29,6 +44,8 @@ import {
   maxFrameStrands,
   maxHarmonicTerms,
   composes,
+  curveDomain,
+  projectsInput,
   takesInput,
   usesSpatialPole,
   type FrameConfig,
@@ -147,9 +164,24 @@ export default function SpatialApp({
     [states, setStates] = useState<Record<string, ScalarState>>({});
   const [frame, setFrame] = useState<Frame | null>(null),
     [settled, setSettled] = useState("");
-  const [error, setError] = useState(""),
+  // The engine's error, and the configuration path of the field it names.
+  const [error, setError] = useState<{ message: string; field?: string }>({
+      message: "",
+    }),
     [renderError, setRenderError] = useState(""),
     [imageBusy, setImageBusy] = useState(false);
+  // The field showing the failure under its control, if any, and the label
+  // of the control last changed.
+  const [claimed, setClaimed] = useState<string | null>(null);
+  const claim = useCallback(
+    (key: string, on: boolean) =>
+      setClaimed((c) => (on ? key : c === key ? null : c)),
+    [],
+  );
+  const touched = useRef<string | null>(null);
+  const touch = useCallback((label: string) => {
+    touched.current = label;
+  }, []);
   const [reset, setReset] = useState(0),
     [refit, setRefit] = useState(0),
     [spinning, setSpinning] = useState(false);
@@ -189,7 +221,7 @@ export default function SpatialApp({
   }, []);
   useEffect(() => {
     let current = true;
-    setError("");
+    setError({ message: "" });
     if (pending || scalarError) {
       setSettled(request);
       return;
@@ -207,7 +239,10 @@ export default function SpatialApp({
         })
         .catch((e: Error) => {
           if (current) {
-            setError(e.message);
+            setError({
+              message: e.message,
+              field: e instanceof EngineError ? e.field : undefined,
+            });
             setSettled(request);
           }
         });
@@ -248,6 +283,7 @@ export default function SpatialApp({
   const choose = (index: string) => {
     if (index === "") return;
     generation.current++;
+    touched.current = null;
     setStates({});
     setPreset(index);
     setCustomOpened(spatialPresets[+index].config.format === "parametric");
@@ -286,6 +322,7 @@ export default function SpatialApp({
   } | null>(null);
   const openStudy = (id: number, study: SpatialStudy) => {
     generation.current++;
+    touched.current = null;
     setStates({});
     setPreset("");
     setCustomOpened(study.config.format === "parametric");
@@ -441,7 +478,28 @@ export default function SpatialApp({
     base: "Base curve",
     "tangent-foot": "Tangent-foot curve",
     orthotomic: "Tangent-line orthotomic",
+    involute: "Involute",
   }[config.input];
+  const unwinding = config.unwinding;
+  // Choosing the involute keeps its anchor where the domain allows, and
+  // otherwise moves it to the domain's middle. The choice applies at once;
+  // the anchor is checked again once evaluations still pending for the
+  // domain land, unless the input or the study has changed meanwhile.
+  const centerAnchor = (c: SpatialConfig) => {
+    const [lo, hi] = curveDomain(c);
+    const anchor = c.unwinding.anchor;
+    return c.input === "involute" && !(anchor >= lo && anchor <= hi)
+      ? { ...c, unwinding: { ...c.unwinding, anchor: (lo + hi) / 2 } }
+      : c;
+  };
+  function chooseInput(input: SpatialConfig["input"]) {
+    update((c) => centerAnchor({ ...c, input }));
+    if (input !== "involute" || jobs.current.size === 0) return;
+    const token = generation.current;
+    void Promise.allSettled([...jobs.current]).then(() => {
+      if (token === generation.current) setConfig(centerAnchor);
+    });
+  }
   const inversionSource = {
     base: "the base curve",
     "tangent-foot": "the tangent-foot curve",
@@ -1250,7 +1308,32 @@ export default function SpatialApp({
   );
   const failure = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
-    : error;
+    : error.message;
+  // Where the failure is shown: under the input that failed to parse, or
+  // under the control the engine's error names, or, for an error about the
+  // whole study, the control just changed; the notebook shows it below the
+  // study only when no such field can.
+  const failureTarget: Pick<FieldErrorTarget, "id" | "label"> = scalarError
+    ? scalarError.control
+      ? { id: scalarError.control }
+      : { label: scalarError.name }
+    : {
+        label:
+          (error.field && fieldLabel(config, error.field)) ??
+          touched.current ??
+          undefined,
+      };
+  const fieldError = useMemo<FieldErrorTarget>(
+    () => ({ ...failureTarget, message: failure, claim, touch }),
+    [failureTarget.id, failureTarget.label, failure],
+  );
+  // Fields outside the study's own controls show only their own inputs'
+  // errors, so a shared label never claims another's.
+  const panelError = useMemo<FieldErrorTarget>(
+    () => ({ ...fieldError, label: undefined }),
+    [fieldError],
+  );
+  const claimedHere = !!failure && claimed !== null;
   const shown = animation?.frame ?? frame,
     camera = animation ? animationCamera(animation) : undefined,
     // A finished animation hands its camera over to be explored.
@@ -1642,15 +1725,32 @@ export default function SpatialApp({
   // What the construction below is built on, when that is a derived curve.
   const builtOn = composing && (
     <p className="bottom-note composition-note">
-      Built on the{" "}
-      {config.input === "orthotomic"
-        ? "tangent-line orthotomic Q(t) = 2H(t) − P"
-        : "tangent-foot curve H(t) = r(t) + ((P − r(t)) · T(t)) T(t)"}{" "}
-      of the base curve r, drawn in grey with its perpendiculars from the pole
-      P. The construction below acts on that curve in place of r: it is
-      evaluated from the base at every sample, never redrawn from a polyline.
+      {config.input === "involute" ? (
+        <>
+          Built on the involute I(t) = r(t) + (c − s(t)) T(t) of the base curve
+          r, unwound by a string of length c from its anchor, drawn in grey with
+          representative strings. The involute runs along the base's principal
+          normal, so the base lies in its normal planes. The construction below
+          acts on it in place of r: arc length is integrated at every point,
+          never measured along a polyline.
+        </>
+      ) : (
+        <>
+          Built on the{" "}
+          {config.input === "orthotomic"
+            ? "tangent-line orthotomic Q(t) = 2H(t) − P"
+            : "tangent-foot curve H(t) = r(t) + ((P − r(t)) · T(t)) T(t)"}{" "}
+          of the base curve r, drawn in grey with its perpendiculars from the
+          pole P. The construction below acts on that curve in place of r: it is
+          evaluated from the base at every sample, never redrawn from a
+          polyline.
+        </>
+      )}
       {composition && composition.cusps > 0
         ? ` It stops or turns back at ${composition.cusps} ${composition.cusps === 1 ? "cusp" : "cusps"}, where the construction is broken rather than joined across.`
+        : ""}
+      {composition && composition.unreached > 0
+        ? ` Arc length does not cross a break of the base, so ${composition.unreached} ${composition.unreached === 1 ? "sample lies" : "samples lie"} beyond the involute's reach.`
         : ""}
     </p>
   );
@@ -2156,445 +2256,488 @@ export default function SpatialApp({
             dark={theme.dark}
           />
           <ScalarStatus.Provider value={scalarStatus}>
-            <div key={generation.current}>
-              <Field label="Spatial definition">
-                <select
-                  value={config.format}
-                  onChange={(e) =>
-                    void definition(e.target.value as SpatialConfig["format"])
-                  }
-                >
-                  <option value="torus">Torus knot generator</option>
-                  <option value="parametric">
-                    Parametric · x(t), y(t), z(t)
-                  </option>
-                  <option value="harmonic">
-                    Harmonic sum · generating vectors
-                  </option>
-                  <option value="field">
-                    Vector field · trajectories r′ = V
-                  </option>
-                  <option value="pursuit">
-                    Pursuit · each chases the next
-                  </option>
-                  <option value="surface">Surface patch · X(u, v)</option>
-                  <option value="rays">Mirror or interface · rays</option>
-                  <option value="implicit">
-                    Implicit surface · F(x, y, z) = c
-                  </option>
-                </select>
-              </Field>
-              {config.format === "harmonic" ? (
-                harmonicControls
-              ) : patched ? (
-                surfaceControls
-              ) : leveled ? (
-                implicitControls
-              ) : flowing ? (
-                fieldControls
-              ) : chasing ? (
-                pursuitControls
-              ) : config.format === "torus" ? (
-                <>
-                  {(
-                    [
-                      ["radius", "Major radius R"],
-                      ["tube", "Minor radius r"],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <Field
-                      key={key}
-                      label={label}
-                      help={
-                        key === "radius"
-                          ? "Distance from the torus center to the tube center. From 0.1 to 20."
-                          : "Tube radius, at least 0.01 and smaller than R."
-                      }
-                    >
-                      <ScalarInput
-                        name={label}
-                        value={config[key]}
-                        onChange={(value) =>
-                          update((c) => ({ ...c, [key]: value }))
-                        }
-                      />
-                    </Field>
-                  ))}
-                  <Field label="Knot winding">
-                    <select
-                      value={`${config.p},${config.q}`}
-                      onChange={(e) => {
-                        const [p, q] = e.target.value.split(",").map(Number);
-                        update((c) => ({ ...c, p, q }));
-                      }}
-                    >
-                      {[
-                        [2, 3],
-                        [2, 5],
-                        [3, 4],
-                        [3, 5],
-                        [4, 5],
-                        [5, 7],
-                      ].map(([p, q]) => (
-                        <option key={`${p},${q}`} value={`${p},${q}`}>
-                          {p} around · {q} through
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </>
-              ) : (
-                <>
-                  {(["x", "y", "z"] as const).map((axis) => (
-                    <Field label={`${axis}(t)`} key={axis}>
-                      <input
-                        value={config.curve[axis]}
-                        spellCheck={false}
-                        onChange={(e) =>
-                          update((c) => ({
-                            ...c,
-                            curve: { ...c.curve, [axis]: e.target.value },
-                          }))
-                        }
-                      />
-                    </Field>
-                  ))}
-                  <div className="pair">
+            <FieldErrorContext.Provider value={fieldError}>
+              <div key={generation.current}>
+                <Field label="Spatial definition">
+                  <select
+                    value={config.format}
+                    onChange={(e) =>
+                      void definition(e.target.value as SpatialConfig["format"])
+                    }
+                  >
+                    <option value="torus">Torus knot generator</option>
+                    <option value="parametric">
+                      Parametric · x(t), y(t), z(t)
+                    </option>
+                    <option value="harmonic">
+                      Harmonic sum · generating vectors
+                    </option>
+                    <option value="field">
+                      Vector field · trajectories r′ = V
+                    </option>
+                    <option value="pursuit">
+                      Pursuit · each chases the next
+                    </option>
+                    <option value="surface">Surface patch · X(u, v)</option>
+                    <option value="rays">Mirror or interface · rays</option>
+                    <option value="implicit">
+                      Implicit surface · F(x, y, z) = c
+                    </option>
+                  </select>
+                </Field>
+                {config.format === "harmonic" ? (
+                  harmonicControls
+                ) : patched ? (
+                  surfaceControls
+                ) : leveled ? (
+                  implicitControls
+                ) : flowing ? (
+                  fieldControls
+                ) : chasing ? (
+                  pursuitControls
+                ) : config.format === "torus" ? (
+                  <>
                     {(
                       [
-                        ["min", "t from"],
-                        ["max", "to"],
+                        ["radius", "Major radius R"],
+                        ["tube", "Minor radius r"],
                       ] as const
                     ).map(([key, label]) => (
-                      <Field label={label} key={key}>
+                      <Field
+                        key={key}
+                        label={label}
+                        help={
+                          key === "radius"
+                            ? "Distance from the torus center to the tube center. From 0.1 to 20."
+                            : "Tube radius, at least 0.01 and smaller than R."
+                        }
+                      >
                         <ScalarInput
                           name={label}
-                          value={config.curve[key]}
+                          value={config[key]}
                           onChange={(value) =>
+                            update((c) => ({ ...c, [key]: value }))
+                          }
+                        />
+                      </Field>
+                    ))}
+                    <Field label="Knot winding">
+                      <select
+                        value={`${config.p},${config.q}`}
+                        onChange={(e) => {
+                          const [p, q] = e.target.value.split(",").map(Number);
+                          update((c) => ({ ...c, p, q }));
+                        }}
+                      >
+                        {[
+                          [2, 3],
+                          [2, 5],
+                          [3, 4],
+                          [3, 5],
+                          [4, 5],
+                          [5, 7],
+                        ].map(([p, q]) => (
+                          <option key={`${p},${q}`} value={`${p},${q}`}>
+                            {p} around · {q} through
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </>
+                ) : (
+                  <>
+                    {(["x", "y", "z"] as const).map((axis) => (
+                      <Field label={`${axis}(t)`} key={axis}>
+                        <input
+                          value={config.curve[axis]}
+                          spellCheck={false}
+                          onChange={(e) =>
                             update((c) => ({
                               ...c,
-                              curve: { ...c.curve, [key]: value },
+                              curve: { ...c.curve, [axis]: e.target.value },
                             }))
                           }
                         />
                       </Field>
                     ))}
-                  </div>
-                  <Field
-                    label="Shape parameter a"
-                    help="Use a in any coordinate expression, then animate it with a parameter track."
-                  >
-                    <ScalarInput
-                      name="Shape parameter a"
-                      value={config.curve.a}
-                      onChange={(value) =>
-                        update((c) => ({
-                          ...c,
-                          curve: { ...c.curve, a: value },
-                        }))
-                      }
-                    />
-                  </Field>
-                  <details {...expressions} className="spatial-details">
-                    <summary>Expression reference</summary>
-                    <p>
-                      Use t, a, pi, e, phi; + − * / ^; sin, cos, tan, asin,
-                      acos, atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt,
-                      abs. Trigonometry uses radians. Write multiplication
-                      explicitly, such as 2*cos(t). Constants only in numeric
-                      controls.
-                    </p>
-                  </details>
-                </>
-              )}
-              {!curveless && (
-                <>
-                  <Field label="Construction">
-                    <select
-                      value={config.construction}
-                      onChange={(e) => {
-                        const construction = e.target
-                          .value as SpatialConfig["construction"];
-                        update((c) => ({ ...c, construction }));
-                      }}
+                    <div className="pair">
+                      {(
+                        [
+                          ["min", "t from"],
+                          ["max", "to"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <Field label={label} key={key}>
+                          <ScalarInput
+                            name={label}
+                            value={config.curve[key]}
+                            onChange={(value) =>
+                              update((c) => ({
+                                ...c,
+                                curve: { ...c.curve, [key]: value },
+                              }))
+                            }
+                          />
+                        </Field>
+                      ))}
+                    </div>
+                    <Field
+                      label="Shape parameter a"
+                      help="Use a in any coordinate expression, then animate it with a parameter track."
                     >
-                      <option value="developable">Tangent developable</option>
-                      <option value="involute">
-                        Involute · unwinding strings
-                      </option>
-                      <option value="tangent-foot">
-                        Tangent-foot projection
-                      </option>
-                      <option value="orthotomic">
-                        Tangent-line orthotomic
-                      </option>
-                      <option value="inversion">Sphere inversion</option>
-                      <option value="framed">
-                        Framed ribbon · offset strands
-                      </option>
-                      <option value="ruled">
-                        Ruled surface · chords & threads
-                      </option>
-                      <option value="canal">Tube · canal surface</option>
-                      <option value="none">None · the curve alone</option>
-                    </select>
-                  </Field>
-                  {takesInput(config) && (
-                    <>
-                      <Field
-                        label="Built on"
-                        help="Build the construction on the base curve, or on its tangent-foot curve or tangent-line orthotomic from the pole. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
+                      <ScalarInput
+                        name="Shape parameter a"
+                        value={config.curve.a}
+                        onChange={(value) =>
+                          update((c) => ({
+                            ...c,
+                            curve: { ...c.curve, a: value },
+                          }))
+                        }
+                      />
+                    </Field>
+                    <details {...expressions} className="spatial-details">
+                      <summary>Expression reference</summary>
+                      <p>
+                        Use t, a, pi, e, phi; + − * / ^; sin, cos, tan, asin,
+                        acos, atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt,
+                        abs. Trigonometry uses radians. Write multiplication
+                        explicitly, such as 2*cos(t). Constants only in numeric
+                        controls.
+                      </p>
+                    </details>
+                  </>
+                )}
+                {!curveless && (
+                  <>
+                    <Field label="Construction">
+                      <select
+                        value={config.construction}
+                        onChange={(e) => {
+                          const construction = e.target
+                            .value as SpatialConfig["construction"];
+                          update((c) => ({ ...c, construction }));
+                        }}
                       >
-                        <select
-                          value={config.input}
-                          onChange={(e) => {
-                            const input = e.target
-                              .value as SpatialConfig["input"];
-                            update((c) => ({ ...c, input }));
-                          }}
+                        <option value="developable">Tangent developable</option>
+                        <option value="involute">
+                          Involute · unwinding strings
+                        </option>
+                        <option value="tangent-foot">
+                          Tangent-foot projection
+                        </option>
+                        <option value="orthotomic">
+                          Tangent-line orthotomic
+                        </option>
+                        <option value="inversion">Sphere inversion</option>
+                        <option value="framed">
+                          Framed ribbon · offset strands
+                        </option>
+                        <option value="ruled">
+                          Ruled surface · chords & threads
+                        </option>
+                        <option value="canal">Tube · canal surface</option>
+                        <option value="none">None · the curve alone</option>
+                      </select>
+                    </Field>
+                    {takesInput(config) && (
+                      <>
+                        <Field
+                          label="Built on"
+                          help="Build the construction on the base curve, on its tangent-foot curve or tangent-line orthotomic from the pole, or on one of its involutes. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
                         >
-                          <option value="base">The base curve</option>
-                          <option value="tangent-foot">
-                            Its tangent-foot curve
-                          </option>
-                          <option value="orthotomic">
-                            Its tangent-line orthotomic
-                          </option>
-                        </select>
-                      </Field>
-                      {composing && poleFields}
-                    </>
-                  )}
-                  {canal ? (
-                    canalControls
-                  ) : ruled ? (
-                    ruledControls
-                  ) : framed ? (
-                    frameControls
-                  ) : inversion ? (
-                    <>
-                      <Field
-                        label="Curve to invert"
-                        help="Invert the base curve, or one of its tangent projections from the pole."
-                      >
-                        <select
-                          value={config.inversion.input}
-                          onChange={(e) => {
-                            const input = e.target
-                              .value as SpatialConfig["inversion"]["input"];
-                            update((c) => ({
-                              ...c,
-                              inversion: { ...c.inversion, input },
-                            }));
-                          }}
+                          <select
+                            value={config.input}
+                            onChange={(e) =>
+                              chooseInput(
+                                e.target.value as SpatialConfig["input"],
+                              )
+                            }
+                          >
+                            <option value="base">The base curve</option>
+                            <option value="tangent-foot">
+                              Its tangent-foot curve
+                            </option>
+                            <option value="orthotomic">
+                              Its tangent-line orthotomic
+                            </option>
+                            <option value="involute">Its involute</option>
+                          </select>
+                        </Field>
+                        {projectsInput(config) && poleFields}
+                        {composing && config.input === "involute" && (
+                          <div className="pair">
+                            <Field
+                              label="Input anchor t₀"
+                              help="Where the input's arc length s starts, as a parameter value inside the domain, on a regular stretch of the base."
+                            >
+                              <ScalarInput
+                                name="Input anchor t₀"
+                                value={unwinding.anchor}
+                                onChange={(value) =>
+                                  update((c) => ({
+                                    ...c,
+                                    unwinding: {
+                                      ...c.unwinding,
+                                      anchor: value,
+                                    },
+                                  }))
+                                }
+                              />
+                            </Field>
+                            <Field
+                              label="Input string c"
+                              help="Signed string length at the input's anchor, within ±100000. The involute has a cusp where s = c, and stops wherever the base is straight."
+                            >
+                              <ScalarInput
+                                name="Input string c"
+                                value={unwinding.offset}
+                                onChange={(value) =>
+                                  update((c) => ({
+                                    ...c,
+                                    unwinding: {
+                                      ...c.unwinding,
+                                      offset: value,
+                                    },
+                                  }))
+                                }
+                              />
+                            </Field>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {canal ? (
+                      canalControls
+                    ) : ruled ? (
+                      ruledControls
+                    ) : framed ? (
+                      frameControls
+                    ) : inversion ? (
+                      <>
+                        <Field
+                          label="Curve to invert"
+                          help="Invert the base curve, or one of its tangent projections from the pole."
                         >
-                          <option value="base">Base curve</option>
-                          <option value="tangent-foot">
-                            Tangent-foot projection
-                          </option>
-                          <option value="orthotomic">
-                            Tangent-line orthotomic
-                          </option>
-                        </select>
-                      </Field>
-                      <div className="pair">
-                        {(["x", "y"] as const).map((axis) => (
+                          <select
+                            value={config.inversion.input}
+                            onChange={(e) => {
+                              const input = e.target
+                                .value as SpatialConfig["inversion"]["input"];
+                              update((c) => ({
+                                ...c,
+                                inversion: { ...c.inversion, input },
+                              }));
+                            }}
+                          >
+                            <option value="base">Base curve</option>
+                            <option value="tangent-foot">
+                              Tangent-foot projection
+                            </option>
+                            <option value="orthotomic">
+                              Tangent-line orthotomic
+                            </option>
+                          </select>
+                        </Field>
+                        <div className="pair">
+                          {(["x", "y"] as const).map((axis) => (
+                            <Field
+                              key={axis}
+                              label={`Center ${axis}`}
+                              help={`Inversion center coordinate ${axis}, within ±100000. The center itself has no image.`}
+                            >
+                              <ScalarInput
+                                name={`Center ${axis}`}
+                                value={config.inversion.center[axis]}
+                                onChange={(value) =>
+                                  update((c) => ({
+                                    ...c,
+                                    inversion: {
+                                      ...c.inversion,
+                                      center: {
+                                        ...c.inversion.center,
+                                        [axis]: value,
+                                      },
+                                    },
+                                  }))
+                                }
+                              />
+                            </Field>
+                          ))}
+                        </div>
+                        <div className="pair">
                           <Field
-                            key={axis}
-                            label={`Center ${axis}`}
-                            help={`Inversion center coordinate ${axis}, within ±100000. The center itself has no image.`}
+                            label="Center z"
+                            help="Height of the inversion center, within ±100000."
                           >
                             <ScalarInput
-                              name={`Center ${axis}`}
-                              value={config.inversion.center[axis]}
+                              name="Center z"
+                              value={config.inversion.center.z}
                               onChange={(value) =>
                                 update((c) => ({
                                   ...c,
                                   inversion: {
                                     ...c.inversion,
-                                    center: {
-                                      ...c.inversion.center,
-                                      [axis]: value,
-                                    },
+                                    center: { ...c.inversion.center, z: value },
                                   },
                                 }))
                               }
                             />
                           </Field>
-                        ))}
-                      </div>
-                      <div className="pair">
+                          <Field
+                            label="Sphere radius R"
+                            help="Radius of the inversion sphere, greater than 0 and at most 100000. Points on it stay fixed."
+                          >
+                            <ScalarInput
+                              name="Sphere radius R"
+                              value={config.inversion.radius}
+                              onChange={(value) =>
+                                update((c) => ({
+                                  ...c,
+                                  inversion: { ...c.inversion, radius: value },
+                                }))
+                              }
+                            />
+                          </Field>
+                        </div>
+                        {config.inversion.input !== "base" && poleFields}
+                      </>
+                    ) : projection ? (
+                      poleFields
+                    ) : involute ? (
+                      <>
                         <Field
-                          label="Center z"
-                          help="Height of the inversion center, within ±100000."
+                          label="Anchor t₀"
+                          help="Where arc length s starts, as a parameter value inside the domain. The string there has length c."
                         >
                           <ScalarInput
-                            name="Center z"
-                            value={config.inversion.center.z}
+                            name="Anchor t₀"
+                            value={config.involute.anchor}
                             onChange={(value) =>
                               update((c) => ({
                                 ...c,
-                                inversion: {
-                                  ...c.inversion,
-                                  center: { ...c.inversion.center, z: value },
+                                involute: { ...c.involute, anchor: value },
+                              }))
+                            }
+                          />
+                        </Field>
+                        <label className="check">
+                          <input
+                            type="checkbox"
+                            checked={config.involute.family.enabled}
+                            onChange={(e) => {
+                              const enabled = e.target.checked;
+                              update((c) => ({
+                                ...c,
+                                involute: {
+                                  ...c.involute,
+                                  family: { ...c.involute.family, enabled },
                                 },
-                              }))
-                            }
+                              }));
+                            }}
                           />
-                        </Field>
-                        <Field
-                          label="Sphere radius R"
-                          help="Radius of the inversion sphere, greater than 0 and at most 100000. Points on it stay fixed."
-                        >
-                          <ScalarInput
-                            name="Sphere radius R"
-                            value={config.inversion.radius}
-                            onChange={(value) =>
-                              update((c) => ({
-                                ...c,
-                                inversion: { ...c.inversion, radius: value },
-                              }))
-                            }
-                          />
-                        </Field>
-                      </div>
-                      {config.inversion.input !== "base" && poleFields}
-                    </>
-                  ) : projection ? (
-                    poleFields
-                  ) : involute ? (
-                    <>
+                          Family of involutes
+                        </label>
+                        {config.involute.family.enabled ? (
+                          <>
+                            <div className="pair">
+                              {(
+                                [
+                                  ["from", "c from"],
+                                  ["to", "c to"],
+                                ] as const
+                              ).map(([key, label]) => (
+                                <Field
+                                  label={label}
+                                  key={key}
+                                  help={
+                                    key === "from"
+                                      ? "String length of the first filament, within ±100000."
+                                      : "String length of the last; members are evenly spaced."
+                                  }
+                                >
+                                  <ScalarInput
+                                    name={label}
+                                    value={config.involute.family[key]}
+                                    onChange={(value) =>
+                                      update((c) => ({
+                                        ...c,
+                                        involute: {
+                                          ...c.involute,
+                                          family: {
+                                            ...c.involute.family,
+                                            [key]: value,
+                                          },
+                                        },
+                                      }))
+                                    }
+                                  />
+                                </Field>
+                              ))}
+                            </div>
+                            <Field
+                              label="Involutes"
+                              help="From 2 to 24 filaments, and at most 48,000 points in all (involutes × samples)."
+                            >
+                              <input
+                                type="number"
+                                min="2"
+                                max="24"
+                                step="1"
+                                value={
+                                  Number.isNaN(config.involute.family.count)
+                                    ? ""
+                                    : config.involute.family.count
+                                }
+                                onChange={(e) => {
+                                  const count = e.target.valueAsNumber;
+                                  update((c) => ({
+                                    ...c,
+                                    involute: {
+                                      ...c.involute,
+                                      family: { ...c.involute.family, count },
+                                    },
+                                  }));
+                                }}
+                              />
+                            </Field>
+                          </>
+                        ) : (
+                          <Field
+                            label="String length c"
+                            help="Signed length of the string at the anchor, within ±100000. The filament touches the curve where s = c."
+                          >
+                            <ScalarInput
+                              name="String length c"
+                              value={config.involute.offset}
+                              onChange={(value) =>
+                                update((c) => ({
+                                  ...c,
+                                  involute: { ...c.involute, offset: value },
+                                }))
+                              }
+                            />
+                          </Field>
+                        )}
+                      </>
+                    ) : none ? null : (
                       <Field
-                        label="Anchor t₀"
-                        help="Where arc length s starts, as a parameter value inside the domain. The string there has length c."
+                        label="Tangent reach L"
+                        help="Half-length of each straight tangent segment, in world units. Greater than 0 and at most 20."
                       >
                         <ScalarInput
-                          name="Anchor t₀"
-                          value={config.involute.anchor}
+                          name="Tangent reach L"
+                          value={config.length}
                           onChange={(value) =>
-                            update((c) => ({
-                              ...c,
-                              involute: { ...c.involute, anchor: value },
-                            }))
+                            update((c) => ({ ...c, length: value }))
                           }
                         />
                       </Field>
-                      <label className="check">
-                        <input
-                          type="checkbox"
-                          checked={config.involute.family.enabled}
-                          onChange={(e) => {
-                            const enabled = e.target.checked;
-                            update((c) => ({
-                              ...c,
-                              involute: {
-                                ...c.involute,
-                                family: { ...c.involute.family, enabled },
-                              },
-                            }));
-                          }}
-                        />
-                        Family of involutes
-                      </label>
-                      {config.involute.family.enabled ? (
-                        <>
-                          <div className="pair">
-                            {(
-                              [
-                                ["from", "c from"],
-                                ["to", "c to"],
-                              ] as const
-                            ).map(([key, label]) => (
-                              <Field
-                                label={label}
-                                key={key}
-                                help={
-                                  key === "from"
-                                    ? "String length of the first filament, within ±100000."
-                                    : "String length of the last; members are evenly spaced."
-                                }
-                              >
-                                <ScalarInput
-                                  name={label}
-                                  value={config.involute.family[key]}
-                                  onChange={(value) =>
-                                    update((c) => ({
-                                      ...c,
-                                      involute: {
-                                        ...c.involute,
-                                        family: {
-                                          ...c.involute.family,
-                                          [key]: value,
-                                        },
-                                      },
-                                    }))
-                                  }
-                                />
-                              </Field>
-                            ))}
-                          </div>
-                          <Field
-                            label="Involutes"
-                            help="From 2 to 24 filaments, and at most 48,000 points in all (involutes × samples)."
-                          >
-                            <input
-                              type="number"
-                              min="2"
-                              max="24"
-                              step="1"
-                              value={
-                                Number.isNaN(config.involute.family.count)
-                                  ? ""
-                                  : config.involute.family.count
-                              }
-                              onChange={(e) => {
-                                const count = e.target.valueAsNumber;
-                                update((c) => ({
-                                  ...c,
-                                  involute: {
-                                    ...c.involute,
-                                    family: { ...c.involute.family, count },
-                                  },
-                                }));
-                              }}
-                            />
-                          </Field>
-                        </>
-                      ) : (
-                        <Field
-                          label="String length c"
-                          help="Signed length of the string at the anchor, within ±100000. The filament touches the curve where s = c."
-                        >
-                          <ScalarInput
-                            name="String length c"
-                            value={config.involute.offset}
-                            onChange={(value) =>
-                              update((c) => ({
-                                ...c,
-                                involute: { ...c.involute, offset: value },
-                              }))
-                            }
-                          />
-                        </Field>
-                      )}
-                    </>
-                  ) : none ? null : (
-                    <Field
-                      label="Tangent reach L"
-                      help="Half-length of each straight tangent segment, in world units. Greater than 0 and at most 20."
-                    >
-                      <ScalarInput
-                        name="Tangent reach L"
-                        value={config.length}
-                        onChange={(value) =>
-                          update((c) => ({ ...c, length: value }))
-                        }
-                      />
-                    </Field>
-                  )}
-                </>
-              )}
-            </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </FieldErrorContext.Provider>
           </ScalarStatus.Provider>
           <p className="spatial-caption">
             Constant expressions welcome: pi, e, phi.
@@ -2709,13 +2852,18 @@ export default function SpatialApp({
                                           ["rulings", "Tangent rulings"],
                                           ["edges", "Ribbon edges"],
                                         ] as const)),
-                        ...(composing
+                        ...(composing && config.input === "involute"
                           ? ([
                               ["parent", "Base curve"],
-                              ["connectors", "Perpendiculars & tangent feet"],
-                              ["pole", "Pole marker"],
+                              ["connectors", "Strings from the base"],
                             ] as const)
-                          : []),
+                          : composing
+                            ? ([
+                                ["parent", "Base curve"],
+                                ["connectors", "Perpendiculars & tangent feet"],
+                                ["pole", "Pole marker"],
+                              ] as const)
+                            : []),
                         ...(config.format === "harmonic"
                           ? ([
                               ["vectors", "Vector sums"],
@@ -2752,21 +2900,23 @@ export default function SpatialApp({
             </fieldset>
           )}
           <ScalarStatus.Provider value={scalarStatus}>
-            <CutPanel
-              cut={cut}
-              onCut={setCut}
-              error={userCut.error}
-              onFace={faceView}
-              onCenter={centerCut}
-              onFlip={flipCut}
-              peeling={animation?.cut !== undefined}
-            />
-            <SightPanel
-              sight={sight}
-              onSight={setSight}
-              error={userSight.error}
-              unavailable={!seeThrough}
-            />
+            <FieldErrorContext.Provider value={panelError}>
+              <CutPanel
+                cut={cut}
+                onCut={setCut}
+                error={userCut.error}
+                onFace={faceView}
+                onCenter={centerCut}
+                onFlip={flipCut}
+                peeling={animation?.cut !== undefined}
+              />
+              <SightPanel
+                sight={sight}
+                onSight={setSight}
+                error={userSight.error}
+                unavailable={!seeThrough}
+              />
+            </FieldErrorContext.Provider>
           </ScalarStatus.Provider>
           <ProbePanel
             config={config}
@@ -2777,246 +2927,253 @@ export default function SpatialApp({
             at={moving?.probe}
             dark={theme.dark}
           />
-          <details className="spatial-details">
-            <summary>Sampling & definition</summary>
-            {leveled ? (
-              <>
-                <div className="pair">
-                  <Field
-                    label="Cells"
-                    help={`${minImplicitCells}–${maxImplicitCells} cells along the box's longest side, as many along the others as keeps them nearest to cubes, and at most ${maxImplicitGrid.toLocaleString()} in all.`}
-                  >
-                    <input
-                      type="number"
-                      min={minImplicitCells}
-                      max={maxImplicitCells}
-                      step="1"
-                      value={
-                        Number.isNaN(config.implicit.cells)
-                          ? ""
-                          : config.implicit.cells
-                      }
-                      onChange={(e) => {
-                        const cells = e.target.valueAsNumber;
-                        setImplicit((q) => ({ ...q, cells }));
-                      }}
-                    />
-                  </Field>
-                  <Field
-                    label="Refinement levels"
-                    help={`0–${maxImplicitRefine} octree levels; 0 meshes the grid alone. Where an edge of the grid's tetrahedra has both ends on one side of the level and its midpoint on the other, every tetrahedron around it is halved, and the halves are tested in turn, each level halving the cell, up to ${maxRefinedTetrahedra.toLocaleString()} tetrahedra.`}
-                  >
-                    <input
-                      type="number"
-                      min={0}
-                      max={maxImplicitRefine}
-                      step="1"
-                      value={
-                        Number.isNaN(config.implicit.refine)
-                          ? ""
-                          : config.implicit.refine
-                      }
-                      onChange={(e) => {
-                        const refine = e.target.valueAsNumber;
-                        setImplicit((q) => ({ ...q, refine }));
-                      }}
-                    />
-                  </Field>
-                </div>
-                <SamplingNote>
-                  F is evaluated at every grid point, and every cube is split
-                  into six tetrahedra around its diagonal, the same way in every
-                  cube, so neighbours agree on their shared faces. Within a
-                  tetrahedron the surface is one triangle or two, with no
-                  ambiguous case; a grid face whose corners alternate is
-                  counted, since there the split, not F, decides whether the
-                  surface joins. Each vertex is found on F itself, by false
-                  position with bisection, to 10⁻¹² of its edge, and a sign
-                  change whose value does not shrink with its bracket is a pole
-                  or a jump, never meshed. Cubes touching a point where F is not
-                  finite are left out. Normals are ∇F by five-point differences,
-                  not the mesh&rsquo;s. Sections are traced as the 2D notebook
-                  traces implicit curves, on their own grid of four times the
-                  box&rsquo;s cells, at most 256, and refined to a thousandth of
-                  a cell. The mesh is limited to 200,000 triangles and 400,000
-                  grid edges searched; the sections share 65,536 bisected edges
-                  and 131,072 points. Refinement samples F at the midpoint of
-                  every edge of the tetrahedra, and halves those around an edge
-                  whose midpoint lies across the level from both its ends: a
-                  neck, gap or thread thinner than a cell, or a face whose
-                  diagonal joins what its centre separates. Tetrahedra are
-                  halved by newest-vertex bisection, together with every one on
-                  the same edge, so the mesh never cracks where sizes meet.
-                  Refinement only follows what its samples see: a piece that
-                  falls between all of them is still missed.
-                </SamplingNote>
-              </>
-            ) : patched ? (
-              <>
-                <div className="pair">
-                  {(
-                    [
-                      ["uSamples", "u samples"],
-                      ["vSamples", "v samples"],
-                    ] as const
-                  ).map(([key, label]) => (
+          <FieldErrorContext.Provider value={fieldError}>
+            <details className="spatial-details">
+              <summary>Sampling & definition</summary>
+              {leveled ? (
+                <>
+                  <div className="pair">
                     <Field
-                      key={key}
-                      label={label}
-                      help={
-                        key === "uSamples"
-                          ? `12–240 cells each way, and at most ${maxSurfaceCells.toLocaleString()} in all.`
-                          : undefined
-                      }
+                      label="Cells"
+                      help={`${minImplicitCells}–${maxImplicitCells} cells along the box's longest side, as many along the others as keeps them nearest to cubes, and at most ${maxImplicitGrid.toLocaleString()} in all.`}
                     >
                       <input
                         type="number"
-                        min="12"
-                        max="240"
+                        min={minImplicitCells}
+                        max={maxImplicitCells}
                         step="1"
                         value={
-                          Number.isNaN(config.surface[key])
+                          Number.isNaN(config.implicit.cells)
                             ? ""
-                            : config.surface[key]
+                            : config.implicit.cells
                         }
                         onChange={(e) => {
-                          const value = e.target.valueAsNumber;
-                          setSurface((s) => ({ ...s, [key]: value }));
+                          const cells = e.target.valueAsNumber;
+                          setImplicit((q) => ({ ...q, cells }));
                         }}
                       />
                     </Field>
-                  ))}
-                </div>
-                <Field
-                  label="Parameter curves"
-                  help={
-                    mirroring
-                      ? `2–${maxSurfaceCurves} curves each way, drawn on the ${face} and its caustics; rays stand where they cross.`
-                      : `2–${maxSurfaceCurves} curves each way, drawn on the surface and its focal sheets; normal lines stand where they cross.`
-                  }
-                >
-                  <input
-                    type="number"
-                    min="2"
-                    max={maxSurfaceCurves}
-                    step="1"
-                    value={
-                      Number.isNaN(config.surface.curves)
-                        ? ""
-                        : config.surface.curves
-                    }
-                    onChange={(e) => {
-                      const curves = e.target.valueAsNumber;
-                      setSurface((s) => ({ ...s, curves }));
-                    }}
-                  />
-                </Field>
-                {mirroring ? (
+                    <Field
+                      label="Refinement levels"
+                      help={`0–${maxImplicitRefine} octree levels; 0 meshes the grid alone. Where an edge of the grid's tetrahedra has both ends on one side of the level and its midpoint on the other, every tetrahedron around it is halved, and the halves are tested in turn, each level halving the cell, up to ${maxRefinedTetrahedra.toLocaleString()} tetrahedra.`}
+                    >
+                      <input
+                        type="number"
+                        min={0}
+                        max={maxImplicitRefine}
+                        step="1"
+                        value={
+                          Number.isNaN(config.implicit.refine)
+                            ? ""
+                            : config.implicit.refine
+                        }
+                        onChange={(e) => {
+                          const refine = e.target.valueAsNumber;
+                          setImplicit((q) => ({ ...q, refine }));
+                        }}
+                      />
+                    </Field>
+                  </div>
                   <SamplingNote>
-                    Positions, normals and their derivatives come from each
-                    patch&rsquo;s exact first and second derivatives at every
-                    grid sample, and so do the outgoing rays&rsquo; directions
-                    and derivatives. Caustic points are the centres of curvature
-                    of the outgoing wavefront, from its shape operator across
-                    each ray. A caustic edge is joined only when its curvature
-                    keeps its sign and the caustic point halfway along it is
-                    lit, finite, and between its ends, so a caustic is never
-                    joined through infinity, past the edge of the light, or
-                    across its own cusps. Caustic points beyond 100 surface
-                    radii are treated as at infinity. A receiver takes each
-                    cell&rsquo;s flux from its midpoint, spreads it evenly over
-                    the two triangles its corners&rsquo; rays make on the plane,
-                    and gives every bin the flux inside it, by exact area.
+                    F is evaluated at every grid point, and every cube is split
+                    into six tetrahedra around its diagonal, the same way in
+                    every cube, so neighbours agree on their shared faces.
+                    Within a tetrahedron the surface is one triangle or two,
+                    with no ambiguous case; a grid face whose corners alternate
+                    is counted, since there the split, not F, decides whether
+                    the surface joins. Each vertex is found on F itself, by
+                    false position with bisection, to 10⁻¹² of its edge, and a
+                    sign change whose value does not shrink with its bracket is
+                    a pole or a jump, never meshed. Cubes touching a point where
+                    F is not finite are left out. Normals are ∇F by five-point
+                    differences, not the mesh&rsquo;s. Sections are traced as
+                    the 2D notebook traces implicit curves, on their own grid of
+                    four times the box&rsquo;s cells, at most 256, and refined
+                    to a thousandth of a cell. The mesh is limited to 200,000
+                    triangles and 400,000 grid edges searched; the sections
+                    share 65,536 bisected edges and 131,072 points. Refinement
+                    samples F at the midpoint of every edge of the tetrahedra,
+                    and halves those around an edge whose midpoint lies across
+                    the level from both its ends: a neck, gap or thread thinner
+                    than a cell, or a face whose diagonal joins what its centre
+                    separates. Tetrahedra are halved by newest-vertex bisection,
+                    together with every one on the same edge, so the mesh never
+                    cracks where sizes meet. Refinement only follows what its
+                    samples see: a piece that falls between all of them is still
+                    missed.
                   </SamplingNote>
-                ) : (
+                </>
+              ) : patched ? (
+                <>
+                  <div className="pair">
+                    {(
+                      [
+                        ["uSamples", "u samples"],
+                        ["vSamples", "v samples"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <Field
+                        key={key}
+                        label={label}
+                        help={
+                          key === "uSamples"
+                            ? `12–240 cells each way, and at most ${maxSurfaceCells.toLocaleString()} in all.`
+                            : undefined
+                        }
+                      >
+                        <input
+                          type="number"
+                          min="12"
+                          max="240"
+                          step="1"
+                          value={
+                            Number.isNaN(config.surface[key])
+                              ? ""
+                              : config.surface[key]
+                          }
+                          onChange={(e) => {
+                            const value = e.target.valueAsNumber;
+                            setSurface((s) => ({ ...s, [key]: value }));
+                          }}
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                  <Field
+                    label="Parameter curves"
+                    help={
+                      mirroring
+                        ? `2–${maxSurfaceCurves} curves each way, drawn on the ${face} and its caustics; rays stand where they cross.`
+                        : `2–${maxSurfaceCurves} curves each way, drawn on the surface and its focal sheets; normal lines stand where they cross.`
+                    }
+                  >
+                    <input
+                      type="number"
+                      min="2"
+                      max={maxSurfaceCurves}
+                      step="1"
+                      value={
+                        Number.isNaN(config.surface.curves)
+                          ? ""
+                          : config.surface.curves
+                      }
+                      onChange={(e) => {
+                        const curves = e.target.valueAsNumber;
+                        setSurface((s) => ({ ...s, curves }));
+                      }}
+                    />
+                  </Field>
+                  {mirroring ? (
+                    <SamplingNote>
+                      Positions, normals and their derivatives come from each
+                      patch&rsquo;s exact first and second derivatives at every
+                      grid sample, and so do the outgoing rays&rsquo; directions
+                      and derivatives. Caustic points are the centres of
+                      curvature of the outgoing wavefront, from its shape
+                      operator across each ray. A caustic edge is joined only
+                      when its curvature keeps its sign and the caustic point
+                      halfway along it is lit, finite, and between its ends, so
+                      a caustic is never joined through infinity, past the edge
+                      of the light, or across its own cusps. Caustic points
+                      beyond 100 surface radii are treated as at infinity. A
+                      receiver takes each cell&rsquo;s flux from its midpoint,
+                      spreads it evenly over the two triangles its
+                      corners&rsquo; rays make on the plane, and gives every bin
+                      the flux inside it, by exact area.
+                    </SamplingNote>
+                  ) : (
+                    <SamplingNote>
+                      Positions, normals and principal curvatures come from each
+                      patch&rsquo;s exact first and second derivatives at every
+                      grid sample. Where X_u × X_v vanishes the chart is
+                      singular and has no normal. A focal edge is joined only
+                      when its curvature keeps its sign and the focal point
+                      halfway along it is finite and lies between its ends, so a
+                      sheet is never joined through infinity, even between
+                      samples. Centres of curvature beyond 100 surface radii are
+                      treated as at infinity.
+                    </SamplingNote>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Field label="Curve samples">
+                    <input
+                      type="number"
+                      min="240"
+                      max="2400"
+                      step="1"
+                      value={Number.isNaN(config.samples) ? "" : config.samples}
+                      onChange={(e) =>
+                        update((c) => ({
+                          ...c,
+                          samples: e.target.valueAsNumber,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label={
+                      none
+                        ? flowing
+                          ? "Field arrows"
+                          : chasing
+                            ? "Connecting polygons"
+                            : "Representative samples"
+                        : canal
+                          ? "Contact circles"
+                          : ruled
+                            ? "Rulings"
+                            : framed
+                              ? "Frames & cross-lines"
+                              : inversion
+                                ? "Correspondences"
+                                : projection
+                                  ? "Projection constructions"
+                                  : involute
+                                    ? "Unwinding strings"
+                                    : "Tangent lines"
+                    }
+                  >
+                    <input
+                      type="number"
+                      min="12"
+                      max="240"
+                      step="1"
+                      value={Number.isNaN(config.lines) ? "" : config.lines}
+                      onChange={(e) =>
+                        update((c) => ({ ...c, lines: e.target.valueAsNumber }))
+                      }
+                    />
+                  </Field>
                   <SamplingNote>
-                    Positions, normals and principal curvatures come from each
-                    patch&rsquo;s exact first and second derivatives at every
-                    grid sample. Where X_u × X_v vanishes the chart is singular
-                    and has no normal. A focal edge is joined only when its
-                    curvature keeps its sign and the focal point halfway along
-                    it is finite and lies between its ends, so a sheet is never
-                    joined through infinity, even between samples. Centres of
-                    curvature beyond 100 surface radii are treated as at
-                    infinity.
+                    Finite sampling can miss fine detail. Compare resolutions
+                    near poles, stationary points, and tight folds. Invalid
+                    samples and unresolved tangent or normal intervals leave
+                    gaps. Involute arc length uses Simpson's rule on each sample
+                    interval, as does the arc length that spreads a frame's
+                    twist. A transported frame is carried between samples by two
+                    reflections. A harmonic curve's vector sums sit at the same
+                    evenly spaced samples as the construction lines, and its
+                    derivatives are exact. A ruled surface's partner is
+                    evaluated at mt + δ for the same samples, and a second
+                    thread is differentiated like a custom curve. A canal
+                    surface's profile ρ(t) is differentiated the same way,
+                    checked at each interval's midpoint, and drawn on at most
+                    480 contact circles, always including those beside a gap. A
+                    vector field&rsquo;s trajectories are integrated with
+                    adaptive Dormand&ndash;Prince steps, each to its own error
+                    tolerance and within 50,000 steps, and sampled at the same
+                    evenly spaced times; the first one&rsquo;s velocity is the
+                    field itself. A chase is integrated the same way, as one
+                    system, within 40,000 steps, and the first pursuer&rsquo;s
+                    velocity and acceleration come from the pursuit law itself.
                   </SamplingNote>
-                )}
-              </>
-            ) : (
-              <>
-                <Field label="Curve samples">
-                  <input
-                    type="number"
-                    min="240"
-                    max="2400"
-                    step="1"
-                    value={Number.isNaN(config.samples) ? "" : config.samples}
-                    onChange={(e) =>
-                      update((c) => ({ ...c, samples: e.target.valueAsNumber }))
-                    }
-                  />
-                </Field>
-                <Field
-                  label={
-                    none
-                      ? flowing
-                        ? "Field arrows"
-                        : chasing
-                          ? "Connecting polygons"
-                          : "Representative samples"
-                      : canal
-                        ? "Contact circles"
-                        : ruled
-                          ? "Rulings"
-                          : framed
-                            ? "Frames & cross-lines"
-                            : inversion
-                              ? "Correspondences"
-                              : projection
-                                ? "Projection constructions"
-                                : involute
-                                  ? "Unwinding strings"
-                                  : "Tangent lines"
-                  }
-                >
-                  <input
-                    type="number"
-                    min="12"
-                    max="240"
-                    step="1"
-                    value={Number.isNaN(config.lines) ? "" : config.lines}
-                    onChange={(e) =>
-                      update((c) => ({ ...c, lines: e.target.valueAsNumber }))
-                    }
-                  />
-                </Field>
-                <SamplingNote>
-                  Finite sampling can miss fine detail. Compare resolutions near
-                  poles, stationary points, and tight folds. Invalid samples and
-                  unresolved tangent or normal intervals leave gaps. Involute
-                  arc length uses Simpson's rule on each sample interval, as
-                  does the arc length that spreads a frame's twist. A
-                  transported frame is carried between samples by two
-                  reflections. A harmonic curve's vector sums sit at the same
-                  evenly spaced samples as the construction lines, and its
-                  derivatives are exact. A ruled surface's partner is evaluated
-                  at mt + δ for the same samples, and a second thread is
-                  differentiated like a custom curve. A canal surface's profile
-                  ρ(t) is differentiated the same way, checked at each
-                  interval's midpoint, and drawn on at most 480 contact circles,
-                  always including those beside a gap. A vector field&rsquo;s
-                  trajectories are integrated with adaptive Dormand&ndash;Prince
-                  steps, each to its own error tolerance and within 50,000
-                  steps, and sampled at the same evenly spaced times; the first
-                  one&rsquo;s velocity is the field itself. A chase is
-                  integrated the same way, as one system, within 40,000 steps,
-                  and the first pursuer&rsquo;s velocity and acceleration come
-                  from the pursuit law itself.
-                </SamplingNote>
-              </>
-            )}
-          </details>
-          {failure && (
+                </>
+              )}
+            </details>
+          </FieldErrorContext.Provider>
+          {failure && !claimedHere && (
             <p className="error" role="alert">
               {failure}
             </p>

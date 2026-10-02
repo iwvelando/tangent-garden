@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"syscall/js"
 	"tangentgarden/engine"
 	"tangentgarden/engine/expr"
@@ -45,7 +46,14 @@ func main() {
 			result, err = engine3.Compute(q)
 		}
 		if err != nil {
-			b, _ := json.Marshal(map[string]string{"error": err.Error()})
+			// A validation error names its field, for the notebook to show
+			// beside that control.
+			reply := map[string]string{"error": err.Error()}
+			var named *engine3.FieldError
+			if errors.As(err, &named) {
+				reply["field"] = named.Field
+			}
+			b, _ := json.Marshal(reply)
 			return string(b)
 		}
 		encode := func() (string, error) {

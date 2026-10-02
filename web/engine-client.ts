@@ -30,7 +30,7 @@ export class EngineClient {
       if (!task) return;
       clearTimeout(task.timer);
       this.pending.delete(data.id);
-      if (data.error) task.reject(new Error(data.error));
+      if (data.error) task.reject(new EngineError(data.error, data.field));
       else task.resolve(data);
     };
     this.worker.onerror = () =>
@@ -150,4 +150,15 @@ export function boundText(value: number) {
       return `${p === 1 ? "" : p === -1 ? "-" : `${p}*`}pi/${q}`;
   }
   return String(value);
+}
+
+// An engine error, with the configuration path of the field it names when
+// it is about one field (3D studies only).
+export class EngineError extends Error {
+  constructor(
+    message: string,
+    readonly field?: string,
+  ) {
+    super(message);
+  }
 }

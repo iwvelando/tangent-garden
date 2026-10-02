@@ -70,10 +70,10 @@ const (
 
 func (q CanalRequest) validate() error {
 	if !finite(q.Radius) || q.Radius <= 0 || q.Radius > 1e5 {
-		return fmt.Errorf("the radius R must be finite, above 0, and at most 100000")
+		return fieldErr("canal.radius", "the radius R must be finite, above 0, and at most 100000")
 	}
 	if q.Meridians < 0 || q.Meridians > maxMeridians {
-		return fmt.Errorf("use 0–12 meridians")
+		return fieldErr("canal.meridians", "use 0–12 meridians")
 	}
 	return nil
 }
@@ -90,7 +90,7 @@ func (q CanalRequest) frame(f FrameRequest) FrameRequest {
 func (q CanalRequest) radius(span float64) (func(float64) (float64, float64, float64, bool), error) {
 	e, err := expr.Parse(q.Profile)
 	if err != nil {
-		return nil, fmt.Errorf("ρ(t): %w", err)
+		return nil, named("canal.profile", fmt.Errorf("ρ(t): %w", err))
 	}
 	profile := sampled(func(s float64) Vec3 { return Vec3{e(s), 0, 0} }, math.Inf(-1), math.Inf(1), span)
 	return func(s float64) (float64, float64, float64, bool) {
@@ -145,7 +145,7 @@ func canalSurface(c Request, out *Result, radius func(float64) (float64, float64
 		}
 	}
 	if first < 0 {
-		return fmt.Errorf("the sphere radius R·ρ(t) is never positive where the curve is regular; check ρ(t)")
+		return fieldErr("canal.profile", "the sphere radius R·ρ(t) is never positive where the curve is regular; check ρ(t)")
 	}
 	size := 0.0
 	for i := range base {

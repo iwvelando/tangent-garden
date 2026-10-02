@@ -106,10 +106,10 @@ func (q SurfaceRequest) validate() error {
 		return err
 	}
 	if !bounded(q.Offset) {
-		return fmt.Errorf("the offset distance d must be finite and within ±100000")
+		return fieldErr("surface.offset", "the offset distance d must be finite and within ±100000")
 	}
 	if !bounded(q.Reach) {
-		return fmt.Errorf("the normal reach ℓ must be finite and within ±100000")
+		return fieldErr("surface.reach", "the normal reach ℓ must be finite and within ±100000")
 	}
 	return nil
 }
@@ -123,41 +123,51 @@ func (q SurfaceRequest) validatePatch() error {
 	switch q.Kind {
 	case "ellipsoid":
 		if !shape(q.A) || !shape(q.B) || !shape(q.C) {
-			return fmt.Errorf("the semi-axes a, b and c must be finite, positive, and at most 100000")
+			field := "surface.c"
+			if !shape(q.A) {
+				field = "surface.a"
+			} else if !shape(q.B) {
+				field = "surface.b"
+			}
+			return fieldErr(field, "the semi-axes a, b and c must be finite, positive, and at most 100000")
 		}
 	case "torus":
 		if !finite(q.A) || q.A < 0 || q.A > 1e5 {
-			return fmt.Errorf("the major radius R must be finite and within 0–100000")
+			return fieldErr("surface.a", "the major radius R must be finite and within 0–100000")
 		}
 		if !shape(q.B) {
-			return fmt.Errorf("the minor radius r must be finite, positive, and at most 100000")
+			return fieldErr("surface.b", "the minor radius r must be finite, positive, and at most 100000")
 		}
 	case "cylinder":
 		if !shape(q.A) || !shape(q.B) {
-			return fmt.Errorf("the semi-axes a and b must be finite, positive, and at most 100000")
+			return fieldErr(map[bool]string{true: "surface.b", false: "surface.a"}[shape(q.A)], "the semi-axes a and b must be finite, positive, and at most 100000")
 		}
 	case "paraboloid":
 		if !bounded(q.A) || !bounded(q.B) {
-			return fmt.Errorf("the curvatures k₁ and k₂ must be finite and within ±100000")
+			return fieldErr(map[bool]string{true: "surface.b", false: "surface.a"}[bounded(q.A)], "the curvatures k₁ and k₂ must be finite and within ±100000")
 		}
 	case "monkey":
 		if !bounded(q.A) {
-			return fmt.Errorf("the height k must be finite and within ±100000")
+			return fieldErr("surface.a", "the height k must be finite and within ±100000")
 		}
 	default:
-		return fmt.Errorf("unknown surface")
+		return fieldErr("surface.kind", "unknown surface")
 	}
 	if domain(q.UMin, q.UMax) != nil {
-		return fmt.Errorf("u domain: the start must be below the end, within ±1000000, with width 0.000001–100000")
+		return fieldErr(ends("surface.uMin", "surface.uMax", q.UMin), "u domain: the start must be below the end, within ±1000000, with width 0.000001–100000")
 	}
 	if domain(q.VMin, q.VMax) != nil {
-		return fmt.Errorf("v domain: the start must be below the end, within ±1000000, with width 0.000001–100000")
+		return fieldErr(ends("surface.vMin", "surface.vMax", q.VMin), "v domain: the start must be below the end, within ±1000000, with width 0.000001–100000")
 	}
 	if q.USamples < 12 || q.VSamples < 12 || q.USamples > maxSurfaceSamples || q.VSamples > maxSurfaceSamples || q.USamples*q.VSamples > maxSurfaceCells {
-		return fmt.Errorf("use 12–240 samples in each direction, with at most 14,400 cells")
+		field := "surface.vSamples"
+		if q.USamples < 12 || q.USamples > maxSurfaceSamples {
+			field = "surface.uSamples"
+		}
+		return fieldErr(field, "use 12–240 samples in each direction, with at most 14,400 cells")
 	}
 	if q.Curves < 2 || q.Curves > maxSurfaceCurves {
-		return fmt.Errorf("use 2–48 parameter curves in each direction")
+		return fieldErr("surface.curves", "use 2–48 parameter curves in each direction")
 	}
 	return nil
 }

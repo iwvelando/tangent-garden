@@ -797,12 +797,18 @@ test("a link carries a camera path and its flight; refuses turns, views and name
 });
 
 test("a link carries the curve a construction is built on; older links build on the base", async () => {
-  for (const input of ["base", "tangent-foot", "orthotomic"] as const) {
+  for (const input of [
+    "base",
+    "tangent-foot",
+    "orthotomic",
+    "involute",
+  ] as const) {
     const study = spatial();
     study.config = {
       ...study.config,
       construction: "involute",
       input,
+      unwinding: { anchor: 0.25, offset: -Math.PI },
       pole: { x: -1, y: 0.5, z: 2 },
     };
     study.layers = { ...study.layers, parent: false, connectors: false };
@@ -820,4 +826,21 @@ test("a link carries the curve a construction is built on; older links build on 
   const bad = structuredClone(spatial()) as any;
   bad.config.input = "evolute";
   await refused(() => spatialStudy(bad), "config.input");
+});
+
+test("a link carries the involute a construction is built on; older links take the default", async () => {
+  // A link made before the involute input has no unwinding, and draws
+  // exactly as before, since only the involute input reads it.
+  const older = structuredClone(spatial()) as any;
+  delete older.config.unwinding;
+  const read = spatialStudy(older);
+  assert.deepEqual(read.config.unwinding, spatialPresets[0].config.unwinding);
+  assert.equal(read.config.input, "base");
+  const bad = structuredClone(spatial()) as any;
+  bad.config.unwinding.offset = "1";
+  await refused(() => spatialStudy(bad), "config.unwinding.offset");
+  // The inversion's own input does not take the involute.
+  const inverted = structuredClone(spatial()) as any;
+  inverted.config.inversion.input = "involute";
+  await refused(() => spatialStudy(inverted), "config.inversion.input");
 });
