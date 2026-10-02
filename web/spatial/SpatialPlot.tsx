@@ -9,6 +9,7 @@ import {
   type View,
 } from "./renderer";
 import type { Batch } from "./scene";
+import type { CutSpec } from "./cut";
 const noProbe: Batch[] = [];
 export function SpatialPlot({
   result,
@@ -24,6 +25,7 @@ export function SpatialPlot({
   restored,
   onCamera,
   probe = noProbe,
+  cut = null,
 }: {
   result: SpatialResult;
   dark: boolean;
@@ -43,6 +45,8 @@ export function SpatialPlot({
   onCamera?: (camera: SpatialCamera) => void;
   // The parameter probe's batches for this result (see probe.ts).
   probe?: Batch[];
+  // The cutaway plane as drawn (see cut.ts), or none.
+  cut?: CutSpec | null;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
@@ -58,6 +62,7 @@ export function SpatialPlot({
     onViewport,
     onCamera,
     probe,
+    cut,
   });
   state.current = {
     dark,
@@ -67,6 +72,7 @@ export function SpatialPlot({
     onViewport,
     onCamera,
     probe,
+    cut,
   };
   const [error, setError] = useState("");
   const current = (): View =>
@@ -78,9 +84,14 @@ export function SpatialPlot({
   const draw = () => {
     if (!canvas.current?.clientWidth) return;
     const v = current();
+    renderer.current?.setCut(state.current.cut);
     renderer.current?.draw(v, state.current.layers, state.current.dark);
-    // The shown camera, for tests and inspection, without a re-render.
+    // The shown camera and cut, for tests and inspection, without a
+    // re-render.
     canvas.current.dataset.view = JSON.stringify(v);
+    if (state.current.cut)
+      canvas.current.dataset.cut = JSON.stringify(state.current.cut);
+    else delete canvas.current.dataset.cut;
     state.current.onViewport(v);
     state.current.onCamera?.({ ...manual.current });
   };
@@ -132,7 +143,7 @@ export function SpatialPlot({
     renderer.current?.setProbe(probe);
     draw();
   }, [probe]);
-  useEffect(draw, [dark, layers, override]);
+  useEffect(draw, [dark, layers, override, cut]);
   useEffect(() => {
     manual.current =
       restored?.reset === reset ? { ...restored.view } : { ...initialView };

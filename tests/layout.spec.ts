@@ -172,6 +172,18 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
         await page.getByRole("checkbox", { name }).check();
         await expect(page.locator(".spatial-probe .pair")).toBeVisible();
       });
+    // The cut's fields pair only while it is on, on a curve and a surface;
+    // its refusal must not move them either.
+    for (const preset of [
+      "Trefoil · (2, 3)",
+      "An ellipsoid hiding its centers",
+    ])
+      setups.push(async () => {
+        await page.goto("/?study=3d");
+        await choosePreset(page, { label: preset });
+        await page.getByRole("checkbox", { name: "Cut with a plane" }).check();
+        await expect(page.locator(".spatial-cut .pair").first()).toBeVisible();
+      });
     return setups;
   },
   "4D": async (page) => {

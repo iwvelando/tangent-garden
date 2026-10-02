@@ -746,6 +746,41 @@ A mesh like this is a picture of the level set, not a differentiable surface: it
 
 Dropping the discontinuity test, the shared vertex at a grid point, the triangle orientation, the consistent tetrahedra, the second triangle of a quadrilateral, the alternating-corner test, the box-face test for cuts, the vanishing-gradient test, the undefined-cube test, the section frame's axis rule, the section budget's skipping, or the bisection safeguard each makes a test fail. The WebAssembly bridge test checks the sphere, its sections, a pole and validation.
 
+## Spatial cutaway plane
+
+The cut is a drawing setting, not part of the study: Go computes the whole study as it would without it, and the cut only hides part of the drawing. It is the plane `n̂·p = d`, with `n̂ = n/|n|`, in world coordinates. The entered normal `n` may have any nonzero length, each component finite and within ±10⁵. Only its direction counts. The offset `d` is the plane's signed distance from the origin along `n̂`, within ±10⁵. The normal points to the hidden side: whatever lies where `n̂·p > d` is hidden, and points on the plane are kept. **Flip** negates both `n` and `d`, which describes the same plane with the other side hidden. The plane is fixed in space. Orbiting the camera, or animating parameters that move the study's bounds, does not move it.
+
+**What it cuts.** **The surface** cuts only the study's own sheet: the patch, mirror or interface, ribbon, tube, developable or level surface (the `surface` layer). **Every sheet** also cuts the offset, the focal or caustic sheets and the receiver. **Sheets and lines** also cuts the base curve and every construction line. The parameter probe is never cut.
+
+**Drawing.** For each vertex the renderer computes `C = (n̂·(p − c) − (d − n̂·c))/r`, with `c` and `r` the view's center and radius. It does this at the vertex stage's full precision, and the constant is formed in double precision beforehand. `C` is linear in `p`, so interpolating it across a triangle or segment gives its exact value at every fragment, and a fragment of a cut pass with `C > 0` is discarded. Dividing by the radius keeps `C` of order one, so the fragment stage's reduced precision only blurs the boundary by rounding near `C = 0`, well under a pixel.
+
+The vector line drawing applies the same test without WebGL. Each cut sheet triangle carries `n̂·p − d` at its corners. Orthographic projection is affine, so interpolating that value on the page equals interpolating it in space, and a pixel center beyond the plane is left out of the depth raster. A line sample tested against a cut triangle at a point beyond the plane is not hidden by it. A cut line segment from `a` to `b` is clipped in world space before projection, at `t = C_a/(C_a − C_b)`, so it ends exactly on the plane.
+
+**The edge.** The cut edge is where the drawn triangles of the cut sheets cross the plane. A triangle with corners on both sides yields one segment between the crossings of its two crossed edges. Each crossing is interpolated from its edge's corners taken in coordinate order, so the two triangles sharing an edge produce the same point bit for bit and the pieces join. A corner exactly on the plane counts as kept, as in the drawing. A triangle wholly on one side, lying in the plane, or with a nonfinite corner yields nothing, and a zero-length piece is dropped.
+
+The mesh's vertices lie on the surface, so the edge is the section of the drawn piecewise-linear mesh. It is as close to the true section as the mesh is to the surface, and it is not a refined section curve. On a sphere of radius 1.2 cut at `z = 0.5`, every edge point lies inside the exact circle of radius √(1.2² − 0.5²) by at most the sag of the longest mesh edge. Measured at 48 × 24 and 96 × 48 cells, the largest deficit falls from 0.0042 to 0.0013, a ratio of 3.3. That is second order, as chords are, short of a clean factor of four only because the largest deficit is sampled where the plane happens to cross each grid. An implicit surface's **Section curves**, by contrast, are traced on `F` itself (see above).
+
+**Peeling.** The animation **Peel away with the cut** keeps the entered normal and moves `d`. At the start it takes the largest value of `n̂·p` over the points of the passes the cut reaches, as drawn, in single precision. At the end it takes the smallest. At progress `p` the offset is `d_max + (d_min − d_max)·p`, and the ends are exact. At the start nothing is hidden, and at the end all the cut passes are hidden but for points exactly at the minimum. The study and its result never change, so no frame needs the engine.
+
+**Work.** Finding the edge visits each cut triangle once. In Node on an Apple M5 Max this took about 1 ms for a 96 × 96 surface patch (18,432 triangles) and 5 ms for 204,800 triangles, the size of the largest implicit mesh, per plane. It is recomputed only when the plane, the result or the layers change, and once per frame of a peel.
+
+**Checks.** Unit tests verify:
+
+- normalization of `n`, and refusals naming the field for a zero normal, a nonfinite component or offset, and a value beyond ±10⁵;
+- which passes each choice cuts, with the probe and the edge never cut;
+- on the unit cube, the square section of perimeter 4 at `z = 0.25`, every edge point on the plane to 10⁻⁷, each point shared by exactly two pieces, and the regular hexagon of side √2/2 at `x + y + z = 1.5`;
+- a plane through a face, with no zero-length pieces, planes missing the cube, and nonfinite corners;
+- the peel's exact range and ends;
+- in the line drawing, a line behind the kept half still hidden and one behind the cut half shown, cut lines ending exactly at the plane, and the edge visible on its own sheet.
+
+Browser tests verify:
+
+- the sphere's edge circle and its second-order convergence through the real engine;
+- the drawn PNG hiding the sheet beyond the plane at an analytically placed pixel, with the edge in its ink there and in the visible-only lines;
+- a plane beyond the study giving the same PNG as no cut, and line drawings of existing studies byte-identical to those made before the cut existed;
+- the peel's exact endpoints, and an exported MP4 whose first and last frames match still images at those offsets.
+
+
 ## Reference studies
 
 Each of these recipes is a preset, framed independently with equal axis scale. They are mathematical descriptions, not pixel specifications.

@@ -1,3 +1,4 @@
+import type { Cut } from "./cut";
 import type { SpatialConfig } from "./types";
 const base: SpatialConfig = {
   format: "torus",
@@ -148,10 +149,13 @@ const base: SpatialConfig = {
     a: 1,
   },
 };
+// A preset may open with its own cut (see cut.ts); choosing one without
+// turns the cut off.
 export const spatialPresets: {
   name: string;
   detail: string;
   config: SpatialConfig;
+  cut?: Cut;
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -1275,6 +1279,82 @@ export const spatialPresets: {
           count: 3,
         },
       },
+    },
+  },
+  {
+    name: "An ellipsoid hiding its centers",
+    detail:
+      "The whole focal surface lies inside the shell; a cut plane opens the shell to show it",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        // a² < 2c²: every center of curvature lies inside the ellipsoid,
+        // within 0.61 of its quadratic form at the 96 × 96 grid. The whole
+        // shell is drawn; the cut, not the domain, opens it.
+        a: 1.2,
+        b: 1,
+        c: 0.9,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 96,
+        vSamples: 96,
+        curves: 12,
+        reach: 0,
+      },
+    },
+    // Through the center, slanting across the default view, so the section
+    // shows as an ellipse: the shell's near right half is cut away, its
+    // parameter curves left standing, and the focal sheets are whole.
+    cut: {
+      enabled: true,
+      normal: { x: 0.66, y: 0.39, z: 0.64 },
+      offset: 0,
+      cuts: "surface",
+      edge: true,
+    },
+  },
+  {
+    name: "A lamp sealed in an ellipsoid",
+    detail:
+      "The whole spheroidal mirror, cut open: every ray from one focus meets again at the other",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        // Foci at x = ±√(a² − b²) = ±1.
+        a: 1.25,
+        b: 0.75,
+        c: 0.75,
+        reverse: true,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 72,
+        vSamples: 48,
+        curves: 9,
+      },
+      rays: {
+        ...base.rays,
+        light: "point",
+        source: { x: -1, y: 0, z: 0 },
+        length: 0.8,
+      },
+    },
+    // Lengthwise through both foci, slanting towards the default view.
+    cut: {
+      enabled: true,
+      normal: { x: 0.3, y: 0.5, z: 1 },
+      offset: 0,
+      cuts: "surface",
+      edge: true,
     },
   },
 ];

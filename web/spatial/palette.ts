@@ -87,6 +87,12 @@ export const palette = {
     [0.13, 0.3, 0.82],
     [0.52, 0.68, 1],
   ],
+  // The cut's edge (ink 12): a drafting section line, graphite on paper or
+  // chalk on the dark theme, apart from every sheet and construction ink.
+  cut: [
+    [0.13, 0.14, 0.15],
+    [0.95, 0.94, 0.89],
+  ],
 } satisfies Record<string, Pair>;
 
 // A color as a GLSL literal, and a pair chosen by the shader's `dark`
@@ -101,8 +107,10 @@ const mixed = (a: RGB, b: RGB, t: number): RGB =>
 
 // The color the shader gives a line of this ink and phase. Only lines are
 // covered: shaded sheets (ink 0 and below) and receiver bins (7) are not.
+// The cut's edge is ink 12.
 export function lineColor(ink: number, phase: number, dark: boolean): RGB {
   const k = dark ? 1 : 0;
+  if (ink > 11.5) return palette.cut[k];
   if (ink > 10.5) return palette.probeBinormal[k];
   if (ink > 9.5) return palette.probeNormal[k];
   if (ink > 8.5) return palette.probeTangent[k];

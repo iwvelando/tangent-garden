@@ -180,6 +180,47 @@ for (const [preset, name] of [
     expect(video.first.hash).not.toBe(video.last.hash);
   });
 
+test("the cut plane draws, exports and peels through WebKit WebGL and H.264", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "An ellipsoid hiding its centers" });
+  const stage = page.locator(".spatial-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const png = async () => {
+    const image = page.waitForEvent("download");
+    await exportImage(page, "PNG");
+    return readFile((await (await image).path())!);
+  };
+  const cut = await png();
+  expect([cut.readUInt32BE(16), cut.readUInt32BE(20)]).toEqual([2000, 1520]);
+  const enable = page.getByRole("checkbox", { name: "Cut with a plane" });
+  await enable.uncheck();
+  const whole = await png();
+  expect(whole.equals(cut)).toBe(false);
+  await enable.check();
+  expect((await png()).equals(cut)).toBe(true);
+  // A peel exported as H.264 runs from the whole shell to none of it.
+  await open(page, "#spatial-animation-section");
+  await page.getByLabel("Animate", { exact: true }).selectOption("cut");
+  await page.getByLabel("Duration (seconds)").fill("0.4");
+  await open(page, "#spatial-export-settings");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("0.5");
+  const path = (await save(page))!;
+  const data = probe(path);
+  if (data) {
+    expect(data.frames).toBe(6);
+    expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+  }
+  const video = await decodeVideo(page, await readFile(path));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  expect(video.first.hash).not.toBe(video.last.hash);
+});
+
 // An iterated map's density is a PNG embedded in the SVG; drawing that SVG
 // to a canvas must keep it and must not taint the canvas.
 test("PNG export keeps an iterated map's embedded density in WebKit", async ({
