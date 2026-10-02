@@ -14,6 +14,8 @@ import { SpatialPlot } from "./SpatialPlot";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { CutPanel } from "./CutPanel";
 import { cutSpec, defaultCut, type Cut } from "./cut";
+import { SightPanel } from "./SightPanel";
+import { defaultSight, isPlain, sightSpec, type Sight } from "./sight";
 import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
@@ -160,6 +162,11 @@ export default function SpatialApp({
   // The cutaway plane: a drawing setting, never sent to Go.
   const [cut, setCut] = useState<Cut>(defaultCut);
   const userCut = useMemo(() => cutSpec(cut), [cut]);
+  // Seeing through sheets and drawing lines behind them: a drawing setting
+  // too. seeThrough is whether the device could draw see-through sheets.
+  const [sight, setSight] = useState<Sight>(defaultSight);
+  const userSight = useMemo(() => sightSpec(sight), [sight]);
+  const [seeThrough, setSeeThrough] = useState(true);
   const viewport = useRef<View | undefined>(undefined),
     plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
@@ -245,6 +252,7 @@ export default function SpatialApp({
     setConfig(structuredClone(spatialPresets[+index].config));
     // A preset brings its own cut, or none, so it draws as its picture.
     setCut(structuredClone(spatialPresets[+index].cut ?? defaultCut));
+    setSight(structuredClone(spatialPresets[+index].sight ?? defaultSight));
     setProbe((p) => ({
       ...p,
       position: defaultProbe.position,
@@ -274,6 +282,7 @@ export default function SpatialApp({
     setLayers(study.layers);
     setProbe(study.probe);
     setCut(study.cut);
+    setSight(study.sight);
     setRestoredView({ reset: reset + 1, view: study.view });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -299,6 +308,7 @@ export default function SpatialApp({
     // that a mirror's link names the light or the mirror.
     probe: { ...probe, target: probeTarget(config, probe) },
     cut,
+    sight,
   });
   // The cut's buttons compute from its numeric fields, so they wait for
   // evaluations still pending for them; a preset chosen meanwhile wins.
@@ -1283,6 +1293,7 @@ export default function SpatialApp({
       layers,
       dark: theme.dark,
       cut: drawnCut,
+      sight: userSight.spec,
     });
     try {
       const { imageFile } = await import("./export");
@@ -1306,6 +1317,7 @@ export default function SpatialApp({
             }
           : undefined,
         snapshot.cut,
+        snapshot.sight,
       );
       controller.signal.throwIfAborted();
       saveFile(
@@ -2681,6 +2693,12 @@ export default function SpatialApp({
               onFlip={flipCut}
               peeling={animation?.cut !== undefined}
             />
+            <SightPanel
+              sight={sight}
+              onSight={setSight}
+              error={userSight.error}
+              unavailable={!seeThrough}
+            />
           </ScalarStatus.Provider>
           <ProbePanel
             config={config}
@@ -2954,6 +2972,7 @@ export default function SpatialApp({
             disabled={!ready || !active || imageBusy}
             probe={probing ? probe : null}
             cut={userCut.spec}
+            sight={userSight.spec}
             dark={theme.dark}
             layers={layers}
             getCurrentView={() =>
@@ -2974,6 +2993,8 @@ export default function SpatialApp({
           // The entered cut while it is on, as a preset's fingerprint
           // includes it (see examples/index.ts).
           data-cut={cut.enabled ? JSON.stringify(cut) : undefined}
+          // The entered sight when it changes the drawing, likewise.
+          data-sight={isPlain(sight) ? undefined : JSON.stringify(sight)}
           data-progress={animation?.progress}
           data-mode={animation?.mode}
           data-camera={camera ? JSON.stringify(camera) : undefined}
@@ -3057,6 +3078,8 @@ export default function SpatialApp({
                   }}
                   probe={probeDrawing}
                   cut={drawnCut}
+                  sight={userSight.spec}
+                  onSeeThrough={setSeeThrough}
                 />
               ) : (
                 <div className="loading">

@@ -59,7 +59,7 @@ try {
       await gallery.locator(`[data-example="${example.example}"]`).click();
       await gallery.waitFor({ state: "hidden" });
       // The drawing is ready once it shows this example's definition: a 3D
-      // study's with its cut, when it has one.
+      // study's with its cut and sight, when it has them.
       await page.waitForFunction(
         ([notebook, want]) => {
           const spatial = document.querySelector(
@@ -71,8 +71,8 @@ try {
                   ?.dataset.config
               : notebook === "3d"
                 ? spatial?.config &&
-                  (spatial.cut
-                    ? `{"config":${spatial.config},"cut":${spatial.cut}}`
+                  (spatial.cut || spatial.sight
+                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}}`
                     : spatial.config)
                 : document.querySelector(".plot-wrap[aria-busy=false]") &&
                   document.querySelector("#artwork > desc")?.textContent;

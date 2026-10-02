@@ -1424,3 +1424,29 @@ test("the cut plane's normal and offset share the bounded scalar parser", async 
   }
   await expect.poll(async () => (await drawn())?.offset).toBe(-1 / phi);
 });
+
+test("the see-through opacity shares the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  const box = page.getByRole("group", { name: "See through" });
+  await box.getByLabel("Sheets", { exact: true }).selectOption("through");
+  const drawn = async () => {
+    const value = await page
+      .locator("#spatial-artwork")
+      .getAttribute("data-sight");
+    return value ? JSON.parse(value).opacity : undefined;
+  };
+  await field(page, "Opacity α").fill("1/phi^3");
+  await expect.poll(drawn).toBe(1 / phi ** 3);
+  for (const variable of ["t", "x", "a"]) {
+    await field(page, "Opacity α").fill(variable);
+    await expect(page.getByRole("alert").first()).toContainText(
+      "Sheet opacity α",
+    );
+  }
+  await field(page, "Opacity α").fill("pi/10");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect.poll(drawn).toBe(Math.PI / 10);
+});

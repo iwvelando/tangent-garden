@@ -1,4 +1,5 @@
 import type { Cut } from "./cut";
+import type { Sight } from "./sight";
 import type { SpatialConfig } from "./types";
 const base: SpatialConfig = {
   format: "torus",
@@ -149,13 +150,14 @@ const base: SpatialConfig = {
     a: 1,
   },
 };
-// A preset may open with its own cut (see cut.ts); choosing one without
-// turns the cut off.
+// A preset may open with its own cut (see cut.ts) and its own sight (see
+// sight.ts); choosing one without turns them off.
 export const spatialPresets: {
   name: string;
   detail: string;
   config: SpatialConfig;
   cut?: Cut;
+  sight?: Sight;
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -1356,5 +1358,46 @@ export const spatialPresets: {
       cuts: "surface",
       edge: true,
     },
+  },
+  {
+    name: "A Klein bottle passing through itself",
+    detail:
+      "Seen through, the neck turns back, pierces its own wall and opens into the body; drawn opaque, only the outside shows",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        // The usual immersion of the Klein bottle (Stewart 1991, as given
+        // by MathWorld), with x and y exchanged so that the default view
+        // looks along the neck. It meets itself along a curve, where ∇F
+        // vanishes.
+        f: "(x^2 + y^2 + z^2 + 2*x - 1)*((x^2 + y^2 + z^2 - 2*x - 1)^2 - 8*z^2) + 16*y*z*(x^2 + y^2 + z^2 - 2*x - 1)",
+        a: 1,
+        level: 0,
+        // The surface spans x ∈ [−2.45, 3.05], y ∈ [−2.9, 2.9] and
+        // z ∈ [−3.7, 3.7], so the box does not cut it.
+        box: {
+          xMin: -2.7,
+          xMax: 3.3,
+          yMin: -3.1,
+          yMax: 3.1,
+          zMin: -3.9,
+          zMax: 3.9,
+        },
+        // One refinement level closes the slits along the self-intersection
+        // as well as finer cells would, at about a third of their time.
+        cells: 48,
+        refine: 1,
+        // Across the bottle's axis: where the neck is inside the body, a
+        // plane meets both, one curve within the other.
+        sections: {
+          normal: { x: 1, y: 0, z: 0 },
+          from: -2.1,
+          to: 2.7,
+          count: 9,
+        },
+      },
+    },
+    sight: { sheets: "through", opacity: 0.3, hidden: "dashed" },
   },
 ];

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, devices, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { exportImage, openExportSettings, choosePreset, open } from "./helpers";
 import { decodeVideo, probe, frameCoverage } from "./video";
@@ -216,6 +216,51 @@ test("the cut plane draws, exports and peels through WebKit WebGL and H.264", as
     expect(data.frames).toBe(6);
     expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
   }
+  const video = await decodeVideo(page, await readFile(path));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  expect(video.first.hash).not.toBe(video.last.hash);
+});
+
+test("see-through sheets and dashed hidden lines draw and export through WebKit WebGL and H.264", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "A Klein bottle passing through itself" });
+  const stage = page.locator(".spatial-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  // WebKit renders to half-float targets, so the sheets are seen through,
+  // not drawn opaque in their place.
+  await expect(page.locator("#spatial-artwork")).toHaveAttribute(
+    "data-sight",
+    JSON.stringify({ sheets: "through", opacity: 0.3, hidden: "dashed" }),
+  );
+  const box = page.getByRole("group", { name: "See through" });
+  await expect(box.getByText(/cannot draw see-through/)).toHaveCount(0);
+  const png = async () => {
+    const image = page.waitForEvent("download");
+    await exportImage(page, "PNG");
+    return readFile((await (await image).path())!);
+  };
+  const seen = await png();
+  expect([seen.readUInt32BE(16), seen.readUInt32BE(20)]).toEqual([2000, 1520]);
+  const sheets = box.getByLabel("Sheets", { exact: true });
+  await sheets.selectOption("opaque");
+  const opaque = await png();
+  expect(opaque.equals(seen)).toBe(false);
+  await sheets.selectOption("through");
+  expect((await png()).equals(seen)).toBe(true);
+  await open(page, "#spatial-animation-section");
+  await page.getByLabel("Animate", { exact: true }).selectOption("reveal");
+  await page.getByLabel("Duration (seconds)").fill("0.4");
+  await open(page, "#spatial-export-settings");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("0.5");
+  const path = (await save(page))!;
+  const data = probe(path);
+  if (data) expect(data.frames).toBe(6);
   const video = await decodeVideo(page, await readFile(path));
   expect(video.duration).toBeCloseTo(0.4, 3);
   expect(video.first.hash).not.toBe(video.last.hash);
@@ -510,4 +555,47 @@ test("WebKit opens a study link made elsewhere and copies its own", async ({
     return new Response(stream).text();
   });
   expect(reopened).toBe('{"v":1}');
+});
+
+// iOS WebKit ignores padding and height on a select drawn natively, so it
+// shrank to about 21 px and clipped its text until tapped. Every select, in
+// every notebook, must keep the fields' 36 px and padding on a phone.
+// This file already runs in WebKit, so only the phone's viewport, scale,
+// touch and mobile layout are taken from the device.
+const { defaultBrowserType: _, ...iPhone } = devices["iPhone 16 Pro Max"];
+test.describe("on an iPhone", () => {
+  test.use(iPhone);
+  for (const [study, setup] of [
+    ["2d", async () => {}],
+    [
+      "3d",
+      async (page: Page) =>
+        page.getByRole("checkbox", { name: "Cut with a plane" }).check(),
+    ],
+    ["4d", async () => {}],
+  ] as const)
+    test(`every ${study} select keeps the fields' height`, async ({ page }) => {
+      await page.goto(`/?study=${study}`);
+      await expect(page.locator("select:visible").first()).toBeVisible();
+      await setup(page);
+      const selects = await page
+        .locator(".app:visible select")
+        .evaluateAll((els) =>
+          els
+            .filter((e) => (e as HTMLElement).offsetParent !== null)
+            .map((e) => {
+              const s = getComputedStyle(e);
+              return {
+                name: e.getAttribute("aria-label") ?? e.id ?? "",
+                height: Math.round(e.getBoundingClientRect().height),
+                padding: s.paddingTop,
+              };
+            }),
+        );
+      expect(selects.length).toBeGreaterThan(1);
+      for (const s of selects) {
+        expect(s.height, s.name).toBeGreaterThanOrEqual(36);
+        expect(s.padding, s.name).toBe("7px");
+      }
+    });
 });

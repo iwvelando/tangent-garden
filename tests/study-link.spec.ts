@@ -17,6 +17,7 @@ import { spatialPresets } from "../web/spatial/presets";
 import { tesseractPresets } from "../web/tesseract/presets";
 import { defaultLayers } from "../web/spatial/renderer";
 import { defaultCut } from "../web/spatial/cut";
+import { defaultSight } from "../web/spatial/sight";
 import { initialView } from "../web/tesseract/types";
 
 // Links are encoded here independently of the app, with Node's zlib, so a
@@ -80,6 +81,7 @@ const spatial = (i = 0): SpatialStudy => ({
     cuts: "surface",
     edge: false,
   },
+  sight: { sheets: "through", opacity: 0.5, hidden: "dashed" },
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
@@ -550,6 +552,8 @@ test("links made by version 1 keep opening", async () => {
   });
   // Links made before the cut open without it.
   assert.deepEqual(s.cut, defaultCut);
+  // Links made before seeing through open opaque, hiding hidden lines.
+  assert.deepEqual(s.sight, defaultSight);
 
   const fourLink = await readStudyLink(v1["4d"]);
   assert.equal(fourLink.notebook, "4d");
@@ -633,5 +637,50 @@ test("a link carries the cut and a peel; refuses a zero normal and a peel withou
     bad((c) => (c.enabled = false)),
     "animation.mode",
     /only while the cut is on/,
+  );
+});
+
+test("a link carries seeing through; refuses an opacity outside its range or an unknown way", async () => {
+  for (const hidden of ["hide", "faint", "dashed"] as const)
+    for (const sheets of ["opaque", "through"] as const)
+      for (const opacity of [0.05, 0.8]) {
+        const study: SpatialStudy = {
+          ...spatial(),
+          sight: { sheets, opacity, hidden },
+        };
+        const read = await readStudyLink(await writeStudyLink("3d", study));
+        assert.deepEqual(spatialStudy(read.study), study);
+      }
+  // Missing fields take their defaults.
+  const partial = structuredClone(spatial()) as any;
+  partial.sight = { hidden: "faint" };
+  assert.deepEqual(spatialStudy(partial).sight, {
+    ...defaultSight,
+    hidden: "faint",
+  });
+  const bad = (change: (sight: any) => void) => {
+    const s = structuredClone(spatial()) as any;
+    change(s.sight);
+    return () => spatialStudy(s);
+  };
+  await refused(
+    bad((v) => (v.opacity = 0.9)),
+    "sight.opacity",
+  );
+  await refused(
+    bad((v) => (v.opacity = 0.01)),
+    "sight.opacity",
+  );
+  await refused(
+    bad((v) => (v.sheets = "glass")),
+    "sight.sheets",
+  );
+  await refused(
+    bad((v) => (v.hidden = "dotted")),
+    "sight.hidden",
+  );
+  await refused(
+    bad((v) => (v.extra = 1)),
+    "sight.extra",
   );
 });

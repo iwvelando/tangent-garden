@@ -32,6 +32,7 @@ import {
 import type { Layers } from "./renderer";
 import { buildScene, scenePasses } from "./scene";
 import { sweepExtent, sweepOffset, type CutSpec } from "./cut";
+import type { Sight } from "./sight";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "../export-quality";
 import {
@@ -61,6 +62,8 @@ type Session = {
   // range a peel moves it over.
   cut: CutSpec | null;
   extent?: [number, number];
+  // The sight when playback began, for an export.
+  sight: Sight;
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
@@ -78,6 +81,8 @@ type Props = {
   probe: Probe | null;
   // The entered cut while it is on and valid, else null.
   cut: CutSpec | null;
+  // The sight as drawn (see sight.ts).
+  sight: Sight;
   dark: boolean;
   layers: Layers;
   getCurrentView: () => Viewport | undefined;
@@ -101,6 +106,7 @@ export function SpatialAnimationPanel({
   disabled,
   probe,
   cut,
+  sight,
   dark,
   layers,
   getCurrentView,
@@ -559,6 +565,7 @@ export function SpatialAnimationPanel({
         ...(mode === "probe" && { probe: probe! }),
         cut,
         extent,
+        sight,
         camera,
         heldView,
         duration,
@@ -586,6 +593,7 @@ export function SpatialAnimationPanel({
           dark,
           layers: { ...layers },
           cut: s.cut,
+          sight: s.sight,
           signal: controller.signal,
           sample: (p) => sample(s, p, engine),
           onProgress: (completed, total) => {

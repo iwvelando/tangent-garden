@@ -429,6 +429,23 @@ select {
   min-height: 36px;
   padding: 7px 9px;
 }
+/* iOS WebKit ignores padding and height on a natively drawn select, which
+   then shrinks below the fields beside it and clips its text. Drawn without
+   native appearance, every select keeps the fields' metrics, with its arrow
+   drawn here in the muted ink of the current theme. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
 input[type="range"] {
   width: 100%;
   height: 16px;

@@ -10,6 +10,7 @@ import {
 } from "./renderer";
 import type { Batch } from "./scene";
 import type { CutSpec } from "./cut";
+import { defaultSight, isPlain, type Sight } from "./sight";
 const noProbe: Batch[] = [];
 export function SpatialPlot({
   result,
@@ -26,6 +27,8 @@ export function SpatialPlot({
   onCamera,
   probe = noProbe,
   cut = null,
+  sight = defaultSight,
+  onSeeThrough,
 }: {
   result: SpatialResult;
   dark: boolean;
@@ -47,6 +50,10 @@ export function SpatialPlot({
   probe?: Batch[];
   // The cutaway plane as drawn (see cut.ts), or none.
   cut?: CutSpec | null;
+  // Seeing through sheets and lines behind them (see sight.ts), and
+  // whether see-through sheets could be drawn, reported when asked for.
+  sight?: Sight;
+  onSeeThrough?: (available: boolean) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
@@ -63,6 +70,8 @@ export function SpatialPlot({
     onCamera,
     probe,
     cut,
+    sight,
+    onSeeThrough,
   });
   state.current = {
     dark,
@@ -73,6 +82,8 @@ export function SpatialPlot({
     onCamera,
     probe,
     cut,
+    sight,
+    onSeeThrough,
   };
   const [error, setError] = useState("");
   const current = (): View =>
@@ -85,6 +96,10 @@ export function SpatialPlot({
     if (!canvas.current?.clientWidth) return;
     const v = current();
     renderer.current?.setCut(state.current.cut);
+    const shown = state.current.sight;
+    const through =
+      shown.sheets !== "through" || !!renderer.current?.seeThrough();
+    renderer.current?.setSight(shown);
     renderer.current?.draw(v, state.current.layers, state.current.dark);
     // The shown camera and cut, for tests and inspection, without a
     // re-render.
@@ -92,6 +107,12 @@ export function SpatialPlot({
     if (state.current.cut)
       canvas.current.dataset.cut = JSON.stringify(state.current.cut);
     else delete canvas.current.dataset.cut;
+    // The sight as drawn: opaque sheets where they could not be seen
+    // through.
+    const drawn = through ? shown : { ...shown, sheets: "opaque" as const };
+    if (isPlain(drawn)) delete canvas.current.dataset.sight;
+    else canvas.current.dataset.sight = JSON.stringify(drawn);
+    state.current.onSeeThrough?.(through);
     state.current.onViewport(v);
     state.current.onCamera?.({ ...manual.current });
   };
@@ -143,7 +164,7 @@ export function SpatialPlot({
     renderer.current?.setProbe(probe);
     draw();
   }, [probe]);
-  useEffect(draw, [dark, layers, override, cut]);
+  useEffect(draw, [dark, layers, override, cut, sight]);
   useEffect(() => {
     manual.current =
       restored?.reset === reset ? { ...restored.view } : { ...initialView };
