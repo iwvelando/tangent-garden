@@ -259,8 +259,23 @@ export function planarStudy(value: unknown): PlanarStudy {
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
+  const conformed = conform(raw.config, config, presets[0].config, "config");
+  // A polar source's radius or angle that the link leaves out reads as 0, as
+  // its field shows it and as Go takes it; a Cartesian source keeps them
+  // absent.
+  const source = conformed.source;
   const study = {
-    config: conform(raw.config, config, presets[0].config, "config"),
+    config:
+      source.coordinates === "polar"
+        ? {
+            ...conformed,
+            source: {
+              ...source,
+              radius: source.radius ?? 0,
+              theta: source.theta ?? 0,
+            },
+          }
+        : conformed,
     bounds: conform<Bounds>(
       raw.bounds,
       { fields: { min: "text", max: "text" } },

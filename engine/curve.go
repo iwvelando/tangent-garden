@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"math"
 	"tangentgarden/engine/expr"
 )
@@ -35,30 +34,36 @@ type Curve struct {
 type curveFunc func(float64) Vec
 
 func compile(c Curve) (curveFunc, error) {
-	if !finite(c.Min) || !finite(c.Max) {
-		return nil, fmt.Errorf("domain bounds must be finite numbers")
+	if !finite(c.Min) {
+		return nil, fieldErr("min", "domain bounds must be finite numbers")
+	}
+	if !finite(c.Max) {
+		return nil, fieldErr("max", "domain bounds must be finite numbers")
 	}
 	if c.Min == c.Max {
-		return nil, fmt.Errorf("domain start and end are equal (%g): the interval has zero width; keep the start below the end", c.Min)
+		return nil, fieldErr("max", "domain start and end are equal (%g): the interval has zero width; keep the start below the end", c.Min)
 	}
 	if c.Min > c.Max {
-		return nil, fmt.Errorf("domain start (%g) is greater than domain end (%g); keep the start below the end", c.Min, c.Max)
+		return nil, fieldErr("max", "domain start (%g) is greater than domain end (%g); keep the start below the end", c.Min, c.Max)
 	}
-	if math.Abs(c.Min) > 1e6 || math.Abs(c.Max) > 1e6 {
-		return nil, fmt.Errorf("domain bounds must stay within ±1000000")
+	if math.Abs(c.Min) > 1e6 {
+		return nil, fieldErr("min", "domain bounds must stay within ±1000000")
+	}
+	if math.Abs(c.Max) > 1e6 {
+		return nil, fieldErr("max", "domain bounds must stay within ±1000000")
 	}
 	if span := c.Max - c.Min; span < 1e-6 || span > 1e5 {
-		return nil, fmt.Errorf("domain width is %g; supported widths are 0.000001–100000", span)
+		return nil, fieldErr("max", "domain width is %g; supported widths are 0.000001–100000", span)
 	}
 	if c.Format == "roulette" {
 		if err := c.Roulette.validate(); err != nil {
-			return nil, err
+			return nil, within("roulette", err)
 		}
 		return c.Roulette.curve(), nil
 	}
 	if c.Format == "lissajous" {
 		if err := c.Lissajous.validate(); err != nil {
-			return nil, err
+			return nil, within("lissajous", err)
 		}
 		return c.Lissajous.at, nil
 	}
@@ -71,39 +76,39 @@ func compile(c Curve) (curveFunc, error) {
 	}
 	if c.Format == "pursuit" {
 		if err := c.Pursuit.validate(); err != nil {
-			return nil, err
+			return nil, within("pursuit", err)
 		}
 		return newChase(c.Pursuit, c.Min, c.Max, chaseTolerance).pursuer(0), nil
 	}
 	if c.Format == "field" {
 		if err := c.Field.validate(); err != nil {
-			return nil, err
+			return nil, within("field", err)
 		}
 		f, _, err := c.Field.system(c.A)
 		if err != nil {
-			return nil, err
+			return nil, within("field", err)
 		}
 		return newTrajectory(f, c.Field.Seeds[0], c.Min, c.Max, c.Field.Escape, fieldTolerance).curve(), nil
 	}
 	if c.Format == "polar" {
 		r, e := expr.ParseWithParameter(c.R, c.A)
 		if e != nil {
-			return nil, e
+			return nil, &FieldError{"r", e.Error()}
 		}
 		return func(t float64) Vec { return Vec{r(t) * math.Cos(t), r(t) * math.Sin(t)} }, nil
 	}
 	if c.Format == "cartesian" {
 		c.X = "t"
 	} else if c.Format != "parametric" {
-		return nil, fmt.Errorf("unknown curve format")
+		return nil, fieldErr("format", "unknown curve format")
 	}
 	x, e := expr.ParseWithParameter(c.X, c.A)
 	if e != nil {
-		return nil, fmt.Errorf("x: %w", e)
+		return nil, fieldErr("x", "x: %v", e)
 	}
 	y, e := expr.ParseWithParameter(c.Y, c.A)
 	if e != nil {
-		return nil, fmt.Errorf("y: %w", e)
+		return nil, fieldErr("y", "y: %v", e)
 	}
 	return func(t float64) Vec { return Vec{x(t), y(t)} }, nil
 }

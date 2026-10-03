@@ -88,20 +88,23 @@ func Compute(q Request) (Result, error) {
 	out := Result{Rays: []Ray{}, Family: []Path{}, Circles: []Circle{}, Rolling: []Rolling{}, Warnings: []string{}}
 	optical := q.Kind == "catacaustic" || q.Kind == "diacaustic"
 	if !optical && q.Kind != "evolute" && q.Kind != "involute" && q.Kind != "offset" && q.Kind != "rolling" && q.Kind != "envelope" && q.Kind != "inversion" && !usesPole(q.Kind) {
-		return out, fmt.Errorf("unknown construction")
+		return out, fieldErr("kind", "unknown construction")
 	}
 	if usesPole(q.Kind) && !q.Pole.Valid() {
-		return out, fmt.Errorf("pole coordinates must be finite numbers")
+		return out, fieldErr(coordinate("pole", q.Pole, finite), "pole coordinates must be finite numbers")
 	}
-	if q.Samples < 64 || q.Samples > 32768 || q.Lines < 2 || q.Lines > 2048 || q.Lines > q.Samples {
-		return out, fmt.Errorf("samples must be 64–32768 and lines 2–2048, with no more lines than samples")
+	if q.Samples < 64 || q.Samples > 32768 {
+		return out, fieldErr("samples", "samples must be 64–32768 and lines 2–2048, with no more lines than samples")
+	}
+	if q.Lines < 2 || q.Lines > 2048 || q.Lines > q.Samples {
+		return out, fieldErr("lines", "samples must be 64–32768 and lines 2–2048, with no more lines than samples")
 	}
 	if q.Curve.Format == "implicit" {
 		// A level set has no parameter to build a construction on: its
 		// contours are the drawing, with the gradient as construction.
 		res, warnings, err := q.Curve.Implicit.contours(q.Curve.A, q.Lines)
 		if err != nil {
-			return out, err
+			return out, within("curve.implicit", err)
 		}
 		out.Base, out.Derived, out.Virtual, out.Contours = []*Vec{}, []*Vec{}, []bool{}, res
 		out.Warnings = append(out.Warnings, warnings...)
@@ -112,60 +115,74 @@ func Compute(q Request) (Result, error) {
 		// drawing, with the first iterates as construction.
 		res, err := q.Curve.Attractor.density(q.Lines)
 		if err != nil {
-			return out, err
+			return out, within("curve.attractor", err)
 		}
 		out.Base, out.Derived, out.Virtual, out.Attractor = []*Vec{}, []*Vec{}, []bool{}, res
 		return out, nil
 	}
 	if !finite(q.Offset) || math.Abs(q.Offset) > 1e5 {
-		return out, fmt.Errorf("involute offset must be finite and within ±100000")
+		return out, fieldErr("offset", "involute offset must be finite and within ±100000")
 	}
 	if !finite(q.Distance) || math.Abs(q.Distance) > 1e5 {
-		return out, fmt.Errorf("offset distance must be finite and within ±100000")
+		return out, fieldErr("distance", "offset distance must be finite and within ±100000")
 	}
 	if err := validateInput(q.Input, q.Kind, q.Pole); err != nil {
 		return out, err
 	}
 	if q.Kind == "rolling" {
 		if err := q.Rolling.validate(); err != nil {
-			return out, err
+			return out, within("rolling", err)
 		}
 	}
 	var inv *inverter
 	if q.Kind == "inversion" {
 		if err := q.Inversion.validate(); err != nil {
-			return out, err
+			return out, within("inversion", err)
 		}
 		out.Inversion = &InversionResult{Center: q.Inversion.Center, Radius: q.Inversion.Radius, Breaks: []int{}}
 	}
 	stacked := q.Kind == "offset" && q.Stack.Enabled
 	if stacked {
 		if err := q.Stack.validate(q.Samples); err != nil {
-			return out, err
+			return out, within("stack", err)
 		}
 	}
 	if optical && q.Source.Kind == "point" {
 		switch q.Source.Coordinates {
 		case "", "cartesian":
 		case "polar":
-			if !finite(q.Source.Radius) || q.Source.Radius < 0 || !finite(q.Source.Theta) {
-				return out, fmt.Errorf("polar source radius must be finite and nonnegative; theta must be finite (radians)")
+			if !finite(q.Source.Radius) || q.Source.Radius < 0 {
+				return out, fieldErr("source.radius", "polar source radius must be finite and nonnegative; theta must be finite (radians)")
+			}
+			if !finite(q.Source.Theta) {
+				return out, fieldErr("source.theta", "polar source radius must be finite and nonnegative; theta must be finite (radians)")
 			}
 			q.Source.Position = Vec{q.Source.Radius * math.Cos(q.Source.Theta), q.Source.Radius * math.Sin(q.Source.Theta)}
 		default:
-			return out, fmt.Errorf("unknown source coordinate format")
+			return out, fieldErr("source.coordinates", "unknown source coordinate format")
 		}
 		out.SourcePosition = point(q.Source.Position)
 	}
-	if optical && (q.Source.Kind != "point" && q.Source.Kind != "parallel" || !q.Source.Position.Valid() || !finite(q.Source.Angle)) {
-		return out, fmt.Errorf("invalid light source")
+	if optical {
+		switch {
+		case q.Source.Kind != "point" && q.Source.Kind != "parallel":
+			return out, fieldErr("source.kind", "invalid light source")
+		case !q.Source.Position.Valid():
+			return out, fieldErr(coordinate("source.position", q.Source.Position, finite), "invalid light source")
+		case !finite(q.Source.Angle):
+			return out, fieldErr("source.angle", "invalid light source")
+		}
 	}
-	if q.Kind == "diacaustic" && (!finite(q.NIncident) || !finite(q.NTransmitted) || q.NIncident < 0.01 || q.NTransmitted < 0.01 || q.NIncident > 10 || q.NTransmitted > 10) {
-		return out, fmt.Errorf("medium indices must be 0.01–10")
+	index := func(n float64) bool { return finite(n) && n >= 0.01 && n <= 10 }
+	if q.Kind == "diacaustic" && !index(q.NIncident) {
+		return out, fieldErr("nIncident", "medium indices must be 0.01–10")
+	}
+	if q.Kind == "diacaustic" && !index(q.NTransmitted) {
+		return out, fieldErr("nTransmitted", "medium indices must be 0.01–10")
 	}
 	f, err := compile(q.Curve)
 	if err != nil {
-		return out, err
+		return out, within("curve", err)
 	}
 	// The construction acts on g, the base or a curve derived from it.
 	g := inputCurve(q.Input, f, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
@@ -178,18 +195,18 @@ func Compute(q Request) (Result, error) {
 	var mv *mover
 	if q.Kind == "rolling" && q.Rolling.curve() {
 		if mv, out.Moving, err = newMover(q.Rolling, q.Curve.A, q.Samples); err != nil {
-			return out, err
+			return out, within("rolling", err)
 		}
 	}
 	var family *lines
 	var circles *rings
 	if q.Kind == "envelope" && q.Envelope.Mode == "circle" {
 		if circles, err = newRings(q.Envelope, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
-			return out, err
+			return out, within("envelope", err)
 		}
 	} else if q.Kind == "envelope" {
 		if family, err = newLines(q.Envelope, g, q.Curve.A, q.Curve.Min, q.Curve.Max); err != nil {
-			return out, err
+			return out, within("envelope", err)
 		}
 		if family.end != nil {
 			out.Second = make([]*Vec, q.Samples)
@@ -223,7 +240,7 @@ func Compute(q Request) (Result, error) {
 	if q.Curve.Format == "field" {
 		var timed bool
 		if flows, velocity, timed, err = q.Curve.Field.flows(q.Curve.A, lo, hi); err != nil {
-			return out, err
+			return out, within("curve.field", err)
 		}
 		out.Field = newFieldResult(flows, q.Samples, timed)
 		if w := exhaustedWarning(flows); w != "" {

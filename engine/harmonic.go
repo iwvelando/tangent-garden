@@ -62,12 +62,16 @@ func (l Lissajous) validate() error {
 	amplitude := func(x float64) bool { return finite(x) && x >= 0 && x <= 1e5 }
 	frequency := func(x float64) bool { return finite(x) && math.Abs(x) <= maxFrequency }
 	switch {
-	case !amplitude(l.AmplitudeX) || !amplitude(l.AmplitudeY):
-		return fmt.Errorf("Lissajous amplitudes A and B must be finite and within 0–100000")
-	case !frequency(l.FrequencyX) || !frequency(l.FrequencyY):
-		return fmt.Errorf("Lissajous frequencies m and n must be finite and within ±1000")
+	case !amplitude(l.AmplitudeX):
+		return fieldErr("amplitudeX", "Lissajous amplitudes A and B must be finite and within 0–100000")
+	case !amplitude(l.AmplitudeY):
+		return fieldErr("amplitudeY", "Lissajous amplitudes A and B must be finite and within 0–100000")
+	case !frequency(l.FrequencyX):
+		return fieldErr("frequencyX", "Lissajous frequencies m and n must be finite and within ±1000")
+	case !frequency(l.FrequencyY):
+		return fieldErr("frequencyY", "Lissajous frequencies m and n must be finite and within ±1000")
 	case !finite(l.Phase) || math.Abs(l.Phase) > 1e6:
-		return fmt.Errorf("the Lissajous phase φ must be finite and within ±1000000 radians")
+		return fieldErr("phase", "the Lissajous phase φ must be finite and within ±1000000 radians")
 	}
 	return nil
 }
@@ -79,11 +83,11 @@ func validateTerms(terms []Term) error {
 	for k, term := range terms {
 		switch {
 		case !finite(term.Radius) || term.Radius < 0 || term.Radius > 1e5:
-			return fmt.Errorf("term %d: the radius must be finite and within 0–100000", k+1)
+			return fieldErr(fmt.Sprintf("terms.%d.radius", k), "term %d: the radius must be finite and within 0–100000", k+1)
 		case !finite(term.Frequency) || math.Abs(term.Frequency) > maxFrequency:
-			return fmt.Errorf("term %d: the frequency must be finite and within ±1000", k+1)
+			return fieldErr(fmt.Sprintf("terms.%d.frequency", k), "term %d: the frequency must be finite and within ±1000", k+1)
 		case !finite(term.Phase) || math.Abs(term.Phase) > 1e6:
-			return fmt.Errorf("term %d: the phase must be finite and within ±1000000 radians", k+1)
+			return fieldErr(fmt.Sprintf("terms.%d.phase", k), "term %d: the phase must be finite and within ±1000000 radians", k+1)
 		}
 	}
 	return nil

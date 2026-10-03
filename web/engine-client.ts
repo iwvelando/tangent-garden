@@ -153,7 +153,7 @@ export function boundText(value: number) {
 }
 
 // An engine error, with the configuration path of the field it names when
-// it is about one field (3D studies only).
+// it is about one field.
 export class EngineError extends Error {
   constructor(
     message: string,

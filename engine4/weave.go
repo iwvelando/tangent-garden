@@ -106,54 +106,54 @@ func weaveSources(k int, alpha float64, family string, m int) []sphereCircle {
 
 func weave(q Request, r Result) (Result, error) {
 	if q.Mode != "stereo" {
-		return r, fmt.Errorf("choose Stereographic loom for the spherical ring weave")
+		return r, fieldErr("mode", "choose Stereographic loom for the spherical ring weave")
 	}
 	if q.Weave == nil {
 		return r, fmt.Errorf("spherical weave parameters are required")
 	}
 	w := *q.Weave
 	if w.Family != "tori" && w.Family != "fibers" {
-		return r, fmt.Errorf("Weave family must be Clifford tori or Hopf fibers")
+		return r, fieldErr("weave.family", "Weave family must be Clifford tori or Hopf fibers")
 	}
-	for _, a := range q.Angles {
+	for i, a := range q.Angles {
 		if !finite(a) || math.Abs(a) > 1e6 {
-			return r, fmt.Errorf("rotation angles must be finite and within ±1000000 radians")
+			return r, fieldErr(fmt.Sprintf("angles.%d", i), "rotation angles must be finite and within ±1000000 radians")
 		}
 	}
 	if q.Count < 1 || q.Count > 9 {
-		return r, fmt.Errorf("use 1–9 latitudes")
+		return r, fieldErr("count", "use 1–9 latitudes")
 	}
 	if q.Curves < 1 || q.Curves > 16 {
 		if w.Family == "fibers" {
-			return r, fmt.Errorf("use 1–16 fibers per latitude")
+			return r, fieldErr("curves", "use 1–16 fibers per latitude")
 		}
-		return r, fmt.Errorf("use 1–16 curves per direction")
+		return r, fieldErr("curves", "use 1–16 curves per direction")
 	}
 	if q.Samples < 8 || q.Samples > 256 {
-		return r, fmt.Errorf("use 8–256 arc samples")
+		return r, fieldErr("samples", "use 8–256 arc samples")
 	}
 	if !finite(q.Clip) || q.Clip < 2 || q.Clip > 12 {
-		return r, fmt.Errorf("stereographic window radius must be between 2 and 12")
+		return r, fieldErr("clip", "stereographic window radius must be between 2 and 12")
 	}
 	half := 0. // A single latitude ignores spread.
 	if q.Count > 1 {
 		if !finite(w.Spread) || w.Spread < 0 || w.Spread > math.Pi/2+weaveTolerance {
-			return r, fmt.Errorf("Latitude spread must be between 0 and π/2")
+			return r, fieldErr("weave.spread", "Latitude spread must be between 0 and π/2")
 		}
 		if w.Spread == 0 {
-			return r, fmt.Errorf("Latitude spread must be positive when drawing more than one latitude")
+			return r, fieldErr("weave.spread", "Latitude spread must be positive when drawing more than one latitude")
 		}
 		half = w.Spread / 2
 	}
 	for _, field := range []struct {
-		name string
-		v    float64
-	}{{"Central latitude α", w.Alpha}, {"Latitude start", w.AlphaFrom}, {"Latitude end", w.AlphaTo}} {
+		name, key string
+		v         float64
+	}{{"Central latitude α", "alpha", w.Alpha}, {"Latitude start", "alphaFrom", w.AlphaFrom}, {"Latitude end", "alphaTo", w.AlphaTo}} {
 		if !finite(field.v) || field.v-half < -weaveTolerance || field.v+half > math.Pi/2+weaveTolerance {
 			if q.Count > 1 {
-				return r, fmt.Errorf("%s must keep every latitude within 0 and π/2 (α ± spread/2)", field.name)
+				return r, fieldErr("weave."+field.key, "%s must keep every latitude within 0 and π/2 (α ± spread/2)", field.name)
 			}
-			return r, fmt.Errorf("%s must be between 0 and π/2", field.name)
+			return r, fieldErr("weave."+field.key, "%s must be between 0 and π/2", field.name)
 		}
 	}
 	perLatitude := q.Curves

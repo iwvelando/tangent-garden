@@ -3,6 +3,7 @@ import { NotebookContext } from "./NotebookMode";
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -33,7 +34,8 @@ import {
   type Roll,
   type Vec,
 } from "./types";
-import { EngineClient, boundText } from "./engine-client";
+import { EngineClient, EngineError, boundText } from "./engine-client";
+import { fieldLabel } from "./planar-fields";
 import { useTheme } from "./useTheme";
 import { AnimationPanel } from "./AnimationPanel";
 import { AppHeader } from "./AppHeader";
@@ -52,7 +54,15 @@ import {
   type PlanarStudy,
   type PlotCamera,
 } from "./planar-link";
-import { Field, HelpText, HelpToggle, useHelp } from "./Field";
+import {
+  Field,
+  FieldErrorContext,
+  HelpText,
+  StudyError,
+  HelpToggle,
+  useHelp,
+  type FieldErrorTarget,
+} from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
 import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
@@ -236,7 +246,23 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const [expert, setExpert] = useState(false);
   const [animation, setAnimation] = useState<AnimationView | null>(null);
   const [animationRunning, setAnimationRunning] = useState(false);
-  const [computeError, setError] = useState("");
+  // The engine's error, and the configuration path of the field it names.
+  const [computeError, setError] = useState<{
+    message: string;
+    field?: string;
+  }>({ message: "" });
+  // The field showing the failure under its control, if any, and the name
+  // of the control last changed.
+  const [claimed, setClaimed] = useState<string | null>(null);
+  const claim = useCallback(
+    (key: string, on: boolean) =>
+      setClaimed((c) => (on ? key : c === key ? null : c)),
+    [],
+  );
+  const touched = useRef<string | null>(null);
+  const touch = useCallback((label: string) => {
+    touched.current = label;
+  }, []);
   const [settledKey, setSettledKey] = useState("");
   const requestKey = JSON.stringify([config, bounds]);
   // Derive readiness from the exact inputs, so neither export nor animation can
@@ -250,7 +276,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     ? ""
     : scalarError
       ? `${scalarError.name}: ${scalarError.error}`
-      : computeError;
+      : computeError.message;
   const theme = useTheme();
   const { dark, preference } = theme;
   const [reset, setReset] = useState(0);
@@ -314,13 +340,16 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
         .then((next) => {
           if (cancelled) return;
           setFrame(next);
-          setError("");
+          setError({ message: "" });
           setSettledKey(requestKey);
         })
         .catch((reason) => {
           if (cancelled) return;
-          setFrame(null);
-          setError(reason.message);
+          // The previous valid study stays in view, marked as such.
+          setError({
+            message: reason.message,
+            field: reason instanceof EngineError ? reason.field : undefined,
+          });
           setSettledKey(requestKey);
         });
     }, 120);
@@ -1051,6 +1080,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     </StudyExplanation>
   );
   const choosePreset = (index: number) => {
+    touched.current = null;
     setPreset(String(index));
     scalarGeneration.current++;
     const next = presets[index].config;
@@ -1076,6 +1106,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     settings: PlanarAnimation;
   } | null>(null);
   const openStudy = (id: number, study: PlanarStudy) => {
+    touched.current = null;
     setPreset("custom");
     scalarGeneration.current++;
     setPoleKind(study.poleKind);
@@ -1113,6 +1144,25 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       tracks: [],
     },
   });
+  // Where the error is shown: under the input that failed to parse, or
+  // under the control the engine's error names, or, for an error about the
+  // whole study, the control just changed; the drawing shows it only when
+  // no such field can.
+  const failureTarget: Pick<FieldErrorTarget, "id" | "label"> = scalarError
+    ? scalarError.control
+      ? { id: scalarError.control }
+      : { label: scalarError.name }
+    : {
+        label:
+          (computeError.field && fieldLabel(config, computeError.field)) ??
+          touched.current ??
+          undefined,
+      };
+  const fieldError = useMemo<FieldErrorTarget>(
+    () => ({ ...failureTarget, message: error, claim, touch }),
+    [failureTarget.id, failureTarget.label, error],
+  );
+  const claimedHere = !!error && claimed !== null;
   return (
     <div
       className={dark ? "app dark" : "app"}
@@ -1138,893 +1188,907 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 onDismiss={() => setLinkNotice("")}
               />
             )}
-            <div className="section-label">01 / THE STUDY</div>
-            <ExampleGallery
-              examples={planarExamples}
-              current={preset === "custom" ? null : +preset}
-              onChoose={choosePreset}
-              thumbnail={planarThumbnail}
-              dark={dark}
-            />
-            <fieldset className="mode-switch" aria-labelledby="controls-legend">
-              <legend>
-                <span id="controls-legend">Controls</span>
-                <HelpToggle topic="control modes" help={modeHelp} />
-              </legend>
-              <div className="mode-options">
-                {[false, true].map((value) => (
-                  <label key={String(value)}>
-                    <input
-                      type="radio"
-                      name="controls-mode"
-                      checked={expert === value}
-                      onChange={() => setExpert(value)}
-                    />
-                    {value ? "Expert mode" : "Simple mode"}
-                  </label>
-                ))}
-              </div>
-              <HelpText help={modeHelp}>
-                Simple mode offers presets and sliders. Expert mode takes exact
-                whole numbers: 64–32,768 samples and 2–2,048 construction lines,
-                never more lines than samples. Larger values take longer to
-                compute and draw.
-              </HelpText>
-            </fieldset>
-            <div className="tabs" role="group" aria-label="Construction">
-              {tabs.map((k) => {
-                const active =
-                  !unparametrized &&
-                  (config.kind === k ||
-                    (k === "pedal" && usesPole(config.kind)));
-                return (
-                  <button
-                    className={active ? "active" : ""}
-                    aria-pressed={active}
-                    key={k}
-                    disabled={unparametrized}
-                    title={
-                      implicit
-                        ? "An implicit curve has no parameter to build a construction on."
-                        : attractor
-                          ? "An iterated map has no parameter to build a construction on."
-                          : undefined
-                    }
-                    onClick={() => {
-                      if (active) return;
-                      const kind = k === "pedal" ? poleKind : k;
-                      // An evolute cannot feed every construction.
-                      update((c) => ({
-                        kind,
-                        input: inputAllowed(kind, c.input) ? c.input : "curve",
-                      }));
-                    }}
-                  >
-                    {k}
-                  </button>
-                );
-              })}
-            </div>
-            <section>
-              <div className="section-label">02 / THE CURVE</div>
-              <Field label="Definition">
-                <select
-                  value={config.curve.format}
-                  onChange={(e) =>
-                    curve({
-                      format: e.target.value as Config["curve"]["format"],
-                    })
-                  }
-                >
-                  <option value="parametric">Parametric · x(t), y(t)</option>
-                  <option value="cartesian">Cartesian · y = f(x)</option>
-                  <option value="polar">Polar · r(t)</option>
-                  <option value="roulette">Roulette · rolling circle</option>
-                  <option value="lissajous">
-                    Lissajous · A sin(mt + φ), B sin(nt)
-                  </option>
-                  <option value="fourier">Fourier · rotating circles</option>
-                  <option value="pursuit">
-                    Pursuit · each chases the next
-                  </option>
-                  <option value="field">Vector field · trajectories</option>
-                  <option value="implicit">Implicit · F(x, y) = c</option>
-                  <option value="attractor">Attractor · iterated map</option>
-                </select>
-              </Field>
-              {config.curve.format === "roulette" ? (
-                rouletteControls
-              ) : config.curve.format === "lissajous" ? (
-                lissajousControls
-              ) : config.curve.format === "fourier" ? (
-                fourierControls
-              ) : config.curve.format === "pursuit" ? (
-                pursuitControls
-              ) : config.curve.format === "field" ? (
-                fieldControls
-              ) : implicit ? (
-                implicitControls
-              ) : attractor ? (
-                attractorControls
-              ) : (
-                <>
-                  {config.curve.format === "parametric" && (
-                    <Field label="x(t)" className="equation">
+            <FieldErrorContext.Provider value={fieldError}>
+              <div className="section-label">01 / THE STUDY</div>
+              <ExampleGallery
+                examples={planarExamples}
+                current={preset === "custom" ? null : +preset}
+                onChoose={choosePreset}
+                thumbnail={planarThumbnail}
+                dark={dark}
+              />
+              <fieldset
+                className="mode-switch"
+                aria-labelledby="controls-legend"
+              >
+                <legend>
+                  <span id="controls-legend">Controls</span>
+                  <HelpToggle topic="control modes" help={modeHelp} />
+                </legend>
+                <div className="mode-options">
+                  {[false, true].map((value) => (
+                    <label key={String(value)}>
                       <input
-                        value={config.curve.x}
-                        onChange={(e) => curve({ x: e.target.value })}
-                        spellCheck={false}
+                        type="radio"
+                        name="controls-mode"
+                        checked={expert === value}
+                        onChange={() => setExpert(value)}
                       />
-                    </Field>
-                  )}
-                  {config.curve.format !== "polar" ? (
-                    <Field
-                      label={
-                        config.curve.format === "cartesian" ? "f(x)" : "y(t)"
-                      }
-                      className="equation"
-                    >
-                      <input
-                        value={config.curve.y}
-                        onChange={(e) => curve({ y: e.target.value })}
-                        spellCheck={false}
-                      />
-                    </Field>
-                  ) : (
-                    <Field label="r(t)" className="equation">
-                      <input
-                        value={config.curve.r}
-                        onChange={(e) => curve({ r: e.target.value })}
-                        spellCheck={false}
-                      />
-                    </Field>
-                  )}
-                </>
-              )}
-              {!unparametrized && (
-                <div className="pair">
-                  {(["min", "max"] as const).map((key) => (
-                    <Field
-                      className="equation"
-                      key={key}
-                      topic={
-                        key !== "min"
-                          ? undefined
-                          : config.curve.format === "roulette"
-                            ? "rolling parameter t"
-                            : harmonic ||
-                                config.curve.format === "pursuit" ||
-                                config.curve.format === "field"
-                              ? "time parameter t"
-                              : undefined
-                      }
-                      help={
-                        key !== "min"
-                          ? undefined
-                          : config.curve.format === "roulette"
-                            ? config.curve.roulette.roll === "line"
-                              ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
-                              : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
-                            : harmonic
-                              ? "t is time: a vector of frequency k turns through k·t radians."
-                              : config.curve.format === "pursuit"
-                                ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
-                                : config.curve.format === "field"
-                                  ? "t is time: every trajectory starts from its seed when t is at the domain start. Fields may depend on t."
-                                  : undefined
-                      }
-                      label={
-                        key === "min"
-                          ? config.curve.format === "cartesian"
-                            ? "x from"
-                            : "t from"
-                          : "to"
-                      }
-                    >
-                      <input
-                        value={bounds[key]}
-                        onChange={(e) => {
-                          setPreset("custom");
-                          setBounds({ ...bounds, [key]: e.target.value });
-                        }}
-                        spellCheck={false}
-                      />
-                    </Field>
+                      {value ? "Expert mode" : "Simple mode"}
+                    </label>
                   ))}
                 </div>
-              )}
-              {config.curve.format !== "roulette" &&
-                !ownsShape(config.curve.format) &&
-                scalar(
-                  <>
-                    Shape parameter <var>a</var>
-                  </>,
-                  ["curve", "a"],
-                  {
-                    topic: "shape parameter a",
-                    help: (
-                      <>
-                        Use <var>a</var> as an adjustable coefficient in your
-                        curve, for example <code>a*cos(t)</code>, then animate
-                        it. Expressions without a are unaffected.
-                      </>
-                    ),
-                    name: "Shape parameter a",
-                  },
-                )}
-              <details {...expressions}>
-                <summary>Expression reference</summary>
-                <p>
-                  Use explicit multiplication: <code>2*cos(t)</code>. Supports +
-                  − * / ^, parentheses, pi, e, phi, sin, cos, tan, asin, acos,
-                  atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt, abs. Angles
-                  are radians. Use <var>t</var> (or <var>x</var> for a graph),
-                  and <var>a</var> for an adjustable shape coefficient. A vector
-                  field uses <var>x</var>, <var>y</var>, and <var>t</var>; an
-                  implicit curve uses <var>x</var> and <var>y</var>. Bounds,
-                  numeric parameters such as radii and phases, and animation
-                  endpoints accept constant expressions such as 2*pi or -phi;
-                  they cannot contain <var>t</var>, <var>x</var>,<var>y</var>,
-                  or <var>a</var>.
-                </p>
-                <p>
-                  <code>pi ≈ 3.1415926536</code> · circle constant
-                  <br />
-                  <code>e ≈ 2.7182818285</code> · natural logarithm base
-                  <br />
-                  <code>phi ≈ 1.6180339887</code> · golden ratio, (1+√5)/2
-                </p>
-              </details>
-              {!unparametrized && (
-                <>
-                  <Field
-                    label="Construct on"
-                    topic="construction input"
-                    help="The construction acts on this curve: the curve itself, or a curve derived from it, which is drawn faintly with it. A derived curve is evaluated from the curve's definition at every t, never from its drawn points. Its evolute cannot feed the evolute or the caustics, which would need the curve's fourth derivative."
-                  >
-                    <select
-                      value={config.input}
-                      onChange={(e) =>
-                        update({ input: e.target.value as ConstructionInput })
+                <HelpText help={modeHelp}>
+                  Simple mode offers presets and sliders. Expert mode takes
+                  exact whole numbers: 64–32,768 samples and 2–2,048
+                  construction lines, never more lines than samples. Larger
+                  values take longer to compute and draw.
+                </HelpText>
+              </fieldset>
+              <div className="tabs" role="group" aria-label="Construction">
+                {tabs.map((k) => {
+                  const active =
+                    !unparametrized &&
+                    (config.kind === k ||
+                      (k === "pedal" && usesPole(config.kind)));
+                  return (
+                    <button
+                      className={active ? "active" : ""}
+                      aria-pressed={active}
+                      key={k}
+                      disabled={unparametrized}
+                      title={
+                        implicit
+                          ? "An implicit curve has no parameter to build a construction on."
+                          : attractor
+                            ? "An iterated map has no parameter to build a construction on."
+                            : undefined
                       }
-                    >
-                      {(Object.keys(inputOptions) as ConstructionInput[]).map(
-                        (k) => (
-                          <option
-                            key={k}
-                            value={k}
-                            disabled={!inputAllowed(config.kind, k)}
-                          >
-                            {inputOptions[k]}
-                          </option>
-                        ),
-                      )}
-                    </select>
-                  </Field>
-                  {usesPole(config.input) && !usesPole(config.kind) && (
-                    <div className="pair">
-                      {scalar("Pole x", ["pole", "x"])}
-                      {scalar("Pole y", ["pole", "y"])}
-                    </div>
-                  )}
-                  {config.input === "offset" &&
-                    (config.kind !== "offset" || config.stack.enabled) &&
-                    scalar("Offset distance d", ["distance"], {
-                      topic: "offset distance",
-                      help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel.",
-                    })}
-                </>
-              )}
-            </section>
-            {!unparametrized && usesPole(config.kind) && (
-              <section>
-                <div className="section-label">03 / THE POLE</div>
-                <Field label="Projection">
-                  <select
-                    value={config.kind}
-                    onChange={(e) => {
-                      const kind = e.target.value as PoleKind;
-                      setPoleKind(kind);
-                      update({ kind });
-                    }}
-                  >
-                    {(Object.keys(poleOptions) as PoleKind[]).map((k) => (
-                      <option key={k} value={k}>
-                        {poleOptions[k].label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <p className="note">
-                  {poleOptions[config.kind].note} The pole is independent of the
-                  light source and can lie on the curve.
-                </p>
-                <div className="pair">
-                  {scalar("Pole x", ["pole", "x"])}
-                  {scalar("Pole y", ["pole", "y"])}
-                </div>
-              </section>
-            )}
-            {optical && (
-              <section>
-                <div className="section-label">03 / THE LIGHT</div>
-                <Field label="Source">
-                  <select
-                    value={config.source.kind}
-                    onChange={(e) =>
-                      update((c) => ({
-                        source: {
-                          ...c.source,
-                          kind: e.target.value as "point" | "parallel",
-                        },
-                      }))
-                    }
-                  >
-                    <option value="point">Point source</option>
-                    <option value="parallel">
-                      At infinity · parallel rays
-                    </option>
-                  </select>
-                </Field>
-                {config.source.kind === "point" && (
-                  <Field
-                    label="Source coordinates"
-                    help={
-                      config.source.coordinates === "polar"
-                        ? "Radius r ≥ 0 is the distance from the origin. Angle θ is in radians, counterclockwise from +x; animate it from 0 to pi/2 for a quarter orbit. Angles are not wrapped."
-                        : undefined
-                    }
-                  >
-                    <select
-                      value={config.source.coordinates ?? "cartesian"}
-                      onChange={(e) => {
-                        const coordinates = e.target.value as
-                          "cartesian" | "polar";
-                        setPreset("custom");
-                        // Convert the coordinates just entered, not those
-                        // from before Go finished evaluating them.
-                        void scalarStatus.resolved().then(() =>
-                          setConfig((c) => {
-                            const position =
-                              c.source.coordinates === "polar"
-                                ? {
-                                    x:
-                                      (c.source.radius ?? 0) *
-                                      Math.cos(c.source.theta ?? 0),
-                                    y:
-                                      (c.source.radius ?? 0) *
-                                      Math.sin(c.source.theta ?? 0),
-                                  }
-                                : c.source.position;
-                            return {
-                              ...c,
-                              source: {
-                                ...c.source,
-                                coordinates,
-                                position,
-                                radius: Math.hypot(position.x, position.y),
-                                theta: Math.atan2(position.y, position.x),
-                              },
-                            };
-                          }),
-                        );
+                      onClick={() => {
+                        if (active) return;
+                        const kind = k === "pedal" ? poleKind : k;
+                        // An evolute cannot feed every construction.
+                        update((c) => ({
+                          kind,
+                          input: inputAllowed(kind, c.input)
+                            ? c.input
+                            : "curve",
+                        }));
                       }}
                     >
-                      <option value="cartesian">Cartesian · x, y</option>
-                      <option value="polar">Polar · r, θ</option>
-                    </select>
-                  </Field>
-                )}
-                {config.source.kind === "point" &&
-                config.source.coordinates === "polar" ? (
-                  <div className="pair">
-                    {scalar("Source radius r", ["source", "radius"])}
-                    {scalar("Source theta θ (radians)", ["source", "theta"])}
-                  </div>
-                ) : config.source.kind === "point" ? (
-                  <div className="pair">
-                    {scalar("Source x", ["source", "position", "x"])}
-                    {scalar("Source y", ["source", "position", "y"])}
-                  </div>
-                ) : (
-                  scalar("Travel direction (degrees)", ["source", "angle"])
-                )}
-                {config.source.kind === "parallel" && (
-                  <p className="note">0° travels right; 90° travels up.</p>
-                )}
-                {config.kind === "diacaustic" && (
-                  <>
-                    <div className="pair">
-                      {scalar("Incident index n₁", ["nIncident"])}
-                      {scalar("Transmitted n₂", ["nTransmitted"])}
-                    </div>
-                    <p className="note">
-                      Ratio n₁/n₂ ={" "}
-                      {(config.nIncident / config.nTransmitted).toFixed(3)}.
-                      Each ray crosses once.
-                    </p>
-                    <details {...indices}>
-                      <summary>How the refractive indices work</summary>
-                      <p>
-                        The incident index n₁ describes the medium light is
-                        leaving; transmitted index n₂ describes the medium it
-                        enters. The index is the ratio of the speed of light in
-                        vacuum to its phase speed in that medium. Familiar
-                        examples are air ≈ 1, water ≈ 1.33, and glass ≈ 1.5;
-                        real values depend on material and wavelength.
-                      </p>
-                      <p>
-                        Snell’s law is n₁ sin θ₁ = n₂ sin θ₂, with angles
-                        measured from the normal. If n₂ is larger, light bends
-                        toward the normal; if smaller, it bends away. Equal
-                        indices leave the direction unchanged. When n₁ &gt; n₂
-                        and the incident angle exceeds asin(n₂/n₁), there is
-                        total internal reflection: amber reflected rays replace
-                        transmitted rays at those samples.
-                      </p>
-                      <p>
-                        This explorer accepts any finite decimal from{" "}
-                        <strong>0.01 through 10</strong>, inclusive, for either
-                        index. These are computational limits, not a claim that
-                        every value represents ordinary visible-light glass.
-                        There is no 0.05-step restriction: 1.333 is valid. The
-                        construction uses the ratio n₁/n₂, so scaling both
-                        equally gives the same ray directions.
-                      </p>
-                    </details>
-                  </>
-                )}
-              </section>
-            )}
-            {!unparametrized && config.kind === "offset" && (
-              <section>
-                <div className="section-label">03 / THE OFFSET</div>
-                <Field label="Offsets">
-                  <select
-                    value={config.stack.enabled ? "stack" : "single"}
-                    onChange={(e) =>
-                      update((c) => ({
-                        stack: {
-                          ...c.stack,
-                          enabled: e.target.value === "stack",
-                        },
-                      }))
-                    }
-                  >
-                    <option value="single">One offset</option>
-                    <option value="stack">A stack of offsets</option>
-                  </select>
-                </Field>
-                {config.stack.enabled ? (
-                  <>
-                    <div className="pair">
-                      {scalar("First offset distance", ["stack", "from"], {
-                        topic: "offset stack distances",
-                        help: "The stack runs evenly from the first distance to the last, both included, each within ±100,000. Positive values move to the left of travel.",
-                      })}
-                      {scalar("Last offset distance", ["stack", "to"])}
-                    </div>
-                    {number(
-                      "Number of offsets",
-                      config.stack.count,
-                      (count) =>
-                        update((c) => ({ stack: { ...c.stack, count } })),
-                      {
-                        step: 1,
-                        min: 2,
-                        max: 64,
-                        help: "Whole numbers from 2 to 64. Offsets × samples may not exceed 131,072.",
-                      },
-                    )}
-                  </>
-                ) : (
-                  scalar("Offset distance d", ["distance"], {
-                    topic: "offset distance",
-                    help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel, which is inward on a counterclockwise closed curve. Negative values move to the right.",
-                  })
-                )}
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={config.circles}
-                    onChange={(e) => update({ circles: e.target.checked })}
-                  />
-                  Generating circles
-                </label>
-                <p className="note">
-                  Circles have the largest distance as their radius. Cusps and
-                  self-crossings are part of the offset, not errors: it is the
-                  full parallel curve, not a trimmed outline.
-                </p>
-              </section>
-            )}
-            {!unparametrized && config.kind === "rolling" && (
-              <section>
-                <div className="section-label">
-                  03 / THE ROLLING{" "}
-                  {config.rolling.shape === "curve" ? "CURVE" : "CIRCLE"}
-                </div>
-                <div className="pair">
-                  <Field label="Rolling shape">
-                    <select
-                      value={config.rolling.shape}
-                      onChange={(e) =>
-                        update((c) => ({
-                          rolling: {
-                            ...c.rolling,
-                            shape: e.target.value as "circle" | "curve",
-                          },
-                        }))
-                      }
-                    >
-                      <option value="circle">Circle</option>
-                      <option value="curve">Curve · x(t), y(t)</option>
-                    </select>
-                  </Field>
-                  <Field label="Side of the curve">
-                    <select
-                      value={config.rolling.side}
-                      onChange={(e) =>
-                        update((c) => ({
-                          rolling: {
-                            ...c.rolling,
-                            side: e.target.value as "left" | "right",
-                          },
-                        }))
-                      }
-                    >
-                      <option value="left">Left of travel</option>
-                      <option value="right">Right of travel</option>
-                    </select>
-                  </Field>
-                </div>
-                {config.rolling.shape === "curve" ? (
-                  <>
-                    {(["x", "y"] as const).map((key) => (
-                      <Field
-                        key={key}
-                        label={`Rolling ${key}(t)`}
-                        className="equation"
-                        topic={key === "x" ? "rolling curve" : undefined}
-                        help={
-                          key === "x"
-                            ? "The rolling curve in its own frame, in t (and a). It is placed on the base so the two stay tangent at the contact, with equal arc lengths rolled on each."
-                            : undefined
-                        }
-                      >
-                        <input
-                          value={config.rolling.curve[key]}
-                          onChange={(e) => {
-                            const text = e.target.value;
-                            update((c) => ({
-                              rolling: {
-                                ...c.rolling,
-                                curve: { ...c.rolling.curve, [key]: text },
-                              },
-                            }));
-                          }}
-                          spellCheck={false}
-                        />
-                      </Field>
-                    ))}
-                    <div className="pair">
-                      {scalar("Rolling t from", ["rolling", "curve", "min"])}
-                      {scalar("Rolling t to", ["rolling", "curve", "max"])}
-                    </div>
-                    {scalar(
-                      "Contact starts at t",
-                      ["rolling", "curve", "start"],
-                      {
-                        topic: "rolling curve start",
-                        help: "The rolling curve's point that touches the base at its domain start. On the left the contact runs toward the end of the rolling curve's domain; on the right, toward its start.",
-                      },
-                    )}
-                    <div className="pair">
-                      {scalar("Tracing point x", ["rolling", "point", "x"], {
-                        topic: "rolling curve tracing point",
-                        help: "A point fixed to the rolling curve, in the same frame as x(t), y(t); within ±100,000.",
-                      })}
-                      {scalar("Tracing point y", ["rolling", "point", "y"])}
-                    </div>
-                    <p className="note">
-                      On the left, the rolling curve's own left side faces the
-                      base's left; on the right, its left side faces the base's
-                      right. For a counterclockwise closed curve its left is its
-                      inside. A closed rolling curve wraps around; an open one,
-                      or one with a cusp, stops there. Overlaps are part of the
-                      roulette, not collisions.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <div className="pair">
-                      {scalar("Circle radius ρ", ["rolling", "radius"], {
-                        topic: "rolling circle radius",
-                        help: "Positive and at most 100,000.",
-                      })}
-                      {scalar("Tracing distance ℓ", ["rolling", "arm"], {
-                        topic: "rolling tracing distance",
-                        help: "Distance of the tracing point from the circle's center, 0–100,000. ℓ = ρ traces the rim, with cusps on the curve; larger values give loops.",
-                      })}
-                    </div>
-                    {scalar("Phase ψ (radians)", ["rolling", "phase"], {
-                      topic: "rolling phase",
-                      help: "At the domain start the tracing arm points at the contact; the phase turns it counterclockwise by ψ radians.",
-                    })}
-                    <p className="note">
-                      On a counterclockwise closed curve the left is the inside.
-                      The circle rolls from the domain start and stops at a
-                      cusp. Where it is larger than the curve's radius of
-                      curvature, or the curve comes back near itself, it
-                      overlaps the curve: this is the mathematical roulette, not
-                      a collision.
-                    </p>
-                  </>
-                )}
-              </section>
-            )}
-            {!unparametrized && config.kind === "envelope" && (
-              <section>
-                <div className="section-label">03 / THE FAMILY</div>
-                <Field label="Family">
-                  <select
-                    value={config.envelope.mode}
-                    onChange={(e) =>
-                      update((c) => ({
-                        envelope: {
-                          ...c.envelope,
-                          mode: e.target.value as "angle" | "chord" | "circle",
-                        },
-                      }))
-                    }
-                  >
-                    <option value="chord">Chords to a second point</option>
-                    <option value="angle">Lines turned to an angle θ(t)</option>
-                    <option value="circle">Circles of radius R(t)</option>
-                  </select>
-                </Field>
-                {config.envelope.mode === "circle" ? (
-                  <>
-                    <Field
-                      label="Circle radius R(t)"
-                      className="equation"
-                      topic="circle radius"
-                      help="Positive, in t (and a). Each circle is centered on the curve's point at t; where the radius is not positive there is no circle."
-                    >
-                      <input
-                        value={config.envelope.radius}
-                        onChange={(e) => {
-                          const radius = e.target.value;
-                          update((c) => ({
-                            envelope: { ...c.envelope, radius },
-                          }));
-                        }}
-                        spellCheck={false}
-                      />
-                    </Field>
-                    <p className="note">
-                      Each circle is drawn with its radii to the touching
-                      points. Where |R′| exceeds the curve's speed the circles
-                      nest, and the envelope has gaps; a stationary center has
-                      no envelope point.
-                    </p>
-                  </>
-                ) : config.envelope.mode === "chord" ? (
-                  <>
-                    {(["x", "y"] as const).map((key) => (
-                      <Field
-                        key={key}
-                        label={`Second point ${key}(t)`}
-                        className="equation"
-                        topic={key === "x" ? "second point" : undefined}
-                        help={
-                          key === "x"
-                            ? "The chord's other endpoint, in t (and a), over the curve's domain. With x = cos(a*t), y = sin(a*t) on the unit circle, animate a for the multiplication tables."
-                            : undefined
-                        }
-                      >
-                        <input
-                          value={config.envelope[key]}
-                          onChange={(e) => {
-                            const text = e.target.value;
-                            update((c) => ({
-                              envelope: { ...c.envelope, [key]: text },
-                            }));
-                          }}
-                          spellCheck={false}
-                        />
-                      </Field>
-                    ))}
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={config.envelope.extend}
-                        onChange={(e) => {
-                          const extend = e.target.checked;
-                          update((c) => ({
-                            envelope: { ...c.envelope, extend },
-                          }));
-                        }}
-                      />
-                      Extend chords to full lines
-                    </label>
-                    <p className="note">
-                      Where the two endpoints coincide the chord has no
-                      direction, and the envelope has a gap.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <Field
-                      label="Direction angle θ(t)"
-                      className="equation"
-                      topic="direction angle"
-                      help="In radians, counterclockwise from +x, in t (and a). Each line passes through the curve's point at t. A turn by exactly pi gives the same line."
-                    >
-                      <input
-                        value={config.envelope.angle}
-                        onChange={(e) => {
-                          const angle = e.target.value;
-                          update((c) => ({
-                            envelope: { ...c.envelope, angle },
-                          }));
-                        }}
-                        spellCheck={false}
-                      />
-                    </Field>
-                    <p className="note">
-                      Lines are unbounded and drawn across the view. Parallel
-                      neighbours meet at infinity, so the envelope has gaps
-                      there.
-                    </p>
-                  </>
-                )}
-              </section>
-            )}
-            {!unparametrized && config.kind === "inversion" && (
-              <section>
-                <div className="section-label">03 / THE INVERSION</div>
-                <div className="pair">
-                  {scalar("Inversion center x", ["inversion", "center", "x"])}
-                  {scalar("Inversion center y", ["inversion", "center", "y"])}
-                </div>
-                {scalar("Inversion radius R", ["inversion", "radius"], {
-                  topic: "inversion radius",
-                  help: "Positive, at most 100,000. Points at distance R from the center stay fixed; the product of a point's distance and its image's is R².",
+                      {k}
+                    </button>
+                  );
                 })}
-                <p className="note">
-                  {config.input === "curve"
-                    ? "Each segment joins a point of the curve to its image, along a ray from the center."
-                    : "Each segment joins a point of the curve's " +
-                      config.input +
-                      " to its image, along a ray from the center."}{" "}
-                  The image is left open where it runs off to infinity.
-                </p>
-              </section>
-            )}
-            {!unparametrized && config.kind === "involute" && (
-              <section>
-                {scalar("Initial string offset c", ["offset"], {
-                  topic: "initial string offset",
-                  help: "Arc length starts at the domain minimum. The offset selects a member of the involute family.",
-                })}
-              </section>
-            )}
-            <section>
-              <div className="section-label">
-                {!unparametrized &&
-                (optical ||
-                  usesPole(config.kind) ||
-                  config.kind === "offset" ||
-                  config.kind === "rolling" ||
-                  config.kind === "envelope" ||
-                  config.kind === "inversion")
-                  ? "04"
-                  : "03"}{" "}
-                / THE DRAWING
               </div>
-              {expert ? (
-                number(
-                  "Construction lines",
-                  config.lines,
-                  (n) => update({ lines: n }),
-                  {
-                    step: 1,
-                    min: 2,
-                    max: Math.min(2048, config.samples),
-                    help: "Whole numbers from 2 to 2,048, no more than the samples. Dense drawings slow interaction and export.",
-                  },
-                )
-              ) : (
-                <Field label="Construction lines" value={config.lines}>
-                  <input
-                    type="range"
-                    min={Math.min(
-                      8,
-                      Number.isFinite(config.lines) ? config.lines : 8,
-                    )}
-                    max={Math.max(
-                      180,
-                      Number.isFinite(config.lines) ? config.lines : 180,
-                    )}
-                    value={config.lines}
-                    onChange={(e) => update({ lines: +e.target.value })}
-                  />
+              <section>
+                <div className="section-label">02 / THE CURVE</div>
+                <Field label="Definition">
+                  <select
+                    value={config.curve.format}
+                    onChange={(e) =>
+                      curve({
+                        format: e.target.value as Config["curve"]["format"],
+                      })
+                    }
+                  >
+                    <option value="parametric">Parametric · x(t), y(t)</option>
+                    <option value="cartesian">Cartesian · y = f(x)</option>
+                    <option value="polar">Polar · r(t)</option>
+                    <option value="roulette">Roulette · rolling circle</option>
+                    <option value="lissajous">
+                      Lissajous · A sin(mt + φ), B sin(nt)
+                    </option>
+                    <option value="fourier">Fourier · rotating circles</option>
+                    <option value="pursuit">
+                      Pursuit · each chases the next
+                    </option>
+                    <option value="field">Vector field · trajectories</option>
+                    <option value="implicit">Implicit · F(x, y) = c</option>
+                    <option value="attractor">Attractor · iterated map</option>
+                  </select>
                 </Field>
+                {config.curve.format === "roulette" ? (
+                  rouletteControls
+                ) : config.curve.format === "lissajous" ? (
+                  lissajousControls
+                ) : config.curve.format === "fourier" ? (
+                  fourierControls
+                ) : config.curve.format === "pursuit" ? (
+                  pursuitControls
+                ) : config.curve.format === "field" ? (
+                  fieldControls
+                ) : implicit ? (
+                  implicitControls
+                ) : attractor ? (
+                  attractorControls
+                ) : (
+                  <>
+                    {config.curve.format === "parametric" && (
+                      <Field label="x(t)" className="equation">
+                        <input
+                          value={config.curve.x}
+                          onChange={(e) => curve({ x: e.target.value })}
+                          spellCheck={false}
+                        />
+                      </Field>
+                    )}
+                    {config.curve.format !== "polar" ? (
+                      <Field
+                        label={
+                          config.curve.format === "cartesian" ? "f(x)" : "y(t)"
+                        }
+                        className="equation"
+                      >
+                        <input
+                          value={config.curve.y}
+                          onChange={(e) => curve({ y: e.target.value })}
+                          spellCheck={false}
+                        />
+                      </Field>
+                    ) : (
+                      <Field label="r(t)" className="equation">
+                        <input
+                          value={config.curve.r}
+                          onChange={(e) => curve({ r: e.target.value })}
+                          spellCheck={false}
+                        />
+                      </Field>
+                    )}
+                  </>
+                )}
+                {!unparametrized && (
+                  <div className="pair">
+                    {(["min", "max"] as const).map((key) => (
+                      <Field
+                        className="equation"
+                        key={key}
+                        topic={
+                          key !== "min"
+                            ? undefined
+                            : config.curve.format === "roulette"
+                              ? "rolling parameter t"
+                              : harmonic ||
+                                  config.curve.format === "pursuit" ||
+                                  config.curve.format === "field"
+                                ? "time parameter t"
+                                : undefined
+                        }
+                        help={
+                          key !== "min"
+                            ? undefined
+                            : config.curve.format === "roulette"
+                              ? config.curve.roulette.roll === "line"
+                                ? "t is the angle the rolling circle has turned, in radians; its center moves r·t along the line."
+                                : "t is the angle of the rolling center around the fixed center, in radians. One turn is 2*pi."
+                              : harmonic
+                                ? "t is time: a vector of frequency k turns through k·t radians."
+                                : config.curve.format === "pursuit"
+                                  ? "t is time: the pursuers start from their positions when t is at the domain start, and a pursuer of speed v runs v·t in time t."
+                                  : config.curve.format === "field"
+                                    ? "t is time: every trajectory starts from its seed when t is at the domain start. Fields may depend on t."
+                                    : undefined
+                        }
+                        label={
+                          key === "min"
+                            ? config.curve.format === "cartesian"
+                              ? "x from"
+                              : "t from"
+                            : "to"
+                        }
+                      >
+                        <input
+                          value={bounds[key]}
+                          onChange={(e) => {
+                            setPreset("custom");
+                            setBounds({ ...bounds, [key]: e.target.value });
+                          }}
+                          spellCheck={false}
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                )}
+                {config.curve.format !== "roulette" &&
+                  !ownsShape(config.curve.format) &&
+                  scalar(
+                    <>
+                      Shape parameter <var>a</var>
+                    </>,
+                    ["curve", "a"],
+                    {
+                      topic: "shape parameter a",
+                      help: (
+                        <>
+                          Use <var>a</var> as an adjustable coefficient in your
+                          curve, for example <code>a*cos(t)</code>, then animate
+                          it. Expressions without a are unaffected.
+                        </>
+                      ),
+                      name: "Shape parameter a",
+                    },
+                  )}
+                <details {...expressions}>
+                  <summary>Expression reference</summary>
+                  <p>
+                    Use explicit multiplication: <code>2*cos(t)</code>. Supports
+                    + − * / ^, parentheses, pi, e, phi, sin, cos, tan, asin,
+                    acos, atan, sinh, cosh, tanh, sech, exp, log, ln, sqrt, abs.
+                    Angles are radians. Use <var>t</var> (or <var>x</var> for a
+                    graph), and <var>a</var> for an adjustable shape
+                    coefficient. A vector field uses <var>x</var>, <var>y</var>,
+                    and <var>t</var>; an implicit curve uses <var>x</var> and{" "}
+                    <var>y</var>. Bounds, numeric parameters such as radii and
+                    phases, and animation endpoints accept constant expressions
+                    such as 2*pi or -phi; they cannot contain <var>t</var>,{" "}
+                    <var>x</var>,<var>y</var>, or <var>a</var>.
+                  </p>
+                  <p>
+                    <code>pi ≈ 3.1415926536</code> · circle constant
+                    <br />
+                    <code>e ≈ 2.7182818285</code> · natural logarithm base
+                    <br />
+                    <code>phi ≈ 1.6180339887</code> · golden ratio, (1+√5)/2
+                  </p>
+                </details>
+                {!unparametrized && (
+                  <>
+                    <Field
+                      label="Construct on"
+                      topic="construction input"
+                      help="The construction acts on this curve: the curve itself, or a curve derived from it, which is drawn faintly with it. A derived curve is evaluated from the curve's definition at every t, never from its drawn points. Its evolute cannot feed the evolute or the caustics, which would need the curve's fourth derivative."
+                    >
+                      <select
+                        value={config.input}
+                        onChange={(e) =>
+                          update({ input: e.target.value as ConstructionInput })
+                        }
+                      >
+                        {(Object.keys(inputOptions) as ConstructionInput[]).map(
+                          (k) => (
+                            <option
+                              key={k}
+                              value={k}
+                              disabled={!inputAllowed(config.kind, k)}
+                            >
+                              {inputOptions[k]}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </Field>
+                    {usesPole(config.input) && !usesPole(config.kind) && (
+                      <div className="pair">
+                        {scalar("Pole x", ["pole", "x"])}
+                        {scalar("Pole y", ["pole", "y"])}
+                      </div>
+                    )}
+                    {config.input === "offset" &&
+                      (config.kind !== "offset" || config.stack.enabled) &&
+                      scalar("Offset distance d", ["distance"], {
+                        topic: "offset distance",
+                        help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel.",
+                      })}
+                  </>
+                )}
+              </section>
+              {!unparametrized && usesPole(config.kind) && (
+                <section>
+                  <div className="section-label">03 / THE POLE</div>
+                  <Field label="Projection">
+                    <select
+                      value={config.kind}
+                      onChange={(e) => {
+                        const kind = e.target.value as PoleKind;
+                        setPoleKind(kind);
+                        update({ kind });
+                      }}
+                    >
+                      {(Object.keys(poleOptions) as PoleKind[]).map((k) => (
+                        <option key={k} value={k}>
+                          {poleOptions[k].label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <p className="note">
+                    {poleOptions[config.kind].note} The pole is independent of
+                    the light source and can lie on the curve.
+                  </p>
+                  <div className="pair">
+                    {scalar("Pole x", ["pole", "x"])}
+                    {scalar("Pole y", ["pole", "y"])}
+                  </div>
+                </section>
               )}
               {optical && (
-                <Field label="Ray length" value={`${length.toFixed(1)}×`}>
-                  <input
-                    type="range"
-                    min=".1"
-                    max="3"
-                    step=".1"
-                    value={length}
-                    onChange={(e) => setLength(+e.target.value)}
-                  />
-                </Field>
-              )}
-              <div className="layer-grid">
-                {(Object.keys(layers) as (keyof Layers)[])
-                  .filter(
-                    (k) =>
-                      (optical ||
-                        (k === "virtual" && chords) ||
-                        !["incident", "virtual"].includes(k)) &&
-                      !(attractor && k === "derived"),
-                  )
-                  .map((k) => (
-                    <label className="check" key={k}>
-                      <input
-                        type="checkbox"
-                        checked={layers[k]}
-                        onChange={(e) =>
-                          setLayers({ ...layers, [k]: e.target.checked })
-                        }
-                      />
-                      {
-                        {
-                          base: implicit
-                            ? "Curve F = c"
-                            : attractor
-                              ? "Visit density"
-                              : "Base curve",
-                          derived: implicit ? "Other levels" : "Derived curve",
-                          lines: "Construction lines",
-                          incident: "Incident rays",
-                          virtual: "Virtual extensions",
-                          axes: "Grid & axes",
-                        }[k]
+                <section>
+                  <div className="section-label">03 / THE LIGHT</div>
+                  <Field label="Source">
+                    <select
+                      value={config.source.kind}
+                      onChange={(e) =>
+                        update((c) => ({
+                          source: {
+                            ...c.source,
+                            kind: e.target.value as "point" | "parallel",
+                          },
+                        }))
                       }
-                    </label>
-                  ))}
-              </div>
-              {unparametrized ? null : expert ? (
-                number(
-                  "Numerical samples",
-                  config.samples,
-                  (n) => update({ samples: n }),
-                  { step: 1, min: 64, max: 32768, help: samplesHelp },
-                )
-              ) : (
-                <Field label="Numerical samples" help={samplesHelp}>
-                  <select
-                    value={config.samples}
-                    onChange={(e) => update({ samples: +e.target.value })}
-                  >
-                    {![500, 1000, 2000, 4000].includes(config.samples) && (
-                      <option value={config.samples}>
-                        {config.samples} · custom
+                    >
+                      <option value="point">Point source</option>
+                      <option value="parallel">
+                        At infinity · parallel rays
                       </option>
-                    )}
-                    <option value="500">500 · quick study</option>
-                    <option value="1000">1,000 · standard</option>
-                    <option value="2000">2,000 · fine</option>
-                    <option value="4000">4,000 · finest</option>
-                  </select>
-                </Field>
+                    </select>
+                  </Field>
+                  {config.source.kind === "point" && (
+                    <Field
+                      label="Source coordinates"
+                      help={
+                        config.source.coordinates === "polar"
+                          ? "Radius r ≥ 0 is the distance from the origin. Angle θ is in radians, counterclockwise from +x; animate it from 0 to pi/2 for a quarter orbit. Angles are not wrapped."
+                          : undefined
+                      }
+                    >
+                      <select
+                        value={config.source.coordinates ?? "cartesian"}
+                        onChange={(e) => {
+                          const coordinates = e.target.value as
+                            "cartesian" | "polar";
+                          setPreset("custom");
+                          // Convert the coordinates just entered, not those
+                          // from before Go finished evaluating them.
+                          void scalarStatus.resolved().then(() =>
+                            setConfig((c) => {
+                              const position =
+                                c.source.coordinates === "polar"
+                                  ? {
+                                      x:
+                                        (c.source.radius ?? 0) *
+                                        Math.cos(c.source.theta ?? 0),
+                                      y:
+                                        (c.source.radius ?? 0) *
+                                        Math.sin(c.source.theta ?? 0),
+                                    }
+                                  : c.source.position;
+                              return {
+                                ...c,
+                                source: {
+                                  ...c.source,
+                                  coordinates,
+                                  position,
+                                  radius: Math.hypot(position.x, position.y),
+                                  theta: Math.atan2(position.y, position.x),
+                                },
+                              };
+                            }),
+                          );
+                        }}
+                      >
+                        <option value="cartesian">Cartesian · x, y</option>
+                        <option value="polar">Polar · r, θ</option>
+                      </select>
+                    </Field>
+                  )}
+                  {config.source.kind === "point" &&
+                  config.source.coordinates === "polar" ? (
+                    <div className="pair">
+                      {scalar("Source radius r", ["source", "radius"])}
+                      {scalar("Source theta θ (radians)", ["source", "theta"])}
+                    </div>
+                  ) : config.source.kind === "point" ? (
+                    <div className="pair">
+                      {scalar("Source x", ["source", "position", "x"])}
+                      {scalar("Source y", ["source", "position", "y"])}
+                    </div>
+                  ) : (
+                    scalar("Travel direction (degrees)", ["source", "angle"])
+                  )}
+                  {config.source.kind === "parallel" && (
+                    <p className="note">0° travels right; 90° travels up.</p>
+                  )}
+                  {config.kind === "diacaustic" && (
+                    <>
+                      <div className="pair">
+                        {scalar("Incident index n₁", ["nIncident"])}
+                        {scalar("Transmitted n₂", ["nTransmitted"])}
+                      </div>
+                      <p className="note">
+                        Ratio n₁/n₂ ={" "}
+                        {(config.nIncident / config.nTransmitted).toFixed(3)}.
+                        Each ray crosses once.
+                      </p>
+                      <details {...indices}>
+                        <summary>How the refractive indices work</summary>
+                        <p>
+                          The incident index n₁ describes the medium light is
+                          leaving; transmitted index n₂ describes the medium it
+                          enters. The index is the ratio of the speed of light
+                          in vacuum to its phase speed in that medium. Familiar
+                          examples are air ≈ 1, water ≈ 1.33, and glass ≈ 1.5;
+                          real values depend on material and wavelength.
+                        </p>
+                        <p>
+                          Snell’s law is n₁ sin θ₁ = n₂ sin θ₂, with angles
+                          measured from the normal. If n₂ is larger, light bends
+                          toward the normal; if smaller, it bends away. Equal
+                          indices leave the direction unchanged. When n₁ &gt; n₂
+                          and the incident angle exceeds asin(n₂/n₁), there is
+                          total internal reflection: amber reflected rays
+                          replace transmitted rays at those samples.
+                        </p>
+                        <p>
+                          This explorer accepts any finite decimal from{" "}
+                          <strong>0.01 through 10</strong>, inclusive, for
+                          either index. These are computational limits, not a
+                          claim that every value represents ordinary
+                          visible-light glass. There is no 0.05-step
+                          restriction: 1.333 is valid. The construction uses the
+                          ratio n₁/n₂, so scaling both equally gives the same
+                          ray directions.
+                        </p>
+                      </details>
+                    </>
+                  )}
+                </section>
               )}
-            </section>
+              {!unparametrized && config.kind === "offset" && (
+                <section>
+                  <div className="section-label">03 / THE OFFSET</div>
+                  <Field label="Offsets">
+                    <select
+                      value={config.stack.enabled ? "stack" : "single"}
+                      onChange={(e) =>
+                        update((c) => ({
+                          stack: {
+                            ...c.stack,
+                            enabled: e.target.value === "stack",
+                          },
+                        }))
+                      }
+                    >
+                      <option value="single">One offset</option>
+                      <option value="stack">A stack of offsets</option>
+                    </select>
+                  </Field>
+                  {config.stack.enabled ? (
+                    <>
+                      <div className="pair">
+                        {scalar("First offset distance", ["stack", "from"], {
+                          topic: "offset stack distances",
+                          help: "The stack runs evenly from the first distance to the last, both included, each within ±100,000. Positive values move to the left of travel.",
+                        })}
+                        {scalar("Last offset distance", ["stack", "to"])}
+                      </div>
+                      {number(
+                        "Number of offsets",
+                        config.stack.count,
+                        (count) =>
+                          update((c) => ({ stack: { ...c.stack, count } })),
+                        {
+                          step: 1,
+                          min: 2,
+                          max: 64,
+                          help: "Whole numbers from 2 to 64. Offsets × samples may not exceed 131,072.",
+                        },
+                      )}
+                    </>
+                  ) : (
+                    scalar("Offset distance d", ["distance"], {
+                      topic: "offset distance",
+                      help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel, which is inward on a counterclockwise closed curve. Negative values move to the right.",
+                    })
+                  )}
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={config.circles}
+                      onChange={(e) => update({ circles: e.target.checked })}
+                    />
+                    Generating circles
+                  </label>
+                  <p className="note">
+                    Circles have the largest distance as their radius. Cusps and
+                    self-crossings are part of the offset, not errors: it is the
+                    full parallel curve, not a trimmed outline.
+                  </p>
+                </section>
+              )}
+              {!unparametrized && config.kind === "rolling" && (
+                <section>
+                  <div className="section-label">
+                    03 / THE ROLLING{" "}
+                    {config.rolling.shape === "curve" ? "CURVE" : "CIRCLE"}
+                  </div>
+                  <div className="pair">
+                    <Field label="Rolling shape">
+                      <select
+                        value={config.rolling.shape}
+                        onChange={(e) =>
+                          update((c) => ({
+                            rolling: {
+                              ...c.rolling,
+                              shape: e.target.value as "circle" | "curve",
+                            },
+                          }))
+                        }
+                      >
+                        <option value="circle">Circle</option>
+                        <option value="curve">Curve · x(t), y(t)</option>
+                      </select>
+                    </Field>
+                    <Field label="Side of the curve">
+                      <select
+                        value={config.rolling.side}
+                        onChange={(e) =>
+                          update((c) => ({
+                            rolling: {
+                              ...c.rolling,
+                              side: e.target.value as "left" | "right",
+                            },
+                          }))
+                        }
+                      >
+                        <option value="left">Left of travel</option>
+                        <option value="right">Right of travel</option>
+                      </select>
+                    </Field>
+                  </div>
+                  {config.rolling.shape === "curve" ? (
+                    <>
+                      {(["x", "y"] as const).map((key) => (
+                        <Field
+                          key={key}
+                          label={`Rolling ${key}(t)`}
+                          className="equation"
+                          topic={key === "x" ? "rolling curve" : undefined}
+                          help={
+                            key === "x"
+                              ? "The rolling curve in its own frame, in t (and a). It is placed on the base so the two stay tangent at the contact, with equal arc lengths rolled on each."
+                              : undefined
+                          }
+                        >
+                          <input
+                            value={config.rolling.curve[key]}
+                            onChange={(e) => {
+                              const text = e.target.value;
+                              update((c) => ({
+                                rolling: {
+                                  ...c.rolling,
+                                  curve: { ...c.rolling.curve, [key]: text },
+                                },
+                              }));
+                            }}
+                            spellCheck={false}
+                          />
+                        </Field>
+                      ))}
+                      <div className="pair">
+                        {scalar("Rolling t from", ["rolling", "curve", "min"])}
+                        {scalar("Rolling t to", ["rolling", "curve", "max"])}
+                      </div>
+                      {scalar(
+                        "Contact starts at t",
+                        ["rolling", "curve", "start"],
+                        {
+                          topic: "rolling curve start",
+                          help: "The rolling curve's point that touches the base at its domain start. On the left the contact runs toward the end of the rolling curve's domain; on the right, toward its start.",
+                        },
+                      )}
+                      <div className="pair">
+                        {scalar("Tracing point x", ["rolling", "point", "x"], {
+                          topic: "rolling curve tracing point",
+                          help: "A point fixed to the rolling curve, in the same frame as x(t), y(t); within ±100,000.",
+                        })}
+                        {scalar("Tracing point y", ["rolling", "point", "y"])}
+                      </div>
+                      <p className="note">
+                        On the left, the rolling curve's own left side faces the
+                        base's left; on the right, its left side faces the
+                        base's right. For a counterclockwise closed curve its
+                        left is its inside. A closed rolling curve wraps around;
+                        an open one, or one with a cusp, stops there. Overlaps
+                        are part of the roulette, not collisions.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="pair">
+                        {scalar("Circle radius ρ", ["rolling", "radius"], {
+                          topic: "rolling circle radius",
+                          help: "Positive and at most 100,000.",
+                        })}
+                        {scalar("Tracing distance ℓ", ["rolling", "arm"], {
+                          topic: "rolling tracing distance",
+                          help: "Distance of the tracing point from the circle's center, 0–100,000. ℓ = ρ traces the rim, with cusps on the curve; larger values give loops.",
+                        })}
+                      </div>
+                      {scalar("Phase ψ (radians)", ["rolling", "phase"], {
+                        topic: "rolling phase",
+                        help: "At the domain start the tracing arm points at the contact; the phase turns it counterclockwise by ψ radians.",
+                      })}
+                      <p className="note">
+                        On a counterclockwise closed curve the left is the
+                        inside. The circle rolls from the domain start and stops
+                        at a cusp. Where it is larger than the curve's radius of
+                        curvature, or the curve comes back near itself, it
+                        overlaps the curve: this is the mathematical roulette,
+                        not a collision.
+                      </p>
+                    </>
+                  )}
+                </section>
+              )}
+              {!unparametrized && config.kind === "envelope" && (
+                <section>
+                  <div className="section-label">03 / THE FAMILY</div>
+                  <Field label="Family">
+                    <select
+                      value={config.envelope.mode}
+                      onChange={(e) =>
+                        update((c) => ({
+                          envelope: {
+                            ...c.envelope,
+                            mode: e.target.value as
+                              "angle" | "chord" | "circle",
+                          },
+                        }))
+                      }
+                    >
+                      <option value="chord">Chords to a second point</option>
+                      <option value="angle">
+                        Lines turned to an angle θ(t)
+                      </option>
+                      <option value="circle">Circles of radius R(t)</option>
+                    </select>
+                  </Field>
+                  {config.envelope.mode === "circle" ? (
+                    <>
+                      <Field
+                        label="Circle radius R(t)"
+                        className="equation"
+                        topic="circle radius"
+                        help="Positive, in t (and a). Each circle is centered on the curve's point at t; where the radius is not positive there is no circle."
+                      >
+                        <input
+                          value={config.envelope.radius}
+                          onChange={(e) => {
+                            const radius = e.target.value;
+                            update((c) => ({
+                              envelope: { ...c.envelope, radius },
+                            }));
+                          }}
+                          spellCheck={false}
+                        />
+                      </Field>
+                      <p className="note">
+                        Each circle is drawn with its radii to the touching
+                        points. Where |R′| exceeds the curve's speed the circles
+                        nest, and the envelope has gaps; a stationary center has
+                        no envelope point.
+                      </p>
+                    </>
+                  ) : config.envelope.mode === "chord" ? (
+                    <>
+                      {(["x", "y"] as const).map((key) => (
+                        <Field
+                          key={key}
+                          label={`Second point ${key}(t)`}
+                          className="equation"
+                          topic={key === "x" ? "second point" : undefined}
+                          help={
+                            key === "x"
+                              ? "The chord's other endpoint, in t (and a), over the curve's domain. With x = cos(a*t), y = sin(a*t) on the unit circle, animate a for the multiplication tables."
+                              : undefined
+                          }
+                        >
+                          <input
+                            value={config.envelope[key]}
+                            onChange={(e) => {
+                              const text = e.target.value;
+                              update((c) => ({
+                                envelope: { ...c.envelope, [key]: text },
+                              }));
+                            }}
+                            spellCheck={false}
+                          />
+                        </Field>
+                      ))}
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={config.envelope.extend}
+                          onChange={(e) => {
+                            const extend = e.target.checked;
+                            update((c) => ({
+                              envelope: { ...c.envelope, extend },
+                            }));
+                          }}
+                        />
+                        Extend chords to full lines
+                      </label>
+                      <p className="note">
+                        Where the two endpoints coincide the chord has no
+                        direction, and the envelope has a gap.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Field
+                        label="Direction angle θ(t)"
+                        className="equation"
+                        topic="direction angle"
+                        help="In radians, counterclockwise from +x, in t (and a). Each line passes through the curve's point at t. A turn by exactly pi gives the same line."
+                      >
+                        <input
+                          value={config.envelope.angle}
+                          onChange={(e) => {
+                            const angle = e.target.value;
+                            update((c) => ({
+                              envelope: { ...c.envelope, angle },
+                            }));
+                          }}
+                          spellCheck={false}
+                        />
+                      </Field>
+                      <p className="note">
+                        Lines are unbounded and drawn across the view. Parallel
+                        neighbours meet at infinity, so the envelope has gaps
+                        there.
+                      </p>
+                    </>
+                  )}
+                </section>
+              )}
+              {!unparametrized && config.kind === "inversion" && (
+                <section>
+                  <div className="section-label">03 / THE INVERSION</div>
+                  <div className="pair">
+                    {scalar("Inversion center x", ["inversion", "center", "x"])}
+                    {scalar("Inversion center y", ["inversion", "center", "y"])}
+                  </div>
+                  {scalar("Inversion radius R", ["inversion", "radius"], {
+                    topic: "inversion radius",
+                    help: "Positive, at most 100,000. Points at distance R from the center stay fixed; the product of a point's distance and its image's is R².",
+                  })}
+                  <p className="note">
+                    {config.input === "curve"
+                      ? "Each segment joins a point of the curve to its image, along a ray from the center."
+                      : "Each segment joins a point of the curve's " +
+                        config.input +
+                        " to its image, along a ray from the center."}{" "}
+                    The image is left open where it runs off to infinity.
+                  </p>
+                </section>
+              )}
+              {!unparametrized && config.kind === "involute" && (
+                <section>
+                  {scalar("Initial string offset c", ["offset"], {
+                    topic: "initial string offset",
+                    help: "Arc length starts at the domain minimum. The offset selects a member of the involute family.",
+                  })}
+                </section>
+              )}
+              <section>
+                <div className="section-label">
+                  {!unparametrized &&
+                  (optical ||
+                    usesPole(config.kind) ||
+                    config.kind === "offset" ||
+                    config.kind === "rolling" ||
+                    config.kind === "envelope" ||
+                    config.kind === "inversion")
+                    ? "04"
+                    : "03"}{" "}
+                  / THE DRAWING
+                </div>
+                {expert ? (
+                  number(
+                    "Construction lines",
+                    config.lines,
+                    (n) => update({ lines: n }),
+                    {
+                      step: 1,
+                      min: 2,
+                      max: Math.min(2048, config.samples),
+                      help: "Whole numbers from 2 to 2,048, no more than the samples. Dense drawings slow interaction and export.",
+                    },
+                  )
+                ) : (
+                  <Field label="Construction lines" value={config.lines}>
+                    <input
+                      type="range"
+                      min={Math.min(
+                        8,
+                        Number.isFinite(config.lines) ? config.lines : 8,
+                      )}
+                      max={Math.max(
+                        180,
+                        Number.isFinite(config.lines) ? config.lines : 180,
+                      )}
+                      value={config.lines}
+                      onChange={(e) => update({ lines: +e.target.value })}
+                    />
+                  </Field>
+                )}
+                {optical && (
+                  <Field label="Ray length" value={`${length.toFixed(1)}×`}>
+                    <input
+                      type="range"
+                      min=".1"
+                      max="3"
+                      step=".1"
+                      value={length}
+                      onChange={(e) => setLength(+e.target.value)}
+                    />
+                  </Field>
+                )}
+                <div className="layer-grid">
+                  {(Object.keys(layers) as (keyof Layers)[])
+                    .filter(
+                      (k) =>
+                        (optical ||
+                          (k === "virtual" && chords) ||
+                          !["incident", "virtual"].includes(k)) &&
+                        !(attractor && k === "derived"),
+                    )
+                    .map((k) => (
+                      <label className="check" key={k}>
+                        <input
+                          type="checkbox"
+                          checked={layers[k]}
+                          onChange={(e) =>
+                            setLayers({ ...layers, [k]: e.target.checked })
+                          }
+                        />
+                        {
+                          {
+                            base: implicit
+                              ? "Curve F = c"
+                              : attractor
+                                ? "Visit density"
+                                : "Base curve",
+                            derived: implicit
+                              ? "Other levels"
+                              : "Derived curve",
+                            lines: "Construction lines",
+                            incident: "Incident rays",
+                            virtual: "Virtual extensions",
+                            axes: "Grid & axes",
+                          }[k]
+                        }
+                      </label>
+                    ))}
+                </div>
+                {unparametrized ? null : expert ? (
+                  number(
+                    "Numerical samples",
+                    config.samples,
+                    (n) => update({ samples: n }),
+                    { step: 1, min: 64, max: 32768, help: samplesHelp },
+                  )
+                ) : (
+                  <Field label="Numerical samples" help={samplesHelp}>
+                    <select
+                      value={config.samples}
+                      onChange={(e) => update({ samples: +e.target.value })}
+                    >
+                      {![500, 1000, 2000, 4000].includes(config.samples) && (
+                        <option value={config.samples}>
+                          {config.samples} · custom
+                        </option>
+                      )}
+                      <option value="500">500 · quick study</option>
+                      <option value="1000">1,000 · standard</option>
+                      <option value="2000">2,000 · fine</option>
+                      <option value="4000">4,000 · finest</option>
+                    </select>
+                  </Field>
+                )}
+              </section>
+            </FieldErrorContext.Provider>
+            {error && !claimedHere && <StudyError message={error} />}
             <AnimationPanel
               getCurrentView={() => manualView.current}
               dark={dark}
@@ -2063,12 +2127,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
             </button>
           </div>
           <div className="plot-wrap" ref={plotWrap} aria-busy={busy}>
-            {error ? (
-              <div className="error" role="alert">
-                <strong>Let’s check the definition</strong>
-                <p>{error}</p>
-              </div>
-            ) : result && shown ? (
+            {result && shown ? (
               <Plot
                 onViewport={(view) => {
                   manualView.current = view;
@@ -2087,7 +2146,14 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 animation={animation}
               />
             ) : (
-              <div className="loading">Preparing the numerical engine…</div>
+              <div className="loading">
+                {error
+                  ? "Check the study definition to begin."
+                  : "Preparing the numerical engine…"}
+              </div>
+            )}
+            {frame && error && (
+              <span className="stale-study">Previous valid study</span>
             )}
             {busy && result && <span className="computing">Computing…</span>}
             <div className="plot-meta">

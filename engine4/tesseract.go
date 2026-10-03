@@ -150,37 +150,40 @@ func Compute(q Request) (r Result, err error) {
 		return curved(q, r)
 	}
 	if q.Object != "tesseract" {
-		return r, fmt.Errorf("choose tesseract, ball, tube, lift, bypass, or weave")
+		return r, fieldErr("object", "choose tesseract, ball, tube, lift, bypass, or weave")
 	}
 	if q.Mode != "perspective" && q.Mode != "orthographic" && q.Mode != "stereo" && q.Mode != "section" {
-		return r, fmt.Errorf("choose a tesseract projection or section")
+		return r, fieldErr("mode", "choose a tesseract projection or section")
 	}
-	for _, a := range q.Angles {
+	for i, a := range q.Angles {
 		if !finite(a) || math.Abs(a) > 1e6 {
-			return r, fmt.Errorf("rotation angles must be finite and within ±1000000 radians")
+			return r, fieldErr(fmt.Sprintf("angles.%d", i), "rotation angles must be finite and within ±1000000 radians")
 		}
 	}
 	// Validate the active construction only. An unfinished field in another
 	// mode remains editable there without blocking this independent view.
 	if q.Mode == "perspective" && (!finite(q.Distance) || q.Distance < 2.05 || q.Distance > 20) {
-		return r, fmt.Errorf("4D eye distance must be between 2.05 and 20")
+		return r, fieldErr("distance", "4D eye distance must be between 2.05 and 20")
 	}
 	if q.Mode == "section" {
-		if !finite(q.Slice) || math.Abs(q.Slice) > 3 || !finite(q.Spread) || q.Spread < 0 || q.Spread > 4 {
-			return r, fmt.Errorf("slice offset must be within ±3 and spread between 0 and 4")
+		if !finite(q.Slice) || math.Abs(q.Slice) > 3 {
+			return r, fieldErr("slice", "slice offset must be within ±3 and spread between 0 and 4")
+		}
+		if !finite(q.Spread) || q.Spread < 0 || q.Spread > 4 {
+			return r, fieldErr("spread", "slice offset must be within ±3 and spread between 0 and 4")
 		}
 		if q.Count < 1 || q.Count > 25 {
-			return r, fmt.Errorf("use 1–25 sections")
+			return r, fieldErr("count", "use 1–25 sections")
 		}
 	} else if q.Grid < 0 || q.Grid > 12 {
-		return r, fmt.Errorf("use 0–12 face grid lines")
+		return r, fieldErr("grid", "use 0–12 face grid lines")
 	}
 	if q.Mode == "stereo" {
 		if q.Samples < 8 || q.Samples > 256 {
-			return r, fmt.Errorf("use 8–256 arc samples")
+			return r, fieldErr("samples", "use 8–256 arc samples")
 		}
 		if !finite(q.Clip) || q.Clip < 2 || q.Clip > 12 {
-			return r, fmt.Errorf("stereographic window radius must be between 2 and 12")
+			return r, fieldErr("clip", "stereographic window radius must be between 2 and 12")
 		}
 	}
 	var vs [16]Vec4

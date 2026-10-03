@@ -26,6 +26,19 @@ assert.equal(result.base.length, 1000);
 assert.ok(Math.abs(result.derived[0].x + 2.5) < 1e-5);
 assert.equal(result.rays.length, 30);
 assert.ok(JSON.parse(globalThis.tangentGardenCompute("{")).error);
+// A validation error names the field it is about, for the notebook to show
+// beside that control; an error about the whole study names none.
+const planarRefused = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({ ...config, curve: { ...config.curve, max: -1 } }),
+  ),
+);
+assert.match(planarRefused.error, /greater than domain end/);
+assert.equal(planarRefused.field, "curve.max");
+assert.equal(
+  "field" in JSON.parse(globalThis.tangentGardenCompute("{")),
+  false,
+);
 const scalars = JSON.parse(
   globalThis.tangentGardenScalars(JSON.stringify(["2*pi", "phi", "ln(e)"])),
 );
@@ -1687,6 +1700,13 @@ for (const change of [
       ),
     ).error,
   );
+const hyperRefused = JSON.parse(
+  globalThis.tangentGardenTesseract(
+    JSON.stringify({ ...hyper, mode: "perspective", distance: 2 }),
+  ),
+);
+assert.match(hyperRefused.error, /eye distance/);
+assert.equal(hyperRefused.field, "distance");
 for (const mode of ["perspective", "orthographic", "stereo"])
   assert.equal(
     JSON.parse(

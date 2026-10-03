@@ -94,36 +94,44 @@ self.onmessage = async ({
       if (weave) {
         for (const [i, value] of q.angles.entries())
           if (!Number.isFinite(value))
-            throw new Error(
+            throw fieldError(
+              `angles.${i}`,
               `${["xy", "xz", "yz", "xw", "yw", "zw"][i]} angle must be a finite constant.`,
             );
-        const fields: [string, number][] = [
-          ["Central latitude α", weave.alpha],
+        const fields: [string, string, number][] = [
+          ["weave.alpha", "Central latitude α", weave.alpha],
           // A single latitude ignores spread.
           ...(q.count === 1
             ? []
-            : [["Latitude spread", weave.spread] as [string, number]]),
-          ["Latitude start", weave.alphaFrom],
-          ["Latitude end", weave.alphaTo],
-          ["Projection window radius", q.clip],
+            : [
+                ["weave.spread", "Latitude spread", weave.spread] as [
+                  string,
+                  string,
+                  number,
+                ],
+              ]),
+          ["weave.alphaFrom", "Latitude start", weave.alphaFrom],
+          ["weave.alphaTo", "Latitude end", weave.alphaTo],
+          ["clip", "Projection window radius", q.clip],
         ];
-        for (const [label, value] of fields)
+        for (const [field, label, value] of fields)
           if (!Number.isFinite(value))
-            throw new Error(`${label} must be a finite constant.`);
-        for (const [label, value] of [
-          ["Latitudes", q.count],
+            throw fieldError(field, `${label} must be a finite constant.`);
+        for (const [field, label, value] of [
+          ["count", "Latitudes", q.count],
           [
+            "curves",
             weave.family === "fibers"
               ? "Fibers per latitude"
               : "Curves per direction",
             q.curves,
           ],
-          ["Arc samples", q.samples],
-        ] as [string, number][]) {
+          ["samples", "Arc samples", q.samples],
+        ] as [string, string, number][]) {
           if (!Number.isFinite(value))
-            throw new Error(`${label} must be a finite whole number.`);
+            throw fieldError(field, `${label} must be a finite whole number.`);
           if (!Number.isInteger(value))
-            throw new Error(`${label} must be a whole number.`);
+            throw fieldError(field, `${label} must be a whole number.`);
         }
       }
       if (q.object === "bypass" && !route)
@@ -131,31 +139,41 @@ self.onmessage = async ({
       if (route) {
         if (!Array.isArray(route.outside) || route.outside.length !== 3)
           throw new Error("Outside point requires three coordinates.");
-        const fields: [string, number][] = [
+        const fields: [string, string, number][] = [
           ...route.outside.map(
             (value, i) =>
-              [`Outside point ${["x", "y", "z"][i]}`, value] as [
-                string,
-                number,
-              ],
+              [
+                `bypass.outside.${i}`,
+                `Outside point ${["x", "y", "z"][i]}`,
+                value,
+              ] as [string, string, number],
           ),
-          ["Inner radius a", route.inner],
-          ["Outer radius b", route.outer],
-          ["Route height H", route.height],
-          ["Route position s", route.position],
-          ["First comparison w", route.w1],
-          ["Second comparison w", route.w2],
+          ["bypass.inner", "Inner radius a", route.inner],
+          ["bypass.outer", "Outer radius b", route.outer],
+          ["bypass.height", "Route height H", route.height],
+          ["bypass.position", "Route position s", route.position],
+          ["bypass.w1", "First comparison w", route.w1],
+          ["bypass.w2", "Second comparison w", route.w2],
           ...(route.obstacle === "embedded"
-            ? [["Fourth-coordinate extent ε", route.extent] as [string, number]]
+            ? [
+                [
+                  "bypass.extent",
+                  "Fourth-coordinate extent ε",
+                  route.extent,
+                ] as [string, string, number],
+              ]
             : []),
         ];
-        for (const [label, value] of fields)
+        for (const [field, label, value] of fields)
           if (!Number.isFinite(value))
-            throw new Error(`${label} must be a finite constant.`);
+            throw fieldError(field, `${label} must be a finite constant.`);
         if (!Number.isFinite(q.samples))
-          throw new Error("Shell samples must be a finite whole number.");
+          throw fieldError(
+            "samples",
+            "Shell samples must be a finite whole number.",
+          );
         if (!Number.isInteger(q.samples))
-          throw new Error("Shell samples must be a whole number.");
+          throw fieldError("samples", "Shell samples must be a whole number.");
       }
       if (q.object === "lift" && !lift)
         throw new Error("Enter localized lift parameters.");
@@ -169,38 +187,52 @@ self.onmessage = async ({
             throw new Error(`${label} requires three coordinates.`);
           for (const [i, value] of lift[key].entries())
             if (!Number.isFinite(value))
-              throw new Error(
+              throw fieldError(
+                `lift.${key}.${i}`,
                 `${label} ${["x", "y", "z"][i]} must be a finite constant.`,
               );
         }
-        const fields: [string, number][] = [
-          ["Lift support radius L", lift.support],
-          ["Lift height A", lift.height],
-          ["Support start", lift.radiusFrom],
-          ["Support end", lift.radiusTo],
+        const fields: [keyof typeof lift, string, number][] = [
+          ["support", "Lift support radius L", lift.support],
+          ["height", "Lift height A", lift.height],
+          ["radiusFrom", "Support start", lift.radiusFrom],
+          ["radiusTo", "Support end", lift.radiusTo],
           ...(q.mode === "lifted"
-            ? [["Presentation xw angle", lift.angle] as [string, number]]
+            ? [
+                ["angle", "Presentation xw angle", lift.angle] as [
+                  keyof typeof lift,
+                  string,
+                  number,
+                ],
+              ]
             : []),
         ];
-        for (const [label, value] of fields)
+        for (const [key, label, value] of fields)
           if (!Number.isFinite(value))
-            throw new Error(`${label} must be a finite constant.`);
+            throw fieldError(
+              `lift.${key}`,
+              `${label} must be a finite constant.`,
+            );
         if (!Number.isFinite(q.samples))
-          throw new Error("Thread samples must be a finite whole number.");
+          throw fieldError(
+            "samples",
+            "Thread samples must be a finite whole number.",
+          );
         if (!Number.isInteger(q.samples))
-          throw new Error("Thread samples must be a whole number.");
+          throw fieldError("samples", "Thread samples must be a whole number.");
       }
-      const counts = weave
-        ? [q.count, q.curves, q.samples]
+      const counted: ("count" | "curves" | "samples" | "grid")[] = weave
+        ? ["count", "curves", "samples"]
         : lift || route
-          ? [q.samples]
+          ? ["samples"]
           : curved
-            ? [q.count, q.curves, q.samples]
+            ? ["count", "curves", "samples"]
             : q.mode === "section"
-              ? [q.count]
+              ? ["count"]
               : q.mode === "stereo"
-                ? [q.grid, q.samples]
-                : [q.grid];
+                ? ["grid", "samples"]
+                : ["grid"];
+      const counts = counted.map((key) => q[key]);
       const values = weave
         ? [q.clip]
         : curved
@@ -226,8 +258,10 @@ self.onmessage = async ({
         throw new Error(
           "Fill in every active tesseract parameter with a finite constant.",
         );
-      if (!counts.every(Number.isInteger))
-        throw new Error(
+      const fraction = counted.find((key) => !Number.isInteger(q[key]));
+      if (fraction)
+        throw fieldError(
+          fraction,
           "Section, face-line and sample counts must be whole numbers.",
         );
       // Inactive unfinished integer fields must not fail Go JSON decoding.
@@ -557,9 +591,13 @@ self.onmessage = async ({
     }
     const config = structuredClone(data.config);
     if (data.bounds) {
-      const [min, max] = scalar([data.bounds.min, data.bounds.max]);
-      config.curve.min = min;
-      config.curve.max = max;
+      // Each bound alone, so an error names the one that failed.
+      for (const key of ["min", "max"] as const)
+        try {
+          [config.curve[key]] = scalar([data.bounds[key]]);
+        } catch (error) {
+          throw fieldError(`curve.${key}`, (error as Error).message);
+        }
     }
     const stacked = config.kind === "offset" && config.stack.enabled;
     const implicit =
@@ -674,23 +712,38 @@ self.onmessage = async ({
     ];
     if (!numbers.every(Number.isFinite))
       throw new Error("Fill in each numeric field with a finite number.");
-    if (!Number.isInteger(config.samples) || !Number.isInteger(config.lines))
-      throw new Error("Samples and construction lines must be whole numbers.");
+    for (const field of ["samples", "lines"] as const)
+      if (!Number.isInteger(config[field]))
+        throw fieldError(
+          field,
+          "Samples and construction lines must be whole numbers.",
+        );
+    if (implicit && !Number.isInteger(implicit.cells))
+      throw fieldError(
+        "curve.implicit.cells",
+        "Grid cells and the level count must be whole numbers.",
+      );
     if (
       implicit &&
-      (!Number.isInteger(implicit.cells) ||
-        (implicit.family.enabled && !Number.isInteger(implicit.family.count)))
+      implicit.family.enabled &&
+      !Number.isInteger(implicit.family.count)
     )
-      throw new Error("Grid cells and the level count must be whole numbers.");
-    if (
-      attractor &&
-      ![attractor.cells, attractor.discard, attractor.iterates].every(
-        Number.isInteger,
-      )
-    )
-      throw new Error("Grid cells and iterate counts must be whole numbers.");
+      throw fieldError(
+        "curve.implicit.family.count",
+        "Grid cells and the level count must be whole numbers.",
+      );
+    if (attractor)
+      for (const field of ["cells", "discard", "iterates"] as const)
+        if (!Number.isInteger(attractor[field]))
+          throw fieldError(
+            `curve.attractor.${field}`,
+            "Grid cells and iterate counts must be whole numbers.",
+          );
     if (stacked && !Number.isInteger(config.stack.count))
-      throw new Error("The number of offsets must be a whole number.");
+      throw fieldError(
+        "stack.count",
+        "The number of offsets must be a whole number.",
+      );
     const result: import("./types").Result | { error: string } = JSON.parse(
       tangentGardenCompute(JSON.stringify(config)),
     );
@@ -704,13 +757,13 @@ self.onmessage = async ({
     self.postMessage({
       id: data.id,
       error: error instanceof Error ? error.message : String(error),
-      // The field a 3D validation error names, as the engine's own do.
+      // The field a validation error names, as the engine's own do.
       ...(error instanceof Error && "field" in error && { field: error.field }),
     });
   }
 };
 
-// An error about one field of a 3D study, named by its configuration path.
+// An error about one field of a study, named by its configuration path.
 function fieldError(field: string, message: string) {
   return Object.assign(new Error(message), { field });
 }

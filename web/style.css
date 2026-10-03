@@ -515,12 +515,35 @@ input[type="range"] {
 /* An error under the control it names: compact, unlike the drawing's. */
 .field-error {
   margin: 6px 0 0;
+  /* Brought into view clear of the screen's edge and a phone's toolbars. */
+  scroll-margin: 24px 0;
   font-size: 12.5px;
   line-height: 1.5;
   color: #a4522f;
 }
 .dark .field-error {
   color: #f3bc83;
+}
+/* An error no field shows, after the study's controls: as compact. */
+.study-error {
+  margin: 12px 0 0;
+  scroll-margin: 24px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #a4522f;
+}
+.dark .study-error {
+  color: #f3bc83;
+}
+/* The drawing kept while the study is invalid, marked outside its geometry. */
+.stale-study {
+  position: absolute;
+  top: 16px;
+  left: 30px;
+  right: 30px;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
 }
 input:not([type="range"]):not([type="checkbox"]):not(
     [type="radio"]

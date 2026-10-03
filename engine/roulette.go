@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"math"
 	"tangentgarden/engine/closure"
 )
@@ -51,23 +50,23 @@ func (g Roulette) validate() error {
 	switch g.Roll {
 	case "inside", "outside", "line":
 	default:
-		return fmt.Errorf("a roulette rolls inside, outside, or along a line")
+		return fieldErr("roll", "a roulette rolls inside, outside, or along a line")
 	}
 	positive := func(x float64) bool { return finite(x) && x > 0 && x <= 1e5 }
 	if g.Roll != "line" && !positive(g.FixedRadius) {
-		return fmt.Errorf("the fixed radius R must be positive, finite, and at most 100000")
+		return fieldErr("fixedRadius", "the fixed radius R must be positive, finite, and at most 100000")
 	}
 	if !positive(g.Radius) {
-		return fmt.Errorf("the rolling radius r must be positive, finite, and at most 100000")
+		return fieldErr("radius", "the rolling radius r must be positive, finite, and at most 100000")
 	}
 	if g.Roll == "inside" && g.Radius >= g.FixedRadius {
-		return fmt.Errorf("a circle rolling inside needs a rolling radius r smaller than the fixed radius R")
+		return fieldErr("radius", "a circle rolling inside needs a rolling radius r smaller than the fixed radius R")
 	}
 	if !finite(g.Arm) || g.Arm < 0 || g.Arm > 1e5 {
-		return fmt.Errorf("the tracing distance d must be finite and within 0–100000")
+		return fieldErr("arm", "the tracing distance d must be finite and within 0–100000")
 	}
 	if !finite(g.Phase) || math.Abs(g.Phase) > 1e6 {
-		return fmt.Errorf("the roulette phase must be finite and within ±1000000 radians")
+		return fieldErr("phase", "the roulette phase must be finite and within ±1000000 radians")
 	}
 	return nil
 }

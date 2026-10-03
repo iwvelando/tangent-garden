@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -29,10 +28,10 @@ func Invert(p, center Vec, radius float64) *Vec {
 
 func (v Inversion) validate() error {
 	if !v.Center.Valid() {
-		return fmt.Errorf("center of inversion coordinates must be finite numbers")
+		return fieldErr(coordinate("center", v.Center, finite), "center of inversion coordinates must be finite numbers")
 	}
 	if !finite(v.Radius) || v.Radius <= 0 || v.Radius > 1e5 {
-		return fmt.Errorf("inversion radius must be positive and at most 100000")
+		return fieldErr("radius", "inversion radius must be positive and at most 100000")
 	}
 	return nil
 }

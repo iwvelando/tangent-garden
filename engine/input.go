@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -16,16 +15,16 @@ func composed(input string) bool { return input != "" && input != "curve" }
 
 func validateInput(input, kind string, pole Vec) error {
 	if inputOrder(input)+constructionOrder(kind) > 3 {
-		return fmt.Errorf("an evolute's evolute or caustics would need the curve's fourth derivative, which finite differences cannot resolve reliably; choose another input or construction")
+		return fieldErr("input", "an evolute's evolute or caustics would need the curve's fourth derivative, which finite differences cannot resolve reliably; choose another input or construction")
 	}
 	switch input {
 	case "", "curve", "evolute", "offset":
 	case "pedal", "contrapedal", "orthotomic":
 		if !pole.Valid() {
-			return fmt.Errorf("pole coordinates must be finite numbers")
+			return fieldErr(coordinate("pole", pole, finite), "pole coordinates must be finite numbers")
 		}
 	default:
-		return fmt.Errorf("construct on the curve, its evolute, pedal, contrapedal, orthotomic, or offset")
+		return fieldErr("input", "construct on the curve, its evolute, pedal, contrapedal, orthotomic, or offset")
 	}
 	return nil
 }

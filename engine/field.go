@@ -86,12 +86,12 @@ func (v VectorField) validate() error {
 		return fmt.Errorf("a vector field has 1–16 seeds")
 	}
 	for i, s := range v.Seeds {
-		if !finite(s.X) || !finite(s.Y) || math.Abs(s.X) > 1e5 || math.Abs(s.Y) > 1e5 {
-			return fmt.Errorf("seed %d: the coordinates must be finite and within ±100000", i+1)
+		if p := (Vec{s.X, s.Y}); !bound(1e5)(s.X) || !bound(1e5)(s.Y) {
+			return fieldErr(coordinate(fmt.Sprintf("seeds.%d", i), p, bound(1e5)), "seed %d: the coordinates must be finite and within ±100000", i+1)
 		}
 	}
 	if !finite(v.Escape) || v.Escape <= 0 || v.Escape > 1e5 {
-		return fmt.Errorf("the escape radius must be finite, positive, and at most 100000")
+		return fieldErr("escape", "the escape radius must be finite, positive, and at most 100000")
 	}
 	return nil
 }
@@ -101,11 +101,11 @@ func (v VectorField) validate() error {
 func (v VectorField) system(a float64) (odeFunc, bool, error) {
 	x, tx, err := expr.ParseField(v.X, a)
 	if err != nil {
-		return nil, false, fmt.Errorf("dx/dt: %w", err)
+		return nil, false, fieldErr("x", "dx/dt: %v", err)
 	}
 	y, ty, err := expr.ParseField(v.Y, a)
 	if err != nil {
-		return nil, false, fmt.Errorf("dy/dt: %w", err)
+		return nil, false, fieldErr("y", "dy/dt: %v", err)
 	}
 	return func(t float64, p, out []float64) {
 		out[0], out[1] = x(p[0], p[1], t), y(p[0], p[1], t)

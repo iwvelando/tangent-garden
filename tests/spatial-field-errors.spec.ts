@@ -3,6 +3,12 @@ import { spatialPresets } from "../web/spatial/presets";
 import { choosePreset } from "./helpers";
 import { fieldLabel } from "../web/spatial/fields";
 import { readFileSync } from "node:fs";
+import { defaultAnimation } from "../web/spatial/link";
+import { defaultLayers, initialView } from "../web/spatial/renderer";
+import { defaultProbe } from "../web/spatial/probe";
+import { defaultCut } from "../web/spatial/cut";
+import { defaultSight } from "../web/spatial/sight";
+import { studyHref, writeStudyLink } from "../web/study-link";
 
 // An error is shown where it can be fixed: under the control it names,
 // marked invalid, as the page's one alert.
@@ -27,7 +33,9 @@ async function shownAt(page: Page, name: string, text: string | RegExp) {
   await expect(page.getByRole("alert")).toHaveCount(1);
   await expect(fieldOf(page, name).getByRole("alert")).toContainText(text);
   await expect(control(page, name)).toHaveAttribute("aria-invalid", "true");
-  await expect(fieldOf(page, name).getByRole("alert")).toBeInViewport();
+  await expect(fieldOf(page, name).getByRole("alert")).toBeInViewport({
+    ratio: 1,
+  });
 }
 
 for (const [width, height] of [
@@ -110,3 +118,47 @@ test("every field the engine names has a control", () => {
   for (const path of paths)
     expect(fieldLabel(config, path), path).toEqual(expect.any(String));
 });
+
+// An error that no field shows stands after the study's controls, compact,
+// never over the drawing.
+for (const [width, height] of [
+  [1440, 1000],
+  [390, 844],
+] as const)
+  test(`an error no field shows stands after the controls, in view (${width}px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    const config = structuredClone(spatialPresets[0].config);
+    config.format = "parametric";
+    Object.assign(config.curve, { x: "0", y: "0", z: "0" });
+    const token = await writeStudyLink("3d", {
+      config,
+      layers: defaultLayers,
+      view: initialView,
+      animation: defaultAnimation,
+      probe: defaultProbe,
+      cut: defaultCut,
+      sight: defaultSight,
+    });
+    await page.goto(
+      studyHref("http://localhost/?study=3d", "3d", token).replace(
+        "http://localhost",
+        "",
+      ),
+    );
+    const alert = page.getByRole("alert");
+    await expect(alert).toHaveCount(1);
+    await expect(alert).toContainText("no regular finite samples");
+    await expect(page.locator("aside").getByRole("alert")).toHaveCount(1);
+    expect((await alert.boundingBox())!.height).toBeLessThan(120);
+    // Brought into view, wherever the controls end.
+    // Whole, and clear of the screen's edge.
+    await expect(alert).toBeInViewport({ ratio: 1 });
+    const box = (await alert.boundingBox())!;
+    expect(box.y + box.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height - 16,
+    );
+    // On a desktop only the sidebar scrolls; the drawing stays put.
+    if (width > 700) expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  });

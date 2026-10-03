@@ -1,9 +1,21 @@
-import { cloneElement, useEffect, useRef, useState } from "react";
+import {
+  cloneElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AppHeader } from "../AppHeader";
 import { useTheme } from "../useTheme";
-import { Field } from "../Field";
+import {
+  Field,
+  FieldErrorContext,
+  StudyError,
+  type FieldErrorTarget,
+} from "../Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
-import { EngineClient } from "../engine-client";
+import { EngineClient, EngineError } from "../engine-client";
 import { ExampleGallery } from "../ExampleGallery";
 import { tesseractExamples, tesseractThumbnail } from "../examples";
 import { ExportImageMenu } from "../ExportImageMenu";
@@ -24,6 +36,7 @@ import {
   type View,
 } from "./types";
 import { objects, modes } from "./objects";
+import { axes, fieldLabel, labels } from "./fields";
 import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
 import { tesseractStudy, type TesseractStudy } from "./link";
@@ -70,7 +83,25 @@ export default function TesseractApp({
   const [frame, setFrame] = useState<{ config: Config; result: Result } | null>(
       null,
     ),
-    [error, setError] = useState("");
+    // The engine's error, and the request path of the field it names.
+    [failed, setFailed] = useState<{ message: string; field?: string }>({
+      message: "",
+    });
+  const error = failed.message,
+    setError = (message: string, field?: string) =>
+      setFailed({ message, field });
+  // The field showing the failure under its control, if any, and the label
+  // of the control last changed.
+  const [claimed, setClaimed] = useState<string | null>(null);
+  const claim = useCallback(
+    (key: string, on: boolean) =>
+      setClaimed((c) => (on ? key : c === key ? null : c)),
+    [],
+  );
+  const touched = useRef<string | null>(null);
+  const touch = useCallback((label: string) => {
+    touched.current = label;
+  }, []);
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
   const client = useRef<EngineClient | null>(null),
     sampler = useRef<Sampler | null>(null),
@@ -87,7 +118,8 @@ export default function TesseractApp({
   const controller = useRef<AbortController | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const scalarBusy = Object.values(scalars).some((s) => s.pending),
-    scalarError = Object.values(scalars).find((s) => s.error)?.error;
+    scalarState = Object.values(scalars).find((s) => s.error),
+    scalarError = scalarState?.error;
   // Playback holds the view buttons; a finished animation hands them back.
   const held = preview && (playing || progress < 1);
   const request = preview ? sample(config, motion, progress) : config,
@@ -134,7 +166,7 @@ export default function TesseractApp({
         })
         .catch((e: Error) => {
           if (ticket === epoch.current) {
-            setError(e.message);
+            setError(e.message, e instanceof EngineError ? e.field : undefined);
             setSettled(key);
           }
         });
@@ -168,7 +200,10 @@ export default function TesseractApp({
         else raf = requestAnimationFrame(tick);
       } catch (e) {
         if (ticket === epoch.current) {
-          setError((e as Error).message);
+          setError(
+            (e as Error).message,
+            e instanceof EngineError ? e.field : undefined,
+          );
           setPlaying(false);
         }
       }
@@ -240,6 +275,7 @@ export default function TesseractApp({
     </Field>
   );
   const choose = (i: number) => {
+    touched.current = null;
     stop();
     generation.current++;
     setScalars({});
@@ -258,6 +294,7 @@ export default function TesseractApp({
   // the sender's layers, views, and motion.
   const [linkNotice, setLinkNotice] = useState("");
   const openStudy = (study: TesseractStudy) => {
+    touched.current = null;
     stop();
     generation.current++;
     setScalars({});
@@ -460,6 +497,26 @@ export default function TesseractApp({
         (frame?.result.sections.length ?? 1) - 1,
       )
     ];
+  // Where the failure is shown: under the input that failed to parse, or
+  // under the control the engine's error names, or, for an error about the
+  // whole study, the control just changed; the drawing shows it only when
+  // no such field can.
+  const failure = scalarError || error;
+  const failureTarget: Pick<FieldErrorTarget, "id" | "label"> = scalarState
+    ? scalarState.control
+      ? { id: scalarState.control }
+      : { label: scalarState.name }
+    : {
+        label:
+          (failed.field && fieldLabel(config, failed.field)) ??
+          touched.current ??
+          undefined,
+      };
+  const fieldError = useMemo<FieldErrorTarget>(
+    () => ({ ...failureTarget, message: failure, claim, touch }),
+    [failureTarget.id, failureTarget.label, failure],
+  );
+  const claimedHere = !!failure && claimed !== null;
   return (
     <div className={`app tesseract-app ${dark ? "dark" : ""}`}>
       <AppHeader theme={theme}>
@@ -510,328 +567,331 @@ export default function TesseractApp({
           }}
         >
           <aside className="tesseract-controls">
-            <section>
-              {linkNotice && (
-                <LinkNotice
-                  text={linkNotice}
-                  onDismiss={() => setLinkNotice("")}
+            <FieldErrorContext.Provider value={fieldError}>
+              <section>
+                {linkNotice && (
+                  <LinkNotice
+                    text={linkNotice}
+                    onDismiss={() => setLinkNotice("")}
+                  />
+                )}
+                <div className="section-label">
+                  01 / BEYOND THREE DIMENSIONS
+                </div>
+                <ExampleGallery
+                  examples={tesseractExamples}
+                  current={preset}
+                  onChoose={choose}
+                  thumbnail={tesseractThumbnail}
+                  dark={dark}
                 />
-              )}
-              <div className="section-label">01 / BEYOND THREE DIMENSIONS</div>
-              <ExampleGallery
-                examples={tesseractExamples}
-                current={preset}
-                onChoose={choose}
-                thumbnail={tesseractThumbnail}
-                dark={dark}
-              />
-              <Field label="4D object">
-                <select
-                  value={config.object}
-                  onChange={(e) => {
-                    const object = e.target.value as Config["object"];
-                    // An object replacement invalidates scalar jobs from the previous definition.
-                    stop();
-                    generation.current++;
-                    setScalars({});
-                    setMotion(objects[object].motion);
-                    update((c) => {
-                      const saved = remembered.current[object];
-                      if (saved) return structuredClone(saved);
-                      return objects[object].defaults(c);
-                    });
-                  }}
-                >
-                  {Object.entries(objects).map(([key, object]) => (
-                    <option key={key} value={key}>
-                      {object.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label={descriptor.viewLabel}>
-                <select
-                  value={config.mode}
-                  onChange={(e) => {
-                    const mode = e.target.value as Config["mode"];
-                    if (descriptor.linkedViews) {
+                <Field label={labels.object}>
+                  <select
+                    value={config.object}
+                    onChange={(e) => {
+                      const object = e.target.value as Config["object"];
+                      // An object replacement invalidates scalar jobs from the previous definition.
                       stop();
-                      // The paired shadow camera is kept only across a
-                      // paired → diagram → paired excursion.
-                      if (config.mode === "paired" && mode === "diagram") {
-                        pairedShadow.current = { ...view };
-                        setView({ ...diagramView });
-                      } else {
-                        if (mode === "paired" && config.mode === "diagram") {
-                          setDiagramView({ ...view });
-                          if (pairedShadow.current)
-                            setView({ ...pairedShadow.current });
+                      generation.current++;
+                      setScalars({});
+                      setMotion(objects[object].motion);
+                      update((c) => {
+                        const saved = remembered.current[object];
+                        if (saved) return structuredClone(saved);
+                        return objects[object].defaults(c);
+                      });
+                    }}
+                  >
+                    {Object.entries(objects).map(([key, object]) => (
+                      <option key={key} value={key}>
+                        {object.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={descriptor.viewLabel}>
+                  <select
+                    value={config.mode}
+                    onChange={(e) => {
+                      const mode = e.target.value as Config["mode"];
+                      if (descriptor.linkedViews) {
+                        stop();
+                        // The paired shadow camera is kept only across a
+                        // paired → diagram → paired excursion.
+                        if (config.mode === "paired" && mode === "diagram") {
+                          pairedShadow.current = { ...view };
+                          setView({ ...diagramView });
+                        } else {
+                          if (mode === "paired" && config.mode === "diagram") {
+                            setDiagramView({ ...view });
+                            if (pairedShadow.current)
+                              setView({ ...pairedShadow.current });
+                          }
+                          pairedShadow.current = null;
                         }
-                        pairedShadow.current = null;
+                        if (descriptor.flat?.({ ...config, mode }))
+                          setSpinning(false);
+                        setPreset(null);
+                        setConfig((c) => ({ ...c, mode }));
+                        return;
                       }
-                      if (descriptor.flat?.({ ...config, mode }))
-                        setSpinning(false);
-                      setPreset(null);
-                      setConfig((c) => ({ ...c, mode }));
-                      return;
-                    }
-                    if (mode !== "section" && motion === "slice")
-                      setMotion("double");
-                    update((c) => ({ ...c, mode }));
-                  }}
-                >
-                  {descriptor.modes.map((mode) => (
-                    <option key={mode} value={mode}>
-                      {modes[mode]}
-                    </option>
+                      if (mode !== "section" && motion === "slice")
+                        setMotion("double");
+                      update((c) => ({ ...c, mode }));
+                    }}
+                  >
+                    {descriptor.modes.map((mode) => (
+                      <option key={mode} value={mode}>
+                        {modes[mode]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <p className="note">{descriptor.selectorNote}</p>
+              </section>
+              {descriptor.rotations && (
+                <section>
+                  <div className="section-label">
+                    02 / TURN IN FOUR DIMENSIONS
+                  </div>
+                  {[0, 2, 4].map((i) => (
+                    <div className="pair" key={i}>
+                      {[i, i + 1].map((k) =>
+                        cloneElement(
+                          scalar(
+                            `${axes[k]} angle`,
+                            config.angles[k],
+                            (c, n) => {
+                              const angles = [...c.angles] as Config["angles"];
+                              angles[k] = n;
+                              return { ...c, angles };
+                            },
+                            "Radians; pi/2 is a quarter turn. Applied in order xy, xz, yz, xw, yw, zw. Positive turns carry the first named axis toward the second.",
+                          ),
+                          { key: k },
+                        ),
+                      )}
+                    </div>
                   ))}
-                </select>
-              </Field>
-              <p className="note">{descriptor.selectorNote}</p>
-            </section>
-            {descriptor.rotations && (
+                  <p className="note">
+                    The w planes turn through the fourth dimension. Drag the
+                    drawing to change your viewpoint in 3D.
+                  </p>
+                </section>
+              )}
               <section>
                 <div className="section-label">
-                  02 / TURN IN FOUR DIMENSIONS
+                  {descriptor.constructionNumber} / THE CONSTRUCTION
                 </div>
-                {[0, 2, 4].map((i) => (
-                  <div className="pair" key={i}>
-                    {[i, i + 1].map((k) =>
-                      cloneElement(
-                        scalar(
-                          `${["xy", "xz", "yz", "xw", "yw", "zw"][k]} angle`,
-                          config.angles[k],
-                          (c, n) => {
-                            const angles = [...c.angles] as Config["angles"];
-                            angles[k] = n;
-                            return { ...c, angles };
-                          },
-                          "Radians; pi/2 is a quarter turn. Applied in order xy, xz, yz, xw, yw, zw. Positive turns carry the first named axis toward the second.",
-                        ),
-                        { key: k },
-                      ),
-                    )}
-                  </div>
-                ))}
-                <p className="note">
-                  The w planes turn through the fourth dimension. Drag the
-                  drawing to change your viewpoint in 3D.
-                </p>
-              </section>
-            )}
-            <section>
-              <div className="section-label">
-                {descriptor.constructionNumber} / THE CONSTRUCTION
-              </div>
-              {curved && (
-                <>
-                  <div className="pair">
-                    {descriptor.radiusFields.map((field) =>
-                      cloneElement(
-                        scalar(
-                          field.label,
-                          config[field.key],
-                          (c, n) => ({ ...c, [field.key]: n }),
-                          field.help,
-                        ),
-                        { key: field.key },
-                      ),
-                    )}
-                  </div>
-                  <div className="pair">
-                    {count(
-                      "Curves per direction",
-                      config.curves,
-                      3,
-                      16,
-                      (c, curves) => ({ ...c, curves }),
-                    )}
-                    {count(
-                      "Curve samples",
-                      config.samples,
-                      8,
-                      256,
-                      (c, samples) => ({ ...c, samples }),
-                    )}
-                  </div>
-                  <p className="note">
-                    Finite boundary linework. Families share a budget of 512
-                    curves and 65,536 points; reduce counts if the budget is
-                    exceeded.
-                  </p>
-                </>
-              )}
-              {numericStudy && (
-                <>
-                  {descriptor.choicesFirst && choices}
-                  {renderNumericFields(false)}
-                  {descriptor.countFields ? (
-                    <>
-                      {[0, 2].map((start) => (
-                        <div className="pair" key={start}>
-                          {descriptor.countFields!(config)
-                            .slice(start, start + 2)
-                            .map((f) =>
-                              cloneElement(
-                                count(
-                                  f.label,
-                                  config[f.key],
-                                  f.min,
-                                  f.max,
-                                  (c, n) => ({ ...c, [f.key]: n }),
-                                ),
-                                { key: f.key },
-                              ),
-                            )}
-                        </div>
-                      ))}
-                      {descriptor.countNote && (
-                        <p className="note">{descriptor.countNote}</p>
-                      )}
-                    </>
-                  ) : (
-                    count(
-                      descriptor.sampleLabel!,
-                      config.samples,
-                      8,
-                      256,
-                      (c, samples) => ({ ...c, samples }),
-                    )
-                  )}
-                  {descriptor.motionEndpointsLabel && (
-                    <details className="subsection">
-                      <summary>{descriptor.motionEndpointsLabel}</summary>
-                      {renderNumericFields(true)}
-                    </details>
-                  )}
-                  {!descriptor.choicesFirst && choices}
-                </>
-              )}
-              {config.mode === "perspective" &&
-                scalar(
-                  "4D eye distance",
-                  config.distance,
-                  (c, distance) => ({ ...c, distance }),
-                  "From 2.05 to 20. The tesseract has circumradius 2, so the eye stays outside every rotation.",
-                )}
-              {config.mode === "stereo" &&
-                scalar(
-                  "Projection window radius",
-                  config.clip,
-                  (c, clip) => ({ ...c, clip }),
-                  "From 2 to 12 in projected space. Arcs passing through infinity are clipped at this sphere and left open. A larger window reveals more distant branches.",
-                )}
-              {config.mode === "section" ? (
-                <>
-                  {scalar(
-                    "Slice offset h",
-                    config.slice,
-                    (c, slice) => ({ ...c, slice }),
-                    descriptor.sliceHelp,
-                  )}
-                  <div className="pair">
-                    {count(
-                      "Section count",
-                      config.count,
-                      1,
-                      25,
-                      (c, count) => ({ ...c, count }),
-                    )}
-                    {scalar(
-                      "Section spread",
-                      config.spread,
-                      (c, spread) => ({ ...c, spread }),
-                      descriptor.spreadHelp,
-                    )}
-                  </div>
-                  {curved && (
-                    <Field
-                      label="Selected section"
-                      help="Section numbers follow the ordered slice family. The selected outline is stronger; negative h uses dashes and nonnegative h uses solid strokes. Selection stays fixed during passage and exports."
-                    >
-                      <input
-                        type="number"
-                        min="1"
-                        max={config.count}
-                        step="1"
-                        value={
-                          Math.min(
-                            layers.selectedSection ?? 0,
-                            config.count - 1,
-                          ) + 1
-                        }
-                        onChange={(e) => {
-                          const n = Number(e.target.value);
-                          if (!Number.isInteger(n) || n < 1 || n > config.count)
-                            return;
-                          controller.current?.abort();
-                          setLayers((l) => ({ ...l, selectedSection: n - 1 }));
-                        }}
-                      />
-                    </Field>
-                  )}
-                </>
-              ) : (
-                !numericStudy && (
+                {curved && (
                   <>
-                    {count(
-                      "Face grid lines",
-                      config.grid,
-                      0,
-                      12,
-                      (c, grid) => ({
-                        ...c,
-                        grid,
-                      }),
-                    )}
-                    {config.mode === "stereo" &&
-                      count(
-                        "Arc samples",
+                    <div className="pair">
+                      {descriptor.radiusFields.map((field) =>
+                        cloneElement(
+                          scalar(
+                            field.label,
+                            config[field.key],
+                            (c, n) => ({ ...c, [field.key]: n }),
+                            field.help,
+                          ),
+                          { key: field.key },
+                        ),
+                      )}
+                    </div>
+                    <div className="pair">
+                      {count(
+                        labels.curves,
+                        config.curves,
+                        3,
+                        16,
+                        (c, curves) => ({ ...c, curves }),
+                      )}
+                      {count(
+                        labels.curveSamples,
                         config.samples,
                         8,
                         256,
                         (c, samples) => ({ ...c, samples }),
                       )}
+                    </div>
+                    <p className="note">
+                      Finite boundary linework. Families share a budget of 512
+                      curves and 65,536 points; reduce counts if the budget is
+                      exceeded.
+                    </p>
                   </>
-                )
-              )}
-              <div className="layer-grid">
-                {(
-                  descriptor.layerOptions?.(config) ??
-                  (["edges", "guides", "faces"] as const)
-                    .filter(
-                      (k) =>
-                        k === "edges" ||
-                        (k === "faces"
-                          ? !curved &&
-                            config.mode === "section" &&
-                            config.count === 1
-                          : config.mode !== "section"),
-                    )
-                    .map((k) => ({
-                      key: k,
-                      label: {
-                        edges: "Edges & section contours",
-                        guides: "Face lattice",
-                        faces: "Translucent section faces",
-                      }[k],
-                    }))
-                ).map(({ key: k, label }) => (
-                  <label className="check" key={k}>
-                    <input
-                      type="checkbox"
-                      checked={!!layers[k]}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        controller.current?.abort();
-                        setLayers((l) => ({ ...l, [k]: checked }));
-                      }}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </section>
+                )}
+                {numericStudy && (
+                  <>
+                    {descriptor.choicesFirst && choices}
+                    {renderNumericFields(false)}
+                    {descriptor.countFields ? (
+                      <>
+                        {[0, 2].map((start) => (
+                          <div className="pair" key={start}>
+                            {descriptor.countFields!(config)
+                              .slice(start, start + 2)
+                              .map((f) =>
+                                cloneElement(
+                                  count(
+                                    f.label,
+                                    config[f.key],
+                                    f.min,
+                                    f.max,
+                                    (c, n) => ({ ...c, [f.key]: n }),
+                                  ),
+                                  { key: f.key },
+                                ),
+                              )}
+                          </div>
+                        ))}
+                        {descriptor.countNote && (
+                          <p className="note">{descriptor.countNote}</p>
+                        )}
+                      </>
+                    ) : (
+                      count(
+                        descriptor.sampleLabel!,
+                        config.samples,
+                        8,
+                        256,
+                        (c, samples) => ({ ...c, samples }),
+                      )
+                    )}
+                    {descriptor.motionEndpointsLabel && (
+                      <details className="subsection">
+                        <summary>{descriptor.motionEndpointsLabel}</summary>
+                        {renderNumericFields(true)}
+                      </details>
+                    )}
+                    {!descriptor.choicesFirst && choices}
+                  </>
+                )}
+                {config.mode === "perspective" &&
+                  scalar(
+                    labels.distance,
+                    config.distance,
+                    (c, distance) => ({ ...c, distance }),
+                    "From 2.05 to 20. The tesseract has circumradius 2, so the eye stays outside every rotation.",
+                  )}
+                {config.mode === "stereo" &&
+                  scalar(
+                    labels.clip,
+                    config.clip,
+                    (c, clip) => ({ ...c, clip }),
+                    "From 2 to 12 in projected space. Arcs passing through infinity are clipped at this sphere and left open. A larger window reveals more distant branches.",
+                  )}
+                {config.mode === "section" ? (
+                  <>
+                    {scalar(
+                      labels.slice,
+                      config.slice,
+                      (c, slice) => ({ ...c, slice }),
+                      descriptor.sliceHelp,
+                    )}
+                    <div className="pair">
+                      {count(labels.count, config.count, 1, 25, (c, count) => ({
+                        ...c,
+                        count,
+                      }))}
+                      {scalar(
+                        labels.spread,
+                        config.spread,
+                        (c, spread) => ({ ...c, spread }),
+                        descriptor.spreadHelp,
+                      )}
+                    </div>
+                    {curved && (
+                      <Field
+                        label="Selected section"
+                        help="Section numbers follow the ordered slice family. The selected outline is stronger; negative h uses dashes and nonnegative h uses solid strokes. Selection stays fixed during passage and exports."
+                      >
+                        <input
+                          type="number"
+                          min="1"
+                          max={config.count}
+                          step="1"
+                          value={
+                            Math.min(
+                              layers.selectedSection ?? 0,
+                              config.count - 1,
+                            ) + 1
+                          }
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            if (
+                              !Number.isInteger(n) ||
+                              n < 1 ||
+                              n > config.count
+                            )
+                              return;
+                            controller.current?.abort();
+                            setLayers((l) => ({
+                              ...l,
+                              selectedSection: n - 1,
+                            }));
+                          }}
+                        />
+                      </Field>
+                    )}
+                  </>
+                ) : (
+                  !numericStudy && (
+                    <>
+                      {count(labels.grid, config.grid, 0, 12, (c, grid) => ({
+                        ...c,
+                        grid,
+                      }))}
+                      {config.mode === "stereo" &&
+                        count(
+                          labels.arcSamples,
+                          config.samples,
+                          8,
+                          256,
+                          (c, samples) => ({ ...c, samples }),
+                        )}
+                    </>
+                  )
+                )}
+                <div className="layer-grid">
+                  {(
+                    descriptor.layerOptions?.(config) ??
+                    (["edges", "guides", "faces"] as const)
+                      .filter(
+                        (k) =>
+                          k === "edges" ||
+                          (k === "faces"
+                            ? !curved &&
+                              config.mode === "section" &&
+                              config.count === 1
+                            : config.mode !== "section"),
+                      )
+                      .map((k) => ({
+                        key: k,
+                        label: {
+                          edges: "Edges & section contours",
+                          guides: "Face lattice",
+                          faces: "Translucent section faces",
+                        }[k],
+                      }))
+                  ).map(({ key: k, label }) => (
+                    <label className="check" key={k}>
+                      <input
+                        type="checkbox"
+                        checked={!!layers[k]}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          controller.current?.abort();
+                          setLayers((l) => ({ ...l, [k]: checked }));
+                        }}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </section>
+            </FieldErrorContext.Provider>
+            {failure && !claimedHere && <StudyError message={failure} />}
             <AnimationPanel
               {...{
                 config,
@@ -959,14 +1019,15 @@ export default function TesseractApp({
                   }}
                 />
               )}
-              {!frame && !error && (
-                <div className="loading">Opening the fourth dimension…</div>
-              )}
-              {(error || scalarError) && (
-                <div className="error tesseract-error" role="alert">
-                  <strong>Let’s check the definition</strong>
-                  <p>{scalarError || error}</p>
+              {!frame && (
+                <div className="loading">
+                  {failure
+                    ? "Check the study definition to begin."
+                    : "Opening the fourth dimension…"}
                 </div>
+              )}
+              {frame && failure && (
+                <span className="stale-study">Previous valid study</span>
               )}
               {busy && frame && <span className="computing">Computing…</span>}
             </div>

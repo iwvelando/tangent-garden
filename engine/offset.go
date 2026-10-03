@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -46,10 +45,13 @@ const maxStackPoints = 131072
 
 func (s Stack) validate(samples int) error {
 	if s.Count < 2 || s.Count > 64 || s.Count*samples > maxStackPoints {
-		return fmt.Errorf("offset stacks need 2–64 offsets and at most 131,072 points (offsets × samples)")
+		return fieldErr("count", "offset stacks need 2–64 offsets and at most 131,072 points (offsets × samples)")
 	}
-	if !finite(s.From) || !finite(s.To) || math.Abs(s.From) > 1e5 || math.Abs(s.To) > 1e5 {
-		return fmt.Errorf("offset stack distances must be finite and within ±100000")
+	if !bound(1e5)(s.From) {
+		return fieldErr("from", "offset stack distances must be finite and within ±100000")
+	}
+	if !bound(1e5)(s.To) {
+		return fieldErr("to", "offset stack distances must be finite and within ±100000")
 	}
 	return nil
 }
