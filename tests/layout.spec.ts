@@ -357,3 +357,122 @@ test("every header control is the same height in every notebook", async ({
     }
   }
 });
+
+const artworks = {
+  "2d": "#artwork",
+  "3d": "#spatial-artwork",
+  "4d": "#tesseract-artwork",
+} as const;
+
+// Switching notebooks keeps the study's label, dimension picker and examples
+// where the reader left them.
+test("every notebook starts its controls at the same height on a desktop", async ({
+  page,
+}) => {
+  await page.goto("/");
+  let first: number[] | undefined;
+  for (const dimension of ["2d", "3d", "4d"] as const) {
+    if (dimension !== "2d") await chooseNotebook(page, dimension);
+    await expect(page.locator(artworks[dimension])).toBeVisible();
+    const aside = page.locator(".app:visible aside");
+    const top = (await aside.boundingBox())!.y;
+    const offsets = [
+      (await aside.locator(".section-label").first().boundingBox())!.y - top,
+      (await aside.locator(".notebook-mode").boundingBox())!.y - top,
+      (await aside.locator(".example-picker").boundingBox())!.y - top,
+    ];
+    if (!first) first = offsets;
+    else
+      offsets.forEach((y, i) =>
+        expect(Math.abs(y - first![i]), dimension).toBeLessThan(1),
+      );
+    // Nothing rules off the study above its label.
+    expect(
+      await aside
+        .locator(".section-label")
+        .first()
+        .evaluate((label) => {
+          for (
+            let e = label.parentElement;
+            e && e.tagName !== "ASIDE";
+            e = e.parentElement
+          )
+            if (parseFloat(getComputedStyle(e).borderTopWidth) > 0) return true;
+          return false;
+        }),
+      dimension,
+    ).toBe(false);
+  }
+});
+
+// On phones every notebook puts its view buttons on their own row, under the
+// title and aligned with it, then the drawing, then the controls with the
+// examples, and only then the explanation.
+test("phones order every notebook's heading, drawing, controls and explanation alike", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  for (const dimension of ["2d", "3d", "4d"] as const) {
+    if (dimension !== "2d") await chooseNotebook(page, dimension);
+    const drawing = page.locator(artworks[dimension]);
+    await expect(drawing).toBeVisible();
+    const app = page.locator(".app:visible");
+    const title = (await app.locator(".plot-heading h1").boundingBox())!;
+    const buttons = await app
+      .locator(".plot-heading button:visible")
+      .evaluateAll((es) => es.map((e) => e.getBoundingClientRect().toJSON()));
+    expect(buttons.length, dimension).toBeGreaterThan(0);
+    expect(buttons[0].y, dimension).toBeGreaterThan(title.y + title.height);
+    expect(Math.abs(buttons[0].x - title.x), dimension).toBeLessThan(1);
+    const top = async (selector: string) =>
+      (await app.locator(selector).first().boundingBox())!.y;
+    const picture = (await drawing.boundingBox())!;
+    const controls = await top("aside");
+    const examples = await top(".example-picker");
+    const explanation = await top(
+      dimension === "4d" ? ".tesseract-explanation" : ".explanation",
+    );
+    expect(buttons[0].y + buttons[0].height, dimension).toBeLessThan(picture.y);
+    expect(picture.y + picture.height, dimension).toBeLessThan(controls);
+    expect(examples, dimension).toBeLessThan(explanation);
+    expect(controls, dimension).toBeLessThan(explanation);
+  }
+});
+
+// The drawing keeps one frame across notebooks, so switching dimension never
+// moves the drawing's edges or the legend under it.
+for (const [width, height] of [
+  [1440, 900],
+  [390, 844],
+] as const) {
+  test(`every notebook's drawing has the same frame at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    let first: number[] | undefined;
+    for (const dimension of ["2d", "3d", "4d"] as const) {
+      if (dimension !== "2d") await chooseNotebook(page, dimension);
+      await expect(page.locator(artworks[dimension])).toBeVisible();
+      const frame = await page
+        .locator(".app:visible .plot-wrap")
+        .evaluate((e) => {
+          const box = e.getBoundingClientRect();
+          // Measured from the page's top, wherever it is scrolled.
+          return [box.top + scrollY, box.bottom + scrollY];
+        });
+      // On phones the headings above differ in length; the height must not.
+      const shape =
+        width > 700 ? frame : [frame[1] - frame[0], frame[1] - frame[0]];
+      if (!first) first = shape;
+      else
+        shape.forEach((y, i) =>
+          expect(
+            Math.abs(y - first![i]),
+            `${dimension}: ${shape}`,
+          ).toBeLessThan(1),
+        );
+    }
+  });
+}

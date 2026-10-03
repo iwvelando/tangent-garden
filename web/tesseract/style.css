@@ -1,9 +1,10 @@
 .tesseract-canvas-wrap {
   background: var(--paper);
   position: relative;
-  height: calc(100vh - 330px);
-  min-height: 390px;
-  max-height: 840px;
+  /* The same frame as the other notebooks' drawings. */
+  height: calc(100vh - 325px);
+  min-height: 420px;
+  max-height: 880px;
 }
 #tesseract-artwork {
   display: block;
@@ -18,6 +19,13 @@
 #tesseract-artwork:focus-visible {
   outline: 2px solid #74a89a;
   outline-offset: -3px;
+}
+/* The study opens the controls as in the other notebooks, with no rule or
+   gap above it. */
+.tesseract-controls > section:first-child {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
 }
 .tesseract-controls .field {
   min-width: 0;
@@ -122,8 +130,8 @@
 }
 @media (max-width: 700px) {
   .tesseract-canvas-wrap {
-    height: calc((100vw - 36px) * 0.85);
-    min-height: 0;
+    height: 55vh;
+    min-height: 340px;
   }
   .tesseract-app .plot-meta {
     flex-wrap: wrap;

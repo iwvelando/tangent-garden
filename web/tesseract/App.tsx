@@ -7,7 +7,10 @@ import {
   useState,
 } from "react";
 import { AppHeader } from "../AppHeader";
+import { AnimationButton } from "../AnimationButton";
+import { NotebookMode } from "../NotebookMode";
 import { useTheme } from "../useTheme";
+import { useMediaQuery } from "../useMediaQuery";
 import {
   Field,
   FieldErrorContext,
@@ -49,6 +52,7 @@ export default function TesseractApp({
   shared?: SharedStudy;
 }) {
   const theme = useTheme(),
+    narrow = useMediaQuery("(max-width: 700px)"),
     { dark } = theme;
   const [config, setConfig] = useState<Config>(() =>
     structuredClone(tesseractPresets[0].config),
@@ -517,6 +521,53 @@ export default function TesseractApp({
     [failureTarget.id, failureTarget.label, failure],
   );
   const claimedHere = !!failure && claimed !== null;
+  // On phones the explanation follows the controls, as in the other
+  // notebooks, so the examples come straight after the drawing.
+  const explanation = (
+    <div className="tesseract-explanation">
+      <h2>{info[0]}</h2>
+      <p>{info[1]}</p>
+      <code>{info[2]}</code>
+      <p className="note">{descriptor.colorNote(config)}</p>
+      {frame && descriptor.readouts && (
+        <div className="lift-readout">
+          {descriptor.readouts(frame.result).map(({ label, value }) => (
+            <span key={label}>
+              {label}: <b>{value}</b>
+            </span>
+          ))}
+        </div>
+      )}
+      {frame && descriptor.comparisonReadouts && (
+        <details className="comparison-readout">
+          <summary>{descriptor.comparisonLabel}</summary>
+          {descriptor.comparisonNote && <p>{descriptor.comparisonNote}</p>}
+          <div className="lift-readout">
+            {descriptor
+              .comparisonReadouts(frame.result)
+              .map(({ label, value }) => (
+                <span key={label}>
+                  {label}: <b>{value}</b>
+                </span>
+              ))}
+          </div>
+        </details>
+      )}
+      {curved && selected ? (
+        <p className="section-identity" data-section={selected.id}>
+          Selected section{" "}
+          {Math.min(
+            layers.selectedSection ?? 0,
+            frame!.result.sections.length - 1,
+          ) + 1}{" "}
+          · {descriptor.sectionDetail(selected)}
+        </p>
+      ) : null}
+      <p className="tesseract-diagnostics" role="status">
+        {frame && descriptor.diagnostics(frame.result)}
+      </p>
+    </div>
+  );
   return (
     <div className={`app tesseract-app ${dark ? "dark" : ""}`}>
       <AppHeader theme={theme}>
@@ -525,6 +576,7 @@ export default function TesseractApp({
           study={snapshot}
           disabled={busy || !!error || !!scalarError}
         />
+        <AnimationButton section="shape-animation-section" />
         <ExportImageMenu
           menuId="tesseract-export-image"
           kind="tesseract"
@@ -578,6 +630,7 @@ export default function TesseractApp({
                 <div className="section-label">
                   01 / BEYOND THREE DIMENSIONS
                 </div>
+                <NotebookMode />
                 <ExampleGallery
                   examples={tesseractExamples}
                   current={preset}
@@ -1072,52 +1125,9 @@ export default function TesseractApp({
               </span>
             </div>
           </div>
-          <div className="tesseract-explanation">
-            <h2>{info[0]}</h2>
-            <p>{info[1]}</p>
-            <code>{info[2]}</code>
-            <p className="note">{descriptor.colorNote(config)}</p>
-            {frame && descriptor.readouts && (
-              <div className="lift-readout">
-                {descriptor.readouts(frame.result).map(({ label, value }) => (
-                  <span key={label}>
-                    {label}: <b>{value}</b>
-                  </span>
-                ))}
-              </div>
-            )}
-            {frame && descriptor.comparisonReadouts && (
-              <details className="comparison-readout">
-                <summary>{descriptor.comparisonLabel}</summary>
-                {descriptor.comparisonNote && (
-                  <p>{descriptor.comparisonNote}</p>
-                )}
-                <div className="lift-readout">
-                  {descriptor
-                    .comparisonReadouts(frame.result)
-                    .map(({ label, value }) => (
-                      <span key={label}>
-                        {label}: <b>{value}</b>
-                      </span>
-                    ))}
-                </div>
-              </details>
-            )}
-            {curved && selected ? (
-              <p className="section-identity" data-section={selected.id}>
-                Selected section{" "}
-                {Math.min(
-                  layers.selectedSection ?? 0,
-                  frame!.result.sections.length - 1,
-                ) + 1}{" "}
-                · {descriptor.sectionDetail(selected)}
-              </p>
-            ) : null}
-            <p className="tesseract-diagnostics" role="status">
-              {frame && descriptor.diagnostics(frame.result)}
-            </p>
-          </div>
+          {!narrow && explanation}
         </article>
+        {narrow && <div className="behind">{explanation}</div>}
       </main>
     </div>
   );

@@ -14,27 +14,16 @@ for (const width of [320, 390, 1440]) {
       await page.setViewportSize({ width, height: 1000 });
       await page.emulateMedia({ colorScheme });
       await page.goto("/");
-      const picker = () => page.locator(".app:visible .notebook-mode > button");
-      await expect(picker()).toHaveText("2D studies ▾");
-      await picker().focus();
-      await page.keyboard.press("ArrowDown");
-      await expect(
-        page.getByRole("menuitemradio", { name: "2D studies" }),
-      ).toBeFocused();
-      await page.keyboard.press("End");
-      await expect(
-        page.getByRole("menuitemradio", { name: "4D studies" }),
-      ).toBeFocused();
-      await page.keyboard.press("Enter");
+      const choice = (name: string) =>
+        page
+          .locator(".app:visible")
+          .getByRole("radio", { name: `${name} studies` });
+      await expect(choice("2D")).toBeChecked();
+      await choice("2D").focus();
+      await page.keyboard.press("ArrowLeft");
       await expect(page.locator("#tesseract-artwork")).toBeVisible();
-      await expect(picker()).toBeFocused();
-      await expect(picker()).toHaveText("4D studies ▾");
-      await picker().click();
-      await expect(
-        page.getByRole("menuitemradio", { name: "4D studies" }),
-      ).toHaveAttribute("aria-checked", "true");
-      await page.keyboard.press("Escape");
-      await expect(picker()).toBeFocused();
+      await expect(choice("4D")).toBeFocused();
+      await expect(choice("4D")).toBeChecked();
       const buttons = page.locator(".app:visible .header-actions");
       const row = await buttons
         .locator(":scope > button, :scope > div > button")

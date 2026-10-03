@@ -23,6 +23,8 @@ import {
 } from "../Field";
 import { fieldLabel } from "./fields";
 import { AppHeader } from "../AppHeader";
+import { AnimationButton } from "../AnimationButton";
+import { NotebookMode } from "../NotebookMode";
 import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
 import { saveFile } from "../export-image";
@@ -2225,6 +2227,7 @@ export default function SpatialApp({
     >
       <AppHeader theme={theme}>
         <ShareLink notebook="3d" study={snapshot} disabled={!ready} />
+        <AnimationButton section="spatial-animation-section" />
         <ExportImageMenu
           disabled={!ready || running || imageBusy}
           kind="spatial"
@@ -2249,6 +2252,7 @@ export default function SpatialApp({
             <LinkNotice text={linkNotice} onDismiss={() => setLinkNotice("")} />
           )}
           <div className="section-label">01 / THE STUDY</div>
+          <NotebookMode />
           <ExampleGallery
             examples={spatialExamples}
             current={preset === "" ? null : +preset}

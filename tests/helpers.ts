@@ -66,14 +66,10 @@ export async function chooseNotebook(
   page: Page,
   dimension: "2d" | "3d" | "4d",
 ) {
-  await page.locator(".app:visible .notebook-mode > button").click();
   await page
-    .getByRole("menuitemradio", {
-      name: { "2d": "2D studies", "3d": "3D studies", "4d": "4D studies" }[
-        dimension
-      ],
-      exact: true,
-    })
+    .locator(".app:visible")
+    .getByRole("radiogroup", { name: "Study dimension" })
+    .getByRole("radio", { name: `${dimension.toUpperCase()} studies` })
     .click();
 }
 

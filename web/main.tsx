@@ -1,5 +1,10 @@
 import { StudyExplanation } from "./StudyExplanation";
-import { NotebookContext } from "./NotebookMode";
+import {
+  NotebookContext,
+  NotebookMode,
+  type FocusRequest,
+} from "./NotebookMode";
+import { AnimationButton } from "./AnimationButton";
 import {
   lazy,
   Suspense,
@@ -1174,6 +1179,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
           study={snapshot}
           disabled={!result || busy || !!error}
         />
+        <AnimationButton section="animation-section" />
         <ExportImageMenu
           disabled={!result || busy || !!error || animationRunning}
           kind={studyName(config)}
@@ -1190,6 +1196,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
             )}
             <FieldErrorContext.Provider value={fieldError}>
               <div className="section-label">01 / THE STUDY</div>
+              <NotebookMode />
               <ExampleGallery
                 examples={planarExamples}
                 current={preset === "custom" ? null : +preset}
@@ -2196,7 +2203,7 @@ const notebookKind = (): NotebookKind => {
   return study === "3d" || study === "4d" ? study : "2d";
 };
 function Notebook() {
-  const focusRequest = useRef(false);
+  const focusRequest = useRef<FocusRequest>(false);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -2208,9 +2215,9 @@ function Notebook() {
     setSeen((s) => ({ ...s, [next]: true }));
     setMode(next);
   };
-  const choose = (next: NotebookKind) => {
+  const choose = (next: NotebookKind, via: "keyboard" | "pointer") => {
     if (next === mode) return;
-    focusRequest.current = true;
+    focusRequest.current = via;
     show(next);
     const url = new URL(location.href);
     if (next === "2d") url.searchParams.delete("study");
