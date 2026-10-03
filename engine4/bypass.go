@@ -196,36 +196,36 @@ func bypass(q Request, r Result) (Result, error) {
 		return primary, nil
 	}
 	if q.Mode != "shadow" && q.Mode != "diagram" {
-		return r, fmt.Errorf("choose XYZ shadow, Coordinate diagram, or Side-by-side views")
+		return r, fieldErr("mode", "choose XYZ shadow, Coordinate diagram, or Side-by-side views")
 	}
 	if q.Bypass == nil {
 		return r, fmt.Errorf("shell bypass parameters are required")
 	}
 	l := *q.Bypass
 	if l.Obstacle != "embedded" && l.Obstacle != "radial" {
-		return r, fmt.Errorf("choose an embedded or radial obstacle")
+		return r, fieldErr("bypass.obstacle", "choose an embedded or radial obstacle")
 	}
 	if !finite(l.Inner) || l.Inner < .05 || l.Inner > 10 {
-		return r, fmt.Errorf("Inner radius a must be between 0.05 and 10")
+		return r, fieldErr("bypass.inner", "Inner radius a must be between 0.05 and 10")
 	}
 	if !finite(l.Outer) || l.Outer-l.Inner < .001 || l.Outer > 20 {
-		return r, fmt.Errorf("Outer radius b must exceed a by at least 0.001 and be at most 20")
+		return r, fieldErr("bypass.outer", "Outer radius b must exceed a by at least 0.001 and be at most 20")
 	}
 	if l.Obstacle == "embedded" && (!finite(l.Extent) || l.Extent < 0 || l.Extent > 5) {
-		return r, fmt.Errorf("Fourth-coordinate extent ε must be between 0 and 5")
+		return r, fieldErr("bypass.extent", "Fourth-coordinate extent ε must be between 0 and 5")
 	}
 	if l.Obstacle == "radial" {
 		l.Extent = 0
 	}
 	if !finite(l.Height) || l.Height < 0 || l.Height > 20 {
-		return r, fmt.Errorf("Route height H must be between 0 and 20")
+		return r, fieldErr("bypass.height", "Route height H must be between 0 and 20")
 	}
 	if !finite(l.Position) || l.Position < 0 || l.Position > 1 {
-		return r, fmt.Errorf("Route position s must be between 0 and 1")
+		return r, fieldErr("bypass.position", "Route position s must be between 0 and 1")
 	}
 	for i, v := range l.Outside {
 		if !finite(v) || math.Abs(v) > 20 {
-			return r, fmt.Errorf("Outside point %s must be finite and within ±20", []string{"x", "y", "z"}[i])
+			return r, fieldErr(fmt.Sprintf("bypass.outside.%d", i), "Outside point %s must be finite and within ±20", []string{"x", "y", "z"}[i])
 		}
 	}
 	outside := math.Sqrt(dot(l.Outside, l.Outside))
@@ -233,15 +233,15 @@ func bypass(q Request, r Result) (Result, error) {
 		return r, fmt.Errorf("Outside point radius must exceed b and be at most 40")
 	}
 	for _, f := range []struct {
-		name string
-		v    float64
-	}{{"First comparison w", l.W1}, {"Second comparison w", l.W2}} {
+		name, key string
+		v         float64
+	}{{"First comparison w", "w1", l.W1}, {"Second comparison w", "w2", l.W2}} {
 		if !finite(f.v) || math.Abs(f.v) > 20 {
-			return r, fmt.Errorf("%s must be finite and within ±20", f.name)
+			return r, fieldErr("bypass."+f.key, "%s must be finite and within ±20", f.name)
 		}
 	}
 	if q.Samples < 8 || q.Samples > 256 {
-		return r, fmt.Errorf("use 8–256 shell samples")
+		return r, fieldErr("samples", "use 8–256 shell samples")
 	}
 	vertices := []Vec4{{l.Outside[0], l.Outside[1], l.Outside[2], 0}, {l.Outside[0], l.Outside[1], l.Outside[2], l.Height}, {0, 0, 0, l.Height}, {0, 0, 0, 0}}
 	leg := math.Min(2, math.Floor(3*l.Position))

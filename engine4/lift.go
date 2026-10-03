@@ -194,38 +194,38 @@ func presentIntervalCount(source liftCurve, pieces []interval) int {
 }
 func lifted(q Request, r Result) (Result, error) {
 	if q.Mode != "reference" && q.Mode != "lifted" {
-		return r, fmt.Errorf("choose Reference slice or Lifted construction")
+		return r, fieldErr("mode", "choose Reference slice or Lifted construction")
 	}
 	if q.Lift == nil {
 		return r, fmt.Errorf("localized lift parameters are required")
 	}
 	l := *q.Lift
 	for _, field := range []struct {
-		name string
-		v    Vec3
-	}{{"Lift center", l.Center}, {"Drift start", l.From}, {"Drift end", l.To}} {
-		for _, v := range field.v {
+		name, key string
+		v         Vec3
+	}{{"Lift center", "center", l.Center}, {"Drift start", "from", l.From}, {"Drift end", "to", l.To}} {
+		for i, v := range field.v {
 			if !finite(v) || math.Abs(v) > 20 {
-				return r, fmt.Errorf("%s coordinates must be finite and within ±20", field.name)
+				return r, fieldErr(fmt.Sprintf("lift.%s.%d", field.key, i), "%s coordinates must be finite and within ±20", field.name)
 			}
 		}
 	}
 	for _, field := range []struct {
-		name string
-		v    float64
-	}{{"Lift support radius L", l.Support}, {"Support start", l.RadiusFrom}, {"Support end", l.RadiusTo}} {
+		name, key string
+		v         float64
+	}{{"Lift support radius L", "support", l.Support}, {"Support start", "radiusFrom", l.RadiusFrom}, {"Support end", "radiusTo", l.RadiusTo}} {
 		if !finite(field.v) || field.v < .05 || field.v > 20 {
-			return r, fmt.Errorf("%s must be between 0.05 and 20", field.name)
+			return r, fieldErr("lift."+field.key, "%s must be between 0.05 and 20", field.name)
 		}
 	}
 	if !finite(l.Height) || l.Height < 0 || l.Height > 10 {
-		return r, fmt.Errorf("Lift height A must be between 0 and 10")
+		return r, fieldErr("lift.height", "Lift height A must be between 0 and 10")
 	}
 	if q.Mode == "lifted" && (!finite(l.Angle) || math.Abs(l.Angle) > 1e6) {
-		return r, fmt.Errorf("Presentation xw angle must be finite and within ±1000000 radians")
+		return r, fieldErr("lift.angle", "Presentation xw angle must be finite and within ±1000000 radians")
 	}
 	if q.Samples < 8 || q.Samples > 256 {
-		return r, fmt.Errorf("use 8–256 thread samples")
+		return r, fieldErr("samples", "use 8–256 thread samples")
 	}
 	// Static over either motion and both linked views, including optional guides.
 	bound := math.Max(l.Support, math.Max(l.RadiusFrom, l.RadiusTo))

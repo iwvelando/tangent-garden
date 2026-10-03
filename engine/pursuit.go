@@ -65,14 +65,14 @@ func (p Pursuit) validate() error {
 	}
 	for i, q := range p.Pursuers {
 		switch {
-		case !finite(q.X) || !finite(q.Y) || math.Abs(q.X) > 1e5 || math.Abs(q.Y) > 1e5:
-			return fmt.Errorf("pursuer %d: the coordinates must be finite and within ±100000", i+1)
+		case !bound(1e5)(q.X) || !bound(1e5)(q.Y):
+			return fieldErr(coordinate(fmt.Sprintf("pursuers.%d", i), Vec{q.X, q.Y}, bound(1e5)), "pursuer %d: the coordinates must be finite and within ±100000", i+1)
 		case !finite(q.Speed) || q.Speed < 0 || q.Speed > 1e5:
-			return fmt.Errorf("pursuer %d: the speed must be finite and within 0–100000", i+1)
+			return fieldErr(fmt.Sprintf("pursuers.%d.speed", i), "pursuer %d: the speed must be finite and within 0–100000", i+1)
 		}
 	}
 	if !finite(p.Capture) || p.Capture <= 0 || p.Capture > 1e5 {
-		return fmt.Errorf("the capture distance must be finite, positive, and at most 100000")
+		return fieldErr("capture", "the capture distance must be finite, positive, and at most 100000")
 	}
 	return nil
 }

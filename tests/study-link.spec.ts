@@ -545,6 +545,33 @@ const v1 = {
     "y24m_1oMZkMBabffQXorthRflh8",
 };
 
+// A polar source needs its radius and angle; one a link leaves out reads as
+// 0, as its field shows it and as Go would take it, so the study opens
+// rather than failing on a value the reader cannot see is missing.
+test("a polar source's missing radius or angle opens as 0", async () => {
+  const study = planar(2) as any;
+  study.config.source = {
+    ...study.config.source,
+    kind: "point",
+    coordinates: "polar",
+    radius: 1.5,
+  };
+  let read = planarStudy(study);
+  assert.equal(read.config.source.radius, 1.5);
+  assert.equal(read.config.source.theta, 0);
+  delete study.config.source.radius;
+  study.config.source.theta = 0.5;
+  read = planarStudy(study);
+  assert.equal(read.config.source.radius, 0);
+  assert.equal(read.config.source.theta, 0.5);
+  // A Cartesian source keeps them absent.
+  delete study.config.source.coordinates;
+  delete study.config.source.theta;
+  read = planarStudy(study);
+  assert.equal("radius" in read.config.source, false);
+  assert.equal("theta" in read.config.source, false);
+});
+
 test("links made by version 1 keep opening", async () => {
   const planarLink = await readStudyLink(v1["2d"]);
   assert.equal(planarLink.notebook, "2d");

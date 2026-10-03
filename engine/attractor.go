@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -59,26 +58,26 @@ var maxDiscard, maxIterates = 1_000_000, 5_000_000
 
 func (v Attractor) validate() error {
 	if v.Map != "clifford" && v.Map != "dejong" && v.Map != "henon" {
-		return fmt.Errorf("choose the Clifford, de Jong, or Hénon map")
+		return fieldErr("map", "choose the Clifford, de Jong, or Hénon map")
 	}
-	for _, x := range []float64{v.A, v.B, v.C, v.D} {
+	for i, x := range []float64{v.A, v.B, v.C, v.D} {
 		if !finite(x) || math.Abs(x) > 1000 {
-			return fmt.Errorf("the map's coefficients must be finite and within ±1000")
+			return fieldErr([]string{"a", "b", "c", "d"}[i], "the map's coefficients must be finite and within ±1000")
 		}
 	}
-	if !(math.Abs(v.Start.X) <= escapeBound && math.Abs(v.Start.Y) <= escapeBound) {
-		return fmt.Errorf("the start must be finite and within ±100000")
+	if start := bound(escapeBound); !start(v.Start.X) || !start(v.Start.Y) {
+		return fieldErr(coordinate("start", v.Start, start), "the start must be finite and within ±100000")
 	}
 	if v.Discard < 0 || v.Discard > maxDiscard {
-		return fmt.Errorf("discard 0–1,000,000 iterates")
+		return fieldErr("discard", "discard 0–1,000,000 iterates")
 	}
 	if v.Iterates < 0 || v.Iterates > maxIterates {
-		return fmt.Errorf("accumulate 0–5,000,000 iterates")
+		return fieldErr("iterates", "accumulate 0–5,000,000 iterates")
 	}
 	if v.Cells < minCells || v.Cells > maxCells {
-		return fmt.Errorf("a density grid needs 4–1024 cells along the window's longer side")
+		return fieldErr("cells", "a density grid needs 4–1024 cells along the window's longer side")
 	}
-	return v.Window.validate()
+	return within("window", v.Window.validate())
 }
 
 func (v Attractor) step() func(Vec) Vec {

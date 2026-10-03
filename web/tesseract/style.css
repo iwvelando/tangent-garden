@@ -95,12 +95,6 @@
 .section-meta .tesseract-legend > span > span {
   display: block;
 }
-.tesseract-error {
-  position: absolute;
-  inset: 0;
-  background: var(--panel);
-  opacity: 0.96;
-}
 .lift-readout {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 30ch), 1fr));

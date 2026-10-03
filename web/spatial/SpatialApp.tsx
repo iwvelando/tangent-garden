@@ -15,6 +15,7 @@ import { useDisclosure } from "../useDisclosure";
 import {
   Field,
   FieldErrorContext,
+  StudyError,
   HelpText,
   HelpToggle,
   useHelp,
@@ -3173,11 +3174,7 @@ export default function SpatialApp({
               )}
             </details>
           </FieldErrorContext.Provider>
-          {failure && !claimedHere && (
-            <p className="error" role="alert">
-              {failure}
-            </p>
-          )}
+          {failure && !claimedHere && <StudyError message={failure} />}
           <p className="spatial-status" role="status">
             {busy
               ? "Growing the spatial study…"
@@ -3319,7 +3316,7 @@ export default function SpatialApp({
                 </div>
               )}
               {frame && failure && (
-                <span className="spatial-stale">Previous valid study</span>
+                <span className="stale-study">Previous valid study</span>
               )}
             </div>
             <div className="plot-meta">

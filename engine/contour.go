@@ -92,13 +92,16 @@ func formatLevel(v float64) string { return strconv.FormatFloat(v, 'g', 6, 64) }
 
 // validate checks a window for an implicit curve or a density grid.
 func (w Window) validate() error {
-	for _, x := range []float64{w.XMin, w.XMax, w.YMin, w.YMax} {
+	for i, x := range []float64{w.XMin, w.XMax, w.YMin, w.YMax} {
 		if !finite(x) || math.Abs(x) > 1e5 {
-			return fmt.Errorf("the window must be finite and within ±100000")
+			return fieldErr([]string{"xMin", "xMax", "yMin", "yMax"}[i], "the window must be finite and within ±100000")
 		}
 	}
-	if !(w.XMax-w.XMin >= 1e-6) || !(w.YMax-w.YMin >= 1e-6) {
-		return fmt.Errorf("the window needs x and y ranges at least 0.000001 wide, each from below to above")
+	if !(w.XMax-w.XMin >= 1e-6) {
+		return fieldErr("xMax", "the window needs x and y ranges at least 0.000001 wide, each from below to above")
+	}
+	if !(w.YMax-w.YMin >= 1e-6) {
+		return fieldErr("yMax", "the window needs x and y ranges at least 0.000001 wide, each from below to above")
 	}
 	return nil
 }
@@ -118,20 +121,23 @@ func gridShape(w Window, cells int) (nx, ny int) {
 
 func (v Implicit) validate() error {
 	if err := v.Window.validate(); err != nil {
-		return err
+		return within("window", err)
 	}
 	if v.Cells < minCells || v.Cells > maxCells {
-		return fmt.Errorf("an implicit curve needs 4–1024 cells along the window's longer side")
+		return fieldErr("cells", "an implicit curve needs 4–1024 cells along the window's longer side")
 	}
 	if !finite(v.Level) {
-		return fmt.Errorf("the level must be finite")
+		return fieldErr("level", "the level must be finite")
 	}
 	if f := v.Family; f.Enabled {
 		if f.Count < 2 || f.Count > 64 {
-			return fmt.Errorf("a family of levels has 2–64 levels")
+			return fieldErr("family.count", "a family of levels has 2–64 levels")
 		}
-		if !finite(f.From) || !finite(f.To) {
-			return fmt.Errorf("family levels must be finite")
+		if !finite(f.From) {
+			return fieldErr("family.from", "family levels must be finite")
+		}
+		if !finite(f.To) {
+			return fieldErr("family.to", "family levels must be finite")
 		}
 	}
 	return nil
@@ -177,10 +183,10 @@ func (s *sheet) gradient(p Vec) Vec {
 func newSheet(v Implicit, a float64) (*sheet, error) {
 	f, timed, err := expr.ParseField(v.F, a)
 	if err != nil {
-		return nil, fmt.Errorf("F(x, y): %w", err)
+		return nil, fieldErr("f", "F(x, y): %v", err)
 	}
 	if timed {
-		return nil, fmt.Errorf("F(x, y) cannot use t; animate a or the level instead")
+		return nil, fieldErr("f", "F(x, y) cannot use t; animate a or the level instead")
 	}
 	return sample(func(x, y float64) float64 { return f(x, y, 0) }, v.Window, v.Cells), nil
 }

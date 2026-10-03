@@ -162,3 +162,18 @@ export function Field({
     </div>
   );
 }
+
+// An error no field shows: the notebook's one alert, after the study's
+// controls. Like a field's error, it is brought into view when it appears,
+// since the controls may end below the screen or the sidebar's scroll.
+export function StudyError({ message }: { message: string }) {
+  const box = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    box.current?.scrollIntoView({ block: "nearest" });
+  }, [message]);
+  return (
+    <p className="study-error" role="alert" ref={box}>
+      {message}
+    </p>
+  );
+}

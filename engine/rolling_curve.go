@@ -80,10 +80,10 @@ func newMover(c Roller, a float64, samples int) (*mover, *MovingResult, error) {
 	m := c.Curve
 	f, err := compile(Curve{Format: "parametric", X: m.X, Y: m.Y, Min: m.Min, Max: m.Max, A: a})
 	if err != nil {
-		return nil, nil, fmt.Errorf("rolling curve %w", err)
+		return nil, nil, within("curve", fmt.Errorf("rolling curve %w", err))
 	}
 	if !finite(m.Start) || m.Start < m.Min || m.Start > m.Max {
-		return nil, nil, fmt.Errorf("the rolling curve's contact starts at t = %g, outside its domain %g to %g", m.Start, m.Min, m.Max)
+		return nil, nil, fieldErr("curve.start", "the rolling curve's contact starts at t = %g, outside its domain %g to %g", m.Start, m.Min, m.Max)
 	}
 	n := samples - 1
 	v := &mover{f: f, lo: m.Min, hi: m.Max, h: (m.Max - m.Min) / float64(n), tracing: c.Point}

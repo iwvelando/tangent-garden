@@ -12,7 +12,7 @@ const maxPoints = 65536
 
 func curved(q Request, r Result) (Result, error) {
 	if q.Mode != "section" {
-		return r, fmt.Errorf("curved solids support axis-aligned sections only")
+		return r, fieldErr("mode", "curved solids support axis-aligned sections only")
 	}
 	for _, a := range q.Angles {
 		if !finite(a) || a != 0 {
@@ -20,30 +20,30 @@ func curved(q Request, r Result) (Result, error) {
 		}
 	}
 	if !finite(q.Radius) || q.Radius < .001 || q.Radius > 100 {
-		return r, fmt.Errorf("object radius must be between 0.001 and 100")
+		return r, fieldErr("radius", "object radius must be between 0.001 and 100")
 	}
 	support := q.Radius
 	r.Radius = q.Radius
 	if q.Object == "tube" {
 		if !finite(q.Tube) || q.Tube < .001 || q.Tube >= q.Radius {
-			return r, fmt.Errorf("tube radius must be at least 0.001 and smaller than the core radius")
+			return r, fieldErr("tube", "tube radius must be at least 0.001 and smaller than the core radius")
 		}
 		support, r.Radius = q.Tube, q.Radius+q.Tube
 	}
 	if !finite(q.Slice) || math.Abs(q.Slice) > 4*support {
-		return r, fmt.Errorf("slice offset must be within four times the support radius")
+		return r, fieldErr("slice", "slice offset must be within four times the support radius")
 	}
 	if !finite(q.Spread) || (q.Count > 1 && (q.Spread < 0 || q.Spread > 4*support)) {
-		return r, fmt.Errorf("section spread must be finite and, for a family, within zero to four times the support radius")
+		return r, fieldErr("spread", "section spread must be finite and, for a family, within zero to four times the support radius")
 	}
 	if q.Count < 1 || q.Count > 25 {
-		return r, fmt.Errorf("use 1–25 sections")
+		return r, fieldErr("count", "use 1–25 sections")
 	}
 	if q.Curves < 3 || q.Curves > 16 {
-		return r, fmt.Errorf("use 3–16 representative curves per direction")
+		return r, fieldErr("curves", "use 3–16 representative curves per direction")
 	}
 	if q.Samples < 8 || q.Samples > 256 {
-		return r, fmt.Errorf("use 8–256 curve samples")
+		return r, fieldErr("samples", "use 8–256 curve samples")
 	}
 	// Two circle directions for the tube; meridians and interior latitudes for the ball.
 	perSection := 2 * q.Curves

@@ -38,7 +38,7 @@ func newLines(l EnvelopeFamily, base curveFunc, a, lo, hi float64) (*lines, erro
 	case "angle":
 		theta, err := expr.ParseWithParameter(l.Angle, a)
 		if err != nil {
-			return nil, fmt.Errorf("direction angle: %w", err)
+			return nil, fieldErr("angle", "direction angle: %v", err)
 		}
 		out.unit = func(t float64) Vec {
 			sin, cos := math.Sincos(theta(t))
@@ -58,7 +58,7 @@ func newLines(l EnvelopeFamily, base curveFunc, a, lo, hi float64) (*lines, erro
 			return q.Sub(p).Unit()
 		}
 	default:
-		return nil, fmt.Errorf("the family is lines at a direction angle, chords to a second endpoint, or circles of a radius")
+		return nil, fieldErr("mode", "the family is lines at a direction angle, chords to a second endpoint, or circles of a radius")
 	}
 	return out, nil
 }
@@ -131,7 +131,7 @@ type rings struct {
 func newRings(l EnvelopeFamily, a, lo, hi float64) (*rings, error) {
 	radius, err := expr.ParseWithParameter(l.Radius, a)
 	if err != nil {
-		return nil, fmt.Errorf("circle radius: %w", err)
+		return nil, fieldErr("radius", "circle radius: %v", err)
 	}
 	return &rings{radius: func(t float64) Vec { return Vec{radius(t), 0} }, lo: lo, hi: hi}, nil
 }

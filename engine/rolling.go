@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -29,28 +28,28 @@ func (c Roller) curve() bool { return c.Shape == "curve" }
 
 func (c Roller) validate() error {
 	if c.Shape != "" && c.Shape != "circle" && !c.curve() {
-		return fmt.Errorf("the rolling shape is a circle or a curve")
+		return fieldErr("shape", "the rolling shape is a circle or a curve")
 	}
 	if c.Side != "left" && c.Side != "right" {
 		if c.curve() {
-			return fmt.Errorf("the rolling curve rolls on the left or right side of the curve")
+			return fieldErr("side", "the rolling curve rolls on the left or right side of the curve")
 		}
-		return fmt.Errorf("the rolling circle rolls on the left or right side of the curve")
+		return fieldErr("side", "the rolling circle rolls on the left or right side of the curve")
 	}
 	if c.curve() {
-		if !c.Point.Valid() || math.Abs(c.Point.X) > 1e5 || math.Abs(c.Point.Y) > 1e5 {
-			return fmt.Errorf("the rolling curve's tracing point must have finite coordinates within ±100000")
+		if !bound(1e5)(c.Point.X) || !bound(1e5)(c.Point.Y) {
+			return fieldErr(coordinate("point", c.Point, bound(1e5)), "the rolling curve's tracing point must have finite coordinates within ±100000")
 		}
 		return nil
 	}
 	if !finite(c.Radius) || c.Radius <= 0 || c.Radius > 1e5 {
-		return fmt.Errorf("the rolling circle radius ρ must be positive, finite, and at most 100000")
+		return fieldErr("radius", "the rolling circle radius ρ must be positive, finite, and at most 100000")
 	}
 	if !finite(c.Arm) || c.Arm < 0 || c.Arm > 1e5 {
-		return fmt.Errorf("the rolling circle's tracing distance ℓ must be finite and within 0–100000")
+		return fieldErr("arm", "the rolling circle's tracing distance ℓ must be finite and within 0–100000")
 	}
 	if !finite(c.Phase) || math.Abs(c.Phase) > 1e6 {
-		return fmt.Errorf("the rolling circle phase ψ must be finite and within ±1000000 radians")
+		return fieldErr("phase", "the rolling circle phase ψ must be finite and within ±1000000 radians")
 	}
 	return nil
 }

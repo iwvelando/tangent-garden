@@ -24,8 +24,7 @@ func main() {
 			result, err = engine4.Compute(q)
 		}
 		if err != nil {
-			b, _ := json.Marshal(map[string]string{"error": err.Error()})
-			return string(b)
+			return refusal(err)
 		}
 		b, err := json.Marshal(result)
 		if err != nil {
@@ -46,15 +45,7 @@ func main() {
 			result, err = engine3.Compute(q)
 		}
 		if err != nil {
-			// A validation error names its field, for the notebook to show
-			// beside that control.
-			reply := map[string]string{"error": err.Error()}
-			var named *engine3.FieldError
-			if errors.As(err, &named) {
-				reply["field"] = named.Field
-			}
-			b, _ := json.Marshal(reply)
-			return string(b)
+			return refusal(err)
 		}
 		encode := func() (string, error) {
 			b, err := json.Marshal(result)
@@ -83,8 +74,7 @@ func main() {
 			result, err = engine.Compute(q)
 		}
 		if err != nil {
-			b, _ := json.Marshal(map[string]string{"error": err.Error()})
-			return string(b)
+			return refusal(err)
 		}
 		b, err := json.Marshal(result)
 		if err != nil {
@@ -120,4 +110,23 @@ func main() {
 	})
 	js.Global().Set("tangentGardenScalars", scalars)
 	select {}
+}
+
+// refusal is the reply to a request an engine refused. A validation error
+// names its field, for the notebook to show beside that control.
+func refusal(err error) string {
+	reply := map[string]string{"error": err.Error()}
+	var planar *engine.FieldError
+	var spatial *engine3.FieldError
+	var hyper *engine4.FieldError
+	switch {
+	case errors.As(err, &planar):
+		reply["field"] = planar.Field
+	case errors.As(err, &spatial):
+		reply["field"] = spatial.Field
+	case errors.As(err, &hyper):
+		reply["field"] = hyper.Field
+	}
+	b, _ := json.Marshal(reply)
+	return string(b)
 }
