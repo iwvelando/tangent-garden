@@ -21,7 +21,10 @@ export type Viewport = View;
 // views (see path.ts).
 export type AnimationMode =
   "reveal" | "parameters" | "orbit" | "trace" | "probe" | "cut" | "path";
-export type CameraMode = "hold" | "current" | "follow" | "fit";
+// The animation camera of every mode but the orbit and the path, which move
+// the camera themselves. "path" flies the key views while the geometry
+// moves.
+export type CameraMode = "hold" | "current" | "follow" | "fit" | "path";
 // A harmonic term's frequency or one coordinate of its vector A or B,
 // numbered from 1 in term order.
 export type HarmonicTarget =
@@ -117,8 +120,11 @@ export type AnimationView = {
   probeSetup?: import("./probe").Probe;
   // The cut as this frame draws it, when the animation moves it.
   cut?: import("./cut").CutSpec;
-  // The camera path, when the animation flies it.
+  // The camera path, when the animation flies it, and the bounds its key
+  // views were taken about: the study's own when playback began, whatever
+  // bounds each frame has.
   path?: CameraPath;
+  around?: Bounds3;
 };
 export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",
@@ -961,9 +967,9 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
   };
 }
 export function animationCamera(view: AnimationView): View {
-  // A camera path is the whole camera, about the study's own bounds.
-  if (view.mode === "path" && view.path)
-    return pathView(view.path, view.frame.result.bounds, view.progress);
+  // A camera path is the whole camera, about the study's own bounds, at the
+  // time of the frame it draws.
+  if (view.path) return pathView(view.path, view.around!, view.progress);
   const held = view.heldView!;
   const bounds =
     view.camera === "current"

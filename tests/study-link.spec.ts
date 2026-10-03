@@ -823,6 +823,34 @@ test("a link carries a camera path and its flight; refuses turns, views and name
   );
 });
 
+test("a link carries a camera flying its path while the geometry moves; never while orbiting", async () => {
+  // Revealing, varying parameters, tracing, probing and peeling may fly the
+  // path; the path mode keeps a chosen camera it ignores.
+  for (const mode of ["reveal", "parameters", "path"] as const) {
+    const study: SpatialStudy = {
+      ...spatial(),
+      animation: { ...spatial().animation, mode, camera: "path" },
+    };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study), study);
+  }
+  // Every other camera still opens as it did.
+  for (const camera of ["hold", "current", "follow", "fit"] as const) {
+    const study: SpatialStudy = {
+      ...spatial(),
+      animation: { ...spatial().animation, mode: "reveal", camera },
+    };
+    assert.equal(spatialStudy(structuredClone(study)).animation.camera, camera);
+  }
+  // The orbit is a camera animation of its own.
+  const orbiting = structuredClone(spatial()) as any;
+  orbiting.animation.camera = "path";
+  await refused(() => spatialStudy(orbiting), "animation.camera", /orbit/);
+  const unknown = structuredClone(spatial()) as any;
+  unknown.animation.camera = "chase";
+  await refused(() => spatialStudy(unknown), "animation.camera");
+});
+
 test("a link carries the curve a construction is built on; older links build on the base", async () => {
   for (const input of [
     "base",

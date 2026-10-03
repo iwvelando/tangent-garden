@@ -370,3 +370,47 @@ test("the first view has no turns", () => {
     message: "must be 0: the first view has no leg before it.",
   });
 });
+
+test("a path flown while the geometry moves is the same camera about the study as drawn, whatever each frame's bounds", () => {
+  // A frame of a parameter animation, reveal or trace has bounds of its own,
+  // and the hold and fit cameras frame them; the path ignores them and the
+  // held view, and flies about the bounds its views were taken about.
+  const p = path(tour, "smooth");
+  const elsewhere: Bounds3 = { center: { x: -4, y: 2, z: 7 }, radius: 0.4 };
+  const frame = { result: { bounds: elsewhere } };
+  for (const mode of ["reveal", "parameters", "trace", "probe", "cut"] as const)
+    for (let i = 0; i <= 30; i++) {
+      const progress = i / 30;
+      const view = animationCamera({
+        mode,
+        camera: "path",
+        frame,
+        final: frame,
+        heldView: {
+          ...elsewhere,
+          yaw: 2,
+          pitch: -1,
+          zoom: 3,
+          panX: 1,
+          panY: 1,
+        },
+        path: p,
+        around: bounds,
+        progress,
+      } as unknown as AnimationView);
+      expect(apart(view, pathView(p, bounds, progress))).toBeLessThan(1e-9);
+    }
+  // At its ends it stands at the first and last views exactly.
+  const at = (progress: number) =>
+    animationCamera({
+      mode: "parameters",
+      camera: "path",
+      frame,
+      final: frame,
+      path: p,
+      around: bounds,
+      progress,
+    } as unknown as AnimationView);
+  expect(at(0)).toEqual(manual(tour[0]));
+  expect(at(1)).toEqual(manual(tour[3]));
+});

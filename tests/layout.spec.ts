@@ -203,6 +203,16 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
       await expect(page.locator(".animation-error")).toBeVisible();
       await expect(page.locator(".path-view .pair").first()).toBeVisible();
     });
+    // Flown while the geometry moves, the views stand under the animation
+    // camera, after the preset's parameter track.
+    setups.push(async () => {
+      await page.goto("/?study=3d");
+      await choosePreset(page, { label: "A helix's string, always level" });
+      await expect(
+        page.getByLabel("Animation camera", { exact: true }),
+      ).toHaveValue("path");
+      await expect(page.locator(".path-view .pair").first()).toBeVisible();
+    });
     return setups;
   },
   "4D": async (page) => {
