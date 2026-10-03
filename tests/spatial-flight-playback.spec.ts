@@ -204,12 +204,13 @@ test("each frame of a parameter animation is drawn with the camera of its own ti
   await expect(page.locator(".animation-values")).toHaveText(
     /^Minor radius r = 0\.6\d* · Start → Side$/,
   );
-  // While it plays, each drawn frame pairs its geometry with its camera,
-  // however late the engine delivers it.
+  // While it plays to the end, each drawn frame pairs its geometry with its
+  // camera, however late the engine delivers it. A slow device draws fewer
+  // frames, never fewer than one between the ends.
   await seek(page, "0");
   await button(page, "Resume").click();
   const seen = new Set<string>();
-  while (seen.size < 6) {
+  for (;;) {
     const shown = await snapshot(page);
     if (!shown.progress || seen.has(shown.progress)) continue;
     const p = Number(shown.progress);
@@ -221,8 +222,11 @@ test("each frame of a parameter animation is drawn with the camera of its own ti
     );
     if (p === 1) break;
   }
-  // Stop restores the study and its manual camera.
-  await button(page, "Stop").click();
+  expect(
+    [...seen].filter((p) => p !== "0" && p !== "1").length,
+  ).toBeGreaterThan(0);
+  // Back to study restores the study and its manual camera.
+  await button(page, "Back to study").click();
   await expect.poll(async () => (await shownView(page)).yaw).toBe(manual.yaw);
   expect(await shownView(page)).toEqual(idle);
 });
