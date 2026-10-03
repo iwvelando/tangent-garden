@@ -12,6 +12,7 @@ import type {
 } from "./types";
 import type { View } from "./renderer";
 import { pathView, type CameraPath } from "./path";
+import { rideView, type RidePath } from "./ride";
 export type { Frame };
 export type Viewport = View;
 // Reveal, vary parameters, orbit the camera, trace light from its source to
@@ -23,8 +24,10 @@ export type AnimationMode =
   "reveal" | "parameters" | "orbit" | "trace" | "probe" | "cut" | "path";
 // The animation camera of every mode but the orbit and the path, which move
 // the camera themselves. "path" flies the key views while the geometry
-// moves.
-export type CameraMode = "hold" | "current" | "follow" | "fit" | "path";
+// moves; "ride" rides a ray in perspective while light is traced (see
+// ride.ts).
+export type CameraMode =
+  "hold" | "current" | "follow" | "fit" | "path" | "ride";
 // A harmonic term's frequency or one coordinate of its vector A or B,
 // numbered from 1 in term order.
 export type HarmonicTarget =
@@ -125,6 +128,9 @@ export type AnimationView = {
   // bounds each frame has.
   path?: CameraPath;
   around?: Bounds3;
+  // The ray the camera rides while light is traced, the bounds its lens
+  // was framed about, and the timeline's total optical path.
+  ride?: { path: RidePath; around: Bounds3; total: number };
 };
 export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",
@@ -970,6 +976,14 @@ export function animationCamera(view: AnimationView): View {
   // A camera path is the whole camera, about the study's own bounds, at the
   // time of the frame it draws.
   if (view.path) return pathView(view.path, view.around!, view.progress);
+  // So is the ride, at the optical path the frame's light has reached.
+  if (view.ride)
+    return rideView(
+      view.ride.path,
+      view.ride.around,
+      view.heldView!,
+      Math.min(1, Math.max(0, view.progress)) * view.ride.total,
+    );
   const held = view.heldView!;
   const bounds =
     view.camera === "current"

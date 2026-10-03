@@ -62,6 +62,19 @@ import {
   type KeyView,
   type PathStyle,
 } from "./path";
+import {
+  rideChoices,
+  rideError,
+  rideFields,
+  rideHelp,
+  ridePath,
+  rideRange,
+  rideReadout,
+  snapRide,
+  defaultRide,
+  type Ride,
+  type RidePath,
+} from "./ride";
 
 type Status =
   "idle" | "preparing" | "playing" | "paused" | "complete" | "exporting";
@@ -86,6 +99,9 @@ type Session = {
   // its key views were taken about.
   path?: CameraPath;
   around?: Bounds3;
+  // Present only while riding a ray: its polyline, the bounds its lens is
+  // framed about, and the trace's total optical path.
+  ride?: { path: RidePath; around: Bounds3; total: number };
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
@@ -174,6 +190,12 @@ export function SpatialAnimationPanel({
   const [duration, setDuration] = useState(10);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [path, setPath] = useState<CameraPath>(defaultPath);
+  const [ride, setRide] = useState<Ride>(defaultRide);
+  // Only traced light has a ray to ride; another mode holds the final view.
+  const rides = mode === "trace" && camera === "ride";
+  useEffect(() => {
+    if (mode !== "trace" && camera === "ride") setCamera("hold");
+  }, [mode, camera]);
   // The path mode flies the key views with the geometry fixed; the path
   // camera flies them while it moves. The orbit turns the camera itself.
   const flies = mode === "path" || (camera === "path" && mode !== "orbit");
@@ -251,7 +273,8 @@ export function SpatialAnimationPanel({
           : [];
     });
   }, [targets.join(",")]);
-  if (settings) settings.current = { mode, camera, duration, tracks, path };
+  if (settings)
+    settings.current = { mode, camera, duration, tracks, path, ride };
   // After the retention and trace fallbacks above, which then see the
   // linked study's own frame.
   const restored = useRef(-1);
@@ -263,6 +286,7 @@ export function SpatialAnimationPanel({
     setDuration(restore.settings.duration);
     setTracks(restore.settings.tracks);
     setPath(restore.settings.path);
+    setRide(restore.settings.ride);
   }, [restore]);
   const flown = useRef(-1);
   useEffect(() => {
@@ -271,9 +295,10 @@ export function SpatialAnimationPanel({
     const brought = flight.flight;
     setPath(brought ? structuredClone(brought.path) : defaultPath);
     if (brought?.animate) {
-      // The path flies while the geometry moves.
+      // The path flies, or the ray is ridden, while the geometry moves.
       setMode(brought.animate.mode);
-      setCamera("path");
+      setCamera(brought.ride ? "ride" : "path");
+      if (brought.ride) setRide(structuredClone(brought.ride));
       if (brought.animate.tracks)
         setTracks(structuredClone(brought.animate.tracks));
       setDuration(brought.duration);
@@ -282,7 +307,7 @@ export function SpatialAnimationPanel({
       setDuration(brought.duration);
     } else {
       setMode((m) => (m === "path" ? "reveal" : m));
-      setCamera((c) => (c === "path" ? "hold" : c));
+      setCamera((c) => (c === "path" || c === "ride" ? "hold" : c));
     }
   }, [flight]);
   const running =
@@ -409,6 +434,7 @@ export function SpatialAnimationPanel({
       mode: s.mode,
       complete: p === 1,
       ...(s.path && { path: s.path, around: s.around }),
+      ...(s.ride && { ride: s.ride }),
       // Sample (or row) 0 at the start and the last at the end, exactly.
       ...(s.mode === "probe" && {
         probe: probeIndex(
@@ -435,11 +461,19 @@ export function SpatialAnimationPanel({
     onView(view);
     const leg = s.path ? pathLeg(s.path, view.progress) : "";
     // A path flown while the geometry moves names its leg after the
-    // geometry's readout.
+    // geometry's readout, and a ride its ray and stage.
+    const riding = s.ride
+      ? rideReadout(
+          s.ride.path,
+          s.original.result,
+          s.original.config,
+          view.progress * s.ride.total,
+        )
+      : "";
     setLive(
       s.mode === "path"
         ? leg
-        : [readout(s, view), leg].filter(Boolean).join(" · "),
+        : [readout(s, view), leg, riding].filter(Boolean).join(" · "),
     );
   }
   function readout(s: Session, view: AnimationView) {
@@ -568,6 +602,11 @@ export function SpatialAnimationPanel({
         const problem = pathError(path);
         if (problem) throw new Error(`${problem.field} ${problem.message}`);
       }
+      const ray = rides ? snapRide(frame.result, ride) : null;
+      if (ray) {
+        const problem = rideError(frame.result, ray);
+        if (problem) throw new Error(`${problem.field} ${problem.message}`);
+      }
       if (epoch.current !== token) return;
       // The probe moves over the study's own diagnostics, fetched here only
       // if the study was drawn without them.
@@ -631,9 +670,23 @@ export function SpatialAnimationPanel({
                 : frame.result.bounds,
             )
           : undefined;
+      // The ride's lens is framed about the study's own bounds, which the
+      // light enters.
+      const rode =
+        ray && timeline
+          ? ridePath(frame.result, timeline, ray, frame.result.bounds)
+          : null;
+      if (ray && !rode) throw new Error("This ray cannot be ridden.");
       const s: Session = {
         original,
         timeline,
+        ...(rode && {
+          ride: {
+            path: rode,
+            around: frame.result.bounds,
+            total: timeline!.total,
+          },
+        }),
         first,
         final,
         tracks: numeric,
@@ -887,6 +940,63 @@ export function SpatialAnimationPanel({
       </div>
     </>
   );
+  // The ride's crossing as drawn: the nearest to the one chosen.
+  const choices = frame ? rideChoices(frame.result, frame.config) : null;
+  const snapped = frame ? snapRide(frame.result, ride) : ride;
+  const parameter = (x: number) => String(+x.toPrecision(4));
+  const rideEditor = choices && (
+    <>
+      <div className="pair">
+        {(["u", "v"] as const).map((axis) => (
+          <Field
+            key={axis}
+            label={rideFields[axis]}
+            help={rideHelp.ray}
+            topic={`ray at ${axis}`}
+          >
+            <select
+              value={axis === "u" ? snapped.i : snapped.j}
+              onChange={(e) => {
+                const k = +e.target.value;
+                setRide((r) =>
+                  axis === "u" ? { ...r, i: k } : { ...r, j: k },
+                );
+              }}
+            >
+              {choices[axis].map((c) => (
+                <option key={c.index} value={c.index}>
+                  {axis} = {parameter(c.value)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ))}
+      </div>
+      <div className="pair">
+        {(["follow", "turn"] as const).map((key) => (
+          <Field
+            key={key}
+            label={`${rideFields[key]} (radii)`}
+            help={rideHelp[key]}
+            topic={rideFields[key].toLowerCase()}
+          >
+            <input
+              aria-label={rideFields[key]}
+              type="number"
+              min={rideRange[0]}
+              max={rideRange[1]}
+              step="any"
+              value={Number.isNaN(ride[key]) ? "" : ride[key]}
+              onChange={(e) => {
+                const value = e.target.valueAsNumber;
+                setRide((r) => ({ ...r, [key]: value }));
+              }}
+            />
+          </Field>
+        ))}
+      </div>
+    </>
+  );
   return (
     <section className="animation-section">
       <details id="spatial-animation-section" {...section}>
@@ -1058,13 +1168,15 @@ export function SpatialAnimationPanel({
                 <>
                   {camera === "path"
                     ? `${pathHelp.camera} ${pathHelp.framing}`
-                    : camera === "current"
-                      ? "Keeps your current orbit, pan, and zoom throughout, including export."
-                      : camera === "hold"
-                        ? "Frames the final result once and holds that view."
-                        : camera === "follow"
-                          ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
-                          : "Recenters and zooms to fit the evolving geometry."}
+                    : camera === "ride"
+                      ? rideHelp.camera
+                      : camera === "current"
+                        ? "Keeps your current orbit, pan, and zoom throughout, including export."
+                        : camera === "hold"
+                          ? "Frames the final result once and holds that view."
+                          : camera === "follow"
+                            ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
+                            : "Recenters and zooms to fit the evolving geometry."}
                   {(camera === "fit" || camera === "follow") &&
                     " Isolated points near asymptotes are ignored; use Hold current view to explore distant branches."}
                 </>
@@ -1085,10 +1197,14 @@ export function SpatialAnimationPanel({
                 {mode !== "orbit" && (
                   <option value="path">Fly through key views</option>
                 )}
+                {mode === "trace" && (
+                  <option value="ride">Ride a ray · perspective</option>
+                )}
               </select>
             </Field>
           )}
           {mode !== "path" && flies && pathEditor}
+          {rides && rideEditor}
           <details
             id="spatial-export-settings"
             className="subsection"

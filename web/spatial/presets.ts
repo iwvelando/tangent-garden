@@ -1,6 +1,7 @@
 import type { Cut } from "./cut";
 import type { Sight } from "./sight";
 import type { CameraPath } from "./path";
+import type { Ride } from "./ride";
 import type { AnimationMode, Track } from "./animation";
 import type { SpatialConfig } from "./types";
 const base: SpatialConfig = {
@@ -164,6 +165,8 @@ export type Flight = {
     mode: Exclude<AnimationMode, "orbit" | "path">;
     tracks?: Track[];
   };
+  // A ray to ride while light is traced, in place of flying the path.
+  ride?: Ride;
 };
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts) and its own camera path to fly (see Flight); choosing one
@@ -1836,6 +1839,43 @@ export const spatialPresets: {
           },
         ],
       },
+    },
+  },
+  // The coma of the tilted beam above, ridden. Light 20° off the
+  // paraboloid's axis meets it at u = 0.8, v = 0, in the plane of the tilt
+  // (sample (72, 48), a crossing of its curves), and reflects through its
+  // two caustic points, where the ray touches each caustic sheet. The camera
+  // falls with the light, turns over the mirror and passes both points,
+  // about 1.08 and 1.25 along. The rays are drawn 2 long, so with the
+  // framing radius 4.36 the camera rests about 1.56 along, just past them.
+  {
+    name: "Riding a ray through coma",
+    detail:
+      "Fall with one ray of a tilted beam into a paraboloid, turn at the mirror, and pass through both of its caustic points",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "paraboloid",
+        a: 0.5,
+        b: 0.5,
+        c: 0,
+        uMin: -1.6,
+        uMax: 1.6,
+        vMin: -1.6,
+        vMax: 1.6,
+        uSamples: 96,
+        vSamples: 96,
+        curves: 9,
+      },
+      rays: { ...base.rays, azimuth: 0, elevation: -70, length: 2 },
+    },
+    flight: {
+      duration: 20,
+      animate: { mode: "trace" },
+      path: { style: "steady", keys: [] },
+      ride: { i: 72, j: 48, follow: 0.1, turn: 0.2 },
     },
   },
 ];

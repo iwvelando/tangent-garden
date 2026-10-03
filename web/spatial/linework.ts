@@ -126,19 +126,27 @@ export function linework(
           extend(paths(hiddenGroups, pass.layer, color), run.from, run.to);
         else if (arcs) {
           // Arc length is affine along the segment in space, and so along
-          // the kept part, the clipped piece and the run on the page.
+          // the kept part and the clipped piece; on the page it is affine
+          // only without perspective.
           const v = i / 7,
             [ka, kb] = part.range,
-            [t0, t1] = piece[2];
-          const phase = (r: number) => {
-            const u = ka + (kb - ka) * (t0 + (t1 - t0) * r);
+            [t0, t1] = piece[2],
+            w = piece[3];
+          const phase = (s: number) => {
+            const u = ka + (kb - ka) * (t0 + (t1 - t0) * s);
             return (arcs[v] + (arcs[v + 1] - arcs[v]) * u) * perUnit;
           };
+          const [r0, r1] = run.r,
+            s0 = spaceAt(w, r0),
+            s1 = spaceAt(w, r1);
           for (const [a, b] of dashes(
             run.from,
             run.to,
-            phase(run.r[0]),
-            phase(run.r[1]),
+            phase(s0),
+            phase(s1),
+            w[0] === w[1]
+              ? undefined
+              : (f) => (pageAt(w, s0 + (s1 - s0) * f) - r0) / (r1 - r0),
           ))
             extend(paths(hiddenGroups, pass.layer, color), a, b);
         }
@@ -160,12 +168,21 @@ export function linework(
 }
 
 // The dashes of a page run whose dash phase runs from sa to sb: the parts
-// where the phase's fractional part is below dashOn.
-function dashes(from: Point, to: Point, sa: number, sb: number) {
+// where the phase's fractional part is below dashOn. Under perspective,
+// toPage takes a fraction of the phase's change to the fraction of the run
+// on the page where it is reached.
+function dashes(
+  from: Point,
+  to: Point,
+  sa: number,
+  sb: number,
+  toPage?: (f: number) => number,
+) {
   const out: [Point, Point][] = [];
   if (!(sb !== sa)) return out;
   const at = (s: number): Point => {
-    const t = (s - sa) / (sb - sa);
+    const f = (s - sa) / (sb - sa),
+      t = toPage && f > 0 && f < 1 ? toPage(f) : f;
     if (t <= 0) return from;
     if (t >= 1) return to;
     return {
@@ -227,22 +244,25 @@ function extend(paths: [number, number][][], a: Point, b: Point) {
     ]);
 }
 
-// The part of a segment within the drawing's clip volume (Liang–Barsky), as
-// page points, or nothing.
-// The third element is the piece's ends as parameters along the segment.
-type Piece = [Point, Point, [number, number]];
+// The part of a segment within the drawing's clip volume (Liang–Barsky in
+// homogeneous clip coordinates, so a perspective camera's near plane cuts
+// it before it can pass behind the eye), as page points, or nothing.
+// The third element is the piece's ends as parameters along the segment,
+// and the fourth their clip w, which is 1 throughout without perspective.
+type Piece = [Point, Point, [number, number], [number, number]];
 function clipped(
   k: Camera,
-  a: [number, number, number],
-  b: [number, number, number],
+  a: [number, number, number, number],
+  b: [number, number, number, number],
 ): Piece | undefined {
   let t0 = 0,
     t1 = 1;
+  const dw = b[3] - a[3];
   for (let axis = 0; axis < 3; axis++) {
     const d = b[axis] - a[axis];
     for (const [p, q] of [
-      [-d, a[axis] + 1],
-      [d, 1 - a[axis]],
+      [-(d + dw), a[axis] + a[3]],
+      [d - dw, a[3] - a[axis]],
     ]) {
       if (p === 0) {
         if (q < 0) return;
@@ -254,10 +274,19 @@ function clipped(
     }
   }
   if (!(t0 <= t1)) return;
-  const at = (t: number) =>
-    page(k, t === 0 ? a : t === 1 ? b : a.map((v, i) => v + (b[i] - v) * t));
-  return [at(t0), at(t1), [t0, t1]];
+  const end = (t: number) =>
+    t === 0 ? a : t === 1 ? b : a.map((v, i) => v + (b[i] - v) * t);
+  const [p0, p1] = [end(t0), end(t1)];
+  return [page(k, p0), page(k, p1), [t0, t1], [p0[3], p1[3]]];
 }
+// Along a piece whose ends have clip w w0 and w1, the fraction of its
+// length in space at a fraction r of its length on the page, and back:
+// perspective-correct interpolation, as the drawing's varyings have.
+// Without perspective both are the identity.
+const spaceAt = ([w0, w1]: [number, number], r: number) =>
+  w0 === w1 ? r : (r * w0) / ((1 - r) * w1 + r * w0);
+const pageAt = ([w0, w1]: [number, number], s: number) =>
+  w0 === w1 ? s : (s * w1) / ((1 - s) * w0 + s * w1);
 
 // The shown sheets' triangles on the page, and which of them is nearest at
 // each pixel center (−1 where there is none). Points hold each corner's page
@@ -282,51 +311,89 @@ function depthRaster(
   plane?: Plane,
 ): Raster {
   const { width, height } = k;
-  let vertices = 0,
-    triangles = 0;
-  for (const { batch: sheet } of sheets) {
-    vertices += sheet.data.length / 7;
-    triangles += Math.floor(
-      (sheet.indices?.length ?? sheet.data.length / 7) / 3,
-    );
+  const perspective = k.lens[0] > 0;
+  const points: number[] = [],
+    corners: number[] = [],
+    sides: number[] = [],
+    cuts: number[] = [];
+  // A corner on the page, and its side of the cut over clip w, which is
+  // affine on the page as the drawing's perspective-correct varying is.
+  const put = (c: readonly number[], side: number) => {
+    const p = page(k, c);
+    points.push(p.x, p.y, p.depth);
+    if (plane) sides.push(side / c[3]);
+    return points.length / 3 - 1;
+  };
+  for (const { batch: sheet, cut } of sheets) {
+    signal?.throwIfAborted();
+    const data = sheet.data,
+      count = data.length / 7,
+      base = points.length / 3,
+      cutting = !!plane && cut;
+    const clips: (readonly number[])[] = [],
+      side = new Float64Array(count);
+    for (let v = 0; v < count; v++) {
+      const c = clip(k, data[7 * v], data[7 * v + 1], data[7 * v + 2]);
+      if (cutting)
+        side[v] =
+          plane.normal.x * data[7 * v] +
+          plane.normal.y * data[7 * v + 1] +
+          plane.normal.z * data[7 * v + 2] -
+          plane.offset;
+      if (perspective) clips.push(c);
+      put(c, side[v]);
+    }
+    const indices = sheet.indices;
+    const n = indices ? indices.length : count;
+    for (let c = 0; c + 2 < n; c += 3) {
+      const v = [0, 1, 2].map((j) => (indices ? indices[c + j] : c + j));
+      // Before the near plane a triangle's corners would be drawn through
+      // the eye, inverted: under perspective it is clipped there first, and
+      // the rest drawn as a fan.
+      const ahead = (u: number) => clips[u][2] + clips[u][3] >= 0;
+      if (!perspective || v.every(ahead)) {
+        corners.push(...v.map((u) => base + u));
+        cuts.push(cutting ? 1 : 0);
+        continue;
+      }
+      if (!v.some(ahead)) continue;
+      const kept: number[] = [];
+      for (let j = 0; j < 3; j++) {
+        const a = v[j],
+          b = v[(j + 1) % 3];
+        if (ahead(a)) kept.push(base + a);
+        if (ahead(a) !== ahead(b)) {
+          const ca = clips[a],
+            cb = clips[b],
+            da = ca[2] + ca[3],
+            t = da / (da - (cb[2] + cb[3]));
+          kept.push(
+            put(
+              ca.map((x, i) => x + (cb[i] - x) * t),
+              side[a] + (side[b] - side[a]) * t,
+            ),
+          );
+        }
+      }
+      for (let j = 1; j + 1 < kept.length; j++) {
+        corners.push(kept[0], kept[j], kept[j + 1]);
+        cuts.push(cutting ? 1 : 0);
+      }
+    }
   }
   const r: Raster = {
     width,
     height,
     depth: new Float32Array(width * height).fill(Infinity),
     nearest: new Int32Array(width * height).fill(-1),
-    points: new Float64Array(3 * vertices),
-    corners: new Uint32Array(3 * triangles),
-    sides: new Float64Array(plane ? vertices : 0),
-    cut: new Uint8Array(triangles),
+    points: Float64Array.from(points),
+    corners: Uint32Array.from(corners),
+    sides: Float64Array.from(sides),
+    cut: Uint8Array.from(cuts),
   };
-  let base = 0,
-    t = 0;
-  for (const { batch: sheet, cut } of sheets) {
-    signal?.throwIfAborted();
-    const data = sheet.data,
-      count = data.length / 7;
-    for (let v = 0; v < count; v++) {
-      const p = page(k, clip(k, data[7 * v], data[7 * v + 1], data[7 * v + 2]));
-      r.points[3 * (base + v)] = p.x;
-      r.points[3 * (base + v) + 1] = p.y;
-      r.points[3 * (base + v) + 2] = p.depth;
-      if (plane && cut)
-        r.sides[base + v] =
-          plane.normal.x * data[7 * v] +
-          plane.normal.y * data[7 * v + 1] +
-          plane.normal.z * data[7 * v + 2] -
-          plane.offset;
-    }
-    const indices = sheet.indices;
-    const corners = indices ? indices.length : count;
-    for (let c = 0; c + 2 < corners; c += 3, t++) {
-      for (let j = 0; j < 3; j++)
-        r.corners[3 * t + j] = base + (indices ? indices[c + j] : c + j);
-      r.cut[t] = plane && cut ? 1 : 0;
-      rasterize(r, t, work);
-    }
-    base += count;
+  for (let t = 0; t < cuts.length; t++) {
+    if (t % 4096 === 0) signal?.throwIfAborted();
+    rasterize(r, t, work);
   }
   return r;
 }

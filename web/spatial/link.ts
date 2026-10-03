@@ -34,6 +34,7 @@ import {
   zoomRange,
   type CameraPath,
 } from "./path";
+import { defaultRide, rideRange, type Ride } from "./ride";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
@@ -47,6 +48,9 @@ export type SpatialAnimation = Omit<
 > & {
   camera: CameraMode;
   path: CameraPath;
+  // The ray the camera rides while light is traced; links made before it
+  // ride the default when asked to.
+  ride: Ride;
 };
 export type SpatialStudy = {
   config: SpatialConfig;
@@ -67,6 +71,7 @@ export const defaultAnimation: SpatialAnimation = {
   duration: 10,
   tracks: [],
   path: defaultPath,
+  ride: defaultRide,
 };
 
 const vec3 = {
@@ -358,6 +363,34 @@ function cameraPath(value: unknown): CameraPath {
   return out;
 }
 
+// The ride's crossing, −1 for the middle one, and its distances within
+// their limits; the lower limit itself is refused below.
+const crossing: { range: [number, number] } = { range: [-1, 100000] };
+const ride: SchemaOf<Ride> = {
+  fields: {
+    i: crossing,
+    j: crossing,
+    follow: { range: rideRange },
+    turn: { range: rideRange },
+  },
+};
+function riding(value: unknown): Ride {
+  const out = conform(value, ride, defaultRide, "animation.ride");
+  for (const key of ["i", "j"] as const)
+    if (!Number.isInteger(out[key]))
+      throw new LinkError(
+        `animation.ride.${key}`,
+        `animation.ride.${key} must be a whole number.`,
+      );
+  for (const key of ["follow", "turn"] as const)
+    if (!(out[key] > rideRange[0]))
+      throw new LinkError(
+        `animation.ride.${key}`,
+        `animation.ride.${key} must be more than ${rideRange[0]}.`,
+      );
+  return out;
+}
+
 const sight: SchemaOf<Sight> = {
   fields: {
     sheets: { options: { opaque: true, through: true } },
@@ -397,11 +430,14 @@ export function spatialStudy(value: unknown): SpatialStudy {
     typeof raw.animation === "object" &&
     raw.animation !== null &&
     !Array.isArray(raw.animation);
-  const { path: flight, ...shared } = grouped
-    ? (raw.animation as Record<string, unknown>)
-    : {};
-  const flying = shared.camera === "path";
-  if (flying) delete shared.camera;
+  const {
+    path: flight,
+    ride: rode,
+    ...shared
+  } = grouped ? (raw.animation as Record<string, unknown>) : {};
+  const flying = shared.camera === "path",
+    rides = shared.camera === "ride";
+  if (flying || rides) delete shared.camera;
   const settings = animationSettings(
     grouped ? shared : raw.animation,
     {
@@ -419,8 +455,15 @@ export function spatialStudy(value: unknown): SpatialStudy {
   const animation: SpatialAnimation = {
     ...settings,
     ...(flying && { camera: "path" }),
+    ...(rides && { camera: "ride" }),
     path: cameraPath(flight),
+    ride: riding(rode),
   };
+  if (rides && animation.mode !== "trace")
+    throw new LinkError(
+      "animation.camera",
+      "animation.camera rides a ray only while light is traced.",
+    );
   if (flying && animation.mode === "orbit")
     throw new LinkError(
       "animation.camera",

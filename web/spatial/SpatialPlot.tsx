@@ -12,6 +12,16 @@ import type { Batch } from "./scene";
 import type { CutSpec } from "./cut";
 import { defaultSight, isPlain, type Sight } from "./sight";
 const noProbe: Batch[] = [];
+const cameraKeys = [
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "+",
+  "=",
+  "-",
+  "Home",
+];
 export function SpatialPlot({
   result,
   dark,
@@ -59,8 +69,13 @@ export function SpatialPlot({
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
   const manual = useRef({ ...initialView });
   const explored = useRef<View | null>(null);
-  // Orbit, pan, and zoom act on whichever camera is shown.
-  const target = () => explored.current ?? manual.current;
+  // Orbit, pan, and zoom act on whichever camera is shown. A ride's
+  // released perspective camera has no orbit of its own: they leave the ray
+  // for the orthographic view it was held about. Home returns to the ray.
+  const target = () => {
+    if (explored.current) delete explored.current.lens;
+    return explored.current ?? manual.current;
+  };
   const state = useRef({
     dark,
     layers,
@@ -235,7 +250,7 @@ export function SpatialPlot({
         onPointerCancel={(e) => gesture.current.up(e)}
         onLostPointerCapture={(e) => gesture.current.up(e)}
         onKeyDown={(e) => {
-          if (override) return;
+          if (override || !cameraKeys.includes(e.key)) return;
           const v = target(),
             delta = (current().radius * 0.05) / v.zoom;
           switch (e.key) {

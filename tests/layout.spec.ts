@@ -213,6 +213,17 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
       ).toHaveValue("path");
       await expect(page.locator(".path-view .pair").first()).toBeVisible();
     });
+    // Riding a ray pairs its crossing and its distances under the camera.
+    setups.push(async () => {
+      await page.goto("/?study=3d");
+      await choosePreset(page, { label: "Riding a ray through coma" });
+      await expect(
+        page.getByLabel("Animation camera", { exact: true }),
+      ).toHaveValue("ride");
+      await expect(
+        page.getByLabel("Turn window", { exact: true }),
+      ).toBeVisible();
+    });
     return setups;
   },
   "4D": async (page) => {
