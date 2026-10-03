@@ -43,6 +43,14 @@ func invert(center Vec3, radius float64, p Vec3) Vec3 {
 	return center.add(d.mul(radius * radius / d.dot(d)))
 }
 
+// source is the point of the source curve at base point r with unit tangent.
+func (q InversionRequest) source(pole, r, tangent Vec3) Vec3 {
+	if q.Input == "base" {
+		return r
+	}
+	return project(q.Input, pole, r, tangent)
+}
+
 func (q InversionRequest) validate(pole Vec3) error {
 	bounded := func(v Vec3) bool {
 		return v.valid() && math.Max(math.Abs(v.X), math.Max(math.Abs(v.Y), math.Abs(v.Z))) <= 1e5
@@ -73,12 +81,7 @@ func (q InversionRequest) validate(pole Vec3) error {
 func inversions(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, tangents []Vec3, breaks []bool) *InversionResult {
 	q := c.Inversion
 	n := len(base) - 1
-	source := func(r, tangent Vec3) Vec3 {
-		if q.Input == "base" {
-			return r
-		}
-		return project(q.Input, c.Pole, r, tangent)
-	}
+	source := func(r, tangent Vec3) Vec3 { return q.source(c.Pole, r, tangent) }
 	out := &InversionResult{Center: q.Center, Radius: q.Radius, Input: q.Input, Source: make([]*Vec3, n+1), Points: make([]*Vec3, n+1), Breaks: append([]bool(nil), breaks...), Correspondences: make([]InversionCorrespondence, 0, c.Lines)}
 	if q.Input != "base" {
 		out.Pole = &c.Pole

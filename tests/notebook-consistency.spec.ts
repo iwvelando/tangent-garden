@@ -150,7 +150,7 @@ test("each 3D example names itself above a shared construction title", async ({
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
-  expect(titles).toHaveLength(64);
+  expect(titles).toHaveLength(66);
   // The construction, not the example, titles the drawing.
   const involutes = [
     "Unwinding a staircase",
@@ -162,6 +162,7 @@ test("each 3D example names itself above a shared construction title", async ({
     "A staircase drawn into a sphere",
     "A trefoil turned inside out",
     "Inverted perpendiculars",
+    "A rose that misses the center",
   ];
   const framed = [
     "A band around the trefoil",
@@ -223,37 +224,39 @@ test("each 3D example names itself above a shared construction title", async ({
     await expect(heading.locator("h1")).toHaveText(
       label === "A knot through perpendiculars"
         ? "Tangent-foot curve"
-        : label === "Half-turns around a helix"
-          ? "Tangent-line orthotomic"
-          : involutes.includes(label)
-            ? "Filaments unwound from a curve"
-            : inversions.includes(label)
-              ? "A curve inverted in a sphere"
-              : framed.includes(label) ||
-                  label === "A ribbon along Rössler's band"
-                ? "A ribbon carried by a frame"
-                : ruled.includes(label)
-                  ? "A surface of straight threads"
-                  : canals.includes(label)
-                    ? "A surface enveloping spheres"
-                    : label === "Lorenz's two wings"
-                      ? "Paths that follow a field"
-                      : label === "Four pursuers on a tetrahedron" ||
-                          label === "A chase untangling a trefoil"
-                        ? "Pursuers closing in space"
-                        : surfaces.includes(label)
-                          ? "A surface and its centers of curvature"
-                          : mirrors.includes(label)
-                            ? "A mirror and its caustics"
-                            : interfaces.includes(label)
-                              ? "An interface and its caustics"
-                              : levels.includes(label)
-                                ? "A level surface and its sections"
-                                : "A ribbon of tangent lines",
+        : label === "A coil hidden between samples"
+          ? "A curve in space"
+          : label === "Half-turns around a helix"
+            ? "Tangent-line orthotomic"
+            : involutes.includes(label)
+              ? "Filaments unwound from a curve"
+              : inversions.includes(label)
+                ? "A curve inverted in a sphere"
+                : framed.includes(label) ||
+                    label === "A ribbon along Rössler's band"
+                  ? "A ribbon carried by a frame"
+                  : ruled.includes(label)
+                    ? "A surface of straight threads"
+                    : canals.includes(label)
+                      ? "A surface enveloping spheres"
+                      : label === "Lorenz's two wings"
+                        ? "Paths that follow a field"
+                        : label === "Four pursuers on a tetrahedron" ||
+                            label === "A chase untangling a trefoil"
+                          ? "Pursuers closing in space"
+                          : surfaces.includes(label)
+                            ? "A surface and its centers of curvature"
+                            : mirrors.includes(label)
+                              ? "A mirror and its caustics"
+                              : interfaces.includes(label)
+                                ? "An interface and its caustics"
+                                : levels.includes(label)
+                                  ? "A level surface and its sections"
+                                  : "A ribbon of tangent lines",
     );
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
-  expect(eyebrows.size).toBe(64);
+  expect(eyebrows.size).toBe(66);
   expect(eyebrows).toContain("THREE HARMONICS; THE THREAD PAUSES TWICE");
   await choosePreset(page, { label: titles[4] });
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");

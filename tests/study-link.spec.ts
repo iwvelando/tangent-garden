@@ -953,3 +953,19 @@ test("a link carries the involute a construction is built on; older links take t
   inverted.config.inversion.input = "involute";
   await refused(() => spatialStudy(inverted), "config.inversion.input");
 });
+
+test("a link carries refinement between samples; older links draw on the even samples", async () => {
+  for (const adaptive of [true, false]) {
+    const study = spatial();
+    study.config = { ...study.config, adaptive };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study), study);
+  }
+  // A link made before refinement drew every curve on its even samples.
+  const older = structuredClone(spatial()) as any;
+  delete older.config.adaptive;
+  assert.equal(spatialStudy(older).config.adaptive, false);
+  const bad = structuredClone(spatial()) as any;
+  bad.config.adaptive = "yes";
+  await refused(() => spatialStudy(bad), "config.adaptive");
+});

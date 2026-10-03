@@ -988,6 +988,36 @@ assert.equal(spatialCustom.mesh.at(-1).sampleIndex, 480);
 assert.equal(spatialCustom.rulings.at(-1).sampleIndex, 480);
 assert.ok(spatialCustom.bounds.radius > 2);
 console.log("Spatial custom-expression WASM bridge passed.");
+// Refining between samples: the line (t, 0.01, 0) inverts in the unit sphere
+// to the circle through the origin with center (0, 50, 0). The refined image
+// stays on it, joined, and reaches its far point (0, 100, 0).
+const nearMiss = (adaptive) =>
+  JSON.parse(
+    globalThis.tangentGardenSpatial(
+      JSON.stringify({
+        format: "parametric",
+        curve: { x: "t", y: "0.01", z: "0", a: 1, min: -3, max: 3 },
+        construction: "inversion",
+        inversion: { center: { x: 0, y: 0, z: 0 }, radius: 1, input: "base" },
+        length: 1,
+        samples: 240,
+        lines: 12,
+        adaptive,
+      }),
+    ),
+  );
+assert.equal(nearMiss(false).adaptive, undefined);
+const refinedImage = nearMiss(true).adaptive.image;
+assert.ok(refinedImage.inserted > 0 && !refinedImage.exhausted);
+assert.equal(refinedImage.points.length, refinedImage.at.length);
+assert.ok(refinedImage.points.every((p) => p !== null));
+assert.ok(
+  refinedImage.points.every(
+    (p) => Math.abs(Math.hypot(p.x, p.y - 50, p.z) - 50) < 1e-7,
+  ),
+);
+assert.ok(Math.max(...refinedImage.points.map((p) => p.y)) > 99.999);
+console.log("Spatial refinement WASM bridge passed.");
 // Helix involute family: s = k t with k = √(4 + 1/9); each member lies in
 // the plane z = c/(3k), with its string reaching back to the curve.
 const helixInvolute = (involute) =>

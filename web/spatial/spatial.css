@@ -273,3 +273,10 @@
 .cut-error {
   margin: 0 0 12px;
 }
+/* What refining between samples added, under its checkbox. */
+.refinement-readout {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}

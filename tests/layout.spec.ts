@@ -305,12 +305,13 @@ for (const width of [1440, 390])
     test(`help text in paired fields moves neither neighbour at ${width}px in ${notebook}`, async ({
       page,
     }) => {
-      test.slow();
       await page.setViewportSize({ width, height: 1000 });
+      const list = await setups(page);
+      // The sweep grows with every example; a fixed limit runs out as the
+      // gallery grows. About a second a setup locally, so three is ample.
+      test.setTimeout(60_000 + 3_000 * list.length);
       // Guard against a sweep that silently finds nothing.
-      expect(await sweepPairs(page, await setups(page))).toBeGreaterThanOrEqual(
-        3,
-      );
+      expect(await sweepPairs(page, list)).toBeGreaterThanOrEqual(3);
     });
 
 for (const width of [1440, 390]) {

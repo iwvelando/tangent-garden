@@ -52,7 +52,8 @@ const predating = (b: Buffer) =>
       .toString("utf8")
       .replace('"input":"base",', "")
       .replace('"unwinding":{"anchor":0,"offset":1},', "")
-      .replace('"parent":true,', ""),
+      .replace('"parent":true,', "")
+      .replace('"adaptive":false,', ""),
   );
 
 // Line drawings recorded from main at 0e7ad8f, before seeing through.

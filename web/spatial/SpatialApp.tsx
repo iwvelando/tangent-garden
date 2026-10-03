@@ -68,6 +68,8 @@ import {
   maxSpatialSeeds,
   maxSpatialPursuers,
   type HarmonicCurve,
+  type AdaptiveResult,
+  type RefinedPath,
   type SpatialConfig,
   type Frame,
   type ImplicitConfig,
@@ -136,6 +138,31 @@ const imageNames: Record<ImageFormat, string> = {
 
 // How a study is sampled is for the curious: a heading and an info toggle
 // keep the detail out of the way until it is asked for.
+// What refinement added to the drawn curves, and what it could not
+// resolve.
+function refinementReadout(adaptive: AdaptiveResult) {
+  const paths = [
+    adaptive.base,
+    adaptive.parent,
+    adaptive.projection,
+    adaptive.image,
+  ].filter((p): p is RefinedPath => !!p);
+  const total = (key: "inserted" | "breaks" | "unresolved") =>
+    paths.reduce((sum, p) => sum + p[key], 0);
+  const plural = (n: number, one: string, many: string) =>
+    `${n.toLocaleString()} ${n === 1 ? one : many}`;
+  const inserted = total("inserted"),
+    breaks = total("breaks"),
+    unresolved = total("unresolved");
+  return [
+    `${plural(inserted, "point", "points")} added between samples.`,
+    breaks > 0 && `${plural(breaks, "break", "breaks")} found between samples.`,
+    unresolved > 0 &&
+      `${plural(unresolved, "piece stays", "pieces stay")} coarser than the tolerance${paths.some((p) => p.exhausted) ? ": the budget of 16,384 points ran out" : ", at the finest step"}.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 function SamplingNote({ children }: { children: ReactNode }) {
   const help = useHelp();
   return (
@@ -461,6 +488,8 @@ export default function SpatialApp({
   // construction applies to it either.
   const leveled = config.format === "implicit";
   const curveless = patched || leveled;
+  // Only a curve given by a formula can be evaluated between its samples.
+  const refinable = !curveless && !flowing && !chasing;
   const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
     update((c) => ({ ...c, canal: change(c.canal) }));
   const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
@@ -3151,18 +3180,56 @@ export default function SpatialApp({
                       }
                     />
                   </Field>
+                  {refinable && (
+                    <>
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={config.adaptive}
+                          onChange={(e) => {
+                            const adaptive = e.target.checked;
+                            update((c) => ({ ...c, adaptive }));
+                          }}
+                        />
+                        Refine between samples
+                      </label>
+                      {config.adaptive && shown?.result.adaptive && (
+                        <p className="refinement-readout">
+                          {refinementReadout(shown.result.adaptive)}
+                        </p>
+                      )}
+                    </>
+                  )}
                   <SamplingNote>
                     Finite sampling can miss fine detail. Compare resolutions
-                    near poles, stationary points, and tight folds. Invalid
-                    samples and unresolved tangent or normal intervals leave
-                    gaps. Involute arc length uses Simpson's rule on each sample
-                    interval, as does the arc length that spreads a frame's
-                    twist. A transported frame is carried between samples by two
-                    reflections. A harmonic curve's vector sums sit at the same
-                    evenly spaced samples as the construction lines, and its
-                    derivatives are exact. A ruled surface's partner is
-                    evaluated at mt + δ for the same samples, and a second
-                    thread is differentiated like a custom curve. A canal
+                    near poles, stationary points, and tight folds.
+                    {refinable && (
+                      <>
+                        {" "}
+                        Refining between samples halves a sample interval, at
+                        most 10 times, wherever the chord drawn across it strays
+                        from the curve by more than 1/5000 of the radius fitted
+                        to that curve&rsquo;s samples, judged at three points
+                        along it, and stops after 16,384 added points per curve.
+                        It refines the curve, a projection, an inverted curve
+                        and the base under a derived input; involutes, frame
+                        strands, partner threads, contact circles and every
+                        surface stay on the evenly spaced samples. A gap or jump
+                        it finds between samples breaks the curve and any
+                        surface there; a passage of the inverted curve through
+                        the center is found the same way. A feature narrower
+                        than its three points can still be missed.
+                      </>
+                    )}{" "}
+                    Invalid samples and unresolved tangent or normal intervals
+                    leave gaps. Involute arc length uses Simpson's rule on each
+                    sample interval, as does the arc length that spreads a
+                    frame's twist. A transported frame is carried between
+                    samples by two reflections. A harmonic curve's vector sums
+                    sit at the same evenly spaced samples as the construction
+                    lines, and its derivatives are exact. A ruled surface's
+                    partner is evaluated at mt + δ for the same samples, and a
+                    second thread is differentiated like a custom curve. A canal
                     surface's profile ρ(t) is differentiated the same way,
                     checked at each interval's midpoint, and drawn on at most
                     480 contact circles, always including those beside a gap. A

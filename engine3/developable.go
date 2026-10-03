@@ -80,6 +80,9 @@ type Request struct {
 	// principal curvatures, directions and foci at every sample, in place
 	// of the surface's (see lightProbe); other studies ignore it.
 	LightDiagnostics bool `json:"lightDiagnostics"`
+	// Adaptive refines the drawn curves between their uniform samples (see
+	// refinePath); surface, ray, and implicit studies ignore it.
+	Adaptive bool `json:"adaptive"`
 }
 type Vertex struct {
 	SampleIndex int     `json:"sampleIndex"`
@@ -141,6 +144,9 @@ type Result struct {
 	// Probe is present only when requested, for a surface patch, canal,
 	// developable, ruled surface or framed ribbon with a width.
 	Probe *SurfaceDiagnostics `json:"surfaceDiagnostics,omitempty"`
+	// Adaptive is present only when refinement was requested, for a curve
+	// it can refine.
+	Adaptive *AdaptiveResult `json:"adaptive,omitempty"`
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -265,6 +271,7 @@ func compute(c Request) (Result, error) {
 	var baseTangents []Vec3
 	var baseBreaks []bool
 	var reached []bool
+	baseEvaluate := evaluate
 	if composed {
 		baseCurve, baseTangents, baseBreaks = baseSamples(c, evaluate, lo, hi, c.Samples, closed)
 		if c.projected() {
@@ -361,10 +368,20 @@ func compute(c Request) (Result, error) {
 		// where the base does.
 		disconnected = disconnected || composed && baseBreaks[i+1]
 		out.Breaks[i+1] = disconnected
-		if !developable {
-			continue
+	}
+	// Refinement breaks the intervals where it finds the curve stopping or
+	// jumping between samples, so no surface is joined across them.
+	if c.refines() && !(composed && reached != nil) {
+		out.Adaptive = &AdaptiveResult{}
+		position := c.position(baseEvaluate)
+		var broken []int
+		out.Adaptive.Base, broken = refinePath(out.Base, out.Breaks, position, lo, hi, pathTolerance(out.Base), refineBudget)
+		for _, i := range broken {
+			out.Breaks[i+1] = true
 		}
-		if disconnected || !valid[i] || !valid[i+1] || normals[i].dot(normals[i+1]) < 0 {
+	}
+	for i := 0; i < n && developable; i++ {
+		if out.Breaks[i+1] || !valid[i] || !valid[i+1] || normals[i].dot(normals[i+1]) < 0 {
 			out.Omitted++
 			continue
 		}
@@ -415,6 +432,13 @@ func compute(c Request) (Result, error) {
 	// The base under a derived input frames with the pole as its own family.
 	if composed {
 		out.Composition = composition(c, baseCurve, baseTangents, baseBreaks, closed, out.Base, out.Breaks, reached)
+		if c.refines() {
+			if out.Adaptive == nil {
+				out.Adaptive = &AdaptiveResult{}
+			}
+			curve := out.Composition.Curve
+			out.Adaptive.Parent, _ = refinePath(curve, out.Composition.Breaks, c.baseOnly().position(baseEvaluate), lo, hi, pathTolerance(curve), refineBudget)
+		}
 		generating = append(generating, out.Composition.Curve)
 		if reached == nil {
 			generating = append(generating, []*Vec3{&out.Composition.Pole})
@@ -459,6 +483,16 @@ func compute(c Request) (Result, error) {
 	}
 	if projection {
 		out.Projection = projections(c, out.Base, tangents)
+		if out.Adaptive != nil {
+			points := out.Projection.Points
+			out.Adaptive.Projection, _ = refinePath(points, out.Breaks, func(t float64) Vec3 {
+				r, v, _, ok := evaluate(t)
+				if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+					return Vec3{math.NaN(), 0, 0}
+				}
+				return project(c.Construction, c.Pole, r, v.unit())
+			}, lo, hi, pathTolerance(points), refineBudget)
+		}
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
 		out.Bounds = fit(append([][]*Vec3{out.Base, out.Projection.Points, out.Projection.Feet, {&out.Projection.Pole}}, generating...)...)
 		out.Radius = out.Bounds.Radius
@@ -466,6 +500,23 @@ func compute(c Request) (Result, error) {
 	}
 	if inversion {
 		q := inversions(c, evaluate, lo, hi, out.Base, tangents, out.Breaks)
+		if out.Adaptive != nil {
+			// Refinement decides each passage through the center in place of
+			// the uniform midpoint test.
+			q.Breaks, q.Crossings = append([]bool(nil), out.Breaks...), 0
+			var broken []int
+			out.Adaptive.Image, broken = refinePath(q.Points, q.Breaks, func(t float64) Vec3 {
+				r, v, _, ok := evaluate(t)
+				if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+					return Vec3{math.NaN(), 0, 0}
+				}
+				return invert(q.Center, q.Radius, c.Inversion.source(c.Pole, r, v.unit()))
+			}, lo, hi, pathTolerance(q.Points), refineBudget)
+			for _, i := range broken {
+				q.Breaks[i+1] = true
+			}
+			q.Crossings = len(broken)
+		}
 		out.Inversion = q
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
 		// A base source repeats the base, which leaves the fit unchanged.

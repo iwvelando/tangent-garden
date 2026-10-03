@@ -96,7 +96,7 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
                               : p.config.format === "torus"
                                 ? "Torus knots"
                                 : "Parametric curves",
-  keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.sight ? " see-through" : ""}${p.flight ? ` flight${p.flight.ride ? " ride perspective" : ""}` : ""}`,
+  keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.sight ? " see-through" : ""}${p.flight ? ` flight${p.flight.ride ? " ride perspective" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}`,
   // A preset's cut and sight are part of its picture; presets without
   // either keep the fingerprints they had before those existed.
   fingerprint: fingerprint(
