@@ -146,6 +146,7 @@ const base: SpatialConfig = {
   q: 3,
   samples: 960,
   lines: 96,
+  adaptive: false,
   curve: {
     x: "(2.4+0.85*cos(3*t))*cos(2*t)",
     y: "(2.4+0.85*cos(3*t))*sin(2*t)",
@@ -1876,6 +1877,63 @@ export const spatialPresets: {
       animate: { mode: "trace" },
       path: { style: "steady", keys: [] },
       ride: { i: 72, j: 48, follow: 0.1, turn: 0.2 },
+    },
+  },
+  // A harmonic trefoil carrying a small coil of frequency 233. At 240
+  // samples a period each sample lands 7/240 of a turn behind the last on
+  // the coil, so the even samples alias it into a slow, smooth seven-fold
+  // wave that is not there. Refining between samples finds the coil. Twelve
+  // vector sums keep the generating vectors from hiding it.
+  {
+    name: "A coil hidden between samples",
+    detail: "A trefoil wound 233 times, unseen by its even samples",
+    config: {
+      ...base,
+      format: "harmonic",
+      construction: "none",
+      samples: 240,
+      lines: 12,
+      adaptive: true,
+      harmonic: {
+        ...base.harmonic,
+        terms: [
+          ...base.harmonic.terms,
+          {
+            frequency: 233,
+            cosine: { x: 0, y: 0, z: 0.12 },
+            sine: { x: 0.12, y: 0, z: 0 },
+          },
+        ],
+      },
+    },
+  },
+  // Five petals that pass 0.2 to 0.29 above the center of inversion,
+  // at t = π/10, 3π/10, π/2, 7π/10 and 9π/10. Each near miss at distance δ
+  // throws out a loop about R²/δ across, which the even samples cut with a
+  // few long chords and refining draws round.
+  {
+    name: "A rose that misses the center",
+    detail: "Five near misses throw out five loops, drawn round",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "inversion",
+      samples: 240,
+      lines: 30,
+      adaptive: true,
+      inversion: {
+        center: { x: 0, y: 0, z: 0 },
+        radius: 0.6,
+        input: "base",
+      },
+      curve: {
+        x: "cos(5*t)*cos(t)",
+        y: "cos(5*t)*sin(t)",
+        z: "a*(1+0.8*sin(t))",
+        a: 0.16,
+        min: 0,
+        max: Math.PI,
+      },
     },
   },
 ];

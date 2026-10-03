@@ -52,7 +52,8 @@ const predating = (b: Buffer) =>
       .toString("utf8")
       .replace('"input":"base",', "")
       .replace('"unwinding":{"anchor":0,"offset":1},', "")
-      .replace('"parent":true,', ""),
+      .replace('"parent":true,', "")
+      .replace('"adaptive":false,', ""),
   );
 
 // Recorded from main at 672ef89, before the cut. Regenerate only when a

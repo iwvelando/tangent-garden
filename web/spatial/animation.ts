@@ -2,6 +2,7 @@ import { projectsInput, unwindsInput, usesSpatialPole } from "./types";
 import { harmonicLabels } from "./harmonic";
 import { surfaceShape } from "./surface";
 import type {
+  RefinedPath,
   SpatialConfig,
   SpatialResult,
   Frame,
@@ -872,6 +873,25 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     ...result.harmonic,
     positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
   };
+  // A refined curve shows its points up to the last revealed sample; the
+  // inserted points do not change the framing.
+  const shown = (path: RefinedPath | undefined) => {
+    if (!path) return path;
+    const count = path.at.findIndex((u) => u > last);
+    return count < 0
+      ? path
+      : {
+          ...path,
+          points: path.points.slice(0, count),
+          at: path.at.slice(0, count),
+        };
+  };
+  const adaptive = result.adaptive && {
+    base: shown(result.adaptive.base),
+    parent: shown(result.adaptive.parent),
+    projection: shown(result.adaptive.projection),
+    image: shown(result.adaptive.image),
+  };
   // The seam compares the last sample with the first, so it appears only
   // once the whole curve is shown.
   const frame = result.frame && {
@@ -939,6 +959,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     frame,
     ruled,
     canal,
+    adaptive,
     bounds: inversion
       ? fitBounds(
           base,

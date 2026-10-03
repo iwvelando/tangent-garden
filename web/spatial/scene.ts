@@ -1,4 +1,5 @@
 import type {
+  RefinedPath,
   SpatialResult,
   SurfaceSheet,
   Vec3,
@@ -291,10 +292,30 @@ export function buildScene(result: SpatialResult) {
         out.push(points[i - 1]!, points[i]!);
     return out;
   }
+  // A refined curve's points in order, joined except beside a null, which
+  // carries every break.
+  function joined(points: (Vec3 | null)[]) {
+    const out: Vec3[] = [];
+    for (let i = 1; i < points.length; i++)
+      if (points[i - 1] && points[i]) out.push(points[i - 1]!, points[i]!);
+    return out;
+  }
+  // A drawn curve's own samples with their breaks, or its refinement when
+  // the study has one.
+  const curve = (
+    points: (Vec3 | null)[],
+    breaks: boolean[],
+    refined: RefinedPath | undefined,
+  ) => (refined ? joined(refined.points) : pairs(points, breaks));
   const vertices = (points: Vec3[], phase = 0) =>
     points.flatMap((p) => [p.x, p.y, p.z, 0, 0, 1, phase]);
-  function path(points: (Vec3 | null)[], breaks: boolean[], ink: number) {
-    return batch(vertices(pairs(points, breaks)), "lines", ink);
+  function path(
+    points: (Vec3 | null)[],
+    breaks: boolean[],
+    ink: number,
+    refined?: RefinedPath,
+  ) {
+    return batch(vertices(curve(points, breaks, refined)), "lines", ink);
   }
   // Every member shares the base's breaks: arc length never crosses one, so
   // a member has no points beyond it. A collapsed member (a line's involute)
@@ -398,7 +419,8 @@ export function buildScene(result: SpatialResult) {
     "triangles",
     0,
   );
-  const base = path(result.base, result.breaks, 2);
+  const refined = result.adaptive;
+  const base = path(result.base, result.breaks, 2, refined?.base);
   // A framed ribbon's edges are also broken where a Frenet normal reverses.
   // A ruled surface's partner thread (its plus) is broken where the
   // partner is missing or jumps.
@@ -423,7 +445,11 @@ export function buildScene(result: SpatialResult) {
     vertices(
       result.projection?.collapsed && at
         ? cross(at, result.bounds.radius * 0.025)
-        : pairs(result.projection?.points ?? [], result.breaks),
+        : curve(
+            result.projection?.points ?? [],
+            result.breaks,
+            refined?.projection,
+          ),
     ),
     "lines",
     3,
@@ -458,6 +484,7 @@ export function buildScene(result: SpatialResult) {
     result.composition?.curve ?? [],
     result.composition?.breaks ?? [],
     4,
+    refined?.parent,
   );
   // The image uses its own breaks: the base's plus every passage through
   // the center, where the image leaves through infinity.
@@ -467,7 +494,7 @@ export function buildScene(result: SpatialResult) {
     vertices(
       v?.collapsed && image
         ? cross(image, result.bounds.radius * 0.025)
-        : pairs(v?.points ?? [], v?.breaks ?? []),
+        : curve(v?.points ?? [], v?.breaks ?? [], refined?.image),
     ),
     "lines",
     3,

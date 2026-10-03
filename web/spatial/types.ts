@@ -266,6 +266,31 @@ export type SpatialConfig = {
   q: number;
   samples: number;
   lines: number;
+  // Refine the drawn curves between their uniform samples (see
+  // AdaptiveResult). Surface, ray and implicit studies ignore it.
+  adaptive: boolean;
+};
+// Mirrors engine3.RefinedPath: a drawn curve with points inserted between
+// its uniform samples. at is each point's position in sample steps, whole
+// at the samples (all present) and fractional between them; a null point
+// breaks the line.
+export type RefinedPath = {
+  points: (Vec3 | null)[];
+  at: number[];
+  tolerance: number;
+  inserted: number;
+  breaks: number;
+  unresolved: number;
+  exhausted: boolean;
+};
+// Mirrors engine3.AdaptiveResult: the refined curves a study draws, each
+// absent when it is not drawn or not refined (an involute, a trajectory or
+// a pursuit).
+export type AdaptiveResult = {
+  base?: RefinedPath;
+  parent?: RefinedPath;
+  projection?: RefinedPath;
+  image?: RefinedPath;
 };
 export type SpatialResult = {
   base: (Vec3 | null)[];
@@ -315,6 +340,8 @@ export type SpatialResult = {
   // patch, or a canal, tangent developable, ruled surface or framed ribbon
   // (with a width).
   surfaceDiagnostics?: SurfaceDiagnostics;
+  // Present only when refinement was requested, for a curve it can refine.
+  adaptive?: AdaptiveResult;
 };
 // Mirrors engine3.SurfaceDiagnostics: a surface on the probe's grid, where
 // points[r][k] is at parameters u[r] and v[k]. A patch's grid is its own; a

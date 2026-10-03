@@ -278,6 +278,7 @@ const config: SchemaOf<SpatialConfig> = {
     q: "number",
     samples: "number",
     lines: "number",
+    adaptive: "boolean",
   },
 };
 
