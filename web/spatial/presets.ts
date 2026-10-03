@@ -1,6 +1,7 @@
 import type { Cut } from "./cut";
 import type { Sight } from "./sight";
 import type { CameraPath } from "./path";
+import type { AnimationMode, Track } from "./animation";
 import type { SpatialConfig } from "./types";
 const base: SpatialConfig = {
   format: "torus",
@@ -153,16 +154,27 @@ const base: SpatialConfig = {
     a: 1,
   },
 };
+// A preset's camera path and duration (see path.ts). Without `animate` it
+// is flown with the geometry fixed; with it, as the animation camera of
+// that mode, moving the geometry by its tracks.
+export type Flight = {
+  path: CameraPath;
+  duration: number;
+  animate?: {
+    mode: Exclude<AnimationMode, "orbit" | "path">;
+    tracks?: Track[];
+  };
+};
 // A preset may open with its own cut (see cut.ts), its own sight (see
-// sight.ts) and its own camera path to fly, with its duration (see path.ts);
-// choosing one without turns them off.
+// sight.ts) and its own camera path to fly (see Flight); choosing one
+// without turns them off.
 export const spatialPresets: {
   name: string;
   detail: string;
   config: SpatialConfig;
   cut?: Cut;
   sight?: Sight;
-  flight?: { path: CameraPath; duration: number };
+  flight?: Flight;
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -1655,6 +1667,175 @@ export const spatialPresets: {
       },
       samples: 1200,
       lines: 48,
+    },
+  },
+  // A helix x = R cos t, y = ht, z = R sin t, with speed v = √(R² + h²),
+  // unwound from t₀ = 0. Its tangent rises at the constant slope h/v and
+  // the string runs out at the cusp, s = c, so every point of the involute
+  // I_c = r + (c − s)T lies at the cusp's height y = hc/v: the involute is
+  // level, the involute of the circle below it. As c runs from −πv to πv
+  // its plane climbs the helix from end to end. A level camera sees it
+  // edge-on, a line, from every side; the camera turns at that level, then
+  // rises to look down on the circle's involute. The turntable's axis is y,
+  // the helix's axis, so the edge-on views are exact; the view from above
+  // stops 4° short of straight down. Every view frames the axis, panned
+  // from the study's center (2.51, 0, 2.51), drawn with c = −πv.
+  {
+    name: "A helix's string, always level",
+    detail:
+      "As the string lengthens, its involute climbs the helix in a level plane: edge-on a line from every side, from above a circle's involute",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "involute",
+      involute: {
+        anchor: 0,
+        offset: -Math.PI * Math.sqrt(2.81),
+        family: { enabled: false, from: -2, to: 2, count: 5 },
+      },
+      lines: 40,
+      samples: 900,
+      curve: {
+        x: "1.6*cos(t)",
+        y: "a*t/2",
+        z: "1.6*sin(t)",
+        a: 1,
+        min: -Math.PI,
+        max: Math.PI,
+      },
+    },
+    flight: {
+      duration: 24,
+      animate: {
+        mode: "parameters",
+        tracks: [
+          { target: "offset", from: "-pi*sqrt(2.81)", to: "pi*sqrt(2.81)" },
+        ],
+      },
+      path: {
+        style: "smooth",
+        keys: [
+          {
+            name: "Edge-on: a level line",
+            yaw: 0,
+            pitch: 0,
+            zoom: 1.4,
+            panX: 2.51,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Still level from another side",
+            yaw: 2.2,
+            pitch: 0,
+            zoom: 1.4,
+            panX: 0.55,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "From above: a circle's involute",
+            yaw: 2.2,
+            pitch: 1.5,
+            zoom: 1,
+            panX: 0.55,
+            panY: 3.5,
+            turns: 0,
+          },
+          {
+            name: "Oblique",
+            yaw: 3,
+            pitch: 0.5,
+            zoom: 1.1,
+            panX: -2.13,
+            panY: 1.36,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
+  // A trough: half a circular cylinder of radius R = 1.5 about z, lit
+  // straight down. Every section across the axis is a semicircular mirror
+  // under parallel light, so the caustic sheet is a nephroid extruded along
+  // the trough, and end-on (along z, the level camera at yaw 0) it is
+  // exactly the nephroid, its cusp at the paraxial focus R/2 above the
+  // lowest line. The cylinder's other focal branch, along its straight
+  // rulings, is at infinity. Traced, light reaches the caustic first near
+  // the rims, where it reflects soonest, and last at the cusp. The flight
+  // falls into the trough with the light, holds end-on while the nephroid
+  // closes, and ends looking down onto the cusp line as the last light
+  // arrives. Pans
+  // frame the cusp line's middle (0, −0.75, 0) from the study's center
+  // (0, −0.944, 0).
+  {
+    name: "Following light into a trough",
+    detail:
+      "Light falls into a half-cylinder and folds into a nephroid sheet; the camera follows it in and ends beside the cusp as the last rays arrive",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "cylinder",
+        a: 1.5,
+        b: 1.5,
+        c: 0,
+        reverse: true,
+        uMin: Math.PI,
+        uMax: 2 * Math.PI,
+        vMin: -1.2,
+        vMax: 1.2,
+        uSamples: 120,
+        vSamples: 16,
+        curves: 13,
+      },
+      rays: { ...base.rays, azimuth: -90, elevation: 0, length: 1.5 },
+    },
+    flight: {
+      duration: 24,
+      animate: { mode: "trace" },
+      path: {
+        style: "smooth",
+        keys: [
+          {
+            name: "Over the trough",
+            yaw: 0.7,
+            pitch: 0.45,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "End-on: light falling",
+            yaw: 0,
+            pitch: 0,
+            zoom: 1.4,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "End-on: the nephroid closing",
+            yaw: 0,
+            pitch: 0,
+            zoom: 1.4,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Down onto the cusp",
+            yaw: 0.5,
+            pitch: 0.8,
+            zoom: 2.6,
+            panX: 0,
+            panY: -0.14,
+            turns: 0,
+          },
+        ],
+      },
     },
   },
 ];

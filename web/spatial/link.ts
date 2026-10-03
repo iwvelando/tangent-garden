@@ -16,7 +16,12 @@ import {
 } from "./types";
 import { spatialPresets } from "./presets";
 import { defaultLayers, initialView, type Layers } from "./renderer";
-import { availableTargets, type AnimationMode, type Target } from "./animation";
+import {
+  availableTargets,
+  type AnimationMode,
+  type CameraMode,
+  type Target,
+} from "./animation";
 import { defaultProbe, probeSupport, type Probe } from "./probe";
 import { cutPlane, defaultCut, maxCutValue, type Cut } from "./cut";
 import { defaultSight, opacityRange, type Sight } from "./sight";
@@ -33,9 +38,14 @@ import {
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
 export type SpatialCamera = typeof initialView;
-// The camera path, flown by the path mode, travels with the animation
-// setup; links made before it fly none.
-export type SpatialAnimation = AnimationSettings<AnimationMode, Target> & {
+// The camera path, flown by the path mode or as the animation camera while
+// the geometry moves, travels with the animation setup; links made before
+// it fly none.
+export type SpatialAnimation = Omit<
+  AnimationSettings<AnimationMode, Target>,
+  "camera"
+> & {
+  camera: CameraMode;
   path: CameraPath;
 };
 export type SpatialStudy = {
@@ -381,7 +391,8 @@ export function spatialStudy(value: unknown): SpatialStudy {
     layers: conform(raw.layers, flags(defaultLayers), defaultLayers, "layers"),
     view: conform(raw.view, view, initialView, "view"),
   };
-  // The path is the 3D notebook's own part of the animation setup.
+  // The path, and the camera that flies it, are the 3D notebook's own part
+  // of the animation setup.
   const grouped =
     typeof raw.animation === "object" &&
     raw.animation !== null &&
@@ -389,6 +400,8 @@ export function spatialStudy(value: unknown): SpatialStudy {
   const { path: flight, ...shared } = grouped
     ? (raw.animation as Record<string, unknown>)
     : {};
+  const flying = shared.camera === "path";
+  if (flying) delete shared.camera;
   const settings = animationSettings(
     grouped ? shared : raw.animation,
     {
@@ -401,12 +414,18 @@ export function spatialStudy(value: unknown): SpatialStudy {
       path: true,
     },
     availableTargets(study.config),
-    defaultAnimation,
+    { ...defaultAnimation, camera: "hold" },
   );
   const animation: SpatialAnimation = {
     ...settings,
+    ...(flying && { camera: "path" }),
     path: cameraPath(flight),
   };
+  if (flying && animation.mode === "orbit")
+    throw new LinkError(
+      "animation.camera",
+      "animation.camera flies key views only while the geometry moves, not while the orbit turns the camera.",
+    );
   if (animation.mode === "trace" && study.config.format !== "rays")
     throw new LinkError(
       "animation.mode",

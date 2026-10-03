@@ -18,7 +18,8 @@ import {
   type Track,
   type Viewport,
 } from "./animation";
-import type { Frame } from "./types";
+import type { Bounds3, Frame } from "./types";
+import type { Flight } from "./presets";
 import {
   probeIndex,
   probeSteps,
@@ -80,8 +81,11 @@ type Session = {
   extent?: [number, number];
   // The sight when playback began, for an export.
   sight: Sight;
-  // Present only while flying a camera path: the path when playback began.
+  // Present only while flying a camera path, alone or while the geometry
+  // moves: the path when playback began, and the study's bounds then, which
+  // its key views were taken about.
   path?: CameraPath;
+  around?: Bounds3;
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
@@ -117,10 +121,12 @@ type Props = {
   // Shows a key view in the drawing as its manual camera, to adjust it.
   onShowView: (view: SpatialCamera) => void;
   // A chosen preset's camera path and duration, or none, applied once per
-  // id: a preset brings its own path, or clears the path.
+  // id: a preset brings its own path, or clears the path. The notebook
+  // passes it only once the frame belongs to the preset, so a mode or
+  // tracks it brings are judged against the preset's own study.
   flight?: {
     id: number;
-    flight?: { path: CameraPath; duration: number };
+    flight?: Flight;
   } | null;
 };
 
@@ -168,6 +174,9 @@ export function SpatialAnimationPanel({
   const [duration, setDuration] = useState(10);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [path, setPath] = useState<CameraPath>(defaultPath);
+  // The path mode flies the key views with the geometry fixed; the path
+  // camera flies them while it moves. The orbit turns the camera itself.
+  const flies = mode === "path" || (camera === "path" && mode !== "orbit");
   const keysHelp = useHelp();
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
@@ -261,10 +270,20 @@ export function SpatialAnimationPanel({
     flown.current = flight.id;
     const brought = flight.flight;
     setPath(brought ? structuredClone(brought.path) : defaultPath);
-    if (brought) {
+    if (brought?.animate) {
+      // The path flies while the geometry moves.
+      setMode(brought.animate.mode);
+      setCamera("path");
+      if (brought.animate.tracks)
+        setTracks(structuredClone(brought.animate.tracks));
+      setDuration(brought.duration);
+    } else if (brought) {
       setMode("path");
       setDuration(brought.duration);
-    } else setMode((m) => (m === "path" ? "reveal" : m));
+    } else {
+      setMode((m) => (m === "path" ? "reveal" : m));
+      setCamera((c) => (c === "path" ? "hold" : c));
+    }
   }, [flight]);
   const running =
     status === "playing" || status === "preparing" || status === "exporting";
@@ -348,6 +367,8 @@ export function SpatialAnimationPanel({
     // Traced light enters a fixed view; a moving camera would chase it.
     if (next === "trace" && (camera === "follow" || camera === "fit"))
       setCamera("hold");
+    // The orbit turns the camera itself.
+    if (next === "orbit" && camera === "path") setCamera("hold");
     if (next === "parameters" && !tracks.length && targets.length)
       setTracks([defaultTrack(targets[0])]);
   }
@@ -387,7 +408,7 @@ export function SpatialAnimationPanel({
       progress: p,
       mode: s.mode,
       complete: p === 1,
-      ...(s.mode === "path" && { path: s.path }),
+      ...(s.path && { path: s.path, around: s.around }),
       // Sample (or row) 0 at the start and the last at the end, exactly.
       ...(s.mode === "probe" && {
         probe: probeIndex(
@@ -412,49 +433,51 @@ export function SpatialAnimationPanel({
     s.progress = view.progress;
     setProgress(view.progress);
     onView(view);
+    const leg = s.path ? pathLeg(s.path, view.progress) : "";
+    // A path flown while the geometry moves names its leg after the
+    // geometry's readout.
+    setLive(
+      s.mode === "path"
+        ? leg
+        : [readout(s, view), leg].filter(Boolean).join(" · "),
+    );
+  }
+  function readout(s: Session, view: AnimationView) {
     if (s.mode === "reveal" && s.original.config.format === "implicit") {
       // A level surface reveals upward through its box.
       const { zMin, zMax } = s.original.config.implicit.box;
-      setLive(`z = ${(zMin + (zMax - zMin) * view.progress).toPrecision(6)}`);
-    } else if (
+      return `z = ${(zMin + (zMax - zMin) * view.progress).toPrecision(6)}`;
+    }
+    if (
       s.mode === "reveal" &&
       (s.original.config.format === "surface" ||
         s.original.config.format === "rays")
     ) {
       // A surface or mirror reveals along u.
       const { uMin, uMax } = s.original.config.surface;
-      setLive(`u = ${(uMin + (uMax - uMin) * view.progress).toPrecision(6)}`);
-    } else if (s.mode === "reveal")
-      setLive(
-        `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`,
-      );
-    else if (s.mode === "trace")
-      setLive(
-        `Optical path τ = ${(view.progress * s.timeline!.total).toPrecision(4)} · ${view.frame.result
-          .rays!.caustics.reduce(
-            (n, c) => n + c.points.flat().filter((q) => q).length,
-            0,
-          )
-          .toLocaleString("en-US")} caustic points reached`,
-      );
-    else if (s.mode === "orbit")
-      setLive(`Camera rotation · ${Math.round(view.progress * 360)}°`);
-    else if (s.mode === "path") setLive(pathLeg(s.path!, view.progress));
-    else if (s.mode === "cut")
-      setLive(`Cut at d = ${view.cut!.plane.offset.toPrecision(6)}`);
-    else if (s.mode === "probe")
-      setLive(
-        `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe!, view.probe!)}`,
-      );
-    else
-      setLive(
-        s.tracks
-          .map(
-            (t) =>
-              `${targetLabel(view.frame.config, t.target)} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
-          )
-          .join(" · "),
-      );
+      return `u = ${(uMin + (uMax - uMin) * view.progress).toPrecision(6)}`;
+    }
+    if (s.mode === "reveal")
+      return `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`;
+    if (s.mode === "trace")
+      return `Optical path τ = ${(view.progress * s.timeline!.total).toPrecision(4)} · ${view.frame.result
+        .rays!.caustics.reduce(
+          (n, c) => n + c.points.flat().filter((q) => q).length,
+          0,
+        )
+        .toLocaleString("en-US")} caustic points reached`;
+    if (s.mode === "orbit")
+      return `Camera rotation · ${Math.round(view.progress * 360)}°`;
+    if (s.mode === "cut")
+      return `Cut at d = ${view.cut!.plane.offset.toPrecision(6)}`;
+    if (s.mode === "probe")
+      return `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe!, view.probe!)}`;
+    return s.tracks
+      .map(
+        (t) =>
+          `${targetLabel(view.frame.config, t.target)} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
+      )
+      .join(" · ");
   }
   function fail(reason: unknown, what = "Animation") {
     cancel();
@@ -541,7 +564,7 @@ export function SpatialAnimationPanel({
             );
         }
       }
-      if (mode === "path") {
+      if (flies) {
         const problem = pathError(path);
         if (problem) throw new Error(`${problem.field} ${problem.message}`);
       }
@@ -619,7 +642,10 @@ export function SpatialAnimationPanel({
         cut,
         extent,
         sight,
-        ...(mode === "path" && { path: structuredClone(path) }),
+        ...(flies && {
+          path: structuredClone(path),
+          around: frame.result.bounds,
+        }),
         camera,
         heldView,
         duration,
@@ -1030,13 +1056,15 @@ export function SpatialAnimationPanel({
               label="Animation camera"
               help={
                 <>
-                  {camera === "current"
-                    ? "Keeps your current orbit, pan, and zoom throughout, including export."
-                    : camera === "hold"
-                      ? "Frames the final result once and holds that view."
-                      : camera === "follow"
-                        ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
-                        : "Recenters and zooms to fit the evolving geometry."}
+                  {camera === "path"
+                    ? `${pathHelp.camera} ${pathHelp.framing}`
+                    : camera === "current"
+                      ? "Keeps your current orbit, pan, and zoom throughout, including export."
+                      : camera === "hold"
+                        ? "Frames the final result once and holds that view."
+                        : camera === "follow"
+                          ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
+                          : "Recenters and zooms to fit the evolving geometry."}
                   {(camera === "fit" || camera === "follow") &&
                     " Isolated points near asymptotes are ignored; use Hold current view to explore distant branches."}
                 </>
@@ -1054,9 +1082,13 @@ export function SpatialAnimationPanel({
                     <option value="fit">Fit each frame</option>
                   </>
                 )}
+                {mode !== "orbit" && (
+                  <option value="path">Fly through key views</option>
+                )}
               </select>
             </Field>
           )}
+          {mode !== "path" && flies && pathEditor}
           <details
             id="spatial-export-settings"
             className="subsection"

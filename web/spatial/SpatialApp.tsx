@@ -3209,7 +3209,7 @@ export default function SpatialApp({
             onPlay={showPlot}
             settings={animationSettings}
             restore={busy ? null : restoredAnimation}
-            flight={presetFlight}
+            flight={busy ? null : presetFlight}
             onShowView={(view) => {
               setRestoredView({ reset: reset + 1, view });
               setReset(reset + 1);

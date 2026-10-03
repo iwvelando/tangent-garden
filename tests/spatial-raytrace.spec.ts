@@ -380,9 +380,12 @@ test("3D tracing is offered only for mirrors and interfaces, with fixed cameras"
   await animate(page).selectOption("trace");
   const camera = page.getByRole("combobox", { name: "Animation camera" });
   await expect(camera).toHaveValue("hold");
+  // Cameras that frame each frame's geometry would chase the light; a
+  // flight through key views does not depend on it.
   await expect(camera.locator("option")).toHaveText([
     "Hold final view",
     "Hold current view",
+    "Fly through key views",
   ]);
   await choosePreset(page, { label: spatialPresets[0].name });
   await expect(animate(page)).toHaveValue("reveal");

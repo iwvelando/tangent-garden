@@ -40,6 +40,8 @@ export const keyLabel = (path: CameraPath, k: number) =>
   path.keys[k]?.name.trim() || `View ${k + 1}`;
 export const pathHelp = {
   mode: "Fly the camera through your key views in order, reaching each at an equal share of the duration. Each leg turns the shorter way around unless you add turns. Geometry stays fixed.",
+  camera:
+    "Flies the camera through your key views in order while the geometry moves, reaching each at an equal share of the duration, as Fly through key views does with the geometry fixed. Each frame is drawn with the camera of its own time. The views are taken about the study as drawn when playback starts, so geometry that grows far beyond it can leave the page.",
   steady:
     "On each leg the camera turns, tilts and zooms at a constant rate, zooming by equal factors in equal times, and stops changing direction at each view.",
   smooth:
