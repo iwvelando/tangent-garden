@@ -266,6 +266,101 @@ test("see-through sheets and dashed hidden lines draw and export through WebKit 
   expect(video.first.hash).not.toBe(video.last.hash);
 });
 
+test("riding a ray draws in perspective and exports through WebKit WebGL and H.264", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "Riding a ray through coma" });
+  const stage = page.locator(".spatial-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await open(page, "#spatial-animation-section");
+  await expect(
+    page.getByLabel("Animation camera", { exact: true }),
+  ).toHaveValue("ride");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.1");
+  await expect(stage).toHaveAttribute("data-progress", "0.1");
+  const view = JSON.parse(
+    (await page.locator("#spatial-artwork").getAttribute("data-view"))!,
+  );
+  expect(view.lens.projection).toBe("perspective");
+  // The shaded still has ink wherever the line drawing's visible mirror
+  // curves are: WebKit's vertex shader projects as scene.ts does.
+  const svgFile = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export image", exact: true }).click();
+  await page
+    .getByRole("menuitem", { name: "Lines (SVG) · visible only, sampled" })
+    .click();
+  const svg = (await readFile((await (await svgFile).path())!)).toString();
+  const group = svg.match(/<g id="curves"[^>]*>(.*?)<\/g>/)![1];
+  const points: [number, number][] = [];
+  for (const d of group.matchAll(/ d="([^"]*)"/g))
+    for (const line of d[1].split(/(?=M)/).filter(Boolean)) {
+      const v = [...line.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map(
+        (m) => [+m[1], +m[2]] as const,
+      );
+      for (let k = 1; k < v.length; k++) {
+        const [a, b] = [v[k - 1], v[k]];
+        const n = Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / 4);
+        for (let m = 0; m < n; m++) {
+          const x = a[0] + ((b[0] - a[0]) * m) / n,
+            y = a[1] + ((b[1] - a[1]) * m) / n;
+          if (x > 4 && x < 1996 && y > 4 && y < 1516) points.push([x, y]);
+        }
+      }
+    }
+  expect(points.length).toBeGreaterThan(200);
+  const image = page.waitForEvent("download");
+  await exportImage(page, "PNG");
+  const png = await readFile((await (await image).path())!);
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([2000, 1520]);
+  const agreement = await page.evaluate(
+    async ([input, at]) => {
+      const picture = new Image();
+      picture.src = `data:image/png;base64,${input}`;
+      await picture.decode();
+      const c = document.createElement("canvas");
+      c.width = picture.width;
+      c.height = picture.height;
+      const g = c.getContext("2d")!;
+      g.drawImage(picture, 0, 0);
+      const data = g.getImageData(0, 0, c.width, c.height).data;
+      const inked = (x: number, y: number) => {
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const i = 4 * ((Math.round(y) + dy) * c.width + Math.round(x) + dx);
+            if (
+              Math.abs(data[i] - data[0]) +
+                Math.abs(data[i + 1] - data[1]) +
+                Math.abs(data[i + 2] - data[2]) >
+              30
+            )
+              return true;
+          }
+        return false;
+      };
+      return at.filter(([x, y]) => inked(x, y)).length / at.length;
+    },
+    [png.toString("base64"), points] as const,
+  );
+  expect(agreement).toBeGreaterThan(0.9);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.getByLabel("Duration (seconds)").fill("0.4");
+  await open(page, "#spatial-export-settings");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("0.5");
+  const path = (await save(page))!;
+  const data = probe(path);
+  if (data) expect(data.frames).toBe(6);
+  const video = await decodeVideo(page, await readFile(path));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  expect(video.first.hash).not.toBe(video.last.hash);
+});
+
 // An iterated map's density is a PNG embedded in the SVG; drawing that SVG
 // to a canvas must keep it and must not taint the canvas.
 test("PNG export keeps an iterated map's embedded density in WebKit", async ({

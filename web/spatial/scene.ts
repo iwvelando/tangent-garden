@@ -13,6 +13,22 @@ export type View = Bounds3 & {
   zoom: number;
   panX: number;
   panY: number;
+  // A perspective camera in place of the orthographic turntable, when
+  // present: only the camera that rides a ray (see ride.ts) draws with one.
+  lens?: Lens;
+};
+// A pinhole camera at eye looking along forward, with up toward the top of
+// the page (made perpendicular to forward). fov is the angle in degrees
+// across the page's shorter side; near and far are distances from the eye
+// along forward, the clip volume's depth.
+export type Lens = {
+  projection: "perspective";
+  eye: Vec3;
+  forward: Vec3;
+  up: Vec3;
+  fov: number;
+  near: number;
+  far: number;
 };
 export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // Surface, rulings, and edges belong to the tangent developable; filaments
@@ -1013,24 +1029,40 @@ export function scenePasses(
 // about the view center (a column-major matrix), pan, then scale so the
 // study's radius × 1.16 spans the page's shorter side. Depth spans four
 // radii either side of the center; nearer points have smaller depth.
+//
+// A view with a lens is drawn in perspective instead. Its rotation's rows
+// are right (forward × up), up and back (−forward); its center is a focus
+// point at distance E = radius ahead of the eye, where the field of view
+// spans the page's shorter side. Clip w is the distance ahead of the eye
+// over E, and clip depth is chosen so window depth runs from 0 at the near
+// plane to 1 at the far one, affine in 1/distance:
+//   w = 1 − z·lens[0],  depth = −z·framing[2] + lens[1]·w + lens[2],
+// with z the rotated point's coordinate toward the viewer. Orthographic
+// views have lens = 0, so w is exactly 1 and nothing they draw changes.
 export type Camera = {
   rotation: number[];
   center: Vec3;
   pan: [number, number];
   framing: [number, number, number];
+  lens: [number, number, number];
   width: number;
   height: number;
+};
+const unit3 = (v: Vec3) => {
+  const n = Math.hypot(v.x, v.y, v.z);
+  return { x: v.x / n, y: v.y / n, z: v.z / n };
 };
 export function camera(
   view: View,
   size: { width: number; height: number },
 ): Camera {
+  if (view.lens) return perspective(view.lens, view.radius, size);
+  const aspect = size.width / size.height;
   const c = Math.cos(view.yaw),
     s = Math.sin(view.yaw),
     a = Math.cos(view.pitch),
     b = Math.sin(view.pitch);
-  const scale = view.zoom / (view.radius * 1.16),
-    aspect = size.width / size.height;
+  const scale = view.zoom / (view.radius * 1.16);
   return {
     rotation: [c, b * s, -a * s, 0, a, b, s, -b * c, a * c],
     center: view.center,
@@ -1040,27 +1072,70 @@ export function camera(
       scale * Math.min(1, aspect),
       1 / (view.radius * 4),
     ],
+    lens: [0, 0, 0],
     width: size.width,
     height: size.height,
   };
 }
-// A point in clip coordinates, each within [−1, 1] where it is drawn: the
-// vertex shader's arithmetic.
+function perspective(
+  lens: Lens,
+  radius: number,
+  size: { width: number; height: number },
+): Camera {
+  const aspect = size.width / size.height;
+  const f = unit3(lens.forward),
+    along = lens.up.x * f.x + lens.up.y * f.y + lens.up.z * f.z;
+  const u = unit3({
+    x: lens.up.x - along * f.x,
+    y: lens.up.y - along * f.y,
+    z: lens.up.z - along * f.z,
+  });
+  const r = {
+    x: f.y * u.z - f.z * u.y,
+    y: f.z * u.x - f.x * u.z,
+    z: f.x * u.y - f.y * u.x,
+  };
+  const E = radius,
+    n = lens.near,
+    far = lens.far;
+  const scale = 1 / (E * Math.tan((lens.fov * Math.PI) / 360));
+  return {
+    rotation: [r.x, u.x, -f.x, r.y, u.y, -f.y, r.z, u.z, -f.z],
+    center: {
+      x: lens.eye.x + E * f.x,
+      y: lens.eye.y + E * f.y,
+      z: lens.eye.z + E * f.z,
+    },
+    pan: [0, 0],
+    framing: [scale / Math.max(1, aspect), scale * Math.min(1, aspect), 0],
+    lens: [1 / E, (far + n) / (far - n), (-2 * far * n) / ((far - n) * E)],
+    width: size.width,
+    height: size.height,
+  };
+}
+// A point in homogeneous clip coordinates, each of x, y and depth within
+// [−w, w] where it is drawn: the vertex shader's arithmetic.
 export function clip(k: Camera, x: number, y: number, z: number) {
   const r = k.rotation,
     dx = x - k.center.x,
     dy = y - k.center.y,
     dz = z - k.center.z;
+  const toward = r[2] * dx + r[5] * dy + r[8] * dz;
+  const w = 1 - toward * k.lens[0];
   return [
     (r[0] * dx + r[3] * dy + r[6] * dz + k.pan[0]) * k.framing[0],
     (r[1] * dx + r[4] * dy + r[7] * dz + k.pan[1]) * k.framing[1],
-    -(r[2] * dx + r[5] * dy + r[8] * dz) * k.framing[2],
-  ] as [number, number, number];
+    -toward * k.framing[2] + k.lens[1] * w + k.lens[2],
+    w,
+  ] as [number, number, number, number];
 }
 // Clip coordinates as page pixels (y down) and window depth from 0 to 1.
-export const page = (k: Camera, c: readonly number[]) => ({
-  x: ((c[0] + 1) / 2) * k.width,
-  y: ((1 - c[1]) / 2) * k.height,
-  depth: (c[2] + 1) / 2,
-});
+export const page = (k: Camera, c: readonly number[]) => {
+  const w = c[3] ?? 1;
+  return {
+    x: ((c[0] / w + 1) / 2) * k.width,
+    y: ((1 - c[1] / w) / 2) * k.height,
+    depth: (c[2] / w + 1) / 2,
+  };
+};
 export const project = (k: Camera, p: Vec3) => page(k, clip(k, p.x, p.y, p.z));

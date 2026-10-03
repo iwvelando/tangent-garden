@@ -3387,11 +3387,15 @@ export default function SpatialApp({
                 </div>
               )}
               <span>
-                {released
-                  ? "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · Back to study restores your view"
-                  : animation
-                    ? "Animation camera · Stop restores manual framing"
-                    : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home"}
+                {released?.lens
+                  ? "Perspective from the ray · drag, pan or zoom to return to the orthographic view · Home to the ray · Back to study restores your view"
+                  : released
+                    ? "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · Back to study restores your view"
+                    : camera?.lens
+                      ? "Perspective · riding a ray · Stop restores manual framing"
+                      : animation
+                        ? "Animation camera · Stop restores manual framing"
+                        : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home"}
               </span>
             </div>
           </div>

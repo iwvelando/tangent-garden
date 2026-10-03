@@ -26,6 +26,9 @@ export type Timeline = {
   incident: (Vec3 | null)[][];
   nIncident: number;
   nTransmitted: number;
+  // Whether the outgoing light is refracted (else reflected); totally
+  // reflected rays are marked on the study's own rays.
+  refracting: boolean;
   // How far behind its starting front parallel light is drawn, so a plane
   // wave streams in from past the framing sphere; 0 for a point.
   behind: number;
@@ -143,6 +146,7 @@ export function traceTimeline(
     incident,
     nIncident,
     nTransmitted,
+    refracting,
     behind: parallel ? 2 * bounds.radius : 0,
   };
 }

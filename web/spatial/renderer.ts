@@ -38,6 +38,9 @@ attribute float arc;
 uniform float dashes;
 uniform mat3 rotation;
 uniform vec3 framing;
+// Perspective (see scene.ts's camera); zero for the orthographic camera,
+// whose w is then exactly 1.
+uniform vec3 lens;
 uniform vec3 center;
 uniform vec2 pan;
 uniform vec4 cut;
@@ -54,7 +57,8 @@ void main() {
   // (n̂·p − d) / radius, positive beyond the cut plane: computed here, at
   // the vertex stage's precision, and linear across every primitive.
   C = dot(cut.xyz, position - center) - cut.w;
-  gl_Position = vec4((P.x + pan.x) * framing.x, (P.y + pan.y) * framing.y, -P.z * framing.z, 1.0);
+  float w = 1.0 - P.z * lens.x;
+  gl_Position = vec4((P.x + pan.x) * framing.x, (P.y + pan.y) * framing.y, -P.z * framing.z + lens.y * w + lens.z, w);
 }`;
 const fragmentSource = `
 precision mediump float;
@@ -156,7 +160,8 @@ void main() {
 }`;
 
 // Rendering only: all curve samples, analytic normals and mesh topology come
-// from Go. The camera is orthographic with identical scale on all three axes.
+// from Go. The camera is orthographic with identical scale on all three axes,
+// or a perspective camera while riding a ray (see scene.ts).
 export function createRenderer(canvas: HTMLCanvasElement) {
   const gl = canvas.getContext("webgl", {
     antialias: true,
@@ -202,6 +207,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     [
       "rotation",
       "framing",
+      "lens",
       "center",
       "pan",
       "ink",
@@ -410,6 +416,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl!.uniform3f(uniforms.center, k.center.x, k.center.y, k.center.z);
     gl!.uniform2f(uniforms.pan, k.pan[0], k.pan[1]);
     gl!.uniform3f(uniforms.framing, ...k.framing);
+    gl!.uniform3f(uniforms.lens, ...k.lens);
     gl!.uniform1f(uniforms.dark, dark ? 1 : 0);
     // The plane relative to the view center, scaled by the radius.
     if (cut) {

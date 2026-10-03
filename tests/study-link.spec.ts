@@ -23,6 +23,7 @@ import { defaultLayers } from "../web/spatial/renderer";
 import { defaultCut } from "../web/spatial/cut";
 import { defaultSight } from "../web/spatial/sight";
 import { defaultPath, maxKeys } from "../web/spatial/path";
+import { defaultRide } from "../web/spatial/ride";
 import { initialView } from "../web/tesseract/types";
 
 // Links are encoded here independently of the app, with Node's zlib, so a
@@ -99,6 +100,7 @@ const spatial = (i = 0): SpatialStudy => ({
         { name: "Out", yaw: 2, pitch: 0, zoom: 1, panX: 0, panY: 0, turns: 8 },
       ],
     },
+    ride: { i: 4, j: 12, follow: 0.5, turn: 1.25 },
   },
   // A mirror's probe describes its light; a curve probe there is from a
   // link made before it had one.
@@ -849,6 +851,58 @@ test("a link carries a camera flying its path while the geometry moves; never wh
   const unknown = structuredClone(spatial()) as any;
   unknown.animation.camera = "chase";
   await refused(() => spatialStudy(unknown), "animation.camera");
+});
+
+test("a link carries a camera riding a ray while light is traced; never otherwise", async () => {
+  const rays = spatialPresets.findIndex((p) => p.config.format === "rays");
+  const study: SpatialStudy = {
+    ...spatial(rays),
+    animation: { ...spatial(rays).animation, mode: "trace", camera: "ride" },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // The middle crossing is written as −1.
+  const middle = structuredClone(study);
+  middle.animation.ride = { ...middle.animation.ride, i: -1, j: -1 };
+  assert.deepEqual(spatialStudy(structuredClone(middle)), middle);
+  // Links made before the ride ride the default when asked to.
+  const older = structuredClone(study) as any;
+  delete older.animation.ride;
+  assert.deepEqual(spatialStudy(older).animation.ride, defaultRide);
+  // Only a trace has a ray to ride.
+  for (const mode of ["reveal", "parameters", "orbit", "path"] as const) {
+    const s = structuredClone(study) as any;
+    s.animation.mode = mode;
+    await refused(() => spatialStudy(s), "animation.camera", /traced/);
+  }
+  const bad = (change: (ride: any) => void) => {
+    const s = structuredClone(study) as any;
+    change(s.animation.ride);
+    return () => spatialStudy(s);
+  };
+  const ride = "animation.ride";
+  for (const value of [0, -1, 4.5, "1"])
+    await refused(
+      bad((r) => (r.follow = value)),
+      `${ride}.follow`,
+    );
+  await refused(
+    bad((r) => (r.turn = 0)),
+    `${ride}.turn`,
+  );
+  await refused(
+    bad((r) => (r.i = 1.5)),
+    `${ride}.i`,
+    /whole/,
+  );
+  await refused(
+    bad((r) => (r.j = -2)),
+    `${ride}.j`,
+  );
+  await refused(
+    bad((r) => (r.roll = 0)),
+    `${ride}.roll`,
+  );
 });
 
 test("a link carries the curve a construction is built on; older links build on the base", async () => {
