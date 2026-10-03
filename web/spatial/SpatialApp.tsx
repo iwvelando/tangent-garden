@@ -3294,6 +3294,7 @@ export default function SpatialApp({
           // The entered sight when it changes the drawing, likewise.
           data-sight={isPlain(sight) ? undefined : JSON.stringify(sight)}
           data-progress={animation?.progress}
+          data-time={animation?.time}
           data-mode={animation?.mode}
           data-camera={camera ? JSON.stringify(camera) : undefined}
         >

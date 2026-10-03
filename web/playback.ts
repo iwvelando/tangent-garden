@@ -5,9 +5,13 @@
 // frame is drawn; requests are spaced by the measured latency divided among
 // the lanes, so the lanes alternate instead of finishing together. A reply
 // older than the frame on screen is dropped, so progress only rises.
+// Repeating playback wraps from the end to the start (the time asked for is
+// in [0, 1), never 1, which is 0 again) and never ends on its own; a reply
+// is judged older by the unwrapped time.
 export function play<T>(o: {
   from: number;
   duration: number;
+  repeat?: boolean;
   lanes: ((p: number) => Promise<T>)[];
   show: (value: T, p: number) => void;
   end: () => void;
@@ -50,11 +54,11 @@ export function play<T>(o: {
     // `began`, so clamp at the starting point: extrapolating before it
     // would overshoot the entered endpoint, such as rounding a count of 2
     // down to 1, and a resumed animation would step backward.
-    const p = Math.min(
-      1,
-      Math.max(o.from, o.from + (now - began) / o.duration),
-    );
-    final = p === 1;
+    const elapsed = Math.max(o.from, o.from + (now - began) / o.duration),
+      time = o.repeat ? elapsed : Math.min(1, elapsed),
+      p = o.repeat ? time - Math.floor(time) : time,
+      ending = !o.repeat && p === 1;
+    final = ending;
     busy[lane] = true;
     const sent = clock();
     new Promise<T>((resolve) => resolve(o.lanes[lane](p))).then(
@@ -63,10 +67,10 @@ export function play<T>(o: {
         if (stopped) return;
         const took = clock() - sent;
         latency = latency ? (latency + took) / 2 : took;
-        if (p > shown) {
-          shown = p;
+        if (time > shown) {
+          shown = time;
           o.show(value, p);
-          if (p === 1) {
+          if (ending) {
             stop();
             o.end();
             return;

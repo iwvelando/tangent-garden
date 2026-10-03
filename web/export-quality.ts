@@ -35,9 +35,12 @@ export function exportEncoding({ scale, quality, layout }: ExportSettings) {
   };
 }
 
-// Frame progress and millisecond delays shared by every export format. The
-// delays sum exactly to the requested duration and include both endpoints.
-export function exportTiming(seconds: number, fps: number) {
+// Frame times and millisecond delays shared by every export format. The
+// delays sum exactly to the requested duration. Frames include both
+// endpoints, unless the animation cycles (see timing.ts): then they are
+// equally spaced over one period and the end, which is the start again, is
+// left out, so a looping file shows no frame twice at its seam.
+export function exportTiming(seconds: number, fps: number, cyclic = false) {
   if (!Number.isFinite(seconds) || seconds < 0.1 || seconds > 3600)
     throw new Error("Duration must be between 0.1 and 3600 seconds.");
   if (!frameRates.includes(fps))
@@ -49,7 +52,7 @@ export function exportTiming(seconds: number, fps: number) {
     );
   const milliseconds = Math.round(seconds * 1000);
   return Array.from({ length: count }, (_, i) => ({
-    progress: i / (count - 1),
+    progress: cyclic ? i / count : i / (count - 1),
     duration:
       Math.round(((i + 1) * milliseconds) / count) -
       Math.round((i * milliseconds) / count),

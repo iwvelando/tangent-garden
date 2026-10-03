@@ -114,7 +114,11 @@ export type AnimationView = {
   camera: CameraMode;
   heldView?: View;
   length: number;
+  // The motion's progress, which the frame is drawn at, and the time the
+  // timeline stands at (see timing.ts); they differ only when the
+  // animation repeats back and forth or eases.
   progress: number;
+  time?: number;
   mode: AnimationMode;
   // A finished animation releases the camera, starting from its own.
   complete: boolean;
@@ -129,6 +133,8 @@ export type AnimationView = {
   // bounds each frame has.
   path?: CameraPath;
   around?: Bounds3;
+  // A loop's path passes its seam smoothly (see pathView).
+  cyclic?: boolean;
   // The ray the camera rides while light is traced, the bounds its lens
   // was framed about, and the timeline's total optical path.
   ride?: { path: RidePath; around: Bounds3; total: number };
@@ -996,7 +1002,8 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
 export function animationCamera(view: AnimationView): View {
   // A camera path is the whole camera, about the study's own bounds, at the
   // time of the frame it draws.
-  if (view.path) return pathView(view.path, view.around!, view.progress);
+  if (view.path)
+    return pathView(view.path, view.around!, view.progress, view.cyclic);
   // So is the ride, at the optical path the frame's light has reached.
   if (view.ride)
     return rideView(

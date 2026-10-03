@@ -414,3 +414,132 @@ test("a path flown while the geometry moves is the same camera about the study a
   expect(at(0)).toEqual(manual(tour[0]));
   expect(at(1)).toEqual(manual(tour[3]));
 });
+
+test("in a loop, a smooth closed path passes through the view where it ends and starts again without stopping", () => {
+  // A closed tour: the last view is the first, one turn on.
+  const ring = [
+    key({ yaw: 0.3, pitch: 0.2, zoom: 1 }),
+    key({ yaw: 2.1, pitch: 0.7, zoom: 2.2 }),
+    key({ yaw: -2.2, pitch: -0.3, zoom: 1.4 }),
+    key({ yaw: 0.3, pitch: 0.2, zoom: 1, turns: 0 }),
+  ];
+  const smooth = path(ring, "smooth");
+  const h = 1e-6;
+  const rates = (cyclic: boolean) => {
+    const at = (p: number) => pathView(smooth, bounds, p, cyclic);
+    // At exactly 1 the camera is the last view as entered, its yaw not
+    // unwrapped along the path, so the end's rate is taken just before it.
+    const [a0, a1, b0, b1] = [at(0), at(h), at(1 - 2 * h), at(1 - h)];
+    return {
+      start: [
+        (a1.yaw - a0.yaw) / h,
+        (a1.pitch - a0.pitch) / h,
+        Math.log(a1.zoom / a0.zoom) / h,
+      ],
+      end: [
+        (b1.yaw - b0.yaw) / h,
+        (b1.pitch - b0.pitch) / h,
+        Math.log(b1.zoom / b0.zoom) / h,
+      ],
+    };
+  };
+  // Not cyclic, the ends take one-sided slopes that disagree at the seam.
+  const open = rates(false);
+  expect(
+    Math.max(...open.start.map((r, i) => Math.abs(r - open.end[i]))),
+  ).toBeGreaterThan(0.5);
+  // Cyclic, the seam is one more interior view: the same rate either side.
+  const closed = rates(true);
+  for (let i = 0; i < 3; i++)
+    expect(Math.abs(closed.start[i] - closed.end[i])).toBeLessThan(1e-3);
+  // Still exactly at every view, and the same drawing at both ends.
+  ring.forEach((k, i) =>
+    expect(
+      apart(pathView(smooth, bounds, i / 3, true), manual(k)),
+    ).toBeLessThan(1e-9),
+  );
+  // And never beyond the two views of a leg.
+  for (let i = 0; i <= 3000; i++) {
+    const p = i / 3000,
+      leg = Math.min(2, Math.floor(p * 3));
+    const v = pathView(smooth, bounds, p, true);
+    const [a, b] = [ring[leg], ring[leg + 1]];
+    expect(v.pitch).toBeGreaterThanOrEqual(Math.min(a.pitch, b.pitch) - 1e-15);
+    expect(v.pitch).toBeLessThanOrEqual(Math.max(a.pitch, b.pitch) + 1e-15);
+  }
+});
+
+test("a loop changes neither a steady path nor a path of two views", () => {
+  for (const keys of [tour, tour.slice(0, 2)])
+    for (const style of ["steady", "smooth"] as const) {
+      if (style === "smooth" && keys.length > 2) continue;
+      for (let i = 0; i <= 50; i++)
+        expect(
+          apart(
+            pathView(path(keys, style), bounds, i / 50, true),
+            pathView(path(keys, style), bounds, i / 50),
+          ),
+        ).toBe(0);
+    }
+  for (let i = 0; i <= 50; i++)
+    expect(
+      apart(
+        pathView(path(tour, "steady"), bounds, i / 50, true),
+        pathView(path(tour, "steady"), bounds, i / 50),
+      ),
+    ).toBe(0);
+});
+
+test("a loop's camera at its seam is the path's own", () => {
+  const view = (cyclic?: boolean): AnimationView => ({
+    frame: null as never,
+    final: null as never,
+    camera: "path",
+    length: 0,
+    progress: 0.999,
+    mode: "path",
+    complete: false,
+    path: path(tour, "smooth"),
+    around: bounds,
+    ...(cyclic !== undefined && { cyclic }),
+  });
+  expect(
+    apart(
+      animationCamera(view(true)),
+      pathView(path(tour, "smooth"), bounds, 0.999, true),
+    ),
+  ).toBe(0);
+  expect(
+    apart(
+      animationCamera(view()),
+      pathView(path(tour, "smooth"), bounds, 0.999),
+    ),
+  ).toBe(0);
+  expect(
+    apart(animationCamera(view(true)), animationCamera(view())),
+  ).toBeGreaterThan(1e-6);
+});
+
+test("in a loop, a seam that is a turning point rests there instead of overshooting it", () => {
+  // The pitch rises from the seam on the first leg and falls back to it on
+  // the last, so the seam is its lowest view.
+  const dip = [
+    key({ pitch: 0.2 }),
+    key({ yaw: 2, pitch: 0.9 }),
+    key({ yaw: 4, pitch: 0.6 }),
+    key({ pitch: 0.2 }),
+  ];
+  const p = path(dip, "smooth");
+  for (let i = 0; i <= 3000; i++) {
+    const at = i / 3000,
+      leg = Math.min(2, Math.floor(at * 3));
+    const v = pathView(p, bounds, at, true).pitch;
+    const [a, b] = [dip[leg].pitch, dip[leg + 1].pitch];
+    expect(v).toBeGreaterThanOrEqual(Math.min(a, b) - 1e-15);
+    expect(v).toBeLessThanOrEqual(Math.max(a, b) + 1e-15);
+  }
+  const h = 1e-6;
+  expect(Math.abs(pathView(p, bounds, h, true).pitch - 0.2) / h).toBeLessThan(
+    1e-3,
+  );
+});

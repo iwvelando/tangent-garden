@@ -3,6 +3,16 @@ import { ProgressSlider } from "../ProgressSlider";
 import type { SpatialAnimation } from "./link";
 import { EngineClient, playbackEngineCount } from "../engine-client";
 import { play } from "../playback";
+import { cycles, progressAt, type Pace, type Repeat } from "../timing";
+import {
+  loopGap,
+  loops,
+  paceChoices,
+  paceHelp,
+  repeatChoices,
+  repeatHelp,
+  smoothLoopHelp,
+} from "./loop";
 import {
   applyTracks,
   availableTargets,
@@ -105,6 +115,10 @@ type Session = {
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
+  // How the duration is spent (see timing.ts): the progress is the time
+  // the timeline stands at.
+  repeat: Repeat;
+  pace: Pace;
   length: number;
   progress: number;
 };
@@ -188,6 +202,13 @@ export function SpatialAnimationPanel({
   }, [cutting, mode]);
   const [camera, setCamera] = useState<CameraMode>("hold");
   const [duration, setDuration] = useState(10);
+  const [repeat, setRepeat] = useState<Repeat>("once");
+  const [pace, setPace] = useState<Pace>("steady");
+  // Only motion that can return to its start loops; another keeps
+  // repeating, back and forth.
+  useEffect(() => {
+    if (!loops(mode) && repeat === "loop") setRepeat("back-and-forth");
+  }, [mode, repeat]);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [path, setPath] = useState<CameraPath>(defaultPath);
   const [ride, setRide] = useState<Ride>(defaultRide);
@@ -274,7 +295,16 @@ export function SpatialAnimationPanel({
     });
   }, [targets.join(",")]);
   if (settings)
-    settings.current = { mode, camera, duration, tracks, path, ride };
+    settings.current = {
+      mode,
+      camera,
+      duration,
+      tracks,
+      path,
+      ride,
+      repeat,
+      pace,
+    };
   // After the retention and trace fallbacks above, which then see the
   // linked study's own frame.
   const restored = useRef(-1);
@@ -287,6 +317,8 @@ export function SpatialAnimationPanel({
     setTracks(restore.settings.tracks);
     setPath(restore.settings.path);
     setRide(restore.settings.ride);
+    setRepeat(restore.settings.repeat);
+    setPace(restore.settings.pace);
   }, [restore]);
   const flown = useRef(-1);
   useEffect(() => {
@@ -294,10 +326,13 @@ export function SpatialAnimationPanel({
     flown.current = flight.id;
     const brought = flight.flight;
     setPath(brought ? structuredClone(brought.path) : defaultPath);
+    // A preset brings its own repeat and pace, or the defaults.
+    setRepeat(brought?.repeat ?? "once");
+    setPace(brought?.pace ?? "steady");
     if (brought?.animate) {
       // The path flies, or the ray is ridden, while the geometry moves.
       setMode(brought.animate.mode);
-      setCamera(brought.ride ? "ride" : "path");
+      setCamera(brought.ride ? "ride" : (brought.camera ?? "path"));
       if (brought.ride) setRide(structuredClone(brought.ride));
       if (brought.animate.tracks)
         setTracks(structuredClone(brought.animate.tracks));
@@ -397,7 +432,21 @@ export function SpatialAnimationPanel({
     if (next === "parameters" && !tracks.length && targets.length)
       setTracks([defaultTrack(targets[0])]);
   }
+  // The frame at a time on the timeline: the motion at its progress then.
   async function sample(
+    s: Session,
+    time: number,
+    engine = client.current!,
+  ): Promise<AnimationView> {
+    const view = await frameAt(s, progressAt(time, s.repeat, s.pace), engine);
+    return {
+      ...view,
+      time,
+      complete: s.repeat === "once" && time === 1,
+    };
+  }
+  // The frame at a progress of the motion.
+  async function frameAt(
     s: Session,
     p: number,
     engine = client.current!,
@@ -433,7 +482,11 @@ export function SpatialAnimationPanel({
       progress: p,
       mode: s.mode,
       complete: p === 1,
-      ...(s.path && { path: s.path, around: s.around }),
+      ...(s.path && {
+        path: s.path,
+        around: s.around,
+        cyclic: s.repeat === "loop",
+      }),
       ...(s.ride && { ride: s.ride }),
       // Sample (or row) 0 at the start and the last at the end, exactly.
       ...(s.mode === "probe" && {
@@ -456,8 +509,8 @@ export function SpatialAnimationPanel({
     };
   }
   function display(s: Session, view: AnimationView) {
-    s.progress = view.progress;
-    setProgress(view.progress);
+    s.progress = view.time!;
+    setProgress(view.time!);
     onView(view);
     const leg = s.path ? pathLeg(s.path, view.progress) : "";
     // A path flown while the geometry moves names its leg after the
@@ -540,6 +593,7 @@ export function SpatialAnimationPanel({
     playing.current = play({
       from,
       duration: s.duration * 1000,
+      repeat: cycles(s.repeat),
       lanes: engines.map((engine) => (p: number) => sample(s, p, engine)),
       show: (view) => {
         if (epoch.current === token) display(s, view);
@@ -702,9 +756,18 @@ export function SpatialAnimationPanel({
         camera,
         heldView,
         duration,
+        repeat,
+        pace,
         length,
         progress: 0,
       };
+      // A loop plays only when its last frame is its first.
+      if (repeat === "loop") {
+        const [a, b] = await Promise.all([frameAt(s, 0), frameAt(s, 1)]);
+        if (epoch.current !== token) return;
+        const gap = loopGap(a, b, layers);
+        if (gap) throw new Error(gap);
+      }
       session.current = s;
       if (save) {
         const controller = new AbortController();
@@ -721,7 +784,9 @@ export function SpatialAnimationPanel({
           format: chosen,
           duration,
           fps: exportFps,
-          loop: chosen === "webp" && loop,
+          // A repeating animation loops forever.
+          loop: chosen === "webp" && (loop || cycles(s.repeat)),
+          cyclic: cycles(s.repeat),
           settings: { scale: exportScale, quality },
           dark,
           layers: { ...layers },
@@ -777,7 +842,7 @@ export function SpatialAnimationPanel({
         if (token !== epoch.current) return;
         display(s, view);
         if (seekTarget.current !== null) setProgress(seekTarget.current);
-        changeStatus(p === 1 ? "complete" : "paused");
+        changeStatus(s.repeat === "once" && p === 1 ? "complete" : "paused");
       }
     } catch (error) {
       if (token === epoch.current) fail(error);
@@ -803,7 +868,13 @@ export function SpatialAnimationPanel({
     <>
       <Field
         label="Path"
-        help={path.style === "smooth" ? pathHelp.smooth : pathHelp.steady}
+        help={
+          path.style === "smooth"
+            ? repeat === "loop"
+              ? `${pathHelp.smooth} ${smoothLoopHelp}`
+              : pathHelp.smooth
+            : pathHelp.steady
+        }
       >
         <select
           value={path.style}
@@ -937,6 +1008,20 @@ export function SpatialAnimationPanel({
         >
           + Add the drawing's view
         </button>
+        {repeat === "loop" && (
+          <button
+            disabled={path.keys.length < 2 || path.keys.length >= maxKeys}
+            onClick={() =>
+              setPath((p) =>
+                p.keys.length < 2 || p.keys.length >= maxKeys
+                  ? p
+                  : { ...p, keys: [...p.keys, { ...p.keys[0], turns: 0 }] },
+              )
+            }
+          >
+            + Return to view 1
+          </button>
+        )}
       </div>
     </>
   );
@@ -1161,6 +1246,34 @@ export function SpatialAnimationPanel({
               onChange={(e) => setDuration(e.target.valueAsNumber)}
             />
           </Field>
+          <div className="pair">
+            <Field label="Repeat" help={repeatHelp[repeat]}>
+              <select
+                value={repeat}
+                onChange={(e) => setRepeat(e.target.value as Repeat)}
+              >
+                {repeatChoices
+                  .filter((c) => c.value !== "loop" || loops(mode))
+                  .map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Pace" help={paceHelp[pace]}>
+              <select
+                value={pace}
+                onChange={(e) => setPace(e.target.value as Pace)}
+              >
+                {paceChoices.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           {mode !== "path" && (
             <Field
               label="Animation camera"
@@ -1275,7 +1388,11 @@ export function SpatialAnimationPanel({
                 onChange={(e) => setQuality(+e.target.value)}
               />
             </Field>
-            {chosen === "webp" ? (
+            {chosen === "webp" && cycles(repeat) ? (
+              <p className="hint">
+                This animation repeats, so the file loops forever.
+              </p>
+            ) : chosen === "webp" ? (
               <label className="check">
                 <input
                   type="checkbox"

@@ -16,6 +16,7 @@ function simulate(options: {
   // can report a frame's start before playback began.
   lag?: number;
   failAt?: number;
+  repeat?: boolean;
 }) {
   let t = 1000,
     ids = 0;
@@ -50,6 +51,7 @@ function simulate(options: {
   const cancel = play({
     from: options.from ?? 0,
     duration: options.duration,
+    repeat: options.repeat,
     lanes,
     show: (value, p) => {
       expect(value).toBe(p * 10);
@@ -209,4 +211,75 @@ test("a helper engine plays wherever an export could add one", () => {
     [8, true, 2],
   ] as const)
     expect(playbackEngineCount(cores, touch)).toBe(count);
+});
+
+test("repeating playback wraps to the start and never ends on its own", async () => {
+  for (const lanes of [1, 2]) {
+    const s = simulate({
+      lanes,
+      duration: 1000,
+      latency: () => 40,
+      repeat: true,
+    });
+    await s.advance(3500);
+    expect(s.ended()).toBe(0);
+    // Three wraps: the time falls back below where it was, and stays in
+    // [0, 1), never asking for 1 (which is 0 again).
+    const wraps = s.shown.filter((p, i) => i && p < s.shown[i - 1]).length;
+    expect(wraps).toBe(3);
+    expect(Math.max(...s.sent.map((r) => r.p))).toBeLessThan(1);
+    expect(Math.min(...s.sent.map((r) => r.p))).toBeGreaterThanOrEqual(0);
+    // Still asking for frames until canceled, and nothing after.
+    const asked = s.sent.length;
+    await s.advance(200);
+    expect(s.sent.length).toBeGreaterThan(asked);
+    s.cancel();
+    const canceled = s.sent.length;
+    await s.advance(1000);
+    expect(s.sent).toHaveLength(canceled);
+    expect(s.pendingFrames()).toBe(0);
+  }
+});
+
+test("a repeating reply older than the frame on screen is dropped across a wrap", async () => {
+  // The first request after 95% of the cycle is slow; requests after the
+  // wrap overtake it.
+  let slow = -1;
+  const s: ReturnType<typeof simulate> = simulate({
+    lanes: 2,
+    duration: 1000,
+    repeat: true,
+    latency: (_, order) => {
+      if (slow < 0 && s.sent[order].p > 0.95) slow = order;
+      return order === slow ? 300 : 30;
+    },
+  });
+  await s.advance(2500);
+  const late = s.sent[slow].p;
+  const overtaken = s.replied.indexOf(slow);
+  // A request after the wrap, at a smaller time, replied first and was shown.
+  const wrapped = s.replied
+    .slice(0, overtaken)
+    .filter((o) => o > slow && s.sent[o].p < late);
+  expect(wrapped.length).toBeGreaterThan(0);
+  expect(s.shown).toContain(s.sent[wrapped[0]].p);
+  expect(s.shown).not.toContain(late);
+  s.cancel();
+});
+
+test("repeating playback resumed at the end continues from the start", async () => {
+  const s = simulate({
+    lanes: 1,
+    duration: 1000,
+    from: 1,
+    latency: () => 20,
+    repeat: true,
+  });
+  await s.advance(400);
+  // The first display frame comes one frame after resuming.
+  expect(s.sent[0].p).toBeGreaterThanOrEqual(0);
+  expect(s.sent[0].p).toBeLessThan(0.05);
+  expect(s.shown.at(-1)).toBeGreaterThan(0.3);
+  expect(s.ended()).toBe(0);
+  s.cancel();
 });
