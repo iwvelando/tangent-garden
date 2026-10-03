@@ -335,6 +335,10 @@ header {
   .share-label {
     display: none;
   }
+  /* Keeps the header's actions on one row. */
+  .animation-jump span {
+    display: none;
+  }
 }
 .share-manual {
   display: grid;
@@ -764,6 +768,9 @@ h1 {
 .dark .export {
   background: #317a72;
 }
+.dark .export:hover:not(:disabled) {
+  background: #276660;
+}
 @media (min-width: 1500px) {
   main {
     grid-template-columns: 320px 1fr;
@@ -957,16 +964,64 @@ h1 {
 
 /* Shared notebook navigation. */
 
-.notebook-mode > button {
-  white-space: nowrap;
+/* The study dimension, one segment per notebook above its examples. Each
+   radio covers its whole segment, so the segment is the click target and
+   carries the focus ring. */
+.notebook-mode {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: -4px 0 12px;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
-.notebook-mode .export-image-options {
-  min-width: 155px;
+.notebook-mode label {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+  border-radius: 5px;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  color: var(--muted);
 }
-.notebook-mode [role="menuitemradio"] {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
+/* Sized explicitly: iOS Safari gives radios a small fixed size that would
+   otherwise win over the insets. */
+.notebook-mode input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: inherit;
+  appearance: none;
+  cursor: pointer;
+}
+.notebook-mode label:hover {
+  background: #e7eeea;
+}
+.dark .notebook-mode label:hover {
+  background: #31454b;
+}
+.notebook-mode label:has(:checked) {
+  background: #dce9e2;
+  color: #235f57;
+  font-weight: 600;
+}
+.dark .notebook-mode label:has(:checked) {
+  background: #294744;
+  color: #d9eeee;
+}
+.notebook-mode input:focus-visible {
+  outline-offset: 1px;
+}
+/* Focus follows a tap or click into the notebook it opens, without a ring. */
+.notebook-mode[data-quiet] input:focus-visible {
+  outline: none;
+}
+.animation-jump span {
+  padding-left: 10px;
 }
 .view-buttons {
   display: flex;
@@ -974,11 +1029,15 @@ h1 {
 .view-buttons .fit[aria-pressed="true"] {
   border-color: #7aa898;
 }
+/* On phones the view buttons take their own row under the title in every
+   notebook, however many there are. */
 @media (max-width: 700px) {
-  .plot-heading:has(.view-buttons) {
-    flex-wrap: wrap;
-    row-gap: 14px;
+  .app article .plot-heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
   }
+  .plot-heading > .fit,
   .view-buttons .fit:first-child {
     margin-left: 0;
   }
@@ -1000,9 +1059,8 @@ h1 {
   .header-actions {
     flex-wrap: wrap;
   }
-  .notebook-mode button {
-    padding: 7px;
-    font-size: 12px;
+  .animation-jump span {
+    padding-left: 4px;
   }
 }
 

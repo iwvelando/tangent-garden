@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { NotebookMode } from "./NotebookMode";
 import type { useTheme } from "./useTheme";
 
 // Shared by all notebooks so switching between them never changes the
-// header; each notebook supplies only its own export menu.
+// header; each notebook supplies only its own link, animation and export
+// actions.
 export function AppHeader({
   theme: { dark, preference, toggle, followSystem },
   children,
@@ -23,7 +23,6 @@ export function AppHeader({
         <span className="brand-divider" /> <small>CURVES & CONSTRUCTIONS</small>
       </a>
       <div className="header-actions">
-        <NotebookMode />
         <span className="local-note">A little geometry. A lot of beauty.</span>
         <button
           onClick={toggle}
