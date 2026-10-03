@@ -101,6 +101,8 @@ const spatial = (i = 0): SpatialStudy => ({
       ],
     },
     ride: { i: 4, j: 12, follow: 0.5, turn: 1.25 },
+    repeat: "back-and-forth",
+    pace: "ease",
   },
   // A mirror's probe describes its light; a curve probe there is from a
   // link made before it had one.
@@ -851,6 +853,53 @@ test("a link carries a camera flying its path while the geometry moves; never wh
   const unknown = structuredClone(spatial()) as any;
   unknown.animation.camera = "chase";
   await refused(() => spatialStudy(unknown), "animation.camera");
+});
+
+test("a link carries how an animation repeats and paces; older links play once, steadily; never loops what cannot return", async () => {
+  for (const [mode, repeat] of [
+    ["orbit", "loop"],
+    ["parameters", "loop"],
+    ["path", "loop"],
+    ["reveal", "back-and-forth"],
+    ["orbit", "once"],
+  ] as const)
+    for (const pace of ["steady", "ease"] as const) {
+      const study: SpatialStudy = {
+        ...spatial(),
+        animation: { ...spatial().animation, mode, repeat, pace },
+      };
+      const read = await readStudyLink(await writeStudyLink("3d", study));
+      assert.deepEqual(spatialStudy(read.study), study, `${mode} ${repeat}`);
+    }
+  // A link made before them, whose animation drew once and steadily.
+  const old = structuredClone(spatial()) as any;
+  delete old.animation.repeat;
+  delete old.animation.pace;
+  const opened = spatialStudy(old).animation;
+  assert.equal(opened.repeat, "once");
+  assert.equal(opened.pace, "steady");
+  // Only one of them given.
+  const half = structuredClone(spatial()) as any;
+  delete half.animation.pace;
+  assert.equal(spatialStudy(half).animation.repeat, "back-and-forth");
+  assert.equal(spatialStudy(half).animation.pace, "steady");
+  // Drawing, tracing and peeling start and end differently.
+  for (const mode of ["reveal", "cut"]) {
+    const looped = structuredClone(spatial()) as any;
+    looped.animation.mode = mode;
+    looped.animation.repeat = "loop";
+    if (mode === "cut") looped.cut.enabled = true;
+    await refused(() => spatialStudy(looped), "animation.repeat", /loops only/);
+  }
+  for (const [field, value] of [
+    ["repeat", "forever"],
+    ["pace", "bounce"],
+    ["repeat", 1],
+  ] as const) {
+    const bad = structuredClone(spatial()) as any;
+    bad.animation[field] = value;
+    await refused(() => spatialStudy(bad), `animation.${field}`);
+  }
 });
 
 test("a link carries a camera riding a ray while light is traced; never otherwise", async () => {

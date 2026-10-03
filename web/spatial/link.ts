@@ -35,6 +35,8 @@ import {
   type CameraPath,
 } from "./path";
 import { defaultRide, rideRange, type Ride } from "./ride";
+import type { Pace, Repeat } from "../timing";
+import { loops } from "./loop";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
@@ -51,6 +53,10 @@ export type SpatialAnimation = Omit<
   // The ray the camera rides while light is traced; links made before it
   // ride the default when asked to.
   ride: Ride;
+  // How the duration is spent (see timing.ts); links made before it play
+  // once, steadily.
+  repeat: Repeat;
+  pace: Pace;
 };
 export type SpatialStudy = {
   config: SpatialConfig;
@@ -72,6 +78,8 @@ export const defaultAnimation: SpatialAnimation = {
   tracks: [],
   path: defaultPath,
   ride: defaultRide,
+  repeat: "once",
+  pace: "steady",
 };
 
 const vec3 = {
@@ -392,6 +400,13 @@ function riding(value: unknown): Ride {
   return out;
 }
 
+const timing: SchemaOf<Pick<SpatialAnimation, "repeat" | "pace">> = {
+  fields: {
+    repeat: { options: { once: true, loop: true, "back-and-forth": true } },
+    pace: { options: { steady: true, ease: true } },
+  },
+};
+
 const sight: SchemaOf<Sight> = {
   fields: {
     sheets: { options: { opaque: true, through: true } },
@@ -434,6 +449,8 @@ export function spatialStudy(value: unknown): SpatialStudy {
   const {
     path: flight,
     ride: rode,
+    repeat,
+    pace,
     ...shared
   } = grouped ? (raw.animation as Record<string, unknown>) : {};
   const flying = shared.camera === "path",
@@ -459,7 +476,21 @@ export function spatialStudy(value: unknown): SpatialStudy {
     ...(rides && { camera: "ride" }),
     path: cameraPath(flight),
     ride: riding(rode),
+    ...conform(
+      {
+        ...(repeat !== undefined && { repeat }),
+        ...(pace !== undefined && { pace }),
+      },
+      timing,
+      { repeat: defaultAnimation.repeat, pace: defaultAnimation.pace },
+      "animation",
+    ),
   };
+  if (animation.repeat === "loop" && !loops(animation.mode))
+    throw new LinkError(
+      "animation.repeat",
+      "animation.repeat loops only an orbit, parameter tracks, the probe or a camera path, which can return to their start.",
+    );
   if (rides && animation.mode !== "trace")
     throw new LinkError(
       "animation.camera",

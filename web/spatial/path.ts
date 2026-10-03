@@ -151,15 +151,21 @@ export function keyFromView(
 // Monotone piecewise cubic Hermite slopes (Fritsch and Carlson, with
 // Moler's end conditions as in MATLAB's pchip) at equally spaced knots: a
 // knot between a rise and a fall, or beside a flat leg, gets slope 0, so no
-// leg leaves the range of its two ends.
-function slopes(y: number[]) {
+// leg leaves the range of its two ends. A cyclic path, whose last knot is
+// its first again, has no ends: both take the interior slope between the
+// last leg and the first, so a loop passes its seam as any other view.
+function slopes(y: number[], cyclic: boolean) {
   const n = y.length,
     delta = y.slice(1).map((v, i) => v - y[i]);
   if (n === 2) return [delta[0], delta[0]];
   const d = new Array<number>(n);
-  for (let k = 1; k < n - 1; k++)
-    d[k] =
-      delta[k - 1] * delta[k] <= 0 ? 0 : 2 / (1 / delta[k - 1] + 1 / delta[k]);
+  const interior = (before: number, after: number) =>
+    before * after <= 0 ? 0 : 2 / (1 / before + 1 / after);
+  for (let k = 1; k < n - 1; k++) d[k] = interior(delta[k - 1], delta[k]);
+  if (cyclic) {
+    d[0] = d[n - 1] = interior(delta[n - 2], delta[0]);
+    return d;
+  }
   const end = (d0: number, d1: number) => {
     const t = (3 * d0 - d1) / 2;
     if (Math.sign(t) !== Math.sign(d0)) return 0;
@@ -183,12 +189,19 @@ function hermite(y: number[], d: number[], i: number, f: number) {
 }
 
 // The camera at progress p ∈ [0, 1], with the views equally spaced in time.
+// A cyclic path (a loop's, whose last view is its first) passes its seam
+// smoothly; it changes only the smooth style's slopes at its ends.
 // At a view it is that view exactly. Between views, yaw (unwrapped along the
 // path), pitch and log zoom are interpolated in the path's style; the
 // framed point (see pathHelp.framing) moves linearly in 1/zoom, or linearly
 // in time on a leg that keeps its zoom. Every view is drawn about the
 // study's own bounds, so depth keeps the study's range.
-export function pathView(path: CameraPath, bounds: Bounds3, p: number): View {
+export function pathView(
+  path: CameraPath,
+  bounds: Bounds3,
+  p: number,
+  cyclic = false,
+): View {
   const keys = path.keys,
     n = keys.length;
   if (n < 2) return manual(keys[0], bounds);
@@ -209,7 +222,7 @@ export function pathView(path: CameraPath, bounds: Bounds3, p: number): View {
     lz = keys.map((k) => Math.log(k.zoom));
   const at = (y: number[]) =>
     path.style === "smooth"
-      ? hermite(y, slopes(y), i, f)
+      ? hermite(y, slopes(y, cyclic), i, f)
       : y[i] + (y[i + 1] - y[i]) * f;
   const v = { yaw: at(yaw), pitch: at(pitch), lz: at(lz) };
   // The framed point of each end of the leg: in the middle of the page, on

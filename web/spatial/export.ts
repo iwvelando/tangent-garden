@@ -155,6 +155,9 @@ export async function exportAnimation(options: {
   duration: number;
   fps: number;
   loop: boolean;
+  // A repeating animation's frames span one period without its end, which
+  // is its start again (see exportTiming).
+  cyclic: boolean;
   settings: ExportSettings;
   dark: boolean;
   layers: Layers;
@@ -163,12 +166,13 @@ export async function exportAnimation(options: {
   cut: CutSpec | null;
   sight: Sight;
   signal: AbortSignal;
-  sample: (progress: number) => Promise<AnimationView>;
+  // The frame at a time on the timeline.
+  sample: (time: number) => Promise<AnimationView>;
   onProgress: (completed: number, total: number) => void;
 }): Promise<Blob> {
   if (options.format === "webp" && options.fps === 60)
     throw new Error("Animated WebP supports 15 or 30 fps.");
-  const timing = exportTiming(options.duration, options.fps),
+  const timing = exportTiming(options.duration, options.fps, options.cyclic),
     encoding = exportEncoding(options.settings);
   const canvas = document.createElement("canvas"),
     renderer = createRenderer(canvas);

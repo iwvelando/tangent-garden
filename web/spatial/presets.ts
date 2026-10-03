@@ -1,8 +1,9 @@
+import type { Pace, Repeat } from "../timing";
 import type { Cut } from "./cut";
 import type { Sight } from "./sight";
 import type { CameraPath } from "./path";
 import type { Ride } from "./ride";
-import type { AnimationMode, Track } from "./animation";
+import type { AnimationMode, CameraMode, Track } from "./animation";
 import type { SpatialConfig } from "./types";
 const base: SpatialConfig = {
   format: "torus",
@@ -168,6 +169,13 @@ export type Flight = {
   };
   // A ray to ride while light is traced, in place of flying the path.
   ride?: Ride;
+  // The animation camera while the geometry moves, in place of flying the
+  // path (whose views are then none).
+  camera?: Exclude<CameraMode, "path" | "ride">;
+  // How the duration is spent (see timing.ts): once and steady unless
+  // given.
+  repeat?: Repeat;
+  pace?: Pace;
 };
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts) and its own camera path to fly (see Flight); choosing one
@@ -1934,6 +1942,178 @@ export const spatialPresets: {
         min: 0,
         max: Math.PI,
       },
+    },
+  },
+  // The trefoil run on by a, c(t + a), carrying spheres of radius
+  // R·ρ(t) = 0.26(1 + 0.85 sin 9t), fixed in t: nine swellings travel the
+  // knot, changing shape with its speed. The envelope exists everywhere,
+  // since |R′| ≤ 0.26 · 0.85 · 9 ≈ 2 is below the knot's least speed √13.
+  // As a runs once around, 0 to 2π, every sphere returns to its place,
+  // sample for sample, while the camera circles once through three views
+  // and returns to the first: both motions close, so the animation loops.
+  {
+    name: "Beads running around a trefoil",
+    detail:
+      "Nine swellings travel the knot and come back to their places as the camera circles once: a seamless loop",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      samples: 720,
+      lines: 108,
+      canal: { radius: 0.26, profile: "1+0.85*sin(9*t)", meridians: 0 },
+      curve: {
+        x: "(2+cos(3*(t+a)))*cos(2*(t+a))",
+        y: "(2+cos(3*(t+a)))*sin(2*(t+a))",
+        z: "sin(3*(t+a))",
+        a: 0,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    flight: {
+      duration: 16,
+      repeat: "loop",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "0", to: "2*pi" }],
+      },
+      path: {
+        style: "smooth",
+        keys: [
+          {
+            name: "Above",
+            yaw: 0.3,
+            pitch: 0.75,
+            zoom: 1.05,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Low, a third around",
+            yaw: 2.4,
+            pitch: 0.25,
+            zoom: 1.25,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Two thirds around",
+            yaw: 4.5 - 2 * Math.PI,
+            pitch: 0.5,
+            zoom: 1.1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Above",
+            yaw: 0.3,
+            pitch: 0.75,
+            zoom: 1.05,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
+  // Schwarz's P surface cos x + cos y + cos z = 0 sits at the middle of a
+  // family of levels. Here the level is −1.6 cos a: at a = 0, caps around
+  // the box's corners; at a = π/2 the P surface itself, a labyrinth of two
+  // equal halves; at a = π a single drop at the center; then back. The
+  // pieces pinch apart where the level passes ±1. cos(2π) rounds to exactly
+  // 1, so the last frame is the first, bit for bit, and the animation loops.
+  {
+    name: "A Schwarz surface breathing",
+    detail:
+      "cos x + cos y + cos z = −1.6 cos a: corner caps open into Schwarz's labyrinth, close to a drop and return, looping",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "cos(x) + cos(y) + cos(z) + 1.6*cos(a)",
+        a: 0,
+        level: 0,
+        box: {
+          xMin: -Math.PI,
+          xMax: Math.PI,
+          yMin: -Math.PI,
+          yMax: Math.PI,
+          zMin: -Math.PI,
+          zMax: Math.PI,
+        },
+        cells: 40,
+        refine: 0,
+        sections: {
+          normal: { x: 0, y: 0, z: 1 },
+          from: -2.4,
+          to: 2.4,
+          count: 5,
+        },
+      },
+    },
+    flight: {
+      duration: 12,
+      repeat: "loop",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "implicitA", from: "0", to: "2*pi" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // The gyroid of "A gyroid, cut open", without its section, and a cut
+  // across the cube's diagonal. A peel starts with everything shown and
+  // ends with everything hidden, so it cannot loop; back and forth plays
+  // it out and back, easing at each end, so it repeats without a jump.
+  {
+    name: "A gyroid peeled and regrown",
+    detail:
+      "A diagonal cut peels the gyroid away and lets it grow back, easing at each end: back and forth repeats what cannot loop",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)",
+        a: 1,
+        level: 0,
+        box: {
+          xMin: -Math.PI,
+          xMax: Math.PI,
+          yMin: -Math.PI,
+          yMax: Math.PI,
+          zMin: -Math.PI,
+          zMax: Math.PI,
+        },
+        cells: 48,
+        refine: 0,
+        sections: {
+          normal: { x: 1, y: 1, z: 1 },
+          from: 0,
+          to: 0,
+          count: 0,
+        },
+      },
+    },
+    cut: {
+      enabled: true,
+      normal: { x: 1, y: 1, z: 1 },
+      offset: 0,
+      cuts: "sheets",
+      edge: true,
+    },
+    flight: {
+      duration: 10,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: { mode: "cut" },
+      path: { style: "steady", keys: [] },
     },
   },
 ];
