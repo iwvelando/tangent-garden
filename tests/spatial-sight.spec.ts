@@ -76,9 +76,14 @@ test("studies drawn opaque with hidden lines hidden are unchanged", async ({
   const sheets = box.getByLabel("Sheets", { exact: true }),
     behind = box.getByLabel("Lines behind sheets", { exact: true });
   const seen: Record<string, string> = {};
+  // Hairlines draw exactly as every study did before line weights.
+  const weight = page
+    .getByRole("group", { name: "Lines" })
+    .getByLabel("Weight", { exact: true });
   for (const label of Object.keys(recorded)) {
     await choosePreset(page, { label });
     await settled(page);
+    await weight.selectOption("hairline");
     seen[label] = sha(predating(await download(page, shown)));
     const plain = await download(page, png);
     await sheets.selectOption("through");
@@ -103,6 +108,7 @@ test("the default sees nothing through; an invalid opacity is named and leaves s
     sheets: "opaque",
     opacity: 0.35,
     hidden: "hide",
+    weight: "regular",
   });
   expect(isPlain(defaultSight)).toBe(true);
   expect(isPlain({ ...defaultSight, hidden: "faint" })).toBe(false);
@@ -118,7 +124,12 @@ test("the default sees nothing through; an invalid opacity is named and leaves s
     expect(error?.field).toBe("Sheet opacity α");
     expect(error?.message).toMatch(/0\.05.*0\.8|finite/);
     // The lines keep their setting; the sheets stay opaque.
-    expect(spec).toEqual({ sheets: "opaque", opacity, hidden: "dashed" });
+    expect(spec).toEqual({
+      sheets: "opaque",
+      opacity,
+      hidden: "dashed",
+      weight: "regular",
+    });
   }
   // Opaque sheets never read the opacity.
   expect(sightSpec({ ...defaultSight, opacity: NaN })).toEqual({
@@ -366,7 +377,9 @@ function sphereStudy(sight?: Partial<Sight>, cut?: Partial<Cut>) {
     layers: onlyLayers("surface"),
     view: { yaw: 0, pitch: 0, zoom: 1, panX: 0, panY: 0 },
     animation: { mode: "reveal", camera: "hold", duration: 10, tracks: [] },
-    ...(sight && { sight: { ...defaultSight, ...sight } }),
+    // Hairlines on both sides of each comparison: a link without a sight
+    // is from before weights, and draws them.
+    ...(sight && { sight: { ...defaultSight, weight: "hairline", ...sight } }),
     ...(cut && { cut: { ...defaultCut, enabled: true, ...cut } }),
   };
 }
@@ -481,7 +494,9 @@ const tube = (layers: Record<string, boolean>, sight?: Partial<Sight>) => ({
   layers,
   view: { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 },
   animation: { mode: "reveal", camera: "hold", duration: 10, tracks: [] },
-  ...(sight && { sight: { ...defaultSight, ...sight } }),
+  // Hairlines on both sides of each comparison: a link without a sight
+  // is from before weights, and draws them.
+  ...(sight && { sight: { ...defaultSight, weight: "hairline", ...sight } }),
 });
 async function compare(
   page: Page,
@@ -648,7 +663,12 @@ test("the panel sets how sheets and lines behind them are drawn, names an invali
     .toEqual({ sheets: "through", opacity: 0.35, hidden: "dashed" });
   await expect(page.locator(".spatial-stage")).toHaveAttribute(
     "data-sight",
-    JSON.stringify({ sheets: "through", opacity: 0.35, hidden: "dashed" }),
+    JSON.stringify({
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "dashed",
+      weight: "regular",
+    }),
   );
   // Constant expressions, like every scalar field.
   await opacity.fill("1/phi^2");

@@ -3,6 +3,11 @@ import { readFile } from "node:fs/promises";
 import { exportImage, openExportSettings, choosePreset, open } from "./helpers";
 import { decodeVideo, probe, frameCoverage } from "./video";
 import { exportTiming } from "../web/export-quality";
+import { deflateRawSync } from "node:zlib";
+import { spatialPresets } from "../web/spatial/presets";
+import { defaultLayers } from "../web/spatial/renderer";
+import { defaultSight, strokeWidth } from "../web/spatial/sight";
+import { lineColor, palette } from "../web/spatial/palette";
 
 // Safari's engine, which every iOS browser also uses: no canvas WebP, and its
 // own H.264 encoder and VideoFrame behavior. Runs in the WebKit project only
@@ -438,6 +443,78 @@ test("the manual camera draws through a perspective lens in WebKit WebGL", async
     [png.toString("base64"), points] as const,
   );
   expect(agreement).toBeGreaterThan(0.9);
+});
+
+// Strokes need instanced drawing, which WebKit's WebGL offers: a bold
+// curve is drawn its weight wide, a share of the page, in a still.
+test("line weights draw strokes in WebKit WebGL", async ({ page }) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "An engraved trefoil tube" });
+  const art = page.locator("#spatial-artwork");
+  await expect(art).toHaveAttribute("data-strokes", '{"weight":"bold"}');
+  const study = {
+    config: {
+      ...structuredClone(spatialPresets[0].config),
+      format: "parametric",
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "0",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    layers: Object.fromEntries(
+      Object.keys(defaultLayers).map((k) => [k, false]),
+    ),
+    view: { yaw: 0, pitch: 0, zoom: 1, panX: 0, panY: 0 },
+    animation: { mode: "reveal", camera: "hold", duration: 10, tracks: [] },
+    sight: { ...defaultSight, weight: "bold" },
+  };
+  await page.goto(
+    `/?study=3d#s=${deflateRawSync(
+      Buffer.from(JSON.stringify({ v: 1, notebook: "3d", study })),
+    ).toString("base64url")}`,
+  );
+  await expect(page.locator(".spatial-stage")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(art).toHaveAttribute("data-strokes", '{"weight":"bold"}');
+  const image = page.waitForEvent("download");
+  await exportImage(page, "PNG");
+  const png = await readFile((await (await image).path())!);
+  const ground = palette.background[0].map((v) => v * 255),
+    ink = lineColor(2, 0, false).map((v) => v * 255);
+  const width = await page.evaluate(
+    async ([input, ink, ground]) => {
+      const picture = new Image();
+      picture.src = `data:image/png;base64,${input}`;
+      await picture.decode();
+      const c = document.createElement("canvas");
+      c.width = picture.width;
+      c.height = picture.height;
+      const g = c.getContext("2d")!;
+      g.drawImage(picture, 0, 0);
+      // The circle's leftmost point is on the middle row, its tangent
+      // vertical: each pixel's share of the way to the curve's color.
+      const row = g.getImageData(0, c.height >> 1, c.width >> 1, 1).data;
+      const d = [0, 1, 2].map((k) => ink[k] - ground[k]);
+      const dd = d.reduce((s, v) => s + v * v, 0);
+      let sum = 0;
+      for (let i = 0; i < row.length; i += 4) {
+        let dot = 0;
+        for (let k = 0; k < 3; k++) dot += (row[i + k] - ground[k]) * d[k];
+        sum += Math.max(0, Math.min(1, dot / dd));
+      }
+      return sum;
+    },
+    [png.toString("base64"), ink, ground] as const,
+  );
+  const want = strokeWidth({ ink: 2 }, "bold", { width: 2000, height: 1520 })!;
+  console.log("WebKit bold stroke", { want, width });
+  expect(Math.abs(width - want)).toBeLessThan(0.15 * want);
 });
 
 // An iterated map's density is a PNG embedded in the SVG; drawing that SVG

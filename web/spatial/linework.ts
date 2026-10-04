@@ -17,7 +17,10 @@ import {
   dashedOpacity,
   dashesPerUnit,
   faintOpacity,
+  sheetOffset,
+  strokeWidth,
   type HiddenLines,
+  type LineWeight,
 } from "./sight";
 
 // Vector linework: the lines the drawing shows, from the same scene, layers
@@ -35,7 +38,8 @@ export type LineGroup = {
   layer: string;
   // Set on a group of lines behind sheets.
   hidden?: "faint" | "dashed";
-  strokes: { color: string; paths: [number, number][][] }[];
+  // A stroke's width on the page, when lines are not hairlines.
+  strokes: { color: string; width?: number; paths: [number, number][][] }[];
 };
 export type LineworkOptions = {
   width: number;
@@ -43,6 +47,8 @@ export type LineworkOptions = {
   occlusion: Occlusion;
   // Lines behind sheets, with sampled occlusion; hidden by default.
   hidden?: HiddenLines;
+  // The lines' weight (see sight.ts): hairlines by default.
+  weight?: LineWeight;
   // Bounds visibility testing: rasterized pixels plus line samples.
   limit?: number;
   signal?: AbortSignal;
@@ -67,6 +73,7 @@ export function linework(
   const edge = cut?.edge && cutEdges(passes, cut.plane, cut.scope);
   if (edge) passes = scenePasses(scene, layers, probe, edge);
   const work = { done: 0, limit: options.limit ?? workLimit };
+  const weight = options.weight ?? "hairline";
   const raster =
     options.occlusion === "sampled"
       ? depthRaster(
@@ -80,6 +87,11 @@ export function linework(
           work,
           options.signal,
           cut?.plane,
+          sheetOffset(
+            passes.filter((p) => !p.sheet).map((p) => p.batch),
+            weight,
+            options,
+          ),
         )
       : undefined;
   const behind =
@@ -87,15 +99,29 @@ export function linework(
       ? options.hidden
       : undefined;
   const perUnit = dashesPerUnit(view);
-  type Strokes = Map<string, [number, number][][]>;
+  // Each layer's paths by color and stroke width.
+  type Strokes = Map<
+    string,
+    { color: string; width?: number; paths: [number, number][][] }
+  >;
   const groups = new Map<string, Strokes>(),
     hiddenGroups = new Map<string, Strokes>();
-  const paths = (into: Map<string, Strokes>, layer: string, color: string) => {
+  const paths = (
+    into: Map<string, Strokes>,
+    layer: string,
+    color: string,
+    width: number | undefined,
+  ) => {
     let strokes = into.get(layer);
     if (!strokes) into.set(layer, (strokes = new Map()));
-    let p = strokes.get(color);
-    if (!p) strokes.set(color, (p = []));
-    return p;
+    const key = width === undefined ? color : `${color} ${width}`;
+    let p = strokes.get(key);
+    if (!p)
+      strokes.set(
+        key,
+        (p = { color, ...(width !== undefined && { width }), paths: [] }),
+      );
+    return p.paths;
   };
   for (const pass of passes) {
     if (pass.sheet) continue;
@@ -104,6 +130,7 @@ export function linework(
     const data = pass.batch.data;
     const plane = cut && isCut(pass, cut.scope) ? cut.plane : undefined;
     const arcs = behind === "dashed" ? arcLengths(data) : undefined;
+    const width = strokeWidth(pass.batch, weight, options);
     for (let i = 0; i + 13 < data.length; i += 14) {
       const part = plane ? kept(plane, data, i) : whole(data, i);
       if (!part) continue;
@@ -115,7 +142,7 @@ export function linework(
       );
       if (!piece) continue;
       const color = hex(lineColor(pass.batch.ink, data[i + 6], dark));
-      const shown = paths(groups, pass.layer, color);
+      const shown = paths(groups, pass.layer, color, width);
       if (!raster) {
         extend(shown, piece[0], piece[1]);
         continue;
@@ -123,7 +150,11 @@ export function linework(
       for (const run of runs(raster, piece, work)) {
         if (run.shown) extend(shown, run.from, run.to);
         else if (behind === "faint")
-          extend(paths(hiddenGroups, pass.layer, color), run.from, run.to);
+          extend(
+            paths(hiddenGroups, pass.layer, color, width),
+            run.from,
+            run.to,
+          );
         else if (arcs) {
           // Arc length is affine along the segment in space, and so along
           // the kept part and the clipped piece; on the page it is affine
@@ -148,7 +179,7 @@ export function linework(
               ? undefined
               : (f) => (pageAt(w, s0 + (s1 - s0) * f) - r0) / (r1 - r0),
           ))
-            extend(paths(hiddenGroups, pass.layer, color), a, b);
+            extend(paths(hiddenGroups, pass.layer, color, width), a, b);
         }
       }
     }
@@ -158,9 +189,7 @@ export function linework(
       .map(([layer, strokes]) => ({
         layer,
         ...(hidden && { hidden }),
-        strokes: [...strokes]
-          .filter(([, paths]) => paths.length)
-          .map(([color, paths]) => ({ color, paths })),
+        strokes: [...strokes.values()].filter((s) => s.paths.length),
       }))
       .filter((g) => g.strokes.length);
   // Lines behind sheets lie beneath the rest.
@@ -302,6 +331,8 @@ type Raster = {
   corners: Uint32Array;
   sides: Float64Array;
   cut: Uint8Array;
+  // The drawing's polygon offset factor for sheets (see sight.ts).
+  offset: number;
 };
 function depthRaster(
   k: Camera,
@@ -309,6 +340,7 @@ function depthRaster(
   work: { done: number; limit: number },
   signal?: AbortSignal,
   plane?: Plane,
+  offset = 1,
 ): Raster {
   const { width, height } = k;
   const perspective = k.lens[0] > 0;
@@ -390,6 +422,7 @@ function depthRaster(
     corners: Uint32Array.from(corners),
     sides: Float64Array.from(sides),
     cut: Uint8Array.from(cuts),
+    offset,
   };
   for (let t = 0; t < cuts.length; t++) {
     if (t % 4096 === 0) signal?.throwIfAborted();
@@ -515,7 +548,10 @@ function hidden(r: Raster, x: number, y: number, depth: number) {
       const z = depthAt(q, x, y);
       if (z < 0 || z > 1) continue;
       found = true;
-      if (depth > z + Math.max(Math.abs(q.dx), Math.abs(q.dy)) + 1e-6)
+      if (
+        depth >
+        z + r.offset * Math.max(Math.abs(q.dx), Math.abs(q.dy)) + 1e-6
+      )
         return true;
     }
   if (found) return false;
@@ -525,7 +561,7 @@ function hidden(r: Raster, x: number, y: number, depth: number) {
   return (
     depth >
     r.depth[py * r.width + px] +
-      2 * Math.max(Math.abs(q.dx), Math.abs(q.dy)) +
+      (r.offset + 1) * Math.max(Math.abs(q.dx), Math.abs(q.dy)) +
       1e-6
   );
 }
@@ -598,7 +634,7 @@ export function linesSvg(
         `<g id="${g.hidden ? `hidden-${g.layer}` : g.layer}" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${g.hidden ? ` stroke-opacity="${g.hidden === "faint" ? faintOpacity : dashedOpacity}"` : ""}>${g.strokes
           .map(
             (s) =>
-              `<path stroke="${s.color}" d="${s.paths
+              `<path stroke="${s.color}"${s.width === undefined ? "" : ` stroke-width="${fixed(s.width)}"`} d="${s.paths
                 .map((path) =>
                   path
                     .map(

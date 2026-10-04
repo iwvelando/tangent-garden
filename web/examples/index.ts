@@ -7,6 +7,7 @@ import {
 } from "../ExampleGallery";
 import { presets } from "../presets";
 import { spatialPresets } from "../spatial/presets";
+import { defaultSight, isPlain } from "../spatial/sight";
 import { composes } from "../spatial/types";
 import type { Config } from "../types";
 import manifest from "./thumbnails.json";
@@ -96,7 +97,7 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
                               : p.config.format === "torus"
                                 ? "Torus knots"
                                 : "Parametric curves",
-  keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.sight ? " see-through" : ""}${p.projection && p.projection !== "orthographic" ? " perspective" : ""}${p.flight ? `${p.flight.path.keys.length ? " flight" : ""}${p.flight.ride ? " ride perspective" : ""}${p.flight.repeat === "loop" ? " seamless loop" : p.flight.repeat === "back-and-forth" ? " back and forth" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}${p.probe?.enabled ? " probe curvature torsion" : ""}`,
+  keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.sight && !isPlain(p.sight) ? " see-through" : ""}${p.sight && p.sight.weight !== defaultSight.weight ? ` ${p.sight.weight} line weight strokes` : ""}${p.projection && p.projection !== "orthographic" ? " perspective" : ""}${p.flight ? `${p.flight.path.keys.length ? " flight" : ""}${p.flight.ride ? " ride perspective" : ""}${p.flight.repeat === "loop" ? " seamless loop" : p.flight.repeat === "back-and-forth" ? " back and forth" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}${p.probe?.enabled ? " probe curvature torsion" : ""}`,
   // A preset's cut, sight, projection, opening view and probe are part of
   // its picture; presets without them keep the fingerprints they had before
   // those existed.

@@ -130,7 +130,7 @@ const spatial = (i = 0): SpatialStudy => ({
     cuts: "surface",
     edge: false,
   },
-  sight: { sheets: "through", opacity: 0.5, hidden: "dashed" },
+  sight: { sheets: "through", opacity: 0.5, hidden: "dashed", weight: "bold" },
   projection: "normal",
 });
 const tesseract = (i = 0): TesseractStudy => ({
@@ -636,8 +636,9 @@ test("links made by version 1 keep opening", async () => {
   });
   // Links made before the cut open without it.
   assert.deepEqual(s.cut, defaultCut);
-  // Links made before seeing through open opaque, hiding hidden lines.
-  assert.deepEqual(s.sight, defaultSight);
+  // Links made before seeing through open opaque, hiding hidden lines, and
+  // links made before line weights draw hairlines, as they did.
+  assert.deepEqual(s.sight, { ...defaultSight, weight: "hairline" });
   // Links made before the perspective option open orthographic.
   assert.equal(s.projection, "orthographic");
   // Links made before camera paths fly none.
@@ -732,24 +733,28 @@ test("a link carries the cut and a peel; refuses a zero normal and a peel withou
   );
 });
 
-test("a link carries seeing through; refuses an opacity outside its range or an unknown way", async () => {
+test("a link carries seeing through and line weight; refuses an opacity outside its range or an unknown way", async () => {
   for (const hidden of ["hide", "faint", "dashed"] as const)
     for (const sheets of ["opaque", "through"] as const)
-      for (const opacity of [0.05, 0.8]) {
-        const study: SpatialStudy = {
-          ...spatial(),
-          sight: { sheets, opacity, hidden },
-        };
-        const read = await readStudyLink(await writeStudyLink("3d", study));
-        assert.deepEqual(spatialStudy(read.study), study);
-      }
-  // Missing fields take their defaults.
+      for (const opacity of [0.05, 0.8])
+        for (const weight of ["hairline", "fine", "regular", "bold"] as const) {
+          const study: SpatialStudy = {
+            ...spatial(),
+            sight: { sheets, opacity, hidden, weight },
+          };
+          const read = await readStudyLink(await writeStudyLink("3d", study));
+          assert.deepEqual(spatialStudy(read.study), study);
+        }
+  // Missing fields take their defaults, except the line weight: a link
+  // without one was made before weights and keeps its hairlines.
   const partial = structuredClone(spatial()) as any;
   partial.sight = { hidden: "faint" };
   assert.deepEqual(spatialStudy(partial).sight, {
     ...defaultSight,
     hidden: "faint",
+    weight: "hairline",
   });
+  assert.equal(defaultSight.weight, "regular");
   const bad = (change: (sight: any) => void) => {
     const s = structuredClone(spatial()) as any;
     change(s.sight);
@@ -770,6 +775,10 @@ test("a link carries seeing through; refuses an opacity outside its range or an 
   await refused(
     bad((v) => (v.hidden = "dotted")),
     "sight.hidden",
+  );
+  await refused(
+    bad((v) => (v.weight = "heavy")),
+    "sight.weight",
   );
   await refused(
     bad((v) => (v.extra = 1)),
