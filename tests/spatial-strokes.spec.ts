@@ -623,20 +623,29 @@ test("an animation export draws the weight it began with, ending on the still", 
   const boldRow = await pngRow(page, await download(page, png));
   expect(boldRow).not.toEqual(hair);
   const still = await download(page, png);
+  // The still's pixels, carried as base64: a 2000 × 1520 image as an
+  // array of numbers is too slow to pass between Node and the page.
   const full = await page.context().newPage();
-  const rgba = await full
-    .evaluate(async (bytes) => {
-      const bitmap = await createImageBitmap(
-        new Blob([new Uint8Array(bytes)], { type: "image/png" }),
-      );
-      const c = document.createElement("canvas");
-      c.width = bitmap.width;
-      c.height = bitmap.height;
-      const g = c.getContext("2d")!;
-      g.drawImage(bitmap, 0, 0);
-      return Array.from(g.getImageData(0, 0, c.width, c.height).data);
-    }, Array.from(still))
-    .finally(() => full.close());
+  const rgba = Buffer.from(
+    await full
+      .evaluate(async (input) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${input}`;
+        await image.decode();
+        const c = document.createElement("canvas");
+        c.width = image.width;
+        c.height = image.height;
+        const g = c.getContext("2d")!;
+        g.drawImage(image, 0, 0);
+        const data = g.getImageData(0, 0, c.width, c.height).data;
+        let text = "";
+        for (let i = 0; i < data.length; i += 0x8000)
+          text += String.fromCharCode(...data.subarray(i, i + 0x8000));
+        return btoa(text);
+      }, still.toString("base64"))
+      .finally(() => full.close()),
+    "base64",
+  );
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)
     await panel.locator(":scope > summary").click();
