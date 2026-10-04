@@ -1,11 +1,14 @@
 // The 2D notebook's study in a portable link (see study-link.ts).
 import {
   animationSettings,
+  animationTiming,
   conform,
+  defaultTiming,
   flags,
   LinkError,
   type AnimationSettings,
   type SchemaOf,
+  type Timing,
 } from "./study-link";
 import {
   maxPursuers,
@@ -22,6 +25,7 @@ import { presets } from "./presets";
 import {
   availableTargets,
   canTrace,
+  loops,
   type AnimationMode,
   type Target,
 } from "./animation";
@@ -31,7 +35,8 @@ import type { Layers } from "./Plot";
 // derives deterministically from the study: pixels of pan and a zoom factor.
 export type PlotCamera = { x: number; y: number; zoom: number };
 export const zoomRange: [number, number] = [0.1, 20];
-export type PlanarAnimation = AnimationSettings<AnimationMode, Target>;
+// Repeat and pace are the timing every notebook shares (timing.ts).
+export type PlanarAnimation = AnimationSettings<AnimationMode, Target> & Timing;
 export type PlanarStudy = {
   config: Config;
   // Domain bounds as entered, so constant expressions such as 2*pi survive.
@@ -57,6 +62,7 @@ export const defaultAnimation: PlanarAnimation = {
   camera: "hold",
   duration: 10,
   tracks: [],
+  ...defaultTiming,
 };
 
 const vec = { fields: { x: "number", y: "number" } } satisfies SchemaOf<Vec>;
@@ -297,12 +303,27 @@ export function planarStudy(value: unknown): PlanarStudy {
       "camera",
     ),
   };
-  const animation = animationSettings(
-    raw.animation,
-    { reveal: true, parameters: true, trace: true },
-    availableTargets(study.config),
-    defaultAnimation,
-  );
+  const grouped =
+    typeof raw.animation === "object" &&
+    raw.animation !== null &&
+    !Array.isArray(raw.animation);
+  const { repeat, pace, ...shared } = grouped
+    ? (raw.animation as Record<string, unknown>)
+    : {};
+  const animation: PlanarAnimation = {
+    ...animationSettings(
+      grouped ? shared : raw.animation,
+      { reveal: true, parameters: true, trace: true },
+      availableTargets(study.config),
+      defaultAnimation,
+    ),
+    ...animationTiming({ repeat, pace }, "animation"),
+  };
+  if (animation.repeat === "loop" && !loops(animation.mode))
+    throw new LinkError(
+      "animation.repeat",
+      "animation.repeat loops only parameter tracks, which can return to their start.",
+    );
   if (animation.mode === "trace" && !canTrace(study.config))
     throw new LinkError(
       "animation.mode",

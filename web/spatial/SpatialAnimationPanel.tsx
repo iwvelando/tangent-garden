@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { FrameRateField } from "../FrameRateField";
 import { ProgressSlider } from "../ProgressSlider";
 import type { SpatialAnimation } from "./link";
 import { EngineClient, playbackEngineCount } from "../engine-client";
 import { play } from "../playback";
-import { cycles, progressAt, type Pace, type Repeat } from "../timing";
 import {
-  loopGap,
-  loops,
+  cycles,
   paceChoices,
   paceHelp,
+  progressAt,
   repeatChoices,
-  repeatHelp,
-  smoothLoopHelp,
-} from "./loop";
+  type Pace,
+  type Repeat,
+} from "../timing";
+import { loopGap, loops, repeatHelp, smoothLoopHelp } from "./loop";
 import {
   applyTracks,
   availableTargets,
@@ -258,8 +259,6 @@ export function SpatialAnimationPanel({
     setQualities((q) => ({ ...q, [chosen]: value }));
   const exportSize = exportEncoding({ scale: exportScale, quality });
   const defaultSize = exportEncoding({ scale: defaultScale, quality });
-  // Animated WebP stops at 30 fps; the MP4 choice is kept for switching back.
-  const exportFps = chosen === "webp" && fps === 60 ? 30 : fps;
   const exportReady = formats?.[chosen] === "yes";
   const exportHint = !formats
     ? ""
@@ -622,7 +621,7 @@ export function SpatialAnimationPanel({
       if (!Number.isFinite(duration) || duration < 0.1 || duration > 3600)
         throw new Error("Duration must be between 0.1 and 3600 seconds.");
       if (!heldView) throw new Error("The current view is not ready yet.");
-      if (save) exportTiming(duration, exportFps);
+      if (save) exportTiming(duration, fps);
       let numeric: NumericTrack[] = [];
       if (mode === "parameters") {
         if (!tracks.length)
@@ -783,7 +782,7 @@ export function SpatialAnimationPanel({
         const blob = await exportAnimation({
           format: chosen,
           duration,
-          fps: exportFps,
+          fps: fps,
           // A repeating animation loops forever.
           loop: chosen === "webp" && (loop || cycles(s.repeat)),
           cyclic: cycles(s.repeat),
@@ -1326,7 +1325,7 @@ export function SpatialAnimationPanel({
             <summary>
               Export settings
               <span className="summary-detail">
-                {text.short} · {exportFps} fps · {exportSize.width} ×{" "}
+                {text.short} · {fps} fps · {exportSize.width} ×{" "}
                 {exportSize.height} · quality {quality}
               </span>
             </summary>
@@ -1344,18 +1343,7 @@ export function SpatialAnimationPanel({
                 </select>
               </Field>
             )}
-            <Field label="Export frame rate">
-              <select
-                value={exportFps}
-                onChange={(e) => setFPS(+e.target.value)}
-              >
-                {chosen === "mp4" && (
-                  <option value={60}>60 fps · smoothest motion</option>
-                )}
-                <option value={30}>30 fps · smoother motion</option>
-                <option value={15}>15 fps · smaller file</option>
-              </select>
-            </Field>
+            <FrameRateField format={chosen} fps={fps} onChange={setFPS} />
             <Field
               label="Export resolution"
               value={`${exportSize.width} × ${exportSize.height}`}

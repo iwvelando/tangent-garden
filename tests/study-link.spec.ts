@@ -65,7 +65,14 @@ const planar = (i = 0): PlanarStudy => ({
     axes: true,
   },
   camera: { x: 12.5, y: -40, zoom: 1.75 },
-  animation: { mode: "reveal", camera: "hold", duration: 10, tracks: [] },
+  animation: {
+    mode: "reveal",
+    camera: "hold",
+    duration: 10,
+    tracks: [],
+    repeat: "back-and-forth",
+    pace: "ease",
+  },
 });
 const spatial = (i = 0): SpatialStudy => ({
   config: structuredClone(spatialPresets[i].config),
@@ -128,6 +135,8 @@ const tesseract = (i = 0): TesseractStudy => ({
   diagramView: { ...initialView },
   motion: tesseractPresets[i].motion,
   duration: 12,
+  repeat: "back-and-forth",
+  pace: "ease",
 });
 
 test("every preset round-trips through a link unchanged", async () => {
@@ -469,6 +478,8 @@ test("fields a link predates take the notebook's defaults", async () => {
     camera: "hold",
     duration: 10,
     tracks: [],
+    repeat: "once",
+    pace: "steady",
   });
   // Optional fields stay absent rather than being invented.
   assert.equal("coordinates" in read.config.source, false);
@@ -590,6 +601,9 @@ test("links made by version 1 keep opening", async () => {
     camera: "fit",
     duration: 7.5,
     tracks: [{ target: "rollFixed", from: "2*e", to: "pi" }],
+    // Links made before repeat and pace play once, steadily.
+    repeat: "once",
+    pace: "steady",
   });
 
   const spatialLink = await readStudyLink(v1["3d"]);
@@ -631,6 +645,8 @@ test("links made by version 1 keep opening", async () => {
   assert.equal(f.view.zoom, 1.3);
   assert.equal(f.motion, "drift");
   assert.equal(f.duration, 4);
+  assert.equal(f.repeat, "once");
+  assert.equal(f.pace, "steady");
 });
 
 test("a link carries the cut and a peel; refuses a zero normal and a peel without the cut", async () => {
@@ -899,6 +915,66 @@ test("a link carries how an animation repeats and paces; older links play once, 
     const bad = structuredClone(spatial()) as any;
     bad.animation[field] = value;
     await refused(() => spatialStudy(bad), `animation.${field}`);
+  }
+});
+
+test("2D and 4D links carry how an animation repeats and paces; older links play once, steadily; never loops what cannot return", async () => {
+  const phase: PlanarStudy = {
+    ...planar(),
+    animation: {
+      ...planar().animation,
+      mode: "parameters",
+      tracks: [{ target: "a", from: "0", to: "2*pi" }],
+    },
+  };
+  for (const repeat of ["once", "loop", "back-and-forth"] as const)
+    for (const pace of ["steady", "ease"] as const) {
+      const study: PlanarStudy = {
+        ...phase,
+        animation: { ...phase.animation, repeat, pace },
+      };
+      const read = await readStudyLink(await writeStudyLink("2d", study));
+      assert.deepEqual(planarStudy(read.study), study, `2D ${repeat} ${pace}`);
+    }
+  // Rotations turn whole turns, and a slice passage starts and ends empty.
+  const slicing = tesseractPresets.findIndex((p) => p.motion === "slice");
+  for (const i of [0, slicing])
+    for (const pace of ["steady", "ease"] as const) {
+      const study: TesseractStudy = { ...tesseract(i), repeat: "loop", pace };
+      const read = await readStudyLink(await writeStudyLink("4d", study));
+      assert.deepEqual(tesseractStudy(read.study), study, `4D ${i} ${pace}`);
+    }
+  // Links made before them, which drew once and steadily.
+  const old2 = structuredClone(planar()) as any;
+  delete old2.animation.repeat;
+  delete old2.animation.pace;
+  assert.equal(planarStudy(old2).animation.repeat, "once");
+  assert.equal(planarStudy(old2).animation.pace, "steady");
+  const old4 = structuredClone(tesseract()) as any;
+  delete old4.repeat;
+  delete old4.pace;
+  assert.equal(tesseractStudy(old4).repeat, "once");
+  assert.equal(tesseractStudy(old4).pace, "steady");
+  // Drawing and tracing start and end differently; so do a lift's drift
+  // and a route.
+  const drawn = structuredClone(planar()) as any;
+  drawn.animation.repeat = "loop";
+  await refused(() => planarStudy(drawn), "animation.repeat", /loops only/);
+  for (const motion of ["drift", "route"]) {
+    const i = tesseractPresets.findIndex((p) => p.motion === motion);
+    const open = { ...tesseract(i), repeat: "loop" };
+    await refused(() => tesseractStudy(open), "repeat", /loops only/);
+  }
+  for (const [field, value] of [
+    ["repeat", "forever"],
+    ["pace", "bounce"],
+  ] as const) {
+    const bad2 = structuredClone(planar()) as any;
+    bad2.animation[field] = value;
+    await refused(() => planarStudy(bad2), `animation.${field}`);
+    const bad4 = structuredClone(tesseract()) as any;
+    bad4[field] = value;
+    await refused(() => tesseractStudy(bad4), field);
   }
 });
 

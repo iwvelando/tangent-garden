@@ -1,6 +1,7 @@
 // The 3D notebook's study in a portable link (see ../study-link.ts).
 import {
   animationSettings,
+  animationTiming,
   conform,
   flags,
   LinkError,
@@ -400,13 +401,6 @@ function riding(value: unknown): Ride {
   return out;
 }
 
-const timing: SchemaOf<Pick<SpatialAnimation, "repeat" | "pace">> = {
-  fields: {
-    repeat: { options: { once: true, loop: true, "back-and-forth": true } },
-    pace: { options: { steady: true, ease: true } },
-  },
-};
-
 const sight: SchemaOf<Sight> = {
   fields: {
     sheets: { options: { opaque: true, through: true } },
@@ -476,15 +470,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
     ...(rides && { camera: "ride" }),
     path: cameraPath(flight),
     ride: riding(rode),
-    ...conform(
-      {
-        ...(repeat !== undefined && { repeat }),
-        ...(pace !== undefined && { pace }),
-      },
-      timing,
-      { repeat: defaultAnimation.repeat, pace: defaultAnimation.pace },
-      "animation",
-    ),
+    ...animationTiming({ repeat, pace }, "animation"),
   };
   if (animation.repeat === "loop" && !loops(animation.mode))
     throw new LinkError(

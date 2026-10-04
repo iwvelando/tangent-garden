@@ -176,12 +176,15 @@ test("both formats offer a choice that defaults to MP4; only WebP can loop", asy
   await expect(loop(page)).toHaveCount(0);
 });
 
-test("60 fps is offered for MP4 only and returns when switching back", async ({
+test("60 fps is offered for both formats, and WebP names its cost", async ({
   page,
 }) => {
   await ready(page);
   const rate = page.getByRole("combobox", { name: "Export frame rate" });
   const summary = page.locator("#export-settings > summary");
+  const cost = page
+    .locator("#export-settings")
+    .getByText("WebP stores every frame whole");
   await expect(rate).toHaveValue("30");
   await expect(rate.locator("option")).toHaveText([
     "60 fps · smoothest motion",
@@ -190,15 +193,68 @@ test("60 fps is offered for MP4 only and returns when switching back", async ({
   ]);
   await rate.selectOption("60");
   await expect(summary).toContainText("MP4 · 60 fps");
+  await expect(cost).toHaveCount(0);
+  // The choice is kept, and its cost is said.
   await format(page).selectOption("webp");
-  await expect(rate).toHaveValue("30");
+  await expect(rate).toHaveValue("60");
   await expect(rate.locator("option")).toHaveText([
+    "60 fps · larger file",
     "30 fps · smoother motion",
     "15 fps · smaller file",
   ]);
-  await expect(summary).toContainText("WebP · 30 fps");
-  await format(page).selectOption("mp4");
-  await expect(rate).toHaveValue("60");
+  await expect(summary).toContainText("WebP · 60 fps");
+  await expect(cost).toBeVisible();
+  await rate.selectOption("30");
+  await expect(cost).toHaveCount(0);
+});
+
+test("a 60 fps WebP has exact frame timing, and Chromium decodes it at that timing", async ({
+  page,
+}) => {
+  await ready(page);
+  await format(page).selectOption("webp");
+  await page
+    .getByRole("combobox", { name: "Export frame rate" })
+    .selectOption("60");
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".2");
+  const download = page.waitForEvent("download");
+  await exportWebP(page).click();
+  const bytes = await (
+    await import("node:fs/promises")
+  ).readFile((await (await download).path())!);
+  const durations = exportTiming(0.2, 60).map((f) => f.duration);
+  // Twelve delays of 16 or 17 ms, a sixtieth of a second each to the
+  // millisecond, summing to the duration.
+  expect(durations).toHaveLength(12);
+  for (const d of durations) expect([16, 17]).toContain(d);
+  expect(durations.reduce((a, b) => a + b)).toBe(200);
+  // Frame durations as the RIFF container stores them.
+  const stored: number[] = [];
+  for (let offset = 12; offset < bytes.length;) {
+    const length = bytes.readUInt32LE(offset + 4);
+    if (bytes.toString("ascii", offset, offset + 4) === "ANMF")
+      stored.push(bytes.readUIntLE(offset + 8 + 12, 3));
+    offset += 8 + length + (length % 2);
+  }
+  expect(stored).toEqual(durations);
+  // Browsers replace delays of 10 ms or less; these are above it, so the
+  // decoder reports them unchanged.
+  const decoded = await page.evaluate(async (input) => {
+    const decoder = new (window as any).ImageDecoder({
+      data: new Uint8Array(input),
+      type: "image/webp",
+    });
+    await decoder.tracks.ready;
+    const n = decoder.tracks.selectedTrack.frameCount;
+    const out: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const { image } = await decoder.decode({ frameIndex: i });
+      out.push(image.duration / 1000);
+      image.close();
+    }
+    return out;
+  }, Array.from(bytes));
+  expect(decoded).toEqual(durations);
 });
 
 test("a 60 fps MP4 has exact frame timing and decodes", async ({ page }) => {
@@ -222,13 +278,6 @@ test("a 60 fps MP4 has exact frame timing and decodes", async ({ page }) => {
   );
   expect(decoded.duration).toBeCloseTo(0.2, 3);
   expect(decoded.first.hash).not.toBe(decoded.last.hash);
-});
-
-test("animated WebP refuses 60 fps even if asked directly", async () => {
-  const { exportAnimation } = await import("../web/export-animation");
-  await expect(
-    exportAnimation({ format: "webp", fps: 60 } as any),
-  ).rejects.toThrow("Animated WebP supports 15 or 30 fps.");
 });
 
 test("without canvas WebP, as on iOS, MP4 is the only format and exports", async ({

@@ -138,8 +138,17 @@ test("4D animation adapts to the study and shares export defaults, limits and di
     .getByRole("combobox", { name: "Export format" })
     .selectOption("webp");
   await expect(quality).toHaveValue("85");
-  await expect(fps).toHaveValue("30");
-  await expect(fps.locator('option[value="60"]')).toHaveCount(0);
+  // 60 fps stays chosen for WebP, which says what it costs.
+  await expect(fps).toHaveValue("60");
+  await expect(fps.locator('option[value="60"]')).toHaveText(
+    "60 fps · larger file",
+  );
+  await expect(
+    page
+      .locator("#shape-export-settings")
+      .getByText("WebP stores every frame whole"),
+  ).toBeVisible();
+  await fps.selectOption("30");
   await scale.fill("0.75");
   await quality.fill("42");
   await page.getByRole("button", { name: /Reset export settings/ }).click();

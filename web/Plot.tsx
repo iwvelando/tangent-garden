@@ -350,6 +350,7 @@ export function Plot({
       data-camera-scale={scale}
       data-camera-center={`${frame.cx - cam.x / scale},${frame.cy + cam.y / scale}`}
       data-animation-progress={animation?.progress}
+      data-animation-time={animation?.time}
       role="img"
       aria-label={
         contours

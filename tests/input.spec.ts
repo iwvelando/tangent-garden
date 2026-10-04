@@ -61,7 +61,7 @@ function runs(d: string) {
 }
 
 test("the combination presets name their input, which brings its own tracks", () => {
-  expect(presets.slice(39).map((p) => p.title)).toEqual([
+  expect(presets.slice(39, 43).map((p) => p.title)).toEqual([
     "Cayley's sextic, a second pedal",
     "Unwinding an evolute",
     "Rolling on an ellipse's pedal",

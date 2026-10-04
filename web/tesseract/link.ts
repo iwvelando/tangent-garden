@@ -1,9 +1,11 @@
 // The 4D notebook's study in a portable link (see ../study-link.ts).
 import {
+  animationTiming,
   conform,
   durationRange,
   LinkError,
   type SchemaOf,
+  type Timing,
 } from "../study-link";
 import { objects, defaultConfig } from "./objects";
 import {
@@ -28,7 +30,7 @@ export type TesseractStudy = {
   diagramView: View;
   motion: Motion;
   duration: number;
-};
+} & Timing;
 
 const vec3 = { tuple: "number", length: 3 } satisfies SchemaOf<Vec3>;
 const lift = {
@@ -144,6 +146,8 @@ export function tesseractStudy(value: unknown): TesseractStudy {
         "diagramView",
         "motion",
         "duration",
+        "repeat",
+        "pace",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -171,11 +175,21 @@ export function tesseractStudy(value: unknown): TesseractStudy {
     descriptor.motion,
     "motion",
   );
-  const offered = motions(read).map((m) => m.value as string);
+  const choices = motions(read),
+    offered = choices.map((m) => m.value as string);
   if (!offered.includes(motion))
     throw new LinkError(
       "motion",
       `motion must be one of ${offered.join(", ")} for this study.`,
+    );
+  const timing = animationTiming(raw, "");
+  if (
+    timing.repeat === "loop" &&
+    !choices.find((m) => m.value === motion)!.loops
+  )
+    throw new LinkError(
+      "repeat",
+      "repeat loops only a whole turn or a slice passage, which can return to their start.",
     );
   return {
     config: read,
@@ -189,5 +203,6 @@ export function tesseractStudy(value: unknown): TesseractStudy {
       12,
       "duration",
     ),
+    ...timing,
   };
 }

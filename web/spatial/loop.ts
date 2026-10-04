@@ -8,7 +8,7 @@
 // periodic. It is compared sample for sample: a sheet's color follows its
 // samples, so a closed curve run on until its samples are only relabeled
 // is not the same drawing. See mathematics.md#seamless-loops.
-import type { Repeat, Pace } from "../timing";
+import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
 import {
   animationCamera,
   type AnimationMode,
@@ -22,6 +22,7 @@ import {
   type View,
 } from "./scene";
 import { probeDrawing } from "./probe";
+import { loopLead as lead } from "../loop-check";
 
 // Drawing along the curve (or rising through the box), tracing light and
 // peeling with the cut all start one way and end another, so they offer
@@ -32,24 +33,10 @@ export const loops = (mode: AnimationMode) =>
   mode === "probe" ||
   mode === "path";
 
-export const repeatChoices: { value: Repeat; label: string }[] = [
-  { value: "once", label: "Once" },
-  { value: "loop", label: "Loop" },
-  { value: "back-and-forth", label: "Back and forth" },
-];
-export const paceChoices: { value: Pace; label: string }[] = [
-  { value: "steady", label: "Steady" },
-  { value: "ease", label: "Ease in and out" },
-];
 export const repeatHelp: Record<Repeat, string> = {
-  once: "Plays from the start to the end, then stops.",
+  once: onceHelp,
   loop: "Plays again and again, its end joining its start, which needs the last frame to match the first. Play checks the drawing, the probe and the camera at both ends and says what differs. An orbit always returns; parameter tracks return when each ends one period after it starts, for example a from 0 to 2*pi in cos(t + a); the probe returns around a closed curve; a camera path returns when its last view is its first, with whole turns. Drawing, tracing and peeling start and end differently, so they offer Back and forth instead. Exports leave out the last frame, which is the first again, and loop forever.",
-  "back-and-forth":
-    "Plays to the end and back to the start within the duration, again and again, so any animation repeats without a jump. Exports loop forever.",
-};
-export const paceHelp: Record<Pace, string> = {
-  steady: "The motion moves at a constant rate.",
-  ease: "The motion starts and ends slowly, following a half cosine, so it eases away from its start and into its end; back and forth slows to rest at each turn.",
+  "back-and-forth": backAndForthHelp,
 };
 // In a loop, a smooth path's seam is one more view it passes through.
 export const smoothLoopHelp =
@@ -58,7 +45,6 @@ export const smoothLoopHelp =
 // Far below a pixel at any export size, and far above the rounding of a
 // period's worth of a parameter (and of single-precision drawing data).
 const tolerance = 1e-6;
-const lead = "Repeat can loop only motion that ends where it starts, but";
 
 // Why the motion's end is not its start, as a sentence naming the field, or
 // null when the last frame is the first. start and end are the frames at

@@ -1,4 +1,5 @@
 import type { Config } from "./types";
+import type { PlanarAnimation } from "./planar-link";
 const base: Config = {
   kind: "evolute",
   curve: {
@@ -106,7 +107,14 @@ const base: Config = {
   samples: 1000,
   lines: 48,
 };
-export const presets: { title: string; note: string; config: Config }[] = [
+// A preset may bring its own animation setup, such as a seamless loop;
+// others leave the setup as it was and play once, steadily.
+export const presets: {
+  title: string;
+  note: string;
+  config: Config;
+  animation?: PlanarAnimation;
+}[] = [
   {
     title: "Ellipse & its evolute",
     note: "An ellipse's normals, gathered into four cusps",
@@ -802,6 +810,33 @@ export const presets: { title: string; note: string; config: Config }[] = [
       stack: { enabled: true, from: -0.6, to: 0.6, count: 9 },
       samples: 2000,
       lines: 48,
+    },
+  },
+  {
+    title: "A lamp circling a mirror",
+    note: "A lamp makes one turn inside an elliptical mirror; its caustic reshapes and returns, looping without a seam",
+    config: {
+      ...base,
+      kind: "catacaustic",
+      curve: { ...base.curve, x: "1.4*cos(t)", y: "sin(t)" },
+      source: {
+        kind: "point",
+        coordinates: "polar",
+        radius: 0.55,
+        theta: 0,
+        position: { x: 0.55, y: 0 },
+        angle: -90,
+      },
+      samples: 1600,
+      lines: 72,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 14,
+      tracks: [{ target: "sourceTheta", from: "0", to: "2*pi" }],
+      repeat: "loop",
+      pace: "steady",
     },
   },
 ];

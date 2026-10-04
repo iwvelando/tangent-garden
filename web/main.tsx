@@ -54,6 +54,7 @@ import {
   type SharedStudy,
 } from "./study-link";
 import {
+  defaultAnimation,
   planarStudy,
   type PlanarAnimation,
   type PlanarStudy,
@@ -1096,6 +1097,16 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       max: boundText(next.curve.max),
     });
     setReset(reset + 1);
+    // A preset brings its own animation setup, or plays the current one
+    // once, steadily (timing.ts).
+    setRestoredAnimation({
+      id: -++presetAnimations.current,
+      settings: presets[index].animation ?? {
+        ...(animationSettings.current ?? defaultAnimation),
+        repeat: "once",
+        pace: "steady",
+      },
+    });
   };
   // A shared study replaces the whole study, as a preset does, and restores
   // the sender's layers, framing, and animation setup.
@@ -1106,6 +1117,8 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     camera: PlotCamera;
   } | null>(null);
   const animationSettings = useRef<PlanarAnimation | null>(null);
+  // Preset setups count down from -1, apart from links' ids.
+  const presetAnimations = useRef(0);
   const [restoredAnimation, setRestoredAnimation] = useState<{
     id: number;
     settings: PlanarAnimation;
@@ -1142,12 +1155,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     poleKind,
     layers,
     camera: camera.current,
-    animation: animationSettings.current ?? {
-      mode: "reveal",
-      camera: "hold",
-      duration: 10,
-      tracks: [],
-    },
+    animation: animationSettings.current ?? defaultAnimation,
   });
   // Where the error is shown: under the input that failed to parse, or
   // under the control the engine's error names, or, for an error about the

@@ -1,3 +1,4 @@
+import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
 import type {
   Config,
   Object4,
@@ -46,19 +47,33 @@ const explanations: Record<
 
 type Section = Result["sections"][number];
 // Rotation choices shared by every study that turns in four dimensions.
-export const rotationMotions: { value: Motion; label: string; help: string }[] =
-  [
-    {
-      value: "double",
-      label: "Double rotation · xw + yz",
-      help: "Turn through one full revolution in two independent planes. The three-dimensional camera stays fixed while the shape rotates in four dimensions.",
-    },
-    {
-      value: "xw",
-      label: "One plane · xw",
-      help: "Turn through one full revolution in the xw plane. The three-dimensional camera stays fixed.",
-    },
-  ];
+// A motion that loops ends where it starts (see ../timing.ts): a whole
+// turn, or a passage from empty to empty. Others offer back and forth.
+export type MotionChoice = {
+  value: Motion;
+  label: string;
+  help: string;
+  loops?: boolean;
+};
+export const repeatHelp: Record<Repeat, string> = {
+  once: onceHelp,
+  loop: "Plays again and again, its end joining its start, which needs the last frame to match the first. Play compares the drawing at both ends and says what differs. A rotation turns one whole revolution, so it returns, and a slice passage returns when no section cuts the shape at its ends; other motions start and end in different places, so they offer Back and forth instead. Exports leave out the last frame, which is the first again, and loop forever.",
+  "back-and-forth": backAndForthHelp,
+};
+export const rotationMotions: MotionChoice[] = [
+  {
+    value: "double",
+    label: "Double rotation · xw + yz",
+    help: "Turn through one full revolution in two independent planes. The three-dimensional camera stays fixed while the shape rotates in four dimensions.",
+    loops: true,
+  },
+  {
+    value: "xw",
+    label: "One plane · xw",
+    help: "Turn through one full revolution in the xw plane. The three-dimensional camera stays fixed.",
+    loops: true,
+  },
+];
 type Explanation = readonly [string, string, string];
 export type ObjectDescriptor = {
   name: string;
@@ -67,7 +82,7 @@ export type ObjectDescriptor = {
   rotations: boolean;
   controls: "polyhedral" | "curved" | "lift" | "route" | "weave";
   linkedViews?: boolean;
-  motionChoices?: { value: Motion; label: string; help: string }[];
+  motionChoices?: MotionChoice[];
   legendItems?:
     | { label: string; family: number }[]
     | ((c: Config) => { label: string; family: number }[]);
