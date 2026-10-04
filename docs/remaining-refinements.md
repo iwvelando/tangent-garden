@@ -1,0 +1,297 @@
+# Remaining refinements
+
+This is the working list of refinements still open after the spatial roadmap's slices and follow-ups. It covers all three notebooks, 2D, 3D and 4D, not only the spatial one. It replaces the open items scattered through [spatial-expansion-roadmap.md](spatial-expansion-roadmap.md); that roadmap's handoff notes remain the history and the source of the decisions summarized here. The 4D notebook's own conditional pass (general implicit sections) stays in [four-dimensional-expansion-roadmap.md](four-dimensional-expansion-roadmap.md#pass-5-general-implicit-sections-only-when-needed).
+
+Nothing here is implemented, scheduled, or authorized for merge or deployment. When starting an item, read `AGENTS.md`, then the permanent docs named in that item. Take one item, or one bullet of a larger item, per branch. When it lands, delete it from this list, move durable definitions and limits into the permanent docs, and record verification in the pull request. Do not grow a handoff log here. Once every item is done or declined, retire this file, the spatial roadmap, and their inbound links (`docs/spatial-study.md` links the roadmap).
+
+## The notebooks at a glance
+
+These are the facts that decide where a refinement applies.
+
+|                | 2D                                                                                                                            | 3D                                                                                   | 4D                                                           |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| Drawing        | SVG (`web/Plot.tsx`)                                                                                                          | WebGL (`web/spatial/renderer.ts`, geometry in `scene.ts`)                            | SVG of an orbitable 3D projection (`web/tesseract/Plot.tsx`) |
+| Camera         | Pan and zoom                                                                                                                  | Turntable orbit (pitch ±1.5 rad), three perspective lenses, key-view paths, ray ride | Turntable orbit (pitch ±1.5 rad), orthographic               |
+| Pointer, touch | Drag, scroll, pinch (`web/gestures.ts`, shared)                                                                               | Same                                                                                 | Same                                                         |
+| Keyboard       | **None on the drawing**                                                                                                       | Arrows orbit, shift-arrows pan, +/− zoom, Home                                       | Same as 3D                                                   |
+| Still export   | SVG; PNG fixed at 2000 × 1520 (`web/ExportImageMenu.tsx`, shared)                                                             | PNG fixed at 2000 × 1520; SVG with embedded PNG; Lines (SVG) on the same page        | As 2D                                                        |
+| Probe          | Curve                                                                                                                         | Curve, surface, light                                                                | None (no user curve)                                         |
+| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, inversion                                                                | Base, derived input, projections, inversion                                          | None (no user curve)                                         |
+| Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`) | Same                                                                                 | Same                                                         |
+
+The 3D-only features are 3D-only by nature: cut, see-through, surface and light probes, camera paths, the ride, perspective lenses, typed mesh transport and adaptive implicit meshes. Do not port them to 2D or 4D unless an item below says so.
+
+## Conventions every item inherits
+
+These come from the handoffs. Each was paid for at least once.
+
+- **Existing drawings stay put.** New settings are opt-in and default to the current behavior. Before touching a shared path, record a guard first, then confirm `make thumbnails` redraws every existing thumbnail byte-identical. Hash line drawings or SVG, not PNGs: PNG bytes depend on the rasterizer, and CI's SwiftShader differs from macOS. Recorded linework hashes in `spatial-cut.spec.ts` and `spatial-sight.spec.ts` strip later metadata fields; extend that stripping when you add one.
+- **Exports record a setting only when it is not the default**, so default files stay byte-identical.
+- **Links:** add every new field to the notebook's schema (`planar-link.ts`, `spatial/link.ts`, `tesseract/link.ts`) with a default that reproduces older links, plus cases in `tests/study-link.spec.ts`. A preset's own value joins its gallery fingerprint only when present.
+- **Presets** are appended so indices hold. Update the counts in `gallery.spec.ts` and `notebook-consistency.spec.ts`, and run `make thumbnails`.
+- **One descriptor per setting** (`cut.ts`, `sight.ts`, `path.ts`, `line-weight.ts`, `tesseract/objects.ts`). Panels read the descriptor and do not branch on names.
+- **Share, don't copy.** A refinement for several notebooks belongs in one shared module, as `timing.ts`, `playback.ts`, `line-weight.ts`, `probe.ts`, `gestures.ts`, `engine/refine` and `ExportImageMenu` are.
+- **Test traps already found:**
+  - React shows a `<select>`'s first option for a value it lacks, which hid two mutation survivors. Assert the state, not the visible option.
+  - Chromium ends a slider drag when a child is inserted into its fieldset. Put changing content in a wrapper.
+  - Layout sweeps must wait for each preset to settle, or they test nothing.
+  - The smoke test's compression check fails against a local `BASE_URL`.
+  - Run WebKit only when a rendering or encoding path changes.
+- **iOS gaps no local test shows.** See the user's notes on radio and checkbox sizing and on `:focus-visible` after a tap. Ask for an on-device check whenever controls or touch behavior change.
+
+## Recommended order
+
+1. Still-export controls (all notebooks)
+2. Camera affordances (3D and 4D; keyboard for 2D)
+3. Probe follow-ups (2D and 3D)
+4. Refinement between samples, remaining constructions (2D and 3D)
+
+The remaining items are smaller or conditional, and each can be taken when a study needs it.
+
+---
+
+### 1. Still-export controls
+
+**Applies to:** 2D, 3D, 4D. All three use `ExportImageMenu`, whose PNG is fixed at 2000 × 1520. The 3D Lines (SVG) page uses the same size.
+
+**Open:**
+
+- User-selected dimensions or aspect.
+- Quality, where a format has one.
+- Optional transparent background.
+
+**Approach:**
+
+- Extend the shared menu once. Keep the theme, layers and camera snapshot, and render at the target resolution: never upscale a raster. Animation resolution is already adjustable, so reuse its limits and wording where they fit.
+- 2D/4D: the SVG's background fill (the `<rect>` filled with the palette's `bg` in `web/Plot.tsx` and `web/tesseract/Drawing.tsx`) must be omitted, not painted over, and stroke antialiasing must composite correctly against nothing.
+- 3D: the see-through composite is `B·(1 − α)ⁿ + c̄·(1 − (1 − α)ⁿ)` over the background B. A transparent export needs that rule restated with alpha, using premultiplied output. Instanced strokes' edge coverage now makes this worth doing.
+- Record dimensions and transparency in metadata only when they are not the defaults.
+
+**Watch for:**
+
+- Device canvas limits. Validate the real limits rather than assuming them; iOS Safari caps canvas area. This overlaps item 8.
+- Pixel line widths that depend on page size. Weights scale by `min(W/1000, H/760)`.
+- The visible-only linework's work cap (200 million), which grows with page area.
+
+**Done when:** each notebook exports a chosen size and a transparent PNG that an independent decoder confirms: dimensions, an alpha channel, and ink matching the opaque export where opaque. Default exports stay byte-identical.
+
+### 2. Camera affordances
+
+**Applies to:**
+
+- Named views and orientation indicator: 3D and 4D, which share the turntable model.
+- Keyboard parity: 2D only. 3D and 4D already have arrows, +/− and Home.
+- Free field of view: 3D only.
+
+**Open:**
+
+- Named front/side/top/isometric views, and a small orientation indicator, in 3D and 4D. The indicator must sit outside the drawing: the viewport carries geometry only.
+- 2D keyboard pan, zoom and reset on the drawing. Mirror 3D/4D's bindings and describe them in the drawing's accessible label.
+- 3D: a field of view other than the three named lenses (30°, 50°, 90°). Lenses are named on purpose, so a link names an option the control has. Any free angle needs its own link field and default.
+- 3D and 4D: the camera cannot look straight down (pitch stops at ±1.5 rad), so overhead views are seen 4° short. A true top view either needs a free orientation, as the ride has, or must be documented as near-overhead.
+- 3D: Reset view returns a preset's opening view to the default view, not the preset's own.
+
+**Watch for:**
+
+- Do not import 3D's four animation camera modes into 4D (see the 4D roadmap).
+- Key views record no projection; a path flies in the drawing's projection.
+- Links must carry a named view only as the resulting camera, not as transient state.
+
+### 3. Probe follow-ups
+
+**Applies to:** 3D and 2D. 4D has no probe.
+
+**Open:**
+
+- **Probe during fixed-study animations.**
+  - 3D: reveal, orbit, camera path, trace and peel leave the probe out.
+  - 2D: reveal and trace leave it out.
+  - The study is fixed in most of these, so diagnostics are computed once. Reveal needs a stated policy for a probe at a sample not yet drawn.
+- **Exact probe between samples** (2D and 3D), if snapping proves too coarse. Today the probe snaps to samples, and a held probe can step by half a sample spacing between parameter frames.
+- **3D surface probe held at its own (u, v)** under parameter tracks, rather than its share of the grid.
+- **3D curve-probe construction highlights** on harmonic and field studies. The canal's contact circle belongs to the surface probe and is drawn there, so do not add it to the curve probe.
+- **3D surface probe on more surfaces.** Implicit meshes are excluded on purpose: a mesh is a picture, not a differentiable evaluator.
+- **Smaller limits** to fix if they bite:
+  - 3D probe lines are depth-tested, so sheets hide them.
+  - Surface plots run along the row only.
+  - The readout cannot tell an unknown tangent plane from a singular one.
+
+**Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
+
+**Watch for:**
+
+- Diagnostics are requested only while the probe is on, and studies without it must stay byte-identical (Go tests assert this per format).
+- Loops are judged with the probe drawn.
+
+### 4. Refinement between samples: remaining constructions
+
+**Applies to:** 3D and 2D. 4D has no user curve.
+
+**Open:**
+
+- **3D:**
+  - Involutes and the involute input. Their arc length is integrated on the uniform grid.
+  - Frame strands.
+  - Partner threads.
+  - Canal circles.
+  - Refining surfaces along the curve.
+- **2D:** evolute, involute, offset, caustics and envelopes. These need second derivatives, arc length along the samples, or envelopes, which the shared `engine/refine` does not supply.
+- **Both:**
+  - A view-dependent drawing refinement, which must still give playback and every export the same curve.
+  - Framing that ignores refined points.
+  - Three probes per piece miss features narrower than a quarter interval.
+
+**Start from:** `engine/refine` (point type supplied with its chord distance and length), `web/refinement.ts`, and `mathematics.md` (**Refinement between samples**).
+
+**Watch for:**
+
+- Uniform samples remain the study's identity for surfaces, construction lines, framing, reveal and probe.
+- Breaks found between samples must reach every curve built on that curve.
+- Keep the feature opt-in and off for older links.
+
+### 5. Camera path timing and pivot
+
+**Applies to:** 3D only. 4D has no camera paths.
+
+**Open:**
+
+- Per-leg durations. Views are now equally spaced in time, independent of when the geometry does something worth seeing.
+- Choosing the framed point from the geometry, not the plane through the study's center. Today a turn holds an off-plane detail only approximately.
+
+**Smaller limits:**
+
+- Smooth's framed point can change rate at a view.
+- Views cannot be reordered.
+- Long view names are cut off at phone width.
+- Geometry that grows past the starting bounds can leave the page under a path, as under Hold current view.
+
+**Start from:** `web/spatial/path.ts` and `mathematics.md#spatial-camera-paths`.
+
+**Watch for:** a loop's seam slope (`cyclic`) and links' `animation.path`. Per-leg durations change how progress maps to time, so define them against `web/timing.ts`.
+
+### 6. Cutaway box or several planes
+
+**Applies to:** 3D only.
+
+**Open:** extend the single plane's discard test to a box or to several planes, together with the linework's raster and clipping and the mesh-derived edge.
+
+**Start from:** `web/spatial/cut.ts` and `mathematics.md#spatial-cutaway-plane`.
+
+**Watch for:**
+
+- The peel's range and Flip semantics.
+- The edge follows the mesh, not a refined section.
+- Fragment rounding near the plane differs from the CPU raster by about a pixel.
+
+### 7. 3D rendering leftovers
+
+**Applies to:** 3D only. The 2D and 4D SVG strokes use the browser's joins.
+
+**Open:**
+
+- Strokes do not taper with perspective depth.
+- Turns sharper than 120° are capped rather than joined.
+- See-through sheets are not multisampled, so their outlines alias.
+- Lines behind several see-through layers are not attenuated per layer.
+- Dash length is set in space, so near dashes look longer under perspective.
+- Close to a perspective eye, **Lines (SVG) · visible only, sampled** can exceed its work limit.
+
+**Start from:** `mathematics.md` (**Spatial line weights**, the see-through section) and `web/spatial/sight.ts`.
+
+**Watch for:** the hairline path must stay the original program and `gl.LINES`.
+
+### 8. WebGL context recovery and device limits
+
+**Applies to:**
+
+- Context recovery: 3D only.
+- Device limits: all three, through item 1.
+
+**Open:**
+
+- 3D: after `webglcontextrestored`, rebuild resources from the current study and keep the camera state. Today `SpatialPlot.tsx` reports a lost context and stops. The 2D notebook must stay usable throughout.
+- All notebooks: validate actual device limits (canvas area, `MAX_TEXTURE_SIZE`, renderbuffer size, half-float targets) before offering an export size, and fail with a named limit, not a blank file.
+
+**Test with:** `WEBGL_lose_context` in Chromium.
+
+### 9. Scale and translation robustness
+
+**Applies to:**
+
+- 3D: primary.
+- 2D: engine tolerances and SVG coordinates.
+- 4D: a check only. Its objects are analytic with bounded scales; the 4D roadmap already requires absolute-plus-relative tolerances.
+
+**Open:**
+
+- Error budgets across tiny, large and translated studies.
+- 3D: rebase positions before the Float32 upload, and keep meaningful clipping (near/far are set in framing radii).
+- Test explicitly that live and exported drawings are equivalent.
+
+Today's finite-value guards and robust bounds do not prove scale independence.
+
+**Start with:** a translated and scaled copy of existing presets compared against the originals. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
+
+### 10. Composition and comparison
+
+**Applies to:**
+
+- Comparison: 2D with 3D.
+- Other bullets: 3D.
+
+**Open:**
+
+- **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another.
+- **3D framed offset strand as an input.** It needs its own evaluator, since its frame is transported along samples and not evaluated pointwise.
+- **3D arc-length restart after a base break,** for involutes and the involute input. It needs separate anchors and labels; today samples past a break are unreached.
+- **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
+
+### 11. Transport and efficiency, when profiled
+
+**Applies to:** 3D first, then 4D.
+
+**Open:**
+
+- Typed-array transport beyond the implicit mesh. Large JSON results:
+  - canal about 15 MB;
+  - surface grid about 10 MB;
+  - surface-probe grids 5–7 MB;
+  - the largest 4D weave 9.6 MB.
+- Worker pools. A third playback engine was rejected at about 100 MB per engine.
+
+**Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical.
+
+### 12. Presets that set layers
+
+**Applies to:** 3D. Check 2D before assuming.
+
+**Open:** 3D presets bring a view, projection, flight, cut, sight and probe, but not layers. Several handoffs list this limit, for example interior focal sheets that need a hidden surface.
+
+**Before building:** confirm the gap still exists in `web/spatial/presets.ts`. A preset's layers would join its fingerprint.
+
+## Pending on-device checks
+
+No device check was possible for these. Ask the user to look on a phone:
+
+- Manual perspective presets.
+- 2D and 4D loop presets in motion.
+- The probe while parameters vary.
+- The 2D probe, refinement and line-weight controls at phone width.
+
+Line weights in 3D were checked locally and on a phone on 2026-10-04.
+
+## Conditional and declined
+
+- **Geometry export** (3D; possibly 4D curves). Curves and meshes in a documented interoperable format, with units, normals, branch boundaries and source metadata. The file must warn that ribbons can be open, singular, self-intersecting and nonmanifold. Choose a format only when a real downstream use is chosen. 2D and 4D drawings already export true vector SVG.
+- **Saved study files:** declined on 2026-09-30. Portable links suffice.
+- **Out of scope:** lighting and material editors, imported scenes, collisions, path tracing, and a backend.
+
+## Accepted limits, not planned
+
+Revisit these only if a study needs them:
+
+- In 2D only parameter tracks loop. In 4D a drift, support, route or latitude sweep cannot loop.
+- The SVG loop check falls back to a raster threshold of 10⁻⁴ of pixels, not a proof of identity.
+- A 3D closed curve run on by less than a period is refused for a loop even when its shape returns.
+- 3D surface, mirror and implicit studies use uniform grids. Cuspidal edges are not located. The mirror and refraction studies have one interaction, no occlusion, and axis-aligned receiver planes only.
+- The 2D hairline is one CSS pixel (two device pixels on dense screens).

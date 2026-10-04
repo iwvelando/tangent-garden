@@ -243,4 +243,4 @@ The involute reuses the space curves, sampling, camera, and media path, and give
 
 ## Future work
 
-The [spatial expansion roadmap](spatial-expansion-roadmap.md) records proposed constructions, deferred numerical and rendering work, notebook/media improvements, and the acceptance gates for future slices.
+The [spatial expansion roadmap](spatial-expansion-roadmap.md) records proposed constructions, deferred numerical and rendering work, notebook/media improvements, and the acceptance gates for future slices. The refinements still open, across the 2D, 3D and 4D notebooks, are listed in [remaining-refinements.md](remaining-refinements.md).

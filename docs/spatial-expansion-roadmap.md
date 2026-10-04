@@ -1,5 +1,7 @@
 # Spatial mathematical art expansion roadmap
 
+> The refinements still open, for all three notebooks, are now listed in [remaining-refinements.md](remaining-refinements.md). Start there; this roadmap remains the history and the record of earlier decisions.
+
 This is the working roadmap for extending Tangent Garden beyond its first 3D construction. It records ideas deliberately left out of the MVP, proposes small implementation slices, and gives mathematical and verification requirements. Unchecked items are future work, not claims about the current application. The ordering is a recommendation, not a commitment to implement every research candidate unchanged. Read `AGENTS.md`, `README.md`, [mathematics.md](mathematics.md), [architecture.md](architecture.md), and [spatial-study.md](spatial-study.md) before implementation. Update progress and handoff notes as each slice lands.
 
 ## Product goal
