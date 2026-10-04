@@ -1,3 +1,4 @@
+import type { RefinedPath } from "./refinement";
 export type Vec = { x: number; y: number };
 export type Kind =
   | "evolute"
@@ -202,6 +203,37 @@ export type Config = {
   input: ConstructionInput;
   samples: number;
   lines: number;
+  // Refines the drawn curves between their samples (engine/adaptive.go);
+  // absent or false draws the samples alone, as before refinement existed.
+  adaptive?: boolean;
+};
+// Whether a curve format can be evaluated between its samples: not an
+// integrated chase or trajectory, nor a level set or iterated map.
+export const refinesBetweenSamples = (format: Config["curve"]["format"]) =>
+  !["pursuit", "field", "implicit", "attractor"].includes(format);
+// Mirrors engine.Diagnostics: the base curve at every sample, for the
+// probe. curvature is signed, positive where the curve turns left; normal
+// is the tangent turned a quarter turn left; center is the center of
+// curvature, null where flat, unknown or beyond 100 study radii; length is
+// the drawn arc length from the first sample.
+export type Diagnostics = {
+  min: number;
+  max: number;
+  curvature: (number | null)[];
+  tangent: (Vec | null)[];
+  normal: (Vec | null)[];
+  center: (Vec | null)[];
+  length: (number | null)[];
+  flat: number;
+  unknown: number;
+  clipped: number;
+};
+// Mirrors engine.AdaptiveResult: the refined base curve, derived input, and
+// pedal-type or inverted curve, each absent when it is not refined.
+export type AdaptiveResult = {
+  base?: RefinedPath<Vec>;
+  input?: RefinedPath<Vec>;
+  derived?: RefinedPath<Vec>;
 };
 export type Ray = {
   sampleIndex: number;
@@ -402,6 +434,10 @@ export type Result = {
   // The derived curve the construction acts on, indexed like base; present
   // only when the input is not the curve itself.
   input?: (Vec | null)[];
+  // Present only when refinement was asked for a curve it can refine.
+  adaptive?: AdaptiveResult;
+  // Present only when the probe asked, for a curve with a parameter.
+  diagnostics?: Diagnostics;
   warnings: string[];
   invalid: number;
 };

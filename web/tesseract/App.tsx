@@ -18,7 +18,13 @@ import {
   type FieldErrorTarget,
 } from "../Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
-import { EngineClient, EngineError } from "../engine-client";
+import {
+  EngineClient,
+  EngineError,
+  playbackEngineCount,
+} from "../engine-client";
+import { play as playFrames } from "../playback";
+import { LineWeightField } from "../LineWeightField";
 import { ExampleGallery } from "../ExampleGallery";
 import { tesseractExamples, tesseractThumbnail } from "../examples";
 import { ExportImageMenu } from "../ExportImageMenu";
@@ -194,42 +200,47 @@ export default function TesseractApp({
   }, [key, ready, playing, active, scalarBusy, revision]);
   useEffect(() => {
     if (!playing || !ready || !active) return;
-    const ticket = ++epoch.current,
-      start = performance.now(),
-      from = progress;
-    let raf = 0;
-    const tick = async (now: number) => {
-      if (ticket !== epoch.current) return;
-      // Repeating, the time wraps from the end to the start, never asking
-      // for 1, which is 0 again.
-      const elapsed = Math.max(from, from + (now - start) / (duration * 1000)),
-        p = cycles(repeat)
-          ? elapsed - Math.floor(elapsed)
-          : Math.min(1, elapsed),
-        q = sample(config, motion, progressAt(p, repeat, pace));
-      try {
-        const result = await sampler.current!.request(q);
-        if (ticket !== epoch.current || !result) return;
-        setFrame({ config: q, result });
-        setSettled(JSON.stringify(q));
+    const ticket = ++epoch.current;
+    // Every frame is calculated; while one engine calculates, a helper,
+    // alive only while playback runs, can calculate the next.
+    const helper = playbackEngineCount() > 1 ? new EngineClient() : null;
+    const frameAt = async (engine: EngineClient, p: number) => {
+      const q = sample(config, motion, progressAt(p, repeat, pace));
+      return { config: q, result: await engine.tesseract(q) };
+    };
+    // Each engine holds at most one calculation; slow devices skip
+    // intermediate times instead of queuing work.
+    const halt = playFrames({
+      from: progress,
+      duration: duration * 1000,
+      repeat: cycles(repeat),
+      lanes: [client.current!, ...(helper ? [helper] : [])].map(
+        (engine) => (p: number) => frameAt(engine, p),
+      ),
+      show: (next, p) => {
+        if (ticket !== epoch.current) return;
+        setFrame(next);
+        setSettled(JSON.stringify(next.config));
         setProgress(p);
         setError("");
-        if (!cycles(repeat) && p >= 1) setPlaying(false);
-        else raf = requestAnimationFrame(tick);
-      } catch (e) {
-        if (ticket === epoch.current) {
-          setError(
-            (e as Error).message,
-            e instanceof EngineError ? e.field : undefined,
-          );
-          setPlaying(false);
-        }
-      }
-    };
-    raf = requestAnimationFrame(tick);
+      },
+      // Ending playback releases the helper with the effect.
+      end: () => {
+        if (ticket === epoch.current) setPlaying(false);
+      },
+      fail: (e) => {
+        if (ticket !== epoch.current) return;
+        setError(
+          (e as Error).message,
+          e instanceof EngineError ? e.field : undefined,
+        );
+        setPlaying(false);
+      },
+    });
     return () => {
       epoch.current++;
-      cancelAnimationFrame(raf);
+      halt();
+      helper?.dispose();
     };
   }, [playing, ready, active]);
   useEffect(() => {
@@ -1010,6 +1021,16 @@ export default function TesseractApp({
                     </label>
                   ))}
                 </div>
+                <LineWeightField
+                  value={layers.weight ?? "regular"}
+                  onChange={(weight) => {
+                    controller.current?.abort();
+                    // Regular is the drawing without a weight, as before.
+                    setLayers(({ weight: _, ...l }) =>
+                      weight === "regular" ? l : { ...l, weight },
+                    );
+                  }}
+                />
               </section>
             </FieldErrorContext.Provider>
             {failure && !claimedHere && <StudyError message={failure} />}

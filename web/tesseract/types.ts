@@ -1,3 +1,4 @@
+import type { LineWeight } from "../line-weight";
 import { objects, rotationMotions, type MotionChoice } from "./objects";
 export type Vec3 = [number, number, number];
 export type Object4 =
@@ -164,6 +165,9 @@ export type Layers = {
   missingGuide?: boolean;
   connectors?: boolean;
   comparison?: boolean;
+  // How wide lines are drawn (../line-weight.ts); regular when absent, as
+  // in links made before line weights.
+  weight?: LineWeight;
 };
 export type Motion =
   | "double"

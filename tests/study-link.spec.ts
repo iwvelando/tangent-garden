@@ -65,6 +65,8 @@ const planar = (i = 0): PlanarStudy => ({
     axes: true,
   },
   camera: { x: 12.5, y: -40, zoom: 1.75 },
+  weight: "fine",
+  probe: { enabled: true, position: 0.25 },
   animation: {
     mode: "reveal",
     camera: "hold",
@@ -72,6 +74,7 @@ const planar = (i = 0): PlanarStudy => ({
     tracks: [],
     repeat: "back-and-forth",
     pace: "ease",
+    probeMotion: "length",
   },
 });
 const spatial = (i = 0): SpatialStudy => ({
@@ -135,7 +138,13 @@ const spatial = (i = 0): SpatialStudy => ({
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
-  layers: { edges: true, guides: false, faces: true, selectedSection: 0 },
+  layers: {
+    edges: true,
+    guides: false,
+    faces: true,
+    selectedSection: 0,
+    weight: "bold",
+  },
   view: { ...initialView, zoom: 1.4 },
   diagramView: { ...initialView },
   motion: tesseractPresets[i].motion,
@@ -485,6 +494,7 @@ test("fields a link predates take the notebook's defaults", async () => {
     tracks: [],
     repeat: "once",
     pace: "steady",
+    probeMotion: "stays",
   });
   // Optional fields stay absent rather than being invented.
   assert.equal("coordinates" in read.config.source, false);
@@ -609,7 +619,13 @@ test("links made by version 1 keep opening", async () => {
     // Links made before repeat and pace play once, steadily.
     repeat: "once",
     pace: "steady",
+    // Links made before the 2D probe keep it at its t.
+    probeMotion: "stays",
   });
+  // Links made before the 2D probe open without it, and before line weights
+  // with regular strokes.
+  assert.deepEqual(p.probe, { enabled: false, position: 0.5 });
+  assert.equal(p.weight, "regular");
 
   const spatialLink = await readStudyLink(v1["3d"]);
   assert.equal(spatialLink.notebook, "3d");
@@ -784,6 +800,35 @@ test("a link carries seeing through and line weight; refuses an opacity outside 
     bad((v) => (v.extra = 1)),
     "sight.extra",
   );
+});
+
+test("2D and 4D links carry the line weight; older links draw regular strokes; an unknown weight is refused", async () => {
+  for (const weight of ["hairline", "fine", "regular", "bold"] as const) {
+    const flat: PlanarStudy = { ...planar(), weight };
+    const read2 = await readStudyLink(await writeStudyLink("2d", flat));
+    assert.deepEqual(planarStudy(read2.study), flat, `2D ${weight}`);
+    const four: TesseractStudy = {
+      ...tesseract(),
+      layers: { ...tesseract().layers, weight },
+    };
+    const read4 = await readStudyLink(await writeStudyLink("4d", four));
+    assert.deepEqual(tesseractStudy(read4.study), four, `4D ${weight}`);
+  }
+  // Links made before line weights drew what regular draws.
+  const old2 = structuredClone(planar()) as any;
+  delete old2.weight;
+  assert.equal(planarStudy(old2).weight, "regular");
+  const old4 = structuredClone(tesseract()) as any;
+  delete old4.layers.weight;
+  assert.equal(tesseractStudy(old4).layers.weight, undefined);
+  for (const value of ["heavy", 2, null]) {
+    const bad2 = structuredClone(planar()) as any;
+    bad2.weight = value;
+    await refused(() => planarStudy(bad2), "weight");
+    const bad4 = structuredClone(tesseract()) as any;
+    bad4.layers.weight = value;
+    await refused(() => tesseractStudy(bad4), "layers.weight");
+  }
 });
 
 test("a link carries the manual camera's projection; refuses an unknown one", async () => {
@@ -1164,4 +1209,62 @@ test("a link carries refinement between samples; older links draw on the even sa
   const bad = structuredClone(spatial()) as any;
   bad.config.adaptive = "yes";
   await refused(() => spatialStudy(bad), "config.adaptive");
+});
+
+test("a 2D link carries refinement between samples; older links draw on the even samples", async () => {
+  for (const adaptive of [true, false]) {
+    const study = planar();
+    study.config = { ...study.config, adaptive };
+    const read = await readStudyLink(await writeStudyLink("2d", study));
+    assert.deepEqual(planarStudy(read.study), study);
+  }
+  // A link made before refinement leaves it out, which draws the samples.
+  const older = structuredClone(planar()) as any;
+  delete older.config.adaptive;
+  assert.equal(planarStudy(older).config.adaptive, undefined);
+  const bad = structuredClone(planar()) as any;
+  bad.config.adaptive = "yes";
+  await refused(() => planarStudy(bad), "config.adaptive");
+});
+
+test("a 2D link carries the probe and how it moves; older links open without it; it moves only while on", async () => {
+  for (const probeMotion of ["stays", "length", "along"] as const) {
+    const study: PlanarStudy = {
+      ...planar(),
+      animation: { ...planar().animation, mode: "probe", probeMotion },
+    };
+    const read = await readStudyLink(await writeStudyLink("2d", study));
+    assert.deepEqual(planarStudy(read.study), study, probeMotion);
+  }
+  // A link made before the probe opens with it off, staying at its t.
+  const older = structuredClone(planar()) as any;
+  delete older.probe;
+  delete older.animation.probeMotion;
+  assert.deepEqual(planarStudy(older).probe, {
+    enabled: false,
+    position: 0.5,
+  });
+  assert.equal(planarStudy(older).animation.probeMotion, "stays");
+  const off = structuredClone(planar()) as any;
+  off.probe.enabled = false;
+  off.animation.mode = "probe";
+  await refused(
+    () => planarStudy(off),
+    "animation.mode",
+    /only while it is on/,
+  );
+  const level = structuredClone(planar()) as any;
+  level.config.curve.format = "implicit";
+  level.animation.mode = "probe";
+  await refused(() => planarStudy(level), "animation.mode");
+  for (const [field, value] of [
+    ["probe.position", 1.5],
+    ["probe.enabled", "yes"],
+    ["animation.probeMotion", "wanders"],
+  ] as const) {
+    const bad = structuredClone(planar()) as any;
+    const [group, key] = field.split(".");
+    bad[group][key] = value;
+    await refused(() => planarStudy(bad), field);
+  }
 });

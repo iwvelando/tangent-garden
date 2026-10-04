@@ -62,6 +62,13 @@ try {
       // study's with its cut and sight, when it has them.
       await page.waitForFunction(
         ([notebook, want]) => {
+          // A 2D example's definition, with its probe when it has one.
+          const planar = (wrap, desc) =>
+            wrap && desc
+              ? wrap.dataset.probe
+                ? `{"config":${desc},"probe":${wrap.dataset.probe}}`
+                : desc
+              : undefined;
           const spatial = document.querySelector(
             ".spatial-stage[aria-busy=false]",
           )?.dataset;
@@ -78,8 +85,10 @@ try {
                   spatial.probe
                     ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}${spatial.projection ? `,"projection":"${spatial.projection}"` : ""}${spatial.opening ? `,"view":${spatial.opening}` : ""}${spatial.probe ? `,"probe":${spatial.probe}` : ""}}`
                     : spatial.config)
-                : document.querySelector(".plot-wrap[aria-busy=false]") &&
-                  document.querySelector("#artwork > desc")?.textContent;
+                : planar(
+                    document.querySelector(".plot-wrap[aria-busy=false]"),
+                    document.querySelector("#artwork > desc")?.textContent,
+                  );
           if (!text) return false;
           let h = 0x811c9dc5;
           for (const c of text) {

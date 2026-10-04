@@ -1,5 +1,6 @@
 import { projectsInput, unwindsInput, usesSpatialPole } from "./types";
 import { harmonicLabels } from "./harmonic";
+import { revealRefined } from "../refinement";
 import { surfaceShape } from "./surface";
 import type {
   RefinedPath,
@@ -883,19 +884,8 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     ...result.harmonic,
     positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
   };
-  // A refined curve shows its points up to the last revealed sample; the
-  // inserted points do not change the framing.
-  const shown = (path: RefinedPath | undefined) => {
-    if (!path) return path;
-    const count = path.at.findIndex((u) => u > last);
-    return count < 0
-      ? path
-      : {
-          ...path,
-          points: path.points.slice(0, count),
-          at: path.at.slice(0, count),
-        };
-  };
+  // A refined curve shows its points up to the last revealed sample.
+  const shown = (path: RefinedPath | undefined) => revealRefined(path, last);
   const adaptive = result.adaptive && {
     base: shown(result.adaptive.base),
     parent: shown(result.adaptive.parent),

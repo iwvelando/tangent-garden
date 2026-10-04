@@ -1,5 +1,6 @@
 import type { Config } from "./types";
 import type { PlanarAnimation } from "./planar-link";
+import type { PlanarProbe } from "./planar-probe";
 const base: Config = {
   kind: "evolute",
   curve: {
@@ -114,6 +115,8 @@ export const presets: {
   note: string;
   config: Config;
   animation?: PlanarAnimation;
+  // A probe the example opens with; without one it opens with the probe off.
+  probe?: PlanarProbe;
 }[] = [
   {
     title: "Ellipse & its evolute",
@@ -837,6 +840,64 @@ export const presets: {
       tracks: [{ target: "sourceTheta", from: "0", to: "2*pi" }],
       repeat: "loop",
       pace: "steady",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "Ripples hidden between samples",
+    note: "A circle carrying a coil of frequency 233, which 240 samples alias into a slow sixfold wave; refined between samples, every loop appears, with its inverse",
+    config: {
+      ...base,
+      kind: "inversion",
+      curve: {
+        ...base.curve,
+        x: "cos(t) + 0.03*cos(233*t)",
+        y: "sin(t) + 0.03*sin(233*t)",
+      },
+      inversion: { center: { x: 0, y: 0 }, radius: 0.8 },
+      samples: 240,
+      lines: 24,
+      adaptive: true,
+    },
+  },
+  {
+    title: "Petals that miss the center",
+    note: "Five petals pass just beside the center of inversion, each throwing out a loop that the samples draw as a jagged polygon; refined between samples, the loops are round",
+    config: {
+      ...base,
+      kind: "inversion",
+      curve: {
+        ...base.curve,
+        x: "cos(5*t)*cos(t) + 0.04",
+        y: "cos(5*t)*sin(t) + 0.03",
+        max: Math.PI,
+      },
+      inversion: { center: { x: 0, y: 0 }, radius: 0.2 },
+      samples: 500,
+      lines: 30,
+      adaptive: true,
+    },
+  },
+  {
+    title: "A clover's curvature, probed",
+    note: "The probe rides a three-leaved curve whose bends change hand at six inflections, with its tangent's foot from the center",
+    config: {
+      ...base,
+      kind: "pedal",
+      curve: { ...base.curve, format: "polar", r: "1 + 0.6*cos(3*t)" },
+      pole: { x: 0, y: 0 },
+      samples: 1200,
+      lines: 36,
+    },
+    probe: { enabled: true, position: 0.03 },
+    animation: {
+      mode: "probe",
+      camera: "hold",
+      duration: 12,
+      tracks: [],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
     },
   },
 ];

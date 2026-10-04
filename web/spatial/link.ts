@@ -34,6 +34,8 @@ import {
 } from "./probe";
 import { cutPlane, defaultCut, maxCutValue, type Cut } from "./cut";
 import { defaultSight, legacyWeight, opacityRange, type Sight } from "./sight";
+import { lineWeightSchema } from "../line-weight";
+import { probeMotionSchema } from "../probe";
 import {
   defaultPath,
   maxKeyName,
@@ -420,15 +422,11 @@ const sight: SchemaOf<Sight> = {
     sheets: { options: { opaque: true, through: true } },
     opacity: { range: opacityRange },
     hidden: { options: { hide: true, faint: true, dashed: true } },
-    weight: {
-      options: { hairline: true, fine: true, regular: true, bold: true },
-    },
+    weight: lineWeightSchema,
   },
 };
 
-const motion: SchemaOf<ProbeMotion> = {
-  options: { stays: true, length: true, along: true },
-};
+const motion = probeMotionSchema;
 
 const projection: SchemaOf<Projection> = {
   options: Object.fromEntries(

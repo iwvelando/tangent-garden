@@ -1,6 +1,8 @@
 // The 3D drawing's colors, as [light theme, dark theme] RGB pairs from 0 to
 // 1. The WebGL fragment shader is written from these values, and vector
 // linework uses them directly, so both draw a line in the same color.
+import { probeInks } from "../probe";
+
 type RGB = [number, number, number];
 type Pair = readonly [RGB, RGB];
 
@@ -68,25 +70,12 @@ export const palette = {
     [0.58, 0.66, 0.58],
     [0.42, 0.54, 0.5],
   ],
-  // The parameter probe (inks 8–11), diagnostic rather than decorative: its
-  // point, osculating circle and highlighted construction in magenta, and
-  // the Frenet frame's T, N and B in red, green and blue.
-  probe: [
-    [0.72, 0.1, 0.46],
-    [1, 0.47, 0.77],
-  ],
-  probeTangent: [
-    [0.8, 0.16, 0.12],
-    [1, 0.45, 0.38],
-  ],
-  probeNormal: [
-    [0.1, 0.5, 0.18],
-    [0.45, 0.9, 0.5],
-  ],
-  probeBinormal: [
-    [0.13, 0.3, 0.82],
-    [0.52, 0.68, 1],
-  ],
+  // The parameter probe (inks 8–11), shared with the 2D notebook
+  // (../probe.ts).
+  probe: probeInks.mark,
+  probeTangent: probeInks.tangent,
+  probeNormal: probeInks.normal,
+  probeBinormal: probeInks.binormal,
   // The cut's edge (ink 12): a drafting section line, graphite on paper or
   // chalk on the dark theme, apart from every sheet and construction ink.
   cut: [

@@ -2,17 +2,19 @@
 // is played, since it draws with React's static renderer as export does.
 import { renderToStaticMarkup } from "react-dom/server";
 import { Plot, type Layers } from "./Plot";
+import type { LineWeight } from "./line-weight";
 import type { AnimationView } from "./animation";
 import { loopRefusal } from "./loop-check";
 import { exportBaseSize } from "./export-quality";
 
 // Why the drawing at the end of a parameter animation is not the drawing at
 // its start, or null when a loop can join them. start and end are the
-// frames at progress 0 and 1, drawn with these layers.
+// frames at progress 0 and 1, drawn with these layers and line weight.
 export function planarLoopGap(
   start: AnimationView,
   end: AnimationView,
   layers: Layers,
+  weight: LineWeight,
 ): Promise<string | null> {
   const draw = (view: AnimationView) =>
     renderToStaticMarkup(
@@ -20,6 +22,7 @@ export function planarLoopGap(
         result={view.frame.result}
         config={view.frame.config}
         layers={layers}
+        weight={weight}
         dark={false}
         length={view.length}
         animation={view}
