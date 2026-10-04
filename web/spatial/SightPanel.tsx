@@ -1,13 +1,12 @@
 import { Field } from "../Field";
 import { ScalarInput } from "../ScalarInput";
+import { LineWeightField } from "../LineWeightField";
 import {
   hiddenLines,
-  lineWeights,
   sheetSights,
   sightFields,
   sightHelp,
   type HiddenLines,
-  type LineWeight,
   type Sight,
   type SheetSight,
   type SightError,
@@ -36,21 +35,12 @@ export function SightPanel({
         <legend>Lines</legend>
         <div>
           <div className="pair">
-            <Field label="Weight" help={sightHelp.weight}>
-              <select
-                value={sight.weight}
-                onChange={(e) => {
-                  const weight = e.target.value as LineWeight;
-                  onSight((s) => ({ ...s, weight }));
-                }}
-              >
-                {lineWeights.map((w) => (
-                  <option key={w.value} value={w.value}>
-                    {w.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <LineWeightField
+              label="Weight"
+              help={sightHelp.weight}
+              value={sight.weight}
+              onChange={(weight) => onSight((s) => ({ ...s, weight }))}
+            />
           </div>
           {unstroked && sight.weight !== "hairline" && (
             <p className="spatial-caption">{sightHelp.unstroked}</p>

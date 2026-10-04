@@ -65,6 +65,7 @@ const planar = (i = 0): PlanarStudy => ({
     axes: true,
   },
   camera: { x: 12.5, y: -40, zoom: 1.75 },
+  weight: "fine",
   animation: {
     mode: "reveal",
     camera: "hold",
@@ -135,7 +136,13 @@ const spatial = (i = 0): SpatialStudy => ({
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
-  layers: { edges: true, guides: false, faces: true, selectedSection: 0 },
+  layers: {
+    edges: true,
+    guides: false,
+    faces: true,
+    selectedSection: 0,
+    weight: "bold",
+  },
   view: { ...initialView, zoom: 1.4 },
   diagramView: { ...initialView },
   motion: tesseractPresets[i].motion,
@@ -784,6 +791,35 @@ test("a link carries seeing through and line weight; refuses an opacity outside 
     bad((v) => (v.extra = 1)),
     "sight.extra",
   );
+});
+
+test("2D and 4D links carry the line weight; older links draw regular strokes; an unknown weight is refused", async () => {
+  for (const weight of ["hairline", "fine", "regular", "bold"] as const) {
+    const flat: PlanarStudy = { ...planar(), weight };
+    const read2 = await readStudyLink(await writeStudyLink("2d", flat));
+    assert.deepEqual(planarStudy(read2.study), flat, `2D ${weight}`);
+    const four: TesseractStudy = {
+      ...tesseract(),
+      layers: { ...tesseract().layers, weight },
+    };
+    const read4 = await readStudyLink(await writeStudyLink("4d", four));
+    assert.deepEqual(tesseractStudy(read4.study), four, `4D ${weight}`);
+  }
+  // Links made before line weights drew what regular draws.
+  const old2 = structuredClone(planar()) as any;
+  delete old2.weight;
+  assert.equal(planarStudy(old2).weight, "regular");
+  const old4 = structuredClone(tesseract()) as any;
+  delete old4.layers.weight;
+  assert.equal(tesseractStudy(old4).layers.weight, undefined);
+  for (const value of ["heavy", 2, null]) {
+    const bad2 = structuredClone(planar()) as any;
+    bad2.weight = value;
+    await refused(() => planarStudy(bad2), "weight");
+    const bad4 = structuredClone(tesseract()) as any;
+    bad4.layers.weight = value;
+    await refused(() => tesseractStudy(bad4), "layers.weight");
+  }
 });
 
 test("a link carries the manual camera's projection; refuses an unknown one", async () => {

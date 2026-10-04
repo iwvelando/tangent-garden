@@ -1,5 +1,6 @@
 import { objects } from "./objects";
 import { plotPalette } from "../palette";
+import { svgStroke } from "../line-weight";
 import type { Config, Result, View, Layers, Vec3 } from "./types";
 export const inks = (dark: boolean) =>
   dark
@@ -24,7 +25,8 @@ export function Drawing({
   dark: boolean;
 }) {
   const colors = inks(dark),
-    scale = (310 * view.zoom) / result.radius;
+    scale = (310 * view.zoom) / result.radius,
+    stroke = svgStroke(layers.weight ?? "regular");
   const descriptor = objects[config.object];
   const curved = descriptor.legend === "sections";
   // Latitude studies share the section key's colours, without its selection.
@@ -185,15 +187,15 @@ export function Drawing({
                 ? "7 5"
                 : undefined
           }
-          strokeWidth={
+          {...stroke(
             curved
               ? sectionIndex(p.sectionId) === selected
                 ? 3
                 : 1.8
               : p.guide
                 ? 1.25
-                : 2.1
-          }
+                : 2.1,
+          )}
           strokeOpacity={
             p.role === "route-context"
               ? 0.35
@@ -227,7 +229,7 @@ export function Drawing({
               r={m.role === "comparison" ? (m.family === 2 ? 9 : 6) : 5}
               fill={m.role === "comparison" ? "none" : colors[m.family]}
               stroke={colors[m.family]}
-              strokeWidth="2.5"
+              {...stroke(2.5)}
             />
           );
         })}

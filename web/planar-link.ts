@@ -30,6 +30,7 @@ import {
   type Target,
 } from "./animation";
 import type { Layers } from "./Plot";
+import { lineWeightSchema, type LineWeight } from "./line-weight";
 
 // The manual camera, offset from the fitted framing, which the drawing
 // derives deterministically from the study: pixels of pan and a zoom factor.
@@ -47,6 +48,8 @@ export type PlanarStudy = {
   poleKind: PoleKind;
   layers: Layers;
   camera: PlotCamera;
+  // How wide lines are drawn; regular in links made before line weights.
+  weight: LineWeight;
   animation: PlanarAnimation;
 };
 export const defaultLayers: Layers = {
@@ -261,6 +264,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "poleKind",
         "layers",
         "camera",
+        "weight",
         "animation",
       ].includes(key)
     )
@@ -301,6 +305,12 @@ export function planarStudy(value: unknown): PlanarStudy {
       { fields: { x: "number", y: "number", zoom: { range: zoomRange } } },
       { x: 0, y: 0, zoom: 1 },
       "camera",
+    ),
+    weight: conform<LineWeight>(
+      raw.weight,
+      lineWeightSchema,
+      "regular",
+      "weight",
     ),
   };
   const grouped =

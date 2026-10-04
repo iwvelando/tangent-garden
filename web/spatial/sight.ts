@@ -5,9 +5,11 @@
 // setting's fields, limits, words and rules, read by the panels, the
 // renderer, linework, links and exports alike.
 
+import { weightScale, type LineWeight } from "../line-weight";
+export { lineWeights, weightScale, type LineWeight } from "../line-weight";
+
 export type SheetSight = "opaque" | "through";
 export type HiddenLines = "hide" | "faint" | "dashed";
-export type LineWeight = "hairline" | "fine" | "regular" | "bold";
 export type Sight = {
   sheets: SheetSight;
   // Each sheet layer's opacity α when sheets are seen through.
@@ -43,22 +45,13 @@ export const hiddenLines: { value: HiddenLines; label: string }[] = [
   { value: "faint", label: "Faint" },
   { value: "dashed", label: "Dashed" },
 ];
-// Line weights. A stroke's width is a share of the page, as in the 2D
-// notebook: its weight in pixels of a 1000 × 760 page, scaled with the page
-// (strokeUnit), so the live drawing, stills and videos agree in proportion
-// at any size. A hairline is one device pixel at any size, as every 3D line
-// was before weights.
-export const lineWeights: { value: LineWeight; label: string }[] = [
-  { value: "hairline", label: "Hairline" },
-  { value: "fine", label: "Fine" },
-  { value: "regular", label: "Regular" },
-  { value: "bold", label: "Bold" },
-];
-export const weightScale: Record<Exclude<LineWeight, "hairline">, number> = {
-  fine: 0.6,
-  regular: 1,
-  bold: 1.6,
-};
+// Line weights (../line-weight.ts, shared with the 2D and 4D notebooks). A
+// stroke's width is a share of the page, as in the 2D notebook: its weight
+// in pixels of a 1000 × 760 page, scaled with the page (strokeUnit), so the
+// live drawing, stills and videos agree in proportion at any size. A
+// hairline is one device pixel at any size, as every 3D line was before
+// weights.
+//
 // Device pixels per page pixel: the page's 1000 × 760 fitted inside.
 export const strokeUnit = (size: { width: number; height: number }) =>
   Math.min(size.width / 1000, size.height / 760);

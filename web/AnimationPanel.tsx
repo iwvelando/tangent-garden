@@ -8,6 +8,7 @@ import {
   playbackEngineCount,
 } from "./engine-client";
 import { play } from "./playback";
+import type { LineWeight } from "./line-weight";
 import {
   applyTracks,
   availableTargets,
@@ -85,6 +86,7 @@ type Props = {
   disabled: boolean;
   dark: boolean;
   layers: Layers;
+  weight: LineWeight;
   getCurrentView: () => Viewport | undefined;
   onView: (view: AnimationView | null) => void;
   onRunning: (running: boolean) => void;
@@ -106,6 +108,7 @@ export function AnimationPanel({
   disabled,
   dark,
   layers,
+  weight,
   getCurrentView,
   onView,
   onRunning,
@@ -546,6 +549,7 @@ export function AnimationPanel({
           await frameAt(s, 0),
           await frameAt(s, 1),
           layers,
+          weight,
         );
         if (gap) throw new Error(gap);
       }
@@ -578,6 +582,7 @@ export function AnimationPanel({
           settings: { scale: exportScale, quality },
           dark,
           layers: { ...layers },
+          weight,
           signal: controller.signal,
           lookahead: engines.length + 1,
           sample: (time) => sample(s, time, engines[next++ % engines.length]),

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { svgStroke, type LineWeight } from "./line-weight";
 import {
   usesPole,
   type Config,
@@ -35,6 +36,8 @@ type Props = {
   initialCamera?: { reset: number; camera: PlotCamera } | null;
   // The manual camera, offset from the fitted framing, whenever it changes.
   onCamera?: (camera: PlotCamera) => void;
+  // How wide lines are drawn (line-weight.ts); regular when absent.
+  weight?: LineWeight;
   pixelRatio?: number;
 };
 const W = 1000,
@@ -89,7 +92,10 @@ export function Plot({
   initialCamera,
   onCamera,
   pixelRatio = 1,
+  weight = "regular",
 }: Props) {
+  // Every stroke's regular width, at the chosen line weight.
+  const stroke = svgStroke(weight);
   const [camera, setCamera] = useState(() =>
     initialCamera?.reset === reset
       ? { ...initialCamera.camera, reset }
@@ -220,7 +226,7 @@ export function Plot({
         x2={q.x}
         y2={q.y}
         stroke={color}
-        strokeWidth="1"
+        {...stroke(1)}
         opacity={opacity}
         strokeDasharray={dashed ? "5 5" : undefined}
       />
@@ -296,7 +302,7 @@ export function Plot({
         r={s.radius * scale}
         fill="none"
         stroke={palette.line}
-        strokeWidth="1.2"
+        {...stroke(1.2)}
         opacity=".75"
       />
       {line(s.center, s.point, palette.line, 0.75)}
@@ -313,7 +319,7 @@ export function Plot({
         r="3.5"
         fill="none"
         stroke={palette.line}
-        strokeWidth="1.5"
+        {...stroke(1.5)}
       />
     </>
   );
@@ -409,6 +415,8 @@ export function Plot({
                 heldView: animation.heldView,
               }
             : undefined,
+          // Recorded only when it is not the drawing as it always was.
+          weight: weight === "regular" ? undefined : weight,
         })}
       </desc>
       <rect width={W} height={H} fill={palette.bg} />
@@ -531,7 +539,7 @@ export function Plot({
                   r={radius}
                   fill="none"
                   stroke={palette.line}
-                  strokeWidth="1"
+                  {...stroke(1)}
                   opacity=".32"
                 />
               )
@@ -553,7 +561,7 @@ export function Plot({
               r={roulette.fixedRadius * scale}
               fill="none"
               stroke={palette.line}
-              strokeWidth="1.8"
+              {...stroke(1.8)}
               opacity=".9"
             />
           )}
@@ -579,7 +587,7 @@ export function Plot({
               }
               fill="none"
               stroke={palette.line}
-              strokeWidth="1"
+              {...stroke(1)}
               strokeLinejoin="round"
               opacity=".55"
             />
@@ -597,7 +605,7 @@ export function Plot({
             r={config.curve.field.escape * scale}
             fill="none"
             stroke={palette.line}
-            strokeWidth="1"
+            {...stroke(1)}
             strokeDasharray="4 5"
             opacity=".5"
           />
@@ -613,7 +621,7 @@ export function Plot({
                 d={arrow(x, y, velocity, length, length / 2, length * 0.3)}
                 fill="none"
                 stroke={palette.line}
-                strokeWidth="1"
+                {...stroke(1)}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 opacity=".55"
@@ -655,7 +663,7 @@ export function Plot({
             height={(attractor.window.yMax - attractor.window.yMin) * scale}
             fill="none"
             stroke={palette.line}
-            strokeWidth="1"
+            {...stroke(1)}
             strokeDasharray="4 5"
             opacity=".5"
           />
@@ -673,7 +681,7 @@ export function Plot({
                 r={k === 0 ? 4 : 2.2}
                 fill={k === 0 ? "none" : palette.line}
                 stroke={palette.line}
-                strokeWidth={k === 0 ? 1.5 : 0}
+                {...stroke(k === 0 ? 1.5 : 0)}
                 opacity=".85"
               />
             );
@@ -686,7 +694,7 @@ export function Plot({
               r="7"
               fill="none"
               stroke={palette.line}
-              strokeWidth="1"
+              {...stroke(1)}
               opacity=".6"
             />
           )}
@@ -703,7 +711,7 @@ export function Plot({
             height={(contours.window.yMax - contours.window.yMin) * scale}
             fill="none"
             stroke={palette.line}
-            strokeWidth="1"
+            {...stroke(1)}
             strokeDasharray="4 5"
             opacity=".5"
           />
@@ -719,7 +727,7 @@ export function Plot({
                 data-y={p.y}
                 d={`M${x - 2.5},${y - 2.5}L${x + 2.5},${y + 2.5}M${x - 2.5},${y + 2.5}L${x + 2.5},${y - 2.5}`}
                 stroke={palette.line}
-                strokeWidth="1"
+                {...stroke(1)}
                 opacity=".6"
               />
             );
@@ -742,7 +750,7 @@ export function Plot({
                 d={arrow(x, y, gradient, length, 0, 5)}
                 fill="none"
                 stroke={palette.line}
-                strokeWidth="1.2"
+                {...stroke(1.2)}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 opacity=".75"
@@ -762,7 +770,7 @@ export function Plot({
               r={g.radius * scale}
               fill="none"
               stroke={palette.line}
-              strokeWidth="1.5"
+              {...stroke(1.5)}
               opacity=".85"
             />
           ))}
@@ -779,7 +787,7 @@ export function Plot({
                       r={r * scale}
                       fill="none"
                       stroke={palette.line}
-                      strokeWidth="1"
+                      {...stroke(1)}
                       opacity=".55"
                     />
                   ),
@@ -840,7 +848,7 @@ export function Plot({
             d={path(moving.path.map((p) => p && carry(placed, p)))}
             fill="none"
             stroke={palette.line}
-            strokeWidth="1.2"
+            {...stroke(1.2)}
             strokeLinejoin="round"
             opacity=".75"
           />
@@ -852,7 +860,7 @@ export function Plot({
             r="3.5"
             fill="none"
             stroke={palette.line}
-            strokeWidth="1.5"
+            {...stroke(1.5)}
           />
         </g>
       )}
@@ -863,7 +871,7 @@ export function Plot({
           d={path(result.second)}
           fill="none"
           stroke={palette.base}
-          strokeWidth="1.4"
+          {...stroke(1.4)}
           opacity=".55"
         />
       )}
@@ -876,7 +884,7 @@ export function Plot({
           r={inversion.radius * scale}
           fill="none"
           stroke={palette.line}
-          strokeWidth="1.4"
+          {...stroke(1.4)}
           strokeDasharray="7 5"
           opacity=".85"
         />
@@ -888,7 +896,7 @@ export function Plot({
           d={path(result.input)}
           fill="none"
           stroke={palette.derived}
-          strokeWidth="1.5"
+          {...stroke(1.5)}
           strokeLinejoin="round"
           opacity=".5"
         />
@@ -901,7 +909,7 @@ export function Plot({
             d={path(points)}
             fill="none"
             stroke={palette.base}
-            strokeWidth="2.3"
+            {...stroke(2.3)}
             strokeLinejoin="round"
           />
         ))}
@@ -913,7 +921,7 @@ export function Plot({
             d={path(c.points) + (c.closed ? "Z" : "")}
             fill="none"
             stroke={palette.base}
-            strokeWidth="2.3"
+            {...stroke(2.3)}
             strokeLinejoin="round"
           />
         ))}
@@ -925,7 +933,7 @@ export function Plot({
             d={path(points)}
             fill="none"
             stroke={palette.base}
-            strokeWidth="2.3"
+            {...stroke(2.3)}
             strokeLinejoin="round"
           />
         ))}
@@ -934,7 +942,7 @@ export function Plot({
           d={path(result.base)}
           fill="none"
           stroke={palette.base}
-          strokeWidth="2.3"
+          {...stroke(2.3)}
         />
       )}
       {layers.lines &&
@@ -960,7 +968,7 @@ export function Plot({
               d={arrow(x, y, a.velocity, 0, 0, 5.5)}
               fill="none"
               stroke={palette.base}
-              strokeWidth="2"
+              {...stroke(2)}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
@@ -976,7 +984,7 @@ export function Plot({
             r="3.5"
             fill={palette.bg}
             stroke={palette.base}
-            strokeWidth="1.5"
+            {...stroke(1.5)}
           />
         ))}
       {layers.lines && epicycles && (
@@ -1003,7 +1011,7 @@ export function Plot({
           d={path(result.derived, dashed ? false : undefined, breaks)}
           fill="none"
           stroke={palette.derived}
-          strokeWidth="2.6"
+          {...stroke(2.6)}
           strokeLinejoin="round"
         />
       )}
@@ -1013,7 +1021,7 @@ export function Plot({
           d={path(result.derived, true)}
           fill="none"
           stroke={palette.derived}
-          strokeWidth="2.3"
+          {...stroke(2.3)}
           strokeDasharray="6 4"
         />
       )}
@@ -1028,7 +1036,7 @@ export function Plot({
                 d={path(c.points) + (c.closed ? "Z" : "")}
                 fill="none"
                 stroke={palette.derived}
-                strokeWidth="1.5"
+                {...stroke(1.5)}
                 strokeLinejoin="round"
                 opacity=".8"
               />
@@ -1049,7 +1057,7 @@ export function Plot({
               d={path(member.points)}
               fill="none"
               stroke={palette.derived}
-              strokeWidth="1.8"
+              {...stroke(1.8)}
               strokeLinejoin="round"
               opacity=".9"
             />

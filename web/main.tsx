@@ -20,6 +20,8 @@ import { presets } from "./presets";
 import { ExampleGallery } from "./ExampleGallery";
 import { planarExamples, planarThumbnail } from "./examples";
 import { Plot, type Layers } from "./Plot";
+import { LineWeightField } from "./LineWeightField";
+import type { LineWeight } from "./line-weight";
 import {
   isHarmonic,
   maxTerms,
@@ -296,6 +298,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     virtual: true,
     axes: false,
   });
+  const [weight, setWeight] = useState<LineWeight>("regular");
   const modeHelp = useHelp();
   const narrow = useMediaQuery("(max-width: 700px)");
   const expressions = useDisclosure("expressions");
@@ -1132,6 +1135,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     setBounds(study.bounds);
     setLength(study.length);
     setLayers(study.layers);
+    setWeight(study.weight);
     setRestoredCamera({ reset: reset + 1, camera: study.camera });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -1155,6 +1159,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     poleKind,
     layers,
     camera: camera.current,
+    weight,
     animation: animationSettings.current ?? defaultAnimation,
   });
   // Where the error is shown: under the input that failed to parse, or
@@ -2076,6 +2081,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                       </label>
                     ))}
                 </div>
+                <LineWeightField value={weight} onChange={setWeight} />
                 {unparametrized ? null : expert ? (
                   number(
                     "Numerical samples",
@@ -2108,6 +2114,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               getCurrentView={() => manualView.current}
               dark={dark}
               layers={layers}
+              weight={weight}
               frame={frame}
               client={client}
               length={length}
@@ -2154,6 +2161,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 result={result}
                 config={shown.config}
                 layers={layers}
+                weight={weight}
                 dark={dark}
                 length={animation?.length ?? length}
                 reset={reset}

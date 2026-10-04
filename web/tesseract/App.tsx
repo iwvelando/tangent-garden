@@ -24,6 +24,7 @@ import {
   playbackEngineCount,
 } from "../engine-client";
 import { play as playFrames } from "../playback";
+import { LineWeightField } from "../LineWeightField";
 import { ExampleGallery } from "../ExampleGallery";
 import { tesseractExamples, tesseractThumbnail } from "../examples";
 import { ExportImageMenu } from "../ExportImageMenu";
@@ -1020,6 +1021,16 @@ export default function TesseractApp({
                     </label>
                   ))}
                 </div>
+                <LineWeightField
+                  value={layers.weight ?? "regular"}
+                  onChange={(weight) => {
+                    controller.current?.abort();
+                    // Regular is the drawing without a weight, as before.
+                    setLayers(({ weight: _, ...l }) =>
+                      weight === "regular" ? l : { ...l, weight },
+                    );
+                  }}
+                />
               </section>
             </FieldErrorContext.Provider>
             {failure && !claimedHere && <StudyError message={failure} />}

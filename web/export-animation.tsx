@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import type { LineWeight } from "./line-weight";
 import { Plot, type Layers } from "./Plot";
 import type { AnimationView } from "./animation";
 import { mp4Sink, webpSink } from "./export-sinks";
@@ -20,6 +21,7 @@ type Options = {
   settings: ExportSettings;
   dark: boolean;
   layers: Layers;
+  weight: LineWeight;
   signal: AbortSignal;
   // Frames calculated ahead of drawing, in order; at least 1.
   lookahead: number;
@@ -31,7 +33,7 @@ type Options = {
 // Rendering is independent of the live DOM, manual camera, and wall clock.
 // Only compressed frames accumulate; cancellation discards them without a file.
 export async function exportAnimation(options: Options): Promise<Blob> {
-  const { signal, sample, onProgress, dark, layers } = options;
+  const { signal, sample, onProgress, dark, layers, weight } = options;
   const timing = exportTiming(options.duration, options.fps, options.cyclic);
   const canvas = document.createElement("canvas");
   const encoding = exportEncoding(options.settings);
@@ -61,6 +63,7 @@ export async function exportAnimation(options: Options): Promise<Blob> {
           result={view.frame.result}
           config={view.frame.config}
           layers={layers}
+          weight={weight}
           dark={dark}
           length={view.length}
           animation={view}

@@ -8,6 +8,7 @@ import {
   type Timing,
 } from "../study-link";
 import { objects, defaultConfig } from "./objects";
+import { lineWeightSchema } from "../line-weight";
 import {
   initialView,
   motions,
@@ -121,6 +122,7 @@ const layers: SchemaOf<Layers> = {
     missingGuide: { optional: "boolean" },
     connectors: { optional: "boolean" },
     comparison: { optional: "boolean" },
+    weight: { optional: lineWeightSchema },
   },
 };
 const defaultLayers: Layers = {
