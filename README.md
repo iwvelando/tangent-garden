@@ -27,7 +27,7 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - Signed normal offsets (parallel curves) that keep their cusps and swallowtails, with distance animation, evenly spaced offset stacks, and optional generating circles whose envelope is the offsets ±R.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.
 - A curvature probe at any sample: tangent, normal, osculating circle and center of curvature, the point's construction lines, signed curvature, radius and arc length read out and plotted, moving along the curve as an animation or held while parameters vary.
-- Optional refinement between samples, inserting points where a chord strays from the curve, the curve built on, and a pedal-type or inverted curve, with gaps and poles found between samples left open.
+- Optional refinement between samples, inserting points where a chord strays from the curve, the curve built on, and a pedal-type, evolute, offset (every member of a stack) or inverted curve, with gaps and poles found between samples left open.
 - Line weights in every notebook: fine, regular, bold, or one-pixel hairlines, live and in every export.
 - Curve-reveal and multi-parameter animations with four camera modes.
 - **Copy link** in every notebook: a link that reopens your study, layers, view, and animation setup for anyone, carried in the URL fragment with no server.

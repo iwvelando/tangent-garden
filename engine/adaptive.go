@@ -27,15 +27,19 @@ type RefinedPath struct {
 
 // AdaptiveResult holds the refined curves a study draws: the base curve, the
 // derived input a construction acts on, and the derived curve where it is
-// defined pointwise from its input's position and tangent (a pedal,
-// contrapedal or orthotomic curve, or an inversion's image). A path that is
-// not drawn, or cannot be evaluated between samples, is absent: every other
-// construction is built along the curve or as an envelope, and keeps its
-// uniform samples.
+// defined pointwise from its input's position and stencil derivatives (a
+// pedal, contrapedal or orthotomic curve, the evolute, an offset or each
+// member of an offset stack, or an inversion's image). A path that is not
+// drawn, or cannot be evaluated between samples, is absent: the involute
+// and rolling curves are built along the curve, and caustics and envelopes
+// as envelopes of a family, so they keep their uniform samples.
 type AdaptiveResult struct {
 	Base    *RefinedPath `json:"base,omitempty"`
 	Input   *RefinedPath `json:"input,omitempty"`
 	Derived *RefinedPath `json:"derived,omitempty"`
+	// Family holds an offset stack's members, refined each on its own, in
+	// the order of the result's family.
+	Family []*RefinedPath `json:"family,omitempty"`
 }
 
 // refines reports whether a curve format can be evaluated between samples:
@@ -107,23 +111,21 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi)
 		note(found)
 	}
-	var derived func(float64) *Vec
-	switch {
-	case usesPole(q.Kind):
-		project := map[string]func(p, d, pole Vec) *Vec{"pedal": Pedal, "contrapedal": Contrapedal, "orthotomic": Orthotomic}[q.Kind]
-		derived = func(t float64) *Vec {
-			p := g(t)
-			d, _ := derivatives(g, t, lo, hi)
-			return project(p, d, q.Pole)
+	if derived := q.derivedAt(f, g); derived != nil {
+		if out.Inversion != nil {
+			// The passage test's breaks give way to refinement's.
+			out.Inversion.Breaks = []int{}
 		}
-	case q.Kind == "inversion":
-		derived = func(t float64) *Vec { return Invert(g(t), q.Inversion.Center, q.Inversion.Radius) }
-		// The passage test's breaks give way to refinement's.
-		out.Inversion.Breaks = []int{}
-	}
-	if derived != nil {
 		a.Derived, found = refinePath(out.Derived, broken, derived, lo, hi)
 		note(found)
+	}
+	// Each member of a stack is broken where its input is, not where
+	// another member is: one member's fold is not a break in its neighbors.
+	for _, member := range out.Family {
+		if at := q.memberAt(f, g, member); at != nil {
+			path, _ := refinePath(member.Points, broken, at, lo, hi)
+			a.Family = append(a.Family, path)
+		}
 	}
 	if out.Inversion != nil {
 		for i := range broken {
@@ -132,4 +134,59 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 		sort.Ints(out.Inversion.Breaks)
 	}
 	out.Adaptive = a
+}
+
+// derivedAt evaluates a study's derived curve at any t from the base f and
+// the input g, or is nil when that curve is not defined pointwise.
+func (q Request) derivedAt(f, g curveFunc) func(float64) *Vec {
+	lo, hi := q.Curve.Min, q.Curve.Max
+	switch {
+	case usesPole(q.Kind):
+		project := map[string]func(p, d, pole Vec) *Vec{"pedal": Pedal, "contrapedal": Contrapedal, "orthotomic": Orthotomic}[q.Kind]
+		return func(t float64) *Vec {
+			p := g(t)
+			d, _ := derivatives(g, t, lo, hi)
+			return project(p, d, q.Pole)
+		}
+	case q.Kind == "evolute":
+		return q.along(f, g, func(p, d, dd Vec) *Vec { return Evolute(p, d, dd) })
+	case q.Kind == "offset" && !q.Stack.Enabled:
+		return q.along(f, g, func(p, d, _ Vec) *Vec { return Offset(p, d, q.Distance) })
+	case q.Kind == "inversion":
+		return func(t float64) *Vec { return Invert(g(t), q.Inversion.Center, q.Inversion.Radius) }
+	}
+	return nil
+}
+
+// memberAt evaluates a member of an offset stack at any t, or is nil for a
+// family that is not a stack (a circle envelope's branches).
+func (q Request) memberAt(f, g curveFunc, member Path) func(float64) *Vec {
+	if q.Kind != "offset" || !q.Stack.Enabled {
+		return nil
+	}
+	return q.along(f, g, func(p, d, _ Vec) *Vec { return Offset(p, d, member.Distance) })
+}
+
+// along evaluates a construction built from its input's position and
+// stencil derivatives at any t, undefined wherever a sample there would be:
+// where the base or the input is undefined, or the derivatives either
+// needs are ill-conditioned, each checked as at the samples.
+func (q Request) along(f, g curveFunc, construct func(p, d, dd Vec) *Vec) func(float64) *Vec {
+	lo, hi := q.Curve.Min, q.Curve.Max
+	base := baseStencil(lo, hi)
+	return func(t float64) *Vec {
+		p := f(t)
+		d, dd := base.derivatives(f, t)
+		if !p.Valid() || !base.conditioned(f, t, d, dd, derivativeOrder(q)) {
+			return nil
+		}
+		if composed(q.Input) {
+			p = g(t)
+			d, dd = base.derivatives(g, t)
+			if !p.Valid() || !inputStencil(lo, hi).conditioned(g, t, d, dd, constructionOrder(q.Kind)) {
+				return nil
+			}
+		}
+		return construct(p, d, dd)
+	}
 }

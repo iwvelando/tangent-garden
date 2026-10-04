@@ -726,6 +726,7 @@ export function reveal(result: Result, progress: number): Result {
       base: revealRefined(result.adaptive.base, last),
       input: revealRefined(result.adaptive.input, last),
       derived: revealRefined(result.adaptive.derived, last),
+      family: result.adaptive.family?.map((path) => revealRefined(path, last)!),
     },
     moving: result.moving && {
       ...result.moving,

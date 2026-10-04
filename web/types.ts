@@ -229,11 +229,13 @@ export type Diagnostics = {
   clipped: number;
 };
 // Mirrors engine.AdaptiveResult: the refined base curve, derived input, and
-// pedal-type or inverted curve, each absent when it is not refined.
+// derived curve (pedal-type, evolute, offset or inverted), each absent when
+// it is not refined, and an offset stack's members in family order.
 export type AdaptiveResult = {
   base?: RefinedPath<Vec>;
   input?: RefinedPath<Vec>;
   derived?: RefinedPath<Vec>;
+  family?: RefinedPath<Vec>[];
 };
 export type Ray = {
   sampleIndex: number;

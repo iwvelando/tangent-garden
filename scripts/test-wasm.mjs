@@ -66,6 +66,29 @@ assert.ok(
   ),
 );
 assert.ok(Math.max(...planarImage.points.map((p) => p.y)) > 49.99);
+// Each member of an offset stack is refined on its own: the unit circle's
+// offsets toward its center by 0.2 and 0.5 are circles of radius 0.8 and 0.5.
+const planarStack = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "offset",
+      curve: { ...config.curve, x: "cos(t)", y: "sin(t)" },
+      stack: { enabled: true, from: 0.2, to: 0.5, count: 2 },
+      samples: 64,
+      adaptive: true,
+    }),
+  ),
+).adaptive.family;
+assert.equal(planarStack.length, 2);
+for (const [k, radius] of [0.8, 0.5].entries()) {
+  const member = planarStack[k];
+  assert.ok(member.inserted > 0 && member.breaks === 0);
+  assert.equal(member.points.length, member.at.length);
+  assert.ok(
+    member.points.every((p) => Math.abs(Math.hypot(p.x, p.y) - radius) < 1e-7),
+  );
+}
 console.log("Planar refinement WASM bridge passed.");
 // The probe's diagnostics: a circle of radius 2 turning left has κ = ½ and
 // its center at the origin at every sample, and a quarter turn's length π.
