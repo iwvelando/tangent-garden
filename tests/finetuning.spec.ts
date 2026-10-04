@@ -77,8 +77,6 @@ test("help, branding, and completed animation settings are usable without stoppi
     "src",
     /tangent-garden\.svg$/,
   );
-  await page.getByRole("button", { name: "About control modes" }).click();
-  await expect(page.getByText(/Expert mode takes exact/)).toBeVisible();
   await page.getByRole("button", { name: "About shape parameter a" }).click();
   await expect(
     page.getByRole("textbox", { name: "Shape parameter a" }),

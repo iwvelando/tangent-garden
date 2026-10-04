@@ -336,7 +336,10 @@ test("closure text stays put while unrelated inputs recompute", async ({
       characterData: true,
     });
   });
-  const slider = page.getByRole("slider", { name: "Construction lines" });
+  const slider = page.getByRole("spinbutton", {
+    name: "Construction lines",
+    exact: true,
+  });
   for (const lines of [50, 70, 90, 30, 40]) {
     await slider.fill(String(lines));
     await page.waitForTimeout(30);

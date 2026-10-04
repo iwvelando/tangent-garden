@@ -542,7 +542,9 @@ test("closure text stays put while amplitudes and phases recompute", async ({
   });
   await field(page, "Radius r₂").fill("0.5");
   await field(page, "Phase φ₃").fill("1");
-  await page.getByRole("slider", { name: "Construction lines" }).fill("50");
+  await page
+    .getByRole("spinbutton", { name: "Construction lines", exact: true })
+    .fill("50");
   await settled(page);
   expect(await page.evaluate(() => [...(window as any).closureSeen])).toEqual([
     "Every frequency is a whole number, so the curve is closed: it repeats after t spans 2π.",

@@ -75,10 +75,7 @@ import {
 import {
   Field,
   FieldErrorContext,
-  HelpText,
   StudyError,
-  HelpToggle,
-  useHelp,
   type FieldErrorTarget,
 } from "./Field";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
@@ -261,7 +258,6 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     min: boundText(config.curve.min),
     max: boundText(config.curve.max),
   });
-  const [expert, setExpert] = useState(false);
   const [animation, setAnimation] = useState<AnimationView | null>(null);
   const [animationRunning, setAnimationRunning] = useState(false);
   // The engine's error, and the configuration path of the field it names.
@@ -312,15 +308,13 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     axes: false,
   });
   const [weight, setWeight] = useState<LineWeight>("regular");
-  const modeHelp = useHelp();
   const narrow = useMediaQuery("(max-width: 700px)");
   const expressions = useDisclosure("expressions");
   const indices = useDisclosure("indices");
   const diagnostics = useDisclosure("diagnostics");
   const refinable = refinesBetweenSamples(config.curve.format);
   const samplesHelp =
-    "More samples trace the curve more finely and take longer to compute; they do not raise numerical precision on their own." +
-    (expert ? " Whole numbers from 64 to 32,768." : "") +
+    "Whole numbers from 64 to 32,768. More samples trace the curve more finely and take longer to compute; they do not raise numerical precision on their own." +
     (refinable
       ? ` Refining between samples halves a sample interval, at most ${refineDepth} times, wherever the chord drawn across it strays from the curve by more than 1/5000 of the radius fitted to that curve's samples, judged at three points along it, and stops after ${refineBudget.toLocaleString("en-US")} added points per curve. It refines the curve, a derived curve it is built on, and a pedal, contrapedal, orthotomic or inverted curve; every other construction, and its lines, stay on the evenly spaced samples. A gap or jump it finds between samples breaks the curve and the curves built on it there; a passage of the inverted curve through the center is found the same way. A feature narrower than its three points can still be missed.`
       : "");
@@ -1237,34 +1231,6 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 thumbnail={planarThumbnail}
                 dark={dark}
               />
-              <fieldset
-                className="mode-switch"
-                aria-labelledby="controls-legend"
-              >
-                <legend>
-                  <span id="controls-legend">Controls</span>
-                  <HelpToggle topic="control modes" help={modeHelp} />
-                </legend>
-                <div className="mode-options">
-                  {[false, true].map((value) => (
-                    <label key={String(value)}>
-                      <input
-                        type="radio"
-                        name="controls-mode"
-                        checked={expert === value}
-                        onChange={() => setExpert(value)}
-                      />
-                      {value ? "Expert mode" : "Simple mode"}
-                    </label>
-                  ))}
-                </div>
-                <HelpText help={modeHelp}>
-                  Simple mode offers presets and sliders. Expert mode takes
-                  exact whole numbers: 64–32,768 samples and 2–2,048
-                  construction lines, never more lines than samples. Larger
-                  values take longer to compute and draw.
-                </HelpText>
-              </fieldset>
               <div className="tabs" role="group" aria-label="Construction">
                 {tabs.map((k) => {
                   const active =
@@ -2023,34 +1989,16 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                     : "03"}{" "}
                   / THE DRAWING
                 </div>
-                {expert ? (
-                  number(
-                    "Construction lines",
-                    config.lines,
-                    (n) => update({ lines: n }),
-                    {
-                      step: 1,
-                      min: 2,
-                      max: Math.min(2048, config.samples),
-                      help: "Whole numbers from 2 to 2,048, no more than the samples. Dense drawings slow interaction and export.",
-                    },
-                  )
-                ) : (
-                  <Field label="Construction lines" value={config.lines}>
-                    <input
-                      type="range"
-                      min={Math.min(
-                        8,
-                        Number.isFinite(config.lines) ? config.lines : 8,
-                      )}
-                      max={Math.max(
-                        180,
-                        Number.isFinite(config.lines) ? config.lines : 180,
-                      )}
-                      value={config.lines}
-                      onChange={(e) => update({ lines: +e.target.value })}
-                    />
-                  </Field>
+                {number(
+                  "Construction lines",
+                  config.lines,
+                  (n) => update({ lines: n }),
+                  {
+                    step: 1,
+                    min: 2,
+                    max: Math.min(2048, config.samples),
+                    help: "Whole numbers from 2 to 2,048, no more than the samples. Dense drawings slow interaction and export.",
+                  },
                 )}
                 {optical && (
                   <Field label="Ray length" value={`${length.toFixed(1)}×`}>
@@ -2102,31 +2050,13 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                     ))}
                 </div>
                 <LineWeightField value={weight} onChange={setWeight} />
-                {unparametrized ? null : expert ? (
+                {!unparametrized &&
                   number(
                     "Numerical samples",
                     config.samples,
                     (n) => update({ samples: n }),
                     { step: 1, min: 64, max: 32768, help: samplesHelp },
-                  )
-                ) : (
-                  <Field label="Numerical samples" help={samplesHelp}>
-                    <select
-                      value={config.samples}
-                      onChange={(e) => update({ samples: +e.target.value })}
-                    >
-                      {![500, 1000, 2000, 4000].includes(config.samples) && (
-                        <option value={config.samples}>
-                          {config.samples} · custom
-                        </option>
-                      )}
-                      <option value="500">500 · quick study</option>
-                      <option value="1000">1,000 · standard</option>
-                      <option value="2000">2,000 · fine</option>
-                      <option value="4000">4,000 · finest</option>
-                    </select>
-                  </Field>
-                )}
+                  )}
                 {refinable && (
                   <RefineBetweenSamples
                     checked={!!config.adaptive}

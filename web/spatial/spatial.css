@@ -20,6 +20,12 @@
   padding-right: 12px;
   font-size: 12px;
 }
+/* A subsection that opens with a field starts as close under its heading as
+   one that opens with a checkbox: the fieldset's padding already clears it. */
+.spatial-probe > div > .field:first-child,
+.spatial-sight > div > .pair:first-child > .field {
+  margin-top: 0;
+}
 /* Checkbox labels only: a Field's label keeps the shared .field-label row,
    in line with its help toggle and value. */
 .spatial-layers label,

@@ -46,11 +46,13 @@ test("domain animation identifies the zero-width final interval", async ({
   expect((await definition(page)).curve.min).toBe(Math.PI);
 });
 
-test("expert counts reach 32,768 samples and 2,048 lines without truncation and persist in simple mode", async ({
+test("counts are exact whole numbers from the start, reaching 32,768 samples and 2,048 lines without truncation", async ({
   page,
 }) => {
   await ready(page);
-  await page.getByRole("radio", { name: "Expert mode" }).check();
+  // There is no control mode to switch: the counts are always exact fields.
+  await expect(page.getByRole("group", { name: "Controls" })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: /mode/ })).toHaveCount(0);
   await page
     .getByRole("spinbutton", { name: "Numerical samples", exact: true })
     .fill("32768");
@@ -63,13 +65,6 @@ test("expert counts reach 32,768 samples and 2,048 lines without truncation and 
   expect((await definition(page)).samples).toBe(32768);
   expect((await definition(page)).lines).toBe(2048);
   expect(await page.locator("#artwork line").count()).toBe(2048);
-  await page.getByRole("radio", { name: "Simple mode" }).check();
-  await expect(
-    page.getByRole("combobox", { name: "Numerical samples" }),
-  ).toHaveValue("32768");
-  await expect(
-    page.getByRole("slider", { name: /Construction lines/ }),
-  ).toHaveValue("2048");
 });
 
 test("hold current view captures pan and zoom through playback, scrubbing and SVG export", async ({

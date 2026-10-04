@@ -25,32 +25,6 @@ fieldset {
 fieldset:disabled {
   opacity: 0.65;
 }
-.mode-switch {
-  margin-top: 18px;
-}
-.mode-switch legend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  font-size: 12.5px;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-.mode-options {
-  display: flex;
-  gap: 16px;
-}
-.mode-switch label {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 13px;
-}
-.mode-switch input {
-  accent-color: #367e78;
-  margin: 0;
-}
 .system-theme {
   font-size: 12px;
   padding: 8px;
@@ -190,6 +164,9 @@ summary:focus-visible {
   --border: #e0e2da;
   --muted: #5f6d69;
   --text: #263c3d;
+  /* Section headings and the rules above them, set apart from field labels. */
+  --section: #2f6f68;
+  --section-rule: #2f6f6859;
   background: var(--panel);
   color: var(--text);
   min-height: 100vh;
@@ -200,6 +177,8 @@ summary:focus-visible {
   --border: #344349;
   --muted: #91a4a9;
   --text: #d9e6e4;
+  --section: #7fbcae;
+  --section-rule: #7fbcae4d;
 }
 header {
   height: 80px;
@@ -383,6 +362,10 @@ aside {
 }
 .section-label {
   margin-bottom: 18px;
+  color: var(--section);
+}
+aside section {
+  border-top-color: var(--section-rule);
 }
 .field {
   display: block;
@@ -427,8 +410,7 @@ aside {
   border-color: var(--text);
   color: var(--panel);
 }
-.field .hint,
-.mode-switch .hint {
+.field .hint {
   margin: 8px 0 0;
 }
 input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
