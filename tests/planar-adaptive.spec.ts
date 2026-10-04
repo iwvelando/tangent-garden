@@ -48,11 +48,22 @@ test("reveal shows refined points up to the last revealed sample", () => {
     warnings: [],
     invalid: 0,
     input: [p(0), p(1), p(2), p(3)],
-    adaptive: { base: refined, input: refined, derived: refined },
+    adaptive: {
+      base: refined,
+      input: refined,
+      derived: refined,
+      family: [refined, refined],
+    },
   };
   // Two of three intervals: through sample 2, before the points beyond it.
   const shown = reveal(result, 2 / 3).adaptive!;
-  for (const path of [shown.base!, shown.input!, shown.derived!]) {
+  expect(shown.family).toHaveLength(2);
+  for (const path of [
+    shown.base!,
+    shown.input!,
+    shown.derived!,
+    ...shown.family!,
+  ]) {
     expect(path.at).toEqual([0, 0.5, 1, 1.5, 2]);
     expect(path.points).toEqual([p(0), p(0.5), p(1), null, p(2)]);
   }
@@ -197,4 +208,139 @@ test("a derived input is drawn from its refined points", async ({ page }) => {
   const uniform = vertices(await input.getAttribute("d"));
   expect(uniform).toBeLessThanOrEqual(240);
   expect(refined).toBeGreaterThan(10 * uniform);
+});
+
+const ripplesStar = "Ripples around a five-pointed star",
+  wavefront = "A wavefront through a three-pointed star";
+
+// A drawn path's vertices in page units, with null at each move (a break).
+const pathPoints = (d: string | null) =>
+  [...(d ?? "").matchAll(/([ML])(-?[\d.]+),(-?[\d.]+)/g)].flatMap((m) => [
+    ...(m[1] === "M" ? [null] : []),
+    { x: Number(m[2]), y: Number(m[3]) },
+  ]);
+type Point = { x: number; y: number };
+const segmentDistance = (p: Point, a: Point, b: Point) => {
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    l = dx * dx + dy * dy,
+    s =
+      l > 0
+        ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l))
+        : 0;
+  return Math.hypot(p.x - a.x - s * dx, p.y - a.y - s * dy);
+};
+// The distance from p to a drawn polyline.
+const toCurve = (p: Point, curve: (Point | null)[]) => {
+  let best = Infinity;
+  for (let k = 1; k < curve.length; k++) {
+    const a = curve[k - 1],
+      b = curve[k];
+    if (a && b) best = Math.min(best, segmentDistance(p, a, b));
+  }
+  return best;
+};
+// The distance from the curve of each chord's midpoint on a drawn offset,
+// as a share of the distance at its vertices: an outward offset with no
+// folds is the edge of the band within its distance of the curve, so its
+// chords stay at that distance only where they follow it.
+const chordReach = (offset: (Point | null)[], curve: (Point | null)[]) => {
+  const vertices = offset.filter((p): p is Point => !!p),
+    reach = vertices.map((p) => toCurve(p, curve)).sort((a, b) => a - b);
+  const distance = reach[Math.floor(reach.length / 2)];
+  let nearest = Infinity;
+  for (let k = 1; k < offset.length; k++) {
+    const a = offset[k - 1],
+      b = offset[k];
+    if (a && b)
+      nearest = Math.min(
+        nearest,
+        toCurve({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, curve),
+      );
+  }
+  return {
+    spread: reach[reach.length - 1] / reach[0],
+    nearest: nearest / distance,
+  };
+};
+
+test("ripples around a five-pointed star swing round its tips at their own distance when refined", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: ripplesStar });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  const stack = art(page).getByTestId("offset-family").locator("path");
+  await expect(stack).toHaveCount(16);
+  const outermost = async () => {
+    const distances = await stack.evaluateAll((paths) =>
+      paths.map((p) => Math.abs(Number(p.getAttribute("data-distance")))),
+    );
+    return stack.nth(distances.indexOf(Math.max(...distances)));
+  };
+  const drawn = await stack.evaluateAll((paths) =>
+    paths.map((p) => p.getAttribute("d")),
+  );
+  const refined = chordReach(
+    pathPoints(await (await outermost()).getAttribute("d")),
+    pathPoints(await base(page).getAttribute("d")),
+  );
+  // Every vertex lies at the offset's distance from the curve, and so does
+  // every chord between them, to within the page's rounding.
+  expect(refined.spread).toBeLessThan(1.01);
+  expect(refined.nearest).toBeGreaterThan(0.99);
+  await refine(page).uncheck();
+  await ready(page);
+  await expect(readout(page)).toHaveCount(0);
+  const uniform = await stack.evaluateAll((paths) =>
+    paths.map((p) => p.getAttribute("d")),
+  );
+  drawn.forEach((d, k) => {
+    expect(vertices(uniform[k])).toBeLessThanOrEqual(1000);
+    expect(vertices(d)).toBeGreaterThan(vertices(uniform[k]));
+  });
+  // Round each tip, a chord of the evenly spaced samples cuts the corner.
+  const corners = chordReach(
+    pathPoints(await (await outermost()).getAttribute("d")),
+    pathPoints(await base(page).getAttribute("d")),
+  );
+  expect(corners.nearest).toBeLessThan(0.9);
+  await refine(page).check();
+  await ready(page);
+  await expect(stack).toHaveCount(16);
+  expect(
+    await stack.evaluateAll((paths) => paths.map((p) => p.getAttribute("d"))),
+  ).toEqual(drawn);
+});
+
+test("a wavefront through a three-pointed star opens refined and stays refined as its distance moves", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: wavefront });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  const offset = art(page).getByTestId("derived-curve");
+  const opening = vertices(await offset.getAttribute("d"));
+  expect(opening).toBeGreaterThan(1000);
+  await openAnimation(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("parameters");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Halfway through its time it turns back at the end of its track, the
+  // farthest outward offset: a band's edge.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(art(page)).toHaveAttribute("data-animation-progress", "1");
+  const outward = chordReach(
+    pathPoints(await offset.getAttribute("d")),
+    pathPoints(await base(page).getAttribute("d")),
+  );
+  expect(outward.spread).toBeLessThan(1.01);
+  expect(outward.nearest).toBeGreaterThan(0.99);
 });

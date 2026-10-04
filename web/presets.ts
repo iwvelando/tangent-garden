@@ -900,4 +900,49 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "Ripples around a five-pointed star",
+    note: "Sixteen parallel curves outside a star whose five points are nearly sharp; each swings round every point in a half circle of its own radius",
+    config: {
+      ...base,
+      kind: "offset",
+      // A hypotrochoid just short of the five-cusped hypocycloid: its points
+      // have radius of curvature about 0.0003, so the normal turns half a
+      // turn within a few samples there.
+      curve: {
+        ...base.curve,
+        x: "4*cos(t) + 0.98*cos(4*t)",
+        y: "4*sin(t) - 0.98*sin(4*t)",
+      },
+      // d = −0.1k for k = 1…16, outward.
+      stack: { enabled: true, from: -0.1, to: -1.6, count: 16 },
+      lines: 100,
+      adaptive: true,
+    },
+  },
+  {
+    title: "A wavefront through a three-pointed star",
+    note: "One parallel curve moves from inside a star with three nearly sharp points, where it crosses itself, to outside, rounding each point in a half circle",
+    config: {
+      ...base,
+      kind: "offset",
+      curve: {
+        ...base.curve,
+        x: "2*cos(t) + 0.98*cos(2*t)",
+        y: "2*sin(t) - 0.98*sin(2*t)",
+      },
+      distance: 0.8,
+      lines: 90,
+      adaptive: true,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 12,
+      tracks: [{ target: "distance", from: "0.8", to: "-1.2" }],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
 ];

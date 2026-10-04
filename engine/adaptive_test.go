@@ -527,3 +527,245 @@ func TestRefinementBreaksAConstructionWhereItsInputBreaks(t *testing.T) {
 		t.Fatalf("evolute broken in interval %d, its pedal curve in %d", g, gap(r.Adaptive.Derived))
 	}
 }
+
+// The ellipse (a cos t, b sin t) and its exact constructions, from closed
+// forms: the evolute ((a²−b²)/a cos³ t, (b²−a²)/b sin³ t), and the point at
+// distance d along the left unit normal (−b cos t, −a sin t)/|r′|.
+const ellipseA, ellipseB = 2.0, 1.0
+
+func ellipseEvolute(s float64) Vec {
+	a, b := ellipseA, ellipseB
+	return Vec{(a*a - b*b) / a * math.Pow(math.Cos(s), 3), (b*b - a*a) / b * math.Pow(math.Sin(s), 3)}
+}
+
+func ellipseOffset(d float64) func(float64) Vec {
+	return func(s float64) Vec {
+		a, b := ellipseA, ellipseB
+		n := Vec{-b * math.Cos(s), -a * math.Sin(s)}.Unit()
+		return Vec{a * math.Cos(s), b * math.Sin(s)}.Add(n.Mul(d))
+	}
+}
+
+func ellipseRequest(kind string) Request {
+	q := request(kind, "2*cos(t)", "sin(t)", 0, 2*math.Pi)
+	q.Samples = 64
+	return q
+}
+
+// checkRefined asserts that a refined construction keeps its uniform
+// samples, puts every point on the exact curve, and follows it to within the
+// tolerance where the uniform samples do not.
+func checkRefined(t *testing.T, q Request, path *RefinedPath, uniform []*Vec, exact func(float64) Vec) {
+	t.Helper()
+	if path == nil || path.Inserted == 0 || path.Exhausted || path.Unresolved != 0 || path.Breaks != 0 {
+		t.Fatalf("not refined cleanly: %+v", path)
+	}
+	checkUniform(t, path, uniform)
+	steps := make([]float64, len(uniform))
+	for i := range steps {
+		steps[i] = param(q, float64(i))
+	}
+	if e := chordError(uniform, steps, exact); e < 4*path.Tolerance {
+		t.Fatalf("the uniform samples already follow it: error %g", e)
+	}
+	ts := positions(q, path)
+	for k, p := range path.Points {
+		if p != nil && p.Sub(exact(ts[k])).Norm() > path.Tolerance/2 {
+			t.Fatalf("point %d at t = %g is %v, want %v", k, ts[k], *p, exact(ts[k]))
+		}
+	}
+	if e := chordError(path.Points, ts, exact); e > 1.5*path.Tolerance {
+		t.Fatalf("refined chord error %g exceeds %g", e, path.Tolerance)
+	}
+}
+
+// The evolute of an ellipse, an astroid stretched along its axes, has four
+// cusps at the ellipse's vertices, which the uniform samples blunt.
+func TestRefinementOfTheEvolute(t *testing.T) {
+	q := ellipseRequest("evolute")
+	uniform := compute(t, q)
+	r := compute(t, adaptive(q))
+	checkRefined(t, q, r.Adaptive.Derived, r.Derived, ellipseEvolute)
+	// Nothing else in the result changes: the construction lines keep the
+	// samples.
+	r.Adaptive = nil
+	a, _ := json.Marshal(r)
+	b, _ := json.Marshal(uniform)
+	if string(a) != string(b) {
+		t.Fatal("refinement changed the rest of the result")
+	}
+}
+
+// An offset of the ellipse farther inward than its smallest radius of
+// curvature, b²/a = 0.5, crosses its evolute and folds into a swallowtail at
+// each end of the major axis: two cusps and a crossing, which the uniform
+// samples cut short.
+func TestRefinementOfAnOffsetPastItsEvolute(t *testing.T) {
+	q := ellipseRequest("offset")
+	q.Distance = 0.9
+	r := compute(t, adaptive(q))
+	checkRefined(t, q, r.Adaptive.Derived, r.Derived, ellipseOffset(q.Distance))
+}
+
+// Every member of an offset stack is refined on its own.
+func TestRefinementOfAnOffsetStack(t *testing.T) {
+	q := ellipseRequest("offset")
+	q.Stack = Stack{Enabled: true, From: 0.3, To: 1.2, Count: 4}
+	r := compute(t, adaptive(q))
+	if r.Adaptive.Derived != nil {
+		t.Fatal("a stack has no single derived curve to refine")
+	}
+	if len(r.Adaptive.Family) != len(r.Family) {
+		t.Fatalf("%d refined members, want %d", len(r.Adaptive.Family), len(r.Family))
+	}
+	for k, member := range r.Family {
+		if k == 0 {
+			// Inside every radius of curvature the offset is as smooth
+			// as the ellipse, and refinement adds little; it must still
+			// lie on the exact offset.
+			path := r.Adaptive.Family[k]
+			checkUniform(t, path, member.Points)
+			ts := positions(q, path)
+			if e := chordError(path.Points, ts, ellipseOffset(member.Distance)); e > 1.5*path.Tolerance {
+				t.Fatalf("member %d: refined chord error %g exceeds %g", k, e, path.Tolerance)
+			}
+			continue
+		}
+		checkRefined(t, q, r.Adaptive.Family[k], member.Points, ellipseOffset(member.Distance))
+	}
+}
+
+// The evolute of a cubic runs off to infinity at its inflection, between
+// samples, where the uniform samples join it straight across.
+func TestRefinementBreaksTheEvoluteAtAnInflection(t *testing.T) {
+	q := request("evolute", "t", "(t - 0.0037)^3", -1, 1)
+	q.Samples = 64
+	r := compute(t, adaptive(q))
+	for i, p := range r.Derived {
+		if p == nil {
+			t.Fatalf("uniform evolute already open at sample %d", i)
+		}
+	}
+	path := r.Adaptive.Derived
+	if path == nil || path.Breaks != 1 {
+		t.Fatalf("evolute not broken once: %+v", path)
+	}
+	checkUniform(t, path, r.Derived)
+	for k, p := range path.Points {
+		if p == nil {
+			if x := param(q, path.At[k]); math.Abs(x-0.0037) > 2.0/63 {
+				t.Fatalf("break at %g, far from the inflection", x)
+			}
+		}
+	}
+}
+
+// An offset and each stack member stay broken where the base breaks
+// between samples, at a pole.
+func TestRefinementBreaksAnOffsetWhereItsBaseBreaks(t *testing.T) {
+	gap := func(p *RefinedPath) int {
+		for k, q := range p.Points {
+			if q == nil {
+				return int(p.At[k])
+			}
+		}
+		return -1
+	}
+	// Built on the hyperbola's pedal curve, which passes continuously below
+	// the asymptote, the offsets are continuous there too: only the base's
+	// break opens them.
+	q := request("offset", "t", "1/(t - 0.0131)", -1, 1)
+	q.Samples, q.Distance, q.Input, q.Pole = 64, 0.05, "pedal", Vec{0.5, 0.5}
+	r := compute(t, adaptive(q))
+	g := gap(r.Adaptive.Base)
+	if g < 0 || gap(r.Adaptive.Input) != g || gap(r.Adaptive.Derived) != g {
+		t.Fatalf("base broken in interval %d, its pedal input in %d, its offset in %d", g, gap(r.Adaptive.Input), gap(r.Adaptive.Derived))
+	}
+	q.Stack = Stack{Enabled: true, From: -0.05, To: 0.05, Count: 3}
+	r = compute(t, adaptive(q))
+	for k, member := range r.Adaptive.Family {
+		if gap(member) != g {
+			t.Fatalf("stack member %d broken in interval %d, base in %d", k, gap(member), g)
+		}
+	}
+}
+
+// Between samples the evolute and offsets are undefined wherever a sample
+// would be: evaluated at each sample, they return exactly the uniform
+// study's point, or nothing where it has none. The exception is an offset
+// just past a reversal of its input's tangent, which the uniform study opens
+// over the whole interval before it and the evaluator leaves to
+// refinement's jump test.
+func TestRefinedConstructionsAgreeWithTheSamples(t *testing.T) {
+	// A parabola whose second derivative steps from 2 to 3 at c, a quarter
+	// of the stencil's spacing past the sample at 0: the curve is smooth
+	// enough to offset there, but its curvature is not to be trusted.
+	kink := request("evolute", "t", "t^2 + 0.5*(t - 0.00005)*abs(t - 0.00005)", -1, 1)
+	kink.Samples = 65
+	evolute := ellipseRequest("evolute")
+	cases := map[string]Request{
+		"evolute":           evolute,
+		"evolute at a kink": kink,
+	}
+	for name, q := range map[string]Request{"offset": ellipseRequest("offset"), "offset at a kink": kink} {
+		q.Kind, q.Distance = "offset", 0.3
+		cases[name] = q
+	}
+	for name, input := range map[string]string{"offset": "offset", "evolute": "evolute"} {
+		q := evolute
+		q.Input, q.Distance = input, 0.3
+		if input == "evolute" {
+			q.Kind = "offset"
+		}
+		cases[name+" input"] = q
+	}
+	stacked := ellipseRequest("offset")
+	stacked.Input, stacked.Stack = "evolute", Stack{Enabled: true, From: -0.4, To: 0.4, Count: 3}
+	cases["stack on the evolute"] = stacked
+	gaps := map[string]int{}
+	for name, q := range cases {
+		r := compute(t, q)
+		f, err := compile(q.Curve)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := inputCurve(q.Input, f, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
+		curves := map[float64][]*Vec{q.Distance: r.Derived}
+		ats := map[float64]func(float64) *Vec{q.Distance: q.derivedAt(f, g)}
+		for _, member := range r.Family {
+			curves[member.Distance] = member.Points
+			ats[member.Distance] = q.memberAt(f, g, member)
+		}
+		step := (q.Curve.Max - q.Curve.Min) / float64(q.Samples-1)
+		for distance, points := range curves {
+			at := ats[distance]
+			if at == nil {
+				t.Fatalf("%s: no evaluator", name)
+			}
+			for j, want := range points {
+				s := q.Curve.Min + float64(j)*step
+				got := at(s)
+				switch {
+				case want != nil && (got == nil || *got != *want):
+					t.Fatalf("%s at sample %d: %v, want %v", name, j, got, *want)
+				case want == nil && got != nil:
+					// Only past a cusp of the ellipse's evolute, at a
+					// multiple of π/2 within the step before, which the
+					// uniform study opens. At the cusp itself the input's
+					// tangent is made of rounding, and neither has a point.
+					cusp := math.Ceil((s-step)/(math.Pi/2)) * math.Pi / 2
+					if q.Kind != "offset" || q.Input != "evolute" || cusp >= s {
+						t.Fatalf("%s at sample %d: %v where the samples have none", name, j, *got)
+					}
+				case want == nil:
+					gaps[name]++
+				}
+			}
+		}
+	}
+	// The kink's curvature is ill-conditioned at the sample beside it, so
+	// its evolute has a gap there, while its offset does not.
+	if gaps["evolute at a kink"] == 0 || gaps["offset at a kink"] != 0 {
+		t.Fatalf("gaps: %v", gaps)
+	}
+}

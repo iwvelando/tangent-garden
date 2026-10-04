@@ -366,13 +366,7 @@ func Compute(q Request) (Result, error) {
 				out.Harmonic.Positions = append(out.Harmonic.Positions, s)
 			}
 		}
-		stableSample := true
-		switch derivativeOrder(q) {
-		case 1:
-			stableSample = stableTangent(f, t, lo, hi, dp)
-		case 2:
-			stableSample = stable(f, t, lo, hi, dp, ddp)
-		}
+		stableSample := baseStencil(lo, hi).conditioned(f, t, dp, ddp, derivativeOrder(q))
 		if !p.Valid() || !stableSample {
 			out.Base[j] = nil
 			out.Invalid++
@@ -387,12 +381,7 @@ func Compute(q Request) (Result, error) {
 			p = g(t)
 			out.Input[j] = point(p)
 			dp, ddp = derivatives(g, t, lo, hi)
-			switch checks := inputStencil(lo, hi); constructionOrder(q.Kind) {
-			case 1:
-				stableSample = checks.stableTangent(g, t, dp)
-			case 2:
-				stableSample = checks.stable(g, t, dp, ddp)
-			}
+			stableSample = inputStencil(lo, hi).conditioned(g, t, dp, ddp, constructionOrder(q.Kind))
 			if !p.Valid() || !stableSample {
 				out.Invalid++
 				if arcLength {

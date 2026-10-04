@@ -1158,7 +1158,7 @@ export function Plot({
               key={k}
               data-distance={rings ? undefined : member.distance}
               data-branch={member.branch}
-              d={path(member.points)}
+              d={path((refined.family?.[k] ?? member).points)}
               fill="none"
               stroke={palette.derived}
               {...stroke(1.8)}

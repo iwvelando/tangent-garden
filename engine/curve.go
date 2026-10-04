@@ -173,6 +173,19 @@ func stable(f curveFunc, t, lo, hi float64, d, dd Vec) bool {
 	return baseStencil(lo, hi).stable(f, t, d, dd)
 }
 
+// conditioned reports whether the derivatives d and dd of f at t that a
+// construction of the given order needs agree with the half step's: none
+// for order 0, the first for order 1, both for order 2.
+func (s stencil) conditioned(f curveFunc, t float64, d, dd Vec, order int) bool {
+	switch order {
+	case 1:
+		return s.stableTangent(f, t, d)
+	case 2:
+		return s.stable(f, t, d, dd)
+	}
+	return true
+}
+
 func (s stencil) stableTangent(f curveFunc, t float64, d Vec) bool {
 	a, _ := derivativesAtStep(f, t, s.lo, s.hi, s.h/2)
 	return a.Valid() && d.Valid() &&
