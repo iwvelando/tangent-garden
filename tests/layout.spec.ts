@@ -434,6 +434,67 @@ test("every notebook starts its controls at the same height on a desktop", async
   }
 });
 
+test("section headings and their rules stand apart from field labels in every notebook and theme", async ({
+  page,
+}) => {
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("/");
+    for (const dimension of ["2d", "3d", "4d"] as const) {
+      if (dimension !== "2d") await chooseNotebook(page, dimension);
+      await expect(page.locator(artworks[dimension])).toBeVisible();
+      const aside = page.locator(".app:visible aside");
+      const style = await aside.evaluate((a) => {
+        const color = (e: Element | null) => e && getComputedStyle(e).color;
+        const section = a.querySelector("section");
+        return {
+          labels: [...a.querySelectorAll(".section-label")].map(color),
+          field: color(a.querySelector(".field-label")),
+          rule: section && getComputedStyle(section).borderTopColor,
+          plain: getComputedStyle(a).borderRightColor,
+        };
+      });
+      const where = `${dimension} ${scheme}`;
+      expect(style.labels.length, where).toBeGreaterThan(1);
+      expect(new Set(style.labels).size, where).toBe(1);
+      expect(style.labels[0], where).not.toBe(style.field);
+      // The rule above a section takes the heading's hue, not the border's.
+      expect(style.rule, where).not.toBe(style.plain);
+    }
+  }
+});
+
+// A 3D subsection that opens with a field starts as close under its heading
+// as one that opens with a checkbox.
+test("3D subsections open the same distance under their headings", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await chooseNotebook(page, "3d");
+  await expect(page.locator(artworks["3d"])).toBeVisible();
+  const gaps = await page
+    .locator(".spatial-layers, .spatial-cut, .spatial-sight, .spatial-probe")
+    .evaluateAll((sets) =>
+      sets.map((set) => {
+        const legend = set.querySelector("legend")!.getBoundingClientRect();
+        const first = set
+          .querySelector("legend ~ div label, legend ~ label")!
+          .getBoundingClientRect();
+        return [
+          set.querySelector("legend")!.textContent,
+          first.top - legend.bottom,
+        ];
+      }),
+    );
+  expect(gaps.map(([name]) => name)).toEqual(
+    expect.arrayContaining(["Lines", "See through", "Cut away"]),
+  );
+  const reference = gaps[0][1] as number;
+  for (const [name, gap] of gaps)
+    expect(Math.abs((gap as number) - reference), String(name)).toBeLessThan(2);
+});
+
 // On phones every notebook puts its view buttons on their own row, under the
 // title and aligned with it, then the drawing, then the controls with the
 // examples, and only then the explanation.

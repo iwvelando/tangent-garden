@@ -49,7 +49,7 @@ test("theme works when local storage is unavailable", async ({ page }) => {
   await expect(page.locator("#artwork")).toBeVisible();
 });
 
-test("bounds use the Go constant parser, and expert values are preserved", async ({
+test("bounds use the Go constant parser, and exact counts are validated", async ({
   page,
 }) => {
   await page.goto("/");
@@ -68,7 +68,6 @@ test("bounds use the Go constant parser, and expert values are preserved", async
   await page.getByRole("textbox", { name: "to", exact: true }).fill("t+1");
   await expect(page.getByRole("alert")).toContainText("not allowed");
   await page.getByRole("textbox", { name: "to", exact: true }).fill("2*pi");
-  await page.getByRole("radio", { name: "Expert mode" }).check();
   await page
     .getByRole("spinbutton", { name: "Numerical samples", exact: true })
     .fill("777");
@@ -83,14 +82,6 @@ test("bounds use the Go constant parser, and expert values are preserved", async
   q = JSON.parse((await page.locator("#artwork desc").textContent())!);
   expect(q.samples).toBe(777);
   expect(q.lines).toBe(240);
-  await page.getByRole("radio", { name: "Simple mode" }).check();
-  await expect(
-    page.getByRole("combobox", { name: "Numerical samples" }),
-  ).toHaveValue("777");
-  await expect(
-    page.getByRole("slider", { name: /Construction lines/ }),
-  ).toHaveValue("240");
-  await page.getByRole("radio", { name: "Expert mode" }).check();
   await page
     .getByRole("spinbutton", { name: "Construction lines", exact: true })
     .fill("12.5");

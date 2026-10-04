@@ -92,8 +92,9 @@ for (const scheme of ["light", "dark"] as const) {
       await page
         .getByRole("combobox", { name: "Source coordinates" })
         .selectOption("polar");
-      for (const topic of ["control modes", "source coordinates"])
-        await page.getByRole("button", { name: `About ${topic}` }).click();
+      await page
+        .getByRole("button", { name: "About source coordinates" })
+        .click();
       await page.getByText("How the refractive indices work").click();
       await openExportSettings(page);
       await expectLegible(page);

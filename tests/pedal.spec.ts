@@ -70,7 +70,6 @@ test("pedal projections, custom controls, invalid input recovery, and SVG export
   );
   expect(errors.length).toBeGreaterThan(50);
   expect(Math.max(...errors)).toBeLessThan(1e-6);
-  await page.getByRole("radio", { name: "Expert mode" }).check();
   await page.getByRole("spinbutton", { name: "Numerical samples" }).fill("777");
   await page
     .getByRole("spinbutton", { name: "Construction lines", exact: true })

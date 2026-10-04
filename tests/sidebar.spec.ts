@@ -21,10 +21,6 @@ test("explanations are available on demand instead of always visible", async ({
   await shapeHelp.click();
   await expect(shape).toHaveAccessibleDescription("");
 
-  await page.getByRole("button", { name: "About control modes" }).click();
-  await expect(aside.getByText(/Expert mode takes exact/)).toBeVisible();
-  await expect(page.getByRole("group", { name: "Controls" })).toBeVisible();
-
   // Hints that carry live values or orientation stay visible.
   await page.getByRole("button", { name: "diacaustic", exact: true }).click();
   await expect(aside.getByText(/Ratio n₁\/n₂ = /)).toBeVisible();
