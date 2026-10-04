@@ -1,22 +1,28 @@
 // Seeing through the drawing: a drawing setting, not part of the study, like
 // the cut. Sheets can be drawn see-through, and lines behind the nearest
-// sheet can be drawn faint or dashed instead of hidden. This module holds
-// the setting's fields, limits, words and rules, read by the panel, the
+// sheet can be drawn faint or dashed instead of hidden. Lines are drawn as
+// strokes of a chosen weight, or as hairlines. This module holds the
+// setting's fields, limits, words and rules, read by the panels, the
 // renderer, linework, links and exports alike.
 
 export type SheetSight = "opaque" | "through";
 export type HiddenLines = "hide" | "faint" | "dashed";
+export type LineWeight = "hairline" | "fine" | "regular" | "bold";
 export type Sight = {
   sheets: SheetSight;
   // Each sheet layer's opacity α when sheets are seen through.
   opacity: number;
   hidden: HiddenLines;
+  weight: LineWeight;
 };
 export const defaultSight: Sight = {
   sheets: "opaque",
   opacity: 0.35,
   hidden: "hide",
+  weight: "regular",
 };
+// Links made before line weights drew hairlines, and keep them.
+export const legacyWeight: LineWeight = "hairline";
 export const opacityRange: [number, number] = [0.05, 0.8];
 // Lines behind a sheet: faint ones at this opacity, dashed ones at the
 // other, over whatever is in front of them.
@@ -37,13 +43,86 @@ export const hiddenLines: { value: HiddenLines; label: string }[] = [
   { value: "faint", label: "Faint" },
   { value: "dashed", label: "Dashed" },
 ];
+// Line weights. A stroke's width is a share of the page, as in the 2D
+// notebook: its weight in pixels of a 1000 × 760 page, scaled with the page
+// (strokeUnit), so the live drawing, stills and videos agree in proportion
+// at any size. A hairline is one device pixel at any size, as every 3D line
+// was before weights.
+export const lineWeights: { value: LineWeight; label: string }[] = [
+  { value: "hairline", label: "Hairline" },
+  { value: "fine", label: "Fine" },
+  { value: "regular", label: "Regular" },
+  { value: "bold", label: "Bold" },
+];
+export const weightScale: Record<Exclude<LineWeight, "hairline">, number> = {
+  fine: 0.6,
+  regular: 1,
+  bold: 1.6,
+};
+// Device pixels per page pixel: the page's 1000 × 760 fitted inside.
+export const strokeUnit = (size: { width: number; height: number }) =>
+  Math.min(size.width / 1000, size.height / 760);
+// Each ink's regular weight, in page pixels: the curve heaviest, as in the
+// 2D notebook (2.3), then families, focal lines, construction lines, and
+// the receding strings and rays lightest. The probe and the cut's edge are
+// read against everything else.
+export function inkWeight(ink: number) {
+  if (ink > 7.5) return 1.6;
+  if (ink > 4.5) return 1.1;
+  if (ink > 3.5) return 0.8;
+  if (ink > 2.5) return 1.5;
+  if (ink > 1.5) return 2.2;
+  return 0.9;
+}
+// A line batch's stroke width in device pixels on a page of this size, or
+// undefined for a hairline. A batch may carry its own weight.
+export function strokeWidth(
+  batch: { ink: number; weight?: number },
+  weight: LineWeight,
+  size: { width: number; height: number },
+) {
+  if (weight === "hairline") return undefined;
+  return (
+    (batch.weight ?? inkWeight(batch.ink)) *
+    weightScale[weight] *
+    strokeUnit(size)
+  );
+}
+// The polygon offset factor that pushes sheets back: their depth's change
+// across the widest stroke's half width, and a pixel more, so a stroke
+// lying on a sheet is not cut by the sheet's slope beneath it. Hairlines
+// need only the pixel. The drawing and the vector export's sampled hiding
+// use the same.
+export function sheetOffset(
+  lines: { ink: number; weight?: number }[],
+  weight: LineWeight,
+  size: { width: number; height: number },
+) {
+  if (weight === "hairline") return 1;
+  return (
+    1 + Math.max(0.5, ...lines.map((b) => strokeWidth(b, weight, size)! / 2))
+  );
+}
+// The weight as an export's metadata records it, only for strokes, so files
+// drawn with hairlines are unchanged.
+export function strokeRecord(spec: Sight) {
+  if (spec.weight === "hairline") return undefined;
+  return {
+    weight: spec.weight,
+    statement: `Lines are strokes ${weightScale[spec.weight]} × their layer's weight wide, in pixels of a 1000 × 760 page scaled to the image, with round ends.`,
+  };
+}
+
 // Field names, as errors name them.
 export const sightFields = { opacity: "Sheet opacity α" } as const;
 export const sightHelp = {
   sheets:
     "See-through draws every sheet layer at once, so folds, inner sheets and lines inside a surface show. At each point of the page, the color is the mean of the shaded colors of all n sheet layers there, laid over the background with opacity 1 − (1 − α)ⁿ: the more layers overlap, the denser the drawing. Every layer counts the same whatever its depth, so it needs no sorting and intersecting sheets are drawn exactly; it is a way to see folds, not a model of light through glass. The study itself is unchanged.",
   opacity: `Each layer's opacity, from ${opacityRange[0]} to ${opacityRange[1]}. Two layers cover 1 − (1 − α)² of the background, three 1 − (1 − α)³.`,
+  weight: `How wide lines are drawn. Fine, regular and bold strokes are a share of the drawing, so they keep their proportion in the live drawing, stills and videos at any size: regular draws the curve ${inkWeight(2)} px and construction lines ${inkWeight(1)} px wide on a 1000 × 760 page, fine ${weightScale.fine}× and bold ${weightScale.bold}× that. Hairlines are one device pixel at any size, as 3D drawings were before line weights, so they grow fainter as an export grows larger. Older links open with hairlines.`,
   hidden: `Lines behind the nearest sheet: hidden, as an opaque drawing hides them; faint, at ${faintOpacity * 100}% opacity; or dashed, at ${dashedOpacity * 100}% opacity, one dash every ${dashPeriod * 100}% of the shorter side of the drawing, measured along the line in space, so a line receding from view has shorter dashes. A line lying on a sheet is in front of it. Lines never hide other lines.`,
+  unstroked:
+    "This device's graphics cannot draw strokes (they need instanced drawing), so lines are drawn as hairlines here and in exports.",
   unavailable:
     "This device's graphics cannot draw see-through sheets (they need half-float render targets), so sheets are drawn opaque here and in exports.",
 };
@@ -91,6 +170,28 @@ export function arcLengths(data: Float32Array): Float64Array {
         data[b + 1] - data[a + 1],
         data[b + 2] - data[a + 2],
       );
+  }
+  return out;
+}
+// Each line vertex's neighbor across its joint (4 floats: the point and 1),
+// or zeros where its polyline starts or ends: a segment's start joins the
+// previous segment's start when the previous one ended exactly there, and
+// its end joins the next segment's end likewise, as arcLengths joins them.
+// Strokes mitre their ends toward these.
+export function strokeJoins(data: Float32Array): Float32Array {
+  const count = data.length / 7,
+    out = new Float32Array(4 * count);
+  const same = (a: number, b: number) =>
+    data[7 * a] === data[7 * b] &&
+    data[7 * a + 1] === data[7 * b + 1] &&
+    data[7 * a + 2] === data[7 * b + 2];
+  const put = (v: number, from: number) => {
+    out.set(data.subarray(7 * from, 7 * from + 3), 4 * v);
+    out[4 * v + 3] = 1;
+  };
+  for (let v = 0; v + 1 < count; v += 2) {
+    if (v > 0 && same(v, v - 1)) put(v, v - 2);
+    if (v + 3 < count && same(v + 1, v + 2)) put(v + 1, v + 3);
   }
   return out;
 }

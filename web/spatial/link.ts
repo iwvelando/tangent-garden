@@ -33,7 +33,7 @@ import {
   type ProbeMotion,
 } from "./probe";
 import { cutPlane, defaultCut, maxCutValue, type Cut } from "./cut";
-import { defaultSight, opacityRange, type Sight } from "./sight";
+import { defaultSight, legacyWeight, opacityRange, type Sight } from "./sight";
 import {
   defaultPath,
   maxKeyName,
@@ -80,7 +80,7 @@ export type SpatialStudy = {
   // The cutaway plane, off in links made before it.
   cut: Cut;
   // Seeing through sheets, opaque and hiding hidden lines in links made
-  // before it.
+  // before it, and the line weight, hairlines in links made before it.
   sight: Sight;
   // The manual camera's projection, orthographic in links made before it.
   projection: Projection;
@@ -420,6 +420,9 @@ const sight: SchemaOf<Sight> = {
     sheets: { options: { opaque: true, through: true } },
     opacity: { range: opacityRange },
     hidden: { options: { hide: true, faint: true, dashed: true } },
+    weight: {
+      options: { hairline: true, fine: true, regular: true, bold: true },
+    },
   },
 };
 
@@ -570,7 +573,12 @@ export function spatialStudy(value: unknown): SpatialStudy {
     animation,
     probe: probed,
     cut: cutting,
-    sight: conform(raw.sight, sight, defaultSight, "sight"),
+    sight: conform(
+      raw.sight,
+      sight,
+      { ...defaultSight, weight: legacyWeight },
+      "sight",
+    ),
     projection: conform(
       raw.projection,
       projection,

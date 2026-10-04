@@ -232,6 +232,8 @@ export default function SpatialApp({
   const [sight, setSight] = useState<Sight>(defaultSight);
   const userSight = useMemo(() => sightSpec(sight), [sight]);
   const [seeThrough, setSeeThrough] = useState(true);
+  // Whether the device could draw strokes rather than hairlines.
+  const [stroking, setStroking] = useState(true);
   // The manual camera's projection: kept by Reset view, carried by links.
   const [lensing, setLensing] = useState<Projection>("orthographic");
   const viewport = useRef<View | undefined>(undefined),
@@ -2966,6 +2968,7 @@ export default function SpatialApp({
                 onSight={setSight}
                 error={userSight.error}
                 unavailable={!seeThrough}
+                unstroked={!stroking}
               />
             </FieldErrorContext.Provider>
           </ScalarStatus.Provider>
@@ -3309,8 +3312,12 @@ export default function SpatialApp({
           // The entered cut while it is on, as a preset's fingerprint
           // includes it (see examples/index.ts).
           data-cut={cut.enabled ? JSON.stringify(cut) : undefined}
-          // The entered sight when it changes the drawing, likewise.
-          data-sight={isPlain(sight) ? undefined : JSON.stringify(sight)}
+          // The entered sight when it is not the default, likewise.
+          data-sight={
+            isPlain(sight) && sight.weight === defaultSight.weight
+              ? undefined
+              : JSON.stringify(sight)
+          }
           // The projection when perspective, and the chosen preset's opening
           // view, likewise.
           data-projection={lensing === "orthographic" ? undefined : lensing}
@@ -3424,6 +3431,7 @@ export default function SpatialApp({
                   cut={drawnCut}
                   sight={userSight.spec}
                   onSeeThrough={setSeeThrough}
+                  onStrokes={setStroking}
                   projection={lensing}
                 />
               ) : (

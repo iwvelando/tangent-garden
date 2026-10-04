@@ -27,7 +27,8 @@ function study(sight: Partial<Sight> | null, mode = "orbit") {
     layers: { ...defaultLayers },
     view: { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 },
     animation: { mode, camera: "current", duration: 5, tracks: [] },
-    ...(sight && { sight: { ...defaultSight, ...sight } }),
+    // Hairlines, as a link without a sight draws them.
+    ...(sight && { sight: { ...defaultSight, weight: "hairline", ...sight } }),
   };
 }
 async function open(page: Page, s: unknown) {

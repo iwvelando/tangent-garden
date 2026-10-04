@@ -178,6 +178,16 @@ Seeing through also opens the earlier studies without cutting them: **An ellipso
 
 The see-through drawing is not multisampled, so the outlines of see-through sheets are not antialiased, and where many tiny triangles meet in one pixel (a chart's pole) the pixel shows the one at its center. It needs half-float render targets; a device without them draws the sheets opaque and says so.
 
+## Line weights
+
+The construction lines are the drawing, so their weight matters. **Lines → Weight** draws them as strokes whose width is a share of the page: the curve heaviest, families lighter, construction lines lightest, so the curve stays legible over hundreds of lines, and a large still keeps the look of the live drawing instead of thinning every line to one pixel. **Hairline** is the drawing as it was before weights. Three examples are drawn for it:
+
+- **A cinquefoil strung to its center** projects the origin onto 240 of the (2, 5) knot's tangent lines. The perpendiculars from the pole to each tangent foot form a fan whose density traces the knot's loops; in fine strokes the hub stays a gradient and the knot reads above it, where hairlines merge the hub into one grey patch and lose the knot among the strings.
+- **An engraved trefoil tube** draws 150 contact circles and eight meridians on the tube in bold strokes, with **Lines behind sheets → Dashed**, so the far half of every circle and the knot inside the tube appear as dashes, like an engraving or a draftsman's hidden lines. Hairline dashes are a pixel wide and nearly vanish.
+- **A helix unwound into a veil** unwinds five involutes from a rising helix with 240 taut strings: the filaments are drawn heavier than the veil of strings between them. Switch to **Hairline** to see every line, filament and string, drawn alike.
+
+Near a sheet's outline a stroke just behind the sheet can show by up to half its width, because sheets are pushed back slightly so strokes lying on them stay whole.
+
 ## Flying the camera
 
 **Animate → Fly through key views** moves the camera alone, through views you choose. Frame the drawing as you like, with orbit, pan and zoom, and press **+ Add the drawing's view**; frame the next and add it, up to twelve. **Show** puts the drawing's camera at a view so you can adjust it, and **Set to drawing** takes the adjusted view back. Name the views: the names appear beside the timeline as the camera reaches each view or flies between two, and never in the drawing.

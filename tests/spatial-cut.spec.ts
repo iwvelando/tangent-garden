@@ -74,9 +74,14 @@ test("line drawings of studies without a cut are unchanged", async ({
 }) => {
   await ready(page);
   const seen: Record<string, { every: string; shown: string }> = {};
+  // Hairlines draw exactly as every study did before line weights.
+  const weight = page
+    .getByRole("group", { name: "Lines" })
+    .getByLabel("Weight", { exact: true });
   for (const label of Object.keys(recorded)) {
     await choosePreset(page, { label });
     await settled(page);
+    await weight.selectOption("hairline");
     seen[label] = {
       every: sha(predating(await download(page, every))),
       shown: sha(predating(await download(page, shown))),

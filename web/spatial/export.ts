@@ -5,7 +5,7 @@ import { linework, linesSvg, sampleStep } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
 import { probeDrawing } from "./probe";
 import { cutRecord, type CutSpec } from "./cut";
-import { defaultSight, sightRecord, type Sight } from "./sight";
+import { defaultSight, sightRecord, strokeRecord, type Sight } from "./sight";
 import { mp4Sink, webpSink } from "../export-sinks";
 import {
   exportEncoding,
@@ -44,6 +44,10 @@ function studyTitle(frame: Frame) {
   }[composes(frame.config) ? frame.config.input : "base"];
   return title[frame.config.construction] + on;
 }
+// The line weight in metadata, only when lines are strokes, so files drawn
+// with hairlines are unchanged.
+const strokesOf = (record: ReturnType<typeof strokeRecord>) =>
+  record ? { strokes: record } : {};
 const xml = (s: string) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
@@ -82,7 +86,13 @@ export async function imageFile(
       view,
       layers,
       dark,
-      { ...page, occlusion, hidden: sight.hidden, signal },
+      {
+        ...page,
+        occlusion,
+        hidden: sight.hidden,
+        weight: sight.weight,
+        signal,
+      },
       probe?.batches,
       cut,
     );
@@ -103,6 +113,7 @@ export async function imageFile(
         dark,
         ...probed,
         ...(lined ? { sight: lined } : {}),
+        ...strokesOf(strokeRecord(sight)),
         rendering: "vector linework",
         occlusion: {
           mode: occlusion,
@@ -126,6 +137,8 @@ export async function imageFile(
       sight,
       sight.sheets === "through" && renderer.seeThrough(),
     );
+    // Strokes, when this device can draw them; otherwise hairlines.
+    const stroked = renderer.strokes() ? strokeRecord(sight) : undefined;
     renderer.draw(view, layers, dark, page);
     signal.throwIfAborted();
     const png = await new Promise<Blob>((resolve, reject) =>
@@ -140,7 +153,7 @@ export async function imageFile(
     // claim a painter-sorted mesh is an exact vector hidden-surface solution.
     return new Blob(
       [
-        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, ...probed, ...(seen ? { sight: seen } : {}), rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, ...probed, ...(seen ? { sight: seen } : {}), ...strokesOf(stroked), rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
       ],
       { type: "image/svg+xml" },
     );

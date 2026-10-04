@@ -18,6 +18,9 @@ import {
   defaultSight,
   faintOpacity,
   isPlain,
+  sheetOffset,
+  strokeJoins,
+  strokeWidth,
   type Sight,
 } from "./sight";
 
@@ -60,10 +63,145 @@ void main() {
   float w = 1.0 - P.z * lens.x;
   gl_Position = vec4((P.x + pan.x) * framing.x, (P.y + pan.y) * framing.y, -P.z * framing.z + lens.y * w + lens.z, w);
 }`;
-const fragmentSource = `
+// Strokes: each line segment as a quad two pixels longer and wider than its
+// stroke on the page, one instance per segment of a line batch's pairs.
+// corner.x picks the segment's start or end, corner.y its side. The segment
+// is clipped to the near plane before projection, so a line passing behind
+// a perspective eye keeps its visible part. S carries the page position
+// across and along the segment in pixels, times w with w itself, so the
+// fragment stage can undo perspective interpolation: these are page
+// distances, linear on the page.
+const strokeVertexSource = `
+attribute vec2 corner;
+attribute vec3 from;
+attribute vec3 to;
+attribute float phase;
+attribute float arcFrom;
+attribute float arcTo;
+// The neighbors across each end's joint, with 1, or 0 where the polyline
+// starts or ends (see sight.ts's strokeJoins).
+attribute vec4 before;
+attribute vec4 after;
+uniform float dashes;
+uniform mat3 rotation;
+uniform vec3 framing;
+uniform vec3 lens;
+uniform vec3 center;
+uniform vec2 pan;
+uniform vec4 cut;
+uniform vec2 viewport;
+uniform float halfWidth;
+uniform float caps;
+varying float U;
+varying float C;
+varying highp float D;
+varying highp vec3 S;
+varying highp float L;
+// Whether the start and the end are mitred joints rather than ends.
+varying vec2 O;
+vec4 clipOf(vec3 p) {
+  vec3 q = rotation * (p - center);
+  float w = 1.0 - q.z * lens.x;
+  return vec4((q.x + pan.x) * framing.x, (q.y + pan.y) * framing.y, -q.z * framing.z + lens.y * w + lens.z, w);
+}
+// Whether an end at page point p is a mitred joint with its neighbor: the
+// neighbor is ahead of the near plane, both segments have length, and the
+// polyline turns there by less than 120°. turn is the neighbor's segment's
+// direction on the page, along the polyline.
+float joint(vec4 neighbor, float flag, vec2 p, bool atEnd, vec2 dir, float len, vec2 scale, out vec2 turn) {
+  turn = dir;
+  if (flag < 0.5 || len <= 1e-4) return 0.0;
+  vec4 n = clipOf(neighbor.xyz);
+  if (n.z + n.w < 0.0 || n.w <= 1e-6) return 0.0;
+  vec2 q = n.xy / n.w * scale;
+  vec2 side = atEnd ? q - p : p - q;
+  float l = length(side);
+  if (l <= 1e-4) return 0.0;
+  turn = side / l;
+  return dot(turn, dir) < -0.5 ? 0.0 : 1.0;
+}
+void main() {
+  vec4 a = clipOf(from), b = clipOf(to);
+  float ca = dot(cut.xyz, from - center) - cut.w,
+    cb = dot(cut.xyz, to - center) - cut.w;
+  float sa = arcFrom, sb = arcTo;
+  U = phase;
+  // Clip space keeps z ≥ −w: the near plane.
+  float na = a.z + a.w, nb = b.z + b.w;
+  if (na < 0.0 && nb < 0.0) {
+    C = 0.0; D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0);
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    return;
+  }
+  // A clipped end is an end, not a joint.
+  float joinA = before.w, joinB = after.w;
+  if (na < 0.0) {
+    float t = na / (na - nb);
+    a = mix(a, b, t); ca = mix(ca, cb, t); sa = mix(sa, sb, t);
+    joinA = 0.0;
+  } else if (nb < 0.0) {
+    float t = nb / (nb - na);
+    b = mix(b, a, t); cb = mix(cb, ca, t); sb = mix(sb, sa, t);
+    joinB = 0.0;
+  }
+  vec2 scale = 0.5 * viewport;
+  vec2 pa = a.xy / a.w * scale, pb = b.xy / b.w * scale;
+  vec2 d = pb - pa;
+  float len = length(d);
+  vec2 dir = len > 1e-4 ? d / len : vec2(1.0, 0.0);
+  vec2 across = vec2(-dir.y, dir.x);
+  float reach = halfWidth + 1.0;
+  bool end = corner.x > 0.5;
+  // Both joints, at every corner, so the quad agrees on them.
+  vec2 turnA, turnB;
+  float atA = joint(before, joinA, pa, false, dir, len, scale, turnA),
+    atB = joint(after, joinB, pb, true, dir, len, scale, turnB);
+  float joined = end ? atB : atA;
+  vec2 turn = end ? turnB : turnA;
+  vec4 e = end ? b : a;
+  vec2 shift;
+  float along;
+  if (joined > 0.5) {
+    // The bisector of the two segments' normals: both segments put this
+    // corner at the same point, reach from either centerline.
+    vec2 m = normalize(across + vec2(-turn.y, turn.x));
+    shift = m * corner.y * (reach / max(dot(m, across), 0.25));
+    along = (end ? len : 0.0) + dot(shift, dir);
+  } else {
+    // Round ends reach past the segment; butt ends only to their fringe.
+    float ext = caps > 0.5 ? reach : 0.5;
+    shift = dir * (end ? ext : -ext) + across * corner.y * reach;
+    along = end ? len + ext : -ext;
+  }
+  gl_Position = vec4(e.xy + shift / scale * e.w, e.z, e.w);
+  S = vec3(along, corner.y * reach, 1.0) * e.w;
+  L = len;
+  O = vec2(atA, atB);
+  C = end ? cb : ca;
+  D = (end ? sb : sa) * dashes;
+}`;
+// The drawing's colors, for sheets and hairlines, and for strokes with
+// STROKE defined, where coverage of the stroke becomes alpha.
+const fragmentBody = `
 precision mediump float;
+#ifndef STROKE
 varying vec3 N;
 varying vec3 P;
+#else
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+varying highp vec3 S;
+varying highp float L;
+#else
+varying mediump vec3 S;
+varying mediump float L;
+#endif
+// The vertex stage's half width and ends, under their own names: a uniform
+// in both stages would need one precision in both.
+uniform float coverHalf;
+uniform float coverCaps;
+uniform float fade;
+varying vec2 O;
+#endif
 varying float U;
 varying float C;
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -119,7 +257,9 @@ void main() {
   } else if (ink > 0.5) {
     if (ink < 1.5) color = ${glsl(palette.construction)};
     else color = ${glsl(palette.curve)};
-  } else {
+  }
+#ifndef STROKE
+  else {
     // Shaded sheets: a surface's offset in sage, its focal sheets in rust
     // and slate, anything else in the decorative teal and gold.
     if (ink < -2.5) color = slate;
@@ -137,7 +277,32 @@ void main() {
     gl_FragColor = vec4(color,${dashedOpacity.toFixed(4)});
   } else if (behind > 0.5) gl_FragColor = vec4(color,${faintOpacity.toFixed(4)});
   else gl_FragColor = vec4(color,1.0);
+#else
+  // The share of the pixel inside the stroke: its distance from the
+  // centerline, and at a polyline's own ends a round cap or a butt end
+  // with a one-pixel fringe. A stroke narrower than a pixel is drawn a
+  // pixel wide, faded by its width.
+  vec2 s = S.xy / S.z;
+  float cover;
+  // Past a mitred joint the neighbor's quad takes over at their shared
+  // edge, so the stroke runs on; only a polyline's own ends are capped.
+  float before = O.x > 0.5 ? 1e6 : s.x, after = O.y > 0.5 ? 1e6 : L - s.x;
+  if (coverCaps > 0.5) {
+    float beyond = max(max(-before, -after), 0.0);
+    cover = clamp(coverHalf + 0.5 - length(vec2(beyond, s.y)), 0.0, 1.0);
+  } else
+    cover = clamp(coverHalf + 0.5 - abs(s.y), 0.0, 1.0) * clamp(before + 0.5, 0.0, 1.0) * clamp(after + 0.5, 0.0, 1.0);
+  cover *= fade;
+  if (cover < 0.004) discard;
+  if (behind > 1.5) {
+    if (fract(D) >= ${dashOn.toFixed(4)}) discard;
+    gl_FragColor = vec4(color,${dashedOpacity.toFixed(4)}*cover);
+  } else if (behind > 0.5) gl_FragColor = vec4(color,${faintOpacity.toFixed(4)}*cover);
+  else gl_FragColor = vec4(color,cover);
+#endif
 }`;
+const fragmentSource = fragmentBody,
+  strokeFragmentSource = "#define STROKE\n" + fragmentBody;
 // See-through sheets: every layer's shaded color and a count were summed at
 // each pixel, so the mean color covers the background by 1 − (1 − α)ⁿ.
 const coverVertex = `
@@ -219,6 +384,62 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       "dashes",
     ].map((n) => [n, gl.getUniformLocation(program, n)]),
   );
+  // Strokes need instancing (ANGLE_instanced_arrays, near universal in
+  // WebGL 1); without it every weight is drawn as hairlines. They read each
+  // line batch's own buffer, two vertices an instance.
+  const instancing = gl.getExtension("ANGLE_instanced_arrays");
+  const strokes = (() => {
+    if (!instancing) return null;
+    try {
+      const stroke = link(strokeVertexSource, strokeFragmentSource, [
+        "corner",
+        "from",
+        "to",
+        "phase",
+        "arcFrom",
+        "arcTo",
+        "before",
+        "after",
+      ]);
+      const corners = gl.createBuffer()!;
+      gl.bindBuffer(gl.ARRAY_BUFFER, corners);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([0, -1, 1, -1, 1, 1, 0, -1, 1, 1, 0, 1]),
+        gl.STATIC_DRAW,
+      );
+      return {
+        program: stroke,
+        corners,
+        uniforms: Object.fromEntries(
+          [
+            "rotation",
+            "framing",
+            "lens",
+            "center",
+            "pan",
+            "ink",
+            "dark",
+            "cut",
+            "cutting",
+            "behind",
+            "dashes",
+            "viewport",
+            "halfWidth",
+            "caps",
+            "coverHalf",
+            "coverCaps",
+            "fade",
+          ].map((n) => [n, gl.getUniformLocation(stroke, n)]),
+        ),
+      };
+    } catch {
+      return null;
+    }
+  })();
+  // With samples, a stroke's coverage becomes sample coverage, so segments
+  // overlapping where they meet never double; without, coverage blends.
+  const sampled = (gl.getParameter(gl.SAMPLES) as number) > 0;
   // See-through sheets, made when first drawn: their program, a triangle
   // covering the page, and a half-float (or float) target summing layers.
   // Null when the device cannot render to one.
@@ -307,6 +528,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     elements?: WebGLBuffer;
     // A line batch's arc lengths, made when first dashed.
     arcs?: WebGLBuffer;
+    // A line batch's joints, made when first stroked.
+    joins?: WebGLBuffer;
   };
   let scene: Scene | undefined;
   // The parameter probe's few batches have their own buffers, so moving it
@@ -404,37 +627,176 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl!.clearColor(background[0], background[1], background[2], 1);
     gl!.clear(gl!.COLOR_BUFFER_BIT | gl!.DEPTH_BUFFER_BIT);
     if (!scene) return;
-    gl!.useProgram(program);
     gl!.enable(gl!.DEPTH_TEST);
     gl!.depthFunc(gl!.LEQUAL);
     const k = camera(view, { width, height });
-    gl!.uniformMatrix3fv(
-      uniforms.rotation,
-      false,
-      new Float32Array(k.rotation),
-    );
-    gl!.uniform3f(uniforms.center, k.center.x, k.center.y, k.center.z);
-    gl!.uniform2f(uniforms.pan, k.pan[0], k.pan[1]);
-    gl!.uniform3f(uniforms.framing, ...k.framing);
-    gl!.uniform3f(uniforms.lens, ...k.lens);
-    gl!.uniform1f(uniforms.dark, dark ? 1 : 0);
-    // The plane relative to the view center, scaled by the radius.
-    if (cut) {
-      const n = cut.plane.normal,
-        c = k.center,
-        r = view.radius;
-      gl!.uniform4f(
-        uniforms.cut,
-        n.x / r,
-        n.y / r,
-        n.z / r,
-        (cut.plane.offset - (n.x * c.x + n.y * c.y + n.z * c.z)) / r,
-      );
+    const stroked = !!strokes && sight.weight !== "hairline";
+    // The camera, theme, cut and dashes, for either program.
+    const place = (u: Record<string, WebGLUniformLocation | null>) => {
+      gl!.uniformMatrix3fv(u.rotation, false, new Float32Array(k.rotation));
+      gl!.uniform3f(u.center, k.center.x, k.center.y, k.center.z);
+      gl!.uniform2f(u.pan, k.pan[0], k.pan[1]);
+      gl!.uniform3f(u.framing, ...k.framing);
+      gl!.uniform3f(u.lens, ...k.lens);
+      gl!.uniform1f(u.dark, dark ? 1 : 0);
+      gl!.uniform1f(u.dashes, dashesPerUnit(view));
+      // The plane relative to the view center, scaled by the radius.
+      if (cut) {
+        const n = cut.plane.normal,
+          c = k.center,
+          r = view.radius;
+        gl!.uniform4f(
+          u.cut,
+          n.x / r,
+          n.y / r,
+          n.z / r,
+          (cut.plane.offset - (n.x * c.x + n.y * c.y + n.z * c.z)) / r,
+        );
+      }
+    };
+    if (stroked) {
+      gl!.useProgram(strokes!.program);
+      place(strokes!.uniforms);
+      gl!.uniform2f(strokes!.uniforms.viewport, width, height);
     }
+    gl!.useProgram(program);
+    place(uniforms);
+    let using = program;
+    const use = (p: WebGLProgram) => {
+      if (using !== p) gl!.useProgram((using = p));
+    };
+    // A line batch's arc lengths, made when first dashed.
+    const arcsOf = (v: Uploaded) => {
+      if (!v.arcs) {
+        v.arcs = gl!.createBuffer()!;
+        (probe.includes(v.batch)
+          ? probeBuffers
+          : edge?.batch === v.batch
+            ? edgeBuffers
+            : buffers
+        ).push(v.arcs);
+        gl!.bindBuffer(gl!.ARRAY_BUFFER, v.arcs);
+        gl!.bufferData(
+          gl!.ARRAY_BUFFER,
+          Float32Array.from(arcLengths(v.batch.data)),
+          gl!.STATIC_DRAW,
+        );
+        uploaded.get(v.batch)!.arcs = v.arcs;
+      }
+      return v.arcs;
+    };
+    // A line batch's joints, made when first stroked.
+    const joinsOf = (v: Uploaded) => {
+      if (!v.joins) {
+        v.joins = gl!.createBuffer()!;
+        (probe.includes(v.batch)
+          ? probeBuffers
+          : edge?.batch === v.batch
+            ? edgeBuffers
+            : buffers
+        ).push(v.joins);
+        gl!.bindBuffer(gl!.ARRAY_BUFFER, v.joins);
+        gl!.bufferData(
+          gl!.ARRAY_BUFFER,
+          strokeJoins(v.batch.data),
+          gl!.STATIC_DRAW,
+        );
+        uploaded.get(v.batch)!.joins = v.joins;
+      }
+      return v.joins;
+    };
+    // Each stroke's width in device pixels.
+    const widthOf = (v: Uploaded) =>
+      strokeWidth(v.batch, sight.weight, { width, height })!;
+    // A line batch as strokes: drawn with round ends and its coverage as
+    // sample coverage (or blended), or, thinner than two pixels or behind
+    // sheets, with butt ends, blended (behind, at the faint or dashed
+    // opacity).
+    const stroke = (
+      v: Uploaded & { cut: boolean },
+      how: { behind?: number } = {},
+    ) => {
+      const t = strokes!,
+        u = t.uniforms,
+        ext = instancing!;
+      use(t.program);
+      // Sample coverage counts whole samples, too coarse for a stroke under
+      // two pixels, whose every pixel is edge: those blend, with butt ends;
+      // their mitred joints neither overlap nor part.
+      const w = widthOf(v),
+        half = Math.max(w, 1) / 2,
+        thin = w < 2,
+        caps = how.behind || thin ? 0 : 1;
+      gl!.uniform1f(u.halfWidth, half);
+      gl!.uniform1f(u.coverHalf, half);
+      gl!.uniform1f(u.caps, caps);
+      gl!.uniform1f(u.coverCaps, caps);
+      gl!.uniform1f(u.fade, Math.min(1, w));
+      gl!.uniform1f(u.ink, v.batch.ink);
+      gl!.uniform1f(u.cutting, v.cut ? 1 : 0);
+      gl!.uniform1f(u.behind, how.behind ?? 0);
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, t.corners);
+      gl!.enableVertexAttribArray(0);
+      gl!.vertexAttribPointer(0, 2, gl!.FLOAT, false, 0, 0);
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, v.buffer);
+      for (const [loc, size, offset] of [
+        [1, 3, 0],
+        [2, 3, 28],
+        [3, 1, 24],
+      ]) {
+        gl!.enableVertexAttribArray(loc);
+        gl!.vertexAttribPointer(loc, size, gl!.FLOAT, false, 56, offset);
+        ext.vertexAttribDivisorANGLE(loc, 1);
+      }
+      if (how.behind === 2) {
+        gl!.bindBuffer(gl!.ARRAY_BUFFER, arcsOf(v));
+        for (const [loc, offset] of [
+          [4, 0],
+          [5, 4],
+        ]) {
+          gl!.enableVertexAttribArray(loc);
+          gl!.vertexAttribPointer(loc, 1, gl!.FLOAT, false, 8, offset);
+          ext.vertexAttribDivisorANGLE(loc, 1);
+        }
+      } else
+        for (const loc of [4, 5]) {
+          gl!.disableVertexAttribArray(loc);
+          gl!.vertexAttrib1f(loc, 0);
+        }
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, joinsOf(v));
+      for (const [loc, offset] of [
+        [6, 0],
+        [7, 16],
+      ]) {
+        gl!.enableVertexAttribArray(loc);
+        gl!.vertexAttribPointer(loc, 4, gl!.FLOAT, false, 32, offset);
+        ext.vertexAttribDivisorANGLE(loc, 1);
+      }
+      const opaque = !how.behind;
+      if (opaque && sampled && !thin) gl!.enable(gl!.SAMPLE_ALPHA_TO_COVERAGE);
+      else if (opaque) {
+        gl!.enable(gl!.BLEND);
+        gl!.blendFunc(gl!.SRC_ALPHA, gl!.ONE_MINUS_SRC_ALPHA);
+        // A blended stroke's faint fringe must not hide what is drawn
+        // behind it later: thin strokes write no depth (see inOrder).
+        if (thin) gl!.depthMask(false);
+      }
+      ext.drawArraysInstancedANGLE(gl!.TRIANGLES, 0, 6, v.count / 2);
+      if (opaque) {
+        gl!.disable(gl!.SAMPLE_ALPHA_TO_COVERAGE);
+        gl!.disable(gl!.BLEND);
+        gl!.depthMask(true);
+      }
+      // The other programs read these locations without instancing.
+      for (const loc of [1, 2, 3, 4, 5, 6, 7])
+        ext.vertexAttribDivisorANGLE(loc, 0);
+      for (const loc of [4, 5, 6, 7]) gl!.disableVertexAttribArray(loc);
+    };
     const render = (
       v: Uploaded & { cut: boolean },
       how: { gather?: boolean; behind?: number } = {},
     ) => {
+      use(program);
       gl!.bindBuffer(gl!.ARRAY_BUFFER, v.buffer);
       attributes.forEach((loc, i) => {
         gl!.enableVertexAttribArray(loc);
@@ -452,23 +814,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.uniform1f(uniforms.gather, how.gather ? 1 : 0);
       gl!.uniform1f(uniforms.behind, how.behind ?? 0);
       if (how.behind === 2) {
-        if (!v.arcs) {
-          v.arcs = gl!.createBuffer()!;
-          (probe.includes(v.batch)
-            ? probeBuffers
-            : edge?.batch === v.batch
-              ? edgeBuffers
-              : buffers
-          ).push(v.arcs);
-          gl!.bindBuffer(gl!.ARRAY_BUFFER, v.arcs);
-          gl!.bufferData(
-            gl!.ARRAY_BUFFER,
-            Float32Array.from(arcLengths(v.batch.data)),
-            gl!.STATIC_DRAW,
-          );
-          uploaded.get(v.batch)!.arcs = v.arcs;
-        }
-        gl!.bindBuffer(gl!.ARRAY_BUFFER, v.arcs);
+        gl!.bindBuffer(gl!.ARRAY_BUFFER, arcsOf(v));
         gl!.enableVertexAttribArray(arcAttribute);
         gl!.vertexAttribPointer(arcAttribute, 1, gl!.FLOAT, false, 4, 0);
       } else {
@@ -488,15 +834,39 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         sheet: pass.sheet,
       }),
     );
+    // Sheets are pushed back so strokes lying on them stay whole.
+    const offset = sheetOffset(
+      passes.filter((v) => !v.sheet).map((v) => v.batch),
+      stroked ? sight.weight : "hairline",
+      { width, height },
+    );
     const sheet = (v: (typeof passes)[number]) => {
       gl!.enable(gl!.POLYGON_OFFSET_FILL);
-      gl!.polygonOffset(1, 1);
+      gl!.polygonOffset(offset, 1);
       render(v);
       gl!.disable(gl!.POLYGON_OFFSET_FILL);
     };
-    // The plain drawing, in the passes' own order.
+    const line = stroked ? stroke : render;
+    // Strokes are drawn after every sheet: those two pixels wide or more
+    // first, writing depth where they cover, then thinner ones, which write
+    // none, so a thin stroke is hidden by sheets and wide strokes in front
+    // of it but hides nothing itself.
+    const inOrder = (lines: typeof passes) =>
+      stroked
+        ? [
+            ...lines.filter((v) => widthOf(v) >= 2),
+            ...lines.filter((v) => widthOf(v) < 2),
+          ]
+        : lines;
+    // The plain drawing, in the passes' own order, or with strokes, sheets
+    // first.
     if (isPlain(sight)) {
-      for (const v of passes) (v.sheet ? sheet : render)(v);
+      if (!stroked) {
+        for (const v of passes) (v.sheet ? sheet : line)(v);
+        return;
+      }
+      passes.filter((v) => v.sheet).forEach(sheet);
+      inOrder(passes.filter((v) => !v.sheet)).forEach((v) => line(v));
       return;
     }
     // Otherwise sheets first, alone in the depth buffer, so lines behind
@@ -507,7 +877,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (target) {
       gather(target, sheets, width, height, render);
       cover(target, width, height, background, sight.opacity);
-      gl!.useProgram(program);
+      gl!.useProgram((using = program));
       gl!.colorMask(false, false, false, false);
       sheets.forEach(sheet);
       gl!.colorMask(true, true, true, true);
@@ -517,14 +887,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.depthMask(false);
       gl!.enable(gl!.BLEND);
       gl!.blendFunc(gl!.SRC_ALPHA, gl!.ONE_MINUS_SRC_ALPHA);
-      gl!.uniform1f(uniforms.dashes, dashesPerUnit(view));
       const behind = sight.hidden === "dashed" ? 2 : 1;
-      lines.forEach((v) => render(v, { behind }));
+      lines.forEach((v) => line(v, { behind }));
       gl!.disable(gl!.BLEND);
       gl!.depthMask(true);
       gl!.depthFunc(gl!.LEQUAL);
     }
-    lines.forEach((v) => render(v));
+    inOrder(lines).forEach((v) => line(v));
   }
   // Every sheet layer's shaded color and a count of one, summed at each
   // pixel of the target without depth testing, so no order matters.
@@ -591,7 +960,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     );
     gl!.uniform1f(t.uniforms.alpha, alpha);
     gl!.bindBuffer(gl!.ARRAY_BUFFER, t.corner);
-    for (let i = 1; i < 4; i++) gl!.disableVertexAttribArray(i);
+    for (let i = 1; i < 8; i++) gl!.disableVertexAttribArray(i);
     gl!.enableVertexAttribArray(0);
     gl!.vertexAttribPointer(0, 2, gl!.FLOAT, false, 0, 0);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
@@ -604,6 +973,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     setSight,
     // Whether this device can draw see-through sheets.
     seeThrough: () => !!seeing(),
+    // Whether this device can draw strokes rather than hairlines.
+    strokes: () => !!strokes,
     draw,
     dispose: () => {
       buffers.forEach((b) => gl.deleteBuffer(b));
@@ -614,6 +985,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         gl.deleteTexture(see.texture);
         gl.deleteFramebuffer(see.framebuffer);
         gl.deleteProgram(see.program);
+      }
+      if (strokes) {
+        gl.deleteBuffer(strokes.corners);
+        gl.deleteProgram(strokes.program);
       }
       shaders.forEach((s) => gl.deleteShader(s));
       gl.deleteProgram(program);

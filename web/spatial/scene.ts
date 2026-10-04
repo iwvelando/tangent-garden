@@ -271,12 +271,15 @@ function indexed(m: ImplicitResult | undefined, pairs: Int32Array | undefined) {
 
 // Geometry ready to draw: world positions, each vertex with a normal and a
 // phase (7 floats), as line pairs or triangles, with the ink that colors
-// them. An indexed batch draws its triangles by index.
+// them. An indexed batch draws its triangles by index. A line batch may
+// carry its own regular weight in page pixels, in place of its ink's (see
+// sight.ts).
 export type Batch = {
   mode: "lines" | "triangles";
   data: Float32Array;
   ink: number;
   indices?: Uint32Array;
+  weight?: number;
 };
 
 // Everything the drawing shows of a result, built once per result. The
@@ -286,11 +289,13 @@ export function buildScene(result: SpatialResult) {
     data: number[] | Float32Array,
     mode: Batch["mode"],
     ink: number,
+    weight?: number,
   ): Batch {
     return {
       mode,
       data: data instanceof Float32Array ? data : new Float32Array(data),
       ink,
+      ...(weight !== undefined && { weight }),
     };
   }
   function meshBatch(m: ImplicitResult | undefined, ink: number): Batch {
@@ -326,8 +331,14 @@ export function buildScene(result: SpatialResult) {
     breaks: boolean[],
     ink: number,
     refined?: RefinedPath,
+    weight?: number,
   ) {
-    return batch(vertices(curve(points, breaks, refined)), "lines", ink);
+    return batch(
+      vertices(curve(points, breaks, refined)),
+      "lines",
+      ink,
+      weight,
+    );
   }
   // Every member shares the base's breaks: arc length never crosses one, so
   // a member has no points beyond it. A collapsed member (a line's involute)
@@ -438,8 +449,10 @@ export function buildScene(result: SpatialResult) {
   // partner is missing or jumps.
   const edgeBreaks =
     result.frame?.breaks ?? result.ruled?.breaks ?? result.breaks;
-  const minus = path(result.minus, edgeBreaks, 2);
-  const plus = path(result.plus, edgeBreaks, 2);
+  // A ribbon's edges and a partner thread bound a sheet: lighter than the
+  // curve they accompany.
+  const minus = path(result.minus, edgeBreaks, 2, undefined, 1.4);
+  const plus = path(result.plus, edgeBreaks, 2, undefined, 1.4);
   const rulings = batch(
     result.rulings
       .flatMap((r) => [r.from, r.to])
@@ -724,6 +737,7 @@ export function buildScene(result: SpatialResult) {
     vertices(f?.seam && f.frames[0]?.sampleIndex === 0 ? seamLines() : []),
     "lines",
     2,
+    1.4,
   );
   const filaments = filamentBatch(result);
   const strings = batch(
@@ -842,10 +856,12 @@ export function buildScene(result: SpatialResult) {
     "lines",
     4,
   );
+  // Outgoing rays come in families: as light as construction lines.
   const reflectedRays = batch(
     vertices(rayLines.filter((l) => !l.total).flatMap((l) => [l.point, l.end])),
     "lines",
     2,
+    0.9,
   );
   // Beyond the critical angle nothing is transmitted: the totally
   // reflected rays recede in grey.
@@ -879,6 +895,7 @@ export function buildScene(result: SpatialResult) {
     ),
     "lines",
     2,
+    1.4,
   );
   // A level surface, its sections (each closed curve back to its start),
   // the planes they lie on, the box, and the edges where the surface is
@@ -902,6 +919,7 @@ export function buildScene(result: SpatialResult) {
     ),
     "lines",
     2,
+    1.8,
   );
   const planeLines = batch(
     vertices(

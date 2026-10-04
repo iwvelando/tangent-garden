@@ -39,6 +39,7 @@ export function SpatialPlot({
   cut = null,
   sight = defaultSight,
   onSeeThrough,
+  onStrokes,
   projection = "orthographic",
 }: {
   result: SpatialResult;
@@ -65,6 +66,8 @@ export function SpatialPlot({
   // whether see-through sheets could be drawn, reported when asked for.
   sight?: Sight;
   onSeeThrough?: (available: boolean) => void;
+  // Whether strokes could be drawn rather than hairlines.
+  onStrokes?: (available: boolean) => void;
   // The manual camera's projection, drawn for the manual and released
   // views; an animation's camera carries its own.
   projection?: Projection;
@@ -91,6 +94,7 @@ export function SpatialPlot({
     cut,
     sight,
     onSeeThrough,
+    onStrokes,
     projection,
   });
   state.current = {
@@ -104,6 +108,7 @@ export function SpatialPlot({
     cut,
     sight,
     onSeeThrough,
+    onStrokes,
     projection,
   };
   const [error, setError] = useState("");
@@ -137,10 +142,18 @@ export function SpatialPlot({
     else delete canvas.current.dataset.cut;
     // The sight as drawn: opaque sheets where they could not be seen
     // through.
-    const drawn = through ? shown : { ...shown, sheets: "opaque" as const };
-    if (isPlain(drawn)) delete canvas.current.dataset.sight;
+    const { weight, ...drawn } = through
+      ? shown
+      : { ...shown, sheets: "opaque" as const };
+    if (isPlain({ ...drawn, weight })) delete canvas.current.dataset.sight;
     else canvas.current.dataset.sight = JSON.stringify(drawn);
+    // The weight as drawn, when lines are strokes rather than hairlines.
+    const stroked = !!renderer.current?.strokes();
+    if (weight === "hairline" || !stroked)
+      delete canvas.current.dataset.strokes;
+    else canvas.current.dataset.strokes = JSON.stringify({ weight });
     state.current.onSeeThrough?.(through);
+    state.current.onStrokes?.(stroked);
     state.current.onViewport(v);
     state.current.onCamera?.({ ...manual.current });
   };

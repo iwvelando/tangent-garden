@@ -1457,7 +1457,12 @@ export const spatialPresets: {
         },
       },
     },
-    sight: { sheets: "through", opacity: 0.3, hidden: "dashed" },
+    sight: {
+      sheets: "through",
+      opacity: 0.3,
+      hidden: "dashed",
+      weight: "regular",
+    },
   },
   {
     name: "Viviani's curve, from every side",
@@ -2401,5 +2406,67 @@ export const spatialPresets: {
       },
       path: { style: "steady", keys: [] },
     },
+  },
+  // Line weights (see sight.ts): studies whose many lines hairlines blur
+  // into one tone or lose at export size. Each opens with the probe off, so
+  // it draws as its picture whatever was chosen before.
+  {
+    name: "A cinquefoil strung to its center",
+    detail:
+      "Two hundred forty perpendiculars from the knot's tangent lines to one pole, a fan of fine strokes under the knot",
+    config: {
+      ...base,
+      q: 5,
+      tube: 0.7,
+      construction: "tangent-foot",
+      pole: { x: 0, y: 0, z: 0 },
+      lines: 240,
+    },
+    sight: { sheets: "opaque", opacity: 0.35, hidden: "hide", weight: "fine" },
+    probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
+  },
+  {
+    name: "An engraved trefoil tube",
+    detail:
+      "A hundred fifty contact circles in bold strokes, their far halves and the knot inside dashed through the tube",
+    config: {
+      ...base,
+      construction: "canal",
+      lines: 150,
+      canal: { radius: 0.32, profile: "1", meridians: 8 },
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "dashed",
+      weight: "bold",
+    },
+    probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
+  },
+  {
+    name: "A helix unwound into a veil",
+    detail:
+      "Five involutes peeled off a rising helix by two hundred forty taut strings, heavier filaments over a fine veil",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "involute",
+      involute: {
+        anchor: 0,
+        offset: 0,
+        family: { enabled: true, from: -3, to: 3, count: 5 },
+      },
+      lines: 240,
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "0.6*t",
+        a: 1,
+        min: -2 * Math.PI,
+        max: 2 * Math.PI,
+      },
+    },
+    sight: { sheets: "opaque", opacity: 0.35, hidden: "hide", weight: "fine" },
+    probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
   },
 ];

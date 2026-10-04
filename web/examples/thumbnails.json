@@ -99,7 +99,7 @@
     "a-thread-between-two-drops": "1e283be0",
     "an-ellipsoid-hiding-its-centers": "cb5c20df",
     "a-lamp-sealed-in-an-ellipsoid": "270a3e30",
-    "a-klein-bottle-passing-through-itself": "6fc666e1",
+    "a-klein-bottle-passing-through-itself": "5a9fe359",
     "viviani-s-curve-from-every-side": "bc741957",
     "filaments-off-a-cusp": "47f92684",
     "a-horn-of-perpendicular-feet": "27cde506",
@@ -121,7 +121,10 @@
     "a-helix-pressed-through-its-circle": "fbf0211a",
     "a-twisted-cubic-losing-its-bend": "e74b2256",
     "a-trefoil-breathing-under-a-moving-probe": "5ccf0bba",
-    "a-knot-reparameterized-in-place": "07106cac"
+    "a-knot-reparameterized-in-place": "07106cac",
+    "a-cinquefoil-strung-to-its-center": "4f9608a0",
+    "an-engraved-trefoil-tube": "fd02c117",
+    "a-helix-unwound-into-a-veil": "7e8dc82c"
   },
   "4d": {
     "a-cube-beyond-a-cube": "60473fe5",
