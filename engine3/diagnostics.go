@@ -15,6 +15,12 @@ import "math"
 // where r‴ is unknown, counted by Unknown. A centre whose radius of
 // curvature exceeds 100 study radii is null, at infinity, counted by Clipped.
 // A closed curve's last sample repeats its first and is not counted.
+//
+// Length is the arc length of the drawn curve from its first sample to each
+// sample, by Simpson's rule on every interval from the speeds at its ends and
+// midpoint. It is null where the curve is not drawn, and an interval across a
+// break or an undefined sample adds nothing, so it measures only the drawn
+// pieces. A closed curve's last sample stands at its whole length.
 type DiagnosticsResult struct {
 	Min       float64    `json:"min"`
 	Max       float64    `json:"max"`
@@ -24,6 +30,7 @@ type DiagnosticsResult struct {
 	Normal    []*Vec3    `json:"normal"`
 	Binormal  []*Vec3    `json:"binormal"`
 	Center    []*Vec3    `json:"center"`
+	Length    []*float64 `json:"length"`
 	Flat      int        `json:"flat"`
 	Unknown   int        `json:"unknown"`
 	Clipped   int        `json:"clipped"`
@@ -190,6 +197,22 @@ func diagnose(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, velo
 		d.Normal[n], d.Binormal[n], d.Center[n] = d.Normal[0], d.Binormal[0], d.Center[0]
 	}
 	return d
+}
+
+// measure fills Length from the sampling loop's speeds at the samples and
+// interval midpoints (NaN where undefined) and the breaks.
+func (d *DiagnosticsResult) measure(base []*Vec3, speeds, middles []float64, breaks []bool, h float64) {
+	d.Length = make([]*float64, len(base))
+	s := 0.0
+	for i := range base {
+		if i > 0 && base[i-1] != nil && base[i] != nil && !breaks[i] && finite(middles[i-1]) {
+			s += h / 6 * (speeds[i-1] + 4*middles[i-1] + speeds[i])
+		}
+		if base[i] != nil {
+			length := s
+			d.Length[i] = &length
+		}
+	}
 }
 
 // clip puts centres whose radius of curvature exceeds 100 study radii at

@@ -74,8 +74,9 @@ try {
                   (spatial.cut ||
                   spatial.sight ||
                   spatial.projection ||
-                  spatial.opening
-                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}${spatial.projection ? `,"projection":"${spatial.projection}"` : ""}${spatial.opening ? `,"view":${spatial.opening}` : ""}}`
+                  spatial.opening ||
+                  spatial.probe
+                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}${spatial.projection ? `,"projection":"${spatial.projection}"` : ""}${spatial.opening ? `,"view":${spatial.opening}` : ""}${spatial.probe ? `,"probe":${spatial.probe}` : ""}}`
                     : spatial.config)
                 : document.querySelector(".plot-wrap[aria-busy=false]") &&
                   document.querySelector("#artwork > desc")?.textContent;

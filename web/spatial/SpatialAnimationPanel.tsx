@@ -39,7 +39,11 @@ import {
   surfaceTerms,
   gridded,
   probeOptions,
+  heldProbe,
+  probeMotions,
+  probeMotionHelp,
   type Probe,
+  type ProbeMotion,
 } from "./probe";
 import type { Layers } from "./renderer";
 import { buildScene, scenePasses } from "./scene";
@@ -97,8 +101,11 @@ type Session = {
   mode: AnimationMode;
   // Present only while tracing rays.
   timeline?: Timeline;
-  // Present only while moving the probe: its setup when playback began.
+  // Present only while the animation draws the probe (moving it, or
+  // varying parameters with it on): its setup when playback began, and,
+  // with parameters, how it moves as they vary (see heldProbe).
   probe?: Probe;
+  motion?: ProbeMotion;
   // The entered cut when playback began, drawn by every mode, and the
   // range a peel moves it over.
   cut: CutSpec | null;
@@ -211,6 +218,14 @@ export function SpatialAnimationPanel({
     if (!loops(mode) && repeat === "loop") setRepeat("back-and-forth");
   }, [mode, repeat]);
   const [tracks, setTracks] = useState<Track[]>([]);
+  // How the probe moves while parameters vary; a grid has no length, so
+  // keeping its share falls back to staying.
+  const [probeMotion, setProbeMotion] = useState<ProbeMotion>("stays");
+  const motions = frame && probing ? probeMotions(frame.config, target) : [];
+  useEffect(() => {
+    if (motions.length && !motions.some((m) => m.value === probeMotion))
+      setProbeMotion("stays");
+  }, [motions.map((m) => m.value).join(","), probeMotion]);
   const [path, setPath] = useState<CameraPath>(defaultPath);
   const [ride, setRide] = useState<Ride>(defaultRide);
   // Only traced light has a ray to ride; another mode holds the final view.
@@ -299,6 +314,7 @@ export function SpatialAnimationPanel({
       camera,
       duration,
       tracks,
+      probeMotion,
       path,
       ride,
       repeat,
@@ -314,6 +330,7 @@ export function SpatialAnimationPanel({
     setCamera(restore.settings.camera);
     setDuration(restore.settings.duration);
     setTracks(restore.settings.tracks);
+    setProbeMotion(restore.settings.probeMotion);
     setPath(restore.settings.path);
     setRide(restore.settings.ride);
     setRepeat(restore.settings.repeat);
@@ -335,6 +352,7 @@ export function SpatialAnimationPanel({
       if (brought.ride) setRide(structuredClone(brought.ride));
       if (brought.animate.tracks)
         setTracks(structuredClone(brought.animate.tracks));
+      setProbeMotion(brought.animate.probe ?? "stays");
       setDuration(brought.duration);
     } else if (brought) {
       setMode("path");
@@ -375,9 +393,9 @@ export function SpatialAnimationPanel({
   useEffect(() => {
     stop();
   }, [revision]);
-  // Turning the probe off ends an animation that moves it.
+  // Turning the probe off ends an animation that draws it.
   useEffect(() => {
-    if (!probing && session.current?.mode === "probe") stop();
+    if (!probing && session.current?.probe) stop();
   }, [probing]);
   // So does turning the cut off, or leaving it invalid, during a peel.
   useEffect(() => {
@@ -471,7 +489,24 @@ export function SpatialAnimationPanel({
       };
     else if (p === 0) current = s.first;
     else if (p === 1) current = s.final;
-    else current = await engine.computeSpatial(values.config);
+    else
+      current = await engine.computeSpatial(
+        values.config,
+        s.probe ? probeOptions(probeTarget(s.original.config, s.probe)) : {},
+      );
+    // While parameters vary, the probe stands on each frame's own
+    // diagnostics, or is absent from it with a reason.
+    const held =
+      s.mode === "parameters" && s.probe
+        ? heldProbe(
+            s.original.result,
+            s.probe,
+            probeTarget(s.original.config, s.probe),
+            s.motion!,
+            current.result,
+            p,
+          )
+        : null;
     return {
       frame: current,
       final: s.final,
@@ -488,6 +523,10 @@ export function SpatialAnimationPanel({
       }),
       ...(s.ride && { ride: s.ride }),
       // Sample (or row) 0 at the start and the last at the end, exactly.
+      ...(held !== null &&
+        (typeof held === "number"
+          ? { probe: held, probeSetup: s.probe }
+          : { probeAway: held, probeSetup: s.probe })),
       ...(s.mode === "probe" && {
         probe: probeIndex(
           p,
@@ -558,12 +597,20 @@ export function SpatialAnimationPanel({
       return `Cut at d = ${view.cut!.plane.offset.toPrecision(6)}`;
     if (s.mode === "probe")
       return `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe!, view.probe!)}`;
-    return s.tracks
-      .map(
+    // A probe that moves as the parameters vary says where it stands.
+    const probed =
+      s.probe && s.motion !== "stays" && view.probe !== undefined
+        ? [
+            `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe, view.probe)}`,
+          ]
+        : [];
+    return [
+      ...s.tracks.map(
         (t) =>
           `${targetLabel(view.frame.config, t.target)} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
-      )
-      .join(" · ");
+      ),
+      ...probed,
+    ].join(" · ");
   }
   function fail(reason: unknown, what = "Animation") {
     cancel();
@@ -662,9 +709,11 @@ export function SpatialAnimationPanel({
       }
       if (epoch.current !== token) return;
       // The probe moves over the study's own diagnostics, fetched here only
-      // if the study was drawn without them.
+      // if the study was drawn without them; while parameters vary, it
+      // stays at what it describes there.
+      const drawsProbe = mode === "probe" || (mode === "parameters" && probing);
       let original = frame;
-      if (mode === "probe" && probeSteps(frame.result, target) === null) {
+      if (drawsProbe && probeSteps(frame.result, target) === null) {
         original = await client.current.computeSpatial(
           frame.config,
           probeOptions(target),
@@ -697,6 +746,7 @@ export function SpatialAnimationPanel({
           client.current
             .computeSpatial(
               applyTracks(frame.config, numeric, 0, length).config,
+              drawsProbe ? probeOptions(target) : {},
             )
             .catch((reason) => {
               throw new Error(`At animation start: ${reason.message}`);
@@ -704,6 +754,7 @@ export function SpatialAnimationPanel({
           (helper.current ?? client.current)
             .computeSpatial(
               applyTracks(frame.config, numeric, 1, length).config,
+              drawsProbe ? probeOptions(target) : {},
             )
             .catch((reason) => {
               throw new Error(`At animation end: ${reason.message}`);
@@ -744,7 +795,8 @@ export function SpatialAnimationPanel({
         final,
         tracks: numeric,
         mode,
-        ...(mode === "probe" && { probe: probe! }),
+        ...(drawsProbe && { probe: probe! }),
+        ...(mode === "parameters" && probing && { motion: probeMotion }),
         cut,
         extent,
         sight,
@@ -1232,6 +1284,25 @@ export function SpatialAnimationPanel({
               >
                 + Add parameter
               </button>
+              {motions.length > 0 && frame && (
+                <Field
+                  label="Probe"
+                  help={probeMotionHelp(frame.config, target)}
+                >
+                  <select
+                    value={probeMotion}
+                    onChange={(e) =>
+                      setProbeMotion(e.target.value as ProbeMotion)
+                    }
+                  >
+                    {motions.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </>
           )}
           {mode === "path" && pathEditor}

@@ -329,11 +329,16 @@ export default function SpatialApp({
       id: (f?.id ?? 0) + 1,
       flight: spatialPresets[+index].flight,
     }));
-    setProbe((p) => ({
-      ...p,
-      position: defaultProbe.position,
-      across: defaultProbe.across,
-    }));
+    const probed = spatialPresets[+index].probe;
+    setProbe((p) =>
+      probed
+        ? structuredClone(probed)
+        : {
+            ...p,
+            position: defaultProbe.position,
+            across: defaultProbe.across,
+          },
+    );
     // And its own projection and opening view, or orthographic from the
     // default view.
     setLensing(spatialPresets[+index].projection ?? "orthographic");
@@ -2971,6 +2976,7 @@ export default function SpatialApp({
             onProbe={setProbe}
             animating={!!animation && !moving}
             at={moving?.probe}
+            away={moving ? undefined : animation?.probeAway}
             dark={theme.dark}
           />
           <FieldErrorContext.Provider value={fieldError}>
@@ -3308,6 +3314,12 @@ export default function SpatialApp({
           // The projection when perspective, and the chosen preset's opening
           // view, likewise.
           data-projection={lensing === "orthographic" ? undefined : lensing}
+          // The chosen preset's probe, likewise.
+          data-probe={
+            preset !== "" && spatialPresets[+preset].probe
+              ? JSON.stringify(spatialPresets[+preset].probe)
+              : undefined
+          }
           data-opening={
             preset !== "" && spatialPresets[+preset].view
               ? JSON.stringify(spatialPresets[+preset].view)

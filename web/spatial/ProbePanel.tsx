@@ -105,6 +105,8 @@ function Plot({
 // result with diagnostics, or null while they are computed or while an
 // animation that does not move the probe plays. `at` is the sample an
 // animation has moved the probe to; the slider waits until it stops.
+// `away` says why a parameter animation that draws the probe has none on
+// the frame it shows.
 export function ProbePanel({
   config,
   frame,
@@ -112,6 +114,7 @@ export function ProbePanel({
   onProbe,
   animating,
   at: moving,
+  away,
   dark,
 }: {
   config: SpatialConfig;
@@ -120,6 +123,7 @@ export function ProbePanel({
   onProbe: (change: (p: Probe) => Probe) => void;
   animating: boolean;
   at?: number;
+  away?: string;
   dark: boolean;
 }) {
   const help = useHelp();
@@ -145,7 +149,7 @@ export function ProbePanel({
           <Field label="Describe" help={describeHelp(config)}>
             <select
               value={target}
-              disabled={moving !== undefined}
+              disabled={moving !== undefined || away !== undefined}
               onChange={(e) => {
                 const target = e.target.value as ProbeTarget;
                 onProbe((p) => ({ ...p, target }));
@@ -188,6 +192,7 @@ export function ProbePanel({
             onProbe={onProbe}
             animating={animating}
             at={moving}
+            away={away}
             dark={dark}
           />
         )}
@@ -195,7 +200,7 @@ export function ProbePanel({
           target === "curve" &&
           (animating ? (
             <p className="spatial-caption">
-              The probe returns when the animation stops.
+              {away ?? "The probe returns when the animation stops."}
             </p>
           ) : !readout || !d ? (
             <p className="spatial-caption">
@@ -333,6 +338,7 @@ function SurfaceProbe({
   onProbe,
   animating,
   at: moving,
+  away,
   dark,
 }: {
   config: SpatialConfig;
@@ -341,13 +347,14 @@ function SurfaceProbe({
   onProbe: (change: (p: Probe) => Probe) => void;
   animating: boolean;
   at?: number;
+  away?: string;
   dark: boolean;
 }) {
   const d = frame?.result.surfaceDiagnostics;
   if (animating)
     return (
       <p className="spatial-caption">
-        The probe returns when the animation stops.
+        {away ?? "The probe returns when the animation stops."}
       </p>
     );
   const target = probeTarget(config, probe);

@@ -505,3 +505,51 @@ for (const [width, height] of [
     }
   });
 }
+
+// A field's label, its help toggle and any value at the end of its row
+// share one line, in the probe panel as everywhere else: its checkbox's
+// own label styles must not reach the fields beside it.
+for (const label of [
+  "Helix · a ribbon staircase",
+  "A sphere collapsing to one focus",
+])
+  test(`probe fields keep their labels on their help toggles' line · ${label}`, async ({
+    page,
+  }) => {
+    await page.goto("/?study=3d");
+    await expect(page.locator(".spatial-stage")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await choosePreset(page, { label });
+    const probe = page.locator(".spatial-probe");
+    await probe.locator(".probe-switch input[type=checkbox]").check();
+    await expect(page.locator(".spatial-stage")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(probe.locator("input[type=range]").first()).toBeVisible();
+    const rows = await probe.locator(".field-label").evaluateAll((rows) =>
+      rows.map((row) => {
+        const middle = (e: Element) => {
+          const r = e.getBoundingClientRect();
+          return r.top + r.height / 2;
+        };
+        const text = row.querySelector("label")!;
+        return {
+          label: text.textContent,
+          font: getComputedStyle(text).fontSize,
+          offsets: [...row.children]
+            .filter((e) => e !== text)
+            .map((e) => Math.abs(middle(e) - middle(text))),
+        };
+      }),
+    );
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      // The sidebar's field labels are 13px, as in every other panel.
+      expect(row, row.label!).toMatchObject({ font: "13px" });
+      for (const offset of row.offsets)
+        expect(offset, row.label!).toBeLessThan(1.5);
+    }
+  });

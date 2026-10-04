@@ -7,6 +7,7 @@ import type { AnimationMode, CameraMode, Track } from "./animation";
 import type { SpatialConfig } from "./types";
 import type { Projection } from "./scene";
 import type { SpatialCamera } from "./link";
+import type { Probe, ProbeMotion } from "./probe";
 const base: SpatialConfig = {
   format: "torus",
   construction: "developable",
@@ -185,6 +186,9 @@ export type Flight = {
   animate?: {
     mode: Exclude<AnimationMode, "orbit" | "path">;
     tracks?: Track[];
+    // How the probe moves while parameters vary, when the preset turns it
+    // on: it stays unless given.
+    probe?: ProbeMotion;
   };
   // A ray to ride while light is traced, in place of flying the path.
   ride?: Ride;
@@ -198,8 +202,9 @@ export type Flight = {
 };
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts), its own camera path to fly (see Flight), and its own
-// projection and manual view (see scene.ts); choosing one without turns
-// them off, orthographic from the default view.
+// projection and manual view (see scene.ts), and its own probe (see
+// probe.ts); choosing one without turns them off, orthographic from the
+// default view, but keeps the probe on or off.
 export const spatialPresets: {
   name: string;
   detail: string;
@@ -209,6 +214,9 @@ export const spatialPresets: {
   flight?: Flight;
   projection?: Projection;
   view?: SpatialCamera;
+  // A preset may open with the probe on at its own point; one without
+  // keeps the probe as it was, returning it to the middle of the curve.
+  probe?: Probe;
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -2262,6 +2270,136 @@ export const spatialPresets: {
           },
         ],
       },
+    },
+  },
+  // The probe while parameters vary. A helix (cos t, at, sin t) about the
+  // drawing's vertical has κ = 1/(1 + a²) and τ = −a/(1 + a²) everywhere
+  // (its hand reverses with a): as a runs from −0.35 to 0.35 its three
+  // turns each way press flat into one circle, where the osculating circle
+  // is the curve and τ = 0, and rise with the other hand. The probe stays
+  // at t = 0.
+  {
+    name: "A helix pressed through its circle",
+    detail:
+      "The pitch reverses: the coils press into one circle, which the osculating circle becomes, as the torsion passes through zero",
+    config: {
+      ...base,
+      format: "parametric",
+      length: 0.9,
+      curve: {
+        x: "cos(t)",
+        y: "a*t",
+        z: "sin(t)",
+        a: -0.35,
+        min: -3 * Math.PI,
+        max: 3 * Math.PI,
+      },
+    },
+    probe: { enabled: true, position: 0.5, target: "curve", across: 0.5 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "-0.35", to: "0.35" }],
+        probe: "stays",
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // (t, at², t³) at t = 0 has r′ = (1, 0, 0), r″ = (0, 2a, 0) and
+  // r‴ = (0, 0, 6), so κ = 2|a| and τ = 3/a there: as the bend flattens the
+  // torsion runs off to infinity while it falls to zero elsewhere, and at
+  // a = 0 the curve is planar with an inflection where the probe stands,
+  // flat, its frame undefined. N flips from +y to −y as a changes sign.
+  {
+    name: "A twisted cubic losing its bend",
+    detail:
+      "As the bend at its middle fades, the torsion there races off to infinity, the frame whips over, and at the turn it is flat",
+    config: {
+      ...base,
+      format: "parametric",
+      length: 0.7,
+      curve: {
+        x: "t",
+        y: "a*t^2",
+        z: "t^3",
+        a: 1,
+        min: -1,
+        max: 1,
+      },
+    },
+    probe: { enabled: true, position: 0.5, target: "curve", across: 0.5 },
+    flight: {
+      duration: 14,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "1", to: "-1" }],
+        probe: "stays",
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // The base trefoil's tube swells while the probe rides the knot from
+  // start to end and back, its frame and circle reading each frame.
+  {
+    name: "A trefoil breathing under a moving probe",
+    detail:
+      "The tube radius swells while the probe rides the knot out and back, its frame and osculating circle reshaped as it goes",
+    config: { ...base, tube: 0.5, length: 1.6 },
+    probe: { enabled: true, position: 0, target: "curve", across: 0.5 },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "tube", from: "0.5", to: "1.3" }],
+        probe: "along",
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // One trefoil, reparameterized: s = t + ½ sin t sin a is increasing in t
+  // (ds/dt ≥ ½), fixes s at 0 and 2π, and returns at a = 2π, so the knot
+  // never moves while its samples, and the rulings at them, flow along it.
+  // Keeping its share of the length, the probe stays at one point of the
+  // knot with steady κ and τ while its t wanders; it loops.
+  {
+    name: "A knot reparameterized in place",
+    detail:
+      "Only the parameterization moves: rulings flow along a fixed trefoil while the probe, held by its share of the length, stays put",
+    config: {
+      ...base,
+      format: "parametric",
+      length: 1.4,
+      lines: 72,
+      curve: {
+        x: "sin(t+0.5*sin(t)*sin(a))+2*sin(2*(t+0.5*sin(t)*sin(a)))",
+        y: "cos(t+0.5*sin(t)*sin(a))-2*cos(2*(t+0.5*sin(t)*sin(a)))",
+        z: "-sin(3*(t+0.5*sin(t)*sin(a)))",
+        a: 0,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    probe: { enabled: true, position: 0.3, target: "curve", across: 0.5 },
+    flight: {
+      duration: 12,
+      repeat: "loop",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "0", to: "2*pi" }],
+        probe: "length",
+      },
+      path: { style: "steady", keys: [] },
     },
   },
 ];
