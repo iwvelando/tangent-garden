@@ -10,6 +10,7 @@ import { implicitMesh } from "../web/spatial/renderer";
 import type { ImplicitResult, SpatialResult } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
+import { engines, watchEngines, type EngineLog } from "./engines";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
 const stage = (page: Page) => page.locator(".spatial-stage");
@@ -411,44 +412,8 @@ for (const camera of ["hold", "current", "follow", "fit"])
     expect(await config(page)).toEqual(base);
   });
 
-// Numbers each engine worker and records its spatial requests and
-// termination, with the core count the browser reports.
-async function workers(page: Page, cores: number) {
-  await page.addInitScript((cores) => {
-    Object.defineProperty(navigator, "hardwareConcurrency", {
-      get: () => cores,
-    });
-    const log: { spatial: number; terminated: boolean; first?: number }[] = [];
-    (window as any).engines = log;
-    const Base = window.Worker;
-    window.Worker = class extends Base {
-      private entry = { spatial: 0, terminated: false };
-      constructor(...args: ConstructorParameters<typeof Worker>) {
-        super(...args);
-        log.push(this.entry);
-      }
-      terminate() {
-        this.entry.terminated = true;
-        super.terminate();
-      }
-      postMessage(message: any, ...rest: any[]) {
-        if (message?.action === "spatial" && !this.entry.spatial++)
-          (this.entry as any).first = message.spatial.implicit?.level;
-        (super.postMessage as any)(message, ...rest);
-      }
-    };
-  }, cores);
-}
-const engines = (page: Page) =>
-  page.evaluate(() =>
-    (
-      (window as any).engines as {
-        spatial: number;
-        terminated: boolean;
-        first?: number;
-      }[]
-    ).map((e) => ({ ...e })),
-  );
+// Each engine's spatial requests.
+const spatial = (e: EngineLog) => e.sent.spatial ?? 0;
 async function levelTrack(page: Page, seconds: string) {
   await openAnimation(page);
   await page.getByLabel("Animate", { exact: true }).selectOption("parameters");
@@ -463,7 +428,7 @@ const button = (page: Page, name: string) =>
 test("parameter playback shares frames with a second engine for its duration", async ({
   page,
 }) => {
-  await workers(page, 8);
+  await watchEngines(page, 8);
   await ready(page);
   await choosePreset(page, drops);
   await settled(page);
@@ -478,12 +443,12 @@ test("parameter playback shares frames with a second engine for its duration", a
   // One helper, released once playback completes; both engines calculated.
   expect(all).toHaveLength(before + 1);
   const helper = all.at(-1)!,
-    app = all.filter((e) => e.spatial && e !== helper);
+    app = all.filter((e) => spatial(e) && e !== helper);
   expect(helper.terminated).toBe(true);
-  expect(helper.spatial).toBeGreaterThan(1);
+  expect(spatial(helper)).toBeGreaterThan(1);
   // The helper prepares the end while the app's engine prepares the start.
-  expect(helper.first).toBe(1.3);
-  expect(app.some((e) => e.spatial > 1 && !e.terminated)).toBe(true);
+  expect(helper.first.spatial.spatial.implicit.level).toBe(1.3);
+  expect(app.some((e) => spatial(e) > 1 && !e.terminated)).toBe(true);
 
   // Pause and Stop release the helper; Resume starts a fresh one.
   await button(page, "Replay").click();
@@ -493,13 +458,13 @@ test("parameter playback shares frames with a second engine for its duration", a
   all = await engines(page);
   expect(all.at(-1)!.terminated).toBe(true);
   // Scrubbing calculates on the app's engine alone.
-  const scrubbed = all.map((e) => e.spatial);
+  const scrubbed = all.map(spatial);
   const slider = page.getByRole("slider", { name: "Animation progress" });
   for (const p of ["0.3", "0.6", "0.45"]) await slider.fill(p);
   await expect(stage(page)).toHaveAttribute("data-progress", "0.45");
   all = await engines(page);
   expect(all).toHaveLength(before + 2);
-  const grew = all.flatMap((e, i) => (e.spatial > scrubbed[i] ? [i] : []));
+  const grew = all.flatMap((e, i) => (spatial(e) > scrubbed[i] ? [i] : []));
   expect(grew).toHaveLength(1);
   expect(all[grew[0]].terminated).toBe(false);
   await button(page, "Resume").click();
@@ -517,7 +482,7 @@ test("parameter playback shares frames with a second engine for its duration", a
 test("two cores, and playback without calculation, keep a single engine", async ({
   page,
 }) => {
-  await workers(page, 2);
+  await watchEngines(page, 2);
   await ready(page);
   await choosePreset(page, drops);
   await settled(page);

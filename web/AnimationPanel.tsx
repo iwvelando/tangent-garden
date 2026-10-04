@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { FrameRateField } from "./FrameRateField";
 import { ProgressSlider } from "./ProgressSlider";
 import type { PlanarAnimation } from "./planar-link";
-import { EngineClient, exportEngineCount } from "./engine-client";
+import {
+  EngineClient,
+  exportEngineCount,
+  playbackEngineCount,
+} from "./engine-client";
+import { play } from "./playback";
 import {
   applyTracks,
   availableTargets,
@@ -65,6 +70,13 @@ type Session = {
   // Where the timeline stands (timing.ts), from which the progress follows.
   progress: number;
 };
+// Whether the session's frames between its ends are calculated by an engine:
+// parameter tracks other than the ray length, and an iterated map's reveal.
+// Every other frame is cut from the prepared study.
+const calculates = (s: Pick<Session, "mode" | "tracks" | "original">) =>
+  (s.mode === "parameters" &&
+    !s.tracks.every((t) => t.target === "rayLength")) ||
+  (s.mode === "reveal" && !!s.original.result.attractor);
 type Props = {
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
@@ -156,8 +168,14 @@ export function AnimationPanel({
   const seekTarget = useRef<number | null>(null),
     scrubbing = useRef(-1);
   const epoch = useRef(0),
-    raf = useRef(0),
+    playing = useRef<(() => void) | null>(null),
     session = useRef<Session | null>(null);
+  // A second engine for parameter playback, alive only while it plays.
+  const helper = useRef<EngineClient | null>(null);
+  const release = () => {
+    helper.current?.dispose();
+    helper.current = null;
+  };
   const targets = frame ? availableTargets(frame.config) : [];
   const iterated = frame?.config.curve.format === "attractor";
   const traceable = !!frame && canTrace(frame.config);
@@ -209,10 +227,12 @@ export function AnimationPanel({
       next === "playing" || next === "preparing" || next === "exporting",
     );
   };
-  const cancel = () => {
+  const cancel = (keepHelper = false) => {
     epoch.current++;
     seekTarget.current = null;
-    cancelAnimationFrame(raf.current);
+    playing.current?.();
+    playing.current = null;
+    if (!keepHelper) release();
     exportAbort.current?.abort();
     exportAbort.current = null;
   };
@@ -232,7 +252,8 @@ export function AnimationPanel({
   useEffect(
     () => () => {
       epoch.current++;
-      cancelAnimationFrame(raf.current);
+      playing.current?.();
+      release();
       exportAbort.current?.abort();
     },
     [],
@@ -380,47 +401,39 @@ export function AnimationPanel({
     );
   }
   function schedule(s: Session, from: number) {
-    cancel();
+    cancel(true);
     const token = epoch.current;
-    const began = performance.now();
-    let last = -Infinity;
     changeStatus("playing");
-    const tick = async (now: number) => {
-      if (epoch.current !== token) return;
-      if (now - last < 1000 / 30) {
-        raf.current = requestAnimationFrame(tick);
-        return;
-      }
-      last = now;
-      // A frame's timestamp marks the start of the frame and can precede
-      // `began`, so clamp at the starting point: extrapolating before it
-      // would overshoot the entered endpoint, such as rounding a count of 2
-      // down to 1, and a resumed animation would step backward.
-      // Repeating, the time wraps from the end to the start, never asking
-      // for 1, which is 0 again.
-      const elapsed = Math.max(
-          from,
-          from + (now - began) / (s.duration * 1000),
-        ),
-        time = cycles(s.repeat)
-          ? elapsed - Math.floor(elapsed)
-          : Math.min(1, elapsed);
-      try {
-        // At most one calculation is in flight. Slow devices skip intermediate
-        // times instead of queuing work or lengthening a 30-second animation.
-        const view = await sample(s, time);
+    // Parameter frames are calculated; while one engine calculates, a helper
+    // can calculate the next. Other modes draw from the prepared study.
+    const computes = calculates(s);
+    if (computes && !helper.current && playbackEngineCount() > 1)
+      helper.current = new EngineClient();
+    const engines =
+      computes && helper.current
+        ? [client.current!, helper.current]
+        : [client.current!];
+    // Each engine holds at most one calculation. Slow devices skip
+    // intermediate times instead of queuing work or lengthening a 30-second
+    // animation.
+    playing.current = play({
+      from,
+      duration: s.duration * 1000,
+      repeat: cycles(s.repeat),
+      lanes: engines.map((engine) => (time: number) => sample(s, time, engine)),
+      show: (view) => {
+        if (epoch.current === token) display(s, view);
+      },
+      end: () => {
         if (epoch.current !== token) return;
-        display(s, view);
-        if (view.complete) {
-          changeStatus("complete");
-          return;
-        }
-        raf.current = requestAnimationFrame(tick);
-      } catch (error) {
+        playing.current = null;
+        release();
+        changeStatus("complete");
+      },
+      fail: (error) => {
         if (epoch.current === token) fail(error);
-      }
-    };
-    raf.current = requestAnimationFrame(tick);
+      },
+    });
   }
   async function start(save = false) {
     if (!frame || !client.current) return;
@@ -475,13 +488,21 @@ export function AnimationPanel({
       let first = frame,
         final = frame;
       if (mode === "parameters") {
+        // Playback's helper engine prepares the end while the app's engine
+        // prepares the start.
+        if (
+          !save &&
+          calculates({ mode, tracks: numeric, original: frame }) &&
+          playbackEngineCount() > 1
+        )
+          helper.current = new EngineClient();
         const results = await Promise.all([
           client.current
             .compute(applyTracks(frame.config, numeric, 0, length).config)
             .catch((reason) => {
               throw new Error(`At animation start: ${reason.message}`);
             }),
-          client.current
+          (helper.current ?? client.current)
             .compute(applyTracks(frame.config, numeric, 1, length).config)
             .catch((reason) => {
               throw new Error(`At animation end: ${reason.message}`);
@@ -540,11 +561,8 @@ export function AnimationPanel({
         if (epoch.current !== token) return;
         // Parameter frames each need a calculation. Temporary engines compute
         // them in parallel for this export only; frames are still drawn in order.
-        const computes =
-          mode === "parameters" &&
-          !numeric.every((t) => t.target === "rayLength");
         const extras = Array.from(
-          { length: computes ? exportEngineCount() - 1 : 0 },
+          { length: calculates(s) ? exportEngineCount() - 1 : 0 },
           () => new EngineClient(),
         );
         const release = () => extras.forEach((engine) => engine.dispose());

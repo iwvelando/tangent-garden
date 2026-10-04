@@ -125,9 +125,9 @@ export function exportEngineCount(
   return 1 + Math.max(0, Math.min(touch ? 1 : 3, cores - 2));
 }
 
-// Engines used for live 3D parameter playback: the app's own plus one helper
-// that calculates the next frame while the current one is drawn, wherever an
-// export could add one.
+// Engines used for live playback of calculated frames in every notebook: the
+// app's own plus one helper that calculates the next frame while the current
+// one is drawn, wherever an export could add one.
 export function playbackEngineCount(
   cores = navigator.hardwareConcurrency || 1,
   touch = matchMedia("(pointer: coarse)").matches,
