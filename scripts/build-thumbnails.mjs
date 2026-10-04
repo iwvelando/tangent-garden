@@ -71,8 +71,11 @@ try {
                   ?.dataset.config
               : notebook === "3d"
                 ? spatial?.config &&
-                  (spatial.cut || spatial.sight
-                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}}`
+                  (spatial.cut ||
+                  spatial.sight ||
+                  spatial.projection ||
+                  spatial.opening
+                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}${spatial.projection ? `,"projection":"${spatial.projection}"` : ""}${spatial.opening ? `,"view":${spatial.opening}` : ""}}`
                     : spatial.config)
                 : document.querySelector(".plot-wrap[aria-busy=false]") &&
                   document.querySelector("#artwork > desc")?.textContent;

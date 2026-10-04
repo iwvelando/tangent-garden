@@ -5,6 +5,8 @@ import type { CameraPath } from "./path";
 import type { Ride } from "./ride";
 import type { AnimationMode, CameraMode, Track } from "./animation";
 import type { SpatialConfig } from "./types";
+import type { Projection } from "./scene";
+import type { SpatialCamera } from "./link";
 const base: SpatialConfig = {
   format: "torus",
   construction: "developable",
@@ -157,6 +159,23 @@ const base: SpatialConfig = {
     a: 1,
   },
 };
+// A helix six turns long about y, with a narrow tangent ribbon and every
+// ruling the developable allows.
+const stairwell: SpatialConfig = {
+  ...base,
+  format: "parametric",
+  length: 0.9,
+  lines: 240,
+  samples: 1800,
+  curve: {
+    x: "2*cos(t)",
+    y: "a*t/3",
+    z: "2*sin(t)",
+    a: 1,
+    min: -6 * Math.PI,
+    max: 6 * Math.PI,
+  },
+};
 // A preset's camera path and duration (see path.ts). Without `animate` it
 // is flown with the geometry fixed; with it, as the animation camera of
 // that mode, moving the geometry by its tracks.
@@ -178,8 +197,9 @@ export type Flight = {
   pace?: Pace;
 };
 // A preset may open with its own cut (see cut.ts), its own sight (see
-// sight.ts) and its own camera path to fly (see Flight); choosing one
-// without turns them off.
+// sight.ts), its own camera path to fly (see Flight), and its own
+// projection and manual view (see scene.ts); choosing one without turns
+// them off, orthographic from the default view.
 export const spatialPresets: {
   name: string;
   detail: string;
@@ -187,6 +207,8 @@ export const spatialPresets: {
   cut?: Cut;
   sight?: Sight;
   flight?: Flight;
+  projection?: Projection;
+  view?: SpatialCamera;
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -2114,6 +2136,132 @@ export const spatialPresets: {
       camera: "hold",
       animate: { mode: "cut" },
       path: { style: "steady", keys: [] },
+    },
+  },
+  // The tangent ribbon of a helix six turns long about y, the turntable's
+  // own axis, seen from 4° short of straight down its axis. Orthographic, the
+  // turns lie on one another as a single ring; through the wide lens each
+  // turn is drawn smaller in proportion to its distance from the eye, so the
+  // stair falls away to a vanishing point. Choose Orthographic to compare.
+  {
+    name: "A spiral stair, down its well",
+    detail:
+      "A helix's tangent ribbon through a wide lens: orthographic, one ring; in perspective, every turn falls away to a vanishing point",
+    config: stairwell,
+    projection: "wide",
+    view: { yaw: 0.3, pitch: 1.5, zoom: 1.2, panX: 0, panY: 0 },
+  },
+  // The same stair through the normal lens, flown by a camera path. Zoom
+  // moves a perspective camera's eye (scene.ts): from outside, over the top
+  // and down inside the helix, then tilting to look across its inner wall,
+  // the eye 2.11 from the middle and 0.77 from the axis, inside the turns of
+  // radius 2; then back out.
+  {
+    name: "Diving down the stairwell",
+    detail:
+      "A camera path in perspective: zoom moves the eye, so the flight passes over the stair and down inside it, and back",
+    config: stairwell,
+    projection: "normal",
+    view: { yaw: 0.3, pitch: 0.35, zoom: 0.9, panX: 0, panY: 0 },
+    flight: {
+      duration: 20,
+      repeat: "back-and-forth",
+      pace: "ease",
+      path: {
+        style: "smooth",
+        keys: [
+          {
+            name: "Outside the stair",
+            yaw: 0.3,
+            pitch: 0.35,
+            zoom: 0.9,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Over the top",
+            yaw: 1.3,
+            pitch: 1.5,
+            zoom: 1.6,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Inside the top turns",
+            yaw: 2.3,
+            pitch: 1.5,
+            zoom: 4.5,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Across the inner wall",
+            yaw: 3.3,
+            pitch: 1.2,
+            zoom: 8,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
+  // The trefoil's tube with y as the knot's axis, seen through the wide lens
+  // from inside its central hole: the eye is 1.16 radius / zoom = 1.46 from
+  // the middle, inside the knot's least distance from its axis, 2.4 − 0.85.
+  // A steady leg of one whole turn turns the camera about the axis, and its
+  // last frame is its first, so it loops.
+  {
+    name: "Inside a trefoil's tube",
+    detail:
+      "A wide lens in the knot's central hole, turning once about its axis: the tube passes overhead, beside and far away",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      lines: 48,
+      canal: { radius: 0.32, profile: "1", meridians: 4 },
+      curve: {
+        x: "(2.4+0.85*cos(3*t))*cos(2*t)",
+        y: "0.85*sin(3*t)",
+        z: "(2.4+0.85*cos(3*t))*sin(2*t)",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    projection: "wide",
+    view: { yaw: 1.2, pitch: 0.3, zoom: 3, panX: 0, panY: 0 },
+    flight: {
+      duration: 30,
+      repeat: "loop",
+      path: {
+        style: "steady",
+        keys: [
+          {
+            name: "In the hole",
+            yaw: 1.2,
+            pitch: 0.3,
+            zoom: 3,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Once around",
+            yaw: 1.2,
+            pitch: 0.3,
+            zoom: 3,
+            panX: 0,
+            panY: 0,
+            turns: 1,
+          },
+        ],
+      },
     },
   },
 ];

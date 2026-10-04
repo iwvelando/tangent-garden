@@ -135,7 +135,7 @@ const cases: Case[] = [
   [
     "slice",
     object("tesseract", "section"),
-    (c) => (c.slice = 4),
+    (c) => (c.slice = 4.1),
     "Slice offset h",
   ],
   [

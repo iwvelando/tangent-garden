@@ -1025,6 +1025,12 @@ h1 {
 }
 .view-buttons {
   display: flex;
+  flex-shrink: 0;
+}
+/* The 3D notebook's projection, as wide as its longest choice. */
+.view-buttons select.projection {
+  width: auto;
+  font-size: 13px;
 }
 .view-buttons .fit[aria-pressed="true"] {
   border-color: #7aa898;
@@ -1040,6 +1046,17 @@ h1 {
   .plot-heading > .fit,
   .view-buttons .fit:first-child {
     margin-left: 0;
+  }
+  /* The 3D projection takes a row of its own above the buttons. */
+  .view-buttons.lensed {
+    flex-wrap: wrap;
+    gap: 10px 12px;
+  }
+  .view-buttons.lensed > * {
+    margin-left: 0;
+  }
+  .view-buttons.lensed > select.projection {
+    flex-basis: 100%;
   }
 }
 @media (max-width: 1200px) {

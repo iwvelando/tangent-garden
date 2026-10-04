@@ -2,7 +2,9 @@ package engine4
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -257,7 +259,7 @@ func TestStereographic(t *testing.T) {
 	}
 }
 func TestRefusals(t *testing.T) {
-	tests := []func(*Request){func(q *Request) { q.Mode = "bad" }, func(q *Request) { q.Mode = "perspective"; q.Distance = 2 }, func(q *Request) { q.Angles[2] = math.NaN() }, func(q *Request) { q.Mode = "stereo"; q.Clip = math.Inf(1) }, func(q *Request) { q.Mode = "section"; q.Slice = 4 }, func(q *Request) { q.Mode = "section"; q.Spread = -1 }, func(q *Request) { q.Mode = "section"; q.Count = 26 }, func(q *Request) { q.Grid = 13 }, func(q *Request) { q.Mode = "stereo"; q.Samples = 257 }}
+	tests := []func(*Request){func(q *Request) { q.Mode = "bad" }, func(q *Request) { q.Mode = "perspective"; q.Distance = 2 }, func(q *Request) { q.Angles[2] = math.NaN() }, func(q *Request) { q.Mode = "stereo"; q.Clip = math.Inf(1) }, func(q *Request) { q.Mode = "section"; q.Slice = 4.1 }, func(q *Request) { q.Mode = "section"; q.Spread = -1 }, func(q *Request) { q.Mode = "section"; q.Count = 26 }, func(q *Request) { q.Grid = 13 }, func(q *Request) { q.Mode = "stereo"; q.Samples = 257 }}
 	for _, f := range tests {
 		q := request()
 		f(&q)
@@ -300,6 +302,43 @@ func TestSectionSweepAndDegenerateContacts(t *testing.T) {
 			if a.Vertices != b.Vertices || a.Edges != b.Edges || a.Faces != b.Faces {
 				t.Fatal(a, b)
 			}
+		}
+	}
+}
+
+// A family's slice passage ends where its nearest section is 2.05 from the
+// center, just beyond the circumradius 2: at most 2.05 + 4/2 for the
+// greatest spread. The offset accepts that far, empty at both ends, and
+// nothing beyond.
+func TestSliceReachesTheWidestPassage(t *testing.T) {
+	section := func(slice, spread float64, count int) Request {
+		q := request()
+		q.Mode, q.Slice, q.Spread, q.Count = "section", slice, spread, count
+		q.Angles = [6]float64{.12, .3, .2, .66, .51, .39}
+		return q
+	}
+	for _, h := range []float64{-4.05, 4.05} {
+		r := compute(t, section(h, 4, 17))
+		if len(r.Sections) != 17 {
+			t.Fatal(len(r.Sections))
+		}
+		for _, s := range r.Sections {
+			if s.Dimension != -1 {
+				t.Fatalf("section at %g is not empty: %+v", s.Level, s)
+			}
+		}
+		if len(r.Paths) != 0 {
+			t.Fatal(len(r.Paths))
+		}
+	}
+	for _, h := range []float64{-4.0501, 4.0501, math.NaN()} {
+		_, err := Compute(section(h, 4, 17))
+		var field *FieldError
+		if !errors.As(err, &field) || field.Field != "slice" {
+			t.Fatalf("slice %g: %v", h, err)
+		}
+		if !strings.Contains(err.Error(), "±4.05") {
+			t.Fatal(err)
 		}
 	}
 }

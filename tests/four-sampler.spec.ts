@@ -55,10 +55,29 @@ test("4D sampler preserves definitions and exact support-relative endpoints", ()
         assert.deepEqual(sampler(q, "double", 0.5), q);
         assert.deepEqual(sampler(q, "xw", 0.5), q);
       }
+  // A single tesseract section passes 2.5% beyond the circumradius 2; a
+  // family's middle passes half its spread further, so its nearest section
+  // is as far out and every section is empty at both ends.
+  const single: Config = { ...base, object: "tesseract", count: 1 };
+  assert.equal(extent(single), 2.05);
+  assert.equal(sampler(single, "slice", 0).slice, -2.05);
+  assert.equal(sampler(single, "slice", 1).slice, 2.05);
+  for (const [count, spread] of [
+    [5, 0.8],
+    [17, 4],
+    [25, 0],
+  ]) {
+    const family: Config = { ...base, object: "tesseract", count, spread };
+    assert.equal(extent(family), 2.05 + spread / 2);
+    for (const end of [0, 1]) {
+      const h = sampler(family, "slice", end).slice;
+      for (let i = 0; i < count; i++) {
+        const level = h + spread * (i / (count - 1) - 0.5);
+        assert.ok(Math.abs(level) >= 2.05 - 1e-12, `section ${i} at ${end}`);
+      }
+    }
+  }
   const cube: Config = { ...base, object: "tesseract" };
-  assert.equal(extent(cube), 2.05);
-  assert.equal(sampler(cube, "slice", 0).slice, -2.05);
-  assert.equal(sampler(cube, "slice", 1).slice, 2.05);
   assert.equal(sampler(cube, "double", 0.5).angles[2], Math.PI);
   assert.equal(sampler(cube, "double", 0.5).angles[3], Math.PI);
   assert.equal(sampler(cube, "xw", 0.5).angles[2], 0);

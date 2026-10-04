@@ -127,6 +127,7 @@ const spatial = (i = 0): SpatialStudy => ({
     edge: false,
   },
   sight: { sheets: "through", opacity: 0.5, hidden: "dashed" },
+  projection: "normal",
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
@@ -633,6 +634,8 @@ test("links made by version 1 keep opening", async () => {
   assert.deepEqual(s.cut, defaultCut);
   // Links made before seeing through open opaque, hiding hidden lines.
   assert.deepEqual(s.sight, defaultSight);
+  // Links made before the perspective option open orthographic.
+  assert.equal(s.projection, "orthographic");
   // Links made before camera paths fly none.
   assert.deepEqual(s.animation.path, defaultPath);
 
@@ -766,6 +769,28 @@ test("a link carries seeing through; refuses an opacity outside its range or an 
     bad((v) => (v.extra = 1)),
     "sight.extra",
   );
+});
+
+test("a link carries the manual camera's projection; refuses an unknown one", async () => {
+  for (const projection of [
+    "orthographic",
+    "narrow",
+    "normal",
+    "wide",
+  ] as const) {
+    const study: SpatialStudy = { ...spatial(), projection };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study), study);
+  }
+  // A link without it opens orthographic.
+  const partial = structuredClone(spatial()) as any;
+  delete partial.projection;
+  assert.equal(spatialStudy(partial).projection, "orthographic");
+  for (const value of ["fisheye", 50, null]) {
+    const s = structuredClone(spatial()) as any;
+    s.projection = value;
+    await refused(() => spatialStudy(s), "projection");
+  }
 });
 
 test("a link carries a camera path and its flight; refuses turns, views and names outside their limits", async () => {

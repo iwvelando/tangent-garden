@@ -111,9 +111,9 @@ test("a whole turn loops without end, wrapping its time, until paused or stopped
 test("every preset's whole turn passes the closure check, and a slice passage only when it starts and ends empty", async ({
   page,
 }) => {
-  // Seventeen parallel sections spread beyond the passage, so some still
-  // cut the shape at its ends.
-  const refused = new Set(["Section garden slice"]);
+  // Every passage, a family's included, reaches beyond the shape by half
+  // its spread, so none is refused.
+  const refused = new Set<string>();
   for (const [i, p] of tesseractPresets.entries()) {
     const looping = motions(p.config).filter((c) => c.loops);
     for (const choice of looping) {

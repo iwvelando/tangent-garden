@@ -235,11 +235,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     constructionNumber: "03",
     radiusFields: [],
     support: () => 2,
-    familyPassage: false,
+    familyPassage: true,
     passageHelp:
-      "The centre moves beyond the tesseract's circumradius 2 at both endpoints. Sections retain their entered spacing.",
+      "The endpoints lie 2.5% beyond the tesseract's circumradius 2, and half the family spread further, so every section is empty there. Sections retain their entered spacing.",
     sliceHelp:
-      "Intersect w = h after rotation. From −3 to 3; beyond the rotated cube there is no section.",
+      "Intersect w = h after rotation. From −4.05 to 4.05, the end of the widest passage; beyond the rotated cube there is no section.",
     spreadHelp:
       "Total distance between first and last slice, from 0 to 4. A single slice ignores spread.",
     explanation: (c) => explanations[c.mode as keyof typeof explanations],

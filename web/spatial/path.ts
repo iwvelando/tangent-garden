@@ -9,7 +9,7 @@
 // stays within ±1.5 rad, so yaw and pitch describe every orientation it can
 // take without a singularity, and they are interpolated directly.
 import type { Bounds3, Vec3 } from "./types";
-import type { View } from "./scene";
+import { projections, type View } from "./scene";
 
 export type PathStyle = "steady" | "smooth";
 export type KeyView = {
@@ -110,6 +110,7 @@ function rows(yaw: number, pitch: number) {
   return [
     [c, 0, s],
     [b * s, a, -b * c],
+    [-a * s, b, a * c],
   ];
 }
 const manual = (key: KeyView, bounds: Bounds3): View => ({
@@ -123,20 +124,29 @@ const manual = (key: KeyView, bounds: Bounds3): View => ({
 
 // A shown view as a key view about the study's bounds that draws every point
 // where the view drew it: a finished animation's camera may be framed about
-// other bounds. Depth keeps the study's own range.
+// other bounds. Depth keeps the study's own range. Through a lens the eye
+// stays put: its distance behind the new target, which moves along the line
+// of sight with the center, sets the zoom (see scene.ts's turntableLens).
 export function keyFromView(
   view: View,
   bounds: Bounds3,
   name: string,
 ): KeyView {
-  const [x, y] = rows(view.yaw, view.pitch);
+  const [x, y, back] = rows(view.yaw, view.pitch);
   const d = [
     bounds.center.x - view.center.x,
     bounds.center.y - view.center.y,
     bounds.center.z - view.center.z,
   ];
   const dot = (r: number[]) => r[0] * d[0] + r[1] * d[1] + r[2] * d[2];
-  const zoom = view.zoom * (bounds.radius / view.radius);
+  const fov = !view.lens && projections[view.projection ?? "orthographic"].fov;
+  const tan = fov ? Math.tan((fov * Math.PI) / 360) : 0;
+  const behind = fov ? (1.16 * view.radius) / (view.zoom * tan) - dot(back) : 0;
+  const zoom = fov
+    ? behind > 0
+      ? (1.16 * bounds.radius) / (behind * tan)
+      : zoomRange[1]
+    : view.zoom * (bounds.radius / view.radius);
   return {
     name,
     yaw: view.yaw,

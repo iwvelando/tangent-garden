@@ -17,6 +17,7 @@ import {
 } from "./types";
 import { spatialPresets } from "./presets";
 import { defaultLayers, initialView, type Layers } from "./renderer";
+import { projections, type Projection } from "./scene";
 import {
   availableTargets,
   type AnimationMode,
@@ -71,6 +72,8 @@ export type SpatialStudy = {
   // Seeing through sheets, opaque and hiding hidden lines in links made
   // before it.
   sight: Sight;
+  // The manual camera's projection, orthographic in links made before it.
+  projection: Projection;
 };
 export const defaultAnimation: SpatialAnimation = {
   mode: "reveal",
@@ -409,6 +412,12 @@ const sight: SchemaOf<Sight> = {
   },
 };
 
+const projection: SchemaOf<Projection> = {
+  options: Object.fromEntries(
+    Object.keys(projections).map((p) => [p, true]),
+  ) as Record<Projection, true>,
+};
+
 export function spatialStudy(value: unknown): SpatialStudy {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new LinkError(
@@ -426,6 +435,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
         "probe",
         "cut",
         "sight",
+        "projection",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -533,5 +543,11 @@ export function spatialStudy(value: unknown): SpatialStudy {
     probe: probed,
     cut: cutting,
     sight: conform(raw.sight, sight, defaultSight, "sight"),
+    projection: conform(
+      raw.projection,
+      projection,
+      "orthographic",
+      "projection",
+    ),
   };
 }

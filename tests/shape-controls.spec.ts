@@ -56,7 +56,14 @@ for (const width of [320, 390, 1440]) {
           .locator(".app:visible .view-buttons button")
           .allTextContents(),
       ).toEqual(labels);
-      await expect(page.locator(".app:visible .plot-meta")).toContainText(text);
+      // The same gestures; the 3D notebook names its projection in the
+      // Projection menu instead of the caption.
+      await expect(page.locator(".app:visible .plot-meta > span")).toHaveText(
+        text.replace(/^Orthographic · drag/, "Drag"),
+      );
+      await expect(page.getByLabel("Projection", { exact: true })).toHaveValue(
+        "orthographic",
+      );
     });
   }
 }

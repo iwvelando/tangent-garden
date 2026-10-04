@@ -17,7 +17,19 @@ export type View = Bounds3 & {
   // A perspective camera in place of the orthographic turntable, when
   // present: only the camera that rides a ray (see ride.ts) draws with one.
   lens?: Lens;
+  // The turntable's projection, orthographic when absent (see camera).
+  projection?: Projection;
 };
+// The manual camera's projections: orthographic, or a pinhole through a
+// lens whose angle in degrees spans the page's shorter side.
+export type Projection = "orthographic" | "narrow" | "normal" | "wide";
+export const projections: Record<Projection, { label: string; fov?: number }> =
+  {
+    orthographic: { label: "Orthographic" },
+    narrow: { label: "Perspective · narrow, 30°", fov: 30 },
+    normal: { label: "Perspective · normal, 50°", fov: 50 },
+    wide: { label: "Perspective · wide, 90°", fov: 90 },
+  };
 // A pinhole camera at eye looking along forward, with up toward the top of
 // the page (made perpendicular to forward). fov is the angle in degrees
 // across the page's shorter side; near and far are distances from the eye
@@ -1084,6 +1096,8 @@ export function camera(
   size: { width: number; height: number },
 ): Camera {
   if (view.lens) return perspective(view.lens, view.radius, size);
+  const fov = projections[view.projection ?? "orthographic"].fov;
+  if (fov) return perspective(turntableLens(view, fov), view.radius, size);
   const aspect = size.width / size.height;
   const c = Math.cos(view.yaw),
     s = Math.sin(view.yaw),
@@ -1102,6 +1116,56 @@ export function camera(
     lens: [0, 0, 0],
     width: size.width,
     height: size.height,
+  };
+}
+// The turntable seen through a lens: its rows right (c, 0, s), up
+// (b s, a, −b c) and back (−a s, b, a c), about a target panned from the
+// center along right and up. The eye is d = 1.16 radius / (zoom tan(fov/2))
+// behind the target, so the plane through the target is drawn at the
+// orthographic scale, panning moves it as before and zooming dollies the
+// eye. Far reaches four radii past the center, as the orthographic depth;
+// near is four radii short of it, or a hundredth of d once the eye is that
+// close.
+// The projection as an export's metadata records it, only when it is a
+// perspective, so orthographic files are unchanged.
+export function projectionRecord(view: View) {
+  const fov = !view.lens && projections[view.projection ?? "orthographic"].fov;
+  if (!fov) return undefined;
+  return {
+    name: view.projection,
+    statement: `A pinhole perspective, ${fov}° across the page's shorter side, from an eye behind the view's target; the plane through the target is drawn at the orthographic scale, and zoom moves the eye.`,
+  };
+}
+function turntableLens(view: View, fov: number): Lens {
+  const c = Math.cos(view.yaw),
+    s = Math.sin(view.yaw),
+    a = Math.cos(view.pitch),
+    b = Math.sin(view.pitch);
+  const right = { x: c, y: 0, z: s },
+    up = { x: b * s, y: a, z: -b * c },
+    back = { x: -a * s, y: b, z: a * c };
+  const d =
+    (1.16 * view.radius) / (view.zoom * Math.tan((fov * Math.PI) / 360));
+  const shift = (k: "x" | "y" | "z") =>
+    -view.panX * right[k] - view.panY * up[k] + d * back[k];
+  const eye = {
+    x: view.center.x + shift("x"),
+    y: view.center.y + shift("y"),
+    z: view.center.z + shift("z"),
+  };
+  const reach = Math.hypot(
+    eye.x - view.center.x,
+    eye.y - view.center.y,
+    eye.z - view.center.z,
+  );
+  return {
+    projection: "perspective",
+    eye,
+    forward: { x: -back.x, y: -back.y, z: -back.z },
+    up,
+    fov,
+    near: Math.max(reach - 4 * view.radius, d / 100),
+    far: reach + 4 * view.radius,
   };
 }
 function perspective(
