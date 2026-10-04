@@ -404,7 +404,9 @@ export type LightDiagnostics = {
 // and 0 at a flat sample (|r′ × r″| below the developable's binormal guard),
 // where N, B, τ and the centre are null; torsion is null also where r‴ is
 // unknown; a centre beyond 100 study radii is null (at infinity). Counts
-// leave out a closed curve's repeated last sample.
+// leave out a closed curve's repeated last sample. length is the drawn
+// curve's arc length from its first sample, null where it is not drawn and
+// not growing across a break.
 export type DiagnosticsResult = {
   min: number;
   max: number;
@@ -414,6 +416,7 @@ export type DiagnosticsResult = {
   normal: (Vec3 | null)[];
   binormal: (Vec3 | null)[];
   center: (Vec3 | null)[];
+  length: (number | null)[];
   flat: number;
   unknown: number;
   clipped: number;

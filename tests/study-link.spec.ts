@@ -110,6 +110,10 @@ const spatial = (i = 0): SpatialStudy => ({
     ride: { i: 4, j: 12, follow: 0.5, turn: 1.25 },
     repeat: "back-and-forth",
     pace: "ease",
+    // A grid has no length to keep a share of.
+    probeMotion: ["rays", "surface"].includes(spatialPresets[i].config.format)
+      ? "along"
+      : "length",
   },
   // A mirror's probe describes its light; a curve probe there is from a
   // link made before it had one.
@@ -638,6 +642,8 @@ test("links made by version 1 keep opening", async () => {
   assert.equal(s.projection, "orthographic");
   // Links made before camera paths fly none.
   assert.deepEqual(s.animation.path, defaultPath);
+  // Links made before the probe moved with parameters keep it in place.
+  assert.equal(s.animation.probeMotion, "stays");
 
   const fourLink = await readStudyLink(v1["4d"]);
   assert.equal(fourLink.notebook, "4d");
@@ -790,6 +796,37 @@ test("a link carries the manual camera's projection; refuses an unknown one", as
     const s = structuredClone(spatial()) as any;
     s.projection = value;
     await refused(() => spatialStudy(s), "projection");
+  }
+});
+
+test("a link carries how the probe moves while parameters vary; a grid's probe stays", async () => {
+  for (const probeMotion of ["stays", "length", "along"] as const) {
+    const study: SpatialStudy = {
+      ...spatial(),
+      animation: { ...spatial().animation, mode: "parameters", probeMotion },
+    };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study), study);
+  }
+  // A link without it keeps the probe in place.
+  const partial = structuredClone(spatial()) as any;
+  delete partial.animation.probeMotion;
+  assert.equal(spatialStudy(partial).animation.probeMotion, "stays");
+  for (const value of ["slides", 1, null]) {
+    const s = structuredClone(spatial()) as any;
+    s.animation.probeMotion = value;
+    await refused(() => spatialStudy(s), "animation.probeMotion");
+  }
+  // A surface's probe stands on a grid, which has rows, not a length: a
+  // share of it stays, as the panel's does, even with the probe off.
+  const patch = spatialPresets.findIndex((p) => p.config.format === "surface");
+  for (const enabled of [true, false]) {
+    const grid = structuredClone(spatial(patch)) as any;
+    grid.probe = { ...grid.probe, target: "surface", enabled };
+    grid.animation.probeMotion = "length";
+    assert.equal(spatialStudy(grid).animation.probeMotion, "stays");
+    grid.animation.probeMotion = "along";
+    assert.equal(spatialStudy(grid).animation.probeMotion, "along");
   }
 });
 

@@ -96,18 +96,19 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
                               : p.config.format === "torus"
                                 ? "Torus knots"
                                 : "Parametric curves",
-  keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.sight ? " see-through" : ""}${p.projection && p.projection !== "orthographic" ? " perspective" : ""}${p.flight ? `${p.flight.path.keys.length ? " flight" : ""}${p.flight.ride ? " ride perspective" : ""}${p.flight.repeat === "loop" ? " seamless loop" : p.flight.repeat === "back-and-forth" ? " back and forth" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}`,
-  // A preset's cut, sight, projection and opening view are part of its
-  // picture; presets without them keep the fingerprints they had before
+  keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.sight ? " see-through" : ""}${p.projection && p.projection !== "orthographic" ? " perspective" : ""}${p.flight ? `${p.flight.path.keys.length ? " flight" : ""}${p.flight.ride ? " ride perspective" : ""}${p.flight.repeat === "loop" ? " seamless loop" : p.flight.repeat === "back-and-forth" ? " back and forth" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}${p.probe?.enabled ? " probe curvature torsion" : ""}`,
+  // A preset's cut, sight, projection, opening view and probe are part of
+  // its picture; presets without them keep the fingerprints they had before
   // those existed.
   fingerprint: fingerprint(
-    p.cut || p.sight || p.projection || p.view
+    p.cut || p.sight || p.projection || p.view || p.probe
       ? {
           config: p.config,
           ...(p.cut && { cut: p.cut }),
           ...(p.sight && { sight: p.sight }),
           ...(p.projection && { projection: p.projection }),
           ...(p.view && { view: p.view }),
+          ...(p.probe && { probe: p.probe }),
         }
       : p.config,
   ),

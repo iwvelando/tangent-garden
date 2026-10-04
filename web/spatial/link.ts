@@ -24,7 +24,14 @@ import {
   type CameraMode,
   type Target,
 } from "./animation";
-import { defaultProbe, probeSupport, type Probe } from "./probe";
+import {
+  defaultProbe,
+  gridded,
+  probeSupport,
+  probeTarget,
+  type Probe,
+  type ProbeMotion,
+} from "./probe";
 import { cutPlane, defaultCut, maxCutValue, type Cut } from "./cut";
 import { defaultSight, opacityRange, type Sight } from "./sight";
 import {
@@ -59,6 +66,9 @@ export type SpatialAnimation = Omit<
   // once, steadily.
   repeat: Repeat;
   pace: Pace;
+  // How the probe moves while parameters vary; links made before it keep
+  // it at its t, or its row and column.
+  probeMotion: ProbeMotion;
 };
 export type SpatialStudy = {
   config: SpatialConfig;
@@ -84,6 +94,7 @@ export const defaultAnimation: SpatialAnimation = {
   ride: defaultRide,
   repeat: "once",
   pace: "steady",
+  probeMotion: "stays",
 };
 
 const vec3 = {
@@ -412,6 +423,10 @@ const sight: SchemaOf<Sight> = {
   },
 };
 
+const motion: SchemaOf<ProbeMotion> = {
+  options: { stays: true, length: true, along: true },
+};
+
 const projection: SchemaOf<Projection> = {
   options: Object.fromEntries(
     Object.keys(projections).map((p) => [p, true]),
@@ -455,6 +470,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
     ride: rode,
     repeat,
     pace,
+    probeMotion,
     ...shared
   } = grouped ? (raw.animation as Record<string, unknown>) : {};
   const flying = shared.camera === "path",
@@ -481,6 +497,12 @@ export function spatialStudy(value: unknown): SpatialStudy {
     path: cameraPath(flight),
     ride: riding(rode),
     ...animationTiming({ repeat, pace }, "animation"),
+    probeMotion: conform(
+      probeMotion,
+      motion,
+      defaultAnimation.probeMotion,
+      "animation.probeMotion",
+    ),
   };
   if (animation.repeat === "loop" && !loops(animation.mode))
     throw new LinkError(
@@ -529,6 +551,12 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode moves the probe only while it is on in a study that offers it.",
     );
+  // A grid has rows, not a length: its probe stays, as the panel's does.
+  if (
+    animation.probeMotion === "length" &&
+    gridded(probeTarget(study.config, probed))
+  )
+    animation.probeMotion = "stays";
   const cutting = conform(raw.cut, cut, defaultCut, "cut");
   if (cutting.enabled && "message" in cutPlane(cutting))
     throw new LinkError("cut.normal", "cut.normal must not be zero.");

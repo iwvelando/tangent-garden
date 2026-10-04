@@ -123,9 +123,13 @@ export type AnimationView = {
   // A finished animation releases the camera, starting from its own.
   complete: boolean;
   // The probe's sample in the frame's diagnostics (a surface's row), and
-  // its setup, when the animation moves it.
+  // its setup, when the animation draws it: moving it, or varying
+  // parameters while it is on.
   probe?: number;
   probeSetup?: import("./probe").Probe;
+  // Why a parameter animation that draws the probe has none on this frame
+  // (see heldProbe).
+  probeAway?: string;
   // The cut as this frame draws it, when the animation moves it.
   cut?: import("./cut").CutSpec;
   // The camera path, when the animation flies it, and the bounds its key

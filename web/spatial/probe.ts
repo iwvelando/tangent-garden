@@ -177,7 +177,7 @@ export function probeHelp(c: SpatialConfig) {
   const { highlight } = probeSupport(c);
   return `Describes the curve itself, not the surface or curves built on it. Moves between the curve's samples (more samples give finer steps) and shows the Frenet frame there: tangent T, principal normal N and binormal B, with the osculating circle of radius 1/κ in the plane of T and N${
     highlight ? `, and ${highlight}` : ""
-  }. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it only when they move it along the curve ("Move the probe along the curve"); still images include it.`;
+  }. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it when they move it along the curve ("Move the probe along the curve") or vary parameters, where Probe chooses whether it stays at its t, keeps its share of the curve's length, or moves along the curve; other animations leave it out, and still images include it.`;
 }
 
 const vertices = (points: Vec3[]) =>
@@ -522,9 +522,9 @@ export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
       c.rays.interaction === "refract"
         ? " and points beyond the critical angle, where the light is totally reflected and nothing is transmitted,"
         : ""
-    } have no outgoing wavefront. Animations and their exports show it only when they move it ("Move the probe along the ${m}"); still images include it.`;
+    } have no outgoing wavefront. Animations and their exports show it when they move it ("Move the probe along the ${m}") or vary parameters; other animations leave it out, and still images include it.`;
   }
-  return `Describes the ${t.surface} at a point: its normal, its two principal directions, and their normal-section circles of radius 1/|κ| through the point, centred on the focal points (the centres of curvature) on the normal line. ${t.help}. Curvatures use A = −dn, so a sphere with its outward normal has κ = −1/R. Where a centre lies beyond 100 study radii it is at infinity and its circle is not drawn; at an umbilic every direction is principal and none is drawn; where the surface is singular there is no normal. Animations and their exports show it only when they move it ("Move the probe along the ${t.surface}"); still images include it.`;
+  return `Describes the ${t.surface} at a point: its normal, its two principal directions, and their normal-section circles of radius 1/|κ| through the point, centred on the focal points (the centres of curvature) on the normal line. ${t.help}. Curvatures use A = −dn, so a sphere with its outward normal has κ = −1/R. Where a centre lies beyond 100 study radii it is at infinity and its circle is not drawn; at an umbilic every direction is principal and none is drawn; where the surface is singular there is no normal. Animations and their exports show it when they move it ("Move the probe along the ${t.surface}") or vary parameters; other animations leave it out, and still images include it.`;
 }
 
 // The grid sample at a probe's fractions: the nearest row, and the nearest
@@ -744,6 +744,91 @@ export function probeSteps(result: SpatialResult, target: ProbeTarget) {
       ? d.u.length - 1
       : null;
   return result.diagnostics ? result.diagnostics.curvature.length - 1 : null;
+}
+
+// How the probe moves while parameter tracks reshape the study: it stays
+// where it was put (at its t on the curve, or its row and column on a
+// grid), keeps its share of the curve's drawn length, or moves along the
+// curve or grid from start to end as the parameters vary.
+export type ProbeMotion = "stays" | "length" | "along";
+export const probeMotionValues: ProbeMotion[] = ["stays", "length", "along"];
+export function probeMotions(
+  c: SpatialConfig,
+  target: ProbeTarget,
+): { value: ProbeMotion; label: string }[] {
+  if (gridded(target))
+    return [
+      { value: "stays", label: "Stays at its row and column" },
+      {
+        value: "along",
+        label: `Moves along the ${surfaceTerms(c, target).surface}`,
+      },
+    ];
+  return [
+    { value: "stays", label: "Stays at its t" },
+    { value: "length", label: "Keeps its share of the length" },
+    { value: "along", label: "Moves along the curve" },
+  ];
+}
+export function probeMotionHelp(c: SpatialConfig, target: ProbeTarget) {
+  if (gridded(target)) {
+    const t = surfaceTerms(c, target);
+    return `Where the probe stands in each frame while the parameters vary. Stays: at the same share of the ${t.surface}'s rows and columns as the point you chose. Moves along: from its first ${t.along} to its last as the animation plays, at the column you chose. It snaps to each frame's own grid; the readout and plot describe that frame.`;
+  }
+  return "Where the probe stands in each frame while the parameters vary. Stays at its t: at the sample nearest the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: at the sample nearest the same fraction of the drawn curve's arc length, measured by Go on each frame's samples, with nothing counted across a break. Moves along the curve: from its first sample to its last as the animation plays. It snaps to each frame's own samples; the readout and plot describe that frame, and framing ignores the osculating circle.";
+}
+
+// The step the probe stands at in one frame of a parameter animation at
+// progress p, or a sentence saying why it has none there. start is the
+// study as playback began, with the diagnostics the target needs; the
+// probe's chosen sample there is what it stays at.
+export function heldProbe(
+  start: SpatialResult,
+  probe: Probe,
+  target: ProbeTarget,
+  motion: ProbeMotion,
+  frame: SpatialResult,
+  p: number,
+): number | string {
+  const steps = probeSteps(frame, target);
+  if (steps === null)
+    return "This frame has nothing for the probe to describe.";
+  if (motion === "along") return probeIndex(p, steps);
+  if (gridded(target))
+    return surfaceProbeAt(
+      frame.surfaceDiagnostics!,
+      probe.position,
+      probe.across,
+    ).row;
+  const from = start.diagnostics!,
+    d = frame.diagnostics!,
+    n0 = from.curvature.length - 1,
+    i0 = probeIndex(probe.position, n0);
+  const short = (v: number) => Number(v.toPrecision(6));
+  if (motion === "stays") {
+    const t = from.min + ((from.max - from.min) * i0) / n0;
+    const x = ((t - d.min) / (d.max - d.min)) * steps;
+    if (!(x >= -0.5 && x <= steps + 0.5))
+      return `t = ${short(t)} lies outside this frame's domain, [${short(d.min)}, ${short(d.max)}].`;
+    return Math.min(steps, Math.max(0, Math.round(x)));
+  }
+  const total = (lengths: (number | null)[]) =>
+    lengths.reduce<number>((m, s) => (s !== null && s > m ? s : m), 0);
+  const mine = from.length[i0],
+    whole = total(from.length);
+  if (mine === null || !(whole > 0))
+    return "The probe's point has no share of the length: it is not on a drawn stretch of the curve.";
+  const goal = (mine / whole) * total(d.length);
+  if (!(total(d.length) > 0)) return "This frame's curve has no length.";
+  let best = -1;
+  d.length.forEach((s, i) => {
+    if (
+      s !== null &&
+      (best < 0 || Math.abs(s - goal) < Math.abs(d.length[best]! - goal))
+    )
+      best = i;
+  });
+  return best;
 }
 
 // The probe's drawing at step i: the curve probe at sample i, or the surface

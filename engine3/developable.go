@@ -380,6 +380,9 @@ func compute(c Request) (Result, error) {
 			out.Breaks[i+1] = true
 		}
 	}
+	if out.Diagnostics != nil {
+		out.Diagnostics.measure(out.Base, speeds, middles, out.Breaks, (hi-lo)/float64(n))
+	}
 	for i := 0; i < n && developable; i++ {
 		if out.Breaks[i+1] || !valid[i] || !valid[i+1] || normals[i].dot(normals[i+1]) < 0 {
 			out.Omitted++
