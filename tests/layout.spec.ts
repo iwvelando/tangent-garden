@@ -69,14 +69,20 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
     await page.goto("/");
     await expect(page.locator("#artwork")).toBeVisible();
     const labels = await exampleTitles(page);
-    const setups: Setup[] = labels.map(
-      (label) => () => choosePreset(page, { label }),
-    );
+    // Each study's own pairs appear once it settles; sweeping before then
+    // would find them mounting under it.
+    const settled = () =>
+      expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false");
+    const setups: Setup[] = labels.map((label) => async () => {
+      await choosePreset(page, { label });
+      await settled();
+    });
     setups.push(async () => {
       await choosePreset(page, { label: "Light inside a circle" });
       await page
         .getByRole("combobox", { name: "Source coordinates" })
         .selectOption("polar");
+      await settled();
     });
     // An iterated map's window appears only when it is not fitted.
     setups.push(async () => {
@@ -84,6 +90,7 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
       await page
         .getByRole("checkbox", { name: "Fit the window to the iterates" })
         .uncheck();
+      await settled();
     });
     return setups;
   },

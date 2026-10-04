@@ -10,6 +10,8 @@
 // field is checked against a schema before it reaches the study, and Go
 // still validates numerical limits as for typed input.
 
+import type { Pace, Repeat } from "./timing";
+
 export const studyLinkVersion = 1;
 export type Notebook = "2d" | "3d" | "4d";
 // Encoded fragment and inflated JSON bounds. Presets need about 1.2 KB.
@@ -343,6 +345,33 @@ export function animationSettings<Mode extends string, Target extends string>(
     seen.add(target);
   });
   return settings as AnimationSettings<Mode, Target>;
+}
+
+// How an animation spends its duration (see timing.ts), shared by every
+// notebook. Links made before it play once, steadily.
+export type Timing = { repeat: Repeat; pace: Pace };
+export const defaultTiming: Timing = { repeat: "once", pace: "steady" };
+const timingSchema: SchemaOf<Timing> = {
+  fields: {
+    repeat: { options: { once: true, loop: true, "back-and-forth": true } },
+    pace: { options: { steady: true, ease: true } },
+  },
+};
+// The repeat and pace among a group's fields at path; one left out takes
+// its default. The notebook decides which motions can loop.
+export function animationTiming(
+  raw: { repeat?: unknown; pace?: unknown },
+  path: string,
+): Timing {
+  return conform(
+    {
+      ...(raw.repeat !== undefined && { repeat: raw.repeat }),
+      ...(raw.pace !== undefined && { pace: raw.pace }),
+    },
+    timingSchema,
+    defaultTiming,
+    path,
+  );
 }
 
 // A link handed to a notebook: its unchecked study, or why it was refused.

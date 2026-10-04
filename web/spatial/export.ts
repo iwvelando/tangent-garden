@@ -170,8 +170,6 @@ export async function exportAnimation(options: {
   sample: (time: number) => Promise<AnimationView>;
   onProgress: (completed: number, total: number) => void;
 }): Promise<Blob> {
-  if (options.format === "webp" && options.fps === 60)
-    throw new Error("Animated WebP supports 15 or 30 fps.");
   const timing = exportTiming(options.duration, options.fps, options.cyclic),
     encoding = exportEncoding(options.settings);
   const canvas = document.createElement("canvas"),

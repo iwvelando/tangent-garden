@@ -1,4 +1,5 @@
 import type { Config, Motion } from "./types";
+import type { Pace, Repeat } from "../timing";
 import { defaultConfig, objects } from "./objects";
 const base = defaultConfig;
 const diagonal: Config["angles"] = [
@@ -14,6 +15,9 @@ export const tesseractPresets: {
   detail: string;
   config: Config;
   motion: Motion;
+  // Once and steady unless given (../timing.ts).
+  repeat?: Repeat;
+  pace?: Pace;
 }[] = [
   {
     name: "A cube beyond a cube",
@@ -152,5 +156,27 @@ export const tesseractPresets: {
       },
     },
     motion: "latitude",
+  },
+  {
+    name: "Hopf circles, flowing forever",
+    detail:
+      "Linked great circles of the 3-sphere turn through two planes at once. Each passes through the projection's pole and opens into a line, then closes again; after one whole turn every circle is back, so the motion loops without a seam.",
+    config: {
+      ...objects.weave.defaults(base),
+      count: 3,
+      curves: 12,
+      samples: 192,
+      clip: 5,
+      angles: [0, 0.35, 0.2, 0, 0.4, 0.25],
+      weave: {
+        family: "fibers",
+        alpha: 0.72,
+        spread: 0.5,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+      },
+    },
+    motion: "double",
+    repeat: "loop",
   },
 ];

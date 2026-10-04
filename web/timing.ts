@@ -25,3 +25,22 @@ export function progressAt(time: number, repeat: Repeat, pace: Pace) {
 // Whether playback wraps from the end to the start, and an export leaves
 // out its last frame, which would be its first again.
 export const cycles = (repeat: Repeat) => repeat !== "once";
+
+// The choices and the words every notebook shows for them. Each notebook
+// says itself which of its motions can loop.
+export const repeatChoices: { value: Repeat; label: string }[] = [
+  { value: "once", label: "Once" },
+  { value: "loop", label: "Loop" },
+  { value: "back-and-forth", label: "Back and forth" },
+];
+export const paceChoices: { value: Pace; label: string }[] = [
+  { value: "steady", label: "Steady" },
+  { value: "ease", label: "Ease in and out" },
+];
+export const onceHelp = "Plays from the start to the end, then stops.";
+export const backAndForthHelp =
+  "Plays to the end and back to the start within the duration, again and again, so any animation repeats without a jump. Exports loop forever.";
+export const paceHelp: Record<Pace, string> = {
+  steady: "The motion moves at a constant rate.",
+  ease: "The motion starts and ends slowly, following a half cosine, so it eases away from its start and into its end; back and forth slows to rest at each turn.",
+};

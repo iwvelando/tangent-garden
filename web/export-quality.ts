@@ -13,7 +13,7 @@ export function exportBaseSize(layout?: ExportLayout) {
   return { width: 1000, height: 760 };
 }
 
-// Animated WebP is limited to 15 and 30; 60 fps is offered for MP4 only.
+// Every format offers all three; a 60 fps WebP is about twice the size.
 export const frameRates = [15, 30, 60];
 
 // 2000 × 1520. At 1000 × 760 construction lines are about one pixel wide, and

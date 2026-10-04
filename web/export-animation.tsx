@@ -15,23 +15,24 @@ type Options = {
   duration: number;
   fps: number;
   loop: boolean;
+  // A repeating animation leaves out its end, which is its start again.
+  cyclic?: boolean;
   settings: ExportSettings;
   dark: boolean;
   layers: Layers;
   signal: AbortSignal;
   // Frames calculated ahead of drawing, in order; at least 1.
   lookahead: number;
-  sample: (progress: number) => Promise<AnimationView>;
+  // The frame at a time on the timeline (see timing.ts).
+  sample: (time: number) => Promise<AnimationView>;
   onProgress: (completed: number, total: number) => void;
 };
 
 // Rendering is independent of the live DOM, manual camera, and wall clock.
 // Only compressed frames accumulate; cancellation discards them without a file.
 export async function exportAnimation(options: Options): Promise<Blob> {
-  if (options.format === "webp" && options.fps === 60)
-    throw new Error("Animated WebP supports 15 or 30 fps.");
   const { signal, sample, onProgress, dark, layers } = options;
-  const timing = exportTiming(options.duration, options.fps);
+  const timing = exportTiming(options.duration, options.fps, options.cyclic);
   const canvas = document.createElement("canvas");
   const encoding = exportEncoding(options.settings);
   canvas.width = encoding.width;

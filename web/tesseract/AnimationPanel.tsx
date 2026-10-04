@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FrameRateField } from "../FrameRateField";
 import { ProgressSlider } from "../ProgressSlider";
 import { Field } from "../Field";
 import { useDisclosure } from "../useDisclosure";
@@ -15,8 +16,16 @@ import {
   type ExportFormat,
   type Formats,
 } from "../export-formats";
-import { objects } from "./objects";
+import { objects, repeatHelp } from "./objects";
 import { motions, type Config, type Motion } from "./types";
+import {
+  cycles,
+  paceChoices,
+  paceHelp,
+  repeatChoices,
+  type Pace,
+  type Repeat,
+} from "../timing";
 
 export type MotionExport = {
   format: ExportFormat;
@@ -30,7 +39,11 @@ export function AnimationPanel(p: {
   layout?: ExportLayout;
   motion: Motion;
   duration: number;
+  repeat: Repeat;
+  pace: Pace;
+  // The time on the timeline, and whether a single pass has finished.
   progress: number;
+  complete: boolean;
   preview: boolean;
   playing: boolean;
   exporting: string;
@@ -38,6 +51,8 @@ export function AnimationPanel(p: {
   disabled: boolean;
   onMotion: (motion: Motion) => void;
   onDuration: (n: number) => void;
+  onRepeat: (r: Repeat) => void;
+  onPace: (p: Pace) => void;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
@@ -69,7 +84,6 @@ export function AnimationPanel(p: {
     (f) => formats?.[f] !== "no",
   );
   const chosen = offered.includes(format) ? format : (offered[0] ?? "mp4");
-  const exportFps = chosen === "webp" && fps === 60 ? 30 : fps;
   const quality = qualities[chosen],
     text = formatText[chosen];
   const size = exportEncoding({ scale, quality, layout: p.layout }),
@@ -84,7 +98,8 @@ export function AnimationPanel(p: {
     running = p.playing || !!p.exporting;
   const valid =
     Number.isFinite(p.duration) && p.duration >= 0.1 && p.duration <= 3600;
-  const choices = motions(p.config);
+  const choices = motions(p.config),
+    loopable = !!choices.find((c) => c.value === p.motion)?.loops;
   return (
     <section className="animation-section">
       <details id="shape-animation-section" {...section}>
@@ -125,6 +140,34 @@ export function AnimationPanel(p: {
               }
             />
           </Field>
+          <div className="pair">
+            <Field label="Repeat" help={repeatHelp[p.repeat]}>
+              <select
+                value={p.repeat}
+                onChange={(e) => p.onRepeat(e.target.value as Repeat)}
+              >
+                {repeatChoices
+                  .filter((c) => c.value !== "loop" || loopable)
+                  .map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Pace" help={paceHelp[p.pace]}>
+              <select
+                value={p.pace}
+                onChange={(e) => p.onPace(e.target.value as Pace)}
+              >
+                {paceChoices.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <p className="hint">
             {objects[p.config.object].animationFramingHelp?.(p.config) ??
               "Animation holds your current view. Drag, pan, or zoom before playback to choose the framing."}
@@ -137,7 +180,7 @@ export function AnimationPanel(p: {
             <summary>
               Export settings
               <span className="summary-detail">
-                {text.short} · {exportFps} fps · {size.width} × {size.height} ·
+                {text.short} · {fps} fps · {size.width} × {size.height} ·
                 quality {quality}
               </span>
             </summary>
@@ -155,18 +198,7 @@ export function AnimationPanel(p: {
                 </select>
               </Field>
             )}
-            <Field label="Export frame rate">
-              <select
-                value={exportFps}
-                onChange={(e) => setFPS(+e.target.value)}
-              >
-                {chosen === "mp4" && (
-                  <option value={60}>60 fps · smoothest motion</option>
-                )}
-                <option value={30}>30 fps · smoother motion</option>
-                <option value={15}>15 fps · smaller file</option>
-              </select>
-            </Field>
+            <FrameRateField format={chosen} fps={fps} onChange={setFPS} />
             <Field
               label="Export resolution"
               value={`${size.width} × ${size.height}`}
@@ -199,7 +231,11 @@ export function AnimationPanel(p: {
                 onChange={(e) => setQuality(+e.target.value)}
               />
             </Field>
-            {chosen === "webp" ? (
+            {chosen === "webp" && cycles(p.repeat) ? (
+              <p className="hint">
+                This animation repeats, so the file loops forever.
+              </p>
+            ) : chosen === "webp" ? (
               <label className="check">
                 <input
                   type="checkbox"
@@ -243,9 +279,7 @@ export function AnimationPanel(p: {
           <div className="animation-buttons">
             <button
               className={
-                p.playing || (p.preview && p.progress < 1)
-                  ? undefined
-                  : "export"
+                p.playing || (p.preview && !p.complete) ? undefined : "export"
               }
               disabled={p.disabled || !!p.exporting || !valid}
               onClick={p.playing ? p.onPause : p.onPlay}
@@ -253,7 +287,7 @@ export function AnimationPanel(p: {
               {p.playing
                 ? "Pause"
                 : p.preview
-                  ? p.progress >= 1
+                  ? p.complete
                     ? "Replay"
                     : "Resume"
                   : "Play animation"}
@@ -261,7 +295,7 @@ export function AnimationPanel(p: {
             <button disabled={!active} onClick={p.onStop}>
               {p.exporting
                 ? "Cancel export"
-                : p.preview && p.progress >= 1
+                : p.preview && p.complete
                   ? "Back to study"
                   : "Stop"}
             </button>
@@ -281,7 +315,7 @@ export function AnimationPanel(p: {
               <div className="note" role="status" aria-live="off">
                 {p.exporting
                   ? `Exporting ${text.short}… ${p.exporting}`
-                  : p.progress >= 1
+                  : p.complete
                     ? "Complete"
                     : !p.playing
                       ? "Paused"
@@ -290,7 +324,7 @@ export function AnimationPanel(p: {
               <p className="note playback-tip">
                 {p.exporting
                   ? "Cancel export discards the file; your study stays as it was."
-                  : p.progress >= 1
+                  : p.complete
                     ? "Orbit the finished drawing, scrub the timeline, or save this frame as an image. Back to study restores your study."
                     : "Pause to scrub or save this frame as an image. Stop restores your study and manual view."}
               </p>
@@ -304,12 +338,12 @@ export function AnimationPanel(p: {
             running ||
             !valid ||
             formats?.[chosen] !== "yes" ||
-            Math.ceil(p.duration * exportFps) > 7200
+            Math.ceil(p.duration * fps) > 7200
           }
           onClick={() =>
             p.onExport({
               format: chosen,
-              fps: exportFps,
+              fps: fps,
               settings: {
                 scale,
                 quality,
@@ -332,7 +366,7 @@ export function AnimationPanel(p: {
             available.
           </p>
         )}
-        {Math.ceil(p.duration * exportFps) > 7200 && (
+        {Math.ceil(p.duration * fps) > 7200 && (
           <p className="hint">
             Export is limited to 7,200 frames. Shorten the duration or choose a
             lower frame rate.

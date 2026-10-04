@@ -8,6 +8,7 @@ import {
   exportTiming,
 } from "../export-quality";
 import type { MotionExport } from "./AnimationPanel";
+import { cycles, progressAt, type Pace, type Repeat } from "../timing";
 import {
   sample,
   type Config,
@@ -24,13 +25,15 @@ export async function exportMotion(
     layers: Layers;
     dark: boolean;
     duration: number;
+    repeat: Repeat;
+    pace: Pace;
     signal: AbortSignal;
     onProgress: (n: number, total: number) => void;
   },
 ) {
-  if (o.format === "webp" && o.fps === 60)
-    throw new Error("Animated WebP supports 15 or 30 frames per second.");
-  const timing = exportTiming(o.duration, o.fps),
+  // A repeating animation leaves out its end, which is its start again,
+  // and its WebP loops forever (../timing.ts).
+  const timing = exportTiming(o.duration, o.fps, cycles(o.repeat)),
     encoding = exportEncoding(o.settings),
     size = exportBaseSize(o.settings.layout);
   const client = new EngineClient(),
@@ -47,10 +50,14 @@ export async function exportMotion(
     sink =
       o.format === "mp4"
         ? mp4Sink(encoding, o.fps)
-        : webpSink(encoding, o.loop);
+        : webpSink(encoding, o.loop || cycles(o.repeat));
     for (let i = 0; i < timing.length; i++) {
       o.signal.throwIfAborted();
-      const config = sample(o.config, o.motion, timing[i].progress),
+      const config = sample(
+          o.config,
+          o.motion,
+          progressAt(timing[i].progress, o.repeat, o.pace),
+        ),
         result = await client.tesseract(config);
       o.signal.throwIfAborted();
       const markup = renderToStaticMarkup(

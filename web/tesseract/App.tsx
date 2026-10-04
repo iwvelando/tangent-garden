@@ -30,6 +30,7 @@ import { inks, sectionInk } from "./Drawing";
 import { Sampler } from "./sampler";
 import { tesseractPresets } from "./presets";
 import {
+  motions,
   sample,
   initialView,
   type Config,
@@ -43,6 +44,7 @@ import { axes, fieldLabel, labels } from "./fields";
 import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
 import { tesseractStudy, type TesseractStudy } from "./link";
+import { cycles, progressAt, type Pace, type Repeat } from "../timing";
 import "./style.css";
 export default function TesseractApp({
   active = true,
@@ -83,7 +85,12 @@ export default function TesseractApp({
   const [motion, setMotion] = useState<Motion>("double"),
     [progress, setProgress] = useState(0),
     [playing, setPlaying] = useState(false),
-    [duration, setDuration] = useState(12);
+    [duration, setDuration] = useState(12),
+    // How the duration is spent (../timing.ts); progress is the time on
+    // the timeline, from which the motion's progress follows.
+    [repeat, setRepeat] = useState<Repeat>("once"),
+    [pace, setPace] = useState<Pace>("steady"),
+    [loopError, setLoopError] = useState("");
   const [frame, setFrame] = useState<{ config: Config; result: Result } | null>(
       null,
     ),
@@ -124,9 +131,12 @@ export default function TesseractApp({
   const scalarBusy = Object.values(scalars).some((s) => s.pending),
     scalarState = Object.values(scalars).find((s) => s.error),
     scalarError = scalarState?.error;
+  // Only a single pass completes; a repeating animation is never finished.
+  const complete = repeat === "once" && progress >= 1,
+    motionProgress = progressAt(progress, repeat, pace);
   // Playback holds the view buttons; a finished animation hands them back.
-  const held = preview && (playing || progress < 1);
-  const request = preview ? sample(config, motion, progress) : config,
+  const held = preview && (playing || !complete);
+  const request = preview ? sample(config, motion, motionProgress) : config,
     key = JSON.stringify(request);
   const busy = !ready || scalarBusy || (!playing && key !== settled);
   useEffect(() => {
@@ -141,8 +151,10 @@ export default function TesseractApp({
       controller.current?.abort();
     };
   }, []);
+  const checks = useRef(0);
   const stop = () => {
     epoch.current++;
+    checks.current++;
     setRevision((r) => r + 1);
     sampler.current?.cancel();
     setPlaying(false);
@@ -188,11 +200,13 @@ export default function TesseractApp({
     let raf = 0;
     const tick = async (now: number) => {
       if (ticket !== epoch.current) return;
-      const p = Math.max(
-          from,
-          Math.min(1, from + (now - start) / (duration * 1000)),
-        ),
-        q = sample(config, motion, p);
+      // Repeating, the time wraps from the end to the start, never asking
+      // for 1, which is 0 again.
+      const elapsed = Math.max(from, from + (now - start) / (duration * 1000)),
+        p = cycles(repeat)
+          ? elapsed - Math.floor(elapsed)
+          : Math.min(1, elapsed),
+        q = sample(config, motion, progressAt(p, repeat, pace));
       try {
         const result = await sampler.current!.request(q);
         if (ticket !== epoch.current || !result) return;
@@ -200,7 +214,7 @@ export default function TesseractApp({
         setSettled(JSON.stringify(q));
         setProgress(p);
         setError("");
-        if (p >= 1) setPlaying(false);
+        if (!cycles(repeat) && p >= 1) setPlaying(false);
         else raf = requestAnimationFrame(tick);
       } catch (e) {
         if (ticket === epoch.current) {
@@ -235,11 +249,19 @@ export default function TesseractApp({
     stop();
     setProgress(0);
     setPreview(false);
+    setLoopError("");
   };
+  // Only a whole turn or a slice passage returns to its start; another
+  // motion keeps repeating, back and forth.
+  const loopable = !!motions(config).find((m) => m.value === motion)?.loops;
+  useEffect(() => {
+    if (!loopable && repeat === "loop") setRepeat("back-and-forth");
+  }, [loopable, repeat]);
   const update = (change: (c: Config) => Config) => {
     stop();
     setProgress(0);
     setPreview(false);
+    setLoopError("");
     setPreset(null);
     setConfig(change);
   };
@@ -286,6 +308,9 @@ export default function TesseractApp({
     setConfig(structuredClone(tesseractPresets[i].config));
     setPreset(i);
     setMotion(tesseractPresets[i].motion);
+    setRepeat(tesseractPresets[i].repeat ?? "once");
+    setPace(tesseractPresets[i].pace ?? "steady");
+    setLoopError("");
     setProgress(0);
     setPreview(false);
     setView({ ...initialView });
@@ -307,6 +332,9 @@ export default function TesseractApp({
     setLayers(study.layers);
     setMotion(study.motion);
     setDuration(study.duration);
+    setRepeat(study.repeat);
+    setPace(study.pace);
+    setLoopError("");
     setProgress(0);
     setPreview(false);
     setView(study.view);
@@ -334,7 +362,45 @@ export default function TesseractApp({
     diagramView,
     motion,
     duration,
+    repeat,
+    pace,
   });
+  const play = async () => {
+    setLoopError("");
+    // A loop joins the end to the start, so they must be the same drawing.
+    if (repeat === "loop") {
+      const ticket = ++checks.current;
+      try {
+        const { tesseractLoopGap } = await import("./loop");
+        const gap = await tesseractLoopGap({
+          client: client.current!,
+          config,
+          motion,
+          view,
+          diagramView,
+          layers,
+          layout,
+        });
+        if (ticket !== checks.current) return;
+        if (gap) {
+          setLoopError(gap);
+          return;
+        }
+      } catch (e) {
+        if (ticket === checks.current) setLoopError((e as Error).message);
+        return;
+      }
+    }
+    if (complete) setProgress(0);
+    setSpinning(false);
+    setPreview(true);
+    setPlaying(true);
+    if (matchMedia("(max-width: 700px)").matches)
+      stage.current?.scrollIntoView({
+        behavior: "instant",
+        block: "start",
+      });
+  };
   const editTimeline = (p: number) => {
     stop();
     setPreview(true);
@@ -358,6 +424,8 @@ export default function TesseractApp({
         layers: { ...layers },
         dark,
         duration,
+        repeat,
+        pace,
         ...options,
         signal: abort.signal,
         onProgress: (n, total) => {
@@ -951,14 +1019,17 @@ export default function TesseractApp({
                 layout,
                 motion,
                 duration,
+                repeat,
+                pace,
                 preview,
                 playing,
                 exporting,
               }}
+              complete={!exporting && complete}
               // Export renders frames apart from the live preview, whose
               // progress would otherwise resample the drawing on every frame.
               progress={exporting ? exportProgress : progress}
-              error={exportError}
+              error={exportError || loopError}
               disabled={!ready || !!error || !!scalarError || scalarBusy}
               onMotion={(m) => {
                 resetMotion();
@@ -968,20 +1039,19 @@ export default function TesseractApp({
                 stop();
                 setDuration(n);
               }}
+              onRepeat={(r) => {
+                stop();
+                setLoopError("");
+                setRepeat(r);
+              }}
+              onPace={(n) => {
+                stop();
+                setPace(n);
+              }}
               onPause={stop}
               onStop={exporting ? stop : resetMotion}
               onSeek={editTimeline}
-              onPlay={() => {
-                if (progress >= 1) setProgress(0);
-                setSpinning(false);
-                setPreview(true);
-                setPlaying(true);
-                if (matchMedia("(max-width: 700px)").matches)
-                  stage.current?.scrollIntoView({
-                    behavior: "instant",
-                    block: "start",
-                  });
-              }}
+              onPlay={() => void play()}
               onExport={(options) => void save(options)}
             />
           </aside>
@@ -1033,7 +1103,8 @@ export default function TesseractApp({
             ref={stage}
             aria-busy={busy}
             data-config={frame ? JSON.stringify(frame.config) : undefined}
-            data-progress={progress}
+            data-progress={preview ? motionProgress : progress}
+            data-time={preview ? progress : undefined}
           >
             {frame?.result.companion && (
               <div className="paired-view-labels" data-layout={liveLayout}>

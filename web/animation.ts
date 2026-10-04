@@ -7,12 +7,22 @@ import {
   type LevelSet,
   type Result,
 } from "./types";
+import { backAndForthHelp, onceHelp, type Repeat } from "./timing";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 // Draw along the curve, vary parameters, or trace light from its source to
 // the caustic (catacaustics and diacaustics only).
 export type AnimationMode = "reveal" | "parameters" | "trace";
 export const canTrace = (config: Config) =>
   config.kind === "catacaustic" || config.kind === "diacaustic";
+// Only parameter tracks can return to their start; drawing along the curve
+// and tracing light start empty and end full, so they offer back and forth
+// instead of a loop (see timing.ts).
+export const loops = (mode: AnimationMode) => mode === "parameters";
+export const repeatHelp: Record<Repeat, string> = {
+  once: onceHelp,
+  loop: "Plays again and again, its end joining its start, which needs the last frame to match the first. Play compares the drawing at both ends and says what differs. Parameter tracks return when each ends one period after it starts, for example a from 0 to 2*pi in cos(t + a); counts return only to the count they start from. Drawing along the curve and tracing light start and end differently, so they offer Back and forth instead. Exports leave out the last frame, which is the first again, and loop forever.",
+  "back-and-forth": backAndForthHelp,
+};
 export type Viewport = { cx: number; cy: number; scale: number; span: number };
 // A Fourier term's frequency, radius, or phase, numbered from 1.
 export type TermTarget = `term${number}${"Frequency" | "Radius" | "Phase"}`;
@@ -88,6 +98,8 @@ export type AnimationView = {
   heldView?: Viewport;
   length: number;
   progress: number;
+  // Where the timeline stands, from which the progress follows (timing.ts).
+  time?: number;
   mode: AnimationMode;
   // A finished animation releases the camera: its final frame stays, and pan
   // and zoom start from the animation's own framing.

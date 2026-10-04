@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { FrameRateField } from "./FrameRateField";
 import { ProgressSlider } from "./ProgressSlider";
 import type { PlanarAnimation } from "./planar-link";
 import { EngineClient, exportEngineCount } from "./engine-client";
@@ -7,6 +8,8 @@ import {
   availableTargets,
   canTrace,
   integerTargets,
+  loops,
+  repeatHelp,
   reveal,
   revealConfig,
   targetLabel,
@@ -23,6 +26,15 @@ import { studyName, type Frame } from "./types";
 import { fitFrame, viewRect, type Layers } from "./Plot";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "./export-quality";
+import {
+  cycles,
+  paceChoices,
+  paceHelp,
+  progressAt,
+  repeatChoices,
+  type Pace,
+  type Repeat,
+} from "./timing";
 import {
   defaultQuality,
   detectFormats,
@@ -47,7 +59,10 @@ type Session = {
   camera: CameraMode;
   heldView?: Viewport;
   duration: number;
+  repeat: Repeat;
+  pace: Pace;
   length: number;
+  // Where the timeline stands (timing.ts), from which the progress follows.
   progress: number;
 };
 type Props = {
@@ -89,6 +104,8 @@ export function AnimationPanel({
   const [mode, setMode] = useState<AnimationMode>("reveal");
   const [camera, setCamera] = useState<CameraMode>("hold");
   const [duration, setDuration] = useState(10);
+  const [repeat, setRepeat] = useState<Repeat>("once");
+  const [pace, setPace] = useState<Pace>("steady");
   const [tracks, setTracks] = useState<Track[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
@@ -127,8 +144,6 @@ export function AnimationPanel({
     setQualities((q) => ({ ...q, [chosen]: value }));
   const exportSize = exportEncoding({ scale: exportScale, quality });
   const defaultSize = exportEncoding({ scale: defaultScale, quality });
-  // Animated WebP stops at 30 fps; the MP4 choice is kept for switching back.
-  const exportFps = chosen === "webp" && fps === 60 ? 30 : fps;
   const exportReady = formats?.[chosen] === "yes";
   const exportHint = !formats
     ? ""
@@ -150,6 +165,11 @@ export function AnimationPanel({
   useEffect(() => {
     if (!traceable && mode === "trace") setMode("reveal");
   }, [traceable, mode]);
+  // Only parameter tracks can return to their start; others keep
+  // repeating, back and forth.
+  useEffect(() => {
+    if (!loops(mode) && repeat === "loop") setRepeat("back-and-forth");
+  }, [mode, repeat]);
   useEffect(() => {
     setTracks((previous) => {
       const retained = previous.filter((track) =>
@@ -163,10 +183,11 @@ export function AnimationPanel({
           : [];
     });
   }, [targets.join(",")]);
-  if (settings) settings.current = { mode, camera, duration, tracks };
+  if (settings)
+    settings.current = { mode, camera, duration, tracks, repeat, pace };
   // After the retention and trace fallbacks above, which then see the
   // linked study's own frame.
-  const restored = useRef(-1);
+  const restored = useRef<number | null>(null);
   useEffect(() => {
     if (!restore || restore.id === restored.current) return;
     restored.current = restore.id;
@@ -174,6 +195,10 @@ export function AnimationPanel({
     setCamera(restore.settings.camera);
     setDuration(restore.settings.duration);
     setTracks(restore.settings.tracks);
+    setRepeat(restore.settings.repeat);
+    setPace(restore.settings.pace);
+    // A refusal belongs to the setup it judged.
+    setError("");
   }, [restore]);
   const running =
     status === "playing" || status === "preparing" || status === "exporting";
@@ -258,7 +283,20 @@ export function AnimationPanel({
     if (next === "parameters" && !tracks.length && targets.length)
       setTracks([defaultTrack(targets[0])]);
   }
+  // The frame at a time on the timeline, drawn at the progress the repeat
+  // and pace give it (timing.ts).
   async function sample(
+    s: Session,
+    time: number,
+    engine = client.current!,
+  ): Promise<AnimationView> {
+    return {
+      ...(await frameAt(s, progressAt(time, s.repeat, s.pace), engine)),
+      time,
+      complete: s.repeat === "once" && time === 1,
+    };
+  }
+  async function frameAt(
     s: Session,
     p: number,
     engine = client.current!,
@@ -307,8 +345,8 @@ export function AnimationPanel({
     };
   }
   function display(s: Session, view: AnimationView) {
-    s.progress = view.progress;
-    setProgress(view.progress);
+    s.progress = view.time ?? view.progress;
+    setProgress(s.progress);
     onView(view);
     if (s.mode === "reveal" && view.frame.result.attractor)
       setLive(
@@ -358,17 +396,22 @@ export function AnimationPanel({
       // `began`, so clamp at the starting point: extrapolating before it
       // would overshoot the entered endpoint, such as rounding a count of 2
       // down to 1, and a resumed animation would step backward.
-      const p = Math.min(
-        1,
-        Math.max(from, from + (now - began) / (s.duration * 1000)),
-      );
+      // Repeating, the time wraps from the end to the start, never asking
+      // for 1, which is 0 again.
+      const elapsed = Math.max(
+          from,
+          from + (now - began) / (s.duration * 1000),
+        ),
+        time = cycles(s.repeat)
+          ? elapsed - Math.floor(elapsed)
+          : Math.min(1, elapsed);
       try {
         // At most one calculation is in flight. Slow devices skip intermediate
         // times instead of queuing work or lengthening a 30-second animation.
-        const view = await sample(s, p);
+        const view = await sample(s, time);
         if (epoch.current !== token) return;
         display(s, view);
-        if (p === 1) {
+        if (view.complete) {
           changeStatus("complete");
           return;
         }
@@ -393,7 +436,7 @@ export function AnimationPanel({
         throw new Error("Duration must be between 0.1 and 3600 seconds.");
       if (camera === "current" && !heldView)
         throw new Error("The current view is not ready yet.");
-      if (save) exportTiming(duration, exportFps);
+      if (save) exportTiming(duration, fps);
       let numeric: NumericTrack[] = [];
       if (mode === "parameters") {
         if (!tracks.length)
@@ -469,9 +512,23 @@ export function AnimationPanel({
         camera,
         heldView,
         duration,
+        repeat,
+        pace,
         length,
         progress: 0,
       };
+      // A loop joins the end to the start, so they must be the same drawing.
+      if (repeat === "loop") {
+        const { planarLoopGap } = await import("./planar-loop");
+        if (epoch.current !== token) return;
+        const gap = await planarLoopGap(
+          await frameAt(s, 0),
+          await frameAt(s, 1),
+          layers,
+        );
+        if (gap) throw new Error(gap);
+      }
+      if (epoch.current !== token) return;
       session.current = s;
       if (save) {
         const controller = new AbortController();
@@ -497,14 +554,15 @@ export function AnimationPanel({
         const blob = await exportAnimation({
           format: chosen,
           duration,
-          fps: exportFps,
-          loop: chosen === "webp" && loop,
+          fps: fps,
+          loop: chosen === "webp" && (loop || cycles(repeat)),
+          cyclic: cycles(repeat),
           settings: { scale: exportScale, quality },
           dark,
           layers: { ...layers },
           signal: controller.signal,
           lookahead: engines.length + 1,
-          sample: (p) => sample(s, p, engines[next++ % engines.length]),
+          sample: (time) => sample(s, time, engines[next++ % engines.length]),
           onProgress: (completed, total) => {
             if (epoch.current !== token) return;
             setProgress(completed / total);
@@ -556,7 +614,7 @@ export function AnimationPanel({
         if (token !== epoch.current) return;
         display(s, view);
         if (seekTarget.current !== null) setProgress(seekTarget.current);
-        changeStatus(p === 1 ? "complete" : "paused");
+        changeStatus(view.complete ? "complete" : "paused");
       }
     } catch (error) {
       if (token === epoch.current) fail(error);
@@ -703,6 +761,34 @@ export function AnimationPanel({
               onChange={(e) => setDuration(e.target.valueAsNumber)}
             />
           </Field>
+          <div className="pair">
+            <Field label="Repeat" help={repeatHelp[repeat]}>
+              <select
+                value={repeat}
+                onChange={(e) => setRepeat(e.target.value as Repeat)}
+              >
+                {repeatChoices
+                  .filter((c) => c.value !== "loop" || loops(mode))
+                  .map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Pace" help={paceHelp[pace]}>
+              <select
+                value={pace}
+                onChange={(e) => setPace(e.target.value as Pace)}
+              >
+                {paceChoices.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <Field
             label="Animation camera"
             help={
@@ -741,7 +827,7 @@ export function AnimationPanel({
             <summary>
               Export settings
               <span className="summary-detail">
-                {text.short} · {exportFps} fps · {exportSize.width} ×{" "}
+                {text.short} · {fps} fps · {exportSize.width} ×{" "}
                 {exportSize.height} · quality {quality}
               </span>
             </summary>
@@ -759,18 +845,7 @@ export function AnimationPanel({
                 </select>
               </Field>
             )}
-            <Field label="Export frame rate">
-              <select
-                value={exportFps}
-                onChange={(e) => setFPS(+e.target.value)}
-              >
-                {chosen === "mp4" && (
-                  <option value={60}>60 fps · smoothest motion</option>
-                )}
-                <option value={30}>30 fps · smoother motion</option>
-                <option value={15}>15 fps · smaller file</option>
-              </select>
-            </Field>
+            <FrameRateField format={chosen} fps={fps} onChange={setFPS} />
             <Field
               label="Export resolution"
               value={`${exportSize.width} × ${exportSize.height}`}
@@ -803,7 +878,11 @@ export function AnimationPanel({
                 onChange={(e) => setQuality(+e.target.value)}
               />
             </Field>
-            {chosen === "webp" ? (
+            {chosen === "webp" && cycles(repeat) ? (
+              <p className="hint">
+                This animation repeats, so the file loops forever.
+              </p>
+            ) : chosen === "webp" ? (
               <label className="check">
                 <input
                   type="checkbox"

@@ -55,7 +55,7 @@ export const planarExamples: Example[] = presets.map((p) => ({
   title: p.title,
   caption: p.note,
   family: planarFamily(p.config),
-  keywords: `${p.config.kind} ${p.config.curve.format} ${p.config.input}`,
+  keywords: `${p.config.kind} ${p.config.curve.format} ${p.config.input}${p.animation?.repeat === "loop" ? " seamless loop" : p.animation?.repeat === "back-and-forth" ? " back and forth" : ""}`,
   fingerprint: fingerprint(p.config),
 }));
 
@@ -140,7 +140,7 @@ export const tesseractExamples: Example[] = tesseractPresets.map((p) => ({
           : p.config.mode === "stereo"
             ? "Stereographic curves"
             : "Shadows",
-  keywords: `${p.config.object} 4D ${p.config.mode}`,
+  keywords: `${p.config.object} 4D ${p.config.mode}${p.repeat === "loop" ? " seamless loop" : p.repeat === "back-and-forth" ? " back and forth" : ""}`,
   fingerprint: fingerprint(p.config),
 }));
 const hyperImages = import.meta.glob<string>("./4d/*.webp", {
