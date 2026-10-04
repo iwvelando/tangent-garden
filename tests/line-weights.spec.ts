@@ -180,6 +180,16 @@ for (const notebook of notebooks)
     expect(ink.hairline / ink.regular).toBeLessThan(0.6);
   });
 
+// How much more ink a bold video frame must have than a regular one. Strokes
+// are 1.6 times as wide, but at the smallest export a stroke is a couple of
+// pixels, so its antialiased edges, which do not scale, dominate the count,
+// as do filled faces; and the encoder's blur varies by platform. Measured
+// ratios: 1.42 (2D) and 1.33 (4D) with macOS's encoder, 1.28 (4D) with
+// Chromium's software encoder on CI. An export that ignored the weight would
+// draw the same SVG for both, a ratio of 1 within codec noise, so 1.15
+// separates the two with room on either side.
+const boldInk = 1.15;
+
 // The smallest video export, to decode quickly.
 async function small(page: Page) {
   await page
@@ -214,7 +224,7 @@ test("2D animation exports draw the chosen weight", async ({ page }) => {
     coverage[weight] = frameCoverage(video.path, info!.width, info!.height)!;
   }
   const last = (w: string) => coverage[w].at(-1)!;
-  expect(last("bold") / last("regular")).toBeGreaterThan(1.3);
+  expect(last("bold") / last("regular")).toBeGreaterThan(boldInk);
 });
 
 test("4D animation exports draw the chosen weight", async ({ page }) => {
@@ -240,7 +250,7 @@ test("4D animation exports draw the chosen weight", async ({ page }) => {
     coverage[weight] = frameCoverage(video.path, info!.width, info!.height)!;
   }
   const last = (w: string) => coverage[w].at(-1)!;
-  expect(last("bold") / last("regular")).toBeGreaterThan(1.3);
+  expect(last("bold") / last("regular")).toBeGreaterThan(boldInk);
 });
 
 for (const notebook of notebooks)
