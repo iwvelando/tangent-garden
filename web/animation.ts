@@ -12,7 +12,7 @@ import { backAndForthHelp, onceHelp, type Repeat } from "./timing";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
 // Draw along the curve, vary parameters, or trace light from its source to
 // the caustic (catacaustics and diacaustics only).
-export type AnimationMode = "reveal" | "parameters" | "trace";
+export type AnimationMode = "reveal" | "parameters" | "trace" | "probe";
 export const canTrace = (config: Config) =>
   config.kind === "catacaustic" || config.kind === "diacaustic";
 // Only parameter tracks can return to their start; drawing along the curve
@@ -105,6 +105,11 @@ export type AnimationView = {
   // A finished animation releases the camera: its final frame stays, and pan
   // and zoom start from the animation's own framing.
   complete: boolean;
+  // The base sample the probe stands at in this frame, when the animation
+  // moves it or holds it while the parameters vary; probeAway says why a
+  // frame that should show it has none.
+  probe?: number;
+  probeAway?: string;
 };
 const targetLabels: Record<FixedTarget, string> = {
   a: "Shape parameter a",

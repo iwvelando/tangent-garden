@@ -66,6 +66,7 @@ const planar = (i = 0): PlanarStudy => ({
   },
   camera: { x: 12.5, y: -40, zoom: 1.75 },
   weight: "fine",
+  probe: { enabled: true, position: 0.25 },
   animation: {
     mode: "reveal",
     camera: "hold",
@@ -73,6 +74,7 @@ const planar = (i = 0): PlanarStudy => ({
     tracks: [],
     repeat: "back-and-forth",
     pace: "ease",
+    probeMotion: "length",
   },
 });
 const spatial = (i = 0): SpatialStudy => ({
@@ -492,6 +494,7 @@ test("fields a link predates take the notebook's defaults", async () => {
     tracks: [],
     repeat: "once",
     pace: "steady",
+    probeMotion: "stays",
   });
   // Optional fields stay absent rather than being invented.
   assert.equal("coordinates" in read.config.source, false);
@@ -616,7 +619,13 @@ test("links made by version 1 keep opening", async () => {
     // Links made before repeat and pace play once, steadily.
     repeat: "once",
     pace: "steady",
+    // Links made before the 2D probe keep it at its t.
+    probeMotion: "stays",
   });
+  // Links made before the 2D probe open without it, and before line weights
+  // with regular strokes.
+  assert.deepEqual(p.probe, { enabled: false, position: 0.5 });
+  assert.equal(p.weight, "regular");
 
   const spatialLink = await readStudyLink(v1["3d"]);
   assert.equal(spatialLink.notebook, "3d");
@@ -1216,4 +1225,46 @@ test("a 2D link carries refinement between samples; older links draw on the even
   const bad = structuredClone(planar()) as any;
   bad.config.adaptive = "yes";
   await refused(() => planarStudy(bad), "config.adaptive");
+});
+
+test("a 2D link carries the probe and how it moves; older links open without it; it moves only while on", async () => {
+  for (const probeMotion of ["stays", "length", "along"] as const) {
+    const study: PlanarStudy = {
+      ...planar(),
+      animation: { ...planar().animation, mode: "probe", probeMotion },
+    };
+    const read = await readStudyLink(await writeStudyLink("2d", study));
+    assert.deepEqual(planarStudy(read.study), study, probeMotion);
+  }
+  // A link made before the probe opens with it off, staying at its t.
+  const older = structuredClone(planar()) as any;
+  delete older.probe;
+  delete older.animation.probeMotion;
+  assert.deepEqual(planarStudy(older).probe, {
+    enabled: false,
+    position: 0.5,
+  });
+  assert.equal(planarStudy(older).animation.probeMotion, "stays");
+  const off = structuredClone(planar()) as any;
+  off.probe.enabled = false;
+  off.animation.mode = "probe";
+  await refused(
+    () => planarStudy(off),
+    "animation.mode",
+    /only while it is on/,
+  );
+  const level = structuredClone(planar()) as any;
+  level.config.curve.format = "implicit";
+  level.animation.mode = "probe";
+  await refused(() => planarStudy(level), "animation.mode");
+  for (const [field, value] of [
+    ["probe.position", 1.5],
+    ["probe.enabled", "yes"],
+    ["animation.probeMotion", "wanders"],
+  ] as const) {
+    const bad = structuredClone(planar()) as any;
+    const [group, key] = field.split(".");
+    bad[group][key] = value;
+    await refused(() => planarStudy(bad), field);
+  }
 });

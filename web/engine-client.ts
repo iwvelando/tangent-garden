@@ -61,11 +61,18 @@ export class EngineClient {
       });
     });
   }
-  async compute(config: Config, bounds?: Bounds): Promise<Frame> {
+  // A 2D study, with the base curve's diagnostics for the probe when asked
+  // (see engine.Diagnostics).
+  async compute(
+    config: Config,
+    bounds?: Bounds,
+    options: { diagnostics?: boolean } = {},
+  ): Promise<Frame> {
     const { result, config: resolved } = await this.request({
       action: "compute",
       config,
       bounds,
+      ...(options.diagnostics ? { diagnostics: true } : {}),
     });
     return { result, config: resolved };
   }

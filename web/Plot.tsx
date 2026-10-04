@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { svgStroke, type LineWeight } from "./line-weight";
+import { probeHighlight } from "./planar-probe";
 import {
   usesPole,
   type Config,
@@ -38,6 +39,9 @@ type Props = {
   onCamera?: (camera: PlotCamera) => void;
   // How wide lines are drawn (line-weight.ts); regular when absent.
   weight?: LineWeight;
+  // The base sample the probe stands at, when it is on and no animation
+  // decides it (see planar-probe.ts).
+  probe?: number;
   pixelRatio?: number;
 };
 const W = 1000,
@@ -93,6 +97,7 @@ export function Plot({
   onCamera,
   pixelRatio = 1,
   weight = "regular",
+  probe,
 }: Props) {
   // Every stroke's regular width, at the chosen line weight.
   const stroke = svgStroke(weight);
@@ -252,6 +257,97 @@ export function Plot({
   // Curves refined between their samples are drawn from their refined
   // points, whose nulls carry every break; framing keeps the samples.
   const refined = result.adaptive ?? {};
+  // The probe's drawing at its sample, in its own inks: the highlighted
+  // construction, the osculating circle and its center, the point, and the
+  // tangent and normal, each a fixed share of the page long. An animation
+  // decides the sample while it plays; one that does not move the probe or
+  // hold it while the parameters vary leaves it out.
+  const probeAt = animation ? animation.probe : probe;
+  const probeDrawing = (() => {
+    const d = result.diagnostics;
+    const p = probeAt === undefined ? null : result.base[probeAt];
+    if (!d || !p || probeAt === undefined) return null;
+    const j = probeAt,
+      at = xy(p),
+      ink = (k: "mark" | "tangent" | "normal") =>
+        ({
+          mark: palette.probe,
+          tangent: palette.probeTangent,
+          normal: palette.probeNormal,
+        })[k];
+    const T = d.tangent[j],
+      N = d.normal[j],
+      c = d.center[j],
+      k = d.curvature[j];
+    const glyph = 70;
+    const arm = (v: Vec, testid: string, color: string) => (
+      <line
+        data-testid={testid}
+        x1={at.x}
+        y1={at.y}
+        x2={at.x + v.x * glyph}
+        y2={at.y - v.y * glyph}
+        stroke={color}
+        {...stroke(1.6)}
+        strokeLinecap="round"
+      />
+    );
+    const center = c && xy(c);
+    const radius = k ? scale / Math.abs(k) : 0;
+    return (
+      <g data-testid="probe" data-sample={j}>
+        {probeHighlight(config, result)
+          ?.lines(result, j, config)
+          .map(([a, b], i) => {
+            const u = xy(a),
+              v = xy(b);
+            return (
+              <line
+                key={i}
+                data-testid="probe-construction"
+                x1={u.x}
+                y1={u.y}
+                x2={v.x}
+                y2={v.y}
+                stroke={ink("mark")}
+                {...stroke(1.2)}
+              />
+            );
+          })}
+        {center && radius < 1e6 && (
+          <>
+            <circle
+              data-testid="probe-circle"
+              cx={center.x}
+              cy={center.y}
+              r={radius}
+              fill="none"
+              stroke={ink("mark")}
+              {...stroke(1.2)}
+            />
+            <circle
+              data-testid="probe-center"
+              cx={center.x}
+              cy={center.y}
+              r="3.5"
+              fill={ink("mark")}
+            />
+          </>
+        )}
+        {T && arm(T, "probe-tangent", ink("tangent"))}
+        {N && arm(N, "probe-normal", ink("normal"))}
+        <circle
+          data-testid="probe-point"
+          cx={at.x}
+          cy={at.y}
+          r="5"
+          fill="none"
+          stroke={ink("mark")}
+          {...stroke(1.6)}
+        />
+      </g>
+    );
+  })();
   // A derived curve or stack member that collapses to one point, such as a
   // circle offset by its radius, is drawn as a dot rather than vanishing.
   const collapsed = (points: (Vec | null)[]) => {
@@ -1138,6 +1234,7 @@ export function Plot({
           />
         </g>
       )}
+      {probeDrawing}
     </svg>
   );
 }

@@ -141,6 +141,24 @@
 .example-thumb .s-text {
   stroke: var(--tg-text);
 }
+.example-thumb .f-probe {
+  fill: var(--tg-probe);
+}
+.example-thumb .s-probe {
+  stroke: var(--tg-probe);
+}
+.example-thumb .f-probeTangent {
+  fill: var(--tg-probeTangent);
+}
+.example-thumb .s-probeTangent {
+  stroke: var(--tg-probeTangent);
+}
+.example-thumb .f-probeNormal {
+  fill: var(--tg-probeNormal);
+}
+.example-thumb .s-probeNormal {
+  stroke: var(--tg-probeNormal);
+}
 
 /* The gallery fills the screen, above a dimmed notebook. */
 .gallery {

@@ -31,13 +31,17 @@ import {
 } from "./animation";
 import type { Layers } from "./Plot";
 import { lineWeightSchema, type LineWeight } from "./line-weight";
+import { probeMotionSchema, type ProbeMotion } from "./probe";
+import { defaultProbe, probeSupported, type PlanarProbe } from "./planar-probe";
 
 // The manual camera, offset from the fitted framing, which the drawing
 // derives deterministically from the study: pixels of pan and a zoom factor.
 export type PlotCamera = { x: number; y: number; zoom: number };
 export const zoomRange: [number, number] = [0.1, 20];
-// Repeat and pace are the timing every notebook shares (timing.ts).
-export type PlanarAnimation = AnimationSettings<AnimationMode, Target> & Timing;
+// Repeat and pace are the timing every notebook shares (timing.ts), and the
+// probe's motion while parameters vary is the 3D notebook's (probe.ts).
+export type PlanarAnimation = AnimationSettings<AnimationMode, Target> &
+  Timing & { probeMotion: ProbeMotion };
 export type PlanarStudy = {
   config: Config;
   // Domain bounds as entered, so constant expressions such as 2*pi survive.
@@ -50,6 +54,8 @@ export type PlanarStudy = {
   camera: PlotCamera;
   // How wide lines are drawn; regular in links made before line weights.
   weight: LineWeight;
+  // The probe, off in links made before it.
+  probe: PlanarProbe;
   animation: PlanarAnimation;
 };
 export const defaultLayers: Layers = {
@@ -66,6 +72,7 @@ export const defaultAnimation: PlanarAnimation = {
   duration: 10,
   tracks: [],
   ...defaultTiming,
+  probeMotion: "stays",
 };
 
 const vec = { fields: { x: "number", y: "number" } } satisfies SchemaOf<Vec>;
@@ -266,6 +273,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "layers",
         "camera",
         "weight",
+        "probe",
         "animation",
       ].includes(key)
     )
@@ -313,23 +321,43 @@ export function planarStudy(value: unknown): PlanarStudy {
       "regular",
       "weight",
     ),
+    probe: conform<PlanarProbe>(
+      raw.probe,
+      { fields: { enabled: "boolean", position: { range: [0, 1] } } },
+      defaultProbe,
+      "probe",
+    ),
   };
   const grouped =
     typeof raw.animation === "object" &&
     raw.animation !== null &&
     !Array.isArray(raw.animation);
-  const { repeat, pace, ...shared } = grouped
+  const { repeat, pace, probeMotion, ...shared } = grouped
     ? (raw.animation as Record<string, unknown>)
     : {};
   const animation: PlanarAnimation = {
     ...animationSettings(
       grouped ? shared : raw.animation,
-      { reveal: true, parameters: true, trace: true },
+      { reveal: true, parameters: true, trace: true, probe: true },
       availableTargets(study.config),
       defaultAnimation,
     ),
     ...animationTiming({ repeat, pace }, "animation"),
+    probeMotion: conform(
+      probeMotion,
+      probeMotionSchema,
+      defaultAnimation.probeMotion,
+      "animation.probeMotion",
+    ),
   };
+  if (
+    animation.mode === "probe" &&
+    !(study.probe.enabled && probeSupported(study.config))
+  )
+    throw new LinkError(
+      "animation.mode",
+      "animation.mode moves the probe only while it is on, along a curve with a parameter.",
+    );
   if (animation.repeat === "loop" && !loops(animation.mode))
     throw new LinkError(
       "animation.repeat",

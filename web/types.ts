@@ -211,6 +211,23 @@ export type Config = {
 // integrated chase or trajectory, nor a level set or iterated map.
 export const refinesBetweenSamples = (format: Config["curve"]["format"]) =>
   !["pursuit", "field", "implicit", "attractor"].includes(format);
+// Mirrors engine.Diagnostics: the base curve at every sample, for the
+// probe. curvature is signed, positive where the curve turns left; normal
+// is the tangent turned a quarter turn left; center is the center of
+// curvature, null where flat, unknown or beyond 100 study radii; length is
+// the drawn arc length from the first sample.
+export type Diagnostics = {
+  min: number;
+  max: number;
+  curvature: (number | null)[];
+  tangent: (Vec | null)[];
+  normal: (Vec | null)[];
+  center: (Vec | null)[];
+  length: (number | null)[];
+  flat: number;
+  unknown: number;
+  clipped: number;
+};
 // Mirrors engine.AdaptiveResult: the refined base curve, derived input, and
 // pedal-type or inverted curve, each absent when it is not refined.
 export type AdaptiveResult = {
@@ -419,6 +436,8 @@ export type Result = {
   input?: (Vec | null)[];
   // Present only when refinement was asked for a curve it can refine.
   adaptive?: AdaptiveResult;
+  // Present only when the probe asked, for a curve with a parameter.
+  diagnostics?: Diagnostics;
   warnings: string[];
   invalid: number;
 };

@@ -38,6 +38,9 @@ type Request struct {
 	// Adaptive refines the drawn curves between their uniform samples (see
 	// engine/adaptive.go); integrated and unparametrized curves ignore it.
 	Adaptive bool `json:"adaptive"`
+	// Diagnostics describes the base curve at every sample for the probe
+	// (see Diagnostics); it changes nothing else in the result.
+	Diagnostics bool `json:"diagnostics"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -88,6 +91,8 @@ type Result struct {
 	// Adaptive is present only when refinement was requested, for a curve
 	// it can refine.
 	Adaptive *AdaptiveResult `json:"adaptive,omitempty"`
+	// Diagnostics is present only when asked, for a curve with a parameter.
+	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
@@ -561,6 +566,9 @@ func Compute(q Request) (Result, error) {
 	}
 	if q.Adaptive && refines(q.Curve.Format) {
 		q.adapt(&out, f, g)
+	}
+	if q.Diagnostics {
+		out.Diagnostics = diagnose(f, out.Base, lo, hi)
 	}
 	if out.Invalid > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("%d samples have no finite construction (singularity, parallel rays, or invalid domain).", out.Invalid))

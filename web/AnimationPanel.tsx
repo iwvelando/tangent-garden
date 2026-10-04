@@ -10,6 +10,14 @@ import {
 import { play } from "./playback";
 import type { LineWeight } from "./line-weight";
 import {
+  curveProbeMotionHelp,
+  curveProbeMotions,
+  heldCurveSample,
+  probeIndex,
+  type ProbeMotion,
+} from "./probe";
+import { probeReadout, type PlanarProbe } from "./planar-probe";
+import {
   applyTracks,
   availableTargets,
   canTrace,
@@ -70,6 +78,10 @@ type Session = {
   length: number;
   // Where the timeline stands (timing.ts), from which the progress follows.
   progress: number;
+  // The probe, when the animation moves it or holds it while the
+  // parameters vary, and how it moves then.
+  probe?: PlanarProbe;
+  motion?: ProbeMotion;
 };
 // Whether the session's frames between its ends are calculated by an engine:
 // parameter tracks other than the ray length, and an iterated map's reveal.
@@ -87,6 +99,8 @@ type Props = {
   dark: boolean;
   layers: Layers;
   weight: LineWeight;
+  // The probe, when it is on (planar-probe.ts).
+  probe: PlanarProbe | null;
   getCurrentView: () => Viewport | undefined;
   onView: (view: AnimationView | null) => void;
   onRunning: (running: boolean) => void;
@@ -109,6 +123,7 @@ export function AnimationPanel({
   dark,
   layers,
   weight,
+  probe,
   getCurrentView,
   onView,
   onRunning,
@@ -122,6 +137,7 @@ export function AnimationPanel({
   const [repeat, setRepeat] = useState<Repeat>("once");
   const [pace, setPace] = useState<Pace>("steady");
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [probeMotion, setProbeMotion] = useState<ProbeMotion>("stays");
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
@@ -186,6 +202,10 @@ export function AnimationPanel({
   useEffect(() => {
     if (!traceable && mode === "trace") setMode("reveal");
   }, [traceable, mode]);
+  // The probe moves only while it is on; otherwise the curve is drawn.
+  useEffect(() => {
+    if (!probe && mode === "probe") setMode("reveal");
+  }, [!probe, mode]);
   // Only parameter tracks can return to their start; others keep
   // repeating, back and forth.
   useEffect(() => {
@@ -205,7 +225,15 @@ export function AnimationPanel({
     });
   }, [targets.join(",")]);
   if (settings)
-    settings.current = { mode, camera, duration, tracks, repeat, pace };
+    settings.current = {
+      mode,
+      camera,
+      duration,
+      tracks,
+      repeat,
+      pace,
+      probeMotion,
+    };
   // After the retention and trace fallbacks above, which then see the
   // linked study's own frame.
   const restored = useRef<number | null>(null);
@@ -218,6 +246,7 @@ export function AnimationPanel({
     setTracks(restore.settings.tracks);
     setRepeat(restore.settings.repeat);
     setPace(restore.settings.pace);
+    setProbeMotion(restore.settings.probeMotion);
     // A refusal belongs to the setup it judged.
     setError("");
   }, [restore]);
@@ -352,11 +381,33 @@ export function AnimationPanel({
         config: s.original.config,
         result: trace(s.original.result, s.timeline!, p),
       };
+    else if (s.mode === "probe") current = s.original;
     else if (p === 0) current = s.first;
     else if (p === 1) current = s.final;
     else if (s.tracks.every((t) => t.target === "rayLength"))
       current = s.original;
-    else current = await engine.compute(values.config);
+    else
+      current = await engine.compute(values.config, undefined, {
+        diagnostics: !!s.probe,
+      });
+    // The probe moves along the fixed study one sample at a time, from the
+    // first sample at the start to the last at the end, exactly; while the
+    // parameters vary it stands on each frame's own diagnostics, or is
+    // absent from it with a reason.
+    const held =
+      s.mode === "probe"
+        ? probeIndex(p, s.original.result.diagnostics!.curvature.length - 1)
+        : s.mode === "parameters" && s.probe
+          ? current.result.diagnostics
+            ? heldCurveSample(
+                s.original.result.diagnostics!,
+                s.probe.position,
+                s.motion!,
+                current.result.diagnostics,
+                p,
+              )
+            : "This frame has no curve for the probe to describe."
+          : null;
     return {
       frame: current,
       final: s.final,
@@ -366,6 +417,8 @@ export function AnimationPanel({
       progress: p,
       mode: s.mode,
       complete: p === 1,
+      ...(typeof held === "number" && { probe: held }),
+      ...(typeof held === "string" && { probeAway: held }),
     };
   }
   function display(s: Session, view: AnimationView) {
@@ -384,15 +437,25 @@ export function AnimationPanel({
       setLive(
         `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`,
       );
+    else if (s.mode === "probe") setLive(probeWhere(view));
     else
       setLive(
-        s.tracks
-          .map(
+        [
+          ...s.tracks.map(
             (t) =>
               `${targetLabel(t.target)} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
-          )
-          .join(" · "),
+          ),
+          // A probe that moves as the parameters vary says where it stands.
+          ...(s.probe && s.motion !== "stays" && view.probe !== undefined
+            ? [probeWhere(view)]
+            : []),
+        ].join(" · "),
       );
+  }
+  // Where the probe stands in a frame, by its parameter.
+  function probeWhere(view: AnimationView) {
+    const r = probeReadout(view.frame.result, view.probe!);
+    return r ? `Probe at t = ${Number(r.t.toPrecision(6))}` : "";
   }
   function fail(reason: unknown, what = "Animation") {
     cancel();
@@ -453,6 +516,11 @@ export function AnimationPanel({
       if (camera === "current" && !heldView)
         throw new Error("The current view is not ready yet.");
       if (save) exportTiming(duration, fps);
+      // The probe moves along the curve, or is held while the parameters
+      // vary, on the diagnostics of the study as it begins.
+      const drawsProbe = !!probe && (mode === "probe" || mode === "parameters");
+      if (drawsProbe && !frame.result.diagnostics)
+        throw new Error("The probe is still finding the curvature.");
       let numeric: NumericTrack[] = [];
       if (mode === "parameters") {
         if (!tracks.length)
@@ -501,12 +569,20 @@ export function AnimationPanel({
           helper.current = new EngineClient();
         const results = await Promise.all([
           client.current
-            .compute(applyTracks(frame.config, numeric, 0, length).config)
+            .compute(
+              applyTracks(frame.config, numeric, 0, length).config,
+              undefined,
+              { diagnostics: drawsProbe },
+            )
             .catch((reason) => {
               throw new Error(`At animation start: ${reason.message}`);
             }),
           (helper.current ?? client.current)
-            .compute(applyTracks(frame.config, numeric, 1, length).config)
+            .compute(
+              applyTracks(frame.config, numeric, 1, length).config,
+              undefined,
+              { diagnostics: drawsProbe },
+            )
             .catch((reason) => {
               throw new Error(`At animation end: ${reason.message}`);
             }),
@@ -540,6 +616,8 @@ export function AnimationPanel({
         pace,
         length,
         progress: 0,
+        probe: drawsProbe ? probe! : undefined,
+        motion: probeMotion,
       };
       // A loop joins the end to the start, so they must be the same drawing.
       if (repeat === "loop") {
@@ -667,7 +745,9 @@ export function AnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "trace" ? (
+              mode === "probe" ? (
+                "Move the probe from the start of the curve to its end, one sample at a time, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
+              ) : mode === "trace" ? (
                 "Send light from the source, or in from the edge of the view for parallel light, to the curve and on. Each caustic point appears as its ray reaches it. Light slows to c/n in each medium, so wavefronts stay together."
               ) : mode === "reveal" ? (
                 iterated ? (
@@ -697,8 +777,25 @@ export function AnimationPanel({
               </option>
               <option value="parameters">Vary parameters</option>
               {traceable && <option value="trace">Trace rays</option>}
+              {probe && (
+                <option value="probe">Move the probe along the curve</option>
+              )}
             </select>
           </Field>
+          {mode === "parameters" && probe && (
+            <Field label="Probe" help={curveProbeMotionHelp}>
+              <select
+                value={probeMotion}
+                onChange={(e) => setProbeMotion(e.target.value as ProbeMotion)}
+              >
+                {curveProbeMotions.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           {mode === "parameters" && (
             <>
               {tracks.map((track, i) => (

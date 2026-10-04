@@ -5,6 +5,19 @@
 // engine3.SurfaceDiagnostics) or the study's own per-sample arrays; this
 // module only selects and draws them.
 import type { Batch } from "./scene";
+import {
+  curveProbeMotionHelp,
+  curveProbeMotions,
+  heldCurveSample,
+  probeIndex,
+  type ProbeMotion,
+} from "../probe";
+export {
+  plotScale,
+  probeIndex,
+  probeMotionValues,
+  type ProbeMotion,
+} from "../probe";
 import type {
   DiagnosticsResult,
   SpatialConfig,
@@ -48,12 +61,6 @@ export const defaultProbe: Probe = {
 // osculating circle and highlighted construction share one; T, N and B each
 // have their own.
 export const probeInk = { mark: 8, tangent: 9, normal: 10, binormal: 11 };
-
-// The nearest of the samples 0…n.
-export const probeIndex = (position: number, n: number) =>
-  Number.isNaN(position)
-    ? Math.round(n / 2)
-    : Math.min(n, Math.max(0, Math.round(position * n)));
 
 type Segments = (r: SpatialResult, j: number) => Vec3[];
 const joined = (...points: (Vec3 | null | undefined)[]): Vec3[] =>
@@ -264,70 +271,6 @@ export function probeReadout(result: SpatialResult, j: number) {
     flat,
     infinite: !!k && !flat && !d.center[j],
   };
-}
-
-// A plot's vertical range and its unbroken runs of [sample, value]. The
-// range is the values' own, trimmed by outer Tukey fences (3 IQR) so that
-// a few values that blow up (τ near a flat sample) do not flatten the rest;
-// those are pinned to the edge they pass and counted. fromZero keeps 0 in
-// range (for κ ≥ 0). A series whose range is within resolution (by default
-// none) is drawn as constant, so that rounding noise in a value known to be
-// fixed, such as the zero curvature along a developable's ruling, does not
-// fill the plot; within resolution of 0 it is drawn as zero. constant is
-// that value when every known value lies within resolution of the others
-// (or all are equal), so nothing is pinned, and null otherwise: a constant
-// series is drawn in a padded range, which is not the data's.
-export function plotScale(
-  values: (number | null)[],
-  fromZero: boolean,
-  resolution = 0,
-) {
-  const known = values
-    .filter((v): v is number => v !== null)
-    .sort((a, b) => a - b);
-  let lo = known[0] ?? 0,
-    hi = known.at(-1) ?? 1;
-  const centre = (lo + hi) / 2;
-  const constant =
-    known.length && hi - lo <= resolution
-      ? Math.abs(centre) <= resolution
-        ? 0
-        : centre
-      : null;
-  if (known.length >= 8) {
-    const q1 = known[Math.floor(known.length / 4)],
-      q3 = known[Math.floor((3 * known.length) / 4)],
-      spread = q3 - q1;
-    if (spread > 0) {
-      lo = known.find((v) => v >= q1 - 3 * spread)!;
-      hi = [...known].reverse().find((v) => v <= q3 + 3 * spread)!;
-    }
-  }
-  if (hi - lo <= resolution && hi > lo) {
-    const middle = (lo + hi) / 2;
-    lo = hi = Math.abs(middle) <= resolution ? 0 : middle;
-  }
-  if (fromZero) lo = Math.min(lo, 0);
-  if (!(hi > lo)) {
-    // A constant series: a zero one from 0 up (or around 0), another
-    // within a tenth of its value.
-    const pad = Math.abs(hi) * 0.1;
-    [lo, hi] = pad > 0 ? [lo - pad, hi + pad] : fromZero ? [0, 1] : [-1, 1];
-  }
-  let pinned = 0;
-  const runs: [number, number][][] = [];
-  let run: [number, number][] = [];
-  values.forEach((v, i) => {
-    if (v === null) {
-      if (run.length) runs.push(run);
-      run = [];
-      return;
-    }
-    if (v > hi || v < lo) pinned++;
-    run.push([i, Math.min(hi, Math.max(lo, v))]);
-  });
-  if (run.length) runs.push(run);
-  return { lo, hi, runs, pinned, constant };
 }
 
 // Whether the base is straight: every known curvature is zero, so no sample
@@ -746,12 +689,8 @@ export function probeSteps(result: SpatialResult, target: ProbeTarget) {
   return result.diagnostics ? result.diagnostics.curvature.length - 1 : null;
 }
 
-// How the probe moves while parameter tracks reshape the study: it stays
-// where it was put (at its t on the curve, or its row and column on a
-// grid), keeps its share of the curve's drawn length, or moves along the
-// curve or grid from start to end as the parameters vary.
-export type ProbeMotion = "stays" | "length" | "along";
-export const probeMotionValues: ProbeMotion[] = ["stays", "length", "along"];
+// How the probe moves while parameter tracks reshape the study (see
+// ../probe.ts); a grid has no length to keep a share of.
 export function probeMotions(
   c: SpatialConfig,
   target: ProbeTarget,
@@ -764,18 +703,14 @@ export function probeMotions(
         label: `Moves along the ${surfaceTerms(c, target).surface}`,
       },
     ];
-  return [
-    { value: "stays", label: "Stays at its t" },
-    { value: "length", label: "Keeps its share of the length" },
-    { value: "along", label: "Moves along the curve" },
-  ];
+  return curveProbeMotions;
 }
 export function probeMotionHelp(c: SpatialConfig, target: ProbeTarget) {
   if (gridded(target)) {
     const t = surfaceTerms(c, target);
     return `Where the probe stands in each frame while the parameters vary. Stays: at the same share of the ${t.surface}'s rows and columns as the point you chose. Moves along: from its first ${t.along} to its last as the animation plays, at the column you chose. It snaps to each frame's own grid; the readout and plot describe that frame.`;
   }
-  return "Where the probe stands in each frame while the parameters vary. Stays at its t: at the sample nearest the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: at the sample nearest the same fraction of the drawn curve's arc length, measured by Go on each frame's samples, with nothing counted across a break. Moves along the curve: from its first sample to its last as the animation plays. It snaps to each frame's own samples; the readout and plot describe that frame, and framing ignores the osculating circle.";
+  return curveProbeMotionHelp;
 }
 
 // The step the probe stands at in one frame of a parameter animation at
@@ -800,35 +735,13 @@ export function heldProbe(
       probe.position,
       probe.across,
     ).row;
-  const from = start.diagnostics!,
-    d = frame.diagnostics!,
-    n0 = from.curvature.length - 1,
-    i0 = probeIndex(probe.position, n0);
-  const short = (v: number) => Number(v.toPrecision(6));
-  if (motion === "stays") {
-    const t = from.min + ((from.max - from.min) * i0) / n0;
-    const x = ((t - d.min) / (d.max - d.min)) * steps;
-    if (!(x >= -0.5 && x <= steps + 0.5))
-      return `t = ${short(t)} lies outside this frame's domain, [${short(d.min)}, ${short(d.max)}].`;
-    return Math.min(steps, Math.max(0, Math.round(x)));
-  }
-  const total = (lengths: (number | null)[]) =>
-    lengths.reduce<number>((m, s) => (s !== null && s > m ? s : m), 0);
-  const mine = from.length[i0],
-    whole = total(from.length);
-  if (mine === null || !(whole > 0))
-    return "The probe's point has no share of the length: it is not on a drawn stretch of the curve.";
-  const goal = (mine / whole) * total(d.length);
-  if (!(total(d.length) > 0)) return "This frame's curve has no length.";
-  let best = -1;
-  d.length.forEach((s, i) => {
-    if (
-      s !== null &&
-      (best < 0 || Math.abs(s - goal) < Math.abs(d.length[best]! - goal))
-    )
-      best = i;
-  });
-  return best;
+  return heldCurveSample(
+    start.diagnostics!,
+    probe.position,
+    motion,
+    frame.diagnostics!,
+    p,
+  );
 }
 
 // The probe's drawing at step i: the curve probe at sample i, or the surface

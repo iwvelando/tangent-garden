@@ -51,7 +51,8 @@ self.onmessage = async ({
   action: "compute" | "scalars" | "spatial" | "tesseract";
   tesseract?: import("./tesseract/types").Config;
   spatial?: import("./spatial/types").SpatialConfig;
-  // Asks Go for the base curve's diagnostics (see engine3.DiagnosticsResult).
+  // Asks Go for the base curve's diagnostics (see engine.Diagnostics and
+  // engine3.DiagnosticsResult).
   diagnostics?: boolean;
   // Asks Go for a surface's diagnostics (see engine3.SurfaceDiagnostics).
   surfaceDiagnostics?: boolean;
@@ -745,7 +746,11 @@ self.onmessage = async ({
         "The number of offsets must be a whole number.",
       );
     const result: import("./types").Result | { error: string } = JSON.parse(
-      tangentGardenCompute(JSON.stringify(config)),
+      tangentGardenCompute(
+        JSON.stringify(
+          data.diagnostics ? { ...config, diagnostics: true } : config,
+        ),
+      ),
     );
     if (!("error" in result) && result.sourcePosition)
       config.source.position = result.sourcePosition;

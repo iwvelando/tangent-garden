@@ -22,6 +22,13 @@ import { planarExamples, planarThumbnail } from "./examples";
 import { Plot, type Layers } from "./Plot";
 import { LineWeightField } from "./LineWeightField";
 import { RefineBetweenSamples } from "./RefineBetweenSamples";
+import { PlanarProbePanel } from "./PlanarProbePanel";
+import {
+  defaultProbe,
+  probeSample,
+  probeSupported,
+  type PlanarProbe,
+} from "./planar-probe";
 import { refineBudget, refineDepth } from "./refinement";
 import type { LineWeight } from "./line-weight";
 import {
@@ -275,7 +282,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     touched.current = label;
   }, []);
   const [settledKey, setSettledKey] = useState("");
-  const requestKey = JSON.stringify([config, bounds]);
+  // The probe asks Go for the base curve's diagnostics (planar-probe.ts).
+  const [probe, setProbe] = useState<PlanarProbe>(defaultProbe);
+  const probing = probe.enabled && probeSupported(config);
+  const requestKey = JSON.stringify([config, bounds, probing]);
   // Derive readiness from the exact inputs, so neither export nor animation can
   // briefly consume the previous frame before the debounce effect runs.
   // Fields whose constant expressions Go is still evaluating, or rejected.
@@ -352,7 +362,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     let cancelled = false;
     const timer = setTimeout(() => {
       client
-        .current!.compute(config, bounds)
+        .current!.compute(config, bounds, { diagnostics: probing })
         .then((next) => {
           if (cancelled) return;
           setFrame(next);
@@ -373,7 +383,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [config, bounds]);
+  }, [config, bounds, probing]);
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
   // A level set and an iterated map have no parameter, so no construction
@@ -1102,6 +1112,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     const next = presets[index].config;
     if (usesPole(next.kind)) setPoleKind(next.kind);
     setConfig(structuredClone(next));
+    setProbe(presets[index].probe ?? defaultProbe);
     setBounds({
       min: boundText(next.curve.min),
       max: boundText(next.curve.max),
@@ -1143,6 +1154,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     setLength(study.length);
     setLayers(study.layers);
     setWeight(study.weight);
+    setProbe(study.probe);
     setRestoredCamera({ reset: reset + 1, camera: study.camera });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -1167,6 +1179,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     layers,
     camera: camera.current,
     weight,
+    probe,
     animation: animationSettings.current ?? defaultAnimation,
   });
   // Where the error is shown: under the input that failed to parse, or
@@ -2124,15 +2137,40 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               </section>
             </FieldErrorContext.Provider>
             {error && !claimedHere && <StudyError message={error} />}
+            <PlanarProbePanel
+              config={config}
+              frame={
+                // While an animation holds or moves the probe, the readout
+                // describes the frame it shows.
+                animation?.probe !== undefined
+                  ? animation.frame
+                  : probing && !busy
+                    ? frame
+                    : null
+              }
+              probe={probe}
+              onProbe={setProbe}
+              animating={!!animation && !animation.complete}
+              at={animation?.probe}
+              away={animation?.probeAway}
+              dark={dark}
+            />
             <AnimationPanel
               getCurrentView={() => manualView.current}
               dark={dark}
               layers={layers}
               weight={weight}
+              probe={probing ? probe : null}
               frame={frame}
               client={client}
               length={length}
-              revision={JSON.stringify([config, bounds, length, active])}
+              revision={JSON.stringify([
+                config,
+                bounds,
+                length,
+                active,
+                probing,
+              ])}
               disabled={busy || !!error}
               onView={setAnimation}
               onRunning={setAnimationRunning}
@@ -2162,7 +2200,14 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               ↔ Fit view
             </button>
           </div>
-          <div className="plot-wrap" ref={plotWrap} aria-busy={busy}>
+          <div
+            className="plot-wrap"
+            ref={plotWrap}
+            aria-busy={busy}
+            // The probe while it is on, as an example's fingerprint records
+            // it (examples/index.ts).
+            data-probe={probing ? JSON.stringify(probe) : undefined}
+          >
             {result && shown ? (
               <Plot
                 onViewport={(view) => {
@@ -2176,6 +2221,11 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 config={shown.config}
                 layers={layers}
                 weight={weight}
+                probe={
+                  probing && result
+                    ? (probeSample(result, probe) ?? undefined)
+                    : undefined
+                }
                 dark={dark}
                 length={animation?.length ?? length}
                 reset={reset}
