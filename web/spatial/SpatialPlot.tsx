@@ -8,7 +8,7 @@ import {
   type Layers,
   type View,
 } from "./renderer";
-import type { Batch } from "./scene";
+import type { Batch, Projection } from "./scene";
 import type { CutSpec } from "./cut";
 import { defaultSight, isPlain, type Sight } from "./sight";
 const noProbe: Batch[] = [];
@@ -39,6 +39,7 @@ export function SpatialPlot({
   cut = null,
   sight = defaultSight,
   onSeeThrough,
+  projection = "orthographic",
 }: {
   result: SpatialResult;
   dark: boolean;
@@ -64,6 +65,9 @@ export function SpatialPlot({
   // whether see-through sheets could be drawn, reported when asked for.
   sight?: Sight;
   onSeeThrough?: (available: boolean) => void;
+  // The manual camera's projection, drawn for the manual and released
+  // views; an animation's camera carries its own.
+  projection?: Projection;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
@@ -87,6 +91,7 @@ export function SpatialPlot({
     cut,
     sight,
     onSeeThrough,
+    projection,
   });
   state.current = {
     dark,
@@ -99,14 +104,22 @@ export function SpatialPlot({
     cut,
     sight,
     onSeeThrough,
+    projection,
   };
   const [error, setError] = useState("");
+  const projected = (v: View): View => {
+    const { projection: _, ...rest } = v;
+    const p = state.current.projection;
+    return p === "orthographic" ? rest : { ...rest, projection: p };
+  };
   const current = (): View =>
     state.current.override ??
-    explored.current ?? {
-      ...manual.current,
-      ...state.current.result.bounds,
-    };
+    projected(
+      explored.current ?? {
+        ...manual.current,
+        ...state.current.result.bounds,
+      },
+    );
   const draw = () => {
     if (!canvas.current?.clientWidth) return;
     const v = current();
@@ -179,7 +192,7 @@ export function SpatialPlot({
     renderer.current?.setProbe(probe);
     draw();
   }, [probe]);
-  useEffect(draw, [dark, layers, override, cut, sight]);
+  useEffect(draw, [dark, layers, override, cut, sight, projection]);
   useEffect(() => {
     manual.current =
       restored?.reset === reset ? { ...restored.view } : { ...initialView };

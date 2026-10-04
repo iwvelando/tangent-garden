@@ -361,6 +361,85 @@ test("riding a ray draws in perspective and exports through WebKit WebGL and H.2
   expect(video.first.hash).not.toBe(video.last.hash);
 });
 
+test("the manual camera draws through a perspective lens in WebKit WebGL", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "A spiral stair, down its well" });
+  const stage = page.locator(".spatial-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByLabel("Projection", { exact: true })).toHaveValue(
+    "wide",
+  );
+  await expect(stage.locator(".plot-meta > span")).toHaveText(
+    /^Drag to orbit · /,
+  );
+  // The shaded still has ink wherever the line drawing's visible curve and
+  // rulings are: WebKit's vertex shader projects through the manual lens as
+  // scene.ts does.
+  const svgFile = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export image", exact: true }).click();
+  await page
+    .getByRole("menuitem", { name: "Lines (SVG) · visible only, sampled" })
+    .click();
+  const svg = (await readFile((await (await svgFile).path())!)).toString();
+  expect(svg).toContain('"projection":"wide"');
+  const points: [number, number][] = [];
+  for (const layer of ["base", "rulings"]) {
+    const group = svg.match(new RegExp(`<g id="${layer}"[^>]*>(.*?)</g>`))![1];
+    for (const d of group.matchAll(/ d="([^"]*)"/g))
+      for (const line of d[1].split(/(?=M)/).filter(Boolean)) {
+        const v = [...line.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map(
+          (m) => [+m[1], +m[2]] as const,
+        );
+        for (let k = 1; k < v.length; k++) {
+          const [a, b] = [v[k - 1], v[k]];
+          const n = Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / 4);
+          for (let m = 0; m < n; m++) {
+            const x = a[0] + ((b[0] - a[0]) * m) / n,
+              y = a[1] + ((b[1] - a[1]) * m) / n;
+            if (x > 4 && x < 1996 && y > 4 && y < 1516) points.push([x, y]);
+          }
+        }
+      }
+  }
+  expect(points.length).toBeGreaterThan(200);
+  const image = page.waitForEvent("download");
+  await exportImage(page, "PNG");
+  const png = await readFile((await (await image).path())!);
+  const agreement = await page.evaluate(
+    async ([input, at]) => {
+      const picture = new Image();
+      picture.src = `data:image/png;base64,${input}`;
+      await picture.decode();
+      const c = document.createElement("canvas");
+      c.width = picture.width;
+      c.height = picture.height;
+      const g = c.getContext("2d")!;
+      g.drawImage(picture, 0, 0);
+      const data = g.getImageData(0, 0, c.width, c.height).data;
+      const inked = (x: number, y: number) => {
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const i = 4 * ((Math.round(y) + dy) * c.width + Math.round(x) + dx);
+            if (
+              Math.abs(data[i] - data[0]) +
+                Math.abs(data[i + 1] - data[1]) +
+                Math.abs(data[i + 2] - data[2]) >
+              30
+            )
+              return true;
+          }
+        return false;
+      };
+      return at.filter(([x, y]) => inked(x, y)).length / at.length;
+    },
+    [png.toString("base64"), points] as const,
+  );
+  expect(agreement).toBeGreaterThan(0.9);
+});
+
 // An iterated map's density is a PNG embedded in the SVG; drawing that SVG
 // to a canvas must keep it and must not taint the canvas.
 test("PNG export keeps an iterated map's embedded density in WebKit", async ({

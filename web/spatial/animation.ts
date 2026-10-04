@@ -1002,8 +1002,15 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
 export function animationCamera(view: AnimationView): View {
   // A camera path is the whole camera, about the study's own bounds, at the
   // time of the frame it draws.
+  // It flies in the held view's projection: key views have none of their
+  // own.
   if (view.path)
-    return pathView(view.path, view.around!, view.progress, view.cyclic);
+    return {
+      ...pathView(view.path, view.around!, view.progress, view.cyclic),
+      ...(view.heldView?.projection && {
+        projection: view.heldView.projection,
+      }),
+    };
   // So is the ride, at the optical path the frame's light has reached.
   if (view.ride)
     return rideView(

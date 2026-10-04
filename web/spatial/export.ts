@@ -1,6 +1,6 @@
 import { composes, type Frame } from "./types";
 import { createRenderer, type View, type Layers } from "./renderer";
-import { buildScene, type Batch } from "./scene";
+import { buildScene, projectionRecord, type Batch } from "./scene";
 import { linework, linesSvg, sampleStep } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
 import { probeDrawing } from "./probe";
@@ -69,9 +69,11 @@ export async function imageFile(
   // Seeing through, recorded only when it changes the drawing.
   sight: Sight = defaultSight,
 ): Promise<Blob> {
+  const lensed = projectionRecord(view);
   const probed = {
     ...(probe ? { probe: probe.record } : {}),
     ...(cut ? { cut: cutRecord(cut) } : {}),
+    ...(lensed ? { projection: lensed } : {}),
   };
   if (format === "svg-lines" || format === "svg-visible") {
     const occlusion = format === "svg-lines" ? "none" : "sampled";

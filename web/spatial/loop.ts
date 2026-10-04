@@ -126,6 +126,8 @@ export function sameCamera(a: View, b: View) {
   const close = (x: number, y: number, scale: number) =>
     Math.abs(x - y) <= tolerance * scale;
   if (Boolean(a.lens) !== Boolean(b.lens)) return false;
+  if ((a.projection ?? "orthographic") !== (b.projection ?? "orthographic"))
+    return false;
   return (
     Math.abs(yaw - turn * Math.round(yaw / turn)) <= tolerance &&
     close(a.pitch, b.pitch, 1) &&

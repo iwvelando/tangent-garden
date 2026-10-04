@@ -44,6 +44,10 @@ type Face struct {
 	Points []Vec3 `json:"points"`
 	Family int    `json:"family"`
 }
+
+// The greatest tesseract slice offset: see Compute.
+const maxSlice = 4.05
+
 type Section struct {
 	ID        string  `json:"id,omitempty"`
 	Kind      string  `json:"kind,omitempty"`
@@ -166,11 +170,13 @@ func Compute(q Request) (r Result, err error) {
 		return r, fieldErr("distance", "4D eye distance must be between 2.05 and 20")
 	}
 	if q.Mode == "section" {
-		if !finite(q.Slice) || math.Abs(q.Slice) > 3 {
-			return r, fieldErr("slice", "slice offset must be within ±3 and spread between 0 and 4")
+		// The offset reaches the end of the widest slice passage, whose
+		// nearest section is then 2.05 from the center: 2.05 + 4/2.
+		if !finite(q.Slice) || math.Abs(q.Slice) > maxSlice {
+			return r, fieldErr("slice", "slice offset must be within ±4.05")
 		}
 		if !finite(q.Spread) || q.Spread < 0 || q.Spread > 4 {
-			return r, fieldErr("spread", "slice offset must be within ±3 and spread between 0 and 4")
+			return r, fieldErr("spread", "section spread must be between 0 and 4")
 		}
 		if q.Count < 1 || q.Count > 25 {
 			return r, fieldErr("count", "use 1–25 sections")

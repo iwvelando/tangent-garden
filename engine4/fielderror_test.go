@@ -24,7 +24,7 @@ func TestValidationNamesItsField(t *testing.T) {
 		{"mode", "mode", func() Request { q := request(); q.Mode = "lifted"; return q }},
 		{"angle", "angles.4", func() Request { q := request(); q.Angles[4] = nan; return q }},
 		{"eye distance", "distance", func() Request { q := request(); q.Mode, q.Distance = "perspective", 2; return q }},
-		{"slice", "slice", func() Request { q := section(); q.Slice = 4; return q }},
+		{"slice", "slice", func() Request { q := section(); q.Slice = 4.1; return q }},
 		{"spread", "spread", func() Request { q := section(); q.Spread = -1; return q }},
 		{"sections", "count", func() Request { q := section(); q.Count = 26; return q }},
 		{"grid", "grid", func() Request { q := request(); q.Grid = 13; return q }},

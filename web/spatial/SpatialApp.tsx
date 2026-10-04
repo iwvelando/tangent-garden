@@ -102,6 +102,7 @@ import {
 } from "./surface";
 import { raysNote, receiverAxes } from "./rays";
 import { defaultLayers, initialView, type Layers, type View } from "./renderer";
+import { projections, type Projection } from "./scene";
 import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
 import {
@@ -231,6 +232,8 @@ export default function SpatialApp({
   const [sight, setSight] = useState<Sight>(defaultSight);
   const userSight = useMemo(() => sightSpec(sight), [sight]);
   const [seeThrough, setSeeThrough] = useState(true);
+  // The manual camera's projection: kept by Reset view, carried by links.
+  const [lensing, setLensing] = useState<Projection>("orthographic");
   const viewport = useRef<View | undefined>(undefined),
     plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
@@ -331,7 +334,14 @@ export default function SpatialApp({
       position: defaultProbe.position,
       across: defaultProbe.across,
     }));
-    setReset((n) => n + 1);
+    // And its own projection and opening view, or orthographic from the
+    // default view.
+    setLensing(spatialPresets[+index].projection ?? "orthographic");
+    const opening = spatialPresets[+index].view;
+    setRestoredView(
+      opening ? { reset: reset + 1, view: { ...opening } } : null,
+    );
+    setReset(reset + 1);
   };
   // A shared study replaces the whole study, as a preset does, and restores
   // the sender's layers, camera, and animation setup.
@@ -361,6 +371,7 @@ export default function SpatialApp({
     setProbe(study.probe);
     setCut(study.cut);
     setSight(study.sight);
+    setLensing(study.projection);
     setRestoredView({ reset: reset + 1, view: study.view });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -387,6 +398,7 @@ export default function SpatialApp({
     probe: { ...probe, target: probeTarget(config, probe) },
     cut,
     sight,
+    projection: lensing,
   });
   // The cut's buttons compute from its numeric fields, so they wait for
   // evaluations still pending for them; a preset chosen meanwhile wins.
@@ -3293,6 +3305,14 @@ export default function SpatialApp({
           data-cut={cut.enabled ? JSON.stringify(cut) : undefined}
           // The entered sight when it changes the drawing, likewise.
           data-sight={isPlain(sight) ? undefined : JSON.stringify(sight)}
+          // The projection when perspective, and the chosen preset's opening
+          // view, likewise.
+          data-projection={lensing === "orthographic" ? undefined : lensing}
+          data-opening={
+            preset !== "" && spatialPresets[+preset].view
+              ? JSON.stringify(spatialPresets[+preset].view)
+              : undefined
+          }
           data-progress={animation?.progress}
           data-time={animation?.time}
           data-mode={animation?.mode}
@@ -3335,7 +3355,20 @@ export default function SpatialApp({
                                       : "A ribbon of tangent lines"}
               </h1>
             </div>
-            <div className="view-buttons">
+            <div className="view-buttons lensed">
+              <select
+                className="fit projection"
+                aria-label="Projection"
+                value={lensing}
+                disabled={!!override || running}
+                onChange={(e) => setLensing(e.target.value as Projection)}
+              >
+                {(Object.keys(projections) as Projection[]).map((p) => (
+                  <option key={p} value={p}>
+                    {projections[p].label}
+                  </option>
+                ))}
+              </select>
               <button
                 className="fit"
                 disabled={!!override || running || !!renderError}
@@ -3379,6 +3412,7 @@ export default function SpatialApp({
                   cut={drawnCut}
                   sight={userSight.spec}
                   onSeeThrough={setSeeThrough}
+                  projection={lensing}
                 />
               ) : (
                 <div className="loading">
@@ -3456,14 +3490,14 @@ export default function SpatialApp({
               )}
               <span>
                 {released?.lens
-                  ? "Perspective from the ray · drag, pan or zoom to return to the orthographic view · Home to the ray · Back to study restores your view"
+                  ? `Perspective from the ray · drag, pan or zoom to return to the ${lensing === "orthographic" ? "orthographic" : "held"} view · Home to the ray · Back to study restores your view`
                   : released
                     ? "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · Back to study restores your view"
                     : camera?.lens
                       ? "Perspective · riding a ray · Stop restores manual framing"
                       : animation
                         ? "Animation camera · Stop restores manual framing"
-                        : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home"}
+                        : "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home"}
               </span>
             </div>
           </div>
