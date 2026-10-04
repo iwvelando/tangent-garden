@@ -22,10 +22,13 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - Vector-field trajectories from 1–16 seeds, integrated with adaptive error control and explicit escape, singularity, and step-budget ends, with the direction field of an autonomous field.
 - Implicit curves F(x, y) = c and families of levels, traced on a bounded grid with exact crossings, deliberately decided saddle cells, poles and jumps told apart from zero crossings, and adaptive refinement, drawn with F's gradient.
 - Iterated maps (Clifford, Peter de Jong, Hénon) drawn as the logarithmic visit density of their orbits on a bounded grid, never joined into curves, with escapes counted.
-- Forty-four example studies; point and parallel light sources; polar source coordinates; configurable refraction.
+- Forty-seven example studies; point and parallel light sources; polar source coordinates; configurable refraction.
 - Independent poles for pedal, contrapedal, and orthotomic constructions, with tangent/normal projections, reflected segments, and pole-coordinate animation.
 - Signed normal offsets (parallel curves) that keep their cusps and swallowtails, with distance animation, evenly spaced offset stacks, and optional generating circles whose envelope is the offsets ±R.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, and light/dark themes.
+- A curvature probe at any sample: tangent, normal, osculating circle and center of curvature, the point's construction lines, signed curvature, radius and arc length read out and plotted, moving along the curve as an animation or held while parameters vary.
+- Optional refinement between samples, inserting points where a chord strays from the curve, the curve built on, and a pedal-type or inverted curve, with gaps and poles found between samples left open.
+- Line weights in every notebook: fine, regular, bold, or one-pixel hairlines, live and in every export.
 - Curve-reveal and multi-parameter animations with four camera modes.
 - **Copy link** in every notebook: a link that reopens your study, layers, view, and animation setup for anyone, carried in the URL fragment with no server.
 - PNG and vector SVG image exports, and for 3D studies a vector line drawing of every line or of the lines not hidden by a surface, with hidden ones faint or dashed if chosen; animation exports as MP4 video (the default) or animated WebP, whichever the browser can encode, with resolution, quality, and up to 60 fps; every notebook can repeat an animation once, as a checked seamless loop, or back and forth, at a steady or eased pace.
