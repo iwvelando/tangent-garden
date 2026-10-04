@@ -39,6 +39,34 @@ assert.equal(
   "field" in JSON.parse(globalThis.tangentGardenCompute("{")),
   false,
 );
+// Refining between samples in the plane: the line (t, 0.02) inverts in the
+// unit circle to the circle through the origin with center (0, 25). The
+// refined image stays on it, joined, and reaches its far point (0, 50).
+const planarNearMiss = (adaptive) =>
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        kind: "inversion",
+        curve: { format: "parametric", x: "t", y: "0.02", min: -3, max: 3 },
+        inversion: { center: { x: 0, y: 0 }, radius: 1 },
+        samples: 64,
+        lines: 8,
+        adaptive,
+      }),
+    ),
+  );
+assert.equal(planarNearMiss(false).adaptive, undefined);
+const planarImage = planarNearMiss(true).adaptive.derived;
+assert.ok(planarImage.inserted > 0 && !planarImage.exhausted);
+assert.equal(planarImage.points.length, planarImage.at.length);
+assert.ok(planarImage.points.every((p) => p !== null));
+assert.ok(
+  planarImage.points.every(
+    (p) => Math.abs(Math.hypot(p.x, p.y - 25) - 25) < 1e-7,
+  ),
+);
+assert.ok(Math.max(...planarImage.points.map((p) => p.y)) > 49.99);
+console.log("Planar refinement WASM bridge passed.");
 const scalars = JSON.parse(
   globalThis.tangentGardenScalars(JSON.stringify(["2*pi", "phi", "ln(e)"])),
 );

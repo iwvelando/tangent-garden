@@ -1,4 +1,5 @@
 import { StudyExplanation } from "../StudyExplanation";
+import { RefineBetweenSamples } from "../RefineBetweenSamples";
 import {
   useCallback,
   useEffect,
@@ -68,8 +69,6 @@ import {
   maxSpatialSeeds,
   maxSpatialPursuers,
   type HarmonicCurve,
-  type AdaptiveResult,
-  type RefinedPath,
   type SpatialConfig,
   type Frame,
   type ImplicitConfig,
@@ -139,31 +138,6 @@ const imageNames: Record<ImageFormat, string> = {
 
 // How a study is sampled is for the curious: a heading and an info toggle
 // keep the detail out of the way until it is asked for.
-// What refinement added to the drawn curves, and what it could not
-// resolve.
-function refinementReadout(adaptive: AdaptiveResult) {
-  const paths = [
-    adaptive.base,
-    adaptive.parent,
-    adaptive.projection,
-    adaptive.image,
-  ].filter((p): p is RefinedPath => !!p);
-  const total = (key: "inserted" | "breaks" | "unresolved") =>
-    paths.reduce((sum, p) => sum + p[key], 0);
-  const plural = (n: number, one: string, many: string) =>
-    `${n.toLocaleString()} ${n === 1 ? one : many}`;
-  const inserted = total("inserted"),
-    breaks = total("breaks"),
-    unresolved = total("unresolved");
-  return [
-    `${plural(inserted, "point", "points")} added between samples.`,
-    breaks > 0 && `${plural(breaks, "break", "breaks")} found between samples.`,
-    unresolved > 0 &&
-      `${plural(unresolved, "piece stays", "pieces stay")} coarser than the tolerance${paths.some((p) => p.exhausted) ? ": the budget of 16,384 points ran out" : ", at the finest step"}.`,
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
 function SamplingNote({ children }: { children: ReactNode }) {
   const help = useHelp();
   return (
@@ -3203,22 +3177,16 @@ export default function SpatialApp({
                   </Field>
                   {refinable && (
                     <>
-                      <label className="check">
-                        <input
-                          type="checkbox"
-                          checked={config.adaptive}
-                          onChange={(e) => {
-                            const adaptive = e.target.checked;
-                            update((c) => ({ ...c, adaptive }));
-                          }}
-                        />
-                        Refine between samples
-                      </label>
-                      {config.adaptive && shown?.result.adaptive && (
-                        <p className="refinement-readout">
-                          {refinementReadout(shown.result.adaptive)}
-                        </p>
-                      )}
+                      <RefineBetweenSamples
+                        checked={config.adaptive}
+                        onChange={(adaptive) =>
+                          update((c) => ({ ...c, adaptive }))
+                        }
+                        refined={
+                          shown?.result.adaptive &&
+                          Object.values(shown.result.adaptive)
+                        }
+                      />
                     </>
                   )}
                   <SamplingNote>

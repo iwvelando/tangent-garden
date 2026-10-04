@@ -35,6 +35,9 @@ type Request struct {
 	Input   string `json:"input"`
 	Samples int    `json:"samples"`
 	Lines   int    `json:"lines"`
+	// Adaptive refines the drawn curves between their uniform samples (see
+	// engine/adaptive.go); integrated and unparametrized curves ignore it.
+	Adaptive bool `json:"adaptive"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -82,6 +85,9 @@ type Result struct {
 	// Attractor is present only for an iterated map, which replaces the
 	// base and derived paths.
 	Attractor *AttractorResult `json:"attractor,omitempty"`
+	// Adaptive is present only when refinement was requested, for a curve
+	// it can refine.
+	Adaptive *AdaptiveResult `json:"adaptive,omitempty"`
 }
 
 func Compute(q Request) (Result, error) {
@@ -552,6 +558,9 @@ func Compute(q Request) (Result, error) {
 				}
 			}
 		}
+	}
+	if q.Adaptive && refines(q.Curve.Format) {
+		q.adapt(&out, f, g)
 	}
 	if out.Invalid > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("%d samples have no finite construction (singularity, parallel rays, or invalid domain).", out.Invalid))

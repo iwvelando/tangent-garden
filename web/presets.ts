@@ -839,4 +839,39 @@ export const presets: {
       pace: "steady",
     },
   },
+  {
+    title: "Ripples hidden between samples",
+    note: "A circle carrying a coil of frequency 233, which 240 samples alias into a slow sixfold wave; refined between samples, every loop appears, with its inverse",
+    config: {
+      ...base,
+      kind: "inversion",
+      curve: {
+        ...base.curve,
+        x: "cos(t) + 0.03*cos(233*t)",
+        y: "sin(t) + 0.03*sin(233*t)",
+      },
+      inversion: { center: { x: 0, y: 0 }, radius: 0.8 },
+      samples: 240,
+      lines: 24,
+      adaptive: true,
+    },
+  },
+  {
+    title: "Petals that miss the center",
+    note: "Five petals pass just beside the center of inversion, each throwing out a loop that the samples draw as a jagged polygon; refined between samples, the loops are round",
+    config: {
+      ...base,
+      kind: "inversion",
+      curve: {
+        ...base.curve,
+        x: "cos(5*t)*cos(t) + 0.04",
+        y: "cos(5*t)*sin(t) + 0.03",
+        max: Math.PI,
+      },
+      inversion: { center: { x: 0, y: 0 }, radius: 0.2 },
+      samples: 500,
+      lines: 30,
+      adaptive: true,
+    },
+  },
 ];

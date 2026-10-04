@@ -1129,3 +1129,11 @@ header {
     --header-control: 34px;
   }
 }
+
+/* What refinement between samples did, under its checkbox (2D and 3D). */
+.refinement-readout {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}

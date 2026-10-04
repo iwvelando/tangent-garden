@@ -1,3 +1,4 @@
+import type { RefinedPath as SharedRefinedPath } from "../refinement";
 export type Vec3 = { x: number; y: number; z: number };
 export type Bounds3 = { center: Vec3; radius: number };
 // Arc length s is measured from the anchor t₀ (a parameter value inside the
@@ -270,19 +271,8 @@ export type SpatialConfig = {
   // AdaptiveResult). Surface, ray and implicit studies ignore it.
   adaptive: boolean;
 };
-// Mirrors engine3.RefinedPath: a drawn curve with points inserted between
-// its uniform samples. at is each point's position in sample steps, whole
-// at the samples (all present) and fractional between them; a null point
-// breaks the line.
-export type RefinedPath = {
-  points: (Vec3 | null)[];
-  at: number[];
-  tolerance: number;
-  inserted: number;
-  breaks: number;
-  unresolved: number;
-  exhausted: boolean;
-};
+// Mirrors engine3.RefinedPath (see ../refinement.ts).
+export type RefinedPath = SharedRefinedPath<Vec3>;
 // Mirrors engine3.AdaptiveResult: the refined curves a study draws, each
 // absent when it is not drawn or not refined (an involute, a trajectory or
 // a pursuit).

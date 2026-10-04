@@ -21,6 +21,8 @@ import { ExampleGallery } from "./ExampleGallery";
 import { planarExamples, planarThumbnail } from "./examples";
 import { Plot, type Layers } from "./Plot";
 import { LineWeightField } from "./LineWeightField";
+import { RefineBetweenSamples } from "./RefineBetweenSamples";
+import { refineBudget, refineDepth } from "./refinement";
 import type { LineWeight } from "./line-weight";
 import {
   isHarmonic,
@@ -40,6 +42,7 @@ import {
   type AttractorMap,
   type Roll,
   type Vec,
+  refinesBetweenSamples,
 } from "./types";
 import { EngineClient, EngineError, boundText } from "./engine-client";
 import { fieldLabel } from "./planar-fields";
@@ -304,9 +307,13 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const expressions = useDisclosure("expressions");
   const indices = useDisclosure("indices");
   const diagnostics = useDisclosure("diagnostics");
+  const refinable = refinesBetweenSamples(config.curve.format);
   const samplesHelp =
     "More samples trace the curve more finely and take longer to compute; they do not raise numerical precision on their own." +
-    (expert ? " Whole numbers from 64 to 32,768." : "");
+    (expert ? " Whole numbers from 64 to 32,768." : "") +
+    (refinable
+      ? ` Refining between samples halves a sample interval, at most ${refineDepth} times, wherever the chord drawn across it strays from the curve by more than 1/5000 of the radius fitted to that curve's samples, judged at three points along it, and stops after ${refineBudget.toLocaleString("en-US")} added points per curve. It refines the curve, a derived curve it is built on, and a pedal, contrapedal, orthotomic or inverted curve; every other construction, and its lines, stay on the evenly spaced samples. A gap or jump it finds between samples breaks the curve and the curves built on it there; a passage of the inverted curve through the center is found the same way. A feature narrower than its three points can still be missed.`
+      : "");
   const client = useRef<EngineClient | null>(null);
   const scalarJobs = useRef(new Set<Promise<void>>());
   const scalarGeneration = useRef(0);
@@ -2106,6 +2113,13 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                       <option value="4000">4,000 · finest</option>
                     </select>
                   </Field>
+                )}
+                {refinable && (
+                  <RefineBetweenSamples
+                    checked={!!config.adaptive}
+                    onChange={(adaptive) => update({ adaptive })}
+                    refined={result?.adaptive && Object.values(result.adaptive)}
+                  />
                 )}
               </section>
             </FieldErrorContext.Provider>

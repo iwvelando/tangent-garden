@@ -1,3 +1,4 @@
+import type { RefinedPath } from "./refinement";
 export type Vec = { x: number; y: number };
 export type Kind =
   | "evolute"
@@ -202,6 +203,20 @@ export type Config = {
   input: ConstructionInput;
   samples: number;
   lines: number;
+  // Refines the drawn curves between their samples (engine/adaptive.go);
+  // absent or false draws the samples alone, as before refinement existed.
+  adaptive?: boolean;
+};
+// Whether a curve format can be evaluated between its samples: not an
+// integrated chase or trajectory, nor a level set or iterated map.
+export const refinesBetweenSamples = (format: Config["curve"]["format"]) =>
+  !["pursuit", "field", "implicit", "attractor"].includes(format);
+// Mirrors engine.AdaptiveResult: the refined base curve, derived input, and
+// pedal-type or inverted curve, each absent when it is not refined.
+export type AdaptiveResult = {
+  base?: RefinedPath<Vec>;
+  input?: RefinedPath<Vec>;
+  derived?: RefinedPath<Vec>;
 };
 export type Ray = {
   sampleIndex: number;
@@ -402,6 +417,8 @@ export type Result = {
   // The derived curve the construction acts on, indexed like base; present
   // only when the input is not the curve itself.
   input?: (Vec | null)[];
+  // Present only when refinement was asked for a curve it can refine.
+  adaptive?: AdaptiveResult;
   warnings: string[];
   invalid: number;
 };

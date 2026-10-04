@@ -244,6 +244,7 @@ const config: SchemaOf<Config> = {
     },
     samples: "number",
     lines: "number",
+    adaptive: { optional: "boolean" },
   },
 };
 

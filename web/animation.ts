@@ -1,3 +1,4 @@
+import { revealRefined } from "./refinement";
 import {
   ownsShape,
   usesPole,
@@ -715,6 +716,12 @@ export function reveal(result: Result, progress: number): Result {
     },
     second: result.second?.slice(0, last + 1),
     input: result.input?.slice(0, last + 1),
+    // A refined curve shows its points up to the last revealed sample.
+    adaptive: result.adaptive && {
+      base: revealRefined(result.adaptive.base, last),
+      input: revealRefined(result.adaptive.input, last),
+      derived: revealRefined(result.adaptive.derived, last),
+    },
     moving: result.moving && {
       ...result.moving,
       positions: result.moving.positions.filter((s) => s.sampleIndex <= last),

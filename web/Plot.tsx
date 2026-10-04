@@ -249,6 +249,9 @@ export function Plot({
   // its image is open between samples.
   const inversion = result.inversion;
   const breaks = new Set(inversion?.breaks);
+  // Curves refined between their samples are drawn from their refined
+  // points, whose nulls carry every break; framing keeps the samples.
+  const refined = result.adaptive ?? {};
   // A derived curve or stack member that collapses to one point, such as a
   // circle offset by its radius, is drawn as a dot rather than vanishing.
   const collapsed = (points: (Vec | null)[]) => {
@@ -893,7 +896,7 @@ export function Plot({
         <path
           data-testid="construction-input"
           aria-label={`The curve's ${config.input}, which the construction acts on`}
-          d={path(result.input)}
+          d={path(refined.input?.points ?? result.input)}
           fill="none"
           stroke={palette.derived}
           {...stroke(1.5)}
@@ -939,7 +942,8 @@ export function Plot({
         ))}
       {layers.base && (
         <path
-          d={path(result.base)}
+          data-testid="base-curve"
+          d={path(refined.base?.points ?? result.base)}
           fill="none"
           stroke={palette.base}
           {...stroke(2.3)}
@@ -1008,7 +1012,11 @@ export function Plot({
       {layers.derived && result.derived.length > 0 && (
         <path
           data-testid="derived-curve"
-          d={path(result.derived, dashed ? false : undefined, breaks)}
+          d={
+            refined.derived
+              ? path(refined.derived.points)
+              : path(result.derived, dashed ? false : undefined, breaks)
+          }
           fill="none"
           stroke={palette.derived}
           {...stroke(2.6)}
