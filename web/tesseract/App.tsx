@@ -30,10 +30,10 @@ import { LineWeightField } from "../LineWeightField";
 import { ExampleGallery } from "../ExampleGallery";
 import { tesseractExamples, tesseractThumbnail } from "../examples";
 import { ExportImageMenu } from "../ExportImageMenu";
-import { saveFile, pngFile, svgFile } from "../export-image";
+import { saveFile, pngFile, stillSize, svgFile } from "../export-image";
 import { AnimationPanel, type MotionExport } from "./AnimationPanel";
 import { StudyPlot } from "./Plot";
-import { exportEncoding, type ExportLayout } from "../export-quality";
+import { exportBaseSize, type ExportLayout } from "../export-quality";
 import { inks, sectionInk } from "./Drawing";
 import { Sampler } from "./sampler";
 import { tesseractPresets } from "./presets";
@@ -662,19 +662,21 @@ export default function TesseractApp({
           menuId="tesseract-export-image"
           kind="tesseract"
           disabled={busy || !!error || !!scalarError || playing || !!exporting}
-          onSave={async (format) => {
+          base={exportBaseSize(liveLayout)}
+          onSave={async (format, still) => {
             const svg = document.getElementById(
               "tesseract-artwork",
             ) as unknown as SVGSVGElement;
-            const size = exportEncoding({
-              scale: 2,
-              quality: 100,
-              layout: liveLayout,
-            });
+            const size = stillSize(still, exportBaseSize(liveLayout));
             const blob =
               format === "svg"
-                ? svgFile(svg)
-                : await pngFile(svg, size.width, size.height);
+                ? svgFile(svg, still.transparent)
+                : await pngFile(
+                    svg,
+                    size.width,
+                    size.height,
+                    still.transparent,
+                  );
             saveFile(blob, `tangent-garden-tesseract.${format}`);
           }}
         />

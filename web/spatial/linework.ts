@@ -614,8 +614,8 @@ const xml = (s: string) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const fixed = (v: number) => String(Math.round(v * 100) / 100 + 0);
 
-// The linework as an SVG document on the theme's background: one group per
-// layer, one path per color. Metadata stays in title and desc; nothing in
+// The linework as an SVG document on the theme's background, or on none when
+// transparent: one group per layer, one path per color. Metadata stays in title and desc; nothing in
 // the drawing is text.
 export function linesSvg(
   groups: LineGroup[],
@@ -623,6 +623,7 @@ export function linesSvg(
     width: number;
     height: number;
     dark: boolean;
+    transparent?: boolean;
     title: string;
     metadata: unknown;
   },
@@ -647,5 +648,5 @@ export function linesSvg(
           .join("")}</g>`,
     )
     .join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><title>${xml(options.title)}</title><desc>${xml(JSON.stringify(options.metadata))}</desc><rect width="${width}" height="${height}" fill="${hex(palette.background[options.dark ? 1 : 0])}"/>${body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><title>${xml(options.title)}</title><desc>${xml(JSON.stringify(options.metadata))}</desc>${options.transparent ? "" : `<rect width="${width}" height="${height}" fill="${hex(palette.background[options.dark ? 1 : 0])}"/>`}${body}</svg>`;
 }
