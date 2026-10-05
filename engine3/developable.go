@@ -271,13 +271,15 @@ func compute(c Request) (Result, error) {
 	var baseTangents []Vec3
 	var baseBreaks []bool
 	var reached []bool
+	// The involute input's position alone, for refinement.
+	var unwoundAt func(float64) Vec3
 	baseEvaluate := evaluate
 	if composed {
 		baseCurve, baseTangents, baseBreaks = baseSamples(c, evaluate, lo, hi, c.Samples, closed)
 		if c.projected() {
 			evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi)
 		} else {
-			if evaluate, reached, err = c.Unwinding.evaluation(evaluate, lo, hi, baseCurve, baseBreaks); err != nil {
+			if evaluate, unwoundAt, reached, err = c.Unwinding.evaluation(evaluate, lo, hi, baseCurve, baseBreaks); err != nil {
 				return Result{}, err
 			}
 			// A closed curve's involute ends a whole length of string from
@@ -371,9 +373,12 @@ func compute(c Request) (Result, error) {
 	}
 	// Refinement breaks the intervals where it finds the curve stopping or
 	// jumping between samples, so no surface is joined across them.
-	if c.refines() && !(composed && reached != nil) {
+	if c.refines() {
 		out.Adaptive = &AdaptiveResult{}
 		position := c.position(baseEvaluate)
+		if unwoundAt != nil {
+			position = unwoundAt
+		}
 		var broken []int
 		out.Adaptive.Base, broken = refinePath(out.Base, out.Breaks, position, lo, hi, pathTolerance(out.Base), refineBudget)
 		for _, i := range broken {
@@ -528,11 +533,18 @@ func compute(c Request) (Result, error) {
 		return out, nil
 	}
 	if involute {
-		result, err := involutes(c.Involute, evaluate, lo, hi, out.Base, tangents, speeds, middles, out.Breaks, c.Lines)
+		result, arcs, err := involutes(c.Involute, evaluate, lo, hi, out.Base, tangents, speeds, middles, out.Breaks, c.Lines)
 		if err != nil {
 			return Result{}, err
 		}
 		out.Involute = result
+		if out.Adaptive != nil {
+			// Each member on its own: one's break is not another's.
+			for _, m := range result.Members {
+				path, _ := refinePath(m.Points, out.Breaks, arcs.member(m.Offset), lo, hi, pathTolerance(m.Points), refineBudget)
+				out.Adaptive.Involute = append(out.Adaptive.Involute, path)
+			}
+		}
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
 		families := [][]*Vec3{out.Base}
 		for _, m := range result.Members {

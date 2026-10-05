@@ -1221,7 +1221,12 @@ assert.ok(Math.max(...refinedImage.points.map((p) => p.y)) > 99.999);
 console.log("Spatial refinement WASM bridge passed.");
 // Helix involute family: s = k t with k = √(4 + 1/9); each member lies in
 // the plane z = c/(3k), with its string reaching back to the curve.
-const helixInvolute = (involute) =>
+const helixInvolute = (
+  involute,
+  adaptive = false,
+  samples = 480,
+  max = 2 * Math.PI,
+) =>
   JSON.parse(
     globalThis.tangentGardenSpatial(
       JSON.stringify({
@@ -1234,10 +1239,11 @@ const helixInvolute = (involute) =>
           z: "t/3",
           a: 1,
           min: 0,
-          max: 2 * Math.PI,
+          max,
         },
-        samples: 480,
+        samples,
         lines: 25,
+        adaptive,
       }),
     ),
   );
@@ -1258,6 +1264,30 @@ assert.equal(unwound.involute.unreached, 0);
 assert.equal(unwound.mesh.length, 0);
 assert.equal(unwound.rulings.length, 0);
 assert.ok(unwound.bounds.radius > speed * 2 * Math.PI - 2);
+// Refined, every member's points between samples stay on its unwound
+// circle's involute: in its plane, at √(4 + (2(c − kt)/k)²) from the axis.
+const refinedUnwound = helixInvolute(
+  {
+    anchor: 0,
+    offset: 0,
+    family: { enabled: true, from: -1, to: 6, count: 2 },
+  },
+  true,
+  240,
+  4 * Math.PI,
+);
+assert.equal(refinedUnwound.adaptive.involute.length, 2);
+refinedUnwound.adaptive.involute.forEach((path, k) => {
+  const c = refinedUnwound.involute.members[k].offset;
+  assert.equal(path.points.length, path.at.length);
+  path.points.forEach((p, j) => {
+    const t = (4 * Math.PI * path.at[j]) / 240;
+    assert.ok(Math.abs(p.z - c / (3 * speed)) < 1e-9);
+    const radius = Math.hypot(2, (2 * (c - speed * t)) / speed);
+    assert.ok(Math.abs(Math.hypot(p.x, p.y) - radius) < 1e-7);
+  });
+});
+assert.ok(refinedUnwound.adaptive.involute.every((path) => path.inserted > 0));
 assert.match(
   helixInvolute({ anchor: 7, offset: 0, family: { enabled: false } }).error,
   /anchor/,

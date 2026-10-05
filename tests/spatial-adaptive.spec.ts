@@ -252,3 +252,98 @@ test("the rose's inverted loops are exported with their refined points", async (
   // Each added point lies inside a joined run, adding one segment.
   expect(refined - uniform).toBeGreaterThanOrEqual(added);
 });
+
+test("each involute is drawn from its own refinement, and revealed with it", () => {
+  const input = study();
+  const twoPoints = [at(0), at(1)];
+  input.breaks = [false, false];
+  input.involute = {
+    members: [0, 1].map((offset) => ({
+      offset,
+      points: twoPoints,
+      collapsed: false,
+    })),
+    strings: [],
+    unreached: 0,
+  };
+  input.adaptive = {
+    involute: [
+      refined([0, 0.5, 1], [0, 0.5, 1]),
+      refined([0, 0.25, 0.75, 1], [0, 0.25, 0.75, 1]),
+    ],
+  };
+  const scene = buildScene(input);
+  expect(xs(scene.filaments.data)).toEqual([
+    0, 0.5, 0.5, 1, 0, 0.25, 0.25, 0.75, 0.75, 1,
+  ]);
+  // Without refinement each member joins its uniform samples, as before.
+  expect(
+    xs(buildScene({ ...input, adaptive: undefined }).filaments.data),
+  ).toEqual([0, 1, 0, 1]);
+  const frame = reveal(input, 0);
+  expect(frame.adaptive?.involute?.map((path) => path.at)).toEqual([[0], [0]]);
+  expect(reveal(input, 1).adaptive).toEqual(input.adaptive);
+});
+
+async function openAnimation(page: Page) {
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+}
+const hat = "Strings swung round a three-cornered hat",
+  crown = "A string swept across a four-cornered crown";
+
+test("the three-cornered hat's involutes open refined and are exported with their refined points", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: hat });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).not.toContainText("coarser");
+  const added = Number(
+    (await readout(page).textContent())!
+      .match(/^([\d,]+) points/)![1]
+      .replace(/,/g, ""),
+  );
+  // The base and each of the four involutes swing round three corners.
+  expect(added).toBeGreaterThan(5 * 3 * 10);
+  const refined = await lines(page);
+  await refine(page).uncheck();
+  await settled(page);
+  const uniform = await lines(page);
+  expect(refined - uniform).toBeGreaterThanOrEqual(added);
+  await refine(page).check();
+  await settled(page);
+  expect(await lines(page)).toBe(refined);
+});
+
+test("the four-cornered crown's string stays refined to the end of its track", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: crown });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  const opening = await readout(page).textContent();
+  expect(opening).toMatch(/^[\d,]+ points added between samples\.$/);
+  await openAnimation(page);
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue(
+    "parameters",
+  );
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Back and forth: halfway through its time it reaches the track's end,
+  // the longest string.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-time", "0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  await expect(readout(page)).not.toHaveText(opening!);
+});
