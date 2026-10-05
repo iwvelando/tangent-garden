@@ -309,6 +309,8 @@ export default function SpatialApp({
     // A preset brings its own cut, or none, so it draws as its picture.
     setCut(structuredClone(spatialPresets[+index].cut ?? defaultCut));
     setSight(structuredClone(spatialPresets[+index].sight ?? defaultSight));
+    // And its own layers, or every one shown.
+    setLayers({ ...defaultLayers, ...spatialPresets[+index].layers });
     // And its own camera path, or none.
     setPresetFlight((f) => ({
       id: (f?.id ?? 0) + 1,
@@ -3306,10 +3308,15 @@ export default function SpatialApp({
           // The projection when perspective, and the chosen preset's opening
           // view, likewise.
           data-projection={lensing === "orthographic" ? undefined : lensing}
-          // The chosen preset's probe, likewise.
+          // The chosen preset's probe and layers, likewise.
           data-probe={
             preset !== "" && spatialPresets[+preset].probe
               ? JSON.stringify(spatialPresets[+preset].probe)
+              : undefined
+          }
+          data-layers={
+            preset !== "" && spatialPresets[+preset].layers
+              ? JSON.stringify(spatialPresets[+preset].layers)
               : undefined
           }
           data-opening={

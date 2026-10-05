@@ -5,7 +5,7 @@ import type { CameraPath } from "./path";
 import type { Ride } from "./ride";
 import type { AnimationMode, CameraMode, Track } from "./animation";
 import type { SpatialConfig } from "./types";
-import { initialView, type Projection } from "./scene";
+import { initialView, type Layers, type Projection } from "./scene";
 import type { SpatialCamera } from "./link";
 import { turnTo } from "../named-views";
 import type { Probe, ProbeMotion } from "./probe";
@@ -203,9 +203,10 @@ export type Flight = {
 };
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts), its own camera path to fly (see Flight), and its own
-// projection and manual view (see scene.ts), and its own probe (see
-// probe.ts); choosing one without turns them off, orthographic from the
-// default view, but keeps the probe on or off.
+// projection and manual view (see scene.ts), its own layers, and its own
+// probe (see probe.ts); choosing one without turns them off, orthographic
+// from the default view with every layer shown, but keeps the probe on or
+// off.
 export const spatialPresets: {
   name: string;
   detail: string;
@@ -215,6 +216,8 @@ export const spatialPresets: {
   flight?: Flight;
   projection?: Projection;
   view?: SpatialCamera;
+  // Only the layers it hides, or shows against the default.
+  layers?: Partial<Layers>;
   // A preset may open with the probe on at its own point; one without
   // keeps the probe as it was, returning it to the middle of the curve.
   probe?: Probe;
@@ -2781,5 +2784,88 @@ export const spatialPresets: {
       },
       path: { style: "steady", keys: [] },
     },
+  },
+  // The ellipsoid of "The focal sheets of an ellipsoid", whole, with its
+  // shell and parameter curves hidden so that both sheets show entire. The
+  // ellipsoid's four umbilics, where κ₁ = κ₂, lie in its xz-plane, and
+  // the two sheets meet at their centers; each sheet folds along cuspidal
+  // edges in the planes of symmetry.
+  {
+    name: "The whole focal surface of an ellipsoid",
+    detail:
+      "Its shell hidden: two sheets of centers, meeting at the centers of its four umbilics",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 0.7,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 120,
+        vSamples: 120,
+        curves: 12,
+        reach: 0,
+      },
+    },
+    layers: { surface: false, curves: false },
+  },
+  // The (3, 4) torus knot's tube, drawn by its contact circles and
+  // meridians alone. The distributed seam closes every meridian.
+  {
+    name: "A cage of rings round a (3, 4) knot",
+    detail: "A tube's contact circles and meridians, its skin left off",
+    config: {
+      ...base,
+      p: 3,
+      q: 4,
+      tube: 1.1,
+      construction: "canal",
+      lines: 120,
+      canal: { radius: 0.3, profile: "1", meridians: 6 },
+      frame: { ...base.frame, closure: "distribute" },
+    },
+    layers: { surface: false, frames: false },
+  },
+  // The Klein bottle of "A Klein bottle passing through itself", drawn by
+  // its sections alone, across its axis and seen from the isometric side.
+  // Where the neck has passed inside the body, a plane meets both, and one
+  // curve lies within the other.
+  {
+    name: "A Klein bottle in twenty-four slices",
+    detail:
+      "Its sections alone: where the neck runs inside the body, one curve lies within another",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "(x^2 + y^2 + z^2 + 2*x - 1)*((x^2 + y^2 + z^2 - 2*x - 1)^2 - 8*z^2) + 16*y*z*(x^2 + y^2 + z^2 - 2*x - 1)",
+        a: 1,
+        level: 0,
+        box: {
+          xMin: -2.7,
+          xMax: 3.3,
+          yMin: -3.1,
+          yMax: 3.1,
+          zMin: -3.9,
+          zMax: 3.9,
+        },
+        cells: 48,
+        refine: 1,
+        sections: {
+          normal: { x: 1, y: 0, z: 0 },
+          from: -2.3,
+          to: 2.9,
+          count: 24,
+        },
+      },
+    },
+    layers: { surface: false, planes: false, box: false },
+    view: turnTo(initialView, "isometric"),
   },
 ];
