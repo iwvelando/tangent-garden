@@ -28,7 +28,7 @@ import { AnimationButton } from "../AnimationButton";
 import { NotebookMode } from "../NotebookMode";
 import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
-import { saveFile } from "../export-image";
+import { saveFile, type Still } from "../export-image";
 import { SpatialPlot } from "./SpatialPlot";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { CutPanel } from "./CutPanel";
@@ -1424,7 +1424,7 @@ export default function SpatialApp({
         : [],
     [probeFrame, probeAt, probeSetup.target, probeSetup.across],
   );
-  async function save(format: string) {
+  async function save(format: string, still: Still) {
     if (!shown || !viewport.current) return;
     imageAbort.current?.abort();
     const controller = new AbortController();
@@ -1461,6 +1461,7 @@ export default function SpatialApp({
           : undefined,
         snapshot.cut,
         snapshot.sight,
+        still,
       );
       controller.signal.throwIfAborted();
       saveFile(
@@ -2271,6 +2272,7 @@ export default function SpatialApp({
           kind="spatial"
           menuId="spatial-export-image-menu"
           svgLabel="SVG · embedded 3D image"
+          sizeLabel="Image size"
           extraItems={[
             { format: "svg-lines", label: "Lines (SVG) · every line" },
             {

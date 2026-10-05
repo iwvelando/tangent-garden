@@ -133,9 +133,19 @@ test("the Export image menu works by keyboard and closes on outside clicks", asy
   await expect(png).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(svg).toBeFocused();
+  // Past the formats come the size and background settings, then the
+  // first item again.
+  const transparent = page.getByRole("menuitemcheckbox", {
+    name: "Transparent background",
+  });
+  await page.keyboard.press("End");
+  await expect(transparent).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(png).toBeFocused();
   await page.keyboard.press("ArrowUp");
+  await expect(transparent).toBeFocused();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowDown");
   await expect(svg).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);

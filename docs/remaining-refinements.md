@@ -8,16 +8,16 @@ Nothing here is implemented, scheduled, or authorized for merge or deployment. W
 
 These are the facts that decide where a refinement applies.
 
-|                | 2D                                                                                                                                | 3D                                                                                   | 4D                                                           |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| Drawing        | SVG (`web/Plot.tsx`)                                                                                                              | WebGL (`web/spatial/renderer.ts`, geometry in `scene.ts`)                            | SVG of an orbitable 3D projection (`web/tesseract/Plot.tsx`) |
-| Camera         | Pan and zoom                                                                                                                      | Turntable orbit (pitch ±1.5 rad), three perspective lenses, key-view paths, ray ride | Turntable orbit (pitch ±1.5 rad), orthographic               |
-| Pointer, touch | Drag, scroll, pinch (`web/gestures.ts`, shared)                                                                                   | Same                                                                                 | Same                                                         |
-| Keyboard       | **None on the drawing**                                                                                                           | Arrows orbit, shift-arrows pan, +/− zoom, Home                                       | Same as 3D                                                   |
-| Still export   | SVG; PNG fixed at 2000 × 1520 (`web/ExportImageMenu.tsx`, shared)                                                                 | PNG fixed at 2000 × 1520; SVG with embedded PNG; Lines (SVG) on the same page        | As 2D                                                        |
-| Probe          | Curve                                                                                                                             | Curve, surface, light                                                                | None (no user curve)                                         |
-| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes | Base, derived input (involute too), projections, inversion, involutes, strands       | None (no user curve)                                         |
-| Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`)     | Same                                                                                 | Same                                                         |
+|                | 2D                                                                                                                                | 3D                                                                                        | 4D                                                           |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Drawing        | SVG (`web/Plot.tsx`)                                                                                                              | WebGL (`web/spatial/renderer.ts`, geometry in `scene.ts`)                                 | SVG of an orbitable 3D projection (`web/tesseract/Plot.tsx`) |
+| Camera         | Pan and zoom                                                                                                                      | Turntable orbit (pitch ±1.5 rad), three perspective lenses, key-view paths, ray ride      | Turntable orbit (pitch ±1.5 rad), orthographic               |
+| Pointer, touch | Drag, scroll, pinch (`web/gestures.ts`, shared)                                                                                   | Same                                                                                      | Same                                                         |
+| Keyboard       | **None on the drawing**                                                                                                           | Arrows orbit, shift-arrows pan, +/− zoom, Home                                            | Same as 3D                                                   |
+| Still export   | SVG; PNG at 1–4 × the page, optionally transparent (`web/ExportImageMenu.tsx`, shared)                                            | PNG, SVG with embedded PNG and Lines (SVG), all at 1–4 × the page, optionally transparent | As 2D                                                        |
+| Probe          | Curve                                                                                                                             | Curve, surface, light                                                                     | None (no user curve)                                         |
+| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes | Base, derived input (involute too), projections, inversion, involutes, strands            | None (no user curve)                                         |
+| Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`)     | Same                                                                                      | Same                                                         |
 
 The 3D-only features are 3D-only by nature: cut, see-through, surface and light probes, camera paths, the ride, perspective lenses, typed mesh transport and adaptive implicit meshes. Do not port them to 2D or 4D unless an item below says so.
 
@@ -41,41 +41,15 @@ These come from the handoffs. Each was paid for at least once.
 
 ## Recommended order
 
-1. Still-export controls (all notebooks)
-2. Camera affordances (2D keyboard; 3D Reset view's opening view)
-3. Probe follow-ups (2D and 3D)
-4. Refinement between samples, remaining constructions (2D and 3D)
+1. Camera affordances (2D keyboard; 3D Reset view's opening view)
+2. Probe follow-ups (2D and 3D)
+3. Refinement between samples, remaining constructions (2D and 3D)
 
 The remaining items are smaller or conditional, and each can be taken when a study needs it.
 
 ---
 
-### 1. Still-export controls
-
-**Applies to:** 2D, 3D, 4D. All three use `ExportImageMenu`, whose PNG is fixed at 2000 × 1520. The 3D Lines (SVG) page uses the same size.
-
-**Open:**
-
-- User-selected dimensions or aspect.
-- Quality, where a format has one.
-- Optional transparent background.
-
-**Approach:**
-
-- Extend the shared menu once. Keep the theme, layers and camera snapshot, and render at the target resolution: never upscale a raster. Animation resolution is already adjustable, so reuse its limits and wording where they fit.
-- 2D/4D: the SVG's background fill (the `<rect>` filled with the palette's `bg` in `web/Plot.tsx` and `web/tesseract/Drawing.tsx`) must be omitted, not painted over, and stroke antialiasing must composite correctly against nothing.
-- 3D: the see-through composite is `B·(1 − α)ⁿ + c̄·(1 − (1 − α)ⁿ)` over the background B. A transparent export needs that rule restated with alpha, using premultiplied output. Instanced strokes' edge coverage now makes this worth doing.
-- Record dimensions and transparency in metadata only when they are not the defaults.
-
-**Watch for:**
-
-- Device canvas limits. Validate the real limits rather than assuming them; iOS Safari caps canvas area. This overlaps item 8.
-- Pixel line widths that depend on page size. Weights scale by `min(W/1000, H/760)`.
-- The visible-only linework's work cap (200 million), which grows with page area.
-
-**Done when:** each notebook exports a chosen size and a transparent PNG that an independent decoder confirms: dimensions, an alpha channel, and ink matching the opaque export where opaque. Default exports stay byte-identical.
-
-### 2. Camera affordances
+### 1. Camera affordances
 
 **Applies to:**
 
@@ -92,7 +66,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - Do not import 3D's four animation camera modes into 4D (see the 4D roadmap).
 - Key views record no projection; a path flies in the drawing's projection.
 
-### 3. Probe follow-ups
+### 2. Probe follow-ups
 
 **Applies to:** 3D and 2D. 4D has no probe.
 
@@ -118,7 +92,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - Diagnostics are requested only while the probe is on, and studies without it must stay byte-identical (Go tests assert this per format).
 - Loops are judged with the probe drawn.
 
-### 4. Refinement between samples: remaining constructions
+### 3. Refinement between samples: remaining constructions
 
 **Applies to:** 3D and 2D. 4D has no user curve.
 
@@ -139,7 +113,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - Breaks found between samples must reach every curve built on that curve.
 - Keep the feature opt-in and off for older links.
 
-### 5. Camera path timing and pivot
+### 4. Camera path timing and pivot
 
 **Applies to:** 3D only. 4D has no camera paths.
 
@@ -159,7 +133,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Watch for:** a loop's seam slope (`cyclic`) and links' `animation.path`. Per-leg durations change how progress maps to time, so define them against `web/timing.ts`.
 
-### 6. Cutaway box or several planes
+### 5. Cutaway box or several planes
 
 **Applies to:** 3D only.
 
@@ -173,7 +147,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - The edge follows the mesh, not a refined section.
 - Fragment rounding near the plane differs from the CPU raster by about a pixel.
 
-### 7. 3D rendering leftovers
+### 6. 3D rendering leftovers
 
 **Applies to:** 3D only. The 2D and 4D SVG strokes use the browser's joins.
 
@@ -190,21 +164,21 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Watch for:** the hairline path must stay the original program and `gl.LINES`.
 
-### 8. WebGL context recovery and device limits
+### 7. WebGL context recovery and device limits
 
 **Applies to:**
 
 - Context recovery: 3D only.
-- Device limits: all three, through item 1.
+- Device limits: all three.
 
 **Open:**
 
 - 3D: after `webglcontextrestored`, rebuild resources from the current study and keep the camera state. Today `SpatialPlot.tsx` reports a lost context and stops. The 2D notebook must stay usable throughout.
-- All notebooks: validate actual device limits (canvas area, `MAX_TEXTURE_SIZE`, renderbuffer size, half-float targets) before offering an export size, and fail with a named limit, not a blank file.
+- All notebooks: still exports already refuse a page the device cannot draw, naming its size (see `mathematics.md`, **Still exports: size and transparent background**). Still open: query the limits before offering a size, so the menu offers only sizes that fit, and cover half-float targets and animation exports the same way.
 
 **Test with:** `WEBGL_lose_context` in Chromium.
 
-### 9. Scale and translation robustness
+### 8. Scale and translation robustness
 
 **Applies to:**
 
@@ -222,7 +196,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Start with:** a translated and scaled copy of existing presets compared against the originals. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
 
-### 10. Composition and comparison
+### 9. Composition and comparison
 
 **Applies to:**
 
@@ -236,7 +210,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 - **3D arc-length restart after a base break,** for involutes and the involute input. It needs separate anchors and labels; today samples past a break are unreached.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
-### 11. Transport and efficiency, when profiled
+### 10. Transport and efficiency, when profiled
 
 **Applies to:** 3D first, then 4D.
 
@@ -251,7 +225,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical.
 
-### 12. Legends that follow layers
+### 11. Legends that follow layers
 
 **Applies to:** 2D, 3D, 4D.
 

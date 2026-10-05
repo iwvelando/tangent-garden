@@ -65,7 +65,13 @@ test("the 3D export menu offers both line drawings beside the image exports", as
     every,
     shown,
   ]);
+  // Its size applies to every format here, each drawn on the page.
+  await expect(page.getByRole("group", { name: "Image size" })).toBeVisible();
   await page.keyboard.press("End");
+  await expect(
+    page.getByRole("menuitemcheckbox", { name: "Transparent background" }),
+  ).toBeFocused();
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowUp");
   await expect(page.getByRole("menuitem", { name: shown })).toBeFocused();
   await page.keyboard.press("Escape");
   // The embedded image keeps its label and its honest metadata.

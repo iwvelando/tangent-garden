@@ -5,15 +5,27 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { pngFile, saveFile, svgFile } from "./export-image";
-
-// Twice the drawing's 1000 × 760 layout: crisp on high-density screens.
-const png = { width: 2000, height: 1520 };
+import {
+  defaultStill,
+  drawingPage,
+  pngFile,
+  saveFile,
+  StillLimit,
+  stillScales,
+  stillSize,
+  svgFile,
+  type Still,
+} from "./export-image";
 
 type Props = {
   disabled: boolean;
   kind: string;
-  onSave?: (format: string) => Promise<void>;
+  onSave?: (format: string, still: Still) => Promise<void>;
+  // The drawing's own page, which every size is a multiple of.
+  base?: { width: number; height: number };
+  // What the size applies to: the PNG alone where the other formats are
+  // vectors, or every format of a page drawn by WebGL.
+  sizeLabel?: string;
   svgLabel?: string;
   // Further formats a notebook saves itself, listed after SVG.
   extraItems?: { format: string; label: string }[];
@@ -29,8 +41,13 @@ export function ExportImageMenu({
     : "SVG · vector, scalable",
   extraItems = [],
   menuId = "export-image-menu",
+  base = drawingPage,
+  sizeLabel = "PNG size",
 }: Props) {
   const [open, setOpen] = useState(false);
+  // Settings, kept between exports. The menu stays open while they change.
+  const [still, setStill] = useState<Still>(defaultStill);
+  const png = stillSize(still, base);
   const [error, setError] = useState("");
   // Keep the right-edge anchor where it fits, and clamp wider popups to the
   // viewport when a compact header leaves too little room on either side.
@@ -94,7 +111,7 @@ export function ExportImageMenu({
     setError("");
     if (onSave) {
       try {
-        await onSave(format);
+        await onSave(format, still);
       } catch (error) {
         setError(
           error instanceof Error ? error.message : "Image export failed.",
@@ -107,12 +124,14 @@ export function ExportImageMenu({
     try {
       const blob =
         format === "svg"
-          ? svgFile(svg)
-          : await pngFile(svg, png.width, png.height);
+          ? svgFile(svg, still.transparent)
+          : await pngFile(svg, png.width, png.height, still.transparent);
       saveFile(blob, `tangent-garden-${kind}.${format}`);
-    } catch {
+    } catch (error) {
       setError(
-        "This browser couldn't save the PNG image. SVG export may still work.",
+        error instanceof StillLimit
+          ? error.message
+          : "This browser couldn't save the PNG image. SVG export may still work.",
       );
     }
   }
@@ -152,6 +171,7 @@ export function ExportImageMenu({
             onClick={() => void save("png")}
           >
             PNG image · {png.width} × {png.height}
+            {still.transparent ? ", transparent" : ""}
           </button>
           <button
             ref={item(1)}
@@ -172,6 +192,39 @@ export function ExportImageMenu({
               {extra.label}
             </button>
           ))}
+          <div role="separator" />
+          <div role="group" aria-label={sizeLabel}>
+            <div className="export-menu-heading" aria-hidden="true">
+              {sizeLabel}
+            </div>
+            {stillScales.map((scale, i) => {
+              const size = stillSize({ ...still, scale }, base);
+              return (
+                <button
+                  key={scale}
+                  ref={item(2 + extraItems.length + i)}
+                  role="menuitemradio"
+                  aria-checked={still.scale === scale}
+                  tabIndex={-1}
+                  onClick={() => setStill((s) => ({ ...s, scale }))}
+                >
+                  {size.width} × {size.height}
+                </button>
+              );
+            })}
+          </div>
+          <div role="separator" />
+          <button
+            ref={item(2 + extraItems.length + stillScales.length)}
+            role="menuitemcheckbox"
+            aria-checked={still.transparent}
+            tabIndex={-1}
+            onClick={() =>
+              setStill((s) => ({ ...s, transparent: !s.transparent }))
+            }
+          >
+            Transparent background
+          </button>
         </div>
       )}
       {error && (

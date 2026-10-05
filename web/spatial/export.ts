@@ -1,7 +1,7 @@
 import { composes, type Frame } from "./types";
 import { createRenderer, type View, type Layers } from "./renderer";
 import { buildScene, projectionRecord, type Batch } from "./scene";
-import { linework, linesSvg, sampleStep } from "./linework";
+import { linework, linesSvg, sampleStep, workLimit } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
 import { probeDrawing } from "./probe";
 import { cutRecord, type CutSpec } from "./cut";
@@ -13,6 +13,15 @@ import {
   type ExportSettings,
 } from "../export-quality";
 import type { ExportFormat } from "../export-formats";
+import { matte } from "../matte";
+import {
+  browserLimit,
+  defaultStill,
+  drawable,
+  stillRecord,
+  stillSize,
+  type Still,
+} from "../export-image";
 
 // The study's name, for a file's title.
 function studyTitle(frame: Frame) {
@@ -55,7 +64,10 @@ const xml = (s: string) =>
 // vector paths: every line ("svg-lines") or the lines not hidden by a shown
 // sheet, by sampling ("svg-visible").
 export type ImageFormat = "png" | "svg" | "svg-lines" | "svg-visible";
-const page = { width: 2000, height: 1520 };
+const defaultArea = (() => {
+  const page = stillSize(defaultStill);
+  return page.width * page.height;
+})();
 
 export async function imageFile(
   frame: Frame,
@@ -72,12 +84,17 @@ export async function imageFile(
   cut?: CutSpec | null,
   // Seeing through, recorded only when it changes the drawing.
   sight: Sight = defaultSight,
+  // The page's size and background, which every format here draws at,
+  // recorded only when they are not the defaults.
+  still: Still = defaultStill,
 ): Promise<Blob> {
   const lensed = projectionRecord(view);
+  const page = stillSize(still);
   const probed = {
     ...(probe ? { probe: probe.record } : {}),
     ...(cut ? { cut: cutRecord(cut) } : {}),
     ...(lensed ? { projection: lensed } : {}),
+    ...stillRecord(still),
   };
   if (format === "svg-lines" || format === "svg-visible") {
     const occlusion = format === "svg-lines" ? "none" : "sampled";
@@ -91,6 +108,10 @@ export async function imageFile(
         occlusion,
         hidden: sight.hidden,
         weight: sight.weight,
+        // The work a page's visibility testing needs grows with its area,
+        // so the limit does too: a view that exports at one size exports
+        // at every size.
+        limit: (workLimit * (page.width * page.height)) / defaultArea,
         signal,
       },
       probe?.batches,
@@ -105,6 +126,7 @@ export async function imageFile(
     const svg = linesSvg(groups, {
       ...page,
       dark,
+      transparent: still.transparent,
       title: `Tangent Garden — ${studyTitle(frame)} (lines)`,
       metadata: {
         config: frame.config,
@@ -126,8 +148,8 @@ export async function imageFile(
     });
     return new Blob([svg], { type: "image/svg+xml" });
   }
-  const canvas = document.createElement("canvas"),
-    renderer = createRenderer(canvas);
+  const drawing = document.createElement("canvas"),
+    renderer = createRenderer(drawing);
   try {
     renderer.upload(frame.result);
     renderer.setProbe(probe?.batches ?? []);
@@ -139,7 +161,25 @@ export async function imageFile(
     );
     // Strokes, when this device can draw them; otherwise hairlines.
     const stroked = renderer.strokes() ? strokeRecord(sight) : undefined;
-    renderer.draw(view, layers, dark, page);
+    let canvas = drawing;
+    if (still.transparent) {
+      // The page over black and over white gives its alpha (see matte).
+      renderer.draw(view, layers, dark, page, [0, 0, 0]);
+      const black = renderer.pixels();
+      renderer.draw(view, layers, dark, page, [1, 1, 1]);
+      const white = renderer.pixels();
+      canvas = document.createElement("canvas");
+      canvas.width = page.width;
+      canvas.height = page.height;
+      const context = canvas.getContext("2d");
+      if (!context || !drawable(context, page.width, page.height))
+        throw browserLimit(page.width, page.height);
+      context.putImageData(
+        new ImageData(matte(black, white), page.width, page.height),
+        0,
+        0,
+      );
+    } else renderer.draw(view, layers, dark, page);
     signal.throwIfAborted();
     const png = await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(
@@ -153,13 +193,13 @@ export async function imageFile(
     // claim a painter-sorted mesh is an exact vector hidden-surface solution.
     return new Blob(
       [
-        `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1520" viewBox="0 0 2000 1520"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, ...probed, ...(seen ? { sight: seen } : {}), ...strokesOf(stroked), rendering: "embedded PNG" }))}</desc><image width="2000" height="1520" href="${canvas.toDataURL("image/png")}"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}" height="${page.height}" viewBox="0 0 ${page.width} ${page.height}"><title>Tangent Garden — ${studyTitle(frame)}</title><desc>${xml(JSON.stringify({ config: frame.config, view, layers, dark, ...probed, ...(seen ? { sight: seen } : {}), ...strokesOf(stroked), rendering: "embedded PNG" }))}</desc><image width="${page.width}" height="${page.height}" href="${canvas.toDataURL("image/png")}"/></svg>`,
       ],
       { type: "image/svg+xml" },
     );
   } finally {
     renderer.dispose();
-    canvas
+    drawing
       .getContext("webgl")
       ?.getExtension("WEBGL_lose_context")
       ?.loseContext();

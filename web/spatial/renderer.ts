@@ -440,6 +440,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   // With samples, a stroke's coverage becomes sample coverage, so segments
   // overlapping where they meet never double; without, coverage blends.
   const sampled = (gl.getParameter(gl.SAMPLES) as number) > 0;
+  // The largest page this device can draw on, a side.
+  const largest = () =>
+    Math.min(
+      gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
+      ...(gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array),
+    );
   // See-through sheets, made when first drawn: their program, a triangle
   // covering the page, and a half-float (or float) target summing layers.
   // Null when the device cannot render to one.
@@ -603,11 +609,15 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     for (const value of Object.values(scene))
       (Array.isArray(value) ? value : [value]).forEach((b) => put(b));
   }
+  // An export can draw on another background than the theme's: a
+  // transparent still is drawn over black and over white (see matte in
+  // export.ts).
   function draw(
     view: View,
     layers: Layers,
     dark: boolean,
     size?: { width: number; height: number },
+    background: readonly number[] = palette.background[dark ? 1 : 0],
   ) {
     const ratio = Math.min(devicePixelRatio || 1, 2);
     const width = Math.max(
@@ -618,12 +628,24 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         1,
         size?.height ?? Math.round(canvas.clientHeight * ratio),
       );
+    // An export's page is drawn whole or not at all: a device that cannot
+    // hold it says so rather than saving a smaller or blank image.
+    if (size && Math.max(width, height) > largest())
+      throw new Error(
+        `This device draws 3D images at most ${largest()} pixels a side. Choose a smaller size.`,
+      );
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
     }
+    if (
+      size &&
+      (gl!.drawingBufferWidth !== width || gl!.drawingBufferHeight !== height)
+    )
+      throw new Error(
+        `This device could draw only ${gl!.drawingBufferWidth} × ${gl!.drawingBufferHeight} of the ${width} × ${height} 3D image. Choose a smaller size.`,
+      );
     gl!.viewport(0, 0, width, height);
-    const background = palette.background[dark ? 1 : 0];
     gl!.clearColor(background[0], background[1], background[2], 1);
     gl!.clear(gl!.COLOR_BUFFER_BIT | gl!.DEPTH_BUFFER_BIT);
     if (!scene) return;
@@ -874,6 +896,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     const sheets = passes.filter((v) => v.sheet),
       lines = passes.filter((v) => !v.sheet);
     const target = sight.sheets === "through" && sheets.length && seeing();
+    if (target && size) {
+      const most = gl!.getParameter(gl!.MAX_TEXTURE_SIZE) as number;
+      if (Math.max(width, height) > most)
+        throw new Error(
+          `This device draws see-through 3D images at most ${most} pixels a side. Choose a smaller size.`,
+        );
+    }
     if (target) {
       gather(target, sheets, width, height, render);
       cover(target, width, height, background, sight.opacity);
@@ -976,6 +1005,21 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     // Whether this device can draw strokes rather than hairlines.
     strokes: () => !!strokes,
     draw,
+    // The drawn page's pixels, top row first, as RGBA.
+    pixels: () => {
+      const width = gl.drawingBufferWidth,
+        height = gl.drawingBufferHeight,
+        rows = new Uint8Array(width * height * 4),
+        out = new Uint8Array(rows.length),
+        stride = width * 4;
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rows);
+      for (let y = 0; y < height; y++)
+        out.set(
+          rows.subarray((height - 1 - y) * stride, (height - y) * stride),
+          y * stride,
+        );
+      return out;
+    },
     dispose: () => {
       buffers.forEach((b) => gl.deleteBuffer(b));
       probeBuffers.forEach((b) => gl.deleteBuffer(b));
