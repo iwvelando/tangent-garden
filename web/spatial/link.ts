@@ -17,7 +17,7 @@ import {
 } from "./types";
 import { spatialPresets } from "./presets";
 import { defaultLayers, initialView, type Layers } from "./renderer";
-import { projections, type Projection } from "./scene";
+import { lensAngles, projections, type Projection } from "./scene";
 import {
   availableTargets,
   type AnimationMode,
@@ -86,6 +86,9 @@ export type SpatialStudy = {
   sight: Sight;
   // The manual camera's projection, orthographic in links made before it.
   projection: Projection;
+  // The chosen lens's angle in degrees, kept while a named lens is shown;
+  // the normal lens's in links made before it.
+  lensAngle: number;
 };
 export const defaultAnimation: SpatialAnimation = {
   mode: "reveal",
@@ -434,6 +437,19 @@ const projection: SchemaOf<Projection> = {
   ) as Record<Projection, true>,
 };
 
+// The chosen lens's angle, in the whole degrees its slider moves by.
+function wholeAngle(value: unknown) {
+  const out = conform(
+    value,
+    { range: [lensAngles.min, lensAngles.max] },
+    lensAngles.initial,
+    "lensAngle",
+  );
+  if (!Number.isInteger(out))
+    throw new LinkError("lensAngle", "lensAngle must be a whole number.");
+  return out;
+}
+
 export function spatialStudy(value: unknown): SpatialStudy {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new LinkError(
@@ -452,6 +468,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
         "cut",
         "sight",
         "projection",
+        "lensAngle",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -583,5 +600,6 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "orthographic",
       "projection",
     ),
+    lensAngle: wholeAngle(raw.lensAngle),
   };
 }

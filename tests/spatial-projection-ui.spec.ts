@@ -16,6 +16,7 @@ const settled = (page: Page) =>
 const projection = (page: Page) =>
   page.getByLabel("Projection", { exact: true });
 const caption = (page: Page) => page.locator(".plot-meta > span");
+const angle = (page: Page) => page.getByRole("slider", { name: "Lens angle" });
 const button = (page: Page, name: string) =>
   page.getByRole("button", { name, exact: true });
 const shownView = async (page: Page) =>
@@ -149,7 +150,9 @@ test("Projection is orthographic by default and offers three labelled lenses", a
     "Perspective · narrow, 30°",
     "Perspective · normal, 50°",
     "Perspective · wide, 90°",
+    "Perspective · chosen angle",
   ]);
+  await expect(angle(page)).toHaveCount(0);
   expect((await shownView(page)).projection).toBeUndefined();
   await expect(caption(page)).toHaveText(
     "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home",
@@ -391,4 +394,225 @@ test("the perspective presets open in their own projection and view, and fly in 
     .poll(async () => (await shownView(page)).projection)
     .toBeUndefined();
   expect(await shownView(page)).toMatchObject(initialView);
+});
+
+test("the chosen angle offers a lens angle beside the named views, from the lens shown before", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await settled(page);
+  // From orthographic it starts at the normal lens's angle.
+  await projection(page).selectOption("chosen");
+  await expect(angle(page)).toHaveValue("50");
+  await expect(angle(page)).toHaveAttribute("min", "1");
+  await expect(angle(page)).toHaveAttribute("max", "150");
+  await expect(page.locator(".lens-angle output")).toHaveText("50°");
+  await expect
+    .poll(async () => (await shownView(page)).projection)
+    .toBe("chosen");
+  expect((await shownView(page)).lensAngle).toBe(50);
+  // Each step of the slider redraws through its angle.
+  await angle(page).fill("140");
+  await expect(page.locator(".lens-angle output")).toHaveText("140°");
+  await expect.poll(async () => (await shownView(page)).lensAngle).toBe(140);
+  await angle(page).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(async () => (await shownView(page)).lensAngle).toBe(139);
+  // A named lens hides it, and the drawing keeps no angle of its own.
+  await projection(page).selectOption("narrow");
+  await expect(angle(page)).toHaveCount(0);
+  await expect
+    .poll(async () => (await shownView(page)).projection)
+    .toBe("narrow");
+  expect((await shownView(page)).lensAngle).toBeUndefined();
+  // Choosing the angle from a named lens starts at that lens's angle, so
+  // the drawing does not move.
+  const narrow = await shownView(page);
+  await projection(page).selectOption("chosen");
+  await expect(angle(page)).toHaveValue("30");
+  await expect
+    .poll(async () => (await shownView(page)).projection)
+    .toBe("chosen");
+  expect(await shownView(page)).toEqual({
+    ...narrow,
+    projection: "chosen",
+    lensAngle: 30,
+  });
+  // From orthographic, the angle last chosen.
+  await angle(page).fill("12");
+  await projection(page).selectOption("orthographic");
+  await expect(angle(page)).toHaveCount(0);
+  await projection(page).selectOption("chosen");
+  await expect(angle(page)).toHaveValue("12");
+});
+
+for (const [width, height] of [
+  [1440, 1000],
+  [390, 844],
+])
+  test(`the lens angle moves no control as it appears, ${width} px wide`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/?study=3d");
+    await settled(page);
+    const boxes = async () =>
+      Promise.all(
+        [
+          projection(page),
+          button(page, "Rotate view"),
+          button(page, "Reset view"),
+          button(page, "Front"),
+          button(page, "Isometric"),
+          canvas(page),
+        ].map(async (l) => (await l.boundingBox())!),
+      );
+    await projection(page).selectOption("wide");
+    const before = await boxes();
+    await projection(page).selectOption("chosen");
+    await expect(angle(page)).toBeVisible();
+    expect(await boxes()).toEqual(before);
+    // It sits outside the drawing, below the named views or beside them.
+    const slider = (await angle(page).boundingBox())!,
+      front = before[3],
+      drawing = before[5];
+    expect(slider.y).toBeGreaterThanOrEqual(drawing.y + drawing.height);
+    expect(slider.y + slider.height / 2).toBeGreaterThanOrEqual(front.y);
+    expect(slider.x + slider.width).toBeLessThanOrEqual(width);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  });
+
+test("a link and Reset view keep the chosen angle, an animation holds it, and exports record it", async ({
+  page,
+}) => {
+  await open(
+    page,
+    study({
+      projection: "chosen",
+      lensAngle: 120,
+      // The eye 1.16 / (0.6 tan 60°) = 1.12 radii from the middle, outside
+      // the study, where the visible lines stay within their work limit.
+      view: { ...manual, zoom: 0.6 },
+      animation: { ...study().animation, mode: "orbit", duration: 6 },
+    }),
+  );
+  await expect(projection(page)).toHaveValue("chosen");
+  await expect(angle(page)).toHaveValue("120");
+  expect(await shownView(page)).toMatchObject({
+    projection: "chosen",
+    lensAngle: 120,
+  });
+  // The shaded still and the line drawing share it, and both record it.
+  const wide = await lines(page, ["base", "rulings"]);
+  expect(agreement(await still(page), wide.lines)).toBeGreaterThan(0.9);
+  expect(wide.svg).toContain('"angle":120');
+  expect(wide.svg).toContain(
+    "perspective, 120° across the page's shorter side",
+  );
+  await angle(page).fill("20");
+  await expect.poll(async () => (await shownView(page)).lensAngle).toBe(20);
+  const narrower = await lines(page, ["base", "rulings"]);
+  expect(narrower.svg).toContain('"angle":20');
+  expect(agreement(await still(page), narrower.lines)).toBeGreaterThan(0.9);
+  expect(agreement(await still(page), wide.lines)).toBeLessThan(0.75);
+  // Reset view keeps it.
+  await button(page, "Reset view").click();
+  await expect
+    .poll(async () => (await shownView(page)).yaw)
+    .toBe(initialView.yaw);
+  expect(await shownView(page)).toMatchObject({
+    projection: "chosen",
+    lensAngle: 20,
+  });
+  // An orbit draws through it and cannot change it meanwhile.
+  await openPanel(page);
+  await button(page, "Play animation").click();
+  await expect(angle(page)).toBeDisabled();
+  await button(page, "Pause").click();
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.25");
+  await expect(stage(page)).toHaveAttribute("data-progress", "0.25");
+  expect(await shownView(page)).toMatchObject({
+    projection: "chosen",
+    lensAngle: 20,
+  });
+  await button(page, "Stop").click();
+  await expect(angle(page)).toBeEnabled();
+  // A copied link carries it.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await button(page, "Copy link").click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const href = await page.evaluate(() => navigator.clipboard.readText());
+  const other = await page.context().newPage();
+  await other.goto(href);
+  await settled(other);
+  await expect(projection(other)).toHaveValue("chosen");
+  await expect(angle(other)).toHaveValue("20");
+  expect(await shownView(other)).toMatchObject({
+    projection: "chosen",
+    lensAngle: 20,
+  });
+  // A preset without its own angle opens orthographic; choosing the angle
+  // again starts at the normal lens's.
+  await choosePreset(other, 1);
+  await settled(other);
+  await expect(projection(other)).toHaveValue("orthographic");
+  await projection(other).selectOption("chosen");
+  await expect(angle(other)).toHaveValue("50");
+});
+
+test("the tunnel opens through its own chosen angle with the eye inside the tube, and loops once around", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await settled(page);
+  await openPanel(page);
+  await choosePreset(page, { label: "Down a torus's tunnel" });
+  await settled(page);
+  await expect(projection(page)).toHaveValue("chosen");
+  await expect(angle(page)).toHaveValue("140");
+  await expect.poll(async () => (await shownView(page)).panX).toBe(2);
+  const v = await shownView(page);
+  expect(v).toMatchObject({
+    yaw: Math.PI,
+    pitch: 0,
+    zoom: 1.5,
+    panX: 2,
+    panY: 0,
+    projection: "chosen",
+    lensAngle: 140,
+  });
+  // The eye, from the turntable's definition: behind the panned target by
+  // d = 1.16 r / (zoom tan 70°). The tube is every point within 0.6 of the
+  // circle of radius 2 about y in the xz-plane.
+  const right = [Math.cos(v.yaw), 0, Math.sin(v.yaw)],
+    back = [-Math.sin(v.yaw), 0, Math.cos(v.yaw)];
+  const d = (1.16 * v.radius) / (v.zoom * Math.tan((70 * Math.PI) / 180));
+  const eye = [0, 1, 2].map(
+    (k) =>
+      [v.center.x, v.center.y, v.center.z][k] - v.panX * right[k] + d * back[k],
+  );
+  const offCore = Math.hypot(Math.hypot(eye[0], eye[2]) - 2, eye[1]);
+  expect(offCore).toBeLessThan(0.3);
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue("path");
+  await expect(page.getByLabel("Repeat", { exact: true })).toHaveValue("loop");
+  await button(page, "Play animation").click();
+  await expect(button(page, "Pause")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator(".animation-error")).toHaveCount(0);
+  await button(page, "Pause").click();
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-time", "0.5");
+  // Halfway, the target has gone half around the core circle.
+  const half = await shownView(page);
+  expect(half.yaw).toBeCloseTo(2 * Math.PI, 9);
+  expect(half).toMatchObject({ projection: "chosen", lensAngle: 140 });
+  await button(page, "Stop").click();
+  // Another preset opens orthographic again.
+  await choosePreset(page, { label: "Inside a trefoil's tube" });
+  await settled(page);
+  await expect(projection(page)).toHaveValue("wide");
+  await expect(angle(page)).toHaveCount(0);
 });

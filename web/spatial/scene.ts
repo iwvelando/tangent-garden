@@ -20,17 +20,37 @@ export type View = Bounds3 & {
   lens?: Lens;
   // The turntable's projection, orthographic when absent (see camera).
   projection?: Projection;
+  // The chosen lens's angle in degrees, drawn only by the chosen
+  // projection; every other projection ignores it.
+  lensAngle?: number;
 };
 // The manual camera's projections: orthographic, or a pinhole through a
-// lens whose angle in degrees spans the page's shorter side.
-export type Projection = "orthographic" | "narrow" | "normal" | "wide";
+// lens whose angle in degrees spans the page's shorter side: one of three
+// named lenses, or the chosen angle (lensAngles).
+export type Projection =
+  "orthographic" | "narrow" | "normal" | "wide" | "chosen";
 export const projections: Record<Projection, { label: string; fov?: number }> =
   {
     orthographic: { label: "Orthographic" },
     narrow: { label: "Perspective · narrow, 30°", fov: 30 },
     normal: { label: "Perspective · normal, 50°", fov: 50 },
     wide: { label: "Perspective · wide, 90°", fov: 90 },
+    chosen: { label: "Perspective · chosen angle" },
   };
+// The chosen lens's angles in degrees: from a telephoto that all but agrees
+// with orthographic to a wide angle that puts the eye a third of the
+// framing radius behind the target at zoom 1. Links made before it, and
+// views that never chose one, start from the normal lens's angle.
+export const lensAngles = { min: 1, max: 150, initial: 50 };
+// The turntable's lens angle in degrees, or none when it is orthographic
+// (or the view rides a lens of its own).
+export function turntableAngle(view: View): number | undefined {
+  if (view.lens) return undefined;
+  const p = view.projection ?? "orthographic";
+  return p === "chosen"
+    ? (view.lensAngle ?? lensAngles.initial)
+    : projections[p].fov;
+}
 // A pinhole camera at eye looking along forward, with up toward the top of
 // the page (made perpendicular to forward). fov is the angle in degrees
 // across the page's shorter side; near and far are distances from the eye
@@ -1122,7 +1142,7 @@ export function camera(
   size: { width: number; height: number },
 ): Camera {
   if (view.lens) return perspective(view.lens, view.radius, size);
-  const fov = projections[view.projection ?? "orthographic"].fov;
+  const fov = turntableAngle(view);
   if (fov) return perspective(turntableLens(view, fov), view.radius, size);
   const aspect = size.width / size.height;
   const c = Math.cos(view.yaw),
@@ -1155,10 +1175,12 @@ export function camera(
 // The projection as an export's metadata records it, only when it is a
 // perspective, so orthographic files are unchanged.
 export function projectionRecord(view: View) {
-  const fov = !view.lens && projections[view.projection ?? "orthographic"].fov;
+  const fov = turntableAngle(view);
   if (!fov) return undefined;
   return {
     name: view.projection,
+    // A chosen angle, which its name does not say.
+    ...(view.projection === "chosen" && { angle: fov }),
     statement: `A pinhole perspective, ${fov}° across the page's shorter side, from an eye behind the view's target; the plane through the target is drawn at the orthographic scale, and zoom moves the eye.`,
   };
 }

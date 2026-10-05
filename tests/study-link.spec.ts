@@ -135,6 +135,7 @@ const spatial = (i = 0): SpatialStudy => ({
   },
   sight: { sheets: "through", opacity: 0.5, hidden: "dashed", weight: "bold" },
   projection: "normal",
+  lensAngle: 50,
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
@@ -850,6 +851,34 @@ test("a link carries the manual camera's projection; refuses an unknown one", as
     const s = structuredClone(spatial()) as any;
     s.projection = value;
     await refused(() => spatialStudy(s), "projection");
+  }
+});
+
+test("a link carries the chosen lens angle in whole degrees, the normal lens's in older links; refuses others", async () => {
+  for (const lensAngle of [1, 12, 140, 150]) {
+    const study: SpatialStudy = {
+      ...spatial(),
+      projection: "chosen",
+      lensAngle,
+    };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study), study);
+  }
+  // A named lens keeps the angle last chosen, for when it is chosen again.
+  const kept: SpatialStudy = { ...spatial(), projection: "wide", lensAngle: 9 };
+  assert.deepEqual(
+    spatialStudy((await readStudyLink(await writeStudyLink("3d", kept))).study),
+    kept,
+  );
+  // A link from before the chosen angle opens at the normal lens's.
+  const partial = structuredClone(spatial()) as any;
+  delete partial.lensAngle;
+  assert.equal(spatialStudy(partial).lensAngle, 50);
+  for (const value of [0, 0.5, 12.5, 151, -10, "wide", null, Infinity]) {
+    const s = structuredClone(spatial()) as any;
+    s.projection = "chosen";
+    s.lensAngle = value;
+    await refused(() => spatialStudy(s), "lensAngle");
   }
 });
 
