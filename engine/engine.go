@@ -99,6 +99,11 @@ type Result struct {
 	// rolled is a rolling study's progress at each sample where its trace
 	// is drawn, from which refinement continues between samples.
 	rolled *rollingRun
+	// lineFamily and circleFamily are an envelope's lines or circles, which
+	// refinement evaluates between samples with the sample loop's own
+	// functions.
+	lineFamily   *lines
+	circleFamily *rings
 }
 
 func Compute(q Request) (Result, error) {
@@ -229,6 +234,7 @@ func Compute(q Request) (Result, error) {
 			out.Second = make([]*Vec, q.Samples)
 		}
 	}
+	out.lineFamily, out.circleFamily = family, circles
 	var roll *Roulette
 	if q.Curve.Format == "roulette" {
 		g := q.Curve.Roulette

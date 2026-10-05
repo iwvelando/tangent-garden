@@ -82,7 +82,12 @@ type familyLine struct {
 // envelope's point solves det(r′ + λu′, u) = 0 on r + λu. Neighbouring
 // directions are aligned with this one before differentiating, so the
 // line's own orientation never matters. A chord's point is virtual when it
-// lies beyond the segment and the chord is not extended.
+// lies beyond the segment and the chord is not extended. The sample loop
+// and refinement share this one compiled function, so a refined envelope
+// passes exactly through the samples: copies inlined in different places can
+// round differently.
+//
+//go:noinline
 func (l *lines) at(t float64, p, dp Vec) familyLine {
 	var out familyLine
 	if l.end != nil {
@@ -153,7 +158,10 @@ const merge = 1e-9
 // Its envelope points X = c + q solve |q|² = R² and q·c′ = −RR′: with
 // v = |c′|, T = c′/v, and k = R′/v, q = R(−kT ± √(1−k²) JT). There are two
 // real points while |k| < 1, one where |k| = 1, and none beyond. A stationary
-// center leaves the system degenerate, so it has no envelope point.
+// center leaves the system degenerate, so it has no envelope point. The
+// sample loop and refinement share this one compiled function.
+//
+//go:noinline
 func (g *rings) at(t float64, c, dc Vec) ring {
 	R := g.radius(t).X
 	if !finite(R) || R <= 0 {

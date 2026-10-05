@@ -599,3 +599,116 @@ test("petals circling a four-pointed star stay refined as the phase turns", asyn
   expect(vertices(halfway)).toBeGreaterThan(1000);
   expect(longestStep(halfway)).toBeLessThan(0.03);
 });
+
+const swellingStar = "Circles swelling at a five-pointed star's points",
+  breathingStar = "Circles breathing round a three-pointed star";
+
+const branches = (page: Page) =>
+  art(page).getByTestId("envelope-branches").locator("path");
+const branchPaths = (page: Page) =>
+  branches(page).evaluateAll((paths) => paths.map((p) => p.getAttribute("d")));
+const circles = (page: Page) =>
+  art(page)
+    .getByTestId("generating-circles")
+    .locator("circle")
+    .evaluateAll((drawn) =>
+      drawn.map((c) => ({
+        x: Number(c.getAttribute("cx")),
+        y: Number(c.getAttribute("cy")),
+        r: Number(c.getAttribute("r")),
+      })),
+    );
+// How far the outer branch's chords reach into the drawn circles, as a
+// share of the circle's radius. The outer branch, the one reaching farthest
+// from the drawing's center, bounds the union of the circles' disks: it lies
+// on the circles and outside all of them, so where its chords follow it they
+// stay outside, and where one cuts across a point it cuts into the circle
+// there.
+const outerDepth = async (page: Page) => {
+  const drawn = (await branchPaths(page)).map((d) => pathPoints(d));
+  const rings = await circles(page);
+  const all = drawn.flat().filter((p): p is Point => !!p);
+  const xs = all.map((p) => p.x),
+    ys = all.map((p) => p.y);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2,
+    cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const reach = drawn.map((points) =>
+    Math.max(
+      ...points
+        .filter((p): p is Point => !!p)
+        .map((p) => Math.hypot(p.x - cx, p.y - cy)),
+    ),
+  );
+  const outer = drawn[reach.indexOf(Math.max(...reach))];
+  let depth = 0;
+  outer.forEach((b, k) => {
+    const a = outer[k - 1];
+    if (!a || !b) return;
+    const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    for (const c of rings)
+      depth = Math.max(depth, (c.r - Math.hypot(m.x - c.x, m.y - c.y)) / c.r);
+  });
+  return depth;
+};
+
+test("circles swelling at a five-pointed star's points are enveloped round each point when refined", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: swellingStar });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  await expect(branches(page)).toHaveCount(2);
+  const drawn = await branchPaths(page);
+  // Refined, a chord strays at most 2·10⁻⁴ of the branch's radius, about
+  // 5, from the circle of radius 0.9 it follows round a point: 0.1% of
+  // that radius, within the page's rounding.
+  expect(await outerDepth(page)).toBeLessThan(0.005);
+  for (const d of drawn) expect(longestStep(d)).toBeLessThan(0.03);
+  await refine(page).uncheck();
+  await ready(page);
+  await expect(readout(page)).toHaveCount(0);
+  const uniform = await branchPaths(page);
+  drawn.forEach((d, k) => {
+    expect(vertices(uniform[k])).toBeLessThanOrEqual(1000);
+    expect(vertices(d)).toBeGreaterThan(vertices(uniform[k]));
+  });
+  // Round each point the circle's half turn takes a few samples, whose
+  // chords cut deep into it.
+  expect(await outerDepth(page)).toBeGreaterThan(0.1);
+  expect(Math.max(...uniform.map(longestStep))).toBeGreaterThan(0.08);
+  await refine(page).check();
+  await ready(page);
+  expect(await branchPaths(page)).toEqual(drawn);
+});
+
+test("circles breathing round a three-pointed star stay enveloped as their radii move", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: breathingStar });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  const opening = await branchPaths(page);
+  expect(await outerDepth(page)).toBeLessThan(0.005);
+  await openAnimation(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("parameters");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Halfway through its time it turns back at the end of its track: the
+  // circles are smallest at the points and largest along the sides.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(art(page)).toHaveAttribute("data-animation-progress", "1");
+  const reversed = await branchPaths(page);
+  expect(reversed).not.toEqual(opening);
+  for (const d of reversed) {
+    expect(vertices(d)).toBeGreaterThan(1000);
+    expect(longestStep(d)).toBeLessThan(0.03);
+  }
+  expect(await outerDepth(page)).toBeLessThan(0.005);
+});

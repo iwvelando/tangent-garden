@@ -1098,4 +1098,61 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "Circles swelling at a five-pointed star's points",
+    note: "Circles centered on a star with five nearly sharp points, largest at the points; their outer envelope rounds each point along the circle there",
+    config: {
+      ...base,
+      kind: "envelope",
+      // R′ = −1.5 sin 5t vanishes at the points, where the center all but
+      // stops (speed 0.08), so |R′| stays below the center's speed and
+      // both branches are real everywhere. At each point the outer branch
+      // follows the circle of radius 0.9 round half a turn within a few
+      // samples.
+      curve: {
+        ...base.curve,
+        x: "4*cos(t) + 0.98*cos(4*t)",
+        y: "4*sin(t) - 0.98*sin(4*t)",
+      },
+      envelope: {
+        ...base.envelope,
+        mode: "circle",
+        radius: "0.6+0.3*cos(5*t)",
+      },
+      lines: 60,
+      adaptive: true,
+    },
+  },
+  {
+    title: "Circles breathing round a three-pointed star",
+    note: "Circles centered on a star with three nearly sharp points swell at the points and shrink along the sides, then the reverse; their envelope rounds each point along the circle there throughout",
+    config: {
+      ...base,
+      kind: "envelope",
+      // R = 0.45 + 0.25a cos 3t, with R′ zero at the points for every a:
+      // the branches stay real, and at a = 0 they are the offsets ±0.45.
+      curve: {
+        ...base.curve,
+        x: "2*cos(t) + 0.98*cos(2*t)",
+        y: "2*sin(t) - 0.98*sin(2*t)",
+        a: 1,
+      },
+      envelope: {
+        ...base.envelope,
+        mode: "circle",
+        radius: "0.45+0.25*a*cos(3*t)",
+      },
+      lines: 45,
+      adaptive: true,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 12,
+      tracks: [{ target: "a", from: "1", to: "-1" }],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
 ];
