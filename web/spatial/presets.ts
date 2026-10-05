@@ -2639,4 +2639,88 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // A screw band bent into a ring: straight treads join the core circle of
+  // radius 2 to a partner thread that coils 24 times round it at a distance
+  // of 0.7, so the band turns once per coil. Ten samples a coil; refining
+  // between samples draws every coil of the thread round.
+  {
+    name: "A screw band coiled round a ring",
+    detail:
+      "Straight treads from a circle to a thread coiling twenty-four times round it",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "ruled",
+      samples: 240,
+      lines: 121,
+      adaptive: true,
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "0",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      ruled: {
+        partner: "thread",
+        thread: {
+          x: "(2+0.7*cos(24*t))*cos(t)",
+          y: "(2+0.7*cos(24*t))*sin(t)",
+          z: "0.7*sin(24*t)",
+        },
+        rate: 1,
+        shift: 0,
+      },
+    },
+    view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
+  },
+  // The same kind of band with thirty coils, eight samples a coil. Its
+  // treads reach ahead along the thread by the shift δ, from straight
+  // spokes at δ = 0 to a whole coil ahead at δ = π/15, where each tread
+  // sweeps a cone; the thread is the same in every frame, and refining
+  // between samples keeps it round throughout.
+  {
+    name: "Treads folding into cones round a ring",
+    detail:
+      "A coiled thread's treads reaching one coil ahead along it and back",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "ruled",
+      samples: 240,
+      lines: 121,
+      adaptive: true,
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "0",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      ruled: {
+        partner: "thread",
+        thread: {
+          x: "(2+0.6*cos(30*t))*cos(t)",
+          y: "(2+0.6*cos(30*t))*sin(t)",
+          z: "0.6*sin(30*t)",
+        },
+        rate: 1,
+        shift: 0,
+      },
+    },
+    view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "shift", from: "0", to: "pi/15" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];
