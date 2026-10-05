@@ -402,6 +402,62 @@ assert.ok(
     );
   }),
 );
+// Refined between 64 samples, a sliding ladder's chords envelope the
+// astroid (cos³ t, sin³ t) through its cusps, and circles of radius 0.9 on
+// an ellipse envelope its offsets ±0.9, a refined path for each branch.
+const ladder = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "envelope",
+      curve: { ...config.curve, x: "cos(t)", y: "0" },
+      envelope: { mode: "chord", x: "0", y: "sin(t)" },
+      samples: 64,
+      adaptive: true,
+    }),
+  ),
+).adaptive.derived;
+assert.ok(ladder.inserted > 0 && ladder.breaks === 0);
+assert.equal(ladder.virtual.length, ladder.points.length);
+assert.ok(
+  ladder.points.every((p, k) => {
+    const t = (ladder.at[k] * 2 * Math.PI) / 63;
+    return (
+      !ladder.virtual[k] &&
+      Math.hypot(p.x - Math.cos(t) ** 3, p.y - Math.sin(t) ** 3) < 1e-7
+    );
+  }),
+);
+const ringed = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "envelope",
+      curve: { ...config.curve, x: "2*cos(t)", y: "sin(t)" },
+      envelope: { mode: "circle", radius: "0.9" },
+      samples: 64,
+      adaptive: true,
+    }),
+  ),
+).adaptive;
+assert.equal(ringed.derived, undefined);
+assert.equal(ringed.family.length, 2);
+ringed.family.forEach((branch, side) => {
+  assert.ok(branch.inserted > 0 && branch.breaks === 0);
+  assert.ok(
+    branch.points.every((p, k) => {
+      const t = (branch.at[k] * 2 * Math.PI) / 63;
+      const n = Math.hypot(Math.cos(t), 2 * Math.sin(t));
+      const d = side === 0 ? 0.9 : -0.9;
+      return (
+        Math.hypot(
+          p.x - (2 * Math.cos(t) - (d * Math.cos(t)) / n),
+          p.y - (Math.sin(t) - (2 * d * Math.sin(t)) / n),
+        ) < 1e-7
+      );
+    }),
+  );
+});
 assert.equal(rolling.rolling.length, config.lines);
 rolling.rolling.forEach((s, k) => {
   assert.deepEqual(s.contact, rolling.base[s.sampleIndex]);

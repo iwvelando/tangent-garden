@@ -9,13 +9,14 @@ import (
 // Refinement between samples: points inserted between a drawn curve's
 // uniform samples wherever the chord joining them strays from the curve
 // (engine/refine, shared with the spatial engine). The uniform samples stay
-// the study's identity: its construction lines, framing, reveal and every
-// other construction keep them.
+// the study's identity: its construction lines and circles, framing, reveal
+// and probe keep them.
 
 // RefinedPath is a drawn curve with its refinement (see refine.Path):
 // points in parameter order, each at its position in sample steps, with a
-// null at every break. A caustic's points also say whether each is virtual,
-// behind its ray's origin, as the result's own Virtual does at the samples.
+// null at every break. A caustic's or chord envelope's points also say
+// whether each is virtual, behind its ray's origin or beyond its chord, as
+// the result's own Virtual does at the samples.
 type RefinedPath struct {
 	Points     []*Vec    `json:"points"`
 	At         []float64 `json:"at"`
@@ -32,16 +33,16 @@ type RefinedPath struct {
 // defined pointwise from its input's position and stencil derivatives (a
 // pedal, contrapedal or orthotomic curve, the evolute, an offset or each
 // member of an offset stack, a catacaustic or diacaustic, or an inversion's
-// image), and the involute and a rolling circle's or curve's trace, whose
-// arc length continues from each sample. A path that is not drawn, or
-// cannot be evaluated between samples, is absent: a family's envelopes keep
-// their uniform samples.
+// image), the involute and a rolling circle's or curve's trace, whose arc
+// length continues from each sample, and an envelope of lines or chords. A
+// path that is not drawn, or cannot be evaluated between samples, is absent.
 type AdaptiveResult struct {
 	Base    *RefinedPath `json:"base,omitempty"`
 	Input   *RefinedPath `json:"input,omitempty"`
 	Derived *RefinedPath `json:"derived,omitempty"`
-	// Family holds an offset stack's members, refined each on its own, in
-	// the order of the result's family.
+	// Family holds an offset stack's members, or a circle envelope's left
+	// and right branches, refined each on its own, in the order of the
+	// result's family.
 	Family []*RefinedPath `json:"family,omitempty"`
 }
 
@@ -91,8 +92,9 @@ func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, h
 }
 
 // adapt refines a computed study's drawn curves: the base from f, a derived
-// input from g, and a derived curve defined pointwise from g, or from g and
-// the involute's or rolling shape's progress at the samples. Intervals
+// input from g, and a derived curve or family defined pointwise from g, or
+// from g and what the sample loop recorded: the involute's or rolling
+// shape's progress, or an envelope's lines or circles. Intervals
 // broken on a curve stay broken on the curves built on it. An inversion's
 // image is refined in place of the uniform passage test, whose breaks it
 // replaces.
@@ -122,16 +124,17 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 		}
 		a.Derived, found = refinePath(out.Derived, broken, derived, lo, hi)
 		note(found)
-		if c := q.causticAt(f, g); c != nil {
+		if at := q.virtualAt(f, g, out); at != nil {
 			n := float64(q.Samples - 1)
 			// As refine.Refine places its points.
-			markVirtual(a.Derived, out.Virtual, func(u float64) (*Vec, bool) { return c.at(lo*(1-u/n) + hi*u/n) })
+			markVirtual(a.Derived, out.Virtual, func(u float64) (*Vec, bool) { return at(lo*(1-u/n) + hi*u/n) })
 		}
 	}
-	// Each member of a stack is broken where its input is, not where
-	// another member is: one member's fold is not a break in its neighbors.
+	// Each member of a stack, or branch of a circle envelope, is broken
+	// where its input is, not where another is: one member's fold is not a
+	// break in its neighbors.
 	for _, member := range out.Family {
-		if at := q.memberAt(f, g, member); at != nil {
+		if at := q.memberAt(f, g, out, member); at != nil {
 			path, _ := refinePath(member.Points, broken, at, lo, hi)
 			a.Family = append(a.Family, path)
 		}
@@ -146,8 +149,9 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 }
 
 // derivedAt evaluates a study's derived curve at any t from the base f, the
-// input g, and the progress out records at the samples for the involute and
-// rolling shapes, or is nil when that curve is not defined pointwise.
+// input g, and what out records at the samples: the involute's and rolling
+// shapes' progress, and an envelope's lines. It is nil when that curve is
+// not defined pointwise, or is a family of paths.
 func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	switch {
@@ -162,10 +166,10 @@ func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
 		return q.along(f, g, func(_ float64, p, d, dd Vec) *Vec { return Evolute(p, d, dd) })
 	case q.Kind == "offset" && !q.Stack.Enabled:
 		return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, q.Distance) })
-	case q.Kind == "catacaustic" || q.Kind == "diacaustic":
-		c := q.causticAt(f, g)
+	case q.Kind == "catacaustic" || q.Kind == "diacaustic" || (q.Kind == "envelope" && out != nil && out.lineFamily != nil):
+		at := q.virtualAt(f, g, out)
 		return func(t float64) *Vec {
-			p, _ := c.at(t)
+			p, _ := at(t)
 			return p
 		}
 	case q.Kind == "inversion":
@@ -246,13 +250,45 @@ func (q Request) rollingAt(f, g curveFunc, run *rollingRun) func(float64) *Vec {
 	})
 }
 
-// memberAt evaluates a member of an offset stack at any t, or is nil for a
-// family that is not a stack (a circle envelope's branches).
-func (q Request) memberAt(f, g curveFunc, member Path) func(float64) *Vec {
-	if q.Kind != "offset" || !q.Stack.Enabled {
+// memberAt evaluates a member of an offset stack, or a branch of a circle
+// envelope, at any t, or is nil for a study with neither.
+func (q Request) memberAt(f, g curveFunc, out *Result, member Path) func(float64) *Vec {
+	switch {
+	case q.Kind == "offset" && q.Stack.Enabled:
+		return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, member.Distance) })
+	case q.Kind == "envelope" && out != nil && out.circleFamily != nil:
+		return q.along(f, g, func(t float64, p, d, _ Vec) *Vec {
+			circle := out.circleFamily.at(t, p, d)
+			if member.Branch == "left" {
+				return circle.left
+			}
+			return circle.right
+		})
+	}
+	return nil
+}
+
+// virtualAt evaluates a study's caustic, or its envelope of lines or chords,
+// at any t, with whether its point is virtual: behind its ray's origin, or
+// beyond a chord that is not extended. It is nil for another construction.
+// The sample loop evaluates each with the same function, (*caustic).point
+// or (*lines).at, so a refined curve passes exactly through the samples.
+func (q Request) virtualAt(f, g curveFunc, out *Result) func(float64) (*Vec, bool) {
+	if c := q.causticAt(f, g); c != nil {
+		return c.at
+	}
+	if q.Kind != "envelope" || out == nil || out.lineFamily == nil {
 		return nil
 	}
-	return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, member.Distance) })
+	return func(t float64) (*Vec, bool) {
+		virtual := false
+		p := q.along(f, g, func(t float64, p, d, _ Vec) *Vec {
+			member := out.lineFamily.at(t, p, d)
+			virtual = member.virtual
+			return member.target
+		})(t)
+		return p, virtual
+	}
 }
 
 // along evaluates a construction built from its input's position and
@@ -329,12 +365,13 @@ func (c *caustic) point(t float64, p, d Vec) (*Vec, bool) {
 	return target, s < 0
 }
 
-// markVirtual marks each point of a refined caustic virtual or real, the
-// samples as the uniform study marks them, and bisects every change between
-// neighbors to the finest step, where the caustic crosses its curve, so its
-// real and virtual parts are drawn to meet. A change across a jump, or one
-// where the caustic stops between them, is a break. at evaluates the
-// caustic at a position in sample steps.
+// markVirtual marks each point of a refined caustic or chord envelope
+// virtual or real, the samples as the uniform study marks them, and bisects
+// every change between neighbors to the finest step, where a caustic
+// crosses its curve or a touching point passes its chord's end, so the real
+// and virtual parts are drawn to meet. A change across a jump, or one where
+// the curve stops between them, is a break. at evaluates the curve at a
+// position in sample steps.
 func markVirtual(path *RefinedPath, samples []bool, at func(float64) (*Vec, bool)) {
 	finest := math.Ldexp(1, -refine.Depth)
 	broken := map[int]bool{}
