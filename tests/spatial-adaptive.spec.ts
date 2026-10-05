@@ -321,6 +321,42 @@ test("each offset strand is drawn from its own refinement, and revealed with it"
   expect(reveal(input, 1).adaptive).toEqual(input.adaptive);
 });
 
+test("each meridian is drawn from its own refinement, and revealed with it", () => {
+  const input = study();
+  const twoPoints = [at(0), at(1)];
+  input.canal = {
+    circles: [],
+    meridians: [twoPoints, twoPoints],
+    breaks: [false, false],
+    constant: true,
+    closed: false,
+    gap: 0,
+    steepest: 0,
+    undefined: 0,
+    imaginary: 0,
+    between: 0,
+    collapsed: 0,
+    folded: 0,
+  };
+  input.adaptive = {
+    meridians: [
+      refined([0, 0.5, 1], [0, 0.5, 1]),
+      refined([0, 0.25, 0.75, 1], [0, 0.25, 0.75, 1]),
+    ],
+  };
+  const scene = buildScene(input);
+  expect(xs(scene.meridians.data)).toEqual([
+    0, 0.5, 0.5, 1, 0, 0.25, 0.25, 0.75, 0.75, 1,
+  ]);
+  // Without refinement each meridian joins its uniform samples, as before.
+  expect(
+    xs(buildScene({ ...input, adaptive: undefined }).meridians.data),
+  ).toEqual([0, 1, 0, 1]);
+  const frame = reveal(input, 0);
+  expect(frame.adaptive?.meridians?.map((path) => path.at)).toEqual([[0], [0]]);
+  expect(reveal(input, 1).adaptive).toEqual(input.adaptive);
+});
+
 async function openAnimation(page: Page) {
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)
@@ -546,4 +582,60 @@ test("the folding treads' thread stays refined as the shift slides", async ({
   await expect
     .poll(async () => Math.abs((await addedPoints(page)) - opening) / opening)
     .toBeLessThan(0.1);
+});
+
+const stripes = "A beaded trefoil wound with spiral stripes",
+  cord = "A cord twisted round a spring";
+
+test("the striped trefoil's meridians open refined and are exported with their refined points", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: stripes });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  // Twelve meridians, each winding thirty times round the knot at about
+  // eight samples a turn, need several points in every interval.
+  const added = await addedPoints(page);
+  expect(added).toBeGreaterThan(12 * 240 * 4);
+  const refined = await lines(page);
+  await refine(page).uncheck();
+  await settled(page);
+  const uniform = await lines(page);
+  expect(refined - uniform).toBeGreaterThanOrEqual(added);
+  await refine(page).check();
+  await settled(page);
+  expect(await lines(page)).toBe(refined);
+});
+
+test("the cord's strands open refined and lose their refinement as they unwind", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: cord });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  // Twisted 30 turns, eight samples a turn, every meridian needs points
+  // between samples.
+  const opening = await addedPoints(page);
+  expect(opening).toBeGreaterThan(6 * 240 * 4);
+  await openAnimation(page);
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue(
+    "parameters",
+  );
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Back and forth: halfway through its time the strands are untwisted.
+  // They still follow the helix's coils, 48 samples a coil, but no longer
+  // wind round the tube, and need far fewer points.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  await expect.poll(() => addedPoints(page)).toBeLessThan(opening / 2);
 });

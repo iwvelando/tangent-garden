@@ -301,20 +301,46 @@ func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, 
 }
 
 // strand evaluates offset strand k at any t between two samples the frame
-// joins, nonfinite elsewhere. Between samples t_i and t_{i+1} the frame is
-// the one transport step the samples take, from sample i's frame to the
-// curve's point and tangent at t, and the arc length is sample i's carried
-// on to t by the Simpson step the samples take, over part of the interval.
-// A distributed correction turns the frame by its share of that arc, and a
-// Frenet frame is the curve's own at t, undefined where its curvature
-// vanishes. So the strand continues each sample without a seam and
-// converges with the samples' own frame.
+// joins, nonfinite elsewhere (see along).
 func (f carried) strand(c Request, evaluate evaluation, k int, lo, hi float64) func(float64) Vec3 {
+	at := f.along(c, evaluate, lo, hi)
+	turn := 2 * math.Pi * float64(k) / float64(c.Frame.Strands)
+	return func(t float64) Vec3 {
+		g, ok := at(t)
+		if !ok {
+			return Vec3{math.NaN(), 0, 0}
+		}
+		return g.r.add(g.direction(c.Frame.Angle + turn).mul(c.Frame.Offset))
+	}
+}
+
+// frameAt is the frame at one parameter between samples: the curve's point
+// r and velocity v, the frame's U and V, and spin, the angle the twist and
+// any distributed correction have turned the offset direction by.
+type frameAt struct {
+	r, v, u, w Vec3
+	spin       float64
+}
+
+// direction is the offset direction D at angle θ₀ + turn, given as start.
+func (g frameAt) direction(start float64) Vec3 {
+	theta := start + g.spin
+	return g.u.mul(math.Cos(theta)).add(g.w.mul(math.Sin(theta)))
+}
+
+// along evaluates the frame at any t between two samples the frame joins;
+// ok is false elsewhere. Between samples t_i and t_{i+1} the frame is the
+// one transport step the samples take, from sample i's frame to the curve's
+// point and tangent at t, and the arc length is sample i's carried on to t
+// by the Simpson step the samples take, over part of the interval. A
+// distributed correction turns the frame by its share of that arc, and a
+// Frenet frame is the curve's own at t, undefined where its curvature
+// vanishes. So a curve offset along D continues each sample without a seam
+// and converges with the samples' own frame.
+func (f carried) along(c Request, evaluate evaluation, lo, hi float64) func(float64) (frameAt, bool) {
 	q := f.result
 	n := len(f.base) - 1
-	undefined := Vec3{math.NaN(), 0, 0}
 	frenet := q.Kind == "frenet"
-	turn := 2 * math.Pi * float64(k) / float64(c.Frame.Strands)
 	speed := func(t float64) float64 {
 		_, v, _, ok := evaluate(t)
 		if !ok || !v.valid() {
@@ -322,34 +348,32 @@ func (f carried) strand(c Request, evaluate evaluation, k int, lo, hi float64) f
 		}
 		return v.norm()
 	}
-	return func(t float64) Vec3 {
+	return func(t float64) (frameAt, bool) {
 		i := max(0, min(n-1, int(math.Floor((t-lo)/(hi-lo)*float64(n)))))
 		if !f.ok[i] || !f.ok[i+1] || q.Breaks[i+1] {
-			return undefined
+			return frameAt{}, false
 		}
 		r, v, a, ok := evaluate(t)
 		if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
-			return undefined
+			return frameAt{}, false
 		}
 		T := v.unit()
 		start := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
 		arc := f.arc[i] + (t-start)/6*(f.speeds[i]+4*speed((start+t)/2)+v.norm())
-		var U, V Vec3
+		g := frameAt{r: r, v: v}
 		if frenet {
 			b, defined := c.binormal(v, a, lo, hi)
 			if !defined {
-				return undefined
+				return frameAt{}, false
 			}
-			U, V = b.cross(T), b
+			g.u, g.w = b.cross(T), b
 		} else {
-			U = transport(f.us[i], *f.base[i], f.tangents[i], r, T)
-			V = T.cross(U)
+			g.u = transport(f.us[i], *f.base[i], f.tangents[i], r, T)
+			g.w = T.cross(g.u)
 		}
-		theta := c.Frame.Angle + turn
 		if q.Length > 0 {
-			theta += (2*math.Pi*c.Frame.Twist*arc + q.Correction*(arc-f.arc[i])) / q.Length
+			g.spin = (2*math.Pi*c.Frame.Twist*arc + q.Correction*(arc-f.arc[i])) / q.Length
 		}
-		d := U.mul(math.Cos(theta)).add(V.mul(math.Sin(theta)))
-		return r.add(d.mul(c.Frame.Offset))
+		return g, true
 	}
 }

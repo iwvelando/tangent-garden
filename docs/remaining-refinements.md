@@ -126,8 +126,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 **Open:**
 
 - **3D:**
-  - Canal circles.
-  - Refining surfaces along the curve. A refined partner thread or base can stand just off its surface's edge until then.
+  - Refining surfaces along the curve. A refined partner thread, meridian or base can stand just off its surface's edge until then.
 - **Both:**
   - A view-dependent drawing refinement, which must still give playback and every export the same curve.
   - Framing that ignores refined points.

@@ -3211,17 +3211,20 @@ export default function SpatialApp({
                         along it, and stops after 16,384 added points per curve.
                         It refines the curve, a projection, an inverted curve,
                         each involute, each offset strand, a ruled
-                        surface&rsquo;s partner thread and the base under a
-                        derived input; the ribbon, contact circles and every
-                        surface stay on the evenly spaced samples. Between
-                        samples an involute&rsquo;s arc length carries on from
-                        the sample before it by the same Simpson step, a
-                        strand&rsquo;s frame by the same two reflections, and a
-                        partner is evaluated at mt + δ as at a sample. A gap or
-                        jump it finds between samples breaks the curve and any
-                        surface there; a passage of the inverted curve through
-                        the center is found the same way. A feature narrower
-                        than its three points can still be missed.
+                        surface&rsquo;s partner thread, a canal&rsquo;s
+                        meridians and the base under a derived input; the
+                        ribbon, contact circles and every surface stay on the
+                        evenly spaced samples. Between samples an
+                        involute&rsquo;s arc length carries on from the sample
+                        before it by the same Simpson step, a strand&rsquo;s or
+                        meridian&rsquo;s frame by the same two reflections, a
+                        meridian&rsquo;s contact circle comes from the profile
+                        there, and a partner is evaluated at mt + δ as at a
+                        sample. A gap or jump it finds between samples breaks
+                        the curve and any surface there; a passage of the
+                        inverted curve through the center is found the same way.
+                        A feature narrower than its three points can still be
+                        missed.
                       </>
                     )}{" "}
                     Invalid samples and unresolved tangent or normal intervals

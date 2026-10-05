@@ -581,11 +581,13 @@ export function buildScene(result: SpatialResult) {
     "lines",
     4,
   );
+  // Meridians, like offset strands, are drawn from their own refinement
+  // when the study has one.
   const lines = canal?.meridians ?? [];
   const meridians = batch(
     lines.flatMap((points, k) =>
       vertices(
-        pairs(points, canal!.breaks),
+        curve(points, canal!.breaks, result.adaptive?.meridians?.[k]),
         lines.length > 1 ? k / (lines.length - 1) : 0,
       ),
     ),
