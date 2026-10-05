@@ -68,6 +68,12 @@ test("a 10 s parameter animation exports every frame with exact timing", async (
   test.setTimeout(180000);
   await ready(page);
   await choosePreset(page, "2");
+  // A preset's animation setup lands when its study has computed, and would
+  // undo an animation edited before then.
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
   await page
     .getByRole("combobox", { name: "Source coordinates" })
     .selectOption("polar");

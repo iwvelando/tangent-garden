@@ -205,8 +205,9 @@ func (q Request) along(f, g curveFunc, construct func(t float64, p, d, dd Vec) *
 }
 
 // caustic evaluates a catacaustic or diacaustic at any t, with whether its
-// point is virtual. The sample loop and refinement both call at, so a
-// refined caustic passes exactly through the samples.
+// point is virtual. The sample loop and refinement share point, one
+// compiled function, so a refined caustic passes exactly through the
+// samples: copies inlined in different places can round differently.
 type caustic struct {
 	q               Request
 	f, g, direction curveFunc
@@ -220,28 +221,37 @@ func (q Request) causticAt(f, g curveFunc) *caustic {
 	return &caustic{q, f, g, q.direction(g)}
 }
 
-// at is undefined wherever a sample would be: under total internal
-// reflection, and where the rays' turning is ill-conditioned, as where a
-// refracted ray crosses to the curve's other side at grazing incidence and
-// the rays jump.
+// at is undefined wherever a sample would be: where along's checks fail,
+// and wherever point is undefined.
 func (c *caustic) at(t float64) (*Vec, bool) {
-	lo, hi := c.q.Curve.Min, c.q.Curve.Max
-	rays := baseStencil(lo, hi)
-	s := 0.0
+	virtual := false
 	p := c.q.along(c.f, c.g, func(t float64, p, d, _ Vec) *Vec {
-		dir := c.direction(t)
-		if !dir.Valid() {
-			return nil
-		}
-		turn, _ := rays.derivatives(c.direction, t)
-		if !rays.stableTangent(c.direction, t, turn) {
-			return nil
-		}
 		var target *Vec
-		target, s = Envelope(p, d, dir, turn)
+		target, virtual = c.point(t, p, d)
 		return target
 	})(t)
-	return p, s < 0
+	return p, virtual
+}
+
+// point is the caustic point on the ray leaving p, where the input's
+// tangent is d, once along's checks have passed: the sample loop, which
+// made them itself, calls it directly. It is undefined under total internal
+// reflection, and for a diacaustic where the rays' turning is
+// ill-conditioned, as where a refracted ray crosses to the curve's other
+// side at grazing incidence and the rays jump; a reflected ray grazes
+// continuously.
+func (c *caustic) point(t float64, p, d Vec) (*Vec, bool) {
+	dir := c.direction(t)
+	if !dir.Valid() {
+		return nil, false
+	}
+	rays := baseStencil(c.q.Curve.Min, c.q.Curve.Max)
+	turn, _ := rays.derivatives(c.direction, t)
+	if c.q.Kind == "diacaustic" && !rays.stableTangent(c.direction, t, turn) {
+		return nil, false
+	}
+	target, s := Envelope(p, d, dir, turn)
+	return target, s < 0
 }
 
 // markVirtual marks each point of a refined caustic virtual or real, the

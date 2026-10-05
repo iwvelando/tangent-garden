@@ -479,7 +479,7 @@ func Compute(q Request) (Result, error) {
 				}
 			}
 			if !tir && dir.Valid() {
-				target, virtual = caustics.at(t)
+				target, virtual = caustics.point(t, p, dp)
 			}
 		}
 		if !paths {
