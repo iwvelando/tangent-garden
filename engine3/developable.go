@@ -183,6 +183,26 @@ func Compute(c Request) (Result, error) {
 	return out, err
 }
 
+// binormal is the unit binormal of a curve with velocity v and acceleration
+// a, defined only where r′ × r″ clears a noise floor scaled by the curve's
+// size: where it does not, the curvature vanishes and the developable,
+// the Frenet frame and the probe have no normal.
+func (c Request) binormal(v, a Vec3, lo, hi float64) (Vec3, bool) {
+	b := v.cross(a)
+	scale := math.Max(a.norm(), v.norm()/(hi-lo))
+	tolerance := 1e-6 // numerical second derivatives have a finite noise floor
+	switch c.analytic() {
+	case "harmonic":
+		scale, tolerance = c.Harmonic.curvatureScale(), 1e-8
+	case "torus":
+		scale, tolerance = float64(c.P*c.P)*(c.Radius+c.Tube)+float64(2*c.P*c.Q+c.Q*c.Q)*c.Tube, 1e-8
+	}
+	if a.valid() && b.norm() > tolerance*v.norm()*scale {
+		return b.unit(), true
+	}
+	return Vec3{}, false
+}
+
 func compute(c Request) (Result, error) {
 	if c.Format == "surface" {
 		return surfaces(c.Surface, c.SurfaceDiagnostics)
@@ -325,19 +345,7 @@ func compute(c Request) (Result, error) {
 		out.Base[i] = &r
 		out.Minus[i] = &minus
 		out.Plus[i] = &plus
-		b := v.cross(a)
-		scale := math.Max(a.norm(), v.norm()/(hi-lo))
-		tolerance := 1e-6 // numerical second derivatives have a finite noise floor
-		switch c.analytic() {
-		case "harmonic":
-			scale, tolerance = c.Harmonic.curvatureScale(), 1e-8
-		case "torus":
-			scale, tolerance = float64(c.P*c.P)*(c.Radius+c.Tube)+float64(2*c.P*c.Q+c.Q*c.Q)*c.Tube, 1e-8
-		}
-		valid[i] = a.valid() && b.norm() > tolerance*v.norm()*scale
-		if valid[i] {
-			normals[i] = b.unit()
-		}
+		normals[i], valid[i] = c.binormal(v, a, lo, hi)
 	}
 	if closed {
 		out.Base[n] = out.Base[0]
@@ -460,6 +468,13 @@ func compute(c Request) (Result, error) {
 	}
 	if framed {
 		frame := frames(c, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
+		if out.Adaptive != nil {
+			// Each strand on its own, like the involutes.
+			for k, strand := range out.Frame.Strands {
+				path, _ := refinePath(strand, out.Frame.Breaks, frame.strand(c, evaluate, k, lo, hi), lo, hi, pathTolerance(strand), refineBudget)
+				out.Adaptive.Strands = append(out.Adaptive.Strands, path)
+			}
+		}
 		if c.SurfaceDiagnostics && c.Frame.Width > 0 {
 			out.Probe = framedProbe(c, evaluate, lo, hi, out.Base, velocities, accelerations, frame)
 		}

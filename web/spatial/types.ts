@@ -276,13 +276,15 @@ export type RefinedPath = SharedRefinedPath<Vec3>;
 // Mirrors engine3.AdaptiveResult: the refined curves a study draws, each
 // absent when it is not drawn or not refined (a trajectory or a pursuit).
 // involute holds the involute construction's members, indexed like
-// SpatialResult.involute.members.
+// SpatialResult.involute.members, and strands the framed construction's
+// offset strands, indexed like SpatialResult.frame.strands.
 export type AdaptiveResult = {
   base?: RefinedPath;
   parent?: RefinedPath;
   projection?: RefinedPath;
   image?: RefinedPath;
   involute?: RefinedPath[];
+  strands?: RefinedPath[];
 };
 export type SpatialResult = {
   base: (Vec3 | null)[];

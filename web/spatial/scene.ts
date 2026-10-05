@@ -656,7 +656,8 @@ export function buildScene(result: SpatialResult) {
     "lines",
     1,
   );
-  // Offset strands shade across the family like involute filaments. Frame
+  // Offset strands shade across the family like involute filaments, each
+  // drawn from its own refinement when the study has one. Frame
   // glyphs draw U (the longer arm) and V, with a short T behind them; the
   // seam shows the offset direction where the loop starts and where it
   // returns.
@@ -665,7 +666,7 @@ export function buildScene(result: SpatialResult) {
   const strands = batch(
     offsets.flatMap((points, k) =>
       vertices(
-        pairs(points, f!.breaks),
+        curve(points, f!.breaks, result.adaptive?.strands?.[k]),
         offsets.length > 1 ? k / (offsets.length - 1) : 0,
       ),
     ),

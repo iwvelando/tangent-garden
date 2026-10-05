@@ -141,6 +141,12 @@ type carried struct {
 	direction func(i int, turn float64) Vec3
 	spin      float64
 	closed    bool
+	// The samples the frame was carried along, for evaluating it between
+	// them (see strand).
+	base     []*Vec3
+	tangents []Vec3
+	speeds   []float64
+	result   *FrameResult
 }
 
 // frames builds the frame at every sample, then the ribbon (in the result's
@@ -291,5 +297,59 @@ func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, 
 		spin = (2*math.Pi*f.Twist + q.Correction) / q.Length
 	}
 	// The ribbon closes where the frame returns to itself.
-	return carried{us, vs, ok, arc, direction, spin, q.Closed && q.Seam == nil}
+	return carried{us, vs, ok, arc, direction, spin, q.Closed && q.Seam == nil, base, tangents, speeds, q}
+}
+
+// strand evaluates offset strand k at any t between two samples the frame
+// joins, nonfinite elsewhere. Between samples t_i and t_{i+1} the frame is
+// the one transport step the samples take, from sample i's frame to the
+// curve's point and tangent at t, and the arc length is sample i's carried
+// on to t by the Simpson step the samples take, over part of the interval.
+// A distributed correction turns the frame by its share of that arc, and a
+// Frenet frame is the curve's own at t, undefined where its curvature
+// vanishes. So the strand continues each sample without a seam and
+// converges with the samples' own frame.
+func (f carried) strand(c Request, evaluate evaluation, k int, lo, hi float64) func(float64) Vec3 {
+	q := f.result
+	n := len(f.base) - 1
+	undefined := Vec3{math.NaN(), 0, 0}
+	frenet := q.Kind == "frenet"
+	turn := 2 * math.Pi * float64(k) / float64(c.Frame.Strands)
+	speed := func(t float64) float64 {
+		_, v, _, ok := evaluate(t)
+		if !ok || !v.valid() {
+			return math.NaN()
+		}
+		return v.norm()
+	}
+	return func(t float64) Vec3 {
+		i := max(0, min(n-1, int(math.Floor((t-lo)/(hi-lo)*float64(n)))))
+		if !f.ok[i] || !f.ok[i+1] || q.Breaks[i+1] {
+			return undefined
+		}
+		r, v, a, ok := evaluate(t)
+		if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+			return undefined
+		}
+		T := v.unit()
+		start := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
+		arc := f.arc[i] + (t-start)/6*(f.speeds[i]+4*speed((start+t)/2)+v.norm())
+		var U, V Vec3
+		if frenet {
+			b, defined := c.binormal(v, a, lo, hi)
+			if !defined {
+				return undefined
+			}
+			U, V = b.cross(T), b
+		} else {
+			U = transport(f.us[i], *f.base[i], f.tangents[i], r, T)
+			V = T.cross(U)
+		}
+		theta := c.Frame.Angle + turn
+		if q.Length > 0 {
+			theta += (2*math.Pi*c.Frame.Twist*arc + q.Correction*(arc-f.arc[i])) / q.Length
+		}
+		d := U.mul(math.Cos(theta)).add(V.mul(math.Sin(theta)))
+		return r.add(d.mul(c.Frame.Offset))
+	}
 }

@@ -285,6 +285,42 @@ test("each involute is drawn from its own refinement, and revealed with it", () 
   expect(reveal(input, 1).adaptive).toEqual(input.adaptive);
 });
 
+test("each offset strand is drawn from its own refinement, and revealed with it", () => {
+  const input = study();
+  const twoPoints = [at(0), at(1)];
+  input.frame = {
+    kind: "rotation-minimizing",
+    frames: [],
+    strands: [twoPoints, twoPoints],
+    breaks: [false, false],
+    length: 1,
+    pieces: 1,
+    undefined: 0,
+    flips: 0,
+    fallbacks: 0,
+    closed: false,
+    holonomy: 0,
+    correction: 0,
+  };
+  input.adaptive = {
+    strands: [
+      refined([0, 0.5, 1], [0, 0.5, 1]),
+      refined([0, 0.25, 0.75, 1], [0, 0.25, 0.75, 1]),
+    ],
+  };
+  const scene = buildScene(input);
+  expect(xs(scene.strands.data)).toEqual([
+    0, 0.5, 0.5, 1, 0, 0.25, 0.25, 0.75, 0.75, 1,
+  ]);
+  // Without refinement each strand joins its uniform samples, as before.
+  expect(
+    xs(buildScene({ ...input, adaptive: undefined }).strands.data),
+  ).toEqual([0, 1, 0, 1]);
+  const frame = reveal(input, 0);
+  expect(frame.adaptive?.strands?.map((path) => path.at)).toEqual([[0], [0]]);
+  expect(reveal(input, 1).adaptive).toEqual(input.adaptive);
+});
+
 async function openAnimation(page: Page) {
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)
@@ -346,4 +382,70 @@ test("the four-cornered crown's string stays refined to the end of its track", a
     /^[\d,]+ points added between samples\.$/,
   );
   await expect(readout(page)).not.toHaveText(opening!);
+});
+
+const rope = "A six-stranded rope round a trefoil",
+  cinquefoil = "Four strands wound round a cinquefoil";
+
+test("the trefoil's rope opens refined and is exported with its refined points", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: rope });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  const added = Number(
+    (await readout(page).textContent())!
+      .match(/^([\d,]+) points/)![1]
+      .replace(/,/g, ""),
+  );
+  // Six strands of forty turns each, every turn drawn with several points.
+  expect(added).toBeGreaterThan(6 * 40 * 10);
+  const refined = await lines(page);
+  await refine(page).uncheck();
+  await settled(page);
+  const uniform = await lines(page);
+  expect(refined - uniform).toBeGreaterThanOrEqual(added);
+  await refine(page).check();
+  await settled(page);
+  expect(await lines(page)).toBe(refined);
+});
+
+test("the cinquefoil's strands stay refined as they swell", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: cinquefoil });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  const count = async () =>
+    Number(
+      (await readout(page).textContent())!
+        .match(/^([\d,]+) points/)![1]
+        .replace(/,/g, ""),
+    );
+  // Four strands of 36 turns each, every turn drawn with a few points.
+  const coiled = await count();
+  expect(coiled).toBeGreaterThan(4 * 36 * 10);
+  await openAnimation(page);
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue(
+    "parameters",
+  );
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Back and forth: halfway through its time the strands reach 0.45 from
+  // the knot, still refined, with wider coils needing more points.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  await expect.poll(count).toBeGreaterThan(coiled);
 });
