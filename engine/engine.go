@@ -96,6 +96,9 @@ type Result struct {
 	// arcs is the involute's arc length at each sample where it is drawn,
 	// NaN elsewhere, from which refinement continues between samples.
 	arcs []float64
+	// rolled is a rolling study's progress at each sample where its trace
+	// is drawn, from which refinement continues between samples.
+	rolled *rollingRun
 }
 
 func Compute(q Request) (Result, error) {
@@ -311,6 +314,7 @@ func Compute(q Request) (Result, error) {
 	var rolls *travel
 	if q.Kind == "rolling" {
 		rolls = newTravel(g, lo, hi)
+		out.rolled = &rollingRun{mv: mv, at: make([]*travel, q.Samples)}
 	}
 	// Why a rolling curve stopped, other than the base's own arc length.
 	movingStop := placedOK
@@ -423,25 +427,23 @@ func Compute(q Request) (Result, error) {
 				origin, target = *start, Offset(p, dp, hi)
 			}
 		case "rolling":
-			// Placed along the heading, which undoes reversals at cusps.
-			heading := dp.Mul(rolls.orient)
-			if !(dp.Norm() > stillSpeed) {
+			if !arcOK {
 				break
 			}
-			if arcOK && mv != nil {
-				s, why := mv.place(p, heading, rolls.arc)
-				if why != placedOK {
-					arcOK, movingStop = false, why
-					break
-				}
-				s.SampleIndex = j
-				target, placed = point(s.Point), &s
-			} else if arcOK {
-				s := q.Rolling.at(p, heading, rolls.arc)
-				s.SampleIndex = j
-				if target = point(s.Point); target != nil && s.Center.Valid() {
-					rolled = &s
-				}
+			var why stop
+			if target, rolled, placed, why = q.roll(mv, p, dp, rolls); why != placedOK {
+				arcOK, movingStop = false, why
+				break
+			}
+			if rolled != nil {
+				rolled.SampleIndex = j
+			}
+			if placed != nil {
+				placed.SampleIndex = j
+			}
+			if target != nil {
+				progress := *rolls
+				out.rolled.at[j] = &progress
 			}
 		case "envelope":
 			if circles != nil {

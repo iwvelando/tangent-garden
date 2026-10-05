@@ -32,9 +32,9 @@ type RefinedPath struct {
 // defined pointwise from its input's position and stencil derivatives (a
 // pedal, contrapedal or orthotomic curve, the evolute, an offset or each
 // member of an offset stack, a catacaustic or diacaustic, or an inversion's
-// image), and the involute, whose arc length continues from each sample. A
-// path that is not drawn, or cannot be evaluated between samples, is absent:
-// rolling curves are built along the curve, and a family's envelopes keep
+// image), and the involute and a rolling circle's or curve's trace, whose
+// arc length continues from each sample. A path that is not drawn, or
+// cannot be evaluated between samples, is absent: a family's envelopes keep
 // their uniform samples.
 type AdaptiveResult struct {
 	Base    *RefinedPath `json:"base,omitempty"`
@@ -92,7 +92,7 @@ func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, h
 
 // adapt refines a computed study's drawn curves: the base from f, a derived
 // input from g, and a derived curve defined pointwise from g, or from g and
-// the involute's arc length at the samples. Intervals
+// the involute's or rolling shape's progress at the samples. Intervals
 // broken on a curve stay broken on the curves built on it. An inversion's
 // image is refined in place of the uniform passage test, whose breaks it
 // replaces.
@@ -115,7 +115,7 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi)
 		note(found)
 	}
-	if derived := q.derivedAt(f, g, out.arcs); derived != nil {
+	if derived := q.derivedAt(f, g, out); derived != nil {
 		if out.Inversion != nil {
 			// The passage test's breaks give way to refinement's.
 			out.Inversion.Breaks = []int{}
@@ -145,9 +145,10 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 	out.Adaptive = a
 }
 
-// derivedAt evaluates a study's derived curve at any t from the base f and
-// the input g, or is nil when that curve is not defined pointwise.
-func (q Request) derivedAt(f, g curveFunc, arcs []float64) func(float64) *Vec {
+// derivedAt evaluates a study's derived curve at any t from the base f, the
+// input g, and the progress out records at the samples for the involute and
+// rolling shapes, or is nil when that curve is not defined pointwise.
+func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	switch {
 	case usesPole(q.Kind):
@@ -170,7 +171,9 @@ func (q Request) derivedAt(f, g curveFunc, arcs []float64) func(float64) *Vec {
 	case q.Kind == "inversion":
 		return func(t float64) *Vec { return Invert(g(t), q.Inversion.Center, q.Inversion.Radius) }
 	case q.Kind == "involute":
-		return q.involuteAt(f, g, arcs)
+		return q.involuteAt(f, g, out.arcs)
+	case q.Kind == "rolling":
+		return q.rollingAt(f, g, out.rolled)
 	}
 	return nil
 }
@@ -184,17 +187,62 @@ func (q Request) derivedAt(f, g curveFunc, arcs []float64) func(float64) *Vec {
 // string, which refinement breaks as a jump.
 func (q Request) involuteAt(f, g curveFunc, arcs []float64) func(float64) *Vec {
 	lo, hi := q.Curve.Min, q.Curve.Max
+	step := (hi - lo) / float64(q.Samples-1)
+	return q.along(f, g, func(t float64, p, d, _ Vec) *Vec {
+		j := q.sampleBefore(t)
+		return q.unwound(g, lo+float64(j)*step, arcs[j], t, p, d)
+	})
+}
+
+// sampleBefore is the index of the sample at or before t, as the sample
+// loop places it.
+func (q Request) sampleBefore(t float64) int {
+	lo, hi := q.Curve.Min, q.Curve.Max
 	n := q.Samples - 1
 	step := (hi - lo) / float64(n)
+	j := max(0, min(n, int(math.Floor((t-lo)/step))))
+	if j < n && lo+float64(j+1)*step <= t {
+		j++
+	} else if j > 0 && lo+float64(j)*step > t {
+		j--
+	}
+	return j
+}
+
+// rollingRun is a rolling study's progress at each sample where its trace
+// is drawn (nil elsewhere), with its rolling curve, or nil for a circle.
+type rollingRun struct {
+	mv *mover
+	at []*travel
+}
+
+// rollingAt evaluates a rolling circle's or curve's trace at any t from the
+// travel run records at each sample where it is drawn: continued from the
+// last sample at or before t by the sample loop's own step, which splits its
+// Simpson arc length at a cusp and reverses the heading there, so the trace
+// rolls back out of a cusp between samples as it does at them. It is
+// undefined wherever a sample there would be, past a sample without a
+// trace, and where a rolling curve cannot be placed.
+func (q Request) rollingAt(f, g curveFunc, run *rollingRun) func(float64) *Vec {
+	lo, hi := q.Curve.Min, q.Curve.Max
+	step := (hi - lo) / float64(q.Samples-1)
 	return q.along(f, g, func(t float64, p, d, _ Vec) *Vec {
-		j := max(0, min(n, int(math.Floor((t-lo)/step))))
-		// The sample at or before t, as the loop places it.
-		if j < n && lo+float64(j+1)*step <= t {
-			j++
-		} else if j > 0 && lo+float64(j)*step > t {
-			j--
+		j := q.sampleBefore(t)
+		if run.at[j] == nil {
+			return nil
 		}
-		return q.unwound(g, lo+float64(j)*step, arcs[j], t, p, d)
+		v := *run.at[j]
+		start := lo + float64(j)*step
+		if h := t - start; h > 0 {
+			a, _ := derivatives(g, start, lo, hi)
+			b, _ := derivatives(g, t-h/2, lo, hi)
+			if !v.step(t, h, a, b, d) {
+				return nil
+			}
+		}
+		// Where a rolling curve cannot be placed, roll has no point.
+		target, _, _, _ := q.roll(run.mv, p, d, &v)
+		return target
 	})
 }
 

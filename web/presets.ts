@@ -1036,4 +1036,66 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "A coin rolled round a three-pointed star",
+    note: "A coin rolled around the outside of a star with three nearly sharp points, tracing a point beyond its rim; it pivots on each point, and the point it carries sweeps a wide round petal there",
+    config: {
+      ...base,
+      kind: "rolling",
+      // The star's length is about 15.84443 = 9 · 2π · 0.28019103, so the
+      // coin turns three times along each side and the trace closes after
+      // one lap with the star's symmetry. At the points, whose radius of
+      // curvature is about 0.0003, the coin turns with the tangent while
+      // hardly rolling, and its tracing point, ρ + ℓ from the contact at
+      // phase π, swings round a circle of that radius.
+      curve: {
+        ...base.curve,
+        x: "2*cos(t) + 0.98*cos(2*t)",
+        y: "2*sin(t) - 0.98*sin(2*t)",
+      },
+      rolling: {
+        ...base.rolling,
+        side: "right",
+        radius: 0.28019103,
+        arm: 0.75,
+        phase: Math.PI,
+      },
+      lines: 28,
+      adaptive: true,
+    },
+  },
+  {
+    title: "Petals circling a four-pointed star",
+    note: "A coin rolled around a star with four nearly sharp points; as its tracing point turns once around the coin, the petals it sweeps at the points shrink into loops and run along the sides, and the next loop swells into a petal",
+    config: {
+      ...base,
+      kind: "rolling",
+      // The star's length is about 23.76664 = 16 · 2π · 0.23641118: four
+      // turns of the coin along each side, so the trace closes after one lap
+      // for every phase, and a whole turn of the phase returns it.
+      curve: {
+        ...base.curve,
+        x: "3*cos(t) + 0.98*cos(3*t)",
+        y: "3*sin(t) - 0.98*sin(3*t)",
+      },
+      rolling: {
+        ...base.rolling,
+        side: "right",
+        radius: 0.23641118,
+        arm: 0.9,
+        phase: Math.PI,
+      },
+      lines: 33,
+      adaptive: true,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 16,
+      tracks: [{ target: "rollingPhase", from: "pi", to: "3*pi" }],
+      repeat: "loop",
+      pace: "steady",
+      probeMotion: "stays",
+    },
+  },
 ];

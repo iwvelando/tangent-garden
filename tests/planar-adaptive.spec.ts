@@ -542,3 +542,60 @@ test("a string wound back onto a four-pointed star stays refined as its length m
   expect(vertices(shortest)).toBeGreaterThan(1000);
   expect(longestStep(shortest)).toBeLessThan(0.04);
 });
+
+const coinStar = "A coin rolled round a three-pointed star",
+  circlingPetals = "Petals circling a four-pointed star";
+
+test("a coin rolled round a three-pointed star sweeps round petals when refined", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: coinStar });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  const trace = art(page).getByTestId("derived-curve");
+  const drawn = await trace.getAttribute("d");
+  // Round the points the coin pivots, its tracing point sweeps an arc of
+  // radius ρ + ℓ ≈ 1.03 in a drawing about 4.4 across: refined, a chord
+  // strays at most 2·10⁻⁴ of the trace's radius from it, so it is at most
+  // about 2% of the drawing.
+  expect(longestStep(drawn)).toBeLessThan(0.03);
+  await refine(page).uncheck();
+  await ready(page);
+  const uniform = await trace.getAttribute("d");
+  expect(vertices(uniform)).toBeLessThanOrEqual(1000);
+  expect(vertices(drawn)).toBeGreaterThan(vertices(uniform));
+  expect(longestStep(uniform)).toBeGreaterThan(0.08);
+  await refine(page).check();
+  await ready(page);
+  expect(await trace.getAttribute("d")).toBe(drawn);
+});
+
+test("petals circling a four-pointed star stay refined as the phase turns", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: circlingPetals });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  const trace = art(page).getByTestId("derived-curve");
+  const opening = await trace.getAttribute("d");
+  expect(longestStep(opening)).toBeLessThan(0.03);
+  await openAnimation(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("parameters");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Halfway, the phase has turned half a turn: the tracing point passes
+  // nearest the contact at the star's points, where small loops now sit.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(art(page)).toHaveAttribute("data-animation-progress", "0.5");
+  const halfway = await trace.getAttribute("d");
+  expect(halfway).not.toBe(opening);
+  expect(vertices(halfway)).toBeGreaterThan(1000);
+  expect(longestStep(halfway)).toBeLessThan(0.03);
+});

@@ -158,3 +158,31 @@ func (v *travel) step(t, h float64, a, b, d Vec) bool {
 	}
 	return piece(t)
 }
+
+// roll places the rolling circle, or the rolling curve mv, at p, where the
+// input's tangent is d, after the travel v, along the heading, which undoes
+// reversals at cusps. It is undefined below the still speed, and reports why
+// a rolling curve could not be placed. The sample loop and refinement share
+// this one compiled function, so a refined trace passes exactly through the
+// samples: copies inlined in different places can round differently.
+//
+//go:noinline
+func (q Request) roll(mv *mover, p, d Vec, v *travel) (*Vec, *Rolling, *Placement, stop) {
+	if !(d.Norm() > stillSpeed) {
+		return nil, nil, nil, placedOK
+	}
+	heading := d.Mul(v.orient)
+	if mv != nil {
+		s, why := mv.place(p, heading, v.arc)
+		if why != placedOK {
+			return nil, nil, nil, why
+		}
+		return point(s.Point), nil, &s, placedOK
+	}
+	s := q.Rolling.at(p, heading, v.arc)
+	target := point(s.Point)
+	if target == nil || !s.Center.Valid() {
+		return target, nil, nil, placedOK
+	}
+	return target, &s, nil, placedOK
+}

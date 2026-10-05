@@ -131,7 +131,7 @@ func TestRefinedInvoluteAgreesWithTheSamples(t *testing.T) {
 			t.Fatal(err)
 		}
 		g := inputCurve(q.Input, f, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
-		at := q.derivedAt(f, g, r.arcs)
+		at := q.derivedAt(f, g, &r)
 		if at == nil {
 			t.Fatalf("%s: no evaluator", name)
 		}
