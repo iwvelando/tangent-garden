@@ -1701,7 +1701,7 @@ console.log(
 );
 // Two unit rings, a(t) at z = −1 and b(t + δ) at z = 1, span the hyperboloid
 // x² + y² = cos²(δ/2) + z² sin²(δ/2).
-const spatialRuled = (ruled) =>
+const spatialRuled = (ruled, study = {}) =>
   JSON.parse(
     tangentGardenSpatial(
       JSON.stringify({
@@ -1728,6 +1728,7 @@ const spatialRuled = (ruled) =>
         },
         samples: 480,
         lines: 24,
+        ...study,
       }),
     ),
   );
@@ -1765,6 +1766,23 @@ const spatialRuled = (ruled) =>
   assert.match(
     spatialRuled({ thread: { x: "a", y: "0", z: "0" } }).error,
     /b x\(t\)/,
+  );
+  // Run thirty times as fast and refined, every point of the partner
+  // thread, between samples too, lies on its ring (cos(30t + δ),
+  // sin(30t + δ), 1).
+  const fast = spatialRuled({ rate: 30 }, { samples: 240, adaptive: true });
+  const path = fast.adaptive.partner;
+  assert.equal(path.points.length, path.at.length);
+  assert.ok(path.inserted > 0);
+  path.points.forEach((p, j) => {
+    const s = (60 * Math.PI * path.at[j]) / 240 + 1.3;
+    const want = { x: Math.cos(s), y: Math.sin(s), z: 1 };
+    for (const axis of ["x", "y", "z"])
+      assert.ok(Math.abs(p[axis] - want[axis]) < 1e-9, `refined at ${s}`);
+  });
+  assert.equal(
+    spatialRuled({ rate: 30 }, { samples: 240 }).adaptive,
+    undefined,
   );
 }
 console.log(

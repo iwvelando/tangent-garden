@@ -169,6 +169,21 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec
 		}
 		q.Breaks[i+1] = broken
 	}
+	if out.Adaptive != nil {
+		// The partner is evaluated pointwise, as at the samples; a gap or jump
+		// refinement finds between samples breaks the surface there too.
+		var broken []int
+		out.Adaptive.Partner, broken = refinePath(plus, q.Breaks, func(t float64) Vec3 {
+			p, _, _, ok, inside := partner(m*t + c.Ruled.Shift)
+			if !ok || !inside {
+				return Vec3{math.NaN(), 0, 0}
+			}
+			return p
+		}, lo, hi, pathTolerance(plus), refineBudget)
+		for _, i := range broken {
+			q.Breaks[i+1] = true
+		}
+	}
 	// Grid points P(i, k) = a_i + (k/strips) d_i, with normals S_t × S_u.
 	type point struct {
 		at      Vec3

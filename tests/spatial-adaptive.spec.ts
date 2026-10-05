@@ -384,6 +384,38 @@ test("the four-cornered crown's string stays refined to the end of its track", a
   await expect(readout(page)).not.toHaveText(opening!);
 });
 
+test("a partner thread is drawn from its own refinement, and revealed with it", () => {
+  const input = study();
+  input.plus = [at(0), at(1), at(2), at(3)];
+  input.ruled = {
+    partner: "thread",
+    // The partner is missing past sample 2, so its last interval breaks
+    // where the base's does not.
+    breaks: [false, false, true, false],
+    closed: false,
+    gap: 0,
+    outside: 0,
+    coincident: 0,
+    singular: 0,
+    developable: false,
+    deviation: 0,
+  };
+  input.adaptive = {
+    partner: refined([0, 0.5, 1, 2, null, 3], [0, 0.5, 1, 2, 2.5, 3]),
+  };
+  const scene = buildScene(input);
+  expect(xs(scene.plus.data)).toEqual([0, 0.5, 0.5, 1, 1, 2]);
+  // Without refinement the partner joins its uniform samples with its own
+  // breaks, as before.
+  expect(xs(buildScene({ ...input, adaptive: undefined }).plus.data)).toEqual([
+    0, 1, 2, 3,
+  ]);
+  // The base is not drawn from the partner's refinement.
+  expect(xs(scene.base.data)).toEqual([0, 1, 1, 2]);
+  expect(reveal(input, 0).adaptive?.partner?.at).toEqual([0]);
+  expect(reveal(input, 1).adaptive).toEqual(input.adaptive);
+});
+
 const rope = "A six-stranded rope round a trefoil",
   cinquefoil = "Four strands wound round a cinquefoil";
 
@@ -448,4 +480,70 @@ test("the cinquefoil's strands stay refined as they swell", async ({
     /^[\d,]+ points added between samples\.$/,
   );
   await expect.poll(count).toBeGreaterThan(coiled);
+});
+
+const band = "A screw band coiled round a ring",
+  cones = "Treads folding into cones round a ring";
+
+const addedPoints = async (page: Page) =>
+  Number(
+    (await readout(page).textContent())!
+      .match(/^([\d,]+) points/)![1]
+      .replace(/,/g, ""),
+  );
+
+test("the screw band's partner thread opens refined and is exported with its refined points", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: band });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  // The circle needs nothing between its 240 samples; the thread's 24
+  // coils, ten samples each, need several points in every interval.
+  const added = await addedPoints(page);
+  expect(added).toBeGreaterThan(240 * 4);
+  const refined = await lines(page);
+  await refine(page).uncheck();
+  await settled(page);
+  const uniform = await lines(page);
+  expect(refined - uniform).toBeGreaterThanOrEqual(added);
+  await refine(page).check();
+  await settled(page);
+  expect(await lines(page)).toBe(refined);
+});
+
+test("the folding treads' thread stays refined as the shift slides", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: cones });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  const opening = await addedPoints(page);
+  expect(opening).toBeGreaterThan(240 * 4);
+  await openAnimation(page);
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue(
+    "parameters",
+  );
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Back and forth: halfway through its time each tread reaches a whole
+  // coil ahead. The thread is the same curve, sliding along itself, so it
+  // is refined as finely as it opened.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  await expect
+    .poll(async () => Math.abs((await addedPoints(page)) - opening) / opening)
+    .toBeLessThan(0.1);
 });
