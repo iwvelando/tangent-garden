@@ -1238,3 +1238,44 @@ header {
   font-size: 12px;
   padding: 4px 8px;
 }
+/* The 3D notebook's indicator and named views, then the chosen lens's
+   angle at the row's end, or on a row of its own where the row is too
+   narrow, so that it moves neither as it appears. */
+.camera-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 16px;
+}
+.lens-angle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding: 16px 4px 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lens-angle input[type="range"] {
+  width: 180px;
+}
+/* On phones it takes its own row, the slider filling what the label and
+   readout leave. */
+@media (max-width: 700px) {
+  .lens-angle {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .lens-angle input[type="range"] {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+}
+.lens-angle output {
+  min-width: 3.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}

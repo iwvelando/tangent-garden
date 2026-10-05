@@ -101,7 +101,7 @@ import {
 } from "./surface";
 import { raysNote, receiverAxes } from "./rays";
 import { defaultLayers, initialView, type Layers, type View } from "./renderer";
-import { projections, viewBasis, type Projection } from "./scene";
+import { lensAngles, projections, viewBasis, type Projection } from "./scene";
 import {
   LiveOrientation,
   feedOrientation,
@@ -216,6 +216,8 @@ export default function SpatialApp({
   const [stroking, setStroking] = useState(true);
   // The manual camera's projection: kept by Reset view, carried by links.
   const [lensing, setLensing] = useState<Projection>("orthographic");
+  // The chosen projection's lens angle, kept while a named lens is shown.
+  const [lensAngle, setLensAngle] = useState(lensAngles.initial);
   // A named view asked for, and the drawn camera's axes beside the drawing.
   const [turn, setTurn] = useState<{ id: number; to: NamedView } | null>(null);
   const orientation = useRef<OrientationFeed>({});
@@ -329,6 +331,7 @@ export default function SpatialApp({
     // And its own projection and opening view, or orthographic from the
     // default view.
     setLensing(spatialPresets[+index].projection ?? "orthographic");
+    setLensAngle(spatialPresets[+index].lensAngle ?? lensAngles.initial);
     const opening = spatialPresets[+index].view;
     setRestoredView(
       opening ? { reset: reset + 1, view: { ...opening } } : null,
@@ -364,6 +367,7 @@ export default function SpatialApp({
     setCut(study.cut);
     setSight(study.sight);
     setLensing(study.projection);
+    setLensAngle(study.lensAngle);
     setRestoredView({ reset: reset + 1, view: study.view });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -391,6 +395,7 @@ export default function SpatialApp({
     cut,
     sight,
     projection: lensing,
+    lensAngle,
   });
   // The cut's buttons compute from its numeric fields, so they wait for
   // evaluations still pending for them; a preset chosen meanwhile wins.
@@ -3308,6 +3313,7 @@ export default function SpatialApp({
           // The projection when perspective, and the chosen preset's opening
           // view, likewise.
           data-projection={lensing === "orthographic" ? undefined : lensing}
+          data-lens-angle={lensing === "chosen" ? lensAngle : undefined}
           // The chosen preset's probe and layers, likewise.
           data-probe={
             preset !== "" && spatialPresets[+preset].probe
@@ -3372,7 +3378,15 @@ export default function SpatialApp({
                 aria-label="Projection"
                 value={lensing}
                 disabled={!!override || running}
-                onChange={(e) => setLensing(e.target.value as Projection)}
+                onChange={(e) => {
+                  // The chosen angle starts from the named lens shown, so
+                  // the drawing does not move; from orthographic, from the
+                  // angle last chosen.
+                  const next = e.target.value as Projection,
+                    named = projections[lensing].fov;
+                  if (next === "chosen" && named) setLensAngle(named);
+                  setLensing(next);
+                }}
               >
                 {(Object.keys(projections) as Projection[]).map((p) => (
                   <option key={p} value={p}>
@@ -3426,6 +3440,7 @@ export default function SpatialApp({
                   onSeeThrough={setSeeThrough}
                   onStrokes={setStroking}
                   projection={lensing}
+                  lensAngle={lensAngle}
                   turn={turn}
                 />
               ) : (
@@ -3515,17 +3530,36 @@ export default function SpatialApp({
               </span>
             </div>
           </div>
-          {shown && (
-            <LiveOrientation
-              feed={orientation.current}
-              dark={theme.dark}
-              disabled={!!override || running}
-              onTurn={(to) => {
-                setSpinning(false);
-                setTurn((t) => ({ id: (t?.id ?? 0) + 1, to }));
-              }}
-            />
-          )}
+          <div className="camera-controls">
+            {shown && (
+              <LiveOrientation
+                feed={orientation.current}
+                dark={theme.dark}
+                disabled={!!override || running}
+                onTurn={(to) => {
+                  setSpinning(false);
+                  setTurn((t) => ({ id: (t?.id ?? 0) + 1, to }));
+                }}
+              />
+            )}
+            {lensing === "chosen" && (
+              // The chosen lens's angle, after the named views so that it
+              // moves none of them as it appears.
+              <label className="lens-angle">
+                Lens angle
+                <input
+                  type="range"
+                  min={lensAngles.min}
+                  max={lensAngles.max}
+                  step={1}
+                  value={lensAngle}
+                  disabled={!!override || running}
+                  onChange={(e) => setLensAngle(+e.target.value)}
+                />
+                <output>{lensAngle}°</output>
+              </label>
+            )}
+          </div>
           {!narrow && builtOn}
           {!narrow && behind}
         </article>

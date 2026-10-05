@@ -203,7 +203,8 @@ export type Flight = {
 };
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts), its own camera path to fly (see Flight), and its own
-// projection and manual view (see scene.ts), its own layers, and its own
+// projection (with its lens angle when chosen) and manual view (see
+// scene.ts), its own layers, and its own
 // probe (see probe.ts); choosing one without turns them off, orthographic
 // from the default view with every layer shown, but keeps the probe on or
 // off.
@@ -215,6 +216,8 @@ export const spatialPresets: {
   sight?: Sight;
   flight?: Flight;
   projection?: Projection;
+  // The chosen projection's lens angle, in whole degrees.
+  lensAngle?: number;
   view?: SpatialCamera;
   // Only the layers it hides, or shows against the default.
   layers?: Partial<Layers>;
@@ -2867,5 +2870,71 @@ export const spatialPresets: {
     },
     layers: { surface: false, planes: false, box: false },
     view: turnTo(initialView, "isometric"),
+  },
+  // A tube of radius 0.6 about the circle of radius 2 in the xz-plane, seen
+  // through a 140° lens from inside. Yaw π with pan 2 puts the target on the
+  // core circle at (2, 0, 0), looking along its tangent +z; at zoom 1.5 the
+  // eye is d = 1.16 · 2.6 / (1.5 tan 70°) = 0.73 behind it, 0.13 off the
+  // core, inside the tube. Its rings crowd toward the bend and the far side
+  // of the ring shows through the see-through wall. The pan turns with the
+  // yaw, so one whole turn of yaw carries the target once around the core
+  // circle: a steady leg of one turn flies the tunnel's length, and its
+  // last frame is its first, so it loops.
+  {
+    name: "Down a torus's tunnel",
+    detail:
+      "A 140° lens inside a ring-shaped tube, flying once around it: the near rings sweep past the page's edges while the far side of the ring glows through the wall",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      lines: 144,
+      canal: { radius: 0.6, profile: "1", meridians: 12 },
+      curve: {
+        x: "2*cos(t)",
+        y: "0",
+        z: "2*sin(t)",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.25,
+      hidden: "faint",
+      weight: "regular",
+    },
+    layers: { frames: false, seam: false },
+    projection: "chosen",
+    lensAngle: 140,
+    view: { yaw: Math.PI, pitch: 0, zoom: 1.5, panX: 2, panY: 0 },
+    flight: {
+      duration: 24,
+      repeat: "loop",
+      path: {
+        style: "steady",
+        keys: [
+          {
+            name: "Inside the tube",
+            yaw: Math.PI,
+            pitch: 0,
+            zoom: 1.5,
+            panX: 2,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Once around",
+            yaw: Math.PI,
+            pitch: 0,
+            zoom: 1.5,
+            panX: 2,
+            panY: 0,
+            turns: 1,
+          },
+        ],
+      },
+    },
   },
 ];

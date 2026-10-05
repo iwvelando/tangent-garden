@@ -9,7 +9,7 @@
 // stays within ±1.5 rad, so yaw and pitch describe every orientation it can
 // take without a singularity, and they are interpolated directly.
 import type { Bounds3, Vec3 } from "./types";
-import { projections, type View } from "./scene";
+import { turntableAngle, type View } from "./scene";
 
 export type PathStyle = "steady" | "smooth";
 export type KeyView = {
@@ -139,7 +139,7 @@ export function keyFromView(
     bounds.center.z - view.center.z,
   ];
   const dot = (r: number[]) => r[0] * d[0] + r[1] * d[1] + r[2] * d[2];
-  const fov = !view.lens && projections[view.projection ?? "orthographic"].fov;
+  const fov = turntableAngle(view);
   const tan = fov ? Math.tan((fov * Math.PI) / 360) : 0;
   const behind = fov ? (1.16 * view.radius) / (view.zoom * tan) - dot(back) : 0;
   const zoom = fov

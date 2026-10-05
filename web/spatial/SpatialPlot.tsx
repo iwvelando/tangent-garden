@@ -42,6 +42,7 @@ export function SpatialPlot({
   onSeeThrough,
   onStrokes,
   projection = "orthographic",
+  lensAngle,
   turn = null,
 }: {
   result: SpatialResult;
@@ -73,6 +74,8 @@ export function SpatialPlot({
   // The manual camera's projection, drawn for the manual and released
   // views; an animation's camera carries its own.
   projection?: Projection;
+  // The chosen projection's lens angle, which the others ignore.
+  lensAngle?: number;
   // A named view to turn the shown camera to, once per id.
   turn?: { id: number; to: NamedView } | null;
 }) {
@@ -100,6 +103,7 @@ export function SpatialPlot({
     onSeeThrough,
     onStrokes,
     projection,
+    lensAngle,
   });
   state.current = {
     dark,
@@ -114,12 +118,17 @@ export function SpatialPlot({
     onSeeThrough,
     onStrokes,
     projection,
+    lensAngle,
   };
   const [error, setError] = useState("");
   const projected = (v: View): View => {
-    const { projection: _, ...rest } = v;
-    const p = state.current.projection;
-    return p === "orthographic" ? rest : { ...rest, projection: p };
+    const { projection: _, lensAngle: __, ...rest } = v;
+    const { projection: p, lensAngle } = state.current;
+    return p === "orthographic"
+      ? rest
+      : p === "chosen"
+        ? { ...rest, projection: p, lensAngle }
+        : { ...rest, projection: p };
   };
   const current = (): View =>
     state.current.override ??
@@ -209,7 +218,7 @@ export function SpatialPlot({
     renderer.current?.setProbe(probe);
     draw();
   }, [probe]);
-  useEffect(draw, [dark, layers, override, cut, sight, projection]);
+  useEffect(draw, [dark, layers, override, cut, sight, projection, lensAngle]);
   useEffect(() => {
     manual.current =
       restored?.reset === reset ? { ...restored.view } : { ...initialView };

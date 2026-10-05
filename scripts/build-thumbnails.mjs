@@ -84,7 +84,7 @@ try {
                   spatial.opening ||
                   spatial.probe ||
                   spatial.layers
-                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}${spatial.projection ? `,"projection":"${spatial.projection}"` : ""}${spatial.opening ? `,"view":${spatial.opening}` : ""}${spatial.probe ? `,"probe":${spatial.probe}` : ""}${spatial.layers ? `,"layers":${spatial.layers}` : ""}}`
+                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}${spatial.projection ? `,"projection":"${spatial.projection}"` : ""}${spatial.lensAngle ? `,"lensAngle":${spatial.lensAngle}` : ""}${spatial.opening ? `,"view":${spatial.opening}` : ""}${spatial.probe ? `,"probe":${spatial.probe}` : ""}${spatial.layers ? `,"layers":${spatial.layers}` : ""}}`
                     : spatial.config)
                 : planar(
                     document.querySelector(".plot-wrap[aria-busy=false]"),

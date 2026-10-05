@@ -1008,6 +1008,9 @@ export function animationCamera(view: AnimationView): View {
       ...(view.heldView?.projection && {
         projection: view.heldView.projection,
       }),
+      ...(view.heldView?.projection === "chosen" && {
+        lensAngle: view.heldView.lensAngle,
+      }),
     };
   // So is the ride, at the optical path the frame's light has reached.
   if (view.ride)

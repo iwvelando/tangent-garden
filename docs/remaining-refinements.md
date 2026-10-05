@@ -42,7 +42,7 @@ These come from the handoffs. Each was paid for at least once.
 ## Recommended order
 
 1. Still-export controls (all notebooks)
-2. Camera affordances (2D keyboard; 3D free field of view)
+2. Camera affordances (2D keyboard; 3D Reset view's opening view)
 3. Probe follow-ups (2D and 3D)
 4. Refinement between samples, remaining constructions (2D and 3D)
 
@@ -80,12 +80,11 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 **Applies to:**
 
 - Keyboard parity: 2D only. 3D and 4D already have arrows, +/− and Home.
-- Free field of view and Reset view's opening view: 3D only.
+- Reset view's opening view: 3D only.
 
 **Open:**
 
 - 2D keyboard pan, zoom and reset on the drawing. Mirror 3D/4D's bindings and describe them in the drawing's accessible label.
-- 3D: a field of view other than the three named lenses (30°, 50°, 90°). Lenses are named on purpose, so a link names an option the control has. Any free angle needs its own link field and default.
 - 3D: Reset view returns a preset's opening view to the default view, not the preset's own.
 
 **Watch for:**

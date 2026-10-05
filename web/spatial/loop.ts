@@ -20,6 +20,7 @@ import {
   type Batch,
   type Layers,
   type View,
+  turntableAngle,
 } from "./scene";
 import { probeDrawing } from "./probe";
 import { loopLead as lead } from "../loop-check";
@@ -128,6 +129,7 @@ export function sameCamera(a: View, b: View) {
   if (Boolean(a.lens) !== Boolean(b.lens)) return false;
   if ((a.projection ?? "orthographic") !== (b.projection ?? "orthographic"))
     return false;
+  if (turntableAngle(a) !== turntableAngle(b)) return false;
   return (
     Math.abs(yaw - turn * Math.round(yaw / turn)) <= tolerance &&
     close(a.pitch, b.pitch, 1) &&
