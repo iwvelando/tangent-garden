@@ -377,6 +377,31 @@ rolling.derived.forEach((p, j) => {
     ) < 1e-9,
   );
 });
+// Refined between 64 samples, the epicycloid stays on its closed form.
+const refinedRolling = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "rolling",
+      curve: { ...config.curve, x: "3*cos(t)", y: "3*sin(t)" },
+      rolling: { side: "right", radius: 1, arm: 1, phase: 0 },
+      samples: 64,
+      adaptive: true,
+    }),
+  ),
+).adaptive.derived;
+assert.ok(refinedRolling.inserted > 0 && refinedRolling.breaks === 0);
+assert.ok(
+  refinedRolling.points.every((p, k) => {
+    const t = (refinedRolling.at[k] * 2 * Math.PI) / 63;
+    return (
+      Math.hypot(
+        p.x - (4 * Math.cos(t) - Math.cos(4 * t)),
+        p.y - (4 * Math.sin(t) - Math.sin(4 * t)),
+      ) < 1e-9
+    );
+  }),
+);
 assert.equal(rolling.rolling.length, config.lines);
 rolling.rolling.forEach((s, k) => {
   assert.deepEqual(s.contact, rolling.base[s.sampleIndex]);
