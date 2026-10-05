@@ -59,7 +59,7 @@ try {
       await gallery.locator(`[data-example="${example.example}"]`).click();
       await gallery.waitFor({ state: "hidden" });
       // The drawing is ready once it shows this example's definition: a 3D
-      // study's with its cut and sight, when it has them.
+      // study's with its cut, sight and layers, when it has them.
       await page.waitForFunction(
         ([notebook, want]) => {
           // A 2D example's definition, with its probe when it has one.
@@ -82,8 +82,9 @@ try {
                   spatial.sight ||
                   spatial.projection ||
                   spatial.opening ||
-                  spatial.probe
-                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}${spatial.projection ? `,"projection":"${spatial.projection}"` : ""}${spatial.opening ? `,"view":${spatial.opening}` : ""}${spatial.probe ? `,"probe":${spatial.probe}` : ""}}`
+                  spatial.probe ||
+                  spatial.layers
+                    ? `{"config":${spatial.config}${spatial.cut ? `,"cut":${spatial.cut}` : ""}${spatial.sight ? `,"sight":${spatial.sight}` : ""}${spatial.projection ? `,"projection":"${spatial.projection}"` : ""}${spatial.opening ? `,"view":${spatial.opening}` : ""}${spatial.probe ? `,"probe":${spatial.probe}` : ""}${spatial.layers ? `,"layers":${spatial.layers}` : ""}}`
                     : spatial.config)
                 : planar(
                     document.querySelector(".plot-wrap[aria-busy=false]"),

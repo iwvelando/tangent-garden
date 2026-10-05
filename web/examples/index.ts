@@ -102,11 +102,11 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
                                 ? "Torus knots"
                                 : "Parametric curves",
   keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.sight && !isPlain(p.sight) ? " see-through" : ""}${p.sight && p.sight.weight !== defaultSight.weight ? ` ${p.sight.weight} line weight strokes` : ""}${p.projection && p.projection !== "orthographic" ? " perspective" : ""}${p.flight ? `${p.flight.path.keys.length ? " flight" : ""}${p.flight.ride ? " ride perspective" : ""}${p.flight.repeat === "loop" ? " seamless loop" : p.flight.repeat === "back-and-forth" ? " back and forth" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}${p.probe?.enabled ? " probe curvature torsion" : ""}`,
-  // A preset's cut, sight, projection, opening view and probe are part of
-  // its picture; presets without them keep the fingerprints they had before
-  // those existed.
+  // A preset's cut, sight, projection, opening view, probe and layers are
+  // part of its picture; presets without them keep the fingerprints they
+  // had before those existed.
   fingerprint: fingerprint(
-    p.cut || p.sight || p.projection || p.view || p.probe
+    p.cut || p.sight || p.projection || p.view || p.probe || p.layers
       ? {
           config: p.config,
           ...(p.cut && { cut: p.cut }),
@@ -114,6 +114,7 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
           ...(p.projection && { projection: p.projection }),
           ...(p.view && { view: p.view }),
           ...(p.probe && { probe: p.probe }),
+          ...(p.layers && { layers: p.layers }),
         }
       : p.config,
   ),

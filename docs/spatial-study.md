@@ -178,6 +178,14 @@ Seeing through also opens the earlier studies without cutting them: **An ellipso
 
 The see-through drawing is not multisampled, so the outlines of see-through sheets are not antialiased, and where many tiny triangles meet in one pixel (a chart's pole) the pixel shows the one at its center. It needs half-float render targets; a device without them draws the sheets opaque and says so.
 
+## Hiding a layer
+
+A cut opens part of a sheet and see-through keeps it all; hiding its layer removes it. Every part of a study is its own layer under **Reveal the construction**, so a drawing can keep only what was inside, or what was drawn on, the surface. Some examples open with layers of their own hidden, and the checkboxes show which; choosing an example without them shows every layer again.
+
+- **The whole focal surface of an ellipsoid** is the 1.5 : 1 : 0.7 ellipsoid of **The focal sheets of an ellipsoid**, closed, with its shell and parameter curves hidden. The two sheets of centers show entire, each folded along cuspidal edges in the planes of symmetry. They meet at the centers of the four umbilics, in the xz-plane, where κ₁ = κ₂.
+- **A cage of rings round a (3, 4) knot** is a tube of radius 0.3 drawn by its 120 contact circles and six meridians, with the surface and frames hidden. The seam is distributed, so every meridian closes.
+- **A Klein bottle in twenty-four slices** is the bottle of **A Klein bottle passing through itself**, drawn by 24 sections across its axis with the surface, planes and box hidden, from the isometric view. Where the neck runs inside the body, one curve lies within another.
+
 ## Line weights
 
 The construction lines are the drawing, so their weight matters. **Lines → Weight** draws them as strokes whose width is a share of the page: the curve heaviest, families lighter, construction lines lightest, so the curve stays legible over hundreds of lines, and a large still keeps the look of the live drawing instead of thinning every line to one pixel. **Hairline** is the drawing as it was before weights. Three examples are drawn for it:
