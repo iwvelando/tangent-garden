@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import { AppHeader } from "../AppHeader";
+import { Orientation } from "../Orientation";
+import { turnTo, turntableBasis } from "../named-views";
 import { AnimationButton } from "../AnimationButton";
 import { NotebookMode } from "../NotebookMode";
 import { useTheme } from "../useTheme";
@@ -1217,6 +1219,19 @@ export default function TesseractApp({
               </span>
             </div>
           </div>
+          {frame && !descriptor.flat?.(config) && (
+            <Orientation
+              basis={turntableBasis(view.yaw, view.pitch)}
+              dark={dark}
+              disabled={held || !!exporting}
+              onTurn={(name) => {
+                if (held || exporting) return;
+                controller.current?.abort();
+                setSpinning(false);
+                setView((v) => turnTo(v, name));
+              }}
+            />
+          )}
           {!narrow && explanation}
         </article>
         {narrow && <div className="behind">{explanation}</div>}

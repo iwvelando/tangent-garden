@@ -101,7 +101,13 @@ import {
 } from "./surface";
 import { raysNote, receiverAxes } from "./rays";
 import { defaultLayers, initialView, type Layers, type View } from "./renderer";
-import { projections, type Projection } from "./scene";
+import { projections, viewBasis, type Projection } from "./scene";
+import {
+  LiveOrientation,
+  feedOrientation,
+  type OrientationFeed,
+} from "../Orientation";
+import type { NamedView } from "../named-views";
 import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
 import {
@@ -210,6 +216,9 @@ export default function SpatialApp({
   const [stroking, setStroking] = useState(true);
   // The manual camera's projection: kept by Reset view, carried by links.
   const [lensing, setLensing] = useState<Projection>("orthographic");
+  // A named view asked for, and the drawn camera's axes beside the drawing.
+  const [turn, setTurn] = useState<{ id: number; to: NamedView } | null>(null);
+  const orientation = useRef<OrientationFeed>({});
   const viewport = useRef<View | undefined>(undefined),
     plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
@@ -3391,6 +3400,7 @@ export default function SpatialApp({
                   refit={refit}
                   onViewport={(v) => {
                     viewport.current = v;
+                    feedOrientation(orientation.current, viewBasis(v));
                   }}
                   onError={setRenderError}
                   restored={restoredView}
@@ -3403,6 +3413,7 @@ export default function SpatialApp({
                   onSeeThrough={setSeeThrough}
                   onStrokes={setStroking}
                   projection={lensing}
+                  turn={turn}
                 />
               ) : (
                 <div className="loading">
@@ -3491,6 +3502,17 @@ export default function SpatialApp({
               </span>
             </div>
           </div>
+          {shown && (
+            <LiveOrientation
+              feed={orientation.current}
+              dark={theme.dark}
+              disabled={!!override || running}
+              onTurn={(to) => {
+                setSpinning(false);
+                setTurn((t) => ({ id: (t?.id ?? 0) + 1, to }));
+              }}
+            />
+          )}
           {!narrow && builtOn}
           {!narrow && behind}
         </article>

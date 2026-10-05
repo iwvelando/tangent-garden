@@ -1,11 +1,8 @@
 import { objects } from "./objects";
-import { plotPalette } from "../palette";
+import { axisInks, plotPalette } from "../palette";
 import { svgStroke } from "../line-weight";
 import type { Config, Result, View, Layers, Vec3 } from "./types";
-export const inks = (dark: boolean) =>
-  dark
-    ? ["#7ddbcc", "#ecc47d", "#bdacf0", "#ec9fa8"]
-    : ["#147669", "#a16b1d", "#7050a2", "#ad5265"];
+export const inks = axisInks;
 // Index colours separate coincident levels without reusing coordinate inks.
 export const sectionInk = (index: number, dark: boolean) =>
   `hsl(${(170 + index * 137.508) % 360} 55% ${dark ? 72 : 36}%)`;

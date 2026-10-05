@@ -11,6 +11,7 @@ import {
 import type { Batch, Projection } from "./scene";
 import type { CutSpec } from "./cut";
 import { defaultSight, isPlain, type Sight } from "./sight";
+import { turnTo, type NamedView } from "../named-views";
 const noProbe: Batch[] = [];
 const cameraKeys = [
   "ArrowLeft",
@@ -41,6 +42,7 @@ export function SpatialPlot({
   onSeeThrough,
   onStrokes,
   projection = "orthographic",
+  turn = null,
 }: {
   result: SpatialResult;
   dark: boolean;
@@ -71,6 +73,8 @@ export function SpatialPlot({
   // The manual camera's projection, drawn for the manual and released
   // views; an animation's camera carries its own.
   projection?: Projection;
+  // A named view to turn the shown camera to, once per id.
+  turn?: { id: number; to: NamedView } | null;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
@@ -215,6 +219,15 @@ export function SpatialPlot({
     explored.current = released ? { ...released } : null;
     draw();
   }, [!!released, refit]);
+  // Only turns asked for after the drawing opened, not one it opened with.
+  const turned = useRef(turn?.id);
+  useEffect(() => {
+    if (!turn || turn.id === turned.current) return;
+    turned.current = turn.id;
+    if (state.current.override) return;
+    Object.assign(target(), turnTo(target(), turn.to));
+    draw();
+  }, [turn?.id]);
   useEffect(() => {
     if (!spinning || override) return;
     let id = 0,

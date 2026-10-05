@@ -5,8 +5,9 @@ import type { CameraPath } from "./path";
 import type { Ride } from "./ride";
 import type { AnimationMode, CameraMode, Track } from "./animation";
 import type { SpatialConfig } from "./types";
-import type { Projection } from "./scene";
+import { initialView, type Projection } from "./scene";
 import type { SpatialCamera } from "./link";
+import { turnTo } from "../named-views";
 import type { Probe, ProbeMotion } from "./probe";
 const base: SpatialConfig = {
   format: "torus",
@@ -2546,5 +2547,34 @@ export const spatialPresets: {
       },
       path: { style: "steady", keys: [] },
     },
+  },
+  // A Lissajous knot (Bogle, Hearst, Jones and Stoilov, 1994): each
+  // coordinate a cosine of its own whole frequency, here 3, 2 and 7 with
+  // phases 0.7, 0.2 and 0. Seen along each axis, as the Front, Side and Top
+  // named views see it, it is a Lissajous figure: x against y at 3 : 2,
+  // z against y at 7 : 2, and x against z at 3 : 7 (Top stops 4° short of
+  // overhead, so that one is seen very slightly foreshortened). It opens
+  // in the isometric view, at equal angles to all three.
+  {
+    name: "A Lissajous knot, seen from three sides",
+    detail:
+      "A tube on a 3 : 2 : 7 Lissajous knot; from the front, the side and the top, three Lissajous figures",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      samples: 1200,
+      lines: 36,
+      canal: { radius: 0.1, profile: "1", meridians: 0 },
+      curve: {
+        x: "2*cos(3*t+0.7)",
+        y: "2*cos(2*t+0.2)",
+        z: "2*cos(7*t)",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
   },
 ];

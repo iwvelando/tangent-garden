@@ -510,11 +510,17 @@ test("phones order every notebook's heading, drawing, controls and explanation a
     const app = page.locator(".app:visible");
     const title = (await app.locator(".plot-heading h1").boundingBox())!;
     const buttons = await app
-      .locator(".plot-heading button:visible")
+      .locator(".plot-heading :is(button, select):visible")
       .evaluateAll((es) => es.map((e) => e.getBoundingClientRect().toJSON()));
     expect(buttons.length, dimension).toBeGreaterThan(0);
     expect(buttons[0].y, dimension).toBeGreaterThan(title.y + title.height);
     expect(Math.abs(buttons[0].x - title.x), dimension).toBeLessThan(1);
+    // One row: the 3D projection sits beside the buttons, not above them.
+    for (const b of buttons)
+      expect(
+        Math.abs(b.y + b.height / 2 - (buttons[0].y + buttons[0].height / 2)),
+        dimension,
+      ).toBeLessThan(1);
     const top = async (selector: string) =>
       (await app.locator(selector).first().boundingBox())!.y;
     const picture = (await drawing.boundingBox())!;

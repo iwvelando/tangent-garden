@@ -30,3 +30,9 @@ export const plotPalette = (dark: boolean) =>
         probeNormal: "#1a802e",
       };
 export type PlotPalette = ReturnType<typeof plotPalette>;
+// The coordinate axes' inks, x, y, z and w: the 4D drawing's edge families
+// and the orientation indicator beside the 3D and 4D drawings.
+export const axisInks = (dark: boolean) =>
+  dark
+    ? ["#7ddbcc", "#ecc47d", "#bdacf0", "#ec9fa8"]
+    : ["#147669", "#a16b1d", "#7050a2", "#ad5265"];
