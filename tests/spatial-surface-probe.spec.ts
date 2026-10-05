@@ -1420,3 +1420,40 @@ test("the light probe moves along the mirror as an animation and returns on Stop
   );
   expect(await pixels(page)).toBe(study);
 });
+
+// A canal's rows are its mesh rings, every other base sample on the beads:
+// row 250 is base sample 500, at t = −2π + 250π/120. A reveal draws the
+// surface probe once it has drawn that sample, not that row's number.
+test("a reveal draws a canal's surface probe once it reaches the probe's row", async ({
+  page,
+}) => {
+  await probeBeads(page);
+  const row = along(page, "Along t");
+  await row.fill("250");
+  const mine = `t = ${short(-2 * Math.PI + (250 * Math.PI) / 120)}, row 250 of 480`;
+  await expect(row).toHaveAttribute("aria-valuetext", mine);
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  await page.getByLabel("Animate", { exact: true }).selectOption("reveal");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  // Through sample 480 of 960: row 250 is not drawn yet.
+  await slider.fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+  await expect(page.locator(".spatial-probe")).toContainText(
+    "The drawing has not reached the probe yet.",
+  );
+  await expect(readout(page)).toHaveCount(0);
+  // Through sample 508: it is.
+  await slider.fill("0.53");
+  await expect(stage(page)).toHaveAttribute("data-progress", "0.53");
+  await expect(row).toHaveAttribute("aria-valuetext", mine);
+  await expect(row).toBeDisabled();
+  await expect(readout(page)).toHaveText(
+    beadReadout(-2 * Math.PI + (250 * Math.PI) / 120),
+  );
+});

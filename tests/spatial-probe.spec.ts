@@ -672,7 +672,7 @@ test("the probe follows presets and formats, and describes a surface study's sur
   await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
 });
 
-test("still exports include the probe as drawn; animation hides it", async ({
+test("still exports include the probe as drawn; a reveal draws it once reached", async ({
   page,
 }) => {
   await ready(page);
@@ -714,28 +714,106 @@ test("still exports include the probe as drawn; animation hides it", async ({
   const png = await download("PNG image · 2000 × 1520");
   const url = `data:image/png;base64,${png.toString("base64")}`;
   expect(await coloured(page, url, probeColour())).toBeGreaterThan(200);
-  // Playback shows the animation's own frames, without the probe, and Stop
-  // brings it back.
+  // A reveal draws the probe, at the user's last sample, only once the
+  // drawing reaches it: halfway along, the panel says why it is missing.
   const probed = await pixels(page);
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)
     await panel.locator(":scope > summary").click();
   await page.getByLabel("Animate", { exact: true }).selectOption("reveal");
   await page
+    .getByLabel("Animation camera", { exact: true })
+    .selectOption("current");
+  await page
     .getByRole("button", { name: "Play animation", exact: true })
     .click();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
-  await expect(page.locator(".spatial-probe")).toContainText(
-    "returns when the animation stops",
-  );
   const slider = page.getByRole("slider", { name: "Animation progress" });
   await slider.fill("0.5");
   await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+  await expect(page.locator(".spatial-probe")).toContainText(
+    "The drawing has not reached the probe yet.",
+  );
   expect(await coloured(page, await pixels(page), probeColour())).toBe(0);
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await slider.fill("1");
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    "t = 9.425, sample 960 of 960",
+  );
+  await expect(point(page)).toBeDisabled();
+  expect(await pixels(page)).toBe(probed);
+  await page
+    .getByRole("button", { name: "Back to study", exact: true })
+    .click();
   await expect(stage(page)).not.toHaveAttribute("data-progress");
   await expect(readout(page)).toHaveCount(3);
   expect(await pixels(page)).toBe(probed);
+});
+
+// Animations that keep the study fixed draw the probe where the user put
+// it, in every frame: an orbit, a peel (which never cuts the probe) and a
+// flight through key views.
+test("an orbit, a peel and a camera path draw the probe at the user's point", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, helix);
+  await probeSwitch(page).check();
+  await settled(page);
+  await point(page).fill("300");
+  const mine = "t = -3.534, sample 300 of 960";
+  await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  const animate = page.getByLabel("Animate", { exact: true });
+  const button = (name: string) =>
+    page.getByRole("button", { name, exact: true });
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  async function midway(mode: string) {
+    await animate.selectOption(mode);
+    await button("Play animation").click();
+    await expect(stage(page)).toHaveAttribute("data-mode", mode);
+    await button("Pause").click();
+    await slider.fill("0.5");
+    await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+    await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
+    await expect(point(page)).toBeDisabled();
+    await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
+    expect(
+      await coloured(page, await pixels(page), probeColour()),
+    ).toBeGreaterThan(50);
+  }
+  await midway("orbit");
+  await expect(page.locator(".animation-values")).toHaveText(
+    "Camera rotation · 180°",
+  );
+  await button("Stop").click();
+  await expect(point(page)).toBeEnabled();
+  // Peeled to its end, the plane hides every line it cuts; the probe stays.
+  const box = page.getByRole("group", { name: "Cut away" });
+  await box.getByRole("checkbox", { name: "Cut with a plane" }).check();
+  await box.getByLabel("What it cuts", { exact: true }).selectOption("all");
+  await midway("cut");
+  await slider.fill("1");
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
+  expect(
+    await coloured(page, await pixels(page), probeColour()),
+  ).toBeGreaterThan(50);
+  await button("Back to study").click();
+  await box.getByRole("checkbox", { name: "Cut with a plane" }).uncheck();
+  // Two key views a few turns apart.
+  await animate.selectOption("path");
+  await button("+ Add the drawing's view").click();
+  await page.locator("#spatial-artwork").focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+  await button("+ Add the drawing's view").click();
+  await midway("path");
+  await button("Stop").click();
+  await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
+  await expect(point(page)).toBeEnabled();
 });
 
 test("the probe's colours hold in the dark theme", async ({ page }) => {
@@ -789,4 +867,47 @@ test("a link carries the probe; links without it open with it off", async ({
   await expect(probeSwitch(other)).not.toBeChecked();
   await expect(readout(other)).toHaveCount(0);
   await context.close();
+});
+
+// The trefoil example flies once round the vertical, which is the probe's
+// normal N at t = π: face on (along B) the osculating circle of radius 2 is
+// round, and edge on (along T) it is a segment of length 4, so it covers
+// far fewer pixels.
+test("the trefoil example flies round its probe, face on and edge on", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, {
+    label: "A trefoil's osculating circle, all the way round",
+  });
+  await settled(page);
+  await expect(probeSwitch(page)).toBeChecked();
+  const mine = "t = 3.142, sample 480 of 960";
+  await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
+  // κ = 1/2, radius 2 and τ = −2/9.
+  await expect(readout(page)).toHaveText(["0.5", "2", "-0.2222"]);
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue("path");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const at = async (p: string) => {
+    await slider.fill(p);
+    await expect(stage(page)).toHaveAttribute("data-progress", p);
+    await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
+    return coloured(page, await pixels(page), probeColour());
+  };
+  const face = await at("0"),
+    edge = await at("0.25"),
+    back = await at("0.5");
+  expect(
+    JSON.parse((await stage(page).getAttribute("data-camera"))!).yaw,
+  ).toBeCloseTo((-3 * Math.PI) / 4, 6);
+  expect(face).toBeGreaterThan(200);
+  expect(edge).toBeLessThan(0.6 * face);
+  expect(back).toBeGreaterThan(2 * edge);
 });

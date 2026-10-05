@@ -19,6 +19,7 @@ import {
   availableTargets,
   integerTargets,
   reveal,
+  revealedThrough,
   targetLabel,
   targetValue,
   type AnimationMode,
@@ -36,6 +37,8 @@ import {
   probeSteps,
   probeTarget,
   probeWhere,
+  probeStep,
+  probeSample,
   surfaceTerms,
   gridded,
   probeOptions,
@@ -45,6 +48,7 @@ import {
   type Probe,
   type ProbeMotion,
 } from "./probe";
+import { revealedProbe } from "../probe";
 import type { Layers } from "./renderer";
 import { buildScene, scenePasses } from "./scene";
 import { sweepExtent, sweepOffset, type CutSpec } from "./cut";
@@ -101,9 +105,9 @@ type Session = {
   mode: AnimationMode;
   // Present only while tracing rays.
   timeline?: Timeline;
-  // Present only while the animation draws the probe (moving it, or
-  // varying parameters with it on): its setup when playback began, and,
-  // with parameters, how it moves as they vary (see heldProbe).
+  // Present only while the probe is on, which every animation draws: its
+  // setup when playback began, and, with parameters, how it moves as they
+  // vary (see heldProbe).
   probe?: Probe;
   motion?: ProbeMotion;
   // The entered cut when playback began, drawn by every mode, and the
@@ -495,7 +499,9 @@ export function SpatialAnimationPanel({
         s.probe ? probeOptions(probeTarget(s.original.config, s.probe)) : {},
       );
     // While parameters vary, the probe stands on each frame's own
-    // diagnostics, or is absent from it with a reason.
+    // diagnostics, or is absent from it with a reason. Animations that keep
+    // the study fixed hold it where the user put it, once a reveal has
+    // drawn it.
     const held =
       s.mode === "parameters" && s.probe
         ? heldProbe(
@@ -506,7 +512,9 @@ export function SpatialAnimationPanel({
             current.result,
             p,
           )
-        : null;
+        : s.mode !== "probe" && s.probe
+          ? fixedProbe(s, p)
+          : null;
     return {
       frame: current,
       final: s.final,
@@ -545,6 +553,20 @@ export function SpatialAnimationPanel({
         },
       }),
     };
+  }
+  // The probe's step in an animation that keeps the study fixed: where the
+  // user put it, once a reveal has drawn the sample (or a surface's row)
+  // it describes.
+  function fixedProbe(s: Session, p: number) {
+    const target = probeTarget(s.original.config, s.probe!),
+      step = probeStep(s.original.result, target, s.probe!);
+    return s.mode === "reveal"
+      ? revealedProbe(
+          step,
+          probeSample(s.original.result, target, step),
+          revealedThrough(s.original.result, p),
+        )
+      : step;
   }
   function display(s: Session, view: AnimationView) {
     s.progress = view.time!;
@@ -710,8 +732,9 @@ export function SpatialAnimationPanel({
       if (epoch.current !== token) return;
       // The probe moves over the study's own diagnostics, fetched here only
       // if the study was drawn without them; while parameters vary, it
-      // stays at what it describes there.
-      const drawsProbe = mode === "probe" || (mode === "parameters" && probing);
+      // stays at what it describes there, and while the study is fixed, at
+      // the user's point.
+      const drawsProbe = probing;
       let original = frame;
       if (drawsProbe && probeSteps(frame.result, target) === null) {
         original = await client.current.computeSpatial(

@@ -805,14 +805,24 @@ function revealImplicit(
     sections,
   };
 }
+// The last sample (or a surface's row) a reveal at progress p draws, over
+// what it reveals along: a surface's or mirror's rows along u, or the
+// curve's samples. A level surface reveals through its box instead.
+export function revealedThrough(result: SpatialResult, p: number) {
+  const count = result.surface
+    ? result.surface.surface.points.length
+    : result.rays
+      ? result.rays.surface.points.length
+      : result.base.length;
+  return Math.floor(Math.max(0, Math.min(1, p)) * (count - 1));
+}
+
 export function reveal(result: SpatialResult, p: number): SpatialResult {
   if (result.implicit)
     return { ...result, implicit: revealImplicit(result.implicit, p) };
+  const last = revealedThrough(result, p);
   if (result.surface) {
-    const s = result.surface,
-      last = Math.floor(
-        Math.max(0, Math.min(1, p)) * (s.surface.points.length - 1),
-      );
+    const s = result.surface;
     const surface = {
       ...s,
       surface: revealSheet(s.surface, last),
@@ -823,10 +833,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     return { ...result, surface, bounds: surfaceBounds(surface) };
   }
   if (result.rays) {
-    const r = result.rays,
-      last = Math.floor(
-        Math.max(0, Math.min(1, p)) * (r.surface.points.length - 1),
-      );
+    const r = result.rays;
     // The receiver collects the whole family, so it appears only once
     // every column is revealed.
     const rays = {
@@ -838,9 +845,6 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     };
     return { ...result, rays, bounds: raysBounds(rays) };
   }
-  const last = Math.floor(
-    Math.max(0, Math.min(1, p)) * (result.base.length - 1),
-  );
   const base = result.base.slice(0, last + 1),
     minus = result.minus.slice(0, last + 1),
     plus = result.plus.slice(0, last + 1);

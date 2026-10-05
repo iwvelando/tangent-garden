@@ -14,6 +14,7 @@ import {
   curveProbeMotions,
   heldCurveSample,
   probeIndex,
+  revealedProbe,
   type ProbeMotion,
 } from "./probe";
 import { probeReadout, type PlanarProbe } from "./planar-probe";
@@ -26,6 +27,7 @@ import {
   repeatHelp,
   reveal,
   revealConfig,
+  revealedThrough,
   targetLabel,
   targetValue,
   type AnimationMode,
@@ -78,8 +80,8 @@ type Session = {
   length: number;
   // Where the timeline stands (timing.ts), from which the progress follows.
   progress: number;
-  // The probe, when the animation moves it or holds it while the
-  // parameters vary, and how it moves then.
+  // The probe while it is on, which every animation draws, and how it
+  // moves while the parameters vary.
   probe?: PlanarProbe;
   motion?: ProbeMotion;
 };
@@ -393,7 +395,8 @@ export function AnimationPanel({
     // The probe moves along the fixed study one sample at a time, from the
     // first sample at the start to the last at the end, exactly; while the
     // parameters vary it stands on each frame's own diagnostics, or is
-    // absent from it with a reason.
+    // absent from it with a reason. Otherwise the study is fixed and the
+    // probe stays at its sample.
     const held =
       s.mode === "probe"
         ? probeIndex(p, s.original.result.diagnostics!.curvature.length - 1)
@@ -407,7 +410,9 @@ export function AnimationPanel({
                 p,
               )
             : "This frame has no curve for the probe to describe."
-          : null;
+          : s.probe
+            ? fixedProbe(s, p)
+            : null;
     return {
       frame: current,
       final: s.final,
@@ -420,6 +425,17 @@ export function AnimationPanel({
       ...(typeof held === "number" && { probe: held }),
       ...(typeof held === "string" && { probeAway: held }),
     };
+  }
+  // The probe's sample in an animation that keeps the study fixed: where
+  // the user put it, once a reveal has drawn it.
+  function fixedProbe(s: Session, p: number) {
+    const j = probeIndex(
+      s.probe!.position,
+      s.original.result.diagnostics!.curvature.length - 1,
+    );
+    return s.mode === "reveal"
+      ? revealedProbe(j, j, revealedThrough(s.original.result, p))
+      : j;
   }
   function display(s: Session, view: AnimationView) {
     s.progress = view.time ?? view.progress;
@@ -516,9 +532,10 @@ export function AnimationPanel({
       if (camera === "current" && !heldView)
         throw new Error("The current view is not ready yet.");
       if (save) exportTiming(duration, fps);
-      // The probe moves along the curve, or is held while the parameters
-      // vary, on the diagnostics of the study as it begins.
-      const drawsProbe = !!probe && (mode === "probe" || mode === "parameters");
+      // The probe moves along the curve, is held while the parameters
+      // vary, or stays at its sample of the fixed study, on the diagnostics
+      // of the study as it begins.
+      const drawsProbe = !!probe;
       if (drawsProbe && !frame.result.diagnostics)
         throw new Error("The probe is still finding the curvature.");
       let numeric: NumericTrack[] = [];

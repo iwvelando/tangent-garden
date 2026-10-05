@@ -121,14 +121,12 @@ import type { ImageFormat } from "./export";
 import {
   defaultProbe,
   probeDrawing as drawProbe,
-  probeIndex,
   probeRecord,
+  probeStep,
   probeSteps,
   probeSupport,
   probeTarget,
-  gridded,
   probeOptions,
-  surfaceProbeAt,
   type Probe,
 } from "./probe";
 import { ProbePanel } from "./ProbePanel";
@@ -1381,9 +1379,10 @@ export default function SpatialApp({
     override = animation?.complete ? undefined : camera,
     released = animation?.complete ? camera : undefined;
   const ready = !!frame && !busy && !failure && !renderError;
-  // The probe draws on the study's own result, or where an animation that
-  // moves it has taken it; other animation frames go without it. The
-  // user's position is kept for when the animation stops.
+  // The probe draws on the study's own result, or on the animation's frame
+  // where the animation stands it (moving it, or holding it at the user's
+  // point); a frame without it goes without. The user's position is kept
+  // for when the animation stops.
   const moving = animation?.probe !== undefined ? animation : null;
   const probeFrame = moving
     ? moving.frame
@@ -1398,13 +1397,11 @@ export default function SpatialApp({
   const probeAt = moving
     ? moving.probe!
     : probeFrame
-      ? gridded(probeTarget(probeFrame.config, probe))
-        ? surfaceProbeAt(
-            probeFrame.result.surfaceDiagnostics!,
-            probe.position,
-            probe.across,
-          ).row
-        : probeIndex(probe.position, probeFrame.result.base.length - 1)
+      ? probeStep(
+          probeFrame.result,
+          probeTarget(probeFrame.config, probe),
+          probe,
+        )
       : 0;
   const probeSetup = moving?.probeSetup ?? probe;
   // The cut as drawn: where an animation that moves it has taken it, or the

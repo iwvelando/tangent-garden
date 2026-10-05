@@ -56,7 +56,7 @@ function Plot({
 // result with diagnostics, or null while they are computed or while an
 // animation that does not move the probe plays. `at` is the sample an
 // animation has moved the probe to; the slider waits until it stops.
-// `away` says why a parameter animation that draws the probe has none on
+// `away` says why an animation that draws the probe has none on
 // the frame it shows.
 export function ProbePanel({
   config,

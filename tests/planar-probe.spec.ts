@@ -311,8 +311,8 @@ for (const [motion, label, sample, t] of [
 
 // Export draws each frame through the same plot: with the geometry fixed,
 // only the probe moves, so a probe animation's first and last frames
-// differ, and a drawing along the curve with the probe on leaves it out of
-// every frame.
+// differ, and a drawing along the curve with the probe on draws it once
+// the drawing reaches it.
 test("exported animations draw the probe where the animation moves it", async ({
   page,
 }) => {
@@ -343,8 +343,85 @@ test("exported animations draw the probe where the animation moves it", async ({
   await probeSwitch(page).uncheck();
   await ready(page);
   await animate.selectOption("reveal");
-  const [, bare] = await ends();
+  const [empty, bare] = await ends();
   expect(bare).not.toBe(last);
+  // Drawn along the curve with the probe on, the first frame has not
+  // reached the probe and is the bare one; the last frame draws it.
+  await probeSwitch(page).check();
+  await ready(page);
+  await animate.selectOption("reveal");
+  const [start, end] = await ends();
+  expect(start).toBe(empty);
+  expect(end).not.toBe(bare);
+});
+
+// Animations that keep the study fixed draw the probe at the user's point.
+// Drawing along the curve draws it once the pen reaches its sample, and
+// says so in the panel until then.
+test("drawing along the curve draws the probe once it reaches it", async ({
+  page,
+}) => {
+  await open(page, {});
+  const j = Math.round(n / 2);
+  await expect(drawn(page, "probe")).toHaveAttribute("data-sample", String(j));
+  await openAnimation(page);
+  await page
+    .getByRole("combobox", { name: "Animate", exact: true })
+    .selectOption("reveal");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  const progress = page.getByRole("slider", { name: "Animation progress" });
+  await progress.fill("0.4");
+  await expect(page.locator(".animation-values")).toHaveText(
+    `t = ${(2 * Math.PI * 0.4).toPrecision(6)}`,
+  );
+  await expect(drawn(page, "probe")).toHaveCount(0);
+  await expect(page.locator(".planar-probe")).toContainText(
+    "The drawing has not reached the probe yet.",
+  );
+  await progress.fill("0.6");
+  await expect(drawn(page, "probe")).toHaveAttribute("data-sample", String(j));
+  await expect(point(page)).toBeDisabled();
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    `t = ${short(ellipse(j).t)}, sample ${j} of ${n}`,
+  );
+  await expect(value(page, "Curvature κ")).toHaveText(
+    `${short(ellipse(j).kappa)} (turning left)`,
+  );
+  await button(page, "Stop").click();
+  await expect(point(page)).toBeEnabled();
+  await expect(drawn(page, "probe")).toHaveAttribute("data-sample", String(j));
+});
+
+// While light is traced the mirror is drawn throughout, and so is its
+// probe; the probe's reflected ray arrives with the light.
+test("tracing light keeps the probe, whose reflected ray arrives with the light", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await ready(page);
+  await choosePreset(page, { label: "Light inside a circle" });
+  await ready(page);
+  await probeSwitch(page).check();
+  await ready(page);
+  await point(page).fill("100");
+  const j = Number(await point(page).inputValue());
+  await expect(drawn(page, "probe-construction")).toHaveCount(1);
+  await openAnimation(page);
+  await page
+    .getByRole("combobox", { name: "Animate", exact: true })
+    .selectOption("trace");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  const progress = page.getByRole("slider", { name: "Animation progress" });
+  await progress.fill("0.01");
+  await expect(drawn(page, "probe")).toHaveAttribute("data-sample", String(j));
+  await expect(drawn(page, "probe-circle")).toHaveCount(1);
+  await expect(drawn(page, "probe-construction")).toHaveCount(0);
+  await progress.fill("1");
+  await expect(drawn(page, "probe-construction")).toHaveCount(1);
+  await expect(drawn(page, "probe")).toHaveAttribute("data-sample", String(j));
 });
 
 // The 2D palette names the probe's inks as roles, for theme-following
@@ -400,4 +477,53 @@ test("the clover example opens probed, bends both ways, and other examples leave
   await ready(page);
   await expect(probeSwitch(page)).not.toBeChecked();
   await expect(drawn(page, "probe")).toHaveCount(0);
+});
+
+// Parallel light reflected at P, where the radius of curvature is ρ and the
+// incidence θ, gathers at Q, ρ·cos θ/2 along the reflected ray; the ray's
+// chord of the osculating circle about C is 2ρ·cos θ = 2(Q − P)·(C − P)/|Q − P|
+// long. So 2|Q − P|² = (Q − P)·(C − P), whatever the mirror. The example's
+// trace draws the probe throughout, and its ray once the light arrives.
+test("the oval mirror example's caustic lies a quarter along the probe's chord", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await ready(page);
+  await choosePreset(page, { label: "Sunlight gathering in an oval mirror" });
+  await ready(page);
+  await expect(probeSwitch(page)).toBeChecked();
+  await openAnimation(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("trace");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  const progress = page.getByRole("slider", { name: "Animation progress" });
+  // Back and forth: the light has not reached the mirror at the start, and
+  // the trace is whole halfway through.
+  await progress.fill("0");
+  await expect(drawn(page, "probe-circle")).toHaveCount(1);
+  await expect(drawn(page, "probe-construction")).toHaveCount(0);
+  await progress.fill("0.5");
+  await expect(drawn(page, "probe-construction")).toHaveCount(1);
+  const P = {
+      x: await attr(page, "probe-construction", "x1"),
+      y: await attr(page, "probe-construction", "y1"),
+    },
+    Q = {
+      x: await attr(page, "probe-construction", "x2"),
+      y: await attr(page, "probe-construction", "y2"),
+    },
+    C = {
+      x: await attr(page, "probe-circle", "cx"),
+      y: await attr(page, "probe-circle", "cy"),
+    };
+  expect(await attr(page, "probe-point", "cx")).toBeCloseTo(P.x, 6);
+  const pq = { x: Q.x - P.x, y: Q.y - P.y },
+    pc = { x: C.x - P.x, y: C.y - P.y };
+  const reach = Math.hypot(pq.x, pq.y),
+    chord = (2 * (pq.x * pc.x + pq.y * pc.y)) / reach;
+  // Tens of pixels long, so not degenerate; a quarter to 1 part in 1000.
+  expect(reach).toBeGreaterThan(30);
+  expect(Math.abs(reach / chord - 0.25)).toBeLessThan(2.5e-4);
 });

@@ -72,10 +72,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Open:**
 
-- **Probe during fixed-study animations.**
-  - 3D: reveal, orbit, camera path, trace and peel leave the probe out.
-  - 2D: reveal and trace leave it out.
-  - The study is fixed in most of these, so diagnostics are computed once. Reveal needs a stated policy for a probe at a sample not yet drawn.
 - **Exact probe between samples** (2D and 3D), if snapping proves too coarse. Today the probe snaps to samples, and a held probe can step by half a sample spacing between parameter frames.
 - **3D surface probe held at its own (u, v)** under parameter tracks, rather than its share of the grid.
 - **3D curve-probe construction highlights** on harmonic and field studies. The canal's contact circle belongs to the surface probe and is drawn there, so do not add it to the curve probe.

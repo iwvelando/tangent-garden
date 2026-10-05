@@ -8,6 +8,7 @@ import type { Batch } from "./scene";
 import {
   curveProbeMotionHelp,
   curveProbeMotions,
+  fixedAnimationsHelp,
   heldCurveSample,
   probeIndex,
   type ProbeMotion,
@@ -184,7 +185,7 @@ export function probeHelp(c: SpatialConfig) {
   const { highlight } = probeSupport(c);
   return `Describes the curve itself, not the surface or curves built on it. Moves between the curve's samples (more samples give finer steps) and shows the Frenet frame there: tangent T, principal normal N and binormal B, with the osculating circle of radius 1/κ in the plane of T and N${
     highlight ? `, and ${highlight}` : ""
-  }. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it when they move it along the curve ("Move the probe along the curve") or vary parameters, where Probe chooses whether it stays at its t, keeps its share of the curve's length, or moves along the curve; other animations leave it out, and still images include it.`;
+  }. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it when they move it along the curve ("Move the probe along the curve") or vary parameters, where Probe chooses whether it stays at its t, keeps its share of the curve's length, or moves along the curve. ${fixedAnimationsHelp}`;
 }
 
 const vertices = (points: Vec3[]) =>
@@ -465,9 +466,9 @@ export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
       c.rays.interaction === "refract"
         ? " and points beyond the critical angle, where the light is totally reflected and nothing is transmitted,"
         : ""
-    } have no outgoing wavefront. Animations and their exports show it when they move it ("Move the probe along the ${m}") or vary parameters; other animations leave it out, and still images include it.`;
+    } have no outgoing wavefront. Animations and their exports show it when they move it ("Move the probe along the ${m}") or vary parameters. ${fixedAnimationsHelp}`;
   }
-  return `Describes the ${t.surface} at a point: its normal, its two principal directions, and their normal-section circles of radius 1/|κ| through the point, centred on the focal points (the centres of curvature) on the normal line. ${t.help}. Curvatures use A = −dn, so a sphere with its outward normal has κ = −1/R. Where a centre lies beyond 100 study radii it is at infinity and its circle is not drawn; at an umbilic every direction is principal and none is drawn; where the surface is singular there is no normal. Animations and their exports show it when they move it ("Move the probe along the ${t.surface}") or vary parameters; other animations leave it out, and still images include it.`;
+  return `Describes the ${t.surface} at a point: its normal, its two principal directions, and their normal-section circles of radius 1/|κ| through the point, centred on the focal points (the centres of curvature) on the normal line. ${t.help}. Curvatures use A = −dn, so a sphere with its outward normal has κ = −1/R. Where a centre lies beyond 100 study radii it is at infinity and its circle is not drawn; at an umbilic every direction is principal and none is drawn; where the surface is singular there is no normal. Animations and their exports show it when they move it ("Move the probe along the ${t.surface}") or vary parameters. ${fixedAnimationsHelp}`;
 }
 
 // The grid sample at a probe's fractions: the nearest row, and the nearest
@@ -687,6 +688,28 @@ export function probeSteps(result: SpatialResult, target: ProbeTarget) {
       ? d.u.length - 1
       : null;
   return result.diagnostics ? result.diagnostics.curvature.length - 1 : null;
+}
+
+// The step the probe stands at in a result with its diagnostics: the curve
+// sample, or a surface's row (its column follows probe.across).
+export function probeStep(
+  result: SpatialResult,
+  target: ProbeTarget,
+  probe: Probe,
+) {
+  return gridded(target)
+    ? surfaceProbeAt(result.surfaceDiagnostics!, probe.position, probe.across)
+        .row
+    : probeIndex(probe.position, result.base.length - 1);
+}
+
+// The base sample (or a surface's row) a reveal draws the probe's step with.
+export function probeSample(
+  result: SpatialResult,
+  target: ProbeTarget,
+  step: number,
+) {
+  return gridded(target) ? result.surfaceDiagnostics!.along[step] : step;
 }
 
 // How the probe moves while parameter tracks reshape the study (see
