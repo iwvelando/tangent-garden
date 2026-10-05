@@ -357,7 +357,10 @@ export function buildScene(result: SpatialResult) {
           ]),
           phase,
         );
-      return vertices(pairs(m.points, result.breaks), phase);
+      return vertices(
+        curve(m.points, result.breaks, result.adaptive?.involute?.[k]),
+        phase,
+      );
     });
     return batch(data, "lines", 3);
   }

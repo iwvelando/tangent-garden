@@ -37,15 +37,19 @@ type RefinedPath struct {
 
 // AdaptiveResult holds the refined curves a study draws: the curve its
 // construction is built on (Base), the base curve beneath a derived input
-// (Parent), a tangent projection, and an inversion image. A path that is
-// not drawn, or cannot be evaluated between samples, is absent: integrated
-// trajectories and pursuits, and an involute (input or construction), whose
-// arc length is measured on the uniform grid.
+// (Parent), a tangent projection, an inversion image, and the involute
+// construction's members. An involute input is evaluated by its own
+// quadrature, and a member's arc length is carried on from the sample
+// before. A path that is not drawn, or cannot be evaluated between samples,
+// is absent: integrated trajectories and pursuits.
 type AdaptiveResult struct {
 	Base       *RefinedPath `json:"base,omitempty"`
 	Parent     *RefinedPath `json:"parent,omitempty"`
 	Projection *RefinedPath `json:"projection,omitempty"`
 	Image      *RefinedPath `json:"image,omitempty"`
+	// Involute holds the involute construction's members, indexed like
+	// its result's members.
+	Involute []*RefinedPath `json:"involute,omitempty"`
 }
 
 // space measures points for refinement.

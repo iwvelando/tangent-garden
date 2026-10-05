@@ -2469,4 +2469,82 @@ export const spatialPresets: {
     sight: { sheets: "opaque", opacity: 0.35, hidden: "hide", weight: "fine" },
     probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
   },
+  // A deltoid, (2 cos t + cos 2t, 2 sin t − sin 2t), lifted into a
+  // three-cornered hat by z = 0.06 sin 3t + 0.6 cos 3t: its corners rise
+  // to z = 0.6 and stay regular, since z′ = 0.18 there, but the tangent
+  // turns through half a turn within a few samples of each. The free end of
+  // every string swings round a half circle of radius |c − s| there, and
+  // refining between samples draws each swing round. Four strings of 1 to 5
+  // are unwound from t₀ = 1, on the brim between two corners.
+  {
+    name: "Strings swung round a three-cornered hat",
+    detail:
+      "Four involutes unwound from a lifted deltoid, each swinging a half circle round every sharp corner",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "involute",
+      samples: 240,
+      lines: 48,
+      adaptive: true,
+      involute: {
+        anchor: 1,
+        offset: 0,
+        family: { enabled: true, from: 1, to: 5, count: 4 },
+      },
+      curve: {
+        x: "2*cos(t)+cos(2*t)",
+        y: "2*sin(t)-sin(2*t)",
+        z: "0.06*sin(3*t)+0.6*cos(3*t)",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    view: { yaw: 0.5, pitch: 0.75, zoom: 1, panX: 0, panY: 0 },
+  },
+  // An astroid, (3 cos t + cos 3t, 3 sin t − sin 3t), lifted into a
+  // four-cornered crown by z = 0.08 sin 4t + 0.5 cos 4t, regular at its
+  // raised corners (z′ = 0.32). One string unwound from t₀ = 0.3 is
+  // lengthened from −8 to 8 and back: its involute sweeps across the crown,
+  // and at every corner its end swings a half circle, drawn round in every
+  // frame.
+  {
+    name: "A string swept across a four-cornered crown",
+    detail:
+      "As the string lengthens, its involute sweeps across a lifted astroid, swinging round each raised corner",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "involute",
+      samples: 240,
+      lines: 40,
+      adaptive: true,
+      involute: {
+        anchor: 0.3,
+        offset: -8,
+        family: { enabled: false, from: -8, to: 8, count: 5 },
+      },
+      curve: {
+        x: "3*cos(t)+cos(3*t)",
+        y: "3*sin(t)-sin(3*t)",
+        z: "0.08*sin(4*t)+0.5*cos(4*t)",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    view: { yaw: 0.4, pitch: 0.8, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "offset", from: "-8", to: "8" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

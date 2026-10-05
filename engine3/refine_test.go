@@ -471,14 +471,14 @@ func TestRefinementOfDerivedInputs(t *testing.T) {
 	for k, p := range r.Adaptive.Parent.Points {
 		near(t, p, trefoilAt(c, 2*math.Pi*r.Adaptive.Parent.At[k]/float64(c.Samples)), 1e-12)
 	}
-	// An involute input is measured on the uniform grid, so only its base
-	// is refined.
+	// An involute input is refined by its own evaluator, with its base.
 	c.Input = "involute"
 	c.Unwinding = UnwindingRequest{Anchor: 0.3, Offset: 1}
 	r = refinedStudy(t, c)
-	if r.Adaptive.Base != nil || r.Adaptive.Parent == nil {
-		t.Fatal("involute input refined")
+	if r.Adaptive.Base == nil || r.Adaptive.Parent == nil {
+		t.Fatal("an involute input and its base are both drawn and both refined")
 	}
+	checkPath(t, r.Adaptive.Base, r.Base, r.Breaks)
 }
 
 func TestRefinementSkipsIntegratedAndSurfaceStudies(t *testing.T) {

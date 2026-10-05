@@ -16,7 +16,7 @@ These are the facts that decide where a refinement applies.
 | Keyboard       | **None on the drawing**                                                                                                           | Arrows orbit, shift-arrows pan, +/− zoom, Home                                       | Same as 3D                                                   |
 | Still export   | SVG; PNG fixed at 2000 × 1520 (`web/ExportImageMenu.tsx`, shared)                                                                 | PNG fixed at 2000 × 1520; SVG with embedded PNG; Lines (SVG) on the same page        | As 2D                                                        |
 | Probe          | Curve                                                                                                                             | Curve, surface, light                                                                | None (no user curve)                                         |
-| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes | Base, derived input, projections, inversion                                          | None (no user curve)                                         |
+| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes | Base, derived input (involute too), projections, inversion, involutes                | None (no user curve)                                         |
 | Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`)     | Same                                                                                 | Same                                                         |
 
 The 3D-only features are 3D-only by nature: cut, see-through, surface and light probes, camera paths, the ride, perspective lenses, typed mesh transport and adaptive implicit meshes. Do not port them to 2D or 4D unless an item below says so.
@@ -130,7 +130,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 **Open:**
 
 - **3D:**
-  - Involutes and the involute input. Their arc length is integrated on the uniform grid.
   - Frame strands.
   - Partner threads.
   - Canal circles.

@@ -70,16 +70,17 @@ func (q InvoluteRequest) offsets(samples int) ([]float64, error) {
 
 // involutes measures arc length outward from the anchor with Simpson's rule
 // on each sample interval, from speeds at its ends and midpoint, and stops at
-// the first invalid sample or break on either side.
-func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*Vec3, tangents []Vec3, speeds, middles []float64, breaks []bool, lines int) (*InvoluteResult, error) {
+// the first invalid sample or break on either side. It returns the arc
+// length too, from which refinement evaluates members between samples.
+func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*Vec3, tangents []Vec3, speeds, middles []float64, breaks []bool, lines int) (*InvoluteResult, *strung, error) {
 	n := len(base) - 1
 	offsets, err := q.offsets(n)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	t0 := q.Anchor
 	if !finite(t0) || t0 < lo || t0 > hi {
-		return nil, fieldErr("involute.anchor", "the anchor t₀ must lie within the domain [%.6g, %.6g]", lo, hi)
+		return nil, nil, fieldErr("involute.anchor", "the anchor t₀ must lie within the domain [%.6g, %.6g]", lo, hi)
 	}
 	h := (hi - lo) / float64(n)
 	k := min(n-1, int(math.Floor((t0-lo)/h)))
@@ -95,7 +96,7 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 	left := (t0 - tk) / 6 * (speeds[k] + 4*speed((tk+t0)/2) + at)
 	right := (tk1 - t0) / 6 * (at + 4*speed((t0+tk1)/2) + speeds[k+1])
 	if base[k] == nil || base[k+1] == nil || breaks[k+1] || !finite(left) || !finite(right) {
-		return nil, fieldErr("involute.anchor", "the anchor t₀ must lie on a regular, continuous stretch of the curve it unwinds, not on a cusp or break")
+		return nil, nil, fieldErr("involute.anchor", "the anchor t₀ must lie on a regular, continuous stretch of the curve it unwinds, not on a cusp or break")
 	}
 	arc := make([]float64, n+1)
 	reached := make([]bool, n+1)
@@ -120,7 +121,7 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 		collapsed := true
 		for i := range points {
 			if reached[i] {
-				p := base[i].add(tangents[i].mul(c - arc[i]))
+				p := filament(*base[i], tangents[i], c, arc[i])
 				points[i] = &p
 				if first == nil {
 					first = &p
@@ -139,5 +140,57 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 			out.Strings = append(out.Strings, Ruling{i, base[i].add(tangents[i].mul(from)), base[i].add(tangents[i].mul(to))})
 		}
 	}
-	return out, nil
+	return out, &strung{evaluate, speed, lo, hi, n, arc, reached, base, tangents, speeds}, nil
+}
+
+// filament is the free end of a string of length c unwound by s along the
+// tangent T at r. The samples and refinement share this one compiled
+// function, so a refined member passes exactly through the samples.
+//
+//go:noinline
+func filament(r, T Vec3, c, s float64) Vec3 { return r.add(T.mul(c - s)) }
+
+// strung is the involute construction's arc length at the samples, from
+// which members are evaluated between them.
+type strung struct {
+	evaluate evaluation
+	speed    func(float64) float64
+	lo, hi   float64
+	n        int
+	arc      []float64
+	reached  []bool
+	base     []*Vec3
+	tangents []Vec3
+	speeds   []float64
+}
+
+// knot is sample i's parameter, as Compute places it.
+func (u *strung) knot(i int) float64 {
+	return u.lo*(1-float64(i)/float64(u.n)) + u.hi*float64(i)/float64(u.n)
+}
+
+// member evaluates the member with string length c at any t between two
+// reached samples, nonfinite elsewhere. Its arc length is the sample's own
+// at the sample at or before t, carried on to t by the Simpson step the
+// samples take, over part of the interval: so it converges at fourth order,
+// as at the samples, and is undefined wherever a sample there would be.
+func (u *strung) member(c float64) func(float64) Vec3 {
+	undefined := Vec3{math.NaN(), 0, 0}
+	return func(t float64) Vec3 {
+		i := max(0, min(u.n-1, int(math.Floor((t-u.lo)/(u.hi-u.lo)*float64(u.n)))))
+		if !u.reached[i] || !u.reached[i+1] {
+			return undefined
+		}
+		start := u.knot(i)
+		if t == start {
+			return filament(*u.base[i], u.tangents[i], c, u.arc[i])
+		}
+		r, v, _, ok := u.evaluate(t)
+		speed := v.norm()
+		if !ok || !r.valid() || !v.valid() || speed < 1e-9 {
+			return undefined
+		}
+		s := u.arc[i] + (t-start)/6*(u.speeds[i]+4*u.speed((start+t)/2)+speed)
+		return filament(r, v.mul(1/speed), c, s)
+	}
 }
