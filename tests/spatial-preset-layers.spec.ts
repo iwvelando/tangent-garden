@@ -12,8 +12,12 @@ async function ready(page: Page) {
   await expect(page.locator("#spatial-artwork")).toBeVisible();
   await settled(page);
 }
+// The Klein bottle's mesh and 24 sections take about 2.5 s locally and
+// several times that on CI, past the default 5 s.
 async function settled(page: Page) {
-  await expect(stage(page)).toHaveAttribute("aria-busy", "false");
+  await expect(stage(page)).toHaveAttribute("aria-busy", "false", {
+    timeout: 30_000,
+  });
 }
 // The layers an SVG export records, which are the layers it was drawn with.
 async function exported(page: Page) {
