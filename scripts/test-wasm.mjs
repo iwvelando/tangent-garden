@@ -1891,8 +1891,39 @@ const spatialCanal = (canal, frame = {}, study = {}) =>
   assert.match(spatialCanal({ meridians: 13 }).error, /meridians/);
   assert.match(spatialCanal({ profile: "a*t" }).error, /ρ\(t\)/);
   assert.match(spatialCanal({}, { closure: "trim" }).error, /closure/);
+  // Twisted 30 times round 240 samples and refined, every point of a
+  // meridian, between samples too, lies on its winding round the torus:
+  // c + 0.5(cos θ e_z + sin θ (T × e_z)), θ = 2πk/3 + 30t.
+  const wound = spatialCanal(
+    { meridians: 3 },
+    { twist: 30 },
+    { samples: 240, adaptive: true },
+  );
+  assert.equal(wound.adaptive.meridians.length, 3);
+  wound.adaptive.meridians.forEach((path, k) => {
+    assert.equal(path.points.length, path.at.length);
+    assert.ok(path.inserted > 0);
+    path.points.forEach((p, j) => {
+      const s = (2 * Math.PI * path.at[j]) / 240;
+      const theta = (2 * Math.PI * k) / 3 + 30 * s;
+      const out = 2 + 0.5 * Math.sin(theta);
+      const want = {
+        x: out * Math.cos(s),
+        y: out * Math.sin(s),
+        z: 0.5 * Math.cos(theta),
+      };
+      for (const axis of ["x", "y", "z"])
+        assert.ok(Math.abs(p[axis] - want[axis]) < 1e-9, `refined at ${s}`);
+    });
+  });
+  assert.equal(
+    spatialCanal({ meridians: 3 }, { twist: 30 }, { samples: 240 }).adaptive,
+    undefined,
+  );
 }
-console.log("WASM canal surface: torus, lost envelope and validation passed");
+console.log(
+  "WASM canal surface: torus, lost envelope, refined meridians and validation passed",
+);
 const spatialField = (field, construction = "none") =>
   JSON.parse(
     tangentGardenSpatial(

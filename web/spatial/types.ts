@@ -277,8 +277,9 @@ export type RefinedPath = SharedRefinedPath<Vec3>;
 // absent when it is not drawn or not refined (a trajectory or a pursuit).
 // involute holds the involute construction's members, indexed like
 // SpatialResult.involute.members, strands the framed construction's
-// offset strands, indexed like SpatialResult.frame.strands, and partner the
-// ruled construction's partner thread (SpatialResult.plus).
+// offset strands, indexed like SpatialResult.frame.strands, partner the
+// ruled construction's partner thread (SpatialResult.plus), and meridians
+// the canal's meridians, indexed like SpatialResult.canal.meridians.
 export type AdaptiveResult = {
   base?: RefinedPath;
   parent?: RefinedPath;
@@ -287,6 +288,7 @@ export type AdaptiveResult = {
   involute?: RefinedPath[];
   strands?: RefinedPath[];
   partner?: RefinedPath;
+  meridians?: RefinedPath[];
 };
 export type SpatialResult = {
   base: (Vec3 | null)[];

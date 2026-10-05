@@ -113,7 +113,7 @@ func contact(R, slope, speed float64) (axial, radius float64, ok, collapsed bool
 	return -R * k, R * math.Sqrt(1-k*k), true, false
 }
 
-func canalSurface(c Request, out *Result, radius func(float64) (float64, float64, float64, bool), frame carried, tangents, accelerations []Vec3, speeds, middles []float64, lo, hi float64, closed bool) error {
+func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float64) (float64, float64, float64, bool), frame carried, tangents, accelerations []Vec3, speeds, middles []float64, lo, hi float64, closed bool) error {
 	n := c.Samples
 	at := func(i float64) float64 { return lo*(1-i/float64(n)) + hi*i/float64(n) }
 	base := out.Base
@@ -206,6 +206,19 @@ func canalSurface(c Request, out *Result, radius func(float64) (float64, float64
 			out.Omitted++
 		}
 	}
+	q.Meridians = make([][]*Vec3, c.Canal.Meridians)
+	for k := range q.Meridians {
+		q.Meridians[k] = make([]*Vec3, n+1)
+		for i := range base {
+			if circled[i] {
+				p := centers[i].add(frame.direction(i, 2*math.Pi*float64(k)/float64(c.Canal.Meridians)).mul(radii[i]))
+				q.Meridians[k][i] = &p
+			}
+		}
+	}
+	if out.Adaptive != nil {
+		refineMeridians(c, out, q, radius, frame, evaluate, lo, hi)
+	}
 	point := func(i int, u, v Vec3, theta float64) Vec3 {
 		return centers[i].add(u.mul(radii[i] * math.Cos(theta)).add(v.mul(radii[i] * math.Sin(theta))))
 	}
@@ -278,16 +291,6 @@ func canalSurface(c Request, out *Result, radius func(float64) (float64, float64
 			out.Mesh = append(out.Mesh, vertex(a, k), vertex(b, k), vertex(a, k+1), vertex(b, k), vertex(b, k+1), vertex(a, k+1))
 		}
 	}
-	q.Meridians = make([][]*Vec3, c.Canal.Meridians)
-	for k := range q.Meridians {
-		q.Meridians[k] = make([]*Vec3, n+1)
-		for i := range base {
-			if circled[i] {
-				p := centers[i].add(frame.direction(i, 2*math.Pi*float64(k)/float64(c.Canal.Meridians)).mul(radii[i]))
-				q.Meridians[k][i] = &p
-			}
-		}
-	}
 	for line := 0; line < c.Lines; line++ {
 		i := line * n / (c.Lines - 1)
 		if !sphere[i] || !frame.ok[i] {
@@ -307,6 +310,108 @@ func canalSurface(c Request, out *Result, radius func(float64) (float64, float64
 		out.Probe = canalProbe(n, closed && q.Closed, lo, hi, at, radius, base, R, slope, sphere, circled, frame, tangents, accelerations, speeds)
 	}
 	return nil
+}
+
+// contacts evaluates the contact circle at any t between two samples the
+// frame joins, as the samples have it but from the profile's own radius
+// and slope at t, with the frame round it (see along); ok is false where
+// the sphere or its circle is not real. Meridians are judged at the same
+// parameters, so each circle is evaluated once for all of them.
+func contacts(c Request, frame carried, evaluate evaluation, radius func(float64) (float64, float64, float64, bool), lo, hi float64) func(float64) (contactCircle, bool) {
+	at := frame.along(c, evaluate, lo, hi)
+	type known struct {
+		circle contactCircle
+		ok     bool
+	}
+	seen := map[float64]known{}
+	return func(t float64) (contactCircle, bool) {
+		if k, ok := seen[t]; ok {
+			return k.circle, k.ok
+		}
+		g, ok := at(t)
+		var circle contactCircle
+		if ok {
+			R, slope, _, defined := radius(t)
+			ok = defined && finite(R) && finite(slope) && R > 0
+			if ok {
+				var axial float64
+				axial, circle.radius, ok, _ = contact(R, slope, g.v.norm())
+				circle.frameAt, circle.center = g, g.r.add(g.v.unit().mul(axial))
+			}
+		}
+		seen[t] = known{circle, ok}
+		return circle, ok
+	}
+}
+
+// contactCircle is a contact circle between samples: its centre and radius,
+// and the frame that measures the angle round it.
+type contactCircle struct {
+	frameAt
+	center Vec3
+	radius float64
+}
+
+// refineMeridians refines each meridian between samples. A gap or jump one
+// finds there breaks the surface, so every other meridian is refined again
+// unless it found the same; each path's Breaks counts only its own finds.
+func refineMeridians(c Request, out *Result, q *CanalResult, radius func(float64) (float64, float64, float64, bool), frame carried, evaluate evaluation, lo, hi float64) {
+	m := len(q.Meridians)
+	if m == 0 {
+		return
+	}
+	circles := contacts(c, frame, evaluate, radius, lo, hi)
+	meridian := func(k int) func(float64) Vec3 {
+		turn := 2 * math.Pi * float64(k) / float64(m)
+		return func(t float64) Vec3 {
+			g, ok := circles(t)
+			if !ok {
+				return Vec3{math.NaN(), 0, 0}
+			}
+			return g.center.add(g.direction(c.Frame.Angle + turn).mul(g.radius))
+		}
+	}
+	paths := make([]*RefinedPath, m)
+	given, found := make([][]bool, m), make([][]int, m)
+	// Whether meridian k was refined knowing every break in breaks.
+	current := func(k int, breaks []bool) bool {
+		if given[k] == nil {
+			return false
+		}
+		own := append([]bool(nil), given[k]...)
+		for _, i := range found[k] {
+			own[i+1] = true
+		}
+		for i, broken := range breaks {
+			if broken && !own[i] {
+				return false
+			}
+		}
+		return true
+	}
+	for {
+		breaks := append([]bool(nil), q.Breaks...)
+		refined := false
+		for k, points := range q.Meridians {
+			if current(k, breaks) {
+				continue
+			}
+			paths[k], found[k] = refinePath(points, breaks, meridian(k), lo, hi, pathTolerance(points), refineBudget)
+			given[k], refined = breaks, true
+		}
+		if !refined {
+			break
+		}
+		for k := range found {
+			for _, i := range found[k] {
+				if !q.Breaks[i+1] {
+					q.Breaks[i+1] = true
+					out.Omitted++
+				}
+			}
+		}
+	}
+	out.Adaptive.Meridians = paths
 }
 
 // drawn is what the canal draws beside the base, as fitted families: its

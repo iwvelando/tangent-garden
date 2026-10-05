@@ -488,7 +488,7 @@ func compute(c Request) (Result, error) {
 		framing := c
 		framing.Frame = c.Canal.frame(c.Frame)
 		frame := frames(framing, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
-		if err := canalSurface(c, &out, radius, frame, tangents, accelerations, speeds, middles, lo, hi, closed); err != nil {
+		if err := canalSurface(c, &out, evaluate, radius, frame, tangents, accelerations, speeds, middles, lo, hi, closed); err != nil {
 			return Result{}, err
 		}
 		families := append([][]*Vec3{out.Base}, out.Canal.drawn()...)

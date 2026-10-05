@@ -2722,5 +2722,64 @@ export const spatialPresets: {
       },
       path: { style: "steady", keys: [] },
     },
+  }, // A tube round the trefoil swelling into nine beads, R = 0.3(1 +
+  // 0.35 sin 9t), with twelve meridians wound 30 times about the knot, the
+  // frame's return angle spread along it so every stripe closes. About
+  // eight samples a turn; refining between samples draws every stripe as a
+  // smooth spiral over the beads.
+  {
+    name: "A beaded trefoil wound with spiral stripes",
+    detail:
+      "Twelve meridians wound thirty times about a tube that swells into nine beads",
+    config: {
+      ...base,
+      construction: "canal",
+      samples: 240,
+      lines: 12,
+      adaptive: true,
+      canal: { radius: 0.3, profile: "1+0.35*sin(9*t)", meridians: 12 },
+      frame: { ...base.frame, twist: 30, closure: "distribute" },
+    },
+  },
+  // A tube of radius R = 0.3(1 + 0.2 sin 5t) round a helix that coils five
+  // times about the vertical, about 51 long. Its six meridians twist 30
+  // times along it, eight samples a turn, steep as a cord's strands, and
+  // unwind until they follow the carried frame and back; the helix is
+  // open, so every frame ends without a seam, and refining between samples
+  // keeps each strand smooth.
+  {
+    name: "A cord twisted round a spring",
+    detail:
+      "Six meridians twisted thirty times along a tube coiled five times, unwinding and back",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      samples: 240,
+      lines: 12,
+      adaptive: true,
+      canal: { radius: 0.3, profile: "1+0.2*sin(5*t)", meridians: 6 },
+      frame: { ...base.frame, reference: { x: 0, y: 1, z: 0 }, twist: 30 },
+      curve: {
+        x: "1.6*cos(t)",
+        y: "0.3*t",
+        z: "1.6*sin(t)",
+        a: 1,
+        min: -5 * Math.PI,
+        max: 5 * Math.PI,
+      },
+    },
+    view: { ...turnTo(initialView, "front"), pitch: 0.3, zoom: 1.1 },
+    flight: {
+      duration: 14,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "twist", from: "30", to: "0" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
   },
 ];
