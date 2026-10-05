@@ -5,10 +5,13 @@
 // Mirrors engine.RefinedPath and engine3.RefinedPath: a drawn curve with
 // points inserted between its uniform samples. at is each point's position
 // in sample steps, whole at the samples (all present) and fractional
-// between them; a null point breaks the line.
+// between them; a null point breaks the line. A 2D caustic also says
+// whether each point is virtual, as the result's own virtual does at the
+// samples.
 export type RefinedPath<P> = {
   points: (P | null)[];
   at: number[];
+  virtual?: boolean[];
   tolerance: number;
   inserted: number;
   breaks: number;
@@ -34,6 +37,7 @@ export function revealRefined<P>(
         ...path,
         points: path.points.slice(0, count),
         at: path.at.slice(0, count),
+        ...(path.virtual && { virtual: path.virtual.slice(0, count) }),
       };
 }
 

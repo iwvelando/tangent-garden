@@ -281,33 +281,8 @@ func Compute(q Request) (Result, error) {
 			radius = math.Max(math.Abs(q.Stack.From), math.Abs(q.Stack.To))
 		}
 	}
-	incident := func(t float64) Vec {
-		if q.Source.Kind == "parallel" {
-			a := q.Source.Angle * math.Pi / 180
-			return Vec{math.Cos(a), math.Sin(a)}
-		}
-		delta := g(t).Sub(q.Source.Position)
-		if delta.Norm() < 1e-9 {
-			return Vec{math.NaN(), math.NaN()}
-		}
-		return delta.Unit()
-	}
-	direction := func(t float64) Vec {
-		dp, _ := derivatives(g, t, lo, hi)
-		if dp.Norm() < 1e-9 {
-			return Vec{math.NaN(), math.NaN()}
-		}
-		i := incident(t)
-		n := dp.Perp().Unit()
-		if q.Kind == "catacaustic" {
-			return Reflect(i, n)
-		}
-		v, ok := Refract(i, n, q.NIncident/q.NTransmitted)
-		if !ok {
-			return Vec{math.NaN(), math.NaN()}
-		}
-		return v
-	}
+	incident, direction := q.incident(g), q.direction(g)
+	caustics := q.causticAt(f, g)
 	// A tangent that reverses within the step before t marks a cusp or
 	// corner between samples. Constructions oriented by the tangent jump
 	// there to its other side: offsets, the involute's unwinding direction,
@@ -504,10 +479,7 @@ func Compute(q Request) (Result, error) {
 				}
 			}
 			if !tir && dir.Valid() {
-				dprime, _ := derivatives(direction, t, lo, hi)
-				var s float64
-				target, s = Envelope(p, dp, dir, dprime)
-				virtual = s < 0
+				target, virtual = caustics.point(t, p, dp)
 			}
 		}
 		if !paths {

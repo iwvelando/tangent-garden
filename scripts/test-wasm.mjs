@@ -89,6 +89,29 @@ for (const [k, radius] of [0.8, 0.5].entries()) {
     member.points.every((p) => Math.abs(Math.hypot(p.x, p.y) - radius) < 1e-7),
   );
 }
+// A refined caustic carries whether each point is virtual: the nephroid,
+// parallel light reflected in the unit circle, is virtual on the half
+// x < 0 of the circle, its points with x < 0 on that half.
+const planarNephroid = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "catacaustic",
+      curve: { ...config.curve, x: "cos(t)", y: "sin(t)" },
+      source: { kind: "parallel", position: { x: 0, y: 0 }, angle: 0 },
+      samples: 64,
+      adaptive: true,
+    }),
+  ),
+).adaptive.derived;
+assert.ok(planarNephroid.inserted > 0 && planarNephroid.breaks === 0);
+assert.equal(planarNephroid.virtual.length, planarNephroid.points.length);
+assert.ok(planarNephroid.virtual.some(Boolean));
+assert.ok(
+  planarNephroid.points.every(
+    (p, k) => Math.abs(p.x) < 1e-3 || p.x < 0 === planarNephroid.virtual[k],
+  ),
+);
 console.log("Planar refinement WASM bridge passed.");
 // The probe's diagnostics: a circle of radius 2 turning left has κ = ½ and
 // its center at the origin at every sample, and a quarter turn's length π.

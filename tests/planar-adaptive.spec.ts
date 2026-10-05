@@ -73,6 +73,36 @@ test("reveal shows refined points up to the last revealed sample", () => {
   );
 });
 
+test("reveal keeps a refined caustic's virtual flags with its points", () => {
+  const p = (x: number): Vec => ({ x, y: 0 });
+  const derived = {
+    points: [p(0), p(0.5), p(1), p(1.001), p(2)],
+    at: [0, 0.5, 1, 1.001, 2],
+    virtual: [false, false, false, true, true],
+    tolerance: 1e-3,
+    inserted: 2,
+    breaks: 0,
+    unresolved: 0,
+    exhausted: false,
+  };
+  const result: Result = {
+    base: [p(0), p(1), p(2)],
+    derived: [p(0), p(1), p(2)],
+    virtual: [false, false, true],
+    rays: [],
+    family: [],
+    circles: [],
+    rolling: [],
+    warnings: [],
+    invalid: 0,
+    adaptive: { derived },
+  };
+  const shown = reveal(result, 1 / 2).adaptive!.derived!;
+  expect(shown.points).toEqual([p(0), p(0.5), p(1)]);
+  expect(shown.virtual).toEqual([false, false, false]);
+  expect(reveal(result, 1).adaptive!.derived).toEqual(derived);
+});
+
 test("the control appears only for curves refinable between samples, and toggles back to the same drawing", async ({
   page,
 }) => {
@@ -343,4 +373,98 @@ test("a wavefront through a three-pointed star opens refined and stays refined a
   );
   expect(outward.spread).toBeLessThan(1.01);
   expect(outward.nearest).toBeGreaterThan(0.99);
+});
+
+const hammered = "Sunlight in a hammered cup",
+  crown = "A crown of cusps in a sunlit cup";
+
+// The ends of a drawn path's runs, between its moves.
+const runEnds = (d: string | null) => {
+  const points = pathPoints(d),
+    ends: Point[] = [];
+  points.forEach((p, k) => {
+    if (p && (!points[k - 1] || !points[k + 1])) ends.push(p);
+  });
+  return ends;
+};
+// How many ends of the solid caustic have an end of the dashed one within
+// reach: where the caustic crosses its curve, from real to virtual.
+const meetings = async (page: Page, reach: number) => {
+  const solid = runEnds(
+      await art(page).getByTestId("derived-curve").getAttribute("d"),
+    ),
+    dashed = runEnds(
+      await art(page).getByTestId("virtual-derived-curve").getAttribute("d"),
+    );
+  return solid.filter((p) =>
+    dashed.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < reach),
+  ).length;
+};
+
+// Light travelling along +x gathers ahead of the half of the cup it meets
+// face on, x > 0, and appears to gather behind the other: the solid real
+// caustic keeps to the right of the cup's center and the dashed virtual
+// one to the left. The page center is the middle of the drawn cup.
+const keepsToItsSide = async (page: Page) => {
+  const xs = (d: string | null) =>
+      pathPoints(d)
+        .filter((p): p is Point => !!p)
+        .map((p) => p.x),
+    cup = xs(await base(page).getAttribute("d")),
+    center = (Math.min(...cup) + Math.max(...cup)) / 2;
+  const solid = xs(
+      await art(page).getByTestId("derived-curve").getAttribute("d"),
+    ),
+    dashed = xs(
+      await art(page).getByTestId("virtual-derived-curve").getAttribute("d"),
+    );
+  expect(solid.length).toBeGreaterThan(0);
+  expect(dashed.length).toBeGreaterThan(0);
+  expect(Math.min(...solid)).toBeGreaterThan(center - 0.5);
+  expect(Math.max(...dashed)).toBeLessThan(center + 0.5);
+};
+
+test("sunlight in a hammered cup opens refined, its real and virtual caustic meeting at the wall", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: hammered });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  const caustic = art(page).getByTestId("derived-curve");
+  const refined = vertices(await caustic.getAttribute("d"));
+  // Where the light grazes the wall, top and bottom, the caustic turns
+  // virtual: refined, the two parts meet there to well within a page unit.
+  expect(await meetings(page, 0.1)).toBe(2);
+  await keepsToItsSide(page);
+  await refine(page).uncheck();
+  await ready(page);
+  // On the samples alone, a sample interval separates them.
+  expect(await meetings(page, 1)).toBe(0);
+  expect(refined).toBeGreaterThan(vertices(await caustic.getAttribute("d")));
+});
+
+test("a crown of cusps in a sunlit cup stays refined as its ripples settle", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: crown });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  expect(await meetings(page, 0.1)).toBe(2);
+  await openAnimation(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("parameters");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Halfway through its time it turns back at the end of its track, a = 0:
+  // a smooth cup, whose caustic is the nephroid.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(art(page)).toHaveAttribute("data-animation-progress", "1");
+  expect(await meetings(page, 0.1)).toBe(2);
+  await keepsToItsSide(page);
 });

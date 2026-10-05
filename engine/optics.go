@@ -27,3 +27,44 @@ func Envelope(p, dp, d, dd Vec) (*Vec, float64) {
 	s := -d.Cross(dp) / den
 	return point(p.Add(d.Mul(s))), s
 }
+
+// incident is the direction of the light arriving at g(t): the source's
+// angle for parallel light (degrees), or away from a point source, which is
+// undefined (NaN) on the source itself.
+func (q Request) incident(g curveFunc) curveFunc {
+	return func(t float64) Vec {
+		if q.Source.Kind == "parallel" {
+			a := q.Source.Angle * math.Pi / 180
+			return Vec{math.Cos(a), math.Sin(a)}
+		}
+		delta := g(t).Sub(q.Source.Position)
+		if delta.Norm() < 1e-9 {
+			return Vec{math.NaN(), math.NaN()}
+		}
+		return delta.Unit()
+	}
+}
+
+// direction is the ray leaving g(t), reflected for a catacaustic and
+// refracted for a diacaustic. It is undefined (NaN) where g has no tangent
+// or the incident light is undefined, and under total internal reflection.
+func (q Request) direction(g curveFunc) curveFunc {
+	lo, hi := q.Curve.Min, q.Curve.Max
+	incident := q.incident(g)
+	return func(t float64) Vec {
+		dp, _ := derivatives(g, t, lo, hi)
+		if dp.Norm() < 1e-9 {
+			return Vec{math.NaN(), math.NaN()}
+		}
+		i := incident(t)
+		n := dp.Perp().Unit()
+		if q.Kind == "catacaustic" {
+			return Reflect(i, n)
+		}
+		v, ok := Refract(i, n, q.NIncident/q.NTransmitted)
+		if !ok {
+			return Vec{math.NaN(), math.NaN()}
+		}
+		return v
+	}
+}
