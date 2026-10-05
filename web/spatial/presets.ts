@@ -2937,4 +2937,88 @@ export const spatialPresets: {
       },
     },
   },
+  // r = (sin t + 2 sin 2t, cos t − 2 cos 2t, −sin 3t). At t = π, the probe's
+  // sample (480 of 960), r = (0, −3, 0), r′ = (3, 0, 3) and r″ = (0, 9, 0):
+  // T = (1, 0, 1)/√2, N = (0, 1, 0), B = (−1, 0, 1)/√2, κ = 1/2 and τ = −2/9.
+  // N is the turntable's vertical axis, so every level view holds it: at
+  // yaw π/4 the camera looks at the osculating circle face on, along B, and
+  // at 3π/4 and −π/4 along ∓T, where the circle is the segment from the
+  // point to its diameter's far end, 2/κ = 4 above it. Each steady leg is a
+  // quarter turn the shorter way, so the last view is the first after one
+  // whole turn, and the flight loops.
+  {
+    name: "A trefoil's osculating circle, all the way round",
+    detail:
+      "The camera circles a knot probed on its outer lobe: face on, the osculating circle hugs the bend; edge on, looking down the tangent, it is a straight segment along the normal",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "none",
+      samples: 960,
+      curve: {
+        x: "sin(t) + 2*sin(2*t)",
+        y: "cos(t) - 2*cos(2*t)",
+        z: "-sin(3*t)",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    probe: { enabled: true, position: 0.5, target: "curve", across: 0.5 },
+    view: { yaw: Math.PI / 4, pitch: 0, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 24,
+      repeat: "loop",
+      path: {
+        style: "steady",
+        keys: [
+          {
+            name: "Face on: the osculating circle",
+            yaw: Math.PI / 4,
+            pitch: 0,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Edge on, looking along T",
+            yaw: (3 * Math.PI) / 4,
+            pitch: 0,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Face on, from the other side",
+            yaw: (-3 * Math.PI) / 4,
+            pitch: 0,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Edge on, looking back along T",
+            yaw: -Math.PI / 4,
+            pitch: 0,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Face on again",
+            yaw: Math.PI / 4,
+            pitch: 0,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
 ];

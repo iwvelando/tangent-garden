@@ -294,7 +294,9 @@ test("a probe playback export draws the probe at each frame's sample", async ({
   );
 });
 
-test("other animation exports still leave the probe out", async ({ page }) => {
+test("a reveal's export draws the probe once the drawing reaches it", async ({
+  page,
+}) => {
   test.slow();
   await probing(page);
   await probeSwitch(page).uncheck();
@@ -302,15 +304,22 @@ test("other animation exports still leave the probe out", async ({ page }) => {
   const bare = await still(page);
   await probeSwitch(page).check();
   await settled(page);
+  const probed = await still(page);
   await mode(page).selectOption("reveal");
   await page
     .getByLabel("Animation camera", { exact: true })
     .selectOption("current");
   const { path } = await exportVideo(page);
-  // The last revealed frame is the whole study, without the probe.
-  const d = frameDifference(path, 2000, 1520, 5, bare);
-  if (d) {
+  // The last revealed frame is the whole study with the probe, at the
+  // middle sample the reveal passed halfway through, not the bare study.
+  // The probe's ink is a small share of the frame, so the bare study
+  // differs by at least twice as much as the probed still does.
+  const d = frameDifference(path, 2000, 1520, 5, probed);
+  const away = frameDifference(path, 2000, 1520, 5, bare);
+  if (d && away) {
     expect(d.meanDifference).toBeLessThan(6);
     expect(d.unmatchedInk).toBeLessThan(0.02);
+    expect(away.unmatchedInk).toBeGreaterThan(0.001);
+    expect(away.unmatchedInk).toBeGreaterThan(2 * d.unmatchedInk);
   }
 });

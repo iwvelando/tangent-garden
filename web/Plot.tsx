@@ -268,8 +268,8 @@ export function Plot({
   // The probe's drawing at its sample, in its own inks: the highlighted
   // construction, the osculating circle and its center, the point, and the
   // tangent and normal, each a fixed share of the page long. An animation
-  // decides the sample while it plays; one that does not move the probe or
-  // hold it while the parameters vary leaves it out.
+  // decides the sample while it plays, and leaves it out of a frame without
+  // one.
   const probeAt = animation ? animation.probe : probe;
   const probeDrawing = (() => {
     const d = result.diagnostics;

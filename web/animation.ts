@@ -105,9 +105,9 @@ export type AnimationView = {
   // A finished animation releases the camera: its final frame stays, and pan
   // and zoom start from the animation's own framing.
   complete: boolean;
-  // The base sample the probe stands at in this frame, when the animation
-  // moves it or holds it while the parameters vary; probeAway says why a
-  // frame that should show it has none.
+  // The base sample the probe stands at in this frame while it is on;
+  // probeAway says why a frame that should show it has none (a reveal that
+  // has not reached it, or a frame whose domain leaves it out).
   probe?: number;
   probeAway?: string;
 };
@@ -668,11 +668,14 @@ export function revealConfig(
   next.curve.attractor.window = { ...final.window };
   return next;
 }
+// The last sample a reveal at progress p draws.
+export const revealedThrough = (result: Result, p: number) =>
+  Math.floor(Math.max(0, Math.min(1, p)) * (result.base.length - 1));
 // Reveal existing numerical samples, so neither the arc-length anchor nor the
 // differentiation stencil changes while the string is being unwound.
 export function reveal(result: Result, progress: number): Result {
   const p = Math.max(0, Math.min(1, progress));
-  const last = Math.floor(p * (result.base.length - 1));
+  const last = revealedThrough(result, p);
   // Contours have no samples: each is drawn along by the same fraction of
   // its points, and a loop stays open until it is complete.
   const along = (set: LevelSet) => ({

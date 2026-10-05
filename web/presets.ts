@@ -1155,4 +1155,30 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "Sunlight gathering in an oval mirror",
+    note: "Sunlight fills an oval mirror; each reflected ray meets the caustic a quarter of the way along its chord of the mirror's osculating circle, where the probe's ray ends as the light arrives",
+    config: {
+      ...base,
+      kind: "catacaustic",
+      // Parallel light reflected at a point whose radius of curvature is ρ,
+      // at incidence θ, gathers ρ·cos θ/2 along the reflected ray (the
+      // caustic's focal distance), and the ray's chord of the osculating
+      // circle there is 2ρ·cos θ long.
+      curve: { ...base.curve, x: "1.6*cos(t)", y: "sin(t)" },
+      source: { ...base.source, kind: "parallel", angle: 0 },
+      lines: 24,
+    },
+    // t ≈ 0.40, where θ ≈ 34° and ρ ≈ 0.86.
+    probe: { enabled: true, position: 0.064 },
+    animation: {
+      mode: "trace",
+      camera: "hold",
+      duration: 10,
+      tracks: [],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
 ];

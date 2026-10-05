@@ -129,7 +129,9 @@ Its **Lines (SVG)** items save the drawing's lines: true SVG paths, suited to ed
 - **A trefoil breathing under a moving probe** swells the knot's tube while the probe rides it out and back.
 - **A knot reparameterized in place** changes only the parameterization: rulings flow along a trefoil that never moves. Held by its share of the length, the probe stays at one point with steady κ and τ while its t wanders; choose **Stays at its t** to watch it slide instead.
 
-Other animations leave the probe out, and still images include it.
+Every other animation draws the probe where you put it, and so do their exports: an orbit, a flight through key views, traced light and a peel (the cut never hides the probe) show it throughout, and a reveal shows it once the drawing reaches its point, saying so in the panel until then. Still images include it too.
+
+- **A trefoil's osculating circle, all the way round** flies once round a knot probed on its outer lobe, where the normal N is vertical. Face on, the osculating circle hugs the bend; a quarter turn later, looking along the tangent, the same circle is a straight segment rising 2/κ = 4 from the point, because it lies in the plane of T and N.
 
 ## Probing a surface
 
