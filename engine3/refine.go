@@ -50,6 +50,9 @@ type AdaptiveResult struct {
 	// Involute holds the involute construction's members, indexed like
 	// its result's members.
 	Involute []*RefinedPath `json:"involute,omitempty"`
+	// Strands holds the framed construction's offset strands, indexed like
+	// its frame's strands.
+	Strands []*RefinedPath `json:"strands,omitempty"`
 }
 
 // space measures points for refinement.

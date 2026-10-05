@@ -1612,7 +1612,7 @@ console.log(
 // Framed ribbon: a unit circle is planar, so its rotation-minimizing normal
 // stays e_z; one turn of twist from θ₀ = 0 carries D = cos θ U + sin θ V
 // around the tangent, and the loop closes without a seam.
-const spatialFrame = (frame) =>
+const spatialFrame = (frame, study = {}) =>
   JSON.parse(
     tangentGardenSpatial(
       JSON.stringify({
@@ -1643,6 +1643,7 @@ const spatialFrame = (frame) =>
         },
         samples: 480,
         lines: 24,
+        ...study,
       }),
     ),
   );
@@ -1677,6 +1678,23 @@ const spatialFrame = (frame) =>
   assert.ok(Math.abs(Math.abs(half.frame.seam.angle) - Math.PI) < 1e-9);
   assert.match(spatialFrame({ kind: "bishop" }).error, /rotation-minimizing/);
   assert.match(spatialFrame({ strands: 13 }).error, /strands/);
+  // Twisted 20 times and refined, every point of the first strand, between
+  // samples too, lies on its coil r + ½(cos 20t e_z + sin 20t (T × e_z)).
+  const coil = spatialFrame({ twist: 20 }, { samples: 240, adaptive: true });
+  const path = coil.adaptive.strands[0];
+  assert.equal(coil.adaptive.strands.length, 2);
+  assert.equal(path.points.length, path.at.length);
+  assert.ok(path.inserted > 0);
+  path.points.forEach((p, j) => {
+    const t = (2 * Math.PI * path.at[j]) / 240;
+    const want = {
+      x: Math.cos(t) * (1 + 0.5 * Math.sin(20 * t)),
+      y: Math.sin(t) * (1 + 0.5 * Math.sin(20 * t)),
+      z: 0.5 * Math.cos(20 * t),
+    };
+    for (const axis of ["x", "y", "z"])
+      assert.ok(Math.abs(p[axis] - want[axis]) < 1e-9, `refined at ${t}`);
+  });
 }
 console.log(
   "WASM framed ribbon: transported frame, twist, seam and validation passed",

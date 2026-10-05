@@ -892,6 +892,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     projection: shown(result.adaptive.projection),
     image: shown(result.adaptive.image),
     involute: result.adaptive.involute?.map((path) => shown(path)!),
+    strands: result.adaptive.strands?.map((path) => shown(path)!),
   };
   // The seam compares the last sample with the first, so it appears only
   // once the whole curve is shown.

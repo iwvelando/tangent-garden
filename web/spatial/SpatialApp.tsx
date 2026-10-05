@@ -3210,15 +3210,17 @@ export default function SpatialApp({
                         to that curve&rsquo;s samples, judged at three points
                         along it, and stops after 16,384 added points per curve.
                         It refines the curve, a projection, an inverted curve,
-                        each involute and the base under a derived input; frame
-                        strands, partner threads, contact circles and every
-                        surface stay on the evenly spaced samples. Between
-                        samples an involute&rsquo;s arc length carries on from
-                        the sample before it by the same Simpson step. A gap or
-                        jump it finds between samples breaks the curve and any
-                        surface there; a passage of the inverted curve through
-                        the center is found the same way. A feature narrower
-                        than its three points can still be missed.
+                        each involute, each offset strand and the base under a
+                        derived input; the ribbon, partner threads, contact
+                        circles and every surface stay on the evenly spaced
+                        samples. Between samples an involute&rsquo;s arc length
+                        carries on from the sample before it by the same Simpson
+                        step, and a strand&rsquo;s frame by the same two
+                        reflections. A gap or jump it finds between samples
+                        breaks the curve and any surface there; a passage of the
+                        inverted curve through the center is found the same way.
+                        A feature narrower than its three points can still be
+                        missed.
                       </>
                     )}{" "}
                     Invalid samples and unresolved tangent or normal intervals

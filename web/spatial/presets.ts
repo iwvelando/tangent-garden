@@ -2577,4 +2577,66 @@ export const spatialPresets: {
     },
     view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
   },
+  // Six strands laid round the trefoil at a distance of 0.32, carried by
+  // its rotation-minimizing frame, its return angle spread along the knot
+  // so the rope closes. Each strand turns 40 times about the knot, about
+  // six samples a turn; refining between samples draws every turn round.
+  {
+    name: "A six-stranded rope round a trefoil",
+    detail:
+      "Six strands twisted forty times about a carried frame, laid into a closed rope",
+    config: {
+      ...base,
+      construction: "framed",
+      samples: 240,
+      lines: 24,
+      adaptive: true,
+      frame: {
+        ...base.frame,
+        twist: 40,
+        width: 0,
+        offset: 0.32,
+        strands: 6,
+        closure: "distribute",
+      },
+    },
+  },
+  // Four strands round a (2, 5) knot, each turning 36 times about it,
+  // about seven samples a turn, swelling from 0.12 to 0.45 away from the
+  // knot and back. The twist is a whole number of turns, so every strand
+  // closes in every frame; refining between samples keeps every coil round
+  // as it widens.
+  {
+    name: "Four strands wound round a cinquefoil",
+    detail:
+      "Offset strands coiled thirty-six times about the knot, swelling away from it and back",
+    config: {
+      ...base,
+      construction: "framed",
+      q: 5,
+      tube: 0.6,
+      samples: 240,
+      lines: 24,
+      adaptive: true,
+      frame: {
+        ...base.frame,
+        twist: 36,
+        width: 0,
+        offset: 0.12,
+        strands: 4,
+        closure: "distribute",
+      },
+    },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "distance", from: "0.12", to: "0.45" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];
