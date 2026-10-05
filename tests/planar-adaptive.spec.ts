@@ -468,3 +468,77 @@ test("a crown of cusps in a sunlit cup stays refined as its ripples settle", asy
   expect(await meetings(page, 0.1)).toBe(2);
   await keepsToItsSide(page);
 });
+
+const unwoundStar = "A string unwound from a three-pointed star",
+  woundBack = "A string wound back onto a four-pointed star";
+
+// The longest step between consecutive drawn vertices of a path, as a
+// share of the larger side of their bounding box. A string's end sweeps a
+// wide arc round each nearly sharp point; drawn by the evenly spaced
+// samples, each arc is one long chord. Refined, a chord strays at most
+// 2·10⁻⁴ of the curve's radius from an arc whose radius is at most the
+// drawing's size, so it is at most about √(8·10⁻⁴) ≈ 3% of that size.
+const longestStep = (d: string | null) => {
+  const points = pathPoints(d);
+  const drawn = points.filter((p): p is Point => !!p);
+  const xs = drawn.map((p) => p.x),
+    ys = drawn.map((p) => p.y);
+  const size = Math.max(
+    Math.max(...xs) - Math.min(...xs),
+    Math.max(...ys) - Math.min(...ys),
+  );
+  let longest = 0;
+  points.forEach((p, k) => {
+    const q = points[k - 1];
+    if (p && q) longest = Math.max(longest, Math.hypot(p.x - q.x, p.y - q.y));
+  });
+  return longest / size;
+};
+
+test("a string unwound from a three-pointed star sweeps round arcs when refined", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: unwoundStar });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(readout(page)).toHaveText(
+    /^[\d,]+ points added between samples\.$/,
+  );
+  const involute = art(page).getByTestId("derived-curve");
+  const drawn = await involute.getAttribute("d");
+  expect(longestStep(drawn)).toBeLessThan(0.04);
+  await refine(page).uncheck();
+  await ready(page);
+  const uniform = await involute.getAttribute("d");
+  expect(vertices(uniform)).toBeLessThanOrEqual(1000);
+  expect(vertices(drawn)).toBeGreaterThan(vertices(uniform));
+  expect(longestStep(uniform)).toBeGreaterThan(0.2);
+  await refine(page).check();
+  await ready(page);
+  expect(await involute.getAttribute("d")).toBe(drawn);
+});
+
+test("a string wound back onto a four-pointed star stays refined as its length moves", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: woundBack });
+  await ready(page);
+  await expect(refine(page)).toBeChecked();
+  const involute = art(page).getByTestId("derived-curve");
+  expect(longestStep(await involute.getAttribute("d"))).toBeLessThan(0.04);
+  await openAnimation(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("parameters");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Halfway through its time it turns back at the end of its track, the
+  // string a whole lap shorter.
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(art(page)).toHaveAttribute("data-animation-progress", "1");
+  const shortest = await involute.getAttribute("d");
+  expect(vertices(shortest)).toBeGreaterThan(1000);
+  expect(longestStep(shortest)).toBeLessThan(0.04);
+});

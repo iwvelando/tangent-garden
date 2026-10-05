@@ -226,7 +226,7 @@ func TestRefinedCausticsAgreeWithTheSamples(t *testing.T) {
 			t.Fatal(err)
 		}
 		g := inputCurve(q.Input, f, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
-		at, c := q.derivedAt(f, g), q.causticAt(f, g)
+		at, c := q.derivedAt(f, g, nil), q.causticAt(f, g)
 		if at == nil || c == nil {
 			t.Fatalf("%s: no evaluator", name)
 		}

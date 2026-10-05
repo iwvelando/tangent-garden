@@ -93,6 +93,9 @@ type Result struct {
 	Adaptive *AdaptiveResult `json:"adaptive,omitempty"`
 	// Diagnostics is present only when asked, for a curve with a parameter.
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+	// arcs is the involute's arc length at each sample where it is drawn,
+	// NaN elsewhere, from which refinement continues between samples.
+	arcs []float64
 }
 
 func Compute(q Request) (Result, error) {
@@ -299,6 +302,12 @@ func Compute(q Request) (Result, error) {
 	arc := 0.0
 	arcOK := true
 	arcLength := q.Kind == "involute" || q.Kind == "rolling"
+	if q.Kind == "involute" {
+		out.arcs = make([]float64, q.Samples)
+		for j := range out.arcs {
+			out.arcs[j] = math.NaN()
+		}
+	}
 	var rolls *travel
 	if q.Kind == "rolling" {
 		rolls = newTravel(g, lo, hi)
@@ -467,7 +476,9 @@ func Compute(q Request) (Result, error) {
 			target = Evolute(p, dp, ddp)
 		case "involute":
 			if arcOK {
-				target = Involute(p, dp, arc, q.Offset)
+				if target = q.unwound(g, t, arc, t, p, dp); target != nil {
+					out.arcs[j] = arc
+				}
 			}
 		default:
 			dir = direction(t)

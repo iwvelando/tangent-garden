@@ -991,4 +991,49 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "A string unwound from a three-pointed star",
+    note: "A taut string unwound twice around a star with three nearly sharp points; at each point it sweeps a wide arc, so the spiral is built from arcs, with a small hook at each bend",
+    config: {
+      ...base,
+      kind: "involute",
+      // Points with radius of curvature about 0.0003: the tangent turns
+      // half a turn within a few samples, and the string's free end sweeps
+      // a half circle of the string's length there. The hooks are the
+      // involute's cusps, at the star's inflections.
+      curve: {
+        ...base.curve,
+        x: "2*cos(t) + 0.98*cos(2*t)",
+        y: "2*sin(t) - 0.98*sin(2*t)",
+        max: 4 * Math.PI,
+      },
+      lines: 48,
+      adaptive: true,
+    },
+  },
+  {
+    title: "A string wound back onto a four-pointed star",
+    note: "A string unwound twice around a star with four nearly sharp points is shortened until it is wound back a whole lap; the cusp where it meets the star runs round the points, and the arcs it swept fold up behind it",
+    config: {
+      ...base,
+      kind: "involute",
+      curve: {
+        ...base.curve,
+        x: "3*cos(t) + 0.98*cos(3*t)",
+        y: "3*sin(t) - 0.98*sin(3*t)",
+        max: 4 * Math.PI,
+      },
+      lines: 48,
+      adaptive: true,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 12,
+      tracks: [{ target: "offset", from: "0", to: "-20" }],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
 ];

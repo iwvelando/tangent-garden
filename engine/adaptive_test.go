@@ -731,7 +731,7 @@ func TestRefinedConstructionsAgreeWithTheSamples(t *testing.T) {
 		}
 		g := inputCurve(q.Input, f, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
 		curves := map[float64][]*Vec{q.Distance: r.Derived}
-		ats := map[float64]func(float64) *Vec{q.Distance: q.derivedAt(f, g)}
+		ats := map[float64]func(float64) *Vec{q.Distance: q.derivedAt(f, g, nil)}
 		for _, member := range r.Family {
 			curves[member.Distance] = member.Points
 			ats[member.Distance] = q.memberAt(f, g, member)
