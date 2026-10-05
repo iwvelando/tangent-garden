@@ -59,6 +59,10 @@ const composedLayers = [
 test("every construction built on a curve can be built on a derived curve, with its own layers and a validated pole", async ({
   page,
 }) => {
+  // Five constructions, each built on two derived curves with every layer
+  // toggled: about 16 s locally and twice that on CI, where it outgrew the
+  // default 30 s.
+  test.slow();
   await ready(page);
   const trefoil = await pixels(page);
   await expect(builtOn(page)).toHaveValue("base");
