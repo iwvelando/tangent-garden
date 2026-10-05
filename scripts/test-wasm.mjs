@@ -112,6 +112,34 @@ assert.ok(
     (p, k) => Math.abs(p.x) < 1e-3 || p.x < 0 === planarNephroid.virtual[k],
   ),
 );
+// A refined involute of the unit circle, unwound from t = 0 with string
+// offset ½, lies on (cos t + (t + ½) sin t, sin t − (t + ½) cos t), whose
+// distance from the center is √(1 + (t + ½)²).
+const planarInvolute = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({
+      ...config,
+      kind: "involute",
+      curve: {
+        ...config.curve,
+        x: "cos(t)",
+        y: "sin(t)",
+        min: 0,
+        max: 4 * Math.PI,
+      },
+      offset: 0.5,
+      samples: 64,
+      adaptive: true,
+    }),
+  ),
+).adaptive.derived;
+assert.ok(planarInvolute.inserted > 0 && planarInvolute.breaks === 0);
+assert.ok(
+  planarInvolute.points.every((p, k) => {
+    const t = (planarInvolute.at[k] * 4 * Math.PI) / 63;
+    return Math.abs(Math.hypot(p.x, p.y) - Math.hypot(1, t + 0.5)) < 1e-9;
+  }),
+);
 console.log("Planar refinement WASM bridge passed.");
 // The probe's diagnostics: a circle of radius 2 turning left has κ = ½ and
 // its center at the origin at every sample, and a quarter turn's length π.

@@ -32,9 +32,10 @@ type RefinedPath struct {
 // defined pointwise from its input's position and stencil derivatives (a
 // pedal, contrapedal or orthotomic curve, the evolute, an offset or each
 // member of an offset stack, a catacaustic or diacaustic, or an inversion's
-// image). A path that is not drawn, or cannot be evaluated between samples,
-// is absent: the involute and rolling curves are built along the curve, and
-// a family's envelopes keep their uniform samples.
+// image), and the involute, whose arc length continues from each sample. A
+// path that is not drawn, or cannot be evaluated between samples, is absent:
+// rolling curves are built along the curve, and a family's envelopes keep
+// their uniform samples.
 type AdaptiveResult struct {
 	Base    *RefinedPath `json:"base,omitempty"`
 	Input   *RefinedPath `json:"input,omitempty"`
@@ -90,7 +91,8 @@ func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, h
 }
 
 // adapt refines a computed study's drawn curves: the base from f, a derived
-// input from g, and a derived curve defined pointwise from g. Intervals
+// input from g, and a derived curve defined pointwise from g, or from g and
+// the involute's arc length at the samples. Intervals
 // broken on a curve stay broken on the curves built on it. An inversion's
 // image is refined in place of the uniform passage test, whose breaks it
 // replaces.
@@ -113,7 +115,7 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi)
 		note(found)
 	}
-	if derived := q.derivedAt(f, g); derived != nil {
+	if derived := q.derivedAt(f, g, out.arcs); derived != nil {
 		if out.Inversion != nil {
 			// The passage test's breaks give way to refinement's.
 			out.Inversion.Breaks = []int{}
@@ -145,7 +147,7 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 
 // derivedAt evaluates a study's derived curve at any t from the base f and
 // the input g, or is nil when that curve is not defined pointwise.
-func (q Request) derivedAt(f, g curveFunc) func(float64) *Vec {
+func (q Request) derivedAt(f, g curveFunc, arcs []float64) func(float64) *Vec {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	switch {
 	case usesPole(q.Kind):
@@ -167,8 +169,33 @@ func (q Request) derivedAt(f, g curveFunc) func(float64) *Vec {
 		}
 	case q.Kind == "inversion":
 		return func(t float64) *Vec { return Invert(g(t), q.Inversion.Center, q.Inversion.Radius) }
+	case q.Kind == "involute":
+		return q.involuteAt(f, g, arcs)
 	}
 	return nil
+}
+
+// involuteAt evaluates the involute at any t from the arc length arcs
+// records at each sample where it is drawn: continued from the last sample
+// at or before t by the sample loop's own Simpson step, so it is undefined
+// wherever a sample there would be, and past a sample without an involute.
+// A reversal of the input's tangent between samples is not tested here: the
+// unwinding direction flips there and the involute jumps by twice its
+// string, which refinement breaks as a jump.
+func (q Request) involuteAt(f, g curveFunc, arcs []float64) func(float64) *Vec {
+	lo, hi := q.Curve.Min, q.Curve.Max
+	n := q.Samples - 1
+	step := (hi - lo) / float64(n)
+	return q.along(f, g, func(t float64, p, d, _ Vec) *Vec {
+		j := max(0, min(n, int(math.Floor((t-lo)/step))))
+		// The sample at or before t, as the loop places it.
+		if j < n && lo+float64(j+1)*step <= t {
+			j++
+		} else if j > 0 && lo+float64(j)*step > t {
+			j--
+		}
+		return q.unwound(g, lo+float64(j)*step, arcs[j], t, p, d)
+	})
 }
 
 // memberAt evaluates a member of an offset stack at any t, or is nil for a
