@@ -14,6 +14,7 @@ import type { PlotCamera } from "./planar-link";
 import { densityImage } from "./attractor";
 import { plotPalette } from "./palette";
 import { createGesture } from "./gestures";
+import type { RefinedPath } from "./refinement";
 export type Layers = {
   base: boolean;
   derived: boolean;
@@ -201,6 +202,13 @@ export function Plot({
       xy,
       (i) => virtual === undefined || result.virtual[i] === virtual,
       breaks,
+    );
+  // A refined curve's real or virtual points, by its own flags.
+  const refinedPath = (refined: RefinedPath<Vec>, virtual?: boolean) =>
+    pathData(
+      refined.points,
+      xy,
+      (i) => virtual === undefined || !!refined.virtual?.[i] === virtual,
     );
   const line = (
     a: Vec,
@@ -1110,7 +1118,7 @@ export function Plot({
           data-testid="derived-curve"
           d={
             refined.derived
-              ? path(refined.derived.points)
+              ? refinedPath(refined.derived, dashed ? false : undefined)
               : path(result.derived, dashed ? false : undefined, breaks)
           }
           fill="none"
@@ -1122,7 +1130,11 @@ export function Plot({
       {dashed && layers.derived && layers.virtual && (
         <path
           data-testid="virtual-derived-curve"
-          d={path(result.derived, true)}
+          d={
+            refined.derived
+              ? refinedPath(refined.derived, true)
+              : path(result.derived, true)
+          }
           fill="none"
           stroke={palette.derived}
           {...stroke(2.3)}

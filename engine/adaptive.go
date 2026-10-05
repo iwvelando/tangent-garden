@@ -14,7 +14,8 @@ import (
 
 // RefinedPath is a drawn curve with its refinement (see refine.Path):
 // points in parameter order, each at its position in sample steps, with a
-// null at every break.
+// null at every break. A caustic's points also say whether each is virtual,
+// behind its ray's origin, as the result's own Virtual does at the samples.
 type RefinedPath struct {
 	Points     []*Vec    `json:"points"`
 	At         []float64 `json:"at"`
@@ -23,16 +24,17 @@ type RefinedPath struct {
 	Breaks     int       `json:"breaks"`
 	Unresolved int       `json:"unresolved"`
 	Exhausted  bool      `json:"exhausted"`
+	Virtual    []bool    `json:"virtual,omitempty"`
 }
 
 // AdaptiveResult holds the refined curves a study draws: the base curve, the
 // derived input a construction acts on, and the derived curve where it is
 // defined pointwise from its input's position and stencil derivatives (a
 // pedal, contrapedal or orthotomic curve, the evolute, an offset or each
-// member of an offset stack, or an inversion's image). A path that is not
-// drawn, or cannot be evaluated between samples, is absent: the involute
-// and rolling curves are built along the curve, and caustics and envelopes
-// as envelopes of a family, so they keep their uniform samples.
+// member of an offset stack, a catacaustic or diacaustic, or an inversion's
+// image). A path that is not drawn, or cannot be evaluated between samples,
+// is absent: the involute and rolling curves are built along the curve, and
+// a family's envelopes keep their uniform samples.
 type AdaptiveResult struct {
 	Base    *RefinedPath `json:"base,omitempty"`
 	Input   *RefinedPath `json:"input,omitempty"`
@@ -118,6 +120,11 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 		}
 		a.Derived, found = refinePath(out.Derived, broken, derived, lo, hi)
 		note(found)
+		if c := q.causticAt(f, g); c != nil {
+			n := float64(q.Samples - 1)
+			// As refine.Refine places its points.
+			markVirtual(a.Derived, out.Virtual, func(u float64) (*Vec, bool) { return c.at(lo*(1-u/n) + hi*u/n) })
+		}
 	}
 	// Each member of a stack is broken where its input is, not where
 	// another member is: one member's fold is not a break in its neighbors.
@@ -149,9 +156,15 @@ func (q Request) derivedAt(f, g curveFunc) func(float64) *Vec {
 			return project(p, d, q.Pole)
 		}
 	case q.Kind == "evolute":
-		return q.along(f, g, func(p, d, dd Vec) *Vec { return Evolute(p, d, dd) })
+		return q.along(f, g, func(_ float64, p, d, dd Vec) *Vec { return Evolute(p, d, dd) })
 	case q.Kind == "offset" && !q.Stack.Enabled:
-		return q.along(f, g, func(p, d, _ Vec) *Vec { return Offset(p, d, q.Distance) })
+		return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, q.Distance) })
+	case q.Kind == "catacaustic" || q.Kind == "diacaustic":
+		c := q.causticAt(f, g)
+		return func(t float64) *Vec {
+			p, _ := c.at(t)
+			return p
+		}
 	case q.Kind == "inversion":
 		return func(t float64) *Vec { return Invert(g(t), q.Inversion.Center, q.Inversion.Radius) }
 	}
@@ -164,14 +177,14 @@ func (q Request) memberAt(f, g curveFunc, member Path) func(float64) *Vec {
 	if q.Kind != "offset" || !q.Stack.Enabled {
 		return nil
 	}
-	return q.along(f, g, func(p, d, _ Vec) *Vec { return Offset(p, d, member.Distance) })
+	return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, member.Distance) })
 }
 
 // along evaluates a construction built from its input's position and
 // stencil derivatives at any t, undefined wherever a sample there would be:
 // where the base or the input is undefined, or the derivatives either
 // needs are ill-conditioned, each checked as at the samples.
-func (q Request) along(f, g curveFunc, construct func(p, d, dd Vec) *Vec) func(float64) *Vec {
+func (q Request) along(f, g curveFunc, construct func(t float64, p, d, dd Vec) *Vec) func(float64) *Vec {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	base := baseStencil(lo, hi)
 	return func(t float64) *Vec {
@@ -187,6 +200,116 @@ func (q Request) along(f, g curveFunc, construct func(p, d, dd Vec) *Vec) func(f
 				return nil
 			}
 		}
-		return construct(p, d, dd)
+		return construct(t, p, d, dd)
+	}
+}
+
+// caustic evaluates a catacaustic or diacaustic at any t, with whether its
+// point is virtual. The sample loop and refinement both call at, so a
+// refined caustic passes exactly through the samples.
+type caustic struct {
+	q               Request
+	f, g, direction curveFunc
+}
+
+// causticAt is a study's caustic, or nil for another construction.
+func (q Request) causticAt(f, g curveFunc) *caustic {
+	if q.Kind != "catacaustic" && q.Kind != "diacaustic" {
+		return nil
+	}
+	return &caustic{q, f, g, q.direction(g)}
+}
+
+// at is undefined wherever a sample would be: under total internal
+// reflection, and where the rays' turning is ill-conditioned, as where a
+// refracted ray crosses to the curve's other side at grazing incidence and
+// the rays jump.
+func (c *caustic) at(t float64) (*Vec, bool) {
+	lo, hi := c.q.Curve.Min, c.q.Curve.Max
+	rays := baseStencil(lo, hi)
+	s := 0.0
+	p := c.q.along(c.f, c.g, func(t float64, p, d, _ Vec) *Vec {
+		dir := c.direction(t)
+		if !dir.Valid() {
+			return nil
+		}
+		turn, _ := rays.derivatives(c.direction, t)
+		if !rays.stableTangent(c.direction, t, turn) {
+			return nil
+		}
+		var target *Vec
+		target, s = Envelope(p, d, dir, turn)
+		return target
+	})(t)
+	return p, s < 0
+}
+
+// markVirtual marks each point of a refined caustic virtual or real, the
+// samples as the uniform study marks them, and bisects every change between
+// neighbors to the finest step, where the caustic crosses its curve, so its
+// real and virtual parts are drawn to meet. A change across a jump, or one
+// where the caustic stops between them, is a break. at evaluates the
+// caustic at a position in sample steps.
+func markVirtual(path *RefinedPath, samples []bool, at func(float64) (*Vec, bool)) {
+	finest := math.Ldexp(1, -refine.Depth)
+	broken := map[int]bool{}
+	for k, p := range path.Points {
+		if p == nil && path.At[k] != math.Trunc(path.At[k]) {
+			broken[int(path.At[k])] = true
+		}
+	}
+	type vertex struct {
+		u       float64
+		p       *Vec
+		virtual bool
+	}
+	var marked []vertex
+	for k, p := range path.Points {
+		u := path.At[k]
+		virtual := false
+		switch {
+		case p == nil:
+		case u == math.Trunc(u):
+			virtual = samples[int(u)]
+		default:
+			_, virtual = at(u)
+		}
+		if k > 0 && p != nil && marked[len(marked)-1].p != nil && virtual != marked[len(marked)-1].virtual {
+			a, b := marked[len(marked)-1], vertex{u, p, virtual}
+			var between []vertex
+			for b.u-a.u > finest && path.Inserted < refine.Budget {
+				m := (a.u + b.u) / 2
+				pm, vm := at(m)
+				if pm == nil {
+					between = append(between, vertex{m, nil, false})
+					break
+				}
+				path.Inserted++
+				between = append(between, vertex{m, pm, vm})
+				if vm == a.virtual {
+					a = vertex{m, pm, vm}
+				} else {
+					b = vertex{m, pm, vm}
+				}
+			}
+			if a.p != nil && b.p != nil && b.u-a.u <= finest && b.p.Sub(*a.p).Norm() > refine.Jump*path.Tolerance {
+				between = append(between, vertex{(a.u + b.u) / 2, nil, false})
+			}
+			sort.Slice(between, func(i, j int) bool { return between[i].u < between[j].u })
+			for _, v := range between {
+				if v.p == nil && !broken[int(v.u)] {
+					broken[int(v.u)] = true
+					path.Breaks++
+				}
+			}
+			marked = append(marked, between...)
+		}
+		marked = append(marked, vertex{u, p, virtual})
+	}
+	path.Points, path.At, path.Virtual = path.Points[:0], path.At[:0], make([]bool, 0, len(marked))
+	for _, v := range marked {
+		path.Points = append(path.Points, v.p)
+		path.At = append(path.At, v.u)
+		path.Virtual = append(path.Virtual, v.virtual)
 	}
 }

@@ -945,4 +945,50 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "Sunlight in a hammered cup",
+    note: "Sunlight in a cup whose wall carries 36 ripples three ten-thousandths of its radius deep, too shallow to see; they break the bright nephroid into a starburst of cusps",
+    config: {
+      ...base,
+      kind: "catacaustic",
+      // The ripples bend the wall's curvature by ±0.0003·(36² − 1) ≈ ±39%,
+      // which moves each reflected ray's caustic point by as much.
+      curve: {
+        ...base.curve,
+        format: "polar",
+        r: "1 + 0.0003*cos(36*t)",
+      },
+      source: { ...base.source, kind: "parallel", angle: 0 },
+      samples: 300,
+      lines: 72,
+      adaptive: true,
+    },
+  },
+  {
+    title: "A crown of cusps in a sunlit cup",
+    note: "Twenty-four ripples six ten-thousandths of its radius deep crown a sunlit cup's caustic with cusps; as they settle out of the wall and return, the crown folds into the nephroid and back",
+    config: {
+      ...base,
+      kind: "catacaustic",
+      curve: {
+        ...base.curve,
+        format: "polar",
+        r: "1 + 0.0006*a*cos(24*t)",
+        a: 1,
+      },
+      source: { ...base.source, kind: "parallel", angle: 0 },
+      samples: 300,
+      lines: 60,
+      adaptive: true,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 12,
+      tracks: [{ target: "a", from: "1", to: "0" }],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
 ];
