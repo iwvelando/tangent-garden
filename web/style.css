@@ -1029,16 +1029,20 @@ h1 {
   .view-buttons .fit:first-child {
     margin-left: 0;
   }
-  /* The 3D projection takes a row of its own above the buttons. */
+  /* The 3D projection shares the buttons' row, taking the width they
+     leave; a long lens name is cut short there, and only a screen too
+     narrow for a readable menu puts it on a row of its own. */
   .view-buttons.lensed {
     flex-wrap: wrap;
-    gap: 10px 12px;
+    gap: 10px 8px;
+    width: 100%;
   }
   .view-buttons.lensed > * {
     margin-left: 0;
   }
   .view-buttons.lensed > select.projection {
-    flex-basis: 100%;
+    flex: 1 1 0;
+    min-width: 5.5em;
   }
 }
 @media (max-width: 1200px) {
@@ -1209,4 +1213,28 @@ header {
 }
 .planar-probe .probe-switch .check {
   margin-bottom: 0;
+}
+/* The orientation indicator and named views under a 3D or 4D drawing
+   (Orientation.tsx), outside its frame, which every notebook keeps the same
+   size. */
+.orientation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 4px 0;
+}
+.orientation-axes {
+  width: 52px;
+  height: 52px;
+  margin: -8px 2px -8px -6px;
+}
+.orientation-axes text {
+  font-size: 11px;
+  font-style: italic;
+  font-family: Georgia, serif;
+}
+.orientation button {
+  font-size: 12px;
+  padding: 4px 8px;
 }

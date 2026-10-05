@@ -7,6 +7,7 @@ import type {
   ReceiverResult,
   ImplicitResult,
 } from "./types";
+import type { Basis } from "../named-views";
 
 export type View = Bounds3 & {
   yaw: number;
@@ -1240,6 +1241,16 @@ export function clip(k: Camera, x: number, y: number, z: number) {
     -toward * k.framing[2] + k.lens[1] * w + k.lens[2],
     w,
   ] as [number, number, number, number];
+}
+// The drawn camera's rows, right, up and toward the viewer, for the
+// orientation indicator: the turntable's, or a lens's (the ride's).
+export function viewBasis(view: View): Basis {
+  const r = camera(view, { width: 1, height: 1 }).rotation;
+  return {
+    right: [r[0], r[3], r[6]],
+    up: [r[1], r[4], r[7]],
+    back: [r[2], r[5], r[8]],
+  };
 }
 // Clip coordinates as page pixels (y down) and window depth from 0 to 1.
 export const page = (k: Camera, c: readonly number[]) => {

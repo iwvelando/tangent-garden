@@ -42,7 +42,7 @@ These come from the handoffs. Each was paid for at least once.
 ## Recommended order
 
 1. Still-export controls (all notebooks)
-2. Camera affordances (3D and 4D; keyboard for 2D)
+2. Camera affordances (2D keyboard; 3D free field of view)
 3. Probe follow-ups (2D and 3D)
 4. Refinement between samples, remaining constructions (2D and 3D)
 
@@ -79,23 +79,19 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Applies to:**
 
-- Named views and orientation indicator: 3D and 4D, which share the turntable model.
 - Keyboard parity: 2D only. 3D and 4D already have arrows, +/− and Home.
-- Free field of view: 3D only.
+- Free field of view and Reset view's opening view: 3D only.
 
 **Open:**
 
-- Named front/side/top/isometric views, and a small orientation indicator, in 3D and 4D. The indicator must sit outside the drawing: the viewport carries geometry only.
 - 2D keyboard pan, zoom and reset on the drawing. Mirror 3D/4D's bindings and describe them in the drawing's accessible label.
 - 3D: a field of view other than the three named lenses (30°, 50°, 90°). Lenses are named on purpose, so a link names an option the control has. Any free angle needs its own link field and default.
-- 3D and 4D: the camera cannot look straight down (pitch stops at ±1.5 rad), so overhead views are seen 4° short. A true top view either needs a free orientation, as the ride has, or must be documented as near-overhead.
 - 3D: Reset view returns a preset's opening view to the default view, not the preset's own.
 
 **Watch for:**
 
 - Do not import 3D's four animation camera modes into 4D (see the 4D roadmap).
 - Key views record no projection; a path flies in the drawing's projection.
-- Links must carry a named view only as the resulting camera, not as transient state.
 
 ### 3. Probe follow-ups
 
