@@ -22,7 +22,7 @@ import { tesseractPresets } from "../web/tesseract/presets";
 import { defaultLayers } from "../web/spatial/renderer";
 import { defaultCut } from "../web/spatial/cut";
 import { defaultSight } from "../web/spatial/sight";
-import { defaultPath, maxKeys } from "../web/spatial/path";
+import { defaultPath, legRange, maxKeys } from "../web/spatial/path";
 import { defaultRide } from "../web/spatial/ride";
 import { initialView } from "../web/tesseract/types";
 
@@ -107,7 +107,16 @@ const spatial = (i = 0): SpatialStudy => ({
           panY: -2,
           turns: -8,
         },
-        { name: "Out", yaw: 2, pitch: 0, zoom: 1, panX: 0, panY: 0, turns: 8 },
+        {
+          name: "Out",
+          yaw: 2,
+          pitch: 0,
+          zoom: 1,
+          panX: 0,
+          panY: 0,
+          turns: 8,
+          leg: 2.5,
+        },
       ],
     },
     ride: { i: 4, j: 12, follow: 0.5, turn: 1.25 },
@@ -913,7 +922,7 @@ test("a link carries how the probe moves while parameters vary; a grid's probe s
   }
 });
 
-test("a link carries a camera path and its flight; refuses turns, views and names outside their limits", async () => {
+test("a link carries a camera path, its leg times and its flight; refuses turns, times, views and names outside their limits", async () => {
   const study: SpatialStudy = {
     ...spatial(),
     animation: { ...spatial().animation, mode: "path", duration: 24 },
@@ -955,6 +964,29 @@ test("a link carries a camera path and its flight; refuses turns, views and name
   await refused(
     bad((p) => (p.keys[0].turns = 1)),
     `${keys}[0].turns`,
+    /first/,
+  );
+  // A view without a leg time keeps none, as in links made before them;
+  // the first view may state its 1 but no other time.
+  const untimed = structuredClone(study) as any;
+  delete untimed.animation.path.keys[2].leg;
+  assert.equal("leg" in spatialStudy(untimed).animation.path.keys[2], false);
+  const first = structuredClone(study);
+  first.animation.path.keys[0].leg = 1;
+  assert.equal(spatialStudy(first).animation.path.keys[0].leg, 1);
+  for (const leg of [legRange[0], legRange[1]]) {
+    const edge = structuredClone(study);
+    edge.animation.path.keys[1].leg = leg;
+    assert.equal(spatialStudy(edge).animation.path.keys[1].leg, leg);
+  }
+  for (const leg of [0, legRange[0] / 2, legRange[1] + 0.5, "2", null])
+    await refused(
+      bad((p) => (p.keys[1].leg = leg)),
+      `${keys}[1].leg`,
+    );
+  await refused(
+    bad((p) => (p.keys[0].leg = 2)),
+    `${keys}[0].leg`,
     /first/,
   );
   await refused(

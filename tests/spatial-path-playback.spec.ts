@@ -221,6 +221,74 @@ test("the flight stands at each view exactly, passes between them, and Stop and 
     .toEqual(at(bounds, flight.keys[1]));
 });
 
+test("leg times set each leg's share of the flight: the camera keeps to them, the views say when they are reached, and a link carries them", async ({
+  page,
+}) => {
+  await open(page, study());
+  const leg = (k: number, p: Page = page) =>
+    p.getByLabel(`View ${k} leg time`, { exact: true });
+  // The first view has no leg before it; the others take 1 until set.
+  await expect(leg(1)).toHaveCount(0);
+  await expect(leg(2)).toHaveValue("1");
+  await expect(views(page)).toContainText("reached 50% of the way");
+  await leg(2).fill("3");
+  await expect(views(page)).toContainText("reached 75% of the way");
+  await expect(views(page)).not.toContainText("reached 50% of the way");
+  const timed: CameraPath = {
+    ...flight,
+    keys: flight.keys.map((k, i) => (i === 1 ? { ...k, leg: 3 } : k)),
+  };
+  const idle = await shownView(page);
+  const bounds = { center: idle.center, radius: idle.radius };
+  await page.keyboard.press("Escape");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  // The second view is reached three quarters of the way through.
+  await seek(page, "0.75");
+  expect(await animationCamera(page)).toEqual(at(bounds, flight.keys[1]));
+  await expect(page.locator(".animation-values")).toHaveText("Side");
+  await seek(page, "0.5");
+  await expect(page.locator(".animation-values")).toHaveText("Start → Side");
+  const between = await animationCamera(page),
+    expected = pathView(timed, bounds as never, 0.5);
+  for (const key of ["yaw", "pitch", "zoom", "panX", "panY"] as const)
+    expect(between[key]).toBeCloseTo(expected[key], 12);
+  await seek(page, "0.875");
+  await expect(page.locator(".animation-values")).toHaveText("Side → Away");
+  await button(page, "Stop").click();
+  // A time outside its limits is named, and the views stop saying when
+  // they are reached.
+  await leg(3).fill("20");
+  await expect(views(page)).not.toContainText("reached");
+  await button(page, "Play animation").click();
+  await expect(page.locator(".animation-error")).toContainText(
+    "View 3 leg time must be from 0.1 to 10.",
+  );
+  await leg(3).fill("0.5");
+  await expect(views(page)).toContainText("reached 0% of the way");
+  await expect(views(page)).toContainText("reached 86% of the way");
+  // A copied link carries the times.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await button(page, "Copy link").click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const href = await page.evaluate(() => navigator.clipboard.readText());
+  const other = await page.context().newPage();
+  await other.goto(href);
+  await expect(canvas(other)).toBeVisible();
+  await settled(other);
+  await openPanel(other);
+  await expect(leg(2, other)).toHaveValue("3");
+  await expect(leg(3, other)).toHaveValue("0.5");
+  // Removing the first view drops the new first view's time with its leg,
+  // and setting a view to the drawing keeps its time.
+  await button(page, "Set view 3 to the drawing's view").click();
+  await expect(leg(3)).toHaveValue("0.5");
+  await button(page, "Remove view 1").click();
+  await expect(leg(1)).toHaveCount(0);
+  await expect(leg(2)).toHaveValue("0.5");
+  await expect(views(page)).toContainText("reached 100% of the way");
+});
+
 test("a path's export starts at its first view and ends at its last", async ({
   page,
 }) => {
@@ -429,4 +497,55 @@ test("Viviani's curve flies from its circle to its figure-eight and around its c
   await expect(mode(page)).toHaveValue("reveal");
   await mode(page).selectOption("path");
   await expect(page.getByLabel("View 1 name", { exact: true })).toHaveCount(0);
+});
+
+test("a rhumb line's flight drops above its pole quickly, sinks in slowly with the pole held in the middle, and returns quickly", async ({
+  page,
+}) => {
+  await ready(page);
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page
+    .locator(`[data-example-title="A rhumb line spiraling into its pole"]`)
+    .click();
+  await settled(page);
+  await expect(mode(page)).toHaveValue("path");
+  await expect(page.getByLabel("Path", { exact: true })).toHaveValue("steady");
+  await expect(page.getByLabel("Repeat", { exact: true })).toHaveValue("loop");
+  for (const [k, time] of [
+    [2, "1"],
+    [3, "6"],
+    [4, "0.8"],
+  ] as const)
+    await expect(
+      page.getByLabel(`View ${k} leg time`, { exact: true }),
+    ).toHaveValue(time);
+  const { center, radius } = await shownView(page);
+  await page.keyboard.press("Escape");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  // Legs of 1, 6 and 0.8: the pole is reached at 1/7.8 and left at 7/7.8.
+  const [above, into] = [1 / 7.8, 7 / 7.8];
+  for (const [p, leg] of [
+    ["0.1", "Beside the sphere → Above the pole"],
+    ["0.2", "Above the pole → Into the spiral"],
+    ["0.5", "Above the pole → Into the spiral"],
+    ["0.88", "Above the pole → Into the spiral"],
+    ["0.92", "Into the spiral → Beside the sphere again"],
+  ] as const) {
+    await seek(page, p);
+    await expect(page.locator(".animation-values")).toHaveText(leg);
+    if (leg !== "Above the pole → Into the spiral") continue;
+    // Looking straight down the z axis, zooming by equal factors in equal
+    // times, with the pole (0, 0, 1) framed: its offset from the framed
+    // point, in page pixels at this zoom, is under a pixel.
+    const view = await animationCamera(page);
+    expect(view.yaw).toBe(0);
+    expect(view.pitch).toBe(0);
+    expect(view.zoom).toBeCloseTo(8 ** ((+p - above) / (into - above)), 9);
+    const size = await canvas(page).boundingBox();
+    const perUnit =
+      (Math.min(size!.width, size!.height) / 2) * (view.zoom / (1.16 * radius));
+    const off = Math.hypot(center.x - view.panX - 0, center.y - view.panY - 0);
+    expect(off * perUnit).toBeLessThan(1);
+  }
 });

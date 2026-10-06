@@ -70,6 +70,8 @@ import {
   defaultPath,
   keyFromView,
   keyLabel,
+  keyTimes,
+  legRange,
   maxKeyName,
   maxKeys,
   maxTurns,
@@ -938,6 +940,18 @@ export function SpatialAnimationPanel({
     const d = Math.round((((x * 180) / Math.PI) % 360) + 360) % 360;
     return d > 180 ? d - 360 : d;
   };
+  // How far through the flight each view is reached, while every leg's time
+  // is valid.
+  const reached =
+    path.keys.length >= 2 &&
+    path.keys.every(
+      (key, k) =>
+        k === 0 ||
+        ((key.leg ?? 1) >= legRange[0] && (key.leg ?? 1) <= legRange[1]),
+    )
+      ? keyTimes(path)
+      : null;
+  const percent = (x: number) => `${Math.round(x * 100)}%`;
   const pathEditor = (
     <>
       <Field
@@ -988,11 +1002,9 @@ export function SpatialAnimationPanel({
           );
           return (
             <div className="animation-track path-view" key={k}>
-              {k === 0 ? (
-                name
-              ) : (
+              {name}
+              {k > 0 && (
                 <div className="pair">
-                  {name}
                   <Field
                     label="Turns"
                     help={pathHelp.turns}
@@ -1011,12 +1023,31 @@ export function SpatialAnimationPanel({
                       }}
                     />
                   </Field>
+                  <Field
+                    label="Leg time"
+                    help={pathHelp.leg}
+                    topic={`view ${k + 1} leg time`}
+                  >
+                    <input
+                      aria-label={`View ${k + 1} leg time`}
+                      type="number"
+                      min={legRange[0]}
+                      max={legRange[1]}
+                      step="0.1"
+                      value={Number.isNaN(key.leg) ? "" : (key.leg ?? 1)}
+                      onChange={(e) => {
+                        const leg = e.target.valueAsNumber;
+                        changeKey(k, (old) => ({ ...old, leg }));
+                      }}
+                    />
+                  </Field>
                 </div>
               )}
               <p className="hint">
                 yaw {degrees(key.yaw)}°, pitch {degrees(key.pitch)}°, zoom{" "}
                 {key.zoom.toFixed(2)}×
                 {key.panX !== 0 || key.panY !== 0 ? ", panned" : ""}
+                {reached && ` · reached ${percent(reached[k])} of the way`}
               </p>
               <div className="path-view-buttons">
                 <button
@@ -1045,6 +1076,7 @@ export function SpatialAnimationPanel({
                         ...view,
                         name: old.name,
                         turns: old.turns,
+                        ...(old.leg !== undefined && { leg: old.leg }),
                       }));
                   }}
                 >
@@ -1057,7 +1089,10 @@ export function SpatialAnimationPanel({
                     setPath((p) => {
                       const keys = p.keys.filter((_, j) => j !== k);
                       // The new first view has no leg before it.
-                      if (keys[0]) keys[0] = { ...keys[0], turns: 0 };
+                      if (keys[0]) {
+                        const { leg: _, ...first } = keys[0];
+                        keys[0] = { ...first, turns: 0 };
+                      }
                       return { ...p, keys };
                     })
                   }

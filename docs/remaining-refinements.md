@@ -109,13 +109,12 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - Breaks found between samples must reach every curve built on that curve.
 - Keep the feature opt-in and off for older links.
 
-### 4. Camera path timing and pivot
+### 4. Camera path pivot
 
 **Applies to:** 3D only. 4D has no camera paths.
 
 **Open:**
 
-- Per-leg durations. Views are now equally spaced in time, independent of when the geometry does something worth seeing.
 - Choosing the framed point from the geometry, not the plane through the study's center. Today a turn holds an off-plane detail only approximately.
 
 **Smaller limits:**
@@ -127,7 +126,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Start from:** `web/spatial/path.ts` and `mathematics.md#spatial-camera-paths`.
 
-**Watch for:** a loop's seam slope (`cyclic`) and links' `animation.path`. Per-leg durations change how progress maps to time, so define them against `web/timing.ts`.
+**Watch for:** a loop's seam slope (`cyclic`) and links' `animation.path`.
 
 ### 5. Cutaway box or several planes
 

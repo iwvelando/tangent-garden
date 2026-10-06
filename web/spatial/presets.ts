@@ -3021,4 +3021,93 @@ export const spatialPresets: {
       },
     },
   },
+  // A loxodrome, or rhumb line: the course on the unit sphere that crosses
+  // every meridian at the same angle, here with longitude λ and latitude
+  // atan(sinh(kλ)), k = 0.16, from the equator to within 0.005 of the
+  // north pole on the z axis. Seen along z (yaw 0, pitch 0) it is the
+  // spiral of radius sech(kλ) at angle λ, which near the pole is the
+  // logarithmic spiral 2e^(−kλ): zooming in by e^(2πk) ≈ 2.73 draws the
+  // same spiral turned once more. The tube's radius shrinks in proportion,
+  // so it keeps that likeness. The longitude is λ = a·t² for t in [0, 1],
+  // with a = 37 (almost six turns), so the samples thin toward the pole,
+  // still about 200 a turn there; evenly spaced in λ, three quarters of
+  // them would crowd within 0.1 of the pole and the robust framing would
+  // fit the pole alone. The flight drops above the pole in a short
+  // leg, sinks in over a long one at zoom 1 to 8 with the pole held in the
+  // middle of the page, where a steady path zooms by equal factors in
+  // equal times, so the spiral seems to turn steadily inward, and returns
+  // quickly. The last view is the first, so it loops.
+  {
+    name: "A rhumb line spiraling into its pole",
+    detail:
+      "A course that keeps one compass bearing winds without end into the pole; the camera drops above it, sinks in slowly as the spiral seems to turn, then pulls back",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      samples: 2400,
+      lines: 24,
+      canal: { radius: 0.045, profile: "1/cosh(5.92*t^2)", meridians: 0 },
+      curve: {
+        x: "cos(a*t^2)/cosh(0.16*a*t^2)",
+        y: "sin(a*t^2)/cosh(0.16*a*t^2)",
+        z: "tanh(0.16*a*t^2)",
+        a: 37,
+        min: 0,
+        max: 1,
+      },
+    },
+    view: { yaw: 0.75, pitch: 0.45, zoom: 1, panX: 0, panY: 0 },
+    // The frame's arms keep one length, long beside the pole's narrow turns,
+    // and the seam marks only where the frame starts and ends.
+    layers: { frames: false, seam: false },
+    flight: {
+      duration: 30,
+      repeat: "loop",
+      path: {
+        style: "steady",
+        keys: [
+          {
+            name: "Beside the sphere",
+            yaw: 0.75,
+            pitch: 0.45,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Above the pole",
+            yaw: 0,
+            pitch: 0,
+            zoom: 1,
+            panX: 0.0771,
+            panY: 0.0945,
+            turns: 0,
+            leg: 1,
+          },
+          {
+            name: "Into the spiral",
+            yaw: 0,
+            pitch: 0,
+            zoom: 8,
+            panX: 0.0771,
+            panY: 0.0945,
+            turns: 0,
+            leg: 6,
+          },
+          {
+            name: "Beside the sphere again",
+            yaw: 0.75,
+            pitch: 0.45,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+            leg: 0.8,
+          },
+        ],
+      },
+    },
+  },
 ];
