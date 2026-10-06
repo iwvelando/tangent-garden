@@ -3451,4 +3451,58 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // The ellipsoid (1.5, 1, 0.7) of "The focal sheets of an ellipsoid",
+  // offset inward along its outward normal and seen from above its open
+  // half. A parallel surface shares the ellipsoid's normals and centers of
+  // curvature, so its radii of curvature are the ellipsoid's less d. The
+  // probe stands on the offset over the bottom of the bowl, (0, −1, 0) on
+  // the ellipsoid (u = 3π/2, v = 0: row 32 and column 40 of 80), where the
+  // ellipsoid's radii are a²/b = 2.25 and c²/b = 0.49. As d sweeps from
+  // −0.1 to −0.9 the offset meets the second focal sheet there at
+  // d = −0.49, a cuspidal edge: κ₂ runs off to infinity and returns with
+  // the opposite sign as the offset turns inside out. Near the ends of the
+  // long axis, where c²/a ≈ 0.33 and b²/a ≈ 0.67, it folds sooner. The
+  // focal sheets are hidden, so that the offset faces the camera, and the
+  // probe's centers mark them.
+  {
+    name: "An ellipsoid's parallel surface",
+    detail:
+      "A surface offset along its normals keeps every center of curvature, and folds along cuspidal edges where it meets the focal sheets",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 0.7,
+        // The far half, open towards the default view.
+        uMin: (11 * Math.PI) / 10,
+        uMax: (21 * Math.PI) / 10,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 80,
+        vSamples: 80,
+        curves: 12,
+        offset: -0.25,
+        reach: 0,
+      },
+    },
+    layers: { focal1: false, focal2: false },
+    view: { yaw: 0.3, pitch: 1, zoom: 1.6, panX: 0, panY: 0 },
+    probe: { enabled: true, position: 0.4, target: "offset", across: 0.5 },
+    flight: {
+      duration: 14,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceOffset", from: "-0.1", to: "-0.9" }],
+        probe: "stays",
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

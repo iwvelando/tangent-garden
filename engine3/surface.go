@@ -344,8 +344,12 @@ func (q SurfaceRequest) positions() ([]*Vec3, float64, error) {
 }
 
 // surfaces samples the patch, its offset and focal sheets, and the
-// representative parameter curves and normal lines.
-func surfaces(q SurfaceRequest, probe bool) (Result, error) {
+// representative parameter curves and normal lines. probe asks for the
+// patch's diagnostics, and offset for its offset's in their place.
+func surfaces(q SurfaceRequest, probe, offset bool) (Result, error) {
+	if probe && offset {
+		return Result{}, fmt.Errorf("probe the surface (surfaceDiagnostics) or its offset (offsetDiagnostics), not both")
+	}
 	if err := q.validate(); err != nil {
 		return Result{}, err
 	}
@@ -452,6 +456,9 @@ func surfaces(q SurfaceRequest, probe bool) (Result, error) {
 	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Surface: out}
 	if probe {
 		result.Probe = patchProbe(q, samples, scale)
+	}
+	if offset && q.Offset != 0 {
+		result.Probe = offsetProbe(q, samples, scale)
 	}
 	return result, nil
 }

@@ -19,7 +19,13 @@ func probed(t *testing.T, c Request) (Result, *SurfaceDiagnostics) {
 	if _, err := json.Marshal(r); err != nil {
 		t.Fatal(err)
 	}
-	d := r.Probe
+	return r, gridded(t, r.Probe)
+}
+
+// gridded checks that surface diagnostics are present and that the grid's
+// arrays agree in shape.
+func gridded(t *testing.T, d *SurfaceDiagnostics) *SurfaceDiagnostics {
+	t.Helper()
 	if d == nil {
 		t.Fatal("no surface diagnostics")
 	}
@@ -38,7 +44,7 @@ func probed(t *testing.T, c Request) (Result, *SurfaceDiagnostics) {
 			}
 		}
 	}
-	return r, d
+	return d
 }
 
 // each visits every sample with a normal, with its curvatures (nil where

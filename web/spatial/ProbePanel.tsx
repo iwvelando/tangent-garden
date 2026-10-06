@@ -389,6 +389,8 @@ function SurfaceProbe({
         d.curvature[b].map((line) => Math.abs(line[column] ?? 0)),
       ),
     );
+  // Where an offset has folded, beyond one focal sheet.
+  const folded = (d.folds ?? []).flat().filter(Boolean).length;
   // No surface or no normal here: every value is blank.
   const blank = r.missing || r.singular;
   const value = (k: number | null) =>
@@ -488,9 +490,11 @@ function SurfaceProbe({
                 ? "Singular here: no normal or principal curvatures."
                 : r.umbilic
                   ? "An umbilic: every direction is principal, so none is drawn."
-                  : r.infinite.some(Boolean)
-                    ? "A centre lies beyond 100 study radii, at infinity: its circle is not drawn."
-                    : ""}
+                  : r.folded
+                    ? "Folded here: the offset lies beyond one focal sheet, turned inside out."
+                    : r.infinite.some(Boolean)
+                      ? "A centre lies beyond 100 study radii, at infinity: its circle is not drawn."
+                      : ""}
           </p>
           {[0, 1].map((b) => (
             <Plot
@@ -522,6 +526,7 @@ function SurfaceProbe({
           </ul>
           {(d.singular > 0 ||
             d.umbilics > 0 ||
+            folded > 0 ||
             d.unknown > 0 ||
             d.clipped[0] > 0 ||
             d.clipped[1] > 0) && (
@@ -531,6 +536,8 @@ function SurfaceProbe({
                   `${count(d.singular, "point is", "points are")} singular, without a normal`,
                 d.umbilics > 0 &&
                   `${count(d.umbilics, "point is an umbilic", "points are umbilics")}`,
+                folded > 0 &&
+                  `${count(folded, "point has", "points have")} folded, beyond a focal sheet`,
                 d.unknown > 0 &&
                   `${terms.unknownBranch} unknown at ${count(d.unknown, "point", "points")}, ${terms.unknown}`,
                 ...[0, 1].map(

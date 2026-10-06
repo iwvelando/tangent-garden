@@ -32,9 +32,9 @@ import type {
 } from "./types";
 
 // What the probe describes: the base curve, a surface (a patch, or the
-// canal built on the curve), or in a mirror or interface study the light
-// leaving it or the mirror itself.
-export type ProbeTarget = "curve" | "surface" | "light" | "mirror";
+// canal built on the curve), a patch's offset, or in a mirror or interface
+// study the light leaving it or the mirror itself.
+export type ProbeTarget = "curve" | "surface" | "offset" | "light" | "mirror";
 // Whether the probe stands on a grid of rows and columns (a surface, the
 // light or the mirror) rather than on the curve's samples.
 export const gridded = (t: ProbeTarget) => t !== "curve";
@@ -44,7 +44,9 @@ export const probeOptions = (t: ProbeTarget) =>
     ? { diagnostics: true }
     : t === "light"
       ? { lightDiagnostics: true }
-      : { surfaceDiagnostics: true };
+      : t === "offset"
+        ? { offsetDiagnostics: true }
+        : { surfaceDiagnostics: true };
 // The probe's place as fractions, so that it survives edits to the domain
 // and sample count: along the base's samples (or a surface's rows, along
 // t or u) and, on a surface, across its columns (around θ, or along v).
@@ -267,9 +269,9 @@ export function surfaceKind(c: SpatialConfig): SurfaceKind | null {
 }
 
 // Whether a study offers the probe, what it can describe (a surface patch
-// only its surface, a curve with a surface built on it either, another
-// curve study its curve), and what the curve probe's highlight shows (null
-// when only the frame and circle are drawn).
+// its surface, or its offset while it has one; a curve with a surface
+// built on it either; another curve study its curve), and what the curve
+// probe's highlight shows (null when only the frame and circle are drawn).
 export function probeSupport(c: SpatialConfig): {
   available: boolean;
   highlight: string | null;
@@ -283,6 +285,9 @@ export function probeSupport(c: SpatialConfig): {
       : [
           ...(curve ? (["curve"] as const) : []),
           ...(surfaceKind(c) ? (["surface"] as const) : []),
+          ...(c.format === "surface" && c.surface.offset !== 0
+            ? (["offset"] as const)
+            : []),
         ];
   const format = formats[c.format];
   const names = [
@@ -474,6 +479,19 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     unknown: "where its derivatives are unstable",
     help: "Moves between the patch's own grid samples (more u and v samples give finer steps). Its principal curvatures are numbered κ₁ ≥ κ₂ with the chosen normal, as the focal sheets are",
   },
+  offset: {
+    ...curvatureWords,
+    surface: "offset surface",
+    along: "u",
+    around: "v",
+    branches: ["κ₁", "κ₂"],
+    sliders: ["Along u", "Along v"],
+    through: "",
+    missing: "The patch has no normal here, so the offset has no point.",
+    unknownBranch: "κ₂ is",
+    unknown: "where its derivatives are unstable",
+    help: "Moves between the patch's own grid samples (more u and v samples give finer steps). The offset X + d·n shares the patch's normal n, as drawn, and its principal directions, and the normal line runs on back to the patch's point X, marked with a cross. Its curvatures are κᵢ/(1 − dκᵢ) from the patch's κᵢ, numbered as the patch's, so each center is the patch's focal point and lies on the focal sheet of the same number: parallel surfaces share their centers of curvature. Where 1 − dκᵢ = 0 the offset meets that focal sheet in a cuspidal edge and is singular there. Where it lies beyond one focal sheet it has folded, turned inside out, and κ₁ < κ₂ can hold",
+  },
   canal: {
     ...curvatureWords,
     surface: "canal surface",
@@ -551,6 +569,7 @@ export function surfaceTerms(
       ...surfaceTermsByKind[target === "light" ? "wavefront" : "patch"],
       surface: medium(c),
     };
+  if (target === "offset") return surfaceTermsByKind.offset;
   return surfaceTermsByKind[surfaceKind(c) ?? "patch"];
 }
 
@@ -562,9 +581,13 @@ export function targetName(c: SpatialConfig, t: ProbeTarget) {
       ? "The light"
       : t === "mirror"
         ? `The ${medium(c)}`
-        : "The surface";
+        : t === "offset"
+          ? "The offset"
+          : "The surface";
 }
 export function describeHelp(c: SpatialConfig) {
+  if (c.format === "surface")
+    return "The surface: the patch's principal directions, curvatures and centers. The offset: the same at the offset's point on the same normal, whose centers are the patch's own. Both stand at the same sample.";
   return c.format === "rays"
     ? `The light: the incident and outgoing rays, and the outgoing wavefront's principal directions, curvatures and foci, which lie on the caustics. The ${medium(c)}: its own principal directions, curvatures and centres. Both stand at the same sample.`
     : `The curve: its Frenet frame, curvature and torsion. The surface: the ${surfaceTerms(c, "surface").surface}'s principal directions, curvatures and centres. Both stand at the same place along t.`;
@@ -574,6 +597,7 @@ export function describeHelp(c: SpatialConfig) {
 export function probeLegend(c: SpatialConfig, target: ProbeTarget) {
   const { targets } = probeSupport(c);
   if (c.format === "rays") return `Probe the light or ${medium(c)}`;
+  if (targets.includes("offset")) return "Probe the surface or its offset";
   if (targets.length > 1) return "Probe the curve or surface";
   return target === "surface" ? "Probe the surface" : "Probe the curve";
 }
@@ -651,21 +675,24 @@ export function surfaceProbeBatches(
       { ...q, [axis]: q[axis] - arm },
       { ...q, [axis]: q[axis] + arm },
     ]);
+  const n = d.normals[row][column];
   const marked: Vec3[] = cross(p);
+  // An offset's patch point, d behind it along the shared normal.
+  const foot = d.kind === "offset" && n ? -(d.distance ?? 0) : null;
+  if (n && foot !== null) marked.push(...cross(plus(p, n, foot)));
   if (d.kind === "canal") {
     const ring = d.points[row];
     ring.forEach((q, k) => {
       const next = ring[(k + 1) % ring.length];
       if (q && next) marked.push(q, next);
     });
-  } else if (d.kind !== "patch") {
+  } else if (d.kind !== "patch" && d.kind !== "offset") {
     // The ruling is straight: one segment between its ends on the grid.
     const known = d.points[row].filter((q): q is Vec3 => !!q);
     if (known.length > 1) marked.push(known[0], known.at(-1)!);
   }
   const out = [lines(marked, probeInk.mark)];
-  const light = d.light,
-    n = d.normals[row][column];
+  const light = d.light;
   if (light) {
     const rays: Vec3[] = [],
       length = light.length,
@@ -678,8 +705,13 @@ export function surfaceProbeBatches(
   }
   if (!n) return out;
   // The normal line spans the point, its glyph and both finite centres;
-  // the outgoing ray also spans ℓ.
-  const reach = [0, glyph, ...(light ? [light.length] : [])];
+  // the outgoing ray also spans ℓ, and an offset's line its patch point.
+  const reach = [
+    0,
+    glyph,
+    ...(light ? [light.length] : []),
+    ...(foot !== null ? [foot] : []),
+  ];
   for (const b of [0, 1] as const) {
     const k = d.curvature[b][row][column];
     if (k && d.focal[b][row][column]) reach.push(1 / k);
@@ -717,7 +749,7 @@ export function surfaceProbeBatches(
 // The numbers at grid sample (row, column): its parameters, each branch's
 // curvature (0 where it is lost in rounding beside the other), radius 1/κ (null where κ is 0 or unknown) and whether its
 // centre is at infinity, the Gaussian and mean curvatures, and whether the
-// surface is missing, singular or umbilic there.
+// surface is missing, singular or umbilic there, or, an offset, folded.
 export function surfaceProbeReadout(
   result: SpatialResult,
   row: number,
@@ -742,6 +774,7 @@ export function surfaceProbeReadout(
     missing: !point,
     singular: !!point && !normal,
     umbilic: known && !d.direction[0][row][column],
+    folded: !!d.folds?.[row]?.[column],
     curvature,
     radius: curvature.map((k) => (k ? 1 / k : null)),
     infinite: curvature.map((k, b) => k !== null && !d.focal[b][row][column]),
@@ -806,11 +839,14 @@ const dot = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
 
 // The steps the probe moves through in a result: the base's samples or the
 // grid's rows. Null without the diagnostics the target needs: the light's
-// for the light, a surface's for a surface or mirror.
+// for the light, the offset's for an offset, a surface's for a surface or
+// mirror.
 export function probeSteps(result: SpatialResult, target: ProbeTarget) {
   const d = result.surfaceDiagnostics;
   if (gridded(target))
-    return d && (target === "light") === (d.kind === "wavefront")
+    return d &&
+      (target === "light") === (d.kind === "wavefront") &&
+      (target === "offset") === (d.kind === "offset")
       ? d.u.length - 1
       : null;
   return result.diagnostics ? result.diagnostics.curvature.length - 1 : null;

@@ -353,6 +353,7 @@ test("the surface readout gives curvatures, radii, K and H, and marks undefined 
     missing: false,
     singular: false,
     umbilic: false,
+    folded: false,
     curvature: [-1, -0.5],
     radius: [-1, -2],
     infinite: [false, false],
@@ -622,6 +623,112 @@ test("a torus patch reads κ₁ and κ₂ against the closed form", async ({
   const k1 = Math.cos(Math.PI / 3) / (2 + 0.4);
   await expect(readout(page).first()).toHaveText(short(1.25));
   await expect(readout(page).nth(1)).toHaveText(short(k1));
+});
+
+// The same torus offset by d is the torus of tube radius r + d: at u = π,
+// v = 0 its curvatures are −1/(R + r + d) and −1/(r + d), numbered as the
+// patch's. Past the core circle (r + d < 0) it has folded; at r + d = 0 it
+// has collapsed onto the core circle, a cuspidal edge, and is singular.
+test("a torus's offset reads the offset torus through the Offset d control", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A torus revealing its centers" });
+  await settled(page);
+  await surfaceSwitch(page).check();
+  await settled(page);
+  await expect(describe(page)).toHaveCount(0);
+  const offset = page.getByRole("textbox", { name: "Offset d", exact: true });
+  const status = page.getByTestId("probe-status");
+  const torus = (tube: number) => {
+    const k1 = -1 / (2 + tube),
+      k2 = -1 / tube;
+    return [
+      short(k1),
+      short(k2),
+      `${short(1 / k1)}, ${short(1 / k2)}`,
+      `${short(k1 * k2)}, ${short((k1 + k2) / 2)}`,
+    ];
+  };
+  await offset.fill("0.4");
+  await settled(page);
+  // The patch is still described until the offset is chosen.
+  await expect(describe(page)).toHaveValue("surface");
+  await expect(readout(page)).toHaveText(torus(0.8));
+  await expect(page.locator(".spatial-probe legend")).toHaveText(
+    "Probe the surface or its offset",
+  );
+  await describe(page).selectOption("offset");
+  await settled(page);
+  await expect(along(page, "Along u")).toHaveAttribute(
+    "aria-valuetext",
+    "u = 3.142, row 36 of 72",
+  );
+  await expect(readout(page)).toHaveText(torus(1.2));
+  await expect(status).toHaveText("");
+  // Past the core circle: turned inside out.
+  await offset.fill("-1.2");
+  await settled(page);
+  await expect(readout(page)).toHaveText(torus(-0.4));
+  await expect(status).toHaveText(
+    "Folded here: the offset lies beyond one focal sheet, turned inside out.",
+  );
+  await expect(page.locator(".probe-notes")).toContainText(
+    "1,825 points have folded, beyond a focal sheet",
+  );
+  // On the core circle itself.
+  await offset.fill("-0.8");
+  await settled(page);
+  await expect(status).toHaveText(
+    "Singular here: no normal or principal curvatures.",
+  );
+  // Without an offset the probe describes the patch again.
+  await offset.fill("0");
+  await settled(page);
+  await expect(describe(page)).toHaveCount(0);
+  await expect(readout(page)).toHaveText(torus(0.8));
+});
+
+// The preset's ellipsoid (1.5, 1, 0.7) offset by d = −0.25: the offset
+// shares the patch's normal and centers, so at every point each radius of
+// curvature of the offset is the patch's less d. At the bottom of the
+// bowl, (0, −1, 0) on the ellipsoid, those radii are −a²/b and −c²/b.
+test("an ellipsoid's parallel surface keeps the ellipsoid's centers", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "An ellipsoid's parallel surface" });
+  await settled(page);
+  await expect(describe(page)).toHaveValue("offset");
+  await expect(surfaceSwitch(page)).toBeChecked();
+  await expect(along(page, "Along u")).toHaveAttribute(
+    "aria-valuetext",
+    "u = 4.712, row 32 of 80",
+  );
+  await expect(along(page, "Along v")).toHaveAttribute(
+    "aria-valuetext",
+    "v = 0, column 40 of 80",
+  );
+  const d = -0.25;
+  await expect(readout(page).nth(2)).toHaveText(
+    `${short(-2.25 - d)}, ${short(-0.49 - d)}`,
+  );
+  const radii = async () =>
+    (await readout(page).nth(2).textContent())!.split(", ").map(Number);
+  for (const column of ["40", "20", "70"]) {
+    await along(page, "Along v").fill(column);
+    await describe(page).selectOption("surface");
+    await settled(page);
+    const own = await radii();
+    await describe(page).selectOption("offset");
+    await settled(page);
+    const parallel = await radii();
+    own.forEach((r, b) =>
+      expect(Math.abs(parallel[b] - (r - d))).toBeLessThan(
+        1e-3 * Math.max(1, Math.abs(r)),
+      ),
+    );
+  }
 });
 
 test("still exports record the surface probe; a link carries it", async ({
@@ -1063,6 +1170,127 @@ test("a mirror's probe describes the light or the mirror, in their own words", (
   expect(surfaceProbeHelp(mirror, "mirror")).toMatch(
     /^Describes the mirror at a point/,
   );
+});
+
+// A patch offset by d = 0.5: the same row as grid(), its points moved
+// along n, with the fifth column folded.
+function offsetGrid(): SpatialResult {
+  const r = grid();
+  const d = r.surfaceDiagnostics!;
+  return {
+    ...r,
+    surfaceDiagnostics: {
+      ...d,
+      kind: "offset",
+      distance: 0.5,
+      folds: [[false, false, false, false, true]],
+    },
+  };
+}
+const patchStudy = (offset: number) => {
+  const c = config("none", "surface");
+  c.surface.offset = offset;
+  return c;
+};
+
+test("a patch with an offset probes the patch or its offset, in their own words", () => {
+  const offset = { ...defaultProbe, target: "offset" as const };
+  expect(probeSupport(patchStudy(0)).targets).toEqual(["surface"]);
+  expect(probeSupport(patchStudy(0.4)).targets).toEqual(["surface", "offset"]);
+  expect(probeSupport(patchStudy(-0.4)).targets).toEqual(["surface", "offset"]);
+  // A mirror reads its patch but not the offset.
+  const mirror = rays();
+  mirror.surface.offset = 0.4;
+  expect(probeSupport(mirror).targets).toEqual(["light", "mirror"]);
+  expect(probeTarget(mirror, offset)).toBe("light");
+  // The offset is kept while the study has one, and falls back to the
+  // patch once it has none.
+  expect(probeTarget(patchStudy(0.4), offset)).toBe("offset");
+  expect(probeTarget(patchStudy(0.4), defaultProbe)).toBe("surface");
+  expect(probeTarget(patchStudy(0), offset)).toBe("surface");
+  expect(probeTarget(config("canal"), offset)).toBe("curve");
+  expect(gridded("offset")).toBe(true);
+  expect(probeOptions("offset")).toEqual({ offsetDiagnostics: true });
+  const c = patchStudy(0.4);
+  expect(targetName(c, "surface")).toBe("The surface");
+  expect(targetName(c, "offset")).toBe("The offset");
+  expect(probeLegend(c, "offset")).toBe("Probe the surface or its offset");
+  expect(probeLegend(c, "surface")).toBe("Probe the surface or its offset");
+  expect(probeLegend(patchStudy(0), "surface")).toBe("Probe the surface");
+  expect(describeHelp(c)).toMatch(/^The surface: .* The offset: /);
+  const own = surfaceTerms(c, "offset");
+  expect(own.surface).toBe("offset surface");
+  expect(own.switch).toBe("Principal curvatures & centres at a point");
+  expect(own.branches).toEqual(["κ₁", "κ₂"]);
+  expect(own.sliders).toEqual(["Along u", "Along v"]);
+  expect(surfaceTerms(c, "surface").surface).toBe("surface");
+  // Help states the engine's rule: curvatures κᵢ/(1 − dκᵢ) numbered as
+  // the patch's, the patch's centers, the cuspidal edge and the fold.
+  const help = surfaceProbeHelp(c, "offset");
+  expect(help).toMatch(/^Describes the offset surface at a point/);
+  expect(help).toMatch(/κᵢ\/\(1 − dκᵢ\)/);
+  expect(help).toMatch(/focal sheet of the same number/);
+  expect(help).toMatch(/cuspidal edge/);
+  expect(help).toMatch(/folded/);
+  expect(help).toMatch(/Move the probe along the offset surface/);
+});
+
+test("the offset's steps, records and drawing need its own diagnostics", () => {
+  const r = offsetGrid(),
+    c = patchStudy(0.5),
+    offset = { ...defaultProbe, target: "offset" as const, across: 0 };
+  expect(probeSteps(r, "offset")).toBe(0);
+  expect(probeSteps(r, "surface")).toBeNull();
+  expect(probeSteps(grid(), "offset")).toBeNull();
+  expect(probeSteps(grid(), "surface")).toBe(0);
+  expect(probeRecord(r, c, offset, 0)).toEqual({
+    target: "offset",
+    row: 0,
+    column: 0,
+    u: 0.25,
+    v: 0,
+  });
+  expect(probeDrawing(r, c, offset, 0)).toEqual(surfaceProbeBatches(r, 0, 0));
+  // The normal line runs on back to the patch's point, d behind the
+  // offset's along n, and a cross marks it.
+  const batches = surfaceProbeBatches(r, 0, 4),
+    glyph = r.bounds.radius * 0.2;
+  const normal = byInk(batches, probeInk.normal);
+  expect(normal).toHaveLength(1);
+  expect(length(sub(normal[0][0], at(0, 0, 0)))).toBeLessThan(f32);
+  expect(length(sub(normal[0][1], at(1 + glyph, 0, 0)))).toBeLessThan(f32);
+  const marks = byInk(batches, probeInk.mark);
+  expect(marks).toHaveLength(6);
+  for (const [center, arms] of [
+    [at(1, 0, 0), marks.slice(0, 3)],
+    [at(0.5, 0, 0), marks.slice(3)],
+  ] as const)
+    for (const [a, b] of arms)
+      expect(
+        length(
+          sub(at((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2), center),
+        ),
+      ).toBeLessThan(f32);
+  // Behind the farther center, the line reaches the patch's point.
+  const behind = surfaceProbeBatches(
+    {
+      ...r,
+      surfaceDiagnostics: { ...r.surfaceDiagnostics!, distance: 3 },
+    },
+    0,
+    0,
+  );
+  expect(
+    length(sub(byInk(behind, probeInk.normal)[0][0], at(-2, 0, 0))),
+  ).toBeLessThan(f32);
+  // A patch's own probe marks only its point.
+  expect(byInk(surfaceProbeBatches(grid(), 0, 4), probeInk.mark)).toHaveLength(
+    3,
+  );
+  // The readout says where the offset has folded.
+  expect(surfaceProbeReadout(r, 0, 4)).toMatchObject({ folded: true });
+  expect(surfaceProbeReadout(r, 0, 0)).toMatchObject({ folded: false });
+  expect(surfaceProbeReadout(grid(), 0, 4)).toMatchObject({ folded: false });
 });
 
 test("the light probe draws its rays, foci and wavefront circles", () => {

@@ -342,6 +342,36 @@ test("a mirror's link carries the light or mirror probe; older ones open without
   assert.equal(spatialStudy(curve).probe.enabled, true);
 });
 
+test("a link carries the probe on a patch's offset", async () => {
+  const parallel = spatialPresets.findIndex(
+    (p) => p.name === "An ellipsoid's parallel surface",
+  );
+  assert.ok(parallel >= 0);
+  const study: SpatialStudy = {
+    ...spatial(parallel),
+    animation: { ...defaultAnimation, mode: "probe", duration: 4 },
+    probe: { enabled: true, position: 0.3, target: "offset", across: 0.6 },
+  };
+  const back = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(back.study), study);
+  // Without an offset, or in another study, the target is kept as written
+  // and the probe describes the study's own first target.
+  const flat = structuredClone(study) as any;
+  flat.config.surface.offset = 0;
+  assert.deepEqual(spatialStudy(flat).probe, study.probe);
+  const curve = structuredClone(spatial()) as any;
+  curve.probe = { enabled: true, position: 0.25, target: "offset", across: 0 };
+  assert.equal(spatialStudy(curve).probe.enabled, true);
+  const mirror = structuredClone(spatial(parallel)) as any;
+  mirror.config.format = "rays";
+  mirror.probe = { enabled: true, position: 0.25, target: "offset", across: 0 };
+  // A mirror's probe describes the light or the mirror, not an offset.
+  assert.equal(spatialStudy(mirror).probe.enabled, false);
+  const unknown = structuredClone(study) as any;
+  unknown.probe.target = "offsets";
+  await refused(() => Promise.resolve(spatialStudy(unknown)), "probe.target");
+});
+
 test("links are compact, url-safe, and readable by an independent decoder", async () => {
   let longest = 0;
   for (const [i] of spatialPresets.entries()) {

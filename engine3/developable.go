@@ -80,6 +80,11 @@ type Request struct {
 	// principal curvatures, directions and foci at every sample, in place
 	// of the surface's (see lightProbe); other studies ignore it.
 	LightDiagnostics bool `json:"lightDiagnostics"`
+	// OffsetDiagnostics asks a surface study with an offset for the
+	// offset's principal curvatures, directions and centers at every
+	// sample, in place of the patch's (see offsetProbe); other studies
+	// ignore it.
+	OffsetDiagnostics bool `json:"offsetDiagnostics"`
 	// Adaptive refines the drawn curves between their uniform samples (see
 	// refinePath); surface, ray, and implicit studies ignore it.
 	Adaptive bool `json:"adaptive"`
@@ -193,9 +198,10 @@ func Compute(c Request) (Result, error) {
 	if err == nil && c.Probe != nil {
 		out.CurveProbe = out.probing.probe(*c.Probe, out.Diagnostics, out.Bounds.Radius)
 	}
-	// A patch and a wavefront place their own focal points: the patch as
-	// its focal sheets, the wavefront as its caustics.
-	if err == nil && out.Probe != nil && out.Probe.Kind != "patch" && out.Probe.Kind != "wavefront" {
+	// A patch, its offset and a wavefront place their own focal points:
+	// the patch and its offset as its focal sheets, the wavefront as its
+	// caustics.
+	if err == nil && out.Probe != nil && out.Probe.Kind != "patch" && out.Probe.Kind != "offset" && out.Probe.Kind != "wavefront" {
 		out.Probe.clip(out.Bounds.Radius)
 	}
 	return out, err
@@ -223,7 +229,7 @@ func (c Request) binormal(v, a Vec3, lo, hi float64) (Vec3, bool) {
 
 func compute(c Request) (Result, error) {
 	if c.Format == "surface" {
-		return surfaces(c.Surface, c.SurfaceDiagnostics)
+		return surfaces(c.Surface, c.SurfaceDiagnostics, c.OffsetDiagnostics)
 	}
 	if c.Format == "rays" {
 		return rays(c.Surface, c.Rays, c.SurfaceDiagnostics, c.LightDiagnostics)

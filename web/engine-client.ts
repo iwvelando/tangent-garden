@@ -10,6 +10,7 @@ export type SpatialOptions = {
   diagnostics?: boolean;
   surfaceDiagnostics?: boolean;
   lightDiagnostics?: boolean;
+  offsetDiagnostics?: boolean;
   // The curve probe at one parameter (see engine3.ProbePoint).
   probe?: ProbeQuery;
 };
@@ -122,6 +123,7 @@ export class EngineClient {
         ...(options.diagnostics ? { diagnostics: true } : {}),
         ...(options.surfaceDiagnostics ? { surfaceDiagnostics: true } : {}),
         ...(options.lightDiagnostics ? { lightDiagnostics: true } : {}),
+        ...(options.offsetDiagnostics ? { offsetDiagnostics: true } : {}),
         ...(options.probe ? { probe: options.probe } : {}),
       })
     ).result;
