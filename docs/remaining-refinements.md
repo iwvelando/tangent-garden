@@ -115,7 +115,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Open:**
 
-- Strokes do not taper with perspective depth.
 - Turns sharper than 120° are capped rather than joined.
 - See-through sheets are not multisampled, so their outlines alias.
 - Lines behind several see-through layers are not attenuated per layer.

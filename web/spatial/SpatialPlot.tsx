@@ -163,7 +163,7 @@ export function SpatialPlot({
     else delete canvas.current.dataset.cut;
     // The sight as drawn: opaque sheets where they could not be seen
     // through.
-    const { weight, ...drawn } = through
+    const { weight, depth, ...drawn } = through
       ? shown
       : { ...shown, sheets: "opaque" as const };
     if (isPlain({ ...drawn, weight })) delete canvas.current.dataset.sight;
@@ -172,7 +172,11 @@ export function SpatialPlot({
     const stroked = !!renderer.current?.strokes();
     if (weight === "hairline" || !stroked)
       delete canvas.current.dataset.strokes;
-    else canvas.current.dataset.strokes = JSON.stringify({ weight });
+    else
+      canvas.current.dataset.strokes = JSON.stringify({
+        weight,
+        ...(depth === "taper" && { depth }),
+      });
     state.current.onSeeThrough?.(through);
     state.current.onStrokes?.(stroked);
     state.current.onViewport(v);

@@ -6,16 +6,20 @@
 // renderer, linework, links and exports alike.
 
 import { weightScale, type LineWeight } from "../line-weight";
+import { clip, type Camera } from "./scene";
+import type { Vec3 } from "./types";
 export { lineWeights, weightScale, type LineWeight } from "../line-weight";
 
 export type SheetSight = "opaque" | "through";
 export type HiddenLines = "hide" | "faint" | "dashed";
+export type StrokeDepth = "even" | "taper";
 export type Sight = {
   sheets: SheetSight;
   // Each sheet layer's opacity α when sheets are seen through.
   opacity: number;
   hidden: HiddenLines;
   weight: LineWeight;
+  depth?: StrokeDepth;
 };
 export const defaultSight: Sight = {
   sheets: "opaque",
@@ -85,25 +89,107 @@ export function strokeWidth(
 // across the widest stroke's half width, and a pixel more, so a stroke
 // lying on a sheet is not cut by the sheet's slope beneath it. Hairlines
 // need only the pixel. The drawing and the vector export's sampled hiding
-// use the same.
+// use the same. Tapered strokes widen by up to taper (taperBound).
 export function sheetOffset(
   lines: { ink: number; weight?: number }[],
   weight: LineWeight,
   size: { width: number; height: number },
+  taper = 1,
 ) {
   if (weight === "hairline") return 1;
   return (
-    1 + Math.max(0.5, ...lines.map((b) => strokeWidth(b, weight, size)! / 2))
+    1 +
+    Math.max(
+      0.5,
+      ...lines.map((b) => (strokeWidth(b, weight, size)! * taper) / 2),
+    )
   );
 }
 // The weight as an export's metadata records it, only for strokes, so files
 // drawn with hairlines are unchanged.
 export function strokeRecord(spec: Sight) {
   if (spec.weight === "hairline") return undefined;
+  const statement = `Lines are strokes ${weightScale[spec.weight]} × their layer's weight wide, in pixels of a 1000 × 760 page scaled to the image, with round ends.`;
+  if (spec.depth !== "taper") return { weight: spec.weight, statement };
   return {
     weight: spec.weight,
-    statement: `Lines are strokes ${weightScale[spec.weight]} × their layer's weight wide, in pixels of a 1000 × 760 page scaled to the image, with round ends.`,
+    depth: spec.depth,
+    statement: `${statement} Through a perspective lens that width is a stroke's where it crosses the plane through the view's target (one radius ahead of the eye when riding a ray), and it is multiplied by that plane's distance from the eye over the stroke's, held from ${taperRange[0]} to ${taperRange[1]}.`,
   };
+}
+
+// Strokes through a perspective lens: even, every stroke its weight's width
+// wherever it is, or tapering with depth, as a line of fixed thickness in
+// space would look. A tapered stroke is its weight's width where it crosses
+// the plane through the view's target (the camera's focus), and that times
+// focus/w elsewhere, w its clip w, which is its distance from the eye over
+// the radius: twice as wide at half the distance, half as wide at twice it.
+// The factor is held within taperRange, so a line passing beside the eye
+// does not fill the page and a far one does not vanish. On the page 1/w is
+// affine along a segment, so the width changes linearly along it. An
+// orthographic view has w = 1 at every point and nothing to taper.
+export const strokeDepths: { value: StrokeDepth; label: string }[] = [
+  { value: "even", label: "Even" },
+  { value: "taper", label: "Taper with distance" },
+];
+export const taperRange: [number, number] = [0.25, 4];
+// The line drawing (SVG) gives each stroke one width per path, so it draws
+// a tapered line in steps: each step's width is a power of taperStep times
+// the weight's (or an end of taperRange), within a factor of √taperStep of
+// the drawing's width at every point of the step.
+export const taperStep = 1.05;
+// The factor a stroke's width is multiplied by at a point of clip w.
+export function strokeTaper(
+  k: Pick<Camera, "lens" | "focus">,
+  w: number,
+  depth: StrokeDepth | undefined,
+) {
+  if (depth !== "taper" || k.lens[0] === 0) return 1;
+  return Math.min(taperRange[1], Math.max(taperRange[0], k.focus / w));
+}
+// The largest factor a point of the study's bounds can have: the sheets'
+// polygon offset must reach the widest stroke drawn on them.
+export function taperBound(
+  k: Camera,
+  bounds: { center: Vec3; radius: number },
+  depth: StrokeDepth | undefined,
+) {
+  if (depth !== "taper" || k.lens[0] === 0) return 1;
+  const c = bounds.center,
+    w = clip(k, c.x, c.y, c.z)[3] - bounds.radius * k.lens[0];
+  return w > 0 ? strokeTaper(k, w, depth) : taperRange[1];
+}
+// A tapered stroke's width step, as the line drawing draws it: the factor
+// g = focus/w (before taperRange holds it) rounded to a power of
+// taperStep, or the end of taperRange it passes.
+export function taperStepOf(g: number) {
+  const [lo, hi] = taperRange;
+  if (!(g > lo)) return lo;
+  if (g >= hi) return hi;
+  return Math.min(
+    hi,
+    Math.max(lo, taperStep ** Math.round(Math.log(g) / Math.log(taperStep))),
+  );
+}
+// The factors g where a tapered stroke's step changes between a and b:
+// the ends of taperRange and halfway (in ratio) between steps.
+export function taperBreaks(a: number, b: number) {
+  const lo = Math.min(a, b),
+    hi = Math.max(a, b),
+    out: number[] = [];
+  const add = (g: number) => {
+    if (g > lo && g < hi) out.push(g);
+  };
+  add(taperRange[0]);
+  const log = Math.log(taperStep);
+  for (
+    let k = Math.ceil(Math.log(Math.max(lo, taperRange[0])) / log - 0.5);
+    taperStep ** (k + 0.5) < Math.min(hi, taperRange[1]);
+    k++
+  )
+    add(taperStep ** (k + 0.5));
+  add(taperRange[1]);
+  return out;
 }
 
 // Field names, as errors name them.
@@ -113,6 +199,8 @@ export const sightHelp = {
     "See-through draws every sheet layer at once, so folds, inner sheets and lines inside a surface show. At each point of the page, the color is the mean of the shaded colors of all n sheet layers there, laid over the background with opacity 1 − (1 − α)ⁿ: the more layers overlap, the denser the drawing. Every layer counts the same whatever its depth, so it needs no sorting and intersecting sheets are drawn exactly; it is a way to see folds, not a model of light through glass. The study itself is unchanged.",
   opacity: `Each layer's opacity, from ${opacityRange[0]} to ${opacityRange[1]}. Two layers cover 1 − (1 − α)² of the background, three 1 − (1 − α)³.`,
   weight: `How wide lines are drawn. Fine, regular and bold strokes are a share of the drawing, so they keep their proportion in the live drawing, stills and videos at any size: regular draws the curve ${inkWeight(2)} px and construction lines ${inkWeight(1)} px wide on a 1000 × 760 page, fine ${weightScale.fine}× and bold ${weightScale.bold}× that. Hairlines are one device pixel at any size, as 3D drawings were before line weights, so they grow fainter as an export grows larger. Older links open with hairlines.`,
+  depth: `How strokes change with distance through a perspective lens. Even strokes are their weight's width wherever they are. Tapered strokes are that width where they cross the plane through the view's target, the plane a perspective lens draws at the orthographic scale, and wider or thinner in proportion to how much nearer or farther from the eye they are: twice as wide at half the distance, half as wide at twice it, from ${taperRange[0]}× to at most ${taperRange[1]}× the width, as a line of one thickness in space would look. Riding a ray, the plane is one study radius ahead of the eye. Orthographic views and hairlines are drawn evenly. Older links open with even strokes.`,
+  flat: "Strokes taper only through a perspective lens: choose one with Projection above the drawing, or ride a ray.",
   hidden: `Lines behind the nearest sheet: hidden, as an opaque drawing hides them; faint, at ${faintOpacity * 100}% opacity; or dashed, at ${dashedOpacity * 100}% opacity, one dash every ${dashPeriod * 100}% of the shorter side of the drawing, measured along the line in space, so a line receding from view has shorter dashes. A line lying on a sheet is in front of it. Lines never hide other lines.`,
   unstroked:
     "This device's graphics cannot draw strokes (they need instanced drawing), so lines are drawn as hairlines here and in exports.",

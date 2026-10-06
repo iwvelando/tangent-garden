@@ -4,29 +4,34 @@ import { LineWeightField } from "../LineWeightField";
 import {
   hiddenLines,
   sheetSights,
+  strokeDepths,
   sightFields,
   sightHelp,
   type HiddenLines,
   type Sight,
   type SheetSight,
   type SightError,
+  type StrokeDepth,
 } from "./sight";
 
 // The lines' weight and seeing through the drawing. Everything they show
 // comes from sight.ts. `unavailable` is set when the device cannot draw
-// see-through sheets, `unstroked` when it cannot draw strokes.
+// see-through sheets, `unstroked` when it cannot draw strokes, and
+// `lensed` when the drawing is seen through a perspective lens.
 export function SightPanel({
   sight,
   onSight,
   error,
   unavailable,
   unstroked = false,
+  lensed = false,
 }: {
   sight: Sight;
   onSight: (change: (s: Sight) => Sight) => void;
   error?: SightError;
   unavailable: boolean;
   unstroked?: boolean;
+  lensed?: boolean;
 }) {
   const through = sight.sheets === "through";
   return (
@@ -41,9 +46,27 @@ export function SightPanel({
               value={sight.weight}
               onChange={(weight) => onSight((s) => ({ ...s, weight }))}
             />
+            <Field label="Depth" help={sightHelp.depth}>
+              <select
+                value={sight.depth ?? "even"}
+                onChange={(e) => {
+                  const depth = e.target.value as StrokeDepth;
+                  onSight((s) => ({ ...s, depth }));
+                }}
+              >
+                {strokeDepths.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
           </div>
           {unstroked && sight.weight !== "hairline" && (
             <p className="spatial-caption">{sightHelp.unstroked}</p>
+          )}
+          {sight.depth === "taper" && !lensed && (
+            <p className="spatial-caption">{sightHelp.flat}</p>
           )}
         </div>
       </fieldset>
