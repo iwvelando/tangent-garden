@@ -37,6 +37,8 @@ const spatial = {
     expect(page.locator(".spatial-stage")).toHaveAttribute(
       "aria-busy",
       "false",
+      // Heavy studies, such as a Klein bottle's level set, take seconds on CI.
+      { timeout: 30000 },
     ),
 };
 
@@ -174,6 +176,8 @@ const four = {
     expect(page.locator(".tesseract-stage")).toHaveAttribute(
       "aria-busy",
       "false",
+      // Heavy studies, such as a Klein bottle's level set, take seconds on CI.
+      { timeout: 30000 },
     ),
 };
 
