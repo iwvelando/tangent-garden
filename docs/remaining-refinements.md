@@ -54,7 +54,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Open:**
 
-- **Exact probe between samples** (2D and 3D), if snapping proves too coarse. Today the probe snaps to samples, and a held probe can step by half a sample spacing between parameter frames.
+- **Exact probe between samples in 3D.** The 2D probe stands between samples on request (see `mathematics.md`, **Curvature and the 2D probe**, _Between samples_); the 3D curve probe still snaps to samples, and a held probe can step by half a sample spacing between parameter frames. The 2D path (`engine/probe.go`, a probe-only request, `probe: { t } | { share }`) is the model.
 - **3D surface probe held at its own (u, v)** under parameter tracks, rather than its share of the grid.
 - **3D surface probe on more surfaces.** Implicit meshes are excluded on purpose: a mesh is a picture, not a differentiable evaluator.
 - **Smaller limits** to fix if they bite:
@@ -62,7 +62,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
   - Surface plots run along the row only.
   - The readout cannot tell an unknown tangent plane from a singular one.
 
-**Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
+**Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks, away messages), `web/planar-probe.ts` and `engine/probe.go` (the 2D probe between samples), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
 
 **Watch for:**
 
@@ -193,7 +193,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - Manual perspective presets.
 - 2D and 4D loop presets in motion.
 - The probe while parameters vary.
-- The 2D probe, refinement and line-weight controls at phone width.
+- The 2D probe, refinement and line-weight controls at phone width, including the probe's **At any t, between samples** checkbox and its continuous slider.
 
 Line weights in 3D were checked locally and on a phone on 2026-10-04.
 

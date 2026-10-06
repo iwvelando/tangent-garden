@@ -145,8 +145,11 @@ test("each 3D example names itself above a shared construction title", async ({
   page,
 }) => {
   // It opens every 3D example in turn, about 90 ms each locally but several
-  // times that on CI, where 61 examples outgrew the default 30 s.
-  test.slow();
+  // times that on CI, and its last step waits for the engine to work
+  // through every example's study first: 100 examples outgrew the slowed
+  // 90 s on CI's slower runners, and took 45 s locally with the CPU
+  // throttled four times.
+  test.setTimeout(240_000);
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
@@ -300,7 +303,7 @@ test("each 3D example names itself above a shared construction title", async ({
   await expect(page.locator(".spatial-stage")).toHaveAttribute(
     "aria-busy",
     "false",
-    { timeout: 30000 },
+    { timeout: 120_000 },
   );
   await expect(page.locator(".app:visible .plot-meta .legend")).toContainText(
     /Base curve.*Tangent developable/,

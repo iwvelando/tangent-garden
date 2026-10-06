@@ -1,14 +1,26 @@
-// The 2D notebook's parameter probe: one base sample's tangent, normal,
-// osculating circle and construction lines, and the base curve's signed
-// curvature around it. Every quantity comes from Go (engine.Diagnostics) or
-// the study's own per-sample arrays; this module only selects them. The
+// The 2D notebook's parameter probe: the base curve's tangent, normal,
+// osculating circle and construction lines at one parameter, and its signed
+// curvature around it. Every quantity comes from Go (engine.Diagnostics at
+// the samples, engine.ProbePoint between them) or the study's own
+// per-sample arrays; this module only selects them. The
 // notebook-independent parts are in probe.ts.
 import { probeIndex } from "./probe";
-import type { Config, Result, Vec } from "./types";
+import {
+  refinesBetweenSamples,
+  type Config,
+  type ProbePoint,
+  type Result,
+  type Vec,
+} from "./types";
 
-// The probe's place as a fraction of the base's samples, so that it
-// survives edits to the domain and sample count.
-export type PlanarProbe = { enabled: boolean; position: number };
+// The probe's place as a fraction of the domain, so that it survives edits
+// to the domain and sample count. It snaps to the nearest sample unless it
+// stands between samples (between), which links made before it leave out.
+export type PlanarProbe = {
+  enabled: boolean;
+  position: number;
+  between?: boolean;
+};
 export const defaultProbe: PlanarProbe = { enabled: false, position: 0.5 };
 
 // Only a curve with a parameter can be probed: a level set and an iterated
@@ -16,30 +28,69 @@ export const defaultProbe: PlanarProbe = { enabled: false, position: 0.5 };
 export const probeSupported = (config: Config) =>
   config.curve.format !== "implicit" && config.curve.format !== "attractor";
 
+// Whether the probe stands between samples in this study: asked for, on a
+// curve Go evaluates at any parameter (not a chase or trajectory, which
+// snap to their samples).
+export const probeBetween = (config: Config, probe: PlanarProbe) =>
+  !!probe.between && refinesBetweenSamples(config.curve.format);
+
+// The parameter at a fraction of the domain, as Go samples it, so that the
+// ends and a symmetric domain's middle are exact.
+export const parameterAt = (min: number, max: number, position: number) =>
+  Math.min(max, Math.max(min, min * (1 - position) + max * position));
+
 // The sample nearest the probe's position in a result with diagnostics.
 export const probeSample = (result: Result, probe: PlanarProbe) =>
   result.diagnostics
     ? probeIndex(probe.position, result.diagnostics.curvature.length - 1)
     : null;
 
-// The numbers at sample j: its parameter, the signed curvature κ (null
-// where unknown), the radius of curvature 1/|κ| (null where κ is 0 or
-// unknown), the drawn arc length to it, whether the sample is flat, and
-// whether its center is at infinity.
-export function probeReadout(result: Result, j: number) {
+// The probe as drawn: Go's description at its parameter, with its sample
+// when it is snapped to one.
+export type HeldProbe = ProbePoint & { sample?: number };
+
+// The probe at sample j, from the result's diagnostics and its own
+// per-sample points, described as Go describes it between samples.
+export function sampleProbe(result: Result, j: number): HeldProbe | null {
   const d = result.diagnostics;
   if (!d) return null;
   const n = d.curvature.length - 1;
-  const k = d.curvature[j] ?? null;
-  const flat = k === 0;
   return {
-    // As Go samples it, so a symmetric domain's middle is exactly 0.
     t: n > 0 ? d.min * (1 - j / n) + d.max * (j / n) : d.min,
+    point: result.base[j] ?? null,
+    tangent: d.tangent[j] ?? null,
+    normal: d.normal[j] ?? null,
+    curvature: d.curvature[j] ?? null,
+    center: d.center[j] ?? null,
+    length: d.length[j] ?? null,
+    ...(result.input && { input: result.input[j] ?? null }),
+    derived: result.derived[j] ?? null,
+    sample: j,
+  };
+}
+
+// Where a probe stands among a result's samples, in sample steps (not
+// rounded): for its mark on the plot of curvature.
+export function probeStep(result: Result, at: ProbePoint) {
+  const d = result.diagnostics;
+  if (!d) return 0;
+  const n = d.curvature.length - 1;
+  return d.max > d.min ? ((at.t - d.min) / (d.max - d.min)) * n : 0;
+}
+
+// The probe's numbers: its parameter, the signed curvature κ (null where
+// unknown), the radius of curvature 1/|κ| (null where κ is 0 or unknown),
+// the drawn arc length to it, whether it is flat, and whether its center
+// is at infinity.
+export function probeReadout(at: ProbePoint) {
+  const k = at.curvature;
+  return {
+    t: at.t,
     curvature: k,
     radius: k ? 1 / Math.abs(k) : null,
-    length: d.length[j] ?? null,
-    flat,
-    infinite: !!k && !d.center[j],
+    length: at.length,
+    flat: k === 0,
+    infinite: !!k && !at.center,
   };
 }
 
@@ -49,19 +100,20 @@ export function probeStraight(result: Result) {
   return known.length > 0 && known.every((k) => k === 0);
 }
 
-// What the probe highlights of each construction at its sample, named for
+// What the probe highlights of each construction at its point, named for
 // its help and legend, as segments from point to point. The construction's
-// own point at the sample is the derived curve's; it acts on the input
-// where there is one, else on the base.
+// own point is the derived curve's; it acts on the input where there is
+// one, else on the base.
 type Highlight = {
   name: string;
-  lines: (r: Result, j: number, c: Config) => [Vec, Vec][];
+  lines: (at: ProbePoint, c: Config) => [Vec, Vec][];
 };
-const from = (r: Result, j: number) => (r.input ? r.input[j] : r.base[j]);
+const from = (at: ProbePoint, c: Config) =>
+  c.input !== "curve" ? (at.input ?? null) : at.point;
 const segment = (a?: Vec | null, b?: Vec | null): [Vec, Vec][] =>
   a && b ? [[a, b]] : [];
-const toDerived: Highlight["lines"] = (r, j) =>
-  segment(from(r, j), r.derived[j]);
+const toDerived: Highlight["lines"] = (at, c) =>
+  segment(from(at, c), at.derived);
 const highlights: Partial<Record<Config["kind"], Highlight>> = {
   evolute: { name: "its normal to the center", lines: toDerived },
   involute: { name: "its unwound string", lines: toDerived },
@@ -72,24 +124,15 @@ const highlights: Partial<Record<Config["kind"], Highlight>> = {
   rolling: { name: "its arm to the traced point", lines: toDerived },
   pedal: {
     name: "its tangent's foot and the perpendicular from the pole",
-    lines: (r, j, c) => [
-      ...toDerived(r, j, c),
-      ...segment(c.pole, r.derived[j]),
-    ],
+    lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
   contrapedal: {
     name: "its normal's foot and the perpendicular from the pole",
-    lines: (r, j, c) => [
-      ...toDerived(r, j, c),
-      ...segment(c.pole, r.derived[j]),
-    ],
+    lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
   orthotomic: {
     name: "its reflected pole",
-    lines: (r, j, c) => [
-      ...toDerived(r, j, c),
-      ...segment(c.pole, r.derived[j]),
-    ],
+    lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
 };
 // A construction drawn as a family of paths (an offset stack, a circle
@@ -99,8 +142,22 @@ export function probeHighlight(config: Config, result: Result) {
   return highlights[config.kind] ?? null;
 }
 
-// The probe's help, naming what it highlights in this study.
-export function probeHelp(config: Config, result?: Result | null) {
+// The probe's help, naming what it highlights in this study, and how it
+// is placed: snapped to samples, or between them.
+export function probeHelp(
+  config: Config,
+  result?: Result | null,
+  between = false,
+) {
   const h = result ? probeHighlight(config, result) : highlights[config.kind];
+  if (between)
+    return `Describe the base curve at any point of its domain: its unit tangent T and normal N (T turned a quarter turn to the left), its osculating circle, which shares its tangent and curvature there, and the circle's center, the center of curvature${h ? `, with ${h.name}` : ""}. The signed curvature κ = (x′y″ − y′x″)/|r′|³ is positive where the curve turns left and negative where it turns right; the radius of curvature is 1/|κ|. The arc length s is measured along the drawn curve from its first sample by Simpson's rule, with nothing counted across a gap, and carried on from the sample before by the same rule. Go evaluates them at the probe's own t from the curve's derivatives there, as it does at every sample; at a sample they are the sample's own. Moving the probe asks Go for that one point, which keeps the study it last computed, so a move is quick; the first place after the study changes computes the study once more, which takes longer for many samples. Where κ is 0 (flat) or the center lies beyond 100 radii of the study, no circle is drawn; where the second derivative is unstable, κ is unknown.`;
   return `Describe the base curve at one of its samples: its unit tangent T and normal N (T turned a quarter turn to the left), its osculating circle, which shares its tangent and curvature there, and the circle's center, the center of curvature${h ? `, with ${h.name}` : ""}. The signed curvature κ = (x′y″ − y′x″)/|r′|³ is positive where the curve turns left and negative where it turns right; the radius of curvature is 1/|κ|. The arc length s is measured along the drawn curve from its first sample by Simpson's rule, with nothing counted across a gap. Go computes them from the curve's own derivatives at every sample; the probe snaps to samples, so moving it never recomputes. Where κ is 0 (flat) or the center lies beyond 100 radii of the study, no circle is drawn; where the second derivative is unstable, κ is unknown.`;
 }
+
+// Help for standing between samples.
+export const betweenHelp =
+  "Let the probe stand at any t, not only at the nearest sample: Go describes the curve and the highlighted construction at that t, exactly. A chase or a trajectory, which Go integrates step by step, snaps to its samples regardless.";
+// How the probe moves while the parameters vary, between samples.
+export const betweenMotionHelp =
+  "Where the probe stands in each frame while the parameters vary. Stays at its t: at exactly the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: where the drawn curve's arc length, measured by Go on each frame, is the same fraction of the whole, with nothing counted across a break. Moves along the curve: from the start of each frame's domain to its end as the animation plays. Go places it with each frame, between samples; the readout and plot describe that frame, and framing ignores the osculating circle.";

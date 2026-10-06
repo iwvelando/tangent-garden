@@ -184,6 +184,22 @@ test("every preset round-trips through a link unchanged", async () => {
   }
 });
 
+test("a 2D link carries a probe between samples; older ones snap it", async () => {
+  const study = planar();
+  study.probe = { enabled: true, position: 0.123456, between: true };
+  const read = await readStudyLink(await writeStudyLink("2d", study));
+  assert.deepEqual(planarStudy(read.study).probe, study.probe);
+  // Links made before it, and a probe set back to snap, carry no flag.
+  for (const probe of [
+    { enabled: true, position: 0.123456 },
+    { enabled: true, position: 0.123456, between: false },
+  ])
+    assert.deepEqual(planarStudy({ ...planar(), probe }).probe, {
+      enabled: true,
+      position: 0.123456,
+    });
+});
+
 test("a link carries probe playback with its probe", async () => {
   const study: SpatialStudy = {
     ...spatial(),
@@ -416,6 +432,7 @@ test("every invalid field is refused by name", async () => {
       /twice/,
     ],
     ["bounds.max", (s) => (s.bounds.max = 2)],
+    ["probe.between", (s) => (s.probe.between = "yes"), /true or false/],
   ];
   for (const [field, change, message] of cases) {
     const study = structuredClone(planar()) as any;

@@ -1,3 +1,4 @@
+import type { HeldProbe } from "./planar-probe";
 import { revealRefined } from "./refinement";
 import {
   ownsShape,
@@ -105,10 +106,10 @@ export type AnimationView = {
   // A finished animation releases the camera: its final frame stays, and pan
   // and zoom start from the animation's own framing.
   complete: boolean;
-  // The base sample the probe stands at in this frame while it is on;
-  // probeAway says why a frame that should show it has none (a reveal that
-  // has not reached it, or a frame whose domain leaves it out).
-  probe?: number;
+  // The probe in this frame while it is on, at a sample or between
+  // samples; probeAway says why a frame that should show it has none (a
+  // reveal that has not reached it, or a frame whose domain leaves it out).
+  probe?: HeldProbe;
   probeAway?: string;
 };
 const targetLabels: Record<FixedTarget, string> = {

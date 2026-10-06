@@ -26,8 +26,12 @@ import { RefineBetweenSamples } from "./RefineBetweenSamples";
 import { PlanarProbePanel } from "./PlanarProbePanel";
 import {
   defaultProbe,
+  parameterAt,
+  probeBetween,
   probeSample,
   probeSupported,
+  sampleProbe,
+  type HeldProbe,
   type PlanarProbe,
 } from "./planar-probe";
 import { refineBudget, refineDepth } from "./refinement";
@@ -379,6 +383,63 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       clearTimeout(timer);
     };
   }, [config, bounds, probing]);
+  // Between samples, Go places the probe at its own t over the drawn
+  // study, apart from the study itself, so moving it redraws only the
+  // probe. A point belongs to the frame and position it was asked for, and
+  // the drawing is busy until it arrives (or the study refuses it). At most
+  // one request is in flight: while it runs, moves only update the place
+  // wanted, and its reply asks for the latest one, so a drag never queues
+  // work behind it.
+  const between = probing && probeBetween(config, probe);
+  const [placed, setPlaced] = useState<{
+    frame: Frame;
+    position: number;
+    at: HeldProbe | null;
+  } | null>(null);
+  const wanted = useRef<{ frame: Frame; position: number } | null>(null);
+  const asking = useRef(false);
+  function askForProbe() {
+    const want = wanted.current;
+    if (asking.current || !want || !client.current) return;
+    asking.current = true;
+    const { min, max } = want.frame.config.curve;
+    client.current
+      .probe(want.frame.config, { t: parameterAt(min, max, want.position) })
+      // A study that fails is reported by its own computation.
+      .then(
+        (at): HeldProbe | null => at,
+        () => null,
+      )
+      .then((at) => {
+        asking.current = false;
+        setPlaced({ ...want, at });
+        const next = wanted.current;
+        if (
+          next &&
+          (next.frame !== want.frame || next.position !== want.position)
+        )
+          askForProbe();
+      });
+  }
+  useEffect(() => {
+    wanted.current =
+      between && frame?.result.diagnostics
+        ? { frame, position: probe.position }
+        : null;
+    askForProbe();
+  }, [between, frame, probe.position]);
+  const current = placed?.frame === frame ? placed : null;
+  const placing =
+    between &&
+    !!frame?.result.diagnostics &&
+    current?.position !== probe.position;
+  const heldProbe =
+    !probing || !frame
+      ? undefined
+      : between
+        ? (current?.at ?? undefined)
+        : (sampleProbe(frame.result, probeSample(frame.result, probe) ?? 0) ??
+          undefined);
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
   // What the legend names: the drawn study's entries, each while its layer
@@ -2090,7 +2151,8 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               probe={probe}
               onProbe={setProbe}
               animating={!!animation && !animation.complete}
-              at={animation?.probe}
+              at={animation?.probe !== undefined ? animation.probe : heldProbe}
+              moving={animation?.probe !== undefined}
               away={animation?.probeAway}
               dark={dark}
             />
@@ -2142,7 +2204,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
           <div
             className="plot-wrap"
             ref={plotWrap}
-            aria-busy={busy}
+            aria-busy={busy || placing}
             // The probe while it is on, as an example's fingerprint records
             // it (examples/index.ts).
             data-probe={probing ? JSON.stringify(probe) : undefined}
@@ -2160,11 +2222,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 config={shown.config}
                 layers={layers}
                 weight={weight}
-                probe={
-                  probing && result
-                    ? (probeSample(result, probe) ?? undefined)
-                    : undefined
-                }
+                probe={heldProbe}
                 dark={dark}
                 length={animation?.length ?? length}
                 reset={reset}

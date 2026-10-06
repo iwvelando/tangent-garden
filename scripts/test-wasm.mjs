@@ -39,6 +39,39 @@ assert.equal(
   "field" in JSON.parse(globalThis.tangentGardenCompute("{")),
   false,
 );
+// The probe between samples: the ellipse (2 cos t, 3 sin t) at t = 0.3,
+// off its samples, with curvature 6/(4 sin² t + 9 cos² t)^{3/2}; the probe
+// alone is the full study's probe, and a malformed one is refused.
+const probeT = 0.3;
+const probeOnly = JSON.parse(
+  globalThis.tangentGardenProbe(
+    JSON.stringify({ ...config, probe: { t: probeT } }),
+  ),
+);
+const probeFull = JSON.parse(
+  globalThis.tangentGardenCompute(
+    JSON.stringify({ ...config, probe: { t: probeT } }),
+  ),
+).probe;
+assert.deepEqual(probeOnly, { probe: probeFull });
+assert.equal(probeFull.t, probeT);
+assert.ok(
+  Math.abs(
+    probeFull.curvature -
+      6 / (4 * Math.sin(probeT) ** 2 + 9 * Math.cos(probeT) ** 2) ** 1.5,
+  ) < 1e-7,
+);
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenProbe(
+      JSON.stringify({ ...config, probe: { t: 99 } }),
+    ),
+  ).error,
+  /probe/,
+);
+assert.ok(
+  JSON.parse(globalThis.tangentGardenProbe(JSON.stringify(config))).error,
+);
 // Refining between samples in the plane: the line (t, 0.02) inverts in the
 // unit circle to the circle through the origin with center (0, 25). The
 // refined image stays on it, joined, and reaches its far point (0, 50).

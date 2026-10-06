@@ -321,11 +321,21 @@ export function planarStudy(value: unknown): PlanarStudy {
       "regular",
       "weight",
     ),
-    probe: conform<PlanarProbe>(
-      raw.probe,
-      { fields: { enabled: "boolean", position: { range: [0, 1] } } },
-      defaultProbe,
-      "probe",
+    probe: betweenOnlyWhenSet(
+      conform<PlanarProbe>(
+        raw.probe,
+        {
+          fields: {
+            enabled: "boolean",
+            position: { range: [0, 1] },
+            // Absent in links made before the probe stood between samples,
+            // which snap it to the nearest sample.
+            between: { optional: "boolean" },
+          },
+        },
+        defaultProbe,
+        "probe",
+      ),
     ),
   };
   const grouped =
@@ -369,4 +379,10 @@ export function planarStudy(value: unknown): PlanarStudy {
       "animation.mode traces light only in a catacaustic or diacaustic.",
     );
   return { ...study, animation };
+}
+
+// A probe snapped to samples carries no between flag, as the notebook keeps
+// it, so a link's false and its absence open the same study.
+function betweenOnlyWhenSet({ between, ...probe }: PlanarProbe): PlanarProbe {
+  return between ? { ...probe, between } : probe;
 }

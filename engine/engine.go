@@ -41,6 +41,10 @@ type Request struct {
 	// Diagnostics describes the base curve at every sample for the probe
 	// (see Diagnostics); it changes nothing else in the result.
 	Diagnostics bool `json:"diagnostics"`
+	// Probe asks for the base curve described at one parameter, at or
+	// between samples (see ProbePoint); it changes nothing else in the
+	// result.
+	Probe *ProbeQuery `json:"probe,omitempty"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -93,6 +97,8 @@ type Result struct {
 	Adaptive *AdaptiveResult `json:"adaptive,omitempty"`
 	// Diagnostics is present only when asked, for a curve with a parameter.
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+	// Probe is present only when asked.
+	Probe *ProbePoint `json:"probe,omitempty"`
 	// arcs is the involute's arc length at each sample where it is drawn,
 	// NaN elsewhere, from which refinement continues between samples.
 	arcs []float64
@@ -104,6 +110,9 @@ type Result struct {
 	// functions.
 	lineFamily   *lines
 	circleFamily *rings
+	// curve and input are the base and the construction's input as
+	// compiled, from which a probe is evaluated over a computed study.
+	curve, input curveFunc
 }
 
 func Compute(q Request) (Result, error) {
@@ -120,6 +129,9 @@ func Compute(q Request) (Result, error) {
 	}
 	if q.Lines < 2 || q.Lines > 2048 || q.Lines > q.Samples {
 		return out, fieldErr("lines", "samples must be 64–32768 and lines 2–2048, with no more lines than samples")
+	}
+	if q.Probe != nil && !refines(q.Curve.Format) {
+		return out, errProbe
 	}
 	if q.Curve.Format == "implicit" {
 		// A level set has no parameter to build a construction on: its
@@ -206,6 +218,9 @@ func Compute(q Request) (Result, error) {
 	if err != nil {
 		return out, within("curve", err)
 	}
+	if err := q.checkProbe(); err != nil {
+		return out, err
+	}
 	// The construction acts on g, the base or a curve derived from it.
 	g := inputCurve(q.Input, f, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
 	if composed(q.Input) {
@@ -235,6 +250,7 @@ func Compute(q Request) (Result, error) {
 		}
 	}
 	out.lineFamily, out.circleFamily = family, circles
+	out.curve, out.input = f, g
 	var roll *Roulette
 	if q.Curve.Format == "roulette" {
 		g := q.Curve.Roulette
@@ -549,6 +565,9 @@ func Compute(q Request) (Result, error) {
 	}
 	if q.Diagnostics {
 		out.Diagnostics = diagnose(f, out.Base, lo, hi)
+	}
+	if q.Probe != nil {
+		out.Probe = q.probe(f, g, &out)
 	}
 	if out.Invalid > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("%d samples have no finite construction (singularity, parallel rays, or invalid domain).", out.Invalid))

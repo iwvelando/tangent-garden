@@ -1181,4 +1181,53 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "A cardioid's osculating circle",
+    note: "The circle that best fits a cardioid glides along it at every t, its center tracing the evolute, a cardioid a third the size, and it shrinks to nothing as it slides into the cusp",
+    config: {
+      ...base,
+      kind: "evolute",
+      // The epicycloid of one cusp, at (1, 0): its radius of curvature is
+      // (8/3)·|sin(t/2)|, and its evolute is a cardioid a third the size,
+      // turned half a turn, with its cusp at the vertex's center (−1/3, 0).
+      curve: {
+        ...base.curve,
+        x: "2*cos(t) - cos(2*t)",
+        y: "2*sin(t) - sin(2*t)",
+      },
+      lines: 40,
+      adaptive: true,
+    },
+    probe: { enabled: true, position: 0.08, between: true },
+    animation: {
+      mode: "probe",
+      camera: "hold",
+      duration: 14,
+      tracks: [],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "An ellipse rounding into a circle",
+    note: "An ellipse swells into a circle and back while the probe keeps an eighth of the way round; its osculating circle settles onto the circle itself as the evolute's four cusps close to a point",
+    config: {
+      ...base,
+      kind: "evolute",
+      curve: { ...base.curve, x: "cos(t)", y: "a*sin(t)", a: 0.6 },
+      lines: 36,
+      adaptive: true,
+    },
+    probe: { enabled: true, position: 0.125, between: true },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 12,
+      tracks: [{ target: "a", from: "0.6", to: "1" }],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "length",
+    },
+  },
 ];
