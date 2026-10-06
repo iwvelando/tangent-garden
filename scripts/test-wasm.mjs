@@ -1591,6 +1591,48 @@ const spatialHarmonic = (terms, min, max) =>
   );
   assert.equal(open.harmonic.period, 0);
   assert.equal(open.harmonic.closed, false);
+  assert.equal("chains" in open.harmonic, false);
+  // With the curve probe's diagnostics, the chain at every sample, for the
+  // probe to draw at its own: from c₀, through each term, to the point.
+  const probed = JSON.parse(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "harmonic",
+        construction: "none",
+        length: 1,
+        harmonic: {
+          center: { x: 1, y: 2, z: 3 },
+          terms: [
+            {
+              frequency: 1,
+              cosine: { x: 2, y: 0, z: 0 },
+              sine: { x: 0, y: 0, z: 1 },
+            },
+            {
+              frequency: -3,
+              cosine: { x: 0, y: 0.5, z: 0 },
+              sine: { x: 0.5, y: 0, z: 0 },
+            },
+          ],
+          min: 0,
+          max: 2 * Math.PI,
+        },
+        samples: 480,
+        lines: 24,
+        diagnostics: true,
+      }),
+    ),
+  );
+  assert.equal(probed.harmonic.chains.length, 481);
+  probed.harmonic.chains.forEach((s, i) => {
+    const t = i === 480 ? 0 : (2 * Math.PI * i) / 480;
+    assert.equal(s.sampleIndex, i);
+    assert.deepEqual(s.joints[0], { x: 1, y: 2, z: 3 });
+    assert.ok(Math.abs(s.joints[1].x - (1 + 2 * Math.cos(t))) < 1e-12);
+    assert.ok(Math.abs(s.joints[1].z - (3 + Math.sin(t))) < 1e-12);
+    for (const axis of ["x", "y", "z"])
+      assert.ok(Math.abs(s.point[axis] - probed.base[i][axis]) < 1e-12);
+  });
   assert.match(
     spatialHarmonic(
       [

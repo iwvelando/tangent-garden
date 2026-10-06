@@ -1,4 +1,6 @@
 import type {
+  HarmonicPosition,
+  HarmonicTerm,
   RefinedPath,
   SpatialResult,
   SurfaceSheet,
@@ -302,6 +304,29 @@ export type Batch = {
   indices?: Uint32Array;
   weight?: number;
 };
+
+// A harmonic curve's chain of generating vectors at one sample, as point
+// pairs: each from its joint to the next, the last to the curve's point.
+export const harmonicChain = (s: HarmonicPosition) =>
+  s.joints.flatMap((j, k) => [j, s.joints[k + 1] ?? s.point]);
+// Each turning term's ellipse around its joint at that sample, as point
+// pairs, from A (φ = 0) towards B; a fixed translation has none.
+export const harmonicEllipses = (terms: HarmonicTerm[], s: HarmonicPosition) =>
+  terms.flatMap((term, k) =>
+    term.frequency === 0
+      ? []
+      : Array.from({ length: 64 }, (_, m) =>
+          [m, m + 1].map((d) => {
+            const t = (2 * Math.PI * d) / 64,
+              j = s.joints[k];
+            return {
+              x: j.x + Math.cos(t) * term.cosine.x + Math.sin(t) * term.sine.x,
+              y: j.y + Math.cos(t) * term.cosine.y + Math.sin(t) * term.sine.y,
+              z: j.z + Math.cos(t) * term.cosine.z + Math.sin(t) * term.sine.z,
+            };
+          }),
+        ).flat(),
+  );
 
 // Everything the drawing shows of a result, built once per result. The
 // WebGL renderer uploads it, and vector linework projects its lines.
@@ -635,10 +660,8 @@ export function buildScene(result: SpatialResult) {
   // sample, and, at the last one shown, that chain again with each turning
   // term's ellipse around its joint and a cross at c₀.
   const h = result.harmonic;
-  const chain = (s: NonNullable<typeof h>["positions"][number]) =>
-    s.joints.flatMap((j, k) => [j, s.joints[k + 1] ?? s.point]);
   const vectors = batch(
-    vertices((h?.positions ?? []).flatMap(chain)),
+    vertices((h?.positions ?? []).flatMap(harmonicChain)),
     "lines",
     4,
   );
@@ -647,32 +670,9 @@ export function buildScene(result: SpatialResult) {
     vertices(
       h && current
         ? [
-            ...chain(current),
+            ...harmonicChain(current),
             ...cross(h.center, result.bounds.radius * 0.02),
-            ...h.terms.flatMap((term, k) =>
-              term.frequency === 0
-                ? []
-                : Array.from({ length: 64 }, (_, m) =>
-                    [m, m + 1].map((d) => {
-                      const t = (2 * Math.PI * d) / 64,
-                        j = current.joints[k];
-                      return {
-                        x:
-                          j.x +
-                          Math.cos(t) * term.cosine.x +
-                          Math.sin(t) * term.sine.x,
-                        y:
-                          j.y +
-                          Math.cos(t) * term.cosine.y +
-                          Math.sin(t) * term.sine.y,
-                        z:
-                          j.z +
-                          Math.cos(t) * term.cosine.z +
-                          Math.sin(t) * term.sine.z,
-                      };
-                    }),
-                  ).flat(),
-            ),
+            ...harmonicEllipses(h.terms, current),
           ]
         : [],
     ),

@@ -458,16 +458,25 @@ export type InversionResult = {
   invalid: number;
   crossings: number;
 };
+// Mirrors engine3.HarmonicPosition: joints[k] is where term k's vector
+// starts at base sample sampleIndex, and the last vector ends at point.
+export type HarmonicPosition = {
+  sampleIndex: number;
+  joints: Vec3[];
+  point: Vec3;
+};
 // Mirrors engine3.HarmonicResult. Terms keep their input order, even when
-// zero. Joints[k] is where term k's vector starts at a representative
-// sample; period is 0 when the curve never repeats.
+// zero. Positions are at the representative samples; chains, present only
+// with the curve probe's diagnostics, at every sample, indexed like base.
+// Period is 0 when the curve never repeats.
 export type SpatialHarmonicResult = {
   center: Vec3;
   terms: HarmonicTerm[];
   period: number;
   whole: boolean;
   closed: boolean;
-  positions: { sampleIndex: number; joints: Vec3[]; point: Vec3 }[];
+  positions: HarmonicPosition[];
+  chains?: HarmonicPosition[];
 };
 // Mirrors engine3.CompositionResult: the base curve and its breaks, indexed
 // like the input curve in base, with representative constructions joining a

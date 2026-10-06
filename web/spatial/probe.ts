@@ -4,7 +4,7 @@
 // centres. Every quantity comes from Go (engine3.DiagnosticsResult and
 // engine3.SurfaceDiagnostics) or the study's own per-sample arrays; this
 // module only selects and draws them.
-import type { Batch } from "./scene";
+import { harmonicChain, harmonicEllipses, type Batch } from "./scene";
 import {
   curveProbeMotionHelp,
   curveProbeMotions,
@@ -117,6 +117,45 @@ function polygonLines(r: SpatialResult, j: number): Vec3[] {
   return ps.flatMap((p, k) => [p!, ps[(k + 1) % ps.length]!]);
 }
 
+// A harmonic curve's chain of generating vectors at the sample's time, each
+// turning around its ellipse, under any construction. It needs the chains
+// Go returns with the probe's diagnostics.
+function chainLines(r: SpatialResult, j: number): Vec3[] {
+  const h = r.harmonic,
+    s = h?.chains?.[j];
+  return h && s ? [...harmonicChain(s), ...harmonicEllipses(h.terms, s)] : [];
+}
+// A field's timeline: every trajectory's point at the sample's time, joined
+// in seed order, open, and broken where a trajectory has ended.
+function timelineLines(r: SpatialResult, j: number): Vec3[] {
+  const ps = (r.field?.paths ?? []).map((path) => path[j]);
+  return ps.flatMap((p, k) => (k > 0 && p && ps[k - 1] ? [ps[k - 1]!, p] : []));
+}
+// What each curve format highlights at the probe's time beside its
+// construction's lines, and whether a study of it has anything to join.
+const formats: Partial<
+  Record<
+    SpatialConfig["format"],
+    { name: string; lines: Segments; offered: (c: SpatialConfig) => boolean }
+  >
+> = {
+  pursuit: {
+    name: "the connecting polygon at its time",
+    lines: polygonLines,
+    offered: () => true,
+  },
+  harmonic: {
+    name: "the chain of turning vectors that sums to the point, each turning around its ellipse",
+    lines: chainLines,
+    offered: () => true,
+  },
+  field: {
+    name: "the timeline joining every trajectory at its time, in seed order",
+    lines: timelineLines,
+    offered: (c) => c.field.seeds.length > 1,
+  },
+};
+
 // The surfaces built on the base, which the probe does not describe.
 const surfaces: Partial<Record<SpatialConfig["construction"], string>> = {
   developable: "tangent ribbon",
@@ -162,9 +201,10 @@ export function probeSupport(c: SpatialConfig): {
           ...(curve ? (["curve"] as const) : []),
           ...(surfaceKind(c) ? (["surface"] as const) : []),
         ];
+  const format = formats[c.format];
   const names = [
     constructions[c.construction]?.name,
-    c.format === "pursuit" ? "the connecting polygon at its time" : undefined,
+    format?.offered(c) ? format.name : undefined,
   ].filter((n): n is string => !!n);
   return {
     available: targets.length > 0,
@@ -216,7 +256,7 @@ export function probeBatches(
   const radius = result.bounds.radius;
   const marked: Vec3[] = [
     ...(constructions[config.construction]?.lines(result, j) ?? []),
-    ...(config.format === "pursuit" ? polygonLines(result, j) : []),
+    ...(formats[config.format]?.lines(result, j) ?? []),
   ];
   const T = d.tangent[j],
     N = d.normal[j],
