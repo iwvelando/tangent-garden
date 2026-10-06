@@ -126,6 +126,21 @@ function arrow(
   return `${shaft}M${side(0.5)}L${f(tip[0])},${f(tip[1])}L${side(-0.5)}`;
 }
 
+// The drawing's keys, as the 3D and 4D drawings': each arrow, with or
+// without shift, pans the drawing its way by 20 page units, + (or =) and −
+// zoom by 1.1, and Home fits the view, as Fit view does. Each is
+// [pan x, pan y, zoom factor].
+const cameraKeys: Record<string, [number, number, number]> = {
+  ArrowLeft: [-20, 0, 1],
+  ArrowRight: [20, 0, 1],
+  ArrowUp: [0, -20, 1],
+  ArrowDown: [0, 20, 1],
+  "+": [0, 0, 1.1],
+  "=": [0, 0, 1.1],
+  "-": [0, 0, 1 / 1.1],
+  Home: [0, 0, 1],
+};
+
 export function Plot({
   result,
   config,
@@ -498,13 +513,34 @@ export function Plot({
       data-animation-time={animation?.time}
       role="img"
       aria-label={
-        contours
+        (contours
           ? `Implicit curve with ${config.lines} gradient normals`
           : attractor
             ? `Iterated map density with its first ${attractor.orbit.length - 1} iterates`
-            : `${config.kind} construction with ${config.lines} representative lines`
+            : `${config.kind} construction with ${config.lines} representative lines`) +
+        ". Drag or arrow keys to pan; scroll, pinch, or plus and minus to zoom; Home fits the view."
       }
+      tabIndex={0}
       style={{ background: palette.bg, touchAction: "none" }}
+      onKeyDown={(e) => {
+        if (locked || !Object.hasOwn(cameraKeys, e.key)) return;
+        e.preventDefault();
+        const [dx, dy, k] = cameraKeys[e.key];
+        // Keys repeat faster than renders, so each applies to the latest
+        // camera. Zoom keeps the middle of the drawing where it is.
+        setCurrent((previous) => {
+          const c = previous.reset === key ? previous : fresh(key);
+          if (e.key === "Home") return { x: 0, y: 0, zoom: 1, reset: key };
+          const zoom = Math.max(0.1, Math.min(20, c.zoom * k)),
+            ratio = zoom / c.zoom;
+          return {
+            ...c,
+            zoom,
+            x: c.x * ratio + dx,
+            y: c.y * ratio + dy,
+          };
+        });
+      }}
       onPointerDown={(e) => {
         if (locked) return;
         e.currentTarget.setPointerCapture(e.pointerId);

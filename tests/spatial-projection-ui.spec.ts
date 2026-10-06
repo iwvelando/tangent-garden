@@ -303,6 +303,39 @@ test("a camera path flies in the drawing's projection, and a finished one is exp
     .toBeCloseTo(manual.yaw, 12);
 });
 
+test("a link that replaces a preset's study resets to the default view, not the preset's", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await settled(page);
+  await choosePreset(page, { label: "A spiral stair, down its well" });
+  await settled(page);
+  await expect.poll(async () => (await shownView(page)).pitch).toBe(1.5);
+  // The link arrives in the open page and restores its sender's camera.
+  await page.evaluate(
+    (hash) => {
+      location.hash = hash;
+    },
+    `s=${deflateRawSync(
+      Buffer.from(JSON.stringify({ v: 1, notebook: "3d", study: study() })),
+    ).toString("base64url")}`,
+  );
+  await expect.poll(async () => (await shownView(page)).yaw).toBe(manual.yaw);
+  await settled(page);
+  await button(page, "Reset view").click();
+  await expect
+    .poll(async () => (await shownView(page)).yaw)
+    .toBe(initialView.yaw);
+  expect(await shownView(page)).toMatchObject(initialView);
+  await canvas(page).focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Home");
+  await expect
+    .poll(async () => (await shownView(page)).yaw)
+    .toBe(initialView.yaw);
+  expect(await shownView(page)).toMatchObject(initialView);
+});
+
 test("a link carries the projection, and a preset without one opens orthographic", async ({
   page,
 }) => {
@@ -344,12 +377,43 @@ test("the perspective presets open in their own projection and view, and fly in 
     panY: 0,
     projection: "wide",
   });
-  // Reset view returns to the default view, through the same lens.
+  // Reset view and Home return to the preset's own opening view, through
+  // the same lens, after orbiting, panning and zooming away from it.
+  const opening = {
+    yaw: 0.3,
+    pitch: 1.5,
+    zoom: 1.2,
+    panX: 0,
+    panY: 0,
+    projection: "wide",
+  };
+  const wander = async () => {
+    await canvas(page).focus();
+    for (const key of ["ArrowLeft", "ArrowUp", "+", "Shift+ArrowRight"])
+      await page.keyboard.press(key);
+    await expect
+      .poll(async () => (await shownView(page)).yaw)
+      .toBeCloseTo(0.2, 12);
+  };
+  await wander();
+  await button(page, "Reset view").click();
+  await expect.poll(async () => (await shownView(page)).yaw).toBe(0.3);
+  expect(await shownView(page)).toMatchObject(opening);
+  await wander();
+  await canvas(page).focus();
+  await page.keyboard.press("Home");
+  await expect.poll(async () => (await shownView(page)).yaw).toBe(0.3);
+  expect(await shownView(page)).toMatchObject(opening);
+  // A preset without an opening view resets to the default one.
+  await choosePreset(page, 1);
+  await settled(page);
+  await canvas(page).focus();
+  await page.keyboard.press("ArrowLeft");
   await button(page, "Reset view").click();
   await expect
-    .poll(async () => (await shownView(page)).pitch)
-    .toBe(initialView.pitch);
-  expect((await shownView(page)).projection).toBe("wide");
+    .poll(async () => (await shownView(page)).yaw)
+    .toBe(initialView.yaw);
+  expect(await shownView(page)).toMatchObject(initialView);
   // The dive flies out and back through the normal lens: halfway through
   // its duration it is at its last view, inside the stair.
   await choosePreset(page, { label: "Diving down the stairwell" });
