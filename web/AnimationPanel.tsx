@@ -12,12 +12,25 @@ import type { LineWeight } from "./line-weight";
 import {
   curveProbeMotionHelp,
   curveProbeMotions,
+  drawnLength,
   heldCurveSample,
+  noLength,
+  noShare,
+  outsideFrame,
   probeIndex,
-  revealedProbe,
   type ProbeMotion,
+  unreached,
 } from "./probe";
-import { probeReadout, type PlanarProbe } from "./planar-probe";
+import {
+  betweenMotionHelp,
+  parameterAt,
+  probeBetween,
+  probeReadout,
+  probeStep,
+  sampleProbe,
+  type HeldProbe,
+  type PlanarProbe,
+} from "./planar-probe";
 import {
   applyTracks,
   availableTargets,
@@ -38,7 +51,7 @@ import {
   type Track,
   type Viewport,
 } from "./animation";
-import { studyName, type Frame } from "./types";
+import { studyName, type Config, type Frame, type ProbeQuery } from "./types";
 import { fitFrame, viewRect, type Layers } from "./Plot";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "./export-quality";
@@ -84,14 +97,22 @@ type Session = {
   // moves while the parameters vary.
   probe?: PlanarProbe;
   motion?: ProbeMotion;
+  // The probe on the study as it begins, and whether it stands between
+  // samples, where Go places it in each frame.
+  point?: HeldProbe | null;
+  between?: boolean;
 };
 // Whether the session's frames between its ends are calculated by an engine:
-// parameter tracks other than the ray length, and an iterated map's reveal.
-// Every other frame is cut from the prepared study.
-const calculates = (s: Pick<Session, "mode" | "tracks" | "original">) =>
+// parameter tracks other than the ray length, an iterated map's reveal, and
+// a probe moved between samples. Every other frame is cut from the
+// prepared study.
+const calculates = (
+  s: Pick<Session, "mode" | "tracks" | "original" | "between">,
+) =>
   (s.mode === "parameters" &&
     !s.tracks.every((t) => t.target === "rayLength")) ||
-  (s.mode === "reveal" && !!s.original.result.attractor);
+  (s.mode === "reveal" && !!s.original.result.attractor) ||
+  (s.mode === "probe" && !!s.between);
 type Props = {
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
@@ -358,6 +379,7 @@ export function AnimationPanel({
   ): Promise<AnimationView> {
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
     let current: Frame;
+    let held: HeldProbe | number | string | null | undefined;
     const attractor = s.original.result.attractor;
     // An iterated map's density cannot be cut back, so each revealed frame
     // counts a prefix of the iterates afresh, live and exported alike.
@@ -384,35 +406,67 @@ export function AnimationPanel({
         result: trace(s.original.result, s.timeline!, p),
       };
     else if (s.mode === "probe") current = s.original;
-    else if (p === 0) current = s.first;
+    else if (
+      s.mode === "parameters" &&
+      s.between &&
+      s.probe &&
+      !fixedParameters(s)
+    ) {
+      // Between samples, each frame's probe is placed by Go with the frame
+      // itself, the ends included.
+      const query = heldQuery(s, values.config, p);
+      current = await engine.compute(values.config, undefined, {
+        diagnostics: true,
+        ...(typeof query !== "string" && { probe: query }),
+      });
+      held =
+        typeof query === "string"
+          ? query
+          : "share" in query &&
+              !(drawnLength(current.result.diagnostics!.length) > 0)
+            ? noLength
+            : current.result.probe!;
+    } else if (p === 0) current = s.first;
     else if (p === 1) current = s.final;
-    else if (s.tracks.every((t) => t.target === "rayLength"))
-      current = s.original;
+    else if (fixedParameters(s)) current = s.original;
     else
       current = await engine.compute(values.config, undefined, {
         diagnostics: !!s.probe,
       });
-    // The probe moves along the fixed study one sample at a time, from the
-    // first sample at the start to the last at the end, exactly; while the
+    // The probe moves along the fixed study, from the start of the domain
+    // to its end, exactly: one sample at a time, or between them. While the
     // parameters vary it stands on each frame's own diagnostics, or is
     // absent from it with a reason. Otherwise the study is fixed and the
-    // probe stays at its sample.
-    const held =
-      s.mode === "probe"
-        ? probeIndex(p, s.original.result.diagnostics!.curvature.length - 1)
-        : s.mode === "parameters" && s.probe
-          ? current.result.diagnostics
-            ? heldCurveSample(
-                s.original.result.diagnostics!,
-                s.probe.position,
-                s.motion!,
-                current.result.diagnostics,
+    // probe stays where it was put.
+    if (held === undefined)
+      held =
+        s.mode === "probe" && s.between
+          ? await engine.probe(s.original.config, {
+              t: parameterAt(
+                s.original.config.curve.min,
+                s.original.config.curve.max,
                 p,
-              )
-            : "This frame has no curve for the probe to describe."
-          : s.probe
-            ? fixedProbe(s, p)
-            : null;
+              ),
+            })
+          : s.mode === "probe"
+            ? probeIndex(p, s.original.result.diagnostics!.curvature.length - 1)
+            : s.mode === "parameters" && s.probe && s.between
+              ? await heldOnFixed(s, values.config, p, engine)
+              : s.mode === "parameters" && s.probe
+                ? current.result.diagnostics
+                  ? heldCurveSample(
+                      s.original.result.diagnostics!,
+                      s.probe.position,
+                      s.motion!,
+                      current.result.diagnostics,
+                      p,
+                    )
+                  : "This frame has no curve for the probe to describe."
+                : s.probe
+                  ? fixedProbe(s, p)
+                  : null;
+    if (typeof held === "number")
+      held = sampleProbe(current.result, held) ?? undefined;
     return {
       frame: current,
       final: s.final,
@@ -422,20 +476,77 @@ export function AnimationPanel({
       progress: p,
       mode: s.mode,
       complete: p === 1,
-      ...(typeof held === "number" && { probe: held }),
+      ...(held && typeof held === "object" && { probe: held }),
       ...(typeof held === "string" && { probeAway: held }),
     };
   }
-  // The probe's sample in an animation that keeps the study fixed: where
-  // the user put it, once a reveal has drawn it.
-  function fixedProbe(s: Session, p: number) {
-    const j = probeIndex(
-      s.probe!.position,
-      s.original.result.diagnostics!.curvature.length - 1,
+  // Ray-length tracks keep the study fixed.
+  const fixedParameters = (s: Session) =>
+    s.tracks.every((t) => t.target === "rayLength");
+  // Where Go is to place a probe between samples in a frame whose study is
+  // config, at progress p: at its own t, the same share of the drawn
+  // length, or along the domain; or why it has no place there.
+  function heldQuery(
+    s: Session,
+    config: Config,
+    p: number,
+  ): ProbeQuery | string {
+    const { min, max } = config.curve;
+    if (s.motion === "along") return { t: parameterAt(min, max, p) };
+    const at = s.point;
+    if (!at) return "This frame has no curve for the probe to describe.";
+    if (s.motion === "stays")
+      return at.t >= min && at.t <= max
+        ? { t: at.t }
+        : outsideFrame(at.t, min, max);
+    const whole = drawnLength(s.original.result.diagnostics!.length);
+    return at.length === null || !(whole > 0)
+      ? noShare
+      : { share: Math.min(1, at.length / whole) };
+  }
+  // A probe between samples held over a study that the parameters leave
+  // fixed.
+  async function heldOnFixed(
+    s: Session,
+    config: Config,
+    p: number,
+    engine: EngineClient,
+  ) {
+    const query = heldQuery(s, config, p);
+    return typeof query === "string"
+      ? query
+      : engine.probe(s.original.config, query);
+  }
+  // The probe in an animation that keeps the study fixed: where the user
+  // put it, once a reveal has drawn it. A probe on a sample is drawn from
+  // the frame's own samples, so traced light reaches its construction as it
+  // reaches the sample's; between samples, light reaches its construction
+  // when it reaches the samples on either side, at the arrival interpolated
+  // between them.
+  function fixedProbe(
+    s: Session,
+    p: number,
+  ): HeldProbe | number | string | null {
+    const at = s.point;
+    if (!at) return null;
+    const step = at.sample ?? probeStep(s.original.result, at);
+    if (s.mode === "reveal" && step > revealedThrough(s.original.result, p))
+      return unreached;
+    if (at.sample !== undefined) return at.sample;
+    if (s.mode === "trace" && !arrived(s.timeline!, step, p))
+      return { ...at, derived: null };
+    return at;
+  }
+  function arrived(timeline: Timeline, step: number, p: number) {
+    const tau = p >= 1 ? Infinity : Math.max(0, p) * timeline.total;
+    const i = Math.floor(step),
+      f = step - i,
+      a = timeline.arrival[i],
+      b = timeline.arrival[Math.min(i + 1, timeline.arrival.length - 1)];
+    const arrival = f === 0 ? a : a + (b - a) * f;
+    return (
+      Number.isFinite(a) && (f === 0 || Number.isFinite(b)) && arrival <= tau
     );
-    return s.mode === "reveal"
-      ? revealedProbe(j, j, revealedThrough(s.original.result, p))
-      : j;
   }
   function display(s: Session, view: AnimationView) {
     s.progress = view.time ?? view.progress;
@@ -470,8 +581,9 @@ export function AnimationPanel({
   }
   // Where the probe stands in a frame, by its parameter.
   function probeWhere(view: AnimationView) {
-    const r = probeReadout(view.frame.result, view.probe!);
-    return r ? `Probe at t = ${Number(r.t.toPrecision(6))}` : "";
+    return view.probe
+      ? `Probe at t = ${Number(probeReadout(view.probe).t.toPrecision(6))}`
+      : "";
   }
   function fail(reason: unknown, what = "Animation") {
     cancel();
@@ -536,6 +648,7 @@ export function AnimationPanel({
       // vary, or stays at its sample of the fixed study, on the diagnostics
       // of the study as it begins.
       const drawsProbe = !!probe;
+      const between = drawsProbe && probeBetween(frame.config, probe!);
       if (drawsProbe && !frame.result.diagnostics)
         throw new Error("The probe is still finding the curvature.");
       let numeric: NumericTrack[] = [];
@@ -580,7 +693,7 @@ export function AnimationPanel({
         // prepares the start.
         if (
           !save &&
-          calculates({ mode, tracks: numeric, original: frame }) &&
+          calculates({ mode, tracks: numeric, original: frame, between }) &&
           playbackEngineCount() > 1
         )
           helper.current = new EngineClient();
@@ -635,6 +748,24 @@ export function AnimationPanel({
         progress: 0,
         probe: drawsProbe ? probe! : undefined,
         motion: probeMotion,
+        between,
+        point: !drawsProbe
+          ? undefined
+          : between
+            ? await client.current.probe(frame.config, {
+                t: parameterAt(
+                  frame.config.curve.min,
+                  frame.config.curve.max,
+                  probe!.position,
+                ),
+              })
+            : sampleProbe(
+                frame.result,
+                probeIndex(
+                  probe!.position,
+                  frame.result.diagnostics!.curvature.length - 1,
+                ),
+              ),
       };
       // A loop joins the end to the start, so they must be the same drawing.
       if (repeat === "loop") {
@@ -763,7 +894,11 @@ export function AnimationPanel({
             topic="animation modes"
             help={
               mode === "probe" ? (
-                "Move the probe from the start of the curve to its end, one sample at a time, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
+                probe && frame && probeBetween(frame.config, probe) ? (
+                  "Move the probe from the start of the curve to its end through every t between, Go describing each frame's point, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
+                ) : (
+                  "Move the probe from the start of the curve to its end, one sample at a time, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
+                )
               ) : mode === "trace" ? (
                 "Send light from the source, or in from the edge of the view for parallel light, to the curve and on. Each caustic point appears as its ray reaches it. Light slows to c/n in each medium, so wavefronts stay together."
               ) : mode === "reveal" ? (
@@ -800,7 +935,14 @@ export function AnimationPanel({
             </select>
           </Field>
           {mode === "parameters" && probe && (
-            <Field label="Probe" help={curveProbeMotionHelp}>
+            <Field
+              label="Probe"
+              help={
+                frame && probeBetween(frame.config, probe)
+                  ? betweenMotionHelp
+                  : curveProbeMotionHelp
+              }
+            >
               <select
                 value={probeMotion}
                 onChange={(e) => setProbeMotion(e.target.value as ProbeMotion)}

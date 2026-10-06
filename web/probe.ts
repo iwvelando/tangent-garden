@@ -137,6 +137,20 @@ export const curveProbeMotions: { value: ProbeMotion; label: string }[] = [
 export const curveProbeMotionHelp =
   "Where the probe stands in each frame while the parameters vary. Stays at its t: at the sample nearest the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: at the sample nearest the same fraction of the drawn curve's arc length, measured by Go on each frame's samples, with nothing counted across a break. Moves along the curve: from its first sample to its last as the animation plays. It snaps to each frame's own samples; the readout and plot describe that frame, and framing ignores the osculating circle.";
 
+// Why a held probe has no point in a frame: its t lies outside the frame's
+// domain, it has no share of the length to keep, or the frame has no
+// length.
+const short6 = (v: number) => Number(v.toPrecision(6));
+export const outsideFrame = (t: number, min: number, max: number) =>
+  `t = ${short6(t)} lies outside this frame's domain, [${short6(min)}, ${short6(max)}].`;
+export const noShare =
+  "The probe's point has no share of the length: it is not on a drawn stretch of the curve.";
+export const noLength = "This frame's curve has no length.";
+// The drawn arc length of a curve, the greatest of its lengths to each
+// sample.
+export const drawnLength = (lengths: (number | null)[]) =>
+  lengths.reduce<number>((m, s) => (s !== null && s > m ? s : m), 0);
+
 // A curve's diagnostics as the probe needs them to hold its place: the
 // domain, one entry per sample, and the drawn arc length to each sample.
 export type CurveSamples = {
@@ -160,22 +174,18 @@ export function heldCurveSample(
   if (motion === "along") return probeIndex(p, steps);
   const n0 = from.curvature.length - 1,
     i0 = probeIndex(position, n0);
-  const short = (v: number) => Number(v.toPrecision(6));
   if (motion === "stays") {
     const t = from.min + ((from.max - from.min) * i0) / n0;
     const x = ((t - frame.min) / (frame.max - frame.min)) * steps;
     if (!(x >= -0.5 && x <= steps + 0.5))
-      return `t = ${short(t)} lies outside this frame's domain, [${short(frame.min)}, ${short(frame.max)}].`;
+      return outsideFrame(t, frame.min, frame.max);
     return Math.min(steps, Math.max(0, Math.round(x)));
   }
-  const total = (lengths: (number | null)[]) =>
-    lengths.reduce<number>((m, s) => (s !== null && s > m ? s : m), 0);
   const mine = from.length[i0],
-    whole = total(from.length);
-  if (mine === null || !(whole > 0))
-    return "The probe's point has no share of the length: it is not on a drawn stretch of the curve.";
-  const goal = (mine / whole) * total(frame.length);
-  if (!(total(frame.length) > 0)) return "This frame's curve has no length.";
+    whole = drawnLength(from.length);
+  if (mine === null || !(whole > 0)) return noShare;
+  const goal = (mine / whole) * drawnLength(frame.length);
+  if (!(drawnLength(frame.length) > 0)) return noLength;
   let best = -1;
   frame.length.forEach((s, i) => {
     if (

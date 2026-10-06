@@ -15,6 +15,7 @@ declare const Go: new () => {
   run(instance: WebAssembly.Instance): Promise<void>;
 };
 declare const tangentGardenCompute: (json: string) => string;
+declare const tangentGardenProbe: (json: string) => string;
 declare const tangentGardenTesseract: (json: string) => string;
 // An implicit surface's mesh arrives beside its JSON, as typed views on one
 // buffer (cmd/wasm/mesh.go); every other reply is JSON alone.
@@ -54,6 +55,11 @@ self.onmessage = async ({
   // Asks Go for the base curve's diagnostics (see engine.Diagnostics and
   // engine3.DiagnosticsResult).
   diagnostics?: boolean;
+  // Asks Go for the base curve described at one parameter, at or between
+  // samples (see engine.ProbePoint); with probeOnly, the reply carries the
+  // probe alone, for a probe moved over a study already drawn.
+  probe?: import("./types").ProbeQuery;
+  probeOnly?: boolean;
   // Asks Go for a surface's diagnostics (see engine3.SurfaceDiagnostics).
   surfaceDiagnostics?: boolean;
   // Asks Go for the light leaving a mirror or interface (see
@@ -745,12 +751,18 @@ self.onmessage = async ({
         "stack.count",
         "The number of offsets must be a whole number.",
       );
+    const request = JSON.stringify({
+      ...config,
+      ...(data.diagnostics && { diagnostics: true }),
+      ...(data.probe && { probe: data.probe }),
+    });
+    if (data.probeOnly) {
+      const reply = JSON.parse(tangentGardenProbe(request));
+      self.postMessage({ id: data.id, ...reply });
+      return;
+    }
     const result: import("./types").Result | { error: string } = JSON.parse(
-      tangentGardenCompute(
-        JSON.stringify(
-          data.diagnostics ? { ...config, diagnostics: true } : config,
-        ),
-      ),
+      tangentGardenCompute(request),
     );
     if (!("error" in result) && result.sourcePosition)
       config.source.position = result.sourcePosition;

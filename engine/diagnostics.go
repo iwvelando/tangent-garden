@@ -40,6 +40,10 @@ type Diagnostics struct {
 }
 
 // diagnose describes the base f at the drawn samples of base, from lo to hi.
+// It is compiled once, not inlined where it is called, so the probe's own
+// diagnostics round as the result's do.
+//
+//go:noinline
 func diagnose(f curveFunc, base []*Vec, lo, hi float64) *Diagnostics {
 	n := len(base)
 	step := (hi - lo) / float64(n-1)
@@ -64,35 +68,64 @@ func diagnose(f curveFunc, base []*Vec, lo, hi float64) *Diagnostics {
 		}
 		s := length
 		d.Length[i] = &s
-		if !(v.Norm() >= 1e-9) || !v.Valid() {
-			continue
-		}
-		tangent := v.Unit()
-		normal := tangent.Perp()
-		d.Tangent[i], d.Normal[i] = &tangent, &normal
-		if !stable(f, t, lo, hi, v, a) {
+		e := describe(f, t, *p, v, a, lo, hi, d.radius)
+		d.Tangent[i], d.Normal[i], d.Curvature[i], d.Center[i] = e.tangent, e.normal, e.curvature, e.center
+		switch {
+		case e.unknown:
 			d.Unknown++
-			continue
-		}
-		// Flat where the acceleration across the tangent is within the
-		// stencil's own resolution of r″, measured by the disagreement of two
-		// spacings, or below the evolute's guard.
-		cross := v.Cross(a)
-		_, half := derivativesAtStep(f, t, lo, hi, baseStencil(lo, hi).h/2)
-		if math.Abs(cross)/v.Norm() <= 10*half.Sub(a).Norm() || math.Abs(cross) < 1e-10*v.Norm()*math.Max(a.Norm(), 1) {
-			zero := 0.0
-			d.Curvature[i] = &zero
+		case e.flat:
 			d.Flat++
-			continue
-		}
-		kappa := cross / (v.Norm() * v.Norm() * v.Norm())
-		d.Curvature[i] = &kappa
-		if math.Abs(1/kappa) > 100*d.radius {
+		case e.clipped:
 			d.Clipped++
-			continue
 		}
-		center := p.Add(normal.Mul(1 / kappa))
-		d.Center[i] = &center
 	}
 	return d
+}
+
+// described is the probe's account of the base at one parameter: its frame,
+// curvature and center of curvature, each nil where it is not known, and
+// whether the curvature is unknown, flat, or has its center at infinity.
+type described struct {
+	tangent, normal, center *Vec
+	curvature               *float64
+	unknown, flat, clipped  bool
+}
+
+// describe describes the base f at t, where it is drawn at p, from its
+// stencil derivatives v and a there. The per-sample diagnostics and the
+// probe between samples share this one compiled function, so a probe at a
+// sample reads exactly what the sample does.
+//
+//go:noinline
+func describe(f curveFunc, t float64, p, v, a Vec, lo, hi, radius float64) described {
+	var e described
+	if !(v.Norm() >= 1e-9) || !v.Valid() {
+		return e
+	}
+	tangent := v.Unit()
+	normal := tangent.Perp()
+	e.tangent, e.normal = &tangent, &normal
+	if !stable(f, t, lo, hi, v, a) {
+		e.unknown = true
+		return e
+	}
+	// Flat where the acceleration across the tangent is within the
+	// stencil's own resolution of r″, measured by the disagreement of two
+	// spacings, or below the evolute's guard.
+	cross := v.Cross(a)
+	_, half := derivativesAtStep(f, t, lo, hi, baseStencil(lo, hi).h/2)
+	if math.Abs(cross)/v.Norm() <= 10*half.Sub(a).Norm() || math.Abs(cross) < 1e-10*v.Norm()*math.Max(a.Norm(), 1) {
+		zero := 0.0
+		e.curvature, e.flat = &zero, true
+		return e
+	}
+	kappa := cross / (v.Norm() * v.Norm() * v.Norm())
+	e.curvature = &kappa
+	if math.Abs(1/kappa) > 100*radius {
+		e.clipped = true
+		return e
+	}
+	center := p.Add(normal.Mul(1 / kappa))
+	e.center = &center
+	return e
 }

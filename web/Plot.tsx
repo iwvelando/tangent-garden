@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { svgStroke, type LineWeight } from "./line-weight";
-import { probeHighlight } from "./planar-probe";
+import { probeHighlight, type HeldProbe } from "./planar-probe";
 import {
   usesPole,
   type Config,
@@ -40,9 +40,9 @@ type Props = {
   onCamera?: (camera: PlotCamera) => void;
   // How wide lines are drawn (line-weight.ts); regular when absent.
   weight?: LineWeight;
-  // The base sample the probe stands at, when it is on and no animation
-  // decides it (see planar-probe.ts).
-  probe?: number;
+  // The probe, when it is on and no animation decides it (see
+  // planar-probe.ts).
+  probe?: HeldProbe;
   pixelRatio?: number;
 };
 const W = 1000,
@@ -312,28 +312,26 @@ export function Plot({
   // Curves refined between their samples are drawn from their refined
   // points, whose nulls carry every break; framing keeps the samples.
   const refined = result.adaptive ?? {};
-  // The probe's drawing at its sample, in its own inks: the highlighted
+  // The probe's drawing at its point, in its own inks: the highlighted
   // construction, the osculating circle and its center, the point, and the
   // tangent and normal, each a fixed share of the page long. An animation
-  // decides the sample while it plays, and leaves it out of a frame without
+  // decides the point while it plays, and leaves it out of a frame without
   // one.
   const probeAt = animation ? animation.probe : probe;
   const probeDrawing = (() => {
-    const d = result.diagnostics;
-    const p = probeAt === undefined ? null : result.base[probeAt];
-    if (!d || !p || probeAt === undefined) return null;
-    const j = probeAt,
-      at = xy(p),
+    const p = probeAt?.point;
+    if (!probeAt || !p) return null;
+    const at = xy(p),
       ink = (k: "mark" | "tangent" | "normal") =>
         ({
           mark: palette.probe,
           tangent: palette.probeTangent,
           normal: palette.probeNormal,
         })[k];
-    const T = d.tangent[j],
-      N = d.normal[j],
-      c = d.center[j],
-      k = d.curvature[j];
+    const T = probeAt.tangent,
+      N = probeAt.normal,
+      c = probeAt.center,
+      k = probeAt.curvature;
     const glyph = 70;
     const arm = (v: Vec, testid: string, color: string) => (
       <line
@@ -350,9 +348,14 @@ export function Plot({
     const center = c && xy(c);
     const radius = k ? scale / Math.abs(k) : 0;
     return (
-      <g data-testid="probe" data-sample={j}>
+      <g
+        data-testid="probe"
+        {...(probeAt.sample !== undefined
+          ? { "data-sample": probeAt.sample }
+          : { "data-t": probeAt.t })}
+      >
         {probeHighlight(config, result)
-          ?.lines(result, j, config)
+          ?.lines(probeAt, config)
           .map(([a, b], i) => {
             const u = xy(a),
               v = xy(b);

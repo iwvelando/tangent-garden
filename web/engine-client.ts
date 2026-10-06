@@ -1,5 +1,5 @@
 import type { SpatialConfig, SpatialResult } from "./spatial/types";
-import type { Bounds, Config, Frame } from "./types";
+import type { Bounds, Config, Frame, ProbePoint, ProbeQuery } from "./types";
 
 // What a spatial study asks Go for beside the study itself.
 export type SpatialOptions = {
@@ -62,19 +62,38 @@ export class EngineClient {
     });
   }
   // A 2D study, with the base curve's diagnostics for the probe when asked
-  // (see engine.Diagnostics).
+  // (see engine.Diagnostics), and the probe at one parameter (see
+  // engine.ProbePoint).
   async compute(
     config: Config,
     bounds?: Bounds,
-    options: { diagnostics?: boolean } = {},
+    options: { diagnostics?: boolean; probe?: ProbeQuery } = {},
   ): Promise<Frame> {
     const { result, config: resolved } = await this.request({
       action: "compute",
       config,
       bounds,
       ...(options.diagnostics ? { diagnostics: true } : {}),
+      ...(options.probe ? { probe: options.probe } : {}),
     });
     return { result, config: resolved };
+  }
+  // The 2D probe alone at one parameter of a study, for a probe moved over
+  // a study already drawn.
+  async probe(
+    config: Config,
+    query: ProbeQuery,
+    bounds?: Bounds,
+  ): Promise<ProbePoint> {
+    return (
+      await this.request({
+        action: "compute",
+        config,
+        bounds,
+        probe: query,
+        probeOnly: true,
+      })
+    ).probe;
   }
   // With diagnostics, the result also describes the base curve at every
   // sample: its curvature, torsion, and Frenet frame. With surface

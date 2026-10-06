@@ -228,6 +228,24 @@ export type Diagnostics = {
   unknown: number;
   clipped: number;
 };
+// Mirrors engine.ProbeQuery: the probe at the parameter t, or where the
+// drawn arc length is share of the whole.
+export type ProbeQuery = { t: number } | { share: number };
+// Mirrors engine.ProbePoint: the base curve described at the parameter t as
+// Diagnostics does at a sample, each null where the base is not drawn
+// there, with the construction's derived input (when it acts on one) and
+// its point, where it is defined pointwise.
+export type ProbePoint = {
+  t: number;
+  point: Vec | null;
+  tangent: Vec | null;
+  normal: Vec | null;
+  curvature: number | null;
+  center: Vec | null;
+  length: number | null;
+  input?: Vec | null;
+  derived: Vec | null;
+};
 // Mirrors engine.AdaptiveResult: the refined base curve, derived input, and
 // derived curve (pedal-type, evolute, offset, caustic or inverted), each
 // absent when
@@ -441,6 +459,8 @@ export type Result = {
   adaptive?: AdaptiveResult;
   // Present only when the probe asked, for a curve with a parameter.
   diagnostics?: Diagnostics;
+  // Present only when the probe asked for one parameter.
+  probe?: ProbePoint;
   warnings: string[];
   invalid: number;
 };

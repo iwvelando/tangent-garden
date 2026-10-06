@@ -83,6 +83,26 @@ func main() {
 		return string(b)
 	})
 	js.Global().Set("tangentGardenCompute", fn)
+	probe := js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) != 1 {
+			return `{"error":"expected one JSON request"}`
+		}
+		var q engine.Request
+		err := json.Unmarshal([]byte(args[0].String()), &q)
+		var at *engine.ProbePoint
+		if err == nil {
+			at, err = engine.ProbeOnly(q)
+		}
+		if err != nil {
+			return refusal(err)
+		}
+		b, err := json.Marshal(map[string]any{"probe": at})
+		if err != nil {
+			return `{"error":"non-finite probe"}`
+		}
+		return string(b)
+	})
+	js.Global().Set("tangentGardenProbe", probe)
 	scalars := js.FuncOf(func(this js.Value, args []js.Value) any {
 		var expressions []string
 		if len(args) != 1 {

@@ -1,15 +1,19 @@
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ProbePlot } from "./ProbePlot";
-import { probeColor, probeIndex } from "./probe";
+import { probeColor } from "./probe";
 import {
+  betweenHelp,
+  probeBetween,
   probeHelp,
   probeHighlight,
   probeReadout,
+  probeStep,
   probeStraight,
   probeSupported,
+  type HeldProbe,
   type PlanarProbe,
 } from "./planar-probe";
-import type { Config, Frame } from "./types";
+import { refinesBetweenSamples, type Config, type Frame } from "./types";
 
 // Four significant figures: curvature is differenced numerically from the
 // curve's expressions to about 10⁻⁷ relative accuracy.
@@ -18,9 +22,10 @@ const count = (n: number, one: string, many: string) =>
   `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 // The 2D probe's controls and readout. `frame` is the study's own result
-// with diagnostics, or null while they are computed. `at` is the sample an
-// animation has moved the probe to; the slider waits until it stops.
-// `away` says why an animation that draws the probe has none on
+// with diagnostics, or null while they are computed. `at` is the probe it
+// describes, at a sample or between samples, or absent while Go places it;
+// `moving` says an animation has placed it, and the slider waits until it
+// stops. `away` says why an animation that draws the probe has none on
 // the frame it shows.
 export function PlanarProbePanel({
   config,
@@ -28,7 +33,8 @@ export function PlanarProbePanel({
   probe,
   onProbe,
   animating,
-  at: moving,
+  at,
+  moving,
   away,
   dark,
 }: {
@@ -37,16 +43,19 @@ export function PlanarProbePanel({
   probe: PlanarProbe;
   onProbe: (change: (p: PlanarProbe) => PlanarProbe) => void;
   animating: boolean;
-  at?: number;
+  at?: HeldProbe;
+  moving: boolean;
   away?: string;
   dark: boolean;
 }) {
   const help = useHelp();
+  const betweenHelpState = useHelp();
   if (!probeSupported(config)) return null;
   const d = frame?.result.diagnostics;
   const n = d ? d.curvature.length - 1 : 0;
-  const at = moving ?? probeIndex(probe.position, n);
-  const readout = frame && d ? probeReadout(frame.result, at) : null;
+  const between = probeBetween(config, probe);
+  const readout = frame && d && at ? probeReadout(at) : null;
+  const step = frame && at ? probeStep(frame.result, at) : 0;
   const swatch = (ink: "mark" | "tangent" | "normal") => ({
     background: probeColor(ink, dark),
   });
@@ -71,9 +80,30 @@ export function PlanarProbePanel({
           </label>
           <HelpToggle topic="the probe" help={help} />
         </div>
-        <HelpText help={help}>{probeHelp(config, frame?.result)}</HelpText>
+        <HelpText help={help}>
+          {probeHelp(config, frame?.result, between)}
+        </HelpText>
+        {probe.enabled && refinesBetweenSamples(config.curve.format) && (
+          <div className="probe-switch">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={!!probe.between}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  onProbe(({ between: _, ...p }) =>
+                    on ? { ...p, between: true } : p,
+                  );
+                }}
+              />
+              At any t, between samples
+            </label>
+            <HelpToggle topic="between samples" help={betweenHelpState} />
+          </div>
+        )}
+        <HelpText help={betweenHelpState}>{betweenHelp}</HelpText>
         {probe.enabled &&
-          (animating && moving === undefined ? (
+          (animating && !moving ? (
             <p className="probe-caption">
               {away ?? "The probe returns when the animation stops."}
             </p>
@@ -92,25 +122,45 @@ export function PlanarProbePanel({
                 value={`t = ${short(readout.t)}`}
                 className="probe-slider"
               >
-                <input
-                  type="range"
-                  min={0}
-                  max={n}
-                  step={1}
-                  value={at}
-                  disabled={moving !== undefined}
-                  aria-valuetext={`t = ${short(readout.t)}, sample ${at} of ${n}`}
-                  onChange={(e) => {
-                    const position = e.target.valueAsNumber / n;
-                    onProbe((p) => ({ ...p, position }));
-                  }}
-                />
+                {between ? (
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step="any"
+                    value={
+                      moving && d && d.max > d.min
+                        ? (readout.t - d.min) / (d.max - d.min)
+                        : probe.position
+                    }
+                    disabled={moving}
+                    aria-valuetext={`t = ${short(readout.t)}`}
+                    onChange={(e) => {
+                      const position = e.target.valueAsNumber;
+                      onProbe((p) => ({ ...p, position }));
+                    }}
+                  />
+                ) : (
+                  <input
+                    type="range"
+                    min={0}
+                    max={n}
+                    step={1}
+                    value={at!.sample ?? Math.round(step)}
+                    disabled={moving}
+                    aria-valuetext={`t = ${short(readout.t)}, sample ${at!.sample ?? Math.round(step)} of ${n}`}
+                    onChange={(e) => {
+                      const position = e.target.valueAsNumber / n;
+                      onProbe((p) => ({ ...p, position }));
+                    }}
+                  />
+                )}
               </Field>
               <dl className="probe-readout">
                 <dt>Curvature κ</dt>
                 <dd>
                   {readout.curvature === null
-                    ? frame!.result.base[at]
+                    ? at!.point
                       ? "unknown here"
                       : "undefined: no point here"
                     : readout.flat
@@ -136,7 +186,7 @@ export function PlanarProbePanel({
                 <ProbePlot
                   values={d.curvature}
                   fromZero={false}
-                  at={at}
+                  at={step}
                   label="κ"
                   ink={probeColor("mark", dark)}
                 />
