@@ -13,7 +13,7 @@ These are the facts that decide where a refinement applies.
 | Drawing        | SVG (`web/Plot.tsx`)                                                                                                              | WebGL (`web/spatial/renderer.ts`, geometry in `scene.ts`)                                 | SVG of an orbitable 3D projection (`web/tesseract/Plot.tsx`) |
 | Camera         | Pan and zoom                                                                                                                      | Turntable orbit (pitch ±1.5 rad), three perspective lenses, key-view paths, ray ride      | Turntable orbit (pitch ±1.5 rad), orthographic               |
 | Pointer, touch | Drag, scroll, pinch (`web/gestures.ts`, shared)                                                                                   | Same                                                                                      | Same                                                         |
-| Keyboard       | **None on the drawing**                                                                                                           | Arrows orbit, shift-arrows pan, +/− zoom, Home                                            | Same as 3D                                                   |
+| Keyboard       | Arrows pan, +/− zoom, Home fits                                                                                                   | Arrows orbit, shift-arrows pan, +/− zoom, Home                                            | Same as 3D                                                   |
 | Still export   | SVG; PNG at 1–4 × the page, optionally transparent (`web/ExportImageMenu.tsx`, shared)                                            | PNG, SVG with embedded PNG and Lines (SVG), all at 1–4 × the page, optionally transparent | As 2D                                                        |
 | Probe          | Curve                                                                                                                             | Curve, surface, light                                                                     | None (no user curve)                                         |
 | Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes | Base, derived input (involute too), projections, inversion, involutes, strands            | None (no user curve)                                         |
@@ -41,32 +41,14 @@ These come from the handoffs. Each was paid for at least once.
 
 ## Recommended order
 
-1. Camera affordances (2D keyboard; 3D Reset view's opening view)
-2. Probe follow-ups (2D and 3D)
-3. Refinement between samples, remaining constructions (2D and 3D)
+1. Probe follow-ups (2D and 3D)
+2. Refinement between samples, remaining constructions (2D and 3D)
 
 The remaining items are smaller or conditional, and each can be taken when a study needs it.
 
 ---
 
-### 1. Camera affordances
-
-**Applies to:**
-
-- Keyboard parity: 2D only. 3D and 4D already have arrows, +/− and Home.
-- Reset view's opening view: 3D only.
-
-**Open:**
-
-- 2D keyboard pan, zoom and reset on the drawing. Mirror 3D/4D's bindings and describe them in the drawing's accessible label.
-- 3D: Reset view returns a preset's opening view to the default view, not the preset's own.
-
-**Watch for:**
-
-- Do not import 3D's four animation camera modes into 4D (see the 4D roadmap).
-- Key views record no projection; a path flies in the drawing's projection.
-
-### 2. Probe follow-ups
+### 1. Probe follow-ups
 
 **Applies to:** 3D and 2D. 4D has no probe.
 
@@ -87,7 +69,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - Diagnostics are requested only while the probe is on, and studies without it must stay byte-identical (Go tests assert this per format).
 - Loops are judged with the probe drawn.
 
-### 3. Refinement between samples: remaining constructions
+### 2. Refinement between samples: remaining constructions
 
 **Applies to:** 3D and 2D. 4D has no user curve.
 
@@ -108,7 +90,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - Breaks found between samples must reach every curve built on that curve.
 - Keep the feature opt-in and off for older links.
 
-### 4. Camera path pivot
+### 3. Camera path pivot
 
 **Applies to:** 3D only. 4D has no camera paths.
 
@@ -127,7 +109,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Watch for:** a loop's seam slope (`cyclic`) and links' `animation.path`.
 
-### 5. 3D rendering leftovers
+### 4. 3D rendering leftovers
 
 **Applies to:** 3D only. The 2D and 4D SVG strokes use the browser's joins.
 
@@ -144,7 +126,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Watch for:** the hairline path must stay the original program and `gl.LINES`.
 
-### 6. WebGL context recovery and device limits
+### 5. WebGL context recovery and device limits
 
 **Applies to:**
 
@@ -158,7 +140,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Test with:** `WEBGL_lose_context` in Chromium.
 
-### 7. Scale and translation robustness
+### 6. Scale and translation robustness
 
 **Applies to:**
 
@@ -176,7 +158,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Start with:** a translated and scaled copy of existing presets compared against the originals. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
 
-### 8. Composition and comparison
+### 7. Composition and comparison
 
 **Applies to:**
 
@@ -190,7 +172,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 - **3D arc-length restart after a base break,** for involutes and the involute input. It needs separate anchors and labels; today samples past a break are unreached.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
-### 9. Transport and efficiency, when profiled
+### 8. Transport and efficiency, when profiled
 
 **Applies to:** 3D first, then 4D.
 

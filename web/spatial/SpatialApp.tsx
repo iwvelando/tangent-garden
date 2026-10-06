@@ -345,10 +345,10 @@ export default function SpatialApp({
     // default view.
     setLensing(spatialPresets[+index].projection ?? "orthographic");
     setLensAngle(spatialPresets[+index].lensAngle ?? lensAngles.initial);
+    // Reset view and Home return to it while the study is the preset's.
     const opening = spatialPresets[+index].view;
-    setRestoredView(
-      opening ? { reset: reset + 1, view: { ...opening } } : null,
-    );
+    setHome(opening ? { ...opening } : null);
+    setRestoredView(null);
     setReset(reset + 1);
   };
   // A shared study replaces the whole study, as a preset does, and restores
@@ -359,6 +359,9 @@ export default function SpatialApp({
     reset: number;
     view: SpatialCamera;
   } | null>(null);
+  // The camera that Reset view and Home return to: a preset's own opening
+  // view, until another preset or a link replaces the study, or the default.
+  const [home, setHome] = useState<SpatialCamera | null>(null);
   const animationSettings = useRef<SpatialAnimation | null>(null);
   const [presetFlight, setPresetFlight] = useState<{
     id: number;
@@ -381,6 +384,7 @@ export default function SpatialApp({
     setSight(study.sight);
     setLensing(study.projection);
     setLensAngle(study.lensAngle);
+    setHome(null);
     setRestoredView({ reset: reset + 1, view: study.view });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -3451,6 +3455,7 @@ export default function SpatialApp({
                   }}
                   onError={setRenderError}
                   restored={restoredView}
+                  home={home}
                   onCamera={(c) => {
                     manualCamera.current = c;
                   }}

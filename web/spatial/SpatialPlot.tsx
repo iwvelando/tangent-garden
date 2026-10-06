@@ -35,6 +35,7 @@ export function SpatialPlot({
   onViewport,
   onError,
   restored,
+  home = null,
   onCamera,
   probe = noProbe,
   cut = null,
@@ -60,6 +61,9 @@ export function SpatialPlot({
   onError: (message: string) => void;
   // A manual camera to start from at this reset, as a shared link restores.
   restored?: { reset: number; view: SpatialCamera } | null;
+  // The camera a reset and Home return to: a preset's opening view, or
+  // without one the default view.
+  home?: SpatialCamera | null;
   // The manual camera whenever it is drawn, for a study link.
   onCamera?: (camera: SpatialCamera) => void;
   // The parameter probe's batches for this result (see probe.ts).
@@ -227,7 +231,9 @@ export function SpatialPlot({
   useEffect(draw, [dark, layers, override, cut, sight, projection, lensAngle]);
   useEffect(() => {
     manual.current =
-      restored?.reset === reset ? { ...restored.view } : { ...initialView };
+      restored?.reset === reset
+        ? { ...restored.view }
+        : { ...(home ?? initialView) };
     draw();
   }, [reset]);
   useEffect(() => {
@@ -334,7 +340,7 @@ export function SpatialPlot({
             case "Home":
               if (explored.current && released)
                 explored.current = { ...released };
-              else manual.current = { ...initialView };
+              else manual.current = { ...(home ?? initialView) };
               break;
             default:
               return;

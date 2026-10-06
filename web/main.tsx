@@ -2221,10 +2221,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               </div>
               <span>
                 {animation?.complete
-                  ? "Drag to pan · scroll or pinch to zoom · Back to study restores your study"
+                  ? "Drag to pan · scroll or pinch to zoom · keys: arrows, + / −, Home · Back to study restores your study"
                   : animation
                     ? "Animation camera · Stop restores manual framing"
-                    : "Drag to pan · scroll or pinch to zoom"}
+                    : "Drag to pan · scroll or pinch to zoom · keys: arrows, + / −, Home"}
               </span>
             </div>
           </div>
