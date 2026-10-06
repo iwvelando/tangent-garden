@@ -47,6 +47,48 @@ type Props = {
 };
 const W = 1000,
   H = 760;
+// An implicit curve has contours and an iterated map a density, and
+// neither a construction, whatever kind the configuration still names.
+// Constructions whose derived points can be virtual are dashed there:
+// optical rays behind the curve, and envelope points beyond their chords.
+function drawnKind(result: Result, config: Config) {
+  const kind = result.contours
+    ? "implicit"
+    : result.attractor
+      ? "attractor"
+      : config.kind;
+  const optical = kind === "catacaustic" || kind === "diacaustic";
+  const extended =
+    kind === "envelope" &&
+    (config.envelope.mode === "angle" || config.envelope.extend);
+  const rings = kind === "envelope" && config.envelope.mode === "circle";
+  const dashed = optical || (kind === "envelope" && !rings && !extended);
+  return { kind, optical, extended, rings, dashed };
+}
+
+// Whether the drawing shows what each legend entry names: the base layer's
+// curve (a level set, a density, or paths), and the derived layer's curve,
+// offset stack, circle envelope or other levels. A layer that is on but has
+// nothing to draw, such as the evolute of a line, shows nothing.
+export function legendGeometry(result: Result, config: Config, layers: Layers) {
+  const { dashed } = drawnKind(result, config);
+  const some = (points: (Vec | null)[]) => points.some((p) => p);
+  const base =
+    some(result.base) ||
+    !!result.contours?.curve.contours.length ||
+    (!!result.attractor &&
+      result.attractor.accumulated > result.attractor.outside) ||
+    !!result.pursuit?.paths.some(some) ||
+    !!result.field?.paths.some(some);
+  const derived =
+    result.derived.some(
+      (p, i) => p && (!dashed || layers.virtual || !result.virtual[i]),
+    ) ||
+    result.family.some((member) => some(member.points)) ||
+    !!result.contours?.family.some((set) => set.contours.length);
+  return { base: layers.base && base, derived: layers.derived && derived };
+}
+
 // The world rectangle a view shows, for light entering from its edge.
 export function viewRect(view: { cx: number; cy: number; scale: number }) {
   return {
@@ -245,19 +287,9 @@ export function Plot({
       />
     );
   };
-  // An implicit curve has contours and an iterated map a density, and
-  // neither a construction, whatever kind the configuration still names.
   const contours = result.contours;
   const attractor = result.attractor;
-  const kind = contours ? "implicit" : attractor ? "attractor" : config.kind;
-  const optical = kind === "catacaustic" || kind === "diacaustic";
-  // Constructions whose derived points can be virtual: optical rays behind
-  // the curve, and envelope points beyond their chords.
-  const extended =
-    kind === "envelope" &&
-    (config.envelope.mode === "angle" || config.envelope.extend);
-  const rings = kind === "envelope" && config.envelope.mode === "circle";
-  const dashed = optical || (kind === "envelope" && !rings && !extended);
+  const { kind, optical, extended, rings, dashed } = drawnKind(result, config);
   // The circle of inversion, the curve inverted when it is derived, and where
   // its image is open between samples.
   const inversion = result.inversion;

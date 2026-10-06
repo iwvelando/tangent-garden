@@ -694,7 +694,20 @@ h1 {
   gap: 9px;
   text-transform: capitalize;
 }
-.legend span {
+/* Each entry is a swatch and its name (Legend.tsx). An entry hidden with
+   its layer keeps its place after the shown ones. */
+.legend .legend-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.legend .legend-entry + .legend-entry {
+  margin-left: 12px;
+}
+.legend-off {
+  visibility: hidden;
+}
+.legend span:not(.legend-entry) {
   width: 14px;
   height: 2px;
   display: inline-block;
@@ -704,7 +717,6 @@ h1 {
 }
 .derived-dot {
   background: #bc562e;
-  margin-left: 12px;
 }
 .dark .base-dot {
   background: #72c9c4;

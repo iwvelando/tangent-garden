@@ -86,7 +86,6 @@
 }
 .ribbon-dot {
   background: #4d9e8f;
-  margin-left: 12px;
 }
 .dark .thread-dot {
   background: #ffde94;
@@ -150,7 +149,6 @@
 }
 .focal-dot {
   background: #b85c42;
-  margin-left: 12px;
 }
 .focal-dot.second {
   background: #5466a8;
@@ -167,7 +165,6 @@
 /* The base curve under a derived input: palette.recede. */
 .parent-dot {
   background: #94a8a1;
-  margin-left: 12px;
 }
 .dark .parent-dot {
   background: #3d5e5e;
@@ -175,7 +172,6 @@
 /* The cut's edge: palette.cut. */
 .cut-dot {
   background: #212426;
-  margin-left: 12px;
 }
 .dark .cut-dot {
   background: #f2f0e3;

@@ -1110,6 +1110,19 @@ export function scenePasses(
   return out;
 }
 
+// The layers a scene has something to draw for, whichever are shown: the
+// legend names a layer's geometry only when it is both on and here.
+export function sceneLayers(s: Scene) {
+  const every = Object.fromEntries(
+    Object.keys(defaultLayers).map((k) => [k, true]),
+  ) as Layers;
+  return new Set(
+    scenePasses(s, every)
+      .filter((p) => p.batch.data.length > 0)
+      .map((p) => p.layer),
+  );
+}
+
 // The orthographic camera, with identical scale on all three axes: rotate
 // about the view center (a column-major matrix), pan, then scale so the
 // study's radius × 1.16 spans the page's shorter side. Depth spans four
