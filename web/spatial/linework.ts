@@ -28,8 +28,12 @@ import {
   faintOpacity,
   sheetOffset,
   strokeWidth,
+  taperBound,
+  taperBreaks,
+  taperStepOf,
   type HiddenLines,
   type LineWeight,
+  type StrokeDepth,
 } from "./sight";
 
 // Vector linework: the lines the drawing shows, from the same scene, layers
@@ -58,6 +62,8 @@ export type LineworkOptions = {
   hidden?: HiddenLines;
   // The lines' weight (see sight.ts): hairlines by default.
   weight?: LineWeight;
+  // Whether strokes taper with depth through a lens; even by default.
+  depth?: StrokeDepth;
   // Bounds visibility testing: rasterized pixels plus line samples.
   limit?: number;
   signal?: AbortSignal;
@@ -86,6 +92,9 @@ export function linework(
   if (edge) passes = scenePasses(scene, layers, probe, edge);
   const work = { done: 0, limit: options.limit ?? workLimit };
   const weight = options.weight ?? "hairline";
+  // Strokes taper only through a lens; hairlines never do.
+  const tapering =
+    weight !== "hairline" && options.depth === "taper" && k.lens[0] > 0;
   const raster =
     options.occlusion === "sampled"
       ? depthRaster(
@@ -103,6 +112,7 @@ export function linework(
             passes.filter((p) => !p.sheet).map((p) => p.batch),
             weight,
             options,
+            taperBound(k, view, options.depth),
           ),
         )
       : undefined;
@@ -135,6 +145,56 @@ export function linework(
       );
     return p.paths;
   };
+  // A page run of a clipped piece, in the paths of its width: a tapered
+  // stroke's run in steps (see sight.ts's taperStepOf), each in the paths
+  // of its step's width, split where the step changes. 1/w is affine on
+  // the page, so the factor focus/w is too.
+  const draw = (
+    into: Map<string, Strokes>,
+    layer: string,
+    color: string,
+    width: number | undefined,
+    piece: Piece,
+    a: Point,
+    b: Point,
+  ) => {
+    if (!tapering || width === undefined)
+      return extend(paths(into, layer, color, width), a, b);
+    const [p0, p1, , [w0, w1]] = piece,
+      dx = p1.x - p0.x,
+      dy = p1.y - p0.y,
+      d2 = dx * dx + dy * dy;
+    const factor = (p: Point) => {
+      const r = d2 > 0 ? ((p.x - p0.x) * dx + (p.y - p0.y) * dy) / d2 : 0;
+      return k.focus * ((1 - r) / w0 + r / w1);
+    };
+    const ga = factor(a),
+      gb = factor(b);
+    let from = a,
+      g = ga;
+    for (const t of [
+      ...taperBreaks(ga, gb).map((x) => (x - ga) / (gb - ga)),
+      1,
+    ].sort((x, y) => x - y)) {
+      const to =
+        t >= 1
+          ? b
+          : {
+              x: a.x + (b.x - a.x) * t,
+              y: a.y + (b.y - a.y) * t,
+              depth: a.depth + (b.depth - a.depth) * t,
+            };
+      const next = ga + (gb - ga) * t;
+      const step = taperStepOf((g + next) / 2);
+      extend(
+        paths(into, layer, color, Math.round(width * step * 1e4) / 1e4),
+        from,
+        to,
+      );
+      from = to;
+      g = next;
+    }
+  };
   for (const pass of passes) {
     if (pass.sheet) continue;
     options.signal?.throwIfAborted();
@@ -155,16 +215,20 @@ export function linework(
         );
         if (!piece) continue;
         const color = hex(lineColor(pass.batch.ink, data[i + 6], dark));
-        const shown = paths(groups, pass.layer, color, width);
         if (!raster) {
-          extend(shown, piece[0], piece[1]);
+          draw(groups, pass.layer, color, width, piece, piece[0], piece[1]);
           continue;
         }
         for (const run of runs(raster, piece, work)) {
-          if (run.shown) extend(shown, run.from, run.to);
+          if (run.shown)
+            draw(groups, pass.layer, color, width, piece, run.from, run.to);
           else if (behind === "faint")
-            extend(
-              paths(hiddenGroups, pass.layer, color, width),
+            draw(
+              hiddenGroups,
+              pass.layer,
+              color,
+              width,
+              piece,
               run.from,
               run.to,
             );
@@ -192,7 +256,7 @@ export function linework(
                 ? undefined
                 : (f) => (pageAt(w, s0 + (s1 - s0) * f) - r0) / (r1 - r0),
             ))
-              extend(paths(hiddenGroups, pass.layer, color, width), a, b);
+              draw(hiddenGroups, pass.layer, color, width, piece, a, b);
           }
         }
       }

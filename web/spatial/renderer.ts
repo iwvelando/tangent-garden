@@ -22,6 +22,8 @@ import {
   sheetOffset,
   strokeJoins,
   strokeWidth,
+  taperBound,
+  taperRange,
   type Sight,
 } from "./sight";
 
@@ -104,6 +106,11 @@ uniform vec4 cut[6];
 uniform vec2 viewport;
 uniform float halfWidth;
 uniform float caps;
+// Tapering with depth (see sight.ts): on (1) or not, the camera's focus w,
+// and the stroke's width at the focus. split keeps every segment (0), or
+// only those two pixels wide or more on average (1) or thinner (2).
+uniform vec3 taper;
+uniform float split;
 varying float U;
 varying vec3 C;
 varying vec3 E;
@@ -112,6 +119,8 @@ varying highp vec3 S;
 varying highp float L;
 // Whether the start and the end are mitred joints rather than ends.
 varying vec2 O;
+// A tapered stroke's width at its start and end.
+varying vec2 T;
 // Each cut plane's (n̂·p − d) / radius, positive beyond it: planes 1–3 and
 // 4–6, computed at the vertex stage's precision and linear across every
 // primitive. A plane the cut lacks is a constant that never decides.
@@ -153,7 +162,7 @@ void main() {
   // Clip space keeps z ≥ −w: the near plane.
   float na = a.z + a.w, nb = b.z + b.w;
   if (na < 0.0 && nb < 0.0) {
-    C = vec3(0.0); E = vec3(0.0); D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0);
+    C = vec3(0.0); E = vec3(0.0); D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0); T = vec2(0.0);
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
@@ -168,14 +177,29 @@ void main() {
     b = mix(b, a, t); cb = mix(cb, ca, t); eb = mix(eb, ea, t); sb = mix(sb, sa, t);
     joinB = 0.0;
   }
+  // Each end's width and reach: tapered by focus/w, held within its
+  // range, or the stroke's own.
+  float reachA = halfWidth + 1.0, reachB = reachA;
+  T = vec2(taper.z);
+  if (taper.x > 0.5) {
+    T = taper.z * clamp(taper.y / vec2(a.w, b.w), ${taperRange[0].toFixed(4)}, ${taperRange[1].toFixed(4)});
+    reachA = max(T.x, 1.0) / 2.0 + 1.0;
+    reachB = max(T.y, 1.0) / 2.0 + 1.0;
+  }
+  float mean = (T.x + T.y) / 2.0;
+  if ((split > 0.5 && split < 1.5 && mean < 2.0) || (split > 1.5 && mean >= 2.0)) {
+    C = vec3(0.0); E = vec3(0.0); D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0);
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    return;
+  }
   vec2 scale = 0.5 * viewport;
   vec2 pa = a.xy / a.w * scale, pb = b.xy / b.w * scale;
   vec2 d = pb - pa;
   float len = length(d);
   vec2 dir = len > 1e-4 ? d / len : vec2(1.0, 0.0);
   vec2 across = vec2(-dir.y, dir.x);
-  float reach = halfWidth + 1.0;
   bool end = corner.x > 0.5;
+  float reach = end ? reachB : reachA;
   // Both joints, at every corner, so the quad agrees on them.
   vec2 turnA, turnB;
   float atA = joint(before, joinA, pa, false, dir, len, scale, turnA),
@@ -225,7 +249,11 @@ varying mediump float L;
 uniform float coverHalf;
 uniform float coverCaps;
 uniform float fade;
+// Whether the stroke tapers, its width then changing linearly along the
+// segment on the page from T.x to T.y.
+uniform float coverTaper;
 varying vec2 O;
+varying vec2 T;
 #endif
 varying float U;
 varying vec3 C;
@@ -315,16 +343,21 @@ void main() {
   // with a one-pixel fringe. A stroke narrower than a pixel is drawn a
   // pixel wide, faded by its width.
   vec2 s = S.xy / S.z;
-  float cover;
+  float cover, halfWide = coverHalf, faded = fade;
+  if (coverTaper > 0.5) {
+    float wide = mix(T.x, T.y, clamp(s.x / max(L, 1e-4), 0.0, 1.0));
+    halfWide = max(wide, 1.0) / 2.0;
+    faded = min(1.0, wide);
+  }
   // Past a mitred joint the neighbor's quad takes over at their shared
   // edge, so the stroke runs on; only a polyline's own ends are capped.
   float before = O.x > 0.5 ? 1e6 : s.x, after = O.y > 0.5 ? 1e6 : L - s.x;
   if (coverCaps > 0.5) {
     float beyond = max(max(-before, -after), 0.0);
-    cover = clamp(coverHalf + 0.5 - length(vec2(beyond, s.y)), 0.0, 1.0);
+    cover = clamp(halfWide + 0.5 - length(vec2(beyond, s.y)), 0.0, 1.0);
   } else
-    cover = clamp(coverHalf + 0.5 - abs(s.y), 0.0, 1.0) * clamp(before + 0.5, 0.0, 1.0) * clamp(after + 0.5, 0.0, 1.0);
-  cover *= fade;
+    cover = clamp(halfWide + 0.5 - abs(s.y), 0.0, 1.0) * clamp(before + 0.5, 0.0, 1.0) * clamp(after + 0.5, 0.0, 1.0);
+  cover *= faded;
   if (cover < 0.004) discard;
   if (behind > 1.5) {
     if (fract(D) >= ${dashOn.toFixed(4)}) discard;
@@ -464,6 +497,9 @@ export function createRenderer(canvas: HTMLCanvasElement) {
             "coverHalf",
             "coverCaps",
             "fade",
+            "taper",
+            "split",
+            "coverTaper",
           ].map((n) => [n, gl.getUniformLocation(stroke, n)]),
         ),
       };
@@ -693,6 +729,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl!.depthFunc(gl!.LEQUAL);
     const k = camera(view, { width, height });
     const stroked = !!strokes && sight.weight !== "hairline";
+    // Strokes taper with depth only through a lens.
+    const tapering = stroked && sight.depth === "taper" && k.lens[0] > 0;
     // The camera, theme, cut and dashes, for either program.
     const place = (u: Record<string, WebGLUniformLocation | null>) => {
       gl!.uniformMatrix3fv(u.rotation, false, new Float32Array(k.rotation));
@@ -789,10 +827,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     // A line batch as strokes: drawn with round ends and its coverage as
     // sample coverage (or blended), or, thinner than two pixels or behind
     // sheets, with butt ends, blended (behind, at the faint or dashed
-    // opacity).
+    // opacity). A tapered batch is drawn in two parts, its segments two
+    // pixels wide or more on average (split 1) and the thinner ones (split
+    // 2), each as a stroke of that width is.
     const stroke = (
       v: Uploaded & { cut: boolean },
-      how: { behind?: number } = {},
+      how: { behind?: number; split?: 1 | 2 } = {},
     ) => {
       const t = strokes!,
         u = t.uniforms,
@@ -803,8 +843,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       // their mitred joints neither overlap nor part.
       const w = widthOf(v),
         half = Math.max(w, 1) / 2,
-        thin = w < 2,
+        thin = how.split ? how.split === 2 : w < 2,
         caps = how.behind || thin ? 0 : 1;
+      gl!.uniform3f(u.taper, tapering ? 1 : 0, k.focus, w);
+      gl!.uniform1f(u.coverTaper, tapering ? 1 : 0);
+      gl!.uniform1f(u.split, how.split ?? 0);
       gl!.uniform1f(u.halfWidth, half);
       gl!.uniform1f(u.coverHalf, half);
       gl!.uniform1f(u.caps, caps);
@@ -917,6 +960,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       passes.filter((v) => !v.sheet).map((v) => v.batch),
       stroked ? sight.weight : "hairline",
       { width, height },
+      tapering ? taperBound(k, view, sight.depth) : 1,
     );
     const sheet = (v: (typeof passes)[number]) => {
       gl!.enable(gl!.POLYGON_OFFSET_FILL);
@@ -928,14 +972,19 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     // Strokes are drawn after every sheet: those two pixels wide or more
     // first, writing depth where they cover, then thinner ones, which write
     // none, so a thin stroke is hidden by sheets and wide strokes in front
-    // of it but hides nothing itself.
+    // of it but hides nothing itself. Tapered strokes are sorted by segment.
     const inOrder = (lines: typeof passes) =>
-      stroked
+      tapering
         ? [
-            ...lines.filter((v) => widthOf(v) >= 2),
-            ...lines.filter((v) => widthOf(v) < 2),
+            ...lines.map((v) => () => stroke(v, { split: 1 })),
+            ...lines.map((v) => () => stroke(v, { split: 2 })),
           ]
-        : lines;
+        : stroked
+          ? [
+              ...lines.filter((v) => widthOf(v) >= 2),
+              ...lines.filter((v) => widthOf(v) < 2),
+            ].map((v) => () => line(v))
+          : lines.map((v) => () => line(v));
     // The plain drawing, in the passes' own order, or with strokes, sheets
     // first.
     if (isPlain(sight)) {
@@ -944,7 +993,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         return;
       }
       passes.filter((v) => v.sheet).forEach(sheet);
-      inOrder(passes.filter((v) => !v.sheet)).forEach((v) => line(v));
+      inOrder(passes.filter((v) => !v.sheet)).forEach((draw) => draw());
       return;
     }
     // Otherwise sheets first, alone in the depth buffer, so lines behind
@@ -978,7 +1027,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.depthMask(true);
       gl!.depthFunc(gl!.LEQUAL);
     }
-    inOrder(lines).forEach((v) => line(v));
+    inOrder(lines).forEach((draw) => draw());
   }
   // Every sheet layer's shaded color and a count of one, summed at each
   // pixel of the target without depth testing, so no order matters.

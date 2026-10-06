@@ -203,6 +203,13 @@ The construction lines are the drawing, so their weight matters. **Lines → Wei
 
 Near a sheet's outline a stroke just behind the sheet can show by up to half its width, because sheets are pushed back slightly so strokes lying on them stay whole.
 
+**Lines → Depth → Taper with distance** makes strokes seen through a perspective lens behave like lines of one thickness in space: a stroke keeps its weight's width where it crosses the plane through the view's target and grows wider as it comes toward the eye and thinner as it recedes, in proportion to its distance, from a quarter to four times its width. Through the orthographic camera every point is at one scale, so tapered and even strokes are the same, and the panel says to choose a lens. Two examples are drawn with it:
+
+- **A braided cable running to the horizon** looks along a long helix wound with three strands through the wide lens, from beside its near end: the first coil sweeps past the eye in heavy strokes and the rest narrow to a thread at the vanishing point.
+- **A coiled trefoil, near and far** sees six strands coiled round a trefoil close through the normal lens: the lobe coming toward you is heavy, and the far side of the knot, seen through its middle, is fine.
+
+Switch **Depth** to **Even** on either to compare. The line drawing (SVG) tapers in steps of 5%, since an SVG path has one width.
+
 ## Flying the camera
 
 **Animate → Fly through key views** moves the camera alone, through views you choose. Frame the drawing as you like, with orbit, pan and zoom, and press **+ Add the drawing's view**; frame the next and add it, up to twelve. **Show** puts the drawing's camera at a view so you can adjust it, and **Set to drawing** takes the adjusted view back. Name the views: the names appear beside the timeline as the camera reaches each view or flies between two, and never in the drawing.

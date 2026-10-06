@@ -1137,12 +1137,18 @@ export function sceneLayers(s: Scene) {
 //   w = 1 − z·lens[0],  depth = −z·framing[2] + lens[1]·w + lens[2],
 // with z the rotated point's coordinate toward the viewer. Orthographic
 // views have lens = 0, so w is exactly 1 and nothing they draw changes.
+//
+// focus is the clip w of the plane facing the eye where strokes that taper
+// with depth have their weight's width (see sight.ts): the plane through
+// the turntable's target, drawn at the orthographic scale, or one radius
+// ahead of a lens of its own. Orthographic views have focus 1, every w.
 export type Camera = {
   rotation: number[];
   center: Vec3;
   pan: [number, number];
   framing: [number, number, number];
   lens: [number, number, number];
+  focus: number;
   width: number;
   height: number;
 };
@@ -1156,7 +1162,10 @@ export function camera(
 ): Camera {
   if (view.lens) return perspective(view.lens, view.radius, size);
   const fov = turntableAngle(view);
-  if (fov) return perspective(turntableLens(view, fov), view.radius, size);
+  if (fov) {
+    const lens = turntableLens(view, fov);
+    return perspective(lens, view.radius, size, lens.target);
+  }
   const aspect = size.width / size.height;
   const c = Math.cos(view.yaw),
     s = Math.sin(view.yaw),
@@ -1173,6 +1182,7 @@ export function camera(
       1 / (view.radius * 4),
     ],
     lens: [0, 0, 0],
+    focus: 1,
     width: size.width,
     height: size.height,
   };
@@ -1197,7 +1207,7 @@ export function projectionRecord(view: View) {
     statement: `A pinhole perspective, ${fov}° across the page's shorter side, from an eye behind the view's target; the plane through the target is drawn at the orthographic scale, and zoom moves the eye.`,
   };
 }
-function turntableLens(view: View, fov: number): Lens {
+function turntableLens(view: View, fov: number): Lens & { target: number } {
   const c = Math.cos(view.yaw),
     s = Math.sin(view.yaw),
     a = Math.cos(view.pitch),
@@ -1227,12 +1237,16 @@ function turntableLens(view: View, fov: number): Lens {
     fov,
     near: Math.max(reach - 4 * view.radius, d / 100),
     far: reach + 4 * view.radius,
+    // The target's distance ahead of the eye.
+    target: d,
   };
 }
 function perspective(
   lens: Lens,
   radius: number,
   size: { width: number; height: number },
+  // The distance ahead of the eye where tapered strokes keep their width.
+  focus = radius,
 ): Camera {
   const aspect = size.width / size.height;
   const f = unit3(lens.forward),
@@ -1261,6 +1275,7 @@ function perspective(
     pan: [0, 0],
     framing: [scale / Math.max(1, aspect), scale * Math.min(1, aspect), 0],
     lens: [1 / E, (far + n) / (far - n), (-2 * far * n) / ((far - n) * E)],
+    focus: focus / E,
     width: size.width,
     height: size.height,
   };

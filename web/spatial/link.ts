@@ -450,6 +450,8 @@ const sight: SchemaOf<Sight> = {
     opacity: { range: opacityRange },
     hidden: { options: { hide: true, faint: true, dashed: true } },
     weight: lineWeightSchema,
+    // Even in links made before strokes could taper.
+    depth: { optional: { options: { even: true, taper: true } } },
   },
 };
 

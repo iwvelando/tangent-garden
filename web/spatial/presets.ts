@@ -3293,4 +3293,86 @@ export const spatialPresets: {
       beyond: "any",
     },
   },
+  // Strokes that taper with depth (see sight.ts): through a lens each
+  // stroke is its weight's width on the plane through the view's target,
+  // and wider or thinner as it is nearer the eye or farther from it.
+  //
+  // Three strands laid round a helix of radius 2 and twenty turns, 44 long
+  // along z, each strand turning twice a coil. The wide lens looks along
+  // the axis from beside its near end (yaw −0.8, pitch 0.4), the target
+  // panned out toward that end so the eye passes close to the first coil,
+  // whose strokes sweep off the page several times their weight; the far
+  // coils narrow toward the vanishing point.
+  {
+    name: "A braided cable running to the horizon",
+    detail:
+      "Three strands coiled round a long helix, seen from beside its near end: heavy where it sweeps past the eye, thinning to a thread at its vanishing point",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "framed",
+      samples: 900,
+      lines: 24,
+      adaptive: true,
+      frame: {
+        ...base.frame,
+        reference: { x: -1, y: 0, z: 0 },
+        twist: 40,
+        width: 0,
+        offset: 0.3,
+        strands: 3,
+      },
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "0.7*a*t",
+        a: 1,
+        min: -10 * Math.PI,
+        max: 10 * Math.PI,
+      },
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "hide",
+      weight: "bold",
+      depth: "taper",
+    },
+    layers: { frames: false, seam: false },
+    projection: "wide",
+    view: { yaw: -0.8, pitch: 0.4, zoom: 2, panX: 9, panY: 5 },
+  },
+  // Six strands coiled forty times round the trefoil, seen close through
+  // the normal lens: the lobe nearest the eye is drawn in heavy strokes and
+  // the far side of the knot, seen through its middle, in fine ones.
+  {
+    name: "A coiled trefoil, near and far",
+    detail:
+      "Six strands twisted round a trefoil, close through a lens: heavy where the knot comes toward you, fine across its far side",
+    config: {
+      ...base,
+      construction: "framed",
+      samples: 240,
+      lines: 24,
+      adaptive: true,
+      frame: {
+        ...base.frame,
+        twist: 40,
+        width: 0,
+        offset: 0.32,
+        strands: 6,
+        closure: "distribute",
+      },
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "hide",
+      weight: "bold",
+      depth: "taper",
+    },
+    layers: { frames: false, seam: false },
+    projection: "normal",
+    view: { yaw: 0.8, pitch: 0.7, zoom: 1.5, panX: 0.3, panY: -0.2 },
+  },
 ];

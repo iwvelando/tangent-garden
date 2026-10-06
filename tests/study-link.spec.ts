@@ -830,7 +830,7 @@ test("a link carries the cut and a peel; refuses a zero normal and a peel withou
   );
 });
 
-test("a link carries seeing through and line weight; refuses an opacity outside its range or an unknown way", async () => {
+test("a link carries seeing through, line weight and taper; refuses an opacity outside its range or an unknown way", async () => {
   for (const hidden of ["hide", "faint", "dashed"] as const)
     for (const sheets of ["opaque", "through"] as const)
       for (const opacity of [0.05, 0.8])
@@ -842,6 +842,18 @@ test("a link carries seeing through and line weight; refuses an opacity outside 
           const read = await readStudyLink(await writeStudyLink("3d", study));
           assert.deepEqual(spatialStudy(read.study), study);
         }
+  // Strokes taper with depth, or stay even; links made before tapering
+  // have no depth and draw even strokes.
+  for (const depth of ["even", "taper"] as const) {
+    const study: SpatialStudy = {
+      ...spatial(),
+      sight: { ...defaultSight, depth },
+    };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study), study);
+  }
+  assert.equal(defaultSight.depth, undefined);
+  assert.equal(spatialStudy(spatial()).sight.depth, undefined);
   // Missing fields take their defaults, except the line weight: a link
   // without one was made before weights and keeps its hairlines.
   const partial = structuredClone(spatial()) as any;
@@ -876,6 +888,10 @@ test("a link carries seeing through and line weight; refuses an opacity outside 
   await refused(
     bad((v) => (v.weight = "heavy")),
     "sight.weight",
+  );
+  await refused(
+    bad((v) => (v.depth = "steep")),
+    "sight.depth",
   );
   await refused(
     bad((v) => (v.extra = 1)),

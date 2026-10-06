@@ -2980,6 +2980,11 @@ export default function SpatialApp({
                 error={userSight.error}
                 unavailable={!seeThrough}
                 unstroked={!stroking}
+                lensed={
+                  lensing !== "orthographic" ||
+                  !!camera?.lens ||
+                  !!released?.lens
+                }
               />
             </FieldErrorContext.Provider>
           </ScalarStatus.Provider>

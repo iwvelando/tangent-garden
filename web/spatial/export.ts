@@ -108,6 +108,7 @@ export async function imageFile(
         occlusion,
         hidden: sight.hidden,
         weight: sight.weight,
+        depth: sight.depth,
         // The work a page's visibility testing needs grows with its area,
         // so the limit does too: a view that exports at one size exports
         // at every size.
