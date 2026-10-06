@@ -165,30 +165,12 @@ func diagnose(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, velo
 		if base[i] == nil {
 			continue
 		}
-		v, a := velocities[i], accelerations[i]
-		speed := v.norm()
-		tangent := v.mul(1 / speed)
-		d.Tangent[i] = &tangent
-		if !a.valid() {
-			continue
-		}
-		if !defined[i] {
-			zero := 0.0
-			d.Curvature[i] = &zero
+		e := describe(third, lo+(hi-lo)*float64(i)/float64(n), *base[i], velocities[i], accelerations[i], binormals[i], defined[i])
+		d.Tangent[i], d.Curvature[i], d.Normal[i], d.Binormal[i], d.Center[i], d.Torsion[i] = e.tangent, e.curvature, e.normal, e.binormal, e.center, e.torsion
+		if e.flat {
 			d.Flat++
-			continue
 		}
-		b := v.cross(a)
-		kappa := b.norm() / (speed * speed * speed)
-		binormal := binormals[i]
-		normal := binormal.cross(tangent)
-		center := base[i].add(normal.mul(1 / kappa))
-		d.Curvature[i], d.Binormal[i], d.Normal[i], d.Center[i] = &kappa, &binormal, &normal, &center
-		t := lo + (hi-lo)*float64(i)/float64(n)
-		if j, ok := third(t, v); ok {
-			tau := b.dot(j) / b.dot(b)
-			d.Torsion[i] = &tau
-		} else {
+		if e.unknown {
 			d.Unknown++
 		}
 	}
@@ -197,6 +179,46 @@ func diagnose(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, velo
 		d.Normal[n], d.Binormal[n], d.Center[n] = d.Normal[0], d.Binormal[0], d.Center[0]
 	}
 	return d
+}
+
+// description is the curve described at one regular point, as DiagnosticsResult
+// holds it at a sample: flat where the curvature vanishes, and unknown where
+// the torsion cannot be found though the frame is defined.
+type description struct {
+	tangent, normal, binormal, center *Vec3
+	curvature, torsion                *float64
+	flat, unknown                     bool
+}
+
+// describe describes the curve at the regular point r with velocity v,
+// acceleration a and the binormal guard's binormal (defined or not), with
+// r‴ from third at t. The per-sample diagnostics and the probe between
+// samples share it, so the probe at a sample reads exactly what the sample
+// does.
+func describe(third func(float64, Vec3) (Vec3, bool), t float64, r, v, a, binormal Vec3, defined bool) description {
+	speed := v.norm()
+	tangent := v.mul(1 / speed)
+	e := description{tangent: &tangent}
+	if !a.valid() {
+		return e
+	}
+	if !defined {
+		zero := 0.0
+		e.curvature, e.flat = &zero, true
+		return e
+	}
+	b := v.cross(a)
+	kappa := b.norm() / (speed * speed * speed)
+	normal := binormal.cross(tangent)
+	center := r.add(normal.mul(1 / kappa))
+	e.curvature, e.binormal, e.normal, e.center = &kappa, &binormal, &normal, &center
+	if j, ok := third(t, v); ok {
+		tau := b.dot(j) / b.dot(b)
+		e.torsion = &tau
+	} else {
+		e.unknown = true
+	}
+	return e
 }
 
 // measure fills Length from the sampling loop's speeds at the samples and

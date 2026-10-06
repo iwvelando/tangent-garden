@@ -137,6 +137,10 @@ export const curveProbeMotions: { value: ProbeMotion; label: string }[] = [
 export const curveProbeMotionHelp =
   "Where the probe stands in each frame while the parameters vary. Stays at its t: at the sample nearest the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: at the sample nearest the same fraction of the drawn curve's arc length, measured by Go on each frame's samples, with nothing counted across a break. Moves along the curve: from its first sample to its last as the animation plays. It snaps to each frame's own samples; the readout and plot describe that frame, and framing ignores the osculating circle.";
 
+// How the probe moves while the parameters vary, between samples.
+export const betweenMotionHelp =
+  "Where the probe stands in each frame while the parameters vary. Stays at its t: at exactly the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: where the drawn curve's arc length, measured by Go on each frame, is the same fraction of the whole, with nothing counted across a break. Moves along the curve: from the start of each frame's domain to its end as the animation plays. Go places it with each frame, between samples; the readout and plot describe that frame, and framing ignores the osculating circle.";
+
 // Why a held probe has no point in a frame: its t lies outside the frame's
 // domain, it has no share of the length to keep, or the frame has no
 // length.

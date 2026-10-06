@@ -83,6 +83,11 @@ type Request struct {
 	// Adaptive refines the drawn curves between their uniform samples (see
 	// refinePath); surface, ray, and implicit studies ignore it.
 	Adaptive bool `json:"adaptive"`
+	// Probe asks for the curve the construction acts on described at one
+	// parameter, at or between samples (see ProbePoint), for a torus knot,
+	// harmonic or custom curve. It asks for the diagnostics too, and changes
+	// nothing else in the result.
+	Probe *ProbeQuery `json:"probe,omitempty"`
 }
 type Vertex struct {
 	SampleIndex int     `json:"sampleIndex"`
@@ -147,6 +152,10 @@ type Result struct {
 	// Adaptive is present only when refinement was requested, for a curve
 	// it can refine.
 	Adaptive *AdaptiveResult `json:"adaptive,omitempty"`
+	// CurveProbe is present only when requested, for a curve.
+	CurveProbe *ProbePoint `json:"probe,omitempty"`
+	// probing places the curve probe over the computed study.
+	probing *probing
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -171,9 +180,18 @@ func jumps(a, b, middle Vec3, step float64) bool {
 }
 
 func Compute(c Request) (Result, error) {
+	if c.Probe != nil {
+		if !c.probedAnywhere() {
+			return Result{}, errProbe
+		}
+		c.Diagnostics = true
+	}
 	out, err := compute(c)
 	if err == nil && out.Diagnostics != nil {
 		out.Diagnostics.clip(out.Bounds.Radius)
+	}
+	if err == nil && c.Probe != nil {
+		out.CurveProbe = out.probing.probe(*c.Probe, out.Diagnostics, out.Bounds.Radius)
 	}
 	// A patch and a wavefront place their own focal points: the patch as
 	// its focal sheets, the wavefront as its caustics.
@@ -284,6 +302,11 @@ func compute(c Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	if c.Probe != nil {
+		if err := checkProbe(*c.Probe, lo, hi); err != nil {
+			return Result{}, err
+		}
+	}
 	// A derived input replaces the curve every construction acts on, and
 	// is broken wherever the base is.
 	composed := c.composed()
@@ -321,6 +344,11 @@ func compute(c Request) (Result, error) {
 	}
 	n := c.Samples
 	out := Result{Base: make([]*Vec3, n+1), Minus: make([]*Vec3, n+1), Plus: make([]*Vec3, n+1), Breaks: make([]bool, n+1), Mesh: make([]Vertex, 0, n*12), Rulings: make([]Ruling, 0, c.Lines)}
+	// Only a study asked for the probe keeps what places it; constructions
+	// fill in their points below.
+	if c.Probe != nil {
+		out.probing = &probing{c: c, evaluate: evaluate, third: jerk(c, evaluate, lo, hi), lo: lo, hi: hi, closed: closed}
+	}
 	normals, tangents := make([]Vec3, n+1), make([]Vec3, n+1)
 	speeds, middles := make([]float64, n+1), make([]float64, n)
 	valid := make([]bool, n+1)
@@ -468,6 +496,15 @@ func compute(c Request) (Result, error) {
 	}
 	if framed {
 		frame := frames(c, &out, tangents, speeds, middles, normals, valid, closed, lo, hi)
+		if c.Frame.Width > 0 {
+			along := frame.along(c, evaluate, lo, hi)
+			out.probing.highlight(func(t float64, _, _ Vec3, at *ProbePoint) {
+				if g, ok := along(t); ok {
+					d := g.direction(c.Frame.Angle).mul(c.Frame.Width)
+					at.Minus, at.Plus = pointAt(g.r.sub(d)), pointAt(g.r.add(d))
+				}
+			})
+		}
 		if out.Adaptive != nil {
 			// Each strand on its own, like the involutes.
 			for k, strand := range out.Frame.Strands {
@@ -497,6 +534,11 @@ func compute(c Request) (Result, error) {
 		return out, nil
 	}
 	if ruled {
+		out.probing.highlight(func(t float64, _, _ Vec3, at *ProbePoint) {
+			if p, _, _, ok, inside := partner(c.Ruled.Rate*t + c.Ruled.Shift); ok && inside {
+				at.Plus = pointAt(p)
+			}
+		})
 		if err := ruledSurface(c, &out, partner, tangents, accelerations, speeds, lo, hi, closed); err != nil {
 			return Result{}, err
 		}
@@ -505,6 +547,10 @@ func compute(c Request) (Result, error) {
 		return out, nil
 	}
 	if projection {
+		out.probing.highlight(func(_ float64, r, tangent Vec3, at *ProbePoint) {
+			at.Foot = pointAt(project("tangent-foot", c.Pole, r, tangent))
+			at.Image = pointAt(project(c.Construction, c.Pole, r, tangent))
+		})
 		out.Projection = projections(c, out.Base, tangents)
 		if out.Adaptive != nil {
 			points := out.Projection.Points
@@ -523,6 +569,11 @@ func compute(c Request) (Result, error) {
 	}
 	if inversion {
 		q := inversions(c, evaluate, lo, hi, out.Base, tangents, out.Breaks)
+		out.probing.highlight(func(_ float64, r, tangent Vec3, at *ProbePoint) {
+			if source := pointAt(c.Inversion.source(c.Pole, r, tangent)); source != nil {
+				at.Source, at.Image = source, pointAt(invert(q.Center, q.Radius, *source))
+			}
+		})
 		if out.Adaptive != nil {
 			// Refinement decides each passage through the center in place of
 			// the uniform midpoint test.
@@ -553,6 +604,12 @@ func compute(c Request) (Result, error) {
 			return Result{}, err
 		}
 		out.Involute = result
+		out.probing.highlight(func(t float64, _, _ Vec3, at *ProbePoint) {
+			at.Members = make([]*Vec3, len(result.Members))
+			for k, m := range result.Members {
+				at.Members[k] = pointAt(arcs.member(m.Offset)(t))
+			}
+		})
 		if out.Adaptive != nil {
 			// Each member on its own: one's break is not another's.
 			for _, m := range result.Members {
@@ -569,6 +626,10 @@ func compute(c Request) (Result, error) {
 		out.Radius = out.Bounds.Radius
 		return out, nil
 	}
+	out.probing.highlight(func(_ float64, r, tangent Vec3, at *ProbePoint) {
+		minus, plus := r.sub(tangent.mul(c.Length)), r.add(tangent.mul(c.Length))
+		at.Minus, at.Plus = &minus, &plus
+	})
 	for i := 0; i < c.Lines; i++ {
 		j := i * n / (c.Lines - 1)
 		if out.Base[j] != nil {

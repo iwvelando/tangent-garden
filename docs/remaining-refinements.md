@@ -41,7 +41,7 @@ These come from the handoffs. Each was paid for at least once.
 
 ## Recommended order
 
-1. Probe follow-ups (2D and 3D)
+1. Probe follow-ups (3D)
 2. Refinement between samples, remaining constructions (2D and 3D)
 
 The remaining items are smaller or conditional, and each can be taken when a study needs it.
@@ -50,11 +50,10 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 ### 1. Probe follow-ups
 
-**Applies to:** 3D and 2D. 4D has no probe.
+**Applies to:** 3D. The 2D probe has nothing open, and 4D has no probe.
 
 **Open:**
 
-- **Exact probe between samples in 3D.** The 2D probe stands between samples on request (see `mathematics.md`, **Curvature and the 2D probe**, _Between samples_); the 3D curve probe still snaps to samples, and a held probe can step by half a sample spacing between parameter frames. The 2D path (`engine/probe.go`, a probe-only request, `probe: { t } | { share }`) is the model.
 - **3D surface probe held at its own (u, v)** under parameter tracks, rather than its share of the grid.
 - **3D surface probe on more surfaces.** Implicit meshes are excluded on purpose: a mesh is a picture, not a differentiable evaluator.
 - **Smaller limits** to fix if they bite:
@@ -62,7 +61,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
   - Surface plots run along the row only.
   - The readout cannot tell an unknown tangent plane from a singular one.
 
-**Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks, away messages), `web/planar-probe.ts` and `engine/probe.go` (the 2D probe between samples), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
+**Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks, away messages), `engine/probe.go` and `engine3/probe.go` (the curve probe between samples, a model for a surface probe at its own (u, v)), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
 
 **Watch for:**
 
@@ -195,7 +194,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - The probe while parameters vary.
 - The 2D probe, refinement and line-weight controls at phone width, including the probe's **At any t, between samples** checkbox and its continuous slider.
 
-Line weights in 3D were checked locally and on a phone on 2026-10-04.
+Line weights in 3D were checked locally and on a phone on 2026-10-04, and the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06.
 
 ## Conditional and declined
 

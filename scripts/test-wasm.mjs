@@ -1103,7 +1103,64 @@ assert.ok(
     ),
   ).error,
 );
-console.log("Spatial WASM bridge: knot, mesh, closure, and validation passed.");
+// The spatial probe between samples: the trefoil at t = 0.3, off its
+// samples, lies on the torus knot ((R + r cos 3t) cos 2t, …, r sin 3t);
+// the probe alone is the full study's probe, its ruling spans the tangent
+// reach on either side, and a malformed one is refused.
+const knotStudy = {
+  radius: 2.4,
+  tube: 0.85,
+  length: 2.3,
+  p: 2,
+  q: 3,
+  samples: 480,
+  lines: 96,
+};
+const knotProbeT = 0.3;
+const knotProbeOnly = JSON.parse(
+  globalThis.tangentGardenSpatialProbe(
+    JSON.stringify({ ...knotStudy, probe: { t: knotProbeT } }),
+  ),
+);
+const knotProbe = JSON.parse(
+  globalThis.tangentGardenSpatial(
+    JSON.stringify({ ...knotStudy, probe: { t: knotProbeT } }),
+  ),
+).probe;
+assert.deepEqual(knotProbeOnly, { probe: knotProbe });
+assert.equal(knotProbe.t, knotProbeT);
+const knotH = 2.4 + 0.85 * Math.cos(3 * knotProbeT);
+assert.ok(
+  Math.hypot(
+    knotProbe.point.x - knotH * Math.cos(2 * knotProbeT),
+    knotProbe.point.y - knotH * Math.sin(2 * knotProbeT),
+    knotProbe.point.z - 0.85 * Math.sin(3 * knotProbeT),
+  ) < 1e-12,
+);
+assert.ok(
+  Math.abs(
+    Math.hypot(
+      knotProbe.plus.x - knotProbe.minus.x,
+      knotProbe.plus.y - knotProbe.minus.y,
+      knotProbe.plus.z - knotProbe.minus.z,
+    ) - 4.6,
+  ) < 1e-12,
+);
+assert.match(
+  JSON.parse(
+    globalThis.tangentGardenSpatialProbe(
+      JSON.stringify({ ...knotStudy, probe: { t: 99 } }),
+    ),
+  ).error,
+  /probe/,
+);
+assert.ok(
+  JSON.parse(globalThis.tangentGardenSpatialProbe(JSON.stringify(knotStudy)))
+    .error,
+);
+console.log(
+  "Spatial WASM bridge: knot, mesh, closure, validation, and the probe between samples passed.",
+);
 const spatialCustom = JSON.parse(
   globalThis.tangentGardenSpatial(
     JSON.stringify({

@@ -2,12 +2,15 @@ import { Field, HelpText, HelpToggle, useHelp } from "../Field";
 import { ProbePlot } from "../ProbePlot";
 import { hex, lineColor } from "./palette";
 import {
+  betweenHelp,
+  curveStep,
   describeHelp,
+  evaluatedAnywhere,
   gridded,
   lightProbeReadout,
   probeLegend,
+  probeBetween,
   probeHelp,
-  probeIndex,
   probeInk,
   probeReadout,
   probeStraight,
@@ -20,7 +23,9 @@ import {
   surfaceProbeReadout,
   surfaceTerms,
   targetName,
+  type CurveProbe,
   type Probe,
+  type ProbePlace,
   type ProbeTarget,
 } from "./probe";
 import type { Frame, SpatialConfig, SurfaceDiagnostics } from "./types";
@@ -54,16 +59,18 @@ function Plot({
 
 // The parameter probe's controls and readout. `frame` is the study's own
 // result with diagnostics, or null while they are computed or while an
-// animation that does not move the probe plays. `at` is the sample an
-// animation has moved the probe to; the slider waits until it stops.
-// `away` says why an animation that draws the probe has none on
-// the frame it shows.
+// animation that does not move the probe plays. `held` is the curve probe
+// it describes, at a sample or between samples, or absent while Go places
+// it. `at` is where an animation has moved the probe to: the curve probe,
+// or a surface's row; the slider waits until it stops. `away` says why an
+// animation that draws the probe has none on the frame it shows.
 export function ProbePanel({
   config,
   frame,
   probe,
   onProbe,
   animating,
+  held,
   at: moving,
   away,
   dark,
@@ -73,19 +80,23 @@ export function ProbePanel({
   probe: Probe;
   onProbe: (change: (p: Probe) => Probe) => void;
   animating: boolean;
-  at?: number;
+  held?: CurveProbe;
+  at?: ProbePlace;
   away?: string;
   dark: boolean;
 }) {
   const help = useHelp();
+  const betweenHelpState = useHelp();
   const support = probeSupport(config);
   if (!support.available) return null;
   const target = probeTarget(config, probe);
   const both = support.targets.length > 1;
   const d = frame?.result.diagnostics;
   const n = d ? d.curvature.length - 1 : 0;
-  const at = moving ?? probeIndex(probe.position, n);
-  const readout = frame && d ? probeReadout(frame.result, at) : null;
+  const between = probeBetween(config, probe);
+  const at = typeof moving === "object" ? moving : held;
+  const readout = frame && d && at ? probeReadout(at) : null;
+  const step = frame && at ? curveStep(frame.result, at) : 0;
   const swatch = (ink: number) => ({
     background: hex(lineColor(ink, 0, dark)),
   });
@@ -133,8 +144,28 @@ export function ProbePanel({
         <HelpText help={help}>
           {gridded(target)
             ? surfaceProbeHelp(config, target)
-            : probeHelp(config)}
+            : probeHelp(config, between)}
         </HelpText>
+        {probe.enabled && target === "curve" && evaluatedAnywhere(config) && (
+          <div className="probe-switch">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={!!probe.between}
+                disabled={moving !== undefined || away !== undefined}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  onProbe(({ between: _, ...p }) =>
+                    on ? { ...p, between: true } : p,
+                  );
+                }}
+              />
+              At any t, between samples
+            </label>
+            <HelpToggle topic="between samples" help={betweenHelpState} />
+          </div>
+        )}
+        <HelpText help={betweenHelpState}>{betweenHelp}</HelpText>
         {probe.enabled && gridded(target) && (
           <SurfaceProbe
             config={config}
@@ -142,7 +173,7 @@ export function ProbePanel({
             probe={probe}
             onProbe={onProbe}
             animating={animating}
-            at={moving}
+            at={typeof moving === "number" ? moving : undefined}
             away={away}
             dark={dark}
           />
@@ -169,19 +200,39 @@ export function ProbePanel({
                 value={`t = ${short(readout.t)}`}
                 className="probe-slider"
               >
-                <input
-                  type="range"
-                  min={0}
-                  max={n}
-                  step={1}
-                  value={at}
-                  disabled={moving !== undefined}
-                  aria-valuetext={`t = ${short(readout.t)}, sample ${at} of ${n}`}
-                  onChange={(e) => {
-                    const position = e.target.valueAsNumber / n;
-                    onProbe((p) => ({ ...p, position }));
-                  }}
-                />
+                {between ? (
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step="any"
+                    value={
+                      moving !== undefined && d!.max > d!.min
+                        ? (readout.t - d!.min) / (d!.max - d!.min)
+                        : probe.position
+                    }
+                    disabled={moving !== undefined}
+                    aria-valuetext={`t = ${short(readout.t)}`}
+                    onChange={(e) => {
+                      const position = e.target.valueAsNumber;
+                      onProbe((p) => ({ ...p, position }));
+                    }}
+                  />
+                ) : (
+                  <input
+                    type="range"
+                    min={0}
+                    max={n}
+                    step={1}
+                    value={at!.sample ?? Math.round(step)}
+                    disabled={moving !== undefined}
+                    aria-valuetext={`t = ${short(readout.t)}, sample ${at!.sample ?? Math.round(step)} of ${n}`}
+                    onChange={(e) => {
+                      const position = e.target.valueAsNumber / n;
+                      onProbe((p) => ({ ...p, position }));
+                    }}
+                  />
+                )}
               </Field>
               <dl className="probe-readout">
                 <dt>Curvature κ</dt>
@@ -214,14 +265,14 @@ export function ProbePanel({
                   <Plot
                     values={d.curvature}
                     fromZero
-                    at={at}
+                    at={step}
                     label="κ"
                     dark={dark}
                   />
                   <Plot
                     values={d.torsion}
                     fromZero={false}
-                    at={at}
+                    at={step}
                     label="τ"
                     dark={dark}
                   />

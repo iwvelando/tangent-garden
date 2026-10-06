@@ -135,6 +135,16 @@ func (h HarmonicCurve) curvatureScale() float64 {
 	return scale
 }
 
+// chain is the chain of generating vectors at t = u.
+func (h HarmonicCurve) chain(u float64) HarmonicPosition {
+	s := HarmonicPosition{Joints: make([]Vec3, len(h.Terms)), Point: h.Center}
+	for k, term := range h.Terms {
+		s.Joints[k] = s.Point
+		s.Point = s.Point.add(term.at(u))
+	}
+	return s
+}
+
 // harmonicGeometry returns the vector chains at the representative samples
 // (and at every sample when the curve probe asks for diagnostics) and, for
 // framing, each term's joints and the axis extents of its ellipse around
@@ -150,11 +160,8 @@ func harmonicGeometry(c Request, lo, hi float64) (*HarmonicResult, [][]*Vec3) {
 		if out.Closed && i == n {
 			u = lo
 		}
-		s := HarmonicPosition{SampleIndex: i, Joints: make([]Vec3, len(h.Terms)), Point: h.Center}
-		for k, term := range h.Terms {
-			s.Joints[k] = s.Point
-			s.Point = s.Point.add(term.at(u))
-		}
+		s := h.chain(u)
+		s.SampleIndex = i
 		return s
 	}
 	families := make([][]*Vec3, 2*len(h.Terms))

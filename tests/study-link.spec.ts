@@ -200,6 +200,38 @@ test("a 2D link carries a probe between samples; older ones snap it", async () =
     });
 });
 
+test("a 3D link carries a probe between samples; older ones snap it", async () => {
+  const study: SpatialStudy = {
+    ...spatial(),
+    probe: {
+      enabled: true,
+      position: 0.123456,
+      target: "curve",
+      across: 0.5,
+      between: true,
+    },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study).probe, study.probe);
+  // Links made before it, and a probe set back to snap, carry no flag.
+  for (const between of [undefined, false]) {
+    const old = structuredClone(spatial()) as any;
+    old.probe = {
+      enabled: true,
+      position: 0.123456,
+      target: "curve",
+      across: 0.5,
+      ...(between !== undefined && { between }),
+    };
+    assert.deepEqual(spatialStudy(old).probe, {
+      enabled: true,
+      position: 0.123456,
+      target: "curve",
+      across: 0.5,
+    });
+  }
+});
+
 test("a link carries probe playback with its probe", async () => {
   const study: SpatialStudy = {
     ...spatial(),
@@ -456,6 +488,7 @@ test("3D and 4D fields are refused by name", async () => {
     ["probe.glow", (s) => (s.probe.glow = true)],
     ["probe.target", (s) => (s.probe.target = "ribbon")],
     ["probe.across", (s) => (s.probe.across = -0.1)],
+    ["probe.between", (s) => (s.probe.between = 1), /true or false/],
     ["layers.glow", (s) => (s.layers.glow = true)],
     ["animation.mode", (s) => (s.animation.mode = "spin")],
     [

@@ -1,4 +1,8 @@
-import type { SpatialConfig, SpatialResult } from "./spatial/types";
+import type {
+  SpatialConfig,
+  SpatialProbePoint,
+  SpatialResult,
+} from "./spatial/types";
 import type { Bounds, Config, Frame, ProbePoint, ProbeQuery } from "./types";
 
 // What a spatial study asks Go for beside the study itself.
@@ -6,6 +10,8 @@ export type SpatialOptions = {
   diagnostics?: boolean;
   surfaceDiagnostics?: boolean;
   lightDiagnostics?: boolean;
+  // The curve probe at one parameter (see engine3.ProbePoint).
+  probe?: ProbeQuery;
 };
 
 // One worker per app, plus temporary ones during parameter-animation export
@@ -116,8 +122,24 @@ export class EngineClient {
         ...(options.diagnostics ? { diagnostics: true } : {}),
         ...(options.surfaceDiagnostics ? { surfaceDiagnostics: true } : {}),
         ...(options.lightDiagnostics ? { lightDiagnostics: true } : {}),
+        ...(options.probe ? { probe: options.probe } : {}),
       })
     ).result;
+  }
+  // The spatial curve probe alone at one parameter of a study, for a probe
+  // moved over a study already drawn.
+  async spatialProbe(
+    config: SpatialConfig,
+    query: ProbeQuery,
+  ): Promise<SpatialProbePoint> {
+    return (
+      await this.request({
+        action: "spatial",
+        spatial: config,
+        probe: query,
+        probeOnly: true,
+      })
+    ).probe;
   }
   async tesseract(
     config: import("./tesseract/types").Config,

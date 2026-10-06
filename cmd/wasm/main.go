@@ -61,6 +61,26 @@ func main() {
 		return text
 	})
 	js.Global().Set("tangentGardenSpatial", spatial)
+	spatialProbe := js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) != 1 {
+			return `{"error":"expected one spatial JSON request"}`
+		}
+		var q engine3.Request
+		err := json.Unmarshal([]byte(args[0].String()), &q)
+		var at *engine3.ProbePoint
+		if err == nil {
+			at, err = engine3.ProbeOnly(q)
+		}
+		if err != nil {
+			return refusal(err)
+		}
+		b, err := json.Marshal(map[string]any{"probe": at})
+		if err != nil {
+			return `{"error":"non-finite probe"}`
+		}
+		return string(b)
+	})
+	js.Global().Set("tangentGardenSpatialProbe", spatialProbe)
 
 	fn := js.FuncOf(func(this js.Value, args []js.Value) any {
 		var q engine.Request

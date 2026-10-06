@@ -338,6 +338,9 @@ const probe: SchemaOf<Probe> = {
       options: { curve: true, surface: true, light: true, mirror: true },
     },
     across: { range: [0, 1] },
+    // Absent in links made before the curve probe stood between samples,
+    // which snap it to the nearest sample.
+    between: { optional: "boolean" },
   },
 };
 
@@ -568,7 +571,15 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode traces light only in a mirror or interface study.",
     );
-  const probed = conform(raw.probe, probe, defaultProbe, "probe");
+  // A probe snapped to samples carries no between flag, as the notebook
+  // keeps it, so a link's false and its absence open the same study.
+  const { between, ...snapped } = conform(
+    raw.probe,
+    probe,
+    defaultProbe,
+    "probe",
+  );
+  const probed: Probe = between ? { ...snapped, between } : snapped;
   // A surface patch offered no probe before the probe had a target, so a
   // link from then opens without it, as it drew.
   if (
