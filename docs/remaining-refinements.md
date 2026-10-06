@@ -127,21 +127,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Watch for:** a loop's seam slope (`cyclic`) and links' `animation.path`.
 
-### 5. Cutaway box or several planes
-
-**Applies to:** 3D only.
-
-**Open:** extend the single plane's discard test to a box or to several planes, together with the linework's raster and clipping and the mesh-derived edge.
-
-**Start from:** `web/spatial/cut.ts` and `mathematics.md#spatial-cutaway-plane`.
-
-**Watch for:**
-
-- The peel's range and Flip semantics.
-- The edge follows the mesh, not a refined section.
-- Fragment rounding near the plane differs from the CPU raster by about a pixel.
-
-### 6. 3D rendering leftovers
+### 5. 3D rendering leftovers
 
 **Applies to:** 3D only. The 2D and 4D SVG strokes use the browser's joins.
 
@@ -158,7 +144,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Watch for:** the hairline path must stay the original program and `gl.LINES`.
 
-### 7. WebGL context recovery and device limits
+### 6. WebGL context recovery and device limits
 
 **Applies to:**
 
@@ -172,7 +158,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Test with:** `WEBGL_lose_context` in Chromium.
 
-### 8. Scale and translation robustness
+### 7. Scale and translation robustness
 
 **Applies to:**
 
@@ -190,7 +176,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Start with:** a translated and scaled copy of existing presets compared against the originals. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
 
-### 9. Composition and comparison
+### 8. Composition and comparison
 
 **Applies to:**
 
@@ -204,7 +190,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 - **3D arc-length restart after a base break,** for involutes and the involute input. It needs separate anchors and labels; today samples past a break are unreached.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
-### 10. Transport and efficiency, when profiled
+### 9. Transport and efficiency, when profiled
 
 **Applies to:** 3D first, then 4D.
 
@@ -219,7 +205,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical.
 
-### 11. Legends that follow layers
+### 10. Legends that follow layers
 
 **Applies to:** 2D, 3D, 4D.
 

@@ -685,6 +685,77 @@ test("links made by version 1 keep opening", async () => {
   assert.equal(f.pace, "steady");
 });
 
+test("a link carries a cut's other planes and their side, and refuses bad ones", async () => {
+  const several: SpatialStudy = {
+    ...spatial(),
+    cut: {
+      ...defaultCut,
+      enabled: true,
+      others: [
+        { normal: { x: 1, y: 0, z: 0 }, offset: 0.25 },
+        { normal: { x: 0, y: -100000, z: 0 }, offset: -100000 },
+      ],
+      beyond: "any",
+    },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", several));
+  assert.deepEqual(spatialStudy(read.study), several);
+  // One-plane cuts, and links made before other planes, have neither field.
+  const one: SpatialStudy = {
+    ...spatial(),
+    cut: { ...defaultCut, enabled: true },
+  };
+  const conformed = spatialStudy(structuredClone(one));
+  assert.deepEqual(conformed, one);
+  assert.equal("others" in conformed.cut, false);
+  assert.equal("beyond" in conformed.cut, false);
+  const bad = (change: (cut: any) => void) => {
+    const s = structuredClone(several) as any;
+    change(s.cut);
+    return () => spatialStudy(s);
+  };
+  await refused(
+    bad((c) => (c.others[1].normal = { x: 0, y: 0, z: 0 })),
+    "cut.others[1].normal",
+    /not be zero/,
+  );
+  // An off cut may keep any planes it was left with.
+  assert.doesNotThrow(
+    bad((c) => {
+      c.others[0].normal = { x: 0, y: 0, z: 0 };
+      c.enabled = false;
+    }),
+  );
+  await refused(
+    bad((c) => (c.others[0].offset = 100001)),
+    "cut.others[0].offset",
+  );
+  await refused(
+    bad((c) => (c.others[0].normal.z = Infinity)),
+    "cut.others[0].normal.z",
+  );
+  await refused(
+    bad((c) => (c.others[0].tilt = 1)),
+    "cut.others[0].tilt",
+  );
+  // Six planes in all: the first and five others.
+  await refused(
+    bad(
+      (c) =>
+        (c.others = Array.from({ length: 6 }, () => ({
+          normal: { x: 1, y: 0, z: 0 },
+          offset: 0,
+        }))),
+    ),
+    "cut.others",
+    /more than 5/,
+  );
+  await refused(
+    bad((c) => (c.beyond = "all")),
+    "cut.beyond",
+  );
+});
+
 test("a link carries the cut and a peel; refuses a zero normal and a peel without the cut", async () => {
   const study: SpatialStudy = {
     ...spatial(),

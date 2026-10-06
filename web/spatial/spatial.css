@@ -212,3 +212,18 @@
   margin: 0 0 12px;
 }
 /* What refining between samples added, under its checkbox. */
+/* Each of a cut's planes; with several, each under its own heading. */
+.cut-plane {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.cut-plane + .cut-plane {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.spatial-cut .cut-plane > legend {
+  color: var(--muted);
+  padding: 0;
+}

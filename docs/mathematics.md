@@ -876,6 +876,18 @@ The mesh's vertices lie on the surface, so the edge is the section of the drawn 
 
 **Work.** Finding the edge visits each cut triangle once. In Node on an Apple M5 Max this took about 1 ms for a 96 × 96 surface patch (18,432 triangles) and 5 ms for 204,800 triangles, the size of the largest implicit mesh, per plane. It is recomputed only when the plane, the result or the layers change, and once per frame of a peel.
 
+**Several planes.** A cut has up to six planes: the first, `n̂₁·p = d₁`, and up to five others, each entered, limited and normalized as the first is, and each refused by its own name (**Cut plane k normal x**, and so on). Write `Cᵢ(p) = n̂ᵢ·p − dᵢ`. **Hidden → Beyond every plane** hides `p` where `Cᵢ(p) > 0` for every `i`: the intersection of the far sides, a notch, which two planes make a wedge and three a corner. **Beyond any plane** hides `p` where `Cᵢ(p) > 0` for some `i`: what is kept is the intersection of the near sides, a slab between two opposite planes or a box within six. With one plane both are the single-plane cut above, and a cut that has never had other planes carries neither field, so its drawings, links and files are unchanged.
+
+- **Drawing.** The renderer computes all six `Cᵢ` at each vertex, as the single plane's `C` is computed, and interpolates them as two three-component varyings. A plane the cut lacks contributes the constant +1 (beyond every plane) or −1 (beyond any), which never decides. A fragment is discarded where the least `Cᵢ` is positive (every) or the greatest is (any). Each `Cᵢ` is linear, so each is exact at every fragment, and the boundary is as sharp as the single plane's.
+- **Line drawing.** The depth raster carries every `Cᵢ` at each corner and leaves out a pixel the planes together hide. A cut line segment is clipped in world space at each plane's crossing `t = Cᵢ(a)/(Cᵢ(a) − Cᵢ(b))`. Beyond any plane, the kept part is the intersection of every plane's kept interval, one piece. Beyond every plane, the hidden part is the intersection of every plane's open hidden interval, so the segment keeps up to two pieces, each ending exactly on the plane that bounds it.
+- **Edge.** The edge is where the drawn sheets meet the boundary of what is hidden. That boundary lies on the planes. On plane `i` it is where every other plane is beyond, `Cⱼ ≥ 0` (every), or kept, `Cⱼ ≤ 0` (any). Each plane's own edge, found as above, is clipped to those half-spaces at the same crossings. Two planes' pieces meet where both clip, to rounding, not bit for bit as one plane's do.
+- **Peeling.** The peel moves every plane together, by the change in the first plane's offset, so a notch keeps its shape as it grows and a box as it shrinks. Let `g(p)` be the least `Cᵢ(p)` (every) or the greatest (any). With every offset raised by `s`, a point is hidden exactly where `g(p) > s`. So the first offset runs from `d₁ + max g` (nothing hidden) to `d₁ + min g` (everything cut is hidden) over the points of the cut passes, as drawn. With one plane this is the range above, computed as before.
+- **Records.** Still images, line drawings and videos record `others` and `beyond` with the cut, only when there are other planes. The statement then names the side: "beyond every plane, where n̂ᵢ·p > dᵢ for each plane i", or "for some plane i".
+
+On **An ellipsoid with a corner cut away**, the three planes `−x = 0`, `y = 0` and `z = 0`, hidden beyond every one, remove the octant facing the default view (yaw 0.3, pitch 0.75, looking from (−0.22, 0.68, 0.70)) from the shell of semi-axes 1.2, 1 and 0.9 and from both sheets of centers inside it. Since a² < 2c², those sheets lie wholly inside the shell. Closed, it hides every one of their pixels; through the notch they show.
+
+On **An ellipsoid's centers, sliced to its middle**, the focal surface of `x²/a² + y²/b² + z²/c² = 1` (a = 1.5, b = 1, c = 0.7, its shell hidden) is kept between the planes `z = ±h`, h = 0.04, hidden beyond either. The normal at `(x, y, z)` is the line `(x(1 − t/a²), y(1 − t/b²), z(1 − t/c²))`. On the principal section `z = 0` its two centers are at `t = c²`, along the z direction, and at the center of curvature of the ellipse `x²/a² + y²/b² = 1`. That second family crosses the plane transversally, in the ellipse's evolute `(ax)^{2/3} + (by)^{2/3} = (a² − b²)^{2/3}`, with cusps at `(±(a² − b²)/a, 0)` and `(0, ±(a² − b²)/b)`. By symmetry in z, the first family's root is `t = c² + O(z²)`. Its center therefore rises only `z(1 − t/c²) = O(z³)` while it moves `O(z²)` inward from `(x(1 − c²/a²), y(1 − c²/b²), 0)`, the ellipse with semi-axes `A = (a² − c²)/a` and `B = (b² − c²)/b`. That ellipse is a cuspidal edge of the sheet, lying in the plane, with a semicubical section. A plane at height h meets the sheet a distance proportional to `h^{2/3}` inside it, so the slab keeps a band along the ellipse rather than the ellipse alone.
+
 **Checks.** Unit tests verify:
 
 - normalization of `n`, and refusals naming the field for a zero normal, a nonfinite component or offset, and a value beyond ±10⁵;
@@ -891,6 +903,24 @@ Browser tests verify:
 - the drawn PNG hiding the sheet beyond the plane at an analytically placed pixel, with the edge in its ink there and in the visible-only lines;
 - a plane beyond the study giving the same PNG as no cut, and line drawings of existing studies byte-identical to those made before the cut existed;
 - the peel's exact endpoints, and an exported MP4 whose first and last frames match still images at those offsets.
+
+With several planes, unit tests verify:
+
+- each other plane normalized, its refusals naming its own field, and at most six planes;
+- an animation's offset moving every plane by as much;
+- on a cube with 4 × 4 faces, the notch's edge 3 long (a corner cut through the center) and 4 long (a wedge), the slab's edge 8 long (two square sections), each point on the boundary of what is hidden, and no edge for far sides that never meet or for a box that reaches no face;
+- one plane's edge and peel unchanged by an empty list of others;
+- the peel's range through the center's corner, from 1 to 0, and the slab's;
+- the record naming other planes only when there are some;
+- in the line drawing, a line losing its middle beyond every plane and keeping only its middle beyond any, and a sheet hidden only where the planes together hide it.
+
+Browser tests verify:
+
+- the panel adding planes along free axes through the center, acting on each plane alone, naming each plane's refusals, stopping at six, and returning to the single-plane spec when they are removed;
+- on a sphere seen from +z, the PNG and the line drawing hiding the near right quarter beyond every one of `x > 0` and `z > 0` (its inside showing there) and the right half beyond either, with the edge on the matching halves of the meridian and equator;
+- the corner preset's three planes each facing the viewer, and the sheets of centers showing through the notch but hidden by the closed shell;
+- on the slab preset seen from +z, edge points within 3% of the evolute out to its cusp at `(0, (a² − b²)/b)`, the rest strictly inside the ellipse `(A, B)`, and a quarter of the thickness bringing that band's edge 2.2 to 2.8 times nearer the ellipse (4^{2/3} ≈ 2.52) at its nearest, middle and farthest points;
+- links carrying other planes and their side, and refusing a zero normal, an out-of-range or unknown field, more than five others, or an unknown side.
 
 
 ## Spatial see-through sheets and hidden lines

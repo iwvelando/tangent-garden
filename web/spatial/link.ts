@@ -32,7 +32,13 @@ import {
   type Probe,
   type ProbeMotion,
 } from "./probe";
-import { cutPlane, defaultCut, maxCutValue, type Cut } from "./cut";
+import {
+  cutPlane,
+  defaultCut,
+  maxCutPlanes,
+  maxCutValue,
+  type Cut,
+} from "./cut";
 import { defaultSight, legacyWeight, opacityRange, type Sight } from "./sight";
 import { lineWeightSchema } from "../line-weight";
 import { probeMotionSchema } from "../probe";
@@ -339,13 +345,23 @@ const probe: SchemaOf<Probe> = {
 const bounded: { range: [number, number] } = {
   range: [-maxCutValue, maxCutValue],
 };
+// Other planes are absent from links made before them, and from links of
+// one-plane cuts.
+const cutNormal = { fields: { x: bounded, y: bounded, z: bounded } };
 const cut: SchemaOf<Cut> = {
   fields: {
     enabled: "boolean",
-    normal: { fields: { x: bounded, y: bounded, z: bounded } },
+    normal: cutNormal,
     offset: bounded,
     cuts: { options: { surface: true, sheets: true, all: true } },
     edge: "boolean",
+    others: {
+      optional: {
+        list: { fields: { normal: cutNormal, offset: bounded } },
+        max: maxCutPlanes - 1,
+      },
+    },
+    beyond: { optional: { options: { every: true, any: true } } },
   },
 };
 
@@ -586,6 +602,14 @@ export function spatialStudy(value: unknown): SpatialStudy {
   const cutting = conform(raw.cut, cut, defaultCut, "cut");
   if (cutting.enabled && "message" in cutPlane(cutting))
     throw new LinkError("cut.normal", "cut.normal must not be zero.");
+  if (cutting.enabled)
+    cutting.others?.forEach((p, i) => {
+      if (!(Math.hypot(p.normal.x, p.normal.y, p.normal.z) > 0))
+        throw new LinkError(
+          `cut.others[${i}].normal`,
+          `cut.others[${i}].normal must not be zero.`,
+        );
+    });
   if (animation.mode === "cut" && !cutting.enabled)
     throw new LinkError(
       "animation.mode",

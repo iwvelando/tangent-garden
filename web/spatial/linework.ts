@@ -10,7 +10,16 @@ import {
   type View,
 } from "./scene";
 import { hex, lineColor, palette } from "./palette";
-import { cutEdges, isCut, type CutSpec, type Plane } from "./cut";
+import {
+  cutEdges,
+  hiddenBy,
+  isCut,
+  maxCutPlanes,
+  specPlanes,
+  type CutBeyond,
+  type CutSpec,
+  type Plane,
+} from "./cut";
 import {
   arcLengths,
   dashOn,
@@ -70,7 +79,10 @@ export function linework(
 ): LineGroup[] {
   const k = camera(view, options);
   let passes = scenePasses(scene, layers, probe);
-  const edge = cut?.edge && cutEdges(passes, cut.plane, cut.scope);
+  const edge =
+    cut?.edge && cutEdges(passes, cut.plane, cut.scope, cut.others, cut.beyond);
+  const planes = cut ? specPlanes(cut) : undefined,
+    beyond = cut?.beyond ?? "every";
   if (edge) passes = scenePasses(scene, layers, probe, edge);
   const work = { done: 0, limit: options.limit ?? workLimit };
   const weight = options.weight ?? "hairline";
@@ -86,7 +98,7 @@ export function linework(
             })),
           work,
           options.signal,
-          cut?.plane,
+          planes && { planes, beyond },
           sheetOffset(
             passes.filter((p) => !p.sheet).map((p) => p.batch),
             weight,
@@ -128,58 +140,60 @@ export function linework(
     options.signal?.throwIfAborted();
     if (!groups.has(pass.layer)) groups.set(pass.layer, new Map());
     const data = pass.batch.data;
-    const plane = cut && isCut(pass, cut.scope) ? cut.plane : undefined;
+    const cutting = cut && isCut(pass, cut.scope);
     const arcs = behind === "dashed" ? arcLengths(data) : undefined;
     const width = strokeWidth(pass.batch, weight, options);
     for (let i = 0; i + 13 < data.length; i += 14) {
-      const part = plane ? kept(plane, data, i) : whole(data, i);
-      if (!part) continue;
-      const { ends } = part;
-      const piece = clipped(
-        k,
-        clip(k, ends[0], ends[1], ends[2]),
-        clip(k, ends[7], ends[8], ends[9]),
-      );
-      if (!piece) continue;
-      const color = hex(lineColor(pass.batch.ink, data[i + 6], dark));
-      const shown = paths(groups, pass.layer, color, width);
-      if (!raster) {
-        extend(shown, piece[0], piece[1]);
-        continue;
-      }
-      for (const run of runs(raster, piece, work)) {
-        if (run.shown) extend(shown, run.from, run.to);
-        else if (behind === "faint")
-          extend(
-            paths(hiddenGroups, pass.layer, color, width),
-            run.from,
-            run.to,
-          );
-        else if (arcs) {
-          // Arc length is affine along the segment in space, and so along
-          // the kept part and the clipped piece; on the page it is affine
-          // only without perspective.
-          const v = i / 7,
-            [ka, kb] = part.range,
-            [t0, t1] = piece[2],
-            w = piece[3];
-          const phase = (s: number) => {
-            const u = ka + (kb - ka) * (t0 + (t1 - t0) * s);
-            return (arcs[v] + (arcs[v + 1] - arcs[v]) * u) * perUnit;
-          };
-          const [r0, r1] = run.r,
-            s0 = spaceAt(w, r0),
-            s1 = spaceAt(w, r1);
-          for (const [a, b] of dashes(
-            run.from,
-            run.to,
-            phase(s0),
-            phase(s1),
-            w[0] === w[1]
-              ? undefined
-              : (f) => (pageAt(w, s0 + (s1 - s0) * f) - r0) / (r1 - r0),
-          ))
-            extend(paths(hiddenGroups, pass.layer, color, width), a, b);
+      for (const part of cutting
+        ? kept(planes!, beyond, data, i)
+        : [whole(data, i)]) {
+        const { ends } = part;
+        const piece = clipped(
+          k,
+          clip(k, ends[0], ends[1], ends[2]),
+          clip(k, ends[7], ends[8], ends[9]),
+        );
+        if (!piece) continue;
+        const color = hex(lineColor(pass.batch.ink, data[i + 6], dark));
+        const shown = paths(groups, pass.layer, color, width);
+        if (!raster) {
+          extend(shown, piece[0], piece[1]);
+          continue;
+        }
+        for (const run of runs(raster, piece, work)) {
+          if (run.shown) extend(shown, run.from, run.to);
+          else if (behind === "faint")
+            extend(
+              paths(hiddenGroups, pass.layer, color, width),
+              run.from,
+              run.to,
+            );
+          else if (arcs) {
+            // Arc length is affine along the segment in space, and so along
+            // the kept part and the clipped piece; on the page it is affine
+            // only without perspective.
+            const v = i / 7,
+              [ka, kb] = part.range,
+              [t0, t1] = piece[2],
+              w = piece[3];
+            const phase = (s: number) => {
+              const u = ka + (kb - ka) * (t0 + (t1 - t0) * s);
+              return (arcs[v] + (arcs[v + 1] - arcs[v]) * u) * perUnit;
+            };
+            const [r0, r1] = run.r,
+              s0 = spaceAt(w, r0),
+              s1 = spaceAt(w, r1);
+            for (const [a, b] of dashes(
+              run.from,
+              run.to,
+              phase(s0),
+              phase(s1),
+              w[0] === w[1]
+                ? undefined
+                : (f) => (pageAt(w, s0 + (s1 - s0) * f) - r0) / (r1 - r0),
+            ))
+              extend(paths(hiddenGroups, pass.layer, color, width), a, b);
+          }
         }
       }
     }
@@ -233,30 +247,82 @@ function dashes(
   return out;
 }
 
-// The part of the segment at data[i] (two 7-float corners) on the kept
-// side of the plane, n̂·p ≤ d, or nothing. A segment crossing it ends
-// exactly on it.
-// Range is the kept part's ends as parameters along the segment.
+// The parts of the segment at data[i] (two 7-float corners) the cut keeps.
+// With one plane that is its kept side, n̂·p ≤ d, or nothing, and a segment
+// crossing it ends exactly on it. With several, each plane's crossing
+// bounds the parts: kept within every plane's kept side (hidden beyond any)
+// is one part, and hidden only beyond every plane removes one stretch of
+// the segment, leaving up to two.
+// Range is a kept part's ends as parameters along the segment.
 type Part = { ends: ArrayLike<number>; range: [number, number] };
 const whole = (data: Float32Array, i: number): Part => ({
   ends: data.subarray(i, i + 14),
   range: [0, 1],
 });
-function kept(plane: Plane, data: Float32Array, i: number): Part | undefined {
-  const n = plane.normal;
-  const side = (j: number) =>
-    n.x * data[j] + n.y * data[j + 1] + n.z * data[j + 2] - plane.offset;
-  const a = side(i),
-    b = side(i + 7);
-  if (a <= 0 && b <= 0) return whole(data, i);
-  if (!(a <= 0 || b <= 0)) return;
-  const t = a / (a - b),
-    out = Float64Array.from(data.subarray(i, i + 14));
-  // Move the hidden end to the crossing.
-  const moved = a > 0 ? 0 : 7;
-  for (let j = 0; j < 3; j++)
-    out[moved + j] = data[i + j] + (data[i + 7 + j] - data[i + j]) * t;
-  return { ends: out, range: moved ? [0, t] : [t, 1] };
+function kept(
+  planes: Plane[],
+  beyond: CutBeyond,
+  data: Float32Array,
+  i: number,
+): Part[] {
+  const side = ({ normal: n, offset }: Plane, j: number) =>
+    n.x * data[j] + n.y * data[j + 1] + n.z * data[j + 2] - offset;
+  if (planes.length === 1) {
+    const a = side(planes[0], i),
+      b = side(planes[0], i + 7);
+    if (a <= 0 && b <= 0) return [whole(data, i)];
+    if (!(a <= 0 || b <= 0)) return [];
+    const t = a / (a - b),
+      out = Float64Array.from(data.subarray(i, i + 14));
+    // Move the hidden end to the crossing.
+    const moved = a > 0 ? 0 : 7;
+    for (let j = 0; j < 3; j++)
+      out[moved + j] = data[i + j] + (data[i + 7 + j] - data[i + j]) * t;
+    return [{ ends: out, range: moved ? [0, t] : [t, 1] }];
+  }
+  const part = (t0: number, t1: number): Part => {
+    if (t0 === 0 && t1 === 1) return whole(data, i);
+    const out = Float64Array.from(data.subarray(i, i + 14));
+    for (let j = 0; j < 3; j++) {
+      const a = data[i + j],
+        d = data[i + 7 + j] - a;
+      if (t0 > 0) out[j] = a + d * t0;
+      if (t1 < 1) out[7 + j] = a + d * t1;
+    }
+    return { ends: out, range: [t0, t1] };
+  };
+  if (beyond === "any") {
+    // Kept where every plane keeps it: one stretch.
+    let t0 = 0,
+      t1 = 1;
+    for (const plane of planes) {
+      const a = side(plane, i),
+        b = side(plane, i + 7);
+      if (a <= 0 && b <= 0) continue;
+      if (!(a <= 0 || b <= 0)) return [];
+      const t = a / (a - b);
+      if (a > 0) t0 = Math.max(t0, t);
+      else t1 = Math.min(t1, t);
+    }
+    return t0 < t1 || (t0 === 0 && t1 === 1) ? [part(t0, t1)] : [];
+  }
+  // Hidden where every plane hides it: one open stretch, (h0, h1).
+  let h0 = 0,
+    h1 = 1;
+  for (const plane of planes) {
+    const a = side(plane, i),
+      b = side(plane, i + 7);
+    if (a > 0 && b > 0) continue;
+    if (!(a > 0 || b > 0)) return [whole(data, i)];
+    const t = a / (a - b);
+    if (a > 0) h1 = Math.min(h1, t);
+    else h0 = Math.max(h0, t);
+  }
+  if (!(h0 < h1)) return [whole(data, i)];
+  const parts: Part[] = [];
+  if (h0 > 0) parts.push(part(0, h0));
+  if (h1 < 1) parts.push(part(h1, 1));
+  return parts;
 }
 
 // A segment continues the last path when it starts exactly where that path
@@ -320,8 +386,8 @@ const pageAt = ([w0, w1]: [number, number], s: number) =>
 // The shown sheets' triangles on the page, and which of them is nearest at
 // each pixel center (−1 where there is none). Points hold each corner's page
 // x, y and depth; corners hold each triangle's three points. A cut
-// triangle's points also hold n̂·p − d in sides, and its pixels beyond the
-// plane are left out, as the drawing discards them.
+// triangle's points also hold n̂ᵢ·p − dᵢ for each plane in sides, and its
+// pixels the planes hide are left out, as the drawing discards them.
 type Raster = {
   width: number;
   height: number;
@@ -330,6 +396,9 @@ type Raster = {
   points: Float64Array;
   corners: Uint32Array;
   sides: Float64Array;
+  // How many planes each point has a side for, and which side hides.
+  planes: number;
+  beyond: CutBeyond;
   cut: Uint8Array;
   // The drawing's polygon offset factor for sheets (see sight.ts).
   offset: number;
@@ -339,44 +408,50 @@ function depthRaster(
   sheets: { batch: Batch; cut: boolean }[],
   work: { done: number; limit: number },
   signal?: AbortSignal,
-  plane?: Plane,
+  cutting?: { planes: Plane[]; beyond: CutBeyond },
   offset = 1,
 ): Raster {
+  const planes = cutting?.planes ?? [],
+    count = planes.length;
   const { width, height } = k;
   const perspective = k.lens[0] > 0;
   const points: number[] = [],
     corners: number[] = [],
     sides: number[] = [],
     cuts: number[] = [];
-  // A corner on the page, and its side of the cut over clip w, which is
-  // affine on the page as the drawing's perspective-correct varying is.
-  const put = (c: readonly number[], side: number) => {
+  // A corner on the page, and its sides of the cut's planes over clip w,
+  // which is affine on the page as the drawing's perspective-correct
+  // varying is.
+  const put = (c: readonly number[], side: (j: number) => number) => {
     const p = page(k, c);
     points.push(p.x, p.y, p.depth);
-    if (plane) sides.push(side / c[3]);
+    for (let j = 0; j < count; j++) sides.push(side(j) / c[3]);
     return points.length / 3 - 1;
   };
   for (const { batch: sheet, cut } of sheets) {
     signal?.throwIfAborted();
     const data = sheet.data,
-      count = data.length / 7,
+      vertices = data.length / 7,
       base = points.length / 3,
-      cutting = !!plane && cut;
+      cutting = count > 0 && cut;
     const clips: (readonly number[])[] = [],
-      side = new Float64Array(count);
-    for (let v = 0; v < count; v++) {
+      side = new Float64Array(vertices * count);
+    for (let v = 0; v < vertices; v++) {
       const c = clip(k, data[7 * v], data[7 * v + 1], data[7 * v + 2]);
       if (cutting)
-        side[v] =
-          plane.normal.x * data[7 * v] +
-          plane.normal.y * data[7 * v + 1] +
-          plane.normal.z * data[7 * v + 2] -
-          plane.offset;
+        planes.forEach(
+          ({ normal: n, offset }, j) =>
+            (side[v * count + j] =
+              n.x * data[7 * v] +
+              n.y * data[7 * v + 1] +
+              n.z * data[7 * v + 2] -
+              offset),
+        );
       if (perspective) clips.push(c);
-      put(c, side[v]);
+      put(c, (j) => side[v * count + j]);
     }
     const indices = sheet.indices;
-    const n = indices ? indices.length : count;
+    const n = indices ? indices.length : vertices;
     for (let c = 0; c + 2 < n; c += 3) {
       const v = [0, 1, 2].map((j) => (indices ? indices[c + j] : c + j));
       // Before the near plane a triangle's corners would be drawn through
@@ -402,7 +477,9 @@ function depthRaster(
           kept.push(
             put(
               ca.map((x, i) => x + (cb[i] - x) * t),
-              side[a] + (side[b] - side[a]) * t,
+              (j) =>
+                side[a * count + j] +
+                (side[b * count + j] - side[a * count + j]) * t,
             ),
           );
         }
@@ -421,6 +498,8 @@ function depthRaster(
     points: Float64Array.from(points),
     corners: Uint32Array.from(corners),
     sides: Float64Array.from(sides),
+    planes: count,
+    beyond: cutting?.beyond ?? "every",
     cut: Uint8Array.from(cuts),
     offset,
   };
@@ -475,18 +554,24 @@ function inside(q: Facet, x: number, y: number, slack = 0) {
 }
 const depthAt = (q: Facet, x: number, y: number) =>
   q.az + q.dx * (x - q.ax) + q.dy * (y - q.ay);
-// Whether a page point inside a cut triangle lies beyond the plane: n̂·p − d
-// is affine on the page, as depth is, so it is interpolated from the
-// corners like the drawing's varying.
+// Whether a page point inside a cut triangle is hidden: each n̂ᵢ·p − dᵢ is
+// affine on the page, as depth is, so it is interpolated from the corners
+// like the drawing's varying, and the planes' sides decide together.
+const hiddenSides = new Float64Array(maxCutPlanes);
 function beyond(r: Raster, t: number, q: Facet, x: number, y: number) {
   if (!r.cut[t]) return false;
-  const [a, b, c] = [0, 1, 2].map((j) => r.corners[3 * t + j]);
-  const sa = r.sides[a],
-    sb = r.sides[b],
-    sc = r.sides[c];
-  const dx = ((sb - sa) * (q.cy - q.ay) - (sc - sa) * (q.by - q.ay)) / q.area,
-    dy = ((sc - sa) * (q.bx - q.ax) - (sb - sa) * (q.cx - q.ax)) / q.area;
-  return sa + dx * (x - q.ax) + dy * (y - q.ay) > 0;
+  const [a, b, c] = [0, 1, 2].map((j) => r.planes * r.corners[3 * t + j]);
+  for (let j = 0; j < r.planes; j++) {
+    const sa = r.sides[a + j],
+      sb = r.sides[b + j],
+      sc = r.sides[c + j];
+    const dx = ((sb - sa) * (q.cy - q.ay) - (sc - sa) * (q.by - q.ay)) / q.area,
+      dy = ((sc - sa) * (q.bx - q.ax) - (sb - sa) * (q.cx - q.ax)) / q.area;
+    const side = sa + dx * (x - q.ax) + dy * (y - q.ay);
+    if (r.planes === 1) return side > 0;
+    hiddenSides[j] = side;
+  }
+  return hiddenBy(hiddenSides.subarray(0, r.planes), r.beyond);
 }
 function rasterize(
   r: Raster,
