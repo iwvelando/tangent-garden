@@ -3211,4 +3211,86 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // The shell of "An ellipsoid hiding its centers" with the octant facing
+  // the default view cut away: x < 0, y > 0 and z > 0, hidden beyond all
+  // three planes through the center. The cut reaches every sheet, so the
+  // notch goes through the shell and through both sheets of centers inside
+  // it, and the edge outlines each.
+  {
+    name: "An ellipsoid with a corner cut away",
+    detail:
+      "Three planes through its center take one octant from the shell and from both sheets of centers nested inside it",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.2,
+        b: 1,
+        c: 0.9,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 96,
+        vSamples: 96,
+        curves: 12,
+        reach: 0,
+      },
+    },
+    cut: {
+      enabled: true,
+      normal: { x: -1, y: 0, z: 0 },
+      offset: 0,
+      cuts: "sheets",
+      edge: true,
+      others: [
+        { normal: { x: 0, y: 1, z: 0 }, offset: 0 },
+        { normal: { x: 0, y: 0, z: 1 }, offset: 0 },
+      ],
+      beyond: "every",
+    },
+  },
+  // The focal surface of "The whole focal surface of an ellipsoid" kept
+  // between z = ±0.04, hidden beyond either plane. One sheet crosses the
+  // principal plane z = 0 in the evolute of the ellipse x²/a² + y²/b² = 1,
+  // (ax)^(2/3) + (by)^(2/3) = (a² − b²)^(2/3). The other folds back on
+  // itself along the ellipse with semi-axes (a² − c²)/a and (b² − c²)/b, a
+  // cuspidal edge lying in the plane, so the slab keeps a band of it inside
+  // that ellipse, about h^(2/3) wide for a slab of half-thickness h.
+  {
+    name: "An ellipsoid's centers, sliced to its middle",
+    detail:
+      "Kept within a thin slab: one sheet of centers leaves the evolute of the middle ellipse, the other a band along a second ellipse, where it folds back on itself",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 0.7,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 120,
+        vSamples: 120,
+        curves: 12,
+        reach: 0,
+      },
+    },
+    layers: { surface: false, curves: false },
+    cut: {
+      enabled: true,
+      normal: { x: 0, y: 0, z: 1 },
+      offset: 0.04,
+      cuts: "all",
+      edge: true,
+      others: [{ normal: { x: 0, y: 0, z: -1 }, offset: 0.04 }],
+      beyond: "any",
+    },
+  },
 ];

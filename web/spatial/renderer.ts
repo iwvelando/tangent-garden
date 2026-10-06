@@ -9,7 +9,7 @@ import {
   type View,
 } from "./scene";
 import { glsl, palette, vec3 } from "./palette";
-import { cutEdges, isCut, type CutSpec } from "./cut";
+import { cutEdges, isCut, maxCutPlanes, specPlanes, type CutSpec } from "./cut";
 import {
   arcLengths,
   dashOn,
@@ -46,20 +46,31 @@ uniform vec3 framing;
 uniform vec3 lens;
 uniform vec3 center;
 uniform vec2 pan;
-uniform vec4 cut;
+uniform vec4 cut[6];
 varying vec3 N;
 varying vec3 P;
 varying float U;
-varying float C;
+varying vec3 C;
+varying vec3 E;
 varying highp float D;
+// Each cut plane's (n̂·p − d) / radius, positive beyond it: planes 1–3 and
+// 4–6, computed at the vertex stage's precision and linear across every
+// primitive. A plane the cut lacks is a constant that never decides.
+vec3 lowSides(vec3 p) {
+  vec3 q = p - center;
+  return vec3(dot(cut[0].xyz, q) - cut[0].w, dot(cut[1].xyz, q) - cut[1].w, dot(cut[2].xyz, q) - cut[2].w);
+}
+vec3 highSides(vec3 p) {
+  vec3 q = p - center;
+  return vec3(dot(cut[3].xyz, q) - cut[3].w, dot(cut[4].xyz, q) - cut[4].w, dot(cut[5].xyz, q) - cut[5].w);
+}
 void main() {
   D = arc * dashes;
   P = rotation * (position - center);
   N = rotation * normal;
   U = phase;
-  // (n̂·p − d) / radius, positive beyond the cut plane: computed here, at
-  // the vertex stage's precision, and linear across every primitive.
-  C = dot(cut.xyz, position - center) - cut.w;
+  C = lowSides(position);
+  E = highSides(position);
   float w = 1.0 - P.z * lens.x;
   gl_Position = vec4((P.x + pan.x) * framing.x, (P.y + pan.y) * framing.y, -P.z * framing.z + lens.y * w + lens.z, w);
 }`;
@@ -88,17 +99,29 @@ uniform vec3 framing;
 uniform vec3 lens;
 uniform vec3 center;
 uniform vec2 pan;
-uniform vec4 cut;
+uniform vec4 cut[6];
 uniform vec2 viewport;
 uniform float halfWidth;
 uniform float caps;
 varying float U;
-varying float C;
+varying vec3 C;
+varying vec3 E;
 varying highp float D;
 varying highp vec3 S;
 varying highp float L;
 // Whether the start and the end are mitred joints rather than ends.
 varying vec2 O;
+// Each cut plane's (n̂·p − d) / radius, positive beyond it: planes 1–3 and
+// 4–6, computed at the vertex stage's precision and linear across every
+// primitive. A plane the cut lacks is a constant that never decides.
+vec3 lowSides(vec3 p) {
+  vec3 q = p - center;
+  return vec3(dot(cut[0].xyz, q) - cut[0].w, dot(cut[1].xyz, q) - cut[1].w, dot(cut[2].xyz, q) - cut[2].w);
+}
+vec3 highSides(vec3 p) {
+  vec3 q = p - center;
+  return vec3(dot(cut[3].xyz, q) - cut[3].w, dot(cut[4].xyz, q) - cut[4].w, dot(cut[5].xyz, q) - cut[5].w);
+}
 vec4 clipOf(vec3 p) {
   vec3 q = rotation * (p - center);
   float w = 1.0 - q.z * lens.x;
@@ -122,14 +145,14 @@ float joint(vec4 neighbor, float flag, vec2 p, bool atEnd, vec2 dir, float len, 
 }
 void main() {
   vec4 a = clipOf(from), b = clipOf(to);
-  float ca = dot(cut.xyz, from - center) - cut.w,
-    cb = dot(cut.xyz, to - center) - cut.w;
+  vec3 ca = lowSides(from), cb = lowSides(to),
+    ea = highSides(from), eb = highSides(to);
   float sa = arcFrom, sb = arcTo;
   U = phase;
   // Clip space keeps z ≥ −w: the near plane.
   float na = a.z + a.w, nb = b.z + b.w;
   if (na < 0.0 && nb < 0.0) {
-    C = 0.0; D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0);
+    C = vec3(0.0); E = vec3(0.0); D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0);
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
@@ -137,11 +160,11 @@ void main() {
   float joinA = before.w, joinB = after.w;
   if (na < 0.0) {
     float t = na / (na - nb);
-    a = mix(a, b, t); ca = mix(ca, cb, t); sa = mix(sa, sb, t);
+    a = mix(a, b, t); ca = mix(ca, cb, t); ea = mix(ea, eb, t); sa = mix(sa, sb, t);
     joinA = 0.0;
   } else if (nb < 0.0) {
     float t = nb / (nb - na);
-    b = mix(b, a, t); cb = mix(cb, ca, t); sb = mix(sb, sa, t);
+    b = mix(b, a, t); cb = mix(cb, ca, t); eb = mix(eb, ea, t); sb = mix(sb, sa, t);
     joinB = 0.0;
   }
   vec2 scale = 0.5 * viewport;
@@ -178,6 +201,7 @@ void main() {
   L = len;
   O = vec2(atA, atB);
   C = end ? cb : ca;
+  E = end ? eb : ea;
   D = (end ? sb : sa) * dashes;
 }`;
 // The drawing's colors, for sheets and hairlines, and for strokes with
@@ -203,7 +227,8 @@ uniform float fade;
 varying vec2 O;
 #endif
 varying float U;
-varying float C;
+varying vec3 C;
+varying vec3 E;
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 varying highp float D;
 #else
@@ -212,12 +237,18 @@ varying mediump float D;
 uniform float ink;
 uniform float dark;
 uniform float cutting;
+// 1 when hidden beyond every plane, 0 beyond any.
+uniform float cutEvery;
 // 1 while gathering see-through sheets; 1 or 2 while drawing lines behind
 // sheets, faint or dashed.
 uniform float gather;
 uniform float behind;
 void main() {
-  if (cutting > 0.5 && C > 0.0) discard;
+  if (cutting > 0.5) {
+    float far = max(max(max(C.x, C.y), max(C.z, E.x)), max(E.y, E.z)),
+      near = min(min(min(C.x, C.y), min(C.z, E.x)), min(E.y, E.z));
+    if ((cutEvery > 0.5 ? near : far) > 0.0) discard;
+  }
   float blend = 0.5 + 0.5 * cos(6.2831853 * U);
   vec3 teal = ${glsl(palette.teal)};
   vec3 gold = ${glsl(palette.gold)};
@@ -379,6 +410,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       "dark",
       "cut",
       "cutting",
+      "cutEvery",
       "gather",
       "behind",
       "dashes",
@@ -422,6 +454,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
             "dark",
             "cut",
             "cutting",
+            "cutEvery",
             "behind",
             "dashes",
             "viewport",
@@ -595,7 +628,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (edge && edge.key.every((k, i) => k === key[i])) return edge.batch;
     edgeBuffers.splice(0).forEach((b) => gl!.deleteBuffer(b));
     if (edge?.batch) uploaded.delete(edge.batch);
-    const batch = cutEdges(scenePasses(scene, layers), cut.plane, cut.scope);
+    const batch = cutEdges(
+      scenePasses(scene, layers),
+      cut.plane,
+      cut.scope,
+      cut.others,
+      cut.beyond,
+    );
     if (batch) put(batch, edgeBuffers);
     edge = { key, batch };
     return batch;
@@ -662,18 +701,34 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.uniform3f(u.lens, ...k.lens);
       gl!.uniform1f(u.dark, dark ? 1 : 0);
       gl!.uniform1f(u.dashes, dashesPerUnit(view));
-      // The plane relative to the view center, scaled by the radius.
+      // The planes relative to the view center, scaled by the radius. A
+      // missing plane is +1 everywhere when hidden beyond every plane and
+      // −1 beyond any, so it never decides.
       if (cut) {
-        const n = cut.plane.normal,
-          c = k.center,
-          r = view.radius;
-        gl!.uniform4f(
-          u.cut,
-          n.x / r,
-          n.y / r,
-          n.z / r,
-          (cut.plane.offset - (n.x * c.x + n.y * c.y + n.z * c.z)) / r,
-        );
+        const c = k.center,
+          r = view.radius,
+          every = (cut.beyond ?? "every") === "every",
+          planes = specPlanes(cut),
+          values = new Float32Array(4 * maxCutPlanes);
+        for (let i = 0; i < maxCutPlanes; i++) {
+          const p = planes[i];
+          if (!p) {
+            values[4 * i + 3] = every ? -1 : 1;
+            continue;
+          }
+          const n = p.normal;
+          values.set(
+            [
+              n.x / r,
+              n.y / r,
+              n.z / r,
+              (p.offset - (n.x * c.x + n.y * c.y + n.z * c.z)) / r,
+            ],
+            4 * i,
+          );
+        }
+        gl!.uniform4fv(u.cut, values);
+        gl!.uniform1f(u.cutEvery, every ? 1 : 0);
       }
     };
     if (stroked) {

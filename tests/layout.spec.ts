@@ -200,6 +200,17 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
         await page.getByRole("checkbox", { name: "Cut with a plane" }).check();
         await expect(page.locator(".spatial-cut .pair").first()).toBeVisible();
       });
+    // Other planes pair their offsets, and with them comes the choice of
+    // side: here the corner preset's three planes.
+    setups.push(async () => {
+      await page.goto("/?study=3d");
+      await choosePreset(page, {
+        label: "An ellipsoid with a corner cut away",
+      });
+      await expect(
+        page.getByRole("group", { name: "Plane 3" }).locator(".pair").first(),
+      ).toBeVisible();
+    });
     // A camera path's views pair their turns and leg times under their
     // names, here the preset's seven, with its turns refused.
     setups.push(async () => {

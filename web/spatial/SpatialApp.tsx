@@ -32,7 +32,15 @@ import { saveFile, type Still } from "../export-image";
 import { SpatialPlot } from "./SpatialPlot";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { CutPanel } from "./CutPanel";
-import { cutSpec, defaultCut, type Cut } from "./cut";
+import {
+  addCutPlane,
+  cutPlaneInputs,
+  cutSpec,
+  defaultCut,
+  withCutPlanes,
+  type Cut,
+  type CutPlaneInput,
+} from "./cut";
 import { SightPanel } from "./SightPanel";
 import { defaultSight, isPlain, sightSpec, type Sight } from "./sight";
 import { spatialPresets } from "./presets";
@@ -403,14 +411,25 @@ export default function SpatialApp({
     if (token !== generation.current) return;
     setCut(change);
   }
+  // Plane k of the cut (the first is 0), changed.
+  const changeCutPlane = (
+    k: number,
+    change: (p: CutPlaneInput) => CutPlaneInput,
+  ) =>
+    changeCut((c) =>
+      withCutPlanes(
+        c,
+        cutPlaneInputs(c).map((p, i) => (i === k ? change(p) : p)),
+      ),
+    );
   // Toward the viewer of the shown camera, to three decimals: only the
   // direction counts.
-  const faceView = () => {
+  const faceView = (k: number) => {
     const v = viewport.current;
     if (!v) return;
     const round = (x: number) => Math.round(x * 1000) / 1000 + 0;
-    void changeCut((c) => ({
-      ...c,
+    void changeCutPlane(k, (p) => ({
+      ...p,
       normal: {
         x: round(-Math.cos(v.pitch) * Math.sin(v.yaw)),
         y: round(Math.sin(v.pitch)),
@@ -418,25 +437,29 @@ export default function SpatialApp({
       },
     }));
   };
-  const centerCut = () => {
+  const centerCut = (k: number) => {
     const center = viewport.current?.center;
     if (!center) return;
-    void changeCut((c) => {
-      const { x, y, z } = c.normal,
+    void changeCutPlane(k, (p) => {
+      const { x, y, z } = p.normal,
         length = Math.hypot(x, y, z);
-      if (!(length > 0) || !Number.isFinite(length)) return c;
+      if (!(length > 0) || !Number.isFinite(length)) return p;
       return {
-        ...c,
+        ...p,
         offset: (x * center.x + y * center.y + z * center.z) / length + 0,
       };
     });
   };
-  const flipCut = () =>
-    void changeCut((c) => ({
-      ...c,
-      normal: { x: -c.normal.x + 0, y: -c.normal.y + 0, z: -c.normal.z + 0 },
-      offset: -c.offset + 0,
+  const flipCut = (k: number) =>
+    void changeCutPlane(k, (p) => ({
+      normal: { x: -p.normal.x + 0, y: -p.normal.y + 0, z: -p.normal.z + 0 },
+      offset: -p.offset + 0,
     }));
+  const addPlane = () => {
+    const center = viewport.current?.center;
+    if (!center) return;
+    void changeCut((c) => addCutPlane(c, center));
+  };
   async function definition(format: SpatialConfig["format"]) {
     const token = generation.current;
     await Promise.allSettled([...jobs.current]);
@@ -2950,6 +2973,7 @@ export default function SpatialApp({
                 onFace={faceView}
                 onCenter={centerCut}
                 onFlip={flipCut}
+                onAdd={addPlane}
                 peeling={animation?.cut !== undefined}
               />
               <SightPanel

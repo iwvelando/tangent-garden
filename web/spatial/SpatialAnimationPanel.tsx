@@ -51,7 +51,7 @@ import {
 import { revealedProbe } from "../probe";
 import type { Layers } from "./renderer";
 import { buildScene, scenePasses } from "./scene";
-import { sweepExtent, sweepOffset, type CutSpec } from "./cut";
+import { movedCut, sweepExtent, sweepOffset, type CutSpec } from "./cut";
 import type { Sight } from "./sight";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "../export-quality";
@@ -549,10 +549,7 @@ export function SpatialAnimationPanel({
       }),
       // The farthest extent at the start and the nearest at the end, exactly.
       ...(s.mode === "cut" && {
-        cut: {
-          ...s.cut!,
-          plane: { ...s.cut!.plane, offset: sweepOffset(p, s.extent!) },
-        },
+        cut: movedCut(s.cut!, sweepOffset(p, s.extent!)),
       }),
     };
   }
@@ -754,6 +751,8 @@ export function SpatialAnimationPanel({
             scenePasses(buildScene(frame.result), layers),
             cut.plane,
             cut.scope,
+            cut.others,
+            cut.beyond,
           ) ?? undefined;
         if (!extent)
           throw new Error(
@@ -1216,7 +1215,7 @@ export function SpatialAnimationPanel({
               mode === "path" ? (
                 `${pathHelp.mode} ${pathHelp.framing}`
               ) : mode === "cut" ? (
-                "Move the cut plane along its normal from the farthest point it reaches to the nearest, so the drawing peels away from the side the normal points to until all it cuts is hidden. Flip the normal to peel from the other side. Geometry stays fixed."
+                "Move the cut plane along its normal from the farthest point it reaches to the nearest, so the drawing peels away from the side the normal points to until all it cuts is hidden. Flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks. Geometry stays fixed."
               ) : mode === "probe" ? (
                 gridded(target) && frame ? (
                   `Move the probe along the ${surfaceTerms(frame.config, target).surface} from its first ${surfaceTerms(frame.config, target).along} to its last, one row at a time at its ${surfaceTerms(frame.config, target).around}, with its principal directions, circles and readout. Geometry stays fixed.`

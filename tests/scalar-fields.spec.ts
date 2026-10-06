@@ -1449,6 +1449,49 @@ test("the cut plane's normal and offset share the bounded scalar parser", async 
   await expect.poll(async () => (await drawn())?.offset).toBe(-1 / phi);
 });
 
+test("a cut's other planes share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  const cut = page.getByRole("group", { name: "Cut away" });
+  await cut.getByRole("checkbox", { name: "Cut with a plane" }).check();
+  await cut.getByRole("button", { name: "Add a plane" }).click();
+  const second = cut.getByRole("group", { name: "Plane 2" });
+  const input = (name: string) => second.getByLabel(name, { exact: true });
+  const drawn = async () => {
+    const value = await page
+      .locator("#spatial-artwork")
+      .getAttribute("data-cut");
+    return value ? JSON.parse(value).others?.[0] : undefined;
+  };
+  for (const [name, text] of [
+    ["Normal x", "phi"],
+    ["Normal y", "e"],
+    ["Normal z", "-pi"],
+    ["Offset d", "pi/4"],
+  ] as const) {
+    await input(name).fill(text);
+    await expect(input(name)).toHaveValue(text);
+  }
+  const length = Math.hypot(phi, Math.E, Math.PI);
+  await expect.poll(drawn).toEqual({
+    normal: { x: phi / length, y: Math.E / length, z: -Math.PI / length },
+    offset: Math.PI / 4,
+  });
+  for (const name of ["Normal x", "Normal y", "Normal z", "Offset d"]) {
+    for (const variable of ["t", "x", "a"]) {
+      await input(name).fill(variable);
+      await expect(page.getByRole("alert").first()).toContainText(
+        `Cut plane 2 ${name.toLowerCase()}`,
+      );
+    }
+    await input(name).fill(name === "Offset d" ? "-1/phi" : "1");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+  await expect.poll(async () => (await drawn())?.offset).toBe(-1 / phi);
+});
+
 test("the see-through opacity shares the bounded scalar parser", async ({
   page,
 }) => {
