@@ -4,8 +4,10 @@ install:
 	npm ci
 wasm:
 	npm run wasm
+# engine3 alone takes 6–9 minutes under -race on CI's runners, close to
+# go test's default 10-minute limit.
 test-go:
-	go test -race -cover ./...
+	go test -race -cover -timeout 20m ./...
 test-wasm: wasm
 	node scripts/test-wasm.mjs
 	node scripts/test-dev-worker.mjs
