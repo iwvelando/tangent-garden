@@ -476,8 +476,9 @@ export default function TesseractApp({
     : undefined;
   const curved = descriptor.legend === "sections";
   const indexed = curved || descriptor.legend === "latitudes";
-  // What the drawing shows, by ink, for the legend.
+  // What the drawing shows, by ink, and the drawn study's legend items.
   const drawn = frame ? drawnInks(frame.result, layers) : null;
+  const drawnDescriptor = objects[(frame?.config ?? config).object];
   const numericStudy = descriptor.parameterKey !== undefined;
   const parameterKey = descriptor.parameterKey ?? "lift";
   const parameters = config[parameterKey] as unknown as Record<
@@ -1212,9 +1213,11 @@ export default function TesseractApp({
                           };
                         })
                       : (
-                          (typeof descriptor.legendItems === "function"
-                            ? descriptor.legendItems(config)
-                            : descriptor.legendItems) ??
+                          (typeof drawnDescriptor.legendItems === "function"
+                            ? drawnDescriptor.legendItems(
+                                frame?.config ?? config,
+                              )
+                            : drawnDescriptor.legendItems) ??
                           inks(dark).map((_, i) => ({
                             label: ["x", "y", "z", "w"][i],
                             family: i,

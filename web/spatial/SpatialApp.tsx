@@ -110,8 +110,11 @@ import {
 import { raysNote, receiverAxes } from "./rays";
 import { defaultLayers, initialView, type Layers, type View } from "./renderer";
 import { lensAngles, projections, viewBasis, type Projection } from "./scene";
-import { spatialLegend } from "./legend";
-import { LegendEntries } from "../Legend";
+import {
+  SpatialLegend,
+  feedGeometry,
+  type GeometryFeed,
+} from "./SpatialLegend";
 import {
   LiveOrientation,
   feedOrientation,
@@ -207,9 +210,8 @@ export default function SpatialApp({
   const [animation, setAnimation] = useState<AnimationView | null>(null),
     [running, setRunning] = useState(false);
   const [layers, setLayers] = useState<Layers>(defaultLayers);
-  // The layers the drawn result has something to draw for, space-separated
-  // (sceneLayers in scene.ts), or null before anything is drawn.
-  const [geometry, setGeometry] = useState<string | null>(null);
+  // What each drawn result has something to draw for, for the legend.
+  const geometryFeed = useRef<GeometryFeed>({});
   // The parameter probe asks Go for diagnostics only while it is on, and
   // only for what it describes: the curve or the surface.
   const [probe, setProbe] = useState<Probe>(defaultProbe);
@@ -3432,8 +3434,8 @@ export default function SpatialApp({
             <div className="spatial-canvas-wrap">
               {shown ? (
                 <SpatialPlot
-                  onGeometry={(drawable) =>
-                    setGeometry([...drawable].sort().join(" "))
+                  onGeometry={(result, drawable) =>
+                    feedGeometry(geometryFeed.current, result, drawable)
                   }
                   result={shown.result}
                   dark={theme.dark}
@@ -3473,41 +3475,13 @@ export default function SpatialApp({
               )}
             </div>
             <div className="plot-meta">
-              <div className="legend">
-                <LegendEntries
-                  entries={[
-                    ...spatialLegend(config).map(
-                      ({ layer, swatch, label }) => ({
-                        key: layer,
-                        shown:
-                          (layer === "base" || layers[layer as keyof Layers]) &&
-                          (geometry === null ||
-                            geometry.split(" ").includes(layer)),
-                        content: (
-                          <>
-                            <span className={swatch} />
-                            {label}
-                          </>
-                        ),
-                      }),
-                    ),
-                    ...(drawnCut?.edge
-                      ? [
-                          {
-                            key: "cut",
-                            shown: true,
-                            content: (
-                              <>
-                                <span className="cut-dot" />
-                                Cut edge
-                              </>
-                            ),
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
-              </div>
+              <SpatialLegend
+                feed={geometryFeed.current}
+                config={shown?.config ?? config}
+                result={shown?.result}
+                layers={layers}
+                cutEdge={!!drawnCut?.edge}
+              />
               <span>
                 {released?.lens
                   ? `Perspective from the ray · drag, pan or zoom to return to the ${lensing === "orthographic" ? "orthographic" : "held"} view · Home to the ray · Back to study restores your view`

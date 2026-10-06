@@ -343,3 +343,38 @@ for (const { notebook, open, meta, below, toggles, settle } of stable)
         expect([await box(meta(page)), await box(below(page))]).toEqual(before);
       }
     });
+
+test("a 3D legend never names another study's geometry", async ({ page }) => {
+  // The legend describes the drawn study: while a new study is computed,
+  // its labels must not meet the geometry of the study still drawn. Every
+  // state the legend passes through is recorded.
+  await spatial.open(page, "The whole focal surface of an ellipsoid");
+  await layer(page, "Surface patch").check();
+  await spatial.settle(page);
+  await spatial.legend(page).evaluate((legend) => {
+    const w = window as unknown as { legendStates: string[][] };
+    w.legendStates = [];
+    const record = () =>
+      w.legendStates.push(
+        Array.from(legend.querySelectorAll<HTMLElement>("[data-legend]"))
+          .filter((e) => getComputedStyle(e).visibility === "visible")
+          .map((e) => e.textContent!.trim()),
+      );
+    new MutationObserver(record).observe(legend, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+  });
+  await choosePreset(page, {
+    label: "A trefoil's osculating circle, all the way round",
+  });
+  await spatial.settle(page);
+  const states = await page.evaluate(
+    () => (window as unknown as { legendStates: string[][] }).legendStates,
+  );
+  // The curve is always drawn, so every state of a curve study names it.
+  expect(states.length).toBeGreaterThan(0);
+  for (const state of states) expect(state).toContain("Base curve");
+});

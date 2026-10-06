@@ -381,7 +381,9 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   }, [config, bounds, probing]);
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
-  // What the legend names: each entry while its layer draws something.
+  // What the legend names: the drawn study's entries, each while its layer
+  // draws something.
+  const drawnFormat = (shown?.config ?? config).curve.format;
   const drawn = shown
     ? legendGeometry(shown.result, shown.config, layers)
     : { base: layers.base, derived: layers.derived };
@@ -2190,15 +2192,15 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                       content: (
                         <>
                           <span className="base-dot" />
-                          {implicit
+                          {drawnFormat === "implicit"
                             ? "Curve F = c"
-                            : attractor
+                            : drawnFormat === "attractor"
                               ? "Visit density"
                               : "Base curve"}
                         </>
                       ),
                     },
-                    ...(attractor
+                    ...(drawnFormat === "attractor"
                       ? []
                       : [
                           {
@@ -2207,7 +2209,9 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                             content: (
                               <>
                                 <span className="derived-dot" />
-                                {implicit ? "Other levels" : config.kind}
+                                {drawnFormat === "implicit"
+                                  ? "Other levels"
+                                  : (shown?.config ?? config).kind}
                               </>
                             ),
                           },
