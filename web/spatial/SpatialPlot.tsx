@@ -41,6 +41,7 @@ export function SpatialPlot({
   sight = defaultSight,
   onSeeThrough,
   onStrokes,
+  onGeometry,
   projection = "orthographic",
   lensAngle,
   turn = null,
@@ -71,6 +72,9 @@ export function SpatialPlot({
   onSeeThrough?: (available: boolean) => void;
   // Whether strokes could be drawn rather than hairlines.
   onStrokes?: (available: boolean) => void;
+  // The layers each uploaded result has something to draw for (sceneLayers
+  // in scene.ts), for the legend.
+  onGeometry?: (result: SpatialResult, layers: ReadonlySet<string>) => void;
   // The manual camera's projection, drawn for the manual and released
   // views; an animation's camera carries its own.
   projection?: Projection;
@@ -212,6 +216,8 @@ export function SpatialPlot({
   useEffect(() => {
     renderer.current?.upload(result);
     renderer.current?.setProbe(state.current.probe);
+    const drawable = renderer.current?.layers();
+    if (drawable) onGeometry?.(result, drawable);
     draw();
   }, [result]);
   useEffect(() => {

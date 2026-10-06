@@ -34,7 +34,8 @@ import { saveFile, pngFile, stillSize, svgFile } from "../export-image";
 import { AnimationPanel, type MotionExport } from "./AnimationPanel";
 import { StudyPlot } from "./Plot";
 import { exportBaseSize, type ExportLayout } from "../export-quality";
-import { inks, sectionInk } from "./Drawing";
+import { drawnInks, inks, sectionInk } from "./Drawing";
+import { LegendEntries } from "../Legend";
 import { Sampler } from "./sampler";
 import { tesseractPresets } from "./presets";
 import {
@@ -475,6 +476,9 @@ export default function TesseractApp({
     : undefined;
   const curved = descriptor.legend === "sections";
   const indexed = curved || descriptor.legend === "latitudes";
+  // What the drawing shows, by ink, and the drawn study's legend items.
+  const drawn = frame ? drawnInks(frame.result, layers) : null;
+  const drawnDescriptor = objects[(frame?.config ?? config).object];
   const numericStudy = descriptor.parameterKey !== undefined;
   const parameterKey = descriptor.parameterKey ?? "lift";
   const parameters = config[parameterKey] as unknown as Record<
@@ -1184,36 +1188,60 @@ export default function TesseractApp({
               className={`plot-meta ${indexed ? "section-meta" : descriptor.legend === "threads" ? "thread-meta" : ""}`}
             >
               <div className="tesseract-legend">
-                {indexed &&
-                  frame?.result.sections.map((s, i) => {
-                    const [number, level, suffix] = descriptor.sectionKey!(
-                      s,
-                      i,
-                    );
-                    return (
-                      <span key={s.id} data-section={s.id}>
-                        <i style={{ background: sectionInk(i, dark) }} />
-                        <span className="section-number">{number}</span>
-                        <span className="section-level">{level}</span>
-                        <span className="section-stroke">{suffix}</span>
-                      </span>
-                    );
-                  })}
-                {!indexed &&
-                  (
-                    (typeof descriptor.legendItems === "function"
-                      ? descriptor.legendItems(config)
-                      : descriptor.legendItems) ??
-                    inks(dark).map((_, i) => ({
-                      label: ["x", "y", "z", "w"][i],
-                      family: i,
-                    }))
-                  ).map(({ label, family }) => (
-                    <span key={label}>
-                      <i style={{ background: inks(dark)[family] }} />
-                      {label}
-                    </span>
-                  ))}
+                <LegendEntries
+                  entries={
+                    indexed
+                      ? // The section key reports every section, an empty
+                        // one too, while the layer that draws them is on.
+                        (frame?.result.sections ?? []).map((s, i) => {
+                          const [number, level, suffix] =
+                            descriptor.sectionKey!(s, i);
+                          return {
+                            key: s.id,
+                            shown: layers.edges,
+                            attributes: { "data-section": s.id },
+                            content: (
+                              <>
+                                <i
+                                  style={{ background: sectionInk(i, dark) }}
+                                />
+                                <span className="section-number">{number}</span>
+                                <span className="section-level">{level}</span>
+                                <span className="section-stroke">{suffix}</span>
+                              </>
+                            ),
+                          };
+                        })
+                      : (
+                          (typeof drawnDescriptor.legendItems === "function"
+                            ? drawnDescriptor.legendItems(
+                                frame?.config ?? config,
+                              )
+                            : drawnDescriptor.legendItems) ??
+                          inks(dark).map((_, i) => ({
+                            label: ["x", "y", "z", "w"][i],
+                            family: i,
+                            roles: undefined,
+                          }))
+                        ).map(({ label, family, roles }) => ({
+                          key: label,
+                          shown:
+                            !drawn ||
+                            drawn.some(
+                              (ink) =>
+                                ink.family === family &&
+                                (!roles ||
+                                  roles.some((role) => role === ink.role)),
+                            ),
+                          content: (
+                            <>
+                              <i style={{ background: inks(dark)[family] }} />
+                              {label}
+                            </>
+                          ),
+                        }))
+                  }
+                />
               </div>
               <span>
                 {descriptor.viewingHelp?.(config) ??

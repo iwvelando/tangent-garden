@@ -19,7 +19,8 @@ import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { ExampleGallery } from "./ExampleGallery";
 import { planarExamples, planarThumbnail } from "./examples";
-import { Plot, type Layers } from "./Plot";
+import { Plot, legendGeometry, type Layers } from "./Plot";
+import { LegendEntries } from "./Legend";
 import { LineWeightField } from "./LineWeightField";
 import { RefineBetweenSamples } from "./RefineBetweenSamples";
 import { PlanarProbePanel } from "./PlanarProbePanel";
@@ -380,6 +381,12 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   }, [config, bounds, probing]);
   const shown = animation?.frame ?? frame;
   const result = shown?.result;
+  // What the legend names: the drawn study's entries, each while its layer
+  // draws something.
+  const drawnFormat = (shown?.config ?? config).curve.format;
+  const drawn = shown
+    ? legendGeometry(shown.result, shown.config, layers)
+    : { base: layers.base, derived: layers.derived };
   // A level set and an iterated map have no parameter, so no construction
   // applies to them.
   const implicit = config.curve.format === "implicit";
@@ -2177,19 +2184,40 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
             {busy && result && <span className="computing">Computing…</span>}
             <div className="plot-meta">
               <div className="legend">
-                <span className="base-dot" />
-                {implicit
-                  ? "Curve F = c"
-                  : attractor
-                    ? "Visit density"
-                    : "Base curve"}
-                {!attractor && (
-                  <>
-                    {" "}
-                    <span className="derived-dot" />{" "}
-                    {implicit ? "Other levels" : config.kind}
-                  </>
-                )}
+                <LegendEntries
+                  entries={[
+                    {
+                      key: "base",
+                      shown: drawn.base,
+                      content: (
+                        <>
+                          <span className="base-dot" />
+                          {drawnFormat === "implicit"
+                            ? "Curve F = c"
+                            : drawnFormat === "attractor"
+                              ? "Visit density"
+                              : "Base curve"}
+                        </>
+                      ),
+                    },
+                    ...(drawnFormat === "attractor"
+                      ? []
+                      : [
+                          {
+                            key: "derived",
+                            shown: drawn.derived,
+                            content: (
+                              <>
+                                <span className="derived-dot" />
+                                {drawnFormat === "implicit"
+                                  ? "Other levels"
+                                  : (shown?.config ?? config).kind}
+                              </>
+                            ),
+                          },
+                        ]),
+                  ]}
+                />
               </div>
               <span>
                 {animation?.complete

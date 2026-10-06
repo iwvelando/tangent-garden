@@ -75,6 +75,11 @@ export const rotationMotions: MotionChoice[] = [
   },
 ];
 type Explanation = readonly [string, string, string];
+export type LegendItem = {
+  label: string;
+  family: number;
+  roles?: Result["paths"][number]["role"][];
+};
 export type ObjectDescriptor = {
   name: string;
   noun: string;
@@ -83,9 +88,11 @@ export type ObjectDescriptor = {
   controls: "polyhedral" | "curved" | "lift" | "route" | "weave";
   linkedViews?: boolean;
   motionChoices?: MotionChoice[];
-  legendItems?:
-    | { label: string; family: number }[]
-    | ((c: Config) => { label: string; family: number }[]);
+  // The legend's entries, each the geometry drawn in one ink family, and
+  // only in the given roles where other geometry shares that ink. An entry
+  // is shown while the drawing has such geometry (drawnInks in Drawing.tsx).
+  // Without them, the legend names the four coordinate directions.
+  legendItems?: LegendItem[] | ((c: Config) => LegendItem[]);
   parameterKey?: "lift" | "bypass" | "weave";
   numericFields?: {
     key:
@@ -481,13 +488,16 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     sampleLabel: "Shell samples",
     // The radial shell's XYZ shadow is a filled ball: no inner boundary.
     legendItems: (c) =>
-      [
-        { label: "Route (solid clear / dashed blocked)", family: 0 },
-        { label: "Inner boundary", family: 1 },
-        { label: "Outer boundary", family: 2 },
-        { label: "Coordinate guides", family: 2 },
-        { label: "Collision intervals", family: 3 },
-      ].filter(
+      (
+        [
+          { label: "Route (solid clear / dashed blocked)", family: 0 },
+          // Comparison points share the boundaries' inks.
+          { label: "Inner boundary", family: 1, roles: ["shell"] },
+          { label: "Outer boundary", family: 2, roles: ["shell"] },
+          { label: "Coordinate guides", family: 2, roles: ["axes"] },
+          { label: "Collision intervals", family: 3 },
+        ] satisfies LegendItem[]
+      ).filter(
         (item) =>
           item.family !== 1 ||
           !(c.mode === "shadow" && c.bypass!.obstacle === "radial"),

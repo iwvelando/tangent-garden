@@ -205,25 +205,6 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical.
 
-### 10. Legends that follow layers
-
-**Applies to:** 2D, 3D, 4D.
-
-**Open:** each notebook's legend names what a study can draw, not what is drawn. Hiding a layer, by hand or through a 3D preset's own layers, leaves its entry in the legend: **The whole focal surface of an ellipsoid** opens with its shell hidden and the legend still names **Surface**.
-
-- 2D: `web/main.tsx` always names the base curve and the derived kind.
-- 3D: `web/spatial/SpatialApp.tsx` chooses a fixed legend per study kind. Only the cut edge (`cutLegend`) and the probe (`probeLegend` in `web/spatial/probe.ts`) appear when they are drawn.
-- 4D: `web/tesseract/App.tsx` reads `legendItems` from the object's descriptor in `web/tesseract/objects.ts`.
-
-**Approach:** tie each legend entry to the layer that draws it, so an entry appears exactly when its layer is shown and the study has that geometry. Follow the cut edge's conditional entry. In 4D, keep the mapping in the descriptor; components do not branch on object names.
-
-**Watch for:**
-
-- The legend sits outside the drawing. Keep it there, and keep it out of live regions.
-- A study with every layer hidden but the curve still needs a legend that makes sense.
-- Hiding a layer must not move the controls beside the legend; check desktop and phone widths.
-- Stills and videos carry no text, so exports should not change. Assert that a default export stays byte-identical.
-
 ## Pending on-device checks
 
 No device check was possible for these. Ask the user to look on a phone:

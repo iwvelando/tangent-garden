@@ -2,6 +2,7 @@ import type { SpatialResult } from "./types";
 import {
   buildScene,
   camera,
+  sceneLayers,
   scenePasses,
   type Batch,
   type Layers,
@@ -1059,6 +1060,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     seeThrough: () => !!seeing(),
     // Whether this device can draw strokes rather than hairlines.
     strokes: () => !!strokes,
+    // The layers the uploaded scene has something to draw for.
+    layers: () => (scene ? sceneLayers(scene) : null),
     draw,
     // The drawn page's pixels, top row first, as RGBA.
     pixels: () => {

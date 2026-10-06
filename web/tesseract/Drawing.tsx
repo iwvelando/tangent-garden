@@ -6,6 +6,37 @@ export const inks = axisInks;
 // Index colours separate coincident levels without reusing coordinate inks.
 export const sectionInk = (index: number, dark: boolean) =>
   `hsl(${(170 + index * 137.508) % 360} 55% ${dark ? 72 : 36}%)`;
+// Whether these layers draw a path or marker: guides, the missing region's
+// guide, displacement connectors and comparison points have their own
+// layers, and edges draw the rest.
+const pathShown = (p: Result["paths"][number], layers: Layers) =>
+  p.role === "missing-guide"
+    ? !!layers.missingGuide
+    : p.role === "displacement"
+      ? !!layers.connectors
+      : p.guide
+        ? layers.guides
+        : layers.edges;
+const markerShown = (
+  m: NonNullable<Result["markers"]>[number],
+  layers: Layers,
+) => (m.role === "comparison" ? !!layers.comparison : layers.edges);
+// Everything a result (and a paired view's companion) draws with these
+// layers, by ink family and role, so that the legend names only what is
+// drawn.
+export function drawnInks(result: Result, layers: Layers) {
+  const inks: { family: number; role?: string }[] = [];
+  for (const r of [result, result.companion]) {
+    if (!r) continue;
+    for (const p of r.paths)
+      if (pathShown(p, layers)) inks.push({ family: p.family, role: p.role });
+    for (const m of r.markers ?? [])
+      if (markerShown(m, layers)) inks.push({ family: m.family, role: m.role });
+    if (layers.faces) for (const f of r.faces) inks.push({ family: f.family });
+    if (layers.edges && r.points.length) inks.push({ family: 0 });
+  }
+  return inks;
+}
 // Only the ordinary 3D viewing camera is evaluated here. Go owns all 4D
 // rotations, clipping, intersections and curve samples. Equal axis scale.
 export function Drawing({
@@ -56,15 +87,7 @@ export function Drawing({
     ];
   };
   const mapped = result.paths
-    .filter((p) =>
-      p.role === "missing-guide"
-        ? layers.missingGuide
-        : p.role === "displacement"
-          ? layers.connectors
-          : p.guide
-            ? layers.guides
-            : layers.edges,
-    )
+    .filter((p) => pathShown(p, layers))
     .map((p) => ({ ...p, points: p.points.map(project) }));
   if (curved)
     mapped.sort((a, b) => {
@@ -211,9 +234,7 @@ export function Drawing({
         />
       ))}
       {result.markers
-        ?.filter((m) =>
-          m.role === "comparison" ? layers.comparison : layers.edges,
-        )
+        ?.filter((m) => markerShown(m, layers))
         .map((m) => {
           const [x, y] = project(m.point);
           return (

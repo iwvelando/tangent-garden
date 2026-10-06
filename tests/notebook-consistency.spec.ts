@@ -293,6 +293,13 @@ test("each 3D example names itself above a shared construction title", async ({
   await expect(
     heading.getByRole("button", { name: "Reset view" }),
   ).toBeVisible();
+  // The legend describes the drawn study, so it waits for the edited one,
+  // which can follow a backlog of examples on a slow engine.
+  await expect(page.locator(".spatial-stage")).toHaveAttribute(
+    "aria-busy",
+    "false",
+    { timeout: 30000 },
+  );
   await expect(page.locator(".app:visible .plot-meta .legend")).toContainText(
     /Base curve.*Tangent developable/,
   );

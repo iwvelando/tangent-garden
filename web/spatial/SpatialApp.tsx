@@ -111,6 +111,11 @@ import { raysNote, receiverAxes } from "./rays";
 import { defaultLayers, initialView, type Layers, type View } from "./renderer";
 import { lensAngles, projections, viewBasis, type Projection } from "./scene";
 import {
+  SpatialLegend,
+  feedGeometry,
+  type GeometryFeed,
+} from "./SpatialLegend";
+import {
   LiveOrientation,
   feedOrientation,
   type OrientationFeed,
@@ -205,6 +210,8 @@ export default function SpatialApp({
   const [animation, setAnimation] = useState<AnimationView | null>(null),
     [running, setRunning] = useState(false);
   const [layers, setLayers] = useState<Layers>(defaultLayers);
+  // What each drawn result has something to draw for, for the legend.
+  const geometryFeed = useRef<GeometryFeed>({});
   // The parameter probe asks Go for diagnostics only while it is on, and
   // only for what it describes: the curve or the surface.
   const [probe, setProbe] = useState<Probe>(defaultProbe);
@@ -536,12 +543,6 @@ export default function SpatialApp({
   // A construction built on a derived input draws that curve as its own,
   // with the base curve beneath it.
   const composing = composes(config);
-  const inputName = {
-    base: "Base curve",
-    "tangent-foot": "Tangent-foot curve",
-    orthotomic: "Tangent-line orthotomic",
-    involute: "Involute",
-  }[config.input];
   const unwinding = config.unwinding;
   // Choosing the involute keeps its anchor where the domain allows, and
   // otherwise moves it to the domain's middle. The choice applies at once;
@@ -1430,13 +1431,6 @@ export default function SpatialApp({
   // The cut as drawn: where an animation that moves it has taken it, or the
   // entered plane.
   const drawnCut = animation?.cut ?? userCut.spec;
-  // The cut's edge in the legend while it is drawn.
-  const cutLegend = drawnCut?.edge ? (
-    <>
-      {" "}
-      <span className="cut-dot" /> Cut edge
-    </>
-  ) : null;
   const probeDrawing = useMemo(
     () =>
       probeFrame
@@ -3440,6 +3434,9 @@ export default function SpatialApp({
             <div className="spatial-canvas-wrap">
               {shown ? (
                 <SpatialPlot
+                  onGeometry={(result, drawable) =>
+                    feedGeometry(geometryFeed.current, result, drawable)
+                  }
                   result={shown.result}
                   dark={theme.dark}
                   layers={layers}
@@ -3478,68 +3475,13 @@ export default function SpatialApp({
               )}
             </div>
             <div className="plot-meta">
-              {leveled ? (
-                <div className="legend">
-                  <span className="surface-dot" /> Level surface{" "}
-                  <span className="thread-dot" /> Section curves
-                  {cutLegend}
-                </div>
-              ) : mirroring ? (
-                <div className="legend">
-                  <span className="surface-dot" />{" "}
-                  {refracting ? "Interface" : "Mirror"}{" "}
-                  <span className="thread-dot" />{" "}
-                  {refracting ? "Transmitted rays" : "Reflected rays"}{" "}
-                  <span className="focal-dot" /> Caustic 1{" "}
-                  <span className="focal-dot second" /> Caustic 2{cutLegend}
-                </div>
-              ) : surfacing ? (
-                <div className="legend">
-                  <span className="surface-dot" /> Surface{" "}
-                  <span className="focal-dot" /> Focal sheet 1{" "}
-                  <span className="focal-dot second" /> Focal sheet 2{cutLegend}
-                </div>
-              ) : (
-                <div className="legend">
-                  <span className="thread-dot" />{" "}
-                  {composing
-                    ? inputName
-                    : flowing
-                      ? "Trajectory 1"
-                      : chasing
-                        ? "Pursuer 1"
-                        : "Base curve"}{" "}
-                  {!(none && !flowing && !chasing) && (
-                    <span className="ribbon-dot" />
-                  )}{" "}
-                  {none
-                    ? flowing
-                      ? "Other trajectories"
-                      : chasing
-                        ? "Other pursuers"
-                        : ""
-                    : canal
-                      ? "Canal surface"
-                      : ruled
-                        ? "Ruled surface"
-                        : framed
-                          ? "Framed ribbon"
-                          : inversion
-                            ? "Inverted curve"
-                            : projection
-                              ? projectionName
-                              : involute
-                                ? "Involute filaments"
-                                : "Tangent developable"}
-                  {composing && (
-                    <>
-                      {" "}
-                      <span className="parent-dot" /> Base curve
-                    </>
-                  )}
-                  {cutLegend}
-                </div>
-              )}
+              <SpatialLegend
+                feed={geometryFeed.current}
+                config={shown?.config ?? config}
+                result={shown?.result}
+                layers={layers}
+                cutEdge={!!drawnCut?.edge}
+              />
               <span>
                 {released?.lens
                   ? `Perspective from the ray · drag, pan or zoom to return to the ${lensing === "orthographic" ? "orthographic" : "held"} view · Home to the ray · Back to study restores your view`
