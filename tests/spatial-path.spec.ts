@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import {
   defaultPath,
   keyFromView,
+  keyTimes,
+  legRange,
   maxKeys,
   pathError,
   pathLeg,
@@ -542,4 +544,200 @@ test("in a loop, a seam that is a turning point rests there instead of overshoot
   expect(Math.abs(pathView(p, bounds, h, true).pitch - 0.2) / h).toBeLessThan(
     1e-3,
   );
+});
+
+// Leg times: a key view's leg (the one arriving at it) takes its share of
+// the duration in proportion to its time; a view without one counts 1.
+const timed = [
+  tour[0],
+  { ...tour[1], leg: 2 },
+  { ...tour[2], leg: 0.5 },
+  { ...tour[3], leg: 1.5 },
+];
+
+test("each view is reached at its legs' share of the duration, exactly, in either style", () => {
+  expect(keyTimes(path(tour))).toEqual([0, 1 / 3, 2 / 3, 1]);
+  expect(keyTimes(path(timed))).toEqual([0, 0.5, 0.625, 1]);
+  expect(keyTimes(path([]))).toEqual([]);
+  expect(keyTimes(path([tour[0]]))).toEqual([0]);
+  for (const style of ["steady", "smooth"] as const)
+    for (const keys of [
+      timed,
+      // Times whose sums are not exact in binary; with 0.1, 1.3 and 1.3 the
+      // third view's progress times the total falls just short of its time.
+      timed.map((k, i) => (i ? { ...k, leg: [0.1, 0.7, 3.3][i - 1] } : k)),
+      timed.map((k, i) => (i ? { ...k, leg: [0.1, 1.3, 1.3][i - 1] } : k)),
+    ]) {
+      const p = path(keys, style);
+      const times = keyTimes(p);
+      keys.forEach((k, i) =>
+        expect(pathView(p, bounds, times[i])).toEqual(manual(k)),
+      );
+      expect(pathLeg(p, times[1])).toBe("Side");
+      expect(pathLeg(p, (times[1] + times[2]) / 2)).toBe("Side → Close");
+    }
+});
+
+test("a leg's time stretches that leg alone; equal times fly as the default", () => {
+  // Steady flies each leg the same way whatever its time: the same camera
+  // at the same fraction of the leg.
+  const equal = path(tour),
+    stretched = path(timed);
+  // Leg times 2, 0.5 and 1.5 of 4.
+  const [a, b] = [
+    [0, 1 / 3, 2 / 3, 1],
+    [0, 0.5, 0.625, 1],
+  ];
+  for (let leg = 0; leg < 3; leg++)
+    for (let i = 1; i < 20; i++) {
+      const f = i / 20;
+      expect(
+        apart(
+          pathView(stretched, bounds, b[leg] + (b[leg + 1] - b[leg]) * f),
+          pathView(equal, bounds, a[leg] + (a[leg + 1] - a[leg]) * f),
+        ),
+      ).toBeLessThan(1e-9);
+    }
+  // A view without a time is a view whose time is 1, field for field; equal
+  // times of any size fly the same path.
+  const ones = path(
+    tour.map((k, i) => (i ? { ...k, leg: 1 } : k)),
+    "smooth",
+  );
+  const scaled = path(
+    tour.map((k, i) => (i ? { ...k, leg: 2.5 } : k)),
+    "smooth",
+  );
+  for (let i = 0; i <= 300; i++) {
+    expect(pathView(ones, bounds, i / 300)).toEqual(
+      pathView(path(tour, "smooth"), bounds, i / 300),
+    );
+    expect(
+      apart(
+        pathView(scaled, bounds, i / 300),
+        pathView(path(tour, "smooth"), bounds, i / 300),
+      ),
+    ).toBeLessThan(1e-9);
+  }
+});
+
+test("smooth keeps its rate through a view between a short leg and a long one, and never overshoots", () => {
+  // Pitch rises over a quick leg and then a slow one: in time, the rate
+  // either side of the view between them is the same.
+  const rise = [
+    key({ pitch: 0, zoom: 1 }),
+    key({ pitch: 0.3, zoom: 2, leg: 0.5 }),
+    key({ pitch: 1.2, zoom: 5, leg: 3 }),
+    key({ pitch: -0.6, zoom: 0.4, leg: 1 }),
+  ];
+  const p = path(rise, "smooth");
+  // Leg times 0.5, 3 and 1 of 4.5.
+  const times = [0, 0.5 / 4.5, 3.5 / 4.5, 1],
+    h = 1e-7;
+  const at = (x: number) => pathView(p, bounds, x);
+  const rate = (x: number, side: 1 | -1) => {
+    const [v0, v1] = [at(x), at(x + side * h)];
+    return [
+      (side * (v1.pitch - v0.pitch)) / h,
+      (side * Math.log(v1.zoom / v0.zoom)) / h,
+    ];
+  };
+  const [before, after] = [rate(times[1], -1), rate(times[1], 1)];
+  expect(before[0]).toBeGreaterThan(0);
+  for (let i = 0; i < 2; i++)
+    expect(Math.abs(before[i] - after[i])).toBeLessThan(
+      1e-4 * Math.abs(before[i]),
+    );
+  // No leg leaves the range of its two views; the highest view is a rest.
+  for (let i = 0; i <= 3000; i++) {
+    const x = i / 3000,
+      leg = Math.max(
+        0,
+        times.findLastIndex((t) => t <= x && t < 1),
+      );
+    const v = at(x),
+      [a, b] = [rise[leg], rise[leg + 1]];
+    expect(v.pitch).toBeGreaterThanOrEqual(Math.min(a.pitch, b.pitch) - 1e-15);
+    expect(v.pitch).toBeLessThanOrEqual(Math.max(a.pitch, b.pitch) + 1e-15);
+    expect(v.zoom).toBeGreaterThanOrEqual(
+      Math.min(a.zoom, b.zoom) * (1 - 1e-12),
+    );
+    expect(v.zoom).toBeLessThanOrEqual(Math.max(a.zoom, b.zoom) * (1 + 1e-12));
+  }
+  expect(Math.abs(rate(times[2], 1)[0])).toBeLessThan(1e-4);
+  // Continuity, however short a leg: no point jumps.
+  for (let i = 0; i < 3000; i++)
+    expect(apart(at(i / 3000), at((i + 1) / 3000))).toBeLessThan(25);
+});
+
+test("in a loop, a smooth path with unequal legs passes its seam at one rate", () => {
+  const ring = [
+    key({ yaw: 0.3, pitch: 0.2, zoom: 1 }),
+    key({ yaw: 2.1, pitch: 0.7, zoom: 2.2, leg: 0.4 }),
+    key({ yaw: -2.2, pitch: -0.3, zoom: 1.4, leg: 2 }),
+    key({ yaw: 0.3, pitch: 0.2, zoom: 1, leg: 3 }),
+  ];
+  const p = path(ring, "smooth"),
+    h = 1e-7;
+  const at = (x: number) => pathView(p, bounds, x, true);
+  // Leg times 0.4, 2 and 3 of 5.4.
+  [0, 0.4 / 5.4, 2.4 / 5.4, 1].forEach((x, i) =>
+    expect(apart(at(x), manual(ring[i]))).toBeLessThan(1e-9),
+  );
+  const [a0, a1, b0, b1] = [at(0), at(h), at(1 - 2 * h), at(1 - h)];
+  const start = [(a1.yaw - a0.yaw) / h, (a1.pitch - a0.pitch) / h],
+    end = [(b1.yaw - b0.yaw) / h, (b1.pitch - b0.pitch) / h];
+  for (let i = 0; i < 2; i++)
+    expect(Math.abs(start[i] - end[i])).toBeLessThan(
+      1e-4 * Math.max(1, Math.abs(start[i])),
+    );
+});
+
+test("leg times are refused outside their limits, and on the first view", () => {
+  const leg = (t: number) =>
+    pathError(path([tour[0], tour[1], { ...tour[2], leg: t }]));
+  const message = `must be from ${legRange[0]} to ${legRange[1]}.`;
+  for (const t of [legRange[0] / 2, legRange[1] * 1.01, 0, -1, Number.NaN])
+    expect(leg(t)).toEqual({ field: "View 3 leg time", message });
+  for (const t of [legRange[0], 1, legRange[1]]) expect(leg(t)).toBeNull();
+  expect(pathError(path([{ ...tour[0], leg: 2 }, tour[1]]))).toEqual({
+    field: "View 1 leg time",
+    message: "must be 1: the first view has no leg before it.",
+  });
+  expect(pathError(path([{ ...tour[0], leg: 1 }, tour[1]]))).toBeNull();
+});
+
+test("smooth's slopes at a view and at the ends weigh the legs' times as pchip does", () => {
+  // Pitch 0, 0.1, 0.7 over legs of 1 and 3, so the legs' rates are 0.1 and
+  // 0.2 per unit of leg time. Moler's pchip (Numerical Computing with
+  // MATLAB, section 3.4) gives the view between them the slope
+  // (w1 + w2)/(w1/0.1 + w2/0.2) with w1 = 2·3 + 1 and w2 = 3 + 2·1, that
+  // is 12/95, and the first view ((2·1 + 3)·0.1 − 1·0.2)/(1 + 3) = 0.075.
+  // In progress, over a total leg time of 4, they are four times as large.
+  const p = path(
+    [key({ pitch: 0 }), key({ pitch: 0.1 }), key({ pitch: 0.7, leg: 3 })],
+    "smooth",
+  );
+  const h = 1e-7,
+    pitch = (x: number) => pathView(p, bounds, x).pitch;
+  const rate = (x: number) => (pitch(x + h) - pitch(x - h)) / (2 * h);
+  expect(rate(0.25)).toBeCloseTo((4 * 12) / 95, 6);
+  expect((pitch(h) - pitch(0)) / h).toBeCloseTo(4 * 0.075, 5);
+  // The last view: ((2·3 + 1)·0.2 − 3·0.1)/(3 + 1) = 0.275.
+  expect((pitch(1 - h) - pitch(1 - 2 * h)) / h).toBeCloseTo(4 * 0.275, 5);
+  // In a loop the seam is a view between the last leg and the first. Pitch
+  // 0.2, 0.7, −0.3, 0.2 over legs of 0.4, 2 and 3: rates 0.5/3 before the
+  // seam and 1.25 after it, w1 = 2·0.4 + 3 and w2 = 0.4 + 2·3, a slope of
+  // 10.2/(3.8·6 + 6.4/1.25) per unit of leg time, over a total of 5.4.
+  const ring = path(
+    [
+      key({ pitch: 0.2 }),
+      key({ yaw: 2, pitch: 0.7, leg: 0.4 }),
+      key({ yaw: 4, pitch: -0.3, leg: 2 }),
+      key({ pitch: 0.2, leg: 3 }),
+    ],
+    "smooth",
+  );
+  const seam = (pathView(ring, bounds, h, true).pitch - 0.2) / h;
+  expect(seam).toBeCloseTo((5.4 * 10.2) / (3.8 * 6 + 6.4 / 1.25), 4);
 });

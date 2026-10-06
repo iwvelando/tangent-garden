@@ -318,7 +318,12 @@ test("reveal draws the segments in order, pauses, resumes, and an edit cancels",
   expect(paused).toBeLessThan(1);
   const last = Math.floor(paused * (config.samples - 1));
   const step = (config.samples - 1) / (config.lines - 1);
-  await expect(segments(page)).toHaveCount(Math.floor(last / step + 1e-9) + 1);
+  // Segment k stands at the sample nearest k·step, so it is drawn once the
+  // reveal reaches that sample, which can precede k·step itself.
+  const shown = Array.from({ length: config.lines }, (_, k) => k).filter(
+    (k) => Math.round(k * step) <= last,
+  ).length;
+  await expect(segments(page)).toHaveCount(shown);
   await expect(page.getByTestId("inversion-circle")).toHaveCount(1);
   await page.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(

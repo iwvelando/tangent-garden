@@ -38,6 +38,7 @@ import { lineWeightSchema } from "../line-weight";
 import { probeMotionSchema } from "../probe";
 import {
   defaultPath,
+  legRange,
   maxKeyName,
   maxKeys,
   maxTurns,
@@ -363,6 +364,8 @@ const path: SchemaOf<CameraPath> = {
           panX: "number",
           panY: "number",
           turns: { range: [-maxTurns, maxTurns] },
+          // Links made before leg times have none: every leg takes 1.
+          leg: { optional: { range: legRange } },
         },
       },
       max: maxKeys,
@@ -387,6 +390,11 @@ function cameraPath(value: unknown): CameraPath {
       throw new LinkError(
         `${field}.turns`,
         `${field}.turns must be 0: the first view has no leg before it.`,
+      );
+    if (k === 0 && key.leg !== undefined && key.leg !== 1)
+      throw new LinkError(
+        `${field}.leg`,
+        `${field}.leg must be 1: the first view has no leg before it.`,
       );
   });
   return out;
