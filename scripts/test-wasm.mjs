@@ -2282,6 +2282,47 @@ const spatialSurface = (surface, study = {}) =>
     if (k !== null) assert.ok(Math.abs(k + 1 / 1.5) < 1e-12);
   });
   assert.ok(umbilic.direction.flat(2).every((e) => e === null));
+  // Its offset, the sphere of radius 2, is an umbilic with κ = −1/2 at the
+  // patch's center; the offset's probe replaces the patch's, not both.
+  const parallel = spatialSurface(
+    {},
+    { offsetDiagnostics: true },
+  ).surfaceDiagnostics;
+  assert.equal(parallel.kind, "offset");
+  assert.equal(parallel.distance, 0.5);
+  assert.deepEqual([parallel.singular, parallel.umbilics], [74, 37 * 17]);
+  parallel.curvature.flat(2).forEach((k) => {
+    if (k !== null) assert.ok(Math.abs(k + 1 / 2) < 1e-12);
+  });
+  parallel.focal.flat(2).forEach((p) => {
+    if (p) assert.ok(Math.hypot(p.x, p.y, p.z) < 1e-12);
+  });
+  assert.ok(parallel.folds.flat().every((f) => f === false));
+  assert.match(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "surface",
+        surface: {
+          kind: "ellipsoid",
+          a: 1,
+          b: 1,
+          c: 1,
+          uMin: 0,
+          uMax: 6,
+          vMin: -1,
+          vMax: 1,
+          uSamples: 12,
+          vSamples: 12,
+          curves: 2,
+          offset: 0.5,
+          reach: 0,
+        },
+        surfaceDiagnostics: true,
+        offsetDiagnostics: true,
+      }),
+    ),
+    /offsetDiagnostics/,
+  );
   assert.deepEqual(round.base, []);
   assert.equal(q.surface.points.length, 37);
   assert.equal(q.surface.points[0].length, 19);

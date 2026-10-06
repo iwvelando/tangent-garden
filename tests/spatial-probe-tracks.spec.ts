@@ -540,3 +540,44 @@ test("a knot reparameterized in place keeps the probe's point while its t moves"
   }
   expect(Math.max(...ks) - Math.min(...ks)).toBeGreaterThan(0.2 * ks[0]);
 });
+
+// The ellipsoid's parallel surface: the probe stays on the offset over the
+// bottom of the bowl, where the ellipsoid's radii are −a²/b = −2.25 and
+// −c²/b = −0.49, while d sweeps from −0.1 to −0.9 and back. The offset's
+// radii are the ellipsoid's less d: past d = −0.49 the second changes sign
+// and the offset there has folded.
+test("an ellipsoid's parallel surface reads radii less d as d sweeps", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  await settled(page);
+  await choosePreset(page, { label: "An ellipsoid's parallel surface" });
+  await settled(page);
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  await expect(mode(page)).toHaveValue("parameters");
+  await expect(motion(page)).toHaveValue("stays");
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Principal curvatures & centres at a point",
+    }),
+  ).toBeChecked();
+  await playPaused(page);
+  const status = page.getByTestId("probe-status");
+  const radii = (d: number) => `${short(-2.25 - d)}, ${short(-0.49 - d)}`;
+  await at(page, "0");
+  await expect(readout(page).nth(2)).toHaveText(radii(-0.1));
+  await expect(status).toHaveText("");
+  // Out at d = −0.9, half way through the back and forth.
+  await at(page, "0.5");
+  await expect(readout(page).nth(2)).toHaveText(radii(-0.9));
+  await expect(status).toHaveText(
+    "Folded here: the offset lies beyond one focal sheet, turned inside out.",
+  );
+  await expect(values(page)).toHaveText(/Offset d = -0\.90000/);
+  await button(page, "Stop").click();
+  await settled(page);
+  await expect(readout(page).nth(2)).toHaveText(radii(-0.25));
+});

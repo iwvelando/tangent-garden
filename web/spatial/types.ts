@@ -385,9 +385,18 @@ export type SpatialProbePoint = {
 // it. A point is null without a surface there; a normal is null at a
 // singular point; a curvature is null where unknown; directions are null at
 // an umbilic; a focal point is null at infinity (beyond 100 radii). Counts
-// leave out a closed surface's repeated last row.
+// leave out a closed surface's repeated last row. A patch's offset, on the
+// patch's grid, shares its normal and directions, with curvatures
+// κᵢ/(1 − dκᵢ) numbered as the patch's, so its centers are the patch's.
 export type SurfaceDiagnostics = {
-  kind: "patch" | "canal" | "developable" | "framed" | "ruled" | "wavefront";
+  kind:
+    | "patch"
+    | "offset"
+    | "canal"
+    | "developable"
+    | "framed"
+    | "ruled"
+    | "wavefront";
   along: number[];
   u: number[];
   v: number[];
@@ -403,6 +412,10 @@ export type SurfaceDiagnostics = {
   clipped: [number, number];
   // Present only for the light leaving a mirror or interface.
   light?: LightDiagnostics;
+  // Present only for a patch's offset: its signed distance d from the
+  // patch along n, and where it has folded, (1 − dκ₁)(1 − dκ₂) < 0.
+  distance?: number;
+  folds?: boolean[][];
 };
 // Mirrors engine3.LightDiagnostics: on the wavefront's grid, the incident
 // direction (null at a singularity or the source), the surface's normal

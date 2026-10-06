@@ -335,7 +335,13 @@ const probe: SchemaOf<Probe> = {
     enabled: "boolean",
     position: { range: [0, 1] },
     target: {
-      options: { curve: true, surface: true, light: true, mirror: true },
+      options: {
+        curve: true,
+        surface: true,
+        offset: true,
+        light: true,
+        mirror: true,
+      },
     },
     across: { range: [0, 1] },
     // Absent in links made before the curve probe stood between samples,

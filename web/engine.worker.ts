@@ -67,6 +67,8 @@ self.onmessage = async ({
   // Asks Go for the light leaving a mirror or interface (see
   // engine3.LightDiagnostics).
   lightDiagnostics?: boolean;
+  // Asks Go for a surface patch's offset in place of the patch.
+  offsetDiagnostics?: boolean;
   base: string;
 }>) => {
   try {
@@ -580,6 +582,7 @@ self.onmessage = async ({
         ...(data.diagnostics && { diagnostics: true }),
         ...(data.surfaceDiagnostics && { surfaceDiagnostics: true }),
         ...(data.lightDiagnostics && { lightDiagnostics: true }),
+        ...(data.offsetDiagnostics && { offsetDiagnostics: true }),
         ...(data.probe && { probe: data.probe }),
       });
       if (data.probeOnly) {

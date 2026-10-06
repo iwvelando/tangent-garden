@@ -15,7 +15,7 @@ These are the facts that decide where a refinement applies.
 | Pointer, touch | Drag, scroll, pinch (`web/gestures.ts`, shared)                                                                                   | Same                                                                                      | Same                                                         |
 | Keyboard       | Arrows pan, +/− zoom, Home fits                                                                                                   | Arrows orbit, shift-arrows pan, +/− zoom, Home                                            | Same as 3D                                                   |
 | Still export   | SVG; PNG at 1–4 × the page, optionally transparent (`web/ExportImageMenu.tsx`, shared)                                            | PNG, SVG with embedded PNG and Lines (SVG), all at 1–4 × the page, optionally transparent | As 2D                                                        |
-| Probe          | Curve                                                                                                                             | Curve, surface, light                                                                     | None (no user curve)                                         |
+| Probe          | Curve                                                                                                                             | Curve, surface, offset, light                                                             | None (no user curve)                                         |
 | Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes | Base, derived input (involute too), projections, inversion, involutes, strands            | None (no user curve)                                         |
 | Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`)     | Same                                                                                      | Same                                                         |
 
@@ -55,7 +55,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 **Open:**
 
 - **3D surface probe held at its own (u, v)** under parameter tracks, rather than its share of the grid.
-- **3D surface probe on more surfaces.** Implicit meshes are excluded on purpose: a mesh is a picture, not a differentiable evaluator.
+- **3D surface probe on a patch's focal sheets.** A patch's offset can be probed already. A focal sheet's curvatures need the patch's third derivatives (they depend on how κᵢ changes), which the patches do not supply yet. Implicit meshes are excluded on purpose: a mesh is a picture, not a differentiable evaluator.
 - **Smaller limits** to fix if they bite:
   - 3D probe lines are depth-tested, so sheets hide them.
   - Surface plots run along the row only.
@@ -194,7 +194,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - The probe while parameters vary.
 - The 2D probe, refinement and line-weight controls at phone width, including the probe's **At any t, between samples** checkbox and its continuous slider.
 
-Line weights in 3D were checked locally and on a phone on 2026-10-04, and the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06.
+Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06.
 
 ## Conditional and declined
 

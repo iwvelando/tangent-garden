@@ -50,8 +50,13 @@ type SurfaceDiagnostics struct {
 	Unknown   int             `json:"unknown"`
 	Clipped   [2]int          `json:"clipped"`
 	// Light is present only for the outgoing wavefront of a ray study.
-	Light  *LightDiagnostics `json:"light,omitempty"`
-	closed bool
+	Light *LightDiagnostics `json:"light,omitempty"`
+	// Distance and Folds are present only for a patch's offset: its signed
+	// distance d from the patch along n, and where it has folded, lying
+	// beyond one focal sheet.
+	Distance float64  `json:"distance,omitempty"`
+	Folds    [][]bool `json:"folds,omitempty"`
+	closed   bool
 }
 
 // newSurfaceDiagnostics allocates a grid of rows × columns.
@@ -120,6 +125,58 @@ func patchProbe(q SurfaceRequest, samples [][]surfacePoint, scale float64) *Surf
 			}
 			for k := 0; k < 2; k++ {
 				kappa, e := s.Kappa[k], s.Dir[k]
+				d.Curvature[k][i][j] = &kappa
+				if !s.Umbilic {
+					d.Direction[k][i][j] = &e
+				}
+			}
+		}
+	}
+	d.clip(scale)
+	return d
+}
+
+// offsetProbe describes the offset X_d = X + d·n at the patch's own
+// samples, from the same evaluations. It shares the patch's normal n, as
+// it is drawn, and since dX_d = (I − dA) dX with A = −dn, its shape
+// operator is A(I − dA)⁻¹: the same principal directions, with curvatures
+// κᵢ/(1 − dκᵢ). Branches keep the patch's numbers, so each center
+// X_d + n(1 − dκᵢ)/κᵢ = X + n/κᵢ is the patch's focal point of the same
+// number: parallel surfaces share their focal sheets. Where 1 − dκᵢ
+// vanishes the offset meets that focal sheet in a cuspidal edge and is
+// singular; where (1 − dκ₁)(1 − dκ₂) < 0 it lies beyond one focal sheet
+// and has folded, and κ₁ < κ₂ is possible there.
+func offsetProbe(q SurfaceRequest, samples [][]surfacePoint, scale float64) *SurfaceDiagnostics {
+	nu, nv := q.USamples, q.VSamples
+	d := newSurfaceDiagnostics("offset", nu+1, nv+1)
+	d.Distance, d.Folds = q.Offset, grid2[bool](nu+1, nv+1)
+	for i := 0; i <= nu; i++ {
+		d.Along[i], d.U[i] = i, lerp(q.UMin, q.UMax, i, nu)
+	}
+	for j := 0; j <= nv; j++ {
+		d.V[j] = lerp(q.VMin, q.VMax, j, nv)
+	}
+	for i, row := range samples {
+		for j, s := range row {
+			if !s.Normal {
+				// The chart has no normal here, so the offset has no point.
+				d.Singular++
+				continue
+			}
+			x, n := s.X.add(s.N.mul(q.Offset)), s.N
+			d.Points[i][j] = &x
+			stretch := [2]float64{1 - q.Offset*s.Kappa[0], 1 - q.Offset*s.Kappa[1]}
+			d.Folds[i][j] = stretch[0]*stretch[1] < 0
+			if !(math.Abs(stretch[0]) > 1e-9*(1+math.Abs(q.Offset*s.Kappa[0]))) || !(math.Abs(stretch[1]) > 1e-9*(1+math.Abs(q.Offset*s.Kappa[1]))) {
+				d.Singular++
+				continue
+			}
+			d.Normals[i][j] = &n
+			if s.Umbilic {
+				d.Umbilics++
+			}
+			for k := 0; k < 2; k++ {
+				kappa, e := s.Kappa[k]/stretch[k], s.Dir[k]
 				d.Curvature[k][i][j] = &kappa
 				if !s.Umbilic {
 					d.Direction[k][i][j] = &e
