@@ -38,6 +38,20 @@ func probeAt(t *testing.T, c Request, s float64) *ProbePoint {
 	return p
 }
 
+// probeOnlyAt is ProbeOnly's probe at t.
+func probeOnlyAt(t *testing.T, c Request, s float64) *ProbePoint {
+	t.Helper()
+	c.Probe = &ProbeQuery{T: &s}
+	p, err := ProbeOnly(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.T != s {
+		t.Fatalf("probe at t = %g, asked %g", p.T, s)
+	}
+	return p
+}
+
 // knotAt is sample i's parameter as the sampling loop places it.
 func knotAt(c Request, lo, hi float64, i int) float64 {
 	n := float64(c.Samples)
@@ -196,7 +210,10 @@ func TestCurveProbeAtASampleIsTheSample(t *testing.T) {
 		plain, d := diagnosed(t, c)
 		n := c.Samples
 		for _, j := range []int{0, 1, 17, n / 3, n / 2, n - 1, n} {
-			p := probeAt(t, c, knotAt(c, d.Min, d.Max, j))
+			// From the study ProbeOnly keeps, which computes each study
+			// once; TestProbeOnlyMatchesAFreshComputation holds it to a
+			// fresh computation.
+			p := probeOnlyAt(t, c, knotAt(c, d.Min, d.Max, j))
 			what := func(s string) string { return name + " " + s + " at sample " + itoa(j) }
 			sameVec(t, what("point"), p.Point, plain.Base[j])
 			sameVec(t, what("tangent"), p.Tangent, d.Tangent[j])
