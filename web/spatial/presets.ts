@@ -3375,4 +3375,80 @@ export const spatialPresets: {
     projection: "normal",
     view: { yaw: 0.8, pitch: 0.7, zoom: 1.5, panX: 0.3, panY: -0.2 },
   },
+  // Viviani's curve, where the sphere of radius 2 about the origin meets
+  // the cylinder of radius 1 through its center: κ = √(13 + 3 cos t)/
+  // (3 + cos t)^{3/2} and τ = 6 cos(t/2)/(13 + 3 cos t) change all the way
+  // round, so the frame and osculating circle never rest. The probe stands
+  // between its 240 samples, at every t, and glides round the window.
+  {
+    name: "An osculating circle gliding round Viviani's window",
+    detail:
+      "The probe stands at every t, not only at samples: its frame and circle swell, shrink and tip smoothly as the curvature and torsion change",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "none",
+      samples: 240,
+      lines: 24,
+      curve: {
+        x: "1+cos(t)",
+        y: "sin(t)",
+        z: "2*sin(t/2)",
+        a: 1,
+        min: -2 * Math.PI,
+        max: 2 * Math.PI,
+      },
+    },
+    probe: {
+      enabled: true,
+      position: 0.1,
+      target: "curve",
+      across: 0.5,
+      between: true,
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "hide",
+      weight: "bold",
+    },
+    view: { yaw: 0.7, pitch: 0.45, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 20,
+      repeat: "loop",
+      camera: "hold",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // The trefoil's tangent feet from a pole above its center, as in "A knot
+  // through perpendiculars", with the probe standing between the knot's
+  // samples: its tangent, the perpendicular from the pole and the foot
+  // slide continuously round the knot, tracing the tangent-foot curve.
+  {
+    name: "A trefoil's perpendicular feet, swept at any t",
+    detail:
+      "The probe slides round the knot through every t between samples, the tangent, the perpendicular from the pole and its foot following it",
+    config: {
+      ...base,
+      construction: "tangent-foot",
+      pole: { x: 0, y: 0, z: 2 },
+      samples: 240,
+      lines: 24,
+    },
+    probe: {
+      enabled: true,
+      position: 0,
+      target: "curve",
+      across: 0.5,
+      between: true,
+    },
+    flight: {
+      duration: 24,
+      repeat: "loop",
+      camera: "hold",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

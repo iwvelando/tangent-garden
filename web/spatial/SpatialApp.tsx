@@ -133,14 +133,20 @@ import {
 import type { ImageFormat } from "./export";
 import {
   defaultProbe,
+  parameterAt,
+  probeBetween,
   probeDrawing as drawProbe,
+  probeIndex,
   probeRecord,
   probeStep,
   probeSteps,
   probeSupport,
   probeTarget,
   probeOptions,
+  sampleProbe,
+  type CurveProbe,
   type Probe,
+  type ProbePlace,
 } from "./probe";
 import { ProbePanel } from "./ProbePanel";
 import "./spatial.css";
@@ -1420,24 +1426,92 @@ export default function SpatialApp({
         probeSteps(frame.result, probeTarget(frame.config, probe)) !== null
       ? frame
       : null;
-  // The sample (or a surface's row) the probe stands at; a surface probe's
-  // column follows probe.across.
-  const probeAt = moving
-    ? moving.probe!
-    : probeFrame
-      ? probeStep(
-          probeFrame.result,
-          probeTarget(probeFrame.config, probe),
-          probe,
+  // Between samples, Go places the curve probe at its own t over the drawn
+  // study, apart from the study itself, so moving it redraws only the
+  // probe. A point belongs to the frame and position it was asked for, and
+  // the drawing is busy until it arrives (or the study refuses it). At most
+  // one request is in flight: while it runs, moves only update the place
+  // wanted, and its reply asks for the latest one, so a drag never queues
+  // work behind it.
+  const between = probing && probeBetween(config, probe);
+  const [placed, setPlaced] = useState<{
+    frame: Frame;
+    position: number;
+    at: CurveProbe | null;
+  } | null>(null);
+  const wanted = useRef<{ frame: Frame; position: number } | null>(null);
+  const asking = useRef(false);
+  function askForProbe() {
+    const want = wanted.current;
+    if (asking.current || !want || !client.current) return;
+    const d = want.frame.result.diagnostics!;
+    asking.current = true;
+    client.current
+      .spatialProbe(want.frame.config, {
+        t: parameterAt(d.min, d.max, want.position),
+      })
+      // A study that fails is reported by its own computation.
+      .then(
+        (at): CurveProbe | null => at,
+        () => null,
+      )
+      .then((at) => {
+        asking.current = false;
+        setPlaced({ ...want, at });
+        const next = wanted.current;
+        if (
+          next &&
+          (next.frame !== want.frame || next.position !== want.position)
         )
-      : 0;
+          askForProbe();
+      });
+  }
+  useEffect(() => {
+    wanted.current =
+      between && !animation && frame?.result.diagnostics
+        ? { frame, position: probe.position }
+        : null;
+    askForProbe();
+  }, [between, !animation, frame, probe.position]);
+  const current = placed?.frame === frame ? placed : null;
+  const placing =
+    between &&
+    !animation &&
+    !!frame?.result.diagnostics &&
+    current?.position !== probe.position;
+  // The curve probe the panel describes when no animation moves it.
+  const heldProbe = useMemo<CurveProbe | undefined>(
+    () =>
+      !probeFrame || moving || probeTarget(probeFrame.config, probe) !== "curve"
+        ? undefined
+        : between
+          ? (current?.at ?? undefined)
+          : (sampleProbe(
+              probeFrame.result,
+              probeIndex(probe.position, probeFrame.result.base.length - 1),
+            ) ?? undefined),
+    [probeFrame, !!moving, probe.target, probe.position, between, current],
+  );
+  // Where the probe stands: the curve probe, or a surface's row (whose
+  // column follows probe.across); nothing while Go places it.
+  const probeAt: ProbePlace | undefined = moving
+    ? moving.probe!
+    : probeFrame && probeTarget(probeFrame.config, probe) === "curve"
+      ? heldProbe
+      : probeFrame
+        ? probeStep(
+            probeFrame.result,
+            probeTarget(probeFrame.config, probe),
+            probe,
+          )
+        : undefined;
   const probeSetup = moving?.probeSetup ?? probe;
   // The cut as drawn: where an animation that moves it has taken it, or the
   // entered plane.
   const drawnCut = animation?.cut ?? userCut.spec;
   const probeDrawing = useMemo(
     () =>
-      probeFrame
+      probeFrame && probeAt !== undefined
         ? drawProbe(probeFrame.result, probeFrame.config, probeSetup, probeAt)
         : [],
     [probeFrame, probeAt, probeSetup.target, probeSetup.across],
@@ -1466,7 +1540,10 @@ export default function SpatialApp({
         snapshot.dark,
         format as ImageFormat,
         controller.signal,
-        probeFrame && probeDrawing.length && shown === probeFrame
+        probeFrame &&
+          probeAt !== undefined &&
+          probeDrawing.length &&
+          shown === probeFrame
           ? {
               batches: probeDrawing,
               record: probeRecord(
@@ -2994,6 +3071,7 @@ export default function SpatialApp({
             probe={probe}
             onProbe={setProbe}
             animating={!!animation && !moving}
+            held={heldProbe}
             at={moving?.probe}
             away={moving ? undefined : animation?.probeAway}
             dark={theme.dark}
@@ -3325,7 +3403,19 @@ export default function SpatialApp({
         <article
           className="spatial-stage"
           aria-label="Spatial artwork"
-          aria-busy={busy}
+          aria-busy={busy || placing}
+          // Where the curve probe is drawn: its t, and its sample when it
+          // stands on one.
+          data-probe-t={
+            typeof probeAt === "object" && probeDrawing.length
+              ? probeAt.t
+              : undefined
+          }
+          data-probe-sample={
+            typeof probeAt === "object" && probeDrawing.length
+              ? probeAt.sample
+              : undefined
+          }
           data-config={shown ? JSON.stringify(shown.config) : undefined}
           // The entered cut while it is on, as a preset's fingerprint
           // includes it (see examples/index.ts).

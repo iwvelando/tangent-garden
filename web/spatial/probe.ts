@@ -1,11 +1,13 @@
-// The parameter probe: one base sample's Frenet frame, osculating circle and
-// construction lines, and the base curve's curvature and torsion around it;
-// or, on a surface, one point's principal directions, curvatures and
-// centres. Every quantity comes from Go (engine3.DiagnosticsResult and
-// engine3.SurfaceDiagnostics) or the study's own per-sample arrays; this
-// module only selects and draws them.
+// The parameter probe: the curve's Frenet frame, osculating circle and
+// construction lines at one parameter, at a sample or between samples, and
+// its curvature and torsion around it; or, on a surface, one point's
+// principal directions, curvatures and centres. Every quantity comes from
+// Go (engine3.DiagnosticsResult and engine3.ProbePoint for the curve,
+// engine3.SurfaceDiagnostics for a surface) or the study's own per-sample
+// arrays; this module only selects and draws them.
 import { harmonicChain, harmonicEllipses, type Batch } from "./scene";
 import {
+  betweenMotionHelp,
   curveProbeMotionHelp,
   curveProbeMotions,
   fixedAnimationsHelp,
@@ -21,7 +23,9 @@ export {
 } from "../probe";
 import type {
   DiagnosticsResult,
+  HarmonicPosition,
   SpatialConfig,
+  SpatialProbePoint,
   SpatialResult,
   SurfaceDiagnostics,
   Vec3,
@@ -44,12 +48,15 @@ export const probeOptions = (t: ProbeTarget) =>
 // The probe's place as fractions, so that it survives edits to the domain
 // and sample count: along the base's samples (or a surface's rows, along
 // t or u) and, on a surface, across its columns (around θ, or along v).
-// The target is what it describes where the study offers both.
+// The target is what it describes where the study offers both. The curve
+// probe snaps to the nearest sample unless it stands between samples
+// (between), which links made before it leave out.
 export type Probe = {
   enabled: boolean;
   position: number;
   target: ProbeTarget;
   across: number;
+  between?: boolean;
 };
 export const defaultProbe: Probe = {
   enabled: false,
@@ -58,76 +65,152 @@ export const defaultProbe: Probe = {
   across: 0.5,
 };
 
+// Whether a study's curve is evaluated at any parameter, so that the probe
+// can stand between its samples: a torus knot, harmonic or custom curve,
+// not a trajectory or pursuit, which Go integrates step by step.
+export const evaluatedAnywhere = (c: SpatialConfig) =>
+  c.format === "torus" || c.format === "harmonic" || c.format === "parametric";
+
+// Whether the probe stands between samples in this study: asked for, on
+// the curve, on a curve Go evaluates at any parameter.
+export const probeBetween = (c: SpatialConfig, p: Probe) =>
+  !!p.between && probeTarget(c, p) === "curve" && evaluatedAnywhere(c);
+
+// The parameter at a fraction of the domain [min, max], as Go samples it,
+// so that the ends and a symmetric domain's middle are exact.
+export const parameterAt = (min: number, max: number, position: number) =>
+  Math.min(max, Math.max(min, min * (1 - position) + max * position));
+
+// A curve study's domain, as Go samples it: a torus knot's full turn, or
+// the harmonic or custom curve's own.
+export function curveDomain(c: SpatialConfig): [number, number] {
+  return c.format === "torus"
+    ? [0, 2 * Math.PI]
+    : c.format === "harmonic"
+      ? [c.harmonic.min, c.harmonic.max]
+      : [c.curve.min, c.curve.max];
+}
+
+// The curve probe as drawn: Go's description at its parameter, with its
+// sample when it is snapped to one.
+export type CurveProbe = SpatialProbePoint & { sample?: number };
+// Where the probe stands in a frame: the curve probe, or a surface's row.
+export type ProbePlace = CurveProbe | number;
+
+// The curve probe at sample j, from the result's diagnostics and its own
+// per-sample arrays, described as Go describes it between samples.
+export function sampleProbe(r: SpatialResult, j: number): CurveProbe | null {
+  const d = r.diagnostics;
+  if (!d) return null;
+  const n = d.curvature.length - 1;
+  const own = (p?: Vec3 | null) => p ?? undefined;
+  return {
+    // As Go samples it, so a symmetric domain's middle is exactly 0.
+    t: n > 0 ? d.min * (1 - j / n) + d.max * (j / n) : d.min,
+    point: r.base[j] ?? null,
+    tangent: d.tangent[j] ?? null,
+    normal: d.normal[j] ?? null,
+    binormal: d.binormal[j] ?? null,
+    center: d.center[j] ?? null,
+    curvature: d.curvature[j] ?? null,
+    torsion: d.torsion[j] ?? null,
+    length: d.length[j] ?? null,
+    minus: own(r.minus[j]),
+    plus: own(r.plus[j]),
+    foot: own(r.projection?.feet[j]),
+    source: own(r.inversion?.source[j]),
+    image: own(r.projection?.points[j] ?? r.inversion?.points[j]),
+    ...(r.involute && {
+      members: r.involute.members.map((m) => m.points[j] ?? null),
+    }),
+    ...(r.harmonic?.chains && { chain: r.harmonic.chains[j] }),
+    sample: j,
+  };
+}
+
+// Where a curve probe stands among a result's samples, in sample steps
+// (not rounded): for its mark on the plots of κ and τ.
+export function curveStep(r: SpatialResult, at: SpatialProbePoint) {
+  const d = r.diagnostics;
+  if (!d) return 0;
+  const n = d.curvature.length - 1;
+  return d.max > d.min ? ((at.t - d.min) / (d.max - d.min)) * n : 0;
+}
+
 // Inks beyond the decorative palette (see palette.ts): the point, its
 // osculating circle and highlighted construction share one; T, N and B each
 // have their own.
 export const probeInk = { mark: 8, tangent: 9, normal: 10, binormal: 11 };
 
-type Segments = (r: SpatialResult, j: number) => Vec3[];
+// The lines the probe highlights at its point, as point pairs, from the
+// construction's points there and, where a format needs them, the result's
+// own samples.
+type Segments = (at: CurveProbe, r: SpatialResult) => Vec3[];
 const joined = (...points: (Vec3 | null | undefined)[]): Vec3[] =>
   points.every((p) => p) ? (points as Vec3[]) : [];
-// Each supported construction's lines at sample j, as point pairs, and what
-// the help calls them. A construction without an entry has no highlight.
+// Each supported construction's lines, as point pairs, and what the help
+// calls them. A construction without an entry has no highlight.
 const constructions: Partial<
   Record<SpatialConfig["construction"], { name: string; lines: Segments }>
 > = {
   developable: {
     name: "its tangent ruling",
-    lines: (r, j) => joined(r.minus[j], r.plus[j]),
+    lines: (at) => joined(at.minus, at.plus),
   },
   involute: {
     name: "each filament's unwinding string",
-    lines: (r, j) =>
-      (r.involute?.members ?? []).flatMap((m) =>
-        joined(r.base[j], m.points[j]),
-      ),
+    lines: (at) => (at.members ?? []).flatMap((m) => joined(at.point, m)),
   },
   "tangent-foot": {
     name: "its tangent, perpendicular and foot",
-    lines: (r, j) => projectionLines(r, j),
+    lines: projectionLines,
   },
   orthotomic: {
     name: "its tangent, perpendicular and reflected pole",
-    lines: (r, j) => projectionLines(r, j),
+    lines: projectionLines,
   },
   inversion: {
     name: "its correspondence segment",
-    lines: (r, j) => joined(r.inversion?.source[j], r.inversion?.points[j]),
+    lines: (at) => joined(at.source, at.image),
   },
   framed: {
     name: "its cross-line",
-    lines: (r, j) => joined(r.minus[j], r.plus[j]),
+    lines: (at) => joined(at.minus, at.plus),
   },
   ruled: {
     name: "its ruling",
-    lines: (r, j) => joined(r.base[j], r.plus[j]),
+    lines: (at) => joined(at.point, at.plus),
   },
 };
-function projectionLines(r: SpatialResult, j: number): Vec3[] {
-  const q = r.projection,
-    foot = q?.feet[j];
-  if (!q || !r.base[j] || !foot || !q.points[j]) return [];
-  return [r.base[j]!, foot, q.pole, foot, foot, q.points[j]!];
+function projectionLines(at: CurveProbe, r: SpatialResult): Vec3[] {
+  const pole = r.projection?.pole;
+  if (!pole || !at.point || !at.foot || !at.image) return [];
+  return [at.point, at.foot, pole, at.foot, at.foot, at.image];
 }
 // A pursuit's polygon joins every pursuer at the sample's time, when all
-// are known.
-function polygonLines(r: SpatialResult, j: number): Vec3[] {
+// are known. A pursuit's probe always stands on a sample.
+function polygonLines(at: CurveProbe, r: SpatialResult): Vec3[] {
+  const j = at.sample;
+  if (j === undefined) return [];
   const ps = (r.pursuit?.paths ?? []).map((path) => path[j]);
   if (ps.length < 2 || ps.some((p) => !p)) return [];
   return ps.flatMap((p, k) => [p!, ps[(k + 1) % ps.length]!]);
 }
 
-// A harmonic curve's chain of generating vectors at the sample's time, each
+// A harmonic curve's chain of generating vectors at the probe's time, each
 // turning around its ellipse, under any construction. It needs the chains
-// Go returns with the probe's diagnostics.
-function chainLines(r: SpatialResult, j: number): Vec3[] {
+// Go returns with the probe's diagnostics, or the chain at the probe's t.
+function chainLines(at: CurveProbe, r: SpatialResult): Vec3[] {
   const h = r.harmonic,
-    s = h?.chains?.[j];
+    s: HarmonicPosition | undefined = at.chain;
   return h && s ? [...harmonicChain(s), ...harmonicEllipses(h.terms, s)] : [];
 }
 // A field's timeline: every trajectory's point at the sample's time, joined
-// in seed order, open, and broken where a trajectory has ended.
-function timelineLines(r: SpatialResult, j: number): Vec3[] {
+// in seed order, open, and broken where a trajectory has ended. A field's
+// probe always stands on a sample.
+function timelineLines(at: CurveProbe, r: SpatialResult): Vec3[] {
+  const j = at.sample;
+  if (j === undefined) return [];
   const ps = (r.field?.paths ?? []).map((path) => path[j]);
   return ps.flatMap((p, k) => (k > 0 && p && ps[k - 1] ? [ps[k - 1]!, p] : []));
 }
@@ -220,10 +303,15 @@ export function probeTarget(c: SpatialConfig, p: Probe): ProbeTarget {
   return targets.includes(p.target) ? p.target : (targets[0] ?? "curve");
 }
 
-// The help beside the probe's switch: what it draws and where it does not.
-export function probeHelp(c: SpatialConfig) {
+// The help beside the probe's switch: what it draws and where it does not,
+// and how it is placed: snapped to samples, or between them.
+export function probeHelp(c: SpatialConfig, between = false) {
   const { highlight } = probeSupport(c);
-  return `Describes the curve itself, not the surface or curves built on it. Moves between the curve's samples (more samples give finer steps) and shows the Frenet frame there: tangent T, principal normal N and binormal B, with the osculating circle of radius 1/κ in the plane of T and N${
+  return `Describes the curve itself, not the surface or curves built on it. ${
+    between
+      ? "Stands at any t of the domain, where Go evaluates the curve's derivatives as it does at every sample (at a sample, the values are the sample's own), and moving it asks Go for that one point, which keeps the study it last computed; the first place after the study changes computes the study once more, which takes longer for many samples. It"
+      : "Moves between the curve's samples (more samples give finer steps) and"
+  } shows the Frenet frame there: tangent T, principal normal N and binormal B, with the osculating circle of radius 1/κ in the plane of T and N${
     highlight ? `, and ${highlight}` : ""
   }. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it when they move it along the curve ("Move the probe along the curve") or vary parameters, where Probe chooses whether it stays at its t, keeps its share of the curve's length, or moves along the curve. ${fixedAnimationsHelp}`;
 }
@@ -240,29 +328,31 @@ const along = (p: Vec3, d: Vec3, length: number) => [
   { x: p.x + d.x * length, y: p.y + d.y * length, z: p.z + d.z * length },
 ];
 
-// The probe's drawing at sample j: the highlighted construction, the
+// Help for standing between samples.
+export const betweenHelp =
+  "Let the probe stand at any t, not only at the nearest sample: Go describes the curve and the highlighted construction at that t, exactly. A trajectory or a pursuit, which Go integrates step by step, snaps to its samples regardless.";
+
+// The curve probe's drawing at its point: the highlighted construction, the
 // osculating circle (from Go's centre, with radius 1/κ, in the plane of T
 // and N) and a three-axis mark at the point, all in the probe ink, then
-// the frame glyphs, each its own ink. Nothing without diagnostics or a
-// sample there.
+// the frame glyphs, each its own ink. Nothing where the curve has no point.
 export function probeBatches(
   result: SpatialResult,
   config: SpatialConfig,
-  j: number,
+  at: CurveProbe,
 ): Batch[] {
-  const d = result.diagnostics,
-    p = result.base[j];
-  if (!d || !p) return [];
+  const p = at.point;
+  if (!p) return [];
   const radius = result.bounds.radius;
   const marked: Vec3[] = [
-    ...(constructions[config.construction]?.lines(result, j) ?? []),
-    ...(formats[config.format]?.lines(result, j) ?? []),
+    ...(constructions[config.construction]?.lines(at, result) ?? []),
+    ...(formats[config.format]?.lines(at, result) ?? []),
   ];
-  const T = d.tangent[j],
-    N = d.normal[j],
-    B = d.binormal[j],
-    c = d.center[j],
-    k = d.curvature[j];
+  const T = at.tangent,
+    N = at.normal,
+    B = at.binormal,
+    c = at.center,
+    k = at.curvature;
   if (c && N && T && k) {
     // Starting at the point, c + ρ(−N): φ = 0 is the point itself.
     const rho = 1 / k,
@@ -294,23 +384,19 @@ export function probeBatches(
   return out;
 }
 
-// The numbers at sample j: its parameter, κ, the radius of curvature 1/κ
-// (null where κ is 0 or unknown), τ, whether the sample is flat, and
-// whether its centre is at infinity.
-export function probeReadout(result: SpatialResult, j: number) {
-  const d = result.diagnostics;
-  if (!d) return null;
-  const n = d.curvature.length - 1;
-  const k = d.curvature[j] ?? null;
+// The curve probe's numbers: its parameter, κ, the radius of curvature 1/κ
+// (null where κ is 0 or unknown), τ, whether it is flat there, and whether
+// its centre is at infinity.
+export function probeReadout(at: SpatialProbePoint) {
+  const k = at.curvature;
   const flat = k === 0;
   return {
-    // As Go samples it, so a symmetric domain's middle is exactly 0.
-    t: n > 0 ? d.min * (1 - j / n) + d.max * (j / n) : d.min,
+    t: at.t,
     curvature: k,
     radius: k ? 1 / k : null,
-    torsion: d.torsion[j] ?? null,
+    torsion: at.torsion,
     flat,
-    infinite: !!k && !flat && !d.center[j],
+    infinite: !!k && !flat && !at.center,
   };
 }
 
@@ -768,7 +854,12 @@ export function probeMotions(
     ];
   return curveProbeMotions;
 }
-export function probeMotionHelp(c: SpatialConfig, target: ProbeTarget) {
+export function probeMotionHelp(
+  c: SpatialConfig,
+  target: ProbeTarget,
+  between = false,
+) {
+  if (between) return betweenMotionHelp;
   if (gridded(target)) {
     const t = surfaceTerms(c, target);
     return `Where the probe stands in each frame while the parameters vary. Stays: at the same share of the ${t.surface}'s rows and columns as the point you chose. Moves along: from its first ${t.along} to its last as the animation plays, at the column you chose. It snaps to each frame's own grid; the readout and plot describe that frame.`;
@@ -807,18 +898,25 @@ export function heldProbe(
   );
 }
 
-// The probe's drawing at step i: the curve probe at sample i, or the surface
-// probe at row i in the column the probe stands in.
+// The curve probe at a place: as given, or at a sample.
+const curveAt = (result: SpatialResult, i: ProbePlace) =>
+  typeof i === "number" ? sampleProbe(result, i) : i;
+
+// The probe's drawing at its place: the curve probe at its point (or at
+// sample i), or the surface probe at row i in the column the probe stands
+// in.
 export function probeDrawing(
   result: SpatialResult,
   config: SpatialConfig,
   probe: Probe,
-  i: number,
+  i: ProbePlace,
 ): Batch[] {
-  if (probeTarget(config, probe) === "curve")
-    return probeBatches(result, config, i);
+  if (probeTarget(config, probe) === "curve") {
+    const at = curveAt(result, i);
+    return at ? probeBatches(result, config, at) : [];
+  }
   const d = result.surfaceDiagnostics;
-  if (!d) return [];
+  if (!d || typeof i !== "number") return [];
   return surfaceProbeBatches(
     result,
     i,
@@ -826,16 +924,23 @@ export function probeDrawing(
   );
 }
 
-// What an export records of the probe at step i: the curve probe's sample
-// and t, or the surface probe's grid sample and its parameters.
+// What an export records of the probe at its place: the curve probe's t,
+// with its sample when it stands on one, or the surface probe's grid sample
+// and its parameters.
 export function probeRecord(
   result: SpatialResult,
   config: SpatialConfig,
   probe: Probe,
-  i: number,
+  i: ProbePlace,
 ) {
-  if (probeTarget(config, probe) === "curve")
-    return { index: i, t: probeReadout(result, i)!.t };
+  if (probeTarget(config, probe) === "curve") {
+    const at = curveAt(result, i)!;
+    return at.sample !== undefined
+      ? { index: at.sample, t: at.t }
+      : { t: at.t };
+  }
+  if (typeof i !== "number")
+    throw new Error("A surface probe stands on a row.");
   const d = result.surfaceDiagnostics!,
     { column } = surfaceProbeAt(d, 0, probe.across);
   return {
@@ -852,11 +957,11 @@ export function probeWhere(
   result: SpatialResult,
   config: SpatialConfig,
   probe: Probe,
-  i: number,
+  i: ProbePlace,
 ) {
   const short = (v: number) => Number(v.toPrecision(6));
   if (probeTarget(config, probe) === "curve")
-    return `t = ${short(probeReadout(result, i)!.t)}`;
+    return `t = ${short(curveAt(result, i)!.t)}`;
   const r = probeRecord(result, config, probe, i) as { u: number; v: number },
     t = surfaceTerms(config, probeTarget(config, probe));
   return `${t.along} = ${short(r.u)}, ${t.around} = ${short(r.v)}`;

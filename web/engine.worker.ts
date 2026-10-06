@@ -16,6 +16,7 @@ declare const Go: new () => {
 };
 declare const tangentGardenCompute: (json: string) => string;
 declare const tangentGardenProbe: (json: string) => string;
+declare const tangentGardenSpatialProbe: (json: string) => string;
 declare const tangentGardenTesseract: (json: string) => string;
 // An implicit surface's mesh arrives beside its JSON, as typed views on one
 // buffer (cmd/wasm/mesh.go); every other reply is JSON alone.
@@ -56,8 +57,9 @@ self.onmessage = async ({
   // engine3.DiagnosticsResult).
   diagnostics?: boolean;
   // Asks Go for the base curve described at one parameter, at or between
-  // samples (see engine.ProbePoint); with probeOnly, the reply carries the
-  // probe alone, for a probe moved over a study already drawn.
+  // samples (see engine.ProbePoint and engine3.ProbePoint); with probeOnly,
+  // the reply carries the probe alone, for a probe moved over a study
+  // already drawn.
   probe?: import("./types").ProbeQuery;
   probeOnly?: boolean;
   // Asks Go for a surface's diagnostics (see engine3.SurfaceDiagnostics).
@@ -573,14 +575,19 @@ self.onmessage = async ({
           "canal.meridians",
           "The number of meridians must be a whole number.",
         );
-      const reply = tangentGardenSpatial(
-        JSON.stringify({
-          ...data.spatial,
-          ...(data.diagnostics && { diagnostics: true }),
-          ...(data.surfaceDiagnostics && { surfaceDiagnostics: true }),
-          ...(data.lightDiagnostics && { lightDiagnostics: true }),
-        }),
-      );
+      const request = JSON.stringify({
+        ...data.spatial,
+        ...(data.diagnostics && { diagnostics: true }),
+        ...(data.surfaceDiagnostics && { surfaceDiagnostics: true }),
+        ...(data.lightDiagnostics && { lightDiagnostics: true }),
+        ...(data.probe && { probe: data.probe }),
+      });
+      if (data.probeOnly) {
+        const reply = JSON.parse(tangentGardenSpatialProbe(request));
+        self.postMessage({ id: data.id, ...reply });
+        return;
+      }
+      const reply = tangentGardenSpatial(request);
       if (typeof reply !== "string") {
         // Transfer the mesh's buffer rather than copying it.
         const { json, ...mesh } = reply;

@@ -340,6 +340,34 @@ export type SpatialResult = {
   surfaceDiagnostics?: SurfaceDiagnostics;
   // Present only when refinement was requested, for a curve it can refine.
   adaptive?: AdaptiveResult;
+  // Present only when the curve probe asked for one parameter.
+  probe?: SpatialProbePoint;
+};
+// Mirrors engine3.ProbePoint: the curve a construction acts on, described
+// at the parameter t as DiagnosticsResult does at a sample, each null where
+// a sample would have none, with the arc length to it; and the points the
+// probe highlights of the construction there, each absent where it has
+// none: a ruling or cross-line from minus to plus, a ruled surface's
+// partner at plus, a tangent projection's foot and image, an inversion's
+// source and image, the involute construction's members, and a harmonic
+// curve's chain.
+export type SpatialProbePoint = {
+  t: number;
+  point: Vec3 | null;
+  tangent: Vec3 | null;
+  normal: Vec3 | null;
+  binormal: Vec3 | null;
+  center: Vec3 | null;
+  curvature: number | null;
+  torsion: number | null;
+  length: number | null;
+  minus?: Vec3;
+  plus?: Vec3;
+  foot?: Vec3;
+  source?: Vec3;
+  image?: Vec3;
+  members?: (Vec3 | null)[];
+  chain?: HarmonicPosition;
 };
 // Mirrors engine3.SurfaceDiagnostics: a surface on the probe's grid, where
 // points[r][k] is at parameters u[r] and v[k]. A patch's grid is its own; a

@@ -5,6 +5,7 @@
 // per-sample arrays; this module only selects them. The
 // notebook-independent parts are in probe.ts.
 import { probeIndex } from "./probe";
+export { betweenMotionHelp } from "./probe";
 import {
   refinesBetweenSamples,
   type Config,
@@ -158,6 +159,3 @@ export function probeHelp(
 // Help for standing between samples.
 export const betweenHelp =
   "Let the probe stand at any t, not only at the nearest sample: Go describes the curve and the highlighted construction at that t, exactly. A chase or a trajectory, which Go integrates step by step, snaps to its samples regardless.";
-// How the probe moves while the parameters vary, between samples.
-export const betweenMotionHelp =
-  "Where the probe stands in each frame while the parameters vary. Stays at its t: at exactly the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: where the drawn curve's arc length, measured by Go on each frame, is the same fraction of the whole, with nothing counted across a break. Moves along the curve: from the start of each frame's domain to its end as the animation plays. Go places it with each frame, between samples; the readout and plot describe that frame, and framing ignores the osculating circle.";

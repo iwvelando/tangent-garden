@@ -5,6 +5,7 @@ import { choosePreset } from "./helpers";
 import {
   probeBatches,
   probeIndex,
+  sampleProbe,
   probeInk,
   probeReadout,
   probeSupport,
@@ -56,6 +57,7 @@ function circle(flatMiddle = false): SpatialResult {
     normal: normal.map((n, i) => (flatMiddle && i === 1 ? null : n)),
     binormal: ts.map((_, i) => (flatMiddle && i === 1 ? null : at(0, 0, 1))),
     center: ts.map((_, i) => (flatMiddle && i === 1 ? null : O)),
+    length: [0, 1, 2],
     flat: flatMiddle ? 1 : 0,
     unknown: 0,
     clipped: 0,
@@ -73,6 +75,16 @@ function circle(flatMiddle = false): SpatialResult {
     invalid: 0,
     diagnostics: d,
   };
+}
+// The probe's drawing and readout at sample j, as the notebook holds a
+// probe snapped to a sample.
+function batchesAt(r: SpatialResult, c: SpatialConfig, j: number) {
+  const at = sampleProbe(r, j);
+  return at ? probeBatches(r, c, at) : [];
+}
+function readoutAt(r: SpatialResult, j: number) {
+  const at = sampleProbe(r, j);
+  return at ? probeReadout(at) : null;
 }
 // Line segments of a batch as point pairs.
 function segments(b: Batch): [Vec3, Vec3][] {
@@ -105,7 +117,7 @@ test("the probe index snaps a position to the nearest sample", () => {
 
 test("the probe draws the Frenet frame and osculating circle at its sample", () => {
   const r = circle();
-  const batches = probeBatches(r, config("none"), 1);
+  const batches = batchesAt(r, config("none"), 1);
   expect(batches.every((b) => b.mode === "lines")).toBe(true);
   const arm = r.bounds.radius * 0.2;
   const p = at(1, 0, 0);
@@ -141,7 +153,7 @@ test("the probe draws the Frenet frame and osculating circle at its sample", () 
 });
 
 test("a flat sample draws only its point and tangent", () => {
-  const batches = probeBatches(circle(true), config("none"), 1);
+  const batches = batchesAt(circle(true), config("none"), 1);
   expect(byInk(batches, probeInk.normal)).toHaveLength(0);
   expect(byInk(batches, probeInk.binormal)).toHaveLength(0);
   expect(byInk(batches, probeInk.tangent)).toHaveLength(1);
@@ -159,7 +171,7 @@ test("a flat sample draws only its point and tangent", () => {
 test("a centre at infinity draws the frame without a circle", () => {
   const r = circle();
   r.diagnostics!.center[1] = null;
-  const batches = probeBatches(r, config("none"), 1);
+  const batches = batchesAt(r, config("none"), 1);
   expect(byInk(batches, probeInk.normal)).toHaveLength(1);
   expect(byInk(batches, probeInk.mark)).toHaveLength(3);
 });
@@ -167,18 +179,18 @@ test("a centre at infinity draws the frame without a circle", () => {
 test("nothing is drawn without diagnostics or a sample", () => {
   const r = circle();
   expect(
-    probeBatches({ ...r, diagnostics: undefined }, config("none"), 1),
+    batchesAt({ ...r, diagnostics: undefined }, config("none"), 1),
   ).toEqual([]);
   r.base[2] = null;
-  expect(probeBatches(r, config("none"), 2)).toEqual([]);
+  expect(batchesAt(r, config("none"), 2)).toEqual([]);
 });
 
 // The highlighted construction at the sample, in the probe ink, excluding
 // the point's own three-axis mark and the osculating circle.
 function highlight(r: SpatialResult, c: SpatialConfig, j: number) {
-  const plain = probeBatches(r, config("none"), j);
+  const plain = batchesAt(r, config("none"), j);
   const count = byInk(plain, probeInk.mark).length;
-  const all = byInk(probeBatches(r, c, j), probeInk.mark);
+  const all = byInk(batchesAt(r, c, j), probeInk.mark);
   // The construction's segments come first.
   return all.slice(0, all.length - count);
 }
@@ -448,7 +460,7 @@ test("the help says the probe describes the base curve", () => {
 
 test("the readout reports the sample's parameter and marks undefined values", () => {
   const r = circle(true);
-  expect(probeReadout(r, 2)).toEqual({
+  expect(readoutAt(r, 2)).toEqual({
     t: 1,
     curvature: 1,
     radius: 1,
@@ -456,7 +468,7 @@ test("the readout reports the sample's parameter and marks undefined values", ()
     flat: false,
     infinite: false,
   });
-  expect(probeReadout(r, 1)).toEqual({
+  expect(readoutAt(r, 1)).toEqual({
     t: 0,
     curvature: 0,
     radius: null,
@@ -465,7 +477,7 @@ test("the readout reports the sample's parameter and marks undefined values", ()
     infinite: false,
   });
   r.diagnostics!.center[0] = null;
-  expect(probeReadout(r, 0)?.infinite).toBe(true);
+  expect(readoutAt(r, 0)?.infinite).toBe(true);
   // t is sampled as Go samples it, lo(1 − i/n) + hi·i/n: exact at the middle
   // of a symmetric domain.
   const d = circle().diagnostics!;
@@ -480,10 +492,10 @@ test("the readout reports the sample's parameter and marks undefined values", ()
       center: Array(961).fill(O),
     },
   };
-  expect(probeReadout(wide, 480)!.t).toBe(0);
+  expect(readoutAt(wide, 480)!.t).toBe(0);
   r.diagnostics!.curvature[0] = null;
-  expect(probeReadout(r, 0)).toMatchObject({ curvature: null, flat: false });
-  expect(probeReadout({ ...r, diagnostics: undefined }, 0)).toBeNull();
+  expect(readoutAt(r, 0)).toMatchObject({ curvature: null, flat: false });
+  expect(readoutAt({ ...r, diagnostics: undefined }, 0)).toBeNull();
 });
 
 test("plots break at undefined samples and pin outliers to their edge", () => {
@@ -568,7 +580,7 @@ test("the probe adds passes last and changes nothing when absent", () => {
   const scene = buildScene(r);
   const plain = scenePasses(scene, defaultLayers);
   expect(scenePasses(scene, defaultLayers, [])).toEqual(plain);
-  const probe = probeBatches(r, config("developable"), 1);
+  const probe = batchesAt(r, config("developable"), 1);
   const passes = scenePasses(scene, defaultLayers, probe);
   expect(passes.slice(0, plain.length)).toEqual(plain);
   expect(passes.slice(plain.length).map((p) => p.layer)).toEqual(
@@ -605,7 +617,7 @@ test("probe inks have their own colours, in the live drawing and in linework", (
   const size = { width: 400, height: 300, occlusion: "none" as const };
   const without = linework(buildScene(r), view, defaultLayers, false, size);
   expect(without.map((g) => g.layer)).not.toContain("probe");
-  const probe = probeBatches(r, config("none"), 1);
+  const probe = batchesAt(r, config("none"), 1);
   const groups = linework(
     buildScene(r),
     view,

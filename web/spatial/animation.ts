@@ -123,10 +123,10 @@ export type AnimationView = {
   mode: AnimationMode;
   // A finished animation releases the camera, starting from its own.
   complete: boolean;
-  // The probe's sample in the frame's diagnostics (a surface's row), and
-  // its setup, when the animation draws it: moving it, or varying
-  // parameters while it is on.
-  probe?: number;
+  // Where the probe stands in the frame (the curve probe, at a sample or
+  // between samples, or a surface's row), and its setup, when the animation
+  // draws it: moving it, or varying parameters while it is on.
+  probe?: import("./probe").ProbePlace;
   probeSetup?: import("./probe").Probe;
   // Why a parameter animation that draws the probe has none on this frame
   // (see heldProbe).
