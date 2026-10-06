@@ -40,7 +40,9 @@ type HarmonicPosition struct {
 // the smallest t-span after which the curve repeats, or 0 when it never does;
 // Whole is set when every moving frequency is a whole number; Closed is set
 // when the domain spans a whole number of periods, so the last sample is the
-// first. Positions are at the representative samples.
+// first. Positions are at the representative samples. Chains, present only
+// with the curve probe's diagnostics, are the chains at every sample,
+// indexed like Base, so the probe can draw its own.
 type HarmonicResult struct {
 	Center    Vec3               `json:"center"`
 	Terms     []HarmonicTerm     `json:"terms"`
@@ -48,6 +50,7 @@ type HarmonicResult struct {
 	Whole     bool               `json:"whole"`
 	Closed    bool               `json:"closed"`
 	Positions []HarmonicPosition `json:"positions"`
+	Chains    []HarmonicPosition `json:"chains,omitempty"`
 }
 
 const (
@@ -133,17 +136,16 @@ func (h HarmonicCurve) curvatureScale() float64 {
 }
 
 // harmonicGeometry returns the vector chains at the representative samples
-// and, for framing, each term's joints and the axis extents of its ellipse
-// around them, one family per term so that a small term's locus cannot trim
-// a large one's. A closed curve's last position is its first.
+// (and at every sample when the curve probe asks for diagnostics) and, for
+// framing, each term's joints and the axis extents of its ellipse around
+// them, one family per term so that a small term's locus cannot trim a large
+// one's. A closed curve's last position is its first.
 func harmonicGeometry(c Request, lo, hi float64) (*HarmonicResult, [][]*Vec3) {
 	h := c.Harmonic
 	n := c.Samples
 	out := &HarmonicResult{Center: h.Center, Terms: h.Terms, Positions: make([]HarmonicPosition, 0, c.Lines)}
 	out.Period, out.Whole, out.Closed = h.closure()
-	families := make([][]*Vec3, 2*len(h.Terms))
-	for line := 0; line < c.Lines; line++ {
-		i := line * n / (c.Lines - 1)
+	chain := func(i int) HarmonicPosition {
 		u := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
 		if out.Closed && i == n {
 			u = lo
@@ -152,6 +154,13 @@ func harmonicGeometry(c Request, lo, hi float64) (*HarmonicResult, [][]*Vec3) {
 		for k, term := range h.Terms {
 			s.Joints[k] = s.Point
 			s.Point = s.Point.add(term.at(u))
+		}
+		return s
+	}
+	families := make([][]*Vec3, 2*len(h.Terms))
+	for line := 0; line < c.Lines; line++ {
+		s := chain(line * n / (c.Lines - 1))
+		for k, term := range h.Terms {
 			families[2*k] = append(families[2*k], &s.Joints[k])
 			reach := Vec3{math.Hypot(term.Cosine.X, term.Sine.X), math.Hypot(term.Cosine.Y, term.Sine.Y), math.Hypot(term.Cosine.Z, term.Sine.Z)}
 			for _, d := range []Vec3{{reach.X, 0, 0}, {0, reach.Y, 0}, {0, 0, reach.Z}} {
@@ -160,6 +169,12 @@ func harmonicGeometry(c Request, lo, hi float64) (*HarmonicResult, [][]*Vec3) {
 			}
 		}
 		out.Positions = append(out.Positions, s)
+	}
+	if c.Diagnostics {
+		out.Chains = make([]HarmonicPosition, n+1)
+		for i := range out.Chains {
+			out.Chains[i] = chain(i)
+		}
 	}
 	return out, families
 }

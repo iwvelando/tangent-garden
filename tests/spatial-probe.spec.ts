@@ -292,6 +292,100 @@ test("a pursuit highlights the connecting polygon at the sample's time", () => {
   expect(highlight(chase, config("none", "pursuit"), 2)).toHaveLength(0);
 });
 
+test("a harmonic curve highlights its chain of turning vectors and their ellipses", () => {
+  const r = circle();
+  // Two turning terms and a fixed translation between them, chained at
+  // sample 2 from the center.
+  const terms = [
+    { frequency: 1, cosine: at(2, 0, 0), sine: at(0, 1, 0) },
+    { frequency: 0, cosine: at(0, 0, 3), sine: at(5, 5, 5) },
+    { frequency: -2, cosine: at(0, 0.5, 0), sine: at(0, 0, 0.5) },
+  ];
+  const chain = {
+    sampleIndex: 2,
+    joints: [at(0, 0, 0), at(1, 1, 0), at(1, 1, 3)],
+    point: r.base[2]!,
+  };
+  const harmonic = {
+    center: O,
+    terms,
+    period: 2 * Math.PI,
+    whole: true,
+    closed: true,
+    // A representative sample elsewhere, which the probe never draws.
+    positions: [{ sampleIndex: 0, joints: [O, O, O], point: r.base[0]! }],
+    chains: [null, null, chain].map((c, i) =>
+      c ? c : { sampleIndex: i, joints: [O, O, O], point: r.base[i]! },
+    ),
+  };
+  const s = highlight({ ...r, harmonic }, config("none", "harmonic"), 2);
+  // Each vector from its joint to the next, the last to the point.
+  expect(s.slice(0, 3).map(([a, b]) => [a, b])).toHaveLength(3);
+  close(s[0][0], O, f32);
+  close(s[0][1], at(1, 1, 0), f32);
+  close(s[1][0], at(1, 1, 0), f32);
+  close(s[1][1], at(1, 1, 3), f32);
+  close(s[2][0], at(1, 1, 3), f32);
+  close(s[2][1], r.base[2]!, f32);
+  // Then each turning term's ellipse about its own joint, the fixed term
+  // having none: points joint + A cos φ + B sin φ, closed.
+  const rings = s.slice(3);
+  expect(rings.length % 2).toBe(0);
+  const per = rings.length / 2;
+  expect(per).toBeGreaterThanOrEqual(32);
+  for (const [ring, joint, A, B] of [
+    [rings.slice(0, per), chain.joints[0], terms[0].cosine, terms[0].sine],
+    [rings.slice(per), chain.joints[2], terms[2].cosine, terms[2].sine],
+  ] as const) {
+    close(ring[0][0], at(joint.x + A.x, joint.y + A.y, joint.z + A.z), f32);
+    close(ring.at(-1)![1], ring[0][0], f32);
+    close(
+      ring[per / 4][0],
+      at(joint.x + B.x, joint.y + B.y, joint.z + B.z),
+      f32,
+    );
+    for (let m = 1; m < per; m++) close(ring[m][0], ring[m - 1][1], f32);
+  }
+  // Without the chains (a study computed without the probe) nothing is
+  // highlighted.
+  expect(
+    highlight(
+      { ...r, harmonic: { ...harmonic, chains: undefined } },
+      config("none", "harmonic"),
+      2,
+    ),
+  ).toHaveLength(0);
+});
+
+test("a field highlights the timeline joining its trajectories at the sample's time", () => {
+  const r = circle();
+  const paths = [
+    r.base,
+    [null, null, at(0, 2, 0)],
+    [null, null, null],
+    [null, null, at(0, 0, 2)],
+    [null, null, at(3, 0, 2)],
+  ];
+  const field = {
+    paths,
+    arrows: [],
+    ends: [],
+    resting: [],
+    timed: false,
+  };
+  const s = highlight({ ...r, field }, config("none", "field"), 2);
+  // In seed order, open, broken where a trajectory has ended.
+  expect(s).toHaveLength(2);
+  close(s[0][0], r.base[2]!, f32);
+  close(s[0][1], at(0, 2, 0), f32);
+  close(s[1][0], at(0, 0, 2), f32);
+  close(s[1][1], at(3, 0, 2), f32);
+  // Nothing at a time no two neighbors share.
+  expect(highlight({ ...r, field }, config("none", "field"), 0)).toHaveLength(
+    0,
+  );
+});
+
 test("the support table names each construction's highlight", () => {
   for (const c of [
     "developable",
@@ -318,6 +412,23 @@ test("the support table names each construction's highlight", () => {
   expect(probeSupport(config("none", "rays")).highlight).toBeNull();
   expect(probeSupport(config("none", "implicit")).available).toBe(false);
   expect(probeSupport(config("canal", "field")).available).toBe(true);
+  // A harmonic curve's chain of vectors under any construction, beside the
+  // construction's own.
+  expect(probeSupport(config("none", "harmonic")).highlight).toMatch(
+    /chain of turning vectors/,
+  );
+  expect(probeSupport(config("developable", "harmonic")).highlight).toMatch(
+    /tangent ruling and .*chain of turning vectors/,
+  );
+  // A field joins its trajectories when it has more than one.
+  const fielded = config("none", "field");
+  expect(fielded.field.seeds.length).toBeGreaterThan(1);
+  expect(probeSupport(fielded).highlight).toMatch(/timeline/);
+  fielded.field.seeds = fielded.field.seeds.slice(0, 1);
+  expect(probeSupport(fielded).highlight).toBeNull();
+  expect(probeHelp(config("none", "harmonic"))).toMatch(
+    /chain of turning vectors/,
+  );
 });
 
 test("a curve is straight only when every known curvature is zero", () => {
@@ -910,4 +1021,121 @@ test("the trefoil example flies round its probe, face on and edge on", async ({
   expect(face).toBeGreaterThan(200);
   expect(edge).toBeLessThan(0.6 * face);
   expect(back).toBeGreaterThan(2 * edge);
+});
+
+// The probe's own stroke in a lines export, as subpaths of page points. An
+// orthographic drawing is an affine image of space, so ratios along a line,
+// midpoints and affine combinations hold in page coordinates.
+async function probeStrokes(page: Page) {
+  await page.getByRole("button", { name: "Export image", exact: true }).click();
+  const event = page.waitForEvent("download");
+  await page
+    .getByRole("menuitem", { name: "Lines (SVG) · every line", exact: true })
+    .click();
+  const svg = (await readFile((await (await event).path())!)).toString();
+  const group = svg.match(/<g id="probe"[^>]*>(.*?)<\/g>/)![1];
+  const ink = hex(lineColor(probeInk.mark, 0, false));
+  const d = group.match(new RegExp(`stroke="${ink}"[^>]* d="([^"]*)"`))![1];
+  return d
+    .split("M")
+    .filter(Boolean)
+    .map((sub) => sub.split("L").map((xy) => xy.trim().split(" ").map(Number)));
+}
+const near2 = (a: number[], b: number[], tol = 0.05) =>
+  expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeLessThan(tol);
+const plus = (a: number[], b: number[], s = 1) => [
+  a[0] + s * b[0],
+  a[1] + s * b[1],
+];
+const minus = (a: number[], b: number[]) => plus(a, b, -1);
+
+test("the epicycles example carries its chain of vectors and their ellipses on the probe", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "Epicycles drawing a cinquefoil" });
+  await settled(page);
+  await expect(probeSwitch(page)).toBeChecked();
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    "t = 0, sample 0 of 1200",
+  );
+  const strokes = await probeStrokes(page);
+  // At t = 0 every term stands at its A: c₀ = 0, then 2x̂, 0.4x̂, 0.4x̂ and
+  // the upright segment's zero, so the chain runs straight along x in the
+  // ratio 5 : 1 : 1 and ends at the point.
+  const [c0, j1, j2, j3, end] = strokes[0];
+  expect(strokes[0]).toHaveLength(5);
+  near2(minus(j1, c0), plus([0, 0], minus(j2, j1), 5));
+  near2(minus(j2, j1), minus(j3, j2));
+  near2(end, j3);
+  // The point's three-axis mark is centred on the chain's end.
+  const arms = strokes.slice(-3);
+  for (const arm of arms) {
+    expect(arm).toHaveLength(2);
+    near2([(arm[0][0] + arm[1][0]) / 2, (arm[0][1] + arm[1][1]) / 2], end);
+  }
+  // The first ellipse turns about c₀ from c₀ + A, through c₀ − A halfway
+  // round, and closes.
+  const ring = strokes[1];
+  near2(ring[0], j1);
+  near2(ring[32], minus(plus(c0, c0), j1));
+  near2(ring.at(-1)!, ring[0]);
+});
+
+test("the vortex example's timeline follows the seeds as they wind into a spiral", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A row of seeds wound up by a vortex" });
+  await settled(page);
+  await expect(probeSwitch(page)).toBeChecked();
+  const radii = Array.from({ length: 12 }, (_, k) =>
+    Number((1 / Math.sqrt(0.55 - 0.04 * k)).toFixed(4)),
+  );
+  // At t = 0 the timeline is the row of seeds on the x-axis, in order, each
+  // where its radius puts it between the first and the last.
+  let timeline = (await probeStrokes(page))[0];
+  expect(timeline).toHaveLength(12);
+  const [first, last] = [timeline[0], timeline[11]];
+  timeline.forEach((p, k) =>
+    near2(
+      p,
+      plus(
+        first,
+        minus(last, first),
+        (radii[k] - radii[0]) / (radii[11] - radii[0]),
+      ),
+    ),
+  );
+  // At t = 16 seed k has turned 16/ρₖ² about the axis, all at one height:
+  // three of them fix the plane's affine image, and the other nine must
+  // fall where it puts their exact positions.
+  await point(page).focus();
+  await page.keyboard.press("End");
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    "t = 16, sample 2400 of 2400",
+  );
+  timeline = (await probeStrokes(page))[0];
+  expect(timeline).toHaveLength(12);
+  const exact = radii.map((r) => [
+    r * Math.cos(16 / r ** 2),
+    r * Math.sin(16 / r ** 2),
+  ]);
+  const [a, b, c] = [0, 5, 11];
+  const u = minus(exact[b], exact[a]),
+    v = minus(exact[c], exact[a]),
+    det = u[0] * v[1] - u[1] * v[0];
+  timeline.forEach((p, k) => {
+    const w = minus(exact[k], exact[a]);
+    const s = (w[0] * v[1] - w[1] * v[0]) / det,
+      t = (u[0] * w[1] - u[1] * w[0]) / det;
+    const expected = plus(
+      plus(timeline[a], minus(timeline[b], timeline[a]), s),
+      minus(timeline[c], timeline[a]),
+      t,
+    );
+    near2(p, expected, 0.1);
+  });
 });

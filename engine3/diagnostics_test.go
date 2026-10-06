@@ -339,7 +339,14 @@ func TestDiagnosticsOffLeaveResultsUnchanged(t *testing.T) {
 		if (after.Diagnostics == nil) != (c.Format == "surface") {
 			t.Fatalf("%s: diagnostics %v", c.Format, after.Diagnostics != nil)
 		}
+		// The probe's own geometry: a harmonic curve's chain at every sample.
+		if (after.Harmonic != nil && after.Harmonic.Chains != nil) != (c.Format == "harmonic") {
+			t.Fatalf("%s: chains %v", c.Format, after.Harmonic)
+		}
 		after.Diagnostics = nil
+		if after.Harmonic != nil {
+			after.Harmonic.Chains = nil
+		}
 		x, _ := json.Marshal(before)
 		y, _ := json.Marshal(after)
 		if !bytes.Equal(x, y) {

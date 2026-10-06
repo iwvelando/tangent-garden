@@ -3110,4 +3110,105 @@ export const spatialPresets: {
       },
     },
   },
+  // Curve-probe highlights on harmonic and field studies (see probe.ts).
+  // The (2, 5) torus knot (2 + 0.8 cos 5t)(cos 2t x̂ + sin 2t ẑ) + 0.8 sin 5t ŷ
+  // is a sum of turning vectors: cos 5t (cos 2t, sin 2t) splits into
+  // circles turning at 7 and −3, so the knot is a circle of radius 2 at
+  // frequency 2, two of radius 0.4 at 7 and −3, and an upright segment at
+  // 5. The probe rides it once round, carrying the whole chain.
+  {
+    name: "Epicycles drawing a cinquefoil",
+    detail:
+      "Four turning vectors, end to end, trace a five-fold torus knot as the probe carries their chain once round",
+    config: {
+      ...base,
+      format: "harmonic",
+      construction: "none",
+      samples: 1200,
+      lines: 12,
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 2,
+            cosine: { x: 2, y: 0, z: 0 },
+            sine: { x: 0, y: 0, z: 2 },
+          },
+          {
+            frequency: 7,
+            cosine: { x: 0.4, y: 0, z: 0 },
+            sine: { x: 0, y: 0, z: 0.4 },
+          },
+          {
+            frequency: -3,
+            cosine: { x: 0.4, y: 0, z: 0 },
+            sine: { x: 0, y: 0, z: 0.4 },
+          },
+          {
+            frequency: 5,
+            cosine: { x: 0, y: 0, z: 0 },
+            sine: { x: 0, y: 0.8, z: 0 },
+          },
+        ],
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    probe: { enabled: true, position: 0, target: "curve", across: 0.5 },
+    // The chain is drawn where the probe stands, not at every
+    // representative sample.
+    layers: { vectors: false, ellipses: false },
+    view: { yaw: 0.6, pitch: 0.85, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 20,
+      repeat: "loop",
+      camera: "hold",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // A point vortex about the y-axis, (x′, z′) = (−z, x)/(x² + z²), with a
+  // steady rise y′ = a: a seed at radius ρ circles at angular speed 1/ρ², so
+  // the seeds set out along the x-axis lie at time t on the spiral θ = t/ρ²,
+  // all at height a·t. Seeds spaced evenly in 1/ρ² (to four decimals) keep
+  // neighbours an equal angle 0.04t apart, so the timeline is an evenly
+  // turning polygonal spiral. The probe rides the innermost trajectory, and its
+  // timeline winds up behind it.
+  {
+    name: "A row of seeds wound up by a vortex",
+    detail:
+      "Twelve seeds set out in a line; the inner ones circle fastest, and the line joining them winds into a rising spiral",
+    config: {
+      ...base,
+      format: "field",
+      construction: "none",
+      samples: 2400,
+      lines: 12,
+      field: {
+        x: "-z/(x^2+z^2)",
+        y: "a",
+        z: "x/(x^2+z^2)",
+        seeds: Array.from({ length: 12 }, (_, k) => ({
+          x: Number((1 / Math.sqrt(0.55 - 0.04 * k)).toFixed(4)),
+          y: 0,
+          z: 0,
+        })),
+        escape: 20,
+        min: 0,
+        max: 16,
+        a: 0.12,
+      },
+    },
+    probe: { enabled: true, position: 0, target: "curve", across: 0.5 },
+    layers: { arrows: false },
+    view: { yaw: 0.5, pitch: 0.6, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

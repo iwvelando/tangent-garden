@@ -284,3 +284,75 @@ func TestHarmonicValidation(t *testing.T) {
 		}
 	}
 }
+
+// The curve probe draws the chain of generating vectors at its own sample,
+// so with diagnostics the harmonic result carries the chain at every sample,
+// and without them nothing changes.
+func TestHarmonicChainsAtEverySampleForTheProbe(t *testing.T) {
+	terms := []HarmonicTerm{
+		{Frequency: 1, Cosine: Vec3{2, 0, 0}, Sine: Vec3{0, 2, 0.5}},
+		{Frequency: 0, Cosine: Vec3{0.5, 0, 0}},
+		{Frequency: -3, Cosine: Vec3{0, 0.4, 0.7}, Sine: Vec3{0.2, 0, 0}},
+		{Frequency: 5, Cosine: Vec3{0, 0, 0.3}, Sine: Vec3{0.1, 0.1, 0}},
+	}
+	center := Vec3{0.3, -1, 2}
+	for _, domain := range [][2]float64{{0, 2 * math.Pi}, {-1, 2}} {
+		c := harmonicStudy(domain[0], domain[1], center, terms...)
+		plain := harmonic(t, c)
+		if plain.Harmonic.Chains != nil {
+			t.Fatal("chains without diagnostics")
+		}
+		before, _ := json.Marshal(plain)
+		if strings.Contains(string(before), `"chains"`) {
+			t.Fatal("chains in a study without the probe")
+		}
+		c.Diagnostics = true
+		r := harmonic(t, c)
+		h := r.Harmonic
+		if len(h.Chains) != c.Samples+1 {
+			t.Fatalf("%d chains", len(h.Chains))
+		}
+		for i, s := range h.Chains {
+			u := sampleT(c, i)
+			if h.Closed && i == c.Samples {
+				u = domain[0]
+			}
+			if s.SampleIndex != i || len(s.Joints) != len(terms) || s.Joints[0] != center {
+				t.Fatalf("chain %d: %+v", i, s)
+			}
+			for k, term := range terms {
+				end := s.Point
+				if k+1 < len(terms) {
+					end = s.Joints[k+1]
+				}
+				w := term.Frequency * u
+				near(t, &end, s.Joints[k].add(term.Cosine.mul(math.Cos(w))).add(term.Sine.mul(math.Sin(w))), 1e-12)
+			}
+			near(t, &s.Point, *r.Base[i], 1e-12)
+		}
+		// The representative positions are the chains at their samples.
+		for _, p := range h.Positions {
+			got, _ := json.Marshal(h.Chains[p.SampleIndex])
+			want, _ := json.Marshal(p)
+			if string(got) != string(want) {
+				t.Fatalf("position %d: %s, chain %s", p.SampleIndex, want, got)
+			}
+		}
+		if h.Closed != (domain[0] == 0) {
+			t.Fatalf("closed %v", h.Closed)
+		}
+		// A closed curve's last chain is its first, exactly, as its last
+		// sample is.
+		first, _ := json.Marshal(h.Chains[0].Joints)
+		final, _ := json.Marshal(h.Chains[c.Samples].Joints)
+		if h.Closed != (string(first) == string(final)) {
+			t.Fatalf("closed %v, first %s, last %s", h.Closed, first, final)
+		}
+		// Everything else is the study without the probe.
+		r.Diagnostics, h.Chains = nil, nil
+		after, _ := json.Marshal(r)
+		if string(after) != string(before) {
+			t.Fatal("the probe changed the study")
+		}
+	}
+}

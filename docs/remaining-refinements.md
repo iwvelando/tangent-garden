@@ -74,7 +74,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 - **Exact probe between samples** (2D and 3D), if snapping proves too coarse. Today the probe snaps to samples, and a held probe can step by half a sample spacing between parameter frames.
 - **3D surface probe held at its own (u, v)** under parameter tracks, rather than its share of the grid.
-- **3D curve-probe construction highlights** on harmonic and field studies. The canal's contact circle belongs to the surface probe and is drawn there, so do not add it to the curve probe.
 - **3D surface probe on more surfaces.** Implicit meshes are excluded on purpose: a mesh is a picture, not a differentiable evaluator.
 - **Smaller limits** to fix if they bite:
   - 3D probe lines are depth-tested, so sheets hide them.
