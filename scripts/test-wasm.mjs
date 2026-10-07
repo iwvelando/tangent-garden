@@ -2323,6 +2323,55 @@ const spatialSurface = (surface, study = {}) =>
     ),
     /offsetDiagnostics/,
   );
+  // An oblate spheroid's second focal sheet is the surface of revolution
+  // of its meridian's evolute, with a cuspidal edge over the equator, and
+  // its first is the axis; a focal sheet's probe replaces the patch's.
+  const evolute = spatialSurface(
+    { c: 0.75, offset: 0 },
+    { focalDiagnostics: 2 },
+  ).surfaceDiagnostics;
+  assert.equal(evolute.kind, "focal");
+  assert.equal(evolute.sheet, 2);
+  assert.equal(evolute.singular, 37);
+  const at = evolute.points[4][12],
+    foot = evolute.feet[4][12];
+  const rho = ((1.5 ** 2 - 0.75 ** 2) / 1.5) * Math.cos(Math.PI / 6) ** 3;
+  assert.ok(Math.abs(Math.hypot(at.x, at.y) - rho) < 1e-12);
+  assert.ok(
+    Math.abs(at.z + ((1.5 ** 2 - 0.75 ** 2) / 0.75) * 0.5 ** 3) < 1e-12,
+  );
+  assert.ok(Math.abs(foot.z - 0.75 * 0.5) < 1e-12);
+  assert.ok(evolute.points[4][9] && !evolute.normals[4][9]);
+  const axis = spatialSurface(
+    { c: 0.75, offset: 0 },
+    { focalDiagnostics: 1 },
+  ).surfaceDiagnostics;
+  assert.equal(axis.singular, 37 * 17);
+  assert.match(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "surface",
+        surface: {
+          kind: "ellipsoid",
+          a: 1,
+          b: 1,
+          c: 1,
+          uMin: 0,
+          uMax: 6,
+          vMin: -1,
+          vMax: 1,
+          uSamples: 12,
+          vSamples: 12,
+          curves: 2,
+          offset: 0,
+          reach: 0,
+        },
+        surfaceDiagnostics: true,
+        focalDiagnostics: 1,
+      }),
+    ),
+    /focalDiagnostics/,
+  );
   assert.deepEqual(round.base, []);
   assert.equal(q.surface.points.length, 37);
   assert.equal(q.surface.points[0].length, 19);

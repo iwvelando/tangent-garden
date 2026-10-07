@@ -339,6 +339,8 @@ const probe: SchemaOf<Probe> = {
         curve: true,
         surface: true,
         offset: true,
+        focal1: true,
+        focal2: true,
         light: true,
         mirror: true,
       },

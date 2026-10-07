@@ -11,6 +11,8 @@ export type SpatialOptions = {
   surfaceDiagnostics?: boolean;
   lightDiagnostics?: boolean;
   offsetDiagnostics?: boolean;
+  // A surface patch's focal sheet, 1 or 2, in place of the patch.
+  focalDiagnostics?: 1 | 2;
   // The curve probe at one parameter (see engine3.ProbePoint).
   probe?: ProbeQuery;
 };
@@ -124,6 +126,9 @@ export class EngineClient {
         ...(options.surfaceDiagnostics ? { surfaceDiagnostics: true } : {}),
         ...(options.lightDiagnostics ? { lightDiagnostics: true } : {}),
         ...(options.offsetDiagnostics ? { offsetDiagnostics: true } : {}),
+        ...(options.focalDiagnostics
+          ? { focalDiagnostics: options.focalDiagnostics }
+          : {}),
         ...(options.probe ? { probe: options.probe } : {}),
       })
     ).result;

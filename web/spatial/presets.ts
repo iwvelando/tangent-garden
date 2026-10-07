@@ -3505,4 +3505,102 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // An oblate spheroid (1.2, 1.2, 0.6), the half behind its axis, seen
+  // side on. Its meridians are ellipses, so the centers of the
+  // meridian curvature, its second focal sheet, sweep the ellipse's
+  // evolute, (0.9 cos³v, −1.8 sin³v) at c = 0.6, around the axis: a
+  // spindle whose rim, over the equator, is a cuspidal edge. The first
+  // sheet, the parallels' centers, is a stretch of the axis and is hidden.
+  // The probe stands on the second sheet over the meridian u = 7π/20
+  // (row 15 of 60), at v = π/6 (column 48 of 72). The sheet's normal is
+  // the meridian's tangent, and its curvatures are the evolute's own and
+  // its parallel's. As c sweeps from 0.6 to 0.95 the spindle shortens
+  // from 2(a² − c²)/c = 3.6 to about 1.1 tall, while its rim, (a² − c²)/a,
+  // draws in from 0.9 to 0.45.
+  {
+    name: "A spheroid's evolute, spun about its axis",
+    detail:
+      "The meridians' centers of curvature sweep the ellipse's evolute around the axis, a spindle with a cuspidal rim",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.2,
+        b: 1.2,
+        c: 0.6,
+        // The half behind the axis, open towards the view.
+        uMin: Math.PI / 10,
+        uMax: (11 * Math.PI) / 10,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 60,
+        vSamples: 72,
+        curves: 10,
+        offset: 0,
+        reach: 0,
+      },
+    },
+    layers: { focal1: false },
+    // Side on, a little above, with the axis upright.
+    view: { yaw: 0, pitch: -1.35, zoom: 0.9, panX: 0, panY: 0 },
+    probe: { enabled: true, position: 0.25, target: "focal2", across: 2 / 3 },
+    flight: {
+      duration: 14,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceC", from: "0.6", to: "0.95" }],
+        probe: "stays",
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // The ellipsoid (1.5, 1, 0.7) of "The focal sheets of an ellipsoid",
+  // with only its first sheet of centers shown. The probe rides that sheet
+  // along u at v ≈ 0.39 (column 60 of 96). Its 100 rows put u = 3π/2 and
+  // 2π, in the planes of symmetry x = 0 and y = 0, on rows 40 and 90:
+  // ridges of the ellipsoid, where κ₁ is stationary along its own line of
+  // curvature, so that the sheet folds back in a cuspidal edge. Nearing
+  // one the sheet's own centers rush in to the probe's point, and on it the
+  // sheet has no tangent plane.
+  {
+    name: "The curvature of an ellipsoid's focal sheet",
+    detail:
+      "Riding one sheet of centers, whose own centers rush in at its cuspidal edges",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 0.7,
+        // The far half, open towards the default view.
+        uMin: (11 * Math.PI) / 10,
+        uMax: (21 * Math.PI) / 10,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 100,
+        vSamples: 96,
+        curves: 12,
+        offset: 0,
+        reach: 0,
+      },
+    },
+    layers: { focal2: false },
+    probe: { enabled: true, position: 0, target: "focal1", across: 0.625 },
+    flight: {
+      duration: 20,
+      repeat: "back-and-forth",
+      pace: "steady",
+      camera: "hold",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

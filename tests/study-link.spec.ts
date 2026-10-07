@@ -372,6 +372,35 @@ test("a link carries the probe on a patch's offset", async () => {
   await refused(() => Promise.resolve(spatialStudy(unknown)), "probe.target");
 });
 
+test("a link carries the probe on a patch's focal sheet", async () => {
+  const sheet = spatialPresets.findIndex(
+    (p) => p.name === "The curvature of an ellipsoid's focal sheet",
+  );
+  assert.ok(sheet >= 0);
+  for (const target of ["focal1", "focal2"] as const) {
+    const study: SpatialStudy = {
+      ...spatial(sheet),
+      animation: { ...defaultAnimation, mode: "probe", duration: 4 },
+      probe: { enabled: true, position: 0.4, target, across: 0.625 },
+    };
+    const back = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(back.study), study);
+  }
+  // In a curve study the target is kept as written, and the probe
+  // describes the curve; a mirror's probe describes the light or mirror.
+  const curve = structuredClone(spatial()) as any;
+  curve.probe = { enabled: true, position: 0.25, target: "focal2", across: 0 };
+  assert.equal(spatialStudy(curve).probe.enabled, true);
+  assert.equal(spatialStudy(curve).probe.target, "focal2");
+  const mirror = structuredClone(spatial(sheet)) as any;
+  mirror.config.format = "rays";
+  mirror.probe = { enabled: true, position: 0.25, target: "focal1", across: 0 };
+  assert.equal(spatialStudy(mirror).probe.enabled, false);
+  const unknown = structuredClone(spatial(sheet)) as any;
+  unknown.probe.target = "focal3";
+  await refused(() => Promise.resolve(spatialStudy(unknown)), "probe.target");
+});
+
 test("links are compact, url-safe, and readable by an independent decoder", async () => {
   let longest = 0;
   for (const [i] of spatialPresets.entries()) {

@@ -144,6 +144,8 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
       ["Helix · a ribbon staircase", true],
       ["The seam of a carried frame", true],
       ["Chords of a rising helix", true],
+      // Already on a focal sheet, whose status words are its own.
+      ["The curvature of an ellipsoid's focal sheet", false],
     ] as const)
       setups.push(async () => {
         await page.goto("/?study=3d");

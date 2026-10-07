@@ -69,6 +69,9 @@ self.onmessage = async ({
   lightDiagnostics?: boolean;
   // Asks Go for a surface patch's offset in place of the patch.
   offsetDiagnostics?: boolean;
+  // Asks Go for a surface patch's focal sheet, 1 or 2, in place of the
+  // patch.
+  focalDiagnostics?: 1 | 2;
   base: string;
 }>) => {
   try {
@@ -583,6 +586,9 @@ self.onmessage = async ({
         ...(data.surfaceDiagnostics && { surfaceDiagnostics: true }),
         ...(data.lightDiagnostics && { lightDiagnostics: true }),
         ...(data.offsetDiagnostics && { offsetDiagnostics: true }),
+        ...(data.focalDiagnostics && {
+          focalDiagnostics: data.focalDiagnostics,
+        }),
         ...(data.probe && { probe: data.probe }),
       });
       if (data.probeOnly) {

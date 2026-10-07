@@ -487,7 +487,8 @@ function SurfaceProbe({
             {r.missing
               ? terms.missing
               : r.singular
-                ? "Singular here: no normal or principal curvatures."
+                ? (terms.singular ??
+                  "Singular here: no normal or principal curvatures.")
                 : r.umbilic
                   ? "An umbilic: every direction is principal, so none is drawn."
                   : r.folded

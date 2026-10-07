@@ -387,11 +387,15 @@ export type SpatialProbePoint = {
 // an umbilic; a focal point is null at infinity (beyond 100 radii). Counts
 // leave out a closed surface's repeated last row. A patch's offset, on the
 // patch's grid, shares its normal and directions, with curvatures
-// κᵢ/(1 − dκᵢ) numbered as the patch's, so its centers are the patch's.
+// κᵢ/(1 − dκᵢ) numbered as the patch's, so its centers are the patch's. A
+// patch's focal sheet X + n/κᵢ, on the patch's grid, has the patch's
+// principal direction eᵢ for its normal, oriented continuously along u, and
+// its own curvatures numbered κ₁ ≥ κ₂ with it.
 export type SurfaceDiagnostics = {
   kind:
     | "patch"
     | "offset"
+    | "focal"
     | "canal"
     | "developable"
     | "framed"
@@ -416,6 +420,10 @@ export type SurfaceDiagnostics = {
   // patch along n, and where it has folded, (1 − dκ₁)(1 − dκ₂) < 0.
   distance?: number;
   folds?: boolean[][];
+  // Present only for a patch's focal sheet: its number, and the patch's
+  // point X whose center each point is (null where the sheet has none).
+  sheet?: 1 | 2;
+  feet?: (Vec3 | null)[][];
 };
 // Mirrors engine3.LightDiagnostics: on the wavefront's grid, the incident
 // direction (null at a singularity or the source), the surface's normal
