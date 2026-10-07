@@ -105,7 +105,11 @@ function grid(kind: "patch" | "canal" = "patch"): SpatialResult {
 }
 
 test("the probe describes a patch's surface, the curve or surface built on it, and other curves", () => {
-  expect(probeSupport(config("none", "surface")).targets).toEqual(["surface"]);
+  expect(probeSupport(config("none", "surface")).targets).toEqual([
+    "surface",
+    "focal1",
+    "focal2",
+  ]);
   expect(probeSupport(config("none", "surface")).available).toBe(true);
   expect(probeSupport(config("canal")).targets).toEqual(["curve", "surface"]);
   expect(probeSupport(config("canal", "field")).targets).toEqual([
@@ -415,6 +419,11 @@ const surfaceSwitch = (page: Page) =>
     name: "Principal curvatures & centres at a point",
   });
 const describe = (page: Page) => page.getByLabel("Describe", { exact: true });
+// The targets the Describe menu offers, by value.
+const offered = (page: Page) =>
+  describe(page)
+    .locator("option")
+    .evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
 const along = (page: Page, name: string) =>
   page.getByRole("slider", { name, exact: true });
 const readout = (page: Page) => page.locator(".probe-readout dd");
@@ -591,7 +600,9 @@ test("a torus patch reads κ₁ and κ₂ against the closed form", async ({
   await ready(page);
   await choosePreset(page, { label: "A torus revealing its centers" });
   await settled(page);
-  await expect(describe(page)).toHaveCount(0);
+  // The patch is described first; its focal sheets are offered beside it.
+  await expect(describe(page)).toHaveValue("surface");
+  expect(await offered(page)).toEqual(["surface", "focal1", "focal2"]);
   await surfaceSwitch(page).check();
   await settled(page);
   const v = along(page, "Along v");
@@ -637,7 +648,7 @@ test("a torus's offset reads the offset torus through the Offset d control", asy
   await settled(page);
   await surfaceSwitch(page).check();
   await settled(page);
-  await expect(describe(page)).toHaveCount(0);
+  expect(await offered(page)).toEqual(["surface", "focal1", "focal2"]);
   const offset = page.getByRole("textbox", { name: "Offset d", exact: true });
   const status = page.getByTestId("probe-status");
   const torus = (tube: number) => {
@@ -656,8 +667,14 @@ test("a torus's offset reads the offset torus through the Offset d control", asy
   await expect(describe(page)).toHaveValue("surface");
   await expect(readout(page)).toHaveText(torus(0.8));
   await expect(page.locator(".spatial-probe legend")).toHaveText(
-    "Probe the surface or its offset",
+    "Probe the surface, its offset or its focal sheets",
   );
+  expect(await offered(page)).toEqual([
+    "surface",
+    "offset",
+    "focal1",
+    "focal2",
+  ]);
   await describe(page).selectOption("offset");
   await settled(page);
   await expect(along(page, "Along u")).toHaveAttribute(
@@ -685,8 +702,202 @@ test("a torus's offset reads the offset torus through the Offset d control", asy
   // Without an offset the probe describes the patch again.
   await offset.fill("0");
   await settled(page);
-  await expect(describe(page)).toHaveCount(0);
+  await expect(describe(page)).toHaveValue("surface");
+  expect(await offered(page)).toEqual(["surface", "focal1", "focal2"]);
   await expect(readout(page)).toHaveText(torus(0.8));
+});
+
+// A spheroid (a, a, c) has meridians (a cos v, c sin v), so its meridians'
+// centers, focal sheet 2 while c < a, are the surface of revolution of the
+// evolute (r, z) = ((a² − c²)/a cos³v, (c² − a²)/c sin³v). With the unit
+// normal (−z′, r′)/|γ′| in the meridian plane, a surface of revolution's
+// meridian curvature is (r′z″ − z′r″)/|γ′|³ and its parallel's z′/(r|γ′|);
+// the sheet's normal may point either way, so K and |κ| are compared.
+function spunEvolute(a: number, c: number, v: number) {
+  const k = (a * a - c * c) / a,
+    l = (c * c - a * a) / c;
+  const [cv, sv] = [Math.cos(v), Math.sin(v)];
+  const r = k * cv ** 3,
+    dr = -3 * k * cv * cv * sv,
+    dz = 3 * l * sv * sv * cv,
+    ddr = -3 * k * (cv ** 3 - 2 * cv * sv * sv),
+    ddz = 3 * l * (2 * sv * cv * cv - sv ** 3),
+    speed = Math.hypot(dr, dz);
+  const meridian = (dr * ddz - dz * ddr) / speed ** 3,
+    parallel = dz / (r * speed);
+  return {
+    sizes: [Math.abs(meridian), Math.abs(parallel)].sort((x, y) => x - y),
+    gauss: meridian * parallel,
+  };
+}
+// The readout's |κ₁|, |κ₂| in order, and K.
+async function sheetReadout(page: Page) {
+  const [k1, k2, , kh] = await readout(page).allTextContents();
+  return {
+    sizes: [Math.abs(Number(k1)), Math.abs(Number(k2))].sort((x, y) => x - y),
+    gauss: Number(kh.split(", ")[0]),
+  };
+}
+const fourFigures = (got: number, want: number) =>
+  expect(Math.abs(got - want)).toBeLessThanOrEqual(
+    5e-4 * Math.abs(want) + 1e-12,
+  );
+
+test("a spheroid's second focal sheet reads its spun evolute's curvatures", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, {
+    label: "A spheroid's evolute, spun about its axis",
+  });
+  await settled(page);
+  await expect(describe(page)).toHaveValue("focal2");
+  await expect(surfaceSwitch(page)).toBeChecked();
+  await expect(page.locator(".spatial-probe legend")).toHaveText(
+    "Probe the surface or its focal sheets",
+  );
+  const status = page.getByTestId("probe-status");
+  await expect(along(page, "Along v")).toHaveAttribute(
+    "aria-valuetext",
+    "v = 0.5236, column 48 of 72",
+  );
+  const check = async (c: number, v: number) => {
+    const want = spunEvolute(1.2, c, v),
+      got = await sheetReadout(page);
+    fourFigures(got.gauss, want.gauss);
+    got.sizes.forEach((x, b) => fourFigures(x, want.sizes[b]));
+  };
+  await expect(status).toHaveText("");
+  await check(0.6, Math.PI / 6);
+  // Through the Axis c control, from the preset's edited value.
+  const axis = page.getByRole("textbox", { name: "Axis c", exact: true });
+  await axis.fill("0.8");
+  await settled(page);
+  await expect(describe(page)).toHaveValue("focal2");
+  await check(0.8, Math.PI / 6);
+  await along(page, "Along v").fill("60");
+  await expect(along(page, "Along v")).toHaveAttribute(
+    "aria-valuetext",
+    "v = 1.047, column 60 of 72",
+  );
+  await check(0.8, Math.PI / 3);
+  // The rim over the equator is a cuspidal edge, and the poles have no
+  // normal, so no centers.
+  await along(page, "Along v").fill("36");
+  await expect(status).toHaveText(
+    "Singular here: no tangent plane, as on a cuspidal edge.",
+  );
+  await expect(readout(page).first()).toHaveText("—");
+  await along(page, "Along v").fill("72");
+  await expect(status).toHaveText(
+    "No point here: the patch's center lies at infinity, or the patch has no normal.",
+  );
+  // The parallels' centers, the first sheet, are the axis: singular at
+  // every point, and counted.
+  await along(page, "Along v").fill("48");
+  await describe(page).selectOption("focal1");
+  await settled(page);
+  await expect(status).toHaveText(
+    "Singular here: no tangent plane, as on a cuspidal edge.",
+  );
+  await expect(page.locator(".probe-notes")).toContainText(
+    "4,331 points are singular, without a normal",
+  );
+  // Back on the patch, the readout is the spheroid's own: the meridian's
+  // a c/(a² sin²v + c² cos²v)^{3/2} and the parallel's c/(a√(…)).
+  await describe(page).selectOption("surface");
+  await settled(page);
+  const q = 1.44 * 0.25 + 0.64 * 0.75;
+  const [k1, k2] = (await readout(page).allTextContents()).map(Number);
+  fourFigures(k1, -0.8 / (1.2 * Math.sqrt(q)));
+  fourFigures(k2, -(1.2 * 0.8) / q ** 1.5);
+});
+
+// The preset's ellipsoid has 100 rows, putting u = 3π/2 and 2π, its
+// planes of symmetry x = 0 and y = 0, on rows 40 and 90. There the
+// ellipsoid's κ₁ is stationary along its own line of curvature, so the
+// first sheet has a cuspidal edge; beside it the sheet's own curvature
+// grows without bound.
+test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, {
+    label: "The curvature of an ellipsoid's focal sheet",
+  });
+  await settled(page);
+  await expect(describe(page)).toHaveValue("focal1");
+  const u = along(page, "Along u"),
+    status = page.getByTestId("probe-status");
+  await expect(along(page, "Along v")).toHaveAttribute(
+    "aria-valuetext",
+    "v = 0.3927, column 60 of 96",
+  );
+  const largest = async () =>
+    Math.max(
+      ...(await readout(page).allTextContents())
+        .slice(0, 2)
+        .map((t) => Math.abs(Number(t))),
+    );
+  await u.fill("20");
+  await expect(status).toHaveText("");
+  // Nearing the edge one curvature grows steadily, while the other falls
+  // towards 0, its center at infinity.
+  const away = await largest();
+  let before = away;
+  for (const row of [30, 35, 38, 39]) {
+    await u.fill(String(row));
+    await expect(u).toHaveAttribute(
+      "aria-valuetext",
+      new RegExp(`row ${row} of 100$`),
+    );
+    const now = await largest();
+    expect(now).toBeGreaterThan(before);
+    before = now;
+  }
+  expect(before).toBeGreaterThan(10 * away);
+  await expect(status).toHaveText(
+    "A centre lies beyond 100 study radii, at infinity: its circle is not drawn.",
+  );
+  for (const row of ["40", "90"]) {
+    await u.fill(row);
+    await expect(status).toHaveText(
+      "Singular here: no tangent plane, as on a cuspidal edge.",
+    );
+  }
+  // The animation moves the probe along the sheet, over both edges.
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  const mode = page.getByLabel("Animate", { exact: true });
+  await expect(mode).toHaveValue("probe");
+  await expect(mode.locator('option[value="probe"]')).toHaveText(
+    "Move the probe along the first focal sheet",
+  );
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "probe");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // Back and forth at a steady pace, time 0.2 is progress 0.4, row 40,
+  // and time 0.45 progress 0.9, row 90.
+  for (const [time, row] of [
+    ["0.2", 40],
+    ["0.45", 90],
+  ] as const) {
+    await page.getByRole("slider", { name: "Animation progress" }).fill(time);
+    await expect(stage(page)).toHaveAttribute("data-time", time);
+    await expect(u).toHaveAttribute(
+      "aria-valuetext",
+      new RegExp(`row ${row} of 100$`),
+    );
+    await expect(status).toHaveText(
+      "Singular here: no tangent plane, as on a cuspidal edge.",
+    );
+  }
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(stage(page)).not.toHaveAttribute("data-progress");
+  await expect(u).toHaveAttribute("aria-valuetext", /row 90 of 100$/);
 });
 
 // The preset's ellipsoid (1.5, 1, 0.7) offset by d = −0.25: the offset
@@ -1195,9 +1406,18 @@ const patchStudy = (offset: number) => {
 
 test("a patch with an offset probes the patch or its offset, in their own words", () => {
   const offset = { ...defaultProbe, target: "offset" as const };
-  expect(probeSupport(patchStudy(0)).targets).toEqual(["surface"]);
-  expect(probeSupport(patchStudy(0.4)).targets).toEqual(["surface", "offset"]);
-  expect(probeSupport(patchStudy(-0.4)).targets).toEqual(["surface", "offset"]);
+  const sheets = ["focal1", "focal2"];
+  expect(probeSupport(patchStudy(0)).targets).toEqual(["surface", ...sheets]);
+  expect(probeSupport(patchStudy(0.4)).targets).toEqual([
+    "surface",
+    "offset",
+    ...sheets,
+  ]);
+  expect(probeSupport(patchStudy(-0.4)).targets).toEqual([
+    "surface",
+    "offset",
+    ...sheets,
+  ]);
   // A mirror reads its patch but not the offset.
   const mirror = rays();
   mirror.surface.offset = 0.4;
@@ -1214,10 +1434,17 @@ test("a patch with an offset probes the patch or its offset, in their own words"
   const c = patchStudy(0.4);
   expect(targetName(c, "surface")).toBe("The surface");
   expect(targetName(c, "offset")).toBe("The offset");
-  expect(probeLegend(c, "offset")).toBe("Probe the surface or its offset");
-  expect(probeLegend(c, "surface")).toBe("Probe the surface or its offset");
-  expect(probeLegend(patchStudy(0), "surface")).toBe("Probe the surface");
+  expect(probeLegend(c, "offset")).toBe(
+    "Probe the surface, its offset or its focal sheets",
+  );
+  expect(probeLegend(c, "surface")).toBe(
+    "Probe the surface, its offset or its focal sheets",
+  );
+  expect(probeLegend(patchStudy(0), "surface")).toBe(
+    "Probe the surface or its focal sheets",
+  );
   expect(describeHelp(c)).toMatch(/^The surface: .* The offset: /);
+  expect(describeHelp(patchStudy(0))).not.toMatch(/offset/);
   const own = surfaceTerms(c, "offset");
   expect(own.surface).toBe("offset surface");
   expect(own.switch).toBe("Principal curvatures & centres at a point");
@@ -1291,6 +1518,121 @@ test("the offset's steps, records and drawing need its own diagnostics", () => {
   expect(surfaceProbeReadout(r, 0, 4)).toMatchObject({ folded: true });
   expect(surfaceProbeReadout(r, 0, 0)).toMatchObject({ folded: false });
   expect(surfaceProbeReadout(grid(), 0, 4)).toMatchObject({ folded: false });
+});
+
+// Focal sheet 1 of a patch, by hand: the row of grid() moved to the
+// patch's first centers, with each point's foot, the patch's point X at
+// (2, 0, 0), one patch radius out along the patch's normal x.
+function focalGrid(sheet: 1 | 2 = 1): SpatialResult {
+  const r = grid();
+  const d = r.surfaceDiagnostics!;
+  const foot = at(2, 0, 0);
+  return {
+    ...r,
+    surfaceDiagnostics: {
+      ...d,
+      kind: "focal",
+      sheet,
+      feet: [[foot, null, foot, foot, foot]],
+    },
+  };
+}
+
+test("a patch probes its focal sheets, each in its own words", () => {
+  const c = patchStudy(0),
+    first = { ...defaultProbe, target: "focal1" as const },
+    second = { ...defaultProbe, target: "focal2" as const };
+  expect(probeTarget(c, first)).toBe("focal1");
+  expect(probeTarget(c, second)).toBe("focal2");
+  // Neither a curve study nor a mirror has focal sheets to probe.
+  expect(probeTarget(config("canal"), second)).toBe("curve");
+  expect(probeTarget(rays(), first)).toBe("light");
+  expect(gridded("focal1")).toBe(true);
+  expect(probeOptions("focal1")).toEqual({ focalDiagnostics: 1 });
+  expect(probeOptions("focal2")).toEqual({ focalDiagnostics: 2 });
+  expect(targetName(c, "focal1")).toBe("Focal sheet 1");
+  expect(targetName(c, "focal2")).toBe("Focal sheet 2");
+  expect(probeLegend(c, "focal2")).toBe(
+    "Probe the surface or its focal sheets",
+  );
+  expect(describeHelp(c)).toMatch(/Focal sheet 1 or 2: /);
+  for (const [target, name] of [
+    ["focal1", "first focal sheet"],
+    ["focal2", "second focal sheet"],
+  ] as const) {
+    const own = surfaceTerms(c, target);
+    expect(own.surface).toBe(name);
+    expect(own.branches).toEqual(["κ₁", "κ₂"]);
+    expect(own.sliders).toEqual(["Along u", "Along v"]);
+    expect(own.through).toBe("the patch's normal line");
+    expect(own.singular).toBe(
+      "Singular here: no tangent plane, as on a cuspidal edge.",
+    );
+    // Help states the engine's rule: the sheet's normal is the patch's
+    // principal direction, oriented along u; curvatures need the third
+    // derivatives; ridges give cuspidal edges, umbilics join the sheets,
+    // and a zero curvature puts the sheet at infinity.
+    const help = surfaceProbeHelp(c, target);
+    expect(help).toMatch(new RegExp(`^Describes the ${name} at a point`));
+    expect(help).toMatch(
+      /principal direction eᵢ, oriented continuously along u/,
+    );
+    expect(help).toMatch(/third derivatives/);
+    expect(help).toMatch(/ridge/);
+    expect(help).toMatch(/cuspidal edge/);
+    expect(help).toMatch(/umbilic/);
+    expect(help).toMatch(/at infinity and has no point/);
+    expect(help).toMatch(new RegExp(`Move the probe along the ${name}`));
+  }
+  // The patch and the offset keep their own status words.
+  expect(surfaceTerms(c, "surface").singular).toBeUndefined();
+  expect(surfaceTerms(patchStudy(0.4), "offset").singular).toBeUndefined();
+});
+
+test("a focal sheet's steps, records and drawing need its own diagnostics", () => {
+  const r = focalGrid(),
+    c = patchStudy(0),
+    first = { ...defaultProbe, target: "focal1" as const, across: 0 };
+  expect(probeSteps(r, "focal1")).toBe(0);
+  // The other sheet's, the patch's or the offset's diagnostics do not do.
+  expect(probeSteps(r, "focal2")).toBeNull();
+  expect(probeSteps(focalGrid(2), "focal1")).toBeNull();
+  expect(probeSteps(focalGrid(2), "focal2")).toBe(0);
+  expect(probeSteps(r, "surface")).toBeNull();
+  expect(probeSteps(r, "offset")).toBeNull();
+  expect(probeSteps(grid(), "focal1")).toBeNull();
+  expect(probeSteps(offsetGrid(), "focal1")).toBeNull();
+  expect(probeRecord(r, c, first, 0)).toEqual({
+    target: "focal1",
+    row: 0,
+    column: 0,
+    u: 0.25,
+    v: 0,
+  });
+  expect(probeDrawing(r, c, first, 0)).toEqual(surfaceProbeBatches(r, 0, 0));
+  // Crosses mark the point and the patch's point, joined by the patch's
+  // normal line, which touches the sheet there.
+  const marks = byInk(surfaceProbeBatches(r, 0, 4), probeInk.mark);
+  expect(marks).toHaveLength(7);
+  for (const [center, arms] of [
+    [at(1, 0, 0), marks.slice(0, 3)],
+    [at(2, 0, 0), marks.slice(3, 6)],
+  ] as const)
+    for (const [a, b] of arms)
+      expect(
+        length(
+          sub(at((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2), center),
+        ),
+      ).toBeLessThan(f32);
+  expect(length(sub(marks[6][0], at(2, 0, 0)))).toBeLessThan(f32);
+  expect(length(sub(marks[6][1], at(1, 0, 0)))).toBeLessThan(f32);
+  // A singular point still shows where it lies and whose center it is.
+  expect(byInk(surfaceProbeBatches(r, 0, 2), probeInk.mark)).toHaveLength(7);
+  // The sheet's own normal line and circles are drawn as a patch's.
+  expect(byInk(surfaceProbeBatches(r, 0, 4), probeInk.normal)).toEqual(
+    byInk(surfaceProbeBatches(grid(), 0, 4), probeInk.normal),
+  );
+  expect(surfaceProbeReadout(r, 0, 2)).toMatchObject({ singular: true });
 });
 
 test("the light probe draws its rays, foci and wavefront circles", () => {

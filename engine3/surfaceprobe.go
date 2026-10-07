@@ -56,7 +56,11 @@ type SurfaceDiagnostics struct {
 	// beyond one focal sheet.
 	Distance float64  `json:"distance,omitempty"`
 	Folds    [][]bool `json:"folds,omitempty"`
-	closed   bool
+	// Sheet and Feet are present only for a patch's focal sheet: its
+	// number, 1 or 2, and the patch's point X whose center each point is.
+	Sheet  int       `json:"sheet,omitempty"`
+	Feet   [][]*Vec3 `json:"feet,omitempty"`
+	closed bool
 }
 
 // newSurfaceDiagnostics allocates a grid of rows × columns.
@@ -186,6 +190,163 @@ func offsetProbe(q SurfaceRequest, samples [][]surfacePoint, scale float64) *Sur
 	}
 	d.clip(scale)
 	return d
+}
+
+// focalProbe describes focal sheet number sheet, F = X + n/κ with κ the
+// patch's κ₁ or κ₂, at the patch's own samples. Its normal is the patch's
+// principal direction e of that number: along e the sheet moves only along
+// n, as dF = d(1/κ) n there, and across it along n and the other
+// direction, so the patch's normal line touches the sheet at F. The normal
+// is oriented continuously along u, from the sample before it at the same
+// v, or else along v on the first row, so that the readout's plots along u
+// run on; no orientation suits a whole grid around an umbilic, where the
+// principal directions turn by half a turn. The sheet's curvatures, numbered
+// κ₁ ≥ κ₂, are taken with it, A = −dm. Its second fundamental form,
+// −dF·dm, needs how κ and e change, so the patch's third derivatives (see
+// focalFrame).
+//
+// A sample has no point where the patch has no normal or its center lies
+// beyond focalReach radii, at infinity. It is singular where the patch is
+// umbilic, so that e is undefined and the two sheets meet, and where the
+// sheet has no tangent plane: where κ is stationary along e, a ridge of
+// the patch, whose image is a cuspidal edge of the sheet, or where the
+// whole sheet is a curve or a point, as a surface of revolution's
+// parallels' sheet is its axis.
+func focalProbe(q SurfaceRequest, sheet int, samples [][]surfacePoint, scale float64) *SurfaceDiagnostics {
+	nu, nv := q.USamples, q.VSamples
+	k := sheet - 1
+	d := newSurfaceDiagnostics("focal", nu+1, nv+1)
+	d.Sheet, d.Feet = sheet, grid2[*Vec3](nu+1, nv+1)
+	for i := 0; i <= nu; i++ {
+		d.Along[i], d.U[i] = i, lerp(q.UMin, q.UMax, i, nu)
+	}
+	for j := 0; j <= nv; j++ {
+		d.V[j] = lerp(q.VMin, q.VMax, j, nv)
+	}
+	reach := focalReach * scale
+	for i, row := range samples {
+		for j, s := range row {
+			f, ok := s.focal(k, reach)
+			if !ok {
+				continue
+			}
+			x := s.X
+			d.Feet[i][j], d.Points[i][j] = &x, &f
+			if s.Umbilic {
+				d.Singular++
+				continue
+			}
+			fu, fv, m, mu, mv := q.focalFrame(d.U[i], d.V[j], s, k)
+			area := fu.cross(fv).norm()
+			big := math.Max(fu.norm(), fv.norm())
+			if !(area > 1e-9*big*big) {
+				d.Singular++
+				continue
+			}
+			for _, prior := range [][2]int{{i - 1, j}, {i, j - 1}} {
+				if prior[0] < 0 || prior[1] < 0 {
+					continue
+				}
+				if before := d.Normals[prior[0]][prior[1]]; before != nil {
+					if before.dot(m) < 0 {
+						m, mu, mv = m.mul(-1), mu.mul(-1), mv.mul(-1)
+					}
+					break
+				}
+			}
+			p := principal(f, fu, fv, m, -fu.dot(mu), -(fu.dot(mv)+fv.dot(mu))/2, -fv.dot(mv), area, scale)
+			if !finite(p.Kappa[0]) || !finite(p.Kappa[1]) {
+				d.Unknown++
+				continue
+			}
+			d.Normals[i][j] = &m
+			if p.Umbilic {
+				d.Umbilics++
+			}
+			for b := 0; b < 2; b++ {
+				kappa, e := p.Kappa[b], p.Dir[b]
+				d.Curvature[b][i][j] = &kappa
+				if !p.Umbilic {
+					d.Direction[b][i][j] = &e
+				}
+			}
+		}
+	}
+	d.clip(scale)
+	return d
+}
+
+// focalFrame returns the partial derivatives F_u and F_v of focal sheet k,
+// F = X + n/κ, at the patch's regular, non-umbilic sample s at (u, v), and
+// the sheet's normal, the principal direction e, with its own partial
+// derivatives.
+//
+// In the parameters, with first and second fundamental forms g and b,
+// e = X_u w¹ + X_v w² where b w = κ g w and wᵀg w = 1. Along each
+// parameter, for the pencil's derivatives b′ = X_ij′·n + X_ij·n′ and g′, the
+// eigenvalue changes by κ′ = wᵀ(b′ − κg′)w and the eigenvector by
+// w′ = c w̄ − ½(wᵀg′w) w, where w̄ is the other branch's and
+// c = w̄ᵀ(b′ − κg′)w/(κ − κ̄). Then e′ = X_u′w¹ + X_v′w² + X_u w¹′ + X_v w²′,
+// n′ = −dX(g⁻¹b), and F′ = X′ + n′/κ − κ′n/κ².
+func (q SurfaceRequest) focalFrame(u, v float64, s surfacePoint, k int) (fu, fv, m, mu, mv Vec3) {
+	_, xu, xv, xuu, xuv, xvv := q.patch(u, v)
+	xuuu, xuuv, xuvv, xvvv := q.third(u, v)
+	n := s.N
+	first := [2]Vec3{xu, xv}
+	second := [2][2]Vec3{{xuu, xuv}, {xuv, xvv}}
+	// third[i][j][l] = X_ijl, symmetric in its indices.
+	third := [2][2][2]Vec3{{{xuuu, xuuv}, {xuuv, xuvv}}, {{xuuv, xuvv}, {xuvv, xvvv}}}
+	var g, b [2][2]float64
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 2; j++ {
+			g[i][j], b[i][j] = first[i].dot(first[j]), second[i][j].dot(n)
+		}
+	}
+	det := g[0][0]*g[1][1] - g[0][1]*g[1][0]
+	inverse := [2][2]float64{{g[1][1] / det, -g[0][1] / det}, {-g[1][0] / det, g[0][0] / det}}
+	apply := func(m [2][2]float64, w [2]float64) [2]float64 {
+		return [2]float64{m[0][0]*w[0] + m[0][1]*w[1], m[1][0]*w[0] + m[1][1]*w[1]}
+	}
+	form := func(m [2][2]float64, a, c [2]float64) float64 {
+		w := apply(m, c)
+		return a[0]*w[0] + a[1]*w[1]
+	}
+	// The principal directions in the parameters.
+	var w [2][2]float64
+	for c := 0; c < 2; c++ {
+		w[c] = apply(inverse, [2]float64{xu.dot(s.Dir[c]), xv.dot(s.Dir[c])})
+	}
+	var dn [2]Vec3
+	for l := 0; l < 2; l++ {
+		// Column l of g⁻¹b.
+		shape := apply(inverse, [2]float64{b[0][l], b[1][l]})
+		dn[l] = xu.mul(-shape[0]).sub(xv.mul(shape[1]))
+	}
+	other := 1 - k
+	kappa := s.Kappa[k]
+	var df, de [2]Vec3
+	for l := 0; l < 2; l++ {
+		var dg, db [2][2]float64
+		for i := 0; i < 2; i++ {
+			for j := 0; j < 2; j++ {
+				dg[i][j] = second[i][l].dot(first[j]) + first[i].dot(second[j][l])
+				db[i][j] = third[i][j][l].dot(n) + second[i][j].dot(dn[l])
+			}
+		}
+		var a [2][2]float64
+		for i := 0; i < 2; i++ {
+			for j := 0; j < 2; j++ {
+				a[i][j] = db[i][j] - kappa*dg[i][j]
+			}
+		}
+		dk := form(a, w[k], w[k])
+		c := form(a, w[other], w[k]) / (kappa - s.Kappa[other])
+		half := form(dg, w[k], w[k]) / 2
+		dw := [2]float64{c*w[other][0] - half*w[k][0], c*w[other][1] - half*w[k][1]}
+		de[l] = second[0][l].mul(w[k][0]).add(second[1][l].mul(w[k][1])).add(xu.mul(dw[0])).add(xv.mul(dw[1]))
+		df[l] = first[l].add(dn[l].mul(1 / kappa)).sub(n.mul(dk / (kappa * kappa)))
+	}
+	return df[0], df[1], s.Dir[k], de[0], de[1]
 }
 
 // canalAcross returns the principal curvature of the canal X = c + Rq

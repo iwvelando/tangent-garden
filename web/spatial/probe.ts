@@ -32,9 +32,14 @@ import type {
 } from "./types";
 
 // What the probe describes: the base curve, a surface (a patch, or the
-// canal built on the curve), a patch's offset, or in a mirror or interface
-// study the light leaving it or the mirror itself.
-export type ProbeTarget = "curve" | "surface" | "offset" | "light" | "mirror";
+// canal built on the curve), a patch's offset or either of its focal
+// sheets, or in a mirror or interface study the light leaving it or the
+// mirror itself.
+export type ProbeTarget =
+  "curve" | "surface" | "offset" | "focal1" | "focal2" | "light" | "mirror";
+// The focal sheet a target names, 1 or 2, or null.
+const focalSheet = (t: ProbeTarget): 1 | 2 | null =>
+  t === "focal1" ? 1 : t === "focal2" ? 2 : null;
 // Whether the probe stands on a grid of rows and columns (a surface, the
 // light or the mirror) rather than on the curve's samples.
 export const gridded = (t: ProbeTarget) => t !== "curve";
@@ -46,7 +51,9 @@ export const probeOptions = (t: ProbeTarget) =>
       ? { lightDiagnostics: true }
       : t === "offset"
         ? { offsetDiagnostics: true }
-        : { surfaceDiagnostics: true };
+        : focalSheet(t)
+          ? { focalDiagnostics: focalSheet(t)! }
+          : { surfaceDiagnostics: true };
 // The probe's place as fractions, so that it survives edits to the domain
 // and sample count: along the base's samples (or a surface's rows, along
 // t or u) and, on a surface, across its columns (around θ, or along v).
@@ -269,8 +276,9 @@ export function surfaceKind(c: SpatialConfig): SurfaceKind | null {
 }
 
 // Whether a study offers the probe, what it can describe (a surface patch
-// its surface, or its offset while it has one; a curve with a surface
-// built on it either; another curve study its curve), and what the curve
+// its surface, its offset while it has one, and its focal sheets; a curve
+// with a surface built on it either; another curve study its curve), and
+// what the curve
 // probe's highlight shows (null when only the frame and circle are drawn).
 export function probeSupport(c: SpatialConfig): {
   available: boolean;
@@ -288,6 +296,7 @@ export function probeSupport(c: SpatialConfig): {
           ...(c.format === "surface" && c.surface.offset !== 0
             ? (["offset"] as const)
             : []),
+          ...(c.format === "surface" ? (["focal1", "focal2"] as const) : []),
         ];
   const format = formats[c.format];
   const names = [
@@ -436,7 +445,8 @@ type SurfaceKind = SurfaceDiagnostics["kind"];
 // mark), where it has no point, why a curvature can be unknown, and help
 // stating the grid and conventions the engine uses. The switch, the normal
 // line's legend and each branch's legend name what is drawn: a surface's
-// principal curvatures, or the light's wavefront and foci.
+// principal curvatures, or the light's wavefront and foci. singular, where
+// given, replaces the status at a singular point.
 type SurfaceTerms = {
   switch: string;
   normal: string;
@@ -450,6 +460,7 @@ type SurfaceTerms = {
   missing: string;
   unknownBranch: string;
   unknown: string;
+  singular?: string;
   help: string;
 };
 const rows = "(at most 481, so more samples give finer steps up to that)";
@@ -491,6 +502,22 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     unknownBranch: "κ₂ is",
     unknown: "where its derivatives are unstable",
     help: "Moves between the patch's own grid samples (more u and v samples give finer steps). The offset X + d·n shares the patch's normal n, as drawn, and its principal directions, and the normal line runs on back to the patch's point X, marked with a cross. Its curvatures are κᵢ/(1 − dκᵢ) from the patch's κᵢ, numbered as the patch's, so each center is the patch's focal point and lies on the focal sheet of the same number: parallel surfaces share their centers of curvature. Where 1 − dκᵢ = 0 the offset meets that focal sheet in a cuspidal edge and is singular there. Where it lies beyond one focal sheet it has folded, turned inside out, and κ₁ < κ₂ can hold",
+  },
+  // A patch's focal sheet, named by its number (see surfaceTerms).
+  focal: {
+    ...curvatureWords,
+    surface: "focal sheet",
+    along: "u",
+    around: "v",
+    branches: ["κ₁", "κ₂"],
+    sliders: ["Along u", "Along v"],
+    through: "the patch's normal line",
+    missing:
+      "No point here: the patch's center lies at infinity, or the patch has no normal.",
+    unknownBranch: "both curvatures are",
+    unknown: "where its derivatives overflow",
+    singular: "Singular here: no tangent plane, as on a cuspidal edge.",
+    help: "Moves between the patch's own grid samples (more u and v samples give finer steps). Focal sheet i is X + n/κᵢ, the centers of the patch's κᵢ, and the patch's normal line, drawn from its point X (marked with a cross), touches the sheet there. The sheet's normal is the patch's principal direction eᵢ, oriented continuously along u, and its curvatures, numbered κ₁ ≥ κ₂ with that normal, follow from how κᵢ and eᵢ change across the patch, which takes the patch's third derivatives. Where κᵢ is stationary along eᵢ, on a ridge of the patch, the sheet has a cuspidal edge and is singular; it is singular too at an umbilic of the patch, where the two sheets meet, and wherever the whole sheet is a curve or a point, as a surface of revolution's sheet of parallels is its axis. Where κᵢ = 0 the sheet lies at infinity and has no point",
   },
   canal: {
     ...curvatureWords,
@@ -570,6 +597,12 @@ export function surfaceTerms(
       surface: medium(c),
     };
   if (target === "offset") return surfaceTermsByKind.offset;
+  const sheet = focalSheet(target);
+  if (sheet)
+    return {
+      ...surfaceTermsByKind.focal,
+      surface: `${sheet === 1 ? "first" : "second"} focal sheet`,
+    };
   return surfaceTermsByKind[surfaceKind(c) ?? "patch"];
 }
 
@@ -583,11 +616,17 @@ export function targetName(c: SpatialConfig, t: ProbeTarget) {
         ? `The ${medium(c)}`
         : t === "offset"
           ? "The offset"
-          : "The surface";
+          : focalSheet(t)
+            ? `Focal sheet ${focalSheet(t)}`
+            : "The surface";
 }
 export function describeHelp(c: SpatialConfig) {
   if (c.format === "surface")
-    return "The surface: the patch's principal directions, curvatures and centers. The offset: the same at the offset's point on the same normal, whose centers are the patch's own. Both stand at the same sample.";
+    return `The surface: the patch's principal directions, curvatures and centers.${
+      c.surface.offset !== 0
+        ? " The offset: the same at the offset's point on the same normal, whose centers are the patch's own."
+        : ""
+    } Focal sheet 1 or 2: the same at the patch's center of κ₁ or κ₂, on the sheet of those centers, whose normal is the patch's principal direction. All stand at the same sample.`;
   return c.format === "rays"
     ? `The light: the incident and outgoing rays, and the outgoing wavefront's principal directions, curvatures and foci, which lie on the caustics. The ${medium(c)}: its own principal directions, curvatures and centres. Both stand at the same sample.`
     : `The curve: its Frenet frame, curvature and torsion. The surface: the ${surfaceTerms(c, "surface").surface}'s principal directions, curvatures and centres. Both stand at the same place along t.`;
@@ -597,7 +636,10 @@ export function describeHelp(c: SpatialConfig) {
 export function probeLegend(c: SpatialConfig, target: ProbeTarget) {
   const { targets } = probeSupport(c);
   if (c.format === "rays") return `Probe the light or ${medium(c)}`;
-  if (targets.includes("offset")) return "Probe the surface or its offset";
+  if (targets.includes("offset"))
+    return "Probe the surface, its offset or its focal sheets";
+  if (targets.includes("focal1"))
+    return "Probe the surface or its focal sheets";
   if (targets.length > 1) return "Probe the curve or surface";
   return target === "surface" ? "Probe the surface" : "Probe the curve";
 }
@@ -680,13 +722,17 @@ export function surfaceProbeBatches(
   // An offset's patch point, d behind it along the shared normal.
   const foot = d.kind === "offset" && n ? -(d.distance ?? 0) : null;
   if (n && foot !== null) marked.push(...cross(plus(p, n, foot)));
+  // A focal sheet's patch point, joined to it by the patch's normal line,
+  // which touches the sheet there.
+  const source = d.kind === "focal" ? d.feet?.[row]?.[column] : null;
+  if (source) marked.push(...cross(source), source, p);
   if (d.kind === "canal") {
     const ring = d.points[row];
     ring.forEach((q, k) => {
       const next = ring[(k + 1) % ring.length];
       if (q && next) marked.push(q, next);
     });
-  } else if (d.kind !== "patch" && d.kind !== "offset") {
+  } else if (d.kind !== "patch" && d.kind !== "offset" && d.kind !== "focal") {
     // The ruling is straight: one segment between its ends on the grid.
     const known = d.points[row].filter((q): q is Vec3 => !!q);
     if (known.length > 1) marked.push(known[0], known.at(-1)!);
@@ -839,14 +885,15 @@ const dot = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
 
 // The steps the probe moves through in a result: the base's samples or the
 // grid's rows. Null without the diagnostics the target needs: the light's
-// for the light, the offset's for an offset, a surface's for a surface or
-// mirror.
+// for the light, the offset's for an offset, that focal sheet's for a
+// focal sheet, a surface's for a surface or mirror.
 export function probeSteps(result: SpatialResult, target: ProbeTarget) {
   const d = result.surfaceDiagnostics;
   if (gridded(target))
     return d &&
       (target === "light") === (d.kind === "wavefront") &&
-      (target === "offset") === (d.kind === "offset")
+      (target === "offset") === (d.kind === "offset") &&
+      focalSheet(target) === (d.kind === "focal" ? d.sheet : null)
       ? d.u.length - 1
       : null;
   return result.diagnostics ? result.diagnostics.curvature.length - 1 : null;

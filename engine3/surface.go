@@ -204,6 +204,32 @@ func (q SurfaceRequest) patch(u, v float64) (x, xu, xv, xuu, xuv, xvv Vec3) {
 	}
 }
 
+// third returns the patch's exact third partial derivatives, which its
+// focal sheets' curvatures need (see focalProbe).
+func (q SurfaceRequest) third(u, v float64) (xuuu, xuuv, xuvv, xvvv Vec3) {
+	a, b, c := q.A, q.B, q.C
+	cu, su, cv, sv := math.Cos(u), math.Sin(u), math.Cos(v), math.Sin(v)
+	switch q.Kind {
+	case "ellipsoid":
+		return Vec3{a * cv * su, -b * cv * cu, 0},
+			Vec3{a * sv * cu, b * sv * su, 0},
+			Vec3{a * cv * su, -b * cv * cu, 0},
+			Vec3{a * sv * cu, b * sv * su, -c * cv}
+	case "torus":
+		h := a + b*cv
+		return Vec3{h * su, -h * cu, 0},
+			Vec3{b * sv * cu, b * sv * su, 0},
+			Vec3{b * cv * su, -b * cv * cu, 0},
+			Vec3{b * sv * cu, b * sv * su, -b * cv}
+	case "cylinder":
+		return Vec3{a * su, -b * cu, 0}, Vec3{}, Vec3{}, Vec3{}
+	case "paraboloid":
+		return Vec3{}, Vec3{}, Vec3{}, Vec3{}
+	default: // monkey saddle
+		return Vec3{0, 0, 6 * a}, Vec3{}, Vec3{0, 0, -6 * a}, Vec3{}
+	}
+}
+
 // surfacePoint is the local geometry at one parameter point. Without a
 // normal (a chart singularity), nothing but X is defined. Dir holds the
 // principal directions e₁, e₂ with n = e₁ × e₂; at an umbilic they are an
@@ -244,7 +270,13 @@ func shape(x, xu, xv, xuu, xuv, xvv Vec3, flip bool, scale float64) surfacePoint
 	if flip {
 		n = n.mul(-1)
 	}
-	L, M, N := xuu.dot(n), xuv.dot(n), xvv.dot(n)
+	return principal(x, xu, xv, n, xuu.dot(n), xuv.dot(n), xvv.dot(n), area, scale)
+}
+
+// principal finds the local geometry at x from its first parameter
+// derivatives, its unit normal n and its second fundamental form
+// [[L, M], [M, N]], as point describes.
+func principal(x, xu, xv, n Vec3, L, M, N, area, scale float64) surfacePoint {
 	length := xu.norm()
 	ea := xu.mul(1 / length)
 	eb := n.cross(ea)
@@ -345,10 +377,17 @@ func (q SurfaceRequest) positions() ([]*Vec3, float64, error) {
 
 // surfaces samples the patch, its offset and focal sheets, and the
 // representative parameter curves and normal lines. probe asks for the
-// patch's diagnostics, and offset for its offset's in their place.
-func surfaces(q SurfaceRequest, probe, offset bool) (Result, error) {
+// patch's diagnostics, offset for its offset's in their place, and focused,
+// when 1 or 2, for that focal sheet's.
+func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error) {
 	if probe && offset {
 		return Result{}, fmt.Errorf("probe the surface (surfaceDiagnostics) or its offset (offsetDiagnostics), not both")
+	}
+	if focused < 0 || focused > 2 {
+		return Result{}, fmt.Errorf("focalDiagnostics names focal sheet 1 or 2")
+	}
+	if focused != 0 && (probe || offset) {
+		return Result{}, fmt.Errorf("probe a focal sheet (focalDiagnostics) or the surface or its offset, not both")
 	}
 	if err := q.validate(); err != nil {
 		return Result{}, err
@@ -459,6 +498,9 @@ func surfaces(q SurfaceRequest, probe, offset bool) (Result, error) {
 	}
 	if offset && q.Offset != 0 {
 		result.Probe = offsetProbe(q, samples, scale)
+	}
+	if focused != 0 {
+		result.Probe = focalProbe(q, focused, samples, scale)
 	}
 	return result, nil
 }
