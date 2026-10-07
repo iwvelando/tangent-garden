@@ -113,14 +113,22 @@ jobs:
       # stalled at ~100 KB/s long enough to time a shard out. The downloaded
       # packages are cached per runner image, so a warm shard installs them
       # from the cache with the image's own package lists and no download.
-      # ImageOS and ImageVersion are the runner's environment, not the `env`
-      # context, so the key is written from the shell.
+      # A pull request reads only its own caches and main's, so after the
+      # image changes it falls back to the newest archive for the same OS,
+      # usually main's for the previous image: apt then downloads only the
+      # packages that have changed, and the step saves the archive under the
+      # new image's key. ImageOS and ImageVersion are the runner's
+      # environment, not the `env` context, so the keys are written from the
+      # shell.
       - id: image
-        run: echo "key=apt-ffmpeg-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "prefix=apt-ffmpeg-$ImageOS-" >> "$GITHUB_OUTPUT"
+          echo "key=apt-ffmpeg-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
           key: ${{ steps.image.outputs.key }}
+          restore-keys: ${{ steps.image.outputs.prefix }}
       - name: Install ffmpeg
         timeout-minutes: 5
         run: |
@@ -135,6 +143,9 @@ jobs:
           }
           # Without cached packages, or if the image's lists are stale, refresh.
           install || { sudo apt-get update && install; }
+          # Drop packages from an older image that apt no longer lists, so
+          # the archive does not grow with every image.
+          sudo apt-get autoclean -o Dir::Cache::Archives="$archives"
           # apt leaves the archive root-owned; the cache is saved as the runner.
           sudo chown -R "$(id -u):$(id -g)" "$archives"
       # Runs against the production build in dist/, under the production CSP.
