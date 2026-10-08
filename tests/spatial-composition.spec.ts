@@ -50,6 +50,11 @@ const unwound = [
   preset("A trefoil's string, unwound"),
   preset("A sheet of Viviani's normals"),
 ];
+// The strand's own showcases (see spatial-strand-input.spec.ts).
+const stranded = [
+  preset("A coiled cord round a trefoil"),
+  preset("Threads twisted round a coiled helix"),
+];
 const composedLayers = [
   "Base curve",
   "Perpendiculars & tangent feet",
@@ -180,7 +185,13 @@ test("constructions without an input hide the choice and ignore it", async ({
 test("earlier presets are built on the base and keep their layers", async ({
   page,
 }) => {
-  const added = new Set([+cusp, +horn, +chords, ...unwound.map(Number)]);
+  const added = new Set([
+    +cusp,
+    +horn,
+    +chords,
+    ...unwound.map(Number),
+    ...stranded.map(Number),
+  ]);
   spatialPresets.forEach((p, k) => {
     if (!added.has(k)) expect(p.config.input, p.name).toBe("base");
   });
@@ -207,14 +218,14 @@ test("the cusp preset reports its cusp, and every showcase builds on a derived c
     .getByRole("group", { name: "Example family" })
     .getByRole("button", { name: /Built on a derived curve/ })
     .click();
-  await expect(gallery.locator("[data-example]")).toHaveCount(6);
+  await expect(gallery.locator("[data-example]")).toHaveCount(8);
   expect(
     await gallery
       .locator("[data-example]")
       .evaluateAll((cards) =>
         cards.map((c) => (c as HTMLElement).dataset.example),
       ),
-  ).toEqual([cusp, horn, chords, ...unwound]);
+  ).toEqual([cusp, horn, chords, ...unwound, ...stranded]);
   await page.keyboard.press("Escape");
   await gallery.waitFor({ state: "hidden" });
   for (const [k, input, text] of [

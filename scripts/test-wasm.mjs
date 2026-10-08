@@ -1626,6 +1626,74 @@ console.log(
 console.log(
   "WASM composition on an involute: the helix's planar involute, its cusp, strings and validation passed",
 );
+// Composition on an offset strand: a tube around the strand of the unit
+// circle, a closed harmonic curve, at d = 0.3 and θ₀ = 0.4, twisted five turns. The circle's
+// transported normal is e_z and T × e_z its outward radius, so the strand is
+// the coil (1 + d sin θ)(cos t, sin t, 0) + d cos θ e_z, θ = θ₀ + 5t, which
+// closes, and the tube around it closes too.
+{
+  const coiled = (extra) =>
+    JSON.parse(
+      tangentGardenSpatial(
+        JSON.stringify({
+          format: "harmonic",
+          construction: "canal",
+          input: "strand",
+          strand: { offset: 0.3, angle: 0.4, twist: 5 },
+          canal: { radius: 0.05, profile: "1", meridians: 3 },
+          frame: {
+            kind: "rotation-minimizing",
+            reference: { x: 0, y: 0, z: 1 },
+            closure: "distribute",
+          },
+          harmonic: {
+            center: { x: 0, y: 0, z: 0 },
+            terms: [
+              {
+                frequency: 1,
+                cosine: { x: 1, y: 0, z: 0 },
+                sine: { x: 0, y: 1, z: 0 },
+              },
+            ],
+            min: 0,
+            max: 2 * Math.PI,
+          },
+          samples: 480,
+          lines: 24,
+          ...extra,
+        }),
+      ),
+    );
+  const q = coiled({});
+  assert.equal(q.composition.input, "strand");
+  assert.equal(q.composition.cusps, 0);
+  assert.equal(q.canal.closed, true);
+  q.base.forEach((p, i) => {
+    const t = (2 * Math.PI * i) / 480;
+    const theta = 0.4 + 5 * t;
+    const h = 1 + 0.3 * Math.sin(theta);
+    const want = [h * Math.cos(t), h * Math.sin(t), 0.3 * Math.cos(theta)];
+    assert.ok(
+      Math.hypot(p.x - want[0], p.y - want[1], p.z - want[2]) < 1e-8,
+      `strand sample ${i}`,
+    );
+  });
+  for (const s of q.composition.constructions) {
+    assert.deepEqual(s.foot, s.contact);
+    const arm = Math.hypot(
+      s.image.x - s.contact.x,
+      s.image.y - s.contact.y,
+      s.image.z - s.contact.z,
+    );
+    assert.ok(Math.abs(arm - 0.3) < 1e-12);
+  }
+  const refused = coiled({ strand: { offset: 0.3, angle: 0, twist: 500 } });
+  assert.match(refused.error, /strand's twist/);
+  assert.equal(refused.field, "strand.twist");
+}
+console.log(
+  "WASM composition on an offset strand: the circle's coil, its closed tube, arms and validation passed",
+);
 // Spatial harmonic generator: one term traces the ellipse c₀ + A cos t +
 // B sin t, closed over 2π; an incommensurate pair is left open.
 const spatialHarmonic = (terms, min, max) =>

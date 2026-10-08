@@ -730,6 +730,31 @@ test("spatial involute input anchor and string share the bounded scalar parser",
   }
 });
 
+test("spatial strand input offset, angle and twist share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page.getByLabel("Built on", { exact: true }).selectOption("strand");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const strand = async () => (await spatialConfig(stage))?.strand;
+  for (const [name, text, key, value] of [
+    ["Strand offset d", "e/10", "offset", Math.E / 10],
+    ["Strand angle θ₀", "-pi/4", "angle", -Math.PI / 4],
+    ["Strand twist", "phi*4", "twist", ((1 + Math.sqrt(5)) / 2) * 4],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(async () => (await strand())?.[key]).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
+
 test("spatial inversion center, radius and derived pole share the bounded scalar parser", async ({
   page,
 }) => {

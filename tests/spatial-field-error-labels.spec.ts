@@ -59,6 +59,24 @@ const cases: Case[] = [
     "Input anchor t₀",
   ],
   [
+    "strand.offset",
+    "A coiled cord round a trefoil",
+    (c) => (c.strand.offset = -1),
+    "Strand offset d",
+  ],
+  [
+    "strand.angle",
+    "A coiled cord round a trefoil",
+    (c) => (c.strand.angle = 2e3),
+    "Strand angle θ₀",
+  ],
+  [
+    "strand.twist",
+    "Threads twisted round a coiled helix",
+    (c) => (c.strand.twist = 101),
+    "Strand twist",
+  ],
+  [
     "curve.min",
     "Helix · a ribbon staircase",
     (c) => (c.curve.min = 2e6),

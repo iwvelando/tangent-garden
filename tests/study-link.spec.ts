@@ -410,7 +410,9 @@ test("links are compact, url-safe, and readable by an independent decoder", asyn
     longest = Math.max(longest, t.length);
   }
   // Presets are about 2 KB of JSON; a shared link should stay near 1.5 KB.
-  assert.ok(longest < 2000, `longest 3D preset link is ${longest} characters`);
+  // Every link carries each input's settings, which the strand input's
+  // took past 2000.
+  assert.ok(longest < 2100, `longest 3D preset link is ${longest} characters`);
 });
 
 test("hrefs carry the notebook in the query and the study in the fragment", () => {
@@ -1409,6 +1411,7 @@ test("a link carries the curve a construction is built on; older links build on 
     "tangent-foot",
     "orthotomic",
     "involute",
+    "strand",
   ] as const) {
     const study = spatial();
     study.config = {
@@ -1449,6 +1452,34 @@ test("a link carries the involute a construction is built on; older links take t
   // The inversion's own input does not take the involute.
   const inverted = structuredClone(spatial()) as any;
   inverted.config.inversion.input = "involute";
+  await refused(() => spatialStudy(inverted), "config.inversion.input");
+});
+
+test("a link carries the strand a construction is built on; older links take the default", async () => {
+  const study = spatial();
+  study.config = {
+    ...study.config,
+    construction: "canal",
+    input: "strand",
+    strand: { offset: 0.2, angle: -Math.PI / 3, twist: 2.5 },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A link made before the strand input has no strand, and draws exactly
+  // as before, since only the strand input reads it.
+  const older = structuredClone(spatial()) as any;
+  delete older.config.strand;
+  const opened = spatialStudy(older);
+  assert.deepEqual(opened.config.strand, spatialPresets[0].config.strand);
+  assert.equal(opened.config.input, "base");
+  for (const key of ["offset", "angle", "twist"]) {
+    const bad = structuredClone(spatial()) as any;
+    bad.config.strand[key] = "1";
+    await refused(() => spatialStudy(bad), `config.strand.${key}`);
+  }
+  // The inversion's own input does not take the strand.
+  const inverted = structuredClone(spatial()) as any;
+  inverted.config.inversion.input = "strand";
   await refused(() => spatialStudy(inverted), "config.inversion.input");
 });
 

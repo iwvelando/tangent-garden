@@ -61,6 +61,7 @@ import {
   takesInput,
   usesSpatialPole,
   type FrameConfig,
+  type StrandConfig,
   type RuledConfig,
   type CanalConfig,
   type FieldConfig,
@@ -87,6 +88,7 @@ import {
   maxRefinedTetrahedra,
   maxSections,
 } from "./types";
+import { curveInputs } from "./inputs";
 import { implicitGrid, implicitNote } from "./implicit";
 import {
   harmonicClosureKey,
@@ -543,6 +545,8 @@ export default function SpatialApp({
     update((c) => ({ ...c, ruled: change(c.ruled) }));
   const setFraming = (change: (f: FrameConfig) => FrameConfig) =>
     update((c) => ({ ...c, frame: change(c.frame) }));
+  const setStrand = (change: (s: StrandConfig) => StrandConfig) =>
+    update((c) => ({ ...c, strand: change(c.strand) }));
   const projection =
     config.construction === "tangent-foot" ||
     config.construction === "orthotomic";
@@ -1862,7 +1866,17 @@ export default function SpatialApp({
   // What the construction below is built on, when that is a derived curve.
   const builtOn = composing && (
     <p className="bottom-note composition-note">
-      {config.input === "involute" ? (
+      {config.input === "strand" ? (
+        <>
+          Built on the offset strand g(t) = r(t) + d D(t) of the base curve r,
+          drawn in grey with representative offset arms. D turns about the
+          tangent at angle θ₀ + 2πN s/L in the base's rotation-minimizing frame,
+          so the strand coils N times around the curve. The construction below
+          acts on it in place of r: its frame is carried from the samples and
+          its derivatives are written from the base's own, never measured along
+          a polyline.
+        </>
+      ) : config.input === "involute" ? (
         <>
           Built on the involute I(t) = r(t) + (c − s(t)) T(t) of the base curve
           r, unwound by a string of length c from its anchor, drawn in grey with
@@ -2584,7 +2598,7 @@ export default function SpatialApp({
                       <>
                         <Field
                           label="Built on"
-                          help="Build the construction on the base curve, on its tangent-foot curve or tangent-line orthotomic from the pole, or on one of its involutes. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
+                          help="Build the construction on the base curve, on its tangent-foot curve or tangent-line orthotomic from the pole, on one of its involutes, or on a strand that coils around it. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
                         >
                           <select
                             value={config.input}
@@ -2594,14 +2608,13 @@ export default function SpatialApp({
                               )
                             }
                           >
-                            <option value="base">The base curve</option>
-                            <option value="tangent-foot">
-                              Its tangent-foot curve
-                            </option>
-                            <option value="orthotomic">
-                              Its tangent-line orthotomic
-                            </option>
-                            <option value="involute">Its involute</option>
+                            {Object.entries(curveInputs).map(
+                              ([value, input]) => (
+                                <option key={value} value={value}>
+                                  {input.option}
+                                </option>
+                              ),
+                            )}
                           </select>
                         </Field>
                         {projectsInput(config) && poleFields}
@@ -2644,6 +2657,48 @@ export default function SpatialApp({
                               />
                             </Field>
                           </div>
+                        )}
+                        {composing && config.input === "strand" && (
+                          <>
+                            <div className="pair">
+                              <Field
+                                label="Strand offset d"
+                                help="How far the strand stands off the base curve, from 0 to 100000. Without twist it has a cusp wherever d reaches the radius of curvature on its side."
+                              >
+                                <ScalarInput
+                                  name="Strand offset d"
+                                  value={config.strand.offset}
+                                  onChange={(value) =>
+                                    setStrand((s) => ({ ...s, offset: value }))
+                                  }
+                                />
+                              </Field>
+                              <Field
+                                label="Strand angle θ₀"
+                                help="Where the strand starts around the curve, in radians within ±1000, from the base's rotation-minimizing normal, which starts from the z axis."
+                              >
+                                <ScalarInput
+                                  name="Strand angle θ₀"
+                                  value={config.strand.angle}
+                                  onChange={(value) =>
+                                    setStrand((s) => ({ ...s, angle: value }))
+                                  }
+                                />
+                              </Field>
+                            </div>
+                            <Field
+                              label="Strand twist"
+                              help="Turns the strand makes around the base curve over its whole length, within ±100. On a closed curve the frame's own turn is spread along it, so a whole number of turns closes the strand."
+                            >
+                              <ScalarInput
+                                name="Strand twist"
+                                value={config.strand.twist}
+                                onChange={(value) =>
+                                  setStrand((s) => ({ ...s, twist: value }))
+                                }
+                              />
+                            </Field>
+                          </>
                         )}
                       </>
                     )}
@@ -2992,18 +3047,18 @@ export default function SpatialApp({
                                           ["rulings", "Tangent rulings"],
                                           ["edges", "Ribbon edges"],
                                         ] as const)),
-                        ...(composing && config.input === "involute"
+                        ...(composing
                           ? ([
                               ["parent", "Base curve"],
-                              ["connectors", "Strings from the base"],
+                              [
+                                "connectors",
+                                curveInputs[config.input].connectors,
+                              ],
+                              ...(curveInputs[config.input].pole
+                                ? ([["pole", "Pole marker"]] as const)
+                                : []),
                             ] as const)
-                          : composing
-                            ? ([
-                                ["parent", "Base curve"],
-                                ["connectors", "Perpendiculars & tangent feet"],
-                                ["pole", "Pole marker"],
-                              ] as const)
-                            : []),
+                          : []),
                         ...(config.format === "harmonic"
                           ? ([
                               ["vectors", "Vector sums"],
