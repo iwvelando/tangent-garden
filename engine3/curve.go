@@ -122,19 +122,23 @@ func derivatives(f func(float64) Vec3, t, lo, hi, h float64) (Vec3, Vec3) {
 	origin := f(t)
 	var d, dd Vec3
 	for j := 0; j < 5; j++ {
-		coeff := []float64{1}
+		// The basis polynomial's coefficients, lowest first, built in place
+		// without allocating: m of them are in use.
+		coeff := [5]float64{1}
+		m := 1
 		den := 1.0
 		for k := 0; k < 5; k++ {
 			if k == j {
 				continue
 			}
 			b := a - float64(k)
-			next := make([]float64, len(coeff)+1)
-			for n, c := range coeff {
+			var next [5]float64
+			for n, c := range coeff[:m] {
 				next[n] += c * b
 				next[n+1] += c
 			}
 			coeff = next
+			m++
 			den *= float64(j - k)
 		}
 		v := f(start + float64(j)*h).sub(origin)

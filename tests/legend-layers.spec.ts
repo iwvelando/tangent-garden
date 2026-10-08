@@ -382,3 +382,55 @@ test("a 3D legend never names another study's geometry", async ({ page }) => {
   expect(states.length).toBeGreaterThan(0);
   for (const state of states) expect(state).toContain("Base curve");
 });
+
+test("a 3D legend holds still between an animation's frames", async ({
+  page,
+}) => {
+  test.slow();
+  // Each frame is a new result, drawn a moment after it arrives. Until it
+  // is, the legend keeps the last frame's geometry rather than falling
+  // back to the layers, which would show the ribbon this rope never draws
+  // and push the entries after it along, once a frame.
+  for (const preset of [
+    "A six-stranded rope round a trefoil",
+    "Threads twisted round a coiled helix",
+  ]) {
+    await spatial.open(page, preset);
+    const legend = spatial.legend(page);
+    const before = await shown(legend);
+    expect(before).not.toContain("Framed ribbon");
+    await legend.evaluate((legend) => {
+      const w = window as unknown as { legendStates: string[][] };
+      w.legendStates = [];
+      new MutationObserver(() =>
+        w.legendStates.push(
+          Array.from(legend.querySelectorAll<HTMLElement>("[data-legend]"))
+            .filter((e) => getComputedStyle(e).visibility === "visible")
+            .map((e) => e.textContent!.trim()),
+        ),
+      ).observe(legend, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+    });
+    const panel = page.locator("#spatial-animation-section");
+    if ((await panel.getAttribute("open")) === null)
+      await panel.locator(":scope > summary").click();
+    await panel.getByRole("button", { name: "Play animation" }).click();
+    // Drawing along the curve, a frame at a time, for a while.
+    const stop = panel.getByRole("button", { name: "Stop" });
+    await expect(stop).toBeEnabled();
+    await page.waitForTimeout(2500);
+    await expect(stop).toBeEnabled();
+    await stop.click();
+    const states = await page.evaluate(
+      () => (window as unknown as { legendStates: string[][] }).legendStates,
+    );
+    // A frame drawn from the very start of the curve may have nothing yet
+    // to draw for an entry, but no frame shows one the study never draws.
+    for (const state of states)
+      expect(state).toEqual(before.filter((e) => state.includes(e)));
+  }
+});

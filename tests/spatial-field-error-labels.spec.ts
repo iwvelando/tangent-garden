@@ -59,6 +59,24 @@ const cases: Case[] = [
     "Input anchor t₀",
   ],
   [
+    "coil.radius",
+    "A coiled cord round a trefoil",
+    (c) => (c.coil.radius = -1),
+    "Coil radius d",
+  ],
+  [
+    "coil.angle",
+    "A coiled cord round a trefoil",
+    (c) => (c.coil.angle = 2e3),
+    "Coil angle θ₀",
+  ],
+  [
+    "coil.turns",
+    "Threads twisted round a coiled helix",
+    (c) => (c.coil.turns = 101),
+    "Coil turns",
+  ],
+  [
     "curve.min",
     "Helix · a ribbon staircase",
     (c) => (c.curve.min = 2e6),

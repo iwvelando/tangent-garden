@@ -45,13 +45,15 @@ const every = "Lines (SVG) · every line",
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 // The recordings predate the metadata's construction input and its base
 // curve layer, which a study built on the base records as "base" and shown,
-// and the involute input's unwinding, which it records at its default.
+// and the involute and coil inputs' settings, which it records at their
+// defaults.
 const predating = (b: Buffer) =>
   Buffer.from(
     b
       .toString("utf8")
       .replace('"input":"base",', "")
       .replace('"unwinding":{"anchor":0,"offset":1},', "")
+      .replace('"coil":{"radius":0.3,"angle":0,"turns":8},', "")
       .replace('"parent":true,', "")
       .replace('"adaptive":false,', ""),
   );

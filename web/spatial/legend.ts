@@ -4,6 +4,7 @@
 // its layer is on and the drawn scene has geometry for it (sceneLayers in
 // scene.ts); the cut's edge joins them while it is drawn.
 import { composes, type SpatialConfig } from "./types";
+import { curveInputs } from "./inputs";
 import type { Pass } from "./scene";
 
 export type SpatialLegendEntry = {
@@ -11,13 +12,6 @@ export type SpatialLegendEntry = {
   swatch: string;
   label: string;
 };
-
-const inputNames = {
-  base: "Base curve",
-  "tangent-foot": "Tangent-foot curve",
-  orthotomic: "Tangent-line orthotomic",
-  involute: "Involute",
-} as const;
 
 export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
   if (c.format === "implicit")
@@ -95,7 +89,7 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
       layer: "base",
       swatch: "thread-dot",
       label: composing
-        ? inputNames[c.input]
+        ? curveInputs[c.input].name
         : flowing
           ? "Trajectory 1"
           : chasing

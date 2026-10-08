@@ -10,6 +10,7 @@ import type {
   ImplicitResult,
 } from "./types";
 import type { Basis } from "../named-views";
+import { curveInputs } from "./inputs";
 
 export type View = Bounds3 & {
   yaw: number;
@@ -512,9 +513,10 @@ export function buildScene(result: SpatialResult) {
   );
   // A projection's own connectors, or those of the projection a
   // construction is built on; an involute input has strings from the base
-  // instead, with no pole or feet.
+  // instead, and a coil its arms, with no pole or feet.
   const q = result.projection ?? result.composition;
-  const strung = result.composition?.input === "involute";
+  const strung =
+    !!result.composition && !curveInputs[result.composition.input].pole;
   const at = result.projection?.points.find((p) => p);
   const projection = batch(
     vertices(

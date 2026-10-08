@@ -1,4 +1,5 @@
 import { composes, type Frame } from "./types";
+import { curveInputs } from "./inputs";
 import { createRenderer, type View, type Layers } from "./renderer";
 import { buildScene, projectionRecord, type Batch } from "./scene";
 import { linework, linesSvg, sampleStep, workLimit } from "./linework";
@@ -45,12 +46,9 @@ function studyTitle(frame: Frame) {
           ? "spatial cyclic pursuit"
           : "spatial curve",
   };
-  const on = {
-    base: "",
-    "tangent-foot": " on the tangent-foot curve",
-    orthotomic: " on the tangent-line orthotomic",
-    involute: " on the involute",
-  }[composes(frame.config) ? frame.config.input : "base"];
+  const on = composes(frame.config)
+    ? curveInputs[frame.config.input].title
+    : "";
   return title[frame.config.construction] + on;
 }
 // The line weight in metadata, only when lines are strokes, so files drawn

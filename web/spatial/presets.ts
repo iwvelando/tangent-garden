@@ -15,6 +15,8 @@ const base: SpatialConfig = {
   pole: { x: 1.5, y: 0, z: 1 },
   input: "base",
   unwinding: { anchor: 0, offset: 1 },
+  // A coil a third of a unit off the curve, winding eight times round it.
+  coil: { radius: 0.3, angle: 0, turns: 8 },
   inversion: { center: { x: 0, y: 0, z: 0 }, radius: 2, input: "base" },
   involute: {
     anchor: 0,
@@ -3602,5 +3604,84 @@ export const spatialPresets: {
       animate: { mode: "probe" },
       path: { style: "steady", keys: [] },
     },
+  },
+  // A tube around a coil of the trefoil (torus knot p = 2, q = 3), a
+  // third of a unit off the knot and twisted 36 times round it: a coiled
+  // cord. The coil turns in the knot's rotation-minimizing frame, whose
+  // holonomy is spread along the loop, so a whole number of turns closes
+  // the coil and the tube around it. Played, the turns wind up from 0,
+  // where the coil runs alongside the knot, to 36 turns.
+  {
+    name: "A coiled cord round a trefoil",
+    detail:
+      "A tube around a coil that winds 36 times round the knot, closing on itself; played, the cord winds up from a straight line beside it",
+    config: {
+      ...base,
+      construction: "canal",
+      input: "coil",
+      coil: { radius: 0.34, angle: 0, turns: 36 },
+      canal: { radius: 0.085, profile: "1", meridians: 0 },
+      frame: { ...base.frame, closure: "distribute" },
+      samples: 960,
+      lines: 72,
+    },
+    layers: { connectors: false, circles: false, frames: false, seam: false },
+    probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
+    view: { yaw: 0, pitch: 0.55, zoom: 1.25, panX: 0, panY: 0 },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "inputTurns", from: "0", to: "36" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // A coiled coil: a coil 0.6 off the helix (2 cos t, t/2, 2 sin t),
+  // upright about the turntable's axis, winding ten times round it over
+  // its two turns,
+  // and three strands of a framed construction twisted seventy times round
+  // that coil. Each thread lies in the coil's own rotation-minimizing
+  // frame, as the coil lies in the helix's.
+  {
+    name: "Threads twisted round a coiled helix",
+    detail:
+      "Three threads twisted round a coil that itself winds round a helix, like a rope or a supercoiled loop",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "framed",
+      input: "coil",
+      coil: { radius: 0.6, angle: 0, turns: 10 },
+      curve: {
+        x: "2*cos(t)",
+        y: "t/2",
+        z: "2*sin(t)",
+        a: 1,
+        min: 0,
+        max: 4 * Math.PI,
+      },
+      frame: {
+        ...base.frame,
+        twist: 70,
+        width: 0,
+        offset: 0.13,
+        strands: 3,
+        closure: "distribute",
+      },
+      samples: 1200,
+      lines: 24,
+    },
+    layers: { frames: false, seam: false, connectors: false },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "hide",
+      weight: "bold",
+    },
+    view: { yaw: 0.5, pitch: 0.3, zoom: 1.15, panX: 0, panY: 0 },
   },
 ];

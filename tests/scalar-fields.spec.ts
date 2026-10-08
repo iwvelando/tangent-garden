@@ -730,6 +730,31 @@ test("spatial involute input anchor and string share the bounded scalar parser",
   }
 });
 
+test("spatial coil input radius, angle and turns share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page.getByLabel("Built on", { exact: true }).selectOption("coil");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const coil = async () => (await spatialConfig(stage))?.coil;
+  for (const [name, text, key, value] of [
+    ["Coil radius d", "e/10", "radius", Math.E / 10],
+    ["Coil angle θ₀", "-pi/4", "angle", -Math.PI / 4],
+    ["Coil turns", "phi*4", "turns", ((1 + Math.sqrt(5)) / 2) * 4],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(async () => (await coil())?.[key]).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
+
 test("spatial inversion center, radius and derived pole share the bounded scalar parser", async ({
   page,
 }) => {

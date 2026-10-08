@@ -48,6 +48,9 @@ func TestValidationNamesItsField(t *testing.T) {
 			c.Samples = 481
 			return c
 		}},
+		{"coil radius", "coil.radius", func() Request { return coiled(study(), -1, 0, 0) }},
+		{"coil angle", "coil.angle", func() Request { return coiled(study(), 0.3, nan, 0) }},
+		{"coil turns", "coil.turns", func() Request { return coiled(study(), 0.3, 0, 200) }},
 		{"radius", "radius", func() Request { c := study(); c.Radius = 30; return c }},
 		{"tube", "tube", func() Request { c := study(); c.Tube = 3; return c }},
 		{"p", "p", func() Request { c := study(); c.P = 9; return c }},

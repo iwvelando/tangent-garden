@@ -410,7 +410,9 @@ test("links are compact, url-safe, and readable by an independent decoder", asyn
     longest = Math.max(longest, t.length);
   }
   // Presets are about 2 KB of JSON; a shared link should stay near 1.5 KB.
-  assert.ok(longest < 2000, `longest 3D preset link is ${longest} characters`);
+  // Every link carries each input's settings, which the coil input's
+  // took past 2000.
+  assert.ok(longest < 2100, `longest 3D preset link is ${longest} characters`);
 });
 
 test("hrefs carry the notebook in the query and the study in the fragment", () => {
@@ -1409,6 +1411,7 @@ test("a link carries the curve a construction is built on; older links build on 
     "tangent-foot",
     "orthotomic",
     "involute",
+    "coil",
   ] as const) {
     const study = spatial();
     study.config = {
@@ -1449,6 +1452,34 @@ test("a link carries the involute a construction is built on; older links take t
   // The inversion's own input does not take the involute.
   const inverted = structuredClone(spatial()) as any;
   inverted.config.inversion.input = "involute";
+  await refused(() => spatialStudy(inverted), "config.inversion.input");
+});
+
+test("a link carries the coil a construction is built on; older links take the default", async () => {
+  const study = spatial();
+  study.config = {
+    ...study.config,
+    construction: "canal",
+    input: "coil",
+    coil: { radius: 0.2, angle: -Math.PI / 3, turns: 2.5 },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A link made before the coil input has no coil, and draws exactly
+  // as before, since only the coil input reads it.
+  const older = structuredClone(spatial()) as any;
+  delete older.config.coil;
+  const opened = spatialStudy(older);
+  assert.deepEqual(opened.config.coil, spatialPresets[0].config.coil);
+  assert.equal(opened.config.input, "base");
+  for (const key of ["radius", "angle", "turns"]) {
+    const bad = structuredClone(spatial()) as any;
+    bad.config.coil[key] = "1";
+    await refused(() => spatialStudy(bad), `config.coil.${key}`);
+  }
+  // The inversion's own input does not take the coil.
+  const inverted = structuredClone(spatial()) as any;
+  inverted.config.inversion.input = "coil";
   await refused(() => spatialStudy(inverted), "config.inversion.input");
 });
 
