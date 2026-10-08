@@ -54,11 +54,7 @@ func main() {
 			}
 			return string(b), nil
 		}
-		if result.Implicit != nil {
-			return meshReply(result.Implicit, encode)
-		}
-		text, _ := encode()
-		return text
+		return meshReply(&result, encode)
 	})
 	js.Global().Set("tangentGardenSpatial", spatial)
 	spatialProbe := js.FuncOf(func(this js.Value, args []js.Value) any {

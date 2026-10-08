@@ -18,16 +18,19 @@ declare const tangentGardenCompute: (json: string) => string;
 declare const tangentGardenProbe: (json: string) => string;
 declare const tangentGardenSpatialProbe: (json: string) => string;
 declare const tangentGardenTesseract: (json: string) => string;
-// An implicit surface's mesh arrives beside its JSON, as typed views on one
-// buffer (cmd/wasm/mesh.go); every other reply is JSON alone.
-declare const tangentGardenSpatial: (
-  json: string,
-) =>
+// A study's meshes arrive beside its JSON, as typed views on one buffer
+// (cmd/wasm/mesh.go): the curve mesh always, an implicit surface's only for
+// an implicit study. A refusal is JSON alone.
+declare const tangentGardenSpatial: (json: string) =>
   | string
-  | ({ json: string } & Pick<
-      import("./spatial/types").ImplicitResult,
-      "positions" | "normals" | "triangles" | "cut" | "open"
-    >);
+  | {
+      json: string;
+      mesh: import("./spatial/types").CurveMesh;
+      implicit?: Pick<
+        import("./spatial/types").ImplicitResult,
+        "positions" | "normals" | "triangles" | "cut" | "open"
+      >;
+    };
 declare const tangentGardenScalars: (json: string) => string;
 let ready: Promise<void> | undefined;
 async function init(base: string) {
@@ -598,11 +601,12 @@ self.onmessage = async ({
       }
       const reply = tangentGardenSpatial(request);
       if (typeof reply !== "string") {
-        // Transfer the mesh's buffer rather than copying it.
-        const { json, ...mesh } = reply;
+        // Transfer the meshes' buffer rather than copying it.
+        const { json, mesh, implicit } = reply;
         const result = JSON.parse(json);
-        Object.assign(result.implicit, mesh);
-        self.postMessage({ id: data.id, result }, [mesh.positions.buffer]);
+        result.mesh = mesh;
+        if (implicit) Object.assign(result.implicit, implicit);
+        self.postMessage({ id: data.id, result }, [mesh.vertices.buffer]);
         return;
       }
       const result = JSON.parse(reply);

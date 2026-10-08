@@ -11,6 +11,7 @@ import { linework, type LineGroup } from "../web/spatial/linework";
 import { defaultLayers } from "../web/spatial/renderer";
 import { dashesPerUnit, dashOn } from "../web/spatial/sight";
 import type { SpatialResult, Vec3 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 // The perspective camera, which the camera that rides a ray looks through.
 // Expected pixels come from the pinhole camera's definition: a point at
@@ -96,7 +97,7 @@ function study(parts: Partial<SpatialResult>): SpatialResult {
     minus: [],
     plus: [],
     breaks: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     bounds: { center: O, radius: 1 },
     radius: 1,
@@ -120,7 +121,7 @@ function floor(reach = 50) {
     corner(reach, reach),
     corner(-reach, reach),
   ];
-  return [a, b, c, a, c, d];
+  return curveMesh([a, b, c, a, c, d]);
 }
 const paths = (groups: LineGroup[], layer: string, hidden = false) =>
   groups

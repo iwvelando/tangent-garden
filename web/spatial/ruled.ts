@@ -26,7 +26,7 @@ export function ruledNote(result: SpatialResult): string[] {
     out.push(
       `The partner is missing or jumps across ${gaps === 1 ? "one interval" : `${gaps} intervals`}; the surface is not joined there.`,
     );
-  const regular = result.mesh.length > 0;
+  const regular = result.mesh.sampleIndex.length > 0;
   if (q.coincident > 0)
     out.push(
       regular

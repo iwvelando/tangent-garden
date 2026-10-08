@@ -5,6 +5,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { choosePreset, open } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
+import { curveMesh } from "./curve-mesh";
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
@@ -210,7 +211,7 @@ test("projection reveal keeps correspondence, gaps and independent bounds", () =
     base: [origin, origin, origin, origin],
     minus: [],
     plus: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     breaks: [false, true, true, false],
     bounds: { center: origin, radius: 100 },

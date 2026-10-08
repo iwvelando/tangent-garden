@@ -10,6 +10,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
+import { curveMesh } from "./curve-mesh";
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
@@ -300,7 +301,7 @@ test("field reveal shows every trajectory to the same time", () => {
     base: [origin, near, near, near],
     minus: [],
     plus: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     breaks: [false, false, false, false],
     bounds: { center: origin, radius: 40 },

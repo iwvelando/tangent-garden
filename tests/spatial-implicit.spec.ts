@@ -13,6 +13,7 @@ import { choosePreset } from "./helpers";
 import { engines, watchEngines, type EngineLog } from "./engines";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
+import { curveMesh } from "./curve-mesh";
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
@@ -589,7 +590,7 @@ function study(): SpatialResult {
     base: [],
     minus: [],
     plus: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     breaks: [],
     bounds: { center: origin, radius: 1 },

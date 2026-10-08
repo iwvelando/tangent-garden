@@ -1,6 +1,6 @@
 # Spatial mesh transport: moving curve surfaces off JSON
 
-Status: proposed, not started. This is the detailed framing for the canal bullet of item 8 ("Transport and efficiency, when profiled") in [remaining-refinements.md](remaining-refinements.md). Read `AGENTS.md` first, then the parts of [architecture.md](architecture.md) on the WASM bridge and the implicit mesh.
+Status: step 1 done (see [Step 1, as built](#step-1-as-built)); step 2 and the secondary candidates are open. This is the detailed framing for the canal bullet of item 8 ("Transport and efficiency, when profiled") in [remaining-refinements.md](remaining-refinements.md). Read `AGENTS.md` first, then the parts of [architecture.md](architecture.md) on the WASM bridge and the implicit mesh.
 
 ## The symptom
 
@@ -77,6 +77,26 @@ These are smaller, and each could follow once step 1 exists:
 - `canal.circles`: about 270 KB at 72 lines.
 - `composition` and `base`: each about 170–200 KB at 2400 samples.
 - From item 8: the surface grid (about 10 MB), the surface-probe grids (5–7 MB) and the largest 4D weave (9.6 MB).
+
+## Step 1, as built
+
+- `engine3.FlatMesh` lays `Result.Mesh` out as `vertices` (seven float64 per vertex) and `sampleIndex` (int32); the engine's types and output are unchanged. `cmd/wasm/mesh.go` sends every spatial result as `{ json, mesh, implicit }`, typed views on one buffer, with the implicit arrays nested under `implicit` rather than beside `json`. The worker transfers the buffer; `SpatialResult.mesh` is a `CurveMesh`.
+- `buildScene` copies `vertices` into its batch; the reveal keeps the vertices whose sample is at most the last revealed, in their order (`revealMesh`); the ruled note counts `sampleIndex`. Hand-built test results use `tests/curve-mesh.ts`.
+- `make bench` is now `scripts/bench-spatial.mjs`, with six curve presets beside the implicit studies and a column for the scene's batch. It reads every reply shape, so `--compare` against the deployed site works.
+- Checks: `engine3/flat_test.go` (the arrays equal the JSON bit for bit, including a canal with gaps and an empty ribbon); `scripts/test-wasm.mjs` reads every spatial reply through the typed views and checks a developable's, ribbon's and torus's vertices, an empty mesh and a mesh broken where the envelope is lost; `scripts/test-dev-worker.mjs` checks the worker's reassembly and transfer; `tests/spatial-mesh-transport.spec.ts` compares, for every preset, the scene drawn from the typed mesh with the scene drawn the old way, whole and at four reveals, and plays the coiled cord's track to both endpoints.
+- A one-off comparison against the previous engine and frontend hashed every 3D preset's whole scene at rest, at two reveals, and at each parameter track's start, middle and end: 363 scenes, all identical. A deliberate fault in the reveal changed 78 of them.
+- Timing with `make bench ARGS="--compare <previous build>"`, in Node on the cloud container (median of 5; call + decode + post + scene):
+
+  | Study                                     | Before | After  | Transfer         |
+  | ----------------------------------------- | ------ | ------ | ---------------- |
+  | Coiled cord, 960 samples                  | 794 ms | 59 ms  | 14.9 MB → 4.6 MB |
+  | Coiled cord, 2400 samples                 | 618 ms | 87 ms  | 15.2 MB → 4.9 MB |
+  | Beads running around a trefoil            | 471 ms | 55 ms  | 11.5 MB → 3.6 MB |
+  | A cord twisted round a spring (refined)   | 496 ms | 253 ms | 8.3 MB → 3.1 MB  |
+  | A band around the trefoil (framed ribbon) | 63 ms  | 23 ms  | 1.6 MB → 0.7 MB  |
+  | Trefoil · (2, 3) (tangent developable)    | 101 ms | 13 ms  | 2.6 MB → 0.9 MB  |
+
+  Implicit studies are unchanged within noise. The spring's remaining time is its refinement in Go. Most of what remains of a tube's transfer is the mesh's own buffer (about 4 MB at the 480-ring cap), which step 2 would cut about six-fold.
 
 ## Verification the change must carry
 

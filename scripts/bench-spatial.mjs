@@ -1,14 +1,17 @@
-// Times large implicit surfaces through a real WASM engine, the way the
-// browser worker calls it: the bridge call (Go meshing, sections and
-// encoding), decoding into the result the page receives, and the copy that
-// posting it to the page would make. It reads either bridge reply, JSON
-// alone or JSON with typed mesh arrays, so it can time a deployed site's
-// engine beside a local build:
+// Times large spatial studies through a real WASM engine, the way the
+// browser worker calls it: the bridge call (Go's work and encoding),
+// decoding into the result the page receives, the copy that posting it to
+// the page would make, and, for a curve study, laying its mesh out as the
+// scene's batch (buildScene). The studies are the largest implicit
+// surfaces and the tube, ribbon and developable presets whose meshes are
+// largest. It reads every bridge reply shape, JSON alone or JSON with typed
+// mesh arrays, so it can time a deployed site's engine beside a local
+// build:
 //
-//   node scripts/bench-implicit.mjs                 # public/ (make wasm)
-//   node scripts/bench-implicit.mjs --engine dist/
-//   node scripts/bench-implicit.mjs --compare https://tangent-garden.isaacvelando.com/
-//   node scripts/bench-implicit.mjs --runs 9 --study tanglecube
+//   node scripts/bench-spatial.mjs                 # public/ (make wasm)
+//   node scripts/bench-spatial.mjs --engine dist/
+//   node scripts/bench-spatial.mjs --compare https://tangent-garden.isaacvelando.com/
+//   node scripts/bench-spatial.mjs --runs 9 --study cord
 //
 // --compare times the given engine first, then the local one, and prints
 // each study's speedup. Each engine runs in its own process: both define
@@ -18,6 +21,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
+import { createServer } from "vite";
 
 const box = (x, y = x, z = x) => ({
   xMin: -x,
@@ -33,6 +37,7 @@ const none = { normal: { x: 0, y: 0, z: 1 }, from: 0, to: 0, count: 0 };
 const study = (name, note, implicit) => ({
   name,
   note,
+  kind: "implicit",
   request: {
     format: "implicit",
     samples: 0,
@@ -97,6 +102,22 @@ const studies = [
   }),
 ];
 
+// Curve studies, each a preset (its study drawn at rest, as the first frame
+// of its animation), with any changes to it.
+const curves = [
+  ["cord", "A coiled cord round a trefoil", "960 samples, 480 rings"],
+  [
+    "cord-2400",
+    "A coiled cord round a trefoil",
+    "2400 samples, 480 rings",
+    { samples: 2400 },
+  ],
+  ["beads", "Beads running around a trefoil", "720 samples, 480 rings"],
+  ["spring", "A cord twisted round a spring", "240 samples, refined"],
+  ["band", "A band around the trefoil", "a framed ribbon"],
+  ["developable", "Trefoil · (2, 3)", "the tangent developable"],
+];
+
 const options = { runs: 5, engine: "public/", compare: "", study: "" };
 const args = process.argv.slice(2);
 for (let k = 0; k < args.length; k += 2) {
@@ -131,64 +152,124 @@ const median = (values) => {
   return sorted[Math.floor(sorted.length / 2)];
 };
 
+// The bridge's reply as the worker passes it to the page, and the buffers
+// it transfers. Engines before the curve mesh moved out of JSON reply with
+// JSON alone, or for an implicit surface with its arrays beside the JSON.
+function decode(reply) {
+  if (typeof reply === "string")
+    return { result: JSON.parse(reply), bytes: reply.length, transfer: [] };
+  const { json, mesh, implicit, ...flat } = reply;
+  const result = JSON.parse(json);
+  if (mesh) result.mesh = mesh;
+  if (result.implicit) Object.assign(result.implicit, implicit ?? flat);
+  const buffer = (mesh ?? flat).vertices?.buffer ?? flat.positions.buffer;
+  return { result, bytes: json.length + buffer.byteLength, transfer: [buffer] };
+}
+// The scene's mesh batch (buildScene), from either shape of curve mesh.
+const flatten = (mesh) =>
+  Array.isArray(mesh)
+    ? new Float32Array(
+        mesh.flatMap((v) => [
+          v.position.x,
+          v.position.y,
+          v.position.z,
+          v.normal.x,
+          v.normal.y,
+          v.normal.z,
+          v.phase,
+        ]),
+      )
+    : new Float32Array(mesh.vertices);
+const triangleCount = (result) =>
+  result.implicit
+    ? result.implicit.triangles.length / 3
+    : (result.mesh.sampleIndex ?? result.mesh).length / 3;
+
 // One engine, in this process: time every study and print JSON.
-async function measure(source) {
+async function measure(source, studies) {
   await load(source);
   const results = [];
   for (const s of studies) {
-    if (options.study && s.name !== options.study) continue;
     const rows = [];
     for (let run = 0; run <= options.runs; run++) {
       const t0 = performance.now();
       const reply = globalThis.tangentGardenSpatial(JSON.stringify(s.request));
       const t1 = performance.now();
-      let result, bytes, transfer;
-      if (typeof reply === "string") {
-        result = JSON.parse(reply);
-        bytes = reply.length;
-        transfer = [];
-      } else {
-        const { json, ...mesh } = reply;
-        result = JSON.parse(json);
-        Object.assign(result.implicit, mesh);
-        bytes = json.length + mesh.positions.buffer.byteLength;
-        transfer = [mesh.positions.buffer];
-      }
+      const { result, bytes, transfer } = decode(reply);
       const t2 = performance.now();
       if (result.error) throw new Error(`${s.name}: ${result.error}`);
       if (run === 0)
         results.push({
           name: s.name,
           note: s.note,
-          triangles: result.implicit.triangles.length / 3,
-          vertices: result.implicit.positions.length / 3,
+          kind: s.kind,
+          triangles: triangleCount(result),
+          vertices: result.implicit
+            ? result.implicit.positions.length / 3
+            : 3 * triangleCount(result),
         });
       // What postMessage does to reach the page; it detaches the buffer.
-      structuredClone({ result }, { transfer });
+      const posted = structuredClone({ result }, { transfer }).result;
       const t3 = performance.now();
+      if (s.kind === "curve") flatten(posted.mesh);
+      const t4 = performance.now();
       if (run > 0)
-        rows.push({ call: t1 - t0, decode: t2 - t1, post: t3 - t2, bytes });
+        rows.push({
+          call: t1 - t0,
+          decode: t2 - t1,
+          post: t3 - t2,
+          scene: t4 - t3,
+          bytes,
+        });
     }
     const r = results.at(-1);
-    for (const key of ["call", "decode", "post", "bytes"])
+    for (const key of ["call", "decode", "post", "scene", "bytes"])
       r[key] = median(rows.map((row) => row[key]));
-    r.total = r.call + r.decode + r.post;
+    r.total = r.call + r.decode + r.post + r.scene;
   }
   process.stdout.write(JSON.stringify(results));
   process.exit(0);
 }
 
-function child(source) {
+// Every study's request, with the curve studies read from the presets.
+async function allStudies() {
+  const server = await createServer({
+    logLevel: "silent",
+    server: { ws: false },
+  });
+  try {
+    const { spatialPresets } = await server.ssrLoadModule(
+      "/web/spatial/presets.ts",
+    );
+    const curveStudies = curves.map(([name, preset, note, changes = {}]) => {
+      const p = spatialPresets.find((p) => p.name === preset);
+      if (!p) throw new Error(`No preset named ${preset}`);
+      return {
+        name,
+        note,
+        kind: "curve",
+        request: { ...p.config, ...changes },
+      };
+    });
+    return [...studies, ...curveStudies].filter(
+      (s) => !options.study || s.name === options.study,
+    );
+  } finally {
+    await server.close();
+  }
+}
+
+// Each engine runs in its own process, given the studies on its input.
+function child(source, chosen) {
   const script = fileURLToPath(import.meta.url);
   const out = execFileSync(
     process.execPath,
-    [script, "--child", source, "--runs", String(options.runs)].concat(
-      options.study ? ["--study", options.study] : [],
-    ),
+    [script, "--child", source, "--runs", String(options.runs)],
     {
       encoding: "utf8",
+      input: JSON.stringify(chosen),
       maxBuffer: 1 << 24,
-      stdio: ["ignore", "pipe", "inherit"],
+      stdio: ["pipe", "pipe", "inherit"],
     },
   );
   return JSON.parse(out);
@@ -199,30 +280,33 @@ const mb = (v) => `${(v / 1e6).toFixed(1).padStart(5)} MB`;
 function table(label, results) {
   console.log(`\n${label}`);
   console.log(
-    "study          triangles   call     decode   post     total    transfer",
+    "study          triangles   call     decode   post     scene    total    transfer",
   );
   for (const r of results)
     console.log(
-      `${r.name.padEnd(14)}${String(r.triangles).padStart(9)}  ${ms(r.call)}  ${ms(r.decode)}  ${ms(r.post)}  ${ms(r.total)}  ${mb(r.bytes)}`,
+      `${r.name.padEnd(14)}${String(r.triangles).padStart(9)}  ${ms(r.call)}  ${ms(r.decode)}  ${ms(r.post)}  ${ms(r.scene)}  ${ms(r.total)}  ${mb(r.bytes)}`,
     );
 }
 
-if (options.child) await measure(options.child);
+if (options.child)
+  await measure(options.child, JSON.parse(readFileSync(0, "utf8")));
 else {
   console.log(
-    `Median of ${options.runs} runs after one warm-up. call: the bridge (Go work and encoding); decode: JSON and typed arrays; post: the copy postMessage makes; transfer: bytes crossing to the page.`,
+    `Median of ${options.runs} runs after one warm-up. call: the bridge (Go work and encoding); decode: JSON and typed arrays; post: the copy postMessage makes; scene: a curve mesh laid out as the scene's batch; transfer: bytes crossing to the page.`,
   );
-  const local = child(options.engine);
+  const chosen = await allStudies();
+  if (chosen.length === 0) throw new Error(`No study named ${options.study}`);
+  const local = child(options.engine, chosen);
   if (!options.compare) table(`Engine: ${options.engine}`, local);
   else {
-    const other = child(options.compare);
+    const other = child(options.compare, chosen);
     table(`Engine: ${options.compare}`, other);
     table(`Engine: ${options.engine}`, local);
     console.log("\nSpeedup per frame (total), and transfer size");
     for (const r of local) {
       const o = other.find((x) => x.name === r.name);
       // An engine without refinement ignores it and meshes the grid alone.
-      if (studies.find((s) => s.name === r.name).request.implicit.refine) {
+      if (chosen.find((s) => s.name === r.name).request.implicit?.refine) {
         console.log(`${r.name.padEnd(14)}   not compared: refined`);
         continue;
       }

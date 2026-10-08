@@ -10,6 +10,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
+import { curveMesh } from "./curve-mesh";
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
@@ -253,7 +254,7 @@ test("ruled reveal keeps the partner and its breaks up to the tip", () => {
     base: [origin, origin, origin, origin],
     minus: [],
     plus: [origin, origin, far, far],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [0, 2, 3].map((sampleIndex) => ({
       sampleIndex,
       from: origin,

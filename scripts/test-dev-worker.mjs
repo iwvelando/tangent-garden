@@ -25,17 +25,29 @@ try {
   const replies = [],
     transfers = [],
     requests = [];
-  // An implicit mesh returns as JSON plus typed views on one buffer.
-  const buffer = new ArrayBuffer(8 * 6 + 4 * 5);
+  // A study's meshes return as JSON plus typed views on one buffer: the
+  // curve mesh always, and an implicit surface's arrays for an implicit
+  // study.
+  const buffer = new ArrayBuffer(8 * 27 + 4 * 8);
   const mesh = {
-    positions: new Float64Array(buffer, 0, 3),
-    normals: new Float64Array(buffer, 24, 3),
-    triangles: new Int32Array(buffer, 48, 3),
-    cut: new Int32Array(buffer, 60, 2),
-    open: new Int32Array(buffer, 68, 0),
+    vertices: new Float64Array(buffer, 0, 21),
+    sampleIndex: new Int32Array(buffer, 216, 3),
   };
-  mesh.positions.set([1, 2, 3]);
-  mesh.triangles.set([0, 0, 0]);
+  const implicitMesh = {
+    positions: new Float64Array(buffer, 168, 3),
+    normals: new Float64Array(buffer, 192, 3),
+    triangles: new Int32Array(buffer, 228, 3),
+    cut: new Int32Array(buffer, 240, 2),
+    open: new Int32Array(buffer, 248, 0),
+  };
+  mesh.vertices.set([1, 2, 3, 0, 0, 1, 0.5]);
+  mesh.sampleIndex.set([4, 4, 4]);
+  const curveBuffer = new ArrayBuffer(8 * 21 + 4 * 3);
+  const curveMesh = {
+    vertices: new Float64Array(curveBuffer, 0, 21),
+    sampleIndex: new Int32Array(curveBuffer, 168, 3),
+  };
+  curveMesh.vertices.set([1, 2, 3, 0, 0, 1, 0.5]);
   const context = createContext({
     importScripts: () => {}, // Vite's development environment prelude.
     self: {
@@ -51,10 +63,14 @@ try {
     tangentGardenSpatial: (json) =>
       JSON.parse(json).format === "implicit"
         ? {
-            json: '{"implicit":{"grid":[4,4,4],"positions":null,"normals":null,"triangles":null,"cut":null,"open":null}}',
-            ...mesh,
+            json: '{"mesh":null,"implicit":{"grid":[4,4,4],"positions":null,"normals":null,"triangles":null,"cut":null,"open":null}}',
+            mesh: {
+              vertices: new Float64Array(buffer, 0, 0),
+              sampleIndex: new Int32Array(buffer, 216, 0),
+            },
+            implicit: implicitMesh,
           }
-        : '{"base":[]}',
+        : { json: '{"base":[],"mesh":null}', mesh: curveMesh },
   });
   new Script(`${worker.code}\nready = Promise.resolve();`).runInContext(
     context,
@@ -211,8 +227,22 @@ try {
   });
   const level = replies.at(-1).result.implicit;
   assert.deepEqual(Array.from(level.grid), [4, 4, 4]);
-  for (const name of Object.keys(mesh)) assert.equal(level[name], mesh[name]);
+  for (const name of Object.keys(implicitMesh))
+    assert.equal(level[name], implicitMesh[name]);
+  assert.equal(replies.at(-1).result.mesh.vertices.length, 0);
   assert.deepEqual(Array.from(transfers.at(-1)), [buffer]);
+  // A curve study's mesh is put back the same way.
+  const curve = spatialPresets.find(
+    (p) => p.config.construction === "canal",
+  ).config;
+  await context.self.onmessage({
+    data: { id: 91, action: "spatial", spatial: curve },
+  });
+  const tube = replies.at(-1).result;
+  assert.equal(tube.base.length, 0);
+  assert.equal(tube.mesh.vertices, curveMesh.vertices);
+  assert.equal(tube.mesh.sampleIndex, curveMesh.sampleIndex);
+  assert.deepEqual(Array.from(transfers.at(-1)), [curveBuffer]);
 } finally {
   await server.close();
 }

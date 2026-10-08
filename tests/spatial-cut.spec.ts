@@ -23,6 +23,7 @@ import { defaultLayers } from "../web/spatial/renderer";
 import { spatialPresets } from "../web/spatial/presets";
 import { hex, lineColor } from "../web/spatial/palette";
 import type { SpatialResult, Vec3 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 // The cutaway plane. Studies drawn without a cut must not change: these
 // line drawings were recorded before the cut existed.
@@ -361,7 +362,7 @@ function squareStudy(lineZ: number): SpatialResult {
     breaks: [false, false],
     minus: [],
     plus: [],
-    mesh: [a, b, c, a, c, d],
+    mesh: curveMesh([a, b, c, a, c, d]),
     rulings: [],
     bounds: { center: O, radius: 1 },
     radius: 1,

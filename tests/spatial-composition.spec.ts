@@ -10,6 +10,7 @@ import type { SpatialResult } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
 import { choosePreset, examplesButton } from "./helpers";
 import { readFile } from "node:fs/promises";
+import { curveMesh } from "./curve-mesh";
 
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
@@ -253,7 +254,7 @@ test("composed reveal keeps the base, its connectors and the pole in step and in
     base: [at(0), at(1), null, at(3)],
     minus: [],
     plus: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     breaks: [false, false, true, true],
     bounds: { center: at(0), radius: 60 },

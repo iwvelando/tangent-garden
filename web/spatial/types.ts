@@ -301,12 +301,19 @@ export type AdaptiveResult = {
   partner?: RefinedPath;
   meridians?: RefinedPath[];
 };
+// Mirrors engine3.Result.Mesh, which the engine sends typed, not as JSON
+// (engine3.FlatMesh, cmd/wasm/mesh.go): seven numbers per vertex in
+// vertices (position x, y, z, normal x, y, z, phase) and each vertex's
+// sample in sampleIndex. Every three vertices are one triangle, and the
+// three share their sample.
+export type CurveMesh = { vertices: Float64Array; sampleIndex: Int32Array };
+export const meshStride = 7;
 export type SpatialResult = {
   base: (Vec3 | null)[];
   minus: (Vec3 | null)[];
   plus: (Vec3 | null)[];
   breaks: boolean[];
-  mesh: { position: Vec3; normal: Vec3; phase: number; sampleIndex: number }[];
+  mesh: CurveMesh;
   rulings: { from: Vec3; to: Vec3; sampleIndex: number }[];
   bounds: Bounds3;
   radius: number;
