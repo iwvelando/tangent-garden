@@ -149,11 +149,11 @@ const config: SchemaOf<SpatialConfig> = {
         "tangent-foot": true,
         orthotomic: true,
         involute: true,
-        strand: true,
+        coil: true,
       },
     },
     unwinding: { fields: { anchor: "number", offset: "number" } },
-    strand: { fields: { offset: "number", angle: "number", twist: "number" } },
+    coil: { fields: { radius: "number", angle: "number", turns: "number" } },
     inversion: {
       fields: {
         center: vec3,

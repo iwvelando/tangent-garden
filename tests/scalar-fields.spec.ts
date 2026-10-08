@@ -730,21 +730,21 @@ test("spatial involute input anchor and string share the bounded scalar parser",
   }
 });
 
-test("spatial strand input offset, angle and twist share the bounded scalar parser", async ({
+test("spatial coil input radius, angle and turns share the bounded scalar parser", async ({
   page,
 }) => {
   await page.goto("/?study=3d");
-  await page.getByLabel("Built on", { exact: true }).selectOption("strand");
+  await page.getByLabel("Built on", { exact: true }).selectOption("coil");
   const stage = page.locator(".spatial-stage");
   // Optional chaining throughout: see spatialConfig.
-  const strand = async () => (await spatialConfig(stage))?.strand;
+  const coil = async () => (await spatialConfig(stage))?.coil;
   for (const [name, text, key, value] of [
-    ["Strand offset d", "e/10", "offset", Math.E / 10],
-    ["Strand angle θ₀", "-pi/4", "angle", -Math.PI / 4],
-    ["Strand twist", "phi*4", "twist", ((1 + Math.sqrt(5)) / 2) * 4],
+    ["Coil radius d", "e/10", "radius", Math.E / 10],
+    ["Coil angle θ₀", "-pi/4", "angle", -Math.PI / 4],
+    ["Coil turns", "phi*4", "turns", ((1 + Math.sqrt(5)) / 2) * 4],
   ] as const) {
     await field(page, name).fill(text);
-    await expect.poll(async () => (await strand())?.[key]).toBe(value);
+    await expect.poll(async () => (await coil())?.[key]).toBe(value);
     await expect(field(page, name)).toHaveValue(text);
     for (const variable of ["t", "x", "a"]) {
       await field(page, name).fill(variable);

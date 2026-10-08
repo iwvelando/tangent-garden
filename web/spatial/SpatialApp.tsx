@@ -61,7 +61,7 @@ import {
   takesInput,
   usesSpatialPole,
   type FrameConfig,
-  type StrandConfig,
+  type CoilConfig,
   type RuledConfig,
   type CanalConfig,
   type FieldConfig,
@@ -545,8 +545,8 @@ export default function SpatialApp({
     update((c) => ({ ...c, ruled: change(c.ruled) }));
   const setFraming = (change: (f: FrameConfig) => FrameConfig) =>
     update((c) => ({ ...c, frame: change(c.frame) }));
-  const setStrand = (change: (s: StrandConfig) => StrandConfig) =>
-    update((c) => ({ ...c, strand: change(c.strand) }));
+  const setCoil = (change: (s: CoilConfig) => CoilConfig) =>
+    update((c) => ({ ...c, coil: change(c.coil) }));
   const projection =
     config.construction === "tangent-foot" ||
     config.construction === "orthotomic";
@@ -1866,15 +1866,14 @@ export default function SpatialApp({
   // What the construction below is built on, when that is a derived curve.
   const builtOn = composing && (
     <p className="bottom-note composition-note">
-      {config.input === "strand" ? (
+      {config.input === "coil" ? (
         <>
-          Built on the offset strand g(t) = r(t) + d D(t) of the base curve r,
-          drawn in grey with representative offset arms. D turns about the
-          tangent at angle θ₀ + 2πN s/L in the base's rotation-minimizing frame,
-          so the strand coils N times around the curve. The construction below
-          acts on it in place of r: its frame is carried from the samples and
-          its derivatives are written from the base's own, never measured along
-          a polyline.
+          Built on the coil g(t) = r(t) + d D(t) of the base curve r, drawn in
+          grey with representative arms. D turns about the tangent at angle θ₀ +
+          2πN s/L in the base's rotation-minimizing frame, so the coil winds N
+          times around the curve. The construction below acts on it in place of
+          r: its frame is carried from the samples and its derivatives are
+          written from the base's own, never measured along a polyline.
         </>
       ) : config.input === "involute" ? (
         <>
@@ -2598,7 +2597,7 @@ export default function SpatialApp({
                       <>
                         <Field
                           label="Built on"
-                          help="Build the construction on the base curve, on its tangent-foot curve or tangent-line orthotomic from the pole, on one of its involutes, or on a strand that coils around it. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
+                          help="Build the construction on the base curve, on its tangent-foot curve or tangent-line orthotomic from the pole, on one of its involutes, or on a coil that winds around it. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
                         >
                           <select
                             value={config.input}
@@ -2658,43 +2657,43 @@ export default function SpatialApp({
                             </Field>
                           </div>
                         )}
-                        {composing && config.input === "strand" && (
+                        {composing && config.input === "coil" && (
                           <>
                             <div className="pair">
                               <Field
-                                label="Strand offset d"
-                                help="How far the strand stands off the base curve, from 0 to 100000. Without twist it has a cusp wherever d reaches the radius of curvature on its side."
+                                label="Coil radius d"
+                                help="How far the coil stands off the base curve, from 0 to 100000. With no turns it has a cusp wherever d reaches the radius of curvature on its side."
                               >
                                 <ScalarInput
-                                  name="Strand offset d"
-                                  value={config.strand.offset}
+                                  name="Coil radius d"
+                                  value={config.coil.radius}
                                   onChange={(value) =>
-                                    setStrand((s) => ({ ...s, offset: value }))
+                                    setCoil((s) => ({ ...s, radius: value }))
                                   }
                                 />
                               </Field>
                               <Field
-                                label="Strand angle θ₀"
-                                help="Where the strand starts around the curve, in radians within ±1000, from the base's rotation-minimizing normal, which starts from the z axis."
+                                label="Coil angle θ₀"
+                                help="Where the coil starts around the curve, in radians within ±1000, from the base's rotation-minimizing normal, which starts from the z axis."
                               >
                                 <ScalarInput
-                                  name="Strand angle θ₀"
-                                  value={config.strand.angle}
+                                  name="Coil angle θ₀"
+                                  value={config.coil.angle}
                                   onChange={(value) =>
-                                    setStrand((s) => ({ ...s, angle: value }))
+                                    setCoil((s) => ({ ...s, angle: value }))
                                   }
                                 />
                               </Field>
                             </div>
                             <Field
-                              label="Strand twist"
-                              help="Turns the strand makes around the base curve over its whole length, within ±100. On a closed curve the frame's own turn is spread along it, so a whole number of turns closes the strand."
+                              label="Coil turns"
+                              help="Turns the coil makes around the base curve over its whole length, within ±100. On a closed curve the frame's own turn is spread along it, so a whole number of turns closes the coil."
                             >
                               <ScalarInput
-                                name="Strand twist"
-                                value={config.strand.twist}
+                                name="Coil turns"
+                                value={config.coil.turns}
                                 onChange={(value) =>
-                                  setStrand((s) => ({ ...s, twist: value }))
+                                  setCoil((s) => ({ ...s, turns: value }))
                                 }
                               />
                             </Field>

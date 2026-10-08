@@ -43,7 +43,7 @@ const preset = (name: string) =>
 const cord = preset("A coiled cord round a trefoil"),
   rope = preset("Threads twisted round a coiled helix");
 
-test("every construction built on a curve can be built on an offset strand, with arms and no pole", async ({
+test("every construction built on a curve can be built on a coil, with arms and no pole", async ({
   page,
 }) => {
   // Five constructions, each with two layers and three fields.
@@ -60,20 +60,20 @@ test("every construction built on a curve can be built on an offset strand, with
       .getByLabel("Construction", { exact: true })
       .selectOption(construction);
     await settled(page);
-    await builtOn(page).selectOption("strand");
+    await builtOn(page).selectOption("coil");
     await settled(page);
     expect(await config(page)).toMatchObject({
       construction,
-      input: "strand",
-      strand: { offset: 0.3, angle: 0, twist: 8 },
+      input: "coil",
+      coil: { radius: 0.3, angle: 0, turns: 8 },
     });
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(heading);
-    await expect(page.locator(".legend")).toContainText("Offset strand");
+    await expect(page.locator(".legend")).toContainText("Coil");
     await expect(page.locator(".composition-note")).toContainText(
-      "Built on the offset strand",
+      "Built on the coil",
     );
-    // The strand uses no pole, and none of the involute's fields.
+    // The coil uses no pole, and none of the involute's fields.
     await expect(field(page, "Pole z")).toHaveCount(0);
     await expect(field(page, "Input anchor t₀")).toHaveCount(0);
     await expect(layer(page, "Pole marker")).toHaveCount(0);
@@ -84,18 +84,18 @@ test("every construction built on a curve can be built on an offset strand, with
       await settled(page);
     }
     const original = await pixels(page);
-    for (const name of ["Base curve", "Offset arms"]) {
+    for (const name of ["Base curve", "Coil arms"]) {
       const box = layer(page, name);
       await box.uncheck();
       expect(await pixels(page), `${construction}: ${name}`).not.toBe(original);
       await box.check();
       expect(await pixels(page)).toBe(original);
     }
-    // Each of the strand's own fields moves it.
+    // Each of the coil's own fields moves it.
     for (const [name, text] of [
-      ["Strand offset d", "0.5"],
-      ["Strand angle θ₀", "pi/2"],
-      ["Strand twist", "3"],
+      ["Coil radius d", "0.5"],
+      ["Coil angle θ₀", "pi/2"],
+      ["Coil turns", "3"],
     ] as const) {
       const before = await field(page, name).inputValue();
       await field(page, name).fill(text);
@@ -109,11 +109,11 @@ test("every construction built on a curve can be built on an offset strand, with
       await field(page, "Tube radius R").fill("0.35");
     await builtOn(page).selectOption("base");
     await settled(page);
-    await expect(field(page, "Strand twist")).toHaveCount(0);
+    await expect(field(page, "Coil turns")).toHaveCount(0);
   }
 });
 
-test("the strand's default builds a valid study from every curve definition, edited or not", async ({
+test("the coil's default builds a valid study from every curve definition, edited or not", async ({
   page,
 }) => {
   await ready(page);
@@ -131,43 +131,43 @@ test("the strand's default builds a valid study from every curve definition, edi
       .getByLabel("Construction", { exact: true })
       .selectOption("canal");
     await settled(page);
-    await builtOn(page).selectOption("strand");
+    await builtOn(page).selectOption("coil");
     await settled(page);
-    expect((await config(page)).input, format).toBe("strand");
+    expect((await config(page)).input, format).toBe("coil");
     await expect(page.getByRole("alert"), format).toHaveCount(0);
     await builtOn(page).selectOption("base");
     await settled(page);
   }
   // From edited, non-default values: a short, small curve keeps them, and
-  // the strand coiled round it is still regular.
+  // the coil winding round it is still regular.
   await definition.selectOption("parametric");
   await settled(page);
   await field(page, "t from").fill("0");
   await field(page, "to").fill("1/4");
   await settled(page);
-  await builtOn(page).selectOption("strand");
-  await field(page, "Strand offset d").fill("2*e");
-  await field(page, "Strand twist").fill("-5/2");
+  await builtOn(page).selectOption("coil");
+  await field(page, "Coil radius d").fill("2*e");
+  await field(page, "Coil turns").fill("-5/2");
   await settled(page);
-  expect((await config(page)).strand).toEqual({
-    offset: 2 * Math.E,
+  expect((await config(page)).coil).toEqual({
+    radius: 2 * Math.E,
     angle: 0,
-    twist: -2.5,
+    turns: -2.5,
   });
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("the strand input's fields are validated by name and recover", async ({
+test("the coil input's fields are validated by name and recover", async ({
   page,
 }) => {
   await ready(page);
-  await builtOn(page).selectOption("strand");
+  await builtOn(page).selectOption("coil");
   await settled(page);
   const drawn = await pixels(page);
   for (const [name, text, message] of [
-    ["Strand offset d", "-1", "strand's distance"],
-    ["Strand angle θ₀", "1001", "strand's angle"],
-    ["Strand twist", "101", "strand's twist"],
+    ["Coil radius d", "-1", "coil's radius"],
+    ["Coil angle θ₀", "1001", "coil's angle"],
+    ["Coil turns", "101", "coil's turns"],
   ] as const) {
     const before = await field(page, name).inputValue();
     await field(page, name).fill(text);
@@ -179,25 +179,25 @@ test("the strand input's fields are validated by name and recover", async ({
   expect(await pixels(page)).toBe(drawn);
 });
 
-test("the strand presets build on a strand, close where they should, and leave older presets alone", async ({
+test("the coil presets build on a coil, close where they should, and leave older presets alone", async ({
   page,
 }) => {
   const added = new Set([+cord, +rope]);
   expect(added.has(-1)).toBe(false);
   spatialPresets.forEach((p, k) => {
-    if (!added.has(k)) expect(p.config.input, p.name).not.toBe("strand");
+    if (!added.has(k)) expect(p.config.input, p.name).not.toBe("coil");
   });
   await ready(page);
   for (const k of [cord, rope]) {
     await choosePreset(page, k);
     await settled(page);
-    expect((await config(page)).input).toBe("strand");
+    expect((await config(page)).input).toBe("coil");
     await expect(page.getByRole("alert")).toHaveCount(0);
     const note = page.locator(".composition-note");
-    await expect(note).toContainText("Built on the offset strand");
+    await expect(note).toContainText("Built on the coil");
     await expect(note).not.toContainText("cusp");
     await expect(layer(page, "Base curve")).toBeChecked();
-    await expect(layer(page, "Offset arms")).not.toBeChecked();
+    await expect(layer(page, "Coil arms")).not.toBeChecked();
   }
   // The cord's whole number of turns closes the tube around the knot.
   await choosePreset(page, cord);
@@ -209,7 +209,7 @@ test("the strand presets build on a strand, close where they should, and leave o
   ).toBeVisible();
 });
 
-test("a strand input draws offset arms, not perpendiculars, and reveals them with its base", () => {
+test("a coil input draws coil arms, not perpendiculars, and reveals them with its base", () => {
   const at = (x: number) => ({ x, y: 0, z: 0 });
   const input: SpatialResult = {
     base: [at(0), at(1), at(2), at(3)],
@@ -223,7 +223,7 @@ test("a strand input draws offset arms, not perpendiculars, and reveals them wit
     invalid: 0,
     omitted: 0,
     composition: {
-      input: "strand",
+      input: "coil",
       pole: at(0),
       curve: [at(0), at(2), at(4), at(6)],
       breaks: [false, false, false, false],
@@ -238,7 +238,7 @@ test("a strand input draws offset arms, not perpendiculars, and reveals them wit
     },
   };
   const scene = buildScene(input);
-  // One segment an arm, contact → strand, of seven floats a vertex.
+  // One segment an arm, contact → coil, of seven floats a vertex.
   expect(scene.connectors.data).toHaveLength(3 * 2 * 7);
   expect(scene.feet.data).toHaveLength(0);
   expect(scene.pole.data).toHaveLength(0);
@@ -256,48 +256,48 @@ test("a strand input draws offset arms, not perpendiculars, and reveals them wit
   expect(perpendiculars.pole.data.length).toBeGreaterThan(0);
 });
 
-test("a strand input offers its offset, angle and twist as tracks, and no pole", () => {
+test("a coil input offers its radius, angle and turns as tracks, and no pole", () => {
   const composed = structuredClone(spatialPresets[+cord].config);
   const targets = availableTargets(composed);
   // After the tube's own tracks, which end with its frame's N₀.
   const own = targets.indexOf("normalZ");
   expect(targets.slice(own + 1, own + 4)).toEqual([
-    "inputDistance",
+    "inputRadius",
     "inputAngle",
-    "inputTwist",
+    "inputTurns",
   ]);
   expect(targets).not.toContain("poleX");
   expect(targets).not.toContain("inputOffset");
-  expect(targetLabel(composed, "inputDistance")).toBe("Strand offset d");
-  expect(targetLabel(composed, "inputAngle")).toBe("Strand angle θ₀");
-  expect(targetLabel(composed, "inputTwist")).toBe("Strand twist");
+  expect(targetLabel(composed, "inputRadius")).toBe("Coil radius d");
+  expect(targetLabel(composed, "inputAngle")).toBe("Coil angle θ₀");
+  expect(targetLabel(composed, "inputTurns")).toBe("Coil turns");
   // On the base, or a construction that takes no input, they are not offered.
   expect(availableTargets({ ...composed, input: "base" })).not.toContain(
-    "inputTwist",
+    "inputTurns",
   );
   expect(availableTargets({ ...composed, construction: "none" })).not.toContain(
-    "inputTwist",
+    "inputTurns",
   );
   const end = applyTracks(
     composed,
     [
-      { target: "inputDistance", from: 0.1, to: Math.E / 10 },
+      { target: "inputRadius", from: 0.1, to: Math.E / 10 },
       { target: "inputAngle", from: 0, to: -Math.PI },
-      { target: "inputTwist", from: 0, to: 36 },
+      { target: "inputTurns", from: 0, to: 36 },
     ],
     1,
   ).config;
-  expect(end.strand).toEqual({
-    offset: Math.E / 10,
+  expect(end.coil).toEqual({
+    radius: Math.E / 10,
     angle: -Math.PI,
-    twist: 36,
+    turns: 36,
   });
   expect(end.frame).toEqual(composed.frame);
-  expect(composed.strand).toEqual({ offset: 0.34, angle: 0, twist: 36 });
+  expect(composed.coil).toEqual({ radius: 0.34, angle: 0, turns: 36 });
 });
 
 for (const camera of ["hold", "fit"])
-  test(`a strand twist track plays to exact endpoints and Stop restores the study (${camera} camera)`, async ({
+  test(`a coil turns track plays to exact endpoints and Stop restores the study (${camera} camera)`, async ({
     page,
   }) => {
     await ready(page);
@@ -311,7 +311,7 @@ for (const camera of ["hold", "fit"])
       .selectOption("parameters");
     await page
       .getByLabel("Parameter 1", { exact: true })
-      .selectOption("inputTwist");
+      .selectOption("inputTurns");
     await page.getByLabel("Track 1 from").fill("-1/phi");
     await page.getByLabel("Track 1 to").fill("4*pi");
     await page
@@ -325,13 +325,11 @@ for (const camera of ["hold", "fit"])
     const slider = page.getByRole("slider", { name: "Animation progress" });
     await slider.fill("0");
     await expect(stage(page)).toHaveAttribute("data-progress", "0");
-    expect((await config(page)).strand.twist).toBe(
-      -1 / ((1 + Math.sqrt(5)) / 2),
-    );
+    expect((await config(page)).coil.turns).toBe(-1 / ((1 + Math.sqrt(5)) / 2));
     await slider.fill("1");
     await expect(stage(page)).toHaveAttribute("data-progress", "1");
-    expect((await config(page)).strand.twist).toBe(4 * Math.PI);
-    expect((await config(page)).input).toBe("strand");
+    expect((await config(page)).coil.turns).toBe(4 * Math.PI);
+    expect((await config(page)).input).toBe("coil");
     await slider.fill("0.5");
     await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
     expect(await pixels(page)).not.toBe(drawn);
@@ -341,15 +339,15 @@ for (const camera of ["hold", "fit"])
     expect(await pixels(page)).toBe(drawn);
   });
 
-test("the cord's own animation winds the strand up from 0 to 36 turns", () => {
+test("the cord's own animation winds the coil up from 0 to 36 turns", () => {
   const flight = spatialPresets[+cord].flight!;
   expect(flight.animate).toEqual({
     mode: "parameters",
-    tracks: [{ target: "inputTwist", from: "0", to: "36" }],
+    tracks: [{ target: "inputTurns", from: "0", to: "36" }],
   });
 });
 
-test("an SVG built on a strand names it and records it in the metadata", async ({
+test("an SVG built on a coil names it and records it in the metadata", async ({
   page,
 }) => {
   await ready(page);
@@ -360,11 +358,11 @@ test("an SVG built on a strand names it and records it in the metadata", async (
   await page.getByRole("menuitem", { name: /^SVG/ }).click();
   const svg = await readFile((await (await downloading).path())!, "utf8");
   expect(svg).toContain(
-    "<title>Tangent Garden — spatial framed ribbon on the offset strand</title>",
+    "<title>Tangent Garden — spatial framed ribbon on the coil</title>",
   );
   const metadata = JSON.parse(svg.match(/<desc>(.*?)<\/desc>/s)![1]);
   expect(metadata.config).toEqual(await config(page));
-  expect(metadata.config.strand).toEqual({ offset: 0.6, angle: 0, twist: 10 });
+  expect(metadata.config.coil).toEqual({ radius: 0.6, angle: 0, turns: 10 });
 });
 
 test("the cord opens without the probe the gallery's previous example leaves on", async ({

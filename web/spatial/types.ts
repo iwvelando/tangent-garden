@@ -14,23 +14,23 @@ export type InvoluteConfig = {
 // The base curve, one of its tangent projections from the pole, or its
 // involute (see UnwindingConfig): the curve a construction acts on.
 export type CurveInput =
-  "base" | "tangent-foot" | "orthotomic" | "involute" | "strand";
+  "base" | "tangent-foot" | "orthotomic" | "involute" | "coil";
 // The involute a construction is built on, I = r + (c − s)T, with arc
 // length s from the anchor t₀ and signed string length c (offset). Read only
 // for the involute input, and separate from the involute construction's own
 // anchor and length. Mirrors engine3.UnwindingRequest.
 export type UnwindingConfig = { anchor: number; offset: number };
-// The offset strand a construction is built on, g = r + dD, with D at angle
-// θ₀ (radians) in the base's rotation-minimizing frame started from e_z,
-// turning N whole or fractional turns (twist) over the curve's arc length.
+// The coil a construction is built on, g = r + dD, d its radius and D at
+// angle θ₀ (radians) in the base's rotation-minimizing frame started from
+// e_z, turning N whole or fractional turns over the curve's arc length.
 // On an unbroken closed loop the frame's holonomy is distributed, so the
-// strand closes when N is whole. Read only for the strand input, and
+// coil closes when N is whole. Read only for the coil input, and
 // separate from the framed construction's own frame. Mirrors
-// engine3.StrandRequest.
-export type StrandConfig = { offset: number; angle: number; twist: number };
+// engine3.CoilRequest.
+export type CoilConfig = { radius: number; angle: number; turns: number };
 // Sphere inversion J(p) = O + R²(p − O)/|p − O|² of the base curve or of one
 // of its tangent projections from the pole. Mirrors engine3.InversionRequest.
-export type InversionInput = Exclude<CurveInput, "involute" | "strand">;
+export type InversionInput = Exclude<CurveInput, "involute" | "coil">;
 export type InversionConfig = {
   center: Vec3;
   radius: number;
@@ -245,7 +245,7 @@ export type SpatialConfig = {
   // engine3.Request.Input.
   input: CurveInput;
   unwinding: UnwindingConfig;
-  strand: StrandConfig;
+  coil: CoilConfig;
   inversion: InversionConfig;
   involute: InvoluteConfig;
   harmonic: HarmonicCurve;
@@ -541,13 +541,13 @@ export type SpatialHarmonicResult = {
 // Mirrors engine3.CompositionResult: the base curve and its breaks, indexed
 // like the input curve in base, with representative constructions joining a
 // base point to its tangent foot and the input point (image); on an
-// involute or a strand the foot is the base point, and the connector is its
-// string or offset arm.
+// involute or a coil the foot is the base point, and the connector is its
+// string or coil arm.
 // Cusps counts the runs of intervals where the input curve stops or turns
 // back while the base continues: not at an open curve's ends, and once
 // where a closed curve's ends meet. Unreached counts base samples the
 // involute's arc length cannot reach across a break, which are not cusps.
-// The involute and the strand use no pole and leave it zero.
+// The involute and the coil use no pole and leave it zero.
 export type CompositionResult = {
   input: CurveInput;
   pole: Vec3;
@@ -570,13 +570,13 @@ export const takesInput = (c: SpatialConfig) =>
 export const composes = (c: SpatialConfig) =>
   takesInput(c) && c.input !== "base";
 // A construction built on one of the base's tangent projections from the
-// pole, rather than on its involute or an offset strand.
+// pole, rather than on its involute or a coil.
 export const projectsInput = (c: SpatialConfig) =>
   composes(c) && curveInputs[c.input].pole;
 export const unwindsInput = (c: SpatialConfig) =>
   composes(c) && c.input === "involute";
-export const strandsInput = (c: SpatialConfig) =>
-  composes(c) && c.input === "strand";
+export const coilsInput = (c: SpatialConfig) =>
+  composes(c) && c.input === "coil";
 // The parameter domain of a curve study, where an anchor must lie.
 export function curveDomain(c: SpatialConfig): [number, number] {
   switch (c.format) {

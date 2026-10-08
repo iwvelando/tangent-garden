@@ -175,7 +175,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 **Open:**
 
 - Typed-array transport beyond the implicit mesh. Large JSON results:
-  - canal about 15 MB;
+  - canal about 15 MB (measured, with a proposed plan: [spatial-mesh-transport.md](spatial-mesh-transport.md));
   - surface grid about 10 MB;
   - surface-probe grids 5–7 MB;
   - the largest 4D weave 9.6 MB.

@@ -45,7 +45,7 @@ const png = "PNG image · 2000 × 1520",
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 // The recordings predate the metadata's construction input and its base
 // curve layer, which a study built on the base records as "base" and shown,
-// and the involute and strand inputs' settings, which it records at their
+// and the involute and coil inputs' settings, which it records at their
 // defaults.
 const predating = (b: Buffer) =>
   Buffer.from(
@@ -53,7 +53,7 @@ const predating = (b: Buffer) =>
       .toString("utf8")
       .replace('"input":"base",', "")
       .replace('"unwinding":{"anchor":0,"offset":1},', "")
-      .replace('"strand":{"offset":0.3,"angle":0,"twist":8},', "")
+      .replace('"coil":{"radius":0.3,"angle":0,"turns":8},', "")
       .replace('"parent":true,', "")
       .replace('"adaptive":false,', ""),
   );

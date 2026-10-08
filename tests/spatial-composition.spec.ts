@@ -50,8 +50,8 @@ const unwound = [
   preset("A trefoil's string, unwound"),
   preset("A sheet of Viviani's normals"),
 ];
-// The strand's own showcases (see spatial-strand-input.spec.ts).
-const stranded = [
+// The coil's own showcases (see spatial-coil-input.spec.ts).
+const coiled = [
   preset("A coiled cord round a trefoil"),
   preset("Threads twisted round a coiled helix"),
 ];
@@ -190,7 +190,7 @@ test("earlier presets are built on the base and keep their layers", async ({
     +horn,
     +chords,
     ...unwound.map(Number),
-    ...stranded.map(Number),
+    ...coiled.map(Number),
   ]);
   spatialPresets.forEach((p, k) => {
     if (!added.has(k)) expect(p.config.input, p.name).toBe("base");
@@ -225,7 +225,7 @@ test("the cusp preset reports its cusp, and every showcase builds on a derived c
       .evaluateAll((cards) =>
         cards.map((c) => (c as HTMLElement).dataset.example),
       ),
-  ).toEqual([cusp, horn, chords, ...unwound, ...stranded]);
+  ).toEqual([cusp, horn, chords, ...unwound, ...coiled]);
   await page.keyboard.press("Escape");
   await gallery.waitFor({ state: "hidden" });
   for (const [k, input, text] of [

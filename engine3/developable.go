@@ -34,8 +34,8 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // described by Canal, whose angle is carried by Frame, or "none" for the
 // curve alone. The constructions built on a curve act on the curve Input
 // names (see composed): the base, its tangent-foot curve or orthotomic from
-// Pole, its involute described by Unwinding, or its offset strand described
-// by Strand. Length applies only to the
+// Pole, its involute described by Unwinding, or its coil described
+// by Coil. Length applies only to the
 // developable. Format "field" makes
 // the base the first trajectory of the vector field described by Field, and
 // "pursuit" the first pursuer's path in the chase described by Pursuit.
@@ -50,7 +50,7 @@ type Request struct {
 	Input        string           `json:"input"`
 	Involute     InvoluteRequest  `json:"involute"`
 	Unwinding    UnwindingRequest `json:"unwinding"`
-	Strand       StrandRequest    `json:"strand"`
+	Coil         CoilRequest      `json:"coil"`
 	Pole         Vec3             `json:"pole"`
 	Harmonic     HarmonicCurve    `json:"harmonic"`
 	Inversion    InversionRequest `json:"inversion"`
@@ -330,7 +330,7 @@ func compute(c Request) (Result, error) {
 	var baseTangents []Vec3
 	var baseBreaks []bool
 	var reached []bool
-	// The involute or strand input's position alone, for refinement.
+	// The involute or coil input's position alone, for refinement.
 	var unwoundAt func(float64) Vec3
 	baseEvaluate := evaluate
 	if composed {
@@ -338,8 +338,8 @@ func compute(c Request) (Result, error) {
 		switch {
 		case c.projected():
 			evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi)
-		case c.Input == "strand":
-			if evaluate, unwoundAt, closed, err = c.Strand.evaluation(evaluate, lo, hi, baseCurve, baseTangents, baseBreaks, closed); err != nil {
+		case c.Input == "coil":
+			if evaluate, unwoundAt, closed, err = c.Coil.evaluation(evaluate, lo, hi, baseCurve, baseTangents, baseBreaks, closed); err != nil {
 				return Result{}, err
 			}
 		default:
@@ -477,8 +477,8 @@ func compute(c Request) (Result, error) {
 	}
 	if out.Invalid == n+1 {
 		switch {
-		case composed && c.Input == "strand":
-			return Result{}, fmt.Errorf("the input curve has no regular sample: the offset strand stands still or is undefined; change its distance, angle or twist, or choose another input curve")
+		case composed && c.Input == "coil":
+			return Result{}, fmt.Errorf("the input curve has no regular sample: the coil stands still or is undefined; change its radius, angle or turns, or choose another input curve")
 		case composed && reached != nil:
 			return Result{}, fmt.Errorf("the input curve has no regular sample: the base curve is straight where its arc length reaches, so its involute stands still; choose another input curve")
 		case composed:

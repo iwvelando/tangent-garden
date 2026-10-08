@@ -513,7 +513,7 @@ export function buildScene(result: SpatialResult) {
   );
   // A projection's own connectors, or those of the projection a
   // construction is built on; an involute input has strings from the base
-  // instead, and a strand its offset arms, with no pole or feet.
+  // instead, and a coil its arms, with no pole or feet.
   const q = result.projection ?? result.composition;
   const strung =
     !!result.composition && !curveInputs[result.composition.input].pole;

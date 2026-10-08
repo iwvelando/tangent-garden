@@ -1,6 +1,6 @@
 import {
   projectsInput,
-  strandsInput,
+  coilsInput,
   unwindsInput,
   usesSpatialPole,
 } from "./types";
@@ -57,9 +57,9 @@ type NamedTarget =
   | "offset"
   | "inputAnchor"
   | "inputOffset"
-  | "inputDistance"
+  | "inputRadius"
   | "inputAngle"
-  | "inputTwist"
+  | "inputTurns"
   | "from"
   | "to"
   | "count"
@@ -170,9 +170,9 @@ export const targetLabels: Record<NamedTarget, string> = {
   offset: "String length c",
   inputAnchor: "Input anchor t₀",
   inputOffset: "Input string c",
-  inputDistance: "Strand offset d",
-  inputAngle: "Strand angle θ₀",
-  inputTwist: "Strand twist",
+  inputRadius: "Coil radius d",
+  inputAngle: "Coil angle θ₀",
+  inputTurns: "Coil turns",
   from: "Family c from",
   to: "Family c to",
   count: "Involutes",
@@ -476,11 +476,11 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
                   : ["length"];
   // A construction built on a tangent projection moves with its pole, and
   // one built on an involute with that involute's string and anchor, or on
-  // an offset strand with its distance, angle and twist.
+  // a coil with its radius, angle and turns.
   if (projectsInput(c)) construction.push("poleX", "poleY", "poleZ");
   if (unwindsInput(c)) construction.push("inputOffset", "inputAnchor");
-  if (strandsInput(c))
-    construction.push("inputDistance", "inputAngle", "inputTwist");
+  if (coilsInput(c))
+    construction.push("inputRadius", "inputAngle", "inputTurns");
   const curve: Target[] =
     c.format === "parametric"
       ? ["a", "min", "max"]
@@ -570,9 +570,9 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (t === "anchor" || t === "offset") return c.involute[t];
   if (t === "inputAnchor") return c.unwinding.anchor;
   if (t === "inputOffset") return c.unwinding.offset;
-  if (t === "inputDistance") return c.strand.offset;
-  if (t === "inputAngle") return c.strand.angle;
-  if (t === "inputTwist") return c.strand.twist;
+  if (t === "inputRadius") return c.coil.radius;
+  if (t === "inputAngle") return c.coil.angle;
+  if (t === "inputTurns") return c.coil.turns;
   if (isInvolute(t)) return c.involute.family[t];
   return c[t];
 }
@@ -660,9 +660,9 @@ export function applyTracks(
       config.involute[t.target] = v;
     else if (t.target === "inputAnchor") config.unwinding.anchor = v;
     else if (t.target === "inputOffset") config.unwinding.offset = v;
-    else if (t.target === "inputDistance") config.strand.offset = v;
-    else if (t.target === "inputAngle") config.strand.angle = v;
-    else if (t.target === "inputTwist") config.strand.twist = v;
+    else if (t.target === "inputRadius") config.coil.radius = v;
+    else if (t.target === "inputAngle") config.coil.angle = v;
+    else if (t.target === "inputTurns") config.coil.turns = v;
     else if (isInvolute(t.target)) config.involute.family[t.target] = v;
     else config[t.target] = v;
   }

@@ -45,11 +45,11 @@ export const curveInputs: Record<CurveInput, InputDescriptor> = {
     connectors: "Strings from the base",
     pole: false,
   },
-  strand: {
-    option: "An offset strand",
-    name: "Offset strand",
-    title: " on the offset strand",
-    connectors: "Offset arms",
+  coil: {
+    option: "A coil around it",
+    name: "Coil",
+    title: " on the coil",
+    connectors: "Coil arms",
     pole: false,
   },
 };

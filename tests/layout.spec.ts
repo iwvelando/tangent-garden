@@ -190,12 +190,12 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
         page.getByRole("textbox", { name: "Input string c", exact: true }),
       ).toBeVisible();
     });
-    // So does the strand input's offset and angle.
+    // So does the coil input's radius and angle.
     setups.push(async () => {
       await page.goto("/?study=3d");
       await choosePreset(page, { label: "A coiled cord round a trefoil" });
       await expect(
-        page.getByRole("textbox", { name: "Strand angle θ₀", exact: true }),
+        page.getByRole("textbox", { name: "Coil angle θ₀", exact: true }),
       ).toBeVisible();
     });
     // The cut's fields pair only while it is on, on a curve and a surface;

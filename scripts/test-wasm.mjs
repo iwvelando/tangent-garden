@@ -1626,10 +1626,10 @@ console.log(
 console.log(
   "WASM composition on an involute: the helix's planar involute, its cusp, strings and validation passed",
 );
-// Composition on an offset strand: a tube around the strand of the unit
-// circle, a closed harmonic curve, at d = 0.3 and θ₀ = 0.4, twisted five turns. The circle's
-// transported normal is e_z and T × e_z its outward radius, so the strand is
-// the coil (1 + d sin θ)(cos t, sin t, 0) + d cos θ e_z, θ = θ₀ + 5t, which
+// Composition on a coil: a tube around the coil of the unit circle, a
+// closed harmonic curve, at d = 0.3 and θ₀ = 0.4, winding five turns. The
+// circle's transported normal is e_z and T × e_z its outward radius, so the
+// coil is (1 + d sin θ)(cos t, sin t, 0) + d cos θ e_z, θ = θ₀ + 5t, which
 // closes, and the tube around it closes too.
 {
   const coiled = (extra) =>
@@ -1638,8 +1638,8 @@ console.log(
         JSON.stringify({
           format: "harmonic",
           construction: "canal",
-          input: "strand",
-          strand: { offset: 0.3, angle: 0.4, twist: 5 },
+          input: "coil",
+          coil: { radius: 0.3, angle: 0.4, turns: 5 },
           canal: { radius: 0.05, profile: "1", meridians: 3 },
           frame: {
             kind: "rotation-minimizing",
@@ -1665,7 +1665,7 @@ console.log(
       ),
     );
   const q = coiled({});
-  assert.equal(q.composition.input, "strand");
+  assert.equal(q.composition.input, "coil");
   assert.equal(q.composition.cusps, 0);
   assert.equal(q.canal.closed, true);
   q.base.forEach((p, i) => {
@@ -1675,7 +1675,7 @@ console.log(
     const want = [h * Math.cos(t), h * Math.sin(t), 0.3 * Math.cos(theta)];
     assert.ok(
       Math.hypot(p.x - want[0], p.y - want[1], p.z - want[2]) < 1e-8,
-      `strand sample ${i}`,
+      `coil sample ${i}`,
     );
   });
   for (const s of q.composition.constructions) {
@@ -1687,12 +1687,12 @@ console.log(
     );
     assert.ok(Math.abs(arm - 0.3) < 1e-12);
   }
-  const refused = coiled({ strand: { offset: 0.3, angle: 0, twist: 500 } });
-  assert.match(refused.error, /strand's twist/);
-  assert.equal(refused.field, "strand.twist");
+  const refused = coiled({ coil: { radius: 0.3, angle: 0, turns: 500 } });
+  assert.match(refused.error, /coil's turns/);
+  assert.equal(refused.field, "coil.turns");
 }
 console.log(
-  "WASM composition on an offset strand: the circle's coil, its closed tube, arms and validation passed",
+  "WASM composition on a coil: the circle's coil, its closed tube, arms and validation passed",
 );
 // Spatial harmonic generator: one term traces the ellipse c₀ + A cos t +
 // B sin t, closed over 2π; an incommensurate pair is left open.
