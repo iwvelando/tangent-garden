@@ -366,3 +366,20 @@ test("an SVG built on a strand names it and records it in the metadata", async (
   expect(metadata.config).toEqual(await config(page));
   expect(metadata.config.strand).toEqual({ offset: 0.6, angle: 0, twist: 10 });
 });
+
+test("the cord opens without the probe the gallery's previous example leaves on", async ({
+  page,
+}) => {
+  // The example before it probes a focal sheet; a preset without its own
+  // probe keeps the probe on, which would mark the cord's picture.
+  expect(spatialPresets[+cord - 1].probe?.enabled).toBe(true);
+  await ready(page);
+  await choosePreset(page, String(+cord - 1));
+  await settled(page);
+  await choosePreset(page, cord);
+  await settled(page);
+  await expect(
+    layer(page, "Frame, curvature & torsion at a point"),
+  ).not.toBeChecked();
+  await expect(page.locator(".probe-readout")).toHaveCount(0);
+});

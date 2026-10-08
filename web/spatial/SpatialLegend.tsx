@@ -1,10 +1,11 @@
 // The 3D drawing's legend. It describes the drawn study, whose result the
 // renderer reports the layers of as it uploads it (sceneLayers in
 // scene.ts), through a feed, so that each upload re-renders the legend
-// alone. Until the drawn result's own report arrives, the legend follows
-// the layers only: it never reads one study's geometry with another's
-// entries.
-import { useEffect, useState } from "react";
+// alone. Until the drawn result's own report arrives, the legend keeps the
+// geometry last reported for the same entries, as between an animation's
+// frames, so that it never flickers; for other entries it follows the
+// layers only: it never reads one study's geometry with another's entries.
+import { useEffect, useRef, useState } from "react";
 import { LegendEntries } from "../Legend";
 import { spatialLegend } from "./legend";
 import type { Layers } from "./scene";
@@ -47,12 +48,20 @@ export function SpatialLegend({
       feed.listener = undefined;
     };
   }, [feed]);
-  const geometry = drawn && drawn.result === result ? drawn.layers : null;
+  const entries = spatialLegend(config),
+    signature = JSON.stringify(entries);
+  const held = useRef<{ signature: string; layers: ReadonlySet<string> }>(
+    undefined,
+  );
+  if (drawn && drawn.result === result)
+    held.current = { signature, layers: drawn.layers };
+  const geometry =
+    held.current?.signature === signature ? held.current.layers : null;
   return (
     <div className="legend">
       <LegendEntries
         entries={[
-          ...spatialLegend(config).map(({ layer, swatch, label }) => ({
+          ...entries.map(({ layer, swatch, label }) => ({
             key: layer,
             shown:
               (layer === "base" || layers[layer as keyof Layers]) &&
