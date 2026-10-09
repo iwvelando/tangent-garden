@@ -104,8 +104,8 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 func sampled(f func(float64) Vec3, lo, hi, span float64) evaluation {
 	return func(t float64) (Vec3, Vec3, Vec3, bool) {
 		r := f(t)
-		v, a := derivatives(f, t, lo, hi, span*1e-4)
-		v2, a2 := derivatives(f, t, lo, hi, span*5e-5)
+		v, a := derivatives(f, r, t, lo, hi, span*1e-4)
+		v2, a2 := derivatives(f, r, t, lo, hi, span*5e-5)
 		stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*math.Max(v.norm(), v2.norm())+1e-8
 		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(1, v.norm()/span) {
 			a = Vec3{math.NaN(), 0, 0}
@@ -115,11 +115,11 @@ func sampled(f func(float64) Vec3, lo, hi, span float64) evaluation {
 }
 
 // Bounded five-point Lagrange stencils, including one-sided endpoints. Subtract
-// the central position before differentiating to reduce translation roundoff.
-func derivatives(f func(float64) Vec3, t, lo, hi, h float64) (Vec3, Vec3) {
+// the central position, origin = f(t), which the caller has already
+// evaluated, before differentiating to reduce translation roundoff.
+func derivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64) (Vec3, Vec3) {
 	start := math.Max(lo, math.Min(t-2*h, hi-4*h))
 	a := (t - start) / h
-	origin := f(t)
 	var d, dd Vec3
 	for j := 0; j < 5; j++ {
 		// The basis polynomial's coefficients, lowest first, built in place
