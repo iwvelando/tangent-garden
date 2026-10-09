@@ -76,7 +76,7 @@ func TestRisingVortexHelices(t *testing.T) {
 		}
 	}
 	// Curve alone: no construction geometry, and the fit spans every path.
-	if len(out.Mesh) != 0 || len(out.Rulings) != 0 || len(out.Minus) != 0 || len(out.Plus) != 0 {
+	if len(corners(out.Mesh)) != 0 || len(out.Rulings) != 0 || len(out.Minus) != 0 || len(out.Plus) != 0 {
 		t.Fatal("the curve alone drew a construction")
 	}
 	for _, path := range q.Paths {
@@ -177,8 +177,8 @@ func TestFieldTrajectoryConstructions(t *testing.T) {
 	// its sheet normal is the helix's binormal.
 	c.Construction = "developable"
 	out := flowed(t, c)
-	if len(out.Mesh) == 0 || out.Omitted != 0 {
-		t.Fatalf("mesh %d, omitted %d", len(out.Mesh), out.Omitted)
+	if len(corners(out.Mesh)) == 0 || out.Omitted != 0 {
+		t.Fatalf("mesh %d, omitted %d", len(corners(out.Mesh)), out.Omitted)
 	}
 	for _, r := range out.Rulings {
 		u := sampleTime(c, r.SampleIndex)
@@ -187,7 +187,7 @@ func TestFieldTrajectoryConstructions(t *testing.T) {
 			t.Fatalf("t=%v: tangent %v, want %v", u, got, want)
 		}
 	}
-	for _, v := range out.Mesh {
+	for _, v := range corners(out.Mesh) {
 		u := sampleTime(c, v.SampleIndex)
 		b := Vec3{.5 * math.Sin(u), -.5 * math.Cos(u), 1}.unit()
 		if math.Abs(math.Abs(v.Normal.dot(b))-1) > 1e-6 {
@@ -447,7 +447,7 @@ func TestFieldValidation(t *testing.T) {
 	// Other definitions carry no field result, even under "none".
 	c := Request{Format: "torus", Construction: "none", Radius: 2, Tube: .5, P: 2, Q: 3, Samples: 240, Lines: 12}
 	out, err := Compute(c)
-	if err != nil || out.Field != nil || len(out.Mesh) != 0 || len(out.Rulings) != 0 {
+	if err != nil || out.Field != nil || len(corners(out.Mesh)) != 0 || len(out.Rulings) != 0 {
 		t.Fatalf("torus alone: %v %+v", err, out.Field)
 	}
 }

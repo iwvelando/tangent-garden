@@ -195,7 +195,7 @@ func TestFramesThroughInflection(t *testing.T) {
 	c := framedCustom("t", "t^3", "t^4", -1, 1)
 	c.Samples, c.Lines = 241, 240
 	r := framed(t, c)
-	if r.Frame.Pieces != 1 || r.Omitted != 0 || len(r.Mesh) != 6*c.Samples {
+	if r.Frame.Pieces != 1 || r.Omitted != 0 || len(corners(r.Mesh)) != 6*c.Samples {
 		t.Fatalf("transport broke at the inflection: %+v, %d omitted", r.Frame, r.Omitted)
 	}
 	for i := 1; i <= c.Samples; i++ {
@@ -406,11 +406,12 @@ func TestRibbonMesh(t *testing.T) {
 	c.Frame = frameRequest()
 	c.Frame.Width, c.Frame.Twist = 0.3, 2
 	r := framed(t, c)
-	if r.Omitted != 0 || len(r.Mesh) != 6*c.Samples || len(r.Rulings) != c.Lines {
-		t.Fatalf("%d vertices, %d omitted, %d rulings", len(r.Mesh), r.Omitted, len(r.Rulings))
+	if r.Omitted != 0 || len(corners(r.Mesh)) != 6*c.Samples || len(r.Rulings) != c.Lines {
+		t.Fatalf("%d vertices, %d omitted, %d rulings", len(corners(r.Mesh)), r.Omitted, len(r.Rulings))
 	}
-	for k := 0; k < len(r.Mesh); k += 3 {
-		a, b, d := r.Mesh[k], r.Mesh[k+1], r.Mesh[k+2]
+	mesh := corners(r.Mesh)
+	for k := 0; k < len(mesh); k += 3 {
+		a, b, d := mesh[k], mesh[k+1], mesh[k+2]
 		for _, v := range []Vertex{a, b, d} {
 			if math.Abs(v.Normal.norm()-1) > 1e-12 || v.Normal != a.Normal {
 				t.Fatalf("triangle %d normal %+v", k/3, v.Normal)
@@ -430,7 +431,7 @@ func TestRibbonMesh(t *testing.T) {
 	// No width, no ribbon.
 	c.Frame.Width = 0
 	flat := framed(t, c)
-	if len(flat.Mesh) != 0 || len(flat.Rulings) != 0 || len(flat.Minus) != 0 || len(flat.Plus) != 0 {
+	if len(corners(flat.Mesh)) != 0 || len(flat.Rulings) != 0 || len(flat.Minus) != 0 || len(flat.Plus) != 0 {
 		t.Fatal("zero width drew a ribbon")
 	}
 }

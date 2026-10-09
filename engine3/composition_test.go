@@ -97,7 +97,7 @@ func TestComposedCuspBreaksTheConstruction(t *testing.T) {
 				t.Fatalf("unreached %d", r.Involute.Unreached)
 			}
 		case "developable", "framed":
-			for _, v := range r.Mesh {
+			for _, v := range corners(r.Mesh) {
 				if v.SampleIndex == 241 && construction == "developable" {
 					t.Fatal("a face spans the cusp")
 				}
@@ -218,10 +218,10 @@ func TestTubeAroundOrthotomicOfCircleIsTorus(t *testing.T) {
 			core = 4
 		}
 		torus := func(p Vec3) float64 { return math.Pow(math.Hypot(p.X, p.Y)-core, 2) + p.Z*p.Z - 0.25 }
-		if !r.Canal.Closed || r.Omitted != 0 || len(r.Mesh) == 0 {
+		if !r.Canal.Closed || r.Omitted != 0 || len(corners(r.Mesh)) == 0 {
 			t.Fatalf("%s: canal %+v omitted %d", input, r.Canal, r.Omitted)
 		}
-		for _, v := range r.Mesh {
+		for _, v := range corners(r.Mesh) {
 			if math.Abs(torus(v.Position)) > 1e-7 {
 				t.Fatalf("%s: vertex %+v off the torus", input, v.Position)
 			}

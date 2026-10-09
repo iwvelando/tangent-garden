@@ -222,6 +222,10 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec
 		q.Deviation = math.Max(q.Deviation, math.Abs(da.dot(d.cross(dd)))/(da.norm()*d.norm()*(da.norm()+dd.norm())))
 	}
 	q.Developable = q.Deviation <= 1e-6
+	// A grid point with a normal is listed once and shared by every
+	// triangle at it; a corner without one takes its own triangle's face
+	// normal.
+	listed := map[[2]int]int32{}
 	for i := 0; i < n; i++ {
 		if q.Breaks[i+1] {
 			out.Omitted++
@@ -238,21 +242,30 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec
 				}
 				face := g[1].at.sub(g[0].at).cross(g[2].at.sub(g[0].at))
 				flat := !(face.norm() > 1e-12*g[1].at.sub(g[0].at).norm()*g[2].at.sub(g[0].at).norm())
-				vertices := make([]Vertex, 0, 3)
+				// A flat triangle with a corner that has no normal is left out.
+				dropped := false
+				for _, p := range g {
+					dropped = dropped || (!p.defined && flat)
+				}
+				if dropped {
+					continue
+				}
+				var vertices [3]int32
 				for j, p := range g {
-					normal := p.normal
+					corner := corners[f+j]
+					phase := float64(corner[0]) / float64(n)
 					if !p.defined {
-						if flat {
-							break
-						}
-						normal = face.unit()
+						vertices[j] = out.Mesh.vertex(p.at, face.unit(), phase)
+						continue
 					}
-					row := corners[f+j][0]
-					vertices = append(vertices, Vertex{i + 1, p.at, normal, float64(row) / float64(n)})
+					v, ok := listed[corner]
+					if !ok {
+						v = out.Mesh.vertex(p.at, p.normal, phase)
+						listed[corner] = v
+					}
+					vertices[j] = v
 				}
-				if len(vertices) == 3 {
-					out.Mesh = append(out.Mesh, vertices...)
-				}
+				out.Mesh.triangle(i+1, vertices[0], vertices[1], vertices[2])
 			}
 		}
 	}

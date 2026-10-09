@@ -51,12 +51,13 @@ func TestDevelopableGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Base) != c.Samples+1 || len(r.Mesh) != 12*c.Samples || len(r.Rulings) != c.Lines || r.Omitted != 0 {
+	if len(r.Base) != c.Samples+1 || len(corners(r.Mesh)) != 12*c.Samples || len(r.Rulings) != c.Lines || r.Omitted != 0 {
 		t.Fatal("unexpected counts")
 	}
 	near(t, r.Base[0], r.Base[c.Samples], 0)
 	near(t, r.Minus[0], r.Minus[c.Samples], 0)
 	near(t, r.Plus[0], r.Plus[c.Samples], 0)
+	mesh := corners(r.Mesh)
 	for i := 0; i < c.Samples; i++ {
 		u := float64(i) * 2 * math.Pi / float64(c.Samples)
 		point, v, a := knot(c, u)
@@ -67,12 +68,12 @@ func TestDevelopableGeometry(t *testing.T) {
 		}
 		// N is constant along each ruling and perpendicular to both derivatives:
 		// S_u=T; S_t=v+u T′. Thus these are developable sheets, not a tube.
-		normal := r.Mesh[i*12].Normal
+		normal := mesh[i*12].Normal
 		if math.Abs(normal.dot(v)) > 1e-11 || math.Abs(normal.dot(a)) > 1e-11 || math.Abs(normal.norm()-1) > 1e-12 {
 			t.Fatal("wrong sheet normal")
 		}
-		near(t, r.Mesh[i*12+6].Normal, normal.mul(-1), 1e-12)
-		for _, vertex := range r.Mesh[i*12 : i*12+12] {
+		near(t, mesh[i*12+6].Normal, normal.mul(-1), 1e-12)
+		for _, vertex := range mesh[i*12 : i*12+12] {
 			if vertex.Position.sub(r.Bounds.Center).norm() > r.Radius {
 				t.Fatal("bounding sphere missed geometry")
 			}
@@ -128,7 +129,7 @@ func TestInvalidAndBounded(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(r.Mesh) > 28800 {
+		if len(corners(r.Mesh)) > 28800 {
 			t.Fatal("unbounded mesh")
 		}
 		if _, err = json.Marshal(r); err != nil {
@@ -148,7 +149,7 @@ func TestZeroCurvatureGap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Omitted == 0 || len(r.Mesh) >= 12*c.Samples {
+	if r.Omitted == 0 || len(corners(r.Mesh)) >= 12*c.Samples {
 		t.Fatal("undefined normal did not leave a mesh gap")
 	}
 	if _, err = json.Marshal(r); err != nil {

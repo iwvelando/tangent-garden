@@ -272,7 +272,7 @@ func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, 
 				out.Omitted++
 				continue
 			}
-			vertex := func(j int, p *Vec3, normal Vec3) Vertex { return Vertex{i + 1, *p, normal, float64(j) / float64(n)} }
+			vertex := func(j int, p *Vec3, normal Vec3) int32 { return out.Mesh.vertex(*p, normal, float64(j)/float64(n)) }
 			for _, triangle := range [][3]int{{0, 1, 2}, {1, 3, 2}} {
 				corners := [4]*Vec3{out.Minus[i], out.Plus[i], out.Minus[i+1], out.Plus[i+1]}
 				a, b, d := corners[triangle[0]], corners[triangle[1]], corners[triangle[2]]
@@ -281,7 +281,7 @@ func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, 
 					continue
 				}
 				normal = normal.unit()
-				out.Mesh = append(out.Mesh, vertex(i+triangle[0]/2, a, normal), vertex(i+triangle[1]/2, b, normal), vertex(i+triangle[2]/2, d, normal))
+				out.Mesh.triangle(i+1, vertex(i+triangle[0]/2, a, normal), vertex(i+triangle[1]/2, b, normal), vertex(i+triangle[2]/2, d, normal))
 			}
 		}
 		for line := 0; line < c.Lines; line++ {

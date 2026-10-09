@@ -10,6 +10,7 @@
     "dev:lan": "npm run wasm && vite --host 0.0.0.0",
     "build": "npm run wasm && node scripts/build-notices.mjs && tsc --noEmit && vite build && node scripts/check-dist.mjs",
     "preview": "vite preview --host 127.0.0.1",
+    "preview:lan": "vite preview --host 0.0.0.0",
     "test": "npm run wasm && go test ./... && node scripts/test-wasm.mjs",
     "format": "prettier --write web scripts tests *.json *.ts index.html",
     "format:check": "prettier --check web scripts tests *.json *.ts index.html"

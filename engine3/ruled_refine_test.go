@@ -109,13 +109,13 @@ func TestRefinedPartnerBreaksTheSurface(t *testing.T) {
 	if path.Breaks != 1 || !r.Ruled.Breaks[crack] || r.Breaks[crack] || r.Omitted != 1 {
 		t.Fatalf("%+v; partner break %v, base break %v, omitted %d", *path, r.Ruled.Breaks[crack], r.Breaks[crack], r.Omitted)
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		if v.SampleIndex == crack {
 			t.Fatalf("face across the gap at %+v", v.Position)
 		}
 	}
-	if len(r.Mesh) != len(uniform.Mesh)-ruledStrips*6 {
-		t.Fatalf("%d vertices, uniform %d", len(r.Mesh), len(uniform.Mesh))
+	if len(corners(r.Mesh)) != len(corners(uniform.Mesh))-ruledStrips*6 {
+		t.Fatalf("%d vertices, uniform %d", len(corners(r.Mesh)), len(corners(uniform.Mesh)))
 	}
 }
 

@@ -409,7 +409,7 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool) (Result, er
 		families = append(families, corners)
 	}
 	bounds := fit(families...)
-	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Rays: out}
+	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: emptyMesh(), Rulings: []Ruling{}, Rays: out}
 	switch {
 	case light:
 		result.Probe = lightProbe(q, r, samples, reach)

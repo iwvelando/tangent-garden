@@ -180,7 +180,7 @@ func TestLineInvoluteCollapses(t *testing.T) {
 	for _, p := range member.Points {
 		near(t, p, want, 1e-9)
 	}
-	if r.Involute.Members[0].Points[0] == nil || len(r.Mesh) != 0 {
+	if r.Involute.Members[0].Points[0] == nil || len(corners(r.Mesh)) != 0 {
 		t.Fatal("line involute")
 	}
 }

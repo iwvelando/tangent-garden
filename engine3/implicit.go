@@ -852,5 +852,5 @@ func implicit(q ImplicitRequest) (Result, error) {
 		corners = append(corners, &Vec3{[2]float64{b.XMin, b.XMax}[c&1], [2]float64{b.YMin, b.YMax}[c>>1&1], [2]float64{b.ZMin, b.ZMax}[c>>2&1]})
 	}
 	bounds := fit(positions, points, corners)
-	return Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Implicit: out}, nil
+	return Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: emptyMesh(), Rulings: []Ruling{}, Implicit: out}, nil
 }

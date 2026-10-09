@@ -492,7 +492,7 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 		families = append(families, flatten(f.Points))
 	}
 	bounds := fit(families...)
-	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: []Vertex{}, Rulings: []Ruling{}, Surface: out}
+	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: emptyMesh(), Rulings: []Ruling{}, Surface: out}
 	if probe {
 		result.Probe = patchProbe(q, samples, scale)
 	}

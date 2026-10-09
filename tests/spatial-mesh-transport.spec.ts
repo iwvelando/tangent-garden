@@ -4,14 +4,16 @@ import { test, expect, type Page } from "@playwright/test";
 import { reveal } from "../web/spatial/animation";
 import { spatialPresets } from "../web/spatial/presets";
 import { buildScene } from "../web/spatial/scene";
-import type { SpatialResult } from "../web/spatial/types";
+import type { Batch } from "../web/spatial/scene";
+import { meshStride, type SpatialResult } from "../web/spatial/types";
 import { choosePreset } from "./helpers";
-import type { MeshVertex } from "./curve-mesh";
+import { meshCorners, type MeshVertex } from "./curve-mesh";
 
-// A curve study's mesh leaves the engine as typed arrays, not JSON
-// (engine3.FlatMesh, cmd/wasm/mesh.go). The drawing must be the one JSON
-// delivered: Go's test compares the arrays with the JSON bit for bit, and
-// these compare the scene drawn from them with the scene drawn the old way.
+// A curve study's mesh leaves the engine as indexed typed arrays
+// (engine3.CurveMesh, cmd/wasm/mesh.go), its triangles sharing vertices.
+// The drawing must be every triangle the engine listed, corner by corner,
+// in its order: Go's tests check the triangles, and these check the scene
+// drawn from them, whole and revealed.
 
 // The real engine, run here as the worker runs it (built by `make build`).
 let spatial: (json: string) => any;
@@ -35,20 +37,19 @@ function computed(config: object): SpatialResult {
   if (result.implicit) Object.assign(result.implicit, reply.implicit);
   return result;
 }
-// The mesh as JSON carried it, vertex by vertex. (Go's JSON keeps −0,
-// which JSON.stringify would write as 0, so the list is not re-encoded.)
-function asJSON({ vertices, sampleIndex }: SpatialResult["mesh"]) {
-  return Array.from(sampleIndex, (i, k): MeshVertex => {
-    const [x, y, z, nx, ny, nz, phase] = vertices.subarray(7 * k, 7 * k + 7);
-    return {
-      position: { x, y, z },
-      normal: { x: nx, y: ny, z: nz },
-      phase,
-      sampleIndex: i,
-    };
-  });
+// The scene's mesh batch as drawn, corner by corner.
+function drawn({ data, indices }: Batch) {
+  if (!indices) return data;
+  const out = new Float32Array(meshStride * indices.length);
+  indices.forEach((v, k) =>
+    out.set(
+      data.subarray(meshStride * v, meshStride * v + meshStride),
+      meshStride * k,
+    ),
+  );
+  return out;
 }
-// The scene's mesh batch as buildScene laid out a JSON mesh.
+// The batch the corners make, as buildScene laid out an unindexed mesh.
 const flattened = (mesh: MeshVertex[]) =>
   new Float32Array(
     mesh.flatMap((v) => [
@@ -64,33 +65,45 @@ const flattened = (mesh: MeshVertex[]) =>
 const bytes = (a: Float32Array) =>
   Buffer.from(a.buffer, a.byteOffset, a.byteLength);
 
-test("every preset draws the mesh JSON delivered, whole and revealed", () => {
+test("every preset draws each triangle the engine listed, whole and revealed", () => {
   test.slow();
-  let meshes = 0;
+  let meshes = 0,
+    vertices = 0,
+    corners = 0;
   for (const p of spatialPresets) {
     const result = computed(p.config);
-    const json = asJSON(result.mesh);
-    if (json.length > 0) meshes++;
-    const drawn = buildScene(result).mesh.data;
-    expect(bytes(drawn).equals(bytes(flattened(json))), p.name).toBe(true);
-    // A reveal keeps the vertices up to its sample, as the JSON's did.
+    const listed = meshCorners(result.mesh);
+    if (listed.length > 0) meshes++;
+    vertices += result.mesh.vertices.length / meshStride;
+    corners += listed.length;
+    const scene = buildScene(result);
+    expect(
+      bytes(drawn(scene.mesh)).equals(bytes(flattened(listed))),
+      p.name,
+    ).toBe(true);
+    // The batch is drawn by index whenever there is a mesh.
+    expect(scene.mesh.indices !== undefined, p.name).toBe(listed.length > 0);
+    // A reveal keeps the triangles up to its sample, in order.
     for (const q of [0, 0.37, 0.8, 1]) {
       const shown = reveal(result, q);
       // The study's own result is left as it was.
-      expect(shown.mesh.vertices.length <= result.mesh.vertices.length).toBe(
-        true,
-      );
+      expect(meshCorners(result.mesh).length).toBe(listed.length);
       if (result.implicit || result.surface || result.rays) continue;
       const last = shown.base.length - 1;
-      const kept = json.filter((v) => v.sampleIndex <= last);
+      const kept = listed.filter((v) => v.sampleIndex <= last);
+      const batch = buildScene(shown).mesh;
       expect(
-        bytes(buildScene(shown).mesh.data).equals(bytes(flattened(kept))),
+        bytes(drawn(batch)).equals(bytes(flattened(kept))),
         `${p.name} at ${q}`,
       ).toBe(true);
+      // Nothing revealed is nothing drawn, so the legend leaves it out.
+      if (kept.length === 0) expect(batch.data.length).toBe(0);
     }
   }
-  // Tubes, ribbons, developables and ruled surfaces among them.
+  // Tubes, ribbons, developables and ruled surfaces among them, with each
+  // vertex shared by several triangles.
   expect(meshes).toBeGreaterThan(30);
+  expect(corners).toBeGreaterThan(4 * vertices);
 });
 
 const stage = (page: Page) => page.locator(".spatial-stage");

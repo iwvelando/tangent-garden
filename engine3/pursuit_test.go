@@ -480,12 +480,12 @@ func TestSpatialPursuitConstructions(t *testing.T) {
 			t.Fatalf("%s: no pursuit", construction)
 		}
 		if construction == "developable" {
-			for _, m := range out.Mesh {
+			for _, m := range corners(out.Mesh) {
 				if math.Abs(math.Abs(m.Normal.dot(tilt.w))-1) > 1e-6 {
 					t.Fatalf("developable normal %v, want ±%v", m.Normal, tilt.w)
 				}
 			}
-			if len(out.Mesh) == 0 {
+			if len(corners(out.Mesh)) == 0 {
 				t.Fatal("no developable")
 			}
 		}

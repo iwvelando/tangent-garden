@@ -47,12 +47,12 @@ func TestTubeAroundCircleIsTorus(t *testing.T) {
 	if !q.Constant || !q.Closed || q.Gap != 0 || q.Imaginary != 0 || q.Collapsed != 0 || q.Folded != 0 || q.Undefined != 0 || q.Steepest != 0 || r.Omitted != 0 {
 		t.Fatalf("summary %+v omitted %d", q, r.Omitted)
 	}
-	if len(r.Mesh) != 480*canalSegments*6 || len(q.Circles) != 24 || len(q.Meridians) != 6 || len(r.Rulings) != 0 {
-		t.Fatalf("%d vertices, %d circles, %d meridians, %d rulings", len(r.Mesh), len(q.Circles), len(q.Meridians), len(r.Rulings))
+	if len(corners(r.Mesh)) != 480*canalSegments*6 || len(q.Circles) != 24 || len(q.Meridians) != 6 || len(r.Rulings) != 0 {
+		t.Fatalf("%d vertices, %d circles, %d meridians, %d rulings", len(corners(r.Mesh)), len(q.Circles), len(q.Meridians), len(r.Rulings))
 	}
 	torus := func(p Vec3) float64 { return math.Pow(math.Hypot(p.X, p.Y)-2, 2) + p.Z*p.Z - 0.25 }
 	core := func(p Vec3) Vec3 { return Vec3{p.X, p.Y, 0}.unit().mul(2) }
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		if math.Abs(torus(v.Position)) > 1e-12 {
 			t.Fatalf("vertex %+v off the torus", v.Position)
 		}
@@ -85,7 +85,7 @@ func TestTubeAroundLineIsCylinder(t *testing.T) {
 	if r.Canal.Closed || !r.Canal.Constant || r.Canal.Folded != 0 {
 		t.Fatalf("summary %+v", r.Canal)
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		p := v.Position
 		if math.Abs(p.X*p.X+p.Y*p.Y-0.49) > 1e-12 || math.Abs(v.Normal.Z) > 1e-12 {
 			t.Fatalf("vertex %+v normal %+v", p, v.Normal)
@@ -125,7 +125,7 @@ func TestCanalEnvelopeEquations(t *testing.T) {
 			check(g.SampleIndex, p)
 		}
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		i := row(r, v)
 		check(i, v.Position)
 		radius := 0.3 * (1 + 0.5*math.Sin(3*at(i)))
@@ -165,7 +165,7 @@ func TestCanalConeAndCollapse(t *testing.T) {
 	if r.Canal.Collapsed != 0 || math.Abs(r.Canal.Steepest-0.5) > 1e-9 {
 		t.Fatalf("summary %+v", r.Canal)
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		p := v.Position
 		if math.Abs(3*(p.X*p.X+p.Y*p.Y)-p.Z*p.Z) > 1e-9 {
 			t.Fatalf("vertex %+v off the cone", p)
@@ -229,7 +229,7 @@ func TestNoRealEnvelope(t *testing.T) {
 	if unreal == 0 {
 		t.Fatal("no representative sphere without a circle")
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		if q.Meridians[0][row(r, v)] == nil {
 			t.Fatalf("vertex on a missing circle %+v", v)
 		}
@@ -266,7 +266,7 @@ func TestTubeFoldsBeyondRadiusOfCurvature(t *testing.T) {
 		t.Fatalf("folded %d", r.Canal.Folded)
 	}
 	r := canal(t, canalled(helix, 1.3, "1", 0))
-	if r.Canal.Folded != 481 || r.Omitted != 0 || len(r.Mesh) != 480*canalSegments*6 {
+	if r.Canal.Folded != 481 || r.Omitted != 0 || len(corners(r.Mesh)) != 480*canalSegments*6 {
 		t.Fatalf("folded %d, omitted %d", r.Canal.Folded, r.Omitted)
 	}
 }
@@ -293,7 +293,7 @@ func TestCanalClosureAndSeam(t *testing.T) {
 	}
 	n := knot.Samples
 	first, last := []Vec3{}, []Vec3{}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		switch row(r, v) {
 		case 0:
 			first = append(first, v.Position)
@@ -352,7 +352,7 @@ func TestCanalMeshRingsReachGaps(t *testing.T) {
 	c.Samples = 2400
 	r := canal(t, c)
 	rows := map[int]bool{}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		rows[row(r, v)] = true
 	}
 	if len(rows) > canalRings+60 {
@@ -363,7 +363,7 @@ func TestCanalMeshRingsReachGaps(t *testing.T) {
 	r = canal(t, c)
 	m := r.Canal.Meridians[0]
 	rows = map[int]bool{}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		rows[row(r, v)] = true
 	}
 	for i := 0; i < c.Samples; i++ {
@@ -407,11 +407,12 @@ func TestCanalRigidMotionAndReparameterization(t *testing.T) {
 			t.Fatalf("circle %d radius %g vs %g", k, f.Canal.Circles[k].Radius, g.Radius)
 		}
 	}
-	if len(m.Mesh) != len(r.Mesh) {
-		t.Fatalf("%d vs %d vertices", len(m.Mesh), len(r.Mesh))
+	moved, still := corners(m.Mesh), corners(r.Mesh)
+	if len(moved) != len(still) {
+		t.Fatalf("%d vs %d vertices", len(moved), len(still))
 	}
-	for i := range r.Mesh {
-		near(t, m.Mesh[i].Position, rotate(r.Mesh[i].Position), 1e-9)
+	for i := range still {
+		near(t, moved[i].Position, rotate(still[i].Position), 1e-9)
 	}
 }
 
