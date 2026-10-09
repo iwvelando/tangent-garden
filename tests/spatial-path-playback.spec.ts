@@ -445,6 +445,30 @@ test("views move up and down with their turns and leg times, and travel in their
   await expect(button(page, "Move view 2 down")).toBeFocused();
 });
 
+test("focus follows a moved view the way it went, even when the press did not focus the button", async ({
+  page,
+}) => {
+  await open(page, study());
+  // Safari, on a tap or a click, leaves a pressed button unfocused.
+  const press = async (name: string) => {
+    await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+    await button(page, name).evaluate((b: HTMLButtonElement) => b.click());
+  };
+  await press("Move view 1 down");
+  await expect(page.getByLabel("View 2 name", { exact: true })).toHaveValue(
+    "Start",
+  );
+  await expect(button(page, "Move view 2 down")).toBeFocused();
+  await press("Move view 3 up");
+  await expect(page.getByLabel("View 2 name", { exact: true })).toHaveValue(
+    "Away",
+  );
+  await expect(button(page, "Move view 2 up")).toBeFocused();
+  // At the end it can go no further, so focus takes the other way.
+  await press("Move view 2 down");
+  await expect(button(page, "Move view 3 up")).toBeFocused();
+});
+
 test("long view names wrap in full at phone width", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const long = "A long look along the curve's axis, from below the base";

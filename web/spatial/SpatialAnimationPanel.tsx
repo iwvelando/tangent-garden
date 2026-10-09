@@ -1043,15 +1043,15 @@ export function SpatialAnimationPanel({
   // Focus follows a moved view to its new place, onto the same way's button
   // while it can move further, else the other's.
   const viewsBox = useRef<HTMLDivElement>(null);
-  const moved = useRef(-1);
+  // The way is kept with the move, since Safari leaves a pressed button
+  // unfocused.
+  const moved = useRef<{ to: number; way: "up" | "down" } | null>(null);
   useLayoutEffect(() => {
-    const k = moved.current;
-    if (k < 0) return;
-    moved.current = -1;
+    if (!moved.current) return;
+    const { to: k, way } = moved.current;
+    moved.current = null;
     const box = viewsBox.current;
-    const was = document.activeElement?.getAttribute("aria-label") ?? "";
-    const way = was.endsWith(" down") ? ["down", "up"] : ["up", "down"];
-    for (const w of way) {
+    for (const w of way === "down" ? ["down", "up"] : ["up", "down"]) {
       const b = box?.querySelector<HTMLButtonElement>(
         `button[aria-label="Move view ${k + 1} ${w}"]`,
       );
@@ -1187,7 +1187,7 @@ export function SpatialAnimationPanel({
                       disabled={to < 0 || to >= path.keys.length}
                       onClick={() => {
                         setPath((p) => moveKey(p, k, to));
-                        moved.current = to;
+                        moved.current = { to, way };
                       }}
                     >
                       {way === "up" ? "Move up" : "Move down"}
