@@ -1,3 +1,4 @@
+import { tiered, type Help } from "../help";
 import type { LineWeight } from "../line-weight";
 import { objects, rotationMotions, type MotionChoice } from "./objects";
 export type Vec3 = [number, number, number];
@@ -214,6 +215,13 @@ export function passageExtent(config: Config): number {
     (descriptor.familyPassage && config.count > 1 ? config.spread / 2 : 0)
   );
 }
+// A slice passage's help: its extent, then the object's own detail.
+function passageHelp(config: Config): Help<string> {
+  const extent = passageExtent(config).toPrecision(4),
+    brief = `Move h from −${extent} to ${extent}, empty at both ends.`,
+    more = objects[config.object].passageHelp;
+  return more ? tiered(brief, more) : brief;
+}
 // Choices describe the mathematical study, independently of the notebook name.
 export function motions(config: Config): MotionChoice[] {
   if (objects[config.object].motionChoices)
@@ -225,7 +233,7 @@ export function motions(config: Config): MotionChoice[] {
           {
             value: "slice" as const,
             label: "Slice passage",
-            help: `Move h from −${passageExtent(config).toPrecision(4)} to ${passageExtent(config).toPrecision(4)}, including empty endpoints. ${objects[config.object].passageHelp}`,
+            help: passageHelp(config),
             loops: true,
           },
         ]

@@ -3,6 +3,7 @@
 // scaled for its plot, and where it stands in each frame while parameters
 // vary. Every quantity comes from Go; this module only selects.
 
+import { tiered } from "./help";
 import type { SchemaOf } from "./study-link";
 
 // The probe's inks, diagnostic rather than decorative, as [light theme,
@@ -114,9 +115,6 @@ export function plotScale(
 // step to draw, or why it is away. Other animations that keep the study
 // fixed draw it throughout.
 export const unreached = "The drawing has not reached the probe yet.";
-// Help's account of the probe in those animations.
-export const fixedAnimationsHelp =
-  "Every other animation draws it where you put it, a reveal only once its drawing reaches the point, and still images include it.";
 export const revealedProbe = (step: number, sample: number, last: number) =>
   sample <= last ? step : unreached;
 
@@ -134,12 +132,19 @@ export const curveProbeMotions: { value: ProbeMotion; label: string }[] = [
   { value: "length", label: "Keeps its share of the length" },
   { value: "along", label: "Moves along the curve" },
 ];
-export const curveProbeMotionHelp =
-  "Where the probe stands in each frame while the parameters vary. Stays at its t: at the sample nearest the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: at the sample nearest the same fraction of the drawn curve's arc length, measured by Go on each frame's samples, with nothing counted across a break. Moves along the curve: from its first sample to its last as the animation plays. It snaps to each frame's own samples; the readout and plot describe that frame, and framing ignores the osculating circle.";
+const probeMotionBrief = "Where the probe stands while the parameters vary.";
+const probeMotionMore =
+  "Length shares skip breaks in the curve. The readout describes each frame; framing ignores the osculating circle.";
+export const curveProbeMotionHelp = tiered(
+  probeMotionBrief,
+  `It snaps to each frame's nearest sample, and is absent from a frame whose domain leaves its t out. ${probeMotionMore}`,
+);
 
 // How the probe moves while the parameters vary, between samples.
-export const betweenMotionHelp =
-  "Where the probe stands in each frame while the parameters vary. Stays at its t: at exactly the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: where the drawn curve's arc length, measured by Go on each frame, is the same fraction of the whole, with nothing counted across a break. Moves along the curve: from the start of each frame's domain to its end as the animation plays. Go places it with each frame, between samples; the readout and plot describe that frame, and framing ignores the osculating circle.";
+export const betweenMotionHelp = tiered(
+  probeMotionBrief,
+  `It stands at exactly its t in every frame, and is absent from a frame whose domain leaves that t out. ${probeMotionMore}`,
+);
 
 // Why a held probe has no point in a frame: its t lies outside the frame's
 // domain, it has no share of the length to keep, or the frame has no

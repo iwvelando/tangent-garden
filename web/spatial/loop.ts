@@ -8,6 +8,7 @@
 // periodic. It is compared sample for sample: a sheet's color follows its
 // samples, so a closed curve run on until its samples are only relabeled
 // is not the same drawing. See mathematics.md#seamless-loops.
+import { tiered, type Help } from "../help";
 import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
 import {
   animationCamera,
@@ -34,9 +35,12 @@ export const loops = (mode: AnimationMode) =>
   mode === "probe" ||
   mode === "path";
 
-export const repeatHelp: Record<Repeat, string> = {
+export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
-  loop: "Plays again and again, its end joining its start, which needs the last frame to match the first. Play checks the drawing, the probe and the camera at both ends and says what differs. An orbit always returns; parameter tracks return when each ends one period after it starts, for example a from 0 to 2*pi in cos(t + a); the probe returns around a closed curve; a camera path returns when its last view is its first, with whole turns. Drawing, tracing and peeling start and end differently, so they offer Back and forth instead. Exports leave out the last frame, which is the first again, and loop forever.",
+  loop: tiered(
+    "Plays again and again; the last frame must match the first.",
+    "Play checks both ends and says what differs. Parameter tracks return when each spans one period, as a from 0 to 2*pi in cos(t + a); a camera path when its last view is its first, with whole turns. Drawing, tracing and peeling offer Back and forth instead. Exports leave out the repeated last frame and loop forever.",
+  ),
   "back-and-forth": backAndForthHelp,
 };
 // In a loop, a smooth path's seam is one more view it passes through.

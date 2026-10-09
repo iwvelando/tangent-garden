@@ -4,6 +4,7 @@
 // the samples, engine.ProbePoint between them) or the study's own
 // per-sample arrays; this module only selects them. The
 // notebook-independent parts are in probe.ts.
+import { tiered } from "./help";
 import { probeIndex } from "./probe";
 export { betweenMotionHelp } from "./probe";
 import {
@@ -121,14 +122,14 @@ const highlights: Partial<Record<Config["kind"], Highlight>> = {
   offset: { name: "its normal to the offset", lines: toDerived },
   catacaustic: { name: "its reflected ray", lines: toDerived },
   diacaustic: { name: "its refracted ray", lines: toDerived },
-  inversion: { name: "its correspondence segment", lines: toDerived },
-  rolling: { name: "its arm to the traced point", lines: toDerived },
+  inversion: { name: "the segment to its image", lines: toDerived },
+  rolling: { name: "the arm to the traced point", lines: toDerived },
   pedal: {
-    name: "its tangent's foot and the perpendicular from the pole",
+    name: "its tangent's foot and the pole's perpendicular",
     lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
   contrapedal: {
-    name: "its normal's foot and the perpendicular from the pole",
+    name: "its normal's foot and the pole's perpendicular",
     lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
   orthotomic: {
@@ -151,11 +152,15 @@ export function probeHelp(
   between = false,
 ) {
   const h = result ? probeHighlight(config, result) : highlights[config.kind];
-  if (between)
-    return `Describe the base curve at any point of its domain: its unit tangent T and normal N (T turned a quarter turn to the left), its osculating circle, which shares its tangent and curvature there, and the circle's center, the center of curvature${h ? `, with ${h.name}` : ""}. The signed curvature κ = (x′y″ − y′x″)/|r′|³ is positive where the curve turns left and negative where it turns right; the radius of curvature is 1/|κ|. The arc length s is measured along the drawn curve from its first sample by Simpson's rule, with nothing counted across a gap, and carried on from the sample before by the same rule. Go evaluates them at the probe's own t from the curve's derivatives there, as it does at every sample; at a sample they are the sample's own. Moving the probe asks Go for that one point, which keeps the study it last computed, so a move is quick; the first place after the study changes computes the study once more, which takes longer for many samples. Where κ is 0 (flat) or the center lies beyond 100 radii of the study, no circle is drawn; where the second derivative is unstable, κ is unknown.`;
-  return `Describe the base curve at one of its samples: its unit tangent T and normal N (T turned a quarter turn to the left), its osculating circle, which shares its tangent and curvature there, and the circle's center, the center of curvature${h ? `, with ${h.name}` : ""}. The signed curvature κ = (x′y″ − y′x″)/|r′|³ is positive where the curve turns left and negative where it turns right; the radius of curvature is 1/|κ|. The arc length s is measured along the drawn curve from its first sample by Simpson's rule, with nothing counted across a gap. Go computes them from the curve's own derivatives at every sample; the probe snaps to samples, so moving it never recomputes. Where κ is 0 (flat) or the center lies beyond 100 radii of the study, no circle is drawn; where the second derivative is unstable, κ is unknown.`;
+  const brief = `Shows the base curve's tangent T, normal N and osculating circle${h ? `, with ${h.name}` : ""}.`;
+  return tiered(
+    brief,
+    `N points a quarter turn left of T, and κ is positive where the curve turns left. The circle's radius is 1/|κ|; it is not drawn where κ is 0 or its center lies beyond 100 study radii. Arc length s counts from the first sample, skipping gaps. ${between ? "It stands at any t; each move evaluates just that point." : "It snaps to samples, so moving it never recomputes."}`,
+  );
 }
 
 // Help for standing between samples.
-export const betweenHelp =
-  "Let the probe stand at any t, not only at the nearest sample: Go describes the curve and the highlighted construction at that t, exactly. A chase or a trajectory, which Go integrates step by step, snaps to its samples regardless.";
+export const betweenHelp = tiered(
+  "Lets the probe stand at any t, not only at a sample, describing the curve exactly there.",
+  "The highlighted construction is described at that t too. A chase or a trajectory, integrated step by step, snaps to its samples regardless.",
+);

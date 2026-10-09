@@ -6,6 +6,7 @@
 // all their near sides meet. This module holds the cut's fields, limits,
 // words and geometry, read by the panel, the renderer, linework, playback
 // and links alike.
+import { tiered } from "../help";
 import type { Batch, Pass } from "./scene";
 import type { Vec3 } from "./types";
 // What the plane cuts: the study's own sheet, every shaded sheet, or every
@@ -60,15 +61,25 @@ export const otherCutFields = (k: number) => ({
   offset: `Cut plane ${k} offset d`,
 });
 export const cutHelp = {
-  enabled:
-    "Hides everything on the side the normal points to, where n̂·p > d with n̂ = n/|n|. The plane is fixed in space: it stays put while the camera turns and while parameters animate. The study itself is unchanged; the cut only hides part of the drawing, here and in every export.",
-  normal: `Any direction that is not zero; only its direction counts. Each component within ±${maxCutValue.toLocaleString("en-US")}.`,
+  enabled: tiered(
+    "Hides everything on the side the plane's normal points to, here and in every export.",
+    "That is where n̂·p > d, with n̂ = n/|n|. The plane is fixed in space: it stays put while the camera turns and while parameters animate. The study itself is unchanged; the cut only hides part of the drawing.",
+  ),
+  normal: `Any nonzero direction, each component within ±${maxCutValue.toLocaleString("en-US")}.`,
   offset: `The plane's signed distance from the origin along n̂, within ±${maxCutValue.toLocaleString("en-US")}.`,
-  cuts: "The surface is the study's own sheet: the patch, mirror or interface, ribbon, tube, or level surface. Every sheet adds the offset, focal or caustic sheets and the receiver. Sheets and lines cuts the base curve and every construction line too. The probe is never cut.",
-  edge: "Where the drawn sheets meet the plane, found on their triangles. With several planes, only where they meet the boundary of what is hidden. It follows the mesh, so it is as close to the surface as the mesh is; it is not a refined section curve. An implicit surface's Section curves are traced on F itself.",
+  cuts: tiered(
+    "The surface alone, every sheet, or sheets and lines. Never the probe.",
+    "The surface is the study's own sheet: the patch, mirror or interface, ribbon, tube, or level surface. Every sheet adds the offset, focal or caustic sheets and the receiver. Sheets and lines also cuts the curve and construction lines.",
+  ),
+  edge: tiered(
+    "Draws where the sheets meet the plane; with several planes, where they meet the boundary of what is hidden.",
+    "It is found on the sheets' triangles, so it is as close to the surface as the mesh is, not a refined section curve. An implicit surface's Section curves are traced on F itself.",
+  ),
   add: `Up to ${maxCutPlanes} planes in all; six bound a box. A new plane is through the center, facing along the first axis no plane faces yet.`,
-  beyond:
-    "Beyond every plane hides only where all their far sides meet, so planes cut a notch: two a wedge, three a corner. Beyond any plane hides each plane's far side, so planes keep what lies within them all: two a slab, six a box.",
+  beyond: tiered(
+    "Every plane cuts a notch; any plane keeps what lies inside all.",
+    "Beyond every plane, two planes cut a wedge and three a corner. Beyond any plane, two keep a slab and six a box.",
+  ),
 };
 
 // The planes as entered, the first first, and a cut with them replaced:

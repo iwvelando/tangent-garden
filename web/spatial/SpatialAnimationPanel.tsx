@@ -1,10 +1,17 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { FrameRateField } from "../FrameRateField";
 import { ProgressSlider } from "../ProgressSlider";
 import type { SpatialAnimation } from "./link";
 import { EngineClient, playbackEngineCount } from "../engine-client";
 import { play } from "../playback";
 import {
+  asymptoteHelp,
   cycles,
   paceChoices,
   paceHelp,
@@ -79,6 +86,7 @@ import {
 } from "../export-formats";
 import { saveFile } from "../export-image";
 import { Field, HelpText, HelpToggle, useHelp } from "../Field";
+import { tiered, withMore } from "../help";
 import { useDisclosure } from "../useDisclosure";
 import type { SpatialCamera } from "./link";
 import {
@@ -1057,7 +1065,7 @@ export function SpatialAnimationPanel({
         help={
           path.style === "smooth"
             ? repeat === "loop"
-              ? `${pathHelp.smooth} ${smoothLoopHelp}`
+              ? withMore(pathHelp.smooth, smoothLoopHelp)
               : pathHelp.smooth
             : pathHelp.steady
         }
@@ -1105,7 +1113,7 @@ export function SpatialAnimationPanel({
                 <div className="pair">
                   <Field
                     label="Turns"
-                    help={pathHelp.turns}
+                    help={k === 1 ? pathHelp.turns : undefined}
                     topic={`view ${k + 1} turns`}
                   >
                     <input
@@ -1123,7 +1131,7 @@ export function SpatialAnimationPanel({
                   </Field>
                   <Field
                     label="Leg time"
-                    help={pathHelp.leg}
+                    help={k === 1 ? pathHelp.leg : undefined}
                     topic={`view ${k + 1} leg time`}
                   >
                     <input
@@ -1243,7 +1251,7 @@ export function SpatialAnimationPanel({
           <Field
             key={axis}
             label={rideFields[axis]}
-            help={rideHelp.ray}
+            help={axis === "u" ? rideHelp.ray : undefined}
             topic={`ray at ${axis}`}
           >
             <select
@@ -1311,39 +1319,50 @@ export function SpatialAnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "path" ? (
-                `${pathHelp.mode} ${pathHelp.framing}`
-              ) : mode === "cut" ? (
-                "Move the cut plane along its normal from the farthest point it reaches to the nearest, so the drawing peels away from the side the normal points to until all it cuts is hidden. Flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks. Geometry stays fixed."
-              ) : mode === "probe" ? (
-                gridded(target) && frame ? (
-                  `Move the probe along the ${surfaceTerms(frame.config, target).surface} from its first ${surfaceTerms(frame.config, target).along} to its last, one row at a time at its ${surfaceTerms(frame.config, target).around}, with its principal directions, circles and readout. Geometry stays fixed.`
-                ) : probe && frame && probeBetween(frame.config, probe) ? (
-                  "Move the probe from the start of the curve to its end through every t between, Go describing each frame's point, with its frame, osculating circle and readout. Geometry stays fixed."
-                ) : (
-                  "Move the probe from the start of the curve to its end, one sample at a time, with its frame, osculating circle and readout. Geometry stays fixed."
-                )
-              ) : mode === "trace" ? (
-                "Send light from the source, or in from past the edge of the view for parallel light, to the surface and on. Each caustic point appears as its ray reaches it. Light slows to c/n in each medium, so wavefronts stay together."
-              ) : mode === "orbit" ? (
-                "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
-              ) : mode === "reveal" ? (
-                frame?.config.format === "implicit" ? (
-                  "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
-                ) : (
-                  "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
-                )
-              ) : (
-                <>
-                  Tracks vary together, linearly. Use <var>a</var> in a curve
-                  expression to animate any coefficient, for example{" "}
-                  <code>
-                    <var>a</var>*cos(t)
-                  </code>
-                  . Integer counts change in whole steps. Endpoints accept
-                  constants.
-                </>
-              )
+              mode === "path"
+                ? pathHelp.mode
+                : mode === "cut"
+                  ? tiered(
+                      "Sweep the cut plane along its normal, peeling the drawing away until all it cuts is hidden. Geometry stays fixed.",
+                      "The plane moves from the farthest point it reaches to the nearest, peeling from the side the normal points to; flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks.",
+                    )
+                  : mode === "probe"
+                    ? gridded(target) && frame
+                      ? tiered(
+                          `Move the probe along the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
+                          `It runs from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles.`,
+                        )
+                      : probe && frame && probeBetween(frame.config, probe)
+                        ? tiered(
+                            "Move the probe through every t of the curve. Geometry stays fixed.",
+                            "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                          )
+                        : tiered(
+                            "Move the probe along the curve, sample by sample. Geometry stays fixed.",
+                            "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                          )
+                    : mode === "trace"
+                      ? tiered(
+                          "Send light from the source to the surface and on; each caustic point appears as its ray reaches it.",
+                          "Parallel light comes in from past the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
+                        )
+                      : mode === "orbit"
+                        ? "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
+                        : mode === "reveal"
+                          ? frame?.config.format === "implicit"
+                            ? "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
+                            : "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
+                          : tiered<ReactNode>(
+                              "Tracks vary together, linearly. Endpoints accept constants.",
+                              <>
+                                Use <var>a</var> in a curve expression to
+                                animate any coefficient, for example{" "}
+                                <code>
+                                  <var>a</var>*cos(t)
+                                </code>
+                                . Integer counts change in whole steps.
+                              </>,
+                            )
             }
           >
             <select
@@ -1510,21 +1529,20 @@ export function SpatialAnimationPanel({
             <Field
               label="Animation camera"
               help={
-                <>
-                  {camera === "path"
-                    ? `${pathHelp.camera} ${pathHelp.framing}`
-                    : camera === "ride"
-                      ? rideHelp.camera
-                      : camera === "current"
-                        ? "Keeps your current orbit, pan, and zoom throughout, including export."
-                        : camera === "hold"
-                          ? "Frames the final result once and holds that view."
-                          : camera === "follow"
-                            ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
-                            : "Recenters and zooms to fit the evolving geometry."}
-                  {(camera === "fit" || camera === "follow") &&
-                    " Isolated points near asymptotes are ignored; use Hold current view to explore distant branches."}
-                </>
+                camera === "path"
+                  ? pathHelp.camera
+                  : camera === "ride"
+                    ? rideHelp.camera
+                    : camera === "current"
+                      ? "Keeps your current orbit, pan, and zoom throughout, including export."
+                      : camera === "hold"
+                        ? "Frames the final result once and holds that view."
+                        : tiered(
+                            camera === "follow"
+                              ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
+                              : "Recenters and zooms to fit the evolving geometry.",
+                            asymptoteHelp,
+                          )
               }
             >
               <select
@@ -1596,7 +1614,7 @@ export function SpatialAnimationPanel({
             <Field
               label="Export quality"
               value={`${quality} / 100`}
-              help={`${text.short} starts at ${defaultQuality[chosen]}; lower values make smaller files. Near 100, files can grow much larger; size depends on the drawing and browser.`}
+              help={`${text.short} starts at ${defaultQuality[chosen]}. Lower values make smaller files; near 100, files can grow much larger.`}
             >
               <input
                 aria-label="Export quality"
@@ -1645,8 +1663,8 @@ export function SpatialAnimationPanel({
             </button>
             <p className="hint">
               Export renders every frame in your browser with the current theme,
-              layers, and camera, which can take longer than playback. Up to
-              7,200 frames (2 minutes at 60 fps) or 256 MiB.
+              layers, probe and camera, and can take longer than playback. Up to
+              7,200 frames or 256 MiB.
             </p>
           </details>
         </fieldset>

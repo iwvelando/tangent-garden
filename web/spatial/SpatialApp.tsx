@@ -22,6 +22,7 @@ import {
   useHelp,
   type FieldErrorTarget,
 } from "../Field";
+import { tiered, type Help } from "../help";
 import { fieldLabel } from "./fields";
 import { AppHeader } from "../AppHeader";
 import { AnimationButton } from "../AnimationButton";
@@ -162,8 +163,15 @@ const imageNames: Record<ImageFormat, string> = {
 };
 
 // How a study is sampled is for the curious: a heading and an info toggle
-// keep the detail out of the way until it is asked for.
-function SamplingNote({ children }: { children: ReactNode }) {
+// keep the detail out of the way until it is asked for, and the toggle
+// opens on its essentials, the rest behind Show more.
+function SamplingNote({
+  brief,
+  children,
+}: {
+  brief: string;
+  children: ReactNode;
+}) {
   const help = useHelp();
   return (
     <div className="sampling-note">
@@ -171,7 +179,7 @@ function SamplingNote({ children }: { children: ReactNode }) {
         <span>How it&rsquo;s sampled</span>
         <HelpToggle topic="how it’s sampled" help={help} />
       </div>
-      <HelpText help={help}>{children}</HelpText>
+      <HelpText help={help}>{tiered(brief, children)}</HelpText>
     </div>
   );
 }
@@ -606,7 +614,7 @@ export default function SpatialApp({
     label: string,
     value: number,
     set: (value: number) => void,
-    help?: string,
+    help?: Help<string>,
   ) => (
     <Field key={label} label={label} help={help}>
       <ScalarInput name={label} value={value} onChange={set} />
@@ -664,7 +672,10 @@ export default function SpatialApp({
                   j === i ? { ...t, frequency: value } : t,
                 ),
               })),
-            "Radians per unit t, within ±1000; negative turns from Aₖ away from Bₖ. At 0 the term is the fixed translation Aₖ.",
+            tiered(
+              "Radians per unit t, within ±1000.",
+              "Negative turns from Aₖ away from Bₖ. At 0 the term is the fixed translation Aₖ.",
+            ),
           )}
           {(["cosine", "sine"] as const).map((field) => (
             <div className="pair trio" key={field}>
@@ -684,7 +695,10 @@ export default function SpatialApp({
                   axis === "x"
                     ? field === "cosine"
                       ? "Aₖ is the vector at t = 0. Coordinates within ±100000."
-                      : "Bₖ is the vector a quarter turn later. Parallel to Aₖ, the ellipse flattens to a segment."
+                      : tiered(
+                          "Bₖ is the vector a quarter turn later.",
+                          "Coordinates within ±100000. Parallel to Aₖ, the ellipse flattens to a segment.",
+                        )
                     : undefined,
                 ),
               )}
@@ -753,11 +767,10 @@ export default function SpatialApp({
   const fieldControls = (
     <>
       <p className="note">
-        Each trajectory starts at its seed (within ±100,000) when t is at the
-        interval start and follows the field: its velocity at (x, y, z) at time
-        t is (dx/dt, dy/dt, dz/dt). Use <var>x</var>, <var>y</var>, <var>z</var>
-        , <var>t</var>, and <var>a</var>. The first seed&rsquo;s trajectory is
-        the curve a construction uses.
+        Each trajectory starts at its seed (within ±100,000) and moves with
+        velocity (dx/dt, dy/dt, dz/dt) at (x, y, z) and time t. Use <var>x</var>
+        , <var>y</var>, <var>z</var>, <var>t</var>, and <var>a</var>. The first
+        seed&rsquo;s trajectory is the curve a construction uses.
       </p>
       {(["x", "y", "z"] as const).map((axis) => (
         <Field label={`d${axis}/dt`} className="equation" key={axis}>
@@ -842,7 +855,10 @@ export default function SpatialApp({
         "Escape radius R",
         config.field.escape,
         (value) => setField((f) => ({ ...f, escape: value })),
-        "A trajectory ends the first time it leaves the sphere of this radius about the origin (0–100,000), so a field that runs off to infinity stops in view. A seed outside the sphere has no path.",
+        tiered(
+          "A trajectory ends where it leaves this sphere about the origin, 0–100,000.",
+          "This keeps a runaway field in view. A seed outside the sphere has no path.",
+        ),
       )}
       <p className="note" data-testid="field-note">
         {flows
@@ -880,10 +896,9 @@ export default function SpatialApp({
   const pursuitControls = (
     <>
       <p className="note">
-        Each pursuer starts at (x, y, z) (within ±100,000) when t is at the
-        interval start and runs straight at the next one, the last at the first,
-        at its own speed v (0–100,000). The first pursuer&rsquo;s path is the
-        curve a construction uses.
+        Each pursuer starts at (x, y, z) (within ±100,000) and runs straight at
+        the next, the last at the first, at its own speed v (0–100,000). The
+        first pursuer&rsquo;s path is the curve a construction uses.
       </p>
       {config.pursuit.pursuers.map((pursuer, i, all) => (
         <div
@@ -955,7 +970,10 @@ export default function SpatialApp({
         "Capture distance ε",
         config.pursuit.capture,
         (value) => setPursuit((q) => ({ ...q, capture: value })),
-        "A pursuer’s direction is undefined on its target, so the chase stops, for everyone, the first time any pursuer comes this close to its own target (0–100,000). Nobody merges or changes target.",
+        tiered(
+          "The chase stops for everyone the first time any pursuer comes this close to its target (0–100,000).",
+          "A pursuer’s direction is undefined on its target. Nobody merges or changes target.",
+        ),
       )}
       <p className="note" data-testid="pursuit-note">
         {chase
@@ -1003,7 +1021,10 @@ export default function SpatialApp({
     <>
       <Field
         label="Interaction"
-        help="One reflection, from a mirror, or one refraction, through an interface between two media. Either happens once: the outgoing light never meets the surface again."
+        help={tiered(
+          "One reflection from a mirror, or one refraction between two media.",
+          "The outgoing light never meets the surface again.",
+        )}
       >
         <select
           value={config.rays.interaction}
@@ -1022,7 +1043,10 @@ export default function SpatialApp({
             "Index n₁",
             config.rays.n1,
             (n1) => setRays((r) => ({ ...r, n1 })),
-            "Refractive indices on the incident side, where n points, and beyond it; each positive and at most 100. The ratio is η = n₁/n₂, and light leaving the denser side beyond its critical angle is totally reflected.",
+            tiered(
+              "n₁ where light arrives, n₂ beyond; each above 0, at most 100.",
+              "Light arrives on the side n points to. The ratio is η = n₁/n₂; light leaving the denser side beyond its critical angle is totally reflected.",
+            ),
           )}
           {vector("Index n₂", config.rays.n2, (n2) =>
             setRays((r) => ({ ...r, n2 })),
@@ -1039,7 +1063,10 @@ export default function SpatialApp({
     <>
       <Field
         label="Receiver"
-        help="A plane that collects the outgoing rays and measures the irradiance they deliver to a square window, as a study separate from the caustics."
+        help={tiered(
+          "A plane measuring the irradiance the outgoing rays deliver to a square window.",
+          "It is a study separate from the caustics.",
+        )}
       >
         <select
           value={config.rays.receiver.plane}
@@ -1061,7 +1088,10 @@ export default function SpatialApp({
               "Plane at c",
               config.rays.receiver.at,
               (at) => setReceiver((r) => ({ ...r, at })),
-              "Where the plane stands, within ±100000, and the side of its square window, positive and at most 100000.",
+              tiered(
+                "Where the plane stands, and its window's side.",
+                "The plane stands within ±100000; the side is positive and at most 100000.",
+              ),
             )}
             {vector("Window size s", config.rays.receiver.size, (size) =>
               setReceiver((r) => ({ ...r, size })),
@@ -1072,7 +1102,7 @@ export default function SpatialApp({
               `Centre ${first}`,
               config.rays.receiver.c1,
               (c1) => setReceiver((r) => ({ ...r, c1 })),
-              "The window's centre on the plane, each coordinate within ±100000.",
+              "The window's center on the plane, each coordinate within ±100000.",
             )}
             {vector(`Centre ${second}`, config.rays.receiver.c2, (c2) =>
               setReceiver((r) => ({ ...r, c2 })),
@@ -1106,7 +1136,10 @@ export default function SpatialApp({
     <>
       <Field
         label="Light"
-        help={`Parallel light, as from a distant source, or a point source. Either ${refracting ? "refracts" : "reflects"} once; nothing blocks it on the way in or out.`}
+        help={tiered(
+          "Parallel light, as from a distant source, or a point source.",
+          `Either ${refracting ? "refracts" : "reflects"} once; nothing blocks it on the way in or out.`,
+        )}
       >
         <select
           value={config.rays.light}
@@ -1125,7 +1158,10 @@ export default function SpatialApp({
             "Azimuth α (°)",
             config.rays.azimuth,
             (azimuth) => setRays((r) => ({ ...r, azimuth })),
-            "The light travels along (cos β cos α, cos β sin α, sin β), in degrees within ±100000: β = −90 is straight down.",
+            tiered(
+              "The light's direction, in degrees within ±100000.",
+              "It travels along (cos β cos α, cos β sin α, sin β), so β = −90 is straight down.",
+            ),
           )}
           {vector("Elevation β (°)", config.rays.elevation, (elevation) =>
             setRays((r) => ({ ...r, elevation })),
@@ -1153,7 +1189,10 @@ export default function SpatialApp({
         "Ray length ℓ",
         config.rays.length,
         (length) => setRays((r) => ({ ...r, length })),
-        `Each ${refracting ? "transmitted" : "reflected"} ray runs ℓ from the ${face}, and its virtual extension ℓ back behind it; parallel light arrives from ℓ away. 0–100000; 0 hides the rays.`,
+        tiered(
+          `How far each ${refracting ? "transmitted" : "reflected"} ray runs from the ${face}, 0–100000; 0 hides the rays.`,
+          "Its virtual extension runs ℓ back behind it, and parallel light arrives from ℓ away.",
+        ),
       )}
       {receiverControls}
       <p className="note" data-testid="rays-note">
@@ -1221,9 +1260,15 @@ export default function SpatialApp({
         }
         help={
           refracting
-            ? "The light arrives on the side n points to, in index n₁, and crosses into n₂; light from behind is unlit. Nothing is inferred about inside and outside."
+            ? tiered(
+                "Light arrives on the side n points to, in index n₁; light from behind is unlit.",
+                "It crosses into n₂. Nothing is inferred about inside and outside.",
+              )
             : mirroring
-              ? "The mirror reflects on the side n points to: light arriving against n reflects, and light from behind it is unlit. Nothing is inferred about inside and outside."
+              ? tiered(
+                  "The mirror reflects on the side n points to; light from behind is unlit.",
+                  "Nothing is inferred about inside and outside.",
+                )
               : "Which side n points to. Reversing it negates both curvatures and swaps the focal sheets' numbers; the geometry stays."
         }
       >
@@ -1247,13 +1292,19 @@ export default function SpatialApp({
               "Offset d",
               config.surface.offset,
               (offset) => setSurface((s) => ({ ...s, offset })),
-              "The offset surface X + d n, signed along n, within ±100000; 0 hides it.",
+              tiered(
+                "Offset along n, within ±100000; 0 hides it.",
+                "The offset surface is X + d n.",
+              ),
             )}
             {vector(
               "Normal reach ℓ",
               config.surface.reach,
               (reach) => setSurface((s) => ({ ...s, reach })),
-              "Each normal line runs from X to X + ℓn: signed along n, within ±100000. 0 hides them.",
+              tiered(
+                "Normal lines' length along n, within ±100000; 0 hides them.",
+                "Each runs from X to X + ℓn.",
+              ),
             )}
           </div>
           <p className="note" data-testid="surface-note">
@@ -1274,7 +1325,10 @@ export default function SpatialApp({
     <>
       <Field
         label="F(x, y, z)"
-        help="An expression in x, y, z and a, but not t. The surface is where F = c, meshed within the box; ∇F points to larger F."
+        help={tiered(
+          "An expression in x, y, z and a, but not t; the surface is where F = c.",
+          "It is meshed within the box; ∇F points to larger F.",
+        )}
       >
         <input
           value={config.implicit.f}
@@ -1290,7 +1344,10 @@ export default function SpatialApp({
           "Level c",
           config.implicit.level,
           (level) => setImplicit((q) => ({ ...q, level })),
-          "The level, and a shape parameter a free for the expression; both finite. Animating either sweeps a family of surfaces.",
+          tiered(
+            "The level, and a shape parameter for the expression; both finite.",
+            "Animating either sweeps a family of surfaces.",
+          ),
         )}
         {vector("Shape parameter a", config.implicit.a, (a) =>
           setImplicit((q) => ({ ...q, a })),
@@ -1307,7 +1364,10 @@ export default function SpatialApp({
                 box: { ...q.box, [`${axis}Min`]: value },
               })),
             axis === "x"
-              ? "The box the surface is sought in: each bound within ±100000, each side at least 0.000001 wide. Where the surface meets the box, it is cut open."
+              ? tiered(
+                  "The box searched: bounds within ±100000, sides at least 0.000001.",
+                  "Where the surface meets the box, it is cut open.",
+                )
               : undefined,
           )}
           {vector(`${axis} to`, config.implicit.box[`${axis}Max`], (value) =>
@@ -1320,7 +1380,7 @@ export default function SpatialApp({
       ))}
       <Field
         label="Section planes"
-        help={`From 0 to ${maxSections} parallel planes, evenly spaced; each cuts the surface in the planar level set of F on it.`}
+        help={`From 0 to ${maxSections} evenly spaced planes, each cutting the surface in a level curve of F.`}
       >
         <input
           type="number"
@@ -1351,7 +1411,7 @@ export default function SpatialApp({
                     normal: { ...s.normal, [axis]: value },
                   })),
                 axis === "x"
-                  ? "The planes' normal n, not zero, each coordinate within ±100000. It is made a unit vector n̂."
+                  ? "The planes' normal, not zero, each coordinate within ±100000."
                   : undefined,
               ),
             )}
@@ -1361,7 +1421,10 @@ export default function SpatialApp({
               "First offset d₀",
               config.implicit.sections.from,
               (from) => setSections((s) => ({ ...s, from })),
-              "The planes n̂·p = d, with d evenly from d₀ to d₁, both included; a single plane stands at d₀. Each within ±100000.",
+              tiered(
+                "Planes from d₀ to d₁ along n̂, each within ±100000.",
+                "The planes are n̂·p = d, with n̂ the unit normal, evenly spaced with both ends included; a single plane stands at d₀.",
+              ),
             )}
             {vector("Last offset d₁", config.implicit.sections.to, (to) =>
               setSections((s) => ({ ...s, to })),
@@ -1605,7 +1668,10 @@ export default function SpatialApp({
               reference: { ...f.reference, [axis]: value },
             })),
           axis === "x"
-            ? "Reference normal N₀, nonzero and within ±100000. Projected onto the normal plane where each unbroken stretch begins, it sets U there."
+            ? tiered(
+                "Reference normal, not zero, each coordinate within ±100000.",
+                "Projected onto the normal plane where each unbroken stretch begins, it sets U there.",
+              )
             : undefined,
         ),
       )}
@@ -1623,14 +1689,20 @@ export default function SpatialApp({
         "Twist (turns)",
         config.frame.twist,
         (twist) => setFraming((f) => ({ ...f, twist })),
-        "Turns of D about the tangent, spread by arc length over the curve, within ±100.",
+        tiered(
+          "Turns of D about the tangent, within ±100.",
+          "They are spread by arc length over the curve.",
+        ),
       )}
     </div>
   );
   const closureField = (
     <Field
       label="Closed-loop seam"
-      help="On an unbroken closed loop the carried frame can return turned. Show that seam, or spread the opposite twist evenly along the loop."
+      help={tiered(
+        "On a closed loop the carried frame can return turned: show that seam, or spread the correction.",
+        "The correction is the opposite twist, spread evenly along an unbroken loop.",
+      )}
     >
       <select
         value={config.frame.closure}
@@ -1648,7 +1720,10 @@ export default function SpatialApp({
     <>
       <Field
         label="Frame"
-        help="Rotation-minimizing frames are carried along without turning about the tangent. Frenet frames follow the curvature and serve only as a diagnostic."
+        help={tiered(
+          "Rotation-minimizing frames never turn about the tangent; Frenet frames follow the curvature.",
+          "Frenet frames serve only as a diagnostic.",
+        )}
       >
         <select
           value={config.frame.kind}
@@ -1670,13 +1745,16 @@ export default function SpatialApp({
           "Half-width w",
           config.frame.width,
           (width) => setFraming((f) => ({ ...f, width })),
-          "The ribbon spans −w to w along D. 0 hides it; at most 100000.",
+          "Spans −w to w along D, at most 100000; 0 hides it.",
         )}
         {vector(
           "Offset d",
           config.frame.offset,
           (offset) => setFraming((f) => ({ ...f, offset })),
-          "Distance of each strand r + dD from the curve, from 0 to 100000.",
+          tiered(
+            "Each strand's distance from the curve, 0 to 100000.",
+            "Each strand is r + dD.",
+          ),
         )}
       </div>
       <Field
@@ -1751,13 +1829,16 @@ export default function SpatialApp({
           "Shift δ",
           config.ruled.shift,
           (shift) => setRuling((r) => ({ ...r, shift })),
-          "The partner of a(t) sits at parameter mt + δ, with δ within ±1000000.",
+          "Where the partner sits, mt + δ; δ within ±1000000.",
         )}
         {vector(
           "Rate m",
           config.ruled.rate,
           (rate) => setRuling((r) => ({ ...r, rate })),
-          "How fast the partner's parameter runs, within ±100. On a closed curve a whole number keeps the surface closed.",
+          tiered(
+            "How fast the partner's parameter runs, within ±100.",
+            "On a closed curve a whole number keeps the surface closed.",
+          ),
         )}
       </div>
       <p className="note" data-testid="ruled-note">
@@ -1776,11 +1857,11 @@ export default function SpatialApp({
           "Tube radius R",
           config.canal.radius,
           (radius) => setCanal((q) => ({ ...q, radius })),
-          "Each sphere has radius R·ρ(t); R is above 0 and at most 100000.",
+          "Spheres have radius R·ρ(t); R above 0, at most 100000.",
         )}
         <Field
           label="Meridians"
-          help={`From 0 to ${maxMeridians} curves at evenly spaced angles around each contact circle.`}
+          help={`0 to ${maxMeridians} curves evenly spaced around each contact circle.`}
         >
           <input
             type="number"
@@ -1834,7 +1915,14 @@ export default function SpatialApp({
           <Field
             key={axis}
             label={`Pole ${axis}`}
-            help={`Independent pole coordinate ${axis}, within ±100000. The pole is a geometric point, not a light source.`}
+            help={
+              axis === "x"
+                ? tiered(
+                    "The pole's coordinates, each within ±100000.",
+                    "The pole is a geometric point, not a light source.",
+                  )
+                : undefined
+            }
           >
             <ScalarInput
               name={`Pole ${axis}`}
@@ -1849,10 +1937,7 @@ export default function SpatialApp({
           </Field>
         ))}
       </div>
-      <Field
-        label="Pole z"
-        help="Height of the independent pole, within ±100000. All three coordinates accept constant expressions."
-      >
+      <Field label="Pole z" help="Height of the pole, within ±100000.">
         <ScalarInput
           name="Pole z"
           value={config.pole.z}
@@ -2597,7 +2682,10 @@ export default function SpatialApp({
                       <>
                         <Field
                           label="Built on"
-                          help="Build the construction on the base curve, on its tangent-foot curve or tangent-line orthotomic from the pole, on one of its involutes, or on a coil that winds around it. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
+                          help={tiered(
+                            "The curve the construction is built on: the base curve, or one derived from it.",
+                            "A derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp.",
+                          )}
                         >
                           <select
                             value={config.input}
@@ -2621,7 +2709,10 @@ export default function SpatialApp({
                           <div className="pair">
                             <Field
                               label="Input anchor t₀"
-                              help="Where the input's arc length s starts, as a parameter value inside the domain, on a regular stretch of the base."
+                              help={tiered(
+                                "Where the input's arc length s starts, inside the domain.",
+                                "It must lie on a regular stretch of the base.",
+                              )}
                             >
                               <ScalarInput
                                 name="Input anchor t₀"
@@ -2639,7 +2730,10 @@ export default function SpatialApp({
                             </Field>
                             <Field
                               label="Input string c"
-                              help="Signed string length at the input's anchor, within ±100000. The involute has a cusp where s = c, and stops wherever the base is straight."
+                              help={tiered(
+                                "Signed string length at the anchor, within ±100000.",
+                                "The involute has a cusp where s = c, and stops wherever the base is straight.",
+                              )}
                             >
                               <ScalarInput
                                 name="Input string c"
@@ -2662,7 +2756,10 @@ export default function SpatialApp({
                             <div className="pair">
                               <Field
                                 label="Coil radius d"
-                                help="How far the coil stands off the base curve, from 0 to 100000. With no turns it has a cusp wherever d reaches the radius of curvature on its side."
+                                help={tiered(
+                                  "Distance from the base curve, 0 to 100000.",
+                                  "With no turns the coil has a cusp wherever d reaches the radius of curvature on its side.",
+                                )}
                               >
                                 <ScalarInput
                                   name="Coil radius d"
@@ -2674,7 +2771,10 @@ export default function SpatialApp({
                               </Field>
                               <Field
                                 label="Coil angle θ₀"
-                                help="Where the coil starts around the curve, in radians within ±1000, from the base's rotation-minimizing normal, which starts from the z axis."
+                                help={tiered(
+                                  "Where the coil starts, in radians within ±1000.",
+                                  "It is measured from the base's rotation-minimizing normal, which starts from the z axis.",
+                                )}
                               >
                                 <ScalarInput
                                   name="Coil angle θ₀"
@@ -2687,7 +2787,10 @@ export default function SpatialApp({
                             </div>
                             <Field
                               label="Coil turns"
-                              help="Turns the coil makes around the base curve over its whole length, within ±100. On a closed curve the frame's own turn is spread along it, so a whole number of turns closes the coil."
+                              help={tiered(
+                                "Turns the coil makes around the base curve over its whole length, within ±100.",
+                                "On a closed curve the frame's own turn is spread along it, so a whole number of turns closes the coil.",
+                              )}
                             >
                               <ScalarInput
                                 name="Coil turns"
@@ -2780,7 +2883,10 @@ export default function SpatialApp({
                           </Field>
                           <Field
                             label="Sphere radius R"
-                            help="Radius of the inversion sphere, greater than 0 and at most 100000. Points on it stay fixed."
+                            help={tiered(
+                              "The inversion sphere's radius, above 0, at most 100000.",
+                              "Points on the sphere stay fixed.",
+                            )}
                           >
                             <ScalarInput
                               name="Sphere radius R"
@@ -3138,7 +3244,10 @@ export default function SpatialApp({
                   <div className="pair">
                     <Field
                       label="Cells"
-                      help={`${minImplicitCells}–${maxImplicitCells} cells along the box's longest side, as many along the others as keeps them nearest to cubes, and at most ${maxImplicitGrid.toLocaleString()} in all.`}
+                      help={tiered(
+                        `${minImplicitCells}–${maxImplicitCells} along the box's longest side; the others keep cells near cubes.`,
+                        `At most ${maxImplicitGrid.toLocaleString()} cells in all.`,
+                      )}
                     >
                       <input
                         type="number"
@@ -3158,7 +3267,10 @@ export default function SpatialApp({
                     </Field>
                     <Field
                       label="Refinement levels"
-                      help={`0–${maxImplicitRefine} octree levels; 0 meshes the grid alone. Where an edge of the grid's tetrahedra has both ends on one side of the level and its midpoint on the other, every tetrahedron around it is halved, and the halves are tested in turn, each level halving the cell, up to ${maxRefinedTetrahedra.toLocaleString()} tetrahedra.`}
+                      help={tiered(
+                        `0–${maxImplicitRefine} levels, halving cells where the surface may hide.`,
+                        `0 meshes the grid alone. Refinement stops at ${maxRefinedTetrahedra.toLocaleString()} tetrahedra.`,
+                      )}
                     >
                       <input
                         type="number"
@@ -3177,33 +3289,13 @@ export default function SpatialApp({
                       />
                     </Field>
                   </div>
-                  <SamplingNote>
-                    F is evaluated at every grid point, and every cube is split
-                    into six tetrahedra around its diagonal, the same way in
-                    every cube, so neighbours agree on their shared faces.
-                    Within a tetrahedron the surface is one triangle or two,
-                    with no ambiguous case; a grid face whose corners alternate
-                    is counted, since there the split, not F, decides whether
-                    the surface joins. Each vertex is found on F itself, by
-                    false position with bisection, to 10⁻¹² of its edge, and a
-                    sign change whose value does not shrink with its bracket is
-                    a pole or a jump, never meshed. Cubes touching a point where
-                    F is not finite are left out. Normals are ∇F by five-point
-                    differences, not the mesh&rsquo;s. Sections are traced as
-                    the 2D notebook traces implicit curves, on their own grid of
-                    four times the box&rsquo;s cells, at most 256, and refined
-                    to a thousandth of a cell. The mesh is limited to 200,000
-                    triangles and 400,000 grid edges searched; the sections
-                    share 65,536 bisected edges and 131,072 points. Refinement
-                    samples F at the midpoint of every edge of the tetrahedra,
-                    and halves those around an edge whose midpoint lies across
-                    the level from both its ends: a neck, gap or thread thinner
-                    than a cell, or a face whose diagonal joins what its centre
-                    separates. Tetrahedra are halved by newest-vertex bisection,
-                    together with every one on the same edge, so the mesh never
-                    cracks where sizes meet. Refinement only follows what its
-                    samples see: a piece that falls between all of them is still
-                    missed.
+                  <SamplingNote brief="F is sampled on a grid split into tetrahedra and meshed where it crosses the level, never across poles.">
+                    Vertices lie on F itself. Cubes touching a point where F is
+                    not finite are left out. The mesh is limited to 200,000
+                    triangles and 400,000 grid edges searched. Sections use a
+                    grid four times finer, at most 256 cells, sharing 65,536
+                    bisected edges and 131,072 points. A piece between all the
+                    samples is still missed.
                   </SamplingNote>
                 </>
               ) : patched ? (
@@ -3267,34 +3359,20 @@ export default function SpatialApp({
                     />
                   </Field>
                   {mirroring ? (
-                    <SamplingNote>
-                      Positions, normals and their derivatives come from each
-                      patch&rsquo;s exact first and second derivatives at every
-                      grid sample, and so do the outgoing rays&rsquo; directions
-                      and derivatives. Caustic points are the centres of
-                      curvature of the outgoing wavefront, from its shape
-                      operator across each ray. A caustic edge is joined only
-                      when its curvature keeps its sign and the caustic point
-                      halfway along it is lit, finite, and between its ends, so
-                      a caustic is never joined through infinity, past the edge
-                      of the light, or across its own cusps. Caustic points
-                      beyond 100 surface radii are treated as at infinity. A
-                      receiver takes each cell&rsquo;s flux from its midpoint,
-                      spreads it evenly over the two triangles its
-                      corners&rsquo; rays make on the plane, and gives every bin
-                      the flux inside it, by exact area.
+                    <SamplingNote brief="Positions, normals, rays and their derivatives come from each patch’s exact derivatives at every grid sample.">
+                      Caustic points are the outgoing wavefront&rsquo;s centers
+                      of curvature; beyond 100 surface radii they are treated as
+                      at infinity. A caustic is never joined through infinity,
+                      past the edge of the light, or across its own cusps. A
+                      receiver spreads each cell&rsquo;s flux over the triangles
+                      its rays make on the plane, binned by exact area.
                     </SamplingNote>
                   ) : (
-                    <SamplingNote>
-                      Positions, normals and principal curvatures come from each
-                      patch&rsquo;s exact first and second derivatives at every
-                      grid sample. Where X_u × X_v vanishes the chart is
-                      singular and has no normal. A focal edge is joined only
-                      when its curvature keeps its sign and the focal point
-                      halfway along it is finite and lies between its ends, so a
-                      sheet is never joined through infinity, even between
-                      samples. Centres of curvature beyond 100 surface radii are
-                      treated as at infinity.
+                    <SamplingNote brief="Positions, normals and principal curvatures come from each patch’s exact derivatives at every grid sample.">
+                      Where X_u × X_v vanishes the chart is singular and has no
+                      normal. A focal sheet is never joined through infinity;
+                      centers beyond 100 surface radii are treated as at
+                      infinity.
                     </SamplingNote>
                   )}
                 </>
@@ -3363,54 +3441,16 @@ export default function SpatialApp({
                       />
                     </>
                   )}
-                  <SamplingNote>
-                    Finite sampling can miss fine detail. Compare resolutions
-                    near poles, stationary points, and tight folds.
-                    {refinable && (
-                      <>
-                        {" "}
-                        Refining between samples halves a sample interval, at
-                        most 10 times, wherever the chord drawn across it strays
-                        from the curve by more than 1/5000 of the radius fitted
-                        to that curve&rsquo;s samples, judged at three points
-                        along it, and stops after 16,384 added points per curve.
-                        It refines the curve, a projection, an inverted curve,
-                        each involute, each offset strand, a ruled
-                        surface&rsquo;s partner thread, a canal&rsquo;s
-                        meridians and the base under a derived input; the
-                        ribbon, contact circles and every surface stay on the
-                        evenly spaced samples. Between samples an
-                        involute&rsquo;s arc length carries on from the sample
-                        before it by the same Simpson step, a strand&rsquo;s or
-                        meridian&rsquo;s frame by the same two reflections, a
-                        meridian&rsquo;s contact circle comes from the profile
-                        there, and a partner is evaluated at mt + δ as at a
-                        sample. A gap or jump it finds between samples breaks
-                        the curve and any surface there; a passage of the
-                        inverted curve through the center is found the same way.
-                        A feature narrower than its three points can still be
-                        missed.
-                      </>
-                    )}{" "}
-                    Invalid samples and unresolved tangent or normal intervals
-                    leave gaps. Involute arc length uses Simpson's rule on each
-                    sample interval, as does the arc length that spreads a
-                    frame's twist. A transported frame is carried between
-                    samples by two reflections. A harmonic curve's vector sums
-                    sit at the same evenly spaced samples as the construction
-                    lines, and its derivatives are exact. A ruled surface's
-                    partner is evaluated at mt + δ for the same samples, and a
-                    second thread is differentiated like a custom curve. A canal
-                    surface's profile ρ(t) is differentiated the same way,
-                    checked at each interval's midpoint, and drawn on at most
-                    480 contact circles, always including those beside a gap. A
-                    vector field&rsquo;s trajectories are integrated with
-                    adaptive Dormand&ndash;Prince steps, each to its own error
-                    tolerance and within 50,000 steps, and sampled at the same
-                    evenly spaced times; the first one&rsquo;s velocity is the
-                    field itself. A chase is integrated the same way, as one
-                    system, within 40,000 steps, and the first pursuer&rsquo;s
-                    velocity and acceleration come from the pursuit law itself.
+                  <SamplingNote brief="Finite sampling can miss fine detail; compare resolutions near poles, stationary points and tight folds.">
+                    {refinable &&
+                      "Refinement halves a sample interval up to 10 times where the chord strays from the curve by over 1/5000 of its fitted radius, adding at most 16,384 points per curve. Gaps and jumps it finds break the curve; surfaces stay on the even samples. "}
+                    Invalid samples leave gaps.
+                    {canal &&
+                      " A canal is drawn on at most 480 contact circles."}
+                    {flowing &&
+                      " Trajectories are integrated by adaptive Dormand–Prince steps, within 50,000 steps each."}
+                    {chasing &&
+                      " A chase is integrated by adaptive Dormand–Prince steps, within 40,000 steps."}
                   </SamplingNote>
                 </>
               )}

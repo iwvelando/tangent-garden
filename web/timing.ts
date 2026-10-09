@@ -1,3 +1,5 @@
+import { tiered, type Help } from "./help";
+
 // How an animation spends its duration, shared by playback and export. The
 // time is where the clock and the timeline stand, from 0 at the start to 1
 // at the end of the duration; the progress is how far the motion has gone,
@@ -38,9 +40,17 @@ export const paceChoices: { value: Pace; label: string }[] = [
   { value: "ease", label: "Ease in and out" },
 ];
 export const onceHelp = "Plays from the start to the end, then stops.";
-export const backAndForthHelp =
-  "Plays to the end and back to the start within the duration, again and again, so any animation repeats without a jump. Exports loop forever.";
-export const paceHelp: Record<Pace, string> = {
-  steady: "The motion moves at a constant rate.",
-  ease: "The motion starts and ends slowly, following a half cosine, so it eases away from its start and into its end; back and forth slows to rest at each turn.",
+export const backAndForthHelp = tiered(
+  "Plays to the end and back, again and again.",
+  "Out and back both fit in the duration, so it repeats without a jump. Exports loop forever.",
+);
+// Fitted and following cameras' framing, in every notebook that offers them.
+export const asymptoteHelp =
+  "Framing ignores isolated points near asymptotes; use Hold current view to explore distant branches.";
+export const paceHelp: Record<Pace, Help<string>> = {
+  steady: "Moves at a constant rate.",
+  ease: tiered(
+    "Starts and ends slowly.",
+    "It follows a half cosine; back and forth also rests at each turn.",
+  ),
 };

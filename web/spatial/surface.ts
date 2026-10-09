@@ -50,7 +50,7 @@ export const surfaceShape: Record<
     {
       key: "a",
       label: "Axis a",
-      help: "The semi-axes along x, y and z. Equal ones give a sphere; each is above 0 and at most 100000.",
+      help: "Semi-axes along x, y and z, each above 0, at most 100000.",
     },
     { key: "b", label: "Axis b" },
     { key: "c", label: "Axis c" },
@@ -59,7 +59,7 @@ export const surfaceShape: Record<
     {
       key: "a",
       label: "Major radius R",
-      help: "From the axis to the tube's centre, 0–100000. Below r the torus passes through its axis.",
+      help: "Axis to tube center, 0–100000; below r it crosses its axis.",
     },
     {
       key: "b",
@@ -71,7 +71,7 @@ export const surfaceShape: Record<
     {
       key: "a",
       label: "Semi-axis a",
-      help: "The cross-section's semi-axes along x and y, each above 0 and at most 100000.",
+      help: "Cross-section semi-axes along x and y, above 0, at most 100000.",
     },
     { key: "b", label: "Semi-axis b" },
   ],
@@ -79,7 +79,7 @@ export const surfaceShape: Record<
     {
       key: "a",
       label: "Curvature k₁",
-      help: "The principal curvatures at the vertex, within ±100000. Opposite signs give a saddle.",
+      help: "Vertex curvatures, within ±100000; opposite signs give a saddle.",
     },
     { key: "b", label: "Curvature k₂" },
   ],

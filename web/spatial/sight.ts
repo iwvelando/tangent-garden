@@ -5,6 +5,7 @@
 // setting's fields, limits, words and rules, read by the panels, the
 // renderer, linework, links and exports alike.
 
+import { tiered } from "../help";
 import { weightScale, type LineWeight } from "../line-weight";
 import { clip, type Camera } from "./scene";
 import type { Vec3 } from "./types";
@@ -195,13 +196,24 @@ export function taperBreaks(a: number, b: number) {
 // Field names, as errors name them.
 export const sightFields = { opacity: "Sheet opacity α" } as const;
 export const sightHelp = {
-  sheets:
-    "See-through draws every sheet layer at once, so folds, inner sheets and lines inside a surface show. At each point of the page, the color is the mean of the shaded colors of all n sheet layers there, laid over the background with opacity 1 − (1 − α)ⁿ: the more layers overlap, the denser the drawing. Every layer counts the same whatever its depth, so it needs no sorting and intersecting sheets are drawn exactly; it is a way to see folds, not a model of light through glass. The study itself is unchanged.",
-  opacity: `Each layer's opacity, from ${opacityRange[0]} to ${opacityRange[1]}. Two layers cover 1 − (1 − α)² of the background, three 1 − (1 − α)³.`,
-  weight: `How wide lines are drawn. Fine, regular and bold strokes are a share of the drawing, so they keep their proportion in the live drawing, stills and videos at any size: regular draws the curve ${inkWeight(2)} px and construction lines ${inkWeight(1)} px wide on a 1000 × 760 page, fine ${weightScale.fine}× and bold ${weightScale.bold}× that. Hairlines are one device pixel at any size, as 3D drawings were before line weights, so they grow fainter as an export grows larger. Older links open with hairlines.`,
-  depth: `How strokes change with distance through a perspective lens. Even strokes are their weight's width wherever they are. Tapered strokes are that width where they cross the plane through the view's target, the plane a perspective lens draws at the orthographic scale, and wider or thinner in proportion to how much nearer or farther from the eye they are: twice as wide at half the distance, half as wide at twice it, from ${taperRange[0]}× to at most ${taperRange[1]}× the width, as a line of one thickness in space would look. Riding a ray, the plane is one study radius ahead of the eye. Orthographic views and hairlines are drawn evenly. Older links open with even strokes.`,
+  sheets: tiered(
+    "See-through shows folds and lines inside a surface.",
+    "Where n layers overlap, their mean color covers the background with opacity 1 − (1 − α)ⁿ, whatever their depth. It shows folds; it does not model light through glass.",
+  ),
+  opacity: `Each layer's opacity, from ${opacityRange[0]} to ${opacityRange[1]}.`,
+  weight: tiered(
+    "How wide lines are drawn; all but hairlines scale with the drawing.",
+    `Fine, regular and bold keep their proportions at any size. On a 1000 × 760 page, regular draws the curve ${inkWeight(2)} px and construction lines ${inkWeight(1)} px wide; fine is ${weightScale.fine}× and bold ${weightScale.bold}× that. A hairline is one device pixel at any size, so it looks fainter in larger exports.`,
+  ),
+  depth: tiered(
+    "Tapered strokes widen nearer the eye, through a perspective lens only.",
+    `They have the weight's width on the plane through the view's target (one study radius ahead when riding a ray), twice it at half the distance, from ${taperRange[0]}× to ${taperRange[1]}×. Orthographic views and hairlines are always even.`,
+  ),
   flat: "Strokes taper only through a perspective lens: choose one with Projection above the drawing, or ride a ray.",
-  hidden: `Lines behind the nearest sheet: hidden, as an opaque drawing hides them; faint, at ${faintOpacity * 100}% opacity; or dashed, at ${dashedOpacity * 100}% opacity, one dash every ${dashPeriod * 100}% of the shorter side of the drawing, measured along the line in space, so a line receding from view has shorter dashes. A line lying on a sheet is in front of it. Lines never hide other lines.`,
+  hidden: tiered(
+    "How lines behind the nearest sheet are drawn: hidden, faint, or dashed.",
+    `Faint lines are drawn at ${faintOpacity * 100}% opacity, dashed ones at ${dashedOpacity * 100}%, with dashes measured in space, so they shorten as a line recedes. A line lying on a sheet counts as in front of it.`,
+  ),
   unstroked:
     "This device's graphics cannot draw strokes (they need instanced drawing), so lines are drawn as hairlines here and in exports.",
   unavailable:

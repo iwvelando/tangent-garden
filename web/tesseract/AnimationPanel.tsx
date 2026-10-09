@@ -218,7 +218,7 @@ export function AnimationPanel(p: {
             <Field
               label="Export quality"
               value={String(quality)}
-              help={`${text.short} starts at ${defaultQuality[chosen]}; lower values make smaller files. Near 100, files can grow much larger; size depends on the drawing and browser.`}
+              help={`${text.short} starts at ${defaultQuality[chosen]}. Lower values make smaller files; near 100, files can grow much larger.`}
             >
               <input
                 aria-label="Export quality"
@@ -265,8 +265,8 @@ export function AnimationPanel(p: {
             </button>
             <p className="hint">
               Export renders every frame in your browser with the current theme,
-              layers, and camera, which can take longer than playback. Up to
-              7,200 frames (2 minutes at 60 fps) or 256 MiB.
+              layers and camera, and can take longer than playback. Up to 7,200
+              frames or 256 MiB.
             </p>
           </details>
         </fieldset>

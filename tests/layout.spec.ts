@@ -291,8 +291,8 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
   },
 };
 
-// Opens every help toggle of every visible pair after each setup and
-// returns how many it opened.
+// Opens every help toggle of every visible pair after each setup, and its
+// Show more, and returns how many it opened.
 async function sweepPairs(page: Page, setups: Setup[]) {
   let checked = 0;
   for (const setup of setups) {
@@ -316,10 +316,18 @@ async function sweepPairs(page: Page, setups: Setup[]) {
           if (x !== x2 && Math.abs(y - y2) < 30) expect(y2).toBe(y);
       for (const toggle of await pair.locator(".help-toggle").all()) {
         await toggle.click();
-        await expect(
-          page.locator(`#${await toggle.getAttribute("aria-controls")}`),
-        ).toBeVisible();
+        const help = page.locator(
+          `#${await toggle.getAttribute("aria-controls")}`,
+        );
+        await expect(help).toBeVisible();
         expect(await boxes()).toEqual(before);
+        // A help's Show more opens below both controls too.
+        const more = help.locator(".help-more");
+        if (await more.count()) {
+          await more.click();
+          await expect(help.locator(".hint-more")).toBeVisible();
+          expect(await boxes()).toEqual(before);
+        }
         await toggle.click();
         checked++;
       }

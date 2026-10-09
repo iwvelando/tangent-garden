@@ -9,6 +9,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { isTiered, type Help } from "./help";
 
 // The error a notebook shows under one of its fields: the field whose
 // control has this id, or else whose label (topic) is this label. The
@@ -26,10 +27,21 @@ export const FieldErrorContext = createContext<FieldErrorTarget | null>(null);
 
 // Explanations stay out of the way until requested. A toggle, unlike a title
 // tooltip, works on touch screens and keeps the text open while reading.
+// Help reopens on its essentials: closing it folds its more away again.
 export function useHelp() {
   const id = `${useId()}-help`;
   const [open, setOpen] = useState(false);
-  return { id, open, toggle: () => setOpen(!open) };
+  const [more, setMore] = useState(false);
+  return {
+    id,
+    open,
+    more,
+    toggle: () => {
+      setOpen(!open);
+      setMore(false);
+    },
+    toggleMore: () => setMore(!more),
+  };
 }
 
 export function HelpToggle({
@@ -53,17 +65,40 @@ export function HelpToggle({
   );
 }
 
+// A tiered help is one element, so a paired field's help keeps its single
+// row of the pair's subgrid however much of it is shown.
 export function HelpText({
   help,
   children,
 }: {
   help: ReturnType<typeof useHelp>;
-  children: ReactNode;
+  children: Help;
 }) {
+  if (!isTiered(children))
+    return (
+      <p className="hint" id={help.id} hidden={!help.open}>
+        {children}
+      </p>
+    );
+  const more = `${help.id}-more`;
   return (
-    <p className="hint" id={help.id} hidden={!help.open}>
-      {children}
-    </p>
+    <div className="hint" id={help.id} hidden={!help.open}>
+      <p className="hint-brief">
+        {children.brief}{" "}
+        <button
+          type="button"
+          className="text-button help-more"
+          aria-expanded={help.more}
+          aria-controls={more}
+          onClick={help.toggleMore}
+        >
+          {help.more ? "Show less" : "Show more"}
+        </button>
+      </p>
+      <p className="hint-more" id={more} hidden={!help.more}>
+        {children.more}
+      </p>
+    </div>
   );
 }
 
@@ -71,7 +106,7 @@ type FieldProps = {
   label: ReactNode;
   // Shown at the end of the label row, such as a slider's current value.
   value?: ReactNode;
-  help?: ReactNode;
+  help?: Help;
   // Names the help toggle when the label is not plain text.
   topic?: string;
   className?: string;

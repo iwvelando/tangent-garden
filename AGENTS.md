@@ -34,6 +34,17 @@ If codebase-memory-mcp is available, prefer `search_graph`, `trace_path`, `get_c
 - Study links (`web/study-link.ts`) are untrusted input and must keep opening as studies grow. A new or renamed configuration, layer or animation field needs its entry in the notebook's link schema (`planar-link.ts`, `spatial/link.ts`, `tesseract/link.ts`; `tsc` enforces coverage), a default that reproduces the previous drawing for older links, and a case in `tests/study-link.spec.ts`. Never read link fields before they are conformed, and never put the theme or transient playback state in a link.
 - Theme defaults to the live system preference. Explicit choices persist locally; storage denial must not break the app.
 
+## Help text
+
+Help opens in a narrow sidebar column, so it gives the essentials first and keeps the rest one click away.
+
+- A help opens on one line of at most 20 words, or 12 in a paired column (`.pair`): what the control does and, when it fits, the range the engine accepts.
+- Anything further goes behind Show more: write the help as `tiered(brief, more)` from `web/help.ts`. The second tier is a short paragraph of at most 60 words, for exact limits, edge cases and interactions with other settings. Together the two tiers still state every limit the engine enforces (see Boundaries), but not how the algorithm works step by step: that belongs in `docs/mathematics.md` or a study's explanation. A help that is complete in one line stays one line.
+- `tests/help-text.spec.ts` checks these limits on every help each example opens with, and on the help tables that other settings reveal (Loop, a camera flight, the cut, probe targets, 4D motions). A help shown only under another setting needs its table in that second test.
+- Trim before tiering. Leave out history and compatibility notes (what older links open with, how drawings looked before an option existed), implementation names such as Go, restatements of the control's label, and anything a neighbouring control's help already says.
+- Add to an existing help with `withMore`, never by joining strings, so the essentials stay first. Tests read both tiers with `helpText`.
+- Notes and captions that are always visible get the same treatment: a sentence or two, with longer detail in a help toggle.
+
 ## Verification
 
 Run `gofmt` on changed Go files. Use analytic identities and geometric invariants for numerical changes, and convergence checks when altering approximation methods. A matching screenshot alone is insufficient. Extend relevant tests for regressions, especially singularities and invalid inputs.
