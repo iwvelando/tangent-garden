@@ -10,6 +10,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
+import { curveMesh } from "./curve-mesh";
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
@@ -289,7 +290,7 @@ test("framed reveal keeps strands and frames up to the tip, and the seam only wh
     base: [origin, origin, origin, origin],
     minus: [origin, origin, origin, origin],
     plus: [origin, origin, origin, origin],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     breaks: [false, false, false, false],
     bounds: { center: origin, radius: 40 },

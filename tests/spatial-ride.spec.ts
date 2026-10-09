@@ -24,6 +24,7 @@ import type {
   SurfaceSheet,
   Vec3,
 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 // The camera that rides a ray, observed through the drawing's projection
 // (scene.ts) and the trace's own geometry (raytrace.ts): the head of the
@@ -80,7 +81,7 @@ function mirror(
     base: [],
     minus: [],
     plus: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     breaks: [],
     bounds,

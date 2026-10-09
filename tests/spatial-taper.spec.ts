@@ -21,6 +21,7 @@ import { defaultLayers } from "../web/spatial/renderer";
 import { spatialPresets } from "../web/spatial/presets";
 import { lineColor, palette } from "../web/spatial/palette";
 import type { SpatialResult, Vec3 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 // Strokes that taper with depth: through a perspective lens a stroke is its
 // weight's width where it crosses the plane through the view's target, and
@@ -115,7 +116,7 @@ function receding(n = 200): SpatialResult {
     breaks: base.map(() => false),
     minus: [],
     plus: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     bounds: { center: O, radius: 1 },
     radius: 1,

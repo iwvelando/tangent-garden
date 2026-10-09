@@ -19,6 +19,7 @@ import type { SpatialResult, Vec3 } from "../web/spatial/types";
 import { spatialPresets } from "../web/spatial/presets";
 import { defaultCut, type Cut } from "../web/spatial/cut";
 import { hex, lineColor, palette } from "../web/spatial/palette";
+import { curveMesh } from "./curve-mesh";
 
 // Seeing through the drawing. Studies drawn with opaque sheets and hidden
 // lines hidden must not change. Their line drawings are computed on the CPU
@@ -198,7 +199,7 @@ function squareStudy(base: Vec3[]): SpatialResult {
     breaks: base.map(() => false),
     minus: [],
     plus: [],
-    mesh: [a, b, c, a, c, d],
+    mesh: curveMesh([a, b, c, a, c, d]),
     rulings: [],
     bounds: { center: O, radius: 1 },
     radius: 1,

@@ -9,6 +9,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
+import { curveMesh } from "./curve-mesh";
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
@@ -268,7 +269,7 @@ test("inversion reveal keeps image breaks, correspondences and the center in fra
     base: [origin, origin, origin, origin],
     minus: [],
     plus: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     breaks: [false, false, false, false],
     bounds: { center: origin, radius: 100 },

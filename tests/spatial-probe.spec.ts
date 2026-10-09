@@ -24,6 +24,7 @@ import type {
   SpatialResult,
   Vec3,
 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 // The probe's geometry, built by hand from results whose every expected
 // point follows from the definitions, not from the code under test.
@@ -67,7 +68,7 @@ function circle(flatMiddle = false): SpatialResult {
     minus: base.map((p, i) => sub(p, tangent[i])),
     plus: base.map((p, i) => at(p.x + tangent[i].x, p.y + tangent[i].y, 0)),
     breaks: [false, false, false],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     bounds: { center: O, radius: 2 },
     radius: 2,

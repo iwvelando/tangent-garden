@@ -4,6 +4,7 @@ import { linework, linesSvg, type LineGroup } from "../web/spatial/linework";
 import { lineColor, hex } from "../web/spatial/palette";
 import { defaultLayers, type View } from "../web/spatial/renderer";
 import type { SpatialResult, Vec3 } from "../web/spatial/types";
+import { curveMesh, type MeshVertex } from "./curve-mesh";
 
 // Vector linework: the drawing's own line geometry, projected by the drawing's
 // camera, as SVG paths. These tests build results by hand, so every expected
@@ -20,7 +21,7 @@ function study(parts: Partial<SpatialResult>): SpatialResult {
     minus: [],
     plus: [],
     breaks: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     bounds: { center: O, radius: 1 },
     radius: 1,
@@ -75,7 +76,7 @@ function square(z: (x: number) => number, half = 0.5) {
     corner(half, half),
     corner(-half, half),
   ];
-  return [a, b, c, a, c, d];
+  return curveMesh([a, b, c, a, c, d]);
 }
 
 test("the camera projects with the drawing's orthographic scale, pan and zoom", () => {
@@ -320,7 +321,7 @@ test("rulings lying on a curved sheet stay whole where it turns edge-on", () => 
     const t = (2 * Math.PI * k) / columns;
     return at(Math.cos(t), 0, Math.sin(t));
   };
-  const mesh: SpatialResult["mesh"] = [];
+  const mesh: MeshVertex[] = [];
   for (let k = 0; k < columns; k++)
     for (let j = 0; j < rows; j++) {
       const corner = (dk: number, dj: number) => ({
@@ -342,7 +343,7 @@ test("rulings lying on a curved sheet stay whole where it turns edge-on", () => 
     to: point(k, rows),
     sampleIndex: k,
   }));
-  const result = study({ mesh, rulings });
+  const result = study({ mesh: curveMesh(mesh), rulings });
   for (const pitch of [0, 0.3]) {
     const drawn = group(
       lines(result, { occlusion: "sampled", v: view({ pitch }) }),
@@ -384,7 +385,7 @@ test("rulings on a twisted, thinly meshed sheet stay whole", () => {
     const x = -0.9 + (1.8 * k) / columns;
     return at(x, 0.6, twist * x);
   };
-  const mesh: SpatialResult["mesh"] = [];
+  const mesh: MeshVertex[] = [];
   const v = (position: Vec3) => ({
     position,
     normal: at(0, 0, 1),
@@ -398,7 +399,7 @@ test("rulings on a twisted, thinly meshed sheet stay whole", () => {
     to: b(k),
     sampleIndex: k,
   }));
-  const result = study({ mesh, rulings });
+  const result = study({ mesh: curveMesh(mesh), rulings });
   const length = (ps: number[][][]) =>
     ps.reduce(
       (sum, p) => sum + Math.hypot(p[1][0] - p[0][0], p[1][1] - p[0][1]),
@@ -495,7 +496,7 @@ test("a sheet of triangles smaller than a pixel still hides what is behind it", 
   const half = 30 / unit,
     cells = 300,
     step = (2 * half) / cells;
-  const mesh: SpatialResult["mesh"] = [];
+  const mesh: MeshVertex[] = [];
   const v = (x: number, y: number) => ({
     position: at(x, y, 0.1),
     normal: at(0, 0, 1),
@@ -518,7 +519,7 @@ test("a sheet of triangles smaller than a pixel still hides what is behind it", 
   const result = study({
     base: [at(-2 * half, 0.3 * half, 0), at(2 * half, 0.3 * half, 0)],
     breaks: [false, false],
-    mesh,
+    mesh: curveMesh(mesh),
   });
   const drawn = paths(lines(result, { occlusion: "sampled" }), "base");
   expect(drawn).toHaveLength(2);

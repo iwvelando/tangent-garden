@@ -1068,7 +1068,60 @@ assert.match(iterated({ iterates: 5000001 }).error, /accumulate 0–5,000,000/);
 console.log(
   "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, an involute of an evolute, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, Clifford and Hénon densities, and invalid JSON passed.",
 );
-const spatial = JSON.parse(
+// A spatial result arrives as its JSON and its meshes, typed views on one
+// buffer (cmd/wasm/mesh.go): the curve mesh always, with seven numbers per
+// vertex (position, normal, phase) and each vertex's sample, and an
+// implicit surface's arrays for an implicit study. A refusal is JSON alone.
+const implicitArrays = {
+  positions: Float64Array,
+  normals: Float64Array,
+  triangles: Int32Array,
+  cut: Int32Array,
+  open: Int32Array,
+};
+function spatialResult(reply) {
+  if (typeof reply === "string") return JSON.parse(reply);
+  const result = JSON.parse(reply.json);
+  assert.ok(!("error" in result));
+  // The JSON leaves the arrays out; they arrive typed, on one buffer.
+  assert.ok(result.mesh === null, "the curve mesh is left out of the JSON");
+  const { vertices, sampleIndex } = reply.mesh;
+  assert.ok(vertices instanceof Float64Array);
+  assert.ok(sampleIndex instanceof Int32Array);
+  assert.equal(sampleIndex.buffer, vertices.buffer);
+  assert.equal(vertices.length, 7 * sampleIndex.length);
+  // Whole triangles, each on one sample.
+  assert.equal(sampleIndex.length % 3, 0);
+  for (let k = 0; k < sampleIndex.length; k += 3)
+    assert.ok(
+      sampleIndex[k] === sampleIndex[k + 1] &&
+        sampleIndex[k] === sampleIndex[k + 2],
+    );
+  result.mesh = reply.mesh;
+  assert.equal(reply.implicit === undefined, !result.implicit);
+  if (result.implicit)
+    for (const [name, type] of Object.entries(implicitArrays)) {
+      assert.equal(result.implicit[name], null, name);
+      assert.ok(reply.implicit[name] instanceof type, name);
+      assert.equal(reply.implicit[name].buffer, vertices.buffer, name);
+      result.implicit[name] = reply.implicit[name];
+    }
+  return result;
+}
+// A curve mesh's vertices, as the engine lists them (engine3.Vertex).
+function* meshVertices({ vertices, sampleIndex }) {
+  for (let k = 0; k < sampleIndex.length; k++) {
+    const [x, y, z, nx, ny, nz, phase] = vertices.subarray(7 * k, 7 * k + 7);
+    yield {
+      position: { x, y, z },
+      normal: { x: nx, y: ny, z: nz },
+      phase,
+      sampleIndex: sampleIndex[k],
+    };
+  }
+}
+const meshSize = (mesh) => mesh.sampleIndex.length;
+const spatial = spatialResult(
   globalThis.tangentGardenSpatial(
     JSON.stringify({
       radius: 2.4,
@@ -1082,14 +1135,24 @@ const spatial = JSON.parse(
   ),
 );
 assert.equal(spatial.base.length, 481);
-assert.equal(spatial.mesh.length, 5760);
+assert.equal(meshSize(spatial.mesh), 5760);
+// The developable's two sheets of two triangles per interval run from the
+// curve to its edges, each vertex at its own sample's phase.
+for (const v of meshVertices(spatial.mesh)) {
+  const row = Math.round(v.phase * 480);
+  assert.ok(row === v.sampleIndex || row === v.sampleIndex - 1);
+  const on = [spatial.base[row], spatial.minus[row], spatial.plus[row]].some(
+    (p) => p.x === v.position.x && p.y === v.position.y && p.z === v.position.z,
+  );
+  assert.ok(on);
+}
 assert.equal(spatial.rulings.length, 96);
 assert.deepEqual(spatial.base[0], spatial.base.at(-1));
 assert.ok(Math.abs(spatial.base[0].x - 3.25) < 1e-12);
 assert.ok(spatial.base.some((p) => Math.abs(p.z) > 0.8));
-assert.ok(JSON.parse(globalThis.tangentGardenSpatial("{")).error);
+assert.ok(spatialResult(globalThis.tangentGardenSpatial("{")).error);
 assert.ok(
-  JSON.parse(
+  spatialResult(
     globalThis.tangentGardenSpatial(
       JSON.stringify({
         radius: 2,
@@ -1122,7 +1185,7 @@ const knotProbeOnly = JSON.parse(
     JSON.stringify({ ...knotStudy, probe: { t: knotProbeT } }),
   ),
 );
-const knotProbe = JSON.parse(
+const knotProbe = spatialResult(
   globalThis.tangentGardenSpatial(
     JSON.stringify({ ...knotStudy, probe: { t: knotProbeT } }),
   ),
@@ -1161,7 +1224,7 @@ assert.ok(
 console.log(
   "Spatial WASM bridge: knot, mesh, closure, validation, and the probe between samples passed.",
 );
-const spatialCustom = JSON.parse(
+const spatialCustom = spatialResult(
   globalThis.tangentGardenSpatial(
     JSON.stringify({
       format: "parametric",
@@ -1187,7 +1250,7 @@ assert.equal(spatialCustom.surfaceDiagnostics, undefined);
 // Its tangent developable, with the drawn normal sign(u)·B, has κ = 0 along
 // each ruling and κ = τ/(κ|u|) = (1/4)/(2|u|) across it, on columns ±k/12
 // either side of the edge of regression u = 0.
-const unrolled = JSON.parse(
+const unrolled = spatialResult(
   globalThis.tangentGardenSpatial(
     JSON.stringify({
       format: "parametric",
@@ -1231,7 +1294,7 @@ assert.deepEqual(
   [0, 0, 0, [481 * 24, 0]],
 );
 // The helix r = (2 cos t, 2 sin t, t/4): κ = 2/(4 + 1/16), τ = (1/4)/(4 + 1/16).
-const probed = JSON.parse(
+const probed = spatialResult(
   globalThis.tangentGardenSpatial(
     JSON.stringify({
       format: "parametric",
@@ -1258,7 +1321,7 @@ for (const k of probed.curvature) assert.ok(Math.abs(k - 2 / 4.0625) < 1e-6);
 for (const k of probed.torsion) assert.ok(Math.abs(k - 0.25 / 4.0625) < 1e-5);
 assert.ok(Math.hypot(probed.center[0].x, probed.center[0].y) < 0.1);
 assert.deepEqual([probed.flat, probed.unknown, probed.clipped], [0, 0, 0]);
-const flat = JSON.parse(
+const flat = spatialResult(
   globalThis.tangentGardenSpatial(
     JSON.stringify({
       format: "parametric",
@@ -1275,7 +1338,7 @@ assert.equal(flat.flat, 241);
 assert.ok(
   flat.normal.every((n) => n === null) && flat.torsion.every((t) => t === null),
 );
-assert.equal(spatialCustom.mesh.at(-1).sampleIndex, 480);
+assert.equal(spatialCustom.mesh.sampleIndex.at(-1), 480);
 assert.equal(spatialCustom.rulings.at(-1).sampleIndex, 480);
 assert.ok(spatialCustom.bounds.radius > 2);
 console.log("Spatial custom-expression WASM bridge passed.");
@@ -1283,7 +1346,7 @@ console.log("Spatial custom-expression WASM bridge passed.");
 // to the circle through the origin with center (0, 50, 0). The refined image
 // stays on it, joined, and reaches its far point (0, 100, 0).
 const nearMiss = (adaptive) =>
-  JSON.parse(
+  spatialResult(
     globalThis.tangentGardenSpatial(
       JSON.stringify({
         format: "parametric",
@@ -1317,7 +1380,7 @@ const helixInvolute = (
   samples = 480,
   max = 2 * Math.PI,
 ) =>
-  JSON.parse(
+  spatialResult(
     globalThis.tangentGardenSpatial(
       JSON.stringify({
         format: "parametric",
@@ -1351,7 +1414,7 @@ for (const member of unwound.involute.members)
     assert.ok(Math.abs(p.z - member.offset / (3 * speed)) < 1e-9);
 assert.equal(unwound.involute.strings.length, 25);
 assert.equal(unwound.involute.unreached, 0);
-assert.equal(unwound.mesh.length, 0);
+assert.equal(meshSize(unwound.mesh), 0);
 assert.equal(unwound.rulings.length, 0);
 assert.ok(unwound.bounds.radius > speed * 2 * Math.PI - 2);
 // Refined, every member's points between samples stay on its unwound
@@ -1388,7 +1451,7 @@ console.log("Spatial involute-family WASM bridge passed.");
 // an out-of-plane pole. Transport keeps feet and sample correspondences.
 for (const construction of ["tangent-foot", "orthotomic"]) {
   const pole = { x: 1, y: -2, z: 3 };
-  const q = JSON.parse(
+  const q = spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "parametric",
@@ -1411,7 +1474,7 @@ for (const construction of ["tangent-foot", "orthotomic"]) {
   assert.equal(q.projection.invalid, 0);
   assert.equal(q.projection.constructions.length, 24);
   assert.equal(q.projection.points.length, 481);
-  assert.equal(q.mesh.length, 0);
+  assert.equal(meshSize(q.mesh), 0);
   q.projection.feet.forEach((h, i) => {
     const t = -Math.PI + (2 * Math.PI * i) / 480,
       k = Math.sqrt(4 + 1 / 9);
@@ -1447,7 +1510,7 @@ console.log(
 // Sphere inversion: a circle through the center becomes the line x = R²/2,
 // broken once where the source passes through the center between samples.
 const sphereInversion = (inversion, extra = {}) =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "parametric",
@@ -1474,7 +1537,7 @@ const sphereInversion = (inversion, extra = {}) =>
     radius: 1,
     input: "base",
   });
-  assert.equal(q.mesh.length, 0);
+  assert.equal(meshSize(q.mesh), 0);
   assert.equal(q.inversion.points.length, 481);
   assert.equal(q.inversion.crossings, 1);
   assert.equal(q.inversion.invalid, 0);
@@ -1513,7 +1576,7 @@ console.log(
 // circle from a point on it, the cardioid, which stops at its cusp t = π.
 {
   const composed = (extra) =>
-    JSON.parse(
+    spatialResult(
       tangentGardenSpatial(
         JSON.stringify({
           format: "parametric",
@@ -1572,7 +1635,7 @@ console.log(
 {
   const w = Math.hypot(2, 0.5);
   const unwound = (extra) =>
-    JSON.parse(
+    spatialResult(
       tangentGardenSpatial(
         JSON.stringify({
           format: "parametric",
@@ -1633,7 +1696,7 @@ console.log(
 // closes, and the tube around it closes too.
 {
   const coiled = (extra) =>
-    JSON.parse(
+    spatialResult(
       tangentGardenSpatial(
         JSON.stringify({
           format: "harmonic",
@@ -1697,7 +1760,7 @@ console.log(
 // Spatial harmonic generator: one term traces the ellipse c₀ + A cos t +
 // B sin t, closed over 2π; an incommensurate pair is left open.
 const spatialHarmonic = (terms, min, max) =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "harmonic",
@@ -1752,7 +1815,7 @@ const spatialHarmonic = (terms, min, max) =>
   assert.equal("chains" in open.harmonic, false);
   // With the curve probe's diagnostics, the chain at every sample, for the
   // probe to draw at its own: from c₀, through each term, to the point.
-  const probed = JSON.parse(
+  const probed = spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "harmonic",
@@ -1813,7 +1876,7 @@ console.log(
 // stays e_z; one turn of twist from θ₀ = 0 carries D = cos θ U + sin θ V
 // around the tangent, and the loop closes without a seam.
 const spatialFrame = (frame, study = {}) =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "harmonic",
@@ -1848,8 +1911,31 @@ const spatialFrame = (frame, study = {}) =>
     ),
   );
 {
+  // A ribbon of width 0 is no surface: its mesh arrives empty, still typed.
+  const thread = spatialFrame({ width: 0 });
+  assert.equal(meshSize(thread.mesh), 0);
+  assert.equal(thread.mesh.vertices.length, 0);
   const ring = spatialFrame({});
   const q = ring.frame;
+  // The ribbon's two triangles per interval, each vertex on an edge at
+  // its own sample's phase.
+  assert.equal(meshSize(ring.mesh), 480 * 6);
+  for (const v of meshVertices(ring.mesh)) {
+    const row = Math.round(v.phase * 480);
+    assert.ok(row === v.sampleIndex || row === v.sampleIndex - 1);
+    const edge = [ring.minus[row], ring.plus[row]].some(
+      (p) =>
+        Math.hypot(
+          p.x - v.position.x,
+          p.y - v.position.y,
+          p.z - v.position.z,
+        ) === 0,
+    );
+    assert.ok(edge);
+    assert.ok(
+      Math.abs(Math.hypot(v.normal.x, v.normal.y, v.normal.z) - 1) < 1e-12,
+    );
+  }
   assert.equal(q.kind, "rotation-minimizing");
   assert.equal(q.closed, true);
   assert.equal(q.holonomy, 0);
@@ -1870,7 +1956,7 @@ const spatialFrame = (frame, study = {}) =>
     for (const axis of ["x", "y", "z"])
       assert.ok(Math.abs(p[axis] - want[axis]) < 1e-12, `strand at ${t}`);
   }
-  assert.equal(ring.mesh.length, 6 * 480);
+  assert.equal(meshSize(ring.mesh), 6 * 480);
   assert.equal(ring.rulings.length, 24);
   assert.equal(ring.frame.breaks.length, 481);
   // Half a turn cannot close: the seam reports it.
@@ -1902,7 +1988,7 @@ console.log(
 // Two unit rings, a(t) at z = −1 and b(t + δ) at z = 1, span the hyperboloid
 // x² + y² = cos²(δ/2) + z² sin²(δ/2).
 const spatialRuled = (ruled, study = {}) =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "harmonic",
@@ -1942,9 +2028,9 @@ const spatialRuled = (ruled, study = {}) =>
   assert.equal(loom.minus.length, 0);
   assert.equal(loom.plus.length, 481);
   assert.equal(loom.rulings.length, 24);
-  assert.equal(loom.mesh.length, 480 * 4 * 6);
+  assert.equal(meshSize(loom.mesh), 480 * 4 * 6);
   const k = Math.sin(0.65) ** 2;
-  for (const v of loom.mesh) {
+  for (const v of meshVertices(loom.mesh)) {
     const p = v.position;
     assert.ok(
       Math.abs(p.x * p.x + p.y * p.y - Math.cos(0.65) ** 2 - p.z * p.z * k) <
@@ -1992,7 +2078,7 @@ console.log(
 // With ρ = 1 the envelope is the torus (√(x² + y²) − 2)² + z² = 1/4; a
 // profile that grows faster than the centre moves has no real envelope.
 const spatialCanal = (canal, frame = {}, study = {}) =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "harmonic",
@@ -2068,12 +2154,26 @@ const spatialCanal = (canal, frame = {}, study = {}) =>
   assert.equal(torus.frame.kind, "rotation-minimizing");
   assert.equal(torus.minus.length, 0);
   assert.equal(torus.rulings.length, 0);
-  assert.equal(torus.mesh.length, 480 * 24 * 6);
-  for (const v of torus.mesh) {
+  assert.equal(meshSize(torus.mesh), 480 * 24 * 6);
+  for (const v of meshVertices(torus.mesh)) {
     const p = v.position;
     assert.ok(
       Math.abs((Math.hypot(p.x, p.y) - 2) ** 2 + p.z ** 2 - 0.25) < 1e-12,
     );
+    // The normal (p − c)/R points away from the core circle, and the
+    // vertex's phase is its ring's sample, at or before the quad's sample.
+    const r = Math.hypot(p.x, p.y);
+    const c = { x: (2 * p.x) / r, y: (2 * p.y) / r, z: 0 };
+    assert.ok(
+      Math.hypot(
+        v.normal.x - (p.x - c.x) / 0.5,
+        v.normal.y - (p.y - c.y) / 0.5,
+        v.normal.z - p.z / 0.5,
+      ) < 1e-9,
+    );
+    const ring = v.phase * 480;
+    assert.ok(Math.abs(ring - Math.round(ring)) < 1e-9);
+    assert.ok(Math.round(ring) <= v.sampleIndex && v.sampleIndex <= 480);
   }
   for (const g of q.circles) {
     assert.equal(g.real, true);
@@ -2087,6 +2187,17 @@ const spatialCanal = (canal, frame = {}, study = {}) =>
   assert.ok(Math.abs(beads.canal.steepest - 1.2) < 1e-9);
   assert.ok(beads.canal.circles.some((g) => !g.real && g.points.length === 0));
   assert.ok(beads.omitted > 0);
+  // The mesh breaks where the envelope is lost: no quad spans a gap, and
+  // the samples beyond it carry no triangles.
+  const rings = new Set();
+  for (const v of meshVertices(beads.mesh)) {
+    const ring = Math.round(v.phase * 480);
+    rings.add(ring);
+    for (let i = ring + 1; i <= v.sampleIndex; i++)
+      assert.equal(beads.canal.breaks[i], false);
+  }
+  assert.ok(meshSize(beads.mesh) > 0);
+  assert.ok(rings.size < 481);
   assert.match(spatialCanal({ radius: 0 }).error, /radius R/);
   assert.match(spatialCanal({ meridians: 13 }).error, /meridians/);
   assert.match(spatialCanal({ profile: "a*t" }).error, /ρ\(t\)/);
@@ -2125,7 +2236,7 @@ console.log(
   "WASM canal surface: torus, lost envelope, refined meridians and validation passed",
 );
 const spatialField = (field, construction = "none") =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "field",
@@ -2176,10 +2287,10 @@ const spatialField = (field, construction = "none") =>
       );
     });
   assert.deepEqual(vortex.base, q.paths[0]);
-  assert.equal(vortex.mesh.length, 0);
+  assert.equal(meshSize(vortex.mesh), 0);
   assert.equal(vortex.minus.length, 0);
   assert.equal(q.arrows.length, 48);
-  assert.ok(spatialField({}, "developable").mesh.length > 0);
+  assert.ok(meshSize(spatialField({}, "developable").mesh) > 0);
   // Growth leaves the sphere |r| = 10 at t = ln 10.
   const growth = spatialField({ x: "x", y: "y", z: "z", max: 5 });
   assert.ok(Math.abs(growth.field.ends[0].time - Math.log(10)) < 1e-9);
@@ -2245,7 +2356,7 @@ for (const mode of ["perspective", "orthographic", "stereo"])
 console.log("Tesseract WASM contract passed");
 
 const spatialPursuit = (pursuit, construction = "none") =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "pursuit",
@@ -2295,14 +2406,14 @@ const spatialPursuit = (pursuit, construction = "none") =>
   assert.ok(
     q.polygons.length > 12 && q.polygons.every((p) => p.points.length === 3),
   );
-  assert.ok(spatialPursuit({}, "developable").mesh.length > 0);
+  assert.ok(meshSize(spatialPursuit({}, "developable").mesh) > 0);
   assert.equal(spatialPursuit({ max: 0.5 }).pursuit.capture, null);
   assert.match(spatialPursuit({ pursuers: [] }).error, /2–16 pursuers/);
   assert.match(spatialPursuit({ capture: 0 }).error, /capture distance/);
 }
 console.log("WASM spatial pursuit: triangle, capture and validation passed");
 const spatialSurface = (surface, study = {}) =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         format: "surface",
@@ -2483,7 +2594,7 @@ const spatialSurface = (surface, study = {}) =>
 }
 console.log("WASM surface: sphere, torus and validation passed");
 const spatialRays = (surface, rays, flags = {}) =>
-  JSON.parse(
+  spatialResult(
     tangentGardenSpatial(
       JSON.stringify({
         ...flags,
@@ -2701,15 +2812,8 @@ const spatialRays = (surface, rays, flags = {}) =>
 console.log(
   "WASM rays: paraboloid focus, plane mirror, Snell's window, receiver, light and mirror probes, and validation passed",
 );
-// An implicit result arrives as its JSON and the mesh's five arrays, typed
-// views on one buffer; an error is JSON alone.
-const meshArrays = {
-  positions: Float64Array,
-  normals: Float64Array,
-  triangles: Int32Array,
-  cut: Int32Array,
-  open: Int32Array,
-};
+// An implicit result arrives as its JSON beside its mesh arrays (see
+// spatialResult); an error is JSON alone.
 const implicitReply = (implicit) =>
   tangentGardenSpatial(
     JSON.stringify({
@@ -2741,16 +2845,9 @@ const implicitReply = (implicit) =>
     }),
   );
 const spatialImplicit = (implicit) => {
-  const reply = implicitReply(implicit);
-  if (typeof reply === "string") return JSON.parse(reply);
-  const result = JSON.parse(reply.json);
-  for (const [name, type] of Object.entries(meshArrays)) {
-    // The JSON leaves the arrays out; they arrive typed, on one buffer.
-    assert.equal(result.implicit[name], null, name);
-    assert.ok(reply[name] instanceof type, name);
-    assert.equal(reply[name].buffer, reply.positions.buffer, name);
-    result.implicit[name] = reply[name];
-  }
+  const result = spatialResult(implicitReply(implicit));
+  // A level set has no curve mesh.
+  if (result.implicit) assert.equal(meshSize(result.mesh), 0);
   return result;
 };
 {

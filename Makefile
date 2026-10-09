@@ -11,9 +11,9 @@ test-go:
 test-wasm: wasm
 	node scripts/test-wasm.mjs
 	node scripts/test-dev-worker.mjs
-# Times large implicit surfaces; ARGS="--compare <site or directory>" adds another engine.
+# Times large implicit surfaces and curve meshes; ARGS="--compare <site or directory>" adds another engine.
 bench: wasm
-	node scripts/bench-implicit.mjs $(ARGS)
+	node scripts/bench-spatial.mjs $(ARGS)
 typecheck:
 	npx tsc --noEmit
 vet:

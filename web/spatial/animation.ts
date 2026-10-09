@@ -17,6 +17,7 @@ import type {
   SpatialHarmonicResult,
   SurfaceSheet,
 } from "./types";
+import { meshStride, type CurveMesh } from "./types";
 import type { View } from "./renderer";
 import { pathView, type CameraPath } from "./path";
 import { rideView, type RidePath } from "./ride";
@@ -758,6 +759,26 @@ export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
     return [joints, extents];
   });
 }
+// A curve study's mesh keeps the vertices of samples up to last, in their
+// order. A triangle's three vertices share their sample, so whole
+// triangles are kept.
+function revealMesh(mesh: CurveMesh, last: number): CurveMesh {
+  const { vertices, sampleIndex } = mesh;
+  let kept = 0;
+  for (const i of sampleIndex) if (i <= last) kept++;
+  if (kept === sampleIndex.length) return mesh;
+  const out = {
+    vertices: new Float64Array(meshStride * kept),
+    sampleIndex: new Int32Array(kept),
+  };
+  for (let v = 0, k = 0; v < sampleIndex.length; v++) {
+    if (sampleIndex[v] > last) continue;
+    for (let j = 0; j < meshStride; j++)
+      out.vertices[meshStride * k + j] = vertices[meshStride * v + j];
+    out.sampleIndex[k++] = sampleIndex[v];
+  }
+  return out;
+}
 // A surface or mirror reveals column by column in u: every sheet keeps the
 // samples up to u_last, the edges and faces between them, and the normal
 // lines or rays there.
@@ -975,7 +996,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     minus,
     plus,
     breaks: result.breaks.slice(0, last + 1),
-    mesh: result.mesh.filter((v) => v.sampleIndex <= last),
+    mesh: revealMesh(result.mesh, last),
     rulings: result.rulings.filter((r) => r.sampleIndex <= last),
     involute,
     projection,

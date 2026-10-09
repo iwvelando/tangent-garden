@@ -17,6 +17,7 @@ import {
 } from "../web/spatial/probe";
 import type { Batch } from "../web/spatial/scene";
 import type { SpatialConfig, SpatialResult, Vec3 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 // The 3D curve probe between samples: Go describes the curve and its
 // construction at the probe's own t (engine3/probe.go), read out beside
@@ -458,7 +459,7 @@ test("a probe between samples draws each construction from its own points", () =
     minus: [],
     plus: [],
     breaks: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     bounds: { center: at(0, 0, 0), radius: 2 },
     radius: 2,

@@ -4,6 +4,7 @@ import type { RefinedPath, SpatialResult, Vec3 } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { choosePreset } from "./helpers";
+import { curveMesh } from "./curve-mesh";
 
 const at = (x: number): Vec3 => ({ x, y: x * x, z: 0 });
 // Line pairs in a batch: seven floats a vertex, two vertices a segment.
@@ -33,7 +34,7 @@ function study(): SpatialResult {
     minus: [],
     plus: [],
     breaks: [false, false, false, true],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     bounds: { center: { x: 1.5, y: 4.5, z: 0 }, radius: 5 },
     radius: 5,

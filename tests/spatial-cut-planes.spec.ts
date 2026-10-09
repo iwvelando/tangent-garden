@@ -19,6 +19,7 @@ import { choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import type { SpatialResult, Vec3 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 // A cut of several planes. Hidden beyond every plane, it removes the
 // intersection of their far sides (a notch: a wedge or a corner); hidden
@@ -324,7 +325,7 @@ function squareStudy(lineZ: number): SpatialResult {
     breaks: [false, false],
     minus: [],
     plus: [],
-    mesh: [a, b, c, a, c, d],
+    mesh: curveMesh([a, b, c, a, c, d]),
     rulings: [],
     bounds: { center: at(0, 0, 0), radius: 1 },
     radius: 1,

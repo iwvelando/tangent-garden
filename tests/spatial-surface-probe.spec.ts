@@ -31,6 +31,7 @@ import type {
   SurfaceDiagnostics,
   Vec3,
 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 // The surface probe: a point's principal directions, curvatures and
 // centres, on a canal or a surface patch. Expected values follow from the
@@ -94,7 +95,7 @@ function grid(kind: "patch" | "canal" = "patch"): SpatialResult {
     minus: [],
     plus: [],
     breaks: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     bounds: { center: at(0, 0, 0), radius: 2 },
     radius: 2,

@@ -15,6 +15,7 @@ import type {
   SurfaceSheet,
   Vec3,
 } from "../web/spatial/types";
+import { curveMesh } from "./curve-mesh";
 
 const add = (a: Vec3, b: Vec3, s = 1) => ({
   x: a.x + b.x * s,
@@ -70,7 +71,7 @@ function mirror(
     base: [],
     minus: [],
     plus: [],
-    mesh: [],
+    mesh: curveMesh(),
     rulings: [],
     breaks: [],
     bounds,
