@@ -879,3 +879,143 @@ test("thin strokes crossing in front leave the strokes behind them whole", async
   expect(seen.inked).toBeGreaterThan(5_000);
   expect(seen.lost / seen.inked).toBeLessThan(0.002);
 });
+
+// A polyline turning sharply, seen face on: a V with a sample at its
+// point, its arms turning there by 152° and 170°, and a line folded back on
+// itself (slope 0), turning by 180°, judged past the fold, since its arms
+// lie on one another and double as any line drawn twice does. Each pixel
+// near the turn is covered as the round-joined stroke would cover it, the distance to the
+// nearer arm against the stroke's half width, read from the vector export's
+// own segments at the same page size: no notch where the stroke parts, and
+// no doubled ink where both segments' quads draw. A thin stroke blends, so
+// doubled ink shows; a bold one uses sample coverage.
+test("strokes turning sharper than 120° are joined round, neither parting nor doubling", async ({
+  page,
+}) => {
+  const vee = (slope: number, weight: LineWeight) => {
+    const study = circle({ weight });
+    study.config.curve = {
+      x: slope ? "t" : "abs(t)",
+      y: slope ? `${slope}*abs(t)` : "0",
+      z: "0",
+      a: 1,
+      min: -1,
+      max: 1,
+    };
+    study.config.samples = 240;
+    return study;
+  };
+  const ground = scale255(palette.background[0]),
+    ink = scale255(lineColor(2, 0, false));
+  const seen: Record<string, unknown> = {};
+  for (const [slope, weight, scale] of [
+    [3, "fine", 1],
+    [12, "fine", 1],
+    [0, "fine", 1],
+    [3, "bold", 2],
+    [12, "bold", 2],
+    [0, "bold", 2],
+  ] as const) {
+    await openLink(page, vee(slope, weight));
+    const size = { width: 1000 * scale, height: 760 * scale };
+    await page
+      .getByRole("button", { name: "Export image", exact: true })
+      .click();
+    await page
+      .getByRole("menuitemradio", { name: `${size.width} × ${size.height}` })
+      .click();
+    if (await page.getByRole("menu", { name: "Export image" }).isVisible())
+      await page.keyboard.press("Escape");
+    const still = await download(
+      page,
+      `PNG image · ${size.width} × ${size.height}`,
+    );
+    const svg = (await download(page, "Lines (SVG) · every line")).toString(
+      "utf8",
+    );
+    const segments = visibleSegments(svg);
+    // The turn: the V's point, lowest on the page for y = slope·|t| drawn
+    // upward, or the fold, leftmost for x = |t|.
+    const point = segments
+      .flatMap((s) => [s.a, s.b])
+      .reduce((p, q) => (slope ? (q[1] > p[1] ? q : p) : q[0] < p[0] ? q : p));
+    const half = segments[0].half;
+    const R = 4 * half + 8;
+    const x0 = Math.floor(point[0] - R),
+      y0 = Math.floor(point[1] - R),
+      n = Math.ceil(2 * R);
+    const pixels = await page
+      .context()
+      .newPage()
+      .then(async (other) => {
+        try {
+          return await other.evaluate(
+            async ([bytes, x0, y0, n]) => {
+              const bitmap = await createImageBitmap(
+                new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+              );
+              const c = document.createElement("canvas");
+              c.width = bitmap.width;
+              c.height = bitmap.height;
+              const g = c.getContext("2d", { willReadFrequently: true })!;
+              g.drawImage(bitmap, 0, 0);
+              return [...g.getImageData(x0, y0, n, n).data];
+            },
+            [Array.from(still), x0, y0, n] as const,
+          );
+        } finally {
+          await other.close();
+        }
+      });
+    const d = [0, 1, 2].map((k) => ink[k] - ground[k]);
+    const dd = d.reduce((s, v) => s + v * v, 0);
+    let worst = 0,
+      measured = 0,
+      ideal = 0;
+    for (let v = 0; v < n; v++)
+      for (let u = 0; u < n; u++) {
+        const px = x0 + u + 0.5,
+          py = y0 + v + 0.5;
+        if (!slope && px > point[0]) continue;
+        let dist = Infinity;
+        for (const { a, b } of segments) {
+          const dx = b[0] - a[0],
+            dy = b[1] - a[1],
+            l2 = dx * dx + dy * dy;
+          const t = l2
+            ? Math.max(
+                0,
+                Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / l2),
+              )
+            : 0;
+          dist = Math.min(
+            dist,
+            Math.hypot(px - a[0] - t * dx, py - a[1] - t * dy),
+          );
+        }
+        const want =
+          Math.max(0, Math.min(1, half + 0.5 - dist)) * Math.min(1, 2 * half);
+        const i = 4 * (v * n + u);
+        let dot = 0;
+        for (let k = 0; k < 3; k++) dot += (pixels[i + k] - ground[k]) * d[k];
+        const got = Math.max(0, Math.min(1, dot / dd));
+        measured += got;
+        ideal += want;
+        worst = Math.max(worst, Math.abs(got - want));
+      }
+    const name = `${weight}, slope ${slope}`;
+    seen[name] = { half, measured, ideal, worst };
+  }
+  console.log("Sharp joins", seen);
+  for (const [name, r] of Object.entries(seen) as [
+    string,
+    { half: number; measured: number; ideal: number; worst: number },
+  ][]) {
+    expect(r.ideal, name).toBeGreaterThan(
+      name.endsWith(" 0") ? r.half : 20 * r.half,
+    );
+    expect(Math.abs(r.measured - r.ideal) / r.ideal, name).toBeLessThan(0.03);
+    // Sample coverage counts whole samples, a quarter at a time with four.
+    expect(r.worst, name).toBeLessThan(name.startsWith("fine") ? 0.05 : 0.3);
+  }
+});
