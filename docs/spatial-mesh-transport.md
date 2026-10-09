@@ -1,6 +1,6 @@
 # Spatial mesh transport: moving curve surfaces off JSON
 
-Status: steps 1 and 2 done (see [Step 1, as built](#step-1-as-built) and [Step 2, as built](#step-2-as-built)); the secondary candidates are open, with what step 2 measured about them under [What is left](#what-is-left). This is the detailed framing for the canal bullet of item 8 ("Transport and efficiency, when profiled") in [remaining-refinements.md](remaining-refinements.md). Read `AGENTS.md` first, then the parts of [architecture.md](architecture.md) on the WASM bridge and the implicit mesh.
+Status: steps 1 to 3 done (see [Step 1, as built](#step-1-as-built), [Step 2, as built](#step-2-as-built) and [Step 3, as built](#step-3-as-built)): the meshes travel typed and indexed, every other large numeric array of a spatial or 4D result travels as float64 beside the JSON, and the canal mesh is built with less allocation. What remains is under [What is left](#what-is-left). This is the detailed framing for the canal bullet of item 8 ("Transport and efficiency, when profiled") in [remaining-refinements.md](remaining-refinements.md). Read `AGENTS.md` first, then the parts of [architecture.md](architecture.md) on the WASM bridge and the implicit mesh.
 
 ## The symptom
 
@@ -131,7 +131,47 @@ These are smaller, and each could follow once step 1 exists:
 
   The Node frame time is unchanged within this container's noise: step 1 had already taken the mesh's encoding, parsing and copy out of the frame. What step 2 removes is in the page, where Node does not measure it. The tube's GPU vertex buffer falls from 1.9 MB to 0.34 MB plus 0.28 MB of indices, `buildScene` converts about a sixth as many numbers to float32, and the vertex shader runs once per shared vertex rather than per corner. Check it on a device (see below); headless Chromium cannot judge it.
 
+## Step 3, as built
+
+Step 2's profile (kept below under [Profile after step 2](#profile-after-step-2)) pointed at Go's own work for the cord and the beads, and at `canal.circles`, the spring's refined paths and the grids as the JSON left. Step 3 did both, and took every large numeric array rather than those few.
+
+- **Lifting the arrays out of the JSON.** `cmd/wasm/lift` walks a result by reflection after the meshes are taken out. It moves every slice, or slice of slices, of `engine3.Vec3`, `*engine3.Vec3`, `[3]float64`, `[4]float64`, `float64` or `*float64` with at least 32 floats into one float64 array and sets it to nil, recording its `Place`: JSON path, kind, offset, and length or row lengths (−1 for a null row). A missing point is three NaN and a missing number one NaN. JSON cannot carry a NaN, so a NaN or an infinity in a lifted array refuses the result, as `json.Marshal` does. `meshReply` puts the floats on the mesh buffer as `lifted.floats`, beside `lifted.places` (JSON); `tangentGardenTesseract` now returns `{ json, lifted }` too.
+  - The page, not the worker, puts the arrays back: `EngineClient` calls `restore` (`web/lifted.ts`) on every reply that has `lifted`. The worker stays a classic script with no import, the buffer is transferred rather than cloned, and the code that rebuilds the arrays is ordinary page code that tests import. The rebuilt result is the one JSON gave, value for value, −0 included, so no reader of a result changed. A field marked `omitempty` (a 4D path's `parameters` and `fourPoints`) loses its key when lifted, and `restore` adds it back at the end of its object.
+  - Walking is planned once per type: each struct's fields that can hold a liftable array, with their JSON names, and whether a slice's elements can hold one at all, so grids of flags and short paths cost nothing to pass over. A plain slice of vectors, triples, quads or numbers is copied as it lies in memory.
+  - What stays in the JSON: integer and boolean arrays (a surface's `alongU`, `alongV` and `faces` are about 70 KB each at 240²), fixed-size arrays, arrays shorter than 32 floats, and arrays of small structs such as ray lines and glyphs.
+- **The canal mesh in Go.** `canalSurface` computed each mesh angle's cosine and sine for every ring and every fold check, kept its listed rings in a map, and grew the mesh's arrays from empty. It now takes the 25 cosines and sines from a table computed with the same expression, keeps the rings in a slice, and sizes the arrays from the ring count. Natively the cord's `Compute` fell from about 20 ms to 11 ms and the beads' from 15 ms to 10 ms (benchmark on the cloud container). Most of what is left is evaluating the curve and its derivatives.
+- Checks:
+  - `cmd/wasm/lift/lift_test.go`: nine presets (testdata copies of the twisted spring, coiled cord, band, ellipsoid focal surface, coma, vortex, pursuit, unwound string and the focal-sheet probe) and two 4D studies lift, and the JSON left with the arrays put back decodes to the whole result's JSON bit for bit. Further cases cover nulls, null and empty rows, what stays, `omitempty`, embedded structs, and NaN and ±∞ refused.
+  - `scripts/test-wasm.mjs`: reads every spatial and 4D reply through `restore`, and checks that the floats share the mesh buffer.
+  - `scripts/test-dev-worker.mjs`: the worker forwards `lifted`, transfers its buffer, and passes a 4D refusal through.
+  - `tests/lifted-transport.spec.ts`: `restore` on every kind, with nulls, null rows, an omitted key and −0, and every 3D preset, with and without the surface probe, read back with every place filled.
+  - `tests/spatial-mesh-transport.spec.ts`: builds its scenes from restored results.
+- A one-off comparison against the step-2 engine and frontend ran each scene through each tree's own worker and hashed the result the page receives: every 3D preset at rest, with curve diagnostics and with the surface probe, each parameter track's start, middle and end, and every 4D preset at three points of its motion. All 402 scenes (363 3D, 39 4D) were identical. Of the targeted faults injected:
+  - Swapping y and z in `restore` changed 360 scenes.
+  - Sending a missing number as 0 changed 36 scenes and failed the Go tests.
+  - Swapping the fold check's cosines and sines changed 60 scenes and failed the canal tests.
+  - Starting the canal's listed rings at 0 rather than "not listed" did the same.
+- Timing with `make bench ARGS="--compare <step-2 build>"`, in Node on the cloud container (median of 7; call + decode + post + the page's restore + scene):
+
+  | Study                                     | Step 2 | Step 3 | Transfer        |
+  | ----------------------------------------- | ------ | ------ | --------------- |
+  | Coiled cord, 960 samples                  | 61 ms  | 47 ms  | 1.5 MB → 1.3 MB |
+  | Beads running around a trefoil            | 59 ms  | 44 ms  | 1.3 MB → 1.0 MB |
+  | A cord twisted round a spring (refined)   | 280 ms | 227 ms | 1.6 MB → 1.0 MB |
+  | A band around the trefoil (framed ribbon) | 29 ms  | 20 ms  | 0.8 MB → 0.5 MB |
+  | Trefoil · (2, 3) (tangent developable)    | 24 ms  | 17 ms  | 0.5 MB → 0.4 MB |
+  | The whole focal surface of an ellipsoid   | 426 ms | 214 ms | 7.1 MB → 2.8 MB |
+  | A tilted beam folding into coma           | 319 ms | 225 ms | 5.1 MB → 3.0 MB |
+  | A row of seeds wound up by a vortex       | 213 ms | 143 ms | 2.2 MB → 0.8 MB |
+
+  The 4D weaves gained most: through the worker, **Hopf circles, flowing forever**, **Tori between two circles** and **Rings from a sphere** fell from 25–65 ms to 4–12 ms a frame, and **Spherical loom** from 45–60 ms to 13–23 ms. 4D studies of a few milliseconds, whose arrays are too short to lift, are unchanged within this container's noise. Times vary by a third between runs here, so read these as proportions.
+
 ## What is left
+
+- **Go's own work.** It is now most of every tube frame. For the cord and the beads it is the curve's evaluation (the coil's numerical derivatives); for the twisted spring, the refinement of its meridians (`refineMeridians`, about four fifths of its `Compute`).
+- **The JSON that remains** is mostly boolean grids and arrays of small structs. A surface's flags could travel as bytes and a ray study's lines as a table, at the cost of a kind each in `lift` and `restore`; at under 1 MB for the largest presets, they were left.
+
+### Profile after step 2
 
 Profiling the presets natively after step 2 (the time Go takes, then the time `json.Marshal` takes for everything but the mesh) shows where a tube frame's time now goes:
 

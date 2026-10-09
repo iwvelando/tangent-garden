@@ -42,14 +42,23 @@ try {
   };
   mesh.vertices.set([1, 2, 3, 0, 0, 1, 0.5]);
   mesh.sampleIndex.set([4, 4, 4]);
-  const curveBuffer = new ArrayBuffer(8 * 21 + 4 * 4);
+  // A result's other large arrays are lifted onto the same buffer, with
+  // the places they go back.
+  const curveBuffer = new ArrayBuffer(8 * 24 + 4 * 4);
   const curveMesh = {
     vertices: new Float64Array(curveBuffer, 0, 21),
-    triangles: new Int32Array(curveBuffer, 168, 3),
-    sampleIndex: new Int32Array(curveBuffer, 180, 1),
+    triangles: new Int32Array(curveBuffer, 192, 3),
+    sampleIndex: new Int32Array(curveBuffer, 204, 1),
   };
   curveMesh.vertices.set([1, 2, 3, 0, 0, 1, 0.5]);
   curveMesh.triangles.set([0, 1, 2]);
+  const curveLifted = {
+    floats: new Float64Array(curveBuffer, 168, 3),
+    places: '[{"path":["base"],"kind":"point","offset":0,"count":1}]',
+  };
+  curveLifted.floats.set([4, 5, 6]);
+  // A 4D result's lifted arrays have a buffer of their own.
+  let hyperLifted, hyperRefusal;
   const context = createContext({
     importScripts: () => {}, // Vite's development environment prelude.
     self: {
@@ -60,7 +69,12 @@ try {
     },
     tangentGardenTesseract: (json) => {
       requests.push(JSON.parse(json));
-      return '{"transported":true}';
+      if (hyperRefusal) return hyperRefusal;
+      hyperLifted = {
+        floats: new Float64Array([1, 2, 3]),
+        places: '[{"path":["points"],"kind":"triple","offset":0,"count":1}]',
+      };
+      return { json: '{"points":null}', lifted: hyperLifted };
     },
     tangentGardenSpatial: (json) =>
       JSON.parse(json).format === "implicit"
@@ -74,8 +88,9 @@ try {
             implicit: implicitMesh,
           }
         : {
-            json: '{"base":[],"mesh":{"vertices":null,"triangles":null,"sampleIndex":null}}',
+            json: '{"base":null,"mesh":{"vertices":null,"triangles":null,"sampleIndex":null}}',
             mesh: curveMesh,
+            lifted: curveLifted,
           },
   });
   new Script(`${worker.code}\nready = Promise.resolve();`).runInContext(
@@ -220,6 +235,29 @@ try {
   assert.equal(requests[5].bypass.extent, 0);
   assert.equal(requests[5].grid, undefined);
   assert.equal(requests[5].distance, undefined);
+  // A 4D result reaches the page with its lifted arrays, whose buffer is
+  // transferred rather than copied; the page puts them back.
+  const { restore } = await server.ssrLoadModule("/web/lifted.ts");
+  await context.self.onmessage({
+    data: { id: 88, action: "tesseract", tesseract: bypass },
+  });
+  const hyper = replies.at(-1);
+  assert.equal(hyper.lifted, hyperLifted);
+  assert.deepEqual(Array.from(transfers.at(-1)), [hyperLifted.floats.buffer]);
+  // The worker's objects are of its own realm: compare them as JSON.
+  assert.equal(
+    JSON.stringify(restore(hyper.result, hyper.lifted)),
+    '{"points":[[1,2,3]]}',
+  );
+  // A refusal is JSON alone, and names its field.
+  hyperRefusal = '{"error":"Use 1-64 curves.","field":"curves"}';
+  await context.self.onmessage({
+    data: { id: 89, action: "tesseract", tesseract: bypass },
+  });
+  assert.equal(
+    JSON.stringify(replies.at(-1)),
+    '{"id":89,"error":"Use 1-64 curves.","field":"curves"}',
+  );
   // The worker puts the typed arrays back into the result and transfers
   // their buffer instead of copying it.
   const { spatialPresets } = await server.ssrLoadModule(
@@ -245,7 +283,10 @@ try {
     data: { id: 91, action: "spatial", spatial: curve },
   });
   const tube = replies.at(-1).result;
-  assert.equal(tube.base.length, 0);
+  assert.equal(tube.base, null);
+  assert.equal(replies.at(-1).lifted, curveLifted);
+  restore(tube, replies.at(-1).lifted);
+  assert.equal(JSON.stringify(tube.base), '[{"x":4,"y":5,"z":6}]');
   assert.equal(tube.mesh.vertices, curveMesh.vertices);
   assert.equal(tube.mesh.triangles, curveMesh.triangles);
   assert.equal(tube.mesh.sampleIndex, curveMesh.sampleIndex);

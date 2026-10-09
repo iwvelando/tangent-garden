@@ -3,6 +3,7 @@ import { runInThisContext } from "node:vm";
 import { test, expect, type Page } from "@playwright/test";
 import { reveal } from "../web/spatial/animation";
 import { spatialPresets } from "../web/spatial/presets";
+import { restore } from "../web/lifted";
 import { buildScene } from "../web/spatial/scene";
 import type { Batch } from "../web/spatial/scene";
 import { meshStride, type SpatialResult } from "../web/spatial/types";
@@ -28,11 +29,12 @@ test.beforeAll(async () => {
   spatial = (globalThis as any).tangentGardenSpatial;
 });
 
-// The result as the worker posts it: the JSON with the meshes put back.
+// The result as the page receives it: the JSON with the meshes and the
+// lifted arrays put back.
 function computed(config: object): SpatialResult {
   const reply = spatial(JSON.stringify(config));
   expect(typeof reply).toBe("object");
-  const result = JSON.parse(reply.json);
+  const result = restore(JSON.parse(reply.json), reply.lifted);
   result.mesh = reply.mesh;
   if (result.implicit) Object.assign(result.implicit, reply.implicit);
   return result;

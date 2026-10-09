@@ -26,11 +26,7 @@ func main() {
 		if err != nil {
 			return refusal(err)
 		}
-		b, err := json.Marshal(result)
-		if err != nil {
-			return `{"error":"non-finite tesseract result"}`
-		}
-		return string(b)
+		return liftReply(&result, `{"error":"non-finite tesseract result"}`, nil, nil, map[string]map[string]any{})
 	})
 	js.Global().Set("tangentGardenTesseract", hyper)
 
@@ -47,14 +43,7 @@ func main() {
 		if err != nil {
 			return refusal(err)
 		}
-		encode := func() (string, error) {
-			b, err := json.Marshal(result)
-			if err != nil {
-				return `{"error":"non-finite spatial result"}`, err
-			}
-			return string(b), nil
-		}
-		return meshReply(&result, encode)
+		return meshReply(&result, `{"error":"non-finite spatial result"}`)
 	})
 	js.Global().Set("tangentGardenSpatial", spatial)
 	spatialProbe := js.FuncOf(func(this js.Value, args []js.Value) any {
