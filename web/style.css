@@ -69,6 +69,13 @@ fieldset:disabled {
   flex-wrap: wrap;
   gap: 6px 16px;
 }
+/* A view's name wraps rather than scroll out of sight; its height is set to
+   fit its lines. */
+.view-name {
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .path-view > .hint {
   margin: 8px 0 6px;
 }
@@ -128,7 +135,8 @@ var {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 button,
@@ -154,6 +162,7 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 2px solid #248a87;
   outline-offset: 3px;
@@ -452,7 +461,8 @@ aside section {
   margin: 8px 0 0;
 }
 input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-select {
+select,
+textarea {
   display: block;
   width: 100%;
   background: var(--paper);
@@ -572,14 +582,16 @@ input[type="range"] {
 input:not([type="range"]):not([type="checkbox"]):not(
     [type="radio"]
   )[aria-invalid="true"],
-select[aria-invalid="true"] {
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
   border-color: #a4522f;
 }
 .dark
   input:not([type="range"]):not([type="checkbox"]):not(
     [type="radio"]
   )[aria-invalid="true"],
-.dark select[aria-invalid="true"] {
+.dark select[aria-invalid="true"],
+.dark textarea[aria-invalid="true"] {
   border-color: #f3bc83;
 }
 section {

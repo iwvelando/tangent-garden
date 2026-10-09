@@ -386,6 +386,138 @@ test("the path and its views travel in a copied link", async ({ page }) => {
   );
 });
 
+test("views move up and down with their turns and leg times, and travel in their new order", async ({
+  page,
+}) => {
+  await open(page, study());
+  const name = (k: number) =>
+    page.getByLabel(`View ${k} name`, { exact: true });
+  const field = (k: number, f: string) =>
+    page.getByLabel(`View ${k} ${f}`, { exact: true });
+  await expect(button(page, "Move view 1 up")).toBeDisabled();
+  await expect(button(page, "Move view 3 down")).toBeDisabled();
+  await field(3, "leg time").fill("2");
+  await button(page, "Move view 3 up").click();
+  await expect(name(2)).toHaveValue("Away");
+  await expect(name(3)).toHaveValue("Side");
+  // Turns and leg time move with their view, and the readout follows the
+  // legs' new times: 2 then 1.
+  await expect(field(2, "turns")).toHaveValue("1");
+  await expect(field(2, "leg time")).toHaveValue("2");
+  await expect(field(3, "turns")).toHaveValue("0");
+  await expect(field(3, "leg time")).toHaveValue("1");
+  await expect(views(page)).toContainText("reached 67% of the way");
+  // Focus follows the view moved.
+  await expect(button(page, "Move view 2 up")).toBeFocused();
+  // The new order plays and travels in a copied link.
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "path");
+  await button(page, "Stop").click();
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await button(page, "Copy link").click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const href = await page.evaluate(() => navigator.clipboard.readText());
+  const other = await page.context().newPage();
+  await other.goto(href);
+  await expect(canvas(other)).toBeVisible();
+  await settled(other);
+  await openPanel(other);
+  for (const [k, value] of ["Start", "Away", "Side"].entries())
+    await expect(
+      other.getByLabel(`View ${k + 1} name`, { exact: true }),
+    ).toHaveValue(value);
+  await expect(
+    other.getByLabel("View 2 leg time", { exact: true }),
+  ).toHaveValue("2");
+  await other.close();
+  // A view moved to the front has no leg before it; the view it passes
+  // starts from no turns and a leg of 1.
+  await button(page, "Move view 2 up").click();
+  await expect(name(1)).toHaveValue("Away");
+  await expect(name(2)).toHaveValue("Start");
+  await expect(field(1, "turns")).toHaveCount(0);
+  await expect(field(2, "turns")).toHaveValue("0");
+  await expect(field(2, "leg time")).toHaveValue("1");
+  await expect(button(page, "Move view 1 down")).toBeFocused();
+  await button(page, "Move view 1 down").click();
+  await expect(name(1)).toHaveValue("Start");
+  await expect(name(2)).toHaveValue("Away");
+  await expect(button(page, "Move view 2 down")).toBeFocused();
+});
+
+test("focus follows a moved view the way it went, even when the press did not focus the button", async ({
+  page,
+}) => {
+  await open(page, study());
+  // Safari, on a tap or a click, leaves a pressed button unfocused.
+  const press = async (name: string) => {
+    await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+    await button(page, name).evaluate((b: HTMLButtonElement) => b.click());
+  };
+  await press("Move view 1 down");
+  await expect(page.getByLabel("View 2 name", { exact: true })).toHaveValue(
+    "Start",
+  );
+  await expect(button(page, "Move view 2 down")).toBeFocused();
+  await press("Move view 3 up");
+  await expect(page.getByLabel("View 2 name", { exact: true })).toHaveValue(
+    "Away",
+  );
+  await expect(button(page, "Move view 2 up")).toBeFocused();
+  // At the end it can go no further, so focus takes the other way.
+  await press("Move view 2 down");
+  await expect(button(page, "Move view 3 up")).toBeFocused();
+});
+
+test("long view names wrap in full at phone width", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const long = "A long look along the curve's axis, from below the base";
+  await open(
+    page,
+    study({
+      ...flight,
+      keys: flight.keys.map((key, k) =>
+        k === 1 ? { ...key, name: long } : key,
+      ),
+    }),
+  );
+  const name = page.getByLabel("View 2 name", { exact: true });
+  await expect(name).toHaveValue(long);
+  const fits = () =>
+    name.evaluate((e) => ({
+      x: e.scrollWidth <= e.clientWidth,
+      y: e.scrollHeight <= e.clientHeight,
+    }));
+  const height = (k: number, f: string) =>
+    page
+      .getByLabel(`View ${k} ${f}`, { exact: true })
+      .evaluate((e) => e.getBoundingClientRect().height);
+  // A short name takes one line, as high as the fields beside it.
+  const line = await height(2, "turns");
+  expect(await height(1, "name")).toBe(line);
+  // The long one shows whole, on more lines.
+  expect(await fits()).toEqual({ x: true, y: true });
+  expect(await height(2, "name")).toBeGreaterThan(line);
+  // Enter adds no line of its own.
+  await name.press("End");
+  await name.press("Enter");
+  await expect(name).toHaveValue(long);
+  // The fields beneath move down to make room rather than lie under it.
+  const below = async () => {
+    const [n, t] = await Promise.all([
+      name.boundingBox(),
+      page.getByLabel("View 2 turns", { exact: true }).boundingBox(),
+    ]);
+    return t!.y - (n!.y + n!.height);
+  };
+  const gap = await below();
+  expect(gap).toBeGreaterThan(0);
+  await name.fill("Short");
+  await expect.poll(fits).toMatchObject({ x: true, y: true });
+  expect(await height(2, "name")).toBe(line);
+  expect(await below()).toBeCloseTo(gap, 0);
+});
+
 test("pausing holds the camera, resuming continues, and a change of study stops the flight", async ({
   page,
 }) => {
