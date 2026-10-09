@@ -67,6 +67,7 @@ Commit source, tests, docs, and `package-lock.json`; dependency directories, bui
 ```sh
 make build        # creates dist/
 make preview      # serves that build locally
+make preview-lan  # serves that build to devices on your network, like dev-lan
 make share-card   # re-renders the link-preview card and home-screen icon into public/
 make thumbnails   # re-draws the example gallery's thumbnails into web/examples/
 ```

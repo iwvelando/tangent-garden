@@ -1,4 +1,4 @@
-.PHONY: install wasm bench test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev dev-lan preview check clean share-card thumbnails
+.PHONY: install wasm bench test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev dev-lan preview preview-lan check clean share-card thumbnails
 
 install:
 	npm ci
@@ -42,6 +42,9 @@ dev-lan:
 	npm run dev:lan
 preview:
 	npm run preview
+# Serves the build to other devices on the local network, such as a phone.
+preview-lan:
+	npm run preview:lan
 clean:
 	rm -rf dist public/engine.wasm public/wasm_exec.js public/GO-LICENSE.txt public/LICENSE.txt public/THIRD-PARTY-NOTICES.txt
 thumbnails: build
