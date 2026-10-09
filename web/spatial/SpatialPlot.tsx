@@ -90,6 +90,7 @@ export function SpatialPlot({
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
   const manual = useRef({ ...initialView });
+  const lost = useRef(false);
   const explored = useRef<View | null>(null);
   // Orbit, pan, and zoom act on whichever camera is shown. A ride's
   // released perspective camera has no orbit of its own: they leave the ray
@@ -110,6 +111,7 @@ export function SpatialPlot({
     sight,
     onSeeThrough,
     onStrokes,
+    onGeometry,
     projection,
     lensAngle,
   });
@@ -125,6 +127,7 @@ export function SpatialPlot({
     sight,
     onSeeThrough,
     onStrokes,
+    onGeometry,
     projection,
     lensAngle,
   };
@@ -147,7 +150,9 @@ export function SpatialPlot({
       },
     );
   const draw = () => {
-    if (!canvas.current?.clientWidth) return;
+    // Nothing is drawn or reported while the context is lost; a restored
+    // one draws the camera as it then stands.
+    if (!canvas.current?.clientWidth || lost.current) return;
     const v = current();
     renderer.current?.setCut(state.current.cut);
     const shown = state.current.sight;
@@ -204,19 +209,46 @@ export function SpatialPlot({
       v.zoom = Math.max(0.2, Math.min(8, v.zoom * Math.exp(-e.deltaY * 0.001)));
       draw();
     };
-    const lost = (e: Event) => {
+    // A lost context keeps the camera, the study and every setting, which
+    // live here rather than on the device: restoring it rebuilds the
+    // renderer from them. Asking for restoration requires preventDefault.
+    const lose = (e: Event) => {
       e.preventDefault();
+      lost.current = true;
+      renderer.current = null;
       const text =
-        "The 3D graphics context was lost. Reload this page to restore it.";
+        "The 3D graphics context was lost. The drawing returns when the browser restores it; if it does not, reload the page.";
       setError(text);
       onError(text);
     };
+    // The context stays lost, and nothing is drawn, until a renderer is
+    // rebuilt on it.
+    const regained = () => {
+      try {
+        renderer.current = createRenderer(element);
+      } catch (e) {
+        const text = (e as Error).message;
+        setError(text);
+        onError(text);
+        return;
+      }
+      lost.current = false;
+      const { result, probe, onGeometry } = state.current;
+      renderer.current.upload(result);
+      renderer.current.setProbe(probe);
+      onGeometry?.(result, renderer.current.layers()!);
+      setError("");
+      onError("");
+      draw();
+    };
     element.addEventListener("wheel", wheel, { passive: false });
-    element.addEventListener("webglcontextlost", lost);
+    element.addEventListener("webglcontextlost", lose);
+    element.addEventListener("webglcontextrestored", regained);
     return () => {
       observer.disconnect();
       element.removeEventListener("wheel", wheel);
-      element.removeEventListener("webglcontextlost", lost);
+      element.removeEventListener("webglcontextlost", lose);
+      element.removeEventListener("webglcontextrestored", regained);
       renderer.current?.dispose();
       renderer.current = null;
     };
