@@ -127,12 +127,13 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Applies to:**
 
-- Context recovery: 3D only.
+- Context recovery: 3D only (done).
 - Device limits: all three.
+
+**Done:** after `webglcontextlost`, `SpatialPlot.tsx` asks for restoration and says the drawing returns when the browser restores it. Camera gestures, edits and study changes made meanwhile are kept but not drawn. On `webglcontextrestored` it builds a new renderer, uploads the current result and probe, and draws the camera as it then stands. The 2D notebook stays usable throughout. `tests/spatial-context.spec.ts` covers both, using `WEBGL_lose_context`. Exports draw on their own canvases and are not covered.
 
 **Open:**
 
-- 3D: after `webglcontextrestored`, rebuild resources from the current study and keep the camera state. Today `SpatialPlot.tsx` reports a lost context and stops. The 2D notebook must stay usable throughout.
 - All notebooks: still exports already refuse a page the device cannot draw, naming its size (see `mathematics.md`, **Still exports: size and transparent background**). Still open: query the limits before offering a size, so the menu offers only sizes that fit, and cover half-float targets and animation exports the same way.
 
 **Test with:** `WEBGL_lose_context` in Chromium.
