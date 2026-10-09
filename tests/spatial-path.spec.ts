@@ -5,9 +5,11 @@ import {
   keyTimes,
   legRange,
   maxKeys,
+  moveKey,
   pathError,
   pathLeg,
   pathView,
+  removeKey,
   type CameraPath,
   type KeyView,
 } from "../web/spatial/path";
@@ -338,6 +340,33 @@ test("the readout names the views a leg flies between, or the view it stands at"
   expect(pathLeg(path([key({}), key({ name: "  " })]), 0.5)).toBe(
     "View 1 → View 2",
   );
+});
+
+test("a moved view keeps its turns and leg time, unless it becomes the first", () => {
+  const a = key({ name: "A", yaw: 0.2 });
+  const b = key({ name: "B", yaw: 1, turns: 2, leg: 3 });
+  const c = key({ name: "C", yaw: 2, pitch: 0.4, turns: -1, leg: 0.5 });
+  const p = path([a, b, c], "smooth");
+  const later = moveKey(p, 2, 1);
+  expect(later).toEqual(path([a, c, b], "smooth"));
+  // The legs arrive at the same views, now in the new order: C after A
+  // takes 0.5, then B takes 3.
+  expect(keyTimes(later)).toEqual([0, 0.5 / 3.5, 1]);
+  expect(pathLeg(later, 0.5)).toBe("C → B");
+  // A view moved to the front has no leg before it; the one it passes keeps
+  // the defaults it had as the first.
+  const first = moveKey(p, 1, 0);
+  expect(first.keys).toEqual([key({ name: "B", yaw: 1 }), a, c]);
+  expect(first.keys[0]).not.toHaveProperty("leg");
+  expect(pathError(first)).toBeNull();
+  expect(moveKey(p, 0, 1).keys).toEqual([key({ name: "B", yaw: 1 }), a, c]);
+  // Moves past either end change nothing, and the path given is untouched.
+  expect(moveKey(p, 0, -1)).toBe(p);
+  expect(moveKey(p, 2, 3)).toBe(p);
+  expect(p.keys).toEqual([a, b, c]);
+  // Removing the first view clears the turns and leg time of the next.
+  expect(removeKey(p, 0).keys).toEqual([key({ name: "B", yaw: 1 }), c]);
+  expect(removeKey(p, 1).keys).toEqual([a, c]);
 });
 
 test("smooth never overshoots, however unequal its legs", () => {

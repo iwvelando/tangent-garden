@@ -99,8 +99,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 **Smaller limits:**
 
 - Smooth's framed point can change rate at a view.
-- Views cannot be reordered.
-- Long view names are cut off at phone width.
 - Geometry that grows past the starting bounds can leave the page under a path, as under Hold current view.
 
 **Start from:** `web/spatial/path.ts` and `mathematics.md#spatial-camera-paths`.
@@ -188,6 +186,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - 2D and 4D loop presets in motion.
 - The probe while parameters vary.
 - The 2D probe, refinement and line-weight controls at phone width, including the probe's **At any t, between samples** checkbox and its continuous slider.
+- The camera path's key views at phone width: **Move up** and **Move down**, and long names wrapping in their fields.
 
 Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07.
 

@@ -45,6 +45,28 @@ export const pathStyles: { value: PathStyle; label: string }[] = [
 ];
 export const keyLabel = (path: CameraPath, k: number) =>
   path.keys[k]?.name.trim() || `View ${k + 1}`;
+// The first view has no leg before it, so neither turns nor leg time.
+const asFirst = ({ leg: _, ...key }: KeyView): KeyView => ({
+  ...key,
+  turns: 0,
+});
+const firstClear = (keys: KeyView[]) =>
+  keys.map((key, k) => (k ? key : asFirst(key)));
+// Moves view k to place `to`. Each view keeps the turns and leg time of the
+// leg arriving at it, unless it becomes the first.
+export function moveKey(path: CameraPath, k: number, to: number): CameraPath {
+  const n = path.keys.length;
+  if (k === to || k < 0 || k >= n || to < 0 || to >= n) return path;
+  const keys = path.keys.slice();
+  const [key] = keys.splice(k, 1);
+  keys.splice(to, 0, key);
+  return { ...path, keys: firstClear(keys) };
+}
+// Removes view k; a view that becomes the first loses its leg.
+export const removeKey = (path: CameraPath, k: number): CameraPath => ({
+  ...path,
+  keys: firstClear(path.keys.filter((_, j) => j !== k)),
+});
 // The camera's framing, which both flights share.
 const framing =
   "The camera turns about the middle of the page; while a leg zooms, the place you framed comes straight toward the middle.";
@@ -73,7 +95,7 @@ export const pathHelp = {
   ),
   keys: tiered(
     `Up to ${maxKeys} views. Add the drawing's view; to adjust one, show it, change the drawing, and set it again.`,
-    "Removing the first view clears the turns and leg time of the one after it.",
+    "Turns and leg time move with their view. A view that becomes the first, by moving or removal, loses them.",
   ),
 };
 

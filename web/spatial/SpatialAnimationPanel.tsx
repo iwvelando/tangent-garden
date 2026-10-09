@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -98,10 +99,12 @@ import {
   maxKeyName,
   maxKeys,
   maxTurns,
+  moveKey,
   pathError,
   pathHelp,
   pathLeg,
   pathStyles,
+  removeKey,
   type CameraPath,
   type KeyView,
   type PathStyle,
@@ -1037,6 +1040,24 @@ export function SpatialAnimationPanel({
     const view = getCurrentView();
     return frame && view ? keyFromView(view, frame.result.bounds, "") : null;
   };
+  // Focus follows a moved view to its new place, onto the same way's button
+  // while it can move further, else the other's.
+  const viewsBox = useRef<HTMLDivElement>(null);
+  const moved = useRef(-1);
+  useLayoutEffect(() => {
+    const k = moved.current;
+    if (k < 0) return;
+    moved.current = -1;
+    const box = viewsBox.current;
+    const was = document.activeElement?.getAttribute("aria-label") ?? "";
+    const way = was.endsWith(" down") ? ["down", "up"] : ["up", "down"];
+    for (const w of way) {
+      const b = box?.querySelector<HTMLButtonElement>(
+        `button[aria-label="Move view ${k + 1} ${w}"]`,
+      );
+      if (b && !b.disabled) return b.focus();
+    }
+  }, [path]);
   const changeKey = (k: number, change: (key: KeyView) => KeyView) =>
     setPath((p) => ({
       ...p,
@@ -1084,7 +1105,12 @@ export function SpatialAnimationPanel({
           ))}
         </select>
       </Field>
-      <div className="field path-views" role="group" aria-label="Key views">
+      <div
+        className="field path-views"
+        role="group"
+        aria-label="Key views"
+        ref={viewsBox}
+      >
         <div className="field-label">
           <span>Key views</span>
           <HelpToggle topic="key views" help={keysHelp} />
@@ -1093,16 +1119,11 @@ export function SpatialAnimationPanel({
         {path.keys.map((key, k) => {
           const name = (
             <Field label="Name">
-              <input
+              <ViewName
                 aria-label={`View ${k + 1} name`}
                 placeholder={`View ${k + 1}`}
-                maxLength={maxKeyName}
                 value={key.name}
-                onChange={(e) => {
-                  const name = e.target.value;
-                  changeKey(k, (old) => ({ ...old, name }));
-                }}
-                spellCheck={false}
+                onChange={(name) => changeKey(k, (old) => ({ ...old, name }))}
               />
             </Field>
           );
@@ -1156,6 +1177,23 @@ export function SpatialAnimationPanel({
                 {reached && ` · reached ${percent(reached[k])} of the way`}
               </p>
               <div className="path-view-buttons">
+                {(["up", "down"] as const).map((way) => {
+                  const to = way === "up" ? k - 1 : k + 1;
+                  return (
+                    <button
+                      key={way}
+                      className="text-button"
+                      aria-label={`Move view ${k + 1} ${way}`}
+                      disabled={to < 0 || to >= path.keys.length}
+                      onClick={() => {
+                        setPath((p) => moveKey(p, k, to));
+                        moved.current = to;
+                      }}
+                    >
+                      {way === "up" ? "Move up" : "Move down"}
+                    </button>
+                  );
+                })}
                 <button
                   className="text-button"
                   aria-label={`Show view ${k + 1}`}
@@ -1191,17 +1229,7 @@ export function SpatialAnimationPanel({
                 <button
                   className="text-button"
                   aria-label={`Remove view ${k + 1}`}
-                  onClick={() =>
-                    setPath((p) => {
-                      const keys = p.keys.filter((_, j) => j !== k);
-                      // The new first view has no leg before it.
-                      if (keys[0]) {
-                        const { leg: _, ...first } = keys[0];
-                        keys[0] = { ...first, turns: 0 };
-                      }
-                      return { ...p, keys };
-                    })
-                  }
+                  onClick={() => setPath((p) => removeKey(p, k))}
                 >
                   Remove
                 </button>
@@ -1763,5 +1791,60 @@ export function SpatialAnimationPanel({
         )}
       </details>
     </section>
+  );
+}
+
+// A view's name wraps onto as many lines as it needs, so a long one stays
+// whole in a narrow sidebar. It is still one line of text: Enter and pasted
+// line breaks add none.
+function ViewName({
+  value,
+  onChange,
+  ...rest
+}: {
+  value: string;
+  onChange: (name: string) => void;
+  "aria-label": string;
+  placeholder: string;
+  // From the Field around it.
+  id?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
+}) {
+  const box = useRef<HTMLTextAreaElement>(null);
+  const fit = () => {
+    const e = box.current;
+    if (!e) return;
+    e.style.height = "auto";
+    e.style.height = `${e.scrollHeight + e.offsetHeight - e.clientHeight}px`;
+  };
+  useLayoutEffect(fit, [value]);
+  // A narrower sidebar wraps it onto more lines.
+  useEffect(() => {
+    const parent = box.current?.parentElement;
+    if (!parent) return;
+    let width = parent.clientWidth;
+    const watch = new ResizeObserver(() => {
+      if (parent.clientWidth === width) return;
+      width = parent.clientWidth;
+      fit();
+    });
+    watch.observe(parent);
+    return () => watch.disconnect();
+  }, []);
+  return (
+    <textarea
+      {...rest}
+      ref={box}
+      className="view-name"
+      rows={1}
+      maxLength={maxKeyName}
+      value={value}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.preventDefault();
+      }}
+      onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/g, " "))}
+      spellCheck={false}
+    />
   );
 }
