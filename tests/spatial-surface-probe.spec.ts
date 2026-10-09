@@ -1385,7 +1385,6 @@ test("a mirror's probe describes the light or the mirror, in their own words", (
   expect(reflecting).not.toMatch(/θ′|critical/);
   expect(refracting).toMatch(/θ′ the angle of transmission/);
   expect(refracting).toMatch(/beyond the critical angle/);
-  expect(refracting).toMatch(/Move the probe along the interface/);
   expect(helpText(surfaceProbeHelp(mirror, "mirror"))).toMatch(
     /^Describes the mirror at a point/,
   );
@@ -1467,7 +1466,6 @@ test("a patch with an offset probes the patch or its offset, in their own words"
   expect(help).toMatch(/focal sheet of the same number/);
   expect(help).toMatch(/cuspidal edge/);
   expect(help).toMatch(/folded/);
-  expect(help).toMatch(/Move the probe along the offset surface/);
 });
 
 test("the offset's steps, records and drawing need its own diagnostics", () => {
@@ -1590,7 +1588,6 @@ test("a patch probes its focal sheets, each in its own words", () => {
     expect(help).toMatch(/cuspidal edge/);
     expect(help).toMatch(/umbilic/);
     expect(help).toMatch(/at infinity and has no point/);
-    expect(help).toMatch(new RegExp(`Move the probe along the ${name}`));
   }
   // The patch and the offset keep their own status words.
   expect(surfaceTerms(c, "surface").singular).toBeUndefined();

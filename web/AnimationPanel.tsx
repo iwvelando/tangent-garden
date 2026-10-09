@@ -895,34 +895,36 @@ export function AnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "probe" ? (
-                probe && frame && probeBetween(frame.config, probe) ? (
-                  "Move the probe through every t from the start of the curve to its end, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
-                ) : (
-                  "Move the probe from the start of the curve to its end, sample by sample, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
-                )
-              ) : mode === "trace" ? (
-                tiered(
-                  "Send light from the source to the curve and on; each caustic point appears as its ray reaches it.",
-                  "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
-                )
-              ) : mode === "reveal" ? (
-                iterated ? (
-                  "Count the iterates in order, from none to all of them, in the finished drawing's window and grid."
-                ) : (
-                  "Draw the study from its domain start to its end, keeping the final arc-length anchor and sample spacing."
-                )
-              ) : (
-                <>
-                  Tracks vary together, linearly. Use <var>a</var> in a curve
-                  expression to animate any coefficient, for example{" "}
-                  <code>
-                    <var>a</var>*cos(t)
-                  </code>
-                  . Integer counts change in whole steps. Endpoints accept
-                  constants.
-                </>
-              )
+              mode === "probe"
+                ? probe && frame && probeBetween(frame.config, probe)
+                  ? "Move the probe from start to end through every t. The geometry stays fixed."
+                  : "Move the probe from start to end, sample by sample. The geometry stays fixed."
+                : mode === "trace"
+                  ? tiered(
+                      "Send light from the source; each caustic point appears as its ray reaches it.",
+                      "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
+                    )
+                  : mode === "reveal"
+                    ? iterated
+                      ? "Count the iterates in order, in the finished drawing's window and grid."
+                      : tiered(
+                          "Draw the study from its domain start to its end.",
+                          "Each frame keeps the finished drawing's sample spacing and arc-length anchor.",
+                        )
+                    : tiered(
+                        <>
+                          Tracks vary together, linearly. Use <var>a</var> in a
+                          curve expression to animate any coefficient.
+                        </>,
+                        <>
+                          For example,{" "}
+                          <code>
+                            <var>a</var>*cos(t)
+                          </code>
+                          . Counts change in whole steps. Endpoints accept
+                          constants such as pi.
+                        </>,
+                      )
             }
           >
             <select

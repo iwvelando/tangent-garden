@@ -19,7 +19,7 @@ import {
   StudyError,
   type FieldErrorTarget,
 } from "../Field";
-import type { Help } from "../help";
+import { tiered, type Help } from "../help";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
 import {
   EngineClient,
@@ -56,6 +56,12 @@ import { LinkError, type SharedStudy } from "../study-link";
 import { tesseractStudy, type TesseractStudy } from "./link";
 import { cycles, progressAt, type Pace, type Repeat } from "../timing";
 import "./style.css";
+
+// Each of the six rotation angles shares one help.
+const angleHelp = tiered(
+  "Radians; pi/2 is a quarter turn.",
+  "Each angle stays within ±1000000. Turns apply in order xy, xz, yz, xw, yw, zw, each carrying its first axis toward its second.",
+);
 export default function TesseractApp({
   active = true,
   shared,
@@ -807,7 +813,7 @@ export default function TesseractApp({
                               angles[k] = n;
                               return { ...c, angles };
                             },
-                            "Radians; pi/2 is a quarter turn. Applied in order xy, xz, yz, xw, yw, zw. Positive turns carry the first named axis toward the second.",
+                            angleHelp,
                           ),
                           { key: k },
                         ),
@@ -913,14 +919,14 @@ export default function TesseractApp({
                     labels.distance,
                     config.distance,
                     (c, distance) => ({ ...c, distance }),
-                    "From 2.05 to 20. The tesseract has circumradius 2, so the eye stays outside every rotation.",
+                    "From 2.05 to 20, so the eye stays outside the tesseract.",
                   )}
                 {config.mode === "stereo" &&
                   scalar(
                     labels.clip,
                     config.clip,
                     (c, clip) => ({ ...c, clip }),
-                    "From 2 to 12 in projected space. Arcs passing through infinity are clipped at this sphere and left open. A larger window reveals more distant branches.",
+                    "From 2 to 12. Arcs reaching this sphere are left open; a larger window shows more.",
                   )}
                 {config.mode === "section" ? (
                   <>
@@ -945,7 +951,7 @@ export default function TesseractApp({
                     {curved && (
                       <Field
                         label="Selected section"
-                        help="Picks the section drawn stronger, numbered in slice order. Negative h is dashed, nonnegative h solid; the choice holds through passage and exports."
+                        help="Which section is drawn stronger, counted in slice order."
                       >
                         <input
                           type="number"

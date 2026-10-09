@@ -38,8 +38,8 @@ export const loops = (mode: AnimationMode) =>
 export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
   loop: tiered(
-    "Plays again and again, its end joining its start, which needs the last frame to match the first.",
-    "Play checks the drawing, the probe and the camera at both ends and says what differs. An orbit always returns; parameter tracks return when each spans one period, as a from 0 to 2*pi in cos(t + a); the probe returns around a closed curve; a camera path returns when its last view is its first, with whole turns. Drawing, tracing and peeling cannot loop, so they offer Back and forth instead. Exports leave out the last frame, which repeats the first, and loop forever.",
+    "Plays again and again; the last frame must match the first.",
+    "Play checks both ends and says what differs. Parameter tracks return when each spans one period, as a from 0 to 2*pi in cos(t + a); a camera path when its last view is its first, with whole turns. Drawing, tracing and peeling offer Back and forth instead. Exports leave out the repeated last frame and loop forever.",
   ),
   "back-and-forth": backAndForthHelp,
 };

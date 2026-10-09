@@ -39,17 +39,20 @@ export const rideFields = {
 };
 export const rideHelp = {
   camera: tiered(
-    "Rides one ray in perspective, just behind its light: down the incident ray, then along the outgoing ray to its drawn end.",
-    "It turns at the surface onto the reflected, refracted or totally reflected ray as drawn, through its caustic points, and never follows a virtual ray behind the surface. Up starts toward the side the ray turns to, so the turn is a pitch with no roll. The lens spans 60° across the page's shorter side.",
+    "Rides one ray in perspective, down the incident ray and then along the outgoing ray.",
+    "It turns at the surface onto the reflected, refracted or totally reflected ray as drawn, and never follows a virtual ray. The turn is a pitch with no roll. The lens spans 60° across the page's shorter side.",
   ),
-  ray: "The ray drawn where these parameter curves cross. A crossing the light does not reach has no ray to ride.",
+  ray: tiered(
+    "The ray where these parameter curves cross.",
+    "A crossing the light does not reach has no ray to ride.",
+  ),
   follow: tiered(
-    `How far behind the ray's head the camera rides, in framing-sphere radii of optical path: more than ${rideRange[0]}, at most ${rideRange[1]}.`,
-    "Optical path is length × refractive index, so in glass of index 1.5 the camera is 1/1.5 as far behind in length.",
+    `How far behind the ray's head: above ${rideRange[0]}, at most ${rideRange[1]}.`,
+    "It is measured in framing-sphere radii of optical path, length × refractive index, so in glass of index 1.5 the camera is 1/1.5 as far behind in length.",
   ),
   turn: tiered(
-    `Over how much optical path the camera turns onto the outgoing ray, in framing-sphere radii: more than ${rideRange[0]}, at most ${rideRange[1]}.`,
-    "The turn is centered on the camera's own arrival at the surface, and starts and ends at rest; a window twice the follow distance starts it as the ray's head reaches the surface.",
+    `The optical path the turn spans: above ${rideRange[0]}, at most ${rideRange[1]}.`,
+    "It is measured in framing-sphere radii and centered on the camera's arrival at the surface, starting and ending at rest. A window twice the follow distance starts the turn as the ray's head reaches the surface.",
   ),
 };
 

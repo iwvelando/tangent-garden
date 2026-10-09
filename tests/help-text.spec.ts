@@ -1,10 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
 
-// Help opens on its essentials: one short line. Whatever more a reader may
-// want waits behind Show more, so a narrow sidebar column never opens onto
-// a page of text (AGENTS.md, Help text).
-const briefWords = 30;
+// Help opens on its essentials: one short line, shorter still in a paired
+// column. Whatever more a reader may want waits behind Show more, and is
+// itself a short paragraph, so a narrow sidebar column never opens onto a
+// page of text (AGENTS.md, Help text).
+const briefWords = 20;
+const pairedBriefWords = 12;
+const moreWords = 60;
 
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 
@@ -25,6 +28,7 @@ async function helps(page: Page) {
       }
       return {
         topic: toggle.getAttribute("aria-label")!,
+        paired: toggle.closest(".pair") !== null,
         essentials: essentials.trim(),
         more: help.querySelector(".hint-more")?.textContent?.trim() ?? null,
       };
@@ -102,16 +106,23 @@ for (const [notebook, titles] of Object.entries(notebooks))
     let checked = 0;
     for (const label of labels) {
       await choosePreset(page, { label });
-      for (const { topic, essentials, more } of await helps(page)) {
+      for (const { topic, paired, essentials, more } of await helps(page)) {
         expect
           .soft(
             words(essentials),
             `${label} · ${topic} opens with ${words(essentials)} words: ${essentials}`,
           )
-          .toBeLessThanOrEqual(briefWords);
-        // A second tier has something to show.
-        if (more !== null)
+          .toBeLessThanOrEqual(paired ? pairedBriefWords : briefWords);
+        // A second tier has something to show, and stays short.
+        if (more !== null) {
           expect.soft(words(more), `${label} · ${topic}`).toBeGreaterThan(0);
+          expect
+            .soft(
+              words(more),
+              `${label} · ${topic} shows ${words(more)} more words: ${more}`,
+            )
+            .toBeLessThanOrEqual(moreWords);
+        }
         checked++;
       }
     }

@@ -135,17 +135,18 @@ export const curveProbeMotions: { value: ProbeMotion; label: string }[] = [
   { value: "length", label: "Keeps its share of the length" },
   { value: "along", label: "Moves along the curve" },
 ];
-const probeMotionBrief =
-  "Where the probe stands while the parameters vary: at its t, at its share of the curve's length, or moving along it.";
+const probeMotionBrief = "Where the probe stands while the parameters vary.";
+const probeMotionMore =
+  "Length shares skip breaks in the curve. The readout describes each frame; framing ignores the osculating circle.";
 export const curveProbeMotionHelp = tiered(
   probeMotionBrief,
-  "Stays at its t: at the sample nearest the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: at the sample nearest the same fraction of the drawn curve's arc length, with nothing counted across a break. Moves along the curve: from its first sample to its last as the animation plays. It snaps to each frame's own samples; the readout and plot describe that frame, and framing ignores the osculating circle.",
+  `It snaps to each frame's nearest sample, and is absent from a frame whose domain leaves its t out. ${probeMotionMore}`,
 );
 
 // How the probe moves while the parameters vary, between samples.
 export const betweenMotionHelp = tiered(
   probeMotionBrief,
-  "Stays at its t: at exactly the t you chose, and absent from a frame whose domain leaves that t out. Keeps its share of the length: where the drawn curve's arc length is the same fraction of the whole, with nothing counted across a break. Moves along the curve: from the start of each frame's domain to its end as the animation plays. It stands between samples in every frame; the readout and plot describe that frame, and framing ignores the osculating circle.",
+  `It stands at exactly its t in every frame, and is absent from a frame whose domain leaves that t out. ${probeMotionMore}`,
 );
 
 // Why a held probe has no point in a frame: its t lies outside the frame's

@@ -99,7 +99,7 @@ test("the repeat and pace default to once and steady; loop is offered only for p
   await repeat(page).selectOption("loop");
   await page.getByRole("button", { name: "About repeat" }).click();
   await expect(page.locator("#animation-section")).toContainText(
-    "needs the last frame to match the first",
+    "the last frame must match the first",
   );
 });
 

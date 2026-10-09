@@ -11,7 +11,6 @@ import {
   betweenMotionHelp,
   curveProbeMotionHelp,
   curveProbeMotions,
-  fixedAnimationsHelp,
   heldCurveSample,
   probeIndex,
   type ProbeMotion,
@@ -323,12 +322,12 @@ export function probeTarget(c: SpatialConfig, p: Probe): ProbeTarget {
 export function probeHelp(c: SpatialConfig, between = false) {
   const { highlight } = probeSupport(c);
   return tiered(
-    "Describes the curve itself, not the surface or curves built on it: its Frenet frame and osculating circle.",
+    "Describes the curve itself, not the surface on it: its Frenet frame and osculating circle.",
     `${highlight ? `It also shows ${highlight}. ` : ""}${
       between
-        ? "It stands at any t of the domain, evaluated there as at every sample; at a sample, the values are the sample's own. Each move evaluates just that point; the first move after the study changes recomputes the study, which takes longer for many samples."
-        : "It moves between the curve's samples; more samples give finer steps."
-    } The frame is the tangent T, principal normal N and binormal B; the osculating circle, of radius 1/κ, lies in the plane of T and N. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it when they move it along the curve ("Move the probe along the curve") or vary parameters, where Probe chooses whether it stays at its t, keeps its share of the curve's length, or moves along the curve. ${fixedAnimationsHelp}`,
+        ? "It stands at any t of the domain, evaluated exactly there; the first move after the study changes recomputes the study."
+        : "It moves between the curve's samples."
+    } Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn.`,
   );
 }
 
@@ -467,7 +466,7 @@ type SurfaceTerms = {
   singular?: string;
   help: string;
 };
-const rows = "(at most 481, so more samples give finer steps up to that)";
+const rows = "(at most 481)";
 const curvatureWords = {
   switch: "Principal curvatures & centres at a point",
   normal: "Normal",
@@ -492,7 +491,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "The patch has no point here.",
     unknownBranch: "κ₂ is",
     unknown: "where its derivatives are unstable",
-    help: "Moves between the patch's own grid samples (more u and v samples give finer steps). Its principal curvatures are numbered κ₁ ≥ κ₂ with the chosen normal, as the focal sheets are",
+    help: "It moves between the patch's grid samples. Curvatures are numbered κ₁ ≥ κ₂ with the chosen normal and use A = −dn, so a sphere with its outward normal has κ = −1/R.",
   },
   offset: {
     ...curvatureWords,
@@ -505,7 +504,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "The patch has no normal here, so the offset has no point.",
     unknownBranch: "κ₂ is",
     unknown: "where its derivatives are unstable",
-    help: "Moves between the patch's own grid samples (more u and v samples give finer steps). The offset X + d·n shares the patch's normal n, as drawn, and its principal directions, and the normal line runs on back to the patch's point X, marked with a cross. Its curvatures are κᵢ/(1 − dκᵢ) from the patch's κᵢ, numbered as the patch's, so each center is the patch's focal point and lies on the focal sheet of the same number: parallel surfaces share their centers of curvature. Where 1 − dκᵢ = 0 the offset meets that focal sheet in a cuspidal edge and is singular there. Where it lies beyond one focal sheet it has folded, turned inside out, and κ₁ < κ₂ can hold",
+    help: "Its curvatures are κᵢ/(1 − dκᵢ), so its centers lie on the patch's focal sheet of the same number. Where 1 − dκᵢ = 0 it has a cuspidal edge; beyond a focal sheet it has folded inside out.",
   },
   // A patch's focal sheet, named by its number (see surfaceTerms).
   focal: {
@@ -521,7 +520,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     unknownBranch: "both curvatures are",
     unknown: "where its derivatives overflow",
     singular: "Singular here: no tangent plane, as on a cuspidal edge.",
-    help: "Moves between the patch's own grid samples (more u and v samples give finer steps). Focal sheet i is X + n/κᵢ, the centers of the patch's κᵢ, and the patch's normal line, drawn from its point X (marked with a cross), touches the sheet there. The sheet's normal is the patch's principal direction eᵢ, oriented continuously along u, and its curvatures, numbered κ₁ ≥ κ₂ with that normal, follow from how κᵢ and eᵢ change across the patch, which takes the patch's third derivatives. Where κᵢ is stationary along eᵢ, on a ridge of the patch, the sheet has a cuspidal edge and is singular; it is singular too at an umbilic of the patch, where the two sheets meet, and wherever the whole sheet is a curve or a point, as a surface of revolution's sheet of parallels is its axis. Where κᵢ = 0 the sheet lies at infinity and has no point",
+    help: "Its normal is the patch's principal direction eᵢ, oriented continuously along u, and its curvatures need the patch's third derivatives. A ridge of the patch gives a cuspidal edge, an umbilic joins the two sheets, and where κᵢ = 0 it is at infinity and has no point.",
   },
   canal: {
     ...curvatureWords,
@@ -534,7 +533,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "No surface here: no real contact circle at this t.",
     unknownBranch: "κ across it is",
     unknown: "where its derivatives are unstable",
-    help: "Moves between the canal's mesh rings along t (at most 481, so more samples give finer steps up to that) and 24 turns around each contact circle, measured from θ₀ (with any twist) as the meridians are. Around the circle the curvature is −1/R, centred on the sphere's centre on the curve, with the outward normal; across it, the other principal curvature has its own centre",
+    help: `It moves between the mesh rings along t ${rows} and 24 turns around each contact circle, from θ₀. Around the circle the curvature is −1/R, centred on the curve; across it, the other has its own centre.`,
   },
   developable: {
     ...ruledTerms,
@@ -543,7 +542,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     sliders: ["Along t", "Across the ruling"],
     missing: "No surface here: the curve has no regular point at this t.",
     unknown: "where the curve's third derivative is unstable",
-    help: `Moves between the ribbon's rows along t ${rows} and 24 points along each tangent ruling, at u = ±L·k/12 for k = 1…12 from the curve. It leaves out u = 0, the edge of regression, where the ribbon's two sheets meet in a cusp along the curve and it has no normal. The normal is the drawing's: the curve's binormal B where u > 0 and −B where u < 0. Along the ruling the curvature is 0, with its centre at infinity; across it, it is τ/(κ|u|), from the curve's curvature κ and torsion τ, so K = 0 and the ribbon is developable. Where the curve's curvature vanishes the whole ruling is singular`,
+    help: `It moves between rows along t ${rows} and 24 points along each ruling, at u = ±L·k/12, leaving out the edge of regression u = 0. The normal is ±B, the curve's binormal. Along the ruling the curvature is 0; across it, τ/(κ|u|).`,
   },
   framed: {
     ...ruledTerms,
@@ -553,7 +552,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "No ribbon here: the frame is undefined at this t.",
     unknown:
       "where the curve's third derivative, or a Frenet frame's τ′, is unstable",
-    help: `Moves between the ribbon's rows along t ${rows} and 25 points across each cross-line, from u = −w to w. Curvatures come from how the frame turns, not from the drawn strip. The normal is the drawing's, D × S_t. A ribbon is ruled, so K ≤ 0; an untwisted rotation-minimizing ribbon is developable, with K = 0. Its principal curvatures are numbered κ₁ ≥ κ₂`,
+    help: `It moves between rows along t ${rows} and 25 points across each cross-line, from u = −w to w. Curvatures come from how the frame turns. The normal is D × S_t. A ribbon is ruled, so K ≤ 0; untwisted and rotation-minimizing, K = 0.`,
   },
   ruled: {
     ...ruledTerms,
@@ -562,7 +561,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     sliders: ["Along t", "Along the ruling"],
     missing: "No surface here: the partner is missing at this t.",
     unknown: "where a thread's second derivative is unstable",
-    help: `Moves between the surface's rows along t ${rows} and 25 points along each ruling, from the curve (u = 0) to its partner (u = 1). The normal is S_t × S_u, as drawn. A ruled surface has K ≤ 0, with K = 0 exactly where it is developable; where the threads meet the surface pinches and has no normal. Its principal curvatures are numbered κ₁ ≥ κ₂`,
+    help: `It moves between rows along t ${rows} and 25 points along each ruling, from the curve (u = 0) to its partner (u = 1). The normal is S_t × S_u, and K ≤ 0; where the threads meet there is no normal.`,
   },
   // The light leaving a mirror or interface, whose name surfaceTerms
   // supplies. Its help is the whole of the switch's help (see
@@ -664,21 +663,17 @@ export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
   if (target === "light") {
     const m = t.surface;
     return tiered(
-      `Describes the light leaving the ${m} at a point: its incident and outgoing rays, and the outgoing wavefront's curvatures and foci.`,
-      `The wavefront is perpendicular to the outgoing ray. The probe moves between the ${m}'s own grid samples (more u and v samples give finer steps), the samples its caustics are found at. The wavefront's principal curvatures are numbered μ₁ ≥ μ₂, each with its direction across the ray, and each focuses the light at X + R/μ, on the caustic of the same number: a real focus ahead of the ${m} where μ > 0, a virtual one behind it where μ < 0, on the ray's extension. The readout gives each focus's signed distance 1/μ along the ray, negative for a virtual focus, and the astigmatic interval between the two. Each branch's circle of radius 1/|μ| through the point, centred on its focus, is the wavefront's normal section. Where μ₁ = μ₂ the point is stigmatic: both foci coincide and no direction is drawn. A focus beyond 100 study radii is at infinity, as on the caustics, and its circle is not drawn. θ is the angle of incidence from the ${m}'s normal${
+      `Describes the light leaving the ${m} at a point: its rays, and the outgoing wavefront's foci.`,
+      `The wavefront's curvatures μ₁ ≥ μ₂ focus the light at X + R/μ on the caustics: a real focus ahead of the ${m} where μ > 0. Distances read negative for a virtual focus. Foci beyond 100 study radii are at infinity. θ is the angle of incidence${
         c.rays.interaction === "refract"
-          ? ", and θ′ the angle of transmission"
+          ? ", θ′ the angle of transmission; beyond the critical angle nothing is transmitted"
           : ""
-      }. The source itself, unlit points (where the light grazes the ${m} or arrives behind it)${
-        c.rays.interaction === "refract"
-          ? " and points beyond the critical angle, where the light is totally reflected and nothing is transmitted,"
-          : ""
-      } have no outgoing wavefront. Animations and their exports show it when they move it ("Move the probe along the ${m}") or vary parameters. ${fixedAnimationsHelp}`,
+      }.`,
     );
   }
   return tiered(
-    `Describes the ${t.surface} at a point: its normal, its two principal directions, and their curvature circles, centred on the focal points.`,
-    `Each circle is the normal section of radius 1/|κ| through the point, centred on its centre of curvature on the normal line. ${t.help}. Curvatures use A = −dn, so a sphere with its outward normal has κ = −1/R. Where a centre lies beyond 100 study radii it is at infinity and its circle is not drawn; at an umbilic every direction is principal and none is drawn; where the surface is singular there is no normal. Animations and their exports show it when they move it ("Move the probe along the ${t.surface}") or vary parameters. ${fixedAnimationsHelp}`,
+    `Describes the ${t.surface} at a point: its normal, principal directions and curvature circles.`,
+    `${t.help} Centres beyond 100 study radii are at infinity, with no circle.`,
   );
 }
 
@@ -965,7 +960,7 @@ export function probeMotionHelp(
   if (gridded(target)) {
     const t = surfaceTerms(c, target);
     return tiered(
-      `Where the probe stands while the parameters vary: at its row and column, or moving along the ${t.surface}.`,
+      "Where the probe stands while the parameters vary.",
       `Stays: at the same share of the ${t.surface}'s rows and columns as the point you chose. Moves along: from its first ${t.along} to its last as the animation plays, at the column you chose. It snaps to each frame's own grid; the readout and plot describe that frame.`,
     );
   }

@@ -46,6 +46,6 @@ export function svgStroke(weight: LineWeight) {
 
 // Help for the SVG notebooks' control, stating the scale the drawing uses.
 export const svgWeightHelp = tiered(
-  "How wide lines are drawn. Fine, regular and bold scale with the drawing; a hairline is always one pixel.",
-  `Fine, regular and bold keep their proportion in the live drawing, stills, videos and SVG files at any size; fine is ${weightScale.fine}× and bold ${weightScale.bold}× regular. A hairline stays one pixel wide at any size, so it looks fainter in larger exports, and in an SVG file at any zoom.`,
+  "How wide lines are drawn. Fine, regular and bold scale with the drawing.",
+  `Fine is ${weightScale.fine}× and bold ${weightScale.bold}× regular, in the drawing and every export. A hairline stays one pixel wide at any size, so it looks fainter in larger exports and zoomed SVG files.`,
 );

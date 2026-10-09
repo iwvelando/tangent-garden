@@ -24,8 +24,8 @@ export const loops = (mode: AnimationMode) => mode === "parameters";
 export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
   loop: tiered(
-    "Plays again and again, its end joining its start, which needs the last frame to match the first.",
-    "Play compares both ends and says what differs. Parameter tracks return when each spans one period, as a from 0 to 2*pi in cos(t + a); counts return only to their starting count. Drawing along the curve and tracing light cannot loop, so they offer Back and forth instead. Exports leave out the last frame, which repeats the first, and loop forever.",
+    "Plays again and again; the last frame must match the first.",
+    "Play compares both ends and says what differs. A parameter track returns when it spans one period, as a from 0 to 2*pi in cos(t + a); a count must end where it starts. Exports drop the repeated last frame and loop forever.",
   ),
   "back-and-forth": backAndForthHelp,
 };

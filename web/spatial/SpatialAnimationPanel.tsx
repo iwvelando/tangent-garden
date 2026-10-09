@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { FrameRateField } from "../FrameRateField";
 import { ProgressSlider } from "../ProgressSlider";
 import type { SpatialAnimation } from "./link";
@@ -1107,7 +1113,7 @@ export function SpatialAnimationPanel({
                 <div className="pair">
                   <Field
                     label="Turns"
-                    help={pathHelp.turns}
+                    help={k === 1 ? pathHelp.turns : undefined}
                     topic={`view ${k + 1} turns`}
                   >
                     <input
@@ -1125,7 +1131,7 @@ export function SpatialAnimationPanel({
                   </Field>
                   <Field
                     label="Leg time"
-                    help={pathHelp.leg}
+                    help={k === 1 ? pathHelp.leg : undefined}
                     topic={`view ${k + 1} leg time`}
                   >
                     <input
@@ -1245,7 +1251,7 @@ export function SpatialAnimationPanel({
           <Field
             key={axis}
             label={rideFields[axis]}
-            help={rideHelp.ray}
+            help={axis === "u" ? rideHelp.ray : undefined}
             topic={`ray at ${axis}`}
           >
             <select
@@ -1313,45 +1319,50 @@ export function SpatialAnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "path" ? (
-                pathHelp.mode
-              ) : mode === "cut" ? (
-                tiered(
-                  "Sweep the cut plane along its normal, peeling the drawing away until all it cuts is hidden. Geometry stays fixed.",
-                  "The plane moves from the farthest point it reaches to the nearest, peeling from the side the normal points to; flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks.",
-                )
-              ) : mode === "probe" ? (
-                gridded(target) && frame ? (
-                  `Move the probe along the ${surfaceTerms(frame.config, target).surface} from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles. Geometry stays fixed.`
-                ) : probe && frame && probeBetween(frame.config, probe) ? (
-                  "Move the probe through every t from the start of the curve to its end, with its frame, osculating circle and readout. Geometry stays fixed."
-                ) : (
-                  "Move the probe from the start of the curve to its end, sample by sample, with its frame, osculating circle and readout. Geometry stays fixed."
-                )
-              ) : mode === "trace" ? (
-                tiered(
-                  "Send light from the source to the surface and on; each caustic point appears as its ray reaches it.",
-                  "Parallel light comes in from past the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
-                )
-              ) : mode === "orbit" ? (
-                "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
-              ) : mode === "reveal" ? (
-                frame?.config.format === "implicit" ? (
-                  "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
-                ) : (
-                  "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
-                )
-              ) : (
-                <>
-                  Tracks vary together, linearly. Use <var>a</var> in a curve
-                  expression to animate any coefficient, for example{" "}
-                  <code>
-                    <var>a</var>*cos(t)
-                  </code>
-                  . Integer counts change in whole steps. Endpoints accept
-                  constants.
-                </>
-              )
+              mode === "path"
+                ? pathHelp.mode
+                : mode === "cut"
+                  ? tiered(
+                      "Sweep the cut plane along its normal, peeling the drawing away until all it cuts is hidden. Geometry stays fixed.",
+                      "The plane moves from the farthest point it reaches to the nearest, peeling from the side the normal points to; flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks.",
+                    )
+                  : mode === "probe"
+                    ? gridded(target) && frame
+                      ? tiered(
+                          `Move the probe along the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
+                          `It runs from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles.`,
+                        )
+                      : probe && frame && probeBetween(frame.config, probe)
+                        ? tiered(
+                            "Move the probe through every t of the curve. Geometry stays fixed.",
+                            "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                          )
+                        : tiered(
+                            "Move the probe along the curve, sample by sample. Geometry stays fixed.",
+                            "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                          )
+                    : mode === "trace"
+                      ? tiered(
+                          "Send light from the source to the surface and on; each caustic point appears as its ray reaches it.",
+                          "Parallel light comes in from past the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
+                        )
+                      : mode === "orbit"
+                        ? "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
+                        : mode === "reveal"
+                          ? frame?.config.format === "implicit"
+                            ? "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
+                            : "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
+                          : tiered<ReactNode>(
+                              "Tracks vary together, linearly. Endpoints accept constants.",
+                              <>
+                                Use <var>a</var> in a curve expression to
+                                animate any coefficient, for example{" "}
+                                <code>
+                                  <var>a</var>*cos(t)
+                                </code>
+                                . Integer counts change in whole steps.
+                              </>,
+                            )
             }
           >
             <select

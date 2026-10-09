@@ -122,14 +122,14 @@ const highlights: Partial<Record<Config["kind"], Highlight>> = {
   offset: { name: "its normal to the offset", lines: toDerived },
   catacaustic: { name: "its reflected ray", lines: toDerived },
   diacaustic: { name: "its refracted ray", lines: toDerived },
-  inversion: { name: "its correspondence segment", lines: toDerived },
-  rolling: { name: "its arm to the traced point", lines: toDerived },
+  inversion: { name: "the segment to its image", lines: toDerived },
+  rolling: { name: "the arm to the traced point", lines: toDerived },
   pedal: {
-    name: "its tangent's foot and the perpendicular from the pole",
+    name: "the perpendicular from the pole",
     lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
   contrapedal: {
-    name: "its normal's foot and the perpendicular from the pole",
+    name: "the perpendicular from the pole",
     lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
   orthotomic: {
@@ -152,13 +152,10 @@ export function probeHelp(
   between = false,
 ) {
   const h = result ? probeHighlight(config, result) : highlights[config.kind];
-  const brief = `Describes the base curve at ${between ? "any t of its domain" : "one of its samples"}: its tangent T, normal N and osculating circle${h ? `, with ${h.name}` : ""}.`;
-  const source = between
-    ? "Values come from the curve's derivatives at the probe's own t, and at a sample are the sample's own. Each move evaluates just that point; the first move after the study changes recomputes the study, which takes longer for many samples."
-    : "Values come from the curve's own derivatives at every sample; the probe snaps to samples, so moving it never recomputes.";
+  const brief = `Shows the base curve's tangent T, normal N and osculating circle${h ? `, with ${h.name}` : ""}.`;
   return tiered(
     brief,
-    `N is T turned a quarter turn to the left. The osculating circle shares the curve's tangent and curvature, and its center is the center of curvature. The signed curvature κ = (x′y″ − y′x″)/|r′|³ is positive where the curve turns left and negative where it turns right; the radius of curvature is 1/|κ|. The arc length s runs along the drawn curve from its first sample by Simpson's rule, with nothing counted across a gap${between ? ", and carries on from the sample before by the same rule" : ""}. ${source} Where κ is 0 (flat) or the center lies beyond 100 radii of the study, no circle is drawn; where the second derivative is unstable, κ is unknown.`,
+    `N points a quarter turn left of T, and κ is positive where the curve turns left. The circle's radius is 1/|κ|; it is not drawn where κ is 0 or its center lies beyond 100 study radii. Arc length s counts from the first sample, skipping gaps. ${between ? "It stands at any t; each move evaluates just that point." : "It snaps to samples, so moving it never recomputes."}`,
   );
 }
 

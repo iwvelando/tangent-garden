@@ -197,22 +197,22 @@ export function taperBreaks(a: number, b: number) {
 export const sightFields = { opacity: "Sheet opacity α" } as const;
 export const sightHelp = {
   sheets: tiered(
-    "See-through draws every sheet at once, so folds and lines inside a surface show.",
-    "Where n sheet layers overlap, the color is their mean, laid over the background with opacity 1 − (1 − α)ⁿ, so overlaps look denser. Every layer counts the same whatever its depth, so intersecting sheets are drawn exactly; it shows folds rather than modelling light through glass. The study itself is unchanged.",
+    "See-through shows folds and lines inside a surface.",
+    "Where n layers overlap, their mean color covers the background with opacity 1 − (1 − α)ⁿ, whatever their depth. It shows folds; it does not model light through glass.",
   ),
-  opacity: `Each layer's opacity, from ${opacityRange[0]} to ${opacityRange[1]}. Two layers cover 1 − (1 − α)² of the background, three 1 − (1 − α)³.`,
+  opacity: `Each layer's opacity, from ${opacityRange[0]} to ${opacityRange[1]}.`,
   weight: tiered(
-    "How wide lines are drawn. Fine, regular and bold scale with the drawing; a hairline is always one pixel.",
-    `Fine, regular and bold keep their proportion in the live drawing, stills and videos at any size. On a 1000 × 760 page, regular draws the curve ${inkWeight(2)} px and construction lines ${inkWeight(1)} px wide; fine is ${weightScale.fine}× and bold ${weightScale.bold}× that. A hairline is one device pixel at any size, so it looks fainter in larger exports.`,
+    "How wide lines are drawn; all but hairlines scale with the drawing.",
+    `Fine, regular and bold keep their proportions at any size. On a 1000 × 760 page, regular draws the curve ${inkWeight(2)} px and construction lines ${inkWeight(1)} px wide; fine is ${weightScale.fine}× and bold ${weightScale.bold}× that. A hairline is one device pixel at any size, so it looks fainter in larger exports.`,
   ),
   depth: tiered(
-    "Tapered strokes grow nearer the eye and thin farther away, through a perspective lens only.",
-    `Even strokes keep their weight's width everywhere. Tapered strokes have that width on the plane through the view's target (one study radius ahead when riding a ray) and scale with nearness: twice as wide at half the distance, half as wide at twice it, from ${taperRange[0]}× to ${taperRange[1]}×. Orthographic views and hairlines are always drawn evenly.`,
+    "Tapered strokes widen nearer the eye, through a perspective lens only.",
+    `They have the weight's width on the plane through the view's target (one study radius ahead when riding a ray), twice it at half the distance, from ${taperRange[0]}× to ${taperRange[1]}×. Orthographic views and hairlines are always even.`,
   ),
   flat: "Strokes taper only through a perspective lens: choose one with Projection above the drawing, or ride a ray.",
   hidden: tiered(
     "How lines behind the nearest sheet are drawn: hidden, faint, or dashed.",
-    `Faint lines are drawn at ${faintOpacity * 100}% opacity. Dashed lines are drawn at ${dashedOpacity * 100}% opacity, one dash every ${dashPeriod * 100}% of the drawing's shorter side, measured along the line in space, so a receding line has shorter dashes. A line lying on a sheet counts as in front of it, and lines never hide other lines.`,
+    `Faint lines are drawn at ${faintOpacity * 100}% opacity, dashed ones at ${dashedOpacity * 100}%, with dashes measured in space, so they shorten as a line recedes. A line lying on a sheet counts as in front of it.`,
   ),
   unstroked:
     "This device's graphics cannot draw strokes (they need instanced drawing), so lines are drawn as hairlines here and in exports.",

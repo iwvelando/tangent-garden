@@ -65,11 +65,11 @@ export const cutHelp = {
     "Hides everything on the side the plane's normal points to, here and in every export.",
     "That is where n̂·p > d, with n̂ = n/|n|. The plane is fixed in space: it stays put while the camera turns and while parameters animate. The study itself is unchanged; the cut only hides part of the drawing.",
   ),
-  normal: `Any direction that is not zero; only its direction counts. Each component within ±${maxCutValue.toLocaleString("en-US")}.`,
+  normal: `Any nonzero direction, each component within ±${maxCutValue.toLocaleString("en-US")}.`,
   offset: `The plane's signed distance from the origin along n̂, within ±${maxCutValue.toLocaleString("en-US")}.`,
   cuts: tiered(
-    "Whether the cut hides the surface alone, every sheet, or sheets and lines. The probe is never cut.",
-    "The surface is the study's own sheet: the patch, mirror or interface, ribbon, tube, or level surface. Every sheet adds the offset, focal or caustic sheets and the receiver. Sheets and lines cuts the base curve and every construction line too.",
+    "The surface alone, every sheet, or sheets and lines. Never the probe.",
+    "The surface is the study's own sheet: the patch, mirror or interface, ribbon, tube, or level surface. Every sheet adds the offset, focal or caustic sheets and the receiver. Sheets and lines also cuts the curve and construction lines.",
   ),
   edge: tiered(
     "Draws where the sheets meet the plane; with several planes, where they meet the boundary of what is hidden.",
@@ -77,8 +77,8 @@ export const cutHelp = {
   ),
   add: `Up to ${maxCutPlanes} planes in all; six bound a box. A new plane is through the center, facing along the first axis no plane faces yet.`,
   beyond: tiered(
-    "Beyond every plane cuts a notch where all the far sides meet; beyond any plane keeps only what lies within every plane.",
-    "Hiding beyond every plane, two planes cut a wedge and three a corner. Hiding beyond any plane, two keep a slab and six a box.",
+    "Every plane cuts a notch; any plane keeps what lies inside all.",
+    "Beyond every plane, two planes cut a wedge and three a corner. Beyond any plane, two keep a slab and six a box.",
   ),
 };
 

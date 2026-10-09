@@ -47,7 +47,7 @@ export const keyLabel = (path: CameraPath, k: number) =>
   path.keys[k]?.name.trim() || `View ${k + 1}`;
 // The camera's framing, which both flights share.
 const framing =
-  "The camera turns about the middle of the page, on the plane through the study's center that faces you; while a leg zooms, the place you framed comes straight toward the middle.";
+  "The camera turns about the middle of the page; while a leg zooms, the place you framed comes straight toward the middle.";
 export const pathHelp = {
   mode: tiered(
     "Fly the camera through your key views in order. Geometry stays fixed.",
@@ -55,21 +55,21 @@ export const pathHelp = {
   ),
   camera: tiered(
     "Flies the camera through your key views in order while the geometry moves.",
-    `Each leg takes its share of the duration by its leg time, and each frame is drawn with the camera of its own time. The views are taken about the study as drawn when playback starts, so geometry that grows far beyond it can leave the page. ${framing}`,
+    `Each leg takes its share of the duration by its leg time. Views are taken about the study as drawn when playback starts, so geometry that grows far beyond it can leave the page. ${framing}`,
   ),
   steady:
-    "On each leg the camera turns, tilts and zooms at a constant rate, zooming by equal factors in equal times, and changes direction only at a view.",
+    "Each leg turns, tilts and zooms at a steady rate, changing course only at a view.",
   smooth: tiered(
     "The camera passes through each view without stopping, blending its turning, tilting and zoom.",
     "It never goes beyond the two views of a leg, so it rests at a view that is a turning point. With two views it is Steady.",
   ),
   turns: tiered(
-    `Whole turns added to the shorter way from the previous view, from −${maxTurns} to ${maxTurns}; positive turns as dragging right does.`,
-    "Positive turns go the way the orbit animation turns, negative the other way. Exactly half a turn goes the negative way unless a turn is added.",
+    `Whole turns added to the shorter way, from −${maxTurns} to ${maxTurns}.`,
+    "Turns are counted from the previous view. Positive turns go the way dragging right does, as the orbit animation turns. Exactly half a turn goes the negative way unless a turn is added.",
   ),
   leg: tiered(
-    `How long the leg arriving at this view takes, relative to the other legs, from ${legRange[0]} to ${legRange[1]}.`,
-    "The legs share the duration in proportion to their times, so a leg of 2 takes twice as long as a leg of 1. To linger at a view, add it again and give the leg between the two its time.",
+    `The leg's share of the duration, from ${legRange[0]} to ${legRange[1]}.`,
+    "Each leg is the one arriving at its view. A leg of 2 takes twice as long as a leg of 1. To linger at a view, add it again and give the leg between the two its time.",
   ),
   keys: tiered(
     `Up to ${maxKeys} views. Add the drawing's view; to adjust one, show it, change the drawing, and set it again.`,

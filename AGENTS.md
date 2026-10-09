@@ -37,8 +37,9 @@ If codebase-memory-mcp is available, prefer `search_graph`, `trace_path`, `get_c
 
 Help opens in a narrow sidebar column, so it gives the essentials first and keeps the rest one click away.
 
-- A help opens on one line of at most 30 words: what the control does and, when it fits, the range the engine accepts. `tests/help-text.spec.ts` checks every help in every example against this.
-- Anything further goes behind Show more: write the help as `tiered(brief, more)` from `web/help.ts`. The second tier is for exact limits, formulas, edge cases and interactions with other settings. Together the two tiers still state every limit the engine enforces (see Boundaries). A help that is complete in one line stays one line.
+- A help opens on one line of at most 20 words, or 12 in a paired column (`.pair`): what the control does and, when it fits, the range the engine accepts.
+- Anything further goes behind Show more: write the help as `tiered(brief, more)` from `web/help.ts`. The second tier is a short paragraph of at most 60 words, for exact limits, edge cases and interactions with other settings. Together the two tiers still state every limit the engine enforces (see Boundaries), but not how the algorithm works step by step: that belongs in `docs/mathematics.md` or a study's explanation. A help that is complete in one line stays one line.
+- `tests/help-text.spec.ts` checks every help in every example against these limits.
 - Trim before tiering. Leave out history and compatibility notes (what older links open with, how drawings looked before an option existed), implementation names such as Go, restatements of the control's label, and anything a neighbouring control's help already says.
 - Add to an existing help with `withMore`, never by joining strings, so the essentials stay first. Tests read both tiers with `helpText`.
 - Notes and captions that are always visible get the same treatment: a sentence or two, with longer detail in a help toggle.

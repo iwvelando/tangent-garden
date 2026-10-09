@@ -59,8 +59,8 @@ export type MotionChoice = {
 export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
   loop: tiered(
-    "Plays again and again, its end joining its start, which needs the last frame to match the first.",
-    "Play compares both ends and says what differs. A rotation turns one whole revolution, so it returns; a slice passage returns when no section cuts the shape at its ends. Other motions cannot loop, so they offer Back and forth instead. Exports leave out the last frame, which repeats the first, and loop forever.",
+    "Plays again and again; the last frame must match the first.",
+    "A whole rotation returns to its start, and so does a slice passage that is empty at both ends; other motions offer Back and forth instead. Play says what differs when the ends don't match. Exports drop the repeated last frame and loop forever.",
   ),
   "back-and-forth": backAndForthHelp,
 };
@@ -68,7 +68,7 @@ export const rotationMotions: MotionChoice[] = [
   {
     value: "double",
     label: "Double rotation · xw + yz",
-    help: "Turns one full revolution in two independent planes at once, rotating the shape in four dimensions; the 3D camera stays fixed.",
+    help: "Turns a full revolution in the xw and yz planes at once; the 3D camera stays fixed.",
     loops: true,
   },
   {
@@ -120,7 +120,7 @@ export type ObjectDescriptor = {
   choices?: {
     key: "obstacle" | "family";
     label: string;
-    help: string;
+    help: Help<string>;
     values: { value: string; label: string }[];
   }[];
   flat?: (c: Config) => boolean;
@@ -148,7 +148,7 @@ export type ObjectDescriptor = {
   familyPassage: boolean;
   passageHelp: string;
   sliceHelp: string;
-  spreadHelp: string;
+  spreadHelp: Help<string>;
   legend: "directions" | "sections" | "threads" | "latitudes";
   // Number, level and suffix columns of an indexed section or latitude key.
   sectionKey?: (s: Section, index: number) => readonly [string, string, string];
@@ -226,11 +226,13 @@ const curvedCommon = {
   passageHelp:
     "The endpoints include a 2.5% support margin and half the family spread, so every section is empty there. Sections retain their entered spacing.",
   sliceHelp:
-    "Intersect w = h without 4D rotation. Offset within ±4 times this object's support radius. Outside support the section is empty.",
-  spreadHelp:
-    "Total distance between the first and last slice, up to four times the support radius. All slices share xyz coordinates. A single slice ignores spread.",
+    "The slice w = h, within ±4 support radii; beyond the support it is empty.",
+  spreadHelp: tiered(
+    "Distance from first to last slice, up to 4 support radii.",
+    "All slices share xyz coordinates; a single slice ignores spread.",
+  ),
   colorNote: () =>
-    "Each numbered section has its own colour and h in the key. Negative h is dashed; nonnegative h is solid. The selected section is stronger and appears last. Rotations in 4D are unavailable for these axis-aligned sections; dragging orbits the 3D drawing.",
+    "Each numbered section has its own colour and h in the key; negative h is dashed, nonnegative h solid. The selected section is drawn stronger, and dragging orbits the 3D drawing.",
   limitations:
     "axis-aligned finite sections; representative boundary circles only; no interior or fourth-coordinate projection",
 };
@@ -250,9 +252,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     passageHelp:
       "The endpoints lie 2.5% beyond the tesseract's circumradius 2, and half the family spread further, so every section is empty there. Sections retain their entered spacing.",
     sliceHelp:
-      "Intersect w = h after rotation. From −4.05 to 4.05, the end of the widest passage; beyond the rotated cube there is no section.",
-    spreadHelp:
-      "Total distance between first and last slice, from 0 to 4. A single slice ignores spread.",
+      "The slice w = h through the rotated tesseract, from −4.05 to 4.05.",
+    spreadHelp: tiered(
+      "Distance from first to last slice, from 0 to 4.",
+      "A single slice ignores spread.",
+    ),
     explanation: (c) => explanations[c.mode as keyof typeof explanations],
     colorNote: (c) =>
       c.mode === "section"
@@ -279,7 +283,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         key: "radius",
         label: "4-ball radius R",
-        help: "From 0.001 to 100. Support along w is ±R. Framing remains fixed across the slice passage.",
+        help: "From 0.001 to 100; sections reach w = ±R.",
       },
     ],
     defaults: curvedDefaults("ball", ballSupport),
@@ -300,12 +304,12 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         key: "radius",
         label: "Core radius R",
-        help: "From 0.001 to 100, strictly larger than r. Framing remains fixed across the slice passage.",
+        help: "From 0.001 to 100, and larger than r.",
       },
       {
         key: "tube",
         label: "Tube radius r",
-        help: "At least 0.001 and strictly smaller than R. The support along w is ±r; the core radius stays R.",
+        help: "At least 0.001 and smaller than R; sections reach w = ±r.",
       },
     ],
     defaults: curvedDefaults("tube", tubeSupport),
@@ -366,22 +370,25 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         index,
         label: `Lift center ${axis}`,
         group: "Lift center",
-        help: "From −20 to 20. Moving the center changes which source intervals meet the reference slice.",
+        help: "From −20 to 20.",
       })),
       {
         key: "support",
         label: "Lift support radius L",
-        help: "From 0.05 to 20. The bump vanishes outside L; the derived missing radius is smaller.",
+        help: "From 0.05 to 20; the lift vanishes outside L.",
       },
       {
         key: "height",
         label: "Lift height A",
-        help: "From 0 to 10. Fixed slab half-thickness ε = 0.02: nothing is missing when A ≤ ε. Lifting changes lengths.",
+        help: "From 0 to 10. At 0.02 (ε) or less, nothing is missing.",
       },
       {
         key: "angle",
         label: "Presentation xw angle",
-        help: "Radians within ±1000000. A positive turn carries x toward w; x′ = x cos θ − w sin θ. This explanatory rotation never changes reference-slice membership.",
+        help: tiered(
+          "Radians within ±1000000; turns x toward w for display only.",
+          "x′ = x cos θ − w sin θ. It never changes what lies in the reference slice.",
+        ),
         visible: (c) => c.mode === "lifted",
       },
       ...(["from", "to"] as const).flatMap((key) =>
@@ -390,20 +397,20 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           index,
           label: `Drift ${key === "from" ? "start" : "end"} ${axis}`,
           group: `Drift ${key === "from" ? "start" : "end"}`,
-          help: "From −20 to 20. Playback interpolates the center between the entered endpoints with A and ε held fixed.",
+          help: "From −20 to 20.",
           endpoint: true,
         })),
       ),
       {
         key: "radiusFrom",
         label: "Support start",
-        help: "From 0.05 to 20. The first value of L for Change lift support.",
+        help: "From 0.05 to 20; L where Change lift support begins.",
         endpoint: true,
       },
       {
         key: "radiusTo",
         label: "Support end",
-        help: "From 0.05 to 20. The final value of L for Change lift support; descending ranges reverse the same construction.",
+        help: "From 0.05 to 20; L where Change lift support ends.",
         endpoint: true,
       },
     ],
@@ -459,12 +466,12 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         value: "drift",
         label: "Move lift center",
-        help: "Interpolate the center from Drift start to Drift end. Height A and slab half-thickness ε stay fixed; Stop restores your entered center.",
+        help: "Moves the center from Drift start to Drift end, with A and ε fixed.",
       },
       {
         value: "support",
         label: "Change lift support",
-        help: "Interpolate L from Support start to Support end. Center, height A and slab half-thickness ε stay fixed. The apparent missing radius follows from L; Stop restores your entered support.",
+        help: "Changes L from Support start to Support end, with the center, A and ε fixed.",
       },
     ],
   },
@@ -525,52 +532,64 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         key: "inner",
         label: "Inner radius a",
-        help: "From 0.05 to 10. The cavity is |p| < a in the embedded shell.",
+        help: "From 0.05 to 10.",
       },
       {
         key: "outer",
         label: "Outer radius b",
-        help: "At most 20, exceeding a by at least 0.001. The outside point must have radius greater than b.",
+        help: "Up to 20, and at least a + 0.001.",
       },
       {
         key: "extent",
         label: "Fourth-coordinate extent ε",
-        help: "From 0 to 5. The embedded shell occupies |w| ≤ ε. The radial 4D shell ignores this field.",
+        help: "From 0 to 5; the embedded shell spans |w| ≤ ε.",
         visible: (c) => c.bypass!.obstacle === "embedded",
       },
       {
         key: "height",
         label: "Route height H",
-        help: "From 0 to 20. H > ε clears the embedded shell; equality is contact. A radial 4D shell still blocks the route.",
+        help: tiered(
+          "From 0 to 20; H > ε clears the embedded shell.",
+          "At H = ε the route touches it. No height clears the radial 4D shell.",
+        ),
       },
       ...["x", "y", "z"].map((axis, index) => ({
         key: "outside" as const,
         index,
         group: "Outside point",
         label: `Outside point ${axis}`,
-        help: "Each coordinate is within ±20. The point's radius must exceed b and be at most 40; it stays fixed throughout traversal.",
+        help: tiered(
+          "From −20 to 20.",
+          "The point's radius must exceed b and be at most 40.",
+        ),
       })),
       {
         key: "position",
         label: "Route position s",
-        help: "From 0 to 1. Equal thirds traverse the three linear legs; the exact corners occur at 1/3 and 2/3. The full route is checked at every position.",
+        help: tiered(
+          "From 0 to 1, outside point to origin.",
+          "Each of the three legs takes a third, so the corners fall at 1/3 and 2/3.",
+        ),
       },
       {
         key: "w1",
         label: "First comparison w",
-        help: "Within ±20. q₁ = (a/2, 0, 0, w₁) and q₂ share xyz; their fourth coordinates determine their 4D separation.",
+        help: "Within ±20; the w of q₁ = (a/2, 0, 0, w₁).",
       },
       {
         key: "w2",
         label: "Second comparison w",
-        help: "Within ±20. q₂ = (a/2, 0, 0, w₂). Their XYZ shadows coincide even when their actual positions differ.",
+        help: "Within ±20; the w of q₂, which shares q₁'s xyz.",
       },
     ],
     choices: [
       {
         key: "obstacle",
         label: "Obstacle",
-        help: "Embedded shell: a ≤ |p| ≤ b and |w| ≤ ε. Radial 4D shell: a ≤ |q| ≤ b, which every outside-to-origin path must meet.",
+        help: tiered(
+          "An embedded 3D wall, or a 4D shell every route must cross.",
+          "Embedded: a ≤ |p| ≤ b and |w| ≤ ε. Radial: a ≤ |q| ≤ b.",
+        ),
         values: [
           { value: "embedded", label: "Embedded 3D shell" },
           { value: "radial", label: "Radial 4D shell" },
@@ -662,12 +681,12 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         value: "route",
         label: "Traverse route",
-        help: "Moves from the outside point to the origin, each leg taking a third of the progress; both views show the same point. Stop restores the entered position.",
+        help: "Moves from the outside point to the origin, a third of the time on each leg.",
       },
       {
         value: "return",
         label: "Return along route",
-        help: "Reverse the same route from the origin to the outside point. Height and shell parameters stay fixed; Stop restores the entered route position.",
+        help: "Runs the same route back, from the origin to the outside point.",
       },
     ],
   },
@@ -710,13 +729,16 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       { key: "samples", label: "Arc samples", min: 8, max: 256 },
     ],
     countNote:
-      "Arc samples subdivide each full circle; exact window crossings are added. A study may emit at most 65,536 points: latitudes × circles per latitude × (samples + 2), plus the window guides. Reduce counts if the budget is exceeded.",
+      "Arc samples divide each full circle. A study draws at most 65,536 points; reduce counts if it needs more.",
     choicesFirst: true,
     choices: [
       {
         key: "family",
         label: "Weave family",
-        help: "Clifford tori: fixed-u and fixed-v circles on each latitude torus. Hopf fibers: great circles (e^{it}z₁, e^{it}z₂) spaced evenly in phase around each latitude.",
+        help: tiered(
+          "Which circles to draw on each latitude torus.",
+          "Clifford tori draw fixed-u and fixed-v circles. Hopf fibers draw great circles (e^{it}z₁, e^{it}z₂), spaced evenly in phase.",
+        ),
         values: [
           { value: "tori", label: "Clifford tori" },
           { value: "fibers", label: "Hopf fibers" },
@@ -728,25 +750,34 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         key: "alpha",
         label: "Central latitude α",
         help: tiered(
-          "Radians. Every latitude α ± spread/2 must lie within 0 and π/2 (pi/2).",
-          "At 0 or π/2 a torus collapses to one circle; pi/4 gives the Clifford torus, with equal radii.",
+          "Radians, from 0 to π/2 (pi/2).",
+          "Every latitude α ± spread/2 must stay within 0 and π/2. At 0 or π/2 a torus collapses to one circle; pi/4 gives the Clifford torus.",
         ),
       },
       {
         key: "spread",
         label: "Latitude spread",
-        help: "Radians from 0 to π/2 between the first and last latitude, positive when there is more than one. A single latitude ignores spread.",
+        help: tiered(
+          "Radians from first to last latitude, 0 to π/2.",
+          "It must be positive when there is more than one latitude; a single latitude ignores it.",
+        ),
       },
       {
         key: "alphaFrom",
         label: "Latitude start",
-        help: "Radians. The first central α for Sweep latitudes; the whole family must stay within 0 and π/2 here too.",
+        help: tiered(
+          "Radians; α where Sweep latitudes begins.",
+          "Every latitude α ± spread/2 must stay within 0 and π/2.",
+        ),
         endpoint: true,
       },
       {
         key: "alphaTo",
         label: "Latitude end",
-        help: "Radians. The final central α for Sweep latitudes; the whole family must stay within 0 and π/2 here too.",
+        help: tiered(
+          "Radians; α where Sweep latitudes ends.",
+          "Every latitude α ± spread/2 must stay within 0 and π/2.",
+        ),
         endpoint: true,
       },
     ],
@@ -825,8 +856,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         value: "latitude",
         label: "Sweep latitudes",
         help: tiered(
-          "Moves the central α from Latitude start to Latitude end, with spread and rotation fixed. Stop restores your α.",
-          "A latitude reaching 0 or π/2 collapses to one circle.",
+          "Moves the central α from Latitude start to Latitude end.",
+          "Spread and rotation stay fixed. A latitude reaching 0 or π/2 collapses to one circle.",
         ),
       },
     ],
