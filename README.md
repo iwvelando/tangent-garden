@@ -45,7 +45,7 @@ make install
 make dev
 ```
 
-Open the localhost URL printed by Vite. To try the app on a phone or tablet, run `make dev-lan` instead and open the Network URL it prints from a device on the same network; it serves to anything that can reach your machine, so use it only on a network you trust. Browsers give plain-HTTP addresses other than localhost no secure context, so animation export (which needs the video encoder) may be unavailable there. Go changes require `make wasm` and a browser refresh; frontend changes reload automatically. Native Go tests need no npm dependencies. On Windows, use WSL or another environment providing Make and a POSIX shell.
+Open the localhost URL printed by Vite. To try the app on a phone or tablet, run `make dev-lan` instead and open the Network URL it prints from a device on the same network; it serves to anything that can reach your machine, so use it only on a network you trust. It serves HTTPS with a self-signed certificate, so the device warns once before opening the page: a plain-HTTP address other than localhost is no secure context, where Safari runs the app several times slower and browsers withhold the video encoder that MP4 export needs. Go changes require `make wasm` and a browser refresh; frontend changes reload automatically. Native Go tests need no npm dependencies. On Windows, use WSL or another environment providing Make and a POSIX shell.
 
 ## Verify and contribute
 
