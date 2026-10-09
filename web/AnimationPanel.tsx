@@ -1199,8 +1199,8 @@ export function AnimationPanel({
             </button>
             <p className="hint">
               Export renders every frame in your browser with the current theme,
-              layers and camera, and can take longer than playback. Up to 7,200
-              frames or 256 MiB.
+              layers, probe and camera, and can take longer than playback. Up to
+              7,200 frames or 256 MiB.
             </p>
           </details>
         </fieldset>

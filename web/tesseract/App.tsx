@@ -951,7 +951,10 @@ export default function TesseractApp({
                     {curved && (
                       <Field
                         label="Selected section"
-                        help="Which section is drawn stronger, counted in slice order."
+                        help={tiered(
+                          "Which section is drawn stronger, counted in slice order.",
+                          "It stays the same through the passage and in exports.",
+                        )}
                       >
                         <input
                           type="number"

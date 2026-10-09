@@ -125,11 +125,11 @@ const highlights: Partial<Record<Config["kind"], Highlight>> = {
   inversion: { name: "the segment to its image", lines: toDerived },
   rolling: { name: "the arm to the traced point", lines: toDerived },
   pedal: {
-    name: "the perpendicular from the pole",
+    name: "its tangent's foot and the pole's perpendicular",
     lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
   contrapedal: {
-    name: "the perpendicular from the pole",
+    name: "its normal's foot and the pole's perpendicular",
     lines: (at, c) => [...toDerived(at, c), ...segment(c.pole, at.derived)],
   },
   orthotomic: {

@@ -1926,9 +1926,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                       </div>
                       <p className="note">
                         On the left, the rolling curve's left side faces the
-                        base's left; on the right, the base's right. A closed
-                        rolling curve wraps around; an open one stops at its end
-                        or a cusp. Overlaps are part of the roulette.
+                        base's left; on the right, the base's right. For a
+                        counterclockwise closed curve its left is its inside. A
+                        closed rolling curve wraps around; an open one stops at
+                        its end or a cusp. Overlaps are part of the roulette.
                       </p>
                     </>
                   ) : (

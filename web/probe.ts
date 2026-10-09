@@ -115,9 +115,6 @@ export function plotScale(
 // step to draw, or why it is away. Other animations that keep the study
 // fixed draw it throughout.
 export const unreached = "The drawing has not reached the probe yet.";
-// Help's account of the probe in those animations.
-export const fixedAnimationsHelp =
-  "Every other animation draws it where you put it, a reveal only once its drawing reaches the point, and still images include it.";
 export const revealedProbe = (step: number, sample: number, last: number) =>
   sample <= last ? step : unreached;
 

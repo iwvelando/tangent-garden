@@ -232,7 +232,7 @@ const curvedCommon = {
     "All slices share xyz coordinates; a single slice ignores spread.",
   ),
   colorNote: () =>
-    "Each numbered section has its own colour and h in the key; negative h is dashed, nonnegative h solid. The selected section is drawn stronger, and dragging orbits the 3D drawing.",
+    "Each numbered section has its own color and h in the key; negative h is dashed, nonnegative h solid. The selected section is drawn stronger, and dragging orbits the 3D drawing.",
   limitations:
     "axis-aligned finite sections; representative boundary circles only; no interior or fourth-coordinate projection",
 };
@@ -729,7 +729,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       { key: "samples", label: "Arc samples", min: 8, max: 256 },
     ],
     countNote:
-      "Arc samples divide each full circle. A study draws at most 65,536 points; reduce counts if it needs more.",
+      "Arc samples divide each full circle. A study draws at most 65,536 points: latitudes × circles per latitude × (samples + 2), plus the window guides.",
     choicesFirst: true,
     choices: [
       {

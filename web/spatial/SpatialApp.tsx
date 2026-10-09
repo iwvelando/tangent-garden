@@ -1102,7 +1102,7 @@ export default function SpatialApp({
               `Centre ${first}`,
               config.rays.receiver.c1,
               (c1) => setReceiver((r) => ({ ...r, c1 })),
-              "The window's centre on the plane, each coordinate within ±100000.",
+              "The window's center on the plane, each coordinate within ±100000.",
             )}
             {vector(`Centre ${second}`, config.rays.receiver.c2, (c2) =>
               setReceiver((r) => ({ ...r, c2 })),
@@ -3360,7 +3360,7 @@ export default function SpatialApp({
                   </Field>
                   {mirroring ? (
                     <SamplingNote brief="Positions, normals, rays and their derivatives come from each patch’s exact derivatives at every grid sample.">
-                      Caustic points are the outgoing wavefront&rsquo;s centres
+                      Caustic points are the outgoing wavefront&rsquo;s centers
                       of curvature; beyond 100 surface radii they are treated as
                       at infinity. A caustic is never joined through infinity,
                       past the edge of the light, or across its own cusps. A
@@ -3371,7 +3371,7 @@ export default function SpatialApp({
                     <SamplingNote brief="Positions, normals and principal curvatures come from each patch’s exact derivatives at every grid sample.">
                       Where X_u × X_v vanishes the chart is singular and has no
                       normal. A focal sheet is never joined through infinity;
-                      centres beyond 100 surface radii are treated as at
+                      centers beyond 100 surface radii are treated as at
                       infinity.
                     </SamplingNote>
                   )}

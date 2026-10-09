@@ -491,7 +491,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "The patch has no point here.",
     unknownBranch: "κ₂ is",
     unknown: "where its derivatives are unstable",
-    help: "It moves between the patch's grid samples. Curvatures are numbered κ₁ ≥ κ₂ with the chosen normal and use A = −dn, so a sphere with its outward normal has κ = −1/R.",
+    help: "It moves between the patch's grid samples. Curvatures are numbered κ₁ ≥ κ₂ with the chosen normal.",
   },
   offset: {
     ...curvatureWords,
@@ -520,7 +520,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     unknownBranch: "both curvatures are",
     unknown: "where its derivatives overflow",
     singular: "Singular here: no tangent plane, as on a cuspidal edge.",
-    help: "Its normal is the patch's principal direction eᵢ, oriented continuously along u, and its curvatures need the patch's third derivatives. A ridge of the patch gives a cuspidal edge, an umbilic joins the two sheets, and where κᵢ = 0 it is at infinity and has no point.",
+    help: "Its normal is the patch's principal direction eᵢ, oriented continuously along u; its curvatures need third derivatives. A ridge gives a cuspidal edge, an umbilic joins the sheets, and where κᵢ = 0 it is at infinity and has no point.",
   },
   canal: {
     ...curvatureWords,
@@ -533,7 +533,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "No surface here: no real contact circle at this t.",
     unknownBranch: "κ across it is",
     unknown: "where its derivatives are unstable",
-    help: `It moves between the mesh rings along t ${rows} and 24 turns around each contact circle, from θ₀. Around the circle the curvature is −1/R, centred on the curve; across it, the other has its own centre.`,
+    help: `It moves between the mesh rings along t ${rows} and 24 turns around each contact circle, from θ₀. Around the circle the curvature is −1/R, centered on the curve; across it, the other has its own center.`,
   },
   developable: {
     ...ruledTerms,
@@ -542,7 +542,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     sliders: ["Along t", "Across the ruling"],
     missing: "No surface here: the curve has no regular point at this t.",
     unknown: "where the curve's third derivative is unstable",
-    help: `It moves between rows along t ${rows} and 24 points along each ruling, at u = ±L·k/12, leaving out the edge of regression u = 0. The normal is ±B, the curve's binormal. Along the ruling the curvature is 0; across it, τ/(κ|u|).`,
+    help: `It moves between rows along t ${rows} and 24 points per ruling, u = ±L·k/12, skipping the edge of regression u = 0. The normal is ±B, the binormal. Along the ruling κ = 0; across it, τ/(κ|u|).`,
   },
   framed: {
     ...ruledTerms,
@@ -552,7 +552,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "No ribbon here: the frame is undefined at this t.",
     unknown:
       "where the curve's third derivative, or a Frenet frame's τ′, is unstable",
-    help: `It moves between rows along t ${rows} and 25 points across each cross-line, from u = −w to w. Curvatures come from how the frame turns. The normal is D × S_t. A ribbon is ruled, so K ≤ 0; untwisted and rotation-minimizing, K = 0.`,
+    help: `It moves between rows along t ${rows} and 25 points across each cross-line, u = −w to w. The normal is D × S_t. Ruled, it has K ≤ 0, and K = 0 untwisted and rotation-minimizing.`,
   },
   ruled: {
     ...ruledTerms,
@@ -561,7 +561,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     sliders: ["Along t", "Along the ruling"],
     missing: "No surface here: the partner is missing at this t.",
     unknown: "where a thread's second derivative is unstable",
-    help: `It moves between rows along t ${rows} and 25 points along each ruling, from the curve (u = 0) to its partner (u = 1). The normal is S_t × S_u, and K ≤ 0; where the threads meet there is no normal.`,
+    help: `It moves between rows along t ${rows} and 25 points along each ruling, from the curve (u = 0) to its partner (u = 1). The normal is S_t × S_u, and K ≤ 0.`,
   },
   // The light leaving a mirror or interface, whose name surfaceTerms
   // supplies. Its help is the whole of the switch's help (see
@@ -636,11 +636,11 @@ export function describeHelp(c: SpatialConfig) {
   return c.format === "rays"
     ? tiered(
         `What the probe describes: the light leaving the ${medium(c)}, or the ${medium(c)} itself, at the same sample.`,
-        `The light: the incident and outgoing rays, and the outgoing wavefront's principal directions, curvatures and foci, which lie on the caustics. The ${medium(c)}: its own principal directions, curvatures and centres.`,
+        `The light: the incident and outgoing rays, and the outgoing wavefront's principal directions, curvatures and foci, which lie on the caustics. The ${medium(c)}: its own principal directions, curvatures and centers.`,
       )
     : tiered(
         "What the probe describes: the curve or the surface, at the same place along t.",
-        `The curve: its Frenet frame, curvature and torsion. The surface: the ${surfaceTerms(c, "surface").surface}'s principal directions, curvatures and centres.`,
+        `The curve: its Frenet frame, curvature and torsion. The surface: the ${surfaceTerms(c, "surface").surface}'s principal directions, curvatures and centers.`,
       );
 }
 
@@ -672,8 +672,8 @@ export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
     );
   }
   return tiered(
-    `Describes the ${t.surface} at a point: its normal, principal directions and curvature circles.`,
-    `${t.help} Centres beyond 100 study radii are at infinity, with no circle.`,
+    `Describes the ${t.surface} at a point: its normal, principal directions and curvatures (A = −dn), with circles.`,
+    `${t.help} A sphere with outward normal has κ = −1/R; centers beyond 100 study radii are not drawn.`,
   );
 }
 

@@ -59,7 +59,7 @@ export const surfaceShape: Record<
     {
       key: "a",
       label: "Major radius R",
-      help: "Axis to tube centre, 0–100000; below r it crosses its axis.",
+      help: "Axis to tube center, 0–100000; below r it crosses its axis.",
     },
     {
       key: "b",
