@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { choosePreset } from "./helpers";
+import { helpText } from "../web/help";
 import {
   probeBatches,
   probeIndex,
@@ -439,7 +440,7 @@ test("the support table names each construction's highlight", () => {
   expect(probeSupport(fielded).highlight).toMatch(/timeline/);
   fielded.field.seeds = fielded.field.seeds.slice(0, 1);
   expect(probeSupport(fielded).highlight).toBeNull();
-  expect(probeHelp(config("none", "harmonic"))).toMatch(
+  expect(helpText(probeHelp(config("none", "harmonic")))).toMatch(
     /chain of turning vectors/,
   );
 });
@@ -456,7 +457,7 @@ test("a curve is straight only when every known curvature is zero", () => {
 
 test("the help says the probe describes the base curve", () => {
   for (const c of [config("canal"), config("developable"), config("none")])
-    expect(probeHelp(c)).toMatch(/the curve itself, not the surface/);
+    expect(helpText(probeHelp(c))).toMatch(/the curve itself, not the surface/);
 });
 
 test("the readout reports the sample's parameter and marks undefined values", () => {

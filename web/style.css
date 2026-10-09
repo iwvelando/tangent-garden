@@ -602,6 +602,21 @@ details p,
 .hint[hidden] {
   display: none;
 }
+/* A tiered help: its essentials, then its more beneath them. */
+.hint > p {
+  margin: 0;
+}
+.hint > .hint-more {
+  margin-top: 6px;
+}
+.hint .hint-more[hidden] {
+  display: none;
+}
+.help-more {
+  font-size: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+}
 .layer-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

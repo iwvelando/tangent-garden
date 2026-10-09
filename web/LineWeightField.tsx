@@ -1,4 +1,5 @@
 import { Field } from "./Field";
+import type { Help } from "./help";
 import { lineWeights, svgWeightHelp, type LineWeight } from "./line-weight";
 
 // The line weight's control, in every notebook (line-weight.ts).
@@ -11,7 +12,7 @@ export function LineWeightField({
   value: LineWeight;
   onChange: (weight: LineWeight) => void;
   label?: string;
-  help?: string;
+  help?: Help;
 }) {
   return (
     <Field label={label} help={help}>

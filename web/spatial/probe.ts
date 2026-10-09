@@ -5,6 +5,7 @@
 // Go (engine3.DiagnosticsResult and engine3.ProbePoint for the curve,
 // engine3.SurfaceDiagnostics for a surface) or the study's own per-sample
 // arrays; this module only selects and draws them.
+import { tiered } from "../help";
 import { harmonicChain, harmonicEllipses, type Batch } from "./scene";
 import {
   betweenMotionHelp,
@@ -321,13 +322,14 @@ export function probeTarget(c: SpatialConfig, p: Probe): ProbeTarget {
 // and how it is placed: snapped to samples, or between them.
 export function probeHelp(c: SpatialConfig, between = false) {
   const { highlight } = probeSupport(c);
-  return `Describes the curve itself, not the surface or curves built on it. ${
-    between
-      ? "Stands at any t of the domain, where Go evaluates the curve's derivatives as it does at every sample (at a sample, the values are the sample's own), and moving it asks Go for that one point, which keeps the study it last computed; the first place after the study changes computes the study once more, which takes longer for many samples. It"
-      : "Moves between the curve's samples (more samples give finer steps) and"
-  } shows the Frenet frame there: tangent T, principal normal N and binormal B, with the osculating circle of radius 1/κ in the plane of T and N${
-    highlight ? `, and ${highlight}` : ""
-  }. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it when they move it along the curve ("Move the probe along the curve") or vary parameters, where Probe chooses whether it stays at its t, keeps its share of the curve's length, or moves along the curve. ${fixedAnimationsHelp}`;
+  return tiered(
+    "Describes the curve itself, not the surface or curves built on it: its Frenet frame and osculating circle.",
+    `${highlight ? `It also shows ${highlight}. ` : ""}${
+      between
+        ? "It stands at any t of the domain, evaluated there as at every sample; at a sample, the values are the sample's own. Each move evaluates just that point; the first move after the study changes recomputes the study, which takes longer for many samples."
+        : "It moves between the curve's samples; more samples give finer steps."
+    } The frame is the tangent T, principal normal N and binormal B; the osculating circle, of radius 1/κ, lies in the plane of T and N. Where the curvature vanishes, N, B, τ and the circle are undefined and not drawn. Animations and their exports show it when they move it along the curve ("Move the probe along the curve") or vary parameters, where Probe chooses whether it stays at its t, keeps its share of the curve's length, or moves along the curve. ${fixedAnimationsHelp}`,
+  );
 }
 
 const vertices = (points: Vec3[]) =>
@@ -343,8 +345,10 @@ const along = (p: Vec3, d: Vec3, length: number) => [
 ];
 
 // Help for standing between samples.
-export const betweenHelp =
-  "Let the probe stand at any t, not only at the nearest sample: Go describes the curve and the highlighted construction at that t, exactly. A trajectory or a pursuit, which Go integrates step by step, snaps to its samples regardless.";
+export const betweenHelp = tiered(
+  "Lets the probe stand at any t, not only at a sample, describing the curve exactly there.",
+  "The highlighted construction is described at that t too. A trajectory or a pursuit, integrated step by step, snaps to its samples regardless.",
+);
 
 // The curve probe's drawing at its point: the highlighted construction, the
 // osculating circle (from Go's centre, with radius 1/κ, in the plane of T
@@ -622,14 +626,23 @@ export function targetName(c: SpatialConfig, t: ProbeTarget) {
 }
 export function describeHelp(c: SpatialConfig) {
   if (c.format === "surface")
-    return `The surface: the patch's principal directions, curvatures and centers.${
-      c.surface.offset !== 0
-        ? " The offset: the same at the offset's point on the same normal, whose centers are the patch's own."
-        : ""
-    } Focal sheet 1 or 2: the same at the patch's center of κ₁ or κ₂, on the sheet of those centers, whose normal is the patch's principal direction. All stand at the same sample.`;
+    return tiered(
+      `What the probe describes: the surface, ${c.surface.offset !== 0 ? "its offset, " : ""}or a focal sheet, all at the same sample.`,
+      `The surface: the patch's principal directions, curvatures and centers.${
+        c.surface.offset !== 0
+          ? " The offset: the same at the offset's point on the same normal, whose centers are the patch's own."
+          : ""
+      } Focal sheet 1 or 2: the same at the patch's center of κ₁ or κ₂, on the sheet of those centers, whose normal is the patch's principal direction.`,
+    );
   return c.format === "rays"
-    ? `The light: the incident and outgoing rays, and the outgoing wavefront's principal directions, curvatures and foci, which lie on the caustics. The ${medium(c)}: its own principal directions, curvatures and centres. Both stand at the same sample.`
-    : `The curve: its Frenet frame, curvature and torsion. The surface: the ${surfaceTerms(c, "surface").surface}'s principal directions, curvatures and centres. Both stand at the same place along t.`;
+    ? tiered(
+        `What the probe describes: the light leaving the ${medium(c)}, or the ${medium(c)} itself, at the same sample.`,
+        `The light: the incident and outgoing rays, and the outgoing wavefront's principal directions, curvatures and foci, which lie on the caustics. The ${medium(c)}: its own principal directions, curvatures and centres.`,
+      )
+    : tiered(
+        "What the probe describes: the curve or the surface, at the same place along t.",
+        `The curve: its Frenet frame, curvature and torsion. The surface: the ${surfaceTerms(c, "surface").surface}'s principal directions, curvatures and centres.`,
+      );
 }
 
 // The probe's legend: what it can describe in the study.
@@ -650,17 +663,23 @@ export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
   const t = surfaceTerms(c, target);
   if (target === "light") {
     const m = t.surface;
-    return `Describes the light leaving the ${m} at a point: its incident ray, its outgoing ray, and the outgoing wavefront there, which is perpendicular to the ray. Moves between the ${m}'s own grid samples (more u and v samples give finer steps), the samples its caustics are found at. The wavefront's principal curvatures are numbered μ₁ ≥ μ₂, each with its direction across the ray, and each focuses the light at X + R/μ, on the caustic of the same number: a real focus ahead of the ${m} where μ > 0, a virtual one behind it where μ < 0, on the ray's extension. The readout gives each focus's signed distance 1/μ along the ray, negative for a virtual focus, and the astigmatic interval between the two. Each branch's circle of radius 1/|μ| through the point, centred on its focus, is the wavefront's normal section. Where μ₁ = μ₂ the point is stigmatic: both foci coincide and no direction is drawn. A focus beyond 100 study radii is at infinity, as on the caustics, and its circle is not drawn. θ is the angle of incidence from the ${m}'s normal${
-      c.rays.interaction === "refract"
-        ? ", and θ′ the angle of transmission"
-        : ""
-    }. The source itself, unlit points (where the light grazes the ${m} or arrives behind it)${
-      c.rays.interaction === "refract"
-        ? " and points beyond the critical angle, where the light is totally reflected and nothing is transmitted,"
-        : ""
-    } have no outgoing wavefront. Animations and their exports show it when they move it ("Move the probe along the ${m}") or vary parameters. ${fixedAnimationsHelp}`;
+    return tiered(
+      `Describes the light leaving the ${m} at a point: its incident and outgoing rays, and the outgoing wavefront's curvatures and foci.`,
+      `The wavefront is perpendicular to the outgoing ray. The probe moves between the ${m}'s own grid samples (more u and v samples give finer steps), the samples its caustics are found at. The wavefront's principal curvatures are numbered μ₁ ≥ μ₂, each with its direction across the ray, and each focuses the light at X + R/μ, on the caustic of the same number: a real focus ahead of the ${m} where μ > 0, a virtual one behind it where μ < 0, on the ray's extension. The readout gives each focus's signed distance 1/μ along the ray, negative for a virtual focus, and the astigmatic interval between the two. Each branch's circle of radius 1/|μ| through the point, centred on its focus, is the wavefront's normal section. Where μ₁ = μ₂ the point is stigmatic: both foci coincide and no direction is drawn. A focus beyond 100 study radii is at infinity, as on the caustics, and its circle is not drawn. θ is the angle of incidence from the ${m}'s normal${
+        c.rays.interaction === "refract"
+          ? ", and θ′ the angle of transmission"
+          : ""
+      }. The source itself, unlit points (where the light grazes the ${m} or arrives behind it)${
+        c.rays.interaction === "refract"
+          ? " and points beyond the critical angle, where the light is totally reflected and nothing is transmitted,"
+          : ""
+      } have no outgoing wavefront. Animations and their exports show it when they move it ("Move the probe along the ${m}") or vary parameters. ${fixedAnimationsHelp}`,
+    );
   }
-  return `Describes the ${t.surface} at a point: its normal, its two principal directions, and their normal-section circles of radius 1/|κ| through the point, centred on the focal points (the centres of curvature) on the normal line. ${t.help}. Curvatures use A = −dn, so a sphere with its outward normal has κ = −1/R. Where a centre lies beyond 100 study radii it is at infinity and its circle is not drawn; at an umbilic every direction is principal and none is drawn; where the surface is singular there is no normal. Animations and their exports show it when they move it ("Move the probe along the ${t.surface}") or vary parameters. ${fixedAnimationsHelp}`;
+  return tiered(
+    `Describes the ${t.surface} at a point: its normal, its two principal directions, and their curvature circles, centred on the focal points.`,
+    `Each circle is the normal section of radius 1/|κ| through the point, centred on its centre of curvature on the normal line. ${t.help}. Curvatures use A = −dn, so a sphere with its outward normal has κ = −1/R. Where a centre lies beyond 100 study radii it is at infinity and its circle is not drawn; at an umbilic every direction is principal and none is drawn; where the surface is singular there is no normal. Animations and their exports show it when they move it ("Move the probe along the ${t.surface}") or vary parameters. ${fixedAnimationsHelp}`,
+  );
 }
 
 // The grid sample at a probe's fractions: the nearest row, and the nearest
@@ -945,7 +964,10 @@ export function probeMotionHelp(
   if (between) return betweenMotionHelp;
   if (gridded(target)) {
     const t = surfaceTerms(c, target);
-    return `Where the probe stands in each frame while the parameters vary. Stays: at the same share of the ${t.surface}'s rows and columns as the point you chose. Moves along: from its first ${t.along} to its last as the animation plays, at the column you chose. It snaps to each frame's own grid; the readout and plot describe that frame.`;
+    return tiered(
+      `Where the probe stands while the parameters vary: at its row and column, or moving along the ${t.surface}.`,
+      `Stays: at the same share of the ${t.surface}'s rows and columns as the point you chose. Moves along: from its first ${t.along} to its last as the animation plays, at the column you chose. It snaps to each frame's own grid; the readout and plot describe that frame.`,
+    );
   }
   return curveProbeMotionHelp;
 }

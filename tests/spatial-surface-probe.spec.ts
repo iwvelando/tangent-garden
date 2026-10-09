@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { choosePreset } from "./helpers";
+import { helpText } from "../web/help";
 import {
   defaultProbe,
   describeHelp,
@@ -179,15 +180,19 @@ test("each surface names its parameters, branches and limits", () => {
     "κ across it",
   ]);
   // Help states the limits the engine enforces.
-  const help = surfaceProbeHelp(config("developable"), "surface");
+  const help = helpText(surfaceProbeHelp(config("developable"), "surface"));
   expect(help).toMatch(/edge of regression/);
   expect(help).toMatch(/u = ±L·k\/12/);
   expect(help).toMatch(/binormal/);
-  expect(surfaceProbeHelp(config("framed"), "surface")).toMatch(
+  expect(helpText(surfaceProbeHelp(config("framed"), "surface"))).toMatch(
     /25 points across/,
   );
-  expect(surfaceProbeHelp(config("framed"), "surface")).toMatch(/K ≤ 0/);
-  expect(surfaceProbeHelp(config("ruled"), "surface")).toMatch(/S_t × S_u/);
+  expect(helpText(surfaceProbeHelp(config("framed"), "surface"))).toMatch(
+    /K ≤ 0/,
+  );
+  expect(helpText(surfaceProbeHelp(config("ruled"), "surface"))).toMatch(
+    /S_t × S_u/,
+  );
   for (const c of ["developable", "framed", "ruled", "canal"] as const)
     expect(surfaceTerms(config(c), "surface").unknown).toMatch(/unstable/);
 });
@@ -1358,8 +1363,10 @@ test("a mirror's probe describes the light or the mirror, in their own words", (
   expect(probeLegend(config("canal"), "curve")).toBe(
     "Probe the curve or surface",
   );
-  expect(describeHelp(mirror)).toMatch(/^The light: .* The mirror: /);
-  expect(describeHelp(config("canal"))).toMatch(/canal surface's principal/);
+  expect(helpText(describeHelp(mirror))).toMatch(/The light: .* The mirror: /);
+  expect(helpText(describeHelp(config("canal")))).toMatch(
+    /canal surface's principal/,
+  );
   const light = surfaceTerms(glass, "light");
   expect(light.surface).toBe("interface");
   expect(light.switch).toBe("Wavefront, foci & rays at a point");
@@ -1370,8 +1377,8 @@ test("a mirror's probe describes the light or the mirror, in their own words", (
   expect(own.branches).toEqual(["κ₁", "κ₂"]);
   // Help states what the engine does: θ′ and the critical angle only where
   // light is transmitted.
-  const reflecting = surfaceProbeHelp(mirror, "light"),
-    refracting = surfaceProbeHelp(glass, "light");
+  const reflecting = helpText(surfaceProbeHelp(mirror, "light")),
+    refracting = helpText(surfaceProbeHelp(glass, "light"));
   expect(reflecting).toMatch(/X \+ R\/μ/);
   expect(reflecting).toMatch(/real focus ahead of the mirror where μ > 0/);
   expect(reflecting).toMatch(/negative for a virtual focus/);
@@ -1379,7 +1386,7 @@ test("a mirror's probe describes the light or the mirror, in their own words", (
   expect(refracting).toMatch(/θ′ the angle of transmission/);
   expect(refracting).toMatch(/beyond the critical angle/);
   expect(refracting).toMatch(/Move the probe along the interface/);
-  expect(surfaceProbeHelp(mirror, "mirror")).toMatch(
+  expect(helpText(surfaceProbeHelp(mirror, "mirror"))).toMatch(
     /^Describes the mirror at a point/,
   );
 });
@@ -1444,8 +1451,8 @@ test("a patch with an offset probes the patch or its offset, in their own words"
   expect(probeLegend(patchStudy(0), "surface")).toBe(
     "Probe the surface or its focal sheets",
   );
-  expect(describeHelp(c)).toMatch(/^The surface: .* The offset: /);
-  expect(describeHelp(patchStudy(0))).not.toMatch(/offset/);
+  expect(helpText(describeHelp(c))).toMatch(/The surface: .* The offset: /);
+  expect(helpText(describeHelp(patchStudy(0)))).not.toMatch(/offset/);
   const own = surfaceTerms(c, "offset");
   expect(own.surface).toBe("offset surface");
   expect(own.switch).toBe("Principal curvatures & centres at a point");
@@ -1454,7 +1461,7 @@ test("a patch with an offset probes the patch or its offset, in their own words"
   expect(surfaceTerms(c, "surface").surface).toBe("surface");
   // Help states the engine's rule: curvatures κᵢ/(1 − dκᵢ) numbered as
   // the patch's, the patch's centers, the cuspidal edge and the fold.
-  const help = surfaceProbeHelp(c, "offset");
+  const help = helpText(surfaceProbeHelp(c, "offset"));
   expect(help).toMatch(/^Describes the offset surface at a point/);
   expect(help).toMatch(/κᵢ\/\(1 − dκᵢ\)/);
   expect(help).toMatch(/focal sheet of the same number/);
@@ -1556,7 +1563,7 @@ test("a patch probes its focal sheets, each in its own words", () => {
   expect(probeLegend(c, "focal2")).toBe(
     "Probe the surface or its focal sheets",
   );
-  expect(describeHelp(c)).toMatch(/Focal sheet 1 or 2: /);
+  expect(helpText(describeHelp(c))).toMatch(/Focal sheet 1 or 2: /);
   for (const [target, name] of [
     ["focal1", "first focal sheet"],
     ["focal2", "second focal sheet"],
@@ -1573,7 +1580,7 @@ test("a patch probes its focal sheets, each in its own words", () => {
     // principal direction, oriented along u; curvatures need the third
     // derivatives; ridges give cuspidal edges, umbilics join the sheets,
     // and a zero curvature puts the sheet at infinity.
-    const help = surfaceProbeHelp(c, target);
+    const help = helpText(surfaceProbeHelp(c, target));
     expect(help).toMatch(new RegExp(`^Describes the ${name} at a point`));
     expect(help).toMatch(
       /principal direction eᵢ, oriented continuously along u/,

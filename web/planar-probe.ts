@@ -4,6 +4,7 @@
 // the samples, engine.ProbePoint between them) or the study's own
 // per-sample arrays; this module only selects them. The
 // notebook-independent parts are in probe.ts.
+import { tiered } from "./help";
 import { probeIndex } from "./probe";
 export { betweenMotionHelp } from "./probe";
 import {
@@ -151,11 +152,18 @@ export function probeHelp(
   between = false,
 ) {
   const h = result ? probeHighlight(config, result) : highlights[config.kind];
-  if (between)
-    return `Describe the base curve at any point of its domain: its unit tangent T and normal N (T turned a quarter turn to the left), its osculating circle, which shares its tangent and curvature there, and the circle's center, the center of curvature${h ? `, with ${h.name}` : ""}. The signed curvature κ = (x′y″ − y′x″)/|r′|³ is positive where the curve turns left and negative where it turns right; the radius of curvature is 1/|κ|. The arc length s is measured along the drawn curve from its first sample by Simpson's rule, with nothing counted across a gap, and carried on from the sample before by the same rule. Go evaluates them at the probe's own t from the curve's derivatives there, as it does at every sample; at a sample they are the sample's own. Moving the probe asks Go for that one point, which keeps the study it last computed, so a move is quick; the first place after the study changes computes the study once more, which takes longer for many samples. Where κ is 0 (flat) or the center lies beyond 100 radii of the study, no circle is drawn; where the second derivative is unstable, κ is unknown.`;
-  return `Describe the base curve at one of its samples: its unit tangent T and normal N (T turned a quarter turn to the left), its osculating circle, which shares its tangent and curvature there, and the circle's center, the center of curvature${h ? `, with ${h.name}` : ""}. The signed curvature κ = (x′y″ − y′x″)/|r′|³ is positive where the curve turns left and negative where it turns right; the radius of curvature is 1/|κ|. The arc length s is measured along the drawn curve from its first sample by Simpson's rule, with nothing counted across a gap. Go computes them from the curve's own derivatives at every sample; the probe snaps to samples, so moving it never recomputes. Where κ is 0 (flat) or the center lies beyond 100 radii of the study, no circle is drawn; where the second derivative is unstable, κ is unknown.`;
+  const brief = `Describes the base curve at ${between ? "any t of its domain" : "one of its samples"}: its tangent T, normal N and osculating circle${h ? `, with ${h.name}` : ""}.`;
+  const source = between
+    ? "Values come from the curve's derivatives at the probe's own t, and at a sample are the sample's own. Each move evaluates just that point; the first move after the study changes recomputes the study, which takes longer for many samples."
+    : "Values come from the curve's own derivatives at every sample; the probe snaps to samples, so moving it never recomputes.";
+  return tiered(
+    brief,
+    `N is T turned a quarter turn to the left. The osculating circle shares the curve's tangent and curvature, and its center is the center of curvature. The signed curvature κ = (x′y″ − y′x″)/|r′|³ is positive where the curve turns left and negative where it turns right; the radius of curvature is 1/|κ|. The arc length s runs along the drawn curve from its first sample by Simpson's rule, with nothing counted across a gap${between ? ", and carries on from the sample before by the same rule" : ""}. ${source} Where κ is 0 (flat) or the center lies beyond 100 radii of the study, no circle is drawn; where the second derivative is unstable, κ is unknown.`,
+  );
 }
 
 // Help for standing between samples.
-export const betweenHelp =
-  "Let the probe stand at any t, not only at the nearest sample: Go describes the curve and the highlighted construction at that t, exactly. A chase or a trajectory, which Go integrates step by step, snaps to its samples regardless.";
+export const betweenHelp = tiered(
+  "Lets the probe stand at any t, not only at a sample, describing the curve exactly there.",
+  "The highlighted construction is described at that t too. A chase or a trajectory, integrated step by step, snaps to its samples regardless.",
+);

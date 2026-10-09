@@ -11,6 +11,7 @@
 // the light starts, the interaction point, and the reflected, refracted or
 // (beyond the critical angle) totally reflected segment, as drawn. Its
 // virtual extension behind the surface is never followed.
+import { tiered } from "../help";
 import type { Bounds3, SpatialConfig, SpatialResult, Vec3 } from "./types";
 import type { Timeline } from "./raytrace";
 import type { View } from "./scene";
@@ -37,11 +38,19 @@ export const rideFields = {
   turn: "Turn window",
 };
 export const rideHelp = {
-  camera:
-    "Rides one representative ray in perspective, a little behind the head of its light: down the incident ray, turning at the surface, then along the reflected, refracted or totally reflected ray as drawn, through its caustic points, until its head reaches the ray's drawn end. It never follows a virtual ray behind the surface. Up starts toward the side the ray turns to, so the turn is a pitch with no roll. The lens spans 60° across the page's shorter side.",
+  camera: tiered(
+    "Rides one ray in perspective, just behind its light: down the incident ray, then along the outgoing ray to its drawn end.",
+    "It turns at the surface onto the reflected, refracted or totally reflected ray as drawn, through its caustic points, and never follows a virtual ray behind the surface. Up starts toward the side the ray turns to, so the turn is a pitch with no roll. The lens spans 60° across the page's shorter side.",
+  ),
   ray: "The ray drawn where these parameter curves cross. A crossing the light does not reach has no ray to ride.",
-  follow: `How far behind the ray's head the camera rides, as optical path (length × refractive index) in radii of the framing sphere, more than ${rideRange[0]} and at most ${rideRange[1]}. In glass of index 1.5 the camera is 1/1.5 as far behind in length.`,
-  turn: `The optical path, in radii of the framing sphere, over which the camera turns from the incident ray to the outgoing one, centered on its own arrival at the surface, more than ${rideRange[0]} and at most ${rideRange[1]}. It turns smoothly, starting and ending at rest; a window twice the follow distance starts the turn as the ray's head reaches the surface.`,
+  follow: tiered(
+    `How far behind the ray's head the camera rides, in framing-sphere radii of optical path: more than ${rideRange[0]}, at most ${rideRange[1]}.`,
+    "Optical path is length × refractive index, so in glass of index 1.5 the camera is 1/1.5 as far behind in length.",
+  ),
+  turn: tiered(
+    `Over how much optical path the camera turns onto the outgoing ray, in framing-sphere radii: more than ${rideRange[0]}, at most ${rideRange[1]}.`,
+    "The turn is centered on the camera's own arrival at the surface, and starts and ends at rest; a window twice the follow distance starts it as the ray's head reaches the surface.",
+  ),
 };
 
 const finite = (v: Vec3 | null | undefined): v is Vec3 =>

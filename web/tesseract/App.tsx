@@ -19,6 +19,7 @@ import {
   StudyError,
   type FieldErrorTarget,
 } from "../Field";
+import type { Help } from "../help";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
 import {
   EngineClient,
@@ -283,7 +284,7 @@ export default function TesseractApp({
     label: string,
     value: number,
     change: (c: Config, n: number) => Config,
-    help?: string,
+    help?: Help<string>,
   ) => (
     <Field label={label} help={help}>
       <ScalarInput
@@ -944,7 +945,7 @@ export default function TesseractApp({
                     {curved && (
                       <Field
                         label="Selected section"
-                        help="Section numbers follow the ordered slice family. The selected outline is stronger; negative h uses dashes and nonnegative h uses solid strokes. Selection stays fixed during passage and exports."
+                        help="Picks the section drawn stronger, numbered in slice order. Negative h is dashed, nonnegative h solid; the choice holds through passage and exports."
                       >
                         <input
                           type="number"

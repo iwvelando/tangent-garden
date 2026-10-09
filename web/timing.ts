@@ -39,8 +39,11 @@ export const paceChoices: { value: Pace; label: string }[] = [
 ];
 export const onceHelp = "Plays from the start to the end, then stops.";
 export const backAndForthHelp =
-  "Plays to the end and back to the start within the duration, again and again, so any animation repeats without a jump. Exports loop forever.";
+  "Plays to the end and back within the duration, again and again, so it repeats without a jump. Exports loop forever.";
+// Fitted and following cameras' framing, in every notebook that offers them.
+export const asymptoteHelp =
+  "Framing ignores isolated points near asymptotes; use Hold current view to explore distant branches.";
 export const paceHelp: Record<Pace, string> = {
-  steady: "The motion moves at a constant rate.",
-  ease: "The motion starts and ends slowly, following a half cosine, so it eases away from its start and into its end; back and forth slows to rest at each turn.",
+  steady: "Moves at a constant rate.",
+  ease: "Starts and ends slowly, along a half cosine; back and forth also comes to rest at each turn.",
 };

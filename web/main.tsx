@@ -83,6 +83,7 @@ import {
   StudyError,
   type FieldErrorTarget,
 } from "./Field";
+import { tiered, type Help } from "./help";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
 import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
@@ -318,11 +319,14 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const indices = useDisclosure("indices");
   const diagnostics = useDisclosure("diagnostics");
   const refinable = refinesBetweenSamples(config.curve.format);
-  const samplesHelp =
-    "Whole numbers from 64 to 32,768. More samples trace the curve more finely and take longer to compute; they do not raise numerical precision on their own." +
-    (refinable
-      ? ` Refining between samples halves a sample interval, at most ${refineDepth} times, wherever the chord drawn across it strays from the curve by more than 1/5000 of the radius fitted to that curve's samples, judged at three points along it, and stops after ${refineBudget.toLocaleString("en-US")} added points per curve. It refines the curve, a derived curve it is built on, and a pedal, contrapedal, orthotomic, evolute, offset, caustic or inverted curve, each curve of an offset stack on its own, the involute, whose string length it carries on from the sample before by the same rule the samples use, a rolling circle's or curve's trace, whose distance rolled it carries on the same way, through any cusp between samples, and an envelope of lines or chords, or each branch of an envelope of circles on its own; every construction's lines, circles and rolling positions stay on the evenly spaced samples. A gap or jump it finds between samples breaks the curve and the curves built on it there; a passage of the inverted curve through the center is found the same way. Where a caustic or a chord envelope turns from real to virtual between samples, that change is placed to within 1/${2 ** refineDepth} of a sample interval, so its solid and dashed parts meet. A feature narrower than its three points can still be missed.`
-      : "");
+  const samplesBrief =
+    "Whole numbers from 64 to 32,768. More samples trace the curve more finely and take longer, without raising numerical precision.";
+  const samplesHelp = refinable
+    ? tiered(
+        samplesBrief,
+        `Refining between samples halves a sample interval, at most ${refineDepth} times, wherever the chord across it strays from the curve by more than 1/5000 of the radius fitted to that curve's samples, judged at three points along it, up to ${refineBudget.toLocaleString("en-US")} added points per curve. It refines the curve, the derived curve a construction acts on, and every curve built on them, each on its own: pedals, evolutes, offsets, caustics, inverses, involutes and roulette traces (carrying string length and distance rolled on by the same rule, through any cusp), and envelopes of lines, chords or circles. Construction lines, circles and rolling positions stay on the evenly spaced samples. A gap or jump found between samples, or the inverse's passage through the center, breaks the curves there. Where a caustic or chord envelope turns from real to virtual between samples, the change is placed to within 1/${2 ** refineDepth} of a sample interval, so its solid and dashed parts meet. A feature narrower than the three test points can still be missed.`,
+      )
+    : samplesBrief;
   const client = useRef<EngineClient | null>(null);
   const scalarJobs = useRef(new Set<Promise<void>>());
   const scalarGeneration = useRef(0);
@@ -497,7 +501,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       step?: number | string;
       min?: number;
       max?: number;
-      help?: ReactNode;
+      help?: Help;
       topic?: string;
     } = {},
   ) => (
@@ -518,7 +522,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const scalar = (
     label: ReactNode,
     path: string[],
-    options: { help?: ReactNode; topic?: string; name?: string } = {},
+    options: { help?: Help; topic?: string; name?: string } = {},
   ) => (
     <Field label={label} help={options.help} topic={options.topic}>
       <ScalarInput
@@ -675,10 +679,9 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const fourierControls = (
     <>
       <p className="note">
-        Each term is a vector of radius r (0–100,000) turning at frequency k
-        radians per unit t (within ±1,000, counterclockwise when positive), from
-        angle φ radians at t = 0. The vectors are chained from the origin in
-        this order.
+        Each term is a vector of radius r (0–100,000) turning k radians per unit
+        t (within ±1,000; positive is counterclockwise) from angle φ at t = 0.
+        The vectors chain from the origin in order.
       </p>
       {terms.map((_, i) => (
         <div
@@ -759,10 +762,9 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const pursuitControls = (
     <>
       <p className="note">
-        Each pursuer starts at (x, y) (within ±100,000) when t is at the domain
-        start and runs straight at the next one, the last at the first, at its
-        own speed v (0–100,000). The first pursuer&rsquo;s path is the curve the
-        construction uses.
+        Each pursuer starts at (x, y) (within ±100,000) and runs straight at the
+        next, the last at the first, at its own speed v (0–100,000). The first
+        pursuer&rsquo;s path is the curve the construction uses.
       </p>
       {pursuers.map((_, i) => (
         <div
@@ -818,7 +820,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       </div>
       {scalar("Capture distance ε", ["curve", "pursuit", "capture"], {
         topic: "capture distance",
-        help: "A pursuer’s direction is undefined on its target, so the chase stops, for everyone, the first time any pursuer comes this close to its own target (0–100,000). Nobody merges or changes target.",
+        help: tiered(
+          "The chase stops for everyone the first time any pursuer comes this close to its target (0–100,000).",
+          "A pursuer’s direction is undefined on its target. Nobody merges or changes target.",
+        ),
       })}
       <p className="note" data-testid="capture-note">
         {chase ? captureNote(chase, frame!.config.curve.min) : "Chasing…"}
@@ -858,11 +863,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const fieldControls = (
     <>
       <p className="note">
-        Each trajectory starts at its seed (within ±100,000) when t is at the
-        domain start and follows the field: its velocity at (x, y) at time t is
-        (dx/dt, dy/dt). Use <var>x</var>, <var>y</var>, <var>t</var>, and{" "}
-        <var>a</var>. The first seed&rsquo;s trajectory is the curve the
-        construction uses.
+        Each trajectory starts at its seed (within ±100,000) and moves with
+        velocity (dx/dt, dy/dt) at (x, y) and time t. Use <var>x</var>,{" "}
+        <var>y</var>, <var>t</var>, and <var>a</var>. The first seed&rsquo;s
+        trajectory is the curve the construction uses.
       </p>
       <Field label="dx/dt" className="equation">
         <input
@@ -919,7 +923,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       </button>
       {scalar("Escape radius R", ["curve", "field", "escape"], {
         topic: "escape radius",
-        help: "A trajectory ends the first time it leaves the circle of this radius about the origin (0–100,000), so a field that runs off to infinity stops in view. A seed outside the circle has no path.",
+        help: "A trajectory ends when it first leaves this circle about the origin (0–100,000), so a runaway field stops in view. A seed outside it has no path.",
       })}
       <p className="note" data-testid="field-note">
         {flows ? endNote(flows, frame!.config.curve.min) : "Integrating…"}
@@ -938,10 +942,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const implicitControls = (
     <>
       <p className="note">
-        The curve is every point of the window where F(x, y) equals the level c.
-        Use <var>x</var>, <var>y</var>, and <var>a</var>. It has no parameter,
-        so no construction applies; the normals show F&rsquo;s gradient,
-        pointing across the curve toward larger values.
+        The curve is every point of the window where F(x, y) = c. Use{" "}
+        <var>x</var>, <var>y</var> and <var>a</var>. It has no parameter, so no
+        construction applies; the normals show F&rsquo;s gradient, pointing
+        toward larger values.
       </p>
       <Field label="F(x, y)" className="equation">
         <input
@@ -974,7 +978,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
           min: 4,
           max: 1024,
           topic: "grid cells",
-          help: "Whole numbers from 4 to 1,024 along the window's longer side. F is sampled at the cells' corners, so a piece of the curve smaller than a cell can be missed; crossings and the curve between them are then found exactly.",
+          help: tiered(
+            "Whole numbers from 4 to 1,024 along the window's longer side. A piece of the curve smaller than a cell can be missed.",
+            "F is sampled at the cells' corners; crossings and the curve between them are then found exactly.",
+          ),
         },
       )}
       <label className="check">
@@ -1030,11 +1037,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const attractorControls = (
     <>
       <p className="note">
-        Each point is sent to the next by the map. The iterates are counted in
-        the cells they land in, never joined; a cell&rsquo;s shade is the
-        logarithm of its visits. The orbit is sensitive to rounding, so a
-        different build or device can give different iterates and a similar
-        density.
+        The map sends each point to the next. Iterates are counted in the cells
+        they land in, never joined, and each cell is shaded by the logarithm of
+        its visits. The orbit is sensitive to rounding, so another device may
+        give different iterates with a similar density.
       </p>
       <Field
         label="Map"
@@ -1116,7 +1122,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
             {scalar("Window x from", ["curve", "attractor", "window", "xMin"])}
             {scalar("Window x to", ["curve", "attractor", "window", "xMax"], {
               topic: "density window",
-              help: "Iterates are counted only in this rectangle, within ±100,000; the note counts those outside it. A fitted window is the accumulated iterates' bounds, and this one stands in when none are accumulated.",
+              help: "Iterates are counted only in this rectangle, within ±100,000; the note counts those outside it.",
             })}
           </div>
           <div className="pair">
@@ -1510,7 +1516,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                     <Field
                       label="Construct on"
                       topic="construction input"
-                      help="The construction acts on this curve: the curve itself, or a curve derived from it, which is drawn faintly with it. A derived curve is evaluated from the curve's definition at every t, never from its drawn points. Its evolute cannot feed the evolute or the caustics, which would need the curve's fourth derivative."
+                      help={tiered(
+                        "The curve the construction acts on: the curve itself, or a curve derived from it, drawn faintly.",
+                        "A derived curve is evaluated from the curve's definition at every t, never from its drawn points. The evolute cannot feed the evolute or the caustics, which would need the curve's fourth derivative.",
+                      )}
                     >
                       <select
                         value={config.input}
@@ -1601,7 +1610,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                       label="Source coordinates"
                       help={
                         config.source.coordinates === "polar"
-                          ? "Radius r ≥ 0 is the distance from the origin. Angle θ is in radians, counterclockwise from +x; animate it from 0 to pi/2 for a quarter orbit. Angles are not wrapped."
+                          ? tiered(
+                              "Radius r ≥ 0 from the origin, and angle θ in radians, counterclockwise from +x.",
+                              "Angles are not wrapped: animate θ from 0 to pi/2 for a quarter orbit.",
+                            )
                           : undefined
                       }
                     >
@@ -1693,14 +1705,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                           replace transmitted rays at those samples.
                         </p>
                         <p>
-                          This explorer accepts any finite decimal from{" "}
-                          <strong>0.01 through 10</strong>, inclusive, for
-                          either index. These are computational limits, not a
-                          claim that every value represents ordinary
-                          visible-light glass. There is no 0.05-step
-                          restriction: 1.333 is valid. The construction uses the
-                          ratio n₁/n₂, so scaling both equally gives the same
-                          ray directions.
+                          Either index accepts any finite decimal from{" "}
+                          <strong>0.01 through 10</strong>, inclusive, such as
+                          1.333. The construction uses only the ratio n₁/n₂, so
+                          scaling both equally gives the same rays.
                         </p>
                       </details>
                     </>
@@ -1751,7 +1759,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                   ) : (
                     scalar("Offset distance d", ["distance"], {
                       topic: "offset distance",
-                      help: "Signed distance along the left normal, within ±100,000. Positive values move to the left of travel, which is inward on a counterclockwise closed curve. Negative values move to the right.",
+                      help: "Signed distance along the left normal, within ±100,000. Positive moves left of travel, inward on a counterclockwise closed curve; negative moves right.",
                     })
                   )}
                   <label className="check">
@@ -1819,7 +1827,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                           topic={key === "x" ? "rolling curve" : undefined}
                           help={
                             key === "x"
-                              ? "The rolling curve in its own frame, in t (and a). It is placed on the base so the two stay tangent at the contact, with equal arc lengths rolled on each."
+                              ? "The rolling curve in its own frame, in t (and a), placed to stay tangent to the base, rolling equal arc lengths on each."
                               : undefined
                           }
                         >
@@ -1847,7 +1855,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                         ["rolling", "curve", "start"],
                         {
                           topic: "rolling curve start",
-                          help: "The rolling curve's point that touches the base at its domain start. On the left the contact runs toward the end of the rolling curve's domain; on the right, toward its start.",
+                          help: tiered(
+                            "The rolling curve's point that touches the base at its domain start.",
+                            "On the left the contact runs toward the end of the rolling curve's domain; on the right, toward its start.",
+                          ),
                         },
                       )}
                       <div className="pair">
@@ -1885,10 +1896,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                       <p className="note">
                         On a counterclockwise closed curve the left is the
                         inside. The circle rolls from the domain start and stops
-                        at a cusp. Where it is larger than the curve's radius of
-                        curvature, or the curve comes back near itself, it
-                        overlaps the curve: this is the mathematical roulette,
-                        not a collision.
+                        at a cusp. Where its radius exceeds the curve&rsquo;s
+                        radius of curvature, or the curve doubles back, it
+                        overlaps the curve: that is the roulette, not a
+                        collision.
                       </p>
                     </>
                   )}
@@ -1953,7 +1964,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                           topic={key === "x" ? "second point" : undefined}
                           help={
                             key === "x"
-                              ? "The chord's other endpoint, in t (and a), over the curve's domain. With x = cos(a*t), y = sin(a*t) on the unit circle, animate a for the multiplication tables."
+                              ? tiered(
+                                  "The chord's other endpoint, in t (and a), over the curve's domain.",
+                                  "With x = cos(a*t), y = sin(a*t) on the unit circle, animate a for the multiplication tables.",
+                                )
                               : undefined
                           }
                         >

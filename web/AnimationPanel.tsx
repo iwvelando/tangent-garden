@@ -56,6 +56,7 @@ import { fitFrame, viewRect, type Layers } from "./Plot";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import { defaultScale, exportEncoding, exportTiming } from "./export-quality";
 import {
+  asymptoteHelp,
   cycles,
   paceChoices,
   paceHelp,
@@ -73,6 +74,7 @@ import {
 } from "./export-formats";
 import { saveFile } from "./export-image";
 import { Field } from "./Field";
+import { tiered } from "./help";
 import { useDisclosure } from "./useDisclosure";
 
 type Status =
@@ -895,17 +897,20 @@ export function AnimationPanel({
             help={
               mode === "probe" ? (
                 probe && frame && probeBetween(frame.config, probe) ? (
-                  "Move the probe from the start of the curve to its end through every t between, Go describing each frame's point, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
+                  "Move the probe through every t from the start of the curve to its end, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
                 ) : (
-                  "Move the probe from the start of the curve to its end, one sample at a time, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
+                  "Move the probe from the start of the curve to its end, sample by sample, with its tangent, normal, osculating circle and readout. Geometry stays fixed."
                 )
               ) : mode === "trace" ? (
-                "Send light from the source, or in from the edge of the view for parallel light, to the curve and on. Each caustic point appears as its ray reaches it. Light slows to c/n in each medium, so wavefronts stay together."
+                tiered(
+                  "Send light from the source to the curve and on; each caustic point appears as its ray reaches it.",
+                  "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
+                )
               ) : mode === "reveal" ? (
                 iterated ? (
                   "Count the iterates in order, from none to all of them, in the finished drawing's window and grid."
                 ) : (
-                  "Reveal the full study from its domain start to its end. The arc-length anchor and final sample spacing stay fixed."
+                  "Draw the study from its domain start to its end, keeping the final arc-length anchor and sample spacing."
                 )
               ) : (
                 <>
@@ -1071,17 +1076,16 @@ export function AnimationPanel({
           <Field
             label="Animation camera"
             help={
-              <>
-                {camera === "current"
-                  ? "Keeps your current pan and zoom throughout, including export."
-                  : camera === "hold"
-                    ? "Frames the final result once and holds that view."
-                    : camera === "follow"
-                      ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
-                      : "Recenters and zooms to fit the evolving geometry."}
-                {(camera === "fit" || camera === "follow") &&
-                  " Isolated points near asymptotes are ignored; use Hold current view to explore distant branches."}
-              </>
+              camera === "current"
+                ? "Keeps your current pan and zoom throughout, including export."
+                : camera === "hold"
+                  ? "Frames the final result once and holds that view."
+                  : tiered(
+                      camera === "follow"
+                        ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
+                        : "Recenters and zooms to fit the evolving geometry.",
+                      asymptoteHelp,
+                    )
             }
           >
             <select
@@ -1144,7 +1148,7 @@ export function AnimationPanel({
             <Field
               label="Export quality"
               value={`${quality} / 100`}
-              help={`${text.short} starts at ${defaultQuality[chosen]}; lower values make smaller files. Near 100, files can grow much larger; size depends on the drawing and browser.`}
+              help={`${text.short} starts at ${defaultQuality[chosen]}. Lower values make smaller files; near 100, files can grow much larger.`}
             >
               <input
                 aria-label="Export quality"
@@ -1193,8 +1197,8 @@ export function AnimationPanel({
             </button>
             <p className="hint">
               Export renders every frame in your browser with the current theme,
-              layers, and camera, which can take longer than playback. Up to
-              7,200 frames (2 minutes at 60 fps) or 256 MiB.
+              layers and camera, and can take longer than playback. Up to 7,200
+              frames or 256 MiB.
             </p>
           </details>
         </fieldset>

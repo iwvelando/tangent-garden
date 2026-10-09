@@ -22,6 +22,7 @@ import {
   useHelp,
   type FieldErrorTarget,
 } from "../Field";
+import { tiered, type Help } from "../help";
 import { fieldLabel } from "./fields";
 import { AppHeader } from "../AppHeader";
 import { AnimationButton } from "../AnimationButton";
@@ -162,8 +163,15 @@ const imageNames: Record<ImageFormat, string> = {
 };
 
 // How a study is sampled is for the curious: a heading and an info toggle
-// keep the detail out of the way until it is asked for.
-function SamplingNote({ children }: { children: ReactNode }) {
+// keep the detail out of the way until it is asked for, and the toggle
+// opens on its essentials, the rest behind Show more.
+function SamplingNote({
+  brief,
+  children,
+}: {
+  brief: string;
+  children: ReactNode;
+}) {
   const help = useHelp();
   return (
     <div className="sampling-note">
@@ -171,7 +179,7 @@ function SamplingNote({ children }: { children: ReactNode }) {
         <span>How it&rsquo;s sampled</span>
         <HelpToggle topic="how it’s sampled" help={help} />
       </div>
-      <HelpText help={help}>{children}</HelpText>
+      <HelpText help={help}>{tiered(brief, children)}</HelpText>
     </div>
   );
 }
@@ -606,7 +614,7 @@ export default function SpatialApp({
     label: string,
     value: number,
     set: (value: number) => void,
-    help?: string,
+    help?: Help<string>,
   ) => (
     <Field key={label} label={label} help={help}>
       <ScalarInput name={label} value={value} onChange={set} />
@@ -753,11 +761,10 @@ export default function SpatialApp({
   const fieldControls = (
     <>
       <p className="note">
-        Each trajectory starts at its seed (within ±100,000) when t is at the
-        interval start and follows the field: its velocity at (x, y, z) at time
-        t is (dx/dt, dy/dt, dz/dt). Use <var>x</var>, <var>y</var>, <var>z</var>
-        , <var>t</var>, and <var>a</var>. The first seed&rsquo;s trajectory is
-        the curve a construction uses.
+        Each trajectory starts at its seed (within ±100,000) and moves with
+        velocity (dx/dt, dy/dt, dz/dt) at (x, y, z) and time t. Use <var>x</var>
+        , <var>y</var>, <var>z</var>, <var>t</var>, and <var>a</var>. The first
+        seed&rsquo;s trajectory is the curve a construction uses.
       </p>
       {(["x", "y", "z"] as const).map((axis) => (
         <Field label={`d${axis}/dt`} className="equation" key={axis}>
@@ -842,7 +849,7 @@ export default function SpatialApp({
         "Escape radius R",
         config.field.escape,
         (value) => setField((f) => ({ ...f, escape: value })),
-        "A trajectory ends the first time it leaves the sphere of this radius about the origin (0–100,000), so a field that runs off to infinity stops in view. A seed outside the sphere has no path.",
+        "A trajectory ends when it first leaves this sphere about the origin (0–100,000), so a runaway field stops in view. A seed outside it has no path.",
       )}
       <p className="note" data-testid="field-note">
         {flows
@@ -880,10 +887,9 @@ export default function SpatialApp({
   const pursuitControls = (
     <>
       <p className="note">
-        Each pursuer starts at (x, y, z) (within ±100,000) when t is at the
-        interval start and runs straight at the next one, the last at the first,
-        at its own speed v (0–100,000). The first pursuer&rsquo;s path is the
-        curve a construction uses.
+        Each pursuer starts at (x, y, z) (within ±100,000) and runs straight at
+        the next, the last at the first, at its own speed v (0–100,000). The
+        first pursuer&rsquo;s path is the curve a construction uses.
       </p>
       {config.pursuit.pursuers.map((pursuer, i, all) => (
         <div
@@ -955,7 +961,10 @@ export default function SpatialApp({
         "Capture distance ε",
         config.pursuit.capture,
         (value) => setPursuit((q) => ({ ...q, capture: value })),
-        "A pursuer’s direction is undefined on its target, so the chase stops, for everyone, the first time any pursuer comes this close to its own target (0–100,000). Nobody merges or changes target.",
+        tiered(
+          "The chase stops for everyone the first time any pursuer comes this close to its target (0–100,000).",
+          "A pursuer’s direction is undefined on its target. Nobody merges or changes target.",
+        ),
       )}
       <p className="note" data-testid="pursuit-note">
         {chase
@@ -1003,7 +1012,7 @@ export default function SpatialApp({
     <>
       <Field
         label="Interaction"
-        help="One reflection, from a mirror, or one refraction, through an interface between two media. Either happens once: the outgoing light never meets the surface again."
+        help="One reflection from a mirror, or one refraction through an interface between two media; the outgoing light never meets the surface again."
       >
         <select
           value={config.rays.interaction}
@@ -1022,7 +1031,10 @@ export default function SpatialApp({
             "Index n₁",
             config.rays.n1,
             (n1) => setRays((r) => ({ ...r, n1 })),
-            "Refractive indices on the incident side, where n points, and beyond it; each positive and at most 100. The ratio is η = n₁/n₂, and light leaving the denser side beyond its critical angle is totally reflected.",
+            tiered(
+              "Refractive indices on the side n points to, where light arrives, and beyond it; each positive and at most 100.",
+              "The ratio is η = n₁/n₂; light leaving the denser side beyond its critical angle is totally reflected.",
+            ),
           )}
           {vector("Index n₂", config.rays.n2, (n2) =>
             setRays((r) => ({ ...r, n2 })),
@@ -2597,7 +2609,10 @@ export default function SpatialApp({
                       <>
                         <Field
                           label="Built on"
-                          help="Build the construction on the base curve, on its tangent-foot curve or tangent-line orthotomic from the pole, on one of its involutes, or on a coil that winds around it. The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp."
+                          help={tiered(
+                            "What the construction is built on: the base curve, its tangent-foot curve or orthotomic from the pole, an involute, or a coil around it.",
+                            "The derived curve is evaluated from the base at every sample, and the construction stops wherever it has a cusp.",
+                          )}
                         >
                           <select
                             value={config.input}
@@ -2687,7 +2702,10 @@ export default function SpatialApp({
                             </div>
                             <Field
                               label="Coil turns"
-                              help="Turns the coil makes around the base curve over its whole length, within ±100. On a closed curve the frame's own turn is spread along it, so a whole number of turns closes the coil."
+                              help={tiered(
+                                "Turns the coil makes around the base curve over its whole length, within ±100.",
+                                "On a closed curve the frame's own turn is spread along it, so a whole number of turns closes the coil.",
+                              )}
                             >
                               <ScalarInput
                                 name="Coil turns"
@@ -3158,7 +3176,10 @@ export default function SpatialApp({
                     </Field>
                     <Field
                       label="Refinement levels"
-                      help={`0–${maxImplicitRefine} octree levels; 0 meshes the grid alone. Where an edge of the grid's tetrahedra has both ends on one side of the level and its midpoint on the other, every tetrahedron around it is halved, and the halves are tested in turn, each level halving the cell, up to ${maxRefinedTetrahedra.toLocaleString()} tetrahedra.`}
+                      help={tiered(
+                        `0–${maxImplicitRefine} octree levels; 0 meshes the grid alone. Each level halves cells where the surface may hide, up to ${maxRefinedTetrahedra.toLocaleString()} tetrahedra.`,
+                        "Where an edge of the grid's tetrahedra has both ends on one side of the level and its midpoint on the other, every tetrahedron around it is halved, and the halves are tested in turn.",
+                      )}
                     >
                       <input
                         type="number"
@@ -3177,7 +3198,7 @@ export default function SpatialApp({
                       />
                     </Field>
                   </div>
-                  <SamplingNote>
+                  <SamplingNote brief="F is sampled on a grid split into tetrahedra and meshed where it crosses the level; poles, jumps and points where F is not finite are never meshed.">
                     F is evaluated at every grid point, and every cube is split
                     into six tetrahedra around its diagonal, the same way in
                     every cube, so neighbours agree on their shared faces.
@@ -3267,34 +3288,31 @@ export default function SpatialApp({
                     />
                   </Field>
                   {mirroring ? (
-                    <SamplingNote>
-                      Positions, normals and their derivatives come from each
-                      patch&rsquo;s exact first and second derivatives at every
-                      grid sample, and so do the outgoing rays&rsquo; directions
-                      and derivatives. Caustic points are the centres of
-                      curvature of the outgoing wavefront, from its shape
-                      operator across each ray. A caustic edge is joined only
-                      when its curvature keeps its sign and the caustic point
-                      halfway along it is lit, finite, and between its ends, so
-                      a caustic is never joined through infinity, past the edge
-                      of the light, or across its own cusps. Caustic points
-                      beyond 100 surface radii are treated as at infinity. A
-                      receiver takes each cell&rsquo;s flux from its midpoint,
-                      spreads it evenly over the two triangles its
-                      corners&rsquo; rays make on the plane, and gives every bin
-                      the flux inside it, by exact area.
+                    <SamplingNote brief="Positions, normals, rays and their derivatives come from each patch’s exact first and second derivatives at every grid sample.">
+                      {" "}
+                      Caustic points are the centres of curvature of the
+                      outgoing wavefront, from its shape operator across each
+                      ray. A caustic edge is joined only when its curvature
+                      keeps its sign and the caustic point halfway along it is
+                      lit, finite, and between its ends, so a caustic is never
+                      joined through infinity, past the edge of the light, or
+                      across its own cusps. Caustic points beyond 100 surface
+                      radii are treated as at infinity. A receiver takes each
+                      cell&rsquo;s flux from its midpoint, spreads it evenly
+                      over the two triangles its corners&rsquo; rays make on the
+                      plane, and gives every bin the flux inside it, by exact
+                      area.
                     </SamplingNote>
                   ) : (
-                    <SamplingNote>
-                      Positions, normals and principal curvatures come from each
-                      patch&rsquo;s exact first and second derivatives at every
-                      grid sample. Where X_u × X_v vanishes the chart is
-                      singular and has no normal. A focal edge is joined only
-                      when its curvature keeps its sign and the focal point
-                      halfway along it is finite and lies between its ends, so a
-                      sheet is never joined through infinity, even between
-                      samples. Centres of curvature beyond 100 surface radii are
-                      treated as at infinity.
+                    <SamplingNote brief="Positions, normals and principal curvatures come from each patch’s exact first and second derivatives at every grid sample.">
+                      {" "}
+                      Where X_u × X_v vanishes the chart is singular and has no
+                      normal. A focal edge is joined only when its curvature
+                      keeps its sign and the focal point halfway along it is
+                      finite and lies between its ends, so a sheet is never
+                      joined through infinity, even between samples. Centres of
+                      curvature beyond 100 surface radii are treated as at
+                      infinity.
                     </SamplingNote>
                   )}
                 </>
@@ -3363,9 +3381,7 @@ export default function SpatialApp({
                       />
                     </>
                   )}
-                  <SamplingNote>
-                    Finite sampling can miss fine detail. Compare resolutions
-                    near poles, stationary points, and tight folds.
+                  <SamplingNote brief="Finite sampling can miss fine detail. Compare resolutions near poles, stationary points, and tight folds.">
                     {refinable && (
                       <>
                         {" "}

@@ -1,3 +1,4 @@
+import { tiered, withMore, type Help } from "../help";
 import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
 import type {
   Config,
@@ -52,25 +53,28 @@ type Section = Result["sections"][number];
 export type MotionChoice = {
   value: Motion;
   label: string;
-  help: string;
+  help: Help<string>;
   loops?: boolean;
 };
-export const repeatHelp: Record<Repeat, string> = {
+export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
-  loop: "Plays again and again, its end joining its start, which needs the last frame to match the first. Play compares the drawing at both ends and says what differs. A rotation turns one whole revolution, so it returns, and a slice passage returns when no section cuts the shape at its ends; other motions start and end in different places, so they offer Back and forth instead. Exports leave out the last frame, which is the first again, and loop forever.",
+  loop: tiered(
+    "Plays again and again, its end joining its start, which needs the last frame to match the first.",
+    "Play compares both ends and says what differs. A rotation turns one whole revolution, so it returns; a slice passage returns when no section cuts the shape at its ends. Other motions cannot loop, so they offer Back and forth instead. Exports leave out the last frame, which repeats the first, and loop forever.",
+  ),
   "back-and-forth": backAndForthHelp,
 };
 export const rotationMotions: MotionChoice[] = [
   {
     value: "double",
     label: "Double rotation · xw + yz",
-    help: "Turn through one full revolution in two independent planes. The three-dimensional camera stays fixed while the shape rotates in four dimensions.",
+    help: "Turns one full revolution in two independent planes at once, rotating the shape in four dimensions; the 3D camera stays fixed.",
     loops: true,
   },
   {
     value: "xw",
     label: "One plane · xw",
-    help: "Turn through one full revolution in the xw plane. The three-dimensional camera stays fixed.",
+    help: "Turns one full revolution in the xw plane; the 3D camera stays fixed.",
     loops: true,
   },
 ];
@@ -99,7 +103,7 @@ export type ObjectDescriptor = {
       keyof Lift | keyof Omit<Bypass, "obstacle"> | keyof Omit<Weave, "family">;
     index?: number;
     label: string;
-    help: string;
+    help: Help<string>;
     group?: string;
     endpoint?: boolean;
     visible?: (c: Config) => boolean;
@@ -658,7 +662,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         value: "route",
         label: "Traverse route",
-        help: "Move from the entered outside point to the origin. Each linear leg receives one third of the progress. Both representations show the same exact point; Stop restores the entered route position.",
+        help: "Moves from the outside point to the origin, each leg taking a third of the progress; both views show the same point. Stop restores the entered position.",
       },
       {
         value: "return",
@@ -723,7 +727,10 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         key: "alpha",
         label: "Central latitude α",
-        help: "Radians. Every latitude α ± spread/2 must lie within 0 and π/2 (pi/2). At 0 or π/2 a torus collapses to one circle; pi/4 gives the Clifford torus with equal radii.",
+        help: tiered(
+          "Radians. Every latitude α ± spread/2 must lie within 0 and π/2 (pi/2).",
+          "At 0 or π/2 a torus collapses to one circle; pi/4 gives the Clifford torus, with equal radii.",
+        ),
       },
       {
         key: "spread",
@@ -809,12 +816,18 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     motionChoices: [
       ...rotationMotions.map((m) => ({
         ...m,
-        help: `${m.help} The projection window stays fixed, so circles open into arcs as they pass the pole.`,
+        help: withMore(
+          m.help,
+          "The projection window stays fixed, so circles open into arcs as they pass the pole.",
+        ),
       })),
       {
         value: "latitude",
         label: "Sweep latitudes",
-        help: "Move the central α from Latitude start to Latitude end with spread and rotation fixed. A latitude reaching 0 or π/2 collapses to one circle. Stop restores your entered α.",
+        help: tiered(
+          "Moves the central α from Latitude start to Latitude end, with spread and rotation fixed. Stop restores your α.",
+          "A latitude reaching 0 or π/2 collapses to one circle.",
+        ),
       },
     ],
   },

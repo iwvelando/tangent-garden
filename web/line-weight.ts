@@ -4,6 +4,7 @@
 // stills and videos at any size. A hairline is one pixel at any size. The 3D
 // notebook draws them as WebGL strokes (spatial/sight.ts); the 2D and 4D
 // notebooks as SVG strokes (svgStroke).
+import { tiered } from "./help";
 import type { SchemaOf } from "./study-link";
 
 export type LineWeight = "hairline" | "fine" | "regular" | "bold";
@@ -44,4 +45,7 @@ export function svgStroke(weight: LineWeight) {
 }
 
 // Help for the SVG notebooks' control, stating the scale the drawing uses.
-export const svgWeightHelp = `How wide lines are drawn. Fine, regular and bold strokes are a share of the drawing, so they keep their proportion in the live drawing, stills, videos and SVG files at any size: regular is this notebook's drawing as it has always been, fine ${weightScale.fine}× and bold ${weightScale.bold}× as wide. Hairlines are one pixel wide at any size, so they grow fainter as an export grows larger; in an SVG file they stay one pixel at any zoom. Links made before line weights open with regular strokes.`;
+export const svgWeightHelp = tiered(
+  "How wide lines are drawn. Fine, regular and bold scale with the drawing; a hairline is always one pixel.",
+  `Fine, regular and bold keep their proportion in the live drawing, stills, videos and SVG files at any size; fine is ${weightScale.fine}× and bold ${weightScale.bold}× regular. A hairline stays one pixel wide at any size, so it looks fainter in larger exports, and in an SVG file at any zoom.`,
+);
