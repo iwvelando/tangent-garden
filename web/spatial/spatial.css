@@ -93,11 +93,19 @@
 .dark .ribbon-dot {
   background: #3bb3ab;
 }
+/* Over whatever the canvas shows, including the browser's own placeholder
+   for a lost context, so it carries its own background. */
 .spatial-render-error {
   position: absolute;
   top: 16px;
   left: 30px;
   right: 30px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
 }
 @media (max-width: 700px) {
   .spatial-canvas-wrap {
