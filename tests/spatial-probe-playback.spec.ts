@@ -61,7 +61,7 @@ test("probe playback is offered only while the probe is on", async ({
   await expect(mode(page)).toHaveValue("reveal");
   await mode(page).selectOption("probe");
   await expect(page.locator("#spatial-animation-section")).toContainText(
-    "Move the probe from the start of the curve to its end",
+    "Move the probe along the curve",
   );
   // Turning the probe off falls back to revealing.
   await probeSwitch(page).uncheck();
