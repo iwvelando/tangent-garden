@@ -631,6 +631,99 @@ test("Viviani's curve flies from its circle to its figure-eight and around its c
   await expect(page.getByLabel("View 1 name", { exact: true })).toHaveCount(0);
 });
 
+// The page size of the line drawing (SVG) and its base curve's segments.
+async function baseDrawing(page: Page) {
+  await button(page, "Export image").click();
+  const event = page.waitForEvent("download");
+  await page
+    .getByRole("menuitem", { name: "Lines (SVG) · every line", exact: true })
+    .click();
+  const svg = (await readFile((await (await event).path())!)).toString();
+  const [, width, height] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)!;
+  const group = svg.match(/<g id="base"[^>]*>(.*?)<\/g>/)![1];
+  // Each path's points, joined in order.
+  const paths = [...group.matchAll(/ d="([^"]*)"/g)].map((d) =>
+    [...d[1].matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((m) => [+m[1], +m[2]]),
+  );
+  return { width: +width, height: +height, paths };
+}
+// How near the base curve passes to the middle of the page, in pixels.
+async function nearMiddle(page: Page) {
+  const { width, height, paths } = await baseDrawing(page);
+  const [cx, cy] = [width / 2, height / 2];
+  let best = Infinity;
+  for (const points of paths)
+    for (let i = 1; i < points.length; i++) {
+      const [ax, ay] = points[i - 1],
+        [bx, by] = points[i];
+      const [dx, dy] = [bx - ax, by - ay],
+        dd = dx * dx + dy * dy;
+      const u = dd
+        ? Math.min(1, Math.max(0, ((cx - ax) * dx + (cy - ay) * dy) / dd))
+        : 0;
+      best = Math.min(best, Math.hypot(ax + u * dx - cx, ay + u * dy - cy));
+    }
+  return best;
+}
+
+test("turning about the geometry keeps a framed point of Viviani's curve in the middle of the page, where the plane lets it wander", async ({
+  page,
+}) => {
+  // Viviani's curve alone, without its tube: its top (0, 0, 2a) lies 2a in
+  // front of the plane through the study's center facing a camera at yaw 0.
+  const viviani = spatialPresets.find(
+    (p) => p.name === "Viviani's curve, from every side",
+  )!;
+  const layers = { ...defaultLayers, surface: false, circles: false };
+  const base = {
+    config: viviani.config,
+    layers,
+    view: manual,
+    animation: { ...study().animation, path: { style: "steady", keys: [] } },
+  };
+  await open(page, base);
+  const { center } = await shownView(page);
+  // Panned so that the top is in the middle, then once around it.
+  const top = {
+    name: "Top",
+    yaw: 0,
+    pitch: 0,
+    zoom: 2,
+    panX: center.x,
+    panY: center.y,
+    turns: 0,
+  };
+  const path: CameraPath = {
+    style: "steady",
+    pivot: "geometry",
+    keys: [top, { ...top, name: "Around", turns: 1 }],
+  };
+  await open(page, { ...base, animation: { ...base.animation, path } });
+  const pivot = page.getByLabel("Turn about", { exact: true });
+  await expect(pivot).toHaveValue("geometry");
+  // At a view the drawing is that view, whatever the pivot.
+  await button(page, "Show view 1").click();
+  expect(await nearMiddle(page)).toBeLessThan(0.5);
+  await page.keyboard.press("Escape");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  const between = ["0.125", "0.375", "0.625", "0.875"];
+  for (const p of between) {
+    await seek(page, p);
+    expect(await nearMiddle(page)).toBeLessThan(1);
+  }
+  // About the plane, the top swings away from the middle. (A quarter and
+  // half turn bring other points of this symmetric curve there.)
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await pivot.selectOption("plane");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  for (const p of between) {
+    await seek(page, p);
+    expect(await nearMiddle(page)).toBeGreaterThan(20);
+  }
+});
+
 test("a rhumb line's flight drops above its pole quickly, sinks in slowly with the pole held in the middle, and returns quickly", async ({
   page,
 }) => {
