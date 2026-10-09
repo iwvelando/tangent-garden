@@ -15,8 +15,9 @@ import "math"
 // construction on it is broken rather than joined across: not at an open
 // curve's ends, and once where a closed curve's ends meet. Unreached counts
 // the base's samples that the involute's arc length cannot reach from its
-// anchor across a break; they are not cusps. The involute and the coil
-// leave Pole zero.
+// anchor across a break; they are not cusps. Restarts are the involute's
+// restarted anchors, when its UnwindingRequest asks to restart. The
+// involute and the coil leave Pole zero.
 type CompositionResult struct {
 	Input         string                   `json:"input"`
 	Pole          Vec3                     `json:"pole"`
@@ -25,6 +26,7 @@ type CompositionResult struct {
 	Constructions []ProjectionConstruction `json:"constructions"`
 	Cusps         int                      `json:"cusps"`
 	Unreached     int                      `json:"unreached"`
+	Restarts      []float64                `json:"restarts,omitempty"`
 }
 
 // composed reports whether the construction acts on a derived input. Only

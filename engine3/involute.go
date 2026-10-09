@@ -5,11 +5,14 @@ import "math"
 // InvoluteRequest anchors arc length s at parameter Anchor, inside the curve's
 // domain, and unwinds a taut string of signed initial length Offset (c):
 // I_c(t) = r(t) + (c − s(t)) T(t). When Family is enabled, Count strings with
-// lengths evenly spaced from From to To replace Offset.
+// lengths evenly spaced from From to To replace Offset. With Restart, arc
+// length starts again past each break, from an anchor of each further
+// stretch's own (see restart).
 type InvoluteRequest struct {
-	Anchor float64        `json:"anchor"`
-	Offset float64        `json:"offset"`
-	Family InvoluteFamily `json:"family"`
+	Anchor  float64        `json:"anchor"`
+	Offset  float64        `json:"offset"`
+	Family  InvoluteFamily `json:"family"`
+	Restart bool           `json:"restart,omitempty"`
 }
 type InvoluteFamily struct {
 	Enabled bool    `json:"enabled"`
@@ -30,10 +33,12 @@ type InvoluteMember struct {
 // Strings are representative taut strings along the tangent at a sample,
 // from the curve through every member of the family. Unreached counts
 // regular samples that the arc length could not reach from the anchor.
+// Restarts are the anchors it restarted from, in increasing t, when asked.
 type InvoluteResult struct {
 	Members   []InvoluteMember `json:"members"`
 	Strings   []Ruling         `json:"strings"`
 	Unreached int              `json:"unreached"`
+	Restarts  []float64        `json:"restarts,omitempty"`
 }
 
 const (
@@ -91,25 +96,42 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 		}
 		return v.norm()
 	}
-	tk, tk1 := lo+float64(k)*h, lo+float64(k+1)*h
-	at := speed(t0)
-	left := (t0 - tk) / 6 * (speeds[k] + 4*speed((tk+t0)/2) + at)
-	right := (tk1 - t0) / 6 * (at + 4*speed((t0+tk1)/2) + speeds[k+1])
-	if base[k] == nil || base[k+1] == nil || breaks[k+1] || !finite(left) || !finite(right) {
-		return nil, nil, fieldErr("involute.anchor", "the anchor t₀ must lie on a regular, continuous stretch of the curve it unwinds, not on a cusp or break")
-	}
 	arc := make([]float64, n+1)
 	reached := make([]bool, n+1)
-	arc[k], arc[k+1] = -left, right
-	reached[k], reached[k+1] = true, true
+	// open reports whether arc length can be carried across interval i.
+	open := func(i int) bool {
+		return base[i] != nil && base[i+1] != nil && !breaks[i+1] && finite(middles[i])
+	}
 	interval := func(i int) float64 { return h / 6 * (speeds[i] + 4*middles[i] + speeds[i+1]) }
-	for i := k + 2; i <= n && base[i] != nil && !breaks[i] && finite(middles[i-1]); i++ {
-		arc[i], reached[i] = arc[i-1]+interval(i-1), true
+	// measure sets s = 0 at t0, inside interval k, and carries it outward
+	// to the first break on either side; it reports whether interval k
+	// could be split there.
+	measure := func(t0 float64, k int) bool {
+		tk, tk1 := lo+float64(k)*h, lo+float64(k+1)*h
+		at := speed(t0)
+		left := (t0 - tk) / 6 * (speeds[k] + 4*speed((tk+t0)/2) + at)
+		right := (tk1 - t0) / 6 * (at + 4*speed((t0+tk1)/2) + speeds[k+1])
+		if base[k] == nil || base[k+1] == nil || breaks[k+1] || !finite(left) || !finite(right) {
+			return false
+		}
+		arc[k], arc[k+1] = -left, right
+		reached[k], reached[k+1] = true, true
+		for i := k + 2; i <= n && open(i-1); i++ {
+			arc[i], reached[i] = arc[i-1]+interval(i-1), true
+		}
+		for i := k - 1; i >= 0 && open(i); i-- {
+			arc[i], reached[i] = arc[i+1]-interval(i), true
+		}
+		return true
 	}
-	for i := k - 1; i >= 0 && base[i] != nil && !breaks[i+1] && finite(middles[i]); i-- {
-		arc[i], reached[i] = arc[i+1]-interval(i), true
+	if !measure(t0, k) {
+		return nil, nil, fieldErr("involute.anchor", "the anchor t₀ must lie on a regular, continuous stretch of the curve it unwinds, not on a cusp or break")
 	}
-	out := &InvoluteResult{Members: make([]InvoluteMember, len(offsets)), Strings: make([]Ruling, 0, lines)}
+	var restarts []float64
+	if q.Restart {
+		restarts = restart(n, open, func(i int) bool { return reached[i] }, measure, lo, h)
+	}
+	out := &InvoluteResult{Members: make([]InvoluteMember, len(offsets)), Strings: make([]Ruling, 0, lines), Restarts: restarts}
 	for i := range base {
 		if base[i] != nil && !reached[i] {
 			out.Unreached++
@@ -140,7 +162,37 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 			out.Strings = append(out.Strings, Ruling{i, base[i].add(tangents[i].mul(from)), base[i].add(tangents[i].mul(to))})
 		}
 	}
-	return out, &strung{evaluate, speed, lo, hi, n, arc, reached, base, tangents, speeds}, nil
+	return out, &strung{evaluate, speed, lo, hi, n, arc, reached, breaks, base, tangents, speeds}, nil
+}
+
+// restart anchors arc length again on each stretch of the curve that the
+// first anchor's does not reach: on every maximal run of open intervals
+// whose samples are unreached, at the middle of the parameters of its first
+// and last samples, with s = 0 there. measure carries arc length from an
+// anchor t inside interval k across its stretch. It returns the anchors,
+// in increasing t. A lone regular sample, with no open interval beside it,
+// stays unreached.
+func restart(n int, open, reached func(int) bool, measure func(t float64, k int) bool, lo, h float64) []float64 {
+	var anchors []float64
+	knot := func(i int) float64 { return lo + float64(i)*h }
+	for i := 0; i < n; {
+		if !open(i) || reached(i) {
+			i++
+			continue
+		}
+		j := i
+		for j+1 < n && open(j+1) && !reached(j+1) {
+			j++
+		}
+		// Intervals i..j, samples i..j+1: the middle lies in interval m.
+		t := (knot(i) + knot(j+1)) / 2
+		m := min(j, max(i, int(math.Floor((t-lo)/h))))
+		if measure(t, m) {
+			anchors = append(anchors, t)
+		}
+		i = j + 1
+	}
+	return anchors
 }
 
 // filament is the free end of a string of length c unwound by s along the
@@ -159,6 +211,7 @@ type strung struct {
 	n        int
 	arc      []float64
 	reached  []bool
+	breaks   []bool
 	base     []*Vec3
 	tangents []Vec3
 	speeds   []float64
@@ -178,7 +231,9 @@ func (u *strung) member(c float64) func(float64) Vec3 {
 	undefined := Vec3{math.NaN(), 0, 0}
 	return func(t float64) Vec3 {
 		i := max(0, min(u.n-1, int(math.Floor((t-u.lo)/(u.hi-u.lo)*float64(u.n)))))
-		if !u.reached[i] || !u.reached[i+1] {
+		// Restarted stretches meet at a break, across which their arc
+		// lengths, from different anchors, do not continue.
+		if !u.reached[i] || !u.reached[i+1] || u.breaks[i+1] {
 			return undefined
 		}
 		start := u.knot(i)

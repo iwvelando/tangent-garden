@@ -247,3 +247,81 @@ test("an involute MP4 decodes with exact duration and changing filaments", async
     "tangent-garden-spatial-parameters.mp4",
   );
 });
+
+// (tan t, cos t, sin t) on [−2, 2] breaks at its asymptotes ±π/2, which
+// arc length from an anchor between them never crosses. Restarting
+// anchors each further stretch at its own middle; unchecking removes the
+// field, so the study is the one a link made before restarts opens.
+test("restarting after a break unwinds every stretch of the curve, and unchecking restores the study", async ({
+  page,
+}) => {
+  await ready(page);
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("parametric");
+  await settled(page);
+  for (const [name, value] of [
+    ["x(t)", "tan(t)"],
+    ["y(t)", "cos(t)"],
+    ["z(t)", "sin(t)"],
+    ["t from", "-2"],
+    ["to", "2"],
+  ])
+    await field(page, name).fill(value);
+  await page
+    .getByLabel("Construction", { exact: true })
+    .selectOption("involute");
+  await field(page, "Anchor t₀").fill("0.5");
+  await field(page, "String length c").fill("0.3");
+  await settled(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const note = page
+    .locator(".bottom-note")
+    .filter({ hasText: "regular samples" });
+  await expect(note).toContainText("Arc length is never carried across a gap");
+  const unreached = Number(
+    /(\d+) regular samples/.exec((await note.textContent())!)![1],
+  );
+  expect(unreached).toBeGreaterThan(0);
+  const before = await pixels(page);
+  const restart = page.getByRole("checkbox", {
+    name: "Restart after a break",
+    exact: true,
+  });
+  await restart.check();
+  await settled(page);
+  expect((await config(page)).involute.restart).toBe(true);
+  await expect(note).toContainText("0 regular samples");
+  await expect(note).toContainText(
+    /Arc length restarts past each break, from anchors at t = -1\.\d+, 1\.\d+\./,
+  );
+  expect(await pixels(page)).not.toBe(before);
+  await restart.uncheck();
+  await settled(page);
+  expect("restart" in (await config(page)).involute).toBe(false);
+  await expect(note).toContainText(`${unreached} regular samples`);
+  expect(await pixels(page)).toBe(before);
+
+  // The involute input restarts on its own setting, not the construction's.
+  await page
+    .getByLabel("Construction", { exact: true })
+    .selectOption("developable");
+  await page.getByLabel("Built on", { exact: true }).selectOption("involute");
+  await field(page, "Input anchor t₀").fill("0.5");
+  await field(page, "Input string c").fill("0.3");
+  await settled(page);
+  const composition = page.locator(".composition-note");
+  await expect(composition).toContainText("beyond the involute's reach");
+  await page
+    .getByRole("checkbox", { name: "Restart input after a break" })
+    .check();
+  await settled(page);
+  const restarted = await config(page);
+  expect(restarted.unwinding.restart).toBe(true);
+  expect("restart" in restarted.involute).toBe(false);
+  await expect(composition).not.toContainText("beyond the involute's reach");
+  await expect(composition).toContainText(
+    /its arc length restarts, from anchors at t = -1\.\d+, 1\.\d+\./,
+  );
+  await expect(composition).toContainText("3 cusps");
+});

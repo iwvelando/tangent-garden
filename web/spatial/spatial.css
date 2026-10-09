@@ -231,3 +231,8 @@
   color: var(--muted);
   padding: 0;
 }
+/* Restarting an involute's arc length past a break (restart.tsx): the
+   checkbox sits in line with its help toggle. */
+.restart-switch .check {
+  margin-bottom: 0;
+}

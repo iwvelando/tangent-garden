@@ -324,6 +324,7 @@ func compute(c Request) (Result, error) {
 	var baseTangents []Vec3
 	var baseBreaks []bool
 	var reached []bool
+	var restarts []float64
 	// The involute or coil input's position alone, for refinement.
 	var unwoundAt func(float64) Vec3
 	baseEvaluate := evaluate
@@ -337,7 +338,7 @@ func compute(c Request) (Result, error) {
 				return Result{}, err
 			}
 		default:
-			if evaluate, unwoundAt, reached, err = c.Unwinding.evaluation(evaluate, lo, hi, baseCurve, baseBreaks); err != nil {
+			if evaluate, unwoundAt, reached, restarts, err = c.Unwinding.evaluation(evaluate, lo, hi, baseCurve, baseBreaks); err != nil {
 				return Result{}, err
 			}
 			// A closed curve's involute ends a whole length of string from
@@ -503,6 +504,7 @@ func compute(c Request) (Result, error) {
 	// The base under a derived input frames with the pole as its own family.
 	if composed {
 		out.Composition = composition(c, baseCurve, baseTangents, baseBreaks, closed, out.Base, out.Breaks, reached)
+		out.Composition.Restarts = restarts
 		if c.refines() {
 			if out.Adaptive == nil {
 				out.Adaptive = &AdaptiveResult{}

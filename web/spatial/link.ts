@@ -152,7 +152,14 @@ const config: SchemaOf<SpatialConfig> = {
         coil: true,
       },
     },
-    unwinding: { fields: { anchor: "number", offset: "number" } },
+    // restart is absent in links made before it, which never restart.
+    unwinding: {
+      fields: {
+        anchor: "number",
+        offset: "number",
+        restart: { optional: "boolean" },
+      },
+    },
     coil: { fields: { radius: "number", angle: "number", turns: "number" } },
     inversion: {
       fields: {
@@ -163,7 +170,14 @@ const config: SchemaOf<SpatialConfig> = {
         },
       },
     },
-    involute: { fields: { anchor: "number", offset: "number", family } },
+    involute: {
+      fields: {
+        anchor: "number",
+        offset: "number",
+        family,
+        restart: { optional: "boolean" },
+      },
+    },
     harmonic: {
       fields: {
         center: vec3,

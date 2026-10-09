@@ -25,6 +25,7 @@ import {
   probeSupport,
   surfaceProbeHelp,
 } from "../web/spatial/probe";
+import { restartHelp } from "../web/spatial/restart";
 import { rideHelp } from "../web/spatial/ride";
 import { sightHelp } from "../web/spatial/sight";
 import { surfaceShape } from "../web/spatial/surface";
@@ -192,6 +193,7 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("2D probe motion", curveProbeMotionHelp);
   add("2D probe motion between samples", betweenMotionHelp);
   add("3D between samples", spatialBetweenHelp);
+  add("involute restart", restartHelp);
   const { add: _title, ...cutHelps } = cutHelp;
   table("cut", cutHelps, ["offset", "cuts", "beyond"]);
   const { framing: _framing, ...pathHelps } = pathHelp;
