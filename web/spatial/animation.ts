@@ -17,7 +17,7 @@ import type {
   SpatialHarmonicResult,
   SurfaceSheet,
 } from "./types";
-import { meshStride, type CurveMesh } from "./types";
+import type { CurveMesh } from "./types";
 import type { View } from "./renderer";
 import { pathView, type CameraPath } from "./path";
 import { rideView, type RidePath } from "./ride";
@@ -759,23 +759,22 @@ export function harmonicFamilies(h: SpatialHarmonicResult | undefined) {
     return [joints, extents];
   });
 }
-// A curve study's mesh keeps the vertices of samples up to last, in their
-// order. A triangle's three vertices share their sample, so whole
-// triangles are kept.
+// A curve study's mesh keeps the triangles of samples up to last, in their
+// order, on the same vertices.
 function revealMesh(mesh: CurveMesh, last: number): CurveMesh {
-  const { vertices, sampleIndex } = mesh;
+  const { triangles, sampleIndex } = mesh;
   let kept = 0;
   for (const i of sampleIndex) if (i <= last) kept++;
   if (kept === sampleIndex.length) return mesh;
   const out = {
-    vertices: new Float64Array(meshStride * kept),
+    vertices: mesh.vertices,
+    triangles: new Int32Array(3 * kept),
     sampleIndex: new Int32Array(kept),
   };
-  for (let v = 0, k = 0; v < sampleIndex.length; v++) {
-    if (sampleIndex[v] > last) continue;
-    for (let j = 0; j < meshStride; j++)
-      out.vertices[meshStride * k + j] = vertices[meshStride * v + j];
-    out.sampleIndex[k++] = sampleIndex[v];
+  for (let t = 0, k = 0; t < sampleIndex.length; t++) {
+    if (sampleIndex[t] > last) continue;
+    out.triangles.set(triangles.subarray(3 * t, 3 * t + 3), 3 * k);
+    out.sampleIndex[k++] = sampleIndex[t];
   }
   return out;
 }

@@ -19,7 +19,7 @@ func inverted(t *testing.T, c Request) Result {
 	if _, err := json.Marshal(r); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Mesh)+len(r.Rulings)+len(r.Minus)+len(r.Plus) != 0 || r.Involute != nil || r.Projection != nil {
+	if len(corners(r.Mesh))+len(r.Rulings)+len(r.Minus)+len(r.Plus) != 0 || r.Involute != nil || r.Projection != nil {
 		t.Fatal("unrelated construction geometry")
 	}
 	if len(q.Points) != c.Samples+1 || len(q.Source) != c.Samples+1 || len(q.Breaks) != c.Samples+1 {

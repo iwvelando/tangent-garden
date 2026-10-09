@@ -165,25 +165,37 @@ function decode(reply) {
   const buffer = (mesh ?? flat).vertices?.buffer ?? flat.positions.buffer;
   return { result, bytes: json.length + buffer.byteLength, transfer: [buffer] };
 }
-// The scene's mesh batch (buildScene), from either shape of curve mesh.
+// The scene's mesh batch (buildScene), from any shape of curve mesh: JSON
+// vertices, typed vertices three per triangle, or indexed triangles.
 const flatten = (mesh) =>
-  Array.isArray(mesh)
-    ? new Float32Array(
-        mesh.flatMap((v) => [
-          v.position.x,
-          v.position.y,
-          v.position.z,
-          v.normal.x,
-          v.normal.y,
-          v.normal.z,
-          v.phase,
-        ]),
-      )
-    : new Float32Array(mesh.vertices);
+  mesh.triangles
+    ? [new Float32Array(mesh.vertices), new Uint32Array(mesh.triangles)]
+    : Array.isArray(mesh)
+      ? new Float32Array(
+          mesh.flatMap((v) => [
+            v.position.x,
+            v.position.y,
+            v.position.z,
+            v.normal.x,
+            v.normal.y,
+            v.normal.z,
+            v.phase,
+          ]),
+        )
+      : new Float32Array(mesh.vertices);
 const triangleCount = (result) =>
   result.implicit
     ? result.implicit.triangles.length / 3
-    : (result.mesh.sampleIndex ?? result.mesh).length / 3;
+    : result.mesh.triangles
+      ? result.mesh.sampleIndex.length
+      : (result.mesh.sampleIndex ?? result.mesh).length / 3;
+// Vertices sent: an unindexed curve mesh sends three per triangle.
+const vertexCount = (result) =>
+  result.implicit
+    ? result.implicit.positions.length / 3
+    : result.mesh.triangles
+      ? result.mesh.vertices.length / 7
+      : 3 * triangleCount(result);
 
 // One engine, in this process: time every study and print JSON.
 async function measure(source, studies) {
@@ -204,9 +216,7 @@ async function measure(source, studies) {
           note: s.note,
           kind: s.kind,
           triangles: triangleCount(result),
-          vertices: result.implicit
-            ? result.implicit.positions.length / 3
-            : 3 * triangleCount(result),
+          vertices: vertexCount(result),
         });
       // What postMessage does to reach the page; it detaches the buffer.
       const posted = structuredClone({ result }, { transfer }).result;
@@ -280,11 +290,11 @@ const mb = (v) => `${(v / 1e6).toFixed(1).padStart(5)} MB`;
 function table(label, results) {
   console.log(`\n${label}`);
   console.log(
-    "study          triangles   call     decode   post     scene    total    transfer",
+    "study          triangles  vertices   call     decode   post     scene    total    transfer",
   );
   for (const r of results)
     console.log(
-      `${r.name.padEnd(14)}${String(r.triangles).padStart(9)}  ${ms(r.call)}  ${ms(r.decode)}  ${ms(r.post)}  ${ms(r.scene)}  ${ms(r.total)}  ${mb(r.bytes)}`,
+      `${r.name.padEnd(14)}${String(r.triangles).padStart(9)} ${String(r.vertices).padStart(9)}  ${ms(r.call)}  ${ms(r.decode)}  ${ms(r.post)}  ${ms(r.scene)}  ${ms(r.total)}  ${mb(r.bytes)}`,
     );
 }
 
@@ -310,7 +320,12 @@ else {
         console.log(`${r.name.padEnd(14)}   not compared: refined`);
         continue;
       }
-      if (o.triangles !== r.triangles || o.vertices !== r.vertices)
+      // A curve mesh may share its vertices where the other engine's
+      // does not.
+      if (
+        o.triangles !== r.triangles ||
+        (r.kind !== "curve" && o.vertices !== r.vertices)
+      )
         throw new Error(`${r.name}: the engines drew different meshes`);
       console.log(
         `${r.name.padEnd(14)}${(o.total / r.total).toFixed(2).padStart(6)}×   ${ms(o.total)} → ${ms(r.total)}   ${mb(o.bytes)} → ${mb(r.bytes)}   (${r.note})`,

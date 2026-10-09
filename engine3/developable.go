@@ -101,28 +101,22 @@ type Request struct {
 	// nothing else in the result.
 	Probe *ProbeQuery `json:"probe,omitempty"`
 }
-type Vertex struct {
-	SampleIndex int     `json:"sampleIndex"`
-	Position    Vec3    `json:"position"`
-	Normal      Vec3    `json:"normal"`
-	Phase       float64 `json:"phase"`
-}
 type Ruling struct {
 	SampleIndex int  `json:"sampleIndex"`
 	From        Vec3 `json:"from"`
 	To          Vec3 `json:"to"`
 }
 type Result struct {
-	Bounds  Bounds   `json:"bounds"`
-	Invalid int      `json:"invalid"`
-	Breaks  []bool   `json:"breaks"`
-	Base    []*Vec3  `json:"base"`
-	Minus   []*Vec3  `json:"minus"`
-	Plus    []*Vec3  `json:"plus"`
-	Mesh    []Vertex `json:"mesh"`
-	Rulings []Ruling `json:"rulings"`
-	Radius  float64  `json:"radius"`
-	Omitted int      `json:"omitted"`
+	Bounds  Bounds    `json:"bounds"`
+	Invalid int       `json:"invalid"`
+	Breaks  []bool    `json:"breaks"`
+	Base    []*Vec3   `json:"base"`
+	Minus   []*Vec3   `json:"minus"`
+	Plus    []*Vec3   `json:"plus"`
+	Mesh    CurveMesh `json:"mesh"`
+	Rulings []Ruling  `json:"rulings"`
+	Radius  float64   `json:"radius"`
+	Omitted int       `json:"omitted"`
 	// Involute is present only for the involute construction, which leaves
 	// the developable's Minus, Plus, Mesh, and Rulings empty.
 	Involute   *InvoluteResult   `json:"involute,omitempty"`
@@ -364,7 +358,7 @@ func compute(c Request) (Result, error) {
 		}
 	}
 	n := c.Samples
-	out := Result{Base: make([]*Vec3, n+1), Minus: make([]*Vec3, n+1), Plus: make([]*Vec3, n+1), Breaks: make([]bool, n+1), Mesh: make([]Vertex, 0, n*12), Rulings: make([]Ruling, 0, c.Lines)}
+	out := Result{Base: make([]*Vec3, n+1), Minus: make([]*Vec3, n+1), Plus: make([]*Vec3, n+1), Breaks: make([]bool, n+1), Mesh: emptyMesh(), Rulings: make([]Ruling, 0, c.Lines)}
 	// Only a study asked for the probe keeps what places it; constructions
 	// fill in their points below.
 	if c.Probe != nil {
@@ -445,6 +439,9 @@ func compute(c Request) (Result, error) {
 	if out.Diagnostics != nil {
 		out.Diagnostics.measure(out.Base, speeds, middles, out.Breaks, (hi-lo)/float64(n))
 	}
+	// Each sheet's vertices at a sample, on the curve and on its edge, are
+	// shared by the intervals on both sides of it.
+	listed := map[[3]int]int32{}
 	for i := 0; i < n && developable; i++ {
 		if out.Breaks[i+1] || !valid[i] || !valid[i+1] || normals[i].dot(normals[i+1]) < 0 {
 			out.Omitted++
@@ -455,11 +452,18 @@ func compute(c Request) (Result, error) {
 			if side < 0 {
 				edge = out.Minus
 			}
-			vertex := func(j int, point *Vec3) Vertex {
-				return Vertex{i + 1, *point, normals[j].mul(float64(side)), float64(j) / float64(n)}
+			vertex := func(j, on int, point *Vec3) int32 {
+				key := [3]int{side, on, j}
+				v, ok := listed[key]
+				if !ok {
+					v = out.Mesh.vertex(*point, normals[j].mul(float64(side)), float64(j)/float64(n))
+					listed[key] = v
+				}
+				return v
 			}
-			a, b, c, d := vertex(i, out.Base[i]), vertex(i, edge[i]), vertex(i+1, out.Base[i+1]), vertex(i+1, edge[i+1])
-			out.Mesh = append(out.Mesh, a, b, c, b, d, c)
+			a, b, c, d := vertex(i, 0, out.Base[i]), vertex(i, 1, edge[i]), vertex(i+1, 0, out.Base[i+1]), vertex(i+1, 1, edge[i+1])
+			out.Mesh.triangle(i+1, a, b, c)
+			out.Mesh.triangle(i+1, b, d, c)
 		}
 	}
 	// A harmonic curve's generating vectors and ellipses, and a field's

@@ -25,7 +25,7 @@ func levelSet(t *testing.T, q ImplicitRequest) *ImplicitResult {
 		t.Fatal(err)
 	}
 	m := r.Implicit
-	if m == nil || r.Surface != nil || r.Rays != nil || len(r.Base) != 0 || len(r.Mesh) != 0 {
+	if m == nil || r.Surface != nil || r.Rays != nil || len(r.Base) != 0 || len(corners(r.Mesh)) != 0 {
 		t.Fatalf("an implicit study has only its own result: %+v", r)
 	}
 	if len(m.Positions)%3 != 0 || len(m.Normals) != len(m.Positions) || len(m.Triangles)%3 != 0 {

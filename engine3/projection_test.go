@@ -19,7 +19,7 @@ func projected(t *testing.T, c Request) Result {
 	if _, err := json.Marshal(r); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Mesh)+len(r.Rulings)+len(r.Minus)+len(r.Plus) != 0 || r.Involute != nil {
+	if len(corners(r.Mesh))+len(r.Rulings)+len(r.Minus)+len(r.Plus) != 0 || r.Involute != nil {
 		t.Fatal("unrelated construction geometry")
 	}
 	return r

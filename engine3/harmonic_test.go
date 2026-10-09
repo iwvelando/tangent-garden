@@ -63,7 +63,7 @@ func TestHarmonicSingleTermEllipse(t *testing.T) {
 		}
 	}
 	// A plane ellipse has no inflection, so the whole developable is meshed.
-	if r.Omitted != 0 || len(r.Mesh) == 0 {
+	if r.Omitted != 0 || len(corners(r.Mesh)) == 0 {
 		t.Fatalf("omitted %d", r.Omitted)
 	}
 }
@@ -212,7 +212,7 @@ func TestHarmonicTranslatedStudy(t *testing.T) {
 		}
 	}
 	near(t, b.Bounds.Center, a.Bounds.Center.add(d), 1e-12)
-	if math.Abs(b.Bounds.Radius-a.Bounds.Radius) > 1e-12 || len(a.Mesh) != len(b.Mesh) {
+	if math.Abs(b.Bounds.Radius-a.Bounds.Radius) > 1e-12 || len(corners(a.Mesh)) != len(corners(b.Mesh)) {
 		t.Fatal("translation changed the study")
 	}
 }

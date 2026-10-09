@@ -58,11 +58,11 @@ func TestHyperboloidBetweenRings(t *testing.T) {
 	if !q.Closed || q.Gap > 1e-12 || q.Developable || q.Deviation < 0.1 || q.Singular != 0 || q.Coincident != 0 || r.Omitted != 0 {
 		t.Fatalf("summary %+v omitted %d", q, r.Omitted)
 	}
-	if len(r.Mesh) != 480*ruledStrips*6 || len(r.Rulings) != 24 {
-		t.Fatalf("%d vertices, %d rulings", len(r.Mesh), len(r.Rulings))
+	if len(corners(r.Mesh)) != 480*ruledStrips*6 || len(r.Rulings) != 24 {
+		t.Fatalf("%d vertices, %d rulings", len(corners(r.Mesh)), len(r.Rulings))
 	}
 	k := math.Pow(math.Sin(delta/2), 2)
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		p := v.Position
 		if math.Abs(p.X*p.X+p.Y*p.Y-math.Pow(math.Cos(delta/2), 2)-p.Z*p.Z*k) > 1e-12 {
 			t.Fatalf("vertex %+v off the hyperboloid", p)
@@ -81,9 +81,9 @@ func TestHyperboloidBetweenRings(t *testing.T) {
 		t.Fatalf("minus %d", len(r.Minus))
 	}
 	// The normal turns along each ruling: this surface is not developable.
-	first := r.Mesh[0]
+	first := corners(r.Mesh)[0]
 	var along []Vertex
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		if v.SampleIndex == first.SampleIndex {
 			along = append(along, v)
 		}
@@ -102,7 +102,7 @@ func TestCylinderIsDevelopable(t *testing.T) {
 	if !r.Ruled.Developable || r.Ruled.Deviation > 1e-6 {
 		t.Fatalf("cylinder %+v", r.Ruled)
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		want := Vec3{v.Position.X, v.Position.Y, 0}
 		if v.Normal.cross(want).norm() > 1e-6 {
 			t.Fatalf("normal %+v at %+v", v.Normal, v.Position)
@@ -114,7 +114,7 @@ func TestCylinderIsDevelopable(t *testing.T) {
 // corresponding points of the two threads.
 func TestRulingsAreStraight(t *testing.T) {
 	r := ruled(t, threaded(custom("cos(t)", "sin(2*t)", "0.3*t", 0, 5), "2*cos(t)", "t", "sin(t)^2+1", 0.7, 0.4))
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		d := math.Inf(1)
 		for _, j := range []int{v.SampleIndex - 1, v.SampleIndex} {
 			if j >= 0 && r.Base[j] != nil && r.Plus[j] != nil {
@@ -177,7 +177,7 @@ func TestChordsStopOutsideOpenDomain(t *testing.T) {
 			t.Fatalf("sample %d partner %v", i, p)
 		}
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		if v.SampleIndex > 360 {
 			t.Fatalf("surface past the domain at %d", v.SampleIndex)
 		}
@@ -199,15 +199,15 @@ func TestChordsStopOutsideOpenDomain(t *testing.T) {
 // A constant thread gives a cone, singular at its apex but still shaded.
 func TestCoincidentChordsAndCone(t *testing.T) {
 	r := ruled(t, chords(study(), 1, 0))
-	if r.Ruled.Coincident != 480 || len(r.Mesh) != 0 {
-		t.Fatalf("coincident %d mesh %d", r.Ruled.Coincident, len(r.Mesh))
+	if r.Ruled.Coincident != 480 || len(corners(r.Mesh)) != 0 {
+		t.Fatalf("coincident %d mesh %d", r.Ruled.Coincident, len(corners(r.Mesh)))
 	}
 	r = ruled(t, threaded(ring(0), "0", "0", "2", 1, 0))
 	q := r.Ruled
-	if q.Singular != 480 || q.Coincident != 0 || !q.Developable || len(r.Mesh) == 0 {
-		t.Fatalf("cone %+v mesh %d", q, len(r.Mesh))
+	if q.Singular != 480 || q.Coincident != 0 || !q.Developable || len(corners(r.Mesh)) == 0 {
+		t.Fatalf("cone %+v mesh %d", q, len(corners(r.Mesh)))
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		if math.Abs(v.Normal.norm()-1) > 1e-12 {
 			t.Fatalf("normal %+v at %+v", v.Normal, v.Position)
 		}
@@ -217,10 +217,37 @@ func TestCoincidentChordsAndCone(t *testing.T) {
 			t.Fatalf("normal %+v at %+v", v.Normal, v.Position)
 		}
 	}
+	ownFaces(t, r, Vec3{0, 0, 2})
 	// A partner that meets the base at one sample pinches the surface there.
 	r = ruled(t, threaded(ring(0), "cos(t)", "sin(t)", "cos(t/2)^2", 1, 0))
 	if r.Ruled.Coincident != 1 {
 		t.Fatalf("pinch %+v", r.Ruled)
+	}
+	ownFaces(t, r, Vec3{-1, 0, 0})
+}
+
+// ownFaces checks that every triangle with a corner at a point where the
+// surface has no normal shades that corner with its own face normal, which
+// its neighbours there do not share.
+func ownFaces(t *testing.T, r Result, at Vec3) {
+	t.Helper()
+	mesh := corners(r.Mesh)
+	found := 0
+	for k := 0; k < len(mesh); k += 3 {
+		a, b, d := mesh[k], mesh[k+1], mesh[k+2]
+		face := b.Position.sub(a.Position).cross(d.Position.sub(a.Position)).unit()
+		for _, v := range []Vertex{a, b, d} {
+			if v.Position.sub(at).norm() > 1e-12 {
+				continue
+			}
+			found++
+			if v.Normal.sub(face).norm() > 1e-12 {
+				t.Fatalf("triangle %d: normal %+v at %+v, face normal %+v", k/3, v.Normal, at, face)
+			}
+		}
+	}
+	if found < 2 {
+		t.Fatalf("%d corners at %+v", found, at)
 	}
 }
 
@@ -248,7 +275,7 @@ func TestPartnerPoleBreaksSurface(t *testing.T) {
 			t.Fatalf("%s: %d breaks, %d omitted", pole, breaks, r.Omitted)
 		}
 		// Every face of interval i carries sample index i + 1.
-		for _, v := range r.Mesh {
+		for _, v := range corners(r.Mesh) {
 			if r.Ruled.Breaks[v.SampleIndex] {
 				t.Fatalf("%s: face across the pole at %+v", pole, v.Position)
 			}
@@ -259,13 +286,14 @@ func TestPartnerPoleBreaksSurface(t *testing.T) {
 func TestRuledRigidMotionAndReparameterization(t *testing.T) {
 	a := ruled(t, threaded(custom("cos(t)", "sin(t)", "0.3*t", 0, 2*math.Pi), "2*cos(t)", "2*sin(t)", "0.3*t+1", 1, 0.8))
 	b := ruled(t, threaded(custom("cos(2*t)+5", "sin(2*t)-2", "0.6*t+7", 0, math.Pi), "2*cos(t)+5", "2*sin(t)-2", "0.3*t+8", 2, 0.8))
-	if math.Abs(a.Ruled.Deviation-b.Ruled.Deviation) > 1e-6 || len(a.Mesh) != len(b.Mesh) {
+	if math.Abs(a.Ruled.Deviation-b.Ruled.Deviation) > 1e-6 || len(corners(a.Mesh)) != len(corners(b.Mesh)) {
 		t.Fatalf("deviation %g vs %g", a.Ruled.Deviation, b.Ruled.Deviation)
 	}
 	shift := Vec3{5, -2, 7}
-	for i := range a.Mesh {
-		near(t, b.Mesh[i].Position, a.Mesh[i].Position.add(shift), 1e-9)
-		if math.Abs(math.Abs(b.Mesh[i].Normal.dot(a.Mesh[i].Normal))-1) > 1e-6 {
+	first, second := corners(a.Mesh), corners(b.Mesh)
+	for i := range first {
+		near(t, second[i].Position, first[i].Position.add(shift), 1e-9)
+		if math.Abs(math.Abs(second[i].Normal.dot(first[i].Normal))-1) > 1e-6 {
 			t.Fatalf("normal %d changed", i)
 		}
 	}

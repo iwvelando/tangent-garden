@@ -42,12 +42,14 @@ try {
   };
   mesh.vertices.set([1, 2, 3, 0, 0, 1, 0.5]);
   mesh.sampleIndex.set([4, 4, 4]);
-  const curveBuffer = new ArrayBuffer(8 * 21 + 4 * 3);
+  const curveBuffer = new ArrayBuffer(8 * 21 + 4 * 4);
   const curveMesh = {
     vertices: new Float64Array(curveBuffer, 0, 21),
-    sampleIndex: new Int32Array(curveBuffer, 168, 3),
+    triangles: new Int32Array(curveBuffer, 168, 3),
+    sampleIndex: new Int32Array(curveBuffer, 180, 1),
   };
   curveMesh.vertices.set([1, 2, 3, 0, 0, 1, 0.5]);
+  curveMesh.triangles.set([0, 1, 2]);
   const context = createContext({
     importScripts: () => {}, // Vite's development environment prelude.
     self: {
@@ -63,14 +65,18 @@ try {
     tangentGardenSpatial: (json) =>
       JSON.parse(json).format === "implicit"
         ? {
-            json: '{"mesh":null,"implicit":{"grid":[4,4,4],"positions":null,"normals":null,"triangles":null,"cut":null,"open":null}}',
+            json: '{"mesh":{"vertices":null,"triangles":null,"sampleIndex":null},"implicit":{"grid":[4,4,4],"positions":null,"normals":null,"triangles":null,"cut":null,"open":null}}',
             mesh: {
               vertices: new Float64Array(buffer, 0, 0),
+              triangles: new Int32Array(buffer, 216, 0),
               sampleIndex: new Int32Array(buffer, 216, 0),
             },
             implicit: implicitMesh,
           }
-        : { json: '{"base":[],"mesh":null}', mesh: curveMesh },
+        : {
+            json: '{"base":[],"mesh":{"vertices":null,"triangles":null,"sampleIndex":null}}',
+            mesh: curveMesh,
+          },
   });
   new Script(`${worker.code}\nready = Promise.resolve();`).runInContext(
     context,
@@ -241,6 +247,7 @@ try {
   const tube = replies.at(-1).result;
   assert.equal(tube.base.length, 0);
   assert.equal(tube.mesh.vertices, curveMesh.vertices);
+  assert.equal(tube.mesh.triangles, curveMesh.triangles);
   assert.equal(tube.mesh.sampleIndex, curveMesh.sampleIndex);
   assert.deepEqual(Array.from(transfers.at(-1)), [curveBuffer]);
 } finally {

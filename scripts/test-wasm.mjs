@@ -1069,9 +1069,10 @@ console.log(
   "WASM bridge: analytic ellipse, pedal cardioid, contrapedal circle, orthotomic cardioid, circle offsets, offset stack with circles, astroid roulette, rolling epicycloid, rolling ellipses, circle chords, circles through a focus, a circle inverted into a line, an inverted pedal, an involute of an evolute, a Fourier deltoid, a Lissajous figure, a heptagon pursuit, rotation trajectories, Cassini ovals, Clifford and Hénon densities, and invalid JSON passed.",
 );
 // A spatial result arrives as its JSON and its meshes, typed views on one
-// buffer (cmd/wasm/mesh.go): the curve mesh always, with seven numbers per
-// vertex (position, normal, phase) and each vertex's sample, and an
-// implicit surface's arrays for an implicit study. A refusal is JSON alone.
+// buffer (cmd/wasm/mesh.go): the curve mesh always, indexed, with seven
+// numbers per vertex (position, normal, phase), three vertices and one
+// sample per triangle, and an implicit surface's arrays for an implicit
+// study. A refusal is JSON alone.
 const implicitArrays = {
   positions: Float64Array,
   normals: Float64Array,
@@ -1084,19 +1085,29 @@ function spatialResult(reply) {
   const result = JSON.parse(reply.json);
   assert.ok(!("error" in result));
   // The JSON leaves the arrays out; they arrive typed, on one buffer.
-  assert.ok(result.mesh === null, "the curve mesh is left out of the JSON");
-  const { vertices, sampleIndex } = reply.mesh;
+  assert.deepEqual(
+    result.mesh,
+    { vertices: null, triangles: null, sampleIndex: null },
+    "the curve mesh is left out of the JSON",
+  );
+  const { vertices, triangles, sampleIndex } = reply.mesh;
   assert.ok(vertices instanceof Float64Array);
+  assert.ok(triangles instanceof Int32Array);
   assert.ok(sampleIndex instanceof Int32Array);
+  assert.equal(triangles.buffer, vertices.buffer);
   assert.equal(sampleIndex.buffer, vertices.buffer);
-  assert.equal(vertices.length, 7 * sampleIndex.length);
-  // Whole triangles, each on one sample.
-  assert.equal(sampleIndex.length % 3, 0);
-  for (let k = 0; k < sampleIndex.length; k += 3)
-    assert.ok(
-      sampleIndex[k] === sampleIndex[k + 1] &&
-        sampleIndex[k] === sampleIndex[k + 2],
-    );
+  assert.equal(vertices.length % 7, 0);
+  // Whole triangles, each on one sample, using every vertex.
+  assert.equal(triangles.length, 3 * sampleIndex.length);
+  const used = new Uint8Array(vertices.length / 7);
+  for (const v of triangles) {
+    assert.ok(v >= 0 && v < used.length, `vertex ${v}`);
+    used[v] = 1;
+  }
+  assert.ok(
+    used.every((u) => u === 1),
+    "every vertex is used",
+  );
   result.mesh = reply.mesh;
   assert.equal(reply.implicit === undefined, !result.implicit);
   if (result.implicit)
@@ -1108,19 +1119,24 @@ function spatialResult(reply) {
     }
   return result;
 }
-// A curve mesh's vertices, as the engine lists them (engine3.Vertex).
-function* meshVertices({ vertices, sampleIndex }) {
-  for (let k = 0; k < sampleIndex.length; k++) {
-    const [x, y, z, nx, ny, nz, phase] = vertices.subarray(7 * k, 7 * k + 7);
+// A curve mesh's triangles corner by corner, each with its triangle's
+// sample.
+function* meshVertices({ vertices, triangles, sampleIndex }) {
+  for (let k = 0; k < triangles.length; k++) {
+    const v = triangles[k];
+    const [x, y, z, nx, ny, nz, phase] = vertices.subarray(7 * v, 7 * v + 7);
     yield {
       position: { x, y, z },
       normal: { x: nx, y: ny, z: nz },
       phase,
-      sampleIndex: sampleIndex[k],
+      sampleIndex: sampleIndex[Math.floor(k / 3)],
     };
   }
 }
-const meshSize = (mesh) => mesh.sampleIndex.length;
+// Corners: three per triangle.
+const meshSize = (mesh) => mesh.triangles.length;
+// Vertices, each shared by the triangles beside it.
+const meshVertexCount = (mesh) => mesh.vertices.length / 7;
 const spatial = spatialResult(
   globalThis.tangentGardenSpatial(
     JSON.stringify({
@@ -1136,6 +1152,8 @@ const spatial = spatialResult(
 );
 assert.equal(spatial.base.length, 481);
 assert.equal(meshSize(spatial.mesh), 5760);
+// Each sheet's vertices on the curve and its edge, once per sample.
+assert.equal(meshVertexCount(spatial.mesh), 2 * 2 * 481);
 // The developable's two sheets of two triangles per interval run from the
 // curve to its edges, each vertex at its own sample's phase.
 for (const v of meshVertices(spatial.mesh)) {
@@ -2155,6 +2173,9 @@ const spatialCanal = (canal, frame = {}, study = {}) =>
   assert.equal(torus.minus.length, 0);
   assert.equal(torus.rulings.length, 0);
   assert.equal(meshSize(torus.mesh), 480 * 24 * 6);
+  // Each ring once, its 24 segments and the closing point, the seam ring
+  // at both ends.
+  assert.equal(meshVertexCount(torus.mesh), 481 * 25);
   for (const v of meshVertices(torus.mesh)) {
     const p = v.position;
     assert.ok(

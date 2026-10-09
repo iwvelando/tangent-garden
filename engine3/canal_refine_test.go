@@ -202,13 +202,13 @@ func TestRefinedMeridiansBreakTheSurface(t *testing.T) {
 			}
 		}
 	}
-	for _, v := range r.Mesh {
+	for _, v := range corners(r.Mesh) {
 		if v.SampleIndex == crack {
 			t.Fatalf("face across the gap at %+v", v.Position)
 		}
 	}
-	if len(r.Mesh) != len(uniform.Mesh)-canalSegments*6 {
-		t.Fatalf("%d vertices, uniform %d", len(r.Mesh), len(uniform.Mesh))
+	if len(corners(r.Mesh)) != len(corners(uniform.Mesh))-canalSegments*6 {
+		t.Fatalf("%d vertices, uniform %d", len(corners(r.Mesh)), len(corners(uniform.Mesh)))
 	}
 }
 

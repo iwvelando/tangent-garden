@@ -13,11 +13,12 @@ import (
 // Float64Array and Int32Array views on one ArrayBuffer, the float64 and
 // int32 values Go computed, which the worker can transfer without copying.
 // The reply is { json, mesh, implicit }: mesh holds the curve study's
-// triangles (engine3.FlatMesh: vertices, seven numbers each, and
-// sampleIndex), and implicit, only for an implicit surface, its positions,
-// normals, triangles, cut and open. The JSON keeps every other field, with
-// null in place of each array. WebAssembly and every browser are
-// little-endian, so the bytes are copied as they lie in memory.
+// indexed triangles (engine3.CurveMesh: vertices, seven numbers each,
+// triangles, and sampleIndex, one per triangle), and implicit, only for an
+// implicit surface, its positions, normals, triangles, cut and open. The
+// JSON keeps every other field, with null in place of each array.
+// WebAssembly and every browser are little-endian, so the bytes are copied
+// as they lie in memory.
 func meshReply(result *engine3.Result, encode func() (string, error)) any {
 	type floats struct {
 		group, name string
@@ -27,9 +28,8 @@ func meshReply(result *engine3.Result, encode func() (string, error)) any {
 		group, name string
 		values      []int32
 	}
-	vertices, samples := engine3.FlatMesh(result.Mesh)
-	fs := []floats{{"mesh", "vertices", vertices}}
-	is := []ints{{"mesh", "sampleIndex", samples}}
+	fs := []floats{{"mesh", "vertices", result.Mesh.Vertices}}
+	is := []ints{{"mesh", "triangles", result.Mesh.Triangles}, {"mesh", "sampleIndex", result.Mesh.SampleIndex}}
 	if m := result.Implicit; m != nil {
 		fs = append(fs, floats{"implicit", "positions", m.Positions}, floats{"implicit", "normals", m.Normals})
 		is = append(is, ints{"implicit", "triangles", m.Triangles}, ints{"implicit", "cut", m.Cut}, ints{"implicit", "open", m.Open})
@@ -60,7 +60,7 @@ func meshReply(result *engine3.Result, encode func() (string, error)) any {
 	for _, i := range is {
 		view(i.group, i.name, "Int32Array", unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(i.values))), 4*len(i.values)), len(i.values))
 	}
-	result.Mesh = nil
+	result.Mesh = engine3.CurveMesh{}
 	if m := result.Implicit; m != nil {
 		m.Positions, m.Normals, m.Triangles, m.Cut, m.Open = nil, nil, nil, nil, nil
 	}

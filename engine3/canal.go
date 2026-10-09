@@ -274,6 +274,21 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 			rings = append(rings, i)
 		}
 	}
+	// Each ring's vertices are listed once, when a strip first uses them,
+	// and shared by the strips on both sides of it.
+	listed := map[int]int32{}
+	vertex := func(i, k int) int32 {
+		first, ok := listed[i]
+		if !ok {
+			first = int32(len(out.Mesh.Vertices) / 7)
+			listed[i] = first
+			for m := 0; m <= canalSegments; m++ {
+				p := grid(i, m)
+				out.Mesh.vertex(p, normal(i, p), float64(i)/float64(n))
+			}
+		}
+		return first + int32(k)
+	}
 	for j := 1; j < len(rings); j++ {
 		a, b := rings[j-1], rings[j]
 		connected := true
@@ -283,12 +298,9 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 		if !connected {
 			continue
 		}
-		vertex := func(i, k int) Vertex {
-			p := grid(i, k)
-			return Vertex{b, p, normal(i, p), float64(i) / float64(n)}
-		}
 		for k := 0; k < canalSegments; k++ {
-			out.Mesh = append(out.Mesh, vertex(a, k), vertex(b, k), vertex(a, k+1), vertex(b, k), vertex(b, k+1), vertex(a, k+1))
+			out.Mesh.triangle(b, vertex(a, k), vertex(b, k), vertex(a, k+1))
+			out.Mesh.triangle(b, vertex(b, k), vertex(b, k+1), vertex(a, k+1))
 		}
 	}
 	for line := 0; line < c.Lines; line++ {

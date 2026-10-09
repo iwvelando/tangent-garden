@@ -174,8 +174,9 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Open:**
 
-- Typed-array transport beyond the meshes. The curve mesh (tubes, ribbons, developables, ruled surfaces) now travels typed, as the implicit mesh did ([spatial-mesh-transport.md](spatial-mesh-transport.md), step 1); an indexed curve mesh (step 2) is still open. Large JSON results:
+- Typed-array transport beyond the meshes. The curve mesh (tubes, ribbons, developables, ruled surfaces) now travels typed and indexed, as the implicit mesh did ([spatial-mesh-transport.md](spatial-mesh-transport.md), steps 1 and 2). A tube frame's time is now mostly Go's own work. Large JSON results:
   - canal circles about 270 KB, and `base` and `composition` about 200 KB each at 2400 samples;
+  - a refined tube's paths (`adaptive`) about 900 KB on the twisted spring, whose encoding is about a quarter of its frame natively;
   - surface grid about 10 MB;
   - surface-probe grids 5–7 MB;
   - the largest 4D weave 9.6 MB.

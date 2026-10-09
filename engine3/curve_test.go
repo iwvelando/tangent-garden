@@ -29,7 +29,7 @@ func TestCustomHelix(t *testing.T) {
 		b := Vec3{math.Sin(u) / 3, -math.Cos(u) / 3, 2}.unit()
 		near(t, out.Base[i], r, 1e-12)
 		near(t, out.Plus[i], r.add(tangent.mul(c.Length)), 1e-8)
-		near(t, out.Mesh[12*i].Normal, b.mul(-1), 1e-6)
+		near(t, corners(out.Mesh)[12*i].Normal, b.mul(-1), 1e-6)
 	}
 	// The user-specified domain is not assumed closed.
 	if out.Base[0].sub(*out.Base[c.Samples]).norm() < 1 {
@@ -61,8 +61,8 @@ func TestCustomLineHasTangentsWithoutInventedSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out.Mesh) != 0 || len(out.Rulings) != 96 || out.Invalid != 0 {
-		t.Fatalf("line: faces %d, rulings %d, invalid %d", len(out.Mesh), len(out.Rulings), out.Invalid)
+	if len(corners(out.Mesh)) != 0 || len(out.Rulings) != 96 || out.Invalid != 0 {
+		t.Fatalf("line: faces %d, rulings %d, invalid %d", len(corners(out.Mesh)), len(out.Rulings), out.Invalid)
 	}
 }
 func TestCustomBreaks(t *testing.T) {

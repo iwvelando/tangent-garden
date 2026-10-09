@@ -479,8 +479,16 @@ export function buildScene(result: SpatialResult) {
       { ...at, [axis]: at[axis] - arm },
       { ...at, [axis]: at[axis] + arm },
     ]);
-  // The engine's vertices are already laid out as a batch's.
-  const mesh = batch(new Float32Array(result.mesh.vertices), "triangles", 0);
+  // The engine's vertices are already laid out as a batch's, and its
+  // triangles are drawn by index.
+  const mesh: Batch = result.mesh.triangles.length
+    ? {
+        mode: "triangles",
+        data: new Float32Array(result.mesh.vertices),
+        ink: 0,
+        indices: new Uint32Array(result.mesh.triangles),
+      }
+    : batch([], "triangles", 0);
   const refined = result.adaptive;
   const base = path(result.base, result.breaks, 2, refined?.base);
   // A framed ribbon's edges are also broken where a Frenet normal reverses.

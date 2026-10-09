@@ -1,6 +1,6 @@
 # Spatial mesh transport: moving curve surfaces off JSON
 
-Status: step 1 done (see [Step 1, as built](#step-1-as-built)); step 2 and the secondary candidates are open. This is the detailed framing for the canal bullet of item 8 ("Transport and efficiency, when profiled") in [remaining-refinements.md](remaining-refinements.md). Read `AGENTS.md` first, then the parts of [architecture.md](architecture.md) on the WASM bridge and the implicit mesh.
+Status: steps 1 and 2 done (see [Step 1, as built](#step-1-as-built) and [Step 2, as built](#step-2-as-built)); the secondary candidates are open, with what step 2 measured about them under [What is left](#what-is-left). This is the detailed framing for the canal bullet of item 8 ("Transport and efficiency, when profiled") in [remaining-refinements.md](remaining-refinements.md). Read `AGENTS.md` first, then the parts of [architecture.md](architecture.md) on the WASM bridge and the implicit mesh.
 
 ## The symptom
 
@@ -83,7 +83,7 @@ These are smaller, and each could follow once step 1 exists:
 - `engine3.FlatMesh` lays `Result.Mesh` out as `vertices` (seven float64 per vertex) and `sampleIndex` (int32); the engine's types and output are unchanged. `cmd/wasm/mesh.go` sends every spatial result as `{ json, mesh, implicit }`, typed views on one buffer, with the implicit arrays nested under `implicit` rather than beside `json`. The worker transfers the buffer; `SpatialResult.mesh` is a `CurveMesh`.
 - `buildScene` copies `vertices` into its batch; the reveal keeps the vertices whose sample is at most the last revealed, in their order (`revealMesh`); the ruled note counts `sampleIndex`. Hand-built test results use `tests/curve-mesh.ts`.
 - `make bench` is now `scripts/bench-spatial.mjs`, with six curve presets beside the implicit studies and a column for the scene's batch. It reads every reply shape, so `--compare` against the deployed site works.
-- Checks: `engine3/flat_test.go` (the arrays equal the JSON bit for bit, including a canal with gaps and an empty ribbon); `scripts/test-wasm.mjs` reads every spatial reply through the typed views and checks a developable's, ribbon's and torus's vertices, an empty mesh and a mesh broken where the envelope is lost; `scripts/test-dev-worker.mjs` checks the worker's reassembly and transfer; `tests/spatial-mesh-transport.spec.ts` compares, for every preset, the scene drawn from the typed mesh with the scene drawn the old way, whole and at four reveals, and plays the coiled cord's track to both endpoints.
+- Checks: `engine3/flat_test.go` (since replaced by `engine3/mesh_test.go` in step 2; the arrays equal the JSON bit for bit, including a canal with gaps and an empty ribbon); `scripts/test-wasm.mjs` reads every spatial reply through the typed views and checks a developable's, ribbon's and torus's vertices, an empty mesh and a mesh broken where the envelope is lost; `scripts/test-dev-worker.mjs` checks the worker's reassembly and transfer; `tests/spatial-mesh-transport.spec.ts` compares, for every preset, the scene drawn from the typed mesh with the scene drawn the old way, whole and at four reveals, and plays the coiled cord's track to both endpoints.
 - A one-off comparison against the previous engine and frontend hashed every 3D preset's whole scene at rest, at two reveals, and at each parameter track's start, middle and end: 363 scenes, all identical. A deliberate fault in the reveal changed 78 of them.
 - Timing with `make bench ARGS="--compare <previous build>"`, in Node on the cloud container (median of 5; call + decode + post + scene):
 
@@ -97,6 +97,54 @@ These are smaller, and each could follow once step 1 exists:
   | Trefoil · (2, 3) (tangent developable)    | 101 ms | 13 ms  | 2.6 MB → 0.9 MB  |
 
   Implicit studies are unchanged within noise. The spring's remaining time is its refinement in Go. Most of what remains of a tube's transfer is the mesh's own buffer (about 4 MB at the 480-ring cap), which step 2 would cut about six-fold.
+
+## Step 2, as built
+
+- `Result.Mesh` is an `engine3.CurveMesh` (`engine3/mesh.go`): `vertices`, seven float64 per vertex, `triangles`, three int32 vertex indices per triangle in drawing order, and `sampleIndex`, one int32 per triangle. Every generator gave a triangle's three corners the same sample, so the sample moved to the triangle. `engine3.Vertex` and `engine3.FlatMesh` are gone; Go tests read the triangles corner by corner through `corners` in `engine3/mesh_test.go`.
+- Sharing, which never changes a number:
+  - `canal.go` lists each drawn ring once, its 24 segments and the closing point, when a strip first uses it, and the strips either side share it. The torus has 481 × 25 = 12,025 vertices for 69,120 corners.
+  - `developable.go` lists each sheet's point on the curve and on its edge once per sample and side, so 2 × 2 × 481 = 1,924 vertices for the trefoil's 11,520 corners.
+  - `ruled.go` lists each grid point that has a normal once. A corner without one takes its own triangle's face normal and stays its own vertex, as at a cone's apex or where the threads pinch. A flat triangle with such a corner is dropped before any vertex is listed, so no vertex goes unused.
+  - `frame.go` shades each triangle with its face normal, so a framed ribbon shares nothing; its transfer grows by its 4-byte indices.
+- `cmd/wasm/mesh.go` adds `triangles` beside `vertices` and `sampleIndex` on the same buffer. The worker is unchanged apart from its type. `buildScene` makes the mesh an indexed batch, as the implicit mesh's, with no data at all when there are no triangles, so the legend still leaves an unrevealed surface out. The renderer's existing fallback draws corner by corner without 32-bit indices, and the cut and the line drawing already read indexed batches. `revealMesh` keeps the triangles up to the last revealed sample, in order, on the same vertices.
+- Checks:
+  - `engine3/mesh_test.go`: arrays whole, every index in range, every vertex used, each triangle's corners within its interval, sharing at least two-fold on tubes, developables and ruled surfaces, the torus's exact vertex count, and a JSON round trip bit for bit.
+  - `TestCoincidentChordsAndCone`: every corner at the cone's apex and at a pinch keeps its own face normal.
+  - `scripts/test-wasm.mjs`: reads the three views, checks indices and use, and counts the developable's and torus's shared vertices.
+  - `scripts/test-dev-worker.mjs`: puts the triangles back.
+  - `tests/spatial-mesh-transport.spec.ts`: for every preset, expands the drawn batch through its indices, compares it bit for bit with the triangles the engine listed, whole and at four reveals, and requires at least four corners per vertex across the presets.
+- A one-off comparison against the step-1 engine and frontend expanded every batch of every 3D preset's scene through its indices and hashed it. It covered each preset at rest, at two reveals, and at each parameter track's start, middle and end: 363 scenes, 156 with a mesh, all identical. Of the targeted faults injected:
+  - Sharing a ring's closing point with its first was caught by both the comparison and the Go tests.
+  - So was sharing a developable's vertices across its two sheets.
+  - Sharing a ruled surface's face-normal corners was caught by neither, since no preset and no Go test had such a corner used by two triangles. The pinch check in `TestCoincidentChordsAndCone` was added for it and catches it now.
+  - In the front end, a reveal that kept one sample too few and an indexed batch in the wrong order were each caught by the browser spec.
+- Timing with `make bench ARGS="--compare <step-1 build>"`, in Node on the cloud container (median of 7; call + decode + post + scene):
+
+  | Study                                     | Step 1 | Step 2 | Vertices        | Transfer        |
+  | ----------------------------------------- | ------ | ------ | --------------- | --------------- |
+  | Coiled cord, 960 samples                  | 50 ms  | 51 ms  | 69,120 → 12,025 | 4.6 MB → 1.5 MB |
+  | Coiled cord, 2400 samples                 | 81 ms  | 79 ms  | 69,120 → 12,025 | 4.9 MB → 1.8 MB |
+  | Beads running around a trefoil            | 50 ms  | 44 ms  | 51,840 → 9,025  | 3.6 MB → 1.3 MB |
+  | A cord twisted round a spring (refined)   | 184 ms | 194 ms | 34,560 → 6,025  | 3.1 MB → 1.6 MB |
+  | A band around the trefoil (framed ribbon) | 16 ms  | 20 ms  | 5,760 → 5,760   | 0.7 MB → 0.8 MB |
+  | Trefoil · (2, 3) (tangent developable)    | 11 ms  | 13 ms  | 11,520 → 3,844  | 0.9 MB → 0.5 MB |
+
+  The Node frame time is unchanged within this container's noise: step 1 had already taken the mesh's encoding, parsing and copy out of the frame. What step 2 removes is in the page, where Node does not measure it. The tube's GPU vertex buffer falls from 1.9 MB to 0.34 MB plus 0.28 MB of indices, `buildScene` converts about a sixth as many numbers to float32, and the vertex shader runs once per shared vertex rather than per corner. Check it on a device (see below); headless Chromium cannot judge it.
+
+## What is left
+
+Profiling the presets natively after step 2 (the time Go takes, then the time `json.Marshal` takes for everything but the mesh) shows where a tube frame's time now goes:
+
+| Study (one frame, native)      | Compute | Marshal the rest | JSON    | Largest fields                                     |
+| ------------------------------ | ------- | ---------------- | ------- | -------------------------------------------------- |
+| Coiled cord, 960 samples       | 16 ms   | 3.8 ms           | 473 KB  | `canal` 272 KB, `composition` 94 KB, `base` 70 KB  |
+| Beads running around a trefoil | 12 ms   | 3.4 ms           | 507 KB  | `canal` 408 KB                                     |
+| A cord twisted round a spring  | 49 ms   | 20 ms            | 1.07 MB | `adaptive` 897 KB, `canal` 151 KB                  |
+| A band around the trefoil      | 2.4 ms  | 2.5 ms           | 397 KB  | `frame` 170 KB, `base`, `minus`, `plus` 70 KB each |
+
+- **Go's own work is now most of a tube frame.** It is the next place to look for the cord and the beads, starting with a CPU profile of `Compute` on these requests.
+- **`canal.circles`** is the largest JSON for the cord and the beads, over half of what encoding the rest costs, or roughly a tenth of their native frame. Moving it follows the same pattern, but its `points` feed the renderer, the probe and the line drawing.
+- **The spring's refined paths (`adaptive`)** take about a quarter of its native frame to encode. They are the best remaining JSON candidate for that preset. A typed form for `[]*Vec3` paths, with a NaN or a mask for a missing point, would also carry `base`, `composition`, `minus` and `plus`.
 
 ## Verification the change must carry
 

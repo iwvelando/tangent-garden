@@ -37,8 +37,8 @@ func surfaced(t *testing.T, c Request) *SurfaceResult {
 	if _, err := json.Marshal(out); err != nil {
 		t.Fatal(err)
 	}
-	if len(out.Base) != 0 || len(out.Mesh) != 0 || len(out.Rulings) != 0 {
-		t.Fatalf("a surface study has no base curve: %d samples, %d vertices", len(out.Base), len(out.Mesh))
+	if len(out.Base) != 0 || len(corners(out.Mesh)) != 0 || len(out.Rulings) != 0 {
+		t.Fatalf("a surface study has no base curve: %d samples, %d vertices", len(out.Base), len(corners(out.Mesh)))
 	}
 	return out.Surface
 }
