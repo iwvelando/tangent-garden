@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { FrameRateField } from "./FrameRateField";
 import { ProgressSlider } from "./ProgressSlider";
 import type { PlanarAnimation } from "./planar-link";
@@ -54,7 +54,14 @@ import {
 import { studyName, type Config, type Frame, type ProbeQuery } from "./types";
 import { fitFrame, viewRect, type Layers } from "./Plot";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
-import { defaultScale, exportEncoding, exportTiming } from "./export-quality";
+import {
+  defaultScale,
+  exportEncoding,
+  exportTiming,
+  largestScale,
+  resolutionHelp,
+} from "./export-quality";
+import { canvasFits } from "./export-image";
 import {
   asymptoteHelp,
   cycles,
@@ -171,7 +178,10 @@ export function AnimationPanel({
   const exportSection = useDisclosure("export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
-  const [exportScale, setExportScale] = useState(defaultScale);
+  const [scaleChoice, setExportScale] = useState(defaultScale);
+  // Only resolutions this device draws are offered; a larger choice waits.
+  const topScale = useMemo(() => largestScale(canvasFits), []);
+  const exportScale = Math.min(scaleChoice, topScale);
   // Each format keeps its own quality, starting from its default.
   const [qualities, setQualities] = useState(defaultQuality);
   const [exportNotice, setExportNotice] = useState("");
@@ -1134,14 +1144,14 @@ export function AnimationPanel({
             <Field
               label="Export resolution"
               value={`${exportSize.width} × ${exportSize.height}`}
-              help="More pixels keep finer detail, with larger files and slower export."
+              help={resolutionHelp(topScale)}
             >
               <input
                 aria-label="Export resolution"
                 aria-valuetext={`${exportSize.width} by ${exportSize.height} pixels`}
                 type="range"
                 min="0.5"
-                max="2"
+                max={topScale}
                 step="0.25"
                 value={exportScale}
                 onChange={(e) => setExportScale(+e.target.value)}

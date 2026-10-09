@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -77,7 +78,14 @@ import { buildScene, scenePasses } from "./scene";
 import { movedCut, sweepExtent, sweepOffset, type CutSpec } from "./cut";
 import type { Sight } from "./sight";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
-import { defaultScale, exportEncoding, exportTiming } from "../export-quality";
+import {
+  defaultScale,
+  exportEncoding,
+  exportTiming,
+  largestScale,
+  resolutionHelp,
+} from "../export-quality";
+import { spatialFits } from "./limits";
 import {
   defaultQuality,
   detectFormats,
@@ -281,7 +289,13 @@ export function SpatialAnimationPanel({
   const exportSection = useDisclosure("spatial-export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
-  const [exportScale, setExportScale] = useState(defaultScale);
+  const [scaleChoice, setExportScale] = useState(defaultScale);
+  // Only resolutions this device draws are offered; a larger choice waits.
+  const topScale = useMemo(() => {
+    const fits = spatialFits(sight.sheets === "through");
+    return largestScale((size) => fits(size, false));
+  }, [sight.sheets]);
+  const exportScale = Math.min(scaleChoice, topScale);
   // Each format keeps its own quality, starting from its default.
   const [qualities, setQualities] = useState(defaultQuality);
   const [exportNotice, setExportNotice] = useState("");
@@ -1626,14 +1640,14 @@ export function SpatialAnimationPanel({
             <Field
               label="Export resolution"
               value={`${exportSize.width} × ${exportSize.height}`}
-              help="More pixels keep finer detail, with larger files and slower export."
+              help={resolutionHelp(topScale)}
             >
               <input
                 aria-label="Export resolution"
                 aria-valuetext={`${exportSize.width} by ${exportSize.height} pixels`}
                 type="range"
                 min="0.5"
-                max="2"
+                max={topScale}
                 step="0.25"
                 value={exportScale}
                 onChange={(e) => setExportScale(+e.target.value)}

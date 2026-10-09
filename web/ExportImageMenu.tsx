@@ -1,21 +1,28 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
 import {
+  canvasFits,
   defaultStill,
   drawingPage,
   pngFile,
   saveFile,
   StillLimit,
+  stillFits,
   stillScales,
   stillSize,
   svgFile,
+  type Fits,
   type Still,
 } from "./export-image";
+
+// A PNG rasterized from vectors needs only a canvas of its size.
+const rasterFits: Fits = (size) => canvasFits(size);
 
 type Props = {
   disabled: boolean;
@@ -26,6 +33,9 @@ type Props = {
   // What the size applies to: the PNG alone where the other formats are
   // vectors, or every format of a page drawn by WebGL.
   sizeLabel?: string;
+  // Whether this device can draw a size, asked when the menu opens; kept
+  // the same between renders.
+  fits?: Fits;
   svgLabel?: string;
   // Further formats a notebook saves itself, listed after SVG.
   extraItems?: { format: string; label: string }[];
@@ -43,10 +53,21 @@ export function ExportImageMenu({
   menuId = "export-image-menu",
   base = drawingPage,
   sizeLabel = "PNG size",
+  fits = rasterFits,
 }: Props) {
   const [open, setOpen] = useState(false);
   // Settings, kept between exports. The menu stays open while they change.
-  const [still, setStill] = useState<Still>(defaultStill);
+  const [chosen, setStill] = useState<Still>(defaultStill);
+  // Only sizes this device can draw are offered. A chosen size that does
+  // not fit is kept, and the largest that does is used meanwhile.
+  const scales = useMemo(
+    () => (open ? stillFits(fits, base, chosen.transparent) : stillScales),
+    [open, fits, base.width, base.height, chosen.transparent],
+  );
+  const still = {
+    ...chosen,
+    scale: Math.min(chosen.scale, scales.at(-1)!),
+  };
   const png = stillSize(still, base);
   const [error, setError] = useState("");
   // Keep the right-edge anchor where it fits, and clamp wider popups to the
@@ -95,7 +116,8 @@ export function ExportImageMenu({
     button.current?.focus();
   }
   function keys(e: KeyboardEvent) {
-    const list = items.current;
+    // Fewer sizes leave earlier items behind; only those shown count.
+    const list = items.current.filter((e) => e.isConnected);
     const i = list.indexOf(document.activeElement as HTMLButtonElement);
     const move = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: -1 }[e.key];
     if (move !== undefined) {
@@ -197,7 +219,7 @@ export function ExportImageMenu({
             <div className="export-menu-heading" aria-hidden="true">
               {sizeLabel}
             </div>
-            {stillScales.map((scale, i) => {
+            {scales.map((scale, i) => {
               const size = stillSize({ ...still, scale }, base);
               return (
                 <button
@@ -215,7 +237,7 @@ export function ExportImageMenu({
           </div>
           <div role="separator" />
           <button
-            ref={item(2 + extraItems.length + stillScales.length)}
+            ref={item(2 + extraItems.length + scales.length)}
             role="menuitemcheckbox"
             aria-checked={still.transparent}
             tabIndex={-1}

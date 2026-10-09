@@ -1,3 +1,5 @@
+import { withMore } from "./help";
+
 export type ExportLayout = "columns" | "rows";
 export type ExportSettings = {
   scale: number;
@@ -33,6 +35,39 @@ export function exportEncoding({ scale, quality, layout }: ExportSettings) {
     scale,
     compression: quality / 100,
   };
+}
+
+// The export resolutions offered, from 50% to 200% of the page.
+export const exportScales = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+// The largest resolution a device draws an animation's frames at: from the
+// smallest up to the first it cannot, since a larger page fits no better.
+// The smallest is always offered, so a device that cannot draw it says so
+// when exporting.
+export function largestScale(
+  fits: (size: { width: number; height: number }) => boolean,
+  layout?: ExportLayout,
+) {
+  let top = exportScales[0];
+  for (const scale of exportScales.slice(1)) {
+    if (!fits(exportEncoding({ scale, quality: 100, layout }))) break;
+    top = scale;
+  }
+  return top;
+}
+// The resolution's help, with the device's limit when it is below 200%.
+export function resolutionHelp(top: number, layout?: ExportLayout) {
+  const help =
+    "More pixels keep finer detail, with larger files and slower export.";
+  if (top >= exportScales.at(-1)!) return help;
+  const { width, height } = exportEncoding({
+    scale: top,
+    quality: 100,
+    layout,
+  });
+  return withMore(
+    help,
+    `This device draws animations at most ${width} × ${height}.`,
+  );
 }
 
 // Frame times and millisecond delays shared by every export format. The
