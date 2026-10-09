@@ -217,12 +217,13 @@ export function SpatialPlot({
       lost.current = true;
       renderer.current = null;
       const text =
-        "The 3D graphics context was lost. The drawing returns when the browser restores it.";
+        "The 3D graphics context was lost. The drawing returns when the browser restores it; if it does not, reload the page.";
       setError(text);
       onError(text);
     };
+    // The context stays lost, and nothing is drawn, until a renderer is
+    // rebuilt on it.
     const regained = () => {
-      lost.current = false;
       try {
         renderer.current = createRenderer(element);
       } catch (e) {
@@ -231,6 +232,7 @@ export function SpatialPlot({
         onError(text);
         return;
       }
+      lost.current = false;
       const { result, probe, onGeometry } = state.current;
       renderer.current.upload(result);
       renderer.current.setProbe(probe);

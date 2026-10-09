@@ -42,7 +42,10 @@ test("a lost 3D context is rebuilt on restore with the camera kept", async ({
 
   await lose(page);
   await expect(page.getByRole("alert")).toContainText("context was lost");
-  await expect(page.getByRole("alert")).not.toContainText("Reload");
+  // It says the drawing returns, with reloading only as a fallback.
+  await expect(page.getByRole("alert")).toContainText(
+    "returns when the browser restores it; if it does not, reload the page",
+  );
   // The message sits over the browser's placeholder for the lost canvas,
   // so it brings its own opaque background.
   const { background, color } = await page
