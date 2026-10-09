@@ -1,6 +1,27 @@
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
+import { createServer } from "vite";
 await import("../public/wasm_exec.js");
+// The page's own code to put a result's lifted arrays back.
+const vite = await createServer({ logLevel: "silent", server: { ws: false } });
+const { restore } = await vite.ssrLoadModule("/web/lifted.ts");
+await vite.close();
+// A result's large numeric arrays arrive as a Float64Array beside its JSON,
+// with the places they go back as JSON (cmd/wasm/lift); a refusal is JSON
+// alone.
+function lifted(reply) {
+  assert.ok(reply.lifted.floats instanceof Float64Array);
+  const places = JSON.parse(reply.lifted.places);
+  assert.ok(Array.isArray(places));
+  return restore(JSON.parse(reply.json), reply.lifted);
+}
+const hyperResult = (reply) =>
+  typeof reply === "string" ? JSON.parse(reply) : lifted(reply);
+// The bytes a reply sends to the page.
+const replyBytes = (reply) =>
+  typeof reply === "string"
+    ? Buffer.byteLength(reply)
+    : Buffer.byteLength(reply.json) + reply.lifted.floats.buffer.byteLength;
 const go = new globalThis.Go();
 const { instance } = await WebAssembly.instantiate(
   readFileSync("public/engine.wasm"),
@@ -1108,6 +1129,8 @@ function spatialResult(reply) {
     used.every((u) => u === 1),
     "every vertex is used",
   );
+  assert.equal(reply.lifted.floats.buffer, vertices.buffer);
+  restore(result, reply.lifted);
   result.mesh = reply.mesh;
   assert.equal(reply.implicit === undefined, !result.implicit);
   if (result.implicit)
@@ -2334,7 +2357,7 @@ const hyper = {
   samples: 64,
   clip: 4,
 };
-const h = JSON.parse(globalThis.tangentGardenTesseract(JSON.stringify(hyper)));
+const h = hyperResult(globalThis.tangentGardenTesseract(JSON.stringify(hyper)));
 assert.deepEqual(h.sections[0], {
   id: "section/0",
   level: 0,
@@ -2354,13 +2377,13 @@ for (const change of [
   { angles: [0, 0, "x", 0, 0, 0] },
 ])
   assert.ok(
-    JSON.parse(
+    hyperResult(
       globalThis.tangentGardenTesseract(
         JSON.stringify({ ...hyper, ...change }),
       ),
     ).error,
   );
-const hyperRefused = JSON.parse(
+const hyperRefused = hyperResult(
   globalThis.tangentGardenTesseract(
     JSON.stringify({ ...hyper, mode: "perspective", distance: 2 }),
   ),
@@ -2369,7 +2392,7 @@ assert.match(hyperRefused.error, /eye distance/);
 assert.equal(hyperRefused.field, "distance");
 for (const mode of ["perspective", "orthographic", "stereo"])
   assert.equal(
-    JSON.parse(
+    hyperResult(
       globalThis.tangentGardenTesseract(JSON.stringify({ ...hyper, mode })),
     ).paths.length,
     32,
@@ -3019,7 +3042,7 @@ console.log("WASM implicit: sphere, sections, pole and validation passed");
 for (const object of ["ball", "tube"]) {
   const request = { ...hyper, object, radius: 2, tube: 0.6, curves: 5 };
   const compute = (change = {}) =>
-    JSON.parse(
+    hyperResult(
       tangentGardenTesseract(JSON.stringify({ ...request, ...change })),
     );
   const support = object === "ball" ? 2 : 0.6;
@@ -3046,11 +3069,11 @@ for (const object of ["ball", "tube"]) {
   };
   const start = performance.now();
   const json = tangentGardenTesseract(JSON.stringify(largest));
-  const parsed = JSON.parse(json);
+  const parsed = hyperResult(json);
   assert.equal(parsed.emittedPoints, 65536);
   assert.equal(parsed.evaluations, 65024);
   console.log(
-    `Curved WASM ${object}: largest tube ${(performance.now() - start).toFixed(1)} ms including JSON parse, ${Buffer.byteLength(json)} JSON bytes, ${instance.exports.mem.buffer.byteLength} bytes WASM linear-memory high-water`,
+    `Curved WASM ${object}: largest tube ${(performance.now() - start).toFixed(1)} ms including JSON parse, ${replyBytes(json)} bytes sent, ${instance.exports.mem.buffer.byteLength} bytes WASM linear-memory high-water`,
   );
 }
 console.log("Curved sections WASM contract passed");
@@ -3072,7 +3095,7 @@ console.log("Curved sections WASM contract passed");
       radiusTo: 2.5,
     },
   };
-  const compute = (q) => JSON.parse(tangentGardenTesseract(JSON.stringify(q)));
+  const compute = (q) => hyperResult(tangentGardenTesseract(JSON.stringify(q)));
   const sliced = compute(request);
   assert.equal(sliced.object, "lift");
   assert.equal(sliced.lift.thickness, 0.02);
@@ -3087,7 +3110,7 @@ console.log("Curved sections WASM contract passed");
   const liftedRequest = { ...request, mode: "lifted" };
   const start = performance.now();
   const json = tangentGardenTesseract(JSON.stringify(liftedRequest));
-  const full = JSON.parse(json);
+  const full = hyperResult(json);
   assert.equal(full.paths.filter((p) => !p.guide).length, 6);
   for (const p of full.paths.filter((p) => !p.guide))
     for (let i = 0; i < p.points.length; i++) {
@@ -3137,7 +3160,7 @@ console.log("Curved sections WASM contract passed");
   );
   assert.equal(wrapped.lift.visibleIntervals, 9);
   console.log(
-    `Localized lift WASM: ${full.paths.length} paths, ${full.emittedPoints} points, ${full.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${Buffer.byteLength(json)} JSON bytes; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
+    `Localized lift WASM: ${full.paths.length} paths, ${full.emittedPoints} points, ${full.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${replyBytes(json)} bytes sent; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
   );
 }
 
@@ -3159,7 +3182,7 @@ console.log("Curved sections WASM contract passed");
       w2: 1.25,
     },
   };
-  const compute = (q) => JSON.parse(tangentGardenTesseract(JSON.stringify(q)));
+  const compute = (q) => hyperResult(tangentGardenTesseract(JSON.stringify(q)));
   const full = compute(request);
   assert.equal(full.bypass.state, "clear");
   assert.equal(full.bypass.clearance, 1);
@@ -3258,9 +3281,9 @@ console.log("Curved sections WASM contract passed");
       },
     }),
   );
-  const max = JSON.parse(json);
+  const max = hyperResult(json);
   console.log(
-    `Shell bypass WASM: ${max.paths.length} paths, ${max.emittedPoints} points, ${max.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${Buffer.byteLength(json)} JSON bytes; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
+    `Shell bypass WASM: ${max.paths.length} paths, ${max.emittedPoints} points, ${max.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${replyBytes(json)} bytes sent; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
   );
 }
 
@@ -3283,7 +3306,7 @@ console.log("Curved sections WASM contract passed");
     },
   };
   const compute = (change = {}, weave = {}) =>
-    JSON.parse(
+    hyperResult(
       tangentGardenTesseract(
         JSON.stringify({
           ...request,
@@ -3351,12 +3374,12 @@ console.log("Curved sections WASM contract passed");
   };
   const start = performance.now();
   const json = tangentGardenTesseract(JSON.stringify(largest));
-  const max = JSON.parse(json);
+  const max = hyperResult(json);
   // Every one of the 234 source circles is complete: the true maximum.
   assert.equal(max.weave.completeCircles, 234);
   assert.equal(max.emittedPoints, 237 * 257);
   console.log(
-    `Spherical weave WASM: ${max.paths.length} paths, ${max.emittedPoints} points, ${max.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${Buffer.byteLength(json)} JSON bytes; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
+    `Spherical weave WASM: ${max.paths.length} paths, ${max.emittedPoints} points, ${max.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${replyBytes(json)} bytes sent; ${instance.exports.mem.buffer.byteLength} bytes linear-memory high-water`,
   );
 }
 

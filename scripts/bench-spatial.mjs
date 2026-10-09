@@ -1,10 +1,11 @@
 // Times large spatial studies through a real WASM engine, the way the
 // browser worker calls it: the bridge call (Go's work and encoding),
 // decoding into the result the page receives, the copy that posting it to
-// the page would make, and, for a curve study, laying its mesh out as the
+// the page would make with the page putting any lifted arrays back, and, for
+// a curve study, laying its mesh out as the
 // scene's batch (buildScene). The studies are the largest implicit
-// surfaces and the tube, ribbon and developable presets whose meshes are
-// largest. It reads every bridge reply shape, JSON alone or JSON with typed
+// surfaces, the tube, ribbon and developable presets whose meshes are
+// largest, and surface, ray and field presets with large grids or paths. It reads every bridge reply shape, JSON alone or JSON with typed
 // mesh arrays, so it can time a deployed site's engine beside a local
 // build:
 //
@@ -116,6 +117,10 @@ const curves = [
   ["spring", "A cord twisted round a spring", "240 samples, refined"],
   ["band", "A band around the trefoil", "a framed ribbon"],
   ["developable", "Trefoil · (2, 3)", "the tangent developable"],
+  // Studies whose grids, paths and rays, not a mesh, are most of a frame.
+  ["ellipsoid", "The whole focal surface of an ellipsoid", "a surface"],
+  ["coma", "A tilted beam folding into coma", "rays"],
+  ["vortex", "A row of seeds wound up by a vortex", "a vector field"],
 ];
 
 const options = { runs: 5, engine: "public/", compare: "", study: "" };
@@ -154,16 +159,22 @@ const median = (values) => {
 
 // The bridge's reply as the worker passes it to the page, and the buffers
 // it transfers. Engines before the curve mesh moved out of JSON reply with
-// JSON alone, or for an implicit surface with its arrays beside the JSON.
+// JSON alone, or for an implicit surface with its arrays beside the JSON;
+// engines before the large arrays were lifted out of JSON send no lifted.
 function decode(reply) {
   if (typeof reply === "string")
     return { result: JSON.parse(reply), bytes: reply.length, transfer: [] };
-  const { json, mesh, implicit, ...flat } = reply;
+  const { json, mesh, implicit, lifted, ...flat } = reply;
   const result = JSON.parse(json);
   if (mesh) result.mesh = mesh;
   if (result.implicit) Object.assign(result.implicit, implicit ?? flat);
   const buffer = (mesh ?? flat).vertices?.buffer ?? flat.positions.buffer;
-  return { result, bytes: json.length + buffer.byteLength, transfer: [buffer] };
+  return {
+    result,
+    lifted,
+    bytes: json.length + buffer.byteLength,
+    transfer: [buffer],
+  };
 }
 // The scene's mesh batch (buildScene), from any shape of curve mesh: JSON
 // vertices, typed vertices three per triangle, or indexed triangles.
@@ -200,6 +211,13 @@ const vertexCount = (result) =>
 // One engine, in this process: time every study and print JSON.
 async function measure(source, studies) {
   await load(source);
+  // The page's own code, from this checkout, to put lifted arrays back.
+  const server = await createServer({
+    logLevel: "silent",
+    server: { ws: false },
+  });
+  const { restore } = await server.ssrLoadModule("/web/lifted.ts");
+  await server.close();
   const results = [];
   for (const s of studies) {
     const rows = [];
@@ -207,7 +225,7 @@ async function measure(source, studies) {
       const t0 = performance.now();
       const reply = globalThis.tangentGardenSpatial(JSON.stringify(s.request));
       const t1 = performance.now();
-      const { result, bytes, transfer } = decode(reply);
+      const { result, lifted, bytes, transfer } = decode(reply);
       const t2 = performance.now();
       if (result.error) throw new Error(`${s.name}: ${result.error}`);
       if (run === 0)
@@ -219,9 +237,11 @@ async function measure(source, studies) {
           vertices: vertexCount(result),
         });
       // What postMessage does to reach the page; it detaches the buffer.
-      const posted = structuredClone({ result }, { transfer }).result;
+      const posted = structuredClone({ result, lifted }, { transfer });
+      // The page puts the lifted arrays back.
+      restore(posted.result, posted.lifted);
       const t3 = performance.now();
-      if (s.kind === "curve") flatten(posted.mesh);
+      if (s.kind === "curve") flatten(posted.result.mesh);
       const t4 = performance.now();
       if (run > 0)
         rows.push({
@@ -302,7 +322,7 @@ if (options.child)
   await measure(options.child, JSON.parse(readFileSync(0, "utf8")));
 else {
   console.log(
-    `Median of ${options.runs} runs after one warm-up. call: the bridge (Go work and encoding); decode: JSON and typed arrays; post: the copy postMessage makes; scene: a curve mesh laid out as the scene's batch; transfer: bytes crossing to the page.`,
+    `Median of ${options.runs} runs after one warm-up. call: the bridge (Go work and encoding); decode: JSON and typed arrays; post: the copy postMessage makes, and the page putting lifted arrays back; scene: a curve mesh laid out as the scene's batch; transfer: bytes crossing to the page.`,
   );
   const chosen = await allStudies();
   if (chosen.length === 0) throw new Error(`No study named ${options.study}`);

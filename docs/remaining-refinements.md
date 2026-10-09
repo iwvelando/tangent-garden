@@ -174,12 +174,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Open:**
 
-- Typed-array transport beyond the meshes. The curve mesh (tubes, ribbons, developables, ruled surfaces) now travels typed and indexed, as the implicit mesh did ([spatial-mesh-transport.md](spatial-mesh-transport.md), steps 1 and 2). A tube frame's time is now mostly Go's own work. Large JSON results:
-  - canal circles about 270 KB, and `base` and `composition` about 200 KB each at 2400 samples;
-  - a refined tube's paths (`adaptive`) about 900 KB on the twisted spring, whose encoding is about a quarter of its frame natively;
-  - surface grid about 10 MB;
-  - surface-probe grids 5–7 MB;
-  - the largest 4D weave 9.6 MB.
+- Typed-array transport beyond the meshes is done: the curve mesh travels typed and indexed, as the implicit mesh did, and every other large numeric array of a spatial or 4D result is lifted out of the JSON and put back in the page ([spatial-mesh-transport.md](spatial-mesh-transport.md), steps 1 to 3). What still goes through JSON is mostly grids of flags (a surface's `alongU`, `alongV` and `faces`, about 70 KB each at 240²) and arrays of small structs (ray lines, glyphs, constructions). A tube frame's time is now mostly Go's own work, and the twisted spring's mostly its refinement.
 - Worker pools. A third playback engine was rejected at about 100 MB per engine.
 
 **Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical.

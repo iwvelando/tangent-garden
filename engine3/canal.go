@@ -3,6 +3,7 @@ package engine3
 import (
 	"fmt"
 	"math"
+	"slices"
 	"tangentgarden/engine/expr"
 )
 
@@ -219,11 +220,14 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 	if out.Adaptive != nil {
 		refineMeridians(c, out, q, radius, frame, evaluate, lo, hi)
 	}
-	point := func(i int, u, v Vec3, theta float64) Vec3 {
-		return centers[i].add(u.mul(radii[i] * math.Cos(theta)).add(v.mul(radii[i] * math.Sin(theta))))
+	// The mesh angles' cosines and sines, each computed once.
+	var cosines, sines [canalSegments + 1]float64
+	for k := range cosines {
+		theta := 2 * math.Pi * float64(k) / canalSegments
+		cosines[k], sines[k] = math.Cos(theta), math.Sin(theta)
 	}
 	grid := func(i, k int) Vec3 {
-		return point(i, us[i], vs[i], 2*math.Pi*float64(k)/canalSegments)
+		return centers[i].add(us[i].mul(radii[i] * cosines[k]).add(vs[i].mul(radii[i] * sines[k])))
 	}
 	normal := func(i int, p Vec3) Vec3 { return p.sub(*base[i]).mul(1 / R[i]) }
 	// Folds: X_θ × X_t turns against the outward normal q/R. X_t is a
@@ -257,8 +261,7 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 			default:
 				continue
 			}
-			theta := 2 * math.Pi * float64(k) / canalSegments
-			around := vs[i].mul(math.Cos(theta)).sub(us[i].mul(math.Sin(theta)))
+			around := vs[i].mul(cosines[k]).sub(us[i].mul(sines[k]))
 			if around.cross(along).dot(normal(i, grid(i, k))) < -1e-6*along.norm() {
 				q.Folded++
 				break
@@ -276,10 +279,17 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 	}
 	// Each ring's vertices are listed once, when a strip first uses them,
 	// and shared by the strips on both sides of it.
-	listed := map[int]int32{}
+	listed := make([]int32, n+1)
+	for i := range listed {
+		listed[i] = -1
+	}
+	strips := max(len(rings)-1, 0)
+	out.Mesh.Vertices = slices.Grow(out.Mesh.Vertices, 7*(canalSegments+1)*len(rings))
+	out.Mesh.Triangles = slices.Grow(out.Mesh.Triangles, 3*2*canalSegments*strips)
+	out.Mesh.SampleIndex = slices.Grow(out.Mesh.SampleIndex, 2*canalSegments*strips)
 	vertex := func(i, k int) int32 {
-		first, ok := listed[i]
-		if !ok {
+		first := listed[i]
+		if first < 0 {
 			first = int32(len(out.Mesh.Vertices) / 7)
 			listed[i] = first
 			for m := 0; m <= canalSegments; m++ {

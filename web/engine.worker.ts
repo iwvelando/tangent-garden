@@ -17,14 +17,21 @@ declare const Go: new () => {
 declare const tangentGardenCompute: (json: string) => string;
 declare const tangentGardenProbe: (json: string) => string;
 declare const tangentGardenSpatialProbe: (json: string) => string;
-declare const tangentGardenTesseract: (json: string) => string;
+// A result's large numeric arrays arrive beside its JSON, on one buffer
+// (cmd/wasm/lift); the page puts them back (web/lifted.ts). A refusal is
+// JSON alone.
+declare const tangentGardenTesseract: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 // A study's meshes arrive beside its JSON, as typed views on one buffer
 // (cmd/wasm/mesh.go): the curve mesh always, an implicit surface's only for
-// an implicit study. A refusal is JSON alone.
+// an implicit study, with the other large arrays lifted out. A refusal is
+// JSON alone.
 declare const tangentGardenSpatial: (json: string) =>
   | string
   | {
       json: string;
+      lifted: import("./lifted").Lifted;
       mesh: import("./spatial/types").CurveMesh;
       implicit?: Pick<
         import("./spatial/types").ImplicitResult,
@@ -331,13 +338,16 @@ self.onmessage = async ({
                     : {}),
               }),
       };
-      const result = JSON.parse(
-        tangentGardenTesseract(JSON.stringify(request)),
-      );
-      self.postMessage({
-        id: data.id,
-        ...("error" in result ? result : { result }),
-      });
+      const reply = tangentGardenTesseract(JSON.stringify(request));
+      if (typeof reply !== "string") {
+        // Transfer the lifted arrays' buffer rather than copying it.
+        const { json, lifted } = reply;
+        self.postMessage({ id: data.id, result: JSON.parse(json), lifted }, [
+          lifted.floats.buffer,
+        ]);
+        return;
+      }
+      self.postMessage({ id: data.id, ...JSON.parse(reply) });
       return;
     }
     if (data.action === "spatial") {
@@ -601,12 +611,15 @@ self.onmessage = async ({
       }
       const reply = tangentGardenSpatial(request);
       if (typeof reply !== "string") {
-        // Transfer the meshes' buffer rather than copying it.
-        const { json, mesh, implicit } = reply;
+        // Transfer the meshes' buffer, which also holds the lifted arrays,
+        // rather than copying it.
+        const { json, mesh, implicit, lifted } = reply;
         const result = JSON.parse(json);
         result.mesh = mesh;
         if (implicit) Object.assign(result.implicit, implicit);
-        self.postMessage({ id: data.id, result }, [mesh.vertices.buffer]);
+        self.postMessage({ id: data.id, result, lifted }, [
+          mesh.vertices.buffer,
+        ]);
         return;
       }
       const result = JSON.parse(reply);
