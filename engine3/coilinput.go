@@ -175,8 +175,9 @@ type coilAt struct {
 // ddT differences the base's unit tangent twice at two steps, and is
 // nonfinite where they disagree, as for an expression curve.
 func (g coilAt) ddT(tangent func(float64) Vec3, t, lo, hi, span float64) Vec3 {
-	_, a := derivatives(tangent, t, lo, hi, span*1e-4)
-	_, b := derivatives(tangent, t, lo, hi, span*5e-5)
+	origin := tangent(t)
+	_, a := derivatives(tangent, origin, t, lo, hi, span*1e-4)
+	_, b := derivatives(tangent, origin, t, lo, hi, span*5e-5)
 	if !a.valid() || !b.valid() || a.sub(b).norm() > 1e-2*math.Max(a.norm(), b.norm())+1e-4*math.Max(1, g.speed/span) {
 		return Vec3{math.NaN(), 0, 0}
 	}

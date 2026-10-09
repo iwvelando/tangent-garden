@@ -94,8 +94,9 @@ func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*V
 		if !ok {
 			return invalid, invalid, invalid, false
 		}
-		_, ddT := derivatives(tangent, t, lo, hi, span*1e-4)
-		_, ddT2 := derivatives(tangent, t, lo, hi, span*5e-5)
+		origin := tangent(t)
+		_, ddT := derivatives(tangent, origin, t, lo, hi, span*1e-4)
+		_, ddT2 := derivatives(tangent, origin, t, lo, hi, span*5e-5)
 		acceleration := dT.mul(-speed).add(ddT.mul(length))
 		if !ddT.valid() || !ddT2.valid() || ddT.sub(ddT2).norm() > 1e-2*math.Max(ddT.norm(), ddT2.norm())+1e-4*math.Max(1, dT.norm()/span) {
 			acceleration = invalid
