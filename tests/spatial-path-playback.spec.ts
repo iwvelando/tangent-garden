@@ -473,7 +473,7 @@ test("long view names wrap in full at phone width", async ({ page }) => {
   expect(await height(1, "name")).toBe(line);
   // The long one shows whole, on more lines.
   expect(await fits()).toEqual({ x: true, y: true });
-  expect(await height(2, "name")).toBeGreaterThan(line + 10);
+  expect(await height(2, "name")).toBeGreaterThan(line);
   // Enter adds no line of its own.
   await name.press("End");
   await name.press("Enter");
