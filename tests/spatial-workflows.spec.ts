@@ -459,8 +459,8 @@ test("each sampling explainer waits behind an info toggle", async ({
   for (const [preset, words] of [
     ["0", "Finite sampling can miss fine detail"],
     ["30", "Positions, normals and principal curvatures"],
-    ["34", "Positions, normals and their derivatives"],
-    ["43", "F is evaluated at every grid point"],
+    ["34", "Positions, normals, rays and their derivatives"],
+    ["43", "F is sampled on a grid split into tetrahedra"],
   ]) {
     await choosePreset(page, preset);
     await expect(stage(page)).toHaveAttribute("aria-busy", "false");
@@ -479,9 +479,13 @@ test("each sampling explainer waits behind an info toggle", async ({
     await toggle.click();
     await expect(text).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(await text.getAttribute("id")).toBe(
-      await toggle.getAttribute("aria-controls"),
-    );
+    // The essentials open first, inside the help the toggle controls; the
+    // rest waits behind Show more.
+    const help = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
+    await expect(help.getByText(words)).toBeVisible();
+    await expect(help.locator(".hint-more")).toBeHidden();
+    await help.getByRole("button", { name: "Show more" }).click();
+    await expect(help.locator(".hint-more")).toBeVisible();
     await toggle.click();
     await expect(text).toBeHidden();
   }

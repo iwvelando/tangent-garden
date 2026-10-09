@@ -95,7 +95,7 @@ test("peeling is offered only while the cut is on and valid", async ({
     "path",
   ]);
   await expect(page.locator("#spatial-animation-section")).toContainText(
-    "Move the cut plane along its normal",
+    "Sweep the cut plane along its normal",
   );
   // A zero normal leaves nothing to peel with: back to revealing.
   for (const axis of ["x", "y", "z"])
