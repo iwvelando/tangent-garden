@@ -148,7 +148,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 - Error budgets across tiny, large and translated studies.
 - 3D: rebase positions before the Float32 upload, and keep meaningful clipping (near/far are set in framing radii).
-- Test explicitly that live and exported drawings are equivalent.
 
 Today's finite-value guards and robust bounds do not prove scale independence.
 
