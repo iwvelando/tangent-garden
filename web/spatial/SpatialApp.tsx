@@ -3233,6 +3233,7 @@ export default function SpatialApp({
             animating={!!animation && !moving}
             held={heldProbe}
             at={moving?.probe}
+            across={moving?.probeSetup?.across}
             away={moving ? undefined : animation?.probeAway}
             dark={theme.dark}
           />

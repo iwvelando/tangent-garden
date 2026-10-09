@@ -22,6 +22,7 @@ import {
   betweenHelp as spatialBetweenHelp,
   describeHelp,
   probeHelp as spatialProbeHelp,
+  probeMotionHelp as spatialProbeMotionHelp,
   probeSupport,
   surfaceProbeHelp,
 } from "../web/spatial/probe";
@@ -225,8 +226,13 @@ test("every help a setting reveals keeps to the same limits", () => {
     add(`${name} probe between samples`, spatialProbeHelp(config, true));
     add(`${name} describe`, describeHelp(config));
     for (const target of probeSupport(config).targets)
-      if (target !== "curve")
+      if (target !== "curve") {
         add(`${name} ${target} probe`, surfaceProbeHelp(config, target));
+        add(
+          `${name} ${target} probe motion`,
+          spatialProbeMotionHelp(config, target),
+        );
+      }
   }
   for (const { name, config } of tesseractPresets) {
     const object = objects[config.object];

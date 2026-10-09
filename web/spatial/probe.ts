@@ -12,15 +12,13 @@ import {
   curveProbeMotionHelp,
   curveProbeMotions,
   heldCurveSample,
+  outsideFrame,
   probeIndex,
-  type ProbeMotion,
+  probeMotionSchema,
+  type ProbeMotion as CurveMotion,
 } from "../probe";
-export {
-  plotScale,
-  probeIndex,
-  probeMotionValues,
-  type ProbeMotion,
-} from "../probe";
+import type { SchemaOf } from "../study-link";
+export { plotScale, probeIndex } from "../probe";
 import type {
   DiagnosticsResult,
   HarmonicPosition,
@@ -936,21 +934,43 @@ export function probeSample(
 }
 
 // How the probe moves while parameter tracks reshape the study (see
-// ../probe.ts); a grid has no length to keep a share of.
+// ../probe.ts). A grid has no length to keep a share of; its probe stays at
+// its share of the rows and columns, or at its own parameters (point), which
+// links made before it leave out. On the curve, its point is its t.
+export type ProbeMotion = CurveMotion | "point";
+export const probeMotionValues: ProbeMotion[] = [
+  "stays",
+  "length",
+  "point",
+  "along",
+];
+export const spatialProbeMotionSchema: SchemaOf<ProbeMotion> = {
+  options: { ...probeMotionSchema.options, point: true },
+};
 export function probeMotions(
   c: SpatialConfig,
   target: ProbeTarget,
 ): { value: ProbeMotion; label: string }[] {
-  if (gridded(target))
+  if (gridded(target)) {
+    const t = surfaceTerms(c, target);
     return [
       { value: "stays", label: "Stays at its row and column" },
-      {
-        value: "along",
-        label: `Moves along the ${surfaceTerms(c, target).surface}`,
-      },
+      { value: "point", label: `Stays at its ${t.along} and ${t.around}` },
+      { value: "along", label: `Moves along the ${t.surface}` },
     ];
+  }
   return curveProbeMotions;
 }
+// The motion the probe follows on a target: on the curve, its point is its
+// t; on a grid, a length share is not offered and it stays.
+export const motionOn = (target: ProbeTarget, motion: ProbeMotion) =>
+  gridded(target)
+    ? motion === "length"
+      ? "stays"
+      : motion
+    : motion === "point"
+      ? "stays"
+      : motion;
 export function probeMotionHelp(
   c: SpatialConfig,
   target: ProbeTarget,
@@ -961,16 +981,20 @@ export function probeMotionHelp(
     const t = surfaceTerms(c, target);
     return tiered(
       "Where the probe stands while the parameters vary.",
-      `Stays: at the same share of the ${t.surface}'s rows and columns as the point you chose. Moves along: from its first ${t.along} to its last as the animation plays, at the column you chose. It snaps to each frame's own grid; the readout and plot describe that frame.`,
+      `Row and column: the same share of the ${t.surface}'s rows and columns. ${t.along} and ${t.around}: those values, absent from a frame whose domain leaves one out. Moves along: from its first ${t.along} to its last, at your column. It snaps to each frame's own grid; the readout and plot describe that frame.`,
     );
   }
   return curveProbeMotionHelp;
 }
 
+// A grid sample by row and column.
+export type GridPlace = { row: number; column: number };
+
 // The step the probe stands at in one frame of a parameter animation at
 // progress p, or a sentence saying why it has none there. start is the
 // study as playback began, with the diagnostics the target needs; the
-// probe's chosen sample there is what it stays at.
+// probe's chosen sample there is what it stays at. A grid probe held at
+// its point gives its column too, which may differ from its share's.
 export function heldProbe(
   start: SpatialResult,
   probe: Probe,
@@ -978,24 +1002,89 @@ export function heldProbe(
   motion: ProbeMotion,
   frame: SpatialResult,
   p: number,
-): number | string {
+): number | GridPlace | string {
   const steps = probeSteps(frame, target);
   if (steps === null)
     return "This frame has nothing for the probe to describe.";
-  if (motion === "along") return probeIndex(p, steps);
-  if (gridded(target))
-    return surfaceProbeAt(
-      frame.surfaceDiagnostics!,
-      probe.position,
-      probe.across,
-    ).row;
+  const moves = motionOn(target, motion);
+  if (moves === "along") return probeIndex(p, steps);
+  if (gridded(target)) {
+    const d = frame.surfaceDiagnostics!;
+    if (moves === "stays")
+      return surfaceProbeAt(d, probe.position, probe.across).row;
+    const from = start.surfaceDiagnostics!,
+      place = surfaceProbeAt(from, probe.position, probe.across);
+    return heldGridPoint(
+      from.u[place.row],
+      from.v[place.column],
+      d,
+      surfaceTermsByKind[d.kind],
+    );
+  }
   return heldCurveSample(
     start.diagnostics!,
     probe.position,
-    motion,
+    moves as CurveMotion,
     frame.diagnostics!,
     p,
   );
+}
+// The grid sample nearest the parameters (u, v) in a frame's diagnostics,
+// or a sentence naming the parameter its domain leaves out. Like the curve
+// probe at its t, a parameter within half a step beyond an end rounds onto
+// it; a periodic grid's columns wrap around the full turn.
+export function heldGridPoint(
+  u: number,
+  v: number,
+  d: SurfaceDiagnostics,
+  names: { along: string; around: string },
+): GridPlace | string {
+  const row = nearestOn(d.u, u, names.along);
+  if (typeof row === "string") return row;
+  const column = d.periodic
+    ? nearestTurn(d.v, v)
+    : nearestOn(d.v, v, names.around);
+  if (typeof column === "string") return column;
+  return { row, column };
+}
+// The index of the value nearest x among monotonic values (the first on a
+// tie), or why x lies outside them by more than half the end's step.
+function nearestOn(values: number[], x: number, name: string) {
+  const n = values.length;
+  if (!n) return outsideFrame(x, NaN, NaN, name);
+  const first = values[0],
+    last = values[n - 1],
+    lo = Math.min(first, last),
+    hi = Math.max(first, last);
+  const half = (a: number, b: number) =>
+    n > 1 ? Math.abs(values[b] - values[a]) / 2 : 0;
+  const below = first <= last ? half(0, 1) : half(n - 1, n - 2),
+    above = first <= last ? half(n - 1, n - 2) : half(0, 1);
+  if (!(x >= lo - below && x <= hi + above))
+    return outsideFrame(x, lo, hi, name);
+  let best = 0;
+  values.forEach((s, i) => {
+    if (Math.abs(s - x) < Math.abs(values[best] - x)) best = i;
+  });
+  return best;
+}
+// The index of the turn nearest x around a full turn.
+function nearestTurn(values: number[], x: number) {
+  const apart = (s: number) => {
+    const d = Math.abs(s - x) % (2 * Math.PI);
+    return Math.min(d, 2 * Math.PI - d);
+  };
+  let best = 0;
+  values.forEach((s, i) => {
+    if (apart(s) < apart(values[best])) best = i;
+  });
+  return best;
+}
+// The share across a grid that stands at column, the inverse of
+// surfaceProbeAt's.
+export function columnShare(d: SurfaceDiagnostics, column: number) {
+  const steps = d.periodic ? d.v.length : d.v.length - 1;
+  return steps > 0 ? column / steps : 0;
 }
 
 // The curve probe at a place: as given, or at a sample.
