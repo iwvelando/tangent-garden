@@ -105,20 +105,35 @@ async function liveCanvas(page: Page) {
 }
 
 const spatialCases = [
-  // Hairlines over a shaded ribbon.
-  "Trefoil · (2, 3)",
+  // Exercise hairlines explicitly while retaining the regular-stroke case.
+  { label: "Trefoil · (2, 3)", weight: "hairline" },
+  { label: "Trefoil · (2, 3)", weight: "regular" },
   // Bold strokes, and lines dashed behind an opaque tube.
-  "An engraved trefoil tube",
+  { label: "An engraved trefoil tube", weight: "bold" },
   // See-through sheets, composited over the background.
-  "A Klein bottle passing through itself",
-];
-for (const label of spatialCases)
+  { label: "A Klein bottle passing through itself", weight: "regular" },
+] as const;
+for (const { label, weight } of spatialCases)
   for (const scheme of ["light", "dark"] as const)
-    test(`3D ${label}, ${scheme}: the 1 × PNG is the live canvas, pixel for pixel`, async ({
+    test(`3D ${label}, ${weight}, ${scheme}: the 1 × PNG is the live canvas, pixel for pixel`, async ({
       page,
     }) => {
       await page.emulateMedia({ colorScheme: scheme });
       await spatial(page, label);
+      const weightControl = page
+        .getByRole("group", { name: "Lines", exact: true })
+        .getByLabel("Weight", { exact: true });
+      await weightControl.selectOption(weight);
+      await expect(weightControl).toHaveValue(weight);
+      if (weight === "hairline")
+        await expect(page.locator("#spatial-artwork")).not.toHaveAttribute(
+          "data-strokes",
+        );
+      else
+        await expect(page.locator("#spatial-artwork")).toHaveAttribute(
+          "data-strokes",
+          JSON.stringify({ weight }),
+        );
       await moveCamera(page, "#spatial-artwork");
       const view = await page
         .locator("#spatial-artwork")
@@ -268,8 +283,9 @@ for (const scheme of ["light", "dark"] as const)
   });
 
 // 2D and 4D: the live SVG as the page paints it (with the page's own
-// styles) against the 1 × PNG, and the saved SVG's geometry against the
-// live element's.
+// styles) against the 1 × PNG. The saved SVG's coordinates match the live
+// element's, and its rasterization matches the PNG, including viewport,
+// primitive coordinates and rendering attributes the coordinate list omits.
 const drawingOf = (svg: string) => ({
   paths: [...svg.matchAll(/ d="([^"]*)"/g)].map((m) => m[1]),
   transforms: [...svg.matchAll(/ transform="([^"]*)"/g)].map((m) => m[1]),
@@ -304,10 +320,15 @@ async function vectorEquivalence(
   );
   const label = `${size[0]} × ${size[1]}`;
   const file = decodePng(await save(page, /^PNG image/, label));
-  const svg = drawingOf((await save(page, /^SVG/, label)).toString());
+  const svgBytes = await save(page, /^SVG/, label);
+  const svg = drawingOf(svgBytes.toString());
   expect(shown.paths.length).toBeGreaterThan(0);
   expect(svg).toEqual(shown);
   expect([file.width, file.height]).toEqual(size);
+  // Both exports use the same image decoder, so their rasterized pixels
+  // agree within half a level per channel, independently of the markup.
+  const svgImage = await rasterize(page, svgBytes, ...size);
+  expect(difference(file, svgImage)).toBeLessThan(0.5);
   // Both are Chromium's rasterization of the same vectors at the same
   // size, the page's compositor against an image decode, whose
   // antialiasing can differ by a fraction of a pixel. So the background
