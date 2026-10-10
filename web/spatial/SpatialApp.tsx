@@ -44,6 +44,7 @@ import {
 } from "./cut";
 import { SightPanel } from "./SightPanel";
 import { defaultSight, isPlain, sightSpec, type Sight } from "./sight";
+import { spatialFits } from "./limits";
 import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
 import { spatialExamples, spatialThumbnail } from "../examples";
@@ -240,6 +241,11 @@ export default function SpatialApp({
   // too. seeThrough is whether the device could draw see-through sheets.
   const [sight, setSight] = useState<Sight>(defaultSight);
   const userSight = useMemo(() => sightSpec(sight), [sight]);
+  // The image sizes this device draws, as the sight stands.
+  const imageFits = useMemo(
+    () => spatialFits(userSight.spec.sheets === "through"),
+    [userSight.spec.sheets],
+  );
   const [seeThrough, setSeeThrough] = useState(true);
   // Whether the device could draw strokes rather than hairlines.
   const [stroking, setStroking] = useState(true);
@@ -2466,6 +2472,7 @@ export default function SpatialApp({
           menuId="spatial-export-image-menu"
           svgLabel="SVG · embedded 3D image"
           sizeLabel="Image size"
+          fits={imageFits}
           extraItems={[
             { format: "svg-lines", label: "Lines (SVG) · every line" },
             {
