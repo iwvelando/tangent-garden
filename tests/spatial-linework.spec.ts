@@ -272,6 +272,18 @@ test("visibility testing stops at its work limit instead of saving part", () => 
   expect(() => lines(result, { occlusion: "none", limit: 1000 })).not.toThrow();
 });
 
+test("sheet rasterization enforces its work limit without any line samples", () => {
+  // With no lines, only the sheet raster can exhaust the visibility budget.
+  const result = study({ mesh: square(() => 0) });
+  expect(() => lines(result, { occlusion: "sampled", limit: 1000 })).toThrow(
+    /work limit/,
+  );
+  expect(
+    lines(result, { occlusion: "sampled", limit: size.width * size.height }),
+  ).toEqual([]);
+  expect(lines(result, { occlusion: "none", limit: 1000 })).toEqual([]);
+});
+
 test("the SVG holds paths and metadata, with no text or embedded image", () => {
   const result = study({
     base: [at(-0.5, 0, 0), at(0, 0.3, 0), at(0.5, 0, 0)],
