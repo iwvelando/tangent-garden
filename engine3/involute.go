@@ -230,16 +230,21 @@ func (u *strung) knot(i int) float64 {
 func (u *strung) member(c float64) func(float64) Vec3 {
 	undefined := Vec3{math.NaN(), 0, 0}
 	return func(t float64) Vec3 {
-		i := max(0, min(u.n-1, int(math.Floor((t-u.lo)/(u.hi-u.lo)*float64(u.n)))))
+		x := (t - u.lo) / (u.hi - u.lo) * float64(u.n)
+		// A reached sample remains a valid endpoint beside a break. Match
+		// its parameter exactly before checking the containing interval;
+		// rounding x avoids assigning a knot to the interval before it.
+		j := max(0, min(u.n, int(math.Round(x))))
+		if t == u.knot(j) && u.reached[j] {
+			return filament(*u.base[j], u.tangents[j], c, u.arc[j])
+		}
+		i := max(0, min(u.n-1, int(math.Floor(x))))
 		// Restarted stretches meet at a break, across which their arc
 		// lengths, from different anchors, do not continue.
 		if !u.reached[i] || !u.reached[i+1] || u.breaks[i+1] {
 			return undefined
 		}
 		start := u.knot(i)
-		if t == start {
-			return filament(*u.base[i], u.tangents[i], c, u.arc[i])
-		}
 		r, v, _, ok := u.evaluate(t)
 		speed := v.norm()
 		if !ok || !r.valid() || !v.valid() || speed < 1e-9 {

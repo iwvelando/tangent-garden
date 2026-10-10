@@ -100,6 +100,44 @@ func TestInvoluteRestartsAfterABreak(t *testing.T) {
 	}
 }
 
+// Reached samples on either side of a break are valid filament endpoints,
+// even though the interval between them has no filament point.
+func TestRestartedInvoluteProbeMatchesBreakEndpoints(t *testing.T) {
+	// At 497 samples the first knot after the cusp normalizes just below
+	// its integer index, so interval selection must allow for rounding.
+	for _, samples := range []int{480, 481, 497} {
+		c := involuteStudy("t^2", "t^3", "0", -1, 1.0005, 0.5, 0.3)
+		c.Samples, c.Involute.Restart = samples, true
+		c.Involute.Family = InvoluteFamily{Enabled: true, From: -0.2, To: 0.3, Count: 3}
+		r := involute(t, c)
+		var endpoints []int
+		breaks := 0
+		for i := 1; i <= samples; i++ {
+			if r.Breaks[i] {
+				endpoints = append(endpoints, i-1, i)
+				breaks++
+			}
+		}
+		if breaks == 0 {
+			t.Fatal("the cusp should break the curve")
+		}
+		endpoints = append(endpoints, 0, samples)
+		for _, i := range endpoints {
+			u := knotAt(c, c.Curve.Min, c.Curve.Max, i)
+			_, p := curveProbe(t, c, ProbeQuery{T: &u})
+			if len(p.Members) != len(r.Involute.Members) {
+				t.Fatalf("%d samples, endpoint %d: missing probe members", samples, i)
+			}
+			for m, member := range r.Involute.Members {
+				if member.Points[i] == nil {
+					t.Fatalf("%d samples, endpoint %d: expected a reached sample", samples, i)
+				}
+				sameVec(t, "filament at a reached endpoint", p.Members[m], member.Points[i])
+			}
+		}
+	}
+}
+
 // Between samples a restarted member is never carried across the break
 // between two stretches, whose arc lengths are measured from different
 // anchors: the probe has no filament point there, while it has one on
