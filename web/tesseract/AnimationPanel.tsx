@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FrameRateField } from "../FrameRateField";
 import { ProgressSlider } from "../ProgressSlider";
 import { Field } from "../Field";
@@ -6,9 +6,12 @@ import { useDisclosure } from "../useDisclosure";
 import {
   defaultScale,
   exportEncoding,
+  largestScale,
+  resolutionHelp,
   type ExportSettings,
   type ExportLayout,
 } from "../export-quality";
+import { canvasFits } from "../export-image";
 import {
   defaultQuality,
   detectFormats,
@@ -63,10 +66,17 @@ export function AnimationPanel(p: {
     exportSection = useDisclosure("shape-export");
   const [format, setFormat] = useState<ExportFormat>("mp4"),
     [fps, setFPS] = useState(30),
-    [scale, setScale] = useState(defaultScale),
+    [scaleChoice, setScale] = useState(defaultScale),
     [qualities, setQualities] = useState({ ...defaultQuality }),
     [loop, setLoop] = useState(false),
     [formats, setFormats] = useState<Formats | null>(null);
+  // Only resolutions this device draws are offered; a larger choice waits.
+  const topScale = useMemo(
+      () => largestScale(canvasFits, p.layout),
+      [p.layout],
+    ),
+    scale = Math.min(scaleChoice, topScale),
+    resetScale = Math.min(defaultScale, topScale);
   useEffect(() => {
     let live = true;
     setFormats(null);
@@ -88,7 +98,7 @@ export function AnimationPanel(p: {
     text = formatText[chosen];
   const size = exportEncoding({ scale, quality, layout: p.layout }),
     defaultSize = exportEncoding({
-      scale: defaultScale,
+      scale: resetScale,
       quality,
       layout: p.layout,
     });
@@ -202,14 +212,14 @@ export function AnimationPanel(p: {
             <Field
               label="Export resolution"
               value={`${size.width} × ${size.height}`}
-              help="More pixels keep finer detail, with larger files and slower export."
+              help={resolutionHelp(topScale, p.layout)}
             >
               <input
                 aria-label="Export resolution"
                 aria-valuetext={`${size.width} by ${size.height} pixels`}
                 type="range"
                 min="0.5"
-                max="2"
+                max={topScale}
                 step="0.25"
                 value={scale}
                 onChange={(e) => setScale(+e.target.value)}
@@ -253,7 +263,7 @@ export function AnimationPanel(p: {
             <button
               className="text-button export-reset"
               disabled={
-                scale === defaultScale && quality === defaultQuality[chosen]
+                scale === resetScale && quality === defaultQuality[chosen]
               }
               onClick={() => {
                 setScale(defaultScale);

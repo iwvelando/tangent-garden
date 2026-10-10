@@ -10,6 +10,7 @@ import {
   type View,
 } from "./scene";
 import { glsl, palette, vec3 } from "./palette";
+import { pageLimits } from "./limits";
 import { cutEdges, isCut, maxCutPlanes, specPlanes, type CutSpec } from "./cut";
 import {
   arcLengths,
@@ -597,11 +598,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   // overlapping where they meet never double; without, coverage blends.
   const sampled = (gl.getParameter(gl.SAMPLES) as number) > 0;
   // The largest page this device can draw on, a side.
-  const largest = () =>
-    Math.min(
-      gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
-      ...(gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array),
-    );
+  const largest = () => pageLimits(gl).side;
   // See-through sheets, made when first drawn: their program, a triangle
   // covering the page, and a half-float (or float) target summing layers.
   // Null when the device cannot render to one.
@@ -1088,7 +1085,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       lines = passes.filter((v) => !v.sheet);
     const target = sight.sheets === "through" && sheets.length && seeing();
     if (target && size) {
-      const most = gl!.getParameter(gl!.MAX_TEXTURE_SIZE) as number;
+      const most = pageLimits(gl!).texture;
       if (Math.max(width, height) > most)
         throw new Error(
           `This device draws see-through 3D images at most ${most} pixels a side. Choose a smaller size.`,

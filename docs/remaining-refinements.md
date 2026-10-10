@@ -54,13 +54,13 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Open:**
 
-- **3D surface probe held at its own (u, v)** under parameter tracks, rather than its share of the grid.
 - **Smaller limits** to fix if they bite:
   - 3D probe lines are depth-tested, so sheets hide them.
   - Surface plots run along the row only.
   - The readout cannot tell an unknown tangent plane from a singular one.
+  - A surface probe held at its (u, v) snaps to each frame's grid: Go evaluates surfaces only at their samples.
 
-**Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks, away messages), `engine/probe.go` and `engine3/probe.go` (the curve probe between samples, a model for a surface probe at its own (u, v)), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
+**Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks, away messages), `engine/probe.go` and `engine3/probe.go` (the curve probe between samples), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
 
 **Watch for:**
 
@@ -92,9 +92,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Applies to:** 3D only. 4D has no camera paths.
 
-**Open:**
-
-- Choosing the framed point from the geometry, not the plane through the study's center. Today a turn holds an off-plane detail only approximately.
+**Done:** **Turn about · Geometry in the middle** takes each view's framed point from the drawn geometry on its line of sight (see `mathematics.md#spatial-camera-paths`). It is opt-in; links without it turn about the plane.
 
 **Smaller limits:**
 
@@ -114,26 +112,10 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - See-through sheets are not multisampled, so their outlines alias.
 - Lines behind several see-through layers are not attenuated per layer.
 - Dash length is set in space, so near dashes look longer under perspective.
-- Close to a perspective eye, **Lines (SVG) · visible only, sampled** can exceed its work limit.
 
 **Start from:** `mathematics.md` (**Spatial line weights**, the see-through section) and `web/spatial/sight.ts`.
 
 **Watch for:** the hairline path must stay the original program and `gl.LINES`.
-
-### 5. WebGL context recovery and device limits
-
-**Applies to:**
-
-- Context recovery: 3D only (done).
-- Device limits: all three.
-
-**Done:** after `webglcontextlost`, `SpatialPlot.tsx` asks for restoration and says the drawing returns when the browser restores it, or to reload the page if it does not. Camera gestures, edits and study changes made meanwhile are kept but not drawn. On `webglcontextrestored` it builds a new renderer, uploads the current result and probe, and draws the camera as it then stands. The 2D notebook stays usable throughout. `tests/spatial-context.spec.ts` covers both, using `WEBGL_lose_context`. Exports draw on their own canvases and are not covered.
-
-**Open:**
-
-- All notebooks: still exports already refuse a page the device cannot draw, naming its size (see `mathematics.md`, **Still exports: size and transparent background**). Still open: query the limits before offering a size, so the menu offers only sizes that fit, and cover half-float targets and animation exports the same way.
-
-**Test with:** `WEBGL_lose_context` in Chromium.
 
 ### 6. Scale and translation robustness
 
@@ -147,7 +129,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 - Error budgets across tiny, large and translated studies.
 - 3D: rebase positions before the Float32 upload, and keep meaningful clipping (near/far are set in framing radii).
-- Test explicitly that live and exported drawings are equivalent.
 
 Today's finite-value guards and robust bounds do not prove scale independence.
 
@@ -163,7 +144,6 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 **Open:**
 
 - **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another.
-- **3D arc-length restart after a base break,** for involutes and the involute input. It needs separate anchors and labels; today samples past a break are unreached.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
 ### 8. Transport and efficiency, when profiled

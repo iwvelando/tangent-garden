@@ -581,3 +581,92 @@ test("an ellipsoid's parallel surface reads radii less d as d sweeps", async ({
   await settled(page);
   await expect(readout(page).nth(2)).toHaveText(radii(-0.25));
 });
+
+// The torus patch, u from 0 to 2π in 72 rows and v from −π/3 to π/3 in 24
+// columns: the probe starts at its middle, u = π (row 36) and v = 0
+// (column 12). Held at its u and v it keeps those parameters as tracks
+// stretch the domain; at its row and column it keeps its share instead.
+test("a surface probe held at its u and v keeps them as the domain stretches", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  await settled(page);
+  await choosePreset(page, { label: "A torus revealing its centers" });
+  await page
+    .getByRole("checkbox", {
+      name: "Principal curvatures & centres at a point",
+    })
+    .check();
+  await settled(page);
+  const along = page.getByRole("slider", { name: "Along u" }),
+    around = page.getByRole("slider", { name: "Along v" });
+  await expect(along).toHaveAttribute(
+    "aria-valuetext",
+    "u = 3.142, row 36 of 72",
+  );
+  await expect(around).toHaveAttribute("aria-valuetext", /, column 12 of 24$/);
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  await track(page, "uMax", "2*pi", "4*pi");
+  await expect(motion(page)).toHaveValue("stays");
+  expect(await options(page)).toEqual([
+    ["stays", "Stays at its row and column"],
+    ["point", "Stays at its u and v"],
+    ["along", "Moves along the surface"],
+  ]);
+  // At its share of the rows, u = 2π at the end; at its own u, π, which
+  // is row 18 of the stretched domain's 72.
+  await playPaused(page);
+  await seek(page, "1");
+  await expect(along).toHaveAttribute(
+    "aria-valuetext",
+    "u = 6.283, row 36 of 72",
+  );
+  await button(page, "Back to study").click();
+  await motion(page).selectOption("point");
+  await playPaused(page);
+  await seek(page, "1");
+  await expect(along).toHaveAttribute(
+    "aria-valuetext",
+    "u = 3.142, row 18 of 72",
+  );
+  // The probe does not move, so the readout names only the track.
+  await expect(values(page)).toHaveText("u to = 12.5664");
+  await button(page, "Back to study").click();
+  // Stretching v down to −2π/3: v = 0 is column 16 of 24, drawn there,
+  // where its share would draw it at column 12.
+  await page.getByLabel("Parameter 1", { exact: true }).selectOption("vMin");
+  await page.getByLabel("Track 1 from").fill("-pi/3");
+  await page.getByLabel("Track 1 to").fill("-2*pi/3");
+  await playPaused(page);
+  await seek(page, "1");
+  await expect(around).toHaveAttribute("aria-valuetext", /, column 16 of 24$/);
+  const held = await pixels(page);
+  await button(page, "Back to study").click();
+  await motion(page).selectOption("stays");
+  await playPaused(page);
+  await seek(page, "1");
+  await expect(around).toHaveAttribute("aria-valuetext", /, column 12 of 24$/);
+  expect(await pixels(page)).not.toBe(held);
+  await button(page, "Back to study").click();
+  // Narrowed to [π/6, π/3], the frame leaves v = 0 out: the probe is absent
+  // and says why.
+  await motion(page).selectOption("point");
+  await page.getByLabel("Track 1 to").fill("pi/6");
+  await playPaused(page);
+  await seek(page, "1");
+  await expect(along).toHaveCount(0);
+  await expect(page.locator(".spatial-probe")).toContainText(
+    /v = \S+ lies outside this frame's domain, \[0\.523599, 1\.0472\]\./,
+  );
+  // Returning to the study returns the probe to its own grid.
+  await button(page, "Back to study").click();
+  await settled(page);
+  await expect(along).toHaveAttribute(
+    "aria-valuetext",
+    "u = 3.142, row 36 of 72",
+  );
+  await expect(around).toHaveAttribute("aria-valuetext", /, column 12 of 24$/);
+});

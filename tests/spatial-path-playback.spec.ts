@@ -631,6 +631,177 @@ test("Viviani's curve flies from its circle to its figure-eight and around its c
   await expect(page.getByLabel("View 1 name", { exact: true })).toHaveCount(0);
 });
 
+// The page size of the line drawing (SVG) and its base curve's segments.
+async function baseDrawing(page: Page) {
+  await button(page, "Export image").click();
+  const event = page.waitForEvent("download");
+  await page
+    .getByRole("menuitem", { name: "Lines (SVG) · every line", exact: true })
+    .click();
+  const svg = (await readFile((await (await event).path())!)).toString();
+  const [, width, height] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)!;
+  const group = svg.match(/<g id="base"[^>]*>(.*?)<\/g>/)![1];
+  // Each path's points, joined in order.
+  const paths = [...group.matchAll(/ d="([^"]*)"/g)].map((d) =>
+    [...d[1].matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((m) => [+m[1], +m[2]]),
+  );
+  return { width: +width, height: +height, paths };
+}
+// How near the base curve passes to the middle of the page, in pixels.
+async function nearMiddle(page: Page) {
+  const { width, height, paths } = await baseDrawing(page);
+  const [cx, cy] = [width / 2, height / 2];
+  let best = Infinity;
+  for (const points of paths)
+    for (let i = 1; i < points.length; i++) {
+      const [ax, ay] = points[i - 1],
+        [bx, by] = points[i];
+      const [dx, dy] = [bx - ax, by - ay],
+        dd = dx * dx + dy * dy;
+      const u = dd
+        ? Math.min(1, Math.max(0, ((cx - ax) * dx + (cy - ay) * dy) / dd))
+        : 0;
+      best = Math.min(best, Math.hypot(ax + u * dx - cx, ay + u * dy - cy));
+    }
+  return best;
+}
+
+test("turning about the geometry keeps a framed point of Viviani's curve in the middle of the page, where the plane lets it wander", async ({
+  page,
+}) => {
+  // Viviani's curve alone, without its tube: its top (0, 0, 2a) lies 2a in
+  // front of the plane through the study's center facing a camera at yaw 0.
+  const viviani = spatialPresets.find(
+    (p) => p.name === "Viviani's curve, from every side",
+  )!;
+  const layers = { ...defaultLayers, surface: false, circles: false };
+  const base = {
+    config: viviani.config,
+    layers,
+    view: manual,
+    animation: { ...study().animation, path: { style: "steady", keys: [] } },
+  };
+  await open(page, base);
+  const { center } = await shownView(page);
+  // Panned so that the top is in the middle, then once around it.
+  const top = {
+    name: "Top",
+    yaw: 0,
+    pitch: 0,
+    zoom: 2,
+    panX: center.x,
+    panY: center.y,
+    turns: 0,
+  };
+  const path: CameraPath = {
+    style: "steady",
+    pivot: "geometry",
+    keys: [top, { ...top, name: "Around", turns: 1 }],
+  };
+  await open(page, { ...base, animation: { ...base.animation, path } });
+  const pivot = page.getByLabel("Turn about", { exact: true });
+  await expect(pivot).toHaveValue("geometry");
+  // At a view the drawing is that view, whatever the pivot.
+  await button(page, "Show view 1").click();
+  expect(await nearMiddle(page)).toBeLessThan(0.5);
+  await page.keyboard.press("Escape");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  const between = ["0.125", "0.375", "0.625", "0.875"];
+  for (const p of between) {
+    await seek(page, p);
+    expect(await nearMiddle(page)).toBeLessThan(1);
+  }
+  // About the plane, the top swings away from the middle. (A quarter and
+  // half turn bring other points of this symmetric curve there.)
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await pivot.selectOption("plane");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  for (const p of between) {
+    await seek(page, p);
+    expect(await nearMiddle(page)).toBeGreaterThan(20);
+  }
+});
+
+test("a perspective turn holds visible geometry through playback and decoded export", async ({
+  page,
+}) => {
+  const viviani = spatialPresets.find(
+    (p) => p.name === "Viviani's curve, from every side",
+  )!;
+  const layers = { ...defaultLayers, surface: false, circles: false };
+  const base = {
+    ...study(),
+    config: viviani.config,
+    layers,
+    projection: "normal",
+  };
+  await open(page, base);
+  const { center, radius } = await shownView(page);
+  // The top is nearest the eye exactly along z. Start just in front of it:
+  // an eye circling the center plane crosses it as the off-center top turns.
+  const yaw = 0;
+  const top = {
+    name: "Top",
+    yaw,
+    pitch: 0,
+    zoom: (1.16 * radius) / (3.1 * Math.tan((25 * Math.PI) / 180)),
+    panX: center.x * Math.cos(yaw) - (3 - center.z) * Math.sin(yaw),
+    panY: center.y,
+    turns: 0,
+  };
+  const path: CameraPath = {
+    style: "smooth",
+    pivot: "geometry",
+    keys: [top, { ...top, name: "Around", turns: 1 }],
+  };
+  await open(page, {
+    ...base,
+    animation: { ...base.animation, duration: 0.4, path },
+  });
+  await button(page, "Show view 1").click();
+  expect(await nearMiddle(page)).toBeLessThan(1);
+  const first = await still(page);
+  await page.keyboard.press("Escape");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  let middle!: Buffer;
+  for (const p of ["0.2", "0.4", "0.6", "0.8"]) {
+    await seek(page, p);
+    expect(await nearMiddle(page)).toBeLessThan(1);
+    if (p === "0.8") middle = await still(page);
+  }
+  await button(page, "Stop").click();
+  await openDetails(page, "#spatial-export-settings");
+  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("2");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Export MP4/ }).click();
+  const file = (await (await download).path())!;
+  const timing = probe(file);
+  if (timing) {
+    expect(timing.frames).toBe(6);
+    expect(timing.durations.reduce((a, b) => a + b, 0)).toBe(400);
+  }
+  const video = await decodeVideo(page, await readFile(file));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  for (const [index, reference] of [
+    [0, first],
+    [4, middle],
+    [5, first],
+  ] as const) {
+    const difference = frameDifference(file, 2000, 1520, index, reference);
+    if (difference) {
+      expect(difference.meanDifference).toBeLessThan(3);
+      expect(difference.unmatchedInk).toBeLessThan(0.05);
+    }
+  }
+});
+
 test("a rhumb line's flight drops above its pole quickly, sinks in slowly with the pole held in the middle, and returns quickly", async ({
   page,
 }) => {

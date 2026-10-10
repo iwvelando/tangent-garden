@@ -64,7 +64,8 @@ export type LineworkOptions = {
   weight?: LineWeight;
   // Whether strokes taper with depth through a lens; even by default.
   depth?: StrokeDepth;
-  // Bounds visibility testing: rasterized pixels plus line samples.
+  // Bounds visibility testing: the pixels tried in each sheet triangle's
+  // rows (see span), one per row, plus line samples.
   limit?: number;
   signal?: AbortSignal;
 };
@@ -205,10 +206,10 @@ export function linework(
     const width = strokeWidth(pass.batch, weight, options);
     for (let i = 0; i + 13 < data.length; i += 14) {
       for (const part of cutting
-        ? kept(planes!, beyond, data, i)
+        ? keptLine(planes!, beyond, data, i)
         : [whole(data, i)]) {
         const { ends } = part;
-        const piece = clipped(
+        const piece = clippedLine(
           k,
           clip(k, ends[0], ends[1], ends[2]),
           clip(k, ends[7], ends[8], ends[9]),
@@ -323,7 +324,7 @@ const whole = (data: Float32Array, i: number): Part => ({
   ends: data.subarray(i, i + 14),
   range: [0, 1],
 });
-function kept(
+export function keptLine(
   planes: Plane[],
   beyond: CutBeyond,
   data: Float32Array,
@@ -409,7 +410,7 @@ function extend(paths: [number, number][][], a: Point, b: Point) {
 // The third element is the piece's ends as parameters along the segment,
 // and the fourth their clip w, which is 1 throughout without perspective.
 type Piece = [Point, Point, [number, number], [number, number]];
-function clipped(
+export function clippedLine(
   k: Camera,
   a: [number, number, number, number],
   b: [number, number, number, number],
@@ -442,7 +443,7 @@ function clipped(
 // length in space at a fraction r of its length on the page, and back:
 // perspective-correct interpolation, as the drawing's varyings have.
 // Without perspective both are the identity.
-const spaceAt = ([w0, w1]: [number, number], r: number) =>
+export const spaceAt = ([w0, w1]: [number, number], r: number) =>
   w0 === w1 ? r : (r * w0) / ((1 - r) * w1 + r * w0);
 const pageAt = ([w0, w1]: [number, number], s: number) =>
   w0 === w1 ? s : (s * w1) / ((1 - s) * w0 + s * w1);
@@ -649,10 +650,11 @@ function rasterize(
     y0 = Math.max(0, Math.floor(Math.min(q.ay, q.by, q.cy))),
     y1 = Math.min(r.height - 1, Math.ceil(Math.max(q.ay, q.by, q.cy)));
   if (x1 < x0 || y1 < y0) return;
-  work.done += (x1 - x0 + 1) * (y1 - y0 + 1);
-  if (work.done > work.limit) throw overLimit();
-  for (let y = y0; y <= y1; y++)
-    for (let x = x0; x <= x1; x++) {
+  for (let y = y0; y <= y1; y++) {
+    const [from, to] = span(q, y + 0.5, x0, x1);
+    work.done += 1 + Math.max(0, to - from + 1);
+    if (work.done > work.limit) throw overLimit();
+    for (let x = from; x <= to; x++) {
       // Pixel centers on an edge count as inside, for both neighbors.
       if (!inside(q, x + 0.5, y + 0.5)) continue;
       if (beyond(r, t, q, x + 0.5, y + 0.5)) continue;
@@ -665,6 +667,31 @@ function rasterize(
         r.nearest[i] = t;
       }
     }
+  }
+}
+// The pixels from x0 to x1 of a row whose centers lie at height y that a
+// triangle can cover: those between where its edges cross the row, and one
+// more on each side, so the exact test above still decides each pixel.
+// Close to a perspective eye a triangle can reach far off the page, its box
+// there much larger than the part it covers.
+function span(q: Facet, y: number, x0: number, x1: number) {
+  let lo = Infinity,
+    hi = -Infinity;
+  const edge = (px: number, py: number, qx: number, qy: number) => {
+    // A level edge's ends are the other edges' ends too.
+    const s = (y - py) / (qy - py);
+    if (!(s >= 0 && s <= 1)) return;
+    const x = px + (qx - px) * s;
+    lo = Math.min(lo, x);
+    hi = Math.max(hi, x);
+  };
+  edge(q.ax, q.ay, q.bx, q.by);
+  edge(q.bx, q.by, q.cx, q.cy);
+  edge(q.cx, q.cy, q.ax, q.ay);
+  return [
+    Math.max(x0, Math.floor(lo - 0.5) - 1),
+    Math.min(x1, Math.ceil(hi - 0.5) + 1),
+  ];
 }
 const overLimit = () =>
   new Error(

@@ -436,6 +436,10 @@ test("a size the browser cannot draw names the limit instead of saving a blank f
   page,
 }) => {
   await planarReady(page);
+  // The menu offers only sizes that drew when it opened (export-limits.spec.ts).
+  // A device that can no longer draw one, as under memory pressure, still
+  // refuses it when saved.
+  await choose(page, { size: "4000 × 3040" });
   // As iOS Safari does past its canvas area: no context at all.
   await page.evaluate(() => {
     const original = HTMLCanvasElement.prototype.getContext;
@@ -449,7 +453,6 @@ test("a size the browser cannot draw names the limit instead of saving a blank f
   });
   let downloads = 0;
   page.on("download", () => downloads++);
-  await choose(page, { size: "4000 × 3040" });
   await imageButton(page).click();
   await page.getByRole("menuitem", { name: /^PNG image/ }).click();
   await expect(page.getByRole("alert")).toHaveText(

@@ -1118,6 +1118,20 @@ test("a link carries how the probe moves while parameters vary; a grid's probe s
     grid.animation.probeMotion = "along";
     assert.equal(spatialStudy(grid).animation.probeMotion, "along");
   }
+  // A grid's probe held at its own u and v travels in a link; on the curve
+  // its point is its t, so it stays there.
+  const held = structuredClone(spatial(patch)) as SpatialStudy;
+  held.probe = { ...held.probe, target: "surface", enabled: true };
+  held.animation = {
+    ...held.animation,
+    mode: "parameters",
+    probeMotion: "point",
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", held));
+  assert.deepEqual(spatialStudy(read.study), held);
+  const curve = structuredClone(spatial()) as any;
+  curve.animation.probeMotion = "point";
+  assert.equal(spatialStudy(curve).animation.probeMotion, "stays");
 });
 
 test("a link carries a camera path, its leg times and its flight; refuses turns, times, views and names outside their limits", async () => {
@@ -1216,6 +1230,30 @@ test("a link carries a camera path, its leg times and its flight; refuses turns,
     bad((p) => (p.keys = {})),
     keys,
   );
+});
+
+test("a link carries what a camera path turns about; older links turn about the plane", async () => {
+  const study: SpatialStudy = {
+    ...spatial(),
+    animation: { ...spatial().animation, mode: "path" },
+  };
+  // A path without a pivot, as every link made before it, keeps none: it
+  // turns about the plane through the study's center.
+  assert.equal(
+    "pivot" in spatialStudy(structuredClone(study)).animation.path,
+    false,
+  );
+  for (const pivot of ["plane", "geometry"] as const) {
+    const s = structuredClone(study);
+    s.animation.path.pivot = pivot;
+    const read = await readStudyLink(await writeStudyLink("3d", s));
+    assert.equal(spatialStudy(read.study).animation.path.pivot, pivot);
+  }
+  for (const pivot of ["center", "", 1, null]) {
+    const s = structuredClone(study) as any;
+    s.animation.path.pivot = pivot;
+    await refused(() => spatialStudy(s), "animation.path.pivot");
+  }
 });
 
 test("a link carries a camera flying its path while the geometry moves; never while orbiting", async () => {
@@ -1453,6 +1491,32 @@ test("a link carries the involute a construction is built on; older links take t
   const inverted = structuredClone(spatial()) as any;
   inverted.config.inversion.input = "involute";
   await refused(() => spatialStudy(inverted), "config.inversion.input");
+});
+
+test("a link carries restarts after a break; older links never restart", async () => {
+  const study = spatial();
+  study.config = {
+    ...study.config,
+    construction: "involute",
+    input: "involute",
+    involute: { ...study.config.involute, restart: true },
+    unwinding: { ...study.config.unwinding, restart: true },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // Links made before it carry no flag, and read back without one, so the
+  // request Go receives is the one it always did.
+  const older = structuredClone(spatial()) as any;
+  delete older.config.involute.restart;
+  delete older.config.unwinding.restart;
+  const conformed = spatialStudy(older);
+  assert.equal("restart" in conformed.config.involute, false);
+  assert.equal("restart" in conformed.config.unwinding, false);
+  for (const key of ["involute", "unwinding"] as const) {
+    const bad = structuredClone(spatial()) as any;
+    bad.config[key].restart = "yes";
+    await refused(() => spatialStudy(bad), `config.${key}.restart`);
+  }
 });
 
 test("a link carries the coil a construction is built on; older links take the default", async () => {

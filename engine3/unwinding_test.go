@@ -223,7 +223,7 @@ func TestInvoluteInputDerivativesMatchItsPositions(t *testing.T) {
 			t.Fatal(err)
 		}
 		curve, _, breaks := baseSamples(c, base, lo, hi, c.Samples, closed)
-		evaluate, _, _, err := c.Unwinding.evaluation(base, lo, hi, curve, breaks)
+		evaluate, _, _, _, err := c.Unwinding.evaluation(base, lo, hi, curve, breaks)
 		if err != nil {
 			t.Fatal(err)
 		}

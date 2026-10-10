@@ -39,6 +39,42 @@ export const browserLimit = (width: number, height: number) =>
     `This browser can't draw a ${width} × ${height} image. Choose a smaller size.`,
   );
 
+// Whether this device draws on a 2D canvas of a size, tried as an export
+// would (see drawable) and released at once. A size that drew is
+// remembered; one that did not is tried again, as memory can come back.
+type Size = { width: number; height: number };
+const drew = new Set<string>();
+export function canvasFits({ width, height }: Size) {
+  const key = `${width}×${height}`;
+  if (drew.has(key)) return true;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  try {
+    const context = canvas.getContext("2d");
+    if (!context || !drawable(context, width, height)) return false;
+  } catch {
+    return false;
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
+  drew.add(key);
+  return true;
+}
+// Whether a device can export a still of a size with a background setting.
+export type Fits = (size: Size, transparent: boolean) => boolean;
+// The still scales a device offers: from the smallest, up to the first it
+// cannot draw, since a larger page fits no better. The smallest is always
+// offered, so a device that cannot draw it says so when saving.
+export function stillFits(fits: Fits, base: Size, transparent: boolean) {
+  const scales = [stillScales[0]];
+  for (const scale of stillScales.slice(1)) {
+    if (!fits(stillSize({ scale, transparent }, base), transparent)) break;
+    scales.push(scale);
+  }
+  return scales;
+}
+
 export function svgFile(svg: SVGSVGElement, transparent = false): Blob {
   return new Blob(
     [

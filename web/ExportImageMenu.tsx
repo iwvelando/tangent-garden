@@ -1,21 +1,28 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
 import {
+  canvasFits,
   defaultStill,
   drawingPage,
   pngFile,
   saveFile,
   StillLimit,
+  stillFits,
   stillScales,
   stillSize,
   svgFile,
+  type Fits,
   type Still,
 } from "./export-image";
+
+// A PNG rasterized from vectors needs only a canvas of its size.
+const rasterFits: Fits = (size) => canvasFits(size);
 
 type Props = {
   disabled: boolean;
@@ -26,6 +33,9 @@ type Props = {
   // What the size applies to: the PNG alone where the other formats are
   // vectors, or every format of a page drawn by WebGL.
   sizeLabel?: string;
+  // Whether this device can draw a size, asked when the menu opens; kept
+  // the same between renders.
+  fits?: Fits;
   svgLabel?: string;
   // Further formats a notebook saves itself, listed after SVG.
   extraItems?: { format: string; label: string }[];
@@ -43,10 +53,21 @@ export function ExportImageMenu({
   menuId = "export-image-menu",
   base = drawingPage,
   sizeLabel = "PNG size",
+  fits = rasterFits,
 }: Props) {
   const [open, setOpen] = useState(false);
   // Settings, kept between exports. The menu stays open while they change.
-  const [still, setStill] = useState<Still>(defaultStill);
+  const [chosen, setStill] = useState<Still>(defaultStill);
+  // Only sizes this device can draw are offered. A chosen size that does
+  // not fit is kept, and the largest that does is used meanwhile.
+  const scales = useMemo(
+    () => (open ? stillFits(fits, base, chosen.transparent) : stillScales),
+    [open, fits, base.width, base.height, chosen.transparent],
+  );
+  const still = {
+    ...chosen,
+    scale: Math.min(chosen.scale, scales.at(-1)!),
+  };
   const png = stillSize(still, base);
   const [error, setError] = useState("");
   // Keep the right-edge anchor where it fits, and clamp wider popups to the
@@ -58,7 +79,6 @@ export function ExportImageMenu({
   };
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const items = useRef<HTMLButtonElement[]>([]);
   useLayoutEffect(() => {
     if (!open && !error) return setOffset(0);
     const position = () => {
@@ -77,7 +97,7 @@ export function ExportImageMenu({
     return () => window.removeEventListener("resize", position);
   }, [open, error]);
   useEffect(() => {
-    if (open) items.current[0]?.focus();
+    if (open) popup.current?.querySelector("button")?.focus();
   }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -95,7 +115,7 @@ export function ExportImageMenu({
     button.current?.focus();
   }
   function keys(e: KeyboardEvent) {
-    const list = items.current;
+    const list = [...e.currentTarget.querySelectorAll("button")];
     const i = list.indexOf(document.activeElement as HTMLButtonElement);
     const move = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: -1 }[e.key];
     if (move !== undefined) {
@@ -135,9 +155,6 @@ export function ExportImageMenu({
       );
     }
   }
-  const item = (index: number) => (element: HTMLButtonElement | null) => {
-    if (element) items.current[index] = element;
-  };
   return (
     <div className="export-menu" ref={wrap}>
       <button
@@ -165,7 +182,6 @@ export function ExportImageMenu({
           onKeyDown={keys}
         >
           <button
-            ref={item(0)}
             role="menuitem"
             tabIndex={-1}
             onClick={() => void save("png")}
@@ -174,17 +190,15 @@ export function ExportImageMenu({
             {still.transparent ? ", transparent" : ""}
           </button>
           <button
-            ref={item(1)}
             role="menuitem"
             tabIndex={-1}
             onClick={() => void save("svg")}
           >
             {svgLabel}
           </button>
-          {extraItems.map((extra, i) => (
+          {extraItems.map((extra) => (
             <button
               key={extra.format}
-              ref={item(2 + i)}
               role="menuitem"
               tabIndex={-1}
               onClick={() => void save(extra.format)}
@@ -197,12 +211,11 @@ export function ExportImageMenu({
             <div className="export-menu-heading" aria-hidden="true">
               {sizeLabel}
             </div>
-            {stillScales.map((scale, i) => {
+            {scales.map((scale) => {
               const size = stillSize({ ...still, scale }, base);
               return (
                 <button
                   key={scale}
-                  ref={item(2 + extraItems.length + i)}
                   role="menuitemradio"
                   aria-checked={still.scale === scale}
                   tabIndex={-1}
@@ -215,7 +228,6 @@ export function ExportImageMenu({
           </div>
           <div role="separator" />
           <button
-            ref={item(2 + extraItems.length + stillScales.length)}
             role="menuitemcheckbox"
             aria-checked={still.transparent}
             tabIndex={-1}

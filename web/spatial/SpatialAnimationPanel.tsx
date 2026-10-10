@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -51,6 +52,9 @@ import {
   gridded,
   probeOptions,
   heldProbe,
+  columnShare,
+  motionOn,
+  type GridPlace,
   probeMotions,
   probeMotionHelp,
   probeBetween,
@@ -77,7 +81,14 @@ import { buildScene, scenePasses } from "./scene";
 import { movedCut, sweepExtent, sweepOffset, type CutSpec } from "./cut";
 import type { Sight } from "./sight";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
-import { defaultScale, exportEncoding, exportTiming } from "../export-quality";
+import {
+  defaultScale,
+  exportEncoding,
+  exportTiming,
+  largestScale,
+  resolutionHelp,
+} from "../export-quality";
+import { spatialFits } from "./limits";
 import {
   defaultQuality,
   detectFormats,
@@ -101,12 +112,15 @@ import {
   maxTurns,
   moveKey,
   pathError,
+  framedDepths,
   pathHelp,
+  pathPivots,
   pathLeg,
   pathStyles,
   removeKey,
   type CameraPath,
   type KeyView,
+  type PathPivot,
   type PathStyle,
 } from "./path";
 import {
@@ -153,6 +167,9 @@ type Session = {
   // its key views were taken about.
   path?: CameraPath;
   around?: Bounds3;
+  // How far each view's framed point stands from the plane through the
+  // center, when the path turns about the geometry (see framedDepths).
+  depths?: number[];
   // Present only while riding a ray: its polyline, the bounds its lens is
   // framed about, and the trace's total optical path.
   ride?: { path: RidePath; around: Bounds3; total: number };
@@ -281,7 +298,14 @@ export function SpatialAnimationPanel({
   const exportSection = useDisclosure("spatial-export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
-  const [exportScale, setExportScale] = useState(defaultScale);
+  const [scaleChoice, setExportScale] = useState(defaultScale);
+  // Only resolutions this device draws are offered; a larger choice waits.
+  const topScale = useMemo(() => {
+    const fits = spatialFits(sight.sheets === "through");
+    return largestScale((size) => fits(size, false));
+  }, [sight.sheets]);
+  const exportScale = Math.min(scaleChoice, topScale);
+  const resetScale = Math.min(defaultScale, topScale);
   // Each format keeps its own quality, starting from its default.
   const [qualities, setQualities] = useState(defaultQuality);
   const [exportNotice, setExportNotice] = useState("");
@@ -309,7 +333,7 @@ export function SpatialAnimationPanel({
   const setQuality = (value: number) =>
     setQualities((q) => ({ ...q, [chosen]: value }));
   const exportSize = exportEncoding({ scale: exportScale, quality });
-  const defaultSize = exportEncoding({ scale: defaultScale, quality });
+  const defaultSize = exportEncoding({ scale: resetScale, quality });
   const exportReady = formats?.[chosen] === "yes";
   const exportHint = !formats
     ? ""
@@ -506,7 +530,7 @@ export function SpatialAnimationPanel({
   ): Promise<AnimationView> {
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
     let current: Frame;
-    let held: ProbePlace | string | null | undefined;
+    let held: ProbePlace | GridPlace | string | null | undefined;
     if (s.mode === "parameters" && s.between) {
       // Between samples, each frame's probe is placed by Go with the frame
       // itself, the ends included.
@@ -582,6 +606,16 @@ export function SpatialAnimationPanel({
               : s.probe
                 ? fixedProbe(s, p)
                 : null;
+    // A grid probe held at its point stands in its own column, drawn and
+    // read as the share across the frame's grid that picks it.
+    let setup = s.probe;
+    if (held !== null && typeof held === "object" && "row" in held) {
+      setup = {
+        ...s.probe!,
+        across: columnShare(current.result.surfaceDiagnostics!, held.column),
+      };
+      held = held.row;
+    }
     // The curve probe at a sample is described as between samples.
     if (
       typeof held === "number" &&
@@ -601,12 +635,13 @@ export function SpatialAnimationPanel({
         path: s.path,
         around: s.around,
         cyclic: s.repeat === "loop",
+        ...(s.depths && { depths: s.depths }),
       }),
       ...(s.ride && { ride: s.ride }),
       ...(held !== null &&
         (typeof held === "string"
-          ? { probeAway: held, probeSetup: s.probe }
-          : { probe: held, probeSetup: s.probe })),
+          ? { probeAway: held, probeSetup: setup }
+          : { probe: held, probeSetup: setup })),
       // The farthest extent at the start and the nearest at the end, exactly.
       ...(s.mode === "cut" && {
         cut: movedCut(s.cut!, sweepOffset(p, s.extent!)),
@@ -710,7 +745,10 @@ export function SpatialAnimationPanel({
       return `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe!, view.probe!)}`;
     // A probe that moves as the parameters vary says where it stands.
     const probed =
-      s.probe && s.motion !== "stays" && view.probe !== undefined
+      s.probe &&
+      s.motion !== "stays" &&
+      s.motion !== "point" &&
+      view.probe !== undefined
         ? [
             `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe, view.probe)}`,
           ]
@@ -930,13 +968,28 @@ export function SpatialAnimationPanel({
         tracks: numeric,
         mode,
         ...(drawsProbe && { probe: probe!, between, point }),
-        ...(mode === "parameters" && probing && { motion: probeMotion }),
+        ...(mode === "parameters" &&
+          probing && { motion: motionOn(target, probeMotion) }),
         cut,
         extent,
         sight,
         ...(flies && {
           path: structuredClone(path),
           around: frame.result.bounds,
+          // The geometry the views frame, as drawn now, through the held
+          // view's projection, which the path flies in.
+          ...(path.pivot === "geometry" && {
+            depths: framedDepths(
+              path,
+              scenePasses(buildScene(frame.result), layers),
+              frame.result.bounds,
+              {
+                projection: heldView.projection,
+                lensAngle: heldView.lensAngle,
+              },
+              cut,
+            ),
+          }),
         }),
         camera,
         heldView,
@@ -1099,6 +1152,27 @@ export function SpatialAnimationPanel({
           }}
         >
           {pathStyles.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field
+        label="Turn about"
+        help={path.pivot === "geometry" ? pathHelp.geometry : pathHelp.plane}
+      >
+        <select
+          value={path.pivot ?? "plane"}
+          onChange={(e) => {
+            const pivot = e.target.value as PathPivot;
+            // The plane is the default, which links leave out.
+            setPath(({ pivot: _, ...p }) =>
+              pivot === "geometry" ? { ...p, pivot } : p,
+            );
+          }}
+        >
+          {pathPivots.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
             </option>
@@ -1626,14 +1700,14 @@ export function SpatialAnimationPanel({
             <Field
               label="Export resolution"
               value={`${exportSize.width} × ${exportSize.height}`}
-              help="More pixels keep finer detail, with larger files and slower export."
+              help={resolutionHelp(topScale)}
             >
               <input
                 aria-label="Export resolution"
                 aria-valuetext={`${exportSize.width} by ${exportSize.height} pixels`}
                 type="range"
                 min="0.5"
-                max="2"
+                max={topScale}
                 step="0.25"
                 value={exportScale}
                 onChange={(e) => setExportScale(+e.target.value)}
@@ -1677,8 +1751,7 @@ export function SpatialAnimationPanel({
             <button
               className="text-button export-reset"
               disabled={
-                exportScale === defaultScale &&
-                quality === defaultQuality[chosen]
+                exportScale === resetScale && quality === defaultQuality[chosen]
               }
               onClick={() => {
                 if (status === "complete") stop();
