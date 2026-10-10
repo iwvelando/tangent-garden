@@ -26,8 +26,9 @@ import {
 } from "./animation";
 import {
   defaultProbe,
-  gridded,
+  motionOn,
   probeSupport,
+  spatialProbeMotionSchema,
   probeTarget,
   type Probe,
   type ProbeMotion,
@@ -41,7 +42,6 @@ import {
 } from "./cut";
 import { defaultSight, legacyWeight, opacityRange, type Sight } from "./sight";
 import { lineWeightSchema } from "../line-weight";
-import { probeMotionSchema } from "../probe";
 import {
   defaultPath,
   legRange,
@@ -76,7 +76,8 @@ export type SpatialAnimation = Omit<
   repeat: Repeat;
   pace: Pace;
   // How the probe moves while parameters vary; links made before it keep
-  // it at its t, or its row and column.
+  // it at its t, or its row and column. Holding a grid probe at its own
+  // parameters (point) is left out of links made before it.
   probeMotion: ProbeMotion;
 };
 export type SpatialStudy = {
@@ -484,7 +485,7 @@ const sight: SchemaOf<Sight> = {
   },
 };
 
-const motion = probeMotionSchema;
+const motion = spatialProbeMotionSchema;
 
 const projection: SchemaOf<Projection> = {
   options: Object.fromEntries(
@@ -632,12 +633,12 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode moves the probe only while it is on in a study that offers it.",
     );
-  // A grid has rows, not a length: its probe stays, as the panel's does.
-  if (
-    animation.probeMotion === "length" &&
-    gridded(probeTarget(study.config, probed))
-  )
-    animation.probeMotion = "stays";
+  // A grid has rows, not a length, and on the curve its point is its t:
+  // the probe stays, as the panel's does.
+  animation.probeMotion = motionOn(
+    probeTarget(study.config, probed),
+    animation.probeMotion,
+  );
   const cutting = conform(raw.cut, cut, defaultCut, "cut");
   if (cutting.enabled && "message" in cutPlane(cutting))
     throw new LinkError("cut.normal", "cut.normal must not be zero.");

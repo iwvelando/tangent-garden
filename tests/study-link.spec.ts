@@ -1118,6 +1118,20 @@ test("a link carries how the probe moves while parameters vary; a grid's probe s
     grid.animation.probeMotion = "along";
     assert.equal(spatialStudy(grid).animation.probeMotion, "along");
   }
+  // A grid's probe held at its own u and v travels in a link; on the curve
+  // its point is its t, so it stays there.
+  const held = structuredClone(spatial(patch)) as SpatialStudy;
+  held.probe = { ...held.probe, target: "surface", enabled: true };
+  held.animation = {
+    ...held.animation,
+    mode: "parameters",
+    probeMotion: "point",
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", held));
+  assert.deepEqual(spatialStudy(read.study), held);
+  const curve = structuredClone(spatial()) as any;
+  curve.animation.probeMotion = "point";
+  assert.equal(spatialStudy(curve).animation.probeMotion, "stays");
 });
 
 test("a link carries a camera path, its leg times and its flight; refuses turns, times, views and names outside their limits", async () => {

@@ -72,6 +72,7 @@ export function ProbePanel({
   animating,
   held,
   at: moving,
+  across,
   away,
   dark,
 }: {
@@ -82,6 +83,9 @@ export function ProbePanel({
   animating: boolean;
   held?: CurveProbe;
   at?: ProbePlace;
+  // The share across a grid an animation moving the probe holds it at,
+  // when that is not the probe's own (see heldProbe).
+  across?: number;
   away?: string;
   dark: boolean;
 }) {
@@ -170,7 +174,11 @@ export function ProbePanel({
           <SurfaceProbe
             config={config}
             frame={frame}
-            probe={probe}
+            probe={
+              typeof moving === "number" && across !== undefined
+                ? { ...probe, across }
+                : probe
+            }
             onProbe={onProbe}
             animating={animating}
             at={typeof moving === "number" ? moving : undefined}

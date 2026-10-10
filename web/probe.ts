@@ -150,8 +150,8 @@ export const betweenMotionHelp = tiered(
 // domain, it has no share of the length to keep, or the frame has no
 // length.
 const short6 = (v: number) => Number(v.toPrecision(6));
-export const outsideFrame = (t: number, min: number, max: number) =>
-  `t = ${short6(t)} lies outside this frame's domain, [${short6(min)}, ${short6(max)}].`;
+export const outsideFrame = (t: number, min: number, max: number, name = "t") =>
+  `${name} = ${short6(t)} lies outside this frame's domain, [${short6(min)}, ${short6(max)}].`;
 export const noShare =
   "The probe's point has no share of the length: it is not on a drawn stretch of the curve.";
 export const noLength = "This frame's curve has no length.";

@@ -52,6 +52,9 @@ import {
   gridded,
   probeOptions,
   heldProbe,
+  columnShare,
+  motionOn,
+  type GridPlace,
   probeMotions,
   probeMotionHelp,
   probeBetween,
@@ -527,7 +530,7 @@ export function SpatialAnimationPanel({
   ): Promise<AnimationView> {
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
     let current: Frame;
-    let held: ProbePlace | string | null | undefined;
+    let held: ProbePlace | GridPlace | string | null | undefined;
     if (s.mode === "parameters" && s.between) {
       // Between samples, each frame's probe is placed by Go with the frame
       // itself, the ends included.
@@ -603,6 +606,16 @@ export function SpatialAnimationPanel({
               : s.probe
                 ? fixedProbe(s, p)
                 : null;
+    // A grid probe held at its point stands in its own column, drawn and
+    // read as the share across the frame's grid that picks it.
+    let setup = s.probe;
+    if (held !== null && typeof held === "object" && "row" in held) {
+      setup = {
+        ...s.probe!,
+        across: columnShare(current.result.surfaceDiagnostics!, held.column),
+      };
+      held = held.row;
+    }
     // The curve probe at a sample is described as between samples.
     if (
       typeof held === "number" &&
@@ -627,8 +640,8 @@ export function SpatialAnimationPanel({
       ...(s.ride && { ride: s.ride }),
       ...(held !== null &&
         (typeof held === "string"
-          ? { probeAway: held, probeSetup: s.probe }
-          : { probe: held, probeSetup: s.probe })),
+          ? { probeAway: held, probeSetup: setup }
+          : { probe: held, probeSetup: setup })),
       // The farthest extent at the start and the nearest at the end, exactly.
       ...(s.mode === "cut" && {
         cut: movedCut(s.cut!, sweepOffset(p, s.extent!)),
@@ -732,7 +745,10 @@ export function SpatialAnimationPanel({
       return `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe!, view.probe!)}`;
     // A probe that moves as the parameters vary says where it stands.
     const probed =
-      s.probe && s.motion !== "stays" && view.probe !== undefined
+      s.probe &&
+      s.motion !== "stays" &&
+      s.motion !== "point" &&
+      view.probe !== undefined
         ? [
             `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe, view.probe)}`,
           ]
@@ -952,7 +968,8 @@ export function SpatialAnimationPanel({
         tracks: numeric,
         mode,
         ...(drawsProbe && { probe: probe!, between, point }),
-        ...(mode === "parameters" && probing && { motion: probeMotion }),
+        ...(mode === "parameters" &&
+          probing && { motion: motionOn(target, probeMotion) }),
         cut,
         extent,
         sight,

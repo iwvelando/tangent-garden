@@ -1,7 +1,9 @@
 import { test } from "@playwright/test";
 import assert from "node:assert/strict";
 import {
+  columnShare,
   heldProbe,
+  surfaceProbeAt,
   probeMotions,
   defaultProbe,
   type Probe,
@@ -159,6 +161,120 @@ test("a probe on a grid stays at its row and column, or moves along the rows", (
   );
 });
 
+// A grid whose rows are at u = uMin + i·(uMax − uMin)/rows and whose
+// columns are at v = vMin + k·(vMax − vMin)/columns, or around a full turn
+// when periodic, as Go lays out a canal's contact circle.
+function surface(
+  uMin: number,
+  uMax: number,
+  rows: number,
+  vMin: number,
+  vMax: number,
+  columns: number,
+  periodic = false,
+): SpatialResult {
+  return {
+    surfaceDiagnostics: {
+      kind: periodic ? "canal" : "patch",
+      periodic,
+      u: Array.from(
+        { length: rows + 1 },
+        (_, i) => uMin + ((uMax - uMin) * i) / rows,
+      ),
+      v: periodic
+        ? Array.from({ length: columns }, (_, k) => (2 * Math.PI * k) / columns)
+        : Array.from(
+            { length: columns + 1 },
+            (_, k) => vMin + ((vMax - vMin) * k) / columns,
+          ),
+    },
+  } as unknown as SpatialResult;
+}
+
+test("a probe on a grid can stay at its own u and v as the domain moves", () => {
+  // The user's row 3 of 10 and column 6 of 8 on [0, 1] × [0, 4] are
+  // u = 0.3 and v = 3.
+  const probe = { ...at(0.3), target: "surface" as const, across: 0.75 };
+  const start = surface(0, 1, 10, 0, 4, 8);
+  const held = (frame: SpatialResult) =>
+    heldProbe(start, probe, "surface", "point", frame, 0.5);
+  // The same domain: the same row and column.
+  assert.deepEqual(held(surface(0, 1, 10, 0, 4, 8)), { row: 3, column: 6 });
+  // A domain twice as long each way: u = 0.3 is row 3 of 20, v = 3 is
+  // column 6 of 16, where staying at its share would take row 6, column 12.
+  assert.deepEqual(held(surface(0, 2, 20, 0, 8, 16)), { row: 3, column: 6 });
+  assert.equal(
+    heldProbe(start, probe, "surface", "stays", surface(0, 2, 20, 0, 8, 16), 0),
+    6,
+  );
+  // Nearest sample, not the floor: u = 0.3 is 2.7 steps into [0.03, 1.03].
+  assert.deepEqual(held(surface(0.03, 1.03, 10, 0, 4, 8)), {
+    row: 3,
+    column: 6,
+  });
+  // A reversed domain counts its rows from its own start.
+  assert.deepEqual(held(surface(1, 0, 10, 4, 0, 8)), { row: 7, column: 2 });
+  // Within half a step of an end it rounds onto it.
+  assert.deepEqual(held(surface(-0.72, 0.28, 20, 0, 4, 8)), {
+    row: 20,
+    column: 6,
+  });
+  // Outside the domain along either parameter it has no point, and says
+  // which parameter left it out.
+  const outU = held(surface(0.5, 1.5, 10, 0, 4, 8));
+  assert.equal(outU, "u = 0.3 lies outside this frame's domain, [0.5, 1.5].");
+  const outV = held(surface(0, 1, 10, 3.5, 6, 8));
+  assert.equal(outV, "v = 3 lies outside this frame's domain, [3.5, 6].");
+  // A canal's turn around its contact circle wraps: the last column is
+  // nearer the first than the one before it.
+  const canal = { ...probe, target: "surface" as const, across: 23 / 24 };
+  const ring = surface(0, 1, 10, 0, 0, 24, true);
+  assert.deepEqual(
+    heldProbe(
+      ring,
+      canal,
+      "surface",
+      "point",
+      surface(0, 2, 20, 0, 0, 24, true),
+      0,
+    ),
+    { row: 3, column: 23 },
+  );
+  assert.deepEqual(
+    heldProbe(
+      surface(0, 1, 10, 0, 0, 96, true),
+      { ...canal, across: 95 / 96 },
+      "surface",
+      "point",
+      ring,
+      0,
+    ),
+    { row: 3, column: 0 },
+  );
+  // Without the surface's diagnostics there is nothing to stand on.
+  assert.equal(typeof held(curve(0, 1, 10)), "string");
+  // The frame draws its column as the share across that picks it, on an
+  // open grid and around a contact circle alike.
+  for (const grid of [surface(0, 1, 10, 0, 4, 8), ring])
+    for (const column of [0, 1, 5, grid.surfaceDiagnostics!.v.length - 1])
+      assert.equal(
+        surfaceProbeAt(
+          grid.surfaceDiagnostics!,
+          0,
+          columnShare(grid.surfaceDiagnostics!, column),
+        ).column,
+        column,
+      );
+});
+
+test("the curve probe holding its point stays at its t", () => {
+  const start = curve(0, 1, 10);
+  assert.equal(
+    heldProbe(start, at(0.3), "curve", "point", curve(0, 2, 20), 0.5),
+    3,
+  );
+});
+
 test("the choices name what the probe holds, and a grid has no length", () => {
   const helix = spatialPresets.find(
     (p) => p.name === "Helix · a ribbon staircase",
@@ -178,8 +294,16 @@ test("the choices name what the probe holds, and a grid has no length", () => {
   const patch = spatialPresets.find(
     (p) => p.config.format === "surface",
   )!.config;
-  assert.deepEqual(
-    probeMotions(patch, "surface").map((m) => m.value),
-    ["stays", "along"],
+  assert.deepEqual(probeMotions(patch, "surface"), [
+    { value: "stays", label: "Stays at its row and column" },
+    { value: "point", label: "Stays at its u and v" },
+    { value: "along", label: "Moves along the surface" },
+  ]);
+  const canal = spatialPresets.find(
+    (p) => p.config.construction === "canal",
+  )!.config;
+  assert.equal(
+    probeMotions(canal, "surface")[1].label,
+    "Stays at its t and θ − θ₀",
   );
 });
