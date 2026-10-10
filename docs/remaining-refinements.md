@@ -113,7 +113,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - See-through sheets are not multisampled, so their outlines alias.
 - Lines behind several see-through layers are not attenuated per layer.
 - Dash length is set in space, so near dashes look longer under perspective.
-- Close to a perspective eye, **Lines (SVG) · visible only, sampled** can exceed its work limit.
 
 **Start from:** `mathematics.md` (**Spatial line weights**, the see-through section) and `web/spatial/sight.ts`.
 

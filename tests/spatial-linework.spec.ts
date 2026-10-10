@@ -272,6 +272,18 @@ test("visibility testing stops at its work limit instead of saving part", () => 
   expect(() => lines(result, { occlusion: "none", limit: 1000 })).not.toThrow();
 });
 
+test("sheet rasterization enforces its work limit without any line samples", () => {
+  // With no lines, only the sheet raster can exhaust the visibility budget.
+  const result = study({ mesh: square(() => 0) });
+  expect(() => lines(result, { occlusion: "sampled", limit: 1000 })).toThrow(
+    /work limit/,
+  );
+  expect(
+    lines(result, { occlusion: "sampled", limit: size.width * size.height }),
+  ).toEqual([]);
+  expect(lines(result, { occlusion: "none", limit: 1000 })).toEqual([]);
+});
+
 test("the SVG holds paths and metadata, with no text or embedded image", () => {
   const result = study({
     base: [at(-0.5, 0, 0), at(0, 0.3, 0), at(0.5, 0, 0)],
@@ -525,4 +537,48 @@ test("a sheet of triangles smaller than a pixel still hides what is behind it", 
   expect(drawn).toHaveLength(2);
   expect(Math.abs(drawn[0][1][0] - (1000 - 30))).toBeLessThan(1.5);
   expect(Math.abs(drawn[1][0][0] - (1000 + 30))).toBeLessThan(1.5);
+});
+
+test("close to a perspective eye, sheets reaching off the page cost what they cover", () => {
+  // A fan of thin wedges in the plane z = 0, about the view's target,
+  // reaching a radius past the page on every side. The eye looks down −z
+  // through the wide lens (90°) from 1.16 / 8 above the target, where the
+  // plane is drawn at 8 times the orthographic scale: 655 px per unit, so
+  // the page spans about ±0.19 by ±0.15. Each wedge's box on the page is a
+  // quarter of it or more, but together the wedges cover it once.
+  const wedges = 400,
+    rim = 1;
+  const corner = (a: number) => ({
+    position: at(rim * Math.cos(a), rim * Math.sin(a), 0),
+    normal: at(0, 0, 1),
+    phase: 0,
+    sampleIndex: 0,
+  });
+  const fan: MeshVertex[] = [];
+  for (let i = 0; i < wedges; i++)
+    fan.push(
+      { position: O, normal: at(0, 0, 1), phase: 0, sampleIndex: 0 },
+      corner((2 * Math.PI * i) / wedges),
+      corner((2 * Math.PI * (i + 1)) / wedges),
+    );
+  const v = view({ zoom: 8, projection: "wide" });
+  // A line above the fan, nearer the eye, and one below it, across the page.
+  const result = (z: number) =>
+    study({
+      base: [at(-0.05, 0.02, z), at(0.05, 0.02, z)],
+      breaks: [false, false],
+      mesh: curveMesh(fan),
+    });
+  // The page's area four times over: boxes alone would need 90, past the default limit.
+  const limit = 4 * size.width * size.height;
+  const above = paths(
+    lines(result(0.02), { v, occlusion: "sampled", limit }),
+    "base",
+  );
+  expect(above).toHaveLength(1);
+  expect(
+    paths(lines(result(-0.02), { v, occlusion: "sampled", limit }), "base"),
+  ).toHaveLength(0);
+  // Every line still exports, and hidden testing keeps the visible one whole.
+  expect(above).toEqual(paths(lines(result(0.02), { v }), "base"));
 });

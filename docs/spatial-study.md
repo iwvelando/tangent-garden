@@ -251,7 +251,7 @@ While **Trace rays** sends light into a mirror or interface, **Animation camera 
 - **Inside a trefoil's tube** puts the eye in the knot's central hole and turns it once about the knot's axis, in a seamless loop: the tube passes overhead, beside you and far away.
 - **Down a torus's tunnel** stands inside a ring-shaped tube, looking along it through a 140° lens, with its wall seen through. Its rings sweep out past the page's edges and crowd toward the bend, where the far side of the ring glows through. The pan turns with the camera, so turning once carries the eye all the way around the tunnel, in a seamless loop. Drag **Lens angle** down and the eye backs out through the wall until the whole ring is in view, while the ring at the middle of the page keeps its size: a dolly zoom.
 
-Up close, sheets cover the page many times over, and **Lines (SVG) · visible only, sampled** may refuse a view whose hidden-line test exceeds its work limit; **every line** still exports. Dashes behind sheets keep their length in space, so near dashes look longer. Definitions are in [mathematics](mathematics.md#the-manual-camera-in-perspective).
+Dashes behind sheets keep their length in space, so near dashes look longer. Definitions are in [mathematics](mathematics.md#the-manual-camera-in-perspective).
 
 ## Looping and back and forth
 
