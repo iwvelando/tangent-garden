@@ -174,6 +174,43 @@ test("a transparent 3D still also needs a canvas of its size", async ({
   ).toHaveText("PNG image · 4000 × 3040");
 });
 
+test("keyboard navigation wraps after still sizes shrink and expand", async ({
+  page,
+}) => {
+  await device(page, { area: 8_000_000 });
+  await spatial(page, "Trefoil · (2, 3)");
+  await imageButton(page).click();
+  const box = menu(page).getByRole("menuitemcheckbox", {
+    name: "Transparent background",
+  });
+  const navigate = async () => {
+    const buttons = menu(page).locator("button");
+    const count = await buttons.count();
+    await page.keyboard.press("Home");
+    for (let i = 0; i < count; i++) {
+      await expect(buttons.nth(i)).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+    }
+    await expect(buttons.first()).toBeFocused();
+    for (let i = count - 1; i >= 0; i--) {
+      await page.keyboard.press("ArrowUp");
+      await expect(buttons.nth(i)).toBeFocused();
+    }
+    await page.keyboard.press("End");
+    await expect(box).toBeFocused();
+  };
+  await navigate();
+  for (const count of [3, 4, 3]) {
+    await box.click();
+    await expect(menu(page).getByRole("menuitemradio")).toHaveCount(count);
+    await navigate();
+  }
+  await page.keyboard.press("Escape");
+  await expect(imageButton(page)).toBeFocused();
+  await imageButton(page).click();
+  await navigate();
+});
+
 const resolution = (page: Page) =>
   page.getByRole("slider", { name: "Export resolution", exact: true });
 
@@ -233,3 +270,70 @@ test("4D animation resolution stops where the canvas does", async ({
     "1500 by 1140 pixels",
   );
 });
+
+for (const notebook of ["2D", "3D", "4D", "4D paired"] as const) {
+  test(`${notebook} resets animation exports to this device's available defaults`, async ({
+    page,
+  }) => {
+    await device(page, { area: 2_000_000, renderbuffer: 1600 });
+    if (notebook === "2D") {
+      await planar(page);
+      await openExportSettings(page);
+    } else if (notebook === "3D") {
+      await spatial(page, "Trefoil · (2, 3)");
+      await open(page, "#spatial-animation-section");
+      await open(page, "#spatial-export-settings");
+    } else {
+      await four(page);
+      if (notebook === "4D paired") {
+        await choosePreset(page, { label: "Beside the wall" });
+        await fourSettled(page);
+        await page
+          .getByRole("combobox", { name: "View operation", exact: true })
+          .selectOption("paired");
+        await fourSettled(page);
+      }
+      await open(page, "#shape-animation-section");
+      await open(page, "#shape-export-settings");
+    }
+    const reset = page.getByRole("button", { name: /^Reset export settings/ });
+    const quality = page.getByRole("slider", {
+      name: "Export quality",
+      exact: true,
+    });
+    const format = page.getByRole("combobox", { name: "Export format" });
+    await expect(format).toBeVisible();
+    const paired = notebook === "4D paired";
+    const size = paired ? "2000 × 760" : "1500 × 1140";
+    const scale = paired ? "1" : "1.5";
+    for (const [encoding, defaultQuality] of [
+      ["mp4", "60"],
+      ["webp", "85"],
+    ]) {
+      await format.selectOption(encoding);
+      await expect(reset).toHaveText(
+        `Reset export settings to ${size} · quality ${defaultQuality}`,
+      );
+      await expect(reset).toBeDisabled();
+      await resolution(page).fill("0.5");
+      await quality.fill("70");
+      await expect(reset).toBeEnabled();
+      await reset.click();
+      await expect(resolution(page)).toHaveValue(scale);
+      await expect(quality).toHaveValue(defaultQuality);
+      await expect(reset).toBeDisabled();
+    }
+    if (paired) {
+      // Reset keeps the full default choice for a view with more room.
+      await page
+        .getByRole("combobox", { name: "View operation", exact: true })
+        .selectOption("diagram");
+      await fourSettled(page);
+      await expect(resolution(page)).toHaveValue("1.5");
+      await expect(reset).toHaveText(
+        "Reset export settings to 1500 × 1140 · quality 85",
+      );
+      await expect(reset).toBeDisabled();
+    }
+  });
+}

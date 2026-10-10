@@ -75,7 +75,8 @@ export function AnimationPanel(p: {
       () => largestScale(canvasFits, p.layout),
       [p.layout],
     ),
-    scale = Math.min(scaleChoice, topScale);
+    scale = Math.min(scaleChoice, topScale),
+    resetScale = Math.min(defaultScale, topScale);
   useEffect(() => {
     let live = true;
     setFormats(null);
@@ -97,7 +98,7 @@ export function AnimationPanel(p: {
     text = formatText[chosen];
   const size = exportEncoding({ scale, quality, layout: p.layout }),
     defaultSize = exportEncoding({
-      scale: defaultScale,
+      scale: resetScale,
       quality,
       layout: p.layout,
     });
@@ -262,7 +263,7 @@ export function AnimationPanel(p: {
             <button
               className="text-button export-reset"
               disabled={
-                scale === defaultScale && quality === defaultQuality[chosen]
+                scale === resetScale && quality === defaultQuality[chosen]
               }
               onClick={() => {
                 setScale(defaultScale);

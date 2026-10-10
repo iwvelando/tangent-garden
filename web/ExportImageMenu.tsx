@@ -79,7 +79,6 @@ export function ExportImageMenu({
   };
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const items = useRef<HTMLButtonElement[]>([]);
   useLayoutEffect(() => {
     if (!open && !error) return setOffset(0);
     const position = () => {
@@ -98,7 +97,7 @@ export function ExportImageMenu({
     return () => window.removeEventListener("resize", position);
   }, [open, error]);
   useEffect(() => {
-    if (open) items.current[0]?.focus();
+    if (open) popup.current?.querySelector("button")?.focus();
   }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -116,8 +115,7 @@ export function ExportImageMenu({
     button.current?.focus();
   }
   function keys(e: KeyboardEvent) {
-    // Fewer sizes leave earlier items behind; only those shown count.
-    const list = items.current.filter((e) => e.isConnected);
+    const list = [...e.currentTarget.querySelectorAll("button")];
     const i = list.indexOf(document.activeElement as HTMLButtonElement);
     const move = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: -1 }[e.key];
     if (move !== undefined) {
@@ -157,9 +155,6 @@ export function ExportImageMenu({
       );
     }
   }
-  const item = (index: number) => (element: HTMLButtonElement | null) => {
-    if (element) items.current[index] = element;
-  };
   return (
     <div className="export-menu" ref={wrap}>
       <button
@@ -187,7 +182,6 @@ export function ExportImageMenu({
           onKeyDown={keys}
         >
           <button
-            ref={item(0)}
             role="menuitem"
             tabIndex={-1}
             onClick={() => void save("png")}
@@ -196,17 +190,15 @@ export function ExportImageMenu({
             {still.transparent ? ", transparent" : ""}
           </button>
           <button
-            ref={item(1)}
             role="menuitem"
             tabIndex={-1}
             onClick={() => void save("svg")}
           >
             {svgLabel}
           </button>
-          {extraItems.map((extra, i) => (
+          {extraItems.map((extra) => (
             <button
               key={extra.format}
-              ref={item(2 + i)}
               role="menuitem"
               tabIndex={-1}
               onClick={() => void save(extra.format)}
@@ -219,12 +211,11 @@ export function ExportImageMenu({
             <div className="export-menu-heading" aria-hidden="true">
               {sizeLabel}
             </div>
-            {scales.map((scale, i) => {
+            {scales.map((scale) => {
               const size = stillSize({ ...still, scale }, base);
               return (
                 <button
                   key={scale}
-                  ref={item(2 + extraItems.length + i)}
                   role="menuitemradio"
                   aria-checked={still.scale === scale}
                   tabIndex={-1}
@@ -237,7 +228,6 @@ export function ExportImageMenu({
           </div>
           <div role="separator" />
           <button
-            ref={item(2 + extraItems.length + scales.length)}
             role="menuitemcheckbox"
             aria-checked={still.transparent}
             tabIndex={-1}

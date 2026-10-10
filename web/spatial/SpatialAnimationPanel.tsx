@@ -296,6 +296,7 @@ export function SpatialAnimationPanel({
     return largestScale((size) => fits(size, false));
   }, [sight.sheets]);
   const exportScale = Math.min(scaleChoice, topScale);
+  const resetScale = Math.min(defaultScale, topScale);
   // Each format keeps its own quality, starting from its default.
   const [qualities, setQualities] = useState(defaultQuality);
   const [exportNotice, setExportNotice] = useState("");
@@ -323,7 +324,7 @@ export function SpatialAnimationPanel({
   const setQuality = (value: number) =>
     setQualities((q) => ({ ...q, [chosen]: value }));
   const exportSize = exportEncoding({ scale: exportScale, quality });
-  const defaultSize = exportEncoding({ scale: defaultScale, quality });
+  const defaultSize = exportEncoding({ scale: resetScale, quality });
   const exportReady = formats?.[chosen] === "yes";
   const exportHint = !formats
     ? ""
@@ -1691,8 +1692,7 @@ export function SpatialAnimationPanel({
             <button
               className="text-button export-reset"
               disabled={
-                exportScale === defaultScale &&
-                quality === defaultQuality[chosen]
+                exportScale === resetScale && quality === defaultQuality[chosen]
               }
               onClick={() => {
                 if (status === "complete") stop();

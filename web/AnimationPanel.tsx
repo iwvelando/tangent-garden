@@ -182,6 +182,7 @@ export function AnimationPanel({
   // Only resolutions this device draws are offered; a larger choice waits.
   const topScale = useMemo(() => largestScale(canvasFits), []);
   const exportScale = Math.min(scaleChoice, topScale);
+  const resetScale = Math.min(defaultScale, topScale);
   // Each format keeps its own quality, starting from its default.
   const [qualities, setQualities] = useState(defaultQuality);
   const [exportNotice, setExportNotice] = useState("");
@@ -209,7 +210,7 @@ export function AnimationPanel({
   const setQuality = (value: number) =>
     setQualities((q) => ({ ...q, [chosen]: value }));
   const exportSize = exportEncoding({ scale: exportScale, quality });
-  const defaultSize = exportEncoding({ scale: defaultScale, quality });
+  const defaultSize = exportEncoding({ scale: resetScale, quality });
   const exportReady = formats?.[chosen] === "yes";
   const exportHint = !formats
     ? ""
@@ -1195,8 +1196,7 @@ export function AnimationPanel({
             <button
               className="text-button export-reset"
               disabled={
-                exportScale === defaultScale &&
-                quality === defaultQuality[chosen]
+                exportScale === resetScale && quality === defaultQuality[chosen]
               }
               onClick={() => {
                 if (status === "complete") stop();
