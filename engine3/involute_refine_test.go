@@ -249,7 +249,7 @@ func TestInvoluteInputPositionIsTheSamples(t *testing.T) {
 			t.Fatal(err)
 		}
 		curve, _, breaks := baseSamples(c, base, lo, hi, c.Samples, closed)
-		_, position, _, err := c.Unwinding.evaluation(base, lo, hi, curve, breaks)
+		_, position, _, _, err := c.Unwinding.evaluation(base, lo, hi, curve, breaks)
 		if err != nil {
 			t.Fatal(err)
 		}

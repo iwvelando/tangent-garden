@@ -146,7 +146,6 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 **Open:**
 
 - **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another.
-- **3D arc-length restart after a base break,** for involutes and the involute input. It needs separate anchors and labels; today samples past a break are unreached.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
 ### 8. Transport and efficiency, when profiled

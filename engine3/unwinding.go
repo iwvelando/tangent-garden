@@ -7,10 +7,12 @@ import "math"
 // measured from the anchor t₀ and signed string length c (Offset), as for
 // one member of the involute construction. It is read only for that input,
 // and is independent of the involute construction's own anchor and length,
-// so an involute can be unwound from an involute.
+// so an involute can be unwound from an involute. Restart starts arc length
+// again past each break, as the involute construction's does.
 type UnwindingRequest struct {
-	Anchor float64 `json:"anchor"`
-	Offset float64 `json:"offset"`
+	Anchor  float64 `json:"anchor"`
+	Offset  float64 `json:"offset"`
+	Restart bool    `json:"restart,omitempty"`
 }
 
 func (q UnwindingRequest) validate() error {
@@ -46,35 +48,49 @@ var (
 // T′ = (r″ − (r″·T)T)/|r′| and T″ is differenced from T. I′ is along the
 // base's principal normal, so an involute stops where the base is straight
 // (T′ = 0) as well as where the string runs out (s = c).
-func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*Vec3, breaks []bool) (evaluation, func(float64) Vec3, []bool, error) {
+func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*Vec3, breaks []bool) (evaluation, func(float64) Vec3, []bool, []float64, error) {
 	n := len(curve) - 1
 	t0 := q.Anchor
 	if t0 < lo || t0 > hi {
-		return nil, nil, nil, fieldErr("unwinding.anchor", "the input's anchor t₀ must lie within the domain [%.6g, %.6g]", lo, hi)
+		return nil, nil, nil, nil, fieldErr("unwinding.anchor", "the input's anchor t₀ must lie within the domain [%.6g, %.6g]", lo, hi)
 	}
 	u := &unwinder{offset: q.Offset, base: base, lo: lo, hi: hi, n: n, h: (hi - lo) / float64(n), s: make([]float64, n+1), reach: make([]bool, n)}
 	// open reports whether interval i joins two regular samples.
 	open := func(i int) bool { return curve[i] != nil && curve[i+1] != nil && !breaks[i+1] }
 	k := min(n-1, int(math.Floor((t0-lo)/u.h)))
 	s, reach := u.s, u.reach
-	if open(k) {
-		s[k], s[k+1] = -u.whole(u.knot(k), t0), u.whole(t0, u.knot(k+1))
-		reach[k] = finite(s[k]) && finite(s[k+1])
-	}
-	if !reach[k] {
-		return nil, nil, nil, fieldErr("unwinding.anchor", "the input's anchor t₀ must lie on a regular, continuous stretch of the base curve")
-	}
-	for i := k + 1; i < n && open(i); i++ {
-		if s[i+1] = s[i] + u.whole(u.knot(i), u.knot(i+1)); !finite(s[i+1]) {
-			break
+	// measure sets s = 0 at t0, inside interval k, and carries it outward
+	// to the first break on either side; it reports whether interval k
+	// could be split there.
+	measure := func(t0 float64, k int) bool {
+		if open(k) {
+			s[k], s[k+1] = -u.whole(u.knot(k), t0), u.whole(t0, u.knot(k+1))
+			reach[k] = finite(s[k]) && finite(s[k+1])
 		}
-		reach[i] = true
-	}
-	for i := k - 1; i >= 0 && open(i); i-- {
-		if s[i] = s[i+1] - u.whole(u.knot(i), u.knot(i+1)); !finite(s[i]) {
-			break
+		if !reach[k] {
+			return false
 		}
-		reach[i] = true
+		for i := k + 1; i < n && open(i); i++ {
+			if s[i+1] = s[i] + u.whole(u.knot(i), u.knot(i+1)); !finite(s[i+1]) {
+				break
+			}
+			reach[i] = true
+		}
+		for i := k - 1; i >= 0 && open(i); i-- {
+			if s[i] = s[i+1] - u.whole(u.knot(i), u.knot(i+1)); !finite(s[i]) {
+				break
+			}
+			reach[i] = true
+		}
+		return true
+	}
+	if !measure(t0, k) {
+		return nil, nil, nil, nil, fieldErr("unwinding.anchor", "the input's anchor t₀ must lie on a regular, continuous stretch of the base curve")
+	}
+	var restarts []float64
+	if q.Restart {
+		touched := func(i int) bool { return i > 0 && reach[i-1] || i < n && reach[i] }
+		restarts = restart(n, open, touched, measure, lo, u.h)
 	}
 	reached := make([]bool, n+1)
 	for i := range reached {
@@ -110,7 +126,7 @@ func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*V
 		}
 		return point
 	}
-	return evaluate, position, reached, nil
+	return evaluate, position, reached, restarts, nil
 }
 
 // unwinder holds the involute input's arc length s at the samples, s[i]

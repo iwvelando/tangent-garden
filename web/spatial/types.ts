@@ -5,11 +5,15 @@ export type Bounds3 = { center: Vec3; radius: number };
 // Arc length s is measured from the anchor t₀ (a parameter value inside the
 // domain). A member with signed string length c is I = r + (c − s)T. When
 // the family is enabled, `count` (2–24) lengths evenly spaced from `from` to
-// `to` replace `offset`. Mirrors engine3.InvoluteRequest.
+// `to` replace `offset`. With `restart`, arc length starts again past each
+// break of the base, from an anchor of that stretch's own (see
+// InvoluteResult.restarts); absent means off. Mirrors
+// engine3.InvoluteRequest.
 export type InvoluteConfig = {
   anchor: number;
   offset: number;
   family: { enabled: boolean; from: number; to: number; count: number };
+  restart?: boolean;
 };
 // The base curve, one of its tangent projections from the pole, or its
 // involute (see UnwindingConfig): the curve a construction acts on.
@@ -18,8 +22,13 @@ export type CurveInput =
 // The involute a construction is built on, I = r + (c − s)T, with arc
 // length s from the anchor t₀ and signed string length c (offset). Read only
 // for the involute input, and separate from the involute construction's own
-// anchor and length. Mirrors engine3.UnwindingRequest.
-export type UnwindingConfig = { anchor: number; offset: number };
+// anchor and length. `restart` starts its arc length again past each break,
+// as the construction's does. Mirrors engine3.UnwindingRequest.
+export type UnwindingConfig = {
+  anchor: number;
+  offset: number;
+  restart?: boolean;
+};
 // The coil a construction is built on, g = r + dD, d its radius and D at
 // angle θ₀ (radians) in the base's rotation-minimizing frame started from
 // e_z, turning N whole or fractional turns over the curve's arc length.
@@ -494,6 +503,8 @@ export type InvoluteResult = {
   members: { offset: number; points: (Vec3 | null)[]; collapsed: boolean }[];
   strings: { from: Vec3; to: Vec3; sampleIndex: number }[];
   unreached: number;
+  // The anchors arc length restarted from, in increasing t, when asked.
+  restarts?: number[];
 };
 export type Frame = { config: SpatialConfig; result: SpatialResult };
 
@@ -567,6 +578,8 @@ export type CompositionResult = {
   constructions: ProjectionResult["constructions"];
   cusps: number;
   unreached: number;
+  // The involute input's restarted anchors, in increasing t, when asked.
+  restarts?: number[];
 };
 // The constructions built on a curve, which take an input curve.
 export const takesInput = (c: SpatialConfig) =>

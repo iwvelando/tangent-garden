@@ -153,6 +153,7 @@ import {
   type ProbePlace,
 } from "./probe";
 import { ProbePanel } from "./ProbePanel";
+import { RestartCheck, restartedAt } from "./restart";
 import "./spatial.css";
 
 // Saved image files, by format.
@@ -1655,6 +1656,7 @@ export default function SpatialApp({
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const unreached = shown?.result.involute?.unreached ?? 0;
+  const restarts = shown?.result.involute?.restarts;
   const inverted = shown?.result.inversion;
   const composition = shown?.result.composition;
   const frameResult =
@@ -1992,6 +1994,9 @@ export default function SpatialApp({
         : ""}
       {composition && composition.unreached > 0
         ? ` Arc length does not cross a break of the base, so ${composition.unreached} ${composition.unreached === 1 ? "sample lies" : "samples lie"} beyond the involute's reach.`
+        : ""}
+      {composition?.restarts
+        ? ` Past each break of the base its arc length restarts, from ${restartedAt(composition.restarts)}.`
         : ""}
     </p>
   );
@@ -2411,11 +2416,13 @@ export default function SpatialApp({
       note="Each filament is traced by the free end of a string held taut along the tangent."
       diagnostics={
         shown &&
-        (shown.result.invalid > 0 || unreached > 0) && (
+        (shown.result.invalid > 0 || unreached > 0 || restarts) && (
           <p className="bottom-note">
             {shown.result.invalid} invalid samples · {unreached} regular samples
-            beyond a gap from the anchor. Arc length is never carried across a
-            gap, so no filament is drawn there.
+            beyond a gap from the anchor.{" "}
+            {restarts
+              ? `Arc length restarts past each break, from ${restartedAt(restarts)}.`
+              : "Arc length is never carried across a gap, so no filament is drawn there."}
           </p>
         )
       }
@@ -2758,6 +2765,24 @@ export default function SpatialApp({
                             </Field>
                           </div>
                         )}
+                        {composing && config.input === "involute" && (
+                          <RestartCheck
+                            label="Restart input after a break"
+                            checked={!!unwinding.restart}
+                            onChange={(on) =>
+                              update((c) => {
+                                const { restart: _, ...unwinding } =
+                                  c.unwinding;
+                                return {
+                                  ...c,
+                                  unwinding: on
+                                    ? { ...unwinding, restart: true }
+                                    : unwinding,
+                                };
+                              })
+                            }
+                          />
+                        )}
                         {composing && config.input === "coil" && (
                           <>
                             <div className="pair">
@@ -2928,6 +2953,21 @@ export default function SpatialApp({
                             }
                           />
                         </Field>
+                        <RestartCheck
+                          label="Restart after a break"
+                          checked={!!config.involute.restart}
+                          onChange={(on) =>
+                            update((c) => {
+                              const { restart: _, ...involute } = c.involute;
+                              return {
+                                ...c,
+                                involute: on
+                                  ? { ...involute, restart: true }
+                                  : involute,
+                              };
+                            })
+                          }
+                        />
                         <label className="check">
                           <input
                             type="checkbox"

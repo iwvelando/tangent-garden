@@ -1479,6 +1479,32 @@ test("a link carries the involute a construction is built on; older links take t
   await refused(() => spatialStudy(inverted), "config.inversion.input");
 });
 
+test("a link carries restarts after a break; older links never restart", async () => {
+  const study = spatial();
+  study.config = {
+    ...study.config,
+    construction: "involute",
+    input: "involute",
+    involute: { ...study.config.involute, restart: true },
+    unwinding: { ...study.config.unwinding, restart: true },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // Links made before it carry no flag, and read back without one, so the
+  // request Go receives is the one it always did.
+  const older = structuredClone(spatial()) as any;
+  delete older.config.involute.restart;
+  delete older.config.unwinding.restart;
+  const conformed = spatialStudy(older);
+  assert.equal("restart" in conformed.config.involute, false);
+  assert.equal("restart" in conformed.config.unwinding, false);
+  for (const key of ["involute", "unwinding"] as const) {
+    const bad = structuredClone(spatial()) as any;
+    bad.config[key].restart = "yes";
+    await refused(() => spatialStudy(bad), `config.${key}.restart`);
+  }
+});
+
 test("a link carries the coil a construction is built on; older links take the default", async () => {
   const study = spatial();
   study.config = {
