@@ -149,6 +149,9 @@ export type AnimationView = {
   around?: Bounds3;
   // A loop's path passes its seam smoothly (see pathView).
   cyclic?: boolean;
+  // How far each view's framed point stands from the plane through the
+  // center, when the path turns about the geometry (see framedDepths).
+  depths?: number[];
   // The ray the camera rides while light is traced, the bounds its lens
   // was framed about, and the timeline's total optical path.
   ride?: { path: RidePath; around: Bounds3; total: number };
@@ -1047,15 +1050,21 @@ export function animationCamera(view: AnimationView): View {
   // It flies in the held view's projection: key views have none of their
   // own.
   if (view.path)
-    return {
-      ...pathView(view.path, view.around!, view.progress, view.cyclic),
-      ...(view.heldView?.projection && {
-        projection: view.heldView.projection,
-      }),
-      ...(view.heldView?.projection === "chosen" && {
-        lensAngle: view.heldView.lensAngle,
-      }),
-    };
+    return pathView(
+      view.path,
+      view.around!,
+      view.progress,
+      view.cyclic,
+      view.depths,
+      {
+        ...(view.heldView?.projection && {
+          projection: view.heldView.projection,
+        }),
+        ...(view.heldView?.projection === "chosen" && {
+          lensAngle: view.heldView.lensAngle,
+        }),
+      },
+    );
   // So is the ride, at the optical path the frame's light has reached.
   if (view.ride)
     return rideView(

@@ -10,9 +10,14 @@
 // take without a singularity, and they are interpolated directly.
 import { tiered } from "../help";
 import type { Bounds3, Vec3 } from "./types";
-import { turntableAngle, type View } from "./scene";
+import { camera, clip, turntableAngle, type Pass, type View } from "./scene";
+import { hiddenBy, isCut, specPlanes, type CutSpec } from "./cut";
+import { clippedLine, keptLine, spaceAt } from "./linework";
 
 export type PathStyle = "steady" | "smooth";
+// What the camera turns about between views: the plane through the study's
+// center facing it, or the geometry drawn in the middle of each view.
+export type PathPivot = "plane" | "geometry";
 export type KeyView = {
   name: string;
   yaw: number;
@@ -29,7 +34,12 @@ export type KeyView = {
   // The first view has no leg before it.
   leg?: number;
 };
-export type CameraPath = { style: PathStyle; keys: KeyView[] };
+// Absent, the pivot is the plane, so older paths fly as they did.
+export type CameraPath = {
+  style: PathStyle;
+  pivot?: PathPivot;
+  keys: KeyView[];
+};
 export const defaultPath: CameraPath = { style: "steady", keys: [] };
 export const maxKeys = 12;
 export const maxTurns = 8;
@@ -43,6 +53,13 @@ export const pathStyles: { value: PathStyle; label: string }[] = [
   { value: "steady", label: "Steady" },
   { value: "smooth", label: "Smooth" },
 ];
+export const pathPivots: { value: PathPivot; label: string }[] = [
+  { value: "plane", label: "Center plane" },
+  { value: "geometry", label: "Geometry in the middle" },
+];
+// How near the middle of a view, as a share of half the page's shorter
+// side, geometry must be drawn to be the framed point.
+export const pivotReach = 0.05;
 export const keyLabel = (path: CameraPath, k: number) =>
   path.keys[k]?.name.trim() || `View ${k + 1}`;
 // The first view has no leg before it, so neither turns nor leg time.
@@ -92,6 +109,12 @@ export const pathHelp = {
   leg: tiered(
     `The leg's share of the duration, from ${legRange[0]} to ${legRange[1]}.`,
     "Each leg is the one arriving at its view. A leg of 2 takes twice as long as a leg of 1. To linger at a view, add it again and give the leg between the two its time.",
+  ),
+  plane:
+    "The camera turns about the middle of the page on the plane through the study's center.",
+  geometry: tiered(
+    "The camera turns about the geometry drawn in the middle of each view, keeping it there.",
+    `It takes the geometry nearest the viewer within ${pivotReach * 100}% of half the page's shorter side from the middle, as drawn when playback starts, cut included. A view with none there turns about the plane. Through a lens, the eye turns about that point.`,
   ),
   keys: tiered(
     `Up to ${maxKeys} views. Add the drawing's view; to adjust one, show it, change the drawing, and set it again.`,
@@ -199,7 +222,15 @@ export function keyFromView(
   const dot = (r: number[]) => r[0] * d[0] + r[1] * d[1] + r[2] * d[2];
   const fov = turntableAngle(view);
   const tan = fov ? Math.tan((fov * Math.PI) / 360) : 0;
-  const behind = fov ? (1.16 * view.radius) / (view.zoom * tan) - dot(back) : 0;
+  const framed = view.framedTarget;
+  const behind = fov
+    ? framed
+      ? framed.distance +
+        back[0] * (framed.point.x - bounds.center.x) +
+        back[1] * (framed.point.y - bounds.center.y) +
+        back[2] * (framed.point.z - bounds.center.z)
+      : (1.16 * view.radius) / (view.zoom * tan) - dot(back)
+    : 0;
   const zoom = fov
     ? behind > 0
       ? (1.16 * bounds.radius) / (behind * tan)
@@ -214,6 +245,178 @@ export function keyFromView(
     panY: view.panY + dot(y),
     turns: 0,
   };
+}
+
+// How far each view's framed point stands toward the viewer from the plane
+// through the study's center, along its line of sight: 0 on the plane, as
+// the plane pivot has it. With the geometry pivot, it is where the line
+// through the middle of the page meets the drawn geometry nearest the
+// viewer: a sheet it crosses, or a line that passes within pivotReach of
+// the middle of the page, at its point nearest the line. Only what the view
+// draws counts: inside its clip volume, and not hidden by the cut. A view
+// with nothing there keeps 0. Key views are drawn in the projection of the
+// view held when playback starts (lens), so their lines of sight are too.
+export function framedDepths(
+  path: CameraPath,
+  passes: Pass[],
+  bounds: Bounds3,
+  lens: Pick<View, "projection" | "lensAngle"> = {},
+  cut: CutSpec | null = null,
+): number[] {
+  if (path.pivot !== "geometry") return path.keys.map(() => 0);
+  const planes = cut ? specPlanes(cut) : [],
+    beyond = cut?.beyond ?? "every",
+    sides = new Float64Array(planes.length);
+  return path.keys.map((key) => {
+    const view = { ...manual(key, bounds), ...lens };
+    const k = camera(view, { width: 1, height: 1 });
+    const [right, up, back] = rows(key.yaw, key.pitch);
+    // The framed point on the plane, as pathView takes it.
+    const o = [
+      bounds.center.x - key.panX * right[0] - key.panY * up[0],
+      bounds.center.y - key.panX * right[1] - key.panY * up[1],
+      bounds.center.z - key.panX * right[2] - key.panY * up[2],
+    ];
+    let best = -Infinity;
+    // A point the view draws at the middle within reach, on a pass the cut
+    // applies to when cut.
+    const consider = (
+      x: number,
+      y: number,
+      z: number,
+      reach: number,
+      cuts: boolean,
+      visible = false,
+    ) => {
+      const c = clip(k, x, y, z);
+      if (!visible && (!(c[3] > 0) || Math.abs(c[2]) > c[3])) return;
+      if (Math.hypot(c[0], c[1]) / c[3] > reach) return;
+      if (cuts) {
+        planes.forEach((plane, i) => {
+          const n = plane.normal;
+          sides[i] = n.x * x + n.y * y + n.z * z - plane.offset;
+        });
+        if (hiddenBy(sides, beyond)) return;
+      }
+      const s =
+        back[0] * (x - o[0]) + back[1] * (y - o[1]) + back[2] * (z - o[2]);
+      if (s > best) best = s;
+    };
+    const lateral = (d: number[]) => [
+      right[0] * d[0] + right[1] * d[1] + right[2] * d[2],
+      up[0] * d[0] + up[1] * d[1] + up[2] * d[2],
+    ];
+    for (const pass of passes) {
+      const { data, indices, mode } = pass.batch,
+        cuts = !!cut && isCut(pass, cut.scope);
+      const at = (v: number) => [data[7 * v], data[7 * v + 1], data[7 * v + 2]];
+      const count = indices ? indices.length : data.length / 7;
+      const vertex = (i: number) => at(indices ? indices[i] : i);
+      if (mode === "lines")
+        for (let i = 0; i + 1 < count; i += 2) {
+          const a = vertex(i),
+            b = vertex(i + 1);
+          // The renderer's cut and clip rules, before choosing a point.
+          const pair = indices
+            ? new Float32Array([...a, 0, 0, 1, 0, ...b, 0, 0, 1, 0])
+            : data;
+          const start = indices ? 0 : 7 * i;
+          const parts = cuts
+            ? keptLine(planes, beyond, pair, start)
+            : [
+                {
+                  ends: pair.subarray(start, start + 14),
+                  range: [0, 1] as [number, number],
+                },
+              ];
+          const e = lateral([a[0] - o[0], a[1] - o[1], a[2] - o[2]]),
+            f = lateral([b[0] - a[0], b[1] - a[1], b[2] - a[2]]);
+          const ff = f[0] * f[0] + f[1] * f[1];
+          for (const part of parts) {
+            const d = part.ends;
+            const piece = clippedLine(
+              k,
+              clip(k, d[0], d[1], d[2]),
+              clip(k, d[7], d[8], d[9]),
+            );
+            if (!piece) continue;
+            const [p0, p1, range, w] = piece;
+            // Restrict the visible segment to the disk around the middle.
+            // Page coordinates here span 0..1, so its radius is reach/2.
+            const dx = p1.x - p0.x,
+              dy = p1.y - p0.y;
+            const x = p0.x - 0.5,
+              y = p0.y - 0.5;
+            const dd = dx * dx + dy * dy;
+            let r0 = 0,
+              r1 = 1;
+            if (dd > 0) {
+              const r = -(x * dx + y * dy) / dd;
+              const gap =
+                (pivotReach / 2) ** 2 - (x + r * dx) ** 2 - (y + r * dy) ** 2;
+              if (gap < 0) continue;
+              const dr = Math.sqrt(gap / dd);
+              r0 = Math.max(0, r - dr);
+              r1 = Math.min(1, r + dr);
+              if (r0 > r1) continue;
+            } else if (Math.hypot(x, y) > pivotReach / 2) continue;
+            const along = (r: number) => {
+              const u = range[0] + spaceAt(w, r) * (range[1] - range[0]);
+              return part.range[0] + u * (part.range[1] - part.range[0]);
+            };
+            const lo = along(r0),
+              hi = along(r1);
+            // Across the line of sight, use the nearest visible point.
+            // For equal lateral distances, take the end nearest the eye.
+            const dz =
+              back[0] * (b[0] - a[0]) +
+              back[1] * (b[1] - a[1]) +
+              back[2] * (b[2] - a[2]);
+            const u =
+              ff > 0
+                ? Math.min(hi, Math.max(lo, -(e[0] * f[0] + e[1] * f[1]) / ff))
+                : dz > 0
+                  ? hi
+                  : lo;
+            consider(
+              a[0] + u * (b[0] - a[0]),
+              a[1] + u * (b[1] - a[1]),
+              a[2] + u * (b[2] - a[2]),
+              Infinity,
+              false,
+              true,
+            );
+          }
+        }
+      else
+        for (let i = 0; i + 2 < count; i += 3) {
+          // Where the line of sight crosses the triangle, if it does: the
+          // triangle's own coordinates of the middle, across the line.
+          const a = vertex(i),
+            b = vertex(i + 1),
+            c = vertex(i + 2);
+          const pa = lateral([a[0] - o[0], a[1] - o[1], a[2] - o[2]]),
+            pb = lateral([b[0] - o[0], b[1] - o[1], b[2] - o[2]]),
+            pc = lateral([c[0] - o[0], c[1] - o[1], c[2] - o[2]]);
+          const area =
+            (pb[0] - pa[0]) * (pc[1] - pa[1]) -
+            (pc[0] - pa[0]) * (pb[1] - pa[1]);
+          if (!area) continue;
+          const wb = (pc[0] * pa[1] - pa[0] * pc[1]) / area,
+            wc = (pa[0] * pb[1] - pb[0] * pa[1]) / area,
+            wa = 1 - wb - wc;
+          if (wa < 0 || wb < 0 || wc < 0) continue;
+          consider(
+            wa * a[0] + wb * b[0] + wc * c[0],
+            wa * a[1] + wb * b[1] + wc * c[1],
+            wa * a[2] + wb * b[2] + wc * c[2],
+            Infinity,
+            cuts,
+          );
+        }
+    }
+    return Number.isFinite(best) ? best : 0;
+  });
 }
 
 // Each leg's time, and the instant each view is reached, in those times.
@@ -309,19 +512,23 @@ function locate(path: CameraPath, p: number) {
 // path), pitch and log zoom are interpolated in the path's style; the
 // framed point (see pathHelp.framing) moves linearly in 1/zoom, or linearly
 // in time on a leg that keeps its zoom. Every view is drawn about the
-// study's own bounds, so depth keeps the study's range.
+// study's own bounds, so depth keeps the study's range. depths (see
+// framedDepths) move each view's framed point toward the viewer along its
+// line of sight; absent, every framed point is on the plane.
 export function pathView(
   path: CameraPath,
   bounds: Bounds3,
   p: number,
   cyclic = false,
+  depths?: number[],
+  lens: Pick<View, "projection" | "lensAngle"> = {},
 ): View {
   const keys = path.keys,
     n = keys.length;
-  if (n < 2) return manual(keys[0], bounds);
+  if (n < 2) return { ...manual(keys[0], bounds), ...lens };
   const { h, i, f, end } = locate(path, p);
-  if (end) return manual(keys[n - 1], bounds);
-  if (f === 0) return manual(keys[i], bounds);
+  if (end) return { ...manual(keys[n - 1], bounds), ...lens };
+  if (f === 0) return { ...manual(keys[i], bounds), ...lens };
   // Yaw along the path: each leg the shorter way, a half turn the negative
   // way, plus its whole turns.
   const yaw = [keys[0].yaw];
@@ -338,17 +545,23 @@ export function pathView(
       : y[i] + (y[i + 1] - y[i]) * f;
   const v = { yaw: at(yaw), pitch: at(pitch), lz: at(lz) };
   // The framed point of each end of the leg: in the middle of the page, on
-  // the plane through the center facing the camera.
-  const target = (key: KeyView): Vec3 => {
-    const [rx, ry] = rows(key.yaw, key.pitch);
-    return {
+  // the plane through the center facing the camera, or its depth toward the
+  // viewer from it.
+  const target = (k: number): Vec3 => {
+    const key = keys[k],
+      [rx, ry, back] = rows(key.yaw, key.pitch);
+    const on = {
       x: bounds.center.x - key.panX * rx[0] - key.panY * ry[0],
       y: bounds.center.y - key.panX * rx[1] - key.panY * ry[1],
       z: bounds.center.z - key.panX * rx[2] - key.panY * ry[2],
     };
+    const s = depths?.[k];
+    return s
+      ? { x: on.x + s * back[0], y: on.y + s * back[1], z: on.z + s * back[2] }
+      : on;
   };
-  const a = target(keys[i]),
-    b = target(keys[i + 1]);
+  const a = target(i),
+    b = target(i + 1);
   const span = lz[i + 1] - lz[i];
   const sigma =
     span === 0 ? f : Math.expm1(-(v.lz - lz[i])) / Math.expm1(-span);
@@ -364,14 +577,27 @@ export function pathView(
     bounds.center.y - t.y,
     bounds.center.z - t.z,
   ];
-  return {
+  const view: View = {
     ...bounds,
+    ...lens,
     yaw: v.yaw,
     pitch: v.pitch,
     zoom: Math.exp(v.lz),
     panX: rx[0] * d[0] + rx[1] * d[1] + rx[2] * d[2],
     panY: ry[0] * d[0] + ry[1] * d[1] + ry[2] * d[2],
   };
+  const fov = turntableAngle(view);
+  if (fov && depths?.some((s) => s !== 0)) {
+    // Interpolate the positive distances from each eye to its framed
+    // point, rather than orbiting an eye about the center plane. This is
+    // the same eye at every key, including a key with no geometry.
+    const scale = (1.16 * bounds.radius) / Math.tan((fov * Math.PI) / 360);
+    const distances = keys.map((key, k) =>
+      Math.log(scale / key.zoom - depths[k]),
+    );
+    view.framedTarget = { point: t, distance: Math.exp(at(distances)) };
+  }
+  return view;
 }
 
 // The readout: the view the camera stands at, or the two a leg flies

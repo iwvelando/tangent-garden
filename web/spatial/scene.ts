@@ -26,6 +26,9 @@ export type View = Bounds3 & {
   // The chosen lens's angle in degrees, drawn only by the chosen
   // projection; every other projection ignores it.
   lensAngle?: number;
+  // A geometry path's transient target and positive distance ahead of the
+  // eye. Its original center/radius still bound clipping; key views omit it.
+  framedTarget?: { point: Vec3; distance: number };
 };
 // The manual camera's projections: orthographic, or a pinhole through a
 // lens whose angle in degrees spans the page's shorter side: one of three
@@ -1203,7 +1206,9 @@ export function projectionRecord(view: View) {
     name: view.projection,
     // A chosen angle, which its name does not say.
     ...(view.projection === "chosen" && { angle: fov }),
-    statement: `A pinhole perspective, ${fov}° across the page's shorter side, from an eye behind the view's target; the plane through the target is drawn at the orthographic scale, and zoom moves the eye.`,
+    statement: view.framedTarget
+      ? `A pinhole perspective, ${fov}° across the page's shorter side, with the eye at the recorded positive distance behind the framed geometry point; zoom sets the reference distance for strokes that taper with depth.`
+      : `A pinhole perspective, ${fov}° across the page's shorter side, from an eye behind the view's target; the plane through the target is drawn at the orthographic scale, and zoom moves the eye.`,
   };
 }
 function turntableLens(view: View, fov: number): Lens & { target: number } {
@@ -1218,11 +1223,17 @@ function turntableLens(view: View, fov: number): Lens & { target: number } {
     (1.16 * view.radius) / (view.zoom * Math.tan((fov * Math.PI) / 360));
   const shift = (k: "x" | "y" | "z") =>
     -view.panX * right[k] - view.panY * up[k] + d * back[k];
-  const eye = {
-    x: view.center.x + shift("x"),
-    y: view.center.y + shift("y"),
-    z: view.center.z + shift("z"),
-  };
+  const eye = view.framedTarget
+    ? {
+        x: view.framedTarget.point.x + view.framedTarget.distance * back.x,
+        y: view.framedTarget.point.y + view.framedTarget.distance * back.y,
+        z: view.framedTarget.point.z + view.framedTarget.distance * back.z,
+      }
+    : {
+        x: view.center.x + shift("x"),
+        y: view.center.y + shift("y"),
+        z: view.center.z + shift("z"),
+      };
   const reach = Math.hypot(
     eye.x - view.center.x,
     eye.y - view.center.y,
@@ -1234,9 +1245,13 @@ function turntableLens(view: View, fov: number): Lens & { target: number } {
     forward: { x: -back.x, y: -back.y, z: -back.z },
     up,
     fov,
-    near: Math.max(reach - 4 * view.radius, d / 100),
+    near: Math.max(
+      reach - 4 * view.radius,
+      Math.min(d / 100, view.framedTarget?.distance ?? d),
+    ),
     far: reach + 4 * view.radius,
-    // The target's distance ahead of the eye.
+    // The original zoom's reference distance for tapered strokes, also
+    // while a geometry path moves its target off the center plane.
     target: d,
   };
 }

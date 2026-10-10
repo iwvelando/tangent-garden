@@ -101,12 +101,15 @@ import {
   maxTurns,
   moveKey,
   pathError,
+  framedDepths,
   pathHelp,
+  pathPivots,
   pathLeg,
   pathStyles,
   removeKey,
   type CameraPath,
   type KeyView,
+  type PathPivot,
   type PathStyle,
 } from "./path";
 import {
@@ -153,6 +156,9 @@ type Session = {
   // its key views were taken about.
   path?: CameraPath;
   around?: Bounds3;
+  // How far each view's framed point stands from the plane through the
+  // center, when the path turns about the geometry (see framedDepths).
+  depths?: number[];
   // Present only while riding a ray: its polyline, the bounds its lens is
   // framed about, and the trace's total optical path.
   ride?: { path: RidePath; around: Bounds3; total: number };
@@ -601,6 +607,7 @@ export function SpatialAnimationPanel({
         path: s.path,
         around: s.around,
         cyclic: s.repeat === "loop",
+        ...(s.depths && { depths: s.depths }),
       }),
       ...(s.ride && { ride: s.ride }),
       ...(held !== null &&
@@ -937,6 +944,20 @@ export function SpatialAnimationPanel({
         ...(flies && {
           path: structuredClone(path),
           around: frame.result.bounds,
+          // The geometry the views frame, as drawn now, through the held
+          // view's projection, which the path flies in.
+          ...(path.pivot === "geometry" && {
+            depths: framedDepths(
+              path,
+              scenePasses(buildScene(frame.result), layers),
+              frame.result.bounds,
+              {
+                projection: heldView.projection,
+                lensAngle: heldView.lensAngle,
+              },
+              cut,
+            ),
+          }),
         }),
         camera,
         heldView,
@@ -1099,6 +1120,27 @@ export function SpatialAnimationPanel({
           }}
         >
           {pathStyles.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field
+        label="Turn about"
+        help={path.pivot === "geometry" ? pathHelp.geometry : pathHelp.plane}
+      >
+        <select
+          value={path.pivot ?? "plane"}
+          onChange={(e) => {
+            const pivot = e.target.value as PathPivot;
+            // The plane is the default, which links leave out.
+            setPath(({ pivot: _, ...p }) =>
+              pivot === "geometry" ? { ...p, pivot } : p,
+            );
+          }}
+        >
+          {pathPivots.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
             </option>

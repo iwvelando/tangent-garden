@@ -92,9 +92,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Applies to:** 3D only. 4D has no camera paths.
 
-**Open:**
-
-- Choosing the framed point from the geometry, not the plane through the study's center. Today a turn holds an off-plane detail only approximately.
+**Done:** **Turn about · Geometry in the middle** takes each view's framed point from the drawn geometry on its line of sight (see `mathematics.md#spatial-camera-paths`). It is opt-in; links without it turn about the plane.
 
 **Smaller limits:**
 

@@ -1218,6 +1218,30 @@ test("a link carries a camera path, its leg times and its flight; refuses turns,
   );
 });
 
+test("a link carries what a camera path turns about; older links turn about the plane", async () => {
+  const study: SpatialStudy = {
+    ...spatial(),
+    animation: { ...spatial().animation, mode: "path" },
+  };
+  // A path without a pivot, as every link made before it, keeps none: it
+  // turns about the plane through the study's center.
+  assert.equal(
+    "pivot" in spatialStudy(structuredClone(study)).animation.path,
+    false,
+  );
+  for (const pivot of ["plane", "geometry"] as const) {
+    const s = structuredClone(study);
+    s.animation.path.pivot = pivot;
+    const read = await readStudyLink(await writeStudyLink("3d", s));
+    assert.equal(spatialStudy(read.study).animation.path.pivot, pivot);
+  }
+  for (const pivot of ["center", "", 1, null]) {
+    const s = structuredClone(study) as any;
+    s.animation.path.pivot = pivot;
+    await refused(() => spatialStudy(s), "animation.path.pivot");
+  }
+});
+
 test("a link carries a camera flying its path while the geometry moves; never while orbiting", async () => {
   // Revealing, varying parameters, tracing, probing and peeling may fly the
   // path; the path mode keeps a chosen camera it ignores.
