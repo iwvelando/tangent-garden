@@ -21,6 +21,7 @@ import {
   surfaceProbeAt,
   surfaceProbeHelp,
   surfaceProbeReadout,
+  surfaceProbeStatus,
   surfaceTerms,
   targetName,
   type CurveProbe,
@@ -399,6 +400,9 @@ function SurfaceProbe({
     );
   // Where an offset has folded, beyond one focal sheet.
   const folded = (d.folds ?? []).flat().filter(Boolean).length;
+  // Points without a known tangent plane, whose curvatures are unknown too
+  // but not for the reason the kind's own words give.
+  const planes = d.unknownPlanes ?? 0;
   // No surface or no normal here: every value is blank.
   const blank = r.missing || r.singular;
   const value = (k: number | null) =>
@@ -492,18 +496,7 @@ function SurfaceProbe({
             className="spatial-caption probe-status"
             data-testid="probe-status"
           >
-            {r.missing
-              ? terms.missing
-              : r.singular
-                ? (terms.singular ??
-                  "Singular here: no normal or principal curvatures.")
-                : r.umbilic
-                  ? "An umbilic: every direction is principal, so none is drawn."
-                  : r.folded
-                    ? "Folded here: the offset lies beyond one focal sheet, turned inside out."
-                    : r.infinite.some(Boolean)
-                      ? "A centre lies beyond 100 study radii, at infinity: its circle is not drawn."
-                      : ""}
+            {surfaceProbeStatus(r, terms)}
           </p>
           {[0, 1].map((b) => (
             <Plot
@@ -547,8 +540,10 @@ function SurfaceProbe({
                   `${count(d.umbilics, "point is an umbilic", "points are umbilics")}`,
                 folded > 0 &&
                   `${count(folded, "point has", "points have")} folded, beyond a focal sheet`,
-                d.unknown > 0 &&
-                  `${terms.unknownBranch} unknown at ${count(d.unknown, "point", "points")}, ${terms.unknown}`,
+                d.unknown > planes &&
+                  `${terms.unknownBranch} unknown at ${count(d.unknown - planes, "point", "points")}, ${terms.unknown}`,
+                planes > 0 &&
+                  `${count(planes, "point has", "points have")} no known tangent plane, where the surface's first derivative S_t is unstable`,
                 ...[0, 1].map(
                   (b) =>
                     d.clipped[b] > 0 &&

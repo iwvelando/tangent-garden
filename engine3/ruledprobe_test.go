@@ -555,11 +555,13 @@ func TestRuledProbeConvergesToDrawnSurface(t *testing.T) {
 	}
 }
 
-// Each kind of sample is counted once: a missing point is left out, a
-// point without the drawing's tangent plane is singular, one whose S_t
+// Each kind of sample is counted once: a missing one not at all, one
+// without a regular tangent plane as singular, one whose tangent plane
 // cannot be found (r″ or r‴ unknown) and one whose second derivatives
 // cannot be found are unknown, the second keeping its normal, and a closed
-// surface's last row is not counted.
+// surface's last row is not counted. Only the first kind of unknown sample
+// is marked in UnknownPlane, and a singular sample stays singular even
+// when its S_t is unknown too.
 func TestRuledProbeCountsEachSample(t *testing.T) {
 	nan := Vec3{math.NaN(), math.NaN(), math.NaN()}
 	plane := ruledSample{St: Vec3{1, 0, 0}, Su: Vec3{0, 1, 0}, Point: true, Regular: true, Known: true}
@@ -569,6 +571,8 @@ func TestRuledProbeCountsEachSample(t *testing.T) {
 		switch {
 		case u == 0:
 			return ruledSample{}
+		case u < 0.1:
+			s.Regular, s.St = false, nan
 		case u < 0.2:
 			s.Regular = false
 		case u < 0.3:
@@ -589,12 +593,59 @@ func TestRuledProbeCountsEachSample(t *testing.T) {
 		if d.Singular != 4*counted || d.Unknown != 5*counted || d.Umbilics != 15*counted {
 			t.Fatalf("closed %v: singular %d unknown %d umbilics %d for %d rows", closed, d.Singular, d.Unknown, d.Umbilics, counted)
 		}
-		for k := range d.V {
-			missing, normal := d.Points[0][k] == nil, d.Normals[0][k] != nil
-			if missing != (k == 0) || normal != (k >= 8) || (d.Curvature[0][0][k] != nil) != (k >= 10) {
-				t.Fatalf("column %d: missing %v normal %v curvature %v", k, missing, normal, d.Curvature[0][0][k])
+		if d.UnknownPlanes != 3*counted {
+			t.Fatalf("closed %v: %d unknown planes for %d rows", closed, d.UnknownPlanes, counted)
+		}
+		if len(d.UnknownPlane) != len(d.U) {
+			t.Fatalf("closed %v: %d rows of unknown planes", closed, len(d.UnknownPlane))
+		}
+		for r := range d.U {
+			for k := range d.V {
+				missing, normal := d.Points[r][k] == nil, d.Normals[r][k] != nil
+				if missing != (k == 0) || normal != (k >= 8) || (d.Curvature[0][r][k] != nil) != (k >= 10) {
+					t.Fatalf("row %d column %d: missing %v normal %v curvature %v", r, k, missing, normal, d.Curvature[0][r][k])
+				}
+				if d.UnknownPlane[r][k] != (k >= 5 && k <= 7) {
+					t.Fatalf("row %d column %d: unknown plane %v", r, k, d.UnknownPlane[r][k])
+				}
 			}
 		}
+	}
+	// Without such a sample the grid is left out.
+	if d := ruledProbe("ruled", 240, false, 0, 1, spanned(0.5, 1), at, func(float64) bool { return false }, false); d.UnknownPlane != nil {
+		t.Fatal("an unknown plane on a regular grid")
+	}
+}
+
+// Where r″ is unknown, as where z = (t − c)|t − c| has a jump in r″ at
+// c = −3·10⁻⁴, inside the longer difference step's stencil (±4·10⁻⁴) at the
+// sample t = 0 but outside the shorter one's, the developable's tangent plane there is unknown, not
+// singular: the curve's own diagnostics leave its curvature unknown there,
+// rather than zero, and an inflection stays singular (see
+// TestDevelopableProbeSingularAtInflection).
+func TestDevelopableProbeUnknownWhereSecondDerivativeIs(t *testing.T) {
+	c := custom("t", "t^2", "(t+0.0003)*abs(t+0.0003)", -1, 1)
+	c.Diagnostics = true
+	r, d := probed(t, c)
+	curve := r.Diagnostics
+	unknownRows := 0
+	for row, i := range d.Along {
+		unknown := curve.Curvature[i] == nil
+		if unknown {
+			unknownRows++
+		}
+		for k := range d.V {
+			if d.Points[row][k] == nil {
+				t.Fatalf("row %d column %d: no point", row, k)
+			}
+			plane := d.UnknownPlane != nil && d.UnknownPlane[row][k]
+			if plane != unknown || (d.Normals[row][k] == nil) != unknown {
+				t.Fatalf("row %d (t = %g) column %d: curvature unknown %v, unknown plane %v, normal %v", row, d.U[row], k, unknown, plane, d.Normals[row][k])
+			}
+		}
+	}
+	if unknownRows == 0 || d.Singular != 0 || d.UnknownPlanes != unknownRows*len(d.V) || d.Unknown < d.UnknownPlanes {
+		t.Fatalf("%d unknown rows; singular %d unknown %d, planes %d", unknownRows, d.Singular, d.Unknown, d.UnknownPlanes)
 	}
 }
 

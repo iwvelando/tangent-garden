@@ -807,7 +807,8 @@ export function surfaceProbeBatches(
 // The numbers at grid sample (row, column): its parameters, each branch's
 // curvature (0 where it is lost in rounding beside the other), radius 1/κ (null where κ is 0 or unknown) and whether its
 // centre is at infinity, the Gaussian and mean curvatures, and whether the
-// surface is missing, singular or umbilic there, or, an offset, folded.
+// surface is missing, singular or umbilic there, its tangent plane is
+// unknown (unknownPlane, which is not singular), or, an offset, folded.
 export function surfaceProbeReadout(
   result: SpatialResult,
   row: number,
@@ -816,7 +817,8 @@ export function surfaceProbeReadout(
   const d = result.surfaceDiagnostics;
   if (!d) return null;
   const point = d.points[row]?.[column] ?? null,
-    normal = d.normals[row]?.[column] ?? null;
+    normal = d.normals[row]?.[column] ?? null,
+    unknownPlane = !!point && !!d.unknownPlane?.[row]?.[column];
   const raw = [0, 1].map((b) => d.curvature[b][row]?.[column] ?? null);
   // A curvature within 10⁻¹² of the other is rounding, as along a
   // developable's ruling, where it is exactly 0: shown as 0.
@@ -830,7 +832,8 @@ export function surfaceProbeReadout(
     u: d.u[row],
     v: d.v[column],
     missing: !point,
-    singular: !!point && !normal,
+    singular: !!point && !normal && !unknownPlane,
+    unknownPlane,
     umbilic: known && !d.direction[0][row][column],
     folded: !!d.folds?.[row]?.[column],
     curvature,
@@ -839,6 +842,28 @@ export function surfaceProbeReadout(
     gauss: known ? k1 * k2 : null,
     mean: known ? (k1 + k2) / 2 : null,
   };
+}
+
+// The surface readout's status line: why the point has no surface or
+// normal, or what is particular there, or "" at an ordinary point.
+export function surfaceProbeStatus(
+  r: NonNullable<ReturnType<typeof surfaceProbeReadout>>,
+  terms: SurfaceTerms,
+) {
+  if (r.missing) return terms.missing;
+  if (r.singular)
+    return (
+      terms.singular ?? "Singular here: no normal or principal curvatures."
+    );
+  if (r.unknownPlane)
+    return "Tangent plane unknown here: its derivatives are unstable.";
+  if (r.umbilic)
+    return "An umbilic: every direction is principal, so none is drawn.";
+  if (r.folded)
+    return "Folded here: the offset lies beyond one focal sheet, turned inside out.";
+  if (r.infinite.some(Boolean))
+    return "A centre lies beyond 100 study radii, at infinity: its circle is not drawn.";
+  return "";
 }
 
 // The light's numbers at grid sample (row, column): its state (see

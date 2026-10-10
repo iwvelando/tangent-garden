@@ -22,6 +22,7 @@ import {
   surfaceProbeBatches,
   surfaceProbeHelp,
   surfaceProbeReadout,
+  surfaceProbeStatus,
   surfaceTerms,
 } from "../web/spatial/probe";
 import type { Batch } from "../web/spatial/scene";
@@ -362,6 +363,7 @@ test("the surface readout gives curvatures, radii, K and H, and marks undefined 
     v: 0,
     missing: false,
     singular: false,
+    unknownPlane: false,
     umbilic: false,
     folded: false,
     curvature: [-1, -0.5],
@@ -389,6 +391,75 @@ test("the surface readout gives curvatures, radii, K and H, and marks undefined 
     infinite: [false, true],
     gauss: -0,
   });
+});
+
+// Where the engine cannot find the tangent plane from stable derivatives
+// the point has no normal, as a singular point has none, but the readout
+// and its status say the plane is unknown, not singular, and leave the
+// curvatures unknown rather than blank.
+test("the surface readout tells an unknown tangent plane from a singular one", () => {
+  const r = ruledGrid("developable");
+  const d = r.surfaceDiagnostics!;
+  const terms = surfaceTerms(config("developable"), "surface");
+  d.normals[0][1] = d.normals[0][3] = null;
+  for (const b of [0, 1]) d.curvature[b][0][1] = d.curvature[b][0][3] = null;
+  d.unknownPlane = [Array(5).fill(false), Array(5).fill(false)];
+  d.unknownPlane[0][3] = true;
+  // The second row's gap stays missing even where the grid is marked.
+  d.unknownPlane[1][2] = true;
+  d.singular = d.unknown = d.unknownPlanes = 1;
+  const singular = surfaceProbeReadout(r, 0, 1)!;
+  expect(singular).toMatchObject({ singular: true, unknownPlane: false });
+  expect(surfaceProbeStatus(singular, terms)).toBe(
+    "Singular here: no normal or principal curvatures.",
+  );
+  const unknown = surfaceProbeReadout(r, 0, 3)!;
+  expect(unknown).toMatchObject({
+    missing: false,
+    singular: false,
+    unknownPlane: true,
+    umbilic: false,
+    curvature: [null, null],
+    infinite: [false, false],
+    gauss: null,
+  });
+  expect(surfaceProbeStatus(unknown, terms)).toBe(
+    "Tangent plane unknown here: its derivatives are unstable.",
+  );
+  // Neither on the gap, nor anywhere on a grid without the marks.
+  expect(surfaceProbeReadout(r, 1, 2)).toMatchObject({
+    missing: true,
+    unknownPlane: false,
+  });
+  expect(surfaceProbeStatus(surfaceProbeReadout(r, 1, 2)!, terms)).toBe(
+    terms.missing,
+  );
+  delete d.unknownPlane;
+  expect(surfaceProbeReadout(r, 0, 3)).toMatchObject({
+    singular: true,
+    unknownPlane: false,
+  });
+  // Only the normal line is missing from the drawing: the mark and ruling
+  // remain, as at a singular point.
+  d.unknownPlane = [Array(5).fill(false), Array(5).fill(false)];
+  d.unknownPlane[0][3] = true;
+  expect(surfaceProbeBatches(r, 0, 3).map((b) => b.ink)).toEqual(
+    surfaceProbeBatches(r, 0, 1).map((b) => b.ink),
+  );
+  // The other statuses keep their words and order.
+  const plain = grid();
+  const status = (column: number) =>
+    surfaceProbeStatus(
+      surfaceProbeReadout(plain, 0, column)!,
+      surfaceTerms(config("none", "surface"), "surface"),
+    );
+  expect([0, 1, 2, 3, 4].map(status)).toEqual([
+    "",
+    "The patch has no point here.",
+    "Singular here: no normal or principal curvatures.",
+    "An umbilic: every direction is principal, so none is drawn.",
+    "A centre lies beyond 100 study radii, at infinity: its circle is not drawn.",
+  ]);
 });
 
 test("drawing, steps and export records follow the probe's target", () => {
@@ -1163,6 +1234,50 @@ test("a helix's tangent ribbon reads τ/(κ|u|) across its rulings and K = 0", a
     .uncheck();
   await settled(page);
   expect(await pixels(page)).toBe(original);
+});
+
+// A kink in z(t) = t/3 + (t + 0.002)|t + 0.002| makes r″ jump just inside
+// the longer difference step at t = 0, so r″ is unknown there: the tangent
+// ribbon's tangent plane along that ruling is unknown, not singular, and
+// the panel says so, apart from the curvatures that need r‴.
+test("a tangent ribbon reads an unknown tangent plane as unknown, not singular", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, staircase);
+  await page
+    .getByRole("textbox", { name: "z(t)", exact: true })
+    .fill("t/3 + (t+0.002)*abs(t+0.002)");
+  await settled(page);
+  await describe(page).selectOption("surface");
+  await surfaceSwitch(page).check();
+  await settled(page);
+  await expect(along(page, "Along t")).toHaveAttribute(
+    "aria-valuetext",
+    "t = 0, row 240 of 480",
+  );
+  await expect(page.getByTestId("probe-status")).toHaveText(
+    "Tangent plane unknown here: its derivatives are unstable.",
+  );
+  await expect(readout(page)).toHaveText([
+    "unknown here",
+    "unknown here",
+    "unknown, unknown",
+    "unknown here",
+  ]);
+  await expect(page.locator(".probe-notes")).toContainText(
+    "24 points have no known tangent plane, where the surface's first derivative S_t is unstable",
+  );
+  // Their curvatures are not put down to r‴, and nothing is singular.
+  await expect(page.locator(".probe-notes")).not.toContainText(
+    /singular|both curvatures/,
+  );
+  // A neighbouring row is regular.
+  await along(page, "Along t").fill("241");
+  await expect(page.getByTestId("probe-status")).not.toHaveText(
+    /Tangent plane unknown|Singular/,
+  );
+  await expect(readout(page).first()).not.toHaveText(/unknown|—/);
 });
 
 // A rotation-minimizing frame turns only toward T, so an untwisted ribbon
