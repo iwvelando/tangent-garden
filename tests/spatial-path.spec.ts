@@ -15,9 +15,21 @@ import {
   type KeyView,
 } from "../web/spatial/path";
 import { animationCamera, type AnimationView } from "../web/spatial/animation";
-import { camera, project, type Pass, type View } from "../web/spatial/scene";
+import {
+  buildScene,
+  camera,
+  clip,
+  defaultLayers,
+  project,
+  projectionRecord,
+  scenePasses,
+  type Pass,
+  type View,
+} from "../web/spatial/scene";
+import { linework } from "../web/spatial/linework";
+import { curveMesh } from "./curve-mesh";
 import type { CutSpec } from "../web/spatial/cut";
-import type { Bounds3, Vec3 } from "../web/spatial/types";
+import type { Bounds3, SpatialResult, Vec3 } from "../web/spatial/types";
 
 // The camera path's mathematics, observed through the drawing's own
 // projection (scene.ts), never through a second copy of the path's
@@ -301,6 +313,19 @@ const off = (q: Vec3, d: number[]): Vec3 => ({
   y: q.y + d[1],
   z: q.z + d[2],
 });
+const lineScene = (points: Vec3[]) =>
+  buildScene({
+    base: points,
+    minus: [],
+    plus: [],
+    breaks: points.map(() => false),
+    mesh: curveMesh(),
+    rulings: [],
+    bounds,
+    radius: 1,
+    omitted: 0,
+    invalid: 0,
+  } as SpatialResult);
 
 test("turning about the geometry keeps an off-plane detail in the middle of the page, orthographic or through a lens", () => {
   // A detail far in front of the plane through the study's center, framed
@@ -340,13 +365,37 @@ test("turning about the geometry keeps an off-plane detail in the middle of the 
       expect(framedDepths(plane, [detail], bounds, lens)).toEqual([0, 0]);
       let drift = 0;
       for (let i = 0; i <= 64; i++) {
-        const held = project(
-          camera(
-            lensed(pathView(geometry, bounds, i / 64, false, depths)),
-            size,
-          ),
-          node,
+        const view = animationCamera({
+          mode: "path",
+          camera: "hold",
+          frame: { result: { bounds } },
+          final: { result: { bounds } },
+          path: geometry,
+          around: bounds,
+          depths,
+          heldView: lensed(manual(framed)),
+          progress: i / 64,
+        } as unknown as AnimationView);
+        expect(view.projection).toBe(projection);
+        expect(view.lensAngle).toBe(projection === "chosen" ? 20 : undefined);
+        const c = clip(camera(view, size), node.x, node.y, node.z);
+        expect(c[3]).toBeGreaterThan(0);
+        expect(Math.abs(c[2])).toBeLessThanOrEqual(c[3]);
+        const drawn = linework(
+          lineScene([
+            off(node, [-0.03, -0.02, 0.01]),
+            off(node, [0.03, 0.02, -0.01]),
+          ]),
+          view,
+          defaultLayers,
+          false,
+          { ...size, occlusion: "none" },
         );
+        expect(
+          drawn.find((g) => g.layer === "base")?.strokes.flatMap((s) => s.paths)
+            .length ?? 0,
+        ).toBeGreaterThan(0);
+        const held = project(camera(view, size), node);
         // Within the single precision the drawing stores the detail in.
         expect(Math.abs(held.x - size.width / 2)).toBeLessThan(1e-2);
         expect(Math.abs(held.y - size.height / 2)).toBeLessThan(1e-2);
@@ -362,6 +411,256 @@ test("turning about the geometry keeps an off-plane detail in the middle of the 
       // About the plane the detail leaves the middle by hundreds of pixels.
       expect(drift).toBeGreaterThan(200);
     }
+  }
+});
+
+test("geometry pivots use visible cut-line remnants within reach", () => {
+  const at = (x: number, z = 1) => ({
+    x: bounds.center.x + x,
+    y: bounds.center.y,
+    z: bounds.center.z + z,
+  });
+  const scene = lineScene([at(-0.2, 0.8), at(0.2, 1.2)]);
+  const p = {
+    ...path([key({}), key({ turns: 1 })]),
+    pivot: "geometry" as const,
+  };
+  const cut: CutSpec = {
+    plane: { normal: { x: -1, y: 0, z: 0 }, offset: -bounds.center.x - 0.02 },
+    scope: "all",
+    edge: false,
+  };
+  const drawn = linework(
+    scene,
+    manual(p.keys[0]),
+    defaultLayers,
+    false,
+    { width: 1000, height: 1000, occlusion: "none" },
+    [],
+    cut,
+  );
+  const paths = drawn
+    .find((g) => g.layer === "base")!
+    .strokes.flatMap((s) => s.paths);
+  expect(paths[0][0][0] - 500).toBeGreaterThan(0);
+  expect(paths[0][0][0] - 500).toBeLessThan(25);
+  const depths = framedDepths(
+    p,
+    scenePasses(scene, defaultLayers),
+    bounds,
+    {},
+    cut,
+  );
+  expect(depths[0]).toBeCloseTo(1.02, 5);
+  expect(depths[1]).toBe(depths[0]);
+  expect(
+    framedDepths(
+      p,
+      scenePasses(scene, defaultLayers),
+      bounds,
+      {},
+      {
+        ...cut,
+        plane: { ...cut.plane, offset: -bounds.center.x - 0.3 },
+      },
+    ),
+  ).toEqual([0, 0]);
+});
+
+test("geometry pivots choose the nearest visible depth of sight-parallel lines in either vertex order", () => {
+  const p = {
+    ...path([key({}), key({ turns: 1 })]),
+    pivot: "geometry" as const,
+  };
+  const lens = { projection: "normal" as const };
+  for (const zs of [
+    [-2, 2],
+    [2, -2],
+  ]) {
+    const scene = lineScene(
+      zs.map((z) => ({
+        x: bounds.center.x + 0.1,
+        y: bounds.center.y,
+        z: bounds.center.z + z,
+      })),
+    );
+    const drawn = linework(
+      scene,
+      { ...manual(p.keys[0]), ...lens },
+      defaultLayers,
+      false,
+      { width: 1000, height: 1000, occlusion: "none" },
+    );
+    const points = drawn.find((g) => g.layer === "base")!.strokes[0].paths[0];
+    expect(Math.abs(points[1][0] - points[0][0])).toBeGreaterThan(1);
+    for (const [x, y] of points)
+      expect(Math.hypot(x - 500, y - 500)).toBeLessThan(25);
+    expect(
+      framedDepths(p, scenePasses(scene, defaultLayers), bounds, lens),
+    ).toEqual([2, 2]);
+  }
+});
+
+test("geometry pivots clip lines at every cut plane and the camera before finding their closest point", () => {
+  const p = {
+    ...path([key({}), key({ turns: 1 })]),
+    pivot: "geometry" as const,
+  };
+  const at = (x: number, z: number) => off(bounds.center, [x, 0, z]);
+  const keptRight = {
+    normal: { x: -1, y: 0, z: 0 },
+    offset: -bounds.center.x - 0.02,
+  };
+  for (const reversed of [false, true]) {
+    const endpoints = [at(-0.2, 0), at(0.2, 2)];
+    if (reversed) endpoints.reverse();
+    const pass = linesPass(endpoints);
+    // A box keeps [.02,.12]; a notch removes [-.02,.02]. Both frame the
+    // point at x=.02 and depth 1.1, whichever endpoint comes first.
+    for (const beyond of ["any", "every"] as const) {
+      const cut: CutSpec = {
+        plane: keptRight,
+        others: [
+          {
+            normal: { x: 1, y: 0, z: 0 },
+            offset: bounds.center.x + (beyond === "any" ? 0.12 : -0.02),
+          },
+        ],
+        beyond,
+        scope: "all",
+        edge: false,
+      };
+      const depths = framedDepths(p, [pass], bounds, {}, cut);
+      expect(depths[0]).toBeCloseTo(1.1, 5);
+      expect(depths[1]).toBe(depths[0]);
+      expect(
+        framedDepths(p, [pass], bounds, {}, { ...cut, scope: "sheets" })[0],
+      ).toBeCloseTo(1, 5);
+    }
+    // The closest point on the uncut line is past the far clip plane, but
+    // its visible remnant starts inside reach, exactly at depth -12.
+    const far = [at(-0.01, -13), at(0.1, -11)];
+    if (reversed) far.reverse();
+    expect(framedDepths(p, [linesPass(far)], bounds)[0]).toBeCloseTo(-12, 5);
+    // Through a lens, the closest point is behind the eye. The kept part
+    // meets the near plane on the line of sight, so it still supplies a pivot.
+    const distance = (1.16 * bounds.radius) / Math.tan((25 * Math.PI) / 180);
+    const near = [at(0, distance + 1), at(0, distance - 1)];
+    if (reversed) near.reverse();
+    expect(
+      framedDepths(p, [linesPass(near)], bounds, { projection: "normal" })[0],
+    ).toBeCloseTo(distance * 0.99, 5);
+  }
+});
+
+test("a sight-parallel line's nearest eligible depth stops at the reach boundary", () => {
+  const p = {
+    ...path([key({}), key({ turns: 1 })]),
+    pivot: "geometry" as const,
+  };
+  const lens = { projection: "normal" as const };
+  for (const zs of [
+    [-2, 5],
+    [5, -2],
+  ]) {
+    const pass = linesPass(zs.map((z) => off(bounds.center, [0.1, 0, z])));
+    const [s] = framedDepths(p, [pass], bounds, lens);
+    // Independent pinhole: x/(d-s)/tan(25°) = .05 at the reach boundary.
+    const tan = Math.tan((25 * Math.PI) / 180);
+    expect(s).toBeCloseTo((1.16 * bounds.radius) / tan - 0.1 / (0.05 * tan), 5);
+    const q = project(
+      camera({ ...manual(p.keys[0]), ...lens }, size),
+      off(bounds.center, [0.1, 0, s]),
+    );
+    expect(q.x - size.width / 2).toBeCloseTo((0.05 * size.height) / 2, 4);
+  }
+});
+
+test("perspective geometry paths preserve key cameras, interpolate positive eye distances and convert captured views", () => {
+  const lens = { projection: "normal" as const };
+  const keys = [
+    key({ yaw: 0.2, pitch: 0.4, zoom: 4, panX: -0.7, panY: -0.4 }),
+    key({ yaw: 1.2, pitch: -0.2, zoom: 2, panX: 0.5, panY: 0.1, leg: 0.5 }),
+    key({ yaw: 2, pitch: 0.3, zoom: 3, panX: -0.2, panY: 0.3, leg: 3 }),
+  ];
+  const depths = [1.5, 0, 0.8];
+  const scale = (1.16 * bounds.radius) / Math.tan((25 * Math.PI) / 180);
+  const distances = keys.map((k, i) => scale / k.zoom - depths[i]);
+  for (const style of ["steady", "smooth"] as const) {
+    const p = { ...path(keys, style), pivot: "geometry" as const };
+    const times = keyTimes(p);
+    times.forEach((t, k) =>
+      expect(pathView(p, bounds, t, false, depths, lens)).toEqual({
+        ...manual(keys[k]),
+        ...lens,
+      }),
+    );
+    // A zero-depth path, and all old center-plane studies, stay bit-identical
+    // through the lens, including their clip range and stroke reference.
+    for (let i = 0; i <= 100; i++) {
+      const progress = i / 100;
+      expect(pathView(p, bounds, progress, false, [0, 0, 0], lens)).toEqual({
+        ...pathView(p, bounds, progress),
+        ...lens,
+      });
+      const v = pathView(p, bounds, progress, false, depths, lens);
+      const leg = progress < times[1] ? 0 : 1;
+      const distance =
+        v.framedTarget?.distance ??
+        distances[progress === 0 ? 0 : progress === 1 ? 2 : 1];
+      expect(distance).toBeGreaterThan(0);
+      expect(distance).toBeGreaterThanOrEqual(
+        Math.min(distances[leg], distances[leg + 1]) - 1e-12,
+      );
+      expect(distance).toBeLessThanOrEqual(
+        Math.max(distances[leg], distances[leg + 1]) + 1e-12,
+      );
+      const captured = keyFromView(v, bounds, "Captured");
+      // These views all convert within the manual camera's zoom bounds.
+      for (const point of points) {
+        const a = project(camera(v, size), point);
+        const b = project(
+          camera({ ...manual(captured), ...lens }, size),
+          point,
+        );
+        expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeLessThan(1e-6);
+      }
+    }
+    if (style === "steady") {
+      const v = pathView(p, bounds, times[1] / 2, false, depths, lens);
+      expect(v.framedTarget!.distance).toBeCloseTo(
+        Math.sqrt(distances[0] * distances[1]),
+        12,
+      );
+      expect(projectionRecord(v)).toEqual({
+        name: "normal",
+        statement:
+          "A pinhole perspective, 50° across the page's shorter side, with the eye at the recorded positive distance behind the framed geometry point; zoom sets the reference distance for strokes that taper with depth.",
+      });
+    }
+    // The physical camera and taper reference meet each exact key from both
+    // sides, even though the key itself has no transient target.
+    times.forEach((t, k) => {
+      const exact = camera({ ...manual(keys[k]), ...lens }, size);
+      for (const dt of [-1e-9, 1e-9]) {
+        const v = pathView(
+          p,
+          bounds,
+          Math.max(0, Math.min(1, t + dt)),
+          false,
+          depths,
+          lens,
+        );
+        const near = camera(v, size);
+        expect(near.focus).toBeCloseTo(exact.focus, 6);
+        for (const point of points) {
+          const a = project(near, point),
+            b = project(exact, point);
+          expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeLessThan(0.001);
+          expect(Math.abs(a.depth - b.depth)).toBeLessThan(1e-6);
+        }
+      }
+    });
   }
 });
 

@@ -724,6 +724,84 @@ test("turning about the geometry keeps a framed point of Viviani's curve in the 
   }
 });
 
+test("a perspective turn holds visible geometry through playback and decoded export", async ({
+  page,
+}) => {
+  const viviani = spatialPresets.find(
+    (p) => p.name === "Viviani's curve, from every side",
+  )!;
+  const layers = { ...defaultLayers, surface: false, circles: false };
+  const base = {
+    ...study(),
+    config: viviani.config,
+    layers,
+    projection: "normal",
+  };
+  await open(page, base);
+  const { center, radius } = await shownView(page);
+  // The top is nearest the eye exactly along z. Start just in front of it:
+  // an eye circling the center plane crosses it as the off-center top turns.
+  const yaw = 0;
+  const top = {
+    name: "Top",
+    yaw,
+    pitch: 0,
+    zoom: (1.16 * radius) / (3.1 * Math.tan((25 * Math.PI) / 180)),
+    panX: center.x * Math.cos(yaw) - (3 - center.z) * Math.sin(yaw),
+    panY: center.y,
+    turns: 0,
+  };
+  const path: CameraPath = {
+    style: "smooth",
+    pivot: "geometry",
+    keys: [top, { ...top, name: "Around", turns: 1 }],
+  };
+  await open(page, {
+    ...base,
+    animation: { ...base.animation, duration: 0.4, path },
+  });
+  await button(page, "Show view 1").click();
+  expect(await nearMiddle(page)).toBeLessThan(1);
+  const first = await still(page);
+  await page.keyboard.press("Escape");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  let middle!: Buffer;
+  for (const p of ["0.2", "0.4", "0.6", "0.8"]) {
+    await seek(page, p);
+    expect(await nearMiddle(page)).toBeLessThan(1);
+    if (p === "0.8") middle = await still(page);
+  }
+  await button(page, "Stop").click();
+  await openDetails(page, "#spatial-export-settings");
+  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("2");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Export MP4/ }).click();
+  const file = (await (await download).path())!;
+  const timing = probe(file);
+  if (timing) {
+    expect(timing.frames).toBe(6);
+    expect(timing.durations.reduce((a, b) => a + b, 0)).toBe(400);
+  }
+  const video = await decodeVideo(page, await readFile(file));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  for (const [index, reference] of [
+    [0, first],
+    [4, middle],
+    [5, first],
+  ] as const) {
+    const difference = frameDifference(file, 2000, 1520, index, reference);
+    if (difference) {
+      expect(difference.meanDifference).toBeLessThan(3);
+      expect(difference.unmatchedInk).toBeLessThan(0.05);
+    }
+  }
+});
+
 test("a rhumb line's flight drops above its pole quickly, sinks in slowly with the pole held in the middle, and returns quickly", async ({
   page,
 }) => {

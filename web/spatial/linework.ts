@@ -205,10 +205,10 @@ export function linework(
     const width = strokeWidth(pass.batch, weight, options);
     for (let i = 0; i + 13 < data.length; i += 14) {
       for (const part of cutting
-        ? kept(planes!, beyond, data, i)
+        ? keptLine(planes!, beyond, data, i)
         : [whole(data, i)]) {
         const { ends } = part;
-        const piece = clipped(
+        const piece = clippedLine(
           k,
           clip(k, ends[0], ends[1], ends[2]),
           clip(k, ends[7], ends[8], ends[9]),
@@ -323,7 +323,7 @@ const whole = (data: Float32Array, i: number): Part => ({
   ends: data.subarray(i, i + 14),
   range: [0, 1],
 });
-function kept(
+export function keptLine(
   planes: Plane[],
   beyond: CutBeyond,
   data: Float32Array,
@@ -409,7 +409,7 @@ function extend(paths: [number, number][][], a: Point, b: Point) {
 // The third element is the piece's ends as parameters along the segment,
 // and the fourth their clip w, which is 1 throughout without perspective.
 type Piece = [Point, Point, [number, number], [number, number]];
-function clipped(
+export function clippedLine(
   k: Camera,
   a: [number, number, number, number],
   b: [number, number, number, number],
@@ -442,7 +442,7 @@ function clipped(
 // length in space at a fraction r of its length on the page, and back:
 // perspective-correct interpolation, as the drawing's varyings have.
 // Without perspective both are the identity.
-const spaceAt = ([w0, w1]: [number, number], r: number) =>
+export const spaceAt = ([w0, w1]: [number, number], r: number) =>
   w0 === w1 ? r : (r * w0) / ((1 - r) * w1 + r * w0);
 const pageAt = ([w0, w1]: [number, number], s: number) =>
   w0 === w1 ? s : (s * w1) / ((1 - s) * w0 + s * w1);
