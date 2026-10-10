@@ -25,8 +25,8 @@ import { decodePng } from "./png";
 // of the page, as the 2D notebook's strokes are, or hairlines one device
 // pixel wide, as every 3D drawing was before weights.
 const stage = (page: Page) => page.locator(".spatial-stage");
-const settled = (page: Page) =>
-  expect(stage(page)).toHaveAttribute("aria-busy", "false");
+const settled = (page: Page, timeout = 5000) =>
+  expect(stage(page)).toHaveAttribute("aria-busy", "false", { timeout });
 const weightBox = (page: Page) => page.getByRole("group", { name: "Lines" });
 const page2000 = { width: 2000, height: 1520 };
 
@@ -829,6 +829,7 @@ test("an animation export draws the weight it began with, ending on the still", 
 test("the weight control offers every weight, and presets bring their own", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await page.goto("/?study=3d");
   await settled(page);
   const select = weightBox(page).getByLabel("Weight", { exact: true });
@@ -838,9 +839,13 @@ test("the weight control offers every weight, and presets bring their own", asyn
   );
   await select.selectOption("bold");
   for (const p of spatialPresets.filter((p) => p.sight?.weight)) {
-    await choosePreset(page, { label: p.name });
-    await settled(page);
-    await expect(select, p.name).toHaveValue(p.sight!.weight);
+    await test.step(p.name, async () => {
+      await choosePreset(page, { label: p.name });
+      // Implicit surfaces such as the Klein bottle take more than five
+      // seconds on CI. Keep waiting for the actual completed drawing.
+      await settled(page, 30_000);
+      await expect(select, p.name).toHaveValue(p.sight!.weight);
+    });
   }
   // A preset without its own sight returns to the default weight.
   await choosePreset(page, 0);
