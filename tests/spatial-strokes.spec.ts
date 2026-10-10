@@ -18,6 +18,8 @@ import {
 import { defaultLayers } from "../web/spatial/renderer";
 import { spatialPresets } from "../web/spatial/presets";
 import { lineColor, palette } from "../web/spatial/palette";
+import { defaultCut, type Cut } from "../web/spatial/cut";
+import { decodePng } from "./png";
 
 // Line weights: strokes drawn as screen-space quads whose width is a share
 // of the page, as the 2D notebook's strokes are, or hairlines one device
@@ -570,6 +572,156 @@ test("strokes ink only lines the vector export finds visible, and ink those, ort
   }
 });
 
+// Reflection in depth exchanges the two arms but leaves exactly the same
+// retained line on the page. A removed arm must never own its neighbor's
+// ink, including when the cut crosses the interior of their first segment.
+for (const [name, cut] of [
+  ["one plane", { offset: 0 }],
+  ["inside a segment", { offset: 0.002 }],
+  ["perspective inside a segment", { offset: 0.002 }],
+  [
+    "six planes",
+    {
+      offset: -2,
+      others: [
+        { normal: { x: 1, y: 0, z: 0 }, offset: -0.1 },
+        { normal: { x: -1, y: 0, z: 0 }, offset: -2 },
+        { normal: { x: 0, y: 1, z: 0 }, offset: -1 },
+        { normal: { x: 0, y: -1, z: 0 }, offset: -1 },
+        { normal: { x: 0, y: 0, z: 1 }, offset: 0 },
+      ],
+      beyond: "every",
+    },
+  ],
+  [
+    "beyond every plane",
+    {
+      offset: 0,
+      others: [{ normal: { x: 1, y: 0, z: 0 }, offset: -0.1 }],
+      beyond: "every",
+    },
+  ],
+  [
+    "beyond any plane",
+    {
+      offset: 0,
+      others: [{ normal: { x: 1, y: 0, z: 0 }, offset: 0.1 }],
+      beyond: "any",
+    },
+  ],
+] as [string, Partial<Cut>][]) {
+  test(`a round joint keeps the retained arm with ${name}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({
+      colorScheme: name === "beyond any plane" ? "dark" : "light",
+    });
+    for (const weight of ["fine", "bold"] as const) {
+      const captures = [];
+      for (const z of ["t", "-t"]) {
+        const study = {
+          ...circle({ weight }),
+          ...(name.startsWith("perspective") && {
+            projection: "normal",
+            sight: { ...defaultSight, weight, depth: "taper" },
+          }),
+          cut: {
+            ...defaultCut,
+            ...cut,
+            enabled: true,
+            cuts: "all",
+            edge: false,
+          },
+        };
+        study.config.curve = {
+          x: "abs(t)",
+          y: "0",
+          z,
+          a: 1,
+          min: -1,
+          max: 1,
+        };
+        study.config.samples = 240;
+        study.view.zoom = 4;
+        study.view.panX = 0.5;
+        if (name === "one plane" && z === "-t") {
+          await page.getByLabel("z(t)", { exact: true }).fill(z);
+          await page.getByLabel("z(t)", { exact: true }).blur();
+          await expect
+            .poll(
+              async () =>
+                JSON.parse(
+                  (await stage(page).getAttribute("data-config")) ?? "{}",
+                ).curve?.z,
+            )
+            .toBe(z);
+          await settled(page);
+        } else await openLink(page, study);
+        const live = await page
+          .locator("#spatial-artwork")
+          .evaluate((c: HTMLCanvasElement) => c.toDataURL("image/png"));
+        captures.push({
+          live: decodePng(Buffer.from(live.split(",")[1], "base64")),
+          still: decodePng(await download(page, png)),
+        });
+      }
+      expect([captures[0].still.width, captures[0].still.height]).toEqual([
+        2000, 1520,
+      ]);
+      for (const output of ["live", "still"] as const) {
+        const [a, b] = captures.map((c) => c[output]);
+        expect([b.width, b.height]).toEqual([a.width, a.height]);
+        const ground = [...a.rgba.slice(0, 3)];
+        let changed = 0,
+          inked = 0;
+        for (let i = 0; i < a.rgba.length; i += 4) {
+          const difference = [0, 1, 2].reduce(
+            (sum, k) => sum + Math.abs(a.rgba[i + k] - b.rgba[i + k]),
+            0,
+          );
+          const ink = [0, 1, 2].reduce(
+            (sum, k) => sum + Math.abs(a.rgba[i + k] - ground[k]),
+            0,
+          );
+          if (difference > 20) changed++;
+          if (ink > 100) inked++;
+        }
+        // Ignore at most four boundary pixels of sample-rounding noise, but
+        // demand substantial retained geometry so two blank images cannot pass.
+        expect(inked, `${weight} ${output}`).toBeGreaterThan(
+          output === "live" && name === "beyond any plane"
+            ? 20
+            : output === "live" || name === "beyond any plane"
+              ? 50
+              : 500,
+        );
+        expect(changed, `${weight} ${output}`).toBeLessThan(5);
+        if (!name.startsWith("perspective")) {
+          // A retained arm has one stroke's coverage, even though the
+          // uncut fold would paint its two distant arms on top of each other.
+          const dark = name === "beyond any plane",
+            ink = scale255(lineColor(2, 0, dark)),
+            delta = ink.map((v, k) => v - ground[k]),
+            dd = delta.reduce((sum, v) => sum + v * v, 0),
+            x = Math.floor(a.width * (dark ? 0.51 : 0.75));
+          let coverage = 0;
+          for (let y = 0; y < a.height; y++) {
+            let dot = 0;
+            for (let k = 0; k < 3; k++)
+              dot += (a.rgba[4 * (y * a.width + x) + k] - ground[k]) * delta[k];
+            coverage += Math.max(0, Math.min(1, dot / dd));
+          }
+          const width = strokeWidth({ ink: 2 }, weight, a)!;
+          expect(
+            Math.abs(coverage - width),
+            `${weight} ${output} coverage`,
+          ).toBeLessThan(Math.max(0.35, width * 0.1));
+        }
+      }
+    }
+  });
+}
+
 test("exports record the weight; vector lines carry each stroke's width; hairlines leave files as they were", async ({
   page,
 }) => {
@@ -908,15 +1060,40 @@ test("strokes turning sharper than 120° are joined round, neither parting nor d
   const ground = scale255(palette.background[0]),
     ink = scale255(lineColor(2, 0, false));
   const seen: Record<string, unknown> = {};
-  for (const [slope, weight, scale] of [
+  for (const [slope, weight, scale, clipped] of [
     [3, "fine", 1],
     [12, "fine", 1],
     [0, "fine", 1],
     [3, "bold", 2],
     [12, "bold", 2],
     [0, "bold", 2],
+    [12, "fine", 1, true],
+    [12, "fine", 1, "six planes"],
   ] as const) {
-    await openLink(page, vee(slope, weight));
+    const study = {
+      ...vee(slope, weight),
+      ...(clipped && {
+        cut: {
+          ...defaultCut,
+          enabled: true,
+          cuts: "all",
+          edge: false,
+          normal: { x: 1, y: 0, z: 0 },
+          ...(clipped === "six planes" && {
+            offset: -2,
+            others: [
+              { normal: { x: 0, y: 1, z: 0 }, offset: -2 },
+              { normal: { x: 0, y: -1, z: 0 }, offset: -14 },
+              { normal: { x: 0, y: 0, z: 1 }, offset: -1 },
+              { normal: { x: 0, y: 0, z: -1 }, offset: -1 },
+              { normal: { x: 1, y: 0, z: 0 }, offset: 0 },
+            ],
+            beyond: "every",
+          }),
+        },
+      }),
+    };
+    await openLink(page, study);
     const size = { width: 1000 * scale, height: 760 * scale };
     await page
       .getByRole("button", { name: "Export image", exact: true })
@@ -1003,7 +1180,7 @@ test("strokes turning sharper than 120° are joined round, neither parting nor d
         ideal += want;
         worst = Math.max(worst, Math.abs(got - want));
       }
-    const name = `${weight}, slope ${slope}`;
+    const name = `${weight}, slope ${slope}${clipped ? `, cut arm${clipped === "six planes" ? " with six planes" : ""}` : ""}`;
     seen[name] = { half, measured, ideal, worst };
   }
   console.log("Sharp joins", seen);
