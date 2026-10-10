@@ -589,6 +589,8 @@ test("an ellipsoid's parallel surface reads radii less d as d sweeps", async ({
 test("a surface probe held at its u and v keeps them as the domain stretches", async ({
   page,
 }) => {
+  // Five starts, seeks and restores can exceed the default 30 seconds on CI.
+  test.slow();
   await page.goto("/?study=3d");
   await expect(page.locator("#spatial-artwork")).toBeVisible();
   await settled(page);

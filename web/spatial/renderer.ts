@@ -107,6 +107,8 @@ uniform vec4 cut[6];
 uniform vec2 viewport;
 uniform float halfWidth;
 uniform float caps;
+uniform mediump float cutting;
+uniform mediump float cutEvery;
 // Tapering with depth (see sight.ts): on (1) or not, the camera's focus w,
 // and the stroke's width at the focus. split keeps every segment (0), or
 // only those two pixels wide or more on average (1) or thinner (2).
@@ -118,8 +120,14 @@ varying vec3 E;
 varying highp float D;
 varying highp vec3 S;
 varying highp float L;
-// Whether the start and the end are mitred joints rather than ends.
+// The start and the end: a polyline's own end (0), a mitred joint (1), or
+// a round joint (2).
 varying vec2 O;
+// At a round joint, the neighboring segment from the joint: its direction
+// at the start (J.xy) and the end (J.zw), in this segment's own coordinates
+// (along, across), and its length at each (K).
+varying vec4 J;
+varying vec2 K;
 // A tapered stroke's width at its start and end.
 varying vec2 T;
 // Each cut plane's (n̂·p − d) / radius, positive beyond it: planes 1–3 and
@@ -138,12 +146,35 @@ vec4 clipOf(vec3 p) {
   float w = 1.0 - q.z * lens.x;
   return vec4((q.x + pan.x) * framing.x, (q.y + pan.y) * framing.y, -q.z * framing.z + lens.y * w + lens.z, w);
 }
-// Whether an end at page point p is a mitred joint with its neighbor: the
-// neighbor is ahead of the near plane, both segments have length, and the
-// polyline turns there by less than 120°. turn is the neighbor's segment's
-// direction on the page, along the polyline.
-float joint(vec4 neighbor, float flag, vec2 p, bool atEnd, vec2 dir, float len, vec2 scale, out vec2 turn) {
+// The interval satisfying every plane: hidden for an intersection cut,
+// retained for a union cut. Convert crossings from world parameter to page
+// parameter before sharing them with the fragment stage. Empty/full spans
+// lie outside [0,1], so endpoints exactly on a plane stay retained.
+vec2 cutSpan(vec3 a, vec3 b, float aw, float bw) {
+  vec2 span = vec2(-1.0, 2.0);
+  float sign = cutEvery > 0.5 ? 1.0 : -1.0;
+  for (int i = 0; i < 6; i++) {
+    float x = sign * (dot(cut[i].xyz, a - center) - cut[i].w),
+      y = sign * (dot(cut[i].xyz, b - center) - cut[i].w);
+    if (x > 0.0 && y > 0.0) continue;
+    if ((x < 0.0 && y < 0.0) || (x == 0.0 && y == 0.0 && cutEvery > 0.5))
+      return vec2(2.0, -1.0);
+    if (x == y) continue;
+    float t = x / (x - y);
+    t = t * bw / mix(aw, bw, t);
+    if (y > x) span.x = max(span.x, t);
+    else span.y = min(span.y, t);
+  }
+  return span;
+}
+// Whether an end at page point p is a joint with its neighbor: the
+// neighbor is ahead of the near plane and both segments have length. It is
+// mitred (1) where the polyline turns there by less than 120°, and round (2)
+// where it turns more sharply. turn is the neighbor's segment's direction on
+// the page, along the polyline, and far its length there.
+float joint(vec4 neighbor, float flag, vec2 p, bool atEnd, vec2 dir, float len, vec2 scale, out vec2 turn, out float far) {
   turn = dir;
+  far = 0.0;
   if (flag < 0.5 || len <= 1e-4) return 0.0;
   vec4 n = clipOf(neighbor.xyz);
   if (n.z + n.w < 0.0 || n.w <= 1e-6) return 0.0;
@@ -152,10 +183,12 @@ float joint(vec4 neighbor, float flag, vec2 p, bool atEnd, vec2 dir, float len, 
   float l = length(side);
   if (l <= 1e-4) return 0.0;
   turn = side / l;
-  return dot(turn, dir) < -0.5 ? 0.0 : 1.0;
+  far = l;
+  return dot(turn, dir) < -0.5 ? 2.0 : 1.0;
 }
 void main() {
   vec4 a = clipOf(from), b = clipOf(to);
+  vec3 worldA = from, worldB = to;
   vec3 ca = lowSides(from), cb = lowSides(to),
     ea = highSides(from), eb = highSides(to);
   float sa = arcFrom, sb = arcTo;
@@ -163,7 +196,7 @@ void main() {
   // Clip space keeps z ≥ −w: the near plane.
   float na = a.z + a.w, nb = b.z + b.w;
   if (na < 0.0 && nb < 0.0) {
-    C = vec3(0.0); E = vec3(0.0); D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0); T = vec2(0.0);
+    C = vec3(0.0); E = vec3(0.0); D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0); T = vec2(0.0); J = vec4(0.0); K = vec2(0.0);
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
@@ -171,10 +204,12 @@ void main() {
   float joinA = before.w, joinB = after.w;
   if (na < 0.0) {
     float t = na / (na - nb);
+    worldA = mix(worldA, worldB, t);
     a = mix(a, b, t); ca = mix(ca, cb, t); ea = mix(ea, eb, t); sa = mix(sa, sb, t);
     joinA = 0.0;
   } else if (nb < 0.0) {
     float t = nb / (nb - na);
+    worldB = mix(worldB, worldA, t);
     b = mix(b, a, t); cb = mix(cb, ca, t); eb = mix(eb, ea, t); sb = mix(sb, sa, t);
     joinB = 0.0;
   }
@@ -189,7 +224,7 @@ void main() {
   }
   float mean = (T.x + T.y) / 2.0;
   if ((split > 0.5 && split < 1.5 && mean < 2.0) || (split > 1.5 && mean >= 2.0)) {
-    C = vec3(0.0); E = vec3(0.0); D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0);
+    C = vec3(0.0); E = vec3(0.0); D = 0.0; S = vec3(0.0, 0.0, 1.0); L = 0.0; O = vec2(0.0); J = vec4(0.0); K = vec2(0.0);
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
@@ -203,22 +238,24 @@ void main() {
   float reach = end ? reachB : reachA;
   // Both joints, at every corner, so the quad agrees on them.
   vec2 turnA, turnB;
-  float atA = joint(before, joinA, pa, false, dir, len, scale, turnA),
-    atB = joint(after, joinB, pb, true, dir, len, scale, turnB);
+  float farA, farB;
+  float atA = joint(before, joinA, pa, false, dir, len, scale, turnA, farA),
+    atB = joint(after, joinB, pb, true, dir, len, scale, turnB, farB);
   float joined = end ? atB : atA;
   vec2 turn = end ? turnB : turnA;
   vec4 e = end ? b : a;
   vec2 shift;
   float along;
-  if (joined > 0.5) {
+  if (joined > 0.5 && joined < 1.5) {
     // The bisector of the two segments' normals: both segments put this
     // corner at the same point, reach from either centerline.
     vec2 m = normalize(across + vec2(-turn.y, turn.x));
     shift = m * corner.y * (reach / max(dot(m, across), 0.25));
     along = (end ? len : 0.0) + dot(shift, dir);
   } else {
-    // Round ends reach past the segment; butt ends only to their fringe.
-    float ext = caps > 0.5 ? reach : 0.5;
+    // Round ends and round joints reach past the segment; butt ends only
+    // to their fringe.
+    float ext = caps > 0.5 || joined > 1.5 ? reach : 0.5;
     shift = dir * (end ? ext : -ext) + across * corner.y * reach;
     along = end ? len + ext : -ext;
   }
@@ -226,8 +263,20 @@ void main() {
   S = vec3(along, corner.y * reach, 1.0) * e.w;
   L = len;
   O = vec2(atA, atB);
+  J = vec4(-dot(turnA, dir), -dot(turnA, across), dot(turnB, dir), dot(turnB, across));
+  K = vec2(farA, farB);
   C = end ? cb : ca;
   E = end ? eb : ea;
+  if (cutting > 0.5 && (atA > 1.5 || atB > 1.5)) {
+    // Round joints carry three constant spans in the existing cut slots:
+    // this segment, its start neighbor, then its end neighbor. Both sides
+    // use the same centerline cut, so a removed neighbor cannot own ink.
+    vec2 own = cutSpan(worldA, worldB, a.w, b.w);
+    vec2 start = atA > 1.5 ? cutSpan(worldA, before.xyz, a.w, clipOf(before.xyz).w) : vec2(2.0, -1.0);
+    vec2 finish = atB > 1.5 ? cutSpan(worldB, after.xyz, b.w, clipOf(after.xyz).w) : vec2(2.0, -1.0);
+    C = vec3(own, start.x);
+    E = vec3(start.y, finish);
+  }
   D = (end ? sb : sa) * dashes;
 }`;
 // The drawing's colors, for sheets and hairlines, and for strokes with
@@ -254,11 +303,23 @@ uniform float fade;
 // segment on the page from T.x to T.y.
 uniform float coverTaper;
 varying vec2 O;
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+varying highp vec4 J;
+varying highp vec2 K;
+#else
+varying mediump vec4 J;
+varying mediump vec2 K;
+#endif
 varying vec2 T;
 #endif
 varying float U;
+#if defined(STROKE) && defined(GL_FRAGMENT_PRECISION_HIGH)
+varying highp vec3 C;
+varying highp vec3 E;
+#else
 varying vec3 C;
 varying vec3 E;
+#endif
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 varying highp float D;
 #else
@@ -273,11 +334,24 @@ uniform float cutEvery;
 // sheets, faint or dashed.
 uniform float gather;
 uniform float behind;
+#ifdef STROKE
+bool kept(float t, vec2 span) {
+  return cutEvery > 0.5 ? !(t > span.x && t < span.y) : t >= span.x && t <= span.y;
+}
+#endif
 void main() {
   if (cutting > 0.5) {
+#ifdef STROKE
+    if (O.x > 1.5 || O.y > 1.5) {
+      if (!kept(clamp(S.x / S.z / max(L, 1e-4), 0.0, 1.0), C.xy)) discard;
+    } else {
+#endif
     float far = max(max(max(C.x, C.y), max(C.z, E.x)), max(E.y, E.z)),
       near = min(min(min(C.x, C.y), min(C.z, E.x)), min(E.y, E.z));
     if ((cutEvery > 0.5 ? near : far) > 0.0) discard;
+#ifdef STROKE
+    }
+#endif
   }
   float blend = 0.5 + 0.5 * cos(6.2831853 * U);
   vec3 teal = ${glsl(palette.teal)};
@@ -351,13 +425,25 @@ void main() {
     faded = min(1.0, wide);
   }
   // Past a mitred joint the neighbor's quad takes over at their shared
-  // edge, so the stroke runs on; only a polyline's own ends are capped.
+  // edge, so the stroke runs on; only a polyline's own ends are capped. A
+  // round joint is a round cap on each segment, and a pixel there is drawn
+  // by whichever of the two segments is nearer it, so the caps neither
+  // overlap nor part. A tie is the end's.
+  if (O.x > 1.5 || O.y > 1.5) {
+    float own = length(vec2(max(max(-s.x, s.x - L), 0.0), s.y));
+    float start = clamp(dot(s, J.xy), 0.0, K.x);
+    if (O.x > 1.5 && (cutting < 0.5 || kept(start / K.x, vec2(C.z, E.x))) && length(s - start * J.xy) <= own) discard;
+    vec2 r = vec2(s.x - L, s.y);
+    float finish = clamp(dot(r, J.zw), 0.0, K.y);
+    if (O.y > 1.5 && (cutting < 0.5 || kept(finish / K.y, E.yz)) && length(r - finish * J.zw) < own) discard;
+  }
   float before = O.x > 0.5 ? 1e6 : s.x, after = O.y > 0.5 ? 1e6 : L - s.x;
+  float joined = max(O.x > 1.5 ? -s.x : 0.0, O.y > 1.5 ? s.x - L : 0.0);
   if (coverCaps > 0.5) {
-    float beyond = max(max(-before, -after), 0.0);
+    float beyond = max(max(max(-before, -after), joined), 0.0);
     cover = clamp(halfWide + 0.5 - length(vec2(beyond, s.y)), 0.0, 1.0);
   } else
-    cover = clamp(halfWide + 0.5 - abs(s.y), 0.0, 1.0) * clamp(before + 0.5, 0.0, 1.0) * clamp(after + 0.5, 0.0, 1.0);
+    cover = clamp(halfWide + 0.5 - (joined > 0.0 ? length(vec2(joined, s.y)) : abs(s.y)), 0.0, 1.0) * clamp(before + 0.5, 0.0, 1.0) * clamp(after + 0.5, 0.0, 1.0);
   cover *= faded;
   if (cover < 0.004) discard;
   if (behind > 1.5) {
