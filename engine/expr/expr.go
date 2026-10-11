@@ -17,20 +17,17 @@ type Field func(x, y, t float64) float64
 // SpatialField is an expression in the space coordinates x, y, z and the time t.
 type SpatialField func(x, y, z, t float64) float64
 
-// A parsed expression takes up to four variables, in the order the parser's
-// variable indices give.
-type node func(v0, v1, v2, v3 float64) float64
-
 type parser struct {
 	s          string
 	pos, depth int
 	// The argument each variable name reads; nil in a constant expression.
 	variables map[string]int
-	// The variables the expression reads, and how many times.
+	// The variables the expression reads.
 	used      map[string]bool
-	reads     int
 	parameter *float64
 }
+
+var arithmetic = map[byte]opcode{'+': opAdd, '-': opSub, '*': opMul, '/': opDiv, '^': opPow}
 
 var (
 	curveVariables   = map[string]int{"t": 0, "x": 0}
@@ -38,10 +35,10 @@ var (
 	spatialVariables = map[string]int{"x": 0, "y": 1, "z": 2, "t": 3}
 )
 
-var functions = map[string]func(float64) float64{
-	"sin": math.Sin, "cos": math.Cos, "tan": math.Tan, "asin": math.Asin, "acos": math.Acos, "atan": math.Atan,
-	"sinh": math.Sinh, "cosh": math.Cosh, "tanh": math.Tanh, "sech": func(x float64) float64 { return 1 / math.Cosh(x) },
-	"exp": math.Exp, "log": math.Log, "ln": math.Log, "sqrt": math.Sqrt, "abs": math.Abs,
+var functions = map[string]opcode{
+	"sin": opSin, "cos": opCos, "tan": opTan, "asin": opAsin, "acos": opAcos, "atan": opAtan,
+	"sinh": opSinh, "cosh": opCosh, "tanh": opTanh, "sech": opSech,
+	"exp": opExp, "log": opLog, "ln": opLog, "sqrt": opSqrt, "abs": opAbs,
 }
 
 func Parse(s string) (Expr, error) {
@@ -66,7 +63,7 @@ func ParseField(s string, a float64) (f Field, timed bool, err error) {
 	if err != nil {
 		return nil, false, err
 	}
-	return func(x, y, t float64) float64 { return e(x, y, t, 0) }, p.used["t"], nil
+	return func(x, y, t float64) float64 { return e.eval(x, y, t, 0) }, p.used["t"], nil
 }
 
 // ParseSpatialField parses an expression in x, y, z and t, binding the shape
@@ -79,7 +76,7 @@ func ParseSpatialField(s string, a float64) (f SpatialField, timed bool, err err
 	if err != nil {
 		return nil, false, err
 	}
-	return SpatialField(e), p.used["t"], nil
+	return SpatialField(e.eval), p.used["t"], nil
 }
 
 // curve parses an expression in its one variable, written t or x.
@@ -88,7 +85,7 @@ func curve(s string, a *float64) (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	return func(t float64) float64 { return e(t, 0, 0, 0) }, nil
+	return func(t float64) float64 { return e.eval(t, 0, 0, 0) }, nil
 }
 
 // Scalar accepts constants and arithmetic, but never a curve-dependent variable.
@@ -97,14 +94,14 @@ func Scalar(s string) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	v := e(0, 0, 0, 0)
+	v := e.eval(0, 0, 0, 0)
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0, fmt.Errorf("expression must have a finite real value")
 	}
 	return v, nil
 }
 
-func parse(s string, variables map[string]int, parameter *float64) (*parser, node, error) {
+func parse(s string, variables map[string]int, parameter *float64) (*parser, *program, error) {
 	if len(s) > 1024 {
 		return nil, nil, fmt.Errorf("expression exceeds 1024 characters")
 	}
@@ -114,14 +111,17 @@ func parse(s string, variables map[string]int, parameter *float64) (*parser, nod
 	if err == nil && p.pos != len(p.s) {
 		err = fmt.Errorf("unexpected text at column %d; use * for multiplication", p.pos+1)
 	}
-	return p, e, err
+	if err != nil {
+		return p, nil, err
+	}
+	return p, compile(e), nil
 }
 func (p *parser) space() {
 	for p.pos < len(p.s) && unicode.IsSpace(rune(p.s[p.pos])) {
 		p.pos++
 	}
 }
-func (p *parser) expression(min int) (node, error) {
+func (p *parser) expression(min int) (*tree, error) {
 	p.depth++
 	defer func() { p.depth-- }()
 	if p.depth > 64 {
@@ -131,7 +131,7 @@ func (p *parser) expression(min int) (node, error) {
 	if p.pos >= len(p.s) {
 		return nil, fmt.Errorf("expected an expression")
 	}
-	var left node
+	var left *tree
 	c := p.s[p.pos]
 	p.pos++
 	switch {
@@ -142,7 +142,7 @@ func (p *parser) expression(min int) (node, error) {
 		}
 		left = e
 		if c == '-' {
-			left = func(v0, v1, v2, v3 float64) float64 { return -e(v0, v1, v2, v3) }
+			left = unary(opNeg, e, 0, 0)
 		}
 	case c == '(':
 		e, err := p.expression(0)
@@ -173,7 +173,7 @@ func (p *parser) expression(min int) (node, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid number")
 		}
-		left = func(_, _, _, _ float64) float64 { return v }
+		left = constant(v)
 	case c >= 'a' && c <= 'z':
 		start := p.pos - 1
 		for p.pos < len(p.s) && p.s[p.pos] >= 'a' && p.s[p.pos] <= 'z' {
@@ -190,29 +190,18 @@ func (p *parser) expression(min int) (node, error) {
 				return nil, fmt.Errorf("unknown name %q", name)
 			}
 			p.used[name] = true
-			p.reads++
-			switch k {
-			case 0:
-				left = func(v0, _, _, _ float64) float64 { return v0 }
-			case 1:
-				left = func(_, v1, _, _ float64) float64 { return v1 }
-			case 2:
-				left = func(_, _, v2, _ float64) float64 { return v2 }
-			default:
-				left = func(_, _, _, v3 float64) float64 { return v3 }
-			}
+			left = &tree{op: opVar, index: uint8(k)}
 		case "a":
 			if p.parameter == nil {
 				return nil, fmt.Errorf("a is only allowed in curve expressions")
 			}
-			value := *p.parameter
-			left = func(_, _, _, _ float64) float64 { return value }
+			left = constant(*p.parameter)
 		case "pi":
-			left = func(_, _, _, _ float64) float64 { return math.Pi }
+			left = constant(math.Pi)
 		case "e":
-			left = func(_, _, _, _ float64) float64 { return math.E }
+			left = constant(math.E)
 		case "phi":
-			left = func(_, _, _, _ float64) float64 { return (1 + math.Sqrt(5)) / 2 }
+			left = constant((1 + math.Sqrt(5)) / 2)
 		default:
 			f, ok := functions[name]
 			if !ok {
@@ -232,7 +221,7 @@ func (p *parser) expression(min int) (node, error) {
 				return nil, fmt.Errorf("expected closing parenthesis")
 			}
 			p.pos++
-			left = func(v0, v1, v2, v3 float64) float64 { return f(arg(v0, v1, v2, v3)) }
+			left = unary(f, arg, 0, 0)
 		}
 	default:
 		return nil, fmt.Errorf("unexpected character %q", c)
@@ -260,53 +249,11 @@ func (p *parser) expression(min int) (node, error) {
 		if op == '^' {
 			next = prec
 		}
-		reads := p.reads
 		right, err := p.expression(next)
 		if err != nil {
 			return nil, err
 		}
-		a, b := left, right
-		switch op {
-		case '+':
-			left = func(v0, v1, v2, v3 float64) float64 { return a(v0, v1, v2, v3) + b(v0, v1, v2, v3) }
-		case '-':
-			left = func(v0, v1, v2, v3 float64) float64 { return a(v0, v1, v2, v3) - b(v0, v1, v2, v3) }
-		case '*':
-			left = func(v0, v1, v2, v3 float64) float64 { return a(v0, v1, v2, v3) * b(v0, v1, v2, v3) }
-		case '/':
-			left = func(v0, v1, v2, v3 float64) float64 { return a(v0, v1, v2, v3) / b(v0, v1, v2, v3) }
-		default:
-			left = func(v0, v1, v2, v3 float64) float64 { return math.Pow(a(v0, v1, v2, v3), b(v0, v1, v2, v3)) }
-			// A constant whole exponent, such as the 4 of x^4, is fixed now.
-			if n := b(0, 0, 0, 0); p.reads == reads && n >= 2 && n <= 64 && n == math.Trunc(n) {
-				power := integerPower(int(n))
-				left = func(v0, v1, v2, v3 float64) float64 { return power(a(v0, v1, v2, v3)) }
-			}
-		}
+		left = binary(arithmetic[op], left, right)
 	}
 	return left, nil
-}
-
-// integerPower returns x ↦ x^n for a whole n from 2 to 64, equal to
-// math.Pow(x, n) bit for bit but without its general path. Pow multiplies
-// x's mantissa by successive squarings for each set bit of n, keeping the
-// powers of two apart; here the same products are taken in the same order
-// on x itself. While |x| lies within 2^±⌊1000/n⌋, every product used is a
-// normal number, so the powers of two scale it exactly and each rounding is
-// Pow's. Beyond that, and for zero, infinities and NaN, Pow decides.
-func integerPower(n int) func(float64) float64 {
-	limit := math.Ldexp(1, 1000/n)
-	return func(x float64) float64 {
-		if a := math.Abs(x); !(a > 1/limit && a < limit) {
-			return math.Pow(x, float64(n))
-		}
-		r, b := 1.0, x
-		for i := n; i != 0; i >>= 1 {
-			if i&1 == 1 {
-				r *= b
-			}
-			b *= b
-		}
-		return r
-	}
 }

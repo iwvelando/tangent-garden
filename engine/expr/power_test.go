@@ -34,9 +34,9 @@ func TestIntegerPowerMatchesPow(t *testing.T) {
 	r := rand.New(rand.NewPCG(1, 2))
 	xs := powerSamples(r, 20000)
 	for n := 2; n <= 64; n++ {
-		p := integerPower(n)
+		limit := powerLimit(n)
 		for _, x := range xs {
-			if got, want := p(x), math.Pow(x, float64(n)); !sameBits(got, want) {
+			if got, want := powInt(x, n, limit), math.Pow(x, float64(n)); !sameBits(got, want) {
 				t.Fatalf("%v^%d = %v (%#x), math.Pow gives %v (%#x)", x, n, got, math.Float64bits(got), want, math.Float64bits(want))
 			}
 		}
@@ -92,7 +92,7 @@ func FuzzIntegerPower(f *testing.F) {
 	f.Add(0x1p500, uint8(2))
 	f.Fuzz(func(t *testing.T, x float64, n uint8) {
 		k := 2 + int(n)%63
-		if got, want := integerPower(k)(x), math.Pow(x, float64(k)); !sameBits(got, want) {
+		if got, want := powInt(x, k, powerLimit(k)), math.Pow(x, float64(k)); !sameBits(got, want) {
 			t.Fatalf("%v^%d = %v, math.Pow gives %v", x, k, got, want)
 		}
 	})
