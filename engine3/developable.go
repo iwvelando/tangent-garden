@@ -100,6 +100,9 @@ type Request struct {
 	// harmonic or custom curve. It asks for the diagnostics too, and changes
 	// nothing else in the result.
 	Probe *ProbeQuery `json:"probe,omitempty"`
+	// units are the base curve's units (see units), which compute sets
+	// from its size.
+	units units
 }
 type Ruling struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -179,10 +182,12 @@ func knot(c Request, t float64) (Vec3, Vec3, Vec3) {
 // jumps reports a chord from a to b, one parameter step apart, that the
 // midpoint velocity cannot account for: an asymptote, not a local segment.
 // Comparing displacement with midpoint speed also catches sub-grid poles.
-func jumps(a, b, middle Vec3, step float64) bool {
+// A chord shorter than 10⁻⁷ of the curve's size is rounding, whatever the
+// speed.
+func jumps(a, b, middle Vec3, step, size float64) bool {
 	displacement := b.sub(a)
 	chord := displacement.norm()
-	return chord > 8*middle.norm()*step+1e-7 || displacement.dot(middle) < -1e-8*chord*middle.norm()
+	return chord > 8*middle.norm()*step+1e-7*size || displacement.dot(middle) < -1e-8*chord*middle.norm()
 }
 
 func Compute(c Request) (Result, error) {
@@ -312,6 +317,10 @@ func compute(c Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	// The base's own units measure whether it, or a curve derived from it,
+	// stands still or jumps (see units).
+	baseUnits := evaluate.units(lo, hi, absolute)
+	c.units = baseUnits
 	if c.Probe != nil {
 		if err := checkProbe(*c.Probe, lo, hi); err != nil {
 			return Result{}, err
@@ -332,13 +341,13 @@ func compute(c Request) (Result, error) {
 		baseCurve, baseTangents, baseBreaks = baseSamples(c, evaluate, lo, hi, c.Samples, closed)
 		switch {
 		case c.projected():
-			evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi)
+			evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi, baseUnits)
 		case c.Input == "coil":
-			if evaluate, unwoundAt, closed, err = c.Coil.evaluation(evaluate, lo, hi, baseCurve, baseTangents, baseBreaks, closed); err != nil {
+			if evaluate, unwoundAt, closed, err = c.Coil.evaluation(evaluate, lo, hi, baseCurve, baseTangents, baseBreaks, closed, baseUnits); err != nil {
 				return Result{}, err
 			}
 		default:
-			if evaluate, unwoundAt, reached, restarts, err = c.Unwinding.evaluation(evaluate, lo, hi, baseCurve, baseBreaks); err != nil {
+			if evaluate, unwoundAt, reached, restarts, err = c.Unwinding.evaluation(evaluate, lo, hi, baseCurve, baseBreaks, baseUnits); err != nil {
 				return Result{}, err
 			}
 			// A closed curve's involute ends a whole length of string from
@@ -375,7 +384,7 @@ func compute(c Request) (Result, error) {
 	for i := 0; i <= n; i++ {
 		t := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
 		r, v, a, ok := evaluate(t)
-		if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+		if !ok || !r.valid() || !v.valid() || c.units.still(v) {
 			out.Invalid++
 			continue
 		}
@@ -411,10 +420,10 @@ func compute(c Request) (Result, error) {
 		if ok && middle.valid() {
 			middles[i] = middle.norm()
 		}
-		disconnected := out.Base[i] == nil || out.Base[i+1] == nil || !ok || !middle.valid() || middle.norm() < 1e-9 || tangents[i].dot(tangents[i+1]) < 0
+		disconnected := out.Base[i] == nil || out.Base[i+1] == nil || !ok || !middle.valid() || c.units.still(middle) || tangents[i].dot(tangents[i+1]) < 0
 		if !disconnected && c.Format == "parametric" && !composed {
 			// A chord through an asymptote is not a local tangent segment.
-			disconnected = jumps(*out.Base[i], *out.Base[i+1], middle, (hi-lo)/float64(n))
+			disconnected = jumps(*out.Base[i], *out.Base[i+1], middle, (hi-lo)/float64(n), c.units.size)
 		}
 		// A derived input has no asymptote of its own: each foot lies on
 		// the sphere with diameter from the base point to the pole, and an
@@ -585,7 +594,7 @@ func compute(c Request) (Result, error) {
 			points := out.Projection.Points
 			out.Adaptive.Projection, _ = refinePath(points, out.Breaks, func(t float64) Vec3 {
 				r, v, _, ok := evaluate(t)
-				if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+				if !ok || !r.valid() || !v.valid() || c.units.still(v) {
 					return Vec3{math.NaN(), 0, 0}
 				}
 				return project(c.Construction, c.Pole, r, v.unit())
@@ -610,7 +619,7 @@ func compute(c Request) (Result, error) {
 			var broken []int
 			out.Adaptive.Image, broken = refinePath(q.Points, q.Breaks, func(t float64) Vec3 {
 				r, v, _, ok := evaluate(t)
-				if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+				if !ok || !r.valid() || !v.valid() || c.units.still(v) {
 					return Vec3{math.NaN(), 0, 0}
 				}
 				return invert(q.Center, q.Radius, c.Inversion.source(c.Pole, r, v.unit()))
@@ -628,7 +637,7 @@ func compute(c Request) (Result, error) {
 		return out, nil
 	}
 	if involute {
-		result, arcs, err := involutes(c.Involute, evaluate, lo, hi, out.Base, tangents, speeds, middles, out.Breaks, c.Lines)
+		result, arcs, err := involutes(c.Involute, evaluate, lo, hi, out.Base, tangents, speeds, middles, out.Breaks, c.Lines, c.units)
 		if err != nil {
 			return Result{}, err
 		}

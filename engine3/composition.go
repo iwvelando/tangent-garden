@@ -83,14 +83,17 @@ func (c Request) analytic() string {
 // position and unit tangent, as sphere inversion does, and differentiates
 // it numerically; it never differentiates a sampled path. An expression
 // base is itself differentiated at three times its usual step (see compile).
-func composedEvaluation(kind string, pole Vec3, base evaluation, lo, hi float64) evaluation {
-	return sampled(func(t float64) Vec3 {
+// The base stands still by its own units u, and the input's derivatives
+// are measured in the input's, or in u if it has no size.
+func composedEvaluation(kind string, pole Vec3, base evaluation, lo, hi float64, u units) evaluation {
+	f := func(t float64) Vec3 {
 		r, v, _, ok := base(t)
-		if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+		if !ok || !r.valid() || !v.valid() || u.still(v) {
 			return Vec3{math.NaN(), 0, 0}
 		}
 		return project(kind, pole, r, v.unit())
-	}, lo, hi, hi-lo)
+	}
+	return sampled(f, lo, hi, hi-lo, sized(extent(f, lo, hi), hi-lo, u))
 }
 
 // baseSamples samples the base by the same rules as Compute's sampling
@@ -103,7 +106,7 @@ func baseSamples(c Request, base evaluation, lo, hi float64, n int, closed bool)
 	at := func(i int) float64 { return lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n) }
 	for i := 0; i <= n; i++ {
 		r, v, _, ok := base(at(i))
-		if ok && r.valid() && v.valid() && v.norm() >= 1e-9 {
+		if ok && r.valid() && v.valid() && !c.units.still(v) {
 			curve[i], tangents[i] = &r, v.unit()
 		}
 	}
@@ -114,9 +117,9 @@ func baseSamples(c Request, base evaluation, lo, hi float64, n int, closed bool)
 	for i := 0; i < n; i++ {
 		_, middle, _, ok := base(lo + (hi-lo)*(float64(i)+0.5)/float64(n))
 		a, b := curve[i], curve[i+1]
-		broken := a == nil || b == nil || !ok || !middle.valid() || middle.norm() < 1e-9 || tangents[i].dot(tangents[i+1]) < 0
+		broken := a == nil || b == nil || !ok || !middle.valid() || c.units.still(middle) || tangents[i].dot(tangents[i+1]) < 0
 		if !broken && c.Format == "parametric" {
-			broken = jumps(*a, *b, middle, step)
+			broken = jumps(*a, *b, middle, step, c.units.size)
 		}
 		breaks[i+1] = broken
 	}

@@ -151,7 +151,7 @@ func (p *probing) probe(q ProbeQuery, d *DiagnosticsResult, radius float64) *Pro
 		jerkAt = p.lo + (p.hi-p.lo)*float64(k)/float64(n)
 	}
 	r, v, a, ok := p.evaluate(s)
-	if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+	if !ok || !r.valid() || !v.valid() || p.c.units.still(v) {
 		return at
 	}
 	binormal, defined := p.c.binormal(v, a, p.lo, p.hi)

@@ -37,6 +37,7 @@ func (q CoilRequest) validate() error {
 type coiler struct {
 	CoilRequest
 	base      evaluation
+	units     units // the base's
 	lo, hi, h float64
 	n         int
 	curve     []*Vec3
@@ -66,9 +67,9 @@ type coiler struct {
 // U′ = −(U·T′)T and V′ = −(V·T′)T, so D′ = ωσ T×D − (D·T′)T and
 // D″ = ω(r″·T) T×D + ωσ T′×D − (ωσ)²D − (ωσ (T×D)·T′ + D·T″)T − (D·T′)T′,
 // with only T″ differenced from T; g′ = r′ + dD′ and g″ = r″ + dD″.
-func (q CoilRequest) evaluation(base evaluation, lo, hi float64, curve []*Vec3, tangents []Vec3, breaks []bool, closed bool) (evaluation, func(float64) Vec3, bool, error) {
+func (q CoilRequest) evaluation(base evaluation, lo, hi float64, curve []*Vec3, tangents []Vec3, breaks []bool, closed bool, units units) (evaluation, func(float64) Vec3, bool, error) {
 	n := len(curve) - 1
-	u := &coiler{CoilRequest: q, base: base, lo: lo, hi: hi, h: (hi - lo) / float64(n), n: n, curve: curve, tangents: tangents,
+	u := &coiler{CoilRequest: q, base: base, units: units, lo: lo, hi: hi, h: (hi - lo) / float64(n), n: n, curve: curve, tangents: tangents,
 		speeds: make([]float64, n+1), arc: make([]float64, n+1), us: make([]Vec3, n+1), open: make([]bool, n)}
 	for i := range curve {
 		if _, v, _, ok := base(u.knot(i)); ok && v.valid() {
@@ -113,7 +114,7 @@ func (q CoilRequest) evaluation(base evaluation, lo, hi float64, curve []*Vec3, 
 	span := hi - lo
 	tangent := func(t float64) Vec3 {
 		_, v, _, ok := base(t)
-		if !ok || !v.valid() || v.norm() < 1e-9 {
+		if !ok || !v.valid() || units.still(v) {
 			return Vec3{math.NaN(), 0, 0}
 		}
 		return v.unit()
@@ -202,7 +203,7 @@ func (u *coiler) place(t float64) (coilAt, bool) {
 	}
 	r, v, a, ok := u.base(t)
 	speed := v.norm()
-	if !ok || !r.valid() || !v.valid() || !a.valid() || speed < 1e-9 {
+	if !ok || !r.valid() || !v.valid() || !a.valid() || u.units.still(v) {
 		return coilAt{}, false
 	}
 	T := v.mul(1 / speed)

@@ -97,11 +97,13 @@ func (q RuledRequest) partner(evaluate evaluation, lo, hi float64, closed bool) 
 		expressions[i] = e
 	}
 	f := func(s float64) Vec3 { return Vec3{expressions[0](s), expressions[1](s), expressions[2](s)} }
-	// Steps follow the stretch of b that φ covers.
+	// Steps, and the thread's own units, follow the stretch of b that φ
+	// covers.
+	from, to := q.Rate*lo+q.Shift, q.Rate*hi+q.Shift
 	if q.Rate != 0 {
 		span *= math.Abs(q.Rate)
 	}
-	thread := sampled(f, math.Inf(-1), math.Inf(1), span)
+	thread := sampled(f, math.Inf(-1), math.Inf(1), span, sized(extent(f, math.Min(from, to), math.Max(from, to)), span, absolute))
 	return func(s float64) (Vec3, Vec3, Vec3, bool, bool) {
 		r, v, a, ok := thread(s)
 		return r, v, a, ok, true
@@ -165,7 +167,7 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec
 		broken := out.Breaks[i+1] || plus[i] == nil || plus[i+1] == nil
 		if !broken && m != 0 {
 			_, v, _, ok, inside := partner(m*at(float64(i)+0.5) + c.Ruled.Shift)
-			broken = !ok || !inside || jumps(*plus[i], *plus[i+1], v.mul(m), step)
+			broken = !ok || !inside || jumps(*plus[i], *plus[i+1], v.mul(m), step, size)
 		}
 		q.Breaks[i+1] = broken
 	}

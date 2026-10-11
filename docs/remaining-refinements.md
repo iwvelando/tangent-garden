@@ -126,7 +126,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Open:**
 
-- Error budgets across tiny, large and translated studies.
+- Error budgets across tiny, large and translated studies. In the 3D engine, stated and tested for tiny, huge and far copies of every spatial preset (see [scale and translation](mathematics.md#spatial-scale-and-translation)). Two floors there remain absolute: the stability test of a differenced r‴ (`jerk`, in `engine3/diagnostics.go`), which a tiny copy shows, and, though no copy shows it yet, that of a differenced τ′ in the ruled surface probe (`ruledprobe.go`). The 2D engine's budgets are open.
 - 3D: rebase positions before the Float32 upload, and keep meaningful clipping (near/far are set in framing radii).
 
 Today's finite-value guards and robust bounds do not prove scale independence.
