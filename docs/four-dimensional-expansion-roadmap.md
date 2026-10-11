@@ -426,3 +426,37 @@ The largest accepted study is nine uncollapsed torus latitudes at 13 curves per 
 Verification: `gofmt` clean; **`make check` passed** (engine4 coverage **99.1%**), including race checks and the real WASM and served-worker contracts. **`make test-browser` passed 757/757 Chromium tests**. The first full run failed only the 4D gallery's hard-coded example count, which was updated to 12. **`make test-webkit` passed 29/29**, including actual MP4 timing and distinct endpoints for both weave presets. Independent FFmpeg/ffprobe and ImageDecoder checks verify MP4/WebP duration, dimensions and start/midpoint/end parity with live rendering for the latitude sweep. The MP4 comparison uses export quality 100, because this dense thin linework exceeded the ink-overlap bound at quality 60. SVG metadata and paths match the live drawing. Visual inspection covered both presets at 1440 px and 390 px in light and dark themes. `make thumbnails` passed; only the two new presets' assets and fingerprints were added. `git diff --check` passes.
 
 Limits: finite selected circles only, with one latitude parameterization and evenly spaced phases. There is no surface shading, no opaque visibility and no arbitrary circle editor. The window is fixed per study, and screen crossings are not intersections. No new runtime dependency or resource type was added, and nothing was published or deployed. Pass 5 remains conditional on a concrete need.
+
+### Scale and translation check (2026-10-11)
+
+A check of every tolerance in `engine4` against the absolute-plus-relative requirement above. Nothing needed fixing. No engine code changed, so every 4D preset is bit-for-bit identical. The tests are in `engine4/scale_test.go`.
+
+What can move:
+
+- **Tesseract and spherical weave:** neither. They are the unit tesseract and the unit 3-sphere, centred at the origin, and the request carries no size or centre for them. The test shows that the shared size fields leave every mode unchanged. The weave's window radius sets the window, not the sphere.
+- **Ball and tube:** scale only, since they have no centre. Radii, slice and spread scale together.
+- **Shell bypass:** scale only, since the obstacle is centred at the origin. Every length scales together: radii, ε, outside point, H, and both comparison levels.
+- **Lift:** the sources are fixed curves, so the lift moves past them rather than scaling with them. Moving the centre along the threads moves every interior cut and lifted point by the same amount. The missing radius scales with the support L at a fixed height. Lifted fourth coordinates scale with the height A. The slab half-thickness ε = 0.02 is a fixed modelling length, not a tolerance, so the lift is deliberately not scale-covariant in A.
+
+**Budget.** A power-of-two scale reproduces every returned number exactly: points, parameters, section levels and radii, hits, clearance, distances and framing. Other scales agree within 10⁻¹² of the framing radius, and parameters within 10⁻¹². A study more than 10⁻⁸ from a threshold, relative to its own scale, keeps its outcome at every supported scale. A study within 10⁻¹³ is coalesced at every supported scale. Threshold tests cover these cases:
+
+- the ball and tube tangent slices at supports 0.001–100
+- the radial shell touching H = b, and the embedded route on the slab boundary H = ε, at scales 1/16–8
+- a thread tangent to the missing ball at missing radii 0.06–7.5
+
+Tolerances and their relative bands (δ is the relative distance from the threshold that is coalesced):
+
+| Tolerance | Value | Scale | Relative band |
+| --- | --- | --- | --- |
+| Curved tangent slice, on h | 10⁻¹² + 10⁻¹⁰ s | support s, 0.001–100 | 1.0 × 10⁻¹⁰ to 1.1 × 10⁻⁹ |
+| Bypass sphere tangency, on r² − d² | 10⁻¹² (1 + r²) | radius r, 0.05–20 | δ ≤ 5 × 10⁻¹³ (1 + r⁻²): below 2 × 10⁻¹⁰ |
+| Bypass contact at a cut, on radius and \|w\| | 10⁻¹² + 10⁻¹⁰ b | outer radius b | 1.0 × 10⁻¹⁰ of b |
+| Lift present set, on d² | 10⁻¹² r (r + √10) | missing radius r | δ ≤ 5 × 10⁻¹³ (1 + √10/r): below 4 × 10⁻¹¹ for r ≥ 0.05 |
+| Lift line event | 10⁻¹² + 10⁻¹⁰ max(1, r²) | — | none: below zero residual it only repeats the closest-point event |
+| Lift circle event, on a cosine; event coalescing, on a parameter | 10⁻¹²; 10⁻¹³ | dimensionless | — |
+| Weave window and latitude snap, on q_w and radians | 10⁻¹² | unit sphere | — |
+| Tesseract stereographic coefficients, cut spacing; section level, coincidence and planarity | 10⁻¹⁴; 10⁻¹⁰, 10⁻⁹ (10⁻¹⁸ squared), 10⁻⁹ | unit tesseract, coordinates within 2 | fixed object |
+
+The absolute floor 10⁻¹² dominates the curved and bypass bands at small radii, so their bands widen from about 10⁻¹² to 10⁻⁹ across the supported range. Both stay inside the budget. A validation limit, not a tolerance, is also absolute: the shell needs b − a ≥ 0.001, so a thin shell can become invalid when scaled down.
+
+Targeted mutations, made in temporary edits and since restored, tested each scaled tolerance and the missing radius. Making the curved, bypass or lift-membership tolerances purely absolute (10⁻¹² or 10⁻⁹/10⁻¹⁰) failed the threshold tests. So did offsetting the missing radius by 10⁻⁹. Replacing the lift line-event tolerance with 10³ passed the whole engine4 suite, which confirms that this tolerance is inert.
