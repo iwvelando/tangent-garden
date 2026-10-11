@@ -214,3 +214,54 @@ func TestRefinementBreaksTheInvoluteAtACorner(t *testing.T) {
 		}
 	}
 }
+
+// A gap in the curve a fifth of a sample step wide, between an interval's
+// quarter point and midpoint on a gently curving stretch, where neither the
+// samples nor that interval's three probes fall in it: refinement's scan
+// finds it, and the involute is broken there with its curve.
+func TestRefinementFindsANarrowGapBeneathTheInvolute(t *testing.T) {
+	h := 2.0 / 64
+	gap := -1 + 58.375*h
+	q := request("involute", "t", "t^2 + 0*sqrt((t - a)^2 - 0.1^2*0.03125^2)", -1, 1)
+	q.Curve.A, q.Samples = gap, 65
+	uniform := compute(t, q)
+	for i, p := range uniform.Base {
+		if p == nil {
+			t.Fatalf("a sample at %d falls in the gap", i)
+		}
+	}
+	r := compute(t, adaptive(q))
+	base, involute := r.Adaptive.Base, r.Adaptive.Derived
+	if base.Breaks != 1 || involute == nil || involute.Breaks != 0 {
+		t.Fatalf("base broken %d times, involute %+v", base.Breaks, involute)
+	}
+	for _, p := range []*RefinedPath{base, involute} {
+		open := 0
+		for k, v := range p.Points {
+			if v == nil {
+				open++
+				if int(p.At[k]) != 58 {
+					t.Fatalf("broken in interval %g", p.At[k])
+				}
+			}
+		}
+		if open == 0 {
+			t.Fatal("not broken at the gap")
+		}
+	}
+	// The base is drawn up to the gap's edges, to within two finest steps.
+	ts := positions(q, base)
+	first, last := -1, -1
+	for k, p := range base.Points {
+		if p == nil {
+			if first < 0 {
+				first = k
+			}
+			last = k
+		}
+	}
+	finest := h / 1024
+	if a, b := ts[first-1], ts[last+1]; math.Abs(a-(gap-0.1*h)) > 2*finest || math.Abs(b-(gap+0.1*h)) > 2*finest {
+		t.Fatalf("the gap drawn from %g to %g, want %g to %g", a, b, gap-0.1*h, gap+0.1*h)
+	}
+}

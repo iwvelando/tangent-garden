@@ -9,6 +9,7 @@ package refine
 import (
 	"container/heap"
 	"math"
+	"math/bits"
 	"sort"
 )
 
@@ -24,6 +25,14 @@ const (
 	// A chord still longer than this many tolerances at the finest step
 	// cannot belong to a continuous curve there: a jump through a pole.
 	Jump = 50
+	// Once every piece is within tolerance, the scan evaluates at most Scan
+	// more probes on one path, spent in whole levels: each halves the
+	// spacing of every piece's probes, down to the finest step.
+	Scan = 4096
+	// A scanned piece is refined further when its probes stray beyond the
+	// tolerance and more than Unseen times as far as its three quarter
+	// points do: something they could not see.
+	Unseen = 2
 )
 
 // Path is a drawn curve with its refinement. Points and At run in parameter
@@ -52,16 +61,23 @@ type Metric[P any] struct {
 }
 
 // segment is a piece [a, b] of one uniform interval (positions in sample
-// steps) with its end points (nil where undefined) and three probes at its
-// quarter points; score is the largest distance of a probe from the chord,
-// infinite when a probe is undefined.
+// steps) with its end points (nil where undefined) and its probes, the
+// curve's points at a + k(b − a)/2^level for k from 1 to 2^level − 1: its
+// quarter points (level 2) until the scan adds more. score is the largest
+// distance of a probe from the chord, infinite when a probe is undefined;
+// quarter is that of the quarter points alone.
 type segment[P any] struct {
-	a, b   float64
-	pa, pb *P
-	probes [3]*P
-	depth  int
-	score  float64
+	a, b    float64
+	pa, pb  *P
+	probes  []*P
+	level   int
+	depth   int
+	score   float64
+	quarter float64
 }
+
+// probe is the segment's probe at a + k(b − a)/2^level.
+func (s *segment[P]) probe(k int) *P { return s.probes[k-1] }
 
 type segments[P any] []*segment[P]
 
@@ -87,32 +103,60 @@ func (s *segments[P]) Pop() any {
 // budget that runs out leaves the error evenly spread. A segment with an
 // undefined probe is bisected to localize where the curve stops; one with
 // an undefined end is bisected only toward that end, after every segment
-// above tolerance. It returns the intervals refinement broke, in order.
+// above tolerance. Once every segment is within tolerance, a scan probes
+// them more densely, level by level, for what three probes miss: a segment
+// whose probes then see an undefined point, or stray beyond the tolerance
+// and Unseen times as far as its quarter points, is refined as before. It
+// returns the intervals refinement broke, in order.
 func Refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P], lo, hi, tolerance float64, budget int) (*Path[P], []int) {
+	return refine(points, breaks, at, m, lo, hi, tolerance, budget, Scan)
+}
+
+// refine is Refine with at most scan probes for the scan.
+func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P], lo, hi, tolerance float64, budget, scan int) (*Path[P], []int) {
 	n := len(points) - 1
 	param := func(u float64) float64 { return lo*(1-u/float64(n)) + hi*u/float64(n) }
 	eval := func(u float64) *P { return at(param(u)) }
+	stray := func(s *segment[P], probes []*P) float64 {
+		worst := 0.0
+		for _, p := range probes {
+			if p == nil {
+				return math.Inf(1)
+			}
+			worst = math.Max(worst, m.Distance(*p, *s.pa, *s.pb))
+		}
+		return worst
+	}
 	score := func(s *segment[P]) {
-		switch {
-		case s.pa == nil || s.pb == nil:
+		if s.pa == nil || s.pb == nil {
 			// Only localizing remains: after every segment above
 			// tolerance.
 			s.score = 2 * tolerance
-		case s.probes[0] == nil || s.probes[1] == nil || s.probes[2] == nil:
-			s.score = math.Inf(1)
-		default:
-			s.score = 0
-			for _, p := range s.probes {
-				s.score = math.Max(s.score, m.Distance(*p, *s.pa, *s.pb))
-			}
+			return
+		}
+		q := 1 << (s.level - 2)
+		s.quarter = stray(s, []*P{s.probe(q), s.probe(2 * q), s.probe(3 * q)})
+		s.score = s.quarter
+		if s.level > 2 {
+			s.score = stray(s, s.probes)
 		}
 	}
-	newSegment := func(a, b float64, pa, pb, middle *P, depth int) *segment[P] {
+	// A child takes its parent's probes on its half; one with fewer than
+	// its quarter points evaluates them around the middle it is given.
+	newSegment := func(a, b float64, pa, pb *P, probes []*P, depth int) *segment[P] {
 		w := b - a
 		s := &segment[P]{a: a, b: b, pa: pa, pb: pb, depth: depth}
-		s.probes = [3]*P{eval(a + w/4), middle, eval(a + 3*w/4)}
-		if middle == nil && depth == 0 {
-			s.probes[1] = eval(a + w/2)
+		if len(probes) >= 3 {
+			s.probes, s.level = probes, bits.Len(uint(len(probes)))
+		} else {
+			var middle *P
+			if len(probes) == 1 {
+				middle = probes[0]
+			}
+			s.probes, s.level = []*P{eval(a + w/4), middle, eval(a + 3*w/4)}, 2
+			if middle == nil && depth == 0 {
+				s.probes[1] = eval(a + w/2)
+			}
 		}
 		score(s)
 		return s
@@ -131,55 +175,106 @@ func Refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 	var inserted []vertex
 	brokenAt := map[int]bool{}
 	path := &Path[P]{Tolerance: tolerance}
-	for queue.Len() > 0 {
-		s := heap.Pop(&queue).(*segment[P])
-		if s.score <= tolerance {
-			break
-		}
-		interval := int(math.Floor(s.a))
-		if s.depth == Depth {
-			switch {
-			case s.pa == nil || s.pb == nil:
-				// Localized to the finest step: the break stands.
-			case s.score == math.Inf(1) || m.Length(*s.pa, *s.pb) > Jump*tolerance:
-				inserted = append(inserted, vertex{(s.a + s.b) / 2, nil})
-				brokenAt[interval] = true
-			default:
-				path.Unresolved++
+	// within holds the segments left within tolerance.
+	var within []*segment[P]
+	// refineQueue bisects the queue's segments worst first until all are
+	// within tolerance, which it moves to within, or the budget runs out.
+	refineQueue := func() {
+		for queue.Len() > 0 {
+			s := heap.Pop(&queue).(*segment[P])
+			if s.score <= tolerance {
+				within = append(within, s)
+				within = append(within, queue...)
+				queue = queue[:0]
+				return
 			}
-			continue
-		}
-		if path.Inserted == budget {
-			path.Exhausted = true
-			if s.pa != nil && s.pb != nil {
-				path.Unresolved++
-			}
-			for _, rest := range queue {
-				if rest.score > tolerance && rest.pa != nil && rest.pb != nil {
+			interval := int(math.Floor(s.a))
+			if s.depth == Depth {
+				switch {
+				case s.pa == nil || s.pb == nil:
+					// Localized to the finest step: the break stands.
+				case s.score == math.Inf(1) || m.Length(*s.pa, *s.pb) > Jump*tolerance:
+					inserted = append(inserted, vertex{(s.a + s.b) / 2, nil})
+					brokenAt[interval] = true
+				default:
 					path.Unresolved++
 				}
-			}
-			break
-		}
-		mid := (s.a + s.b) / 2
-		pm := s.probes[1]
-		inserted = append(inserted, vertex{mid, pm})
-		if pm != nil {
-			path.Inserted++
-		} else {
-			brokenAt[interval] = true
-		}
-		// A child toward an undefined end is only localizing, so it needs
-		// no probes of its own.
-		for _, child := range []*segment[P]{
-			newSegment(s.a, mid, s.pa, pm, s.probes[0], s.depth+1),
-			newSegment(mid, s.b, pm, s.pb, s.probes[2], s.depth+1),
-		} {
-			if child.pa == nil && child.pb == nil {
 				continue
 			}
-			heap.Push(&queue, child)
+			if path.Inserted == budget {
+				path.Exhausted = true
+				if s.pa != nil && s.pb != nil {
+					path.Unresolved++
+				}
+				for _, rest := range queue {
+					if rest.score > tolerance && rest.pa != nil && rest.pb != nil {
+						path.Unresolved++
+					}
+				}
+				queue = queue[:0]
+				return
+			}
+			mid := (s.a + s.b) / 2
+			half := len(s.probes) / 2
+			pm := s.probes[half]
+			inserted = append(inserted, vertex{mid, pm})
+			if pm != nil {
+				path.Inserted++
+			} else {
+				brokenAt[interval] = true
+			}
+			// A child toward an undefined end is only localizing, so it
+			// needs no probes of its own.
+			for _, child := range []*segment[P]{
+				newSegment(s.a, mid, s.pa, pm, s.probes[:half], s.depth+1),
+				newSegment(mid, s.b, pm, s.pb, s.probes[half+1:], s.depth+1),
+			} {
+				if child.pa == nil && child.pb == nil {
+					continue
+				}
+				heap.Push(&queue, child)
+			}
 		}
+	}
+	refineQueue()
+	// The scan: each level probes every segment within tolerance at a
+	// spacing of 2^−level sample steps, if the whole level fits in what is
+	// left of the scan's probes.
+	for level := 3; level <= Depth && !path.Exhausted; level++ {
+		cost := 0
+		for _, s := range within {
+			if s.depth+s.level < level {
+				cost += 1<<(level-s.depth) - 1<<s.level
+			}
+		}
+		if cost > scan {
+			break
+		}
+		scan -= cost
+		sort.Slice(within, func(i, j int) bool { return within[i].a < within[j].a })
+		kept := within[:0]
+		for _, s := range within {
+			if s.depth+s.level >= level {
+				kept = append(kept, s)
+				continue
+			}
+			for s.depth+s.level < level {
+				w := (s.b - s.a) / float64(int(1)<<(s.level+1))
+				probes := make([]*P, 0, 2*len(s.probes)+1)
+				for k, p := range s.probes {
+					probes = append(probes, eval(s.a+float64(2*k+1)*w), p)
+				}
+				s.probes, s.level = append(probes, eval(s.b-w)), s.level+1
+			}
+			score(s)
+			if s.score > tolerance && s.score > Unseen*s.quarter {
+				heap.Push(&queue, s)
+			} else {
+				kept = append(kept, s)
+			}
+		}
+		within = kept
+		refineQueue()
 	}
 	sort.Slice(inserted, func(i, j int) bool { return inserted[i].u < inserted[j].u })
 	k := 0

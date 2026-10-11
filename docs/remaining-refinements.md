@@ -76,7 +76,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - **Both:**
   - A view-dependent drawing refinement, which must still give playback and every export the same curve.
   - Framing that ignores refined points.
-  - Three probes per piece miss features narrower than a quarter interval.
 
 **Start from:** `engine/refine` (point type supplied with its chord distance and length), `web/refinement.ts`, and `mathematics.md` (**Refinement between samples**).
 
