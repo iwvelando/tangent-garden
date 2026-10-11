@@ -28,7 +28,7 @@ import "math"
 // the threads meet, or a developable's ruling where the curve straightens.
 // A curvature is nil where it cannot be found from stable derivatives,
 // counted by Unknown; so is a ruled surface's normal where even its tangent
-// plane cannot be. Directions are nil at
+// plane cannot be, marked in UnknownPlane. Directions are nil at
 // an umbilic, counted by Umbilics, where every direction is principal (a
 // canal has none at a regular point; see canalProbe). A
 // focal point is nil at infinity, beyond 100 radii, counted per branch by
@@ -49,6 +49,12 @@ type SurfaceDiagnostics struct {
 	Umbilics  int             `json:"umbilics"`
 	Unknown   int             `json:"unknown"`
 	Clipped   [2]int          `json:"clipped"`
+	// UnknownPlane is present only where some sample has a point whose
+	// tangent plane cannot be found from stable derivatives, marking those
+	// samples: they have no normal, as a singular sample has none, but are
+	// counted by Unknown rather than Singular, and also by UnknownPlanes.
+	UnknownPlane  [][]bool `json:"unknownPlane,omitempty"`
+	UnknownPlanes int      `json:"unknownPlanes,omitempty"`
 	// Light is present only for the outgoing wavefront of a ray study.
 	Light *LightDiagnostics `json:"light,omitempty"`
 	// Distance and Folds are present only for a patch's offset: its signed
@@ -73,6 +79,15 @@ func newSurfaceDiagnostics(kind string, rows, columns int) *SurfaceDiagnostics {
 		d.Focal[k] = grid2[*Vec3](rows, columns)
 	}
 	return d
+}
+
+// markUnknownPlane marks sample (r, k) as having a point whose tangent
+// plane cannot be found, allocating the grid on the first.
+func (d *SurfaceDiagnostics) markUnknownPlane(r, k int) {
+	if d.UnknownPlane == nil {
+		d.UnknownPlane = grid2[bool](len(d.U), len(d.V))
+	}
+	d.UnknownPlane[r][k] = true
 }
 
 // counted reports whether row r is counted: a closed canal's last row

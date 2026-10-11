@@ -57,7 +57,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - **Smaller limits** to fix if they bite:
   - 3D probe lines are depth-tested, so sheets hide them.
   - Surface plots run along the row only.
-  - The readout cannot tell an unknown tangent plane from a singular one.
   - A surface probe held at its (u, v) snaps to each frame's grid: Go evaluates surfaces only at their samples.
 
 **Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks, away messages), `engine/probe.go` and `engine3/probe.go` (the curve probe between samples), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).

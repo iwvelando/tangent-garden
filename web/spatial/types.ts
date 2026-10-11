@@ -414,7 +414,8 @@ export type SpatialProbePoint = {
 // of curvature, 0 around the contact circle (κ = −1/R, focused on the base)
 // and 1 across it, and a developable 0 along the ruling (κ = 0) and 1 across
 // it. A point is null without a surface there; a normal is null at a
-// singular point; a curvature is null where unknown; directions are null at
+// singular point or where the tangent plane is unknown (unknownPlane); a
+// curvature is null where unknown; directions are null at
 // an umbilic; a focal point is null at infinity (beyond 100 radii). Counts
 // leave out a closed surface's repeated last row. A patch's offset, on the
 // patch's grid, shares its normal and directions, with curvatures
@@ -445,6 +446,11 @@ export type SurfaceDiagnostics = {
   umbilics: number;
   unknown: number;
   clipped: [number, number];
+  // Present only where some point's tangent plane cannot be found from
+  // stable derivatives: those points, which have no normal but are not
+  // singular, and their count, which unknown includes.
+  unknownPlane?: boolean[][];
+  unknownPlanes?: number;
   // Present only for the light leaving a mirror or interface.
   light?: LightDiagnostics;
   // Present only for a patch's offset: its signed distance d from the

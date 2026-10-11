@@ -20,8 +20,9 @@ func spanned(from, to float64) []float64 {
 // ruledSample is a ruled surface S(t, u) = a(t) + u d(t) at one grid point:
 // X with its derivatives S_t, S_u, S_tt and S_tu (S_uu vanishes). Point is
 // false where the surface has no point; Regular is false where it has a
-// point but no tangent plane by the drawing's own guard; Known is false
-// where the second derivatives cannot be found stably.
+// point but no tangent plane by the drawing's own guard; an S_t that is not
+// valid means the tangent plane cannot be found; Known is false where the
+// second derivatives cannot be found stably.
 type ruledSample struct {
 	X, St, Su, Stt, Stu   Vec3
 	Point, Regular, Known bool
@@ -82,6 +83,8 @@ func ruledProbe(kind string, n int, closed bool, lo, hi float64, columns []float
 			if !s.St.valid() {
 				// No tangent plane can be found: r″ or r‴ is unknown.
 				count(&d.Unknown)
+				count(&d.UnknownPlanes)
+				d.markUnknownPlane(r, k)
 				continue
 			}
 			p := shape(s.X, s.St, s.Su, s.Stt, s.Stu, Vec3{}, flip(u), size)
@@ -124,7 +127,8 @@ func ruledProbe(kind string, n int, closed bool, lo, hi float64, columns []float
 // same points, so that its second derivatives need only r‴. The drawing's
 // normal is sign(u)·B, which is the reverse of S_t × S_u on both sides.
 // A sample without the drawing's binormal is singular along its whole
-// ruling, as the drawing leaves its faces out.
+// ruling, as the drawing leaves its faces out, unless r″ is unknown there:
+// its tangent plane is then unknown.
 func developableProbe(c Request, evaluate evaluation, lo, hi float64, closed bool, base []*Vec3, velocities, accelerations []Vec3, defined []bool) *SurfaceDiagnostics {
 	n := len(base) - 1
 	third := jerk(c, evaluate, lo, hi)
@@ -134,8 +138,10 @@ func developableProbe(c Request, evaluate evaluation, lo, hi float64, closed boo
 		}
 		r, v, a := *base[i], velocities[i], accelerations[i]
 		w := u / v.norm()
-		s := ruledSample{X: r.add(v.mul(w)), St: v.add(a.mul(w)), Su: v, Stu: a, Point: true, Regular: defined[i]}
-		if !s.Regular {
+		// Without r″ the binormal is unknown rather than absent, and so is
+		// S_t: the tangent plane is unknown, not singular.
+		s := ruledSample{X: r.add(v.mul(w)), St: v.add(a.mul(w)), Su: v, Stu: a, Point: true, Regular: defined[i] || !a.valid()}
+		if !defined[i] {
 			return s
 		}
 		f := float64(i) / float64(n)
