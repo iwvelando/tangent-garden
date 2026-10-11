@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 // BASE_URL points the tests at a deployed site instead of a local preview build.
 const remote = process.env.BASE_URL;
-// WEBKIT=1 adds Safari's engine for tests/webkit.spec.ts (`make test-webkit`).
+// WEBKIT=1 adds Safari's engine and shared mobile-input checks (`make test-webkit`).
 // It is opt-in so ordinary runs need only Chromium installed.
 const webkit = /webkit\.spec\.ts$/;
 
@@ -20,7 +20,7 @@ export default defineConfig({
           {
             name: "webkit",
             use: { browserName: "webkit" as const },
-            testMatch: webkit,
+            testMatch: /(?:webkit|mobile-inputs)\.spec\.ts$/,
           },
         ]
       : []),

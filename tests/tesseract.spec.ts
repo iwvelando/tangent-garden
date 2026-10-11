@@ -456,9 +456,16 @@ test("phone playback brings the drawing into view and keeps controls reachable",
       exact: true,
     })
     .click();
+  const navigation = page.getByRole("navigation", {
+    name: "Notebook sections",
+  });
   await expect
-    .poll(async () => Math.round((await stage(page).boundingBox())!.y))
-    .toBeLessThanOrEqual(12);
+    .poll(async () => {
+      const nav = (await navigation.boundingBox())!;
+      return (await stage(page).boundingBox())!.y - (nav.y + nav.height);
+    })
+    .toBeGreaterThanOrEqual(0);
+  await expect(stage(page)).toBeInViewport({ ratio: 1 });
   const bar = page.locator(".tesseract-playback.active");
   await expect(bar).toBeVisible();
   expect(await bar.evaluate((e) => getComputedStyle(e).position)).toBe("fixed");
