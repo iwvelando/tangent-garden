@@ -238,6 +238,25 @@ export function sightSpec(sight: Sight): { spec: Sight; error?: SightError } {
     error: { field: sightFields.opacity, message },
   };
 }
+// See-through sheets are summed on a target of seeSamples × seeSamples
+// texels a pixel, each composited alone and their mean drawn, so outlines
+// are multisampled as the opaque drawing's are. That needs a multisampled
+// canvas, a target within the device's limits (most, a side), and at most
+// seeTexels texels; otherwise each pixel is one sample.
+export const seeSamples = 2;
+export const seeTexels = 2 ** 24;
+export function seeSampling(
+  size: { width: number; height: number },
+  sampled: boolean,
+  most: number,
+) {
+  const s = seeSamples;
+  return sampled &&
+    s * Math.max(size.width, size.height) <= most &&
+    s * s * size.width * size.height <= seeTexels
+    ? s
+    : 1;
+}
 // Whether the drawing is the plain opaque one, drawn exactly as before.
 export const isPlain = (s: Sight) =>
   s.sheets === "opaque" && s.hidden === "hide";

@@ -7,6 +7,7 @@ import {
   arcLengths,
   defaultSight,
   isPlain,
+  seeSampling,
   sightRecord,
   sightSpec,
   type HiddenLines,
@@ -20,6 +21,7 @@ import { spatialPresets } from "../web/spatial/presets";
 import { defaultCut, type Cut } from "../web/spatial/cut";
 import { hex, lineColor, palette } from "../web/spatial/palette";
 import { curveMesh } from "./curve-mesh";
+import { decodePng } from "./png";
 
 // Seeing through the drawing. Studies drawn with opaque sheets and hidden
 // lines hidden must not change. Their line drawings are computed on the CPU
@@ -138,6 +140,20 @@ test("the default sees nothing through; an invalid opacity is named and leaves s
   expect(sightSpec({ ...defaultSight, opacity: NaN })).toEqual({
     spec: { ...defaultSight, opacity: NaN },
   });
+});
+
+test("see-through sheets take two by two samples a pixel on a multisampled canvas when the target fits", () => {
+  const page = { width: 2000, height: 1520 };
+  expect(seeSampling(page, true, 4096)).toBe(2);
+  // Without samples the opaque drawing's outlines alias too.
+  expect(seeSampling(page, false, 4096)).toBe(1);
+  // Twice the page's longer side within the device's limit, or one sample.
+  expect(seeSampling({ width: 2048, height: 100 }, true, 4096)).toBe(2);
+  expect(seeSampling({ width: 2049, height: 100 }, true, 4096)).toBe(1);
+  // At most 2²⁴ texels: 2048 × 2048 pages, not one pixel more.
+  expect(seeSampling({ width: 2048, height: 2048 }, true, 8192)).toBe(2);
+  expect(seeSampling({ width: 2048, height: 2049 }, true, 8192)).toBe(1);
+  expect(seeSampling({ width: 3000, height: 2280 }, true, 16384)).toBe(1);
 });
 
 test("arc length runs along each polyline in space and restarts where it breaks", () => {
@@ -482,6 +498,101 @@ test("see-through sheets lay the mean of every layer over the background by 1 �
   expect(
     (await download(page, "SVG · embedded 3D image")).toString(),
   ).not.toMatch(/sight/);
+});
+
+// A sheet's outline seen through is multisampled as the opaque drawing's
+// is: a pixel the outline crosses takes the share of it the sheet covers,
+// not all or nothing. With the near half cut away, the far half is one
+// layer, so seen through it is B + α·(O − B) wherever the opaque drawing
+// O has it, at the outline too, up to the two drawings' sample patterns.
+test("see-through outlines are multisampled like the opaque drawing's", async ({
+  page,
+}) => {
+  // Four exports, two at 3000 × 2280.
+  test.setTimeout(120_000);
+  const alpha = 0.6;
+  const half = { normal: at(0, 0, 1), offset: 0, edge: false };
+  await openLink(page, sphereStudy(undefined, half));
+  const view = JSON.parse(
+    (await page.locator("#spatial-artwork").getAttribute("data-view"))!,
+  );
+  // Each size chosen from the menu, then saved.
+  const saved = async (scale: number) => {
+    const size = `${1000 * scale} × ${760 * scale}`;
+    await page
+      .getByRole("button", { name: "Export image", exact: true })
+      .click();
+    await page.getByRole("menuitemradio", { name: size }).click();
+    if (await page.getByRole("menu", { name: "Export image" }).isVisible())
+      await page.keyboard.press("Escape");
+    return decodePng(await download(page, `PNG image · ${size}`));
+  };
+  const opaque = [await saved(2), await saved(3)];
+  await openLink(
+    page,
+    sphereStudy({ sheets: "through", opacity: alpha }, half),
+  );
+  const seen = [await saved(2), await saved(3)];
+  const B = rgb(palette.background[0]);
+  type Image = (typeof seen)[number];
+  const pixel = (img: Image, x: number, y: number) =>
+    [0, 1, 2].map((c) => img.rgba[4 * (y * img.width + x) + c]);
+  // Coverage along the shade a few pixels inside, where both are whole.
+  const share = (p: number[], c: number[]) => {
+    const d = c.map((v, i) => v - B[i]);
+    return (
+      p.reduce((s, v, i) => s + (v - B[i]) * d[i], 0) /
+      d.reduce((s, v) => s + v * v, 0)
+    );
+  };
+  const measure = (opaque: Image, seen: Image) => {
+    const [mx, my] = [opaque.width / 2, opaque.height / 2];
+    const radius = (R * my * view.zoom) / (1.16 * view.radius);
+    let ring = 0,
+      partial = 0,
+      apart = 0,
+      within = 0;
+    for (let k = 0; k < 2000; k++) {
+      const angle = (2 * Math.PI * k) / 2000;
+      const [cx, cy] = [Math.cos(angle), Math.sin(angle)];
+      const point = (r: number) =>
+        [Math.round(mx + r * cx), Math.round(my + r * cy)] as const;
+      // Inside the outline, the rule itself.
+      const middle = point(radius / 2),
+        o = pixel(opaque, ...middle);
+      within = Math.max(
+        within,
+        ...pixel(seen, ...middle).map((v, c) =>
+          Math.abs(v - (B[c] + alpha * (o[c] - B[c]))),
+        ),
+      );
+      const shade = pixel(opaque, ...point(radius - 4));
+      if (Math.hypot(...shade.map((v, i) => v - B[i])) < 30) continue;
+      for (const r of [radius - 0.5, radius + 0.5]) {
+        const o = share(pixel(opaque, ...point(r)), shade);
+        if (o < 0.15 || o > 0.85) continue;
+        ring++;
+        const s = share(pixel(seen, ...point(r)), shade) / alpha;
+        if (s > 0.1 && s < 0.9) partial++;
+        apart += Math.abs(s - o);
+      }
+    }
+    return { ring, partial: partial / ring, apart: apart / ring, within };
+  };
+  const twice = measure(opaque[0], seen[0]);
+  expect(twice.ring).toBeGreaterThan(500);
+  // One sample a pixel left none of 743 partly covered and differed from
+  // the opaque share by 0.35 on average; two by two, 86% and 0.12, the
+  // rest being the two drawings' different sample patterns.
+  expect(twice.partial).toBeGreaterThan(0.7);
+  expect(twice.apart).toBeLessThan(0.2);
+  expect(twice.within).toBeLessThan(2);
+  // Two by two at 3000 × 2280 would pass 2²⁴ texels: one sample a pixel,
+  // still the rule.
+  const thrice = measure(opaque[1], seen[1]);
+  expect(thrice.ring).toBeGreaterThan(300);
+  expect(thrice.partial).toBeLessThan(0.05);
+  expect(thrice.within).toBeLessThan(2);
 });
 
 // The trefoil's tube hides the knot inside it (about 1500 pixels fully in
