@@ -602,6 +602,65 @@ for (const [width, height] of [
   });
 }
 
+// The surface probe's plots, both ways, fit a phone's sidebar, and their
+// choice's help opens below it without moving the sliders above.
+test("the surface probe's plots fit a phone, and their help moves nothing above", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "Beads that lose their envelope" });
+  await page.getByLabel("Describe", { exact: true }).selectOption("surface");
+  await page
+    .getByRole("checkbox", {
+      name: "Principal curvatures & centres at a point",
+    })
+    .check();
+  // A bead's widest row, which has a contact circle to plot around.
+  await page.getByRole("slider", { name: "Along t", exact: true }).fill("270");
+  const plots = page.getByLabel("Plots", { exact: true });
+  await plots.selectOption("both");
+  const figures = page.locator(".spatial-probe .probe-plot");
+  await expect(figures).toHaveCount(4);
+  const probe = (await page.locator(".spatial-probe").boundingBox())!;
+  for (const figure of await figures.all()) {
+    const box = (await figure.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(probe.x - 0.5);
+    expect(box.x + box.width).toBeLessThanOrEqual(probe.x + probe.width + 0.5);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  const sliders = page.locator(".spatial-probe input[type=range]");
+  const boxes = () =>
+    sliders.evaluateAll((els) =>
+      els.map((e) => {
+        const r = e.getBoundingClientRect(),
+          p = e.closest(".spatial-probe")!.getBoundingClientRect();
+        return [Math.round(r.x - p.x), Math.round(r.y - p.y)];
+      }),
+    );
+  const before = await boxes();
+  const control = async () => {
+    const r = (await plots.boundingBox())!,
+      p = (await page.locator(".spatial-probe").boundingBox())!;
+    return [Math.round(r.x - p.x), Math.round(r.y - p.y)];
+  };
+  const select = await control();
+  const toggle = page
+    .locator(".spatial-probe .field", { has: plots })
+    .locator(".help-toggle");
+  await toggle.click();
+  const help = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
+  await expect(help).toBeVisible();
+  await help.locator(".help-more").click();
+  await expect(help.locator(".hint-more")).toBeVisible();
+  expect(await boxes()).toEqual(before);
+  expect(await control()).toEqual(select);
+});
+
 // A field's label, its help toggle and any value at the end of its row
 // share one line, in the probe panel as everywhere else: its checkbox's
 // own label styles must not reach the fields beside it.

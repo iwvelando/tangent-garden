@@ -24,6 +24,7 @@ import {
   probeHelp as spatialProbeHelp,
   probeMotionHelp as spatialProbeMotionHelp,
   probeSupport,
+  surfacePlotsHelp,
   surfaceProbeHelp,
 } from "../web/spatial/probe";
 import { restartHelp } from "../web/spatial/restart";
@@ -230,6 +231,7 @@ test("every help a setting reveals keeps to the same limits", () => {
     for (const target of probeSupport(config).targets)
       if (target !== "curve") {
         add(`${name} ${target} probe`, surfaceProbeHelp(config, target));
+        add(`${name} ${target} plots`, surfacePlotsHelp(config, target));
         add(
           `${name} ${target} probe motion`,
           spatialProbeMotionHelp(config, target),

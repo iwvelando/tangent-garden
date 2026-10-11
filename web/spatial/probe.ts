@@ -57,13 +57,16 @@ export const probeOptions = (t: ProbeTarget) =>
 // t or u) and, on a surface, across its columns (around θ, or along v).
 // The target is what it describes where the study offers both. The curve
 // probe snaps to the nearest sample unless it stands between samples
-// (between), which links made before it leave out.
+// (between), which links made before it leave out. On a grid, plots says
+// which way its curvature plots run (see SurfacePlots); absent, along the
+// rows, as links made before the choice drew them.
 export type Probe = {
   enabled: boolean;
   position: number;
   target: ProbeTarget;
   across: number;
   between?: boolean;
+  plots?: SurfacePlots;
 };
 export const defaultProbe: Probe = {
   enabled: false,
@@ -673,6 +676,87 @@ export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
     `Describes the ${t.surface} at a point: its normal, principal directions and curvatures (A = −dn), with circles.`,
     `${t.help} A sphere with outward normal has κ = −1/R; centers beyond 100 study radii are not drawn.`,
   );
+}
+
+// Which way the surface probe's curvature plots run through its point:
+// along its column, over the rows (u or t), across its row, over the
+// columns (v, θ − θ₀ or u), or both.
+export type SurfacePlots = "along" | "around" | "both";
+export const surfacePlotValues: SurfacePlots[] = ["along", "around", "both"];
+// The probe's plots: along the rows unless it asks for the other way or
+// both. The notebook keeps no plots field for the rows.
+export const surfacePlots = (p: Probe): SurfacePlots => p.plots ?? "along";
+// The choices, named as the probe's sliders are.
+export function surfacePlotOptions(terms: SurfaceTerms) {
+  return [
+    { value: "along", label: terms.sliders[0] },
+    { value: "around", label: terms.sliders[1] },
+    { value: "both", label: "Both" },
+  ] as const;
+}
+export function surfacePlotsHelp(c: SpatialConfig, target: ProbeTarget) {
+  const t = surfaceTerms(c, target),
+    canal = c.format !== "rays" && surfaceKind(c) === "canal";
+  return tiered(
+    `Plots ${t.branches[0]} and ${t.branches[1]} through the point along ${t.along}, along ${t.around}, or both.`,
+    `Each plot reads the grid's own samples through the point and marks the probe's.${
+      canal ? " Around the circle it runs the full turn, back to θ₀." : ""
+    } Variation below 10⁻⁴ of that line's largest curvature is drawn as constant.`,
+  );
+}
+
+// One curvature plot of the surface probe: a branch's values through the
+// grid sample (row, column), the probe's place among them, and the
+// resolution below which variation is rounding (see plotScale): 10⁻⁴ of
+// the line's largest curvature on either branch, as along a developable's
+// ruling, where it is exactly 0. Along the rows it is the column's; across
+// the columns, the row's, which on a periodic grid closes the turn by
+// repeating its first column.
+export type SurfacePlot = {
+  values: (number | null)[];
+  at: number;
+  label: string;
+  resolution: number;
+};
+export function surfacePlotSeries(
+  d: SurfaceDiagnostics,
+  terms: SurfaceTerms,
+  row: number,
+  column: number,
+  plots: SurfacePlots = "along",
+): SurfacePlot[] {
+  const scale = (lines: (number | null)[][]) =>
+    1e-4 *
+    Math.max(0, ...lines.flatMap((line) => line.map((k) => Math.abs(k ?? 0))));
+  const out: SurfacePlot[] = [];
+  if (plots !== "around") {
+    const lines = [0, 1].map((b) => d.curvature[b].map((line) => line[column]));
+    const resolution = scale(lines);
+    lines.forEach((values, b) =>
+      out.push({
+        values,
+        at: row,
+        label: `${terms.branches[b]} along ${terms.along}`,
+        resolution,
+      }),
+    );
+  }
+  if (plots !== "along") {
+    const lines = [0, 1].map((b) => {
+      const line = d.curvature[b][row] ?? [];
+      return d.periodic && line.length ? [...line, line[0]] : [...line];
+    });
+    const resolution = scale(lines);
+    lines.forEach((values, b) =>
+      out.push({
+        values,
+        at: column,
+        label: `${terms.branches[b]} along ${terms.around}`,
+        resolution,
+      }),
+    );
+  }
+  return out;
 }
 
 // The grid sample at a probe's fractions: the nearest row, and the nearest

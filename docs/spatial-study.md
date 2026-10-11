@@ -137,7 +137,7 @@ Every other animation draws the probe where you put it, and so do their exports:
 
 ## Probing a surface
 
-A surface patch, and a canal, tangent developable, framed ribbon or ruled surface built on any curve (choose **Describe → The surface**), can be probed the same way with **Principal curvatures & centres at a point**. Two sliders pick a point on the surface's grid, and the drawing shows its normal, its two principal directions, and the two normal-section circles through it, each centred on its focal point on the normal line. Each branch takes its focal sheet's color, rust and slate. The sidebar reads out both principal curvatures with their radii, and the Gaussian and mean curvatures, and plots both curvatures along the row through the point.
+A surface patch, and a canal, tangent developable, framed ribbon or ruled surface built on any curve (choose **Describe → The surface**), can be probed the same way with **Principal curvatures & centres at a point**. Two sliders pick a point on the surface's grid, and the drawing shows its normal, its two principal directions, and the two normal-section circles through it, each centred on its focal point on the normal line. Each branch takes its focal sheet's color, rust and slate. The sidebar reads out both principal curvatures with their radii, and the Gaussian and mean curvatures, and plots both curvatures through the point along the first slider's parameter, the second's, or both, as **Plots** chooses.
 
 On a canal the branches are its two lines of curvature. **Around the circle**, the curvature is always −1/R, centred on the sphere's centre on the curve, which is why a canal's first focal set is the curve itself. **Across it**, the curvature tells the shape of the envelope:
 
