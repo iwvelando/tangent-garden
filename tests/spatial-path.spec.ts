@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import {
   defaultPath,
@@ -29,6 +30,7 @@ import {
 import { linework } from "../web/spatial/linework";
 import { curveMesh } from "./curve-mesh";
 import type { CutSpec } from "../web/spatial/cut";
+import { spatialPresets } from "../web/spatial/presets";
 import type { Bounds3, SpatialResult, Vec3 } from "../web/spatial/types";
 
 // The camera path's mathematics, observed through the drawing's own
@@ -1332,4 +1334,75 @@ test("smooth's slopes at a view and at the ends weigh the legs' times as pchip d
   );
   const seam = (pathView(ring, bounds, h, true).pitch - 0.2) / h;
   expect(seam).toBeCloseTo((5.4 * 10.2) / (3.8 * 6 + 6.4 / 1.25), 4);
+});
+
+test("only a smooth flight about the geometry changes how its framed point moves: every other flight is the camera it was", () => {
+  // Every preset's path in both styles, open and looped, orthographic and
+  // through its own lens, with depths of 0 as the plane pivot gives them,
+  // and every steady path with depths besides; and smooth paths about the
+  // geometry where it found none. Field for field at 1,001 progresses and
+  // each view's time, against the views these paths flew before the smooth
+  // framed point kept its rate (recorded as this fingerprint).
+  const presetPaths = spatialPresets
+    .filter((preset) => (preset.flight?.path.keys.length ?? 0) >= 2)
+    .map((preset) => ({
+      path: preset.flight!.path,
+      lens: {
+        ...(preset.projection && { projection: preset.projection }),
+        ...(preset.lensAngle !== undefined && { lensAngle: preset.lensAngle }),
+      },
+    }));
+  expect(presetPaths.length).toBeGreaterThan(5);
+  const flights = [
+    ...presetPaths,
+    { path: path(tour), lens: {} },
+    { path: path(tour), lens: { projection: "normal" as const } },
+  ];
+  const lenses: Pick<View, "projection" | "lensAngle">[] = [
+    {},
+    { projection: "normal" },
+    { projection: "chosen", lensAngle: 20 },
+  ];
+  const around: Bounds3[] = [
+    bounds,
+    { center: { x: 0, y: 0, z: 0 }, radius: 1.5 },
+  ];
+  const views: View[] = [];
+  const fly = (
+    p: CameraPath,
+    cyclic: boolean,
+    depths: number[] | undefined,
+    lens: Pick<View, "projection" | "lensAngle">,
+  ) => {
+    const progresses = [
+      ...Array.from({ length: 1001 }, (_, i) => i / 1000),
+      ...keyTimes(p),
+    ];
+    for (const b of around)
+      for (const x of progresses)
+        views.push(pathView(p, b, x, cyclic, depths, lens));
+  };
+  for (const { path: base, lens } of flights)
+    for (const style of ["steady", "smooth"] as const)
+      for (const cyclic of [false, true]) {
+        const p = { ...base, style },
+          zeros = p.keys.map(() => 0);
+        fly(p, cyclic, undefined, lens);
+        fly({ ...p, pivot: "plane" }, cyclic, zeros, lens);
+        fly({ ...p, pivot: "geometry" }, cyclic, zeros, lens);
+        if (style === "steady")
+          for (const l of lenses)
+            fly(
+              { ...p, pivot: "geometry" },
+              cyclic,
+              p.keys.map((_, k) => 0.35 * Math.sin(1.7 * k + 0.4)),
+              l,
+            );
+      }
+  const fingerprint = createHash("sha256")
+    .update(JSON.stringify(views))
+    .digest("hex");
+  expect(fingerprint).toBe(
+    "1afb902144142265d4b7ecab7af04eaf8e0308009d5fcb311878256e8a47b36d",
+  );
 });
