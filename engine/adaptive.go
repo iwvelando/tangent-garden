@@ -70,6 +70,58 @@ var plane = refine.Metric[Vec]{
 	Length: func(a, b Vec) float64 { return b.Sub(a).Norm() },
 }
 
+// studyRadius is refine.Radius of points, measured in a power of two near
+// their interquartile spread, so that the floors refine.Radius applies, a
+// radius of 10⁻⁴ and a spread of 10⁻¹², are relative to the curve's own
+// size and a tiny study is not judged against a larger one. Scaling by a
+// power of two is exact, so the radius is unchanged wherever the floors do
+// not apply.
+func studyRadius(points []*Vec) float64 {
+	unit := spreadUnit(points)
+	scaled := make([]*Vec, len(points))
+	for i, p := range points {
+		if p != nil {
+			q := p.Mul(1 / unit)
+			scaled[i] = &q
+		}
+	}
+	return unit * refine.Radius(scaled, func(p Vec) []float64 { return []float64{p.X, p.Y} })
+}
+
+// spreadUnit is the power of two at or below the larger interquartile
+// range of points' coordinates, taken as refine.Radius takes its quartiles,
+// or of their full range where that is zero, and 1 for points that do not
+// spread at all.
+func spreadUnit(points []*Vec) float64 {
+	var xs, ys []float64
+	for _, p := range points {
+		if p != nil {
+			xs, ys = append(xs, p.X), append(ys, p.Y)
+		}
+	}
+	spread := func(full bool) float64 {
+		out := 0.0
+		for _, vs := range [][]float64{xs, ys} {
+			lo, hi := vs[0], vs[len(vs)-1]
+			if !full {
+				lo, hi = vs[len(vs)/4], vs[3*len(vs)/4]
+			}
+			out = math.Max(out, hi-lo)
+		}
+		return out
+	}
+	if len(xs) == 0 {
+		return 1
+	}
+	sort.Float64s(xs)
+	sort.Float64s(ys)
+	s := spread(false)
+	if s == 0 {
+		s = spread(true)
+	}
+	return binade(s)
+}
+
 // refinePath refines points, broken after each interval in broken, with the
 // curve evaluated by at (see refine.Refine), at refine.Epsilon of the
 // path's own robust radius. It returns the intervals refinement broke.
@@ -78,7 +130,7 @@ func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, h
 	for i := range broken {
 		breaks[i+1] = true
 	}
-	tolerance := refine.Epsilon * refine.Radius(points, func(p Vec) []float64 { return []float64{p.X, p.Y} })
+	tolerance := refine.Epsilon * studyRadius(points)
 	path, found := refine.Refine(points, breaks, at, plane, lo, hi, tolerance, refine.Budget)
 	return &RefinedPath{
 		Points:     path.Points,

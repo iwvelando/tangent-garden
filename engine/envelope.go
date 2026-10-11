@@ -63,9 +63,11 @@ func newLines(l EnvelopeFamily, base curveFunc, a, lo, hi float64) (*lines, erro
 	return out, nil
 }
 
-// coincide reports endpoints too close for the chord to have a direction.
+// coincide reports endpoints too close for the chord to have a direction:
+// within 10⁻⁹ of their own magnitudes, far above the rounding of their
+// difference, at any scale.
 func coincide(p, q Vec) bool {
-	return q.Sub(p).Norm() <= 1e-9*(1+p.Norm()+q.Norm())
+	return q.Sub(p).Norm() <= 1e-9*(p.Norm()+q.Norm())
 }
 
 // familyLine is one member of the family, with the envelope's point on it.

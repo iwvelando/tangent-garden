@@ -120,16 +120,19 @@ func derivatives(f curveFunc, t, lo, hi float64) (Vec, Vec) {
 }
 
 // stencil differentiates curves on a domain at spacing h, and checks the
-// result against spacing h/2, to a relative tolerance plus an absolute floor
-// on the first derivative.
+// result against spacing h/2, to a relative tolerance plus a floor on the
+// first derivative: the fraction floor of the curve's own resolution there,
+// its largest coordinate on the stencil, which bounds the rounding, plus its
+// second derivative, which a cusp at the origin keeps (both per unit of the
+// parameter). Neither changes with the curve's units.
 type stencil struct{ lo, hi, h, floor float64 }
 
 // baseStencil is the spacing for curves evaluated directly.
 func baseStencil(lo, hi float64) stencil { return stencil{lo, hi, (hi - lo) * 1e-4, 1e-8} }
 
 // inputStencil checks a derived input, whose rounding is far above a curve's
-// own: its first derivative must agree relatively, with no absolute floor,
-// so a derivative made of rounding, as at a cusp, is never accepted.
+// own: its first derivative must agree relatively, with no floor, so a
+// derivative made of rounding, as at a cusp, is never accepted.
 func inputStencil(lo, hi float64) stencil { return stencil{lo, hi, (hi - lo) * 1e-4, 0} }
 
 func (s stencil) derivatives(f curveFunc, t float64) (Vec, Vec) {
@@ -137,6 +140,12 @@ func (s stencil) derivatives(f curveFunc, t float64) (Vec, Vec) {
 }
 
 func derivativesAtStep(f curveFunc, t, lo, hi, h float64) (Vec, Vec) {
+	return stencilAt(f, t, lo, hi, h, nil)
+}
+
+// stencilAt is derivativesAtStep, which also records in size, when it is
+// not nil, the largest coordinate of f on the stencil.
+func stencilAt(f curveFunc, t, lo, hi, h float64, size *float64) (Vec, Vec) {
 	start := math.Max(lo, math.Min(t-2*h, hi-4*h))
 	a := (t - start) / h
 	var d, dd Vec
@@ -157,6 +166,9 @@ func derivativesAtStep(f curveFunc, t, lo, hi, h float64) (Vec, Vec) {
 			den *= float64(j - k)
 		}
 		v := f(start + float64(j)*h)
+		if size != nil {
+			*size = math.Max(*size, math.Max(math.Abs(v.X), math.Abs(v.Y)))
+		}
 		d = d.Add(v.Mul(coeff[1] / den / h))
 		dd = dd.Add(v.Mul(2 * coeff[2] / den / h / h))
 	}
@@ -187,14 +199,30 @@ func (s stencil) conditioned(f curveFunc, t float64, d, dd Vec, order int) bool 
 }
 
 func (s stencil) stableTangent(f curveFunc, t float64, d Vec) bool {
-	a, _ := derivativesAtStep(f, t, s.lo, s.hi, s.h/2)
+	a, b, size := s.half(f, t)
 	return a.Valid() && d.Valid() &&
-		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.floor
+		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.floor*(size+b.Norm())
 }
 
 func (s stencil) stable(f curveFunc, t float64, d, dd Vec) bool {
-	a, b := derivativesAtStep(f, t, s.lo, s.hi, s.h/2)
+	a, b, size := s.half(f, t)
 	return a.Valid() && b.Valid() && d.Valid() && dd.Valid() &&
-		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.floor &&
-		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(s.hi-s.lo))
+		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.floor*(size+b.Norm()) &&
+		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(s.hi-s.lo))+rounding*size/(s.h*s.h)
+}
+
+// rounding bounds the rounding of the second derivatives the two spacings
+// compare, as a multiple of the curve's largest coordinate on the stencil
+// over h²: the stencil's coefficients, at most 320/12 in sum at an end of
+// the domain, and four times that at half the spacing, times a few units of
+// rounding in each value of the curve. Far from the origin it outgrows the
+// fixed floor beside it, which a straight line's r″ would otherwise fail.
+const rounding = 1024 * 0x1p-53
+
+// half is the derivatives of f at t at half the spacing, and the largest
+// coordinate of f on that stencil.
+func (s stencil) half(f curveFunc, t float64) (Vec, Vec, float64) {
+	size := 0.0
+	a, b := stencilAt(f, t, s.lo, s.hi, s.h/2, &size)
+	return a, b, size
 }

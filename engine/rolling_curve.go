@@ -188,7 +188,9 @@ func (v *mover) contact(s float64) (float64, stop) {
 	}
 	for i := 0; i < 20; i++ {
 		residual := v.arc[k] + v.simpson(k, u) - target
-		if math.Abs(residual) <= 1e-15*(1+length) {
+		// Relative to the curve's length: a tiny curve is placed as
+		// accurately as a large one.
+		if math.Abs(residual) <= 1e-15*(binade(length)+length) {
 			break
 		}
 		d, _ := derivatives(v.f, u, v.lo, v.hi)
