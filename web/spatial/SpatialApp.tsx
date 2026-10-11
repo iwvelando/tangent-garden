@@ -25,6 +25,7 @@ import {
 import { tiered, type Help } from "../help";
 import { fieldLabel } from "./fields";
 import { AppHeader } from "../AppHeader";
+import { NotebookMain } from "../MobileNotebookNav";
 import { AnimationButton } from "../AnimationButton";
 import { NotebookMode } from "../NotebookMode";
 import { revealDrawing } from "../revealDrawing";
@@ -2490,7 +2491,7 @@ export default function SpatialApp({
           onSave={save}
         />
       </AppHeader>
-      <main>
+      <NotebookMain>
         <aside
           className="spatial-controls"
           aria-label="Spatial study parameters"
@@ -3776,7 +3777,7 @@ export default function SpatialApp({
             {behind}
           </div>
         )}
-      </main>
+      </NotebookMain>
     </div>
   );
 }
