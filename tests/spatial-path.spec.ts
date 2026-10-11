@@ -21,6 +21,7 @@ import {
   camera,
   clip,
   defaultLayers,
+  page,
   project,
   projectionRecord,
   scenePasses,
@@ -1339,8 +1340,8 @@ test("smooth's slopes at a view and at the ends weigh the legs' times as pchip d
 test("only a smooth flight about the geometry changes how its framed point moves: every other flight is the camera it was", () => {
   // Every preset's path in both styles, open and looped, orthographic and
   // through its own lens, with depths of 0 as the plane pivot gives them,
-  // and every steady path with depths besides; and smooth paths about the
-  // geometry where it found none. Field for field at 1,001 progresses and
+  // and every steady path or path of two views with depths besides; and
+  // smooth paths about the geometry where it found none. Field for field at 1,001 progresses and
   // each view's time, against the views these paths flew before the smooth
   // framed point kept its rate (recorded as this fingerprint).
   const presetPaths = spatialPresets
@@ -1357,6 +1358,8 @@ test("only a smooth flight about the geometry changes how its framed point moves
     ...presetPaths,
     { path: path(tour), lens: {} },
     { path: path(tour), lens: { projection: "normal" as const } },
+    { path: path(tour.slice(0, 2)), lens: {} },
+    { path: path([tour[1], { ...tour[1], turns: 1, leg: 2 }]), lens: {} },
   ];
   const lenses: Pick<View, "projection" | "lensAngle">[] = [
     {},
@@ -1390,7 +1393,7 @@ test("only a smooth flight about the geometry changes how its framed point moves
         fly(p, cyclic, undefined, lens);
         fly({ ...p, pivot: "plane" }, cyclic, zeros, lens);
         fly({ ...p, pivot: "geometry" }, cyclic, zeros, lens);
-        if (style === "steady")
+        if (style === "steady" || p.keys.length === 2)
           for (const l of lenses)
             fly(
               { ...p, pivot: "geometry" },
@@ -1403,6 +1406,255 @@ test("only a smooth flight about the geometry changes how its framed point moves
     .update(JSON.stringify(views))
     .digest("hex");
   expect(fingerprint).toBe(
-    "1afb902144142265d4b7ecab7af04eaf8e0308009d5fcb311878256e8a47b36d",
+    "5272abc4f9dd10f0e7fced640db5d9a123eb3e923751b7dd05ca159c2e527a3b",
   );
+});
+
+test("smooth about the geometry moves the framed point at one rate through every view, and through a loop's seam", () => {
+  // The rate at which each point crosses the page, either side of a time:
+  // smooth turns, tilts and zooms at one rate through a view, so a change
+  // in it there is the framed point's.
+  // One-sided differences of second order, which a view where the camera
+  // rests, accelerating differently either side, does not mistake for a
+  // change of rate.
+  const step = 1e-6;
+  // A lattice through the study, so that some points stay drawn when a
+  // lens comes close.
+  const lattice: Vec3[] = [];
+  for (let i = 0; i < 125; i++)
+    lattice.push(
+      off(bounds.center, [
+        1.5 * ((i % 5) - 2),
+        1.5 * ((Math.floor(i / 5) % 5) - 2),
+        1.5 * (Math.floor(i / 25) - 2),
+      ]),
+    );
+  const drawn = (view: View) => {
+    const k = camera(view, size);
+    return lattice.map((p) => {
+      const c = clip(k, p.x, p.y, p.z);
+      return c[3] > 0 && Math.abs(c[2]) <= c[3]
+        ? page(k, c)
+        : { x: NaN, y: NaN, depth: NaN };
+    });
+  };
+  // The farthest any drawn point moves on the page between two views.
+  const onPage = (p: { x: number; y: number }) =>
+    p.x >= 0 && p.x <= size.width && p.y >= 0 && p.y <= size.height;
+  const moved = (a: View, b: View) => {
+    const [pa, pb] = [drawn(a), drawn(b)];
+    return Math.max(
+      0,
+      ...pa.map((p, i) =>
+        onPage(p) && onPage(pb[i])
+          ? Math.hypot(p.x - pb[i].x, p.y - pb[i].y)
+          : 0,
+      ),
+    );
+  };
+  const pageRate = (view: (x: number) => View, x: number, side: 1 | -1) => {
+    const [a, b, c] = [0, 1, 2].map((j) => drawn(view(x + j * side * step)));
+    const rate = (p: number, q: number, r: number) =>
+      (side * (-3 * p + 4 * q - r)) / (2 * step);
+    return a.flatMap((p, i) => [
+      rate(p.x, b[i].x, c[i].x),
+      rate(p.y, b[i].y, c[i].y),
+    ]);
+  };
+  // Through a lens, points behind the eye are not drawn, and not compared.
+  const jump = (before: number[], after: number[]) => {
+    const both = before
+      .map((r, i) => [r, after[i]])
+      .filter((pair) => pair.every(Number.isFinite));
+    expect(both.length).toBeGreaterThan(1);
+    return (
+      Math.max(...both.map(([r, s]) => Math.abs(r - s))) /
+      Math.max(1, ...both.map(([r]) => Math.abs(r)))
+    );
+  };
+  // A climb that turns, tilts and zooms in throughout, so that the camera
+  // rests at no view, with equal legs and with unequal ones.
+  const climb = [
+    key({ yaw: 0.2, pitch: -0.3, zoom: 1, panX: 0.2 }),
+    key({ yaw: 1.1, pitch: 0.1, zoom: 1.8, panY: 0.5 }),
+    key({ yaw: 2.3, pitch: 0.5, zoom: 2.6, panX: -0.6 }),
+    key({ yaw: 2.9, pitch: 0.9, zoom: 4, panY: -0.3 }),
+  ];
+  const legs = [
+    climb[0],
+    { ...climb[1], leg: 0.5 },
+    { ...climb[2], leg: 3 },
+    climb[3],
+  ];
+  // In front of every view's eye through the normal lens, as found depths
+  // are.
+  const depths = [0.8, -1.1, 0.9, 0.3];
+  for (const lens of [
+    {},
+    { projection: "normal" as const },
+    { projection: "chosen" as const, lensAngle: 20 },
+  ])
+    for (const keys of [climb, legs]) {
+      const geometry = {
+        ...path(keys, "smooth"),
+        pivot: "geometry" as const,
+      };
+      const view = (x: number) =>
+        pathView(geometry, bounds, x, false, depths, lens);
+      const plane = (x: number) =>
+        pathView(geometry, bounds, x, false, [0, 0, 0, 0], lens);
+      const times = keyTimes(geometry);
+      let corner = 0;
+      for (const t of times.slice(1, -1)) {
+        expect(jump(pageRate(view, t, -1), pageRate(view, t, 1))).toBeLessThan(
+          1e-6,
+        );
+        corner = Math.max(
+          corner,
+          jump(pageRate(plane, t, -1), pageRate(plane, t, 1)),
+        );
+        // Through a lens, the framed point itself keeps its rate.
+        if (lens.projection) {
+          const rate = (side: 1 | -1) => {
+            // At the view itself the camera is the key's, framed about
+            // the plane, so its framed point is the leg's limit there.
+            const [a, b] = [1, 2].map(
+              (j) => view(t + j * side * step).framedTarget!.point,
+            );
+            const p = view(t + side * 1e-12).framedTarget!.point;
+            return (["x", "y", "z"] as const).map(
+              (c) => (side * (-3 * p[c] + 4 * a[c] - b[c])) / (2 * step),
+            );
+          };
+          expect(jump(rate(-1), rate(1))).toBeLessThan(1e-4);
+        }
+      }
+      // About the plane, the framed point still turns its corner at a view
+      // where the camera does not rest, as it always has.
+      expect(corner).toBeGreaterThan(1e-2);
+      // Still exactly each view at its time, and no jump between.
+      times.forEach((t, k) =>
+        expect(pathView(geometry, bounds, t, false, depths)).toEqual(
+          manual(keys[k]),
+        ),
+      );
+      // Nothing jumps: no point on the page moves more than 25 px in a
+      // three-thousandth of the path.
+      for (let i = 0; i < 3000; i++)
+        expect(moved(view(i / 3000), view((i + 1) / 3000))).toBeLessThan(25);
+    }
+  // A loop: its last view is its first, a turn on, and its seam is one more
+  // view between legs.
+  const ring = [
+    key({ yaw: 0.3, pitch: 0.2, zoom: 1, panX: 0.3 }),
+    key({ yaw: 2.1, pitch: 0.7, zoom: 2.2, panY: -0.4, leg: 0.4 }),
+    key({ yaw: -2.2, pitch: -0.3, zoom: 1.4, panX: -0.5, leg: 2 }),
+    key({ yaw: 0.3, pitch: 0.2, zoom: 1, panX: 0.3, turns: 1, leg: 3 }),
+  ];
+  const loop = { ...path(ring, "smooth"), pivot: "geometry" as const },
+    seam = [1.3, -0.6, 0.9, 1.3];
+  const looped = (x: number) => pathView(loop, bounds, x, true, seam);
+  const [start, end] = [pageRate(looped, 0, 1), pageRate(looped, 1 - step, -1)];
+  expect(jump(start, end)).toBeLessThan(1e-4);
+  // Open, the same path's ends need not agree.
+  const open = (x: number) => pathView(loop, bounds, x, false, seam);
+  expect(
+    jump(pageRate(open, 0, 1), pageRate(open, 1 - step, -1)),
+  ).toBeGreaterThan(1e-2);
+  for (const t of keyTimes(loop).slice(1, -1))
+    expect(jump(pageRate(looped, t, -1), pageRate(looped, t, 1))).toBeLessThan(
+      1e-4,
+    );
+});
+
+test("smooth about the geometry holds a detail in the middle through several views that frame it", () => {
+  // Three views of one small detail far off the plane, each framing it
+  // from another side and zoom: the framed points nearly coincide, so the
+  // framed point barely moves, whatever its rate at each view.
+  const node: Vec3 = { x: 2.2, y: 0.4, z: 1.9 };
+  const ends = [
+    off(node, [-0.002, 0.001, 0.001]),
+    off(node, [0.002, -0.001, 0]),
+  ];
+  const keys = [
+    framing(key({ yaw: 0.2, pitch: 0.4, zoom: 3 }), node),
+    { ...framing(key({ yaw: 2.4, pitch: -0.3, zoom: 5 }), node), leg: 0.6 },
+    {
+      ...framing(key({ yaw: -0.9, pitch: 0.9, zoom: 2 }), node),
+      turns: 1,
+      leg: 2,
+    },
+  ];
+  const geometry = { ...path(keys, "smooth"), pivot: "geometry" as const };
+  const depths = framedDepths(geometry, [linesPass(ends)], bounds);
+  depths.forEach((s) => expect(Math.abs(s)).toBeGreaterThan(0.5));
+  for (const cyclic of [false, true]) {
+    let [held, loose] = [0, 0];
+    for (let i = 0; i <= 600; i++) {
+      const x = i / 600;
+      const at = (view: View) => {
+        const p = project(camera(view, size), node);
+        return Math.hypot(p.x - size.width / 2, p.y - size.height / 2);
+      };
+      held = Math.max(held, at(pathView(geometry, bounds, x, cyclic, depths)));
+      loose = Math.max(loose, at(pathView(geometry, bounds, x, cyclic)));
+    }
+    expect(held).toBeLessThan(2);
+    expect(loose).toBeGreaterThan(20);
+  }
+});
+
+test("smooth about the geometry flies a path backward as its views reversed, open or looped, with a leg that keeps its zoom", () => {
+  // Reversed, each view keeps the time of the leg that left it, and the
+  // turns of the leg that arrived at the next.
+  const reverse = (keys: KeyView[]): KeyView[] =>
+    keys
+      .map((k, i) => ({
+        ...k,
+        turns: -(keys[i + 1]?.turns ?? 0),
+        leg: keys[i + 1]?.leg ?? 1,
+      }))
+      .reverse()
+      .map((k, i) => (i ? k : { ...k, turns: 0, leg: 1 }));
+  // Zoom rises through the seam, so that the loop does not rest there.
+  const level = [
+    key({ yaw: 0.2, pitch: -0.3, zoom: 2, panX: 0.2 }),
+    key({ yaw: 1.1, pitch: 0.1, zoom: 3, panY: 0.5, leg: 0.5 }),
+    key({ yaw: 2.3, pitch: 0.5, zoom: 3, panX: -0.6, leg: 3 }),
+    key({ yaw: 2.9, pitch: 0.9, zoom: 1, panY: -0.3, turns: 1, leg: 1.5 }),
+    key({ yaw: 0.2, pitch: -0.3, zoom: 2, panX: 0.2, leg: 0.8 }),
+  ];
+  const depths = [0.8, -1.1, 0.9, 0.3, 0.8];
+  const forward = { ...path(level, "smooth"), pivot: "geometry" as const },
+    backward = { ...forward, keys: reverse(level) };
+  const back = depths.slice().reverse();
+  for (const cyclic of [false, true])
+    for (let i = 0; i <= 400; i++) {
+      const x = i / 400;
+      expect(
+        apart(
+          pathView(forward, bounds, x, cyclic, depths),
+          pathView(backward, bounds, 1 - x, cyclic, back),
+        ),
+      ).toBeLessThan(1e-6);
+    }
+  // The leg that keeps its zoom passes its views at one rate too.
+  const step = 1e-6;
+  const rate = (x: number, side: 1 | -1) => {
+    const [a, b, c] = [0, 1, 2].map((j) =>
+      pages(pathView(forward, bounds, x + j * side * step, false, depths)),
+    );
+    return a.flatMap((p, k) =>
+      (["x", "y"] as const).map(
+        (q) => (side * (-3 * p[q] + 4 * b[k][q] - c[k][q])) / (2 * step),
+      ),
+    );
+  };
+  for (const t of keyTimes(forward).slice(1, -1)) {
+    const [before, after] = [rate(t, -1), rate(t, 1)];
+    const most = Math.max(1, ...before.map(Math.abs));
+    before.forEach((r, k) =>
+      expect(Math.abs(r - after[k])).toBeLessThan(1e-4 * most),
+    );
+  }
 });
