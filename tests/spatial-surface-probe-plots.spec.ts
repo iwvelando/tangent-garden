@@ -386,8 +386,11 @@ for (const [preset, target, name, words] of [
       `${one} along ${around}`,
       `${two} along ${around}`,
     ]);
-    // The choice outlasts a move across the columns.
-    await page.locator(".spatial-probe input[type=range]").nth(1).fill("0");
+    // The choice outlasts a step across the columns.
+    await page
+      .locator(".spatial-probe input[type=range]")
+      .nth(1)
+      .press("ArrowLeft");
     await settled(page);
     await expect(plots(page)).toHaveValue("both");
     await expect(captions(page)).toHaveCount(4);
