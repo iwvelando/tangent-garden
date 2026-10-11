@@ -140,6 +140,10 @@ func TestDevelopableProbeSingularAtInflection(t *testing.T) {
 	if row < 0 {
 		t.Fatal("no row at t = 0")
 	}
+	// An absent normal here means singular, not an unknown tangent plane.
+	if d.Singular != len(d.V) || d.Unknown != 0 || d.UnknownPlanes != 0 || d.UnknownPlane != nil {
+		t.Fatalf("inflection: singular %d, unknown %d, unknown planes %d, marks present %v; want %d singular and no unknowns or marks", d.Singular, d.Unknown, d.UnknownPlanes, d.UnknownPlane != nil, len(d.V))
+	}
 	for k := range d.V {
 		if d.Points[row][k] == nil || d.Normals[row][k] != nil {
 			t.Fatalf("column %d at the inflection: point %v normal %v", k, d.Points[row][k], d.Normals[row][k])
