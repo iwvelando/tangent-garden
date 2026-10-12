@@ -23,6 +23,7 @@ import { Plot, legendGeometry, type Layers } from "./Plot";
 import { LegendEntries } from "./Legend";
 import { LineWeightField } from "./LineWeightField";
 import { RefineBetweenSamples } from "./RefineBetweenSamples";
+import { StopAtCaustic } from "./StopAtCaustic";
 import { PlanarProbePanel } from "./PlanarProbePanel";
 import {
   defaultProbe,
@@ -306,6 +307,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const [reset, setReset] = useState(0);
   const [refit, setRefit] = useState(0);
   const [length, setLength] = useState(0.8);
+  const [stopAtCaustic, setStopAtCaustic] = useState(false);
   const [layers, setLayers] = useState<Layers>({
     base: true,
     derived: true,
@@ -1214,6 +1216,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     if (usesPole(next.kind)) setPoleKind(next.kind);
     setConfig(structuredClone(next));
     setProbe(presets[index].probe ?? defaultProbe);
+    setStopAtCaustic(!!presets[index].stop);
     setBounds({
       min: boundText(next.curve.min),
       max: boundText(next.curve.max),
@@ -1253,6 +1256,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     setConfig(study.config);
     setBounds(study.bounds);
     setLength(study.length);
+    setStopAtCaustic(study.stop);
     setLayers(study.layers);
     setWeight(study.weight);
     setProbe(study.probe);
@@ -1276,6 +1280,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     config,
     bounds,
     length,
+    stop: stopAtCaustic,
     poleKind,
     layers,
     camera: camera.current,
@@ -2163,6 +2168,16 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                     />
                   </Field>
                 )}
+                {optical && (
+                  <StopAtCaustic
+                    checked={stopAtCaustic}
+                    onChange={setStopAtCaustic}
+                    help={tiered(
+                      "Each ray ends at its caustic point, or at the ray length if that comes first.",
+                      "A ray whose caustic point is virtual extends dashed behind the curve to that point, and runs as far ahead; other rays have no extension. A ray with no caustic point, such as one totally reflected, runs the full length.",
+                    )}
+                  />
+                )}
                 <div className="layer-grid">
                   {(Object.keys(layers) as (keyof Layers)[])
                     .filter(
@@ -2248,10 +2263,12 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               frame={frame}
               client={client}
               length={length}
+              stopAtCaustic={stopAtCaustic}
               revision={JSON.stringify([
                 config,
                 bounds,
                 length,
+                stopAtCaustic,
                 active,
                 probing,
               ])}
@@ -2288,9 +2305,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
             className="plot-wrap"
             ref={plotWrap}
             aria-busy={busy || placing}
-            // The probe while it is on, as an example's fingerprint records
-            // it (examples/index.ts).
+            // The probe while it is on, and stopped rays, as an example's
+            // fingerprint records them (examples/index.ts).
             data-probe={probing ? JSON.stringify(probe) : undefined}
+            data-stop={stopAtCaustic ? "true" : undefined}
           >
             {result && shown ? (
               <Plot
@@ -2308,6 +2326,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 probe={heldProbe}
                 dark={dark}
                 length={animation?.length ?? length}
+                stop={animation?.stop ?? stopAtCaustic}
                 reset={reset}
                 refit={refit}
                 animation={animation}

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { choosePreset, openAnimation, openExportSettings } from "./helpers";
 import { decodeVideo, probe } from "./video";
 import { exportTiming } from "../web/export-quality";
-import { trace, traceTimeline, type Rect } from "../web/raytrace";
+import { reach, trace, traceTimeline, type Rect } from "../web/raytrace";
 import { presets } from "../web/presets";
 import type { Config, Ray, Result, Vec } from "../web/types";
 
@@ -173,6 +173,78 @@ test("refracted light slows by n₁/n₂, and totally reflected light does not",
     y: reflected.direction.y * 0.5,
   });
   expect(glass.arrival[0]).toBe(Infinity);
+});
+
+test("stopping at the caustic ends each ray at its caustic point", () => {
+  const ray = (target: Vec | null, extra: Partial<Ray> = {}): Ray => ({
+    sampleIndex: 0,
+    origin: { x: 1, y: 0 },
+    direction: { x: 0, y: 1 },
+    incident: { x: 0, y: -1 },
+    target,
+    virtual: !!target && target.y < 0,
+    tir: false,
+    ...extra,
+  });
+  // Without stopping, every ray runs the ray length both ways.
+  expect(reach(ray({ x: 1, y: 2 }), 3, false)).toEqual({
+    ahead: 3,
+    behind: 3,
+  });
+  // A real caustic point ends the ray, and there is no extension.
+  expect(reach(ray({ x: 1, y: 2 }), 3, true)).toEqual({ ahead: 2, behind: 0 });
+  // ...unless the ray length comes first.
+  expect(reach(ray({ x: 1, y: 5 }), 3, true)).toEqual({ ahead: 3, behind: 0 });
+  // A virtual point ends the extension, and the ray runs as far ahead.
+  expect(reach(ray({ x: 1, y: -0.5 }), 3, true)).toEqual({
+    ahead: 0.5,
+    behind: 0.5,
+  });
+  expect(reach(ray({ x: 1, y: -4 }), 3, true)).toEqual({
+    ahead: 3,
+    behind: 3,
+  });
+  // With no caustic point, as under total internal reflection, the ray
+  // runs its full length with nothing behind it.
+  expect(reach(ray(null), 3, true)).toEqual({ ahead: 3, behind: 0 });
+  expect(reach(ray(null, { tir: true }), 3, true)).toEqual({
+    ahead: 3,
+    behind: 0,
+  });
+});
+
+test("traced light stops at the caustic when the study does", () => {
+  // A parabola's rays converge on its focus at (0, 1) under light falling
+  // straight down, 1 + y along each from the mirror.
+  const base = Array.from({ length: 21 }, (_, j) => {
+    const x = -2 + j / 5;
+    return { x, y: (x * x) / 4 };
+  });
+  const derived = base.map(() => ({ x: 0, y: 1 }));
+  const incident = base.map(() => ({ x: 0, y: -1 }));
+  const result = study(base, derived, toward(base, derived, incident));
+  const config = optics("catacaustic", down());
+  const full = traceTimeline(result, config, rect, 4);
+  const stopped = traceTimeline(result, config, rect, 4, true);
+  // The light arrives at the focus at τ = 4 either way, and the stopped
+  // drawing is complete then, before the full rays are.
+  expect(stopped.total).toBeCloseTo(4, 12);
+  expect(full.total).toBeGreaterThan(stopped.total + 1);
+  const end = trace(result, stopped, 1);
+  const late = trace(result, stopped, 0.999);
+  for (const [j, ray] of end.rays.entries()) {
+    near(ray.traced!.out, { x: 0, y: 1 });
+    expect(ray.traced!.back).toBeNull();
+    // Just before, the light is τ = 0.004 short of the focus.
+    const o = late.rays[j].traced!.out!;
+    expect(Math.hypot(o.x, o.y - 1)).toBeCloseTo(0.004, 9);
+  }
+  // Without stopping, each ray runs on past the focus.
+  for (const ray of trace(result, full, 1).rays)
+    expect(Math.hypot(ray.traced!.out!.x, ray.traced!.out!.y - 1)).toBeCloseTo(
+      4 - (1 + ray.origin.y),
+      9,
+    );
 });
 
 test("tracing starts bare, grows monotonically, and ends at the study", () => {
@@ -499,4 +571,96 @@ test("a traced MP4 decodes with exact timing and changing endpoints", async ({
   expect(decoded.duration).toBeCloseTo(0.4, 3);
   expect(decoded.first.hash).not.toBe(decoded.last.hash);
   expect(await page.locator("#artwork").innerHTML()).toBe(original);
+});
+
+test("rays stop at the caustic in the drawing, a preset and its export", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const stop = page.getByRole("checkbox", { name: "Stop rays at the caustic" });
+  // The outgoing rays (drawn at opacity 0.5) and their dashed extensions.
+  const drawn = () =>
+    page
+      .locator('#artwork line[opacity="0.5"], #artwork line[stroke-dasharray]')
+      .evaluateAll((lines) =>
+        lines.map((l) => ({
+          dashed: l.hasAttribute("stroke-dasharray"),
+          length: Math.hypot(
+            +l.getAttribute("x2")! - +l.getAttribute("x1")!,
+            +l.getAttribute("y2")! - +l.getAttribute("y1")!,
+          ),
+        })),
+      );
+  const total = (lines: { dashed: boolean; length: number }[]) =>
+    lines.reduce((sum, l) => sum + l.length, 0);
+  // The glass opens with its rays stopped: they converge, so none has a
+  // dashed extension.
+  await choosePreset(page, { label: "Sunlight bending into glass" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(stop).toBeChecked();
+  await expect(page.locator(".plot-wrap")).toHaveAttribute("data-stop", "true");
+  const stopped = await drawn();
+  expect(stopped.filter((l) => l.dashed)).toHaveLength(0);
+  await stop.uncheck();
+  await expect(page.locator(".plot-wrap")).not.toHaveAttribute("data-stop");
+  const full = await drawn();
+  const rays = full.filter((l) => l.dashed).length;
+  expect(rays).toBeGreaterThan(30);
+  expect(total(full.filter((l) => !l.dashed))).toBeGreaterThan(
+    total(stopped) * 1.2,
+  );
+  // A preset without stopped rays draws them full length.
+  await stop.check();
+  await choosePreset(page, { label: "Parallel light & a circle" });
+  await expect(stop).not.toBeChecked();
+  // A traced animation keeps the rays stopped as the light travels, and at
+  // its final frame.
+  await choosePreset(page, { label: "Sunlight bending into glass" });
+  await openExportSettings(page);
+  await expect(animate(page)).toHaveValue("trace");
+  await page.getByRole("combobox", { name: "Repeat" }).selectOption("once");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await expect.poll(() => progress(page)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", {
+    name: "Animation progress",
+    exact: true,
+  });
+  await slider.fill("0.7");
+  // The preset eases its pace, so this is partway, not at 0.7.
+  await expect.poll(() => progress(page)).toBeGreaterThan(0.5);
+  expect(await progress(page)).toBeLessThan(1);
+  expect((await drawn()).filter((l) => l.dashed)).toHaveLength(0);
+  await slider.press("End");
+  await expect.poll(() => progress(page)).toBe(1);
+  const final = await drawn();
+  expect(final.filter((l) => l.dashed)).toHaveLength(0);
+  expect(total(final)).toBeCloseTo(total(stopped), 3);
+  await page
+    .getByRole("button", { name: "Back to study", exact: true })
+    .click();
+  // Every animation's export draws the rays as the study does; a revealed
+  // one ends on the whole study.
+  await animate(page).selectOption("reveal");
+  const last = async () => {
+    await page
+      .getByRole("spinbutton", { name: "Duration (seconds)" })
+      .fill(".4");
+    await page
+      .getByRole("combobox", { name: "Export frame rate" })
+      .selectOption("15");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export MP4 video" }).click();
+    const bytes = await readFile((await (await download).path())!);
+    return (await decodeVideo(page, bytes)).last.ink;
+  };
+  const exportedStopped = await last();
+  await stop.uncheck();
+  const exportedFull = await last();
+  // Lossy encodes are compared by how much they draw, never by hash: the
+  // full rays ink about a fifth more of the frame than the stopped ones.
+  expect(exportedFull).toBeGreaterThan(exportedStopped * 1.1);
 });

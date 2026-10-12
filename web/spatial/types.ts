@@ -165,7 +165,11 @@ export const maxSurfaceCurves = 48;
 // declares the side the light arrives from: a sample is lit only where the
 // light arrives against n. Each representative ray is drawn `length` along
 // its outgoing direction and as far back behind the surface; parallel light
-// arrives from `length` away. Mirrors engine3.RaysRequest.
+// arrives from `length` away. With `stop` a ray ends instead at the first
+// caustic point it reaches within `length`, and its extension at the first
+// virtual one, as far ahead as behind when it has no real one; absent
+// means off, as in links made before it. Mirrors
+// engine3.RaysRequest.
 export type RaysLight = "parallel" | "point";
 export type RaysInteraction = "reflect" | "refract";
 // A receiver on the plane `plane` = at, with a square window of side `size`
@@ -193,6 +197,7 @@ export type RaysConfig = {
   elevation: number;
   source: Vec3;
   length: number;
+  stop?: boolean;
   receiver: ReceiverConfig;
 };
 // The level set F(x, y, z) = level of an expression in x, y, z and a (not

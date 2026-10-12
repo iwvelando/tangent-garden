@@ -17,6 +17,10 @@ import (
 // outgoing ray, and a transmitted ray never meets the surface again. Each
 // representative ray is drawn Length along the outgoing direction, and as
 // far back behind the surface; parallel light arrives from Length away.
+// With Stop, a ray instead ends at the first caustic point it reaches
+// within Length, and its extension at the first virtual one behind the
+// surface; a ray with no virtual caustic point has no extension, and one
+// with no real one runs as far ahead as its extension runs behind.
 // Receiver optionally collects the outgoing rays on a plane.
 type RaysRequest struct {
 	Interaction string          `json:"interaction"`
@@ -27,6 +31,7 @@ type RaysRequest struct {
 	Elevation   float64         `json:"elevation"`
 	Source      Vec3            `json:"source"`
 	Length      float64         `json:"length"`
+	Stop        bool            `json:"stop"`
 	Receiver    ReceiverRequest `json:"receiver"`
 }
 
@@ -382,11 +387,29 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool) (Result, er
 					out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(reflected.mul(r.Length)), s.X, false, true})
 					continue
 				}
-				virtual := false
+				// The first caustic points ahead of the surface and behind it.
+				converging, virtual, ahead, behind := false, false, r.Length, r.Length
 				for k := range s.Mu {
-					virtual = virtual || s.Mu[k] < 0 && s.finite(k, reach)
+					if !s.finite(k, reach) {
+						continue
+					}
+					if s.Mu[k] < 0 {
+						virtual = true
+						behind = math.Min(behind, -1/s.Mu[k])
+					} else {
+						converging = true
+						ahead = math.Min(ahead, 1/s.Mu[k])
+					}
 				}
-				out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(s.R.mul(r.Length)), s.X.sub(s.R.mul(r.Length)), virtual, false})
+				switch {
+				case !r.Stop:
+					ahead, behind = r.Length, r.Length
+				case !virtual:
+					behind = 0
+				case !converging:
+					ahead = behind
+				}
+				out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(s.R.mul(ahead)), s.X.sub(s.R.mul(behind)), virtual, false})
 			}
 		}
 	}

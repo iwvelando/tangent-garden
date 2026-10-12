@@ -668,10 +668,10 @@ func TestRaysValidation(t *testing.T) {
 
 func TestRaysJSON(t *testing.T) {
 	var c Request
-	if err := json.Unmarshal([]byte(`{"format":"rays","surface":{"kind":"paraboloid","a":0.5,"b":0.5,"uMin":-1,"uMax":1,"vMin":-1,"vMax":1,"uSamples":12,"vSamples":12,"curves":3},"rays":{"interaction":"reflect","n1":1,"n2":1.5,"light":"point","azimuth":10,"elevation":-20,"source":{"x":0,"y":0,"z":2},"length":1.5,"receiver":{"plane":"none"}}}`), &c); err != nil {
+	if err := json.Unmarshal([]byte(`{"format":"rays","surface":{"kind":"paraboloid","a":0.5,"b":0.5,"uMin":-1,"uMax":1,"vMin":-1,"vMax":1,"uSamples":12,"vSamples":12,"curves":3},"rays":{"interaction":"reflect","n1":1,"n2":1.5,"light":"point","azimuth":10,"elevation":-20,"source":{"x":0,"y":0,"z":2},"length":1.5,"stop":true,"receiver":{"plane":"none"}}}`), &c); err != nil {
 		t.Fatal(err)
 	}
-	if want := (RaysRequest{"reflect", 1, 1.5, "point", 10, -20, Vec3{0, 0, 2}, 1.5, ReceiverRequest{Plane: "none"}}); c.Rays != want {
+	if want := (RaysRequest{"reflect", 1, 1.5, "point", 10, -20, Vec3{0, 0, 2}, 1.5, true, ReceiverRequest{Plane: "none"}}); c.Rays != want {
 		t.Fatalf("%+v", c.Rays)
 	}
 	out, err := Compute(c)
@@ -686,5 +686,192 @@ func TestRaysJSON(t *testing.T) {
 	}
 	if strings.Contains(string(b), `"surface":{"surface"`) {
 		t.Fatal("a ray study has no surface result")
+	}
+}
+
+// With Stop, each ray ends at the first caustic point it reaches, or at ℓ
+// if that comes first, and its virtual extension at the first virtual
+// caustic point behind the mirror; a ray with no virtual point has none,
+// and one with only virtual points runs as far ahead as behind.
+func TestRaysStopAtCaustic(t *testing.T) {
+	// A concave spherical bowl under light falling straight down: the
+	// tangential focus, R cos θ / 2 along the reflected ray, comes before
+	// the sagittal one, R / (2 cos θ) (Coddington).
+	R := 1.3
+	light := parallel(0, -90)
+	light.Length, light.Stop = 10, true
+	c := bowl(R, 36, 24, light)
+	c.Surface.Curves = 7
+	r := rayed(t, c)
+	if len(r.Lines) == 0 {
+		t.Fatal("no rays")
+	}
+	for _, l := range r.Lines {
+		x := l.Point
+		cos := -x.Z / R
+		rr := Vec3{-2 * cos * x.X / R, -2 * cos * x.Y / R, 2*cos*cos - 1}
+		if cos < 1e-9 {
+			continue
+		}
+		if want := x.add(rr.mul(R * cos / 2)); l.End.sub(want).norm() > 1e-12*R {
+			t.Fatalf("ray (%d, %d) ends at %+v, want the tangential focus %+v", l.I, l.J, l.End, want)
+		}
+		if l.Virtual || l.Back != l.Point {
+			t.Fatalf("ray (%d, %d) has no virtual extension: %+v", l.I, l.J, l.Back)
+		}
+	}
+	// ℓ shorter than the focal distance still ends the ray; near the rim
+	// the focus comes first.
+	c.Rays.Length = .05
+	capped, focused := 0, 0
+	for _, l := range rayed(t, c).Lines {
+		want := math.Min(.05, R*(-l.Point.Z/R)/2)
+		if d := l.End.sub(l.Point).norm(); math.Abs(d-want) > 1e-12 {
+			t.Fatalf("ray (%d, %d) runs %v, want %v", l.I, l.J, d, want)
+		}
+		if want == .05 {
+			capped++
+		} else {
+			focused++
+		}
+	}
+	if capped == 0 || focused == 0 {
+		t.Fatalf("%d rays run ℓ, %d stop at the focus", capped, focused)
+	}
+	// The sphere's convex outside: each extension stops at the tangential
+	// virtual focus, R cos θ / 2 behind the mirror, and the ray runs as far.
+	c = mirror("ellipsoid", R, R, R, 0, 2*math.Pi, .6, math.Pi/2-.05, 36, 24, light)
+	c.Surface.Curves = 7
+	for _, l := range rayed(t, c).Lines {
+		x := l.Point
+		cos := x.Z / R
+		rr := Vec3{2 * cos * x.X / R, 2 * cos * x.Y / R, 2*cos*cos - 1}
+		if d := l.End.sub(x).norm(); math.Abs(d-R*cos/2) > 1e-12 {
+			t.Fatalf("ray (%d, %d) runs %v, want %v", l.I, l.J, d, R*cos/2)
+		}
+		if want := x.sub(rr.mul(R * cos / 2)); !l.Virtual || l.Back.sub(want).norm() > 1e-12*R {
+			t.Fatalf("ray (%d, %d) extends to %+v, want %+v", l.I, l.J, l.Back, want)
+		}
+	}
+	// ℓ caps the extension too.
+	c.Rays.Length = .3
+	capped = 0
+	for _, l := range rayed(t, c).Lines {
+		want := math.Min(.3, l.Point.Z/2)
+		if d := l.Back.sub(l.Point).norm(); math.Abs(d-want) > 1e-12 || math.Abs(l.End.sub(l.Point).norm()-want) > 1e-12 {
+			t.Fatalf("ray (%d, %d) extends %v, want %v", l.I, l.J, d, want)
+		}
+		if want == .3 {
+			capped++
+		}
+	}
+	if capped == 0 {
+		t.Fatal("no extension runs ℓ")
+	}
+	// A saddle's rays converge on one branch and diverge from the other:
+	// each runs to its real point and extends back to its virtual one.
+	saddle := mirror("paraboloid", 1, -1, 0, -.6, .6, -.6, .6, 24, 24, light)
+	saddle.Surface.Curves = 7
+	lines := rayed(t, saddle).Lines
+	if len(lines) != 49 {
+		t.Fatal(len(lines))
+	}
+	for _, l := range lines {
+		x, y := grid(saddle.Surface, l.I, l.J)
+		real, virtual := Vec3{0, 2 * y, .5 - y*y}, Vec3{2 * x, 0, x*x - .5}
+		if l.End.sub(real).norm() > 1e-12 || l.Back.sub(virtual).norm() > 1e-12 || !l.Virtual {
+			t.Fatalf("ray (%d, %d): end %+v, back %+v", l.I, l.J, l.End, l.Back)
+		}
+	}
+	// On a torus under tilted light, rays converge, diverge, or both. ℓ caps
+	// either part, and a ray whose real point lies beyond ℓ still runs ℓ.
+	// (The bowl above covers rays that only converge.)
+	torus := mirror("torus", 2, .8, 0, 0, 2*math.Pi, .05, math.Pi-.05, 36, 24, parallel(25, -60))
+	torus.Rays.Stop, torus.Surface.Curves = true, 13
+	_, scale, _ := torus.Surface.positions()
+	cases := map[string]int{}
+	for _, length := range []float64{.3, 1, 3} {
+		torus.Rays.Length = length
+		for _, l := range rayed(t, torus).Lines {
+			u, v := grid(torus.Surface, l.I, l.J)
+			p := torus.Surface.ray(torus.Rays, u, v, scale)
+			real, virtual := math.Inf(1), math.Inf(1)
+			for k := range p.Mu {
+				if p.finite(k, focalReach*scale) {
+					if p.Mu[k] > 0 {
+						real = math.Min(real, 1/p.Mu[k])
+					} else {
+						virtual = math.Min(virtual, -1/p.Mu[k])
+					}
+				}
+			}
+			ahead, behind := math.Min(length, real), math.Min(length, virtual)
+			switch {
+			case math.IsInf(virtual, 1):
+				behind = 0
+				cases["converging"]++
+			case math.IsInf(real, 1):
+				ahead = behind
+				cases["diverging"]++
+			case real > length && virtual < length:
+				cases["real beyond ℓ"]++
+			}
+			if math.Abs(l.End.sub(l.Point).norm()-ahead) > 1e-9*ahead || math.Abs(l.Back.sub(l.Point).norm()-behind) > 1e-9*behind {
+				t.Fatalf("ℓ %v, ray (%d, %d): runs %v and %v back, want %v and %v (μ %v)", length, l.I, l.J, l.End.sub(l.Point).norm(), l.Back.sub(l.Point).norm(), ahead, behind, p.Mu)
+			}
+		}
+	}
+	if cases["diverging"] == 0 || cases["real beyond ℓ"] == 0 {
+		t.Fatalf("cases %v", cases)
+	}
+	// A plane mirror's point source: every ray extends back to the source's
+	// image, and runs as far.
+	s := Vec3{.2, -.1, 1.5}
+	lit := lamp(s)
+	lit.Length, lit.Stop = 10, true
+	for _, l := range rayed(t, mirror("paraboloid", 0, 0, 0, -1, 1, -1, 1, 24, 24, lit)).Lines {
+		image := Vec3{s.X, s.Y, -s.Z}
+		if l.Back.sub(image).norm() > 1e-12 || math.Abs(l.End.sub(l.Point).norm()-image.sub(l.Point).norm()) > 1e-12 {
+			t.Fatalf("ray (%d, %d): end %+v, back %+v", l.I, l.J, l.End, l.Back)
+		}
+	}
+	// Parallel light on the plane has its caustic at infinity: the rays
+	// run ℓ, with no extension.
+	for _, l := range rayed(t, mirror("paraboloid", 0, 0, 0, -1, 1, -1, 1, 24, 24, light)).Lines {
+		if l.Back != l.Point || math.Abs(l.End.sub(l.Point).norm()-10) > 1e-12 {
+			t.Fatalf("ray (%d, %d): end %+v, back %+v", l.I, l.J, l.End, l.Back)
+		}
+	}
+	// Refraction stops at the transmitted rays' caustic, and totally
+	// reflected light runs ℓ.
+	glass := mirror("ellipsoid", R, R, R, 0, 2*math.Pi, -math.Pi/2, -.05, 36, 24, light)
+	glass.Surface.Reverse, glass.Surface.Curves = true, 7
+	glass.Rays.Interaction, glass.Rays.N1, glass.Rays.N2 = "refract", 1.5, 1
+	r = rayed(t, glass)
+	totals := 0
+	for _, l := range r.Lines {
+		d := l.End.sub(l.Point).norm()
+		if l.Total {
+			totals++
+			if math.Abs(d-10) > 1e-12 {
+				t.Fatalf("totally reflected ray (%d, %d) runs %v", l.I, l.J, d)
+			}
+			continue
+		}
+		u, v := grid(glass.Surface, l.I, l.J)
+		_, scale, _ := glass.Surface.positions()
+		p := glass.Surface.ray(glass.Rays, u, v, scale)
+		first := 10.0
+		for k := range p.Mu {
+			if p.Mu[k] > 0 && p.finite(k, focalReach*scale) {
+				first = math.Min(first, 1/p.Mu[k])
+			}
+		}
+		if math.Abs(d-first) > 1e-9 {
+			t.Fatalf("transmitted ray (%d, %d) runs %v, want %v", l.I, l.J, d, first)
+		}
+	}
+	if totals == 0 {
+		t.Fatal("no totally reflected rays")
 	}
 }

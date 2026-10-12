@@ -55,6 +55,7 @@ const planar = (i = 0): PlanarStudy => ({
   config: structuredClone(presets[i].config),
   bounds: { min: String(presets[i].config.curve.min), max: "2*pi" },
   length: 0.8,
+  stop: !!presets[i].stop,
   poleKind: "pedal",
   layers: {
     base: true,
@@ -543,6 +544,7 @@ test("every invalid field is refused by name", async () => {
     ["camera.zoom", (s) => (s.camera.zoom = 50)],
     ["camera.zoom", (s) => (s.camera.zoom = 0)],
     ["length", (s) => (s.length = 9)],
+    ["stop", (s) => (s.stop = "yes"), /true or false/],
     ["poleKind", (s) => (s.poleKind = "evolute")],
     ["layers.axes", (s) => (s.layers.axes = "yes")],
     ["animation.duration", (s) => (s.animation.duration = 0)],
@@ -580,6 +582,7 @@ test("3D and 4D fields are refused by name", async () => {
     ["config.pole.w", (s) => (s.config.pole.w = 0)],
     ["config.surface.kind", (s) => (s.config.surface.kind = "klein")],
     ["config.implicit.refine", (s) => (s.config.implicit.refine = "2")],
+    ["config.rays.stop", (s) => (s.config.rays.stop = 1)],
     ["view.pitch", (s) => (s.view.pitch = 2)],
     ["view.zoom", (s) => (s.view.zoom = 9)],
     ["probe.position", (s) => (s.probe.position = 1.5)],
@@ -659,6 +662,18 @@ test("fields a link predates take the notebook's defaults", async () => {
   });
   // Optional fields stay absent rather than being invented.
   assert.equal("coordinates" in read.config.source, false);
+  // Rays drawn before they could stop at the caustic run their full length.
+  const caustic = planar(presets.findIndex((p) => p.stop)) as any;
+  assert.equal(caustic.stop, true);
+  assert.equal(planarStudy(caustic).stop, true);
+  delete caustic.stop;
+  assert.equal(planarStudy(caustic).stop, false);
+  const coma = spatial(
+    spatialPresets.findIndex((p) => p.config.rays.stop),
+  ) as any;
+  assert.equal(spatialStudy(coma).config.rays.stop, true);
+  delete coma.config.rays.stop;
+  assert.equal("stop" in spatialStudy(coma).config.rays, false);
 
   // A 4D object's own parameters come from that object's defaults.
   const lift = tesseractPresets.findIndex((p) => p.config.object === "lift");

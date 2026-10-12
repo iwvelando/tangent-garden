@@ -106,6 +106,7 @@ type Session = {
   repeat: Repeat;
   pace: Pace;
   length: number;
+  stop: boolean;
   // Where the timeline stands (timing.ts), from which the progress follows.
   progress: number;
   // The probe while it is on, which every animation draws, and how it
@@ -132,6 +133,8 @@ type Props = {
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
   length: number;
+  // Whether rays stop at their caustic points.
+  stopAtCaustic: boolean;
   revision: string;
   disabled: boolean;
   dark: boolean;
@@ -156,6 +159,7 @@ export function AnimationPanel({
   frame,
   client,
   length,
+  stopAtCaustic,
   revision,
   disabled,
   dark,
@@ -492,6 +496,7 @@ export function AnimationPanel({
       camera: s.camera,
       heldView: s.heldView,
       length: s.mode === "parameters" ? values.length : s.length,
+      stop: s.stop,
       progress: p,
       mode: s.mode,
       complete: p === 1,
@@ -742,6 +747,7 @@ export function AnimationPanel({
               frame.config,
               viewRect(heldView ?? fitted),
               fitted.span * length,
+              stopAtCaustic,
             )
           : undefined;
       const s: Session = {
@@ -757,6 +763,7 @@ export function AnimationPanel({
         repeat,
         pace,
         length,
+        stop: stopAtCaustic,
         progress: 0,
         probe: drawsProbe ? probe! : undefined,
         motion: probeMotion,

@@ -2737,6 +2737,11 @@ const spatialRays = (surface, rays, flags = {}) =>
   plane.caustics[1].points.flat().forEach((p) => {
     assert.ok(Math.hypot(p.x - 0.2, p.y + 0.1, p.z + 1.5) < 1e-12);
   });
+  // Stopped at the caustic, each ray ends at the focus, with no extension.
+  spatialRays({}, { stop: true, length: 3 }).rays.lines.forEach((l) => {
+    assert.ok(Math.hypot(l.end.x, l.end.y, l.end.z - 1) < 1e-12);
+    assert.deepEqual(l.back, l.point);
+  });
   // Behind the mirror, nothing is lit.
   assert.equal(spatialRays({ reverse: true }, {}).rays.unlit, 25 * 25);
   assert.match(

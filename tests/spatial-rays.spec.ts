@@ -469,3 +469,25 @@ test("mirror tracks move the shape, light, chart and grid only", () => {
   expect(end.curve).toEqual(base.curve);
   expect(base.rays).toEqual(spatialPresets[+coma].config.rays);
 });
+
+test("rays stop at the caustic where the study asks", async ({ page }) => {
+  await ready(page);
+  const stop = page.getByRole("checkbox", { name: "Stop rays at the caustic" });
+  // The coma opens with its rays stopped; the dish draws them full length.
+  await choosePreset(page, coma);
+  await settled(page);
+  await expect(stop).toBeChecked();
+  expect((await config(page)).rays.stop).toBe(true);
+  const stopped = await pixels(page);
+  await stop.uncheck();
+  await settled(page);
+  expect("stop" in (await config(page)).rays).toBe(false);
+  expect(await pixels(page)).not.toBe(stopped);
+  await stop.check();
+  await settled(page);
+  expect((await config(page)).rays.stop).toBe(true);
+  await choosePreset(page, dish);
+  await settled(page);
+  await expect(stop).not.toBeChecked();
+  expect("stop" in (await config(page)).rays).toBe(false);
+});

@@ -12,6 +12,7 @@ import {
 import type { AnimationView, Viewport } from "./animation";
 import type { PlotCamera } from "./planar-link";
 import { densityImage } from "./attractor";
+import { reach } from "./raytrace";
 import { plotPalette } from "./palette";
 import { createGesture } from "./gestures";
 import { useDrawingTouch } from "./MobileNotebookNav";
@@ -30,6 +31,8 @@ type Props = {
   layers: Layers;
   dark: boolean;
   length: number;
+  // Whether optical rays stop at their caustic points (raytrace.ts reach).
+  stop?: boolean;
   reset: number;
   // Fit view after an animation completes: reframes only its exploration.
   refit?: number;
@@ -148,6 +151,7 @@ export function Plot({
   layers,
   dark,
   length,
+  stop = false,
   reset,
   refit = 0,
   animation,
@@ -610,13 +614,14 @@ export function Plot({
       {grid}
       {result.rays.map((ray, i) => {
         const distance = (finalFrame?.span ?? frame.span) * length;
+        const { ahead, behind } = reach(ray, distance, stop);
         const end = {
-          x: ray.origin.x + ray.direction.x * distance,
-          y: ray.origin.y + ray.direction.y * distance,
+          x: ray.origin.x + ray.direction.x * ahead,
+          y: ray.origin.y + ray.direction.y * ahead,
         };
         const back = {
-          x: ray.origin.x - ray.direction.x * distance,
-          y: ray.origin.y - ray.direction.y * distance,
+          x: ray.origin.x - ray.direction.x * behind,
+          y: ray.origin.y - ray.direction.y * behind,
         };
         const incoming =
           config.source.kind === "point"
@@ -706,6 +711,7 @@ export function Plot({
             {optical &&
               layers.lines &&
               layers.virtual &&
+              behind > 0 &&
               (!traced || traced.back) &&
               line(ray.origin, traced?.back ?? back, palette.line, 0.23, true)}
           </g>
