@@ -426,10 +426,10 @@ func TestRefineScanStopsWithTheBudget(t *testing.T) {
 
 // On a line with nothing to find, refinement evaluates the curve only at
 // each interval's three probes and at most Scan more, spent on whole levels
-// of the scan: the finest step at 4 intervals, 1/64 of a step at 64, 1/8 at
-// 1024, none at 1025.
+// of the scan: the finest step at 4 intervals, 1/64 of a step at up to 68,
+// 1/32 at up to 146, 1/16 at up to 341, 1/8 at up to 1024, none at 1025.
 func TestRefineScanIsBounded(t *testing.T) {
-	for _, c := range []struct{ n, scanned int }{{4, 4 * (1024 - 4)}, {64, 64 * (64 - 4)}, {1024, 1024 * 4}, {1025, 0}} {
+	for _, c := range []struct{ n, scanned int }{{4, 4 * (1024 - 4)}, {64, 64 * (64 - 4)}, {68, 68 * (64 - 4)}, {69, 69 * (32 - 4)}, {146, 146 * (32 - 4)}, {147, 147 * (16 - 4)}, {341, 341 * (16 - 4)}, {342, 342 * 4}, {1024, 1024 * 4}, {1025, 0}} {
 		ps, breaks, at := line(c.n, func(float64) (float64, bool) { return 0, true })
 		calls := 0
 		counted := func(t float64) *pair { calls++; return at(t) }
