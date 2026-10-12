@@ -20,6 +20,8 @@ import {
   defaultSight,
   faintOpacity,
   isPlain,
+  seeSampling,
+  seeSamples,
   sheetOffset,
   strokeJoins,
   strokeWidth,
@@ -456,7 +458,8 @@ void main() {
 const fragmentSource = fragmentBody,
   strokeFragmentSource = "#define STROKE\n" + fragmentBody;
 // See-through sheets: every layer's shaded color and a count were summed at
-// each pixel, so the mean color covers the background by 1 − (1 − α)ⁿ.
+// each sample, so the mean color covers the background by 1 − (1 − α)ⁿ.
+// A pixel is the mean of its samples, samples × samples texels (1 or 2).
 const coverVertex = `
 attribute vec2 corner;
 void main() { gl_Position = vec4(corner, 0.0, 1.0); }`;
@@ -466,14 +469,18 @@ uniform sampler2D layers;
 uniform vec2 size;
 uniform vec3 background;
 uniform float alpha;
+uniform float samples;
 void main() {
-  vec4 sum = texture2D(layers, gl_FragCoord.xy / size);
-  if (sum.a < 0.5) {
-    gl_FragColor = vec4(background,1.0);
-    return;
-  }
-  float cover = 1.0 - pow(1.0 - alpha, sum.a);
-  gl_FragColor = vec4(mix(background, sum.rgb / sum.a, cover),1.0);
+  vec2 first = floor(gl_FragCoord.xy) * samples;
+  vec3 total = vec3(0.0);
+  for (int i = 0; i < ${seeSamples}; i++)
+    for (int j = 0; j < ${seeSamples}; j++) {
+      if (float(i) >= samples || float(j) >= samples) continue;
+      vec4 sum = texture2D(layers, (first + vec2(i, j) + 0.5) / (size * samples));
+      if (sum.a < 0.5) total += background;
+      else total += mix(background, sum.rgb / sum.a, 1.0 - pow(1.0 - alpha, sum.a));
+    }
+  gl_FragColor = vec4(total / (samples * samples),1.0);
 }`;
 
 // Rendering only: all curve samples, analytic normals and mesh topology come
@@ -601,7 +608,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   const largest = () => pageLimits(gl).side;
   // See-through sheets, made when first drawn: their program, a triangle
   // covering the page, and a half-float (or float) target summing layers.
-  // Null when the device cannot render to one.
+  // Null when the device cannot render to one. With samples the target is
+  // four times the page, up to 128 MB in half floats (see seeSampling).
   let see:
     | {
         program: WebGLProgram;
@@ -670,7 +678,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       width: 1,
       height: 1,
       uniforms: Object.fromEntries(
-        ["layers", "size", "background", "alpha"].map((n) => [
+        ["layers", "size", "background", "alpha", "samples"].map((n) => [
           n,
           gl!.getUniformLocation(cover, n),
         ]),
@@ -1092,8 +1100,14 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         );
     }
     if (target) {
-      gather(target, sheets, width, height, render);
-      cover(target, width, height, background, sight.opacity);
+      const limits = pageLimits(gl!),
+        samples = seeSampling(
+          { width, height },
+          sampled,
+          Math.min(limits.side, limits.texture),
+        );
+      gather(target, sheets, width, height, samples, render);
+      cover(target, width, height, samples, background, sight.opacity);
       gl!.useProgram((using = program));
       gl!.colorMask(false, false, false, false);
       sheets.forEach(sheet);
@@ -1113,14 +1127,18 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     inOrder(lines).forEach((draw) => draw());
   }
   // Every sheet layer's shaded color and a count of one, summed at each
-  // pixel of the target without depth testing, so no order matters.
+  // sample of the target without depth testing, so no order matters. The
+  // target has samples × samples texels a pixel.
   function gather(
     t: NonNullable<typeof see>,
     sheets: (Uploaded & { cut: boolean })[],
-    width: number,
-    height: number,
+    page: number,
+    tall: number,
+    samples: number,
     render: (v: Uploaded & { cut: boolean }, how: { gather?: boolean }) => void,
   ) {
+    const width = page * samples,
+      height = tall * samples;
     gl!.bindTexture(gl!.TEXTURE_2D, t.texture);
     if (t.width !== width || t.height !== height) {
       gl!.texImage2D(
@@ -1145,6 +1163,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       t.texture,
       0,
     );
+    gl!.viewport(0, 0, width, height);
     gl!.clearColor(0, 0, 0, 0);
     gl!.clear(gl!.COLOR_BUFFER_BIT);
     gl!.disable(gl!.DEPTH_TEST);
@@ -1153,6 +1172,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     sheets.forEach((v) => render(v, { gather: true }));
     gl!.disable(gl!.BLEND);
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+    gl!.viewport(0, 0, page, tall);
     gl!.enable(gl!.DEPTH_TEST);
   }
   // The gathered layers over the background, across the whole page.
@@ -1160,6 +1180,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     t: NonNullable<typeof see>,
     width: number,
     height: number,
+    samples: number,
     background: readonly number[],
     alpha: number,
   ) {
@@ -1176,6 +1197,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       background[2],
     );
     gl!.uniform1f(t.uniforms.alpha, alpha);
+    gl!.uniform1f(t.uniforms.samples, samples);
     gl!.bindBuffer(gl!.ARRAY_BUFFER, t.corner);
     for (let i = 1; i < 8; i++) gl!.disableVertexAttribArray(i);
     gl!.enableVertexAttribArray(0);
