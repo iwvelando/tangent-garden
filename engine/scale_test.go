@@ -337,17 +337,34 @@ func (c *copies) polyline(name string, want, got []*Vec, limit float64) {
 			image[i] = &q
 		}
 	}
+	// The nearest segment from lo to hi, and its index.
+	nearest := func(p Vec, lo, hi int) (float64, int) {
+		best, at := math.Inf(1), -1
+		for j := max(lo, 0); j+1 < min(hi, len(image)); j++ {
+			if image[j] != nil && image[j+1] != nil {
+				if d := plane.Distance(p, *image[j], *image[j+1]); d < best {
+					best, at = d, j
+				}
+			}
+		}
+		return best, at
+	}
+	// Both paths run in order, so each point is looked for first beside
+	// the previous one's segment, and among all segments only where it is
+	// not within limit there.
+	last := 0
 	for i, p := range got {
 		if p == nil {
 			continue
 		}
-		best := math.Inf(1)
-		for j := 0; j+1 < len(image); j++ {
-			if image[j] != nil && image[j+1] != nil {
-				best = math.Min(best, plane.Distance(*p, *image[j], *image[j+1]))
-			}
-		}
 		scale := c.size + p.Sub(c.center).Norm()
+		best, at := nearest(*p, last-64, last+66)
+		if best > limit*scale {
+			best, at = nearest(*p, 0, len(image))
+		}
+		if at >= 0 {
+			last = at
+		}
 		if best > limit*scale {
 			c.t.Errorf("%s point %d, %v, is %.2e of %.3g from the original's image, want within %.1e", name, i, *p, best/scale, scale, limit)
 		}
