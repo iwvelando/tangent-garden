@@ -128,26 +128,42 @@ func (e evaluation) units(lo, hi float64, fallback units) units {
 	return sized(extent(func(t float64) Vec3 { r, _, _, _ := e(t); return r }, lo, hi), hi-lo, fallback)
 }
 
-// extent is a curve's size: the diagonal of the box around its points at
-// 65 evenly spaced parameters on [lo, hi], unchanged by a translation and
-// scaled with the curve. It is 0 for a curve with no size of its own: one
+// extent is a curve's size: twice the robustly fitted radius of its points at
+// 65 evenly spaced parameters and 64 staggered probes on [lo, hi], unchanged
+// by a translation and scaled with the curve. The second set avoids treating
+// a regular curve that aliases the uniform grid as a stationary point.
+// It is 0 for a curve with no size of its own: one
 // whose points there are apart by no more than rounding, or are fewer
 // than two.
 func extent(f func(float64) Vec3, lo, hi float64) float64 {
 	low := Vec3{math.Inf(1), math.Inf(1), math.Inf(1)}
 	high := low.mul(-1)
-	for k := 0; k <= 64; k++ {
-		if p := f(lo + (hi-lo)*float64(k)/64); p.valid() {
+	points := make([]*Vec3, 0, 129)
+	include := func(t float64) {
+		if p := f(t); p.valid() {
+			points = append(points, &p)
 			low = Vec3{math.Min(low.X, p.X), math.Min(low.Y, p.Y), math.Min(low.Z, p.Z)}
 			high = Vec3{math.Max(high.X, p.X), math.Max(high.Y, p.Y), math.Max(high.Z, p.Z)}
 		}
+	}
+	for k := 0; k <= 64; k++ {
+		include(lo + (hi-lo)*float64(k)/64)
+	}
+	// Irrationally staggered parameters do not share the uniform grid's
+	// period. This remains a bounded estimate, not a feature certificate.
+	const goldenFraction = 0.6180339887498949
+	for k := 1; k <= 64; k++ {
+		include(lo + (hi-lo)*math.Mod(float64(k)*goldenFraction, 1))
 	}
 	size := high.sub(low).norm()
 	magnitude := math.Max(low.norm(), high.norm())
 	if !finite(size) || size <= 1e-12*magnitude {
 		return 0
 	}
-	return size
+	// A rounded value at a pole can enter the coordinate guard after
+	// scaling, without belonging to a regular branch. The same robust fit
+	// used for framing prevents it from setting every branch's floors.
+	return 2 * fit(points).Radius
 }
 
 // sampled differentiates expressions numerically on [lo, hi] (which may be

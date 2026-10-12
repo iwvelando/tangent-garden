@@ -792,6 +792,37 @@ func vertices(r *ImplicitResult) (mesh, sections, polygons []Vec3) {
 	return mesh, sections, polygons
 }
 
+// captureTie accepts a different reported pair only when both pairs are
+// adjacent and at the capture distance in both returned final states.
+// A symmetric chase can capture several pairs at once; translating it
+// changes which rounded gap is smallest. The 10⁻⁶ relative gap budget is
+// separate from the much looser trajectory-position budget.
+func captureTie(want, got *PursuitResult, eps, scale float64) bool {
+	if want == nil || got == nil || want.Capture == nil || got.Capture == nil || len(want.Final) != len(got.Final) {
+		return false
+	}
+	n := len(want.Final)
+	for _, pair := range [][2]int{
+		{want.Capture.Pursuer, want.Capture.Target},
+		{got.Capture.Pursuer, got.Capture.Target},
+	} {
+		i, j := pair[0], pair[1]
+		if i < 0 || i >= n || j != (i+1)%n {
+			return false
+		}
+		for _, state := range []struct {
+			points []Vec3
+			scale  float64
+		}{{want.Final, 1}, {got.Final, scale}} {
+			gap := state.points[j].sub(state.points[i]).norm() / state.scale
+			if !finite(gap) || math.Abs(gap-eps) > 1e-6*eps {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // compare computes q and its copy under m with every diagnostic and
 // compares their results under the copy's budget.
 func compare(t *testing.T, q Request, m similarity) (*deviation, budget, bool) {
@@ -819,6 +850,12 @@ func compare(t *testing.T, q Request, m similarity) (*deviation, budget, bool) {
 		t.Fatalf("copy: %v", err)
 	}
 	b := budgetFor(ref, m)
+	if m.shift != (Vec3{}) && captureTie(want.Pursuit, got.Pursuit, ref.Pursuit.Capture, m.scale) {
+		tolerated := b.tolerated
+		b.tolerated = func(path string) bool {
+			return tolerated(path) || path == "pursuit.capture.pursuer" || path == "pursuit.capture.target"
+		}
+	}
 	d := &deviation{worst: map[string]float64{}, where: map[string]string{}, unknown: map[string]bool{}}
 	comparison{m: m, q: ref, b: b, radius: want.Bounds.Radius, d: d}.walk("", reflect.ValueOf(want), reflect.ValueOf(got))
 	if want.Implicit != nil && b.skipped("implicit.positions") {
@@ -891,7 +928,9 @@ func TestSimilarPresets(t *testing.T) {
 	for _, m := range similarities {
 		for _, name := range names {
 			t.Run(m.name+"/"+name, func(t *testing.T) {
-				t.Parallel()
+				// Each case repeatedly exercises the same evaluation paths.
+				// Running them together makes atomic coverage counters contend
+				// severely under -race -cover, exceeding the CI time budget.
 				if chaotic[name] && m.shift != (Vec3{}) {
 					t.Skip("chaotic: a far copy's trajectories separate from the original's")
 				}
