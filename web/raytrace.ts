@@ -125,17 +125,48 @@ export function traceTimeline(
   };
 }
 
+// The optical path at progress p of a timeline.
+export const tauAt = (timeline: Timeline, p: number) =>
+  p >= 1 ? Infinity : Math.max(0, p) * timeline.total;
+
+// When the light reaches the caustic at a position in sample steps: at a
+// sample, its own arrival; between samples, once both neighbors' light has
+// arrived, at the arrival interpolated between them. Infinity when either
+// has none.
+export function arrivalAt(timeline: Timeline, step: number) {
+  const i = Math.floor(step),
+    f = step - i,
+    a = timeline.arrival[i],
+    b = timeline.arrival[Math.min(i + 1, timeline.arrival.length - 1)];
+  if (f === 0) return a;
+  return Number.isFinite(a) && Number.isFinite(b) ? a + (b - a) * f : Infinity;
+}
+
 // The study at progress p of its timeline: each caustic sample appears once
-// its ray reaches it, and is never joined across one that has not. Each
-// representative ray carries the part of its path travelled so far. p = 1
-// is the complete study, with every ray at its full length.
+// its ray reaches it, and is never joined across one that has not. A caustic
+// refined between samples is traced the same way, each inserted point at
+// its interpolated arrival. Each representative ray carries the part of its
+// path travelled so far. p = 1 is the complete study, with every ray at its
+// full length.
 export function trace(result: Result, timeline: Timeline, p: number): Result {
-  const tau = p >= 1 ? Infinity : Math.max(0, p) * timeline.total;
+  const tau = tauAt(timeline, p);
+  const refined = result.adaptive?.derived;
   return {
     ...result,
     derived: result.derived.map((q, j) =>
       timeline.arrival[j] <= tau ? q : null,
     ),
+    ...(refined && {
+      adaptive: {
+        ...result.adaptive,
+        derived: {
+          ...refined,
+          points: refined.points.map((q, i) =>
+            arrivalAt(timeline, refined.at[i]) <= tau ? q : null,
+          ),
+        },
+      },
+    }),
     rays: result.rays.map((ray) => {
       const j = ray.sampleIndex,
         from = timeline.start[j],

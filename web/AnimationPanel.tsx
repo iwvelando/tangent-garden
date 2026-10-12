@@ -53,7 +53,13 @@ import {
 } from "./animation";
 import { studyName, type Config, type Frame, type ProbeQuery } from "./types";
 import { fitFrame, viewRect, type Layers } from "./Plot";
-import { trace, traceTimeline, type Timeline } from "./raytrace";
+import {
+  arrivalAt,
+  tauAt,
+  trace,
+  traceTimeline,
+  type Timeline,
+} from "./raytrace";
 import {
   defaultScale,
   exportEncoding,
@@ -551,15 +557,8 @@ export function AnimationPanel({
     return at;
   }
   function arrived(timeline: Timeline, step: number, p: number) {
-    const tau = p >= 1 ? Infinity : Math.max(0, p) * timeline.total;
-    const i = Math.floor(step),
-      f = step - i,
-      a = timeline.arrival[i],
-      b = timeline.arrival[Math.min(i + 1, timeline.arrival.length - 1)];
-    const arrival = f === 0 ? a : a + (b - a) * f;
-    return (
-      Number.isFinite(a) && (f === 0 || Number.isFinite(b)) && arrival <= tau
-    );
+    const arrival = arrivalAt(timeline, step);
+    return Number.isFinite(arrival) && arrival <= tauAt(timeline, p);
   }
   function display(s: Session, view: AnimationView) {
     s.progress = view.time ?? view.progress;
