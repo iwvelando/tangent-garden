@@ -5,7 +5,17 @@ await import("../public/wasm_exec.js");
 // The page's own code to put a result's lifted arrays back.
 const vite = await createServer({ logLevel: "silent", server: { ws: false } });
 const { restore } = await vite.ssrLoadModule("/web/lifted.ts");
+const { presets } = await vite.ssrLoadModule("/web/presets.ts");
 await vite.close();
+// The Go engine's scale and translation tests read a copy of the presets'
+// configurations (engine/scale_test.go has the command that regenerates it).
+assert.deepEqual(
+  JSON.parse(readFileSync("engine/testdata/presets.json", "utf8")),
+  JSON.parse(
+    JSON.stringify(presets.map(({ title, config }) => ({ title, config }))),
+  ),
+  "engine/testdata/presets.json is out of date: regenerate it",
+);
 // A result's large numeric arrays arrive as a Float64Array beside its JSON,
 // with the places they go back as JSON (cmd/wasm/lift); a refusal is JSON
 // alone.
