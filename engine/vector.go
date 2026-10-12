@@ -23,3 +23,15 @@ func point(a Vec) *Vec {
 	}
 	return &a
 }
+
+// binade is the largest power of two at or below x, and 1 for an x that is
+// not positive and finite. A tolerance of a fraction of x plus its binade is
+// relative to x, and rounds exactly as one with 1 in place of the binade
+// wherever x lies from 1 to 2.
+func binade(x float64) float64 {
+	if !(x > 0) || math.IsInf(x, 0) {
+		return 1
+	}
+	_, e := math.Frexp(x)
+	return math.Ldexp(1, max(-1000, min(1000, e-1)))
+}

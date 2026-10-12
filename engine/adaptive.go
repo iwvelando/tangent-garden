@@ -70,6 +70,70 @@ var plane = refine.Metric[Vec]{
 	Length: func(a, b Vec) float64 { return b.Sub(a).Norm() },
 }
 
+// studyRadius is refine.Radius of points, measured in a power of two near
+// their interquartile spread, so that the floors refine.Radius applies, a
+// radius of 10⁻⁴ and a spread of 10⁻¹², are relative to the curve's own
+// size and a tiny study is not judged against a larger one. Scaling by a
+// power of two is exact, so the radius is unchanged wherever the floors do
+// not apply.
+func studyRadius(points []*Vec) float64 {
+	unit := spreadUnit(points)
+	scaled := make([]*Vec, len(points))
+	for i, p := range points {
+		if p != nil {
+			q := p.Mul(1 / unit)
+			scaled[i] = &q
+		}
+	}
+	return unit * refine.Radius(scaled, func(p Vec) []float64 { return []float64{p.X, p.Y} })
+}
+
+// spreadUnit is the power of two at or below the larger interquartile
+// range of points' coordinates, taken as refine.Radius takes its quartiles,
+// or of their full range where that is zero, or of their largest
+// quartile where the spread is only rounding, and 1 for points all at the
+// origin.
+func spreadUnit(points []*Vec) float64 {
+	var xs, ys []float64
+	for _, p := range points {
+		if p != nil {
+			xs, ys = append(xs, p.X), append(ys, p.Y)
+		}
+	}
+	spread := func(full bool) float64 {
+		out := 0.0
+		for _, vs := range [][]float64{xs, ys} {
+			lo, hi := vs[0], vs[len(vs)-1]
+			if !full {
+				lo, hi = vs[len(vs)/4], vs[3*len(vs)/4]
+			}
+			out = math.Max(out, hi-lo)
+		}
+		return out
+	}
+	if len(xs) == 0 {
+		return 1
+	}
+	sort.Float64s(xs)
+	sort.Float64s(ys)
+	s := spread(false)
+	if s == 0 {
+		s = spread(true)
+	}
+	// A spread within 2⁻⁴⁰ of the points' quartiles' magnitude is rounding,
+	// as where a curve collapses to a point: such points are measured in
+	// that magnitude, which is as small as the study is, and which an
+	// asymptote's outliers do not reach.
+	magnitude := 0.0
+	for _, vs := range [][]float64{xs, ys} {
+		magnitude = math.Max(magnitude, math.Max(math.Abs(vs[len(vs)/4]), math.Abs(vs[3*len(vs)/4])))
+	}
+	if s <= 0x1p-40*magnitude {
+		s = magnitude
+	}
+	return binade(s)
+}
+
 // refinePath refines points, broken after each interval in broken, with the
 // curve evaluated by at (see refine.Refine), at refine.Epsilon of the
 // path's own robust radius. It returns the intervals refinement broke.
@@ -78,7 +142,7 @@ func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, h
 	for i := range broken {
 		breaks[i+1] = true
 	}
-	tolerance := refine.Epsilon * refine.Radius(points, func(p Vec) []float64 { return []float64{p.X, p.Y} })
+	tolerance := refine.Epsilon * studyRadius(points)
 	path, found := refine.Refine(points, breaks, at, plane, lo, hi, tolerance, refine.Budget)
 	return &RefinedPath{
 		Points:     path.Points,
@@ -357,8 +421,8 @@ func (c *caustic) point(t float64, p, d Vec) (*Vec, bool) {
 		return nil, false
 	}
 	rays := baseStencil(c.q.Curve.Min, c.q.Curve.Max)
-	turn, _ := rays.derivatives(c.direction, t)
-	if c.q.Kind == "diacaustic" && !rays.stableTangent(c.direction, t, turn) {
+	turn, bend := rays.derivatives(c.direction, t)
+	if c.q.Kind == "diacaustic" && !rays.stableTangent(c.direction, t, turn, bend) {
 		return nil, false
 	}
 	target, s := Envelope(p, d, dir, turn)

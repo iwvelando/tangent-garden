@@ -1,9 +1,6 @@
 package engine
 
-import (
-	"math"
-	"tangentgarden/engine/refine"
-)
+import "math"
 
 // Diagnostics describes the base curve at every sample for the probe,
 // indexed like Base; sample i is at t = Min + (Max − Min)·i/(n − 1). With r′
@@ -49,7 +46,7 @@ func diagnose(f curveFunc, base []*Vec, lo, hi float64) *Diagnostics {
 	step := (hi - lo) / float64(n-1)
 	d := &Diagnostics{Min: lo, Max: hi, Curvature: make([]*float64, n), Tangent: make([]*Vec, n),
 		Normal: make([]*Vec, n), Center: make([]*Vec, n), Length: make([]*float64, n),
-		radius: refine.Radius(base, func(p Vec) []float64 { return []float64{p.X, p.Y} })}
+		radius: studyRadius(base)}
 	speed := func(t float64) float64 {
 		v, _ := derivatives(f, t, lo, hi)
 		return v.Norm()
@@ -99,7 +96,12 @@ type described struct {
 //go:noinline
 func describe(f curveFunc, t float64, p, v, a Vec, lo, hi, radius float64) described {
 	var e described
-	if !(v.Norm() >= 1e-9) || !v.Valid() {
+	// No tangent where the speed is below 10⁻⁹ of the point's distance
+	// from the origin, which bounds the speed's rounding, plus the study
+	// radius (both per unit of the parameter), at any scale. Unlike the
+	// evolute's guard, this one leaves out r″, whose stencil value beside a
+	// pole would hide a tangent the probe can still show.
+	if !(v.Norm() >= 1e-9*(p.Norm()+radius)) || !v.Valid() {
 		return e
 	}
 	tangent := v.Unit()

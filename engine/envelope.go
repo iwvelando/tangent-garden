@@ -63,9 +63,11 @@ func newLines(l EnvelopeFamily, base curveFunc, a, lo, hi float64) (*lines, erro
 	return out, nil
 }
 
-// coincide reports endpoints too close for the chord to have a direction.
+// coincide reports endpoints too close for the chord to have a direction:
+// within 10⁻⁹ of their own magnitudes, far above the rounding of their
+// difference, at any scale.
 func coincide(p, q Vec) bool {
-	return q.Sub(p).Norm() <= 1e-9*(1+p.Norm()+q.Norm())
+	return q.Sub(p).Norm() <= 1e-9*(p.Norm()+q.Norm())
 }
 
 // familyLine is one member of the family, with the envelope's point on it.
@@ -113,8 +115,8 @@ func (l *lines) at(t float64, p, dp Vec) familyLine {
 		}
 		return v
 	}
-	du, _ := derivatives(aligned, t, l.lo, l.hi)
-	if !stableTangent(aligned, t, l.lo, l.hi, du) {
+	du, ddu := derivatives(aligned, t, l.lo, l.hi)
+	if !stableTangent(aligned, t, l.lo, l.hi, du, ddu) {
 		return out
 	}
 	target, s := Envelope(p, dp, u, du)
@@ -173,8 +175,8 @@ func (g *rings) at(t float64, c, dc Vec) ring {
 		out.stationary = true
 		return out
 	}
-	dR, _ := derivatives(g.radius, t, g.lo, g.hi)
-	if !stableTangent(g.radius, t, g.lo, g.hi, dR) {
+	dR, ddR := derivatives(g.radius, t, g.lo, g.hi)
+	if !stableTangent(g.radius, t, g.lo, g.hi, dR, ddR) {
 		return out
 	}
 	k := dR.X / v
