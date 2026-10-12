@@ -18,6 +18,9 @@ func powerSamples(r *rand.Rand, count int) []float64 {
 			xs = append(xs, v, -v, math.Nextafter(v, 0), math.Nextafter(v, math.Inf(1)), -math.Nextafter(v, 0))
 		}
 	}
+	// Squares whose subnormal value x·x rounds differently from Pow, which
+	// rounds twice: no fast path may take them.
+	xs = append(xs, 6577514978167502*0x1p-564, 7987643323449218*0x1p-564, -7717358175910722*0x1p-564)
 	for range count {
 		xs = append(xs, math.Float64frombits(r.Uint64()))
 		// Ordinary magnitudes, where studies live.
@@ -34,9 +37,9 @@ func TestIntegerPowerMatchesPow(t *testing.T) {
 	r := rand.New(rand.NewPCG(1, 2))
 	xs := powerSamples(r, 20000)
 	for n := 2; n <= 64; n++ {
-		p := integerPower(n)
+		limit := powerLimit(n)
 		for _, x := range xs {
-			if got, want := p(x), math.Pow(x, float64(n)); !sameBits(got, want) {
+			if got, want := powInt(x, n, limit), math.Pow(x, float64(n)); !sameBits(got, want) {
 				t.Fatalf("%v^%d = %v (%#x), math.Pow gives %v (%#x)", x, n, got, math.Float64bits(got), want, math.Float64bits(want))
 			}
 		}
@@ -65,6 +68,7 @@ func TestPowerExpressionsMatchPow(t *testing.T) {
 		{"x^2.5", func(x float64) float64 { return math.Pow(x, 2.5) }},
 		{"x^0.5", func(x float64) float64 { return math.Pow(x, 0.5) }},
 		{"(-x)^3", func(x float64) float64 { return math.Pow(-x, 3) }},
+		{"(-x)^2", func(x float64) float64 { return math.Pow(-x, 2) }},
 		{"-x^2", func(x float64) float64 { return -math.Pow(x, 2) }},
 		{"2^x", func(x float64) float64 { return math.Pow(2, x) }},
 		{"x^x", func(x float64) float64 { return math.Pow(x, x) }},
@@ -92,7 +96,7 @@ func FuzzIntegerPower(f *testing.F) {
 	f.Add(0x1p500, uint8(2))
 	f.Fuzz(func(t *testing.T, x float64, n uint8) {
 		k := 2 + int(n)%63
-		if got, want := integerPower(k)(x), math.Pow(x, float64(k)); !sameBits(got, want) {
+		if got, want := powInt(x, k, powerLimit(k)), math.Pow(x, float64(k)); !sameBits(got, want) {
 			t.Fatalf("%v^%d = %v, math.Pow gives %v", x, k, got, want)
 		}
 	})

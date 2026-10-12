@@ -1,4 +1,4 @@
-.PHONY: install wasm bench test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev dev-lan preview preview-lan check clean share-card thumbnails
+.PHONY: install wasm bench preset-hashes test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev dev-lan preview preview-lan check clean share-card thumbnails
 
 install:
 	npm ci
@@ -9,11 +9,15 @@ wasm:
 test-go:
 	go test -race -cover -timeout 20m ./...
 test-wasm: wasm
+	node --test scripts/preset-hashes.test.mjs
 	node scripts/test-wasm.mjs
 	node scripts/test-dev-worker.mjs
 # Times large implicit surfaces and curve meshes; ARGS="--compare <site or directory>" adds another engine.
 bench: wasm
 	node scripts/bench-spatial.mjs $(ARGS)
+# Hashes and times every preset in all three notebooks; ARGS="--compare <site or directory>" shows any that another engine draws differently.
+preset-hashes: wasm
+	node scripts/preset-hashes.mjs $(ARGS)
 typecheck:
 	npx tsc --noEmit
 vet:
