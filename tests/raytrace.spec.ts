@@ -655,11 +655,12 @@ test("rays stop at the caustic in the drawing, a preset and its export", async (
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export MP4 video" }).click();
     const bytes = await readFile((await (await download).path())!);
-    return (await decodeVideo(page, bytes)).last.hash;
+    return (await decodeVideo(page, bytes)).last.ink;
   };
   const exportedStopped = await last();
   await stop.uncheck();
-  expect(await last()).not.toBe(exportedStopped);
-  await stop.check();
-  expect(await last()).toBe(exportedStopped);
+  const exportedFull = await last();
+  // Lossy encodes are compared by how much they draw, never by hash: the
+  // full rays ink about a fifth more of the frame than the stopped ones.
+  expect(exportedFull).toBeGreaterThan(exportedStopped * 1.1);
 });

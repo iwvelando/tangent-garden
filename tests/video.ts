@@ -123,7 +123,19 @@ function decode(page: Page, bytes: Buffer) {
         common & 255,
         pixels[3],
       ];
-      return { hash, background };
+      // Pixels clearly off the background: how much the frame draws, which
+      // codec rounding moves only slightly, unlike its hash.
+      let ink = 0;
+      for (let j = 0; j < pixels.length; j += 4)
+        if (
+          Math.max(
+            Math.abs(pixels[j] - background[0]),
+            Math.abs(pixels[j + 1] - background[1]),
+            Math.abs(pixels[j + 2] - background[2]),
+          ) > 24
+        )
+          ink++;
+      return { hash, background, ink };
     };
     const first = capture();
     // "seeked" does not mean the new frame can be drawn yet; under load,
