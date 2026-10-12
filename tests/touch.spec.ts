@@ -62,6 +62,7 @@ test("2D: pinch zooms about the fingers, two fingers pan, one finger pans", asyn
   await page.goto("/");
   const art = page.locator("#artwork");
   await expect(art).toBeVisible();
+  await page.getByRole("button", { name: "Adjust view", exact: true }).click();
   await art.scrollIntoViewIfNeeded();
   const c = await centre(art);
   // An off-centre pinch keeps the point between the fingers in place.
@@ -99,6 +100,7 @@ test("2D: gestures wait while an animation holds the camera", async ({
   await page.goto("/");
   const art = page.locator("#artwork");
   await expect(art).toBeVisible();
+  await page.getByRole("button", { name: "Adjust view", exact: true }).click();
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("30");
   await page.getByRole("button", { name: "Play animation" }).click();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
@@ -125,6 +127,9 @@ for (const dimension of ["3d", "4d"] as const)
         ? JSON.parse((await art.getAttribute("data-view"))!)
         : JSON.parse((await art.locator("desc").textContent())!).view;
     await expect.poll(async () => !!(await view())).toBe(true);
+    await page
+      .getByRole("button", { name: "Adjust view", exact: true })
+      .click();
     await art.scrollIntoViewIfNeeded();
     const c = await centre(art);
     const start = await view();

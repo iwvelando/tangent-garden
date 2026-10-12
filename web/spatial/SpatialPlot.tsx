@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SpatialResult } from "./types";
 import type { SpatialCamera } from "./link";
 import { createGesture } from "../gestures";
+import { useDrawingTouch } from "../MobileNotebookNav";
 import {
   createRenderer,
   initialView,
@@ -301,6 +302,10 @@ export function SpatialPlot({
   const gesture = useRef(createGesture()),
     // Shift held as a mouse drag begins makes it a pan.
     panning = useRef(false);
+  const touchEnabled = useDrawingTouch();
+  useEffect(() => {
+    gesture.current = createGesture();
+  }, [touchEnabled]);
   return (
     <>
       <canvas
@@ -309,13 +314,15 @@ export function SpatialPlot({
         role="img"
         aria-label="Interactive 3D curve construction. Drag to orbit, shift-drag or two fingers to pan, scroll or pinch to zoom. Arrow keys orbit; shift-arrows pan; plus and minus zoom."
         tabIndex={0}
+        style={{ touchAction: touchEnabled ? "none" : "pan-y pinch-zoom" }}
         onPointerDown={(e) => {
-          if (override) return;
+          if (override || (e.pointerType === "touch" && !touchEnabled)) return;
           e.currentTarget.setPointerCapture(e.pointerId);
           if (!gesture.current.count) panning.current = e.shiftKey;
           gesture.current.down(e);
         }}
         onPointerMove={(e) => {
+          if (e.pointerType === "touch" && !touchEnabled) return;
           const motion = gesture.current.move(e);
           if (!motion || override) return;
           const v = target();

@@ -137,7 +137,7 @@ Every other animation draws the probe where you put it, and so do their exports:
 
 ## Probing a surface
 
-A surface patch, and a canal, tangent developable, framed ribbon or ruled surface built on any curve (choose **Describe → The surface**), can be probed the same way with **Principal curvatures & centres at a point**. Two sliders pick a point on the surface's grid, and the drawing shows its normal, its two principal directions, and the two normal-section circles through it, each centred on its focal point on the normal line. Each branch takes its focal sheet's color, rust and slate. The sidebar reads out both principal curvatures with their radii, and the Gaussian and mean curvatures, and plots both curvatures along the row through the point.
+A surface patch, and a canal, tangent developable, framed ribbon or ruled surface built on any curve (choose **Describe → The surface**), can be probed the same way with **Principal curvatures & centres at a point**. Two sliders pick a point on the surface's grid, and the drawing shows its normal, its two principal directions, and the two normal-section circles through it, each centred on its focal point on the normal line. Each branch takes its focal sheet's color, rust and slate. The sidebar reads out both principal curvatures with their radii, and the Gaussian and mean curvatures, and plots both curvatures through the point along the first slider's parameter, the second's, or both, as **Plots** chooses.
 
 On a canal the branches are its two lines of curvature. **Around the circle**, the curvature is always −1/R, centred on the sphere's centre on the curve, which is why a canal's first focal set is the curve itself. **Across it**, the curvature tells the shape of the envelope:
 
@@ -146,6 +146,8 @@ On a canal the branches are its two lines of curvature. **Around the circle**, t
 - Towards each gap, where the spheres stop having an envelope, the curvature across grows without bound and its plot is pinned to the edge. At t = 0, between the beads, there is no surface at all, and the panel says so.
 
 On a torus patch, κ₁ = −cos v/(R + r cos v) and κ₂ = −1/r, and its centres trace the focal sheets drawn beside it: the core circle and the axis.
+
+On **Where an ellipsoid's curvatures meet**, the probe stands on one meridian of an ellipsoid with three different axes, and plots both ways. Plotted along v, down the meridian, κ₁ and κ₂ close in and meet twice, at −ac/b³: these are two of the ellipsoid's four umbilics, where every direction is principal. The probe stands on one of them, so along u, through it, they meet only at the probe's mark.
 
 A patch with an offset (**Offset d** not 0) can probe the offset instead, with **Describe → The offset**. A surface moved a distance d along its normals is a parallel surface: it has the same normals and the same centers of curvature, so each radius of curvature is the patch's less d. On **An ellipsoid's parallel surface** the probe stands over the bottom of the bowl, where the ellipsoid's radii are 2.25 and 0.49 (read as −2.25 and −0.49 with the outward normal); at d = −0.25 the offset reads −2 and −0.24. Play the animation, which sweeps d from −0.1 to −0.9 and back: at d = −0.49 the offset reaches the second center, a cuspidal edge where it meets that focal sheet, and beyond it κ₂ turns positive and the panel says the offset has folded, turned inside out there. Near the ends of the long axis it folds sooner, and the cuspidal edges show where. Turn on the focal sheet layers to see the probe's centers sitting on them.
 

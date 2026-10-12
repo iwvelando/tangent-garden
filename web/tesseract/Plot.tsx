@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { createGesture } from "../gestures";
+import { useDrawingTouch } from "../MobileNotebookNav";
 import {
   Composition,
   type CompositionProps,
@@ -57,6 +58,10 @@ export function Plot({
   const gesture = useRef(createGesture()),
     // Shift held as a mouse drag begins makes it a pan.
     panning = useRef(false);
+  const touchEnabled = useDrawingTouch();
+  useEffect(() => {
+    gesture.current = createGesture();
+  }, [touchEnabled]);
   return (
     <svg
       ref={ref}
@@ -73,12 +78,15 @@ export function Plot({
         "Interactive tesseract construction. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom. Arrow keys orbit, shift-arrows pan, plus and minus zoom, Home resets."
       }
       tabIndex={0}
+      style={{ touchAction: touchEnabled ? "none" : "pan-y pinch-zoom" }}
       onPointerDown={(e) => {
+        if (e.pointerType === "touch" && !touchEnabled) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         if (!gesture.current.count) panning.current = e.shiftKey || !!flat;
         gesture.current.down(e);
       }}
       onPointerMove={(e) => {
+        if (e.pointerType === "touch" && !touchEnabled) return;
         const motion = gesture.current.move(e);
         if (!motion) return;
         // Nested SVG panels can have zero clientWidth/clientHeight. Their
@@ -161,11 +169,13 @@ export function StudyPlot(
     onDiagramView: (v: View) => void;
   },
 ) {
+  const touchEnabled = useDrawingTouch();
   if (!p.result.companion) return <Plot {...p} />;
   const size = exportBaseSize(p.layout ?? "columns");
   return (
     <svg
       id="tesseract-artwork"
+      style={{ touchAction: touchEnabled ? "none" : "pan-y pinch-zoom" }}
       xmlns="http://www.w3.org/2000/svg"
       viewBox={`0 0 ${size.width} ${size.height}`}
       data-layout={p.layout ?? "columns"}

@@ -14,6 +14,7 @@ import type { PlotCamera } from "./planar-link";
 import { densityImage } from "./attractor";
 import { plotPalette } from "./palette";
 import { createGesture } from "./gestures";
+import { useDrawingTouch } from "./MobileNotebookNav";
 import type { RefinedPath } from "./refinement";
 export type Layers = {
   base: boolean;
@@ -182,6 +183,10 @@ export function Plot({
       : { x: 0, y: 0, zoom: 1, reset: k };
   const cam = !locked && current.reset === key ? current : fresh(key);
   const gesture = useRef(createGesture());
+  const touchEnabled = useDrawingTouch();
+  useEffect(() => {
+    gesture.current = createGesture();
+  }, [touchEnabled]);
   const svgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     const svg = svgRef.current;
@@ -524,7 +529,10 @@ export function Plot({
         ". Drag or arrow keys to pan; scroll, pinch, or plus and minus to zoom; Home fits the view."
       }
       tabIndex={0}
-      style={{ background: palette.bg, touchAction: "none" }}
+      style={{
+        background: palette.bg,
+        touchAction: touchEnabled ? "none" : "pan-y pinch-zoom",
+      }}
       onKeyDown={(e) => {
         if (locked || !Object.hasOwn(cameraKeys, e.key)) return;
         e.preventDefault();
@@ -545,11 +553,12 @@ export function Plot({
         });
       }}
       onPointerDown={(e) => {
-        if (locked) return;
+        if (locked || (e.pointerType === "touch" && !touchEnabled)) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         gesture.current.down(e);
       }}
       onPointerMove={(e) => {
+        if (e.pointerType === "touch" && !touchEnabled) return;
         const motion = gesture.current.move(e);
         if (!motion || locked) return;
         const r = e.currentTarget.getBoundingClientRect();

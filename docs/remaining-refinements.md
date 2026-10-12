@@ -56,7 +56,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 - **Smaller limits** to fix if they bite:
   - 3D probe lines are depth-tested, so sheets hide them.
-  - Surface plots run along the row only.
   - A surface probe held at its (u, v) snaps to each frame's grid: Go evaluates surfaces only at their samples.
 
 **Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks, away messages), `engine/probe.go` and `engine3/probe.go` (the curve probe between samples), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
@@ -95,7 +94,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Smaller limits:**
 
-- Smooth's framed point can change rate at a view.
 - Geometry that grows past the starting bounds can leave the page under a path, as under Hold current view.
 
 **Start from:** `web/spatial/path.ts` and `mathematics.md#spatial-camera-paths`.
@@ -122,7 +120,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 - 3D: primary.
 - 2D: engine tolerances and SVG coordinates.
-- 4D: a check only. Its objects are analytic with bounded scales; the 4D roadmap already requires absolute-plus-relative tolerances.
 
 **Open:**
 
@@ -151,7 +148,7 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Open:**
 
-- Typed-array transport beyond the meshes is done: the curve mesh travels typed and indexed, as the implicit mesh did, and every other large numeric array of a spatial or 4D result is lifted out of the JSON and put back in the page (see [architecture.md](architecture.md), "No spatial mesh goes through JSON" and the paragraph after it). What still goes through JSON is mostly grids of flags (a surface's `alongU`, `alongV` and `faces`, about 70 KB each at 240²) and arrays of small structs (ray lines, glyphs, constructions). A tube frame's time is now mostly Go's own work. The twisted spring's is mostly its meridians' refinement: about 7,400 contact circles between samples, each evaluating the expression curve's five-point stencils at two steps for the curve and the frame's arc length and the profile's for the radius, about 33 expression evaluations each. A faster expression evaluator, or a refinement that asks for fewer circles, is what would cut it further.
+- Typed-array transport beyond the meshes is done: the curve mesh travels typed and indexed, as the implicit mesh did, and every other large numeric array of a spatial or 4D result is lifted out of the JSON and put back in the page (see [architecture.md](architecture.md), "No spatial mesh goes through JSON" and the paragraph after it). What still goes through JSON is mostly grids of flags (a surface's `alongU`, `alongV` and `faces`, about 70 KB each at 240²) and arrays of small structs (ray lines, glyphs, constructions). A tube frame's time is now mostly Go's own work. The twisted spring's is mostly its meridians' refinement: about 7,400 contact circles between samples, each evaluating the expression curve's five-point stencils at two steps for the curve and the frame's arc length and the profile's for the radius, about 33 expression evaluations each. Expressions are now compiled to folded closures that carry their constant and variable operands (`engine/expr/compile.go`), with all 347 preset results unchanged bit for bit (`make preset-hashes`). Measured on 2026-10-11 against the deployed engine with the same Go toolchain, `make bench` gives 1.23–1.49× faster implicit-surface frames and about 1.12–1.15× for the spring (58–60 ms → 52 ms, confirmed with engine order reversed); refinement still takes most of the spring's frame, so a refinement that asks for fewer circles is what would cut it further.
 - 2D results still travel as plain JSON (`tangentGardenCompute`). Measured on 2026-10-09: of the 62 presets, the largest results are Van der Pol (2.9 MB; natively 24 ms compute and 8 ms encoding, and 15 ms to decode and copy in Node), the pendulum (2.0 MB) and the star's ripples (1.8 MB); about fifty are 0.1–0.4 MB, where JSON costs a millisecond or two. JSON is at most about a third of a frame on the largest, against 75–90% of a tube frame before spatial transport moved off JSON, so it is not worth doing yet. If a 2D study grows large, add `engine.Vec` (and its pointer, for gaps) as a kind in `cmd/wasm/lift` and `web/lifted.ts`, send the planar result through `liftReply` as the 4D bridge does, and restore it where the worker parses the planar reply.
 - Worker pools. A third playback engine was rejected at about 100 MB per engine.
 

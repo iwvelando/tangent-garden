@@ -160,7 +160,7 @@ jobs:
 
   # Safari's engine, which every iOS browser also uses: no canvas WebP, and its
   # own H.264 encoder and VideoFrame behavior. Standard macOS runners are free
-  # for public repositories. Runs tests/webkit.spec.ts only.
+  # for public repositories. Runs WebKit and shared mobile-input checks.
   webkit:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}

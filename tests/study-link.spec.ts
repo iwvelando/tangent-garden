@@ -232,6 +232,44 @@ test("a 3D link carries a probe between samples; older ones snap it", async () =
   }
 });
 
+test("a 3D link carries the surface probe's plots; older ones plot along the rows", async () => {
+  const torus = spatialPresets.findIndex(
+    (p) => p.name === "A torus revealing its centers",
+  );
+  for (const plots of ["around", "both"] as const) {
+    const study: SpatialStudy = {
+      ...spatial(torus),
+      probe: {
+        enabled: true,
+        position: 0.25,
+        target: "surface",
+        across: 0.75,
+        plots,
+      },
+    };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study).probe, study.probe);
+  }
+  // Links made before the choice, and plots set back along the rows, carry
+  // no field.
+  for (const plots of [undefined, "along"]) {
+    const old = structuredClone(spatial(torus)) as any;
+    old.probe = {
+      enabled: true,
+      position: 0.25,
+      target: "surface",
+      across: 0.75,
+      ...(plots !== undefined && { plots }),
+    };
+    assert.deepEqual(spatialStudy(old).probe, {
+      enabled: true,
+      position: 0.25,
+      target: "surface",
+      across: 0.75,
+    });
+  }
+});
+
 test("a link carries probe playback with its probe", async () => {
   const study: SpatialStudy = {
     ...spatial(),
@@ -550,6 +588,8 @@ test("3D and 4D fields are refused by name", async () => {
     ["probe.target", (s) => (s.probe.target = "ribbon")],
     ["probe.across", (s) => (s.probe.across = -0.1)],
     ["probe.between", (s) => (s.probe.between = 1), /true or false/],
+    ["probe.plots", (s) => (s.probe.plots = "columns")],
+    ["probe.plots", (s) => (s.probe.plots = 2)],
     ["layers.glow", (s) => (s.layers.glow = true)],
     ["animation.mode", (s) => (s.animation.mode = "spin")],
     [

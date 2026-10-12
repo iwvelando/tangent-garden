@@ -366,6 +366,9 @@ const probe: SchemaOf<Probe> = {
     // Absent in links made before the curve probe stood between samples,
     // which snap it to the nearest sample.
     between: { optional: "boolean" },
+    // Absent in links made before the surface probe plotted across its
+    // columns, whose plots run along the rows.
+    plots: { optional: { options: { along: true, around: true, both: true } } },
   },
 };
 
@@ -600,13 +603,18 @@ export function spatialStudy(value: unknown): SpatialStudy {
     );
   // A probe snapped to samples carries no between flag, as the notebook
   // keeps it, so a link's false and its absence open the same study.
-  const { between, ...snapped } = conform(
+  // Plots along the rows, likewise, carry no plots field.
+  const { between, plots, ...snapped } = conform(
     raw.probe,
     probe,
     defaultProbe,
     "probe",
   );
-  const probed: Probe = between ? { ...snapped, between } : snapped;
+  const probed: Probe = {
+    ...snapped,
+    ...(between && { between }),
+    ...(plots && plots !== "along" && { plots }),
+  };
   // A surface patch offered no probe before the probe had a target, so a
   // link from then opens without it, as it drew.
   if (

@@ -18,6 +18,10 @@ import {
   probeTarget,
   straightNote,
   surfaceInk,
+  surfacePlotOptions,
+  surfacePlots,
+  surfacePlotSeries,
+  surfacePlotsHelp,
   surfaceProbeAt,
   surfaceProbeHelp,
   surfaceProbeReadout,
@@ -28,6 +32,7 @@ import {
   type Probe,
   type ProbePlace,
   type ProbeTarget,
+  type SurfacePlots,
 } from "./probe";
 import type { Frame, SpatialConfig, SurfaceDiagnostics } from "./types";
 
@@ -387,17 +392,6 @@ function SurfaceProbe({
   const swatch = (ink: number) => ({
     background: hex(lineColor(ink, 0, dark)),
   });
-  // Both plots ignore variation below 10⁻⁴ of the column's largest
-  // curvature: rounding noise, as in a developable's zero curvature along
-  // its rulings, not geometry.
-  const resolution =
-    1e-4 *
-    Math.max(
-      0,
-      ...[0, 1].flatMap((b) =>
-        d.curvature[b].map((line) => Math.abs(line[column] ?? 0)),
-      ),
-    );
   // Where an offset has folded, beyond one focal sheet.
   const folded = (d.folds ?? []).flat().filter(Boolean).length;
   // Points without a known tangent plane, whose curvatures are unknown too
@@ -455,6 +449,8 @@ function SurfaceProbe({
         <LightReadout
           frame={frame}
           d={d}
+          probe={probe}
+          onProbe={onProbe}
           row={row}
           column={column}
           dark={dark}
@@ -498,17 +494,15 @@ function SurfaceProbe({
           >
             {surfaceProbeStatus(r, terms)}
           </p>
-          {[0, 1].map((b) => (
-            <Plot
-              key={b}
-              values={d.curvature[b].map((line) => line[column])}
-              fromZero={false}
-              at={row}
-              label={`${terms.branches[b]} along ${terms.along}`}
-              dark={dark}
-              resolution={resolution}
-            />
-          ))}
+          <SurfacePlotsFor
+            frame={frame}
+            d={d}
+            probe={probe}
+            onProbe={onProbe}
+            row={row}
+            column={column}
+            dark={dark}
+          />
           <ul className="probe-legend">
             <li>
               <span className="probe-dot" style={swatch(probeInk.normal)} />
@@ -564,17 +558,20 @@ function SurfaceProbe({
 // The light probe's readout at grid sample (row, column): the outgoing
 // wavefront's curvatures, the signed distances along the ray to its foci,
 // the astigmatic interval between them and the angles at the surface,
-// then a status, the curvatures along the row, the legend and the
-// study's counts.
+// then a status, the curvature plots, the legend and the study's counts.
 function LightReadout({
   frame,
   d,
+  probe,
+  onProbe,
   row,
   column,
   dark,
 }: {
   frame: Frame;
   d: SurfaceDiagnostics;
+  probe: Probe;
+  onProbe: (change: (p: Probe) => Probe) => void;
   row: number;
   column: number;
   dark: boolean;
@@ -587,16 +584,6 @@ function LightReadout({
   const swatch = (ink: number) => ({
     background: hex(lineColor(ink, 0, dark)),
   });
-  // As the surface probe's plots, ignoring variation below 10⁻⁴ of the
-  // column's largest curvature.
-  const resolution =
-    1e-4 *
-    Math.max(
-      0,
-      ...[0, 1].flatMap((b) =>
-        d.curvature[b].map((line) => Math.abs(line[column] ?? 0)),
-      ),
-    );
   // Nothing leaves the point: every value but the angle is blank.
   const blank = r.state !== "traced";
   // Signed along the ray: a virtual focus, behind the surface, is negative.
@@ -637,17 +624,15 @@ function LightReadout({
                     ? "A focus lies beyond 100 study radii, at infinity: its circle is not drawn."
                     : ""}
       </p>
-      {[0, 1].map((b) => (
-        <Plot
-          key={b}
-          values={d.curvature[b].map((line) => line[column])}
-          fromZero={false}
-          at={row}
-          label={`${terms.branches[b]} along ${terms.along}`}
-          dark={dark}
-          resolution={resolution}
-        />
-      ))}
+      <SurfacePlotsFor
+        frame={frame}
+        d={d}
+        probe={probe}
+        onProbe={onProbe}
+        row={row}
+        column={column}
+        dark={dark}
+      />
       <ul className="probe-legend">
         <li>
           <span className="probe-dot" style={swatch(probeInk.normal)} />
@@ -694,6 +679,55 @@ function LightReadout({
           .
         </p>
       )}
+    </>
+  );
+}
+
+// The surface probe's choice of plots and the plots it asks for, through
+// grid sample (row, column): along the rows, across the columns, or both
+// (see surfacePlotSeries).
+function SurfacePlotsFor({
+  frame,
+  d,
+  probe,
+  onProbe,
+  row,
+  column,
+  dark,
+}: {
+  frame: Frame;
+  d: SurfaceDiagnostics;
+  probe: Probe;
+  onProbe: (change: (p: Probe) => Probe) => void;
+  row: number;
+  column: number;
+  dark: boolean;
+}) {
+  const target = probeTarget(frame.config, probe),
+    terms = surfaceTerms(frame.config, target),
+    plots = surfacePlots(probe);
+  return (
+    <>
+      <Field label="Plots" help={surfacePlotsHelp(frame.config, target)}>
+        <select
+          value={plots}
+          onChange={(e) => {
+            const plots = e.target.value as SurfacePlots;
+            onProbe(({ plots: _, ...p }) =>
+              plots === "along" ? p : { ...p, plots },
+            );
+          }}
+        >
+          {surfacePlotOptions(terms).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {surfacePlotSeries(d, terms, row, column, plots).map((plot) => (
+        <Plot key={plot.label} {...plot} fromZero={false} dark={dark} />
+      ))}
     </>
   );
 }

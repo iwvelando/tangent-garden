@@ -570,6 +570,52 @@ export function pathView(
     y: a.y + (b.y - a.y) * sigma,
     z: a.z + (b.z - a.z) * sigma,
   };
+  if (path.style === "smooth" && n > 2 && depths?.some((s) => s !== 0)) {
+    // Each leg alone turns its framed point's course at a view. Smooth
+    // bends each leg so that it arrives at the view, and leaves it, at the
+    // one velocity its two legs' own rates give there; the legs keep their
+    // rates where they already agree, and at an open path's ends.
+    const targets = keys.map((_, k) => target(k)),
+      dz = slopes(lz, h, cyclic);
+    // A leg's framed point velocity as it leaves its first view (0) or
+    // reaches its second (1): its chord, times the rate of σ in time.
+    const legRate = (j: number, end: 0 | 1) => {
+      const w = lz[j + 1] - lz[j];
+      const rate =
+        w === 0
+          ? 1 / h[j]
+          : end
+            ? (-Math.exp(-w) * dz[j + 1]) / Math.expm1(-w)
+            : -dz[j] / Math.expm1(-w);
+      const [p, q] = [targets[j], targets[j + 1]];
+      return [(q.x - p.x) * rate, (q.y - p.y) * rate, (q.z - p.z) * rate];
+    };
+    // At a view between legs j0 (arriving) and j1 (leaving), each leg's
+    // velocity weighed by the other's time, as a parabola's slope through
+    // three points is.
+    const between = (j0: number, j1: number) => {
+      const [u, w] = [legRate(j0, 1), legRate(j1, 0)];
+      return u.map((x, c) => (h[j1] * x + h[j0] * w[c]) / (h[j0] + h[j1]));
+    };
+    const velocity = (k: number) =>
+      k > 0 && k < n - 1
+        ? between(k - 1, k)
+        : cyclic
+          ? between(n - 2, 0)
+          : k
+            ? legRate(n - 2, 1)
+            : legRate(0, 0);
+    // Hermite's corrections to the leg's rates at its ends, which leave
+    // its ends where they are.
+    const [v0, v1] = [velocity(i), velocity(i + 1)],
+      [r0, r1] = [legRate(i, 0), legRate(i, 1)];
+    const f2 = f * f,
+      g0 = h[i] * (f2 * f - 2 * f2 + f),
+      g1 = h[i] * (f2 * f - f2);
+    t.x += g0 * (v0[0] - r0[0]) + g1 * (v1[0] - r1[0]);
+    t.y += g0 * (v0[1] - r0[1]) + g1 * (v1[1] - r1[1]);
+    t.z += g0 * (v0[2] - r0[2]) + g1 * (v1[2] - r1[2]);
+  }
   // Pan so that the framed point is in the middle of the page.
   const [rx, ry] = rows(v.yaw, v.pitch);
   const d = [
