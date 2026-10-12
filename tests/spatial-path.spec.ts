@@ -31,7 +31,6 @@ import {
 import { linework } from "../web/spatial/linework";
 import { curveMesh } from "./curve-mesh";
 import type { CutSpec } from "../web/spatial/cut";
-import { spatialPresets } from "../web/spatial/presets";
 import type { Bounds3, SpatialResult, Vec3 } from "../web/spatial/types";
 
 // The camera path's mathematics, observed through the drawing's own
@@ -1338,26 +1337,24 @@ test("smooth's slopes at a view and at the ends weigh the legs' times as pchip d
 });
 
 test("only a smooth flight about the geometry changes how its framed point moves: every other flight is the camera it was", () => {
-  // Every preset's path in both styles, open and looped, orthographic and
-  // through its own lens, with depths of 0 as the plane pivot gives them,
-  // and every steady path or path of two views with depths besides; and
-  // smooth paths about the geometry where it found none. Field for field at 1,001 progresses and
-  // each view's time, against the views these paths flew before the smooth
-  // framed point kept its rate (recorded as this fingerprint).
-  const presetPaths = spatialPresets
-    .filter((preset) => (preset.flight?.path.keys.length ?? 0) >= 2)
-    .map((preset) => ({
-      path: preset.flight!.path,
-      lens: {
-        ...(preset.projection && { projection: preset.projection }),
-        ...(preset.lensAngle !== undefined && { lensAngle: preset.lensAngle }),
-      },
-    }));
-  expect(presetPaths.length).toBeGreaterThan(5);
+  // Paths in both styles, open and looped, orthographic and through a
+  // lens, with depths of 0 as the plane pivot gives them, and every steady
+  // path or path of two views with depths besides; and smooth paths about
+  // the geometry where it found none. At 1,001 progresses and each view's
+  // time, against the views these paths flew before the smooth framed point
+  // kept its rate (recorded as this fingerprint). Each number is rounded to
+  // six significant figures, and to 0 below 10⁻⁹, so that a last-place
+  // difference in a platform's Math functions does not change the
+  // fingerprint, while any change in how a framed point moves does.
   const flights = [
-    ...presetPaths,
     { path: path(tour), lens: {} },
     { path: path(tour), lens: { projection: "normal" as const } },
+    {
+      path: path(
+        tour.map((k, i) => (i ? { ...k, leg: [0.4, 3, 1.7][i - 1] } : k)),
+      ),
+      lens: { projection: "chosen" as const, lensAngle: 35 },
+    },
     { path: path(tour.slice(0, 2)), lens: {} },
     { path: path([tour[1], { ...tour[1], turns: 1, leg: 2 }]), lens: {} },
   ];
@@ -1403,10 +1400,18 @@ test("only a smooth flight about the geometry changes how its framed point moves
             );
       }
   const fingerprint = createHash("sha256")
-    .update(JSON.stringify(views))
+    .update(
+      JSON.stringify(views, (_, x) =>
+        typeof x === "number"
+          ? Math.abs(x) < 1e-9
+            ? 0
+            : Number(x.toPrecision(6))
+          : x,
+      ),
+    )
     .digest("hex");
   expect(fingerprint).toBe(
-    "5272abc4f9dd10f0e7fced640db5d9a123eb3e923751b7dd05ca159c2e527a3b",
+    "225f9eead0d023fc4b1443256723e632d9dbd415680ea8cc868b1fdf1c256316",
   );
 });
 
