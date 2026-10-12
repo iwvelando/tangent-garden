@@ -84,6 +84,7 @@ export function loopGap(
   return null;
 }
 
+const zero = { x: 0, y: 0, z: 0 };
 // The largest distance between corresponding positions of two drawings, as
 // a fraction of the radius, 0 within tolerance; "pieces" when their batches
 // differ in kind, size or connection, or "shading" when only a vertex's
@@ -107,10 +108,15 @@ export function drawingGap(
       (p.indices && p.indices.some((v, i) => v !== q.indices![i]))
     )
       return "pieces";
+    // Positions are compared measured from p's origin, q's moved there in
+    // double precision.
+    const from = p.origin ?? zero,
+      to = q.origin ?? zero,
+      shift = [to.x - from.x, to.y - from.y, to.z - from.z];
     for (let i = 0; i < p.data.length; i++) {
-      const [x, y] = [p.data[i], q.data[i]];
-      const position = i % 7 < 3,
-        d = Math.abs(x - y);
+      const position = i % 7 < 3;
+      const [x, y] = [p.data[i], q.data[i] + (position ? shift[i % 7] : 0)];
+      const d = Math.abs(x - y);
       if (
         d <=
         tolerance * ((position ? radius : 1) + Math.abs(x) + Math.abs(y))

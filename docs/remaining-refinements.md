@@ -43,7 +43,7 @@ These come from the handoffs. Each was paid for at least once.
 
 ## Recommended order
 
-1. Scale and translation: the drawings (3D, then 2D)
+1. Scale and translation: the 2D drawing
 2. Refinement between samples, remaining constructions (3D and 2D)
 3. 3D rendering leftovers
 
@@ -51,18 +51,17 @@ Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits 
 
 ---
 
-### 1. Scale and translation: the drawings
+### 1. Scale and translation: the 2D drawing
 
-**Applies to:** 3D and 2D. The engines' budgets are done and documented: 2D in [scale and translation](mathematics.md#scale-and-translation) (#139), 3D in [spatial scale and translation](mathematics.md#spatial-scale-and-translation) (#136), 4D in the 4D roadmap (#138). What remains is the drawing.
+**Applies to:** 2D. The engines' budgets are done and documented: 2D in [scale and translation](mathematics.md#scale-and-translation) (#139), 3D in [spatial scale and translation](mathematics.md#spatial-scale-and-translation) (#136), 4D in the 4D roadmap (#138). The 3D drawing measures its positions from a drawing origin near the study (the same section's **Drawing**). What remains is the 2D drawing.
 
 **Open:**
 
-- **3D: rebase positions before the Float32 upload**, and keep meaningful clipping (near/far are set in framing radii). Today `web/spatial/scene.ts` uploads world coordinates as `Float32Array`, and the vertex shaders in `web/spatial/renderer.ts` subtract the `center` uniform in single precision, so a study far from the origin loses its detail before the subtraction. The camera's center moves with pans and paths, so the likely shape is a fixed origin per result, near the study, subtracted in double precision wherever a batch is built, with the shader given only the center's small offset from it. Keep the cut planes, tapers and arc lengths consistent with the rebased positions.
 - **2D: the drawing's coordinates for a study far from the origin.** `xy` in `web/Plot.tsx` already subtracts the frame's center in double precision before writing page coordinates, so this may need only a test: a translated and a scaled copy of existing presets draw the original's SVG to within about 0.001 px. Check the grid and axes, ray glyphs, the probe, and the exports too.
 
-**Start with:** a translated and scaled copy of existing presets compared against the originals, as the engines' tests do (`engine/scale_test.go`, `engine3/curve_scale_test.go`: tiny 2⁻²⁰, huge 2¹³, about 860 and 36,000 units out). Compare drawn geometry, not PNG bytes. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
+**Start with:** a translated and scaled copy of existing presets compared against the originals, as the engine's tests do (`engine/scale_test.go`: tiny 2⁻²⁰, huge 2¹³, about 860 and 36,000 units out) and as `tests/spatial-rebase.spec.ts` does for the 3D drawing. Compare drawn geometry, not PNG bytes. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
 
-**Watch for:** every existing preset's drawing stays identical (the 3D 1 × PNG equals the canvas in `tests/export-equivalence.spec.ts`; hash linework, not PNGs).
+**Watch for:** every existing preset's drawing stays identical (hash the SVG, not PNGs).
 
 ### 2. Refinement between samples: remaining constructions
 
