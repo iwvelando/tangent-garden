@@ -76,6 +76,9 @@ const recorded: Record<string, string> = {
 test("studies drawn opaque with hidden lines hidden are unchanged", async ({
   page,
 }) => {
+  // Twenty exports, four of them see-through at 2 × 2 samples a pixel, take
+  // close to the default 30 s on a CI runner's software GPU.
+  test.setTimeout(90_000);
   await ready(page);
   const box = page.getByRole("group", { name: "See through" });
   const sheets = box.getByLabel("Sheets", { exact: true }),

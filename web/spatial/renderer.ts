@@ -608,7 +608,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   const largest = () => pageLimits(gl).side;
   // See-through sheets, made when first drawn: their program, a triangle
   // covering the page, and a half-float (or float) target summing layers.
-  // Null when the device cannot render to one.
+  // Null when the device cannot render to one. With samples the target is
+  // four times the page, up to 128 MB in half floats (see seeSampling).
   let see:
     | {
         program: WebGLProgram;

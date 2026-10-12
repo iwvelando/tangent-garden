@@ -243,6 +243,12 @@ export function sightSpec(sight: Sight): { spec: Sight; error?: SightError } {
 // are multisampled as the opaque drawing's are. That needs a multisampled
 // canvas, a target within the device's limits (most, a side), and at most
 // seeTexels texels; otherwise each pixel is one sample.
+// GPU memory: two by two samples hold four times the page's texels, at 8
+// bytes each in half floats (16 in floats), for as long as sheets are seen
+// through: about 50 MB on a phone-sized canvas and 128 MB at seeTexels,
+// against a quarter of that with one sample. If 3D drawings are lost on
+// mobile devices, check this first: setting seeSamples to 1 restores the
+// single-sample target.
 export const seeSamples = 2;
 export const seeTexels = 2 ** 24;
 export function seeSampling(
