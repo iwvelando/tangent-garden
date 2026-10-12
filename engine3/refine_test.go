@@ -2,6 +2,7 @@ package engine3
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -289,6 +290,46 @@ func TestRefinementBreaksAtAGapBetweenSamples(t *testing.T) {
 	}
 	if math.Abs(before.X-(gap-0.005)) > 2*step || math.Abs(after.X-(gap+0.005)) > 2*step {
 		t.Fatalf("gap edges drawn at %g and %g, want %g and %g", before.X, after.X, gap-0.005, gap+0.005)
+	}
+}
+
+// z is undefined on a gap a tenth of a sample step wide, between an
+// interval's quarter point and midpoint, on a stretch too gently curved
+// for refinement to bisect, where the samples and that interval's three
+// probes see nothing: refinement's scan finds it, breaks that interval, and
+// the developable is no longer joined across it.
+func TestRefinementFindsAGapBetweenProbes(t *testing.T) {
+	n := 240
+	h := 2 * math.Pi / float64(n)
+	i := 130
+	gap := -math.Pi + (float64(i)+0.375)*h
+	c := custom("t", "0.3*sin(t)", "0.2+0*sqrt((t-a)^2-(0.05*"+fmt.Sprint(h)+")^2)", -math.Pi, math.Pi)
+	c.Curve.A = gap
+	c.Samples = n
+	uniform, err := Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uniform.Breaks[i+1] {
+		t.Fatal("the uniform study already breaks at the gap")
+	}
+	r := refinedStudy(t, c)
+	path := r.Adaptive.Base
+	checkPath(t, path, uniform.Base, uniform.Breaks)
+	if path.Breaks != 1 || !r.Breaks[i+1] || len(breaks(r.Breaks)) != len(breaks(uniform.Breaks))+1 {
+		t.Fatalf("gap: %d refined breaks, %v", path.Breaks, breaks(r.Breaks))
+	}
+	if r.Omitted != uniform.Omitted+1 {
+		t.Fatalf("the developable still joins across the gap: %d omitted", r.Omitted)
+	}
+	step := h / float64(int(1)<<refineDepth)
+	for k, p := range path.Points {
+		if p == nil && path.Points[k-1] != nil && math.Abs(path.Points[k-1].X-(gap-0.05*h)) > 2*step {
+			t.Fatalf("gap drawn from %g, want %g", path.Points[k-1].X, gap-0.05*h)
+		}
+		if p == nil && path.Points[k+1] != nil && math.Abs(path.Points[k+1].X-(gap+0.05*h)) > 2*step {
+			t.Fatalf("gap drawn to %g, want %g", path.Points[k+1].X, gap+0.05*h)
+		}
 	}
 }
 
