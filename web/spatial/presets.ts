@@ -3684,4 +3684,45 @@ export const spatialPresets: {
     },
     view: { yaw: 0.5, pitch: 0.3, zoom: 1.15, panX: 0, panY: 0 },
   },
+  // The ellipsoid (1.5, 1, 0.7) of "The focal sheets of an ellipsoid",
+  // probed on its meridian u = 2π (row 90 of 100), in the plane y = 0 of
+  // its longest and shortest axes. That meridian holds two of its four
+  // umbilics, at sin v = ±√((b² − c²)/(a² − c²)) ≈ ±0.538, which 72 steps
+  // over v put within 2·10⁻³ of columns 23 and 49: plotted along v, κ₁
+  // and κ₂ touch there, at −ac/b³. The probe stands on the upper one, so
+  // along u, through it, they touch only at the probe's mark.
+  {
+    name: "Where an ellipsoid's curvatures meet",
+    detail:
+      "Down one meridian the two principal curvatures close in and touch twice, at umbilics",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 0.7,
+        // The far half, open towards the default view.
+        uMin: (11 * Math.PI) / 10,
+        uMax: (21 * Math.PI) / 10,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 100,
+        vSamples: 72,
+        curves: 12,
+        offset: 0,
+        reach: 0,
+      },
+    },
+    layers: { focal1: false, focal2: false },
+    probe: {
+      enabled: true,
+      position: 0.9,
+      target: "surface",
+      across: 49 / 72,
+      plots: "both",
+    },
+  },
 ];
