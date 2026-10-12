@@ -429,7 +429,9 @@ const button = (page: Page, name: string) =>
 test("parameter playback shares frames with a second engine for its duration", async ({
   page,
 }) => {
-  await watchEngines(page, 8);
+  // Frames are slowed so the first engine is still busy when the next is
+  // due; a fast machine otherwise never needs the helper.
+  await watchEngines(page, 8, { spatial: 80 });
   await ready(page);
   await choosePreset(page, drops);
   await settled(page);
