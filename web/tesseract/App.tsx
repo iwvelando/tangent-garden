@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { AppHeader } from "../AppHeader";
+import { NotebookMain } from "../MobileNotebookNav";
 import { Orientation } from "../Orientation";
 import { turnTo, turntableBasis } from "../named-views";
 import { AnimationButton } from "../AnimationButton";
@@ -692,7 +693,7 @@ export default function TesseractApp({
           }}
         />
       </AppHeader>
-      <main>
+      <NotebookMain>
         <ScalarStatus.Provider
           value={{
             client,
@@ -1275,7 +1276,7 @@ export default function TesseractApp({
           {!narrow && explanation}
         </article>
         {narrow && <div className="behind">{explanation}</div>}
-      </main>
+      </NotebookMain>
     </div>
   );
 }

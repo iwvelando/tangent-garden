@@ -61,6 +61,7 @@ import { fieldLabel } from "./planar-fields";
 import { useTheme } from "./useTheme";
 import { AnimationPanel } from "./AnimationPanel";
 import { AppHeader } from "./AppHeader";
+import { NotebookMain } from "./MobileNotebookNav";
 import { revealDrawing } from "./revealDrawing";
 import { ExportImageMenu } from "./ExportImageMenu";
 import { LinkNotice, ShareLink } from "./ShareLink";
@@ -1318,7 +1319,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
           kind={studyName(config)}
         />
       </AppHeader>
-      <main>
+      <NotebookMain>
         <ScalarStatus.Provider value={scalarStatus}>
           <aside aria-label="Study parameters">
             {linkNotice && (
@@ -2371,7 +2372,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
           {!narrow && behind}
         </article>
         {narrow && <div className="behind">{behind}</div>}
-      </main>
+      </NotebookMain>
     </div>
   );
 }

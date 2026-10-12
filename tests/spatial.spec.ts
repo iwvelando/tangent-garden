@@ -150,6 +150,7 @@ test("narrow screens retain artwork, touch orbit, and controls without overflow"
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await ready(page);
+  await page.getByRole("button", { name: "Adjust view", exact: true }).click();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);

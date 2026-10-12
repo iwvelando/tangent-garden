@@ -1027,6 +1027,55 @@ h1 {
 
 /* Shared notebook navigation. */
 
+.mobile-notebook-nav {
+  display: none;
+}
+@media (max-width: 700px) {
+  .mobile-notebook-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    order: -1;
+    gap: 6px 8px;
+    padding: 6px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-notebook-nav button {
+    min-height: 44px;
+    padding: 6px;
+    border-color: var(--border);
+  }
+  .mobile-notebook-nav button[aria-current="location"] {
+    color: var(--text);
+    background: var(--paper);
+    border-color: var(--section);
+    box-shadow: inset 0 -2px var(--section);
+  }
+  .mobile-nav-hint {
+    grid-column: 1 / -1;
+    color: var(--muted);
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .mobile-notebook-nav button[aria-pressed="true"] {
+    background: var(--section);
+    color: var(--panel);
+  }
+  /* The browser's own scrolling into view, as when it reveals a tapped
+     field, leaves room for the navigation, and for a field's label, in one
+     motion. Not on the navigation itself, which is always in view. */
+  :is(aside, article, .behind) * {
+    scroll-margin-top: calc(var(--mobile-nav-height, 80px) + 8px);
+  }
+  :is(aside, article, .behind) :is(input, select, textarea) {
+    scroll-margin-top: calc(var(--mobile-nav-height, 80px) + 40px);
+  }
+}
+
 /* The study dimension, one segment per notebook above its examples. Each
    radio covers its whole segment, so the segment is the click target and
    carries the focus ring. */
@@ -1359,4 +1408,17 @@ header {
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+}
+
+/* Safari zooms into small form text on focus. Keep touch editing at a readable
+   size (also in landscape), without restricting the user's pinch zoom.
+   :is carries the input selector's specificity over equation/projection rules. */
+@media (max-width: 700px), (pointer: coarse) {
+  :is(
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea
+  ) {
+    font-size: 16px;
+  }
 }
