@@ -122,7 +122,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 - 3D: primary.
 - 2D: engine tolerances and SVG coordinates.
-- 4D: a check only. Its objects are analytic with bounded scales; the 4D roadmap already requires absolute-plus-relative tolerances.
 
 **Open:**
 
