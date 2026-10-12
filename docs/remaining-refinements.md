@@ -95,7 +95,6 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Smaller limits:**
 
-- Smooth's framed point can change rate at a view.
 - Geometry that grows past the starting bounds can leave the page under a path, as under Hold current view.
 
 **Start from:** `web/spatial/path.ts` and `mathematics.md#spatial-camera-paths`.
