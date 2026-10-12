@@ -45,6 +45,9 @@ async function open(page: Page, value: unknown) {
       Buffer.from(JSON.stringify({ v: 1, notebook: "4d", study: value })),
     ).toString("base64url")}`,
   );
+  // Only the fragment changes, so the page is not reloaded: the old study
+  // stays settled until the link is read, which removes the fragment.
+  await expect(page).not.toHaveURL(/#s=/);
   await settled(page);
   await expect(page.locator("#tesseract-artwork")).toBeVisible();
   await openShapeAnimation(page);
@@ -62,7 +65,7 @@ test("the repeat and pace default to once and steady; loop is offered only for m
     repeat(page)
       .locator("option")
       .evaluateAll((o) => o.map((e) => (e as HTMLOptionElement).value));
-  expect(await options()).toEqual(["once", "loop", "back-and-forth"]);
+  await expect.poll(options).toEqual(["once", "loop", "back-and-forth"]);
   await repeat(page).selectOption("loop");
   await page.getByRole("button", { name: "About repeat" }).click();
   await expect(page.locator("#shape-animation-section")).toContainText(
@@ -71,7 +74,7 @@ test("the repeat and pace default to once and steady; loop is offered only for m
   // A lift's drift and a route start and end in different places.
   for (const m of ["drift", "route"]) {
     await open(page, study(preset(m)));
-    expect(await options()).toEqual(["once", "back-and-forth"]);
+    await expect.poll(options).toEqual(["once", "back-and-forth"]);
   }
   // Leaving a loop for a motion that cannot loop keeps it repeating.
   const weave = tesseractPresets.findIndex((p) =>
