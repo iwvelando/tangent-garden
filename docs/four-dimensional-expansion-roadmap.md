@@ -433,10 +433,10 @@ A check of every tolerance in `engine4` against the absolute-plus-relative requi
 
 What can move:
 
-- **Tesseract and spherical weave:** neither. They are the unit tesseract and the unit 3-sphere, centred at the origin, and the request carries no size or centre for them. The test shows that the shared size fields leave every mode unchanged. The weave's window radius sets the window, not the sphere.
-- **Ball and tube:** scale only, since they have no centre. Radii, slice and spread scale together.
-- **Shell bypass:** scale only, since the obstacle is centred at the origin. Every length scales together: radii, ε, outside point, H, and both comparison levels.
-- **Lift:** the sources are fixed curves, so the lift moves past them rather than scaling with them. Moving the centre along the threads moves every interior cut and lifted point by the same amount. The missing radius scales with the support L at a fixed height. Lifted fourth coordinates scale with the height A. The slab half-thickness ε = 0.02 is a fixed modelling length, not a tolerance, so the lift is deliberately not scale-covariant in A.
+- **Tesseract and spherical weave:** neither. They are the unit tesseract and the unit 3-sphere, centered at the origin, and the request carries no size or center for them. The test shows that the shared size fields leave every mode unchanged. The weave's window radius sets the window, not the sphere.
+- **Ball and tube:** scale only, since they have no center. Radii, slice and spread scale together.
+- **Shell bypass:** scale only, since the obstacle is centered at the origin. Every length scales together: radii, ε, outside point, H, and both comparison levels.
+- **Lift:** the sources are fixed curves, so the lift moves past them rather than scaling with them. Moving the center along the threads moves every interior cut and lifted point by the same amount. The missing radius scales with the support L at a fixed height. Lifted fourth coordinates scale with the height A. The slab half-thickness ε = 0.02 is a fixed modelling length, not a tolerance, so the lift is deliberately not scale-covariant in A.
 
 **Budget.** A power-of-two scale reproduces every returned number exactly: points, parameters, section levels and radii, hits, clearance, distances and framing. Other scales agree within 10⁻¹² of the framing radius, and parameters within 10⁻¹². A study more than 10⁻⁸ from a threshold, relative to its own scale, keeps its outcome at every supported scale. A study within 10⁻¹³ is coalesced at every supported scale. Threshold tests cover these cases:
 

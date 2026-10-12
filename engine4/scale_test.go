@@ -122,10 +122,10 @@ func sameScaled(t *testing.T, label string, base, got Result, lambda float64) {
 }
 
 // The tesseract and the spherical weave are fixed objects: the unit tesseract
-// and the unit 3-sphere, centred at the origin. The request carries no size or
-// centre for them, so neither can be scaled or translated, and their fixed
+// and the unit 3-sphere, centered at the origin. The request carries no size or
+// center for them, so neither can be scaled or translated, and their fixed
 // tolerances are set for that one scale. The shared size fields are ignored.
-func TestFixedScaleObjectsHaveNoSizeOrCentre(t *testing.T) {
+func TestFixedScaleObjectsHaveNoSizeOrCenter(t *testing.T) {
 	studies := map[string]Request{}
 	for _, mode := range []string{"perspective", "orthographic", "stereo", "section"} {
 		q := Request{Mode: mode, Angles: [6]float64{.3, -.2, .5, .7, -.4, .25}, Distance: 4, Slice: .3, Spread: 1.5, Count: 5, Grid: 3, Samples: 32, Clip: 4}
@@ -161,7 +161,7 @@ func scaledCurved(object string, lambda float64) Request {
 		Count: 9, Curves: 5, Samples: 32}
 }
 
-// Curved sections have no centre but scale with their radii: the slice, its
+// Curved sections have no center but scale with their radii: the slice, its
 // spread and every returned point and diagnostic scale with them.
 func TestCurvedSectionsScaleWithTheirRadii(t *testing.T) {
 	scales := map[string][]float64{"ball": {.001, 1. / 256, .3, 3, 64, 100}, "tube": {.003, 1. / 256, .3, 3, 64, 100}}
@@ -224,7 +224,7 @@ func scaledBypass(mode, obstacle string, lambda, height float64) Request {
 		Height: height * lambda, Position: .55, Obstacle: obstacle, W1: -.5 * lambda, W2: .7 * lambda}}
 }
 
-// The bypass obstacle is centred at the origin with no centre parameter, but
+// The bypass obstacle is centered at the origin with no center parameter, but
 // every length of the study (radii, extent, outside point, route height and
 // comparison levels) scales together. Route parameters, hits and states are
 // unchanged; lengths scale.
@@ -293,7 +293,7 @@ func shiftedLift(mode string, x float64, samples int) Request {
 }
 
 // The lift's sources are fixed analytic curves; only the lift moves. The
-// threads are straight, so moving the lift centre by τ along x moves every
+// threads are straight, so moving the lift center by τ along x moves every
 // interior cut, sample and lifted point along the threads by τ (a parameter
 // shift of τ/6), while the diagnostics stay the same.
 func TestLiftTranslationAlongTheThreads(t *testing.T) {
@@ -348,10 +348,10 @@ func TestLiftTranslationAlongTheThreads(t *testing.T) {
 
 // The missing radius is a fixed fraction of the support for a fixed height,
 // because the slab half-thickness is compared with the height, not with the
-// support. Scaling L scales the missing radius and its guides about the centre.
+// support. Scaling L scales the missing radius and its guides about the center.
 // Scaling the height A scales every lifted fourth coordinate.
 func TestLiftScalesWithSupportAndHeight(t *testing.T) {
-	center := Vec3{} // a centre that does not scale would round the guide offsets
+	center := Vec3{} // a center that does not scale would round the guide offsets
 	q := func(mode string, support, height float64) Request {
 		return Request{Object: "lift", Mode: mode, Samples: 16, Lift: &LiftParameters{Center: center, Support: support, Height: height,
 			From: Vec3{}, To: Vec3{}, RadiusFrom: .5, RadiusTo: .5}}
