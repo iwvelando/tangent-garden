@@ -94,10 +94,11 @@ func newMover(c Roller, a float64, samples int) (*mover, *MovingResult, error) {
 	for k := range regular {
 		u := v.grid(k)
 		p := f(u)
-		d[k], _ = derivatives(f, u, v.lo, v.hi)
+		var dd Vec
+		d[k], dd = derivatives(f, u, v.lo, v.hi)
 		v.speed[k] = d[k].Norm()
 		out.Path[k] = point(p)
-		regular[k] = p.Valid() && stableTangent(f, u, v.lo, v.hi, d[k]) && v.speed[k] > 0
+		regular[k] = p.Valid() && stableTangent(f, u, v.lo, v.hi, d[k], dd) && v.speed[k] > 0
 	}
 	all := true
 	for k := 0; k < n; k++ {

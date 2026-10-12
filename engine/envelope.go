@@ -115,8 +115,8 @@ func (l *lines) at(t float64, p, dp Vec) familyLine {
 		}
 		return v
 	}
-	du, _ := derivatives(aligned, t, l.lo, l.hi)
-	if !stableTangent(aligned, t, l.lo, l.hi, du) {
+	du, ddu := derivatives(aligned, t, l.lo, l.hi)
+	if !stableTangent(aligned, t, l.lo, l.hi, du, ddu) {
 		return out
 	}
 	target, s := Envelope(p, dp, u, du)
@@ -175,8 +175,8 @@ func (g *rings) at(t float64, c, dc Vec) ring {
 		out.stationary = true
 		return out
 	}
-	dR, _ := derivatives(g.radius, t, g.lo, g.hi)
-	if !stableTangent(g.radius, t, g.lo, g.hi, dR) {
+	dR, ddR := derivatives(g.radius, t, g.lo, g.hi)
+	if !stableTangent(g.radius, t, g.lo, g.hi, dR, ddR) {
 		return out
 	}
 	k := dR.X / v

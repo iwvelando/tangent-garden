@@ -11,8 +11,9 @@ import (
 	"testing"
 )
 
-// The presets' configurations, as web/presets.ts defines them. Regenerate
-// after changing a preset (Node 22.6 or later, from the repository root):
+// The presets' configurations, as web/presets.ts defines them, which
+// scripts/test-wasm.mjs checks. Regenerate after changing a preset (Node
+// 22.6 or later, from the repository root):
 //
 //	node --experimental-strip-types -e 'const {presets} = await import("./web/presets.ts"); process.stdout.write("[\n" + presets.map((p) => JSON.stringify({title: p.title, config: p.config})).join(",\n") + "\n]\n")' > engine/testdata/presets.json
 type preset struct {
@@ -503,11 +504,12 @@ func pointers(points []Vec) []*Vec {
 }
 
 // checkCopies computes each preset and its copies under ms, with the base's
-// diagnostics where it has them.
+// diagnostics and refinement between samples where it has them.
 func checkCopies(t *testing.T, ms []similarity, skip func(preset, similarity) string) {
 	for _, p := range loadPresets(t) {
 		q := p.Config
 		q.Diagnostics = refines(q.Curve.Format)
+		q.Adaptive = refines(q.Curve.Format)
 		want, err := Compute(q)
 		if err != nil {
 			t.Fatalf("%s: %v", p.Title, err)
@@ -583,6 +585,35 @@ func TestCuspAtAnyScaleAndPlace(t *testing.T) {
 		for _, j := range []int{cusp - 1, cusp + 1} {
 			if r.Derived[j] == nil || r.Diagnostics.Center[j] == nil {
 				t.Errorf("%s: no evolute or center beside the cusp, at sample %d", m.name, j)
+			}
+		}
+	}
+}
+
+// A pole 10⁻¹⁷ beside the sample at t = 0 of (t, 1/(t − 10⁻¹⁷)), scaled and
+// moved. The sample is finite, 10¹⁷ times the curve's size, and its stencil
+// straddles the pole, so its first derivative disagrees with the half
+// step's: neither the sample's own size nor the second derivative across
+// the pole may excuse that. At every scale and place the pedal curve has
+// no point there and a circle rolled from t = −1 stops before the pole.
+func TestPoleBesideASampleAtAnyScaleAndPlace(t *testing.T) {
+	for _, m := range []similarity{
+		{"unit", 1, Vec{}},
+		{"tiny", 0x1p-20, Vec{}},
+		{"huge", 0x1p13, Vec{}},
+		{"far", 1, Vec{700, -500}},
+	} {
+		x, y := m.coordinate("t", m.c.X), m.coordinate("1/(t-1e-17)", m.c.Y)
+		pedal := request("pedal", x, y, -1, 1)
+		pedal.Pole = m.c
+		if r := compute(t, pedal); r.Derived[250] != nil {
+			t.Errorf("%s: pedal point %v at the pole", m.name, *r.Derived[250])
+		}
+		rolling := rollingRequest(x, y, -1, 1, Roller{Side: "left", Radius: .1 * m.s, Arm: .1 * m.s})
+		for j, p := range compute(t, rolling).Derived {
+			if u := sampleT(rolling, j); u > 0 && p != nil {
+				t.Errorf("%s: rolled past the pole, to t = %g", m.name, u)
+				break
 			}
 		}
 	}

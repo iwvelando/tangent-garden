@@ -351,3 +351,39 @@ func TestRefinedEnvelopesAgreeWithTheSamples(t *testing.T) {
 		t.Fatalf("virtual samples: %v", virtuals)
 	}
 }
+
+// Circles centered on the parabola (t, t²/4) through its focus (0, 1) all
+// pass through the focus, so one branch of their envelope is that point
+// alone, its samples apart only by rounding. Refinement must measure that
+// branch by its place, not by the rounding's spread, and so leave it as
+// it is, at any scale.
+func TestRefinementLeavesAnEnvelopeThatIsAPoint(t *testing.T) {
+	for _, s := range []float64{1, 0x1p-20} {
+		q := circlesRequest(num(s)+"*t", num(s)+"*t^2/4", -3, 3, num(s)+"*(t^2/4+1)")
+		r := compute(t, adaptive(q))
+		focus := Vec{0, s}
+		point := -1
+		for k := range r.Adaptive.Family {
+			collapsed := true
+			for _, p := range r.Family[k].Points {
+				if p != nil && p.Sub(focus).Norm() > 1e-9*s {
+					collapsed = false
+				}
+			}
+			if collapsed {
+				point = k
+			}
+		}
+		if point < 0 {
+			t.Fatalf("scale %g: no branch is the focus", s)
+		}
+		path := r.Adaptive.Family[point]
+		if path.Inserted != 0 || path.Breaks != 0 || path.Unresolved != 0 || path.Exhausted {
+			t.Errorf("scale %g: the focus refined with %d points, %d breaks, %d unresolved, exhausted %v, at tolerance %g",
+				s, path.Inserted, path.Breaks, path.Unresolved, path.Exhausted, path.Tolerance)
+		}
+		if want := refine.Epsilon * 1e-4 * s; path.Tolerance != want {
+			t.Errorf("scale %g: tolerance %g, want %g, the floor at the focus's place", s, path.Tolerance, want)
+		}
+	}
+}

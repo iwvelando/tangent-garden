@@ -151,6 +151,19 @@ func TestRefinementIsScaleInvariant(t *testing.T) {
 	}
 }
 
+// A circle of radius 2⁻¹⁰ a million units out spreads only 2⁻²⁹ of its
+// distance from the origin, far above rounding, so refinement measures it
+// by its own radius, as at the origin, not by its distance.
+func TestRefinementMeasuresASmallCurveFarOut(t *testing.T) {
+	at := func(x string) *RefinedPath {
+		return compute(t, adaptive(request("pedal", x+"+0.0009765625*cos(t)", "0.0009765625*sin(t)", 0, 2*math.Pi))).Adaptive.Base
+	}
+	near, far := at("0"), at("1048576")
+	if math.Abs(far.Tolerance/near.Tolerance-1) > 1e-3 {
+		t.Fatalf("tolerance %g a million units out, %g at the origin", far.Tolerance, near.Tolerance)
+	}
+}
+
 // Integrated curves and level sets cannot be evaluated between samples, so
 // they are never refined.
 func TestRefinementLeavesIntegratedAndUnparametrizedCurves(t *testing.T) {

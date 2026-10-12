@@ -90,8 +90,9 @@ func studyRadius(points []*Vec) float64 {
 
 // spreadUnit is the power of two at or below the larger interquartile
 // range of points' coordinates, taken as refine.Radius takes its quartiles,
-// or of their full range where that is zero, and 1 for points that do not
-// spread at all.
+// or of their full range where that is zero, or of their largest
+// quartile where the spread is only rounding, and 1 for points all at the
+// origin.
 func spreadUnit(points []*Vec) float64 {
 	var xs, ys []float64
 	for _, p := range points {
@@ -118,6 +119,17 @@ func spreadUnit(points []*Vec) float64 {
 	s := spread(false)
 	if s == 0 {
 		s = spread(true)
+	}
+	// A spread within 2⁻⁴⁰ of the points' quartiles' magnitude is rounding,
+	// as where a curve collapses to a point: such points are measured in
+	// that magnitude, which is as small as the study is, and which an
+	// asymptote's outliers do not reach.
+	magnitude := 0.0
+	for _, vs := range [][]float64{xs, ys} {
+		magnitude = math.Max(magnitude, math.Max(math.Abs(vs[len(vs)/4]), math.Abs(vs[3*len(vs)/4])))
+	}
+	if s <= 0x1p-40*magnitude {
+		s = magnitude
 	}
 	return binade(s)
 }
@@ -409,8 +421,8 @@ func (c *caustic) point(t float64, p, d Vec) (*Vec, bool) {
 		return nil, false
 	}
 	rays := baseStencil(c.q.Curve.Min, c.q.Curve.Max)
-	turn, _ := rays.derivatives(c.direction, t)
-	if c.q.Kind == "diacaustic" && !rays.stableTangent(c.direction, t, turn) {
+	turn, bend := rays.derivatives(c.direction, t)
+	if c.q.Kind == "diacaustic" && !rays.stableTangent(c.direction, t, turn, bend) {
 		return nil, false
 	}
 	target, s := Envelope(p, d, dir, turn)
