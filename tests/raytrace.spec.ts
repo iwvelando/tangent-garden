@@ -253,6 +253,99 @@ test("tracing starts bare, grows monotonically, and ends at the study", () => {
   });
 });
 
+test("a caustic refined between samples appears as light reaches it", () => {
+  // Light falls straight down onto y = x²/4; each sample's caustic point
+  // lies one unit below it, so it is reached at 3 − y + 1 = 4 − x²/4 from
+  // the top of the view, and the outer samples are reached first.
+  const base = Array.from({ length: 5 }, (_, j) => {
+    const x = -2 + j;
+    return { x, y: (x * x) / 4 };
+  });
+  const derived = base.map((p) => ({ x: p.x, y: p.y - 1 }));
+  const incident = base.map(() => ({ x: 0, y: -1 }));
+  const result: Result = {
+    ...study(base, derived, toward(base, derived, incident)),
+    adaptive: {
+      derived: {
+        // Points between samples 0 and 1 and between 2 and 3, a break
+        // between 3 and 4, and a virtual stretch.
+        points: [
+          derived[0],
+          { x: -1.5, y: -0.4 },
+          derived[1],
+          derived[2],
+          { x: 0.25, y: -0.98 },
+          { x: 0.5, y: -0.94 },
+          derived[3],
+          null,
+          derived[4],
+        ],
+        at: [0, 0.5, 1, 2, 2.25, 2.5, 3, 3.5, 4],
+        virtual: [false, false, false, true, true, true, false, false, false],
+        tolerance: 1e-3,
+        inserted: 4,
+        breaks: 1,
+        unresolved: 0,
+        exhausted: false,
+      },
+    },
+  };
+  const timeline = traceTimeline(
+    result,
+    optics("catacaustic", down()),
+    rect,
+    2,
+  );
+  const refined = result.adaptive!.derived!;
+  const shown = (p: number) => trace(result, timeline, p).adaptive!.derived!;
+  // Nothing is shown before the first light arrives, at τ = 3 for x = ±2.
+  const start = shown(0);
+  expect(start.at).toEqual(refined.at);
+  expect(start.virtual).toEqual(refined.virtual);
+  expect(start.points.every((p) => p === null)).toBe(true);
+  // At τ = 3.6 only the samples at x = ±2 (τ = 3) are reached, not those at
+  // x = ±1 (τ = 3.75); the point between samples 0 and 1 arrives at the
+  // interpolated τ = 3.375.
+  const early = shown(3.6 / timeline.total);
+  expect(early.points).toEqual([
+    derived[0],
+    { x: -1.5, y: -0.4 },
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    derived[4],
+  ]);
+  // At τ = 3.9 the middle sample (τ = 4) is not yet reached, but between it
+  // and its neighbor (τ = 3.75) the point at 2.5 (τ = 3.875) is, while the
+  // one at 2.25 (τ = 3.9375) is not.
+  expect(shown(3.9 / timeline.total).points).toEqual([
+    derived[0],
+    { x: -1.5, y: -0.4 },
+    derived[1],
+    null,
+    null,
+    { x: 0.5, y: -0.94 },
+    derived[3],
+    null,
+    derived[4],
+  ]);
+  // Every point arrives once both its neighboring samples have, in order.
+  let count = 0;
+  for (let k = 0; k <= 100; k++) {
+    const view = shown(k / 100);
+    const now = view.points.filter((p) => p !== null).length;
+    expect(now).toBeGreaterThanOrEqual(count);
+    count = now;
+    view.points.forEach((p, i) => p && expect(p).toEqual(refined.points[i]));
+  }
+  // The break stays a break, and the end is the study's refined curve.
+  expect(shown(1)).toEqual(refined);
+  expect(shown(1).points[7]).toBeNull();
+});
+
 test("a derived input is the curve that is lit", () => {
   const base = [{ x: 5, y: 5 }];
   const input = [{ x: 0, y: 0 }];
@@ -322,6 +415,8 @@ for (const [label, camera] of [
   ["Parallel light & a circle", "hold"],
   ["Through a parabola", "current"],
   ["Light inside a circle", "hold"],
+  // Refined between its samples, so the refined caustic must be traced too.
+  ["Sunlight in a hammered cup", "hold"],
 ] as const)
   test(`${label} traces from its light to the caustic (${camera} view)`, async ({
     page,
