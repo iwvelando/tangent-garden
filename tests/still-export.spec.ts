@@ -17,8 +17,12 @@ const planarReady = async (page: Page) => {
   await expect(page.locator("#artwork")).toBeVisible();
   await expect(imageButton(page)).toBeEnabled();
 };
+// A level surface such as the Klein bottle settles in under 2 s locally, but
+// on a CI runner beside another worker it can outlast the default 5 s.
 const spatialSettled = (page: Page) =>
-  expect(page.locator(".spatial-stage")).toHaveAttribute("aria-busy", "false");
+  expect(page.locator(".spatial-stage")).toHaveAttribute("aria-busy", "false", {
+    timeout: 30_000,
+  });
 const spatial = (label: string) => async (page: Page) => {
   await page.goto("/?study=3d");
   await spatialSettled(page);
