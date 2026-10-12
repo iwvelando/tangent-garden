@@ -42,8 +42,9 @@ func coilEvaluation(t *testing.T, c Request) (evaluation, func(float64) Vec3, bo
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.units = base.units(lo, hi, absolute)
 	curve, tangents, breaks := baseSamples(c, base, lo, hi, c.Samples, closed)
-	evaluate, position, closes, err := c.Coil.evaluation(base, lo, hi, curve, tangents, breaks, closed)
+	evaluate, position, closes, err := c.Coil.evaluation(base, lo, hi, curve, tangents, breaks, closed, c.units)
 	if err != nil {
 		t.Fatal(err)
 	}

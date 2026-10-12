@@ -35,6 +35,15 @@ const focal = spatialPresets.findIndex(
   (p) => p.name === "The whole focal surface of an ellipsoid",
 );
 
+test("the Go similarity fixture covers every current spatial preset", async () => {
+  const fixture = JSON.parse(
+    await readFile("engine3/testdata/presets.json", "utf8"),
+  );
+  expect(fixture).toEqual(
+    Object.fromEntries(spatialPresets.map((p) => [p.name, p.config])),
+  );
+});
+
 test("presets that set layers hide only layers their study draws", () => {
   expect(layered.length).toBeGreaterThanOrEqual(3);
   for (const i of layered) {

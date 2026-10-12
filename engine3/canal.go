@@ -93,7 +93,8 @@ func (q CanalRequest) radius(span float64) (func(float64) (float64, float64, flo
 	if err != nil {
 		return nil, named("canal.profile", fmt.Errorf("ρ(t): %w", err))
 	}
-	profile := sampled(func(s float64) Vec3 { return Vec3{e(s), 0, 0} }, math.Inf(-1), math.Inf(1), span)
+	// ρ is a pure number, whose units are 1.
+	profile := sampled(func(s float64) Vec3 { return Vec3{e(s), 0, 0} }, math.Inf(-1), math.Inf(1), span, absolute)
 	return func(s float64) (float64, float64, float64, bool) {
 		r, v, a, ok := profile(s)
 		return q.Radius * r.X, q.Radius * v.X, q.Radius * a.X, ok

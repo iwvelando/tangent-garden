@@ -107,7 +107,9 @@ func inversions(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, ta
 		if first == nil {
 			first = &j
 		}
-		collapsed = collapsed && j.sub(*first).norm() <= 1e-9*(1+j.sub(q.Center).norm())
+		// Rounding is measured against the inversion's radius, its length,
+		// and the image point's distance from the center.
+		collapsed = collapsed && j.sub(*first).norm() <= 1e-9*(q.Radius+j.sub(q.Center).norm())
 	}
 	out.Collapsed = collapsed && first != nil
 	for i := 0; i < n; i++ {
@@ -121,7 +123,7 @@ func inversions(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, ta
 		if !crossed {
 			before, after := m.sub(*a), b.sub(m)
 			// A collapsed image has only roundoff between its points.
-			negligible := 1e-9 * (1 + m.sub(q.Center).norm())
+			negligible := 1e-9 * (q.Radius + m.sub(q.Center).norm())
 			crossed = before.dot(after) < 0 && math.Max(before.norm(), after.norm()) > negligible
 		}
 		if crossed {

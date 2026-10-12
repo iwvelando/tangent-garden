@@ -4,10 +4,12 @@ install:
 	npm ci
 wasm:
 	npm run wasm
-# engine3 alone takes 6–9 minutes under -race on CI's runners, close to
-# go test's default 10-minute limit.
+# Race detection forces atomic coverage counters. Instrumenting those counter
+# accesses under -race makes the numerical suites much slower than
+# running race detection and coverage separately. Both passes run every test.
 test-go:
-	go test -race -cover -timeout 20m ./...
+	go test -race -timeout 20m ./...
+	go test -cover -timeout 20m ./...
 test-wasm: wasm
 	node --test scripts/preset-hashes.test.mjs
 	node scripts/test-wasm.mjs

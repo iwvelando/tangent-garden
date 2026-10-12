@@ -123,7 +123,7 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 
 **Open:**
 
-- Error budgets across tiny, large and translated studies.
+- Error budgets across tiny, large and translated studies. In the 3D engine, stated and tested for tiny, huge and far copies of every spatial preset (see [scale and translation](mathematics.md#spatial-scale-and-translation)). Remaining 3D limits include the absolute stability floors for differenced r‴ (`jerk`, in `engine3/diagnostics.go`) and τ′ (`ruledprobe.go`), the framed ribbon probe's comparison of differently dimensioned tangents (`ruledprobe.go`), and the field's absolute resting-speed and acceleration-stability floors (`flow.go`; the resting limit is also stated in the UI). Far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic. See the documented budgets for the exact tested coverage. The 2D engine's budgets are open.
 - 3D: rebase positions before the Float32 upload, and keep meaningful clipping (near/far are set in framing radii).
 
 Today's finite-value guards and robust bounds do not prove scale independence.

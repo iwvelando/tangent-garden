@@ -77,7 +77,7 @@ func (q InvoluteRequest) offsets(samples int) ([]float64, error) {
 // on each sample interval, from speeds at its ends and midpoint, and stops at
 // the first invalid sample or break on either side. It returns the arc
 // length too, from which refinement evaluates members between samples.
-func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*Vec3, tangents []Vec3, speeds, middles []float64, breaks []bool, lines int) (*InvoluteResult, *strung, error) {
+func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*Vec3, tangents []Vec3, speeds, middles []float64, breaks []bool, lines int, units units) (*InvoluteResult, *strung, error) {
 	n := len(base) - 1
 	offsets, err := q.offsets(n)
 	if err != nil {
@@ -91,7 +91,7 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 	k := min(n-1, int(math.Floor((t0-lo)/h)))
 	speed := func(t float64) float64 {
 		_, v, _, ok := evaluate(t)
-		if !ok || !v.valid() || v.norm() < 1e-9 {
+		if !ok || !v.valid() || units.still(v) {
 			return math.NaN()
 		}
 		return v.norm()
@@ -148,8 +148,9 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 				if first == nil {
 					first = &p
 				}
-				// Relative to the string length, so a distant point stays a point.
-				collapsed = collapsed && p.sub(*first).norm() <= 1e-9*(1+math.Abs(c)+math.Abs(arc[i]))
+				// Relative to the curve's size and the string length, so a
+				// distant point stays a point.
+				collapsed = collapsed && p.sub(*first).norm() <= 1e-9*(units.size+math.Abs(c)+math.Abs(arc[i]))
 			}
 		}
 		out.Members[m] = InvoluteMember{Offset: c, Points: points, Collapsed: collapsed && first != nil}
@@ -162,7 +163,7 @@ func involutes(q InvoluteRequest, evaluate evaluation, lo, hi float64, base []*V
 			out.Strings = append(out.Strings, Ruling{i, base[i].add(tangents[i].mul(from)), base[i].add(tangents[i].mul(to))})
 		}
 	}
-	return out, &strung{evaluate, speed, lo, hi, n, arc, reached, breaks, base, tangents, speeds}, nil
+	return out, &strung{evaluate, units, speed, lo, hi, n, arc, reached, breaks, base, tangents, speeds}, nil
 }
 
 // restart anchors arc length again on each stretch of the curve that the
@@ -206,6 +207,7 @@ func filament(r, T Vec3, c, s float64) Vec3 { return r.add(T.mul(c - s)) }
 // which members are evaluated between them.
 type strung struct {
 	evaluate evaluation
+	units    units
 	speed    func(float64) float64
 	lo, hi   float64
 	n        int
@@ -247,7 +249,7 @@ func (u *strung) member(c float64) func(float64) Vec3 {
 		start := u.knot(i)
 		r, v, _, ok := u.evaluate(t)
 		speed := v.norm()
-		if !ok || !r.valid() || !v.valid() || speed < 1e-9 {
+		if !ok || !r.valid() || !v.valid() || u.units.still(v) {
 			return undefined
 		}
 		s := u.arc[i] + (t-start)/6*(u.speeds[i]+4*u.speed((start+t)/2)+speed)

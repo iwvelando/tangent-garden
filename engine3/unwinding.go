@@ -48,13 +48,13 @@ var (
 // T′ = (r″ − (r″·T)T)/|r′| and T″ is differenced from T. I′ is along the
 // base's principal normal, so an involute stops where the base is straight
 // (T′ = 0) as well as where the string runs out (s = c).
-func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*Vec3, breaks []bool) (evaluation, func(float64) Vec3, []bool, []float64, error) {
+func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*Vec3, breaks []bool, units units) (evaluation, func(float64) Vec3, []bool, []float64, error) {
 	n := len(curve) - 1
 	t0 := q.Anchor
 	if t0 < lo || t0 > hi {
 		return nil, nil, nil, nil, fieldErr("unwinding.anchor", "the input's anchor t₀ must lie within the domain [%.6g, %.6g]", lo, hi)
 	}
-	u := &unwinder{offset: q.Offset, base: base, lo: lo, hi: hi, n: n, h: (hi - lo) / float64(n), s: make([]float64, n+1), reach: make([]bool, n)}
+	u := &unwinder{offset: q.Offset, base: base, units: units, lo: lo, hi: hi, n: n, h: (hi - lo) / float64(n), s: make([]float64, n+1), reach: make([]bool, n)}
 	// open reports whether interval i joins two regular samples.
 	open := func(i int) bool { return curve[i] != nil && curve[i+1] != nil && !breaks[i+1] }
 	k := min(n-1, int(math.Floor((t0-lo)/u.h)))
@@ -99,7 +99,7 @@ func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*V
 	span := hi - lo
 	tangent := func(t float64) Vec3 {
 		_, v, _, ok := base(t)
-		if !ok || !v.valid() || v.norm() < 1e-9 {
+		if !ok || !v.valid() || units.still(v) {
 			return Vec3{math.NaN(), 0, 0}
 		}
 		return v.unit()
@@ -134,6 +134,7 @@ func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*V
 type unwinder struct {
 	offset    float64
 	base      evaluation
+	units     units // the base's
 	lo, hi, h float64
 	n         int
 	s         []float64
@@ -151,7 +152,7 @@ func (u *unwinder) arc(a, b float64, nodes, weights []float64) float64 {
 	for k, x := range nodes {
 		for _, side := range []float64{-1, 1} {
 			_, v, _, ok := u.base(middle + side*half*x)
-			if !ok || !v.valid() || v.norm() < 1e-9 {
+			if !ok || !v.valid() || u.units.still(v) {
 				return math.NaN()
 			}
 			sum += weights[k] * v.norm()
@@ -187,7 +188,7 @@ func (u *unwinder) place(t float64) (point, dT Vec3, speed, length float64, ok b
 	length = u.offset - u.s[j] - u.arc(u.knot(j), t, gauss4[0][:], gauss4[1][:])
 	r, v, a, defined := u.base(t)
 	speed = v.norm()
-	if !defined || !finite(length) || !r.valid() || !v.valid() || !a.valid() || speed < 1e-9 {
+	if !defined || !finite(length) || !r.valid() || !v.valid() || !a.valid() || u.units.still(v) {
 		return
 	}
 	T := v.mul(1 / speed)

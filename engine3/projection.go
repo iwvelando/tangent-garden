@@ -53,7 +53,7 @@ func projections(c Request, base []*Vec3, tangents []Vec3) *ProjectionResult {
 		if first == nil {
 			first = &p
 		}
-		collapsed = collapsed && p.sub(*first).norm() <= 1e-9*(1+p.sub(c.Pole).norm())
+		collapsed = collapsed && p.sub(*first).norm() <= 1e-9*(c.units.size+p.sub(c.Pole).norm())
 	}
 	out.Collapsed = collapsed && first != nil
 	for j := 0; j < c.Lines; j++ {

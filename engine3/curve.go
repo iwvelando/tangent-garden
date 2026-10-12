@@ -95,19 +95,89 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 		expressions[i] = e
 	}
 	f := func(t float64) Vec3 { return Vec3{expressions[0](t), expressions[1](t), expressions[2](t)} }
-	return sampled(f, q.Min, q.Max, span), q.Min, q.Max, false, nil
+	return sampled(f, q.Min, q.Max, span, sized(extent(f, q.Min, q.Max), span, absolute)), q.Min, q.Max, false, nil
+}
+
+// units are a curve's own size, and the speed and acceleration it gives
+// it over a parameter span, in which the floors below which a derivative
+// is lost in rounding, a chord is rounding, or a curve stands still, are
+// measured. They move with the curve's size and not with its position, so
+// a scaled or moved copy of a study keeps its decisions.
+type units struct{ size, speed, acceleration float64 }
+
+// absolute are the units of a curve with no size of its own, or of a pure
+// number, in which the floors are absolute.
+var absolute = units{1, 1, 1}
+
+// sized returns the units of a curve of the given size over span, or
+// fallback when it has no size.
+func sized(size, span float64, fallback units) units {
+	if size > 0 {
+		return units{size, size / span, size / (span * span)}
+	}
+	return fallback
+}
+
+// still reports a velocity too small, beside the curve's units, to give
+// it a direction.
+func (u units) still(v Vec3) bool { return v.norm() < 1e-9*u.speed }
+
+// units are an evaluation's own units on [lo, hi], from its positions, or
+// fallback when it has no size.
+func (e evaluation) units(lo, hi float64, fallback units) units {
+	return sized(extent(func(t float64) Vec3 { r, _, _, _ := e(t); return r }, lo, hi), hi-lo, fallback)
+}
+
+// extent is a curve's size: twice the robustly fitted radius of its points at
+// 65 evenly spaced parameters and 64 staggered probes on [lo, hi], unchanged
+// by a translation and scaled with the curve. The second set avoids treating
+// a regular curve that aliases the uniform grid as a stationary point.
+// It is 0 for a curve with no size of its own: one
+// whose points there are apart by no more than rounding, or are fewer
+// than two.
+func extent(f func(float64) Vec3, lo, hi float64) float64 {
+	low := Vec3{math.Inf(1), math.Inf(1), math.Inf(1)}
+	high := low.mul(-1)
+	points := make([]*Vec3, 0, 129)
+	include := func(t float64) {
+		if p := f(t); p.valid() {
+			points = append(points, &p)
+			low = Vec3{math.Min(low.X, p.X), math.Min(low.Y, p.Y), math.Min(low.Z, p.Z)}
+			high = Vec3{math.Max(high.X, p.X), math.Max(high.Y, p.Y), math.Max(high.Z, p.Z)}
+		}
+	}
+	for k := 0; k <= 64; k++ {
+		include(lo + (hi-lo)*float64(k)/64)
+	}
+	// Irrationally staggered parameters do not share the uniform grid's
+	// period. This remains a bounded estimate, not a feature certificate.
+	const goldenFraction = 0.6180339887498949
+	for k := 1; k <= 64; k++ {
+		include(lo + (hi-lo)*math.Mod(float64(k)*goldenFraction, 1))
+	}
+	size := high.sub(low).norm()
+	magnitude := math.Max(low.norm(), high.norm())
+	if !finite(size) || size <= 1e-12*magnitude {
+		return 0
+	}
+	// A rounded value at a pole can enter the coordinate guard after
+	// scaling, without belonging to a regular branch. The same robust fit
+	// used for framing prevents it from setting every branch's floors.
+	return 2 * fit(points).Radius
 }
 
 // sampled differentiates expressions numerically on [lo, hi] (which may be
 // unbounded) with steps scaled to span, reporting whether the velocity is
-// stable under a halved step and discarding an unstable acceleration.
-func sampled(f func(float64) Vec3, lo, hi, span float64) evaluation {
+// stable under a halved step and discarding an unstable acceleration. Each
+// test has a floor in the curve's units u, below which a difference is
+// rounding.
+func sampled(f func(float64) Vec3, lo, hi, span float64, u units) evaluation {
 	return func(t float64) (Vec3, Vec3, Vec3, bool) {
 		r := f(t)
 		v, a := derivatives(f, r, t, lo, hi, span*1e-4)
 		v2, a2 := derivatives(f, r, t, lo, hi, span*5e-5)
-		stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*math.Max(v.norm(), v2.norm())+1e-8
-		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(1, v.norm()/span) {
+		stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*math.Max(v.norm(), v2.norm())+1e-8*u.speed
+		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(u.acceleration, v.norm()/span) {
 			a = Vec3{math.NaN(), 0, 0}
 		}
 		return r, v, a, stable
@@ -167,13 +237,20 @@ func fit(families ...[]*Vec3) Bounds {
 			continue
 		}
 		found = true
-		for axis, vs := range values {
+		// The family's core magnitude, its largest quartile on any axis,
+		// sets the rounding its coordinates carry: quartiles apart by no
+		// more than that have no spread to fence outliers with.
+		core := 0.0
+		for _, vs := range values {
 			sort.Float64s(vs)
+			core = math.Max(core, math.Max(math.Abs(vs[len(vs)/4]), math.Abs(vs[3*len(vs)/4])))
+		}
+		for axis, vs := range values {
 			l, h := vs[0], vs[len(vs)-1]
 			if len(vs) >= 8 {
 				q1, q3 := vs[len(vs)/4], vs[3*len(vs)/4]
 				spread := q3 - q1
-				if spread > 1e-12 {
+				if spread > 1e-12*core {
 					a, b := q1-3*spread, q3+3*spread
 					for _, v := range vs {
 						if v >= a {
@@ -206,13 +283,19 @@ func fit(families ...[]*Vec3) Bounds {
 		return Bounds{Vec3{}, 1}
 	}
 	center := low.add(high).mul(0.5)
-	radius := 1e-4
+	radius := 0.0
 	for _, family := range families {
 		for _, p := range family {
 			if p != nil && p.X >= low.X && p.X <= high.X && p.Y >= low.Y && p.Y <= high.Y && p.Z >= low.Z && p.Z <= high.Z {
 				radius = math.Max(radius, p.sub(center).norm())
 			}
 		}
+	}
+	// Points apart by no more than rounding have no size of their own, so a
+	// lone point keeps a radius to be framed by; any other study's radius
+	// is its own, however small.
+	if radius <= 1e-12*center.norm() {
+		radius = math.Max(radius, 1e-4)
 	}
 	return Bounds{center, radius}
 }

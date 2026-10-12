@@ -354,7 +354,7 @@ func (f carried) along(c Request, evaluate evaluation, lo, hi float64) func(floa
 			return frameAt{}, false
 		}
 		r, v, a, ok := evaluate(t)
-		if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+		if !ok || !r.valid() || !v.valid() || c.units.still(v) {
 			return frameAt{}, false
 		}
 		T := v.unit()
