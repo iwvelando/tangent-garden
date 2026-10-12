@@ -1,6 +1,6 @@
 package expr
 
-// The evaluator as it was before expressions were compiled to instructions,
+// The evaluator as it was before expressions were compiled to folded closures,
 // kept unchanged but for its names as the reference that the compiled
 // evaluator must match bit for bit (see equivalence_test.go).
 

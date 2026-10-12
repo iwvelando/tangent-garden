@@ -26,15 +26,58 @@ import { fileURLToPath } from "node:url";
 import { Script, createContext, runInThisContext } from "node:vm";
 import { createServer } from "vite";
 
-const options = { runs: 1, engine: "public/", compare: "", only: "" };
-const args = process.argv.slice(2);
-for (let k = 0; k < args.length; k += 2) {
-  const key = args[k].replace(/^--/, "");
-  if (!(key in options) && key !== "child")
-    throw new Error(`Unknown option ${args[k]}`);
-  options[key] = key === "runs" ? Number(args[k + 1]) : args[k + 1];
+export function parseOptions(args) {
+  const options = { runs: 1, engine: "public/", compare: "", only: "" };
+  for (let k = 0; k < args.length; k += 2) {
+    const key = args[k].replace(/^--/, "");
+    if (!Object.hasOwn(options, key) && key !== "child")
+      throw new Error(`Unknown option ${args[k]}`);
+    const value = args[k + 1];
+    if (!value || value.startsWith("--"))
+      throw new Error(`${args[k]} requires a value`);
+    options[key] = key === "runs" ? Number(value) : value;
+  }
+  if (!Number.isSafeInteger(options.runs) || options.runs < 1)
+    throw new Error("--runs must be a finite positive whole number");
+  return options;
 }
-if (!(options.runs >= 1)) throw new Error("--runs must be at least 1");
+
+// Refused studies are not drawings: two identical errors cannot establish
+// that either engine preserved a preset's geometry.
+export function assertReply(name, reply) {
+  const error = reply.error ?? reply.result?.error;
+  if (error) throw new Error(`${name}: refused: ${error}`);
+  if (!reply.result) throw new Error(`${name}: worker returned no result`);
+}
+
+// Require complete coverage before reporting differences. Comparing an empty
+// selection, missing presets or duplicated names must never pass silently.
+export function assertMatchingPresets(local, other) {
+  if (!local.length || !other.length) throw new Error("No presets selected");
+  const index = (rows) => {
+    const byName = new Map();
+    for (const row of rows) {
+      if (row.error) throw new Error(`${row.name}: refused: ${row.error}`);
+      if (byName.has(row.name))
+        throw new Error(`Duplicate preset: ${row.name}`);
+      byName.set(row.name, row);
+    }
+    return byName;
+  };
+  const localByName = index(local),
+    otherByName = index(other);
+  for (const name of localByName.keys())
+    if (!otherByName.has(name))
+      throw new Error(`Comparison engine missing preset: ${name}`);
+  for (const name of otherByName.keys())
+    if (!localByName.has(name))
+      throw new Error(`Comparison engine has extra preset: ${name}`);
+  return local
+    .filter((r) => otherByName.get(r.name).hash !== r.hash)
+    .map((r) => r.name);
+}
+
+let options;
 
 async function loadEngine(source) {
   const read = async (name) => {
@@ -99,7 +142,7 @@ async function requests(server) {
 // A digest of a value that depends on every number's bits, and on nothing
 // a transport might reorder: an object's keys are taken sorted, and an
 // array and a typed array of the same numbers hash alike.
-function digest(value) {
+export function digest(value) {
   const hash = createHash("sha256");
   const bits = new DataView(new ArrayBuffer(8));
   const put = (v) => {
@@ -127,7 +170,7 @@ function digest(value) {
     }
   };
   put(value);
-  return hash.digest("hex").slice(0, 16);
+  return hash.digest("hex");
 }
 
 const median = (values) => {
@@ -145,6 +188,8 @@ async function measure(source) {
   let chosen, worker, restore;
   try {
     chosen = await requests(server);
+    if (!chosen.length)
+      throw new Error(`No presets match ${JSON.stringify(options.only)}`);
     ({ restore } = await server.ssrLoadModule("/web/lifted.ts"));
     worker = await server.transformRequest(
       "/web/engine.worker.ts?worker_file&type=classic",
@@ -181,6 +226,7 @@ async function measure(source) {
       const t0 = performance.now();
       const reply = (last = await ask(request));
       const t1 = performance.now();
+      assertReply(name, reply);
       if (run > 0) times.push(t1 - t0);
       const { id: _, lifted, ...rest } = reply;
       if (rest.result) restore(rest.result, lifted);
@@ -195,18 +241,20 @@ async function measure(source) {
   process.exit(0);
 }
 
+export function childOptions(source, options) {
+  return [
+    "--child",
+    source,
+    "--runs",
+    String(options.runs),
+    ...(options.only ? ["--only", options.only] : []),
+  ];
+}
+
 function child(source) {
   const out = execFileSync(
     process.execPath,
-    [
-      fileURLToPath(import.meta.url),
-      "--child",
-      source,
-      "--runs",
-      String(options.runs),
-      "--only",
-      options.only,
-    ],
+    [fileURLToPath(import.meta.url), ...childOptions(source, options)],
     {
       encoding: "utf8",
       maxBuffer: 1 << 24,
@@ -216,41 +264,45 @@ function child(source) {
   return JSON.parse(out);
 }
 
-const ms = (v) => `${v.toFixed(1).padStart(8)} ms`;
-if (options.child) await measure(options.child);
-else {
-  const local = child(options.engine);
-  if (!options.compare) {
-    console.log(`Engine: ${options.engine}`);
-    for (const r of local)
-      console.log(
-        `${r.hash}  ${ms(r.time)}  ${r.name}${r.error ? `  (refused: ${r.error})` : ""}`,
-      );
-  } else {
-    const other = child(options.compare);
-    console.log(`Time per preset: ${options.compare} → ${options.engine}`);
-    const differ = [];
-    let before = 0,
-      after = 0;
-    for (const r of local) {
-      const o = other.find((x) => x.name === r.name);
-      if (!o) {
-        console.log(`${" ".repeat(34)}  new: ${r.name}`);
-        continue;
+async function main() {
+  options = parseOptions(process.argv.slice(2));
+  const ms = (v) => `${v.toFixed(1).padStart(8)} ms`;
+  if (options.child) await measure(options.child);
+  else {
+    const other = options.compare ? child(options.compare) : null;
+    const local = child(options.engine);
+    if (!options.compare) {
+      console.log(`Engine: ${options.engine}`);
+      for (const r of local)
+        console.log(
+          `${r.hash}  ${ms(r.time)}  ${r.name}${r.error ? `  (refused: ${r.error})` : ""}`,
+        );
+    } else {
+      console.log(`Time per preset: ${options.compare} → ${options.engine}`);
+      const differ = assertMatchingPresets(local, other);
+      let before = 0,
+        after = 0;
+      for (const r of local) {
+        const o = other.find((x) => x.name === r.name);
+        before += o.time;
+        after += r.time;
+        console.log(
+          `${ms(o.time)} → ${ms(r.time)}  ${(o.time / r.time).toFixed(2).padStart(5)}×  ${o.hash === r.hash ? "same" : "DIFFERENT"}  ${r.name}`,
+        );
       }
-      if (o.hash !== r.hash) differ.push(r.name);
-      before += o.time;
-      after += r.time;
       console.log(
-        `${ms(o.time)} → ${ms(r.time)}  ${(o.time / r.time).toFixed(2).padStart(5)}×  ${o.hash === r.hash ? "same" : "DIFFERENT"}  ${r.name}`,
+        `\n${local.length} results, ${differ.length} different; all presets ${ms(before)} → ${ms(after)}`,
       );
-    }
-    console.log(
-      `\n${local.length} results, ${differ.length} different; all presets ${ms(before)} → ${ms(after)}`,
-    );
-    if (differ.length) {
-      console.log(`Different:\n  ${differ.join("\n  ")}`);
-      process.exit(1);
+      if (differ.length) {
+        console.log(`Different:\n  ${differ.join("\n  ")}`);
+        process.exit(1);
+      }
     }
   }
 }
+
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+)
+  await main();

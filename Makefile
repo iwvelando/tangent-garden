@@ -9,6 +9,7 @@ wasm:
 test-go:
 	go test -race -cover -timeout 20m ./...
 test-wasm: wasm
+	node --test scripts/preset-hashes.test.mjs
 	node scripts/test-wasm.mjs
 	node scripts/test-dev-worker.mjs
 # Times large implicit surfaces and curve meshes; ARGS="--compare <site or directory>" adds another engine.
