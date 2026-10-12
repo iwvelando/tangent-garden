@@ -1261,6 +1261,11 @@ header {
   gap: 6px;
   margin-bottom: 13px;
 }
+/* Stopping rays at the caustic (StopAtCaustic.tsx): the checkbox sits in
+   line with its help toggle. */
+.caustic-switch .check {
+  margin-bottom: 0;
+}
 .probe-slider input {
   width: 100%;
   accent-color: #638f82;

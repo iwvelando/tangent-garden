@@ -1,4 +1,4 @@
-import type { Config, Result, Vec } from "./types";
+import type { Config, Ray, Result, Vec } from "./types";
 
 // A world-coordinate rectangle: the view the light enters.
 export type Rect = { x0: number; x1: number; y0: number; y1: number };
@@ -23,8 +23,10 @@ export type Timeline = {
   incident: (Vec | null)[];
   nIncident: number;
   nTransmitted: number;
-  // How far each outgoing ray is drawn, as in the study.
+  // How far each outgoing ray is drawn, as in the study, and whether it
+  // stops at its caustic point (see reach).
   distance: number;
+  stop: boolean;
 };
 
 const finite = (v: Vec | null | undefined): v is Vec =>
@@ -36,6 +38,26 @@ const along = (p: Vec, d: Vec, s: number) => ({
 const inside = (p: Vec, r: Rect) =>
   p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1;
 
+// How far an optical study's ray is drawn ahead of the curve and back
+// behind it. Every ray runs the ray length both ways, unless it stops at the
+// caustic: then a ray ends at its caustic point, or at the ray length if
+// that comes first. Only a ray whose caustic point is virtual extends behind
+// the curve, as far as that point, and it runs as far ahead, so the drawing
+// keeps to the caustic's scale. A ray with no caustic point, as under total
+// internal reflection, runs the ray length with no extension.
+export function reach(ray: Ray, distance: number, stop: boolean) {
+  if (!stop) return { ahead: distance, behind: distance };
+  const q = ray.target;
+  const s = finite(q)
+    ? (q.x - ray.origin.x) * ray.direction.x +
+      (q.y - ray.origin.y) * ray.direction.y
+    : NaN;
+  if (!Number.isFinite(s)) return { ahead: distance, behind: 0 };
+  return s >= 0
+    ? { ahead: Math.min(distance, s), behind: 0 }
+    : { ahead: Math.min(distance, -s), behind: Math.min(distance, -s) };
+}
+
 // Times every sample of an optical study within the given view. Nothing is
 // recomputed: the hit points, caustic points, and rays are the study's own.
 // Like the study, the trace infers no scene topology: every sample is lit,
@@ -45,6 +67,7 @@ export function traceTimeline(
   config: Config,
   rect: Rect,
   distance: number,
+  stop = false,
 ): Timeline {
   const points = result.input ?? result.base;
   const refracting = config.kind === "diacaustic";
@@ -99,10 +122,11 @@ export function traceTimeline(
   let total = 0;
   for (const ray of result.rays) {
     const t = hit[ray.sampleIndex];
+    const { ahead, behind } = reach(ray, distance, stop);
     if (Number.isFinite(t))
       total = Math.max(
         total,
-        t + (ray.tir ? nIncident : nTransmitted) * distance,
+        t + (ray.tir ? nIncident : nTransmitted) * Math.max(ahead, behind),
       );
   }
   arrival.forEach((t, j) => {
@@ -121,6 +145,7 @@ export function traceTimeline(
     nIncident,
     nTransmitted,
     distance,
+    stop,
     behind: parallel ? 2 * Math.max(rect.x1 - rect.x0, rect.y1 - rect.y0) : 0,
   };
 }
@@ -180,15 +205,21 @@ export function trace(result: Result, timeline: Timeline, p: number): Result {
         travelled >= length ? ray.origin : along(from, beam, travelled);
       const tail = along(from, beam, -timeline.behind);
       const speed = ray.tir ? timeline.nIncident : timeline.nTransmitted;
-      const out =
-        tau > t ? Math.min(timeline.distance, (tau - t) / speed) : null;
+      const { ahead, behind } = reach(ray, timeline.distance, timeline.stop);
+      const out = tau > t ? (tau - t) / speed : null;
       return {
         ...ray,
         traced: {
           from: tail,
           to,
-          out: out === null ? null : along(ray.origin, ray.direction, out),
-          back: out === null ? null : along(ray.origin, ray.direction, -out),
+          out:
+            out === null
+              ? null
+              : along(ray.origin, ray.direction, Math.min(ahead, out)),
+          back:
+            out === null || !(behind > 0)
+              ? null
+              : along(ray.origin, ray.direction, -Math.min(behind, out)),
         },
       };
     }),

@@ -881,7 +881,8 @@ export const spatialPresets: {
   },
   {
     name: "A tilted beam folding into coma",
-    detail: "Off the axis the focus spreads into two cusped caustic sheets",
+    detail:
+      "Off the axis the focus spreads into two cusped caustic sheets; each ray stops at the first it touches",
     config: {
       ...base,
       format: "rays",
@@ -899,7 +900,13 @@ export const spatialPresets: {
         vSamples: 96,
         curves: 9,
       },
-      rays: { ...base.rays, azimuth: 0, elevation: -70, length: 2.4 },
+      rays: {
+        ...base.rays,
+        azimuth: 0,
+        elevation: -70,
+        length: 2.4,
+        stop: true,
+      },
     },
   },
   {

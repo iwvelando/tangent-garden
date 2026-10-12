@@ -274,6 +274,7 @@ const config: SchemaOf<SpatialConfig> = {
         elevation: "number",
         source: vec3,
         length: "number",
+        stop: { optional: "boolean" },
         receiver: {
           fields: {
             plane: { options: { none: true, x: true, y: true, z: true } },

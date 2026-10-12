@@ -103,6 +103,8 @@ export type AnimationView = {
   camera: CameraMode;
   heldView?: Viewport;
   length: number;
+  // Whether rays stop at their caustic points, as in the study.
+  stop: boolean;
   progress: number;
   // Where the timeline stands, from which the progress follows (timing.ts).
   time?: number;

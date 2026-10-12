@@ -48,6 +48,9 @@ export type PlanarStudy = {
   bounds: Bounds;
   // Ray length in optical studies, as a multiple of the drawing's span.
   length: number;
+  // Whether optical rays stop at their caustic points; off in links made
+  // before it.
+  stop: boolean;
   // The pole construction remembered while another tab is chosen.
   poleKind: PoleKind;
   layers: Layers;
@@ -269,6 +272,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "config",
         "bounds",
         "length",
+        "stop",
         "poleKind",
         "layers",
         "camera",
@@ -302,6 +306,7 @@ export function planarStudy(value: unknown): PlanarStudy {
       "bounds",
     ),
     length: conform<number>(raw.length, { range: [0.1, 3] }, 0.8, "length"),
+    stop: conform<boolean>(raw.stop, "boolean", false, "stop"),
     poleKind: conform<PoleKind>(
       raw.poleKind,
       { options: poleKinds },

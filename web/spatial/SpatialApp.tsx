@@ -1,5 +1,6 @@
 import { StudyExplanation } from "../StudyExplanation";
 import { RefineBetweenSamples } from "../RefineBetweenSamples";
+import { StopAtCaustic } from "../StopAtCaustic";
 import {
   useCallback,
   useEffect,
@@ -1202,6 +1203,16 @@ export default function SpatialApp({
           "Its virtual extension runs ℓ back behind it, and parallel light arrives from ℓ away.",
         ),
       )}
+      <StopAtCaustic
+        checked={!!config.rays.stop}
+        onChange={(on) =>
+          setRays(({ stop: _, ...r }) => (on ? { ...r, stop: true } : r))
+        }
+        help={tiered(
+          "Each ray ends at the first caustic point it reaches, or at ℓ if that comes first.",
+          `Its virtual extension stops at the first virtual caustic point behind the ${face}; a ray with no real caustic point runs as far ahead, and one with no virtual point has no extension. A totally reflected ray, or one whose caustics lie at infinity, runs ℓ.`,
+        )}
+      />
       {receiverControls}
       <p className="note" data-testid="rays-note">
         {mirror && frame

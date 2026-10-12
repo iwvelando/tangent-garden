@@ -66,6 +66,7 @@ export async function exportAnimation(options: Options): Promise<Blob> {
           weight={weight}
           dark={dark}
           length={view.length}
+          stop={view.stop}
           animation={view}
           reset={0}
           pixelRatio={encoding.scale}

@@ -117,6 +117,8 @@ export const presets: {
   animation?: PlanarAnimation;
   // A probe the example opens with; without one it opens with the probe off.
   probe?: PlanarProbe;
+  // Whether its rays stop at the caustic; others draw them full length.
+  stop?: true;
 }[] = [
   {
     title: "Ellipse & its evolute",
@@ -963,6 +965,7 @@ export const presets: {
       lines: 72,
       adaptive: true,
     },
+    stop: true,
   },
   {
     title: "A crown of cusps in a sunlit cup",
@@ -1228,6 +1231,40 @@ export const presets: {
       repeat: "back-and-forth",
       pace: "ease",
       probeMotion: "length",
+    },
+  },
+  {
+    title: "Sunlight bending into glass",
+    note: "Sunlight refracted into glass (n = 1.5) at a round face gathers into a cusped caustic; each ray stops where it touches it, so the fold shows clearly",
+    config: {
+      ...base,
+      kind: "diacaustic",
+      // The face toward the light, x < 0, lit from outside at up to 81°
+      // incidence, short of grazing at t = π/2 and 3π/2. A single surface
+      // brings paraxial light to n R / (n − 1) = 3 behind it, at (2, 0),
+      // the caustic's cusp; marginal rays touch it nearer.
+      curve: {
+        ...base.curve,
+        x: "cos(t)",
+        y: "sin(t)",
+        min: 0.55 * Math.PI,
+        max: 1.45 * Math.PI,
+      },
+      source: { ...base.source, kind: "parallel", angle: 0 },
+      nIncident: 1,
+      nTransmitted: 1.5,
+      lines: 41,
+      adaptive: true,
+    },
+    stop: true,
+    animation: {
+      mode: "trace",
+      camera: "hold",
+      duration: 10,
+      tracks: [],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
     },
   },
 ];

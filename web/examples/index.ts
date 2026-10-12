@@ -57,10 +57,16 @@ export const planarExamples: Example[] = presets.map((p) => ({
   caption: p.note,
   family: planarFamily(p.config),
   keywords: `${p.config.kind} ${p.config.curve.format} ${p.config.input}${p.animation?.repeat === "loop" ? " seamless loop" : p.animation?.repeat === "back-and-forth" ? " back and forth" : ""}${p.probe ? " probe curvature" : ""}`,
-  // A preset's probe is part of its picture; presets without one keep the
-  // fingerprints they had before the probe.
+  // A preset's probe and stopped rays are part of its picture; presets
+  // without them keep the fingerprints they had before those existed.
   fingerprint: fingerprint(
-    p.probe ? { config: p.config, probe: p.probe } : p.config,
+    p.probe || p.stop
+      ? {
+          config: p.config,
+          ...(p.probe && { probe: p.probe }),
+          ...(p.stop && { stop: p.stop }),
+        }
+      : p.config,
   ),
 }));
 

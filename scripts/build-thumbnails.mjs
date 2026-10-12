@@ -62,11 +62,12 @@ try {
       // study's with its cut, sight and layers, when it has them.
       await page.waitForFunction(
         ([notebook, want]) => {
-          // A 2D example's definition, with its probe when it has one.
+          // A 2D example's definition, with its probe and stopped rays
+          // when it has them.
           const planar = (wrap, desc) =>
             wrap && desc
-              ? wrap.dataset.probe
-                ? `{"config":${desc},"probe":${wrap.dataset.probe}}`
+              ? wrap.dataset.probe || wrap.dataset.stop
+                ? `{"config":${desc}${wrap.dataset.probe ? `,"probe":${wrap.dataset.probe}` : ""}${wrap.dataset.stop ? `,"stop":${wrap.dataset.stop}` : ""}}`
                 : desc
               : undefined;
           const spatial = document.querySelector(
