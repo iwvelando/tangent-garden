@@ -216,8 +216,9 @@ function receiverVertices(g: ReceiverResult | null | undefined) {
 // normal (∇F gave none) takes the triangle's own, as a copy of the vertex;
 // a triangle without area is left out. The phase is the height in the box
 // (decorative, not a measured quantity).
-export function implicitMesh(m: ImplicitResult | undefined) {
+export function implicitMesh(m: ImplicitResult | undefined, origin?: Vec3) {
   if (!m) return { vertices: new Float32Array(), indices: new Uint32Array() };
+  const { x: x0, y: y0, z: z0 } = origin ?? { x: 0, y: 0, z: 0 };
   const p = m.positions,
     n = m.normals,
     t = m.triangles;
@@ -230,9 +231,9 @@ export function implicitMesh(m: ImplicitResult | undefined) {
   const vertices = new Float32Array(7 * (count + copies));
   const put = (i: number, v: number, a: number, b: number, c: number) => {
     const o = 7 * i;
-    vertices[o] = p[v];
-    vertices[o + 1] = p[v + 1];
-    vertices[o + 2] = p[v + 2];
+    vertices[o] = p[v] - x0;
+    vertices[o + 1] = p[v + 1] - y0;
+    vertices[o + 2] = p[v + 2] - z0;
     vertices[o + 3] = a;
     vertices[o + 4] = b;
     vertices[o + 5] = c;
@@ -296,18 +297,79 @@ function indexed(m: ImplicitResult | undefined, pairs: Int32Array | undefined) {
   }));
 }
 
-// Geometry ready to draw: world positions, each vertex with a normal and a
-// phase (7 floats), as line pairs or triangles, with the ink that colors
-// them. An indexed batch draws its triangles by index. A line batch may
-// carry its own regular weight in page pixels, in place of its ink's (see
-// sight.ts).
+// Geometry ready to draw: positions, each vertex with a normal and a phase
+// (7 floats), as line pairs or triangles, with the ink that colors them.
+// Positions are in world coordinates, or measured from origin when the
+// batch has one (see drawingOrigin). An indexed batch draws its triangles by
+// index. A line batch may carry its own regular weight in page pixels, in
+// place of its ink's (see sight.ts).
 export type Batch = {
   mode: "lines" | "triangles";
   data: Float32Array;
   ink: number;
   indices?: Uint32Array;
   weight?: number;
+  origin?: Vec3;
 };
+
+// Where a result's positions are measured from before they become single
+// precision, which holds a coordinate to about 6·10⁻⁸ of its size: the
+// bounds' center once the study lies farther from the origin than
+// originReach radii, so a study far out keeps the detail it has at the
+// origin. Nearer studies keep world coordinates, at most about 5·10⁻⁷ of
+// their radius from where double precision puts them, as they always have.
+export const originReach = 8;
+export function drawingOrigin(bounds: Bounds3): Vec3 | undefined {
+  const c = bounds.center;
+  return Math.hypot(c.x, c.y, c.z) > originReach * bounds.radius
+    ? c
+    : undefined;
+}
+// Vertices (7 numbers each) in single precision, their positions measured
+// from origin in double precision first.
+export function rebased(data: ArrayLike<number>, origin?: Vec3): Float32Array {
+  const out = new Float32Array(data.length);
+  if (!origin) {
+    out.set(data);
+    return out;
+  }
+  for (let i = 0; i < data.length; i++) {
+    const k = i % 7;
+    out[i] =
+      k === 0
+        ? data[i] - origin.x
+        : k === 1
+          ? data[i] - origin.y
+          : k === 2
+            ? data[i] - origin.z
+            : data[i];
+  }
+  return out;
+}
+// A camera, or a plane, for positions measured from origin: the same
+// drawing, with the subtraction made in double precision.
+export function cameraFrom(k: Camera, origin?: Vec3): Camera {
+  if (!origin) return k;
+  return {
+    ...k,
+    center: {
+      x: k.center.x - origin.x,
+      y: k.center.y - origin.y,
+      z: k.center.z - origin.z,
+    },
+  };
+}
+export function planeFrom<P extends { normal: Vec3; offset: number }>(
+  plane: P,
+  origin?: Vec3,
+): P {
+  if (!origin) return plane;
+  const n = plane.normal;
+  return {
+    ...plane,
+    offset: plane.offset - (n.x * origin.x + n.y * origin.y + n.z * origin.z),
+  };
+}
 
 // A harmonic curve's chain of generating vectors at one sample, as point
 // pairs: each from its joint to the next, the last to the curve's point.
@@ -335,22 +397,25 @@ export const harmonicEllipses = (terms: HarmonicTerm[], s: HarmonicPosition) =>
 // Everything the drawing shows of a result, built once per result. The
 // WebGL renderer uploads it, and vector linework projects its lines.
 export function buildScene(result: SpatialResult) {
+  const origin = drawingOrigin(result.bounds);
+  const from = origin && { origin };
   function batch(
-    data: number[] | Float32Array,
+    data: number[],
     mode: Batch["mode"],
     ink: number,
     weight?: number,
   ): Batch {
     return {
       mode,
-      data: data instanceof Float32Array ? data : new Float32Array(data),
+      data: rebased(data, origin),
       ink,
       ...(weight !== undefined && { weight }),
+      ...from,
     };
   }
   function meshBatch(m: ImplicitResult | undefined, ink: number): Batch {
-    const { vertices, indices } = implicitMesh(m);
-    return { mode: "triangles", data: vertices, ink, indices };
+    const { vertices, indices } = implicitMesh(m, origin);
+    return { mode: "triangles", data: vertices, ink, indices, ...from };
   }
   function pairs(points: (Vec3 | null)[], breaks: boolean[]) {
     const out: Vec3[] = [];
@@ -487,9 +552,10 @@ export function buildScene(result: SpatialResult) {
   const mesh: Batch = result.mesh.triangles.length
     ? {
         mode: "triangles",
-        data: new Float32Array(result.mesh.vertices),
+        data: rebased(result.mesh.vertices, origin),
         ink: 0,
         indices: new Uint32Array(result.mesh.triangles),
+        ...from,
       }
     : batch([], "triangles", 0);
   const refined = result.adaptive;

@@ -37,33 +37,31 @@ These come from the handoffs. Each was paid for at least once.
   - Layout sweeps must wait for each preset to settle, or they test nothing.
   - The smoke test's compression check fails against a local `BASE_URL`.
   - Run WebKit only when a rendering or encoding path changes.
-- **iOS gaps no local test shows.** See the user's notes on radio and checkbox sizing and on `:focus-visible` after a tap. Ask for an on-device check whenever controls or touch behavior change.
+  - A test that opens a study by changing only the fragment (`/?study=4d#s=…`) does not reload the page, so the old study is still settled on screen. Wait for the app to clear `#s=` first, as `tests/tesseract-loop.spec.ts` does (#140); other specs still use the bare pattern.
+  - Some numerical faults show only on arm64 (FMA contraction, a sample landing beside rather than on a pole, #139). Run engine tests on arm64 as well as amd64 when changing tolerances or refinement.
+- **iOS gaps no local test shows.** iOS Safari gives radio and checkbox inputs a small fixed size, so a stretched input needs an explicit `width: 100%; height: 100%`. It also treats a programmatic `focus()` after a tap as `:focus-visible`, so suppress the ring explicitly after pointer actions. Ask for an on-device check whenever controls or touch behavior change.
 
 ## Recommended order
 
-1. Probe follow-ups (3D)
-2. Refinement between samples, remaining constructions (2D and 3D)
+1. Scale and translation: the 2D drawing
+2. Refinement between samples, remaining constructions (3D and 2D)
+3. 3D rendering leftovers
 
-The remaining items are smaller or conditional, and each can be taken when a study needs it.
+Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits to fix only when a study runs into them.
 
 ---
 
-### 1. Probe follow-ups
+### 1. Scale and translation: the 2D drawing
 
-**Applies to:** 3D. The 2D probe has nothing open, and 4D has no probe.
+**Applies to:** 2D. The engines' budgets are done and documented: 2D in [scale and translation](mathematics.md#scale-and-translation) (#139), 3D in [spatial scale and translation](mathematics.md#spatial-scale-and-translation) (#136), 4D in the 4D roadmap (#138). The 3D drawing measures its positions from a drawing origin near the study (the same section's **Drawing**). What remains is the 2D drawing.
 
 **Open:**
 
-- **Smaller limits** to fix if they bite:
-  - 3D probe lines are depth-tested, so sheets hide them.
-  - A surface probe held at its (u, v) snaps to each frame's grid: Go evaluates surfaces only at their samples.
+- **2D: the drawing's coordinates for a study far from the origin.** `xy` in `web/Plot.tsx` already subtracts the frame's center in double precision before writing page coordinates, so this may need only a test: a translated and a scaled copy of existing presets draw the original's SVG to within about 0.001 px. Check the grid and axes, ray glyphs, the probe, and the exports too.
 
-**Start from:** `web/probe.ts` (shared `heldCurveSample`, plot scale, inks, away messages), `engine/probe.go` and `engine3/probe.go` (the curve probe between samples), `web/spatial/probe.ts`, `engine/diagnostics.go`, `engine3/diagnostics.go`, and `mathematics.md` (**Curvature and the 2D probe**, the spatial probe sections).
+**Start with:** a translated and scaled copy of existing presets compared against the originals, as the engine's tests do (`engine/scale_test.go`: tiny 2⁻²⁰, huge 2¹³, about 860 and 36,000 units out) and as `tests/spatial-rebase.spec.ts` does for the 3D drawing. Compare drawn geometry, not PNG bytes. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
 
-**Watch for:**
-
-- Diagnostics are requested only while the probe is on, and studies without it must stay byte-identical (Go tests assert this per format).
-- Loops are judged with the probe drawn.
+**Watch for:** every existing preset's drawing stays identical (hash the SVG, not PNGs).
 
 ### 2. Refinement between samples: remaining constructions
 
@@ -77,29 +75,17 @@ The remaining items are smaller or conditional, and each can be taken when a stu
   - A view-dependent drawing refinement, which must still give playback and every export the same curve.
   - Framing that ignores refined points.
 
-**Start from:** `engine/refine` (point type supplied with its chord distance and length), `web/refinement.ts`, and `mathematics.md` (**Refinement between samples**).
+**Start from:** `engine/refine` (point type supplied with its chord distance and length; since #134 it also scans between its probes for narrow features, with a `Scan` budget), `engine3/refine.go`, `web/refinement.ts`, and `mathematics.md` (**Refinement between samples** and **Spatial refinement between samples**).
 
 **Watch for:**
 
 - Uniform samples remain the study's identity for surfaces, construction lines, framing, reveal and probe.
 - Breaks found between samples must reach every curve built on that curve.
+- Anything drawn from a refined curve must follow the reveal and traced light, as `arrivalAt` in `web/raytrace.ts` does (#141).
 - Keep the feature opt-in and off for older links.
+- Refinement is the largest cost of the twisted spring's frame (item 5); measure with `make bench`.
 
-### 3. Camera path pivot
-
-**Applies to:** 3D only. 4D has no camera paths.
-
-**Done:** **Turn about · Geometry in the middle** takes each view's framed point from the drawn geometry on its line of sight (see `mathematics.md#spatial-camera-paths`). It is opt-in; links without it turn about the plane.
-
-**Smaller limits:**
-
-- Geometry that grows past the starting bounds can leave the page under a path, as under Hold current view.
-
-**Start from:** `web/spatial/path.ts` and `mathematics.md#spatial-camera-paths`.
-
-**Watch for:** a loop's seam slope (`cyclic`) and links' `animation.path`.
-
-### 4. 3D rendering leftovers
+### 3. 3D rendering leftovers
 
 **Applies to:** 3D only. The 2D and 4D SVG strokes use the browser's joins.
 
@@ -108,28 +94,11 @@ The remaining items are smaller or conditional, and each can be taken when a stu
 - Lines behind several see-through layers are not attenuated per layer.
 - Dash length is set in space, so near dashes look longer under perspective.
 
-**Start from:** `mathematics.md` (**Spatial line weights**, the see-through section) and `web/spatial/sight.ts`.
+**Start from:** `mathematics.md` (**Spatial line weights**, the see-through section, which now covers its 2 × 2 sampling), `web/spatial/sight.ts` and `web/spatial/renderer.ts`.
 
-**Watch for:** the hairline path must stay the original program and `gl.LINES`.
+**Watch for:** the hairline path must stay the original program and `gl.LINES`. The 1 × PNG must still equal the live canvas pixel for pixel (`tests/export-equivalence.spec.ts`), including see-through sheets.
 
-### 6. Scale and translation robustness
-
-**Applies to:**
-
-- 3D: primary.
-- 2D: SVG coordinates. The engine's budgets are done ([mathematics.md](mathematics.md#scale-and-translation)).
-
-**Open:**
-
-- Error budgets across tiny, large and translated studies. In the 3D engine, stated and tested for tiny, huge and far copies of every spatial preset (see [scale and translation](mathematics.md#spatial-scale-and-translation)). Remaining 3D limits include the absolute stability floors for differenced r‴ (`jerk`, in `engine3/diagnostics.go`) and τ′ (`ruledprobe.go`), the framed ribbon probe's comparison of differently dimensioned tangents (`ruledprobe.go`), and the field's absolute resting-speed and acceleration-stability floors (`flow.go`; the resting limit is also stated in the UI). Far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic. See the documented budgets for the exact tested coverage.
-- 3D: rebase positions before the Float32 upload, and keep meaningful clipping (near/far are set in framing radii).
-- 2D: the drawing's coordinates for a study far from the origin. The engine's remaining limits are listed with its budgets: constructions on an evolute past about five diameters, and the absolute constants below 2⁻²⁰.
-
-Today's finite-value guards and robust bounds do not prove scale independence.
-
-**Start with:** a translated and scaled copy of existing presets compared against the originals. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
-
-### 7. Composition and comparison
+### 4. Composition and comparison
 
 **Applies to:**
 
@@ -138,20 +107,31 @@ Today's finite-value guards and robust bounds do not prove scale independence.
 
 **Open:**
 
-- **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another.
+- **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another. Agree the design with the user before building.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
-### 8. Transport and efficiency, when profiled
+### 5. Transport and efficiency, when profiled
 
 **Applies to:** 3D first, then 4D.
 
 **Open:**
 
-- Typed-array transport beyond the meshes is done: the curve mesh travels typed and indexed, as the implicit mesh did, and every other large numeric array of a spatial or 4D result is lifted out of the JSON and put back in the page (see [architecture.md](architecture.md), "No spatial mesh goes through JSON" and the paragraph after it). What still goes through JSON is mostly grids of flags (a surface's `alongU`, `alongV` and `faces`, about 70 KB each at 240²) and arrays of small structs (ray lines, glyphs, constructions). A tube frame's time is now mostly Go's own work. The twisted spring's is mostly its meridians' refinement: about 7,400 contact circles between samples, each evaluating the expression curve's five-point stencils at two steps for the curve and the frame's arc length and the profile's for the radius, about 33 expression evaluations each. Expressions are now compiled to folded closures that carry their constant and variable operands (`engine/expr/compile.go`), with all 347 preset results unchanged bit for bit (`make preset-hashes`). Measured on 2026-10-11 against the deployed engine with the same Go toolchain, `make bench` gives 1.23–1.49× faster implicit-surface frames and about 1.12–1.15× for the spring (58–60 ms → 52 ms, confirmed with engine order reversed); refinement still takes most of the spring's frame, so a refinement that asks for fewer circles is what would cut it further.
-- 2D results still travel as plain JSON (`tangentGardenCompute`). Measured on 2026-10-09: of the 62 presets, the largest results are Van der Pol (2.9 MB; natively 24 ms compute and 8 ms encoding, and 15 ms to decode and copy in Node), the pendulum (2.0 MB) and the star's ripples (1.8 MB); about fifty are 0.1–0.4 MB, where JSON costs a millisecond or two. JSON is at most about a third of a frame on the largest, against 75–90% of a tube frame before spatial transport moved off JSON, so it is not worth doing yet. If a 2D study grows large, add `engine.Vec` (and its pointer, for gaps) as a kind in `cmd/wasm/lift` and `web/lifted.ts`, send the planar result through `liftReply` as the 4D bridge does, and restore it where the worker parses the planar reply.
+- Typed-array transport beyond the meshes is done: the curve mesh travels typed and indexed, as the implicit mesh did, and every other large numeric array of a spatial or 4D result is lifted out of the JSON and put back in the page (see [architecture.md](architecture.md), "No spatial mesh goes through JSON" and the paragraph after it). What still goes through JSON is mostly grids of flags (a surface's `alongU`, `alongV` and `faces`, about 70 KB each at 240²) and arrays of small structs (ray lines, glyphs, constructions). A tube frame's time is now mostly Go's own work. The twisted spring's is mostly its meridians' refinement: about 7,400 contact circles between samples, each evaluating the expression curve's five-point stencils at two steps for the curve and the frame's arc length and the profile's for the radius, about 33 expression evaluations each. Expressions are now compiled to folded closures that carry their constant and variable operands (`engine/expr/compile.go`), with all 347 preset results unchanged bit for bit (`make preset-hashes`). Measured on 2026-10-11 against the deployed engine with the same Go toolchain, `make bench` gives 1.23–1.49× faster implicit-surface frames and about 1.12–1.15× for the spring (58–60 ms → 52 ms, confirmed with engine order reversed); refinement still takes most of the spring's frame, so a refinement that asks for fewer circles is what would cut it further. The refinement scan added later that day (#134) made the refined presets about 1.7× slower natively in total; re-measure before relying on these figures.
+- 2D results still travel as plain JSON (`tangentGardenCompute`). Measured on 2026-10-09 across the 2D presets: the largest results are Van der Pol (2.9 MB; natively 24 ms compute and 8 ms encoding, and 15 ms to decode and copy in Node), the pendulum (2.0 MB) and the star's ripples (1.8 MB); about fifty are 0.1–0.4 MB, where JSON costs a millisecond or two. JSON is at most about a third of a frame on the largest, against 75–90% of a tube frame before spatial transport moved off JSON, so it is not worth doing yet. If a 2D study grows large, add `engine.Vec` (and its pointer, for gaps) as a kind in `cmd/wasm/lift` and `web/lifted.ts`, send the planar result through `liftReply` as the 4D bridge does, and restore it where the worker parses the planar reply.
 - Worker pools. A third playback engine was rejected at about 100 MB per engine.
 
 **Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical.
+
+### 6. Smaller limits, to fix if they bite
+
+Each is known and documented; none is worth a branch until a study needs it.
+
+- **3D probe** (`web/spatial/probe.ts`, `engine3/probe.go`, `engine3/diagnostics.go`; diagnostics are requested only while the probe is on, and studies without it must stay byte-identical, which Go tests assert per format):
+  - Probe lines are depth-tested, so sheets hide them.
+  - A surface probe held at its (u, v) snaps to each frame's grid: Go evaluates surfaces only at their samples.
+- **3D camera paths** (`web/spatial/path.ts`, `mathematics.md#spatial-camera-paths`; watch a loop's seam slope, `cyclic`, and links' `animation.path`): geometry that grows past the starting bounds can leave the page under a path, as under Hold current view.
+- **3D engine scale floors** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): the absolute stability floors for differenced r‴ (`jerk`, in `engine3/diagnostics.go`) and τ′ (`ruledprobe.go`), the framed ribbon probe's comparison of differently dimensioned tangents (`ruledprobe.go`), and the field's absolute resting-speed and acceleration-stability floors (`flow.go`; the resting limit is also stated in the UI). Far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic.
+- **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute past about five diameters, and the absolute constants below 2⁻²⁰.
 
 ## Pending on-device checks
 
@@ -159,7 +139,8 @@ No device check was possible for these. Ask the user to look on a phone:
 
 - Manual perspective presets.
 - 2D and 4D loop presets in motion.
-- The probe while parameters vary.
+- The probe while parameters vary, including the 3D surface probe's **Stays at its u and v** (#123).
+- See-through sheets on a phone (the Klein bottle and the torus's tunnel): since #137 they are sampled 2 × 2 only when the device's limits allow, and a large high-DPR canvas falls back to one sample.
 - The 2D probe, refinement and line-weight controls at phone width, including the probe's **At any t, between samples** checkbox and its continuous slider.
 - The camera path's key views at phone width: **Move up** and **Move down**, and long names wrapping in their fields.
 

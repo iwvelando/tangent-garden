@@ -2,6 +2,7 @@ import type { SpatialResult } from "./types";
 import {
   buildScene,
   camera,
+  cameraFrom,
   sceneLayers,
   scenePasses,
   type Batch,
@@ -825,7 +826,6 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     // The camera, theme, cut and dashes, for either program.
     const place = (u: Record<string, WebGLUniformLocation | null>) => {
       gl!.uniformMatrix3fv(u.rotation, false, new Float32Array(k.rotation));
-      gl!.uniform3f(u.center, k.center.x, k.center.y, k.center.z);
       gl!.uniform2f(u.pan, k.pan[0], k.pan[1]);
       gl!.uniform3f(u.framing, ...k.framing);
       gl!.uniform3f(u.lens, ...k.lens);
@@ -860,6 +860,16 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         gl!.uniform4fv(u.cut, values);
         gl!.uniform1f(u.cutEvery, every ? 1 : 0);
       }
+    };
+    // The view center measured from a batch's origin, in double precision,
+    // so the shader subtracts only small numbers. The cut's planes are
+    // relative to the center already.
+    const center = (
+      u: Record<string, WebGLUniformLocation | null>,
+      batch: Batch,
+    ) => {
+      const c = cameraFrom(k, batch.origin).center;
+      gl!.uniform3f(u.center, c.x, c.y, c.z);
     };
     if (stroked) {
       gl!.useProgram(strokes!.program);
@@ -945,6 +955,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.uniform1f(u.coverCaps, caps);
       gl!.uniform1f(u.fade, Math.min(1, w));
       gl!.uniform1f(u.ink, v.batch.ink);
+      center(u, v.batch);
       gl!.uniform1f(u.cutting, v.cut ? 1 : 0);
       gl!.uniform1f(u.behind, how.behind ?? 0);
       gl!.bindBuffer(gl!.ARRAY_BUFFER, t.corners);
@@ -1022,6 +1033,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         );
       });
       gl!.uniform1f(uniforms.ink, v.batch.ink);
+      center(uniforms, v.batch);
       gl!.uniform1f(uniforms.cutting, v.cut ? 1 : 0);
       gl!.uniform1f(uniforms.gather, how.gather ? 1 : 0);
       gl!.uniform1f(uniforms.behind, how.behind ?? 0);

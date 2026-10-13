@@ -6,7 +6,13 @@
 // engine3.SurfaceDiagnostics for a surface) or the study's own per-sample
 // arrays; this module only selects and draws them.
 import { tiered } from "../help";
-import { harmonicChain, harmonicEllipses, type Batch } from "./scene";
+import {
+  drawingOrigin,
+  harmonicChain,
+  harmonicEllipses,
+  rebased,
+  type Batch,
+} from "./scene";
 import {
   betweenMotionHelp,
   curveProbeMotionHelp,
@@ -334,11 +340,18 @@ export function probeHelp(c: SpatialConfig, between = false) {
 
 const vertices = (points: Vec3[]) =>
   points.flatMap((p) => [p.x, p.y, p.z, 0, 0, 1, 0]);
-const lines = (points: Vec3[], ink: number): Batch => ({
-  mode: "lines",
-  data: new Float32Array(vertices(points)),
-  ink,
-});
+// Line pairs measured from the result's drawing origin, as its scene's are.
+const linesOf =
+  (result: SpatialResult) =>
+  (points: Vec3[], ink: number): Batch => {
+    const origin = drawingOrigin(result.bounds);
+    return {
+      mode: "lines",
+      data: rebased(vertices(points), origin),
+      ink,
+      ...(origin && { origin }),
+    };
+  };
 const along = (p: Vec3, d: Vec3, length: number) => [
   p,
   { x: p.x + d.x * length, y: p.y + d.y * length, z: p.z + d.z * length },
@@ -361,7 +374,8 @@ export function probeBatches(
 ): Batch[] {
   const p = at.point;
   if (!p) return [];
-  const radius = result.bounds.radius;
+  const radius = result.bounds.radius,
+    lines = linesOf(result);
   const marked: Vec3[] = [
     ...(constructions[config.construction]?.lines(at, result) ?? []),
     ...(formats[config.format]?.lines(at, result) ?? []),
@@ -807,7 +821,8 @@ export function surfaceProbeBatches(
   if (!d || !p) return [];
   const radius = result.bounds.radius,
     arm = radius * 0.02,
-    glyph = radius * 0.2;
+    glyph = radius * 0.2,
+    lines = linesOf(result);
   const cross = (q: Vec3) =>
     (["x", "y", "z"] as const).flatMap((axis) => [
       { ...q, [axis]: q[axis] - arm },

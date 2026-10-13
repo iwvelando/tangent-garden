@@ -1,7 +1,9 @@
 import {
   camera,
+  cameraFrom,
   clip,
   page,
+  planeFrom,
   scenePasses,
   type Batch,
   type Camera,
@@ -200,19 +202,22 @@ export function linework(
     if (pass.sheet) continue;
     options.signal?.throwIfAborted();
     if (!groups.has(pass.layer)) groups.set(pass.layer, new Map());
-    const data = pass.batch.data;
+    const { data, origin } = pass.batch;
     const cutting = cut && isCut(pass, cut.scope);
+    // The camera and planes for positions measured from the batch's origin.
+    const own = cameraFrom(k, origin),
+      kept = cutting ? planes!.map((p) => planeFrom(p, origin)) : undefined;
     const arcs = behind === "dashed" ? arcLengths(data) : undefined;
     const width = strokeWidth(pass.batch, weight, options);
     for (let i = 0; i + 13 < data.length; i += 14) {
-      for (const part of cutting
-        ? keptLine(planes!, beyond, data, i)
+      for (const part of kept
+        ? keptLine(kept, beyond, data, i)
         : [whole(data, i)]) {
         const { ends } = part;
         const piece = clippedLine(
-          k,
-          clip(k, ends[0], ends[1], ends[2]),
-          clip(k, ends[7], ends[8], ends[9]),
+          own,
+          clip(own, ends[0], ends[1], ends[2]),
+          clip(own, ends[7], ends[8], ends[9]),
         );
         if (!piece) continue;
         const color = hex(lineColor(pass.batch.ink, data[i + 6], dark));
@@ -499,12 +504,15 @@ function depthRaster(
       vertices = data.length / 7,
       base = points.length / 3,
       cutting = count > 0 && cut;
+    // The camera and planes for positions measured from the sheet's origin.
+    const own = cameraFrom(k, sheet.origin),
+      kept = planes.map((p) => planeFrom(p, sheet.origin));
     const clips: (readonly number[])[] = [],
       side = new Float64Array(vertices * count);
     for (let v = 0; v < vertices; v++) {
-      const c = clip(k, data[7 * v], data[7 * v + 1], data[7 * v + 2]);
+      const c = clip(own, data[7 * v], data[7 * v + 1], data[7 * v + 2]);
       if (cutting)
-        planes.forEach(
+        kept.forEach(
           ({ normal: n, offset }, j) =>
             (side[v * count + j] =
               n.x * data[7 * v] +

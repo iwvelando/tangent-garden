@@ -7,8 +7,9 @@
 // words and geometry, read by the panel, the renderer, linework, playback
 // and links alike.
 import { tiered } from "../help";
-import type { Batch, Pass } from "./scene";
+import { planeFrom, type Batch, type Pass } from "./scene";
 import type { Vec3 } from "./types";
+const zero: Vec3 = { x: 0, y: 0, z: 0 };
 // What the plane cuts: the study's own sheet, every shaded sheet, or every
 // sheet and line. The probe is never cut.
 export type CutScope = "surface" | "sheets" | "all";
@@ -279,14 +280,19 @@ export function cutEdges(
   // Kept where f ≥ 0: on or beyond another plane, or on or before it.
   const sign = beyond === "every" ? 1 : -1;
   const out: number[] = [];
+  // Every plane's edge is measured from the sheets' origin.
+  let origin: Vec3 | undefined;
   for (const [i, own] of planes.entries()) {
-    const data = planeEdges(passes, own, scope)?.data;
-    if (!data) continue;
+    const edge = planeEdges(passes, own, scope);
+    if (!edge) continue;
+    const { data } = edge;
+    origin = edge.origin;
     for (let k = 0; k + 13 < data.length; k += 14) {
       let t0 = 0,
         t1 = 1;
-      for (const [j, { normal: n, offset }] of planes.entries()) {
+      for (const [j, plane] of planes.entries()) {
         if (j === i) continue;
+        const { normal: n, offset } = planeFrom(plane, origin);
         const f = (q: number) =>
           sign *
           (n.x * data[q] + n.y * data[q + 1] + n.z * data[q + 2] - offset);
@@ -317,21 +323,37 @@ export function cutEdges(
     }
   }
   return out.length
-    ? { mode: "lines", data: new Float32Array(out), ink: cutInk }
+    ? {
+        mode: "lines",
+        data: new Float32Array(out),
+        ink: cutInk,
+        ...(origin && { origin }),
+      }
     : null;
 }
+// The edge is measured from the first cut sheet's origin; a sheet measured
+// from another is moved there in double precision.
 function planeEdges(
   passes: Pass[],
   plane: Plane,
   scope: CutScope,
 ): Batch | null {
-  const { normal: n, offset: d } = plane;
   const out: number[] = [];
   const corner = [0, 0, 0],
     side = [0, 0, 0];
+  let origin: Vec3 | undefined,
+    first = true;
   for (const pass of passes) {
     if (!pass.sheet || !isCut(pass, scope)) continue;
     const { data, indices } = pass.batch;
+    if (first) {
+      origin = pass.batch.origin;
+      first = false;
+    }
+    const { normal: n, offset: d } = planeFrom(plane, pass.batch.origin);
+    const own = pass.batch.origin ?? zero,
+      to = origin ?? zero,
+      shift = [own.x - to.x, own.y - to.y, own.z - to.z];
     const count = indices ? indices.length : data.length / 7;
     const vertex = (c: number) => (indices ? indices[c] : c);
     const crossing = (a: number, b: number) => {
@@ -351,7 +373,7 @@ function planeEdges(
       const p = 7 * a,
         q = 7 * b;
       return [0, 1, 2].map(
-        (k) => data[p + k] + (data[q + k] - data[p + k]) * t,
+        (k) => data[p + k] + (data[q + k] - data[p + k]) * t + shift[k],
       );
     };
     const distance = (v: number) =>
@@ -380,7 +402,12 @@ function planeEdges(
     }
   }
   return out.length
-    ? { mode: "lines", data: new Float32Array(out), ink: cutInk }
+    ? {
+        mode: "lines",
+        data: new Float32Array(out),
+        ink: cutInk,
+        ...(origin && { origin }),
+      }
     : null;
 }
 
@@ -400,8 +427,8 @@ export function sweepExtent(
   beyond: CutBeyond = "every",
 ): [number, number] | null {
   const n = plane.normal,
-    planes = [plane, ...others],
     every = beyond === "every";
+  let planes = [plane, ...others];
   const several = (data: Float32Array, i: number) => {
     let g = every ? Infinity : -Infinity;
     for (const { normal: m, offset } of planes) {
@@ -414,11 +441,15 @@ export function sweepExtent(
     lo = Infinity;
   for (const pass of passes) {
     if (!isCut(pass, scope)) continue;
-    const data = pass.batch.data;
+    const { data, origin } = pass.batch;
+    // n̂·p of a point measured from the origin, and the planes moved there.
+    const o = origin ?? zero,
+      along = n.x * o.x + n.y * o.y + n.z * o.z;
+    planes = [plane, ...others].map((p) => planeFrom(p, origin));
     for (let i = 0; i + 2 < data.length; i += 7) {
       const v = others.length
         ? several(data, i)
-        : n.x * data[i] + n.y * data[i + 1] + n.z * data[i + 2];
+        : n.x * data[i] + n.y * data[i + 1] + n.z * data[i + 2] + along;
       if (!Number.isFinite(v)) continue;
       if (v > hi) hi = v;
       if (v < lo) lo = v;
