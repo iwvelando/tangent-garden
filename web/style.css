@@ -1263,7 +1263,8 @@ header {
 }
 /* Stopping rays at the caustic (StopAtCaustic.tsx): the checkbox sits in
    line with its help toggle. */
-.caustic-switch .check {
+.caustic-switch .check,
+.view-switch .check {
   margin-bottom: 0;
 }
 .probe-slider input {

@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -97,27 +96,23 @@ import {
   type Formats,
 } from "../export-formats";
 import { saveFile } from "../export-image";
-import { Field, HelpText, HelpToggle, useHelp } from "../Field";
+import { KeyViews } from "../KeyViews";
+import { Field } from "../Field";
 import { tiered, withMore } from "../help";
 import { useDisclosure } from "../useDisclosure";
 import type { SpatialCamera } from "./link";
 import {
   defaultPath,
+  asFirst,
   keyFromView,
   keyLabel,
-  keyTimes,
-  legRange,
-  maxKeyName,
-  maxKeys,
   maxTurns,
-  moveKey,
   pathError,
   framedDepths,
   pathHelp,
   pathPivots,
   pathLeg,
   pathStyles,
-  removeKey,
   type CameraPath,
   type KeyView,
   type PathPivot,
@@ -289,7 +284,6 @@ export function SpatialAnimationPanel({
   // The path mode flies the key views with the geometry fixed; the path
   // camera flies them while it moves. The orbit turns the camera itself.
   const flies = mode === "path" || (camera === "path" && mode !== "orbit");
-  const keysHelp = useHelp();
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
@@ -1093,45 +1087,10 @@ export function SpatialAnimationPanel({
     const view = getCurrentView();
     return frame && view ? keyFromView(view, frame.result.bounds, "") : null;
   };
-  // Focus follows a moved view to its new place, onto the same way's button
-  // while it can move further, else the other's.
-  const viewsBox = useRef<HTMLDivElement>(null);
-  // The way is kept with the move, since Safari leaves a pressed button
-  // unfocused.
-  const moved = useRef<{ to: number; way: "up" | "down" } | null>(null);
-  useLayoutEffect(() => {
-    if (!moved.current) return;
-    const { to: k, way } = moved.current;
-    moved.current = null;
-    const box = viewsBox.current;
-    for (const w of way === "down" ? ["down", "up"] : ["up", "down"]) {
-      const b = box?.querySelector<HTMLButtonElement>(
-        `button[aria-label="Move view ${k + 1} ${w}"]`,
-      );
-      if (b && !b.disabled) return b.focus();
-    }
-  }, [path]);
-  const changeKey = (k: number, change: (key: KeyView) => KeyView) =>
-    setPath((p) => ({
-      ...p,
-      keys: p.keys.map((key, j) => (j === k ? change(key) : key)),
-    }));
   const degrees = (x: number) => {
     const d = Math.round((((x * 180) / Math.PI) % 360) + 360) % 360;
     return d > 180 ? d - 360 : d;
   };
-  // How far through the flight each view is reached, while every leg's time
-  // is valid.
-  const reached =
-    path.keys.length >= 2 &&
-    path.keys.every(
-      (key, k) =>
-        k === 0 ||
-        ((key.leg ?? 1) >= legRange[0] && (key.leg ?? 1) <= legRange[1]),
-    )
-      ? keyTimes(path)
-      : null;
-  const percent = (x: number) => `${Math.round(x * 100)}%`;
   const pathEditor = (
     <>
       <Field
@@ -1179,167 +1138,48 @@ export function SpatialAnimationPanel({
           ))}
         </select>
       </Field>
-      <div
-        className="field path-views"
-        role="group"
-        aria-label="Key views"
-        ref={viewsBox}
-      >
-        <div className="field-label">
-          <span>Key views</span>
-          <HelpToggle topic="key views" help={keysHelp} />
-        </div>
-        <HelpText help={keysHelp}>{pathHelp.keys}</HelpText>
-        {path.keys.map((key, k) => {
-          const name = (
-            <Field label="Name">
-              <ViewName
-                aria-label={`View ${k + 1} name`}
-                placeholder={`View ${k + 1}`}
-                value={key.name}
-                onChange={(name) => changeKey(k, (old) => ({ ...old, name }))}
-              />
-            </Field>
-          );
-          return (
-            <div className="animation-track path-view" key={k}>
-              {name}
-              {k > 0 && (
-                <div className="pair">
-                  <Field
-                    label="Turns"
-                    help={k === 1 ? pathHelp.turns : undefined}
-                    topic={`view ${k + 1} turns`}
-                  >
-                    <input
-                      aria-label={`View ${k + 1} turns`}
-                      type="number"
-                      min={-maxTurns}
-                      max={maxTurns}
-                      step="1"
-                      value={Number.isNaN(key.turns) ? "" : key.turns}
-                      onChange={(e) => {
-                        const turns = e.target.valueAsNumber;
-                        changeKey(k, (old) => ({ ...old, turns }));
-                      }}
-                    />
-                  </Field>
-                  <Field
-                    label="Leg time"
-                    help={k === 1 ? pathHelp.leg : undefined}
-                    topic={`view ${k + 1} leg time`}
-                  >
-                    <input
-                      aria-label={`View ${k + 1} leg time`}
-                      type="number"
-                      min={legRange[0]}
-                      max={legRange[1]}
-                      step="0.1"
-                      value={Number.isNaN(key.leg) ? "" : (key.leg ?? 1)}
-                      onChange={(e) => {
-                        const leg = e.target.valueAsNumber;
-                        changeKey(k, (old) => ({ ...old, leg }));
-                      }}
-                    />
-                  </Field>
-                </div>
-              )}
-              <p className="hint">
-                yaw {degrees(key.yaw)}°, pitch {degrees(key.pitch)}°, zoom{" "}
-                {key.zoom.toFixed(2)}×
-                {key.panX !== 0 || key.panY !== 0 ? ", panned" : ""}
-                {reached && ` · reached ${percent(reached[k])} of the way`}
-              </p>
-              <div className="path-view-buttons">
-                {(["up", "down"] as const).map((way) => {
-                  const to = way === "up" ? k - 1 : k + 1;
-                  return (
-                    <button
-                      key={way}
-                      className="text-button"
-                      aria-label={`Move view ${k + 1} ${way}`}
-                      disabled={to < 0 || to >= path.keys.length}
-                      onClick={() => {
-                        setPath((p) => moveKey(p, k, to));
-                        moved.current = { to, way };
-                      }}
-                    >
-                      {way === "up" ? "Move up" : "Move down"}
-                    </button>
-                  );
-                })}
-                <button
-                  className="text-button"
-                  aria-label={`Show view ${k + 1}`}
-                  onClick={() => {
-                    if (status === "complete") stop();
-                    onShowView({
-                      yaw: key.yaw,
-                      pitch: key.pitch,
-                      zoom: key.zoom,
-                      panX: key.panX,
-                      panY: key.panY,
-                    });
-                  }}
-                >
-                  Show
-                </button>
-                <button
-                  className="text-button"
-                  aria-label={`Set view ${k + 1} to the drawing's view`}
-                  onClick={() => {
-                    const view = drawn();
-                    if (view)
-                      changeKey(k, (old) => ({
-                        ...view,
-                        name: old.name,
-                        turns: old.turns,
-                        ...(old.leg !== undefined && { leg: old.leg }),
-                      }));
-                  }}
-                >
-                  Set to drawing
-                </button>
-                <button
-                  className="text-button"
-                  aria-label={`Remove view ${k + 1}`}
-                  onClick={() => setPath((p) => removeKey(p, k))}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        <button
-          disabled={path.keys.length >= maxKeys}
-          onClick={() => {
-            const view = drawn();
-            if (view)
-              setPath((p) =>
-                p.keys.length >= maxKeys
-                  ? p
-                  : { ...p, keys: [...p.keys, view] },
-              );
-          }}
-        >
-          + Add the drawing's view
-        </button>
-        {repeat === "loop" && (
-          <button
-            disabled={path.keys.length < 2 || path.keys.length >= maxKeys}
-            onClick={() =>
-              setPath((p) =>
-                p.keys.length < 2 || p.keys.length >= maxKeys
-                  ? p
-                  : { ...p, keys: [...p.keys, { ...p.keys[0], turns: 0 }] },
-              )
-            }
+      <KeyViews
+        keys={path.keys}
+        onChange={(change) => setPath((p) => ({ ...p, keys: change(p.keys) }))}
+        asFirst={asFirst}
+        describe={(key) =>
+          `yaw ${degrees(key.yaw)}°, pitch ${degrees(key.pitch)}°, zoom ${key.zoom.toFixed(2)}×${key.panX !== 0 || key.panY !== 0 ? ", panned" : ""}`
+        }
+        fields={(key, k, change) => (
+          <Field
+            label="Turns"
+            help={k === 1 ? pathHelp.turns : undefined}
+            topic={`view ${k + 1} turns`}
           >
-            + Return to view 1
-          </button>
+            <input
+              aria-label={`View ${k + 1} turns`}
+              type="number"
+              min={-maxTurns}
+              max={maxTurns}
+              step="1"
+              value={Number.isNaN(key.turns) ? "" : key.turns}
+              onChange={(e) => {
+                const turns = e.target.valueAsNumber;
+                change((old) => ({ ...old, turns }));
+              }}
+            />
+          </Field>
         )}
-      </div>
+        drawn={drawn}
+        keep={(old, view) => ({ ...view, turns: old.turns })}
+        onShow={(key) => {
+          if (status === "complete") stop();
+          onShowView({
+            yaw: key.yaw,
+            pitch: key.pitch,
+            zoom: key.zoom,
+            panX: key.panX,
+            panY: key.panY,
+          });
+        }}
+        help={pathHelp.keys}
+        loop={repeat === "loop"}
+      />
     </>
   );
   // The ride's crossing as drawn: the nearest to the one chosen.
@@ -1864,60 +1704,5 @@ export function SpatialAnimationPanel({
         )}
       </details>
     </section>
-  );
-}
-
-// A view's name wraps onto as many lines as it needs, so a long one stays
-// whole in a narrow sidebar. It is still one line of text: Enter and pasted
-// line breaks add none.
-function ViewName({
-  value,
-  onChange,
-  ...rest
-}: {
-  value: string;
-  onChange: (name: string) => void;
-  "aria-label": string;
-  placeholder: string;
-  // From the Field around it.
-  id?: string;
-  "aria-describedby"?: string;
-  "aria-invalid"?: boolean;
-}) {
-  const box = useRef<HTMLTextAreaElement>(null);
-  const fit = () => {
-    const e = box.current;
-    if (!e) return;
-    e.style.height = "auto";
-    e.style.height = `${e.scrollHeight + e.offsetHeight - e.clientHeight}px`;
-  };
-  useLayoutEffect(fit, [value]);
-  // A narrower sidebar wraps it onto more lines.
-  useEffect(() => {
-    const parent = box.current?.parentElement;
-    if (!parent) return;
-    let width = parent.clientWidth;
-    const watch = new ResizeObserver(() => {
-      if (parent.clientWidth === width) return;
-      width = parent.clientWidth;
-      fit();
-    });
-    watch.observe(parent);
-    return () => watch.disconnect();
-  }, []);
-  return (
-    <textarea
-      {...rest}
-      ref={box}
-      className="view-name"
-      rows={1}
-      maxLength={maxKeyName}
-      value={value}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.preventDefault();
-      }}
-      onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/g, " "))}
-      spellCheck={false}
-    />
   );
 }

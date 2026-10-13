@@ -12,20 +12,23 @@ import {
 import { tiered, type Help } from "./help";
 import { backAndForthHelp, onceHelp, type Repeat } from "./timing";
 export type CameraMode = "hold" | "current" | "follow" | "fit";
-// Draw along the curve, vary parameters, or trace light from its source to
-// the caustic (catacaustics and diacaustics only).
-export type AnimationMode = "reveal" | "parameters" | "trace" | "probe";
+// Draw along the curve, vary parameters, trace light from its source to the
+// caustic (catacaustics and diacaustics only), move the probe, or fly the
+// camera through key views (planar-path.ts).
+export type AnimationMode =
+  "reveal" | "parameters" | "trace" | "probe" | "path";
 export const canTrace = (config: Config) =>
   config.kind === "catacaustic" || config.kind === "diacaustic";
-// Only parameter tracks can return to their start; drawing along the curve
-// and tracing light start empty and end full, so they offer back and forth
-// instead of a loop (see timing.ts).
-export const loops = (mode: AnimationMode) => mode === "parameters";
+// Only parameter tracks and a camera path can return to their start;
+// drawing along the curve and tracing light start empty and end full, so
+// they offer back and forth instead of a loop (see timing.ts).
+export const loops = (mode: AnimationMode) =>
+  mode === "parameters" || mode === "path";
 export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
   loop: tiered(
     "Plays again and again; the last frame must match the first.",
-    "Play compares both ends and says what differs. A parameter track returns when it spans one period, as a from 0 to 2*pi in cos(t + a); a count must end where it starts. Exports drop the repeated last frame and loop forever.",
+    "Play compares both ends and says what differs. A parameter track returns when it spans one period, as a from 0 to 2*pi in cos(t + a); a count must end where it starts; a camera path, when its last view is its first. Exports drop the repeated last frame and loop forever.",
   ),
   "back-and-forth": backAndForthHelp,
 };

@@ -72,6 +72,9 @@ self.onmessage = async ({
   // already drawn.
   probe?: import("./types").ProbeQuery;
   probeOnly?: boolean;
+  // Asks Go to refine a 2D study's refined curves to the view the drawing
+  // shows (see engine.View).
+  view?: import("./types").ViewRect;
   // Asks Go for a surface's diagnostics (see engine3.SurfaceDiagnostics).
   surfaceDiagnostics?: boolean;
   // Asks Go for the light leaving a mirror or interface (see
@@ -788,6 +791,7 @@ self.onmessage = async ({
       ...config,
       ...(data.diagnostics && { diagnostics: true }),
       ...(data.probe && { probe: data.probe }),
+      ...(data.view && { view: data.view }),
     });
     if (data.probeOnly) {
       const reply = JSON.parse(tangentGardenProbe(request));

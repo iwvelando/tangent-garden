@@ -130,6 +130,39 @@ assert.ok(
   ),
 );
 assert.ok(Math.max(...planarImage.points.map((p) => p.y)) > 49.99);
+// Refined to a view, the image's pieces in view meet a tolerance of the
+// view's own size, reported as view, and stay on the circle; a view as
+// large as the study, or one that is not a rectangle, is refused or
+// changes nothing.
+const planarView = (view) =>
+  JSON.parse(
+    globalThis.tangentGardenCompute(
+      JSON.stringify({
+        kind: "inversion",
+        curve: { format: "parametric", x: "t", y: "0.02", min: -3, max: 3 },
+        inversion: { center: { x: 0, y: 0 }, radius: 1 },
+        samples: 64,
+        lines: 8,
+        adaptive: true,
+        view,
+      }),
+    ),
+  );
+const focusedImage = planarView({ x0: 0.9, y0: -0.08, x1: 1.1, y1: 0.12 })
+  .adaptive.derived;
+assert.ok(focusedImage.view > 0 && focusedImage.view < planarImage.tolerance);
+assert.ok(focusedImage.inserted > planarImage.inserted);
+assert.equal(focusedImage.unresolved, 0);
+assert.ok(
+  focusedImage.points.every(
+    (p) => p && Math.abs(Math.hypot(p.x, p.y - 25) - 25) < 1e-7,
+  ),
+);
+assert.deepEqual(
+  planarView({ x0: -100, y0: -100, x1: 100, y1: 100 }).adaptive,
+  planarNearMiss(true).adaptive,
+);
+assert.match(planarView({ x0: 1, y0: 0, x1: 0, y1: 1 }).error, /view/);
 // Each member of an offset stack is refined on its own: the unit circle's
 // offsets toward its center by 0.2 and 0.5 are circles of radius 0.8 and 0.5.
 const planarStack = JSON.parse(

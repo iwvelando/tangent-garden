@@ -1267,4 +1267,75 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "Inside a star's point",
+    note: "Thirteen parallel curves a few thousandths inside a four-pointed star, one curve until you zoom into a point: each rounds it in a smaller arc, until past its center they fold into swallowtails; play to fly in",
+    config: {
+      ...base,
+      kind: "offset",
+      // A hypotrochoid, (3 cos t + c cos 3t, 3 sin t − c sin 3t), with
+      // c = 0.96 just short of the astroid's 1. At its points (t = kπ/2)
+      // the radius of curvature is (3 − 3c)²/(3 + 9c) ≈ 0.00124: an offset
+      // inward by less rounds the point in a smaller arc about the same
+      // center, and one inward by more folds there into a swallowtail.
+      curve: {
+        ...base.curve,
+        x: "3*cos(t) + 0.96*cos(3*t)",
+        y: "3*sin(t) - 0.96*sin(3*t)",
+      },
+      // d = 0.0003k for k = 1…13, inward: four inside the center.
+      stack: { enabled: true, from: 0.0003, to: 0.0039, count: 13 },
+      lines: 64,
+      adaptive: true,
+      adaptiveView: true,
+    },
+    // From the whole star into its right-hand point and back, zooming by
+    // equal factors in equal times, the point coming straight to the middle.
+    animation: {
+      mode: "path",
+      camera: "hold",
+      duration: 12,
+      tracks: [],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+      path: {
+        style: "steady",
+        keys: [
+          { name: "The star", x: 0, y: 0, zoom: 1 },
+          { name: "Inside its point", x: 3.9585, y: 0, zoom: 800 },
+        ],
+      },
+    },
+  },
+  {
+    title: "Loops upon loops",
+    note: "Circles riding on circles, each four times as fast and about a third the size, so every loop carries smaller loops, with its inverse inside; zoom into any loop",
+    config: {
+      ...base,
+      kind: "inversion",
+      // Σ 0.35ᵏ e^{i4ᵏt} for k = 0…4: each term turns 1.4 times as fast as
+      // the one before, so it loops on it, and every frequency is 1 more
+      // than a multiple of 3, so the curve has three-fold symmetry. It
+      // keeps at least 1 − 0.35 − … − 0.015 ≈ 0.47 from the center, so its
+      // inverse in the circle of radius 0.45 stays within 0.2025/0.47 ≈
+      // 0.43 of it, inside the curve.
+      curve: {
+        ...base.curve,
+        format: "fourier",
+        terms: [
+          { frequency: 1, radius: 1, phase: 0 },
+          { frequency: 4, radius: 0.35, phase: 0 },
+          { frequency: 16, radius: 0.1225, phase: 0 },
+          { frequency: 64, radius: 0.042875, phase: 0 },
+          { frequency: 256, radius: 0.01500625, phase: 0 },
+        ],
+      },
+      inversion: { center: { x: 0, y: 0 }, radius: 0.45 },
+      samples: 8000,
+      lines: 40,
+      adaptive: true,
+      adaptiveView: true,
+    },
+  },
 ];

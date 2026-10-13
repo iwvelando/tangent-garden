@@ -154,19 +154,26 @@ func stencilAt(f curveFunc, t, lo, hi, h float64, least *float64) (Vec, Vec) {
 	a := (t - start) / h
 	var d, dd Vec
 	for j := 0; j < 5; j++ {
-		coeff := []float64{1}
+		// The Lagrange basis polynomial's coefficients, lowest first, in
+		// fixed arrays: a stencil is evaluated millions of times when a
+		// curve is refined, and slices would each be allocated.
+		var coeff [5]float64
+		coeff[0] = 1
+		length := 1
 		den := 1.0
 		for k := 0; k < 5; k++ {
 			if k == j {
 				continue
 			}
 			b := a - float64(k)
-			next := make([]float64, len(coeff)+1)
-			for n, c := range coeff {
+			var next [5]float64
+			for n := 0; n < length; n++ {
+				c := coeff[n]
 				next[n] += c * b
 				next[n+1] += c
 			}
 			coeff = next
+			length++
 			den *= float64(j - k)
 		}
 		v := f(start + float64(j)*h)

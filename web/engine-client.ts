@@ -4,7 +4,14 @@ import type {
   SpatialProbePoint,
   SpatialResult,
 } from "./spatial/types";
-import type { Bounds, Config, Frame, ProbePoint, ProbeQuery } from "./types";
+import type {
+  Bounds,
+  Config,
+  Frame,
+  ProbePoint,
+  ProbeQuery,
+  ViewRect,
+} from "./types";
 
 // What a spatial study asks Go for beside the study itself.
 export type SpatialOptions = {
@@ -76,12 +83,17 @@ export class EngineClient {
     });
   }
   // A 2D study, with the base curve's diagnostics for the probe when asked
-  // (see engine.Diagnostics), and the probe at one parameter (see
-  // engine.ProbePoint).
+  // (see engine.Diagnostics), the probe at one parameter (see
+  // engine.ProbePoint), and its refined curves refined to a view (see
+  // engine.View).
   async compute(
     config: Config,
     bounds?: Bounds,
-    options: { diagnostics?: boolean; probe?: ProbeQuery } = {},
+    options: {
+      diagnostics?: boolean;
+      probe?: ProbeQuery;
+      view?: ViewRect;
+    } = {},
   ): Promise<Frame> {
     const { result, config: resolved } = await this.request({
       action: "compute",
@@ -89,6 +101,7 @@ export class EngineClient {
       bounds,
       ...(options.diagnostics ? { diagnostics: true } : {}),
       ...(options.probe ? { probe: options.probe } : {}),
+      ...(options.view ? { view: options.view } : {}),
     });
     return { result, config: resolved };
   }

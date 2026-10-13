@@ -314,7 +314,7 @@ func TestRefineScanLeavesResolvedCurvesAlone(t *testing.T) {
 	}{{ps, at}, {coiled, coil}} {
 		tolerance := Epsilon * Radius(c.ps, coords)
 		with, _ := Refine(c.ps, make([]bool, len(c.ps)), c.at, plane, 0, 2*math.Pi, tolerance, Budget)
-		without, _ := refine(c.ps, make([]bool, len(c.ps)), c.at, plane, 0, 2*math.Pi, tolerance, Budget, 0)
+		without, _ := refine(c.ps, make([]bool, len(c.ps)), c.at, plane, 0, 2*math.Pi, tolerance, Budget, 0, nil)
 		if with.Inserted == 0 || len(with.At) != len(without.At) {
 			t.Fatalf("%d points with the scan, %d without", len(with.At), len(without.At))
 		}

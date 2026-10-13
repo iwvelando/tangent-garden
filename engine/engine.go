@@ -45,6 +45,22 @@ type Request struct {
 	// between samples (see ProbePoint); it changes nothing else in the
 	// result.
 	Probe *ProbeQuery `json:"probe,omitempty"`
+	// View is the rectangle the page shows, when the drawing is zoomed in
+	// and refined to it (see engine/adaptive.go); it changes nothing but
+	// the refined curves.
+	View *View `json:"view,omitempty"`
+}
+
+// View is a rectangle of the plane, from (X0, Y0) to (X1, Y1). Radius,
+// when it is not 0, is the half diagonal its tolerance is a fraction of, in
+// place of the rectangle's own: a rectangle covering several views, as a
+// camera path's piece does, is refined as finely as the smallest.
+type View struct {
+	X0     float64 `json:"x0"`
+	Y0     float64 `json:"y0"`
+	X1     float64 `json:"x1"`
+	Y1     float64 `json:"y1"`
+	Radius float64 `json:"radius,omitempty"`
 }
 type Ray struct {
 	SampleIndex int  `json:"sampleIndex"`
@@ -129,6 +145,9 @@ func Compute(q Request) (Result, error) {
 	}
 	if q.Lines < 2 || q.Lines > 2048 || q.Lines > q.Samples {
 		return out, fieldErr("lines", "samples must be 64–32768 and lines 2–2048, with no more lines than samples")
+	}
+	if q.View != nil && !q.View.valid() {
+		return out, fmt.Errorf("the view must be a rectangle with finite corners, and its radius, if given, positive and finite")
 	}
 	if q.Probe != nil && !refines(q.Curve.Format) {
 		return out, errProbe
