@@ -16,7 +16,7 @@ These are the facts that decide where a refinement applies.
 | Keyboard       | Arrows pan, +/− zoom, Home fits                                                                                                   | Arrows orbit, shift-arrows pan, +/− zoom, Home                                            | Same as 3D                                                   |
 | Still export   | SVG; PNG at 1–4 × the page, optionally transparent (`web/ExportImageMenu.tsx`, shared)                                            | PNG, SVG with embedded PNG and Lines (SVG), all at 1–4 × the page, optionally transparent | As 2D                                                        |
 | Probe          | Curve                                                                                                                             | Curve, surface, offset, focal sheets, light                                               | None (no user curve)                                         |
-| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes | Base, derived input (involute too), projections, inversion, involutes, strands            | None (no user curve)                                         |
+| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes | Base, derived input (involute too), projections, inversion, involutes, strands, surfaces  | None (no user curve)                                         |
 | Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`)     | Same                                                                                      | Same                                                         |
 
 The 3D-only features are 3D-only by nature: cut, see-through, surface and light probes, camera paths, the ride, perspective lenses, typed mesh transport and adaptive implicit meshes. Do not port them to 2D or 4D unless an item below says so.
@@ -69,8 +69,6 @@ Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits 
 
 **Open:**
 
-- **3D:**
-  - Refining surfaces along the curve. A refined partner thread, meridian or base can stand just off its surface's edge until then.
 - **Both:**
   - A view-dependent drawing refinement, which must still give playback and every export the same curve.
   - Framing that ignores refined points.
@@ -79,7 +77,7 @@ Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits 
 
 **Watch for:**
 
-- Uniform samples remain the study's identity for surfaces, construction lines, framing, reveal and probe.
+- Uniform samples remain the study's identity for construction lines, framing, reveal and probe, and for surfaces unless **Refine the surface too** is on (see [surfaces along the curve](mathematics.md#surfaces-along-the-curve)).
 - Breaks found between samples must reach every curve built on that curve.
 - Anything drawn from a refined curve must follow the reveal and traced light, as `arrivalAt` in `web/raytrace.ts` does (#141).
 - Keep the feature opt-in and off for older links.

@@ -64,10 +64,36 @@ type CanalResult struct {
 // canalSegments divides each contact circle of the mesh, and canalRings caps
 // the circles joined into it; a circle beside a gap is always included.
 const (
+	canalSeams    = 4
 	canalSegments = 24
 	canalRings    = 480
 	maxMeridians  = 12
 )
+
+// The mesh angles' cosines and sines, each computed once.
+var canalCosines, canalSines = func() (cosines, sines [canalSegments + 1]float64) {
+	for k := range cosines {
+		theta := 2 * math.Pi * float64(k) / canalSegments
+		cosines[k], sines[k] = math.Cos(theta), math.Sin(theta)
+	}
+	return
+}()
+
+// hoop is one of the mesh's contact circles: its center, the directions u
+// and v of angle 0 and a quarter turn round it, the curve's point base at
+// the sphere's center, and the circle's and sphere's radii.
+type hoop struct {
+	center, u, v, base Vec3
+	radius, sphere     float64
+}
+
+// at is the hoop's point at mesh angle k.
+func (h hoop) at(k int) Vec3 {
+	return h.center.add(h.u.mul(h.radius * canalCosines[k]).add(h.v.mul(h.radius * canalSines[k])))
+}
+
+// normal is the surface's outward normal at the hoop's point p.
+func (h hoop) normal(p Vec3) Vec3 { return p.sub(h.base).mul(1 / h.sphere) }
 
 func (q CanalRequest) validate() error {
 	if !finite(q.Radius) || q.Radius <= 0 || q.Radius > 1e5 {
@@ -218,15 +244,54 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 			}
 		}
 	}
+	hoopAt := func(i int) hoop { return hoop{centers[i], us[i], vs[i], *base[i], radii[i], R[i]} }
+	// A refined surface's rings between samples, by the frame carried to
+	// them and turned as the samples' rings are, with seams at four of the
+	// mesh's angles refined beside the meridians.
+	var circles func(float64) (contactCircle, bool)
+	var ringBetween func(float64) (hoop, bool)
+	var seams [][]*Vec3
 	if out.Adaptive != nil {
-		refineMeridians(c, out, q, radius, frame, evaluate, lo, hi)
+		circles = contacts(c, frame, evaluate, radius, lo, hi)
 	}
-	// The mesh angles' cosines and sines, each computed once.
-	var cosines, sines [canalSegments + 1]float64
-	for k := range cosines {
-		theta := 2 * math.Pi * float64(k) / canalSegments
-		cosines[k], sines[k] = math.Cos(theta), math.Sin(theta)
+	if c.refinesSurface() {
+		ringBetween = func(t float64) (hoop, bool) {
+			g, ok := circles(t)
+			if !ok {
+				return hoop{}, false
+			}
+			psi := turn * g.arc
+			if f.Length > 0 {
+				psi += f.Correction * (g.arc - g.from) / f.Length
+			}
+			u := g.u.mul(math.Cos(psi)).add(g.w.mul(math.Sin(psi)))
+			v := g.w.mul(math.Cos(psi)).sub(g.u.mul(math.Sin(psi)))
+			return hoop{g.center, u, v, g.r, g.radius, g.sphere}, true
+		}
+		seams = make([][]*Vec3, canalSeams)
+		for k := range seams {
+			seams[k] = make([]*Vec3, n+1)
+			for i := range base {
+				if circled[i] {
+					p := hoopAt(i).at(k * canalSegments / canalSeams)
+					seams[k][i] = &p
+				}
+			}
+		}
 	}
+	var seamPaths []*RefinedPath
+	if out.Adaptive != nil && len(q.Meridians)+len(seams) > 0 {
+		seamPaths = refineMeridians(c, out, q, circles, seams, func(k int) func(float64) Vec3 {
+			return func(t float64) Vec3 {
+				g, ok := ringBetween(t)
+				if !ok {
+					return Vec3{math.NaN(), 0, 0}
+				}
+				return g.at(k * canalSegments / canalSeams)
+			}
+		}, lo, hi)
+	}
+	cosines, sines := canalCosines, canalSines
 	grid := func(i, k int) Vec3 {
 		return centers[i].add(us[i].mul(radii[i] * cosines[k]).add(vs[i].mul(radii[i] * sines[k])))
 	}
@@ -278,40 +343,90 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 			rings = append(rings, i)
 		}
 	}
+	// Refined along the curve, the surface gains a ring at each column
+	// where the base, a meridian or a seam drew a point and the contact
+	// circle is real.
+	var columns [][]float64
+	between := map[float64]hoop{}
+	if c.refinesSurface() {
+		paths := append(append([]*RefinedPath{out.Adaptive.Base}, out.Adaptive.Meridians...), seamPaths...)
+		columns, _, out.Adaptive.Capped = surfaceColumns(n, func(i int) bool { return circled[i] && circled[i+1] && !q.Breaks[i+1] }, surfaceVertices/(canalSegments+1), paths...)
+		for i, positions := range columns {
+			kept := positions[:0]
+			for _, at := range positions {
+				if g, ok := ringBetween(parameterAt(lo, hi, n, at)); ok {
+					between[at] = g
+					kept = append(kept, at)
+				}
+			}
+			columns[i] = kept
+			out.Adaptive.Columns += len(kept)
+		}
+	}
+	stops := []float64{}
+	for j, i := range rings {
+		stops = append(stops, float64(i))
+		if columns == nil || j+1 == len(rings) {
+			continue
+		}
+		for k := i; k < rings[j+1]; k++ {
+			stops = append(stops, columns[k]...)
+		}
+	}
+	hoopOf := func(at float64) hoop {
+		if at == math.Trunc(at) {
+			return hoopAt(int(at))
+		}
+		return between[at]
+	}
 	// Each ring's vertices are listed once, when a strip first uses them,
 	// and shared by the strips on both sides of it.
-	listed := make([]int32, n+1)
+	listed, listedBetween := make([]int32, n+1), map[float64]int32{}
 	for i := range listed {
 		listed[i] = -1
 	}
-	strips := max(len(rings)-1, 0)
-	out.Mesh.Vertices = slices.Grow(out.Mesh.Vertices, 7*(canalSegments+1)*len(rings))
+	strips := max(len(stops)-1, 0)
+	out.Mesh.Vertices = slices.Grow(out.Mesh.Vertices, 7*(canalSegments+1)*len(stops))
 	out.Mesh.Triangles = slices.Grow(out.Mesh.Triangles, 3*2*canalSegments*strips)
 	out.Mesh.SampleIndex = slices.Grow(out.Mesh.SampleIndex, 2*canalSegments*strips)
-	vertex := func(i, k int) int32 {
-		first := listed[i]
-		if first < 0 {
+	vertex := func(at float64, k int) int32 {
+		var first int32
+		var ok bool
+		whole := at == math.Trunc(at)
+		if whole {
+			first = listed[int(at)]
+			ok = first >= 0
+		} else {
+			first, ok = listedBetween[at]
+		}
+		if !ok {
 			first = int32(len(out.Mesh.Vertices) / 7)
-			listed[i] = first
+			if whole {
+				listed[int(at)] = first
+			} else {
+				listedBetween[at] = first
+			}
+			g := hoopOf(at)
 			for m := 0; m <= canalSegments; m++ {
-				p := grid(i, m)
-				out.Mesh.vertex(p, normal(i, p), float64(i)/float64(n))
+				p := g.at(m)
+				out.Mesh.vertex(p, g.normal(p), at/float64(n))
 			}
 		}
 		return first + int32(k)
 	}
-	for j := 1; j < len(rings); j++ {
-		a, b := rings[j-1], rings[j]
+	for j := 1; j < len(stops); j++ {
+		a, b := stops[j-1], stops[j]
+		sample := int(math.Ceil(b))
 		connected := true
-		for i := a + 1; i <= b; i++ {
+		for i := int(math.Floor(a)) + 1; i <= sample; i++ {
 			connected = connected && !q.Breaks[i]
 		}
 		if !connected {
 			continue
 		}
 		for k := 0; k < canalSegments; k++ {
-			out.Mesh.triangle(b, vertex(a, k), vertex(b, k), vertex(a, k+1))
-			out.Mesh.triangle(b, vertex(b, k), vertex(b, k+1), vertex(a, k+1))
+			out.Mesh.triangle(sample, vertex(a, k), vertex(b, k), vertex(a, k+1))
+			out.Mesh.triangle(sample, vertex(b, k), vertex(b, k+1), vertex(a, k+1))
 		}
 	}
 	for line := 0; line < c.Lines; line++ {
@@ -359,7 +474,7 @@ func contacts(c Request, frame carried, evaluate evaluation, radius func(float64
 			if ok {
 				var axial float64
 				axial, circle.radius, ok, _ = contact(R, slope, g.v.norm())
-				circle.frameAt, circle.center = g, g.r.add(g.v.unit().mul(axial))
+				circle.frameAt, circle.center, circle.sphere = g, g.r.add(g.v.unit().mul(axial)), R
 			}
 		}
 		seen[t] = known{circle, ok}
@@ -373,18 +488,20 @@ type contactCircle struct {
 	frameAt
 	center Vec3
 	radius float64
+	sphere float64
 }
 
-// refineMeridians refines each meridian between samples. A gap or jump one
-// finds there breaks the surface, so every other meridian is refined again
-// unless it found the same; each path's Breaks counts only its own finds.
-func refineMeridians(c Request, out *Result, q *CanalResult, radius func(float64) (float64, float64, float64, bool), frame carried, evaluate evaluation, lo, hi float64) {
+// refineMeridians refines each meridian between samples, and each of the
+// mesh's seams given, as curves on the surface with their samples and
+// evaluators. A gap or jump one finds there breaks the surface, so every
+// other curve is refined again unless it found the same; each path's Breaks
+// counts only its own finds. It returns the seams' paths.
+func refineMeridians(c Request, out *Result, q *CanalResult, circles func(float64) (contactCircle, bool), seams [][]*Vec3, seam func(int) func(float64) Vec3, lo, hi float64) []*RefinedPath {
 	m := len(q.Meridians)
-	if m == 0 {
-		return
-	}
-	circles := contacts(c, frame, evaluate, radius, lo, hi)
 	meridian := func(k int) func(float64) Vec3 {
+		if k >= m {
+			return seam(k - m)
+		}
 		turn := 2 * math.Pi * float64(k) / float64(m)
 		return func(t float64) Vec3 {
 			g, ok := circles(t)
@@ -394,9 +511,10 @@ func refineMeridians(c Request, out *Result, q *CanalResult, radius func(float64
 			return g.center.add(g.direction(c.Frame.Angle + turn).mul(g.radius))
 		}
 	}
-	paths := make([]*RefinedPath, m)
-	given, found := make([][]bool, m), make([][]int, m)
-	// Whether meridian k was refined knowing every break in breaks.
+	curves := append(append([][]*Vec3{}, q.Meridians...), seams...)
+	paths := make([]*RefinedPath, len(curves))
+	given, found := make([][]bool, len(curves)), make([][]int, len(curves))
+	// Whether curve k was refined knowing every break in breaks.
 	current := func(k int, breaks []bool) bool {
 		if given[k] == nil {
 			return false
@@ -415,7 +533,7 @@ func refineMeridians(c Request, out *Result, q *CanalResult, radius func(float64
 	for {
 		breaks := append([]bool(nil), q.Breaks...)
 		refined := false
-		for k, points := range q.Meridians {
+		for k, points := range curves {
 			if current(k, breaks) {
 				continue
 			}
@@ -434,7 +552,10 @@ func refineMeridians(c Request, out *Result, q *CanalResult, radius func(float64
 			}
 		}
 	}
-	out.Adaptive.Meridians = paths
+	if m > 0 {
+		out.Adaptive.Meridians = paths[:m]
+	}
+	return paths[m:]
 }
 
 // drawn is what the canal draws beside the base, as fitted families: its

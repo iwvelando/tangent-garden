@@ -149,8 +149,8 @@ type carried struct {
 	result   *FrameResult
 }
 
-// frames builds the frame at every sample, then the ribbon (in the result's
-// mesh, edges and cross-lines, as for the developable) and offset strands.
+// frames builds the frame at every sample, then the ribbon's edges and
+// cross-lines (its mesh is ribbon's) and offset strands.
 // Arc length uses Simpson's rule per interval and is not carried across a
 // break; the frame restarts from N₀ after one.
 func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, binormals []Vec3, defined []bool, closed bool, lo, hi float64) carried {
@@ -267,23 +267,6 @@ func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, 
 				out.Minus[i], out.Plus[i] = &minus, &plus
 			}
 		}
-		for i := 0; i < n; i++ {
-			if !ok[i] || !ok[i+1] || q.Breaks[i+1] {
-				out.Omitted++
-				continue
-			}
-			vertex := func(j int, p *Vec3, normal Vec3) int32 { return out.Mesh.vertex(*p, normal, float64(j)/float64(n)) }
-			for _, triangle := range [][3]int{{0, 1, 2}, {1, 3, 2}} {
-				corners := [4]*Vec3{out.Minus[i], out.Plus[i], out.Minus[i+1], out.Plus[i+1]}
-				a, b, d := corners[triangle[0]], corners[triangle[1]], corners[triangle[2]]
-				normal := b.sub(*a).cross(d.sub(*a))
-				if !(normal.norm() > 0) {
-					continue
-				}
-				normal = normal.unit()
-				out.Mesh.triangle(i+1, vertex(i+triangle[0]/2, a, normal), vertex(i+triangle[1]/2, b, normal), vertex(i+triangle[2]/2, d, normal))
-			}
-		}
 		for line := 0; line < c.Lines; line++ {
 			i := line * n / (c.Lines - 1)
 			if ok[i] {
@@ -298,6 +281,92 @@ func frames(c Request, out *Result, tangents []Vec3, speeds, middles []float64, 
 	}
 	// The ribbon closes where the frame returns to itself.
 	return carried{us, vs, ok, arc, direction, spin, q.Closed && q.Seam == nil, base, tangents, speeds, q}
+}
+
+// ribbon draws the ribbon of a frame with a width into the result's mesh,
+// one flat cell per interval the frame joins, as for the developable.
+// Refined along the curve, it gains a cross-line at each column where its
+// edges r ± wD, refined on their own, or the curve or a strand drew a point
+// (see surfaceColumns), and each cell is shaded by one normal; a gap or
+// jump an edge finds between samples leaves that interval's faces out.
+func (f carried) ribbon(c Request, out *Result, evaluate evaluation, lo, hi float64) {
+	q, ok := f.result, f.ok
+	n := len(f.base) - 1
+	joined := func(i int) bool { return ok[i] && ok[i+1] && !q.Breaks[i+1] }
+	var columns [][]float64
+	between := map[float64][2]*Vec3{}
+	if c.refinesSurface() {
+		along := f.along(c, evaluate, lo, hi)
+		edge := func(sign float64) func(float64) Vec3 {
+			return func(t float64) Vec3 {
+				g, ok := along(t)
+				if !ok {
+					return Vec3{math.NaN(), 0, 0}
+				}
+				return g.r.add(g.direction(c.Frame.Angle).mul(sign * c.Frame.Width))
+			}
+		}
+		minus, broken := refinePath(out.Minus, q.Breaks, edge(-1), lo, hi, pathTolerance(out.Minus), refineBudget)
+		plus, more := refinePath(out.Plus, q.Breaks, edge(1), lo, hi, pathTolerance(out.Plus), refineBudget)
+		out.Adaptive.Minus, out.Adaptive.Plus = minus, plus
+		torn := map[int]bool{}
+		for _, i := range append(broken, more...) {
+			torn[i] = true
+		}
+		frame := joined
+		joined = func(i int) bool { return frame(i) && !torn[i] }
+		paths := append([]*RefinedPath{out.Adaptive.Base, minus, plus}, out.Adaptive.Strands...)
+		columns, _, out.Adaptive.Capped = surfaceColumns(n, joined, surfaceVertices/6, paths...)
+		for i, positions := range columns {
+			kept := positions[:0]
+			for _, at := range positions {
+				t := parameterAt(lo, hi, n, at)
+				m, p := edge(-1)(t), edge(1)(t)
+				if !m.valid() || !p.valid() {
+					continue
+				}
+				between[at] = [2]*Vec3{&m, &p}
+				kept = append(kept, at)
+			}
+			columns[i] = kept
+			out.Adaptive.Columns += len(kept)
+		}
+	}
+	edges := func(at float64) [2]*Vec3 {
+		if at == math.Trunc(at) {
+			return [2]*Vec3{out.Minus[int(at)], out.Plus[int(at)]}
+		}
+		return between[at]
+	}
+	for i := 0; i < n; i++ {
+		if !joined(i) {
+			out.Omitted++
+			continue
+		}
+		stops := stations(i, columns)
+		for s := 1; s < len(stops); s++ {
+			from, to := stops[s-1], stops[s]
+			at := [2]float64{from, to}
+			vertex := func(j int, p *Vec3, normal Vec3) int32 { return out.Mesh.vertex(*p, normal, at[j]/float64(n)) }
+			e, g := edges(from), edges(to)
+			// Refined, a cell is shaded by its own normal, across its
+			// diagonals, so its two triangles shade alike.
+			cell := e[1].sub(*g[0]).cross(g[1].sub(*e[0]))
+			for _, triangle := range [][3]int{{0, 1, 2}, {1, 3, 2}} {
+				corners := [4]*Vec3{e[0], e[1], g[0], g[1]}
+				a, b, d := corners[triangle[0]], corners[triangle[1]], corners[triangle[2]]
+				normal := b.sub(*a).cross(d.sub(*a))
+				if !(normal.norm() > 0) {
+					continue
+				}
+				normal = normal.unit()
+				if columns != nil && cell.norm() > 0 {
+					normal = cell.unit()
+				}
+				out.Mesh.triangle(i+1, vertex(triangle[0]/2, a, normal), vertex(triangle[1]/2, b, normal), vertex(triangle[2]/2, d, normal))
+			}
+		}
+	}
 }
 
 // strand evaluates offset strand k at any t between two samples the frame
@@ -316,10 +385,12 @@ func (f carried) strand(c Request, evaluate evaluation, k int, lo, hi float64) f
 
 // frameAt is the frame at one parameter between samples: the curve's point
 // r and velocity v, the frame's U and V, and spin, the angle the twist and
-// any distributed correction have turned the offset direction by.
+// any distributed correction have turned the offset direction by; arc is
+// the arc length there and from that of the sample before.
 type frameAt struct {
 	r, v, u, w Vec3
 	spin       float64
+	arc, from  float64
 }
 
 // direction is the offset direction D at angle θ₀ + turn, given as start.
@@ -360,7 +431,7 @@ func (f carried) along(c Request, evaluate evaluation, lo, hi float64) func(floa
 		T := v.unit()
 		start := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
 		arc := f.arc[i] + (t-start)/6*(f.speeds[i]+4*speed((start+t)/2)+v.norm())
-		g := frameAt{r: r, v: v}
+		g := frameAt{r: r, v: v, arc: arc, from: f.arc[i]}
 		if frenet {
 			b, defined := c.binormal(v, a, lo, hi)
 			if !defined {

@@ -3,6 +3,7 @@ package engine3
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -32,14 +33,23 @@ func curveMeshes() map[string]Request {
 	gap := canalled(custom("t^3", "0", "0", -1, 1), 0.2, "1", 2)
 	flat := framedCustom("cos(t)", "sin(t)", "t/3", 0, 6)
 	flat.Frame.Width = 0
+	refined := func(c Request) Request {
+		c.Adaptive, c.AdaptiveSurface = true, true
+		return c
+	}
 	return map[string]Request{
-		"developable": study(),
-		"torus":       canalled(circle(), 0.5, "1", 6),
-		"canal gap":   gap,
-		"ribbon":      framedCustom("cos(t)", "sin(t)", "t/3", 0, 6),
-		"no ribbon":   flat,
-		"ruled":       threaded(ring(0), "cos(t)", "sin(t)", "1", 1, 0.5),
-		"cone":        threaded(ring(0), "0", "0", "2", 1, 0),
+		"refined developable": refined(study()),
+		"refined torus":       refined(canalled(circle(), 0.5, "1", 6)),
+		"refined canal gap":   refined(gap),
+		"refined ribbon":      refined(framedCustom("cos(t)", "sin(t)", "t/3", 0, 6)),
+		"refined ruled":       refined(threaded(ring(0), "cos(5*t)", "sin(5*t)", "1", 1, 0.5)),
+		"developable":         study(),
+		"torus":               canalled(circle(), 0.5, "1", 6),
+		"canal gap":           gap,
+		"ribbon":              framedCustom("cos(t)", "sin(t)", "t/3", 0, 6),
+		"no ribbon":           flat,
+		"ruled":               threaded(ring(0), "cos(t)", "sin(t)", "1", 1, 0.5),
+		"cone":                threaded(ring(0), "0", "0", "2", 1, 0),
 	}
 }
 
@@ -87,13 +97,13 @@ func TestCurveMeshIsIndexed(t *testing.T) {
 			if len(m.Triangles) != 0 || count != 0 {
 				t.Fatalf("a ribbon of width 0 has %d triangles, %d vertices", len(m.SampleIndex), count)
 			}
-		case "ribbon":
+		case "ribbon", "refined ribbon":
 			// Each triangle has its own face normal, so none shares.
 			if count != len(m.Triangles) || len(m.Triangles) == 0 {
 				t.Fatalf("ribbon: %d vertices for %d corners", count, len(m.Triangles))
 			}
 		default:
-			if r.Omitted == 0 && name == "canal gap" || len(m.Triangles) == 0 {
+			if r.Omitted == 0 && strings.HasSuffix(name, "canal gap") || len(m.Triangles) == 0 {
 				t.Fatalf("%s: %d triangles, %d omitted", name, len(m.SampleIndex), r.Omitted)
 			}
 			// A strip's vertices are each shared by three to six triangles.
