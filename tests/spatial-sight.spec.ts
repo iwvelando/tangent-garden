@@ -6,11 +6,16 @@ import { choosePreset } from "./helpers";
 import {
   arcLengths,
   defaultSight,
+  fadeLayers,
+  fadeStep,
+  hiddenOpacity,
   isPlain,
+  layerFades,
   seeSampling,
   sightRecord,
   sightSpec,
   type HiddenLines,
+  type LayerFade,
   type Sight,
 } from "../web/spatial/sight";
 import { buildScene } from "../web/spatial/scene";
@@ -283,6 +288,131 @@ test("faint hidden lines are exactly the parts the sampled test leaves out", () 
   expect(svg.match(/<g id="base"[^>]*>/)![0]).not.toMatch(/opacity/);
 });
 
+// Squares stacked behind one another facing the view, each smaller and
+// farther: half widths 0.5, 0.35, 0.2 and 0.1 at z = 0, −0.1, −0.2 and
+// −0.3. A line along y = 0.03 at z = −0.5 lies behind one of them for
+// 0.35 < |x| < 0.5, two for 0.2 < |x| < 0.35, three for 0.1 < |x| < 0.2
+// and four within |x| < 0.1.
+const stack = [
+  [0.5, 0],
+  [0.35, -0.1],
+  [0.2, -0.2],
+  [0.1, -0.3],
+] as const;
+function stackedStudy(base: Vec3[], tilt = 0): SpatialResult {
+  const corners = stack.flatMap(([h, z]) => {
+    const c = (x: number, y: number) => ({
+      position: at(x, y, z + tilt * (x + 0.7 * y)),
+      normal: at(0, 0, 1),
+      phase: 0,
+      sampleIndex: 0,
+    });
+    const [a, b, d, e] = [c(-h, -h), c(h, -h), c(h, h), c(-h, h)];
+    return [a, b, d, a, d, e];
+  });
+  return { ...squareStudy(base), mesh: curveMesh(corners) };
+}
+const deep = [at(-1, 0.03, -0.5), at(0, 0.03, -0.5), at(1, 0.03, -0.5)];
+const faded = (result: SpatialResult, hidden: HiddenLines, fade?: LayerFade) =>
+  linework(buildScene(result), front, defaultLayers, false, {
+    ...page,
+    occlusion: "sampled",
+    hidden,
+    ...(fade && { fade }),
+  });
+// The page x where each of a group's paths starts and ends, in model x.
+const spans = (groups: LineGroup[], layers?: number) =>
+  groups
+    .filter((g) => g.hidden && g.layers === layers)
+    .flatMap((g) => g.strokes.flatMap((s) => s.paths))
+    .map((p) => [(p[0][0] - 1000) / unit, (p.at(-1)![0] - 1000) / unit])
+    .sort((a, b) => a[0] - b[0]);
+
+test("hidden lines fade once more behind each further sheet, up to three, only when asked", () => {
+  const near = (got: number[][], want: number[][]) => {
+    expect(got).toHaveLength(want.length);
+    got.forEach((g, i) =>
+      g.forEach((v, j) =>
+        expect(Math.abs(v - want[i][j]) * unit).toBeLessThan(1),
+      ),
+    );
+  };
+  expect(fadeStep).toBe(0.5);
+  expect(fadeLayers).toBe(3);
+  expect(layerFades.map((f) => f.value)).toEqual(["nearest", "each"]);
+  for (const hidden of ["faint", "dashed"] as const) {
+    const plain = faded(stackedStudy(deep), hidden);
+    // Behind the nearest sheet, as before, unless each layer is asked for.
+    expect(faded(stackedStudy(deep), hidden, "nearest")).toEqual(plain);
+    expect(plain.every((g) => g.layers === undefined)).toBe(true);
+    const each = faded(stackedStudy(deep), hidden, "each");
+    // The visible parts are unchanged.
+    expect(each.filter((g) => !g.hidden)).toEqual(
+      plain.filter((g) => !g.hidden),
+    );
+    // Behind the nearest sheet only, the same lines as before, whatever
+    // lies behind more.
+    expect(each.filter((g) => g.hidden).map((g) => g.layers)).toEqual([
+      1, 2, 3,
+    ]);
+    if (hidden === "dashed") continue;
+    near(spans(each, 1), [
+      [-0.5, -0.35],
+      [0.35, 0.5],
+    ]);
+    near(spans(each, 2), [
+      [-0.35, -0.2],
+      [0.2, 0.35],
+    ]);
+    // Three and four layers alike, as one path through x = 0.
+    near(spans(each, 3), [[-0.2, 0.2]]);
+    // Together they are the hidden part as before.
+    near(spans(plain), [[-0.5, 0.5]]);
+  }
+  // Along the squares' diagonals, where each square's two triangles meet,
+  // every sample lies on both: one layer each, as above, flat or tilted so
+  // that the two triangles' depths there differ by rounding.
+  const diagonal = [at(-1, -1, -0.8), at(0, 0, -0.8), at(1, 1, -0.8)];
+  for (const tilt of [0, 0.1]) {
+    const along = faded(stackedStudy(diagonal, tilt), "faint", "each");
+    near(spans(along, 1), [
+      [-0.5, -0.35],
+      [0.35, 0.5],
+    ]);
+    near(spans(along, 2), [
+      [-0.35, -0.2],
+      [0.2, 0.35],
+    ]);
+    near(spans(along, 3), [[-0.2, 0.2]]);
+  }
+  // A line lying on the second sheet is in front of it, and behind only
+  // the first.
+  const lying = [at(-1, 0.03, -0.1), at(0, 0.03, -0.1), at(1, 0.03, -0.1)];
+  const on = faded(stackedStudy(lying), "faint", "each");
+  expect(on.filter((g) => g.hidden).map((g) => g.layers)).toEqual([1]);
+  // The file draws each group at its own opacity, halved per layer, all
+  // beneath the visible lines; the nearest layer's group keeps its name.
+  for (const [hidden, o] of [
+    ["faint", 0.35],
+    ["dashed", 0.8],
+  ] as const) {
+    const svg = linesSvg(faded(stackedStudy(deep), hidden, "each"), {
+      ...page,
+      dark: false,
+      title: "t",
+      metadata: {},
+    });
+    expect(svg).toMatch(
+      new RegExp(
+        `<g id="hidden-base"[^>]* stroke-opacity="${o}"[^>]*>.*<g id="hidden-base-2"[^>]* stroke-opacity="${o / 2}"[^>]*>.*<g id="hidden-base-3"[^>]* stroke-opacity="${o / 4}"[^>]*>.*<g id="base"`,
+      ),
+    );
+    expect(hiddenOpacity(hidden, 1)).toBe(o);
+    expect(hiddenOpacity(hidden, 3)).toBe(o / 4);
+    expect(hiddenOpacity(hidden, 7)).toBe(o / 4);
+  }
+});
+
 test("dashed hidden lines are dashes measured along the line in space, one per 1% of the page's shorter side", () => {
   // A period is 15.2 px on a 2000 × 1520 page, the dash its first 55%,
   // counted from where the base starts, at s = x + 1.
@@ -359,6 +489,18 @@ test("an export records seeing through only when it is on, and states its rule",
   expect(
     sightRecord({ ...defaultSight, hidden: "dashed" }, true)!.statement,
   ).toMatch(/1% of the shorter side/);
+  // Fading behind each layer is recorded only when it changes lines.
+  expect(sightRecord({ ...defaultSight, fade: "each" }, true)).toBeUndefined();
+  expect(
+    sightRecord({ ...defaultSight, hidden: "faint", fade: "nearest" }, true),
+  ).toEqual(faint);
+  const layered = sightRecord(
+    { ...defaultSight, hidden: "faint", fade: "each" },
+    true,
+  )!;
+  expect(layered).toMatchObject({ hidden: "faint", fade: "each" });
+  expect(layered.statement).toMatch(/halved.*each further sheet layer/);
+  expect(layered.statement).toMatch(/three/);
 });
 
 // Through the real app, from links with exact cameras.
@@ -768,16 +910,46 @@ test("the panel sets how sheets and lines behind them are drawn, names an invali
   await expect(behind).toHaveValue("hide");
   await expect(box.getByLabel("Opacity α")).toHaveCount(0);
   expect(await drawnSight(page)).toBeNull();
+  // Fading behind each layer is offered only for lines drawn behind sheets.
+  const fade = box.getByLabel("Fade behind layers", { exact: true });
+  await expect(fade).toHaveCount(0);
+  await behind.selectOption("faint");
+  await expect(fade).toHaveValue("nearest");
+  await fade.selectOption("each");
+  await expect
+    .poll(() => drawnSight(page))
+    .toEqual({
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "faint",
+      fade: "each",
+    });
+  await behind.selectOption("hide");
+  await expect(fade).toHaveCount(0);
+  await behind.selectOption("faint");
+  await expect(fade).toHaveValue("each");
+  await fade.selectOption("nearest");
+  await expect.poll(async () => (await drawnSight(page))?.fade).toBe("nearest");
   await behind.selectOption("dashed");
   await expect
     .poll(() => drawnSight(page))
-    .toEqual({ sheets: "opaque", opacity: 0.35, hidden: "dashed" });
+    .toEqual({
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "dashed",
+      fade: "nearest",
+    });
   await sheets.selectOption("through");
   const opacity = box.getByLabel("Opacity α", { exact: true });
   await expect(opacity).toHaveValue("0.35");
   await expect
     .poll(() => drawnSight(page))
-    .toEqual({ sheets: "through", opacity: 0.35, hidden: "dashed" });
+    .toEqual({
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "dashed",
+      fade: "nearest",
+    });
   await expect(page.locator(".spatial-stage")).toHaveAttribute(
     "data-sight",
     JSON.stringify({
@@ -785,6 +957,7 @@ test("the panel sets how sheets and lines behind them are drawn, names an invali
       opacity: 0.35,
       hidden: "dashed",
       weight: "regular",
+      fade: "nearest",
     }),
   );
   // Constant expressions, like every scalar field.
@@ -804,7 +977,12 @@ test("the panel sets how sheets and lines behind them are drawn, names an invali
   await expect(box.getByRole("alert")).toHaveCount(0);
   await expect
     .poll(() => drawnSight(page))
-    .toEqual({ sheets: "through", opacity: 0.6, hidden: "dashed" });
+    .toEqual({
+      sheets: "through",
+      opacity: 0.6,
+      hidden: "dashed",
+      fade: "nearest",
+    });
   // Layers do not disturb it.
   await page.getByRole("checkbox", { name: "Tangent rulings" }).uncheck();
   expect((await drawnSight(page)).hidden).toBe("dashed");
@@ -813,6 +991,7 @@ test("the panel sets how sheets and lines behind them are drawn, names an invali
   await settled(page);
   await expect(sheets).toHaveValue("opaque");
   await expect(behind).toHaveValue("hide");
+  await expect(fade).toHaveCount(0);
   expect(await drawnSight(page)).toBeNull();
   await expect(page.locator(".spatial-stage")).not.toHaveAttribute(
     "data-sight",
@@ -855,9 +1034,30 @@ test("the visible-lines export draws lines behind sheets as the drawing does, an
   expect(svg).toMatch(/<g id="hidden-base"[^>]*stroke-opacity="0.8"/);
   expect(svg).toMatch(/<g id="hidden-meridians"/);
   expect(svg).toMatch(/dashed at 80% opacity/);
+  expect(svg).not.toMatch(/hidden-base-2|halved/);
   // Every line is drawn whole, and says nothing of hidden lines.
   const every = (await download(page, "Lines (SVG) · every line")).toString();
   expect(every).not.toMatch(/hidden-/);
+  // Faded behind each layer, the nested spheres' sections are grouped by
+  // the layers in front of them, as the drawing fades them.
+  await openLink(
+    page,
+    nestedStudy(onlyLayers("surface", "sections"), {
+      hidden: "faint",
+      fade: "each",
+    }),
+  );
+  const layered = (await download(page, shown)).toString();
+  for (const [id, o] of [
+    ["hidden-sections", 0.35],
+    ["hidden-sections-2", 0.175],
+    ["hidden-sections-3", 0.0875],
+  ] as const)
+    expect(layered).toMatch(
+      new RegExp(`<g id="${id}"[^>]*stroke-opacity="${o}"`),
+    );
+  expect(layered).toMatch(/halved behind each further sheet layer/);
+  expect(layered).toMatch(/-2 or -3 when behind that many sheet layers/);
 });
 
 test("the Klein bottle opens seen through, its sections inside its wall dashed", async ({
@@ -889,4 +1089,189 @@ test("the Klein bottle opens seen through, its sections inside its wall dashed",
     svg.match(/<g id="hidden-sections"[^>]*>(.*?)<\/g>/s)?.[1] ?? "";
   expect(dashes.match(/M/g)?.length ?? 0).toBeGreaterThan(100);
   expect(svg).toMatch(/<g id="sections"/);
+});
+
+// Spheres of radius 1, 2 and 2.6 about the origin, one level set, seen
+// down −z and cut by the planes z = −1.85, −1.15, −0.45 and 0.25 in
+// circles. A circle lies on its own sphere; at its (x, y) the spheres'
+// sheets lie at z = ±√(R² − ρ²), and those above its plane are the layers
+// in front of it: the outer sphere's circle at −1.15 is behind one, the
+// middle one's at −1.15 behind two, the inner one's at −0.45 and the
+// outer one's at −1.85 behind three, and the middle one's at −1.85
+// (ρ = 0.76, inside the inner sphere's outline) behind four, drawn as
+// three.
+const nestedRadii = [1, 2, 2.6],
+  nestedPlanes = [-1.85, -1.15, -0.45, 0.25];
+function nestedStudy(layers: Record<string, boolean>, sight?: Partial<Sight>) {
+  const preset = spatialPresets.find(
+    (p) => p.name === "A sphere and its latitudes",
+  )!;
+  const config = structuredClone(preset.config);
+  config.implicit = {
+    ...config.implicit,
+    f: "(x^2 + y^2 + z^2 - 1)*(x^2 + y^2 + z^2 - 4)*(x^2 + y^2 + z^2 - 6.76)",
+    a: 1,
+    level: 0,
+    box: {
+      xMin: -2.8,
+      xMax: 2.8,
+      yMin: -2.8,
+      yMax: 2.8,
+      zMin: -2.8,
+      zMax: 2.8,
+    },
+    cells: 64,
+    refine: 0,
+    sections: { normal: at(0, 0, 1), from: -1.85, to: 0.25, count: 4 },
+  };
+  return {
+    config,
+    layers,
+    view: { yaw: 0, pitch: 0, zoom: 1, panX: 0, panY: 0 },
+    animation: { mode: "reveal", camera: "hold", duration: 10, tracks: [] },
+    ...(sight && { sight: { ...defaultSight, weight: "hairline", ...sight } }),
+  };
+}
+// The layers in front of a page point of a section circle, from the
+// spheres alone, or undefined where the point is near a sphere's outline
+// or another sheet's depth, or not clearly on one circle.
+function nestedLayers(x: number, y: number, tolerance: number) {
+  const rho = Math.hypot(x, y);
+  const on = nestedRadii.flatMap((R) =>
+    nestedPlanes
+      .filter((c) => R * R > c * c)
+      .map((c) => ({ R, c, d: Math.abs(rho - Math.sqrt(R * R - c * c)) })),
+  );
+  const near = on.filter((o) => o.d < tolerance);
+  if (near.length !== 1) return;
+  const { R, c } = near[0];
+  let n = 0;
+  for (const S of nestedRadii) {
+    // Near an outline the shading changes too fast to read.
+    if (Math.abs(S - rho) < 0.08) return;
+    if (rho > S) continue;
+    for (const z of [1, -1].map((s) => s * Math.sqrt(S * S - rho * rho))) {
+      // Its own sheet, where it lies.
+      if (S === R && Math.abs(z - c) < 0.15) continue;
+      if (Math.abs(z - c) < 0.15) return;
+      if (z > c) n++;
+    }
+  }
+  return n;
+}
+
+test("lines behind several sheets fade again behind each layer, counted as the spheres stack, opaque or seen through", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const surface = onlyLayers("surface"),
+    both = onlyLayers("surface", "sections");
+  const images: Record<string, ReturnType<typeof decodePng>> = {};
+  let view = { center: O, radius: 1, zoom: 1 };
+  for (const [name, layers, sight] of [
+    ["sheets", surface, undefined],
+    ["lines", onlyLayers("sections"), undefined],
+    ["once", both, { hidden: "faint" }],
+    ["each", both, { hidden: "faint", fade: "each" }],
+    ["through", surface, { sheets: "through", opacity: 0.3 }],
+    [
+      "throughEach",
+      both,
+      { sheets: "through", opacity: 0.3, hidden: "faint", fade: "each" },
+    ],
+    ["strokes", onlyLayers("sections"), { weight: "regular" }],
+    ["strokesEach", both, { weight: "regular", hidden: "faint", fade: "each" }],
+  ] as const) {
+    await openLink(page, nestedStudy(layers, sight));
+    if (name === "sheets")
+      view = JSON.parse(
+        (await page.locator("#spatial-artwork").getAttribute("data-view"))!,
+      );
+    images[name] = decodePng(await download(page, png));
+  }
+  const scale = (760 * view.zoom) / (1.16 * view.radius);
+  const { width, rgba } = images.sheets;
+  // The sections' ink: of the colors of many pixels of the lines alone,
+  // the farthest from the background (the rest are antialiased edges).
+  const inks = new Map<number, number>(),
+    v = images.lines.rgba;
+  for (let i = 0; i < v.length; i += 4) {
+    const key = (v[i] << 16) | (v[i + 1] << 8) | v[i + 2];
+    inks.set(key, (inks.get(key) ?? 0) + 1);
+  }
+  const apart = (k: number) =>
+    Math.abs((k >> 16) - v[0]) +
+    Math.abs(((k >> 8) & 255) - v[1]) +
+    Math.abs((k & 255) - v[2]);
+  const [ink] = [...inks]
+    .filter(([, n]) => n > 1000)
+    .sort((a, b) => apart(b[0]) - apart(a[0]))[0];
+  const L = [ink >> 16, (ink >> 8) & 255, ink & 255];
+  const pixel = (img: (typeof images)[string], i: number) =>
+    [0, 1, 2].map((c) => img.rgba[4 * i + c]);
+  // The opacity o of the ink over the sheets, from (1 − o)·A + o·L.
+  const opacity = (p: number[], a: number[]) => {
+    const d = L.map((v, c) => v - a[c]);
+    const n = d.reduce((s, v) => s + v * v, 0);
+    return n < 400 ? NaN : p.reduce((s, v, c) => s + (v - a[c]) * d[c], 0) / n;
+  };
+  const tally = (lines: string, drawn: string, sheets: string) => {
+    // By layers in front, 1 to 4.
+    const out = {
+      checked: [0, 0, 0, 0, 0],
+      right: [0, 0, 0, 0, 0],
+      once: 0,
+    };
+    for (let i = 0; i < rgba.length / 4; i++) {
+      // Fully in the ink; a stroke's edge pixels behind sheets blend at
+      // their coverage, so for strokes its four neighbors must be too.
+      const inked = (j: number) =>
+        Math.max(
+          ...pixel(images[lines], j).map((v, c) => Math.abs(v - L[c])),
+        ) <= 2;
+      if (!inked(i)) continue;
+      if (
+        lines === "strokes" &&
+        ![i - 1, i + 1, i - width, i + width].every(inked)
+      )
+        continue;
+      const x = view.center.x + ((i % width) - 1000) / scale,
+        y = view.center.y - (Math.floor(i / width) - 760) / scale;
+      const n = nestedLayers(x, y, 1.5 / scale);
+      if (n === undefined || n === 0) continue;
+      const k = Math.min(n, 4);
+      const o = opacity(pixel(images[drawn], i), pixel(images[sheets], i));
+      if (Number.isNaN(o)) continue;
+      out.checked[k]++;
+      if (Math.abs(o - 0.35 * 0.5 ** (Math.min(k, 3) - 1)) < 0.03)
+        out.right[k]++;
+      if (
+        drawn === "each" &&
+        Math.abs(
+          opacity(pixel(images.once, i), pixel(images.sheets, i)) - 0.35,
+        ) < 0.03
+      )
+        out.once++;
+    }
+    return out;
+  };
+  for (const [lines, drawn, sheets] of [
+    ["lines", "each", "sheets"],
+    ["lines", "throughEach", "through"],
+    ["strokes", "strokesEach", "sheets"],
+  ] as const) {
+    const seen = tally(lines, drawn, sheets);
+    for (const k of [1, 2, 3, 4]) {
+      expect(seen.checked[k], `${drawn} behind ${k}`).toBeGreaterThan(150);
+      expect(
+        seen.right[k] / seen.checked[k],
+        `${drawn} behind ${k}`,
+      ).toBeGreaterThan(0.95);
+    }
+    // Once, every hidden line is at the faint opacity, however deep.
+    if (drawn === "each")
+      expect(seen.once / seen.checked.reduce((a, b) => a + b)).toBeGreaterThan(
+        0.95,
+      );
+  }
 });

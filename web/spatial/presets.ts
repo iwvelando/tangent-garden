@@ -3828,4 +3828,51 @@ export const spatialPresets: {
     projection: "wide",
     view: { yaw: -0.8, pitch: 0.4, zoom: 1.6, panX: 5, panY: 3 },
   },
+  // Fading behind each layer (see sight.ts): three tori about one core
+  // circle of radius 2, of tube radii 0.3, 0.65 and 1, as one level set,
+  // F = (r² − 0.3²)(r² − 0.65²)(r² − 1) with r the distance from the core. Each
+  // plane x = d meets every torus it reaches in a spiric section of
+  // Perseus, one inside the next; seen through, a section behind one wall
+  // is faint, behind two half that, and behind three or more a quarter.
+  {
+    name: "Spiric sections through three nested tori",
+    detail:
+      "Planes across three tori, one inside the next, cut nested ovals, peanuts and lemniscates; each wall in front of a curve fades it once more",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "((sqrt(x^2 + y^2) - 2)^2 + z^2 - 0.09)*((sqrt(x^2 + y^2) - 2)^2 + z^2 - 0.4225)*((sqrt(x^2 + y^2) - 2)^2 + z^2 - 1)",
+        a: 1,
+        level: 0,
+        box: {
+          xMin: -3.2,
+          xMax: 3.2,
+          yMin: -3.2,
+          yMax: 3.2,
+          zMin: -1.2,
+          zMax: 1.2,
+        },
+        // As fine as the Klein bottle's: finer cells look the same here
+        // and take twice the time.
+        cells: 48,
+        refine: 1,
+        sections: {
+          normal: { x: 1, y: 0, z: 0 },
+          from: -2.75,
+          to: 2.75,
+          count: 11,
+        },
+      },
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.2,
+      hidden: "faint",
+      weight: "regular",
+      fade: "each",
+    },
+    layers: { planes: false, box: false },
+    view: { yaw: 0.55, pitch: 0.6, zoom: 1.3, panX: 0, panY: 0 },
+  },
 ];

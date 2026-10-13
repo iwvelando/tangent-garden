@@ -50,7 +50,13 @@ import {
   type CutPlaneInput,
 } from "./cut";
 import { SightPanel } from "./SightPanel";
-import { defaultSight, isPlain, sightSpec, type Sight } from "./sight";
+import {
+  defaultSight,
+  isPlain,
+  needsTarget,
+  sightSpec,
+  type Sight,
+} from "./sight";
 import { spatialFits } from "./limits";
 import { spatialPresets } from "./presets";
 import { ExampleGallery } from "../ExampleGallery";
@@ -251,8 +257,8 @@ export default function SpatialApp({
   const userSight = useMemo(() => sightSpec(sight), [sight]);
   // The image sizes this device draws, as the sight stands.
   const imageFits = useMemo(
-    () => spatialFits(userSight.spec.sheets === "through"),
-    [userSight.spec.sheets],
+    () => spatialFits(needsTarget(userSight.spec)),
+    [userSight.spec],
   );
   const [seeThrough, setSeeThrough] = useState(true);
   // Whether the device could draw strokes rather than hairlines.

@@ -45,9 +45,8 @@ These come from the handoffs. Each was paid for at least once.
 
 1. Scale and translation: the 2D drawing
 2. Refinement between samples, remaining constructions (3D and 2D)
-3. 3D rendering leftovers
 
-Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits to fix only when a study runs into them.
+Items 3 and 4 need a decision or a profile before any code. Item 5 lists limits to fix only when a study runs into them.
 
 ---
 
@@ -81,21 +80,9 @@ Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits 
 - Breaks found between samples must reach every curve built on that curve.
 - Anything drawn from a refined curve must follow the reveal and traced light, as `arrivalAt` in `web/raytrace.ts` does (#141).
 - Keep the feature opt-in and off for older links.
-- Refinement is the largest cost of the twisted spring's frame (item 5); measure with `make bench`.
+- Refinement is the largest cost of the twisted spring's frame (item 4); measure with `make bench`.
 
-### 3. 3D rendering leftovers
-
-**Applies to:** 3D only. The 2D and 4D SVG strokes use the browser's joins.
-
-**Open:**
-
-- Lines behind several see-through layers are not attenuated per layer.
-
-**Start from:** `mathematics.md` (**Spatial line weights**, the see-through section, which now covers its 2 × 2 sampling and dashes on the page), `web/spatial/sight.ts` and `web/spatial/renderer.ts`.
-
-**Watch for:** the hairline path must stay the original program and `gl.LINES`. The 1 × PNG must still equal the live canvas pixel for pixel (`tests/export-equivalence.spec.ts`), including see-through sheets.
-
-### 4. Composition and comparison
+### 3. Composition and comparison
 
 **Applies to:**
 
@@ -107,7 +94,7 @@ Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits 
 - **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another. Agree the design with the user before building.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
-### 5. Transport and efficiency, when profiled
+### 4. Transport and efficiency, when profiled
 
 **Applies to:** 3D first, then 4D.
 
@@ -119,7 +106,7 @@ Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits 
 
 **Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical.
 
-### 6. Smaller limits, to fix if they bite
+### 5. Smaller limits, to fix if they bite
 
 Each is known and documented; none is worth a branch until a study needs it.
 

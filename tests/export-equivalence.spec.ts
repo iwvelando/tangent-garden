@@ -115,6 +115,9 @@ const spatialCases = [
   // Dashes measured on the page through a lens, hairlines and strokes.
   { label: "A coiled tube running into the distance", weight: "hairline" },
   { label: "A coiled tube running into the distance", weight: "regular" },
+  // Faint lines fading behind each sheet layer, counted on a target of
+  // their own, through see-through sheets, after several live frames.
+  { label: "Spiric sections through three nested tori", weight: "regular" },
 ] as const;
 for (const { label, weight } of spatialCases)
   for (const scheme of ["light", "dark"] as const)

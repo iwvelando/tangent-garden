@@ -4,12 +4,14 @@ import { LineWeightField } from "../LineWeightField";
 import {
   dashMeasures,
   hiddenLines,
+  layerFades,
   sheetSights,
   strokeDepths,
   sightFields,
   sightHelp,
   type DashMeasure,
   type HiddenLines,
+  type LayerFade,
   type Sight,
   type SheetSight,
   type SightError,
@@ -139,6 +141,23 @@ export function SightPanel({
                 </Field>
               )}
             </div>
+          )}
+          {sight.hidden !== "hide" && (
+            <Field label="Fade behind layers" help={sightHelp.fade}>
+              <select
+                value={sight.fade ?? "nearest"}
+                onChange={(e) => {
+                  const fade = e.target.value as LayerFade;
+                  onSight((s) => ({ ...s, fade }));
+                }}
+              >
+                {layerFades.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
           )}
           {through && error && (
             <p className="animation-error cut-error" role="alert">
