@@ -33,15 +33,20 @@ import type { Layers } from "./Plot";
 import { lineWeightSchema, type LineWeight } from "./line-weight";
 import { probeMotionSchema, type ProbeMotion } from "./probe";
 import { defaultProbe, probeSupported, type PlanarProbe } from "./planar-probe";
+import { viewZoom } from "./refinement";
+import { legRange, maxKeyName, maxKeys } from "./key-views";
+import type { PlanarPath } from "./planar-path";
 
 // The manual camera, offset from the fitted framing, which the drawing
 // derives deterministically from the study: pixels of pan and a zoom factor.
 export type PlotCamera = { x: number; y: number; zoom: number };
-export const zoomRange: [number, number] = [0.1, 20];
+// The drawing allows the deeper zoom only when it is refined to its view.
+export const zoomRange: [number, number] = [0.1, viewZoom];
 // Repeat and pace are the timing every notebook shares (timing.ts), and the
 // probe's motion while parameters vary is the 3D notebook's (probe.ts).
+// A camera path's key views, absent in links and presets without one.
 export type PlanarAnimation = AnimationSettings<AnimationMode, Target> &
-  Timing & { probeMotion: ProbeMotion };
+  Timing & { probeMotion: ProbeMotion; path?: PlanarPath };
 export type PlanarStudy = {
   config: Config;
   // Domain bounds as entered, so constant expressions such as 2*pi survive.
@@ -255,8 +260,51 @@ const config: SchemaOf<Config> = {
     samples: "number",
     lines: "number",
     adaptive: { optional: "boolean" },
+    adaptiveView: { optional: "boolean" },
   },
 };
+
+// Key views within the drawing's deepest zoom; a study not refined to its
+// view refuses a deeper one when it plays (planar-path.ts).
+const planarPath: SchemaOf<PlanarPath> = {
+  fields: {
+    style: { options: { steady: true, smooth: true } },
+    keys: {
+      list: {
+        fields: {
+          name: "text",
+          x: "number",
+          y: "number",
+          zoom: { range: zoomRange },
+          leg: { optional: { range: legRange } },
+        },
+      },
+      max: maxKeys,
+    },
+  },
+};
+function cameraPath(value: unknown): PlanarPath {
+  const out = conform<PlanarPath>(
+    value,
+    planarPath,
+    { style: "steady", keys: [] },
+    "animation.path",
+  );
+  out.keys.forEach((key, k) => {
+    const field = `animation.path.keys[${k}]`;
+    if (key.name.length > maxKeyName)
+      throw new LinkError(
+        `${field}.name`,
+        `${field}.name is too long (at most ${maxKeyName} characters).`,
+      );
+    if (k === 0 && key.leg !== undefined && key.leg !== 1)
+      throw new LinkError(
+        `${field}.leg`,
+        `${field}.leg must be 1: the first view has no leg before it.`,
+      );
+  });
+  return out;
+}
 
 // The study a link describes, or a LinkError naming the first bad field.
 export function planarStudy(value: unknown): PlanarStudy {
@@ -347,13 +395,13 @@ export function planarStudy(value: unknown): PlanarStudy {
     typeof raw.animation === "object" &&
     raw.animation !== null &&
     !Array.isArray(raw.animation);
-  const { repeat, pace, probeMotion, ...shared } = grouped
+  const { repeat, pace, probeMotion, path, ...shared } = grouped
     ? (raw.animation as Record<string, unknown>)
     : {};
   const animation: PlanarAnimation = {
     ...animationSettings(
       grouped ? shared : raw.animation,
-      { reveal: true, parameters: true, trace: true, probe: true },
+      { reveal: true, parameters: true, trace: true, probe: true, path: true },
       availableTargets(study.config),
       defaultAnimation,
     ),
@@ -364,6 +412,8 @@ export function planarStudy(value: unknown): PlanarStudy {
       defaultAnimation.probeMotion,
       "animation.probeMotion",
     ),
+    // Links made before 2D camera paths have none.
+    ...(path !== undefined && { path: cameraPath(path) }),
   };
   if (
     animation.mode === "probe" &&
@@ -376,7 +426,7 @@ export function planarStudy(value: unknown): PlanarStudy {
   if (animation.repeat === "loop" && !loops(animation.mode))
     throw new LinkError(
       "animation.repeat",
-      "animation.repeat loops only parameter tracks, which can return to their start.",
+      "animation.repeat loops only parameter tracks or a camera path, which can return to their start.",
     );
   if (animation.mode === "trace" && !canTrace(study.config))
     throw new LinkError(

@@ -541,7 +541,7 @@ test("every invalid field is refused by name", async () => {
         ]),
     ],
     ["config.source.coordinates", (s) => (s.config.source.coordinates = "")],
-    ["camera.zoom", (s) => (s.camera.zoom = 50)],
+    ["camera.zoom", (s) => (s.camera.zoom = 5000)],
     ["camera.zoom", (s) => (s.camera.zoom = 0)],
     ["length", (s) => (s.length = 9)],
     ["stop", (s) => (s.stop = "yes"), /true or false/],
@@ -1680,6 +1680,82 @@ test("a 2D link carries refinement between samples; older links draw on the even
   const bad = structuredClone(planar()) as any;
   bad.config.adaptive = "yes";
   await refused(() => planarStudy(bad), "config.adaptive");
+});
+
+test("a 2D link carries a camera path; older links have none", async () => {
+  const study: PlanarStudy = {
+    ...planar(),
+    animation: {
+      ...planar().animation,
+      mode: "path",
+      repeat: "loop",
+      path: {
+        style: "smooth",
+        keys: [
+          { name: "Whole", x: 0, y: 0, zoom: 1 },
+          { name: "Tip", x: 3.9585, y: -0.001, zoom: 800, leg: 2.5 },
+          { name: "", x: 0, y: 0, zoom: 1 },
+        ],
+      },
+    },
+  };
+  const read = await readStudyLink(await writeStudyLink("2d", study));
+  assert.deepEqual(planarStudy(read.study), study);
+  // A link made before 2D camera paths has none.
+  assert.equal(planarStudy(planar()).animation.path, undefined);
+  for (const [field, change] of [
+    [
+      "animation.path.keys[1].zoom",
+      (s: any) => (s.animation.path.keys[1].zoom = 1001),
+    ],
+    [
+      "animation.path.keys[1].leg",
+      (s: any) => (s.animation.path.keys[1].leg = 11),
+    ],
+    [
+      "animation.path.keys[0].leg",
+      (s: any) => (s.animation.path.keys[0].leg = 2),
+    ],
+    [
+      "animation.path.keys[0].name",
+      (s: any) => (s.animation.path.keys[0].name = "x".repeat(61)),
+    ],
+    [
+      "animation.path.keys[1].x",
+      (s: any) => (s.animation.path.keys[1].x = "far"),
+    ],
+    ["animation.path.style", (s: any) => (s.animation.path.style = "wobbly")],
+    [
+      "animation.path.keys",
+      (s: any) =>
+        (s.animation.path.keys = Array(13).fill(s.animation.path.keys[0])),
+    ],
+  ] as const) {
+    const bad = structuredClone(study) as any;
+    change(bad);
+    await refused(() => planarStudy(bad), field);
+  }
+});
+
+test("a 2D link carries refinement to the view and its deeper zoom; older links refine to the study alone", async () => {
+  const study: PlanarStudy = {
+    ...planar(),
+    config: { ...planar().config, adaptive: true, adaptiveView: true },
+    camera: { x: -3000.5, y: 1250.25, zoom: 640 },
+  };
+  const read = await readStudyLink(await writeStudyLink("2d", study));
+  assert.deepEqual(planarStudy(read.study), study);
+  // A link made before the setting leaves it out, which refines to the
+  // study's tolerance alone, and its zoom stays within 20.
+  const older = structuredClone(study) as any;
+  delete older.config.adaptiveView;
+  assert.equal(planarStudy(older).config.adaptiveView, undefined);
+  const bad = structuredClone(study) as any;
+  bad.config.adaptiveView = "yes";
+  await refused(() => planarStudy(bad), "config.adaptiveView");
+  const far = structuredClone(study) as any;
+  far.camera.zoom = 1001;
+  await refused(() => planarStudy(far), "camera.zoom");
 });
 
 test("a 2D link carries the probe and how it moves; older links open without it; it moves only while on", async () => {

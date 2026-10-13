@@ -8,6 +8,7 @@ import {
   type Result,
   type Rolling,
   type Vec,
+  type ViewRect,
 } from "./types";
 import type { AnimationView, Viewport } from "./animation";
 import type { PlotCamera } from "./planar-link";
@@ -16,7 +17,7 @@ import { reach } from "./raytrace";
 import { plotPalette } from "./palette";
 import { createGesture } from "./gestures";
 import { useDrawingTouch } from "./MobileNotebookNav";
-import type { RefinedPath } from "./refinement";
+import { plainZoom, viewZoom, type RefinedPath } from "./refinement";
 export type Layers = {
   base: boolean;
   derived: boolean;
@@ -48,6 +49,12 @@ type Props = {
   // planar-probe.ts).
   probe?: HeldProbe;
   pixelRatio?: number;
+  // Whether the study is refined to its view: the drawing then zooms to
+  // viewZoom, and reports what it shows once zoomed in.
+  refineView?: boolean;
+  // The rectangle the manual camera shows while it is zoomed in and the
+  // study is refined to its view, or null, whenever that changes.
+  onFocus?: (view: ViewRect | null) => void;
 };
 const W = 1000,
   H = 760;
@@ -161,6 +168,8 @@ export function Plot({
   pixelRatio = 1,
   weight = "regular",
   probe,
+  refineView = false,
+  onFocus,
 }: Props) {
   // Every stroke's regular width, at the chosen line weight.
   const stroke = svgStroke(weight);
@@ -185,7 +194,23 @@ export function Plot({
     !exploring && initialCamera?.reset === k
       ? { ...initialCamera.camera, reset: k }
       : { x: 0, y: 0, zoom: 1, reset: k };
-  const cam = !locked && current.reset === key ? current : fresh(key);
+  // A camera zoomed past the limit, as where refinement to the view was
+  // turned off, zooms out about the middle of the drawing.
+  const zoomLimit = refineView ? viewZoom : plainZoom;
+  const limited = <C extends { x: number; y: number; zoom: number }>(c: C) => {
+    if (c.zoom <= zoomLimit) return c;
+    const k = zoomLimit / c.zoom;
+    return { ...c, x: c.x * k, y: c.y * k, zoom: zoomLimit };
+  };
+  // While an animation plays, its frame's framing is the whole camera: a
+  // held view already carries the manual pan and zoom.
+  const cam = limited(
+    locked
+      ? { x: 0, y: 0, zoom: 1, reset: key }
+      : current.reset === key
+        ? current
+        : fresh(key),
+  );
   const gesture = useRef(createGesture());
   const touchEnabled = useDrawingTouch();
   useEffect(() => {
@@ -195,22 +220,26 @@ export function Plot({
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg || locked) return;
+    // The wheel zooms about the pointer, which stays where it is.
     const zoom = (e: WheelEvent) => {
       e.preventDefault();
+      const r = svg.getBoundingClientRect();
+      const ratio = Math.max(W / r.width, H / r.height);
+      const u = (e.clientX - (r.left + r.width / 2)) * ratio,
+        v = (e.clientY - (r.top + r.height / 2)) * ratio;
       setCurrent((previous) => {
-        const c = previous.reset === key ? previous : fresh(key);
-        return {
-          ...c,
-          zoom: Math.max(
-            0.1,
-            Math.min(20, c.zoom * Math.exp(-e.deltaY * 0.001)),
-          ),
-        };
+        const c = limited(previous.reset === key ? previous : fresh(key));
+        const zoom = Math.max(
+          0.1,
+          Math.min(zoomLimit, c.zoom * Math.exp(-e.deltaY * 0.001)),
+        );
+        const k = zoom / c.zoom;
+        return { ...c, zoom, x: u - (u - c.x) * k, y: v - (v - c.y) * k };
       });
     };
     svg.addEventListener("wheel", zoom, { passive: false });
     return () => svg.removeEventListener("wheel", zoom);
-  }, [key, locked, exploring]);
+  }, [key, locked, exploring, zoomLimit]);
   const palette = plotPalette(dark);
   const currentFrame = useMemo(
     () => fitFrame(result, config),
@@ -254,6 +283,30 @@ export function Plot({
   useEffect(() => {
     if (!animation) onCamera?.({ x: cam.x, y: cam.y, zoom: cam.zoom });
   }, [animation, cam.x, cam.y, cam.zoom, onCamera]);
+  // What the study is refined to: the view while zoomed in, or nothing.
+  // An animation keeps the study's refinement as it was.
+  useEffect(() => {
+    if (animation || !onFocus) return;
+    onFocus(
+      refineView && cam.zoom > 1
+        ? viewRect({
+            cx: frame.cx - cam.x / scale,
+            cy: frame.cy + cam.y / scale,
+            scale,
+          })
+        : null,
+    );
+  }, [
+    animation,
+    refineView,
+    frame.cx,
+    frame.cy,
+    scale,
+    cam.x,
+    cam.y,
+    cam.zoom,
+    onFocus,
+  ]);
   const xy = (p: Vec): Vec => ({
     x: W / 2 + (p.x - frame.cx) * scale + cam.x,
     y: H / 2 - (p.y - frame.cy) * scale + cam.y,
@@ -544,9 +597,9 @@ export function Plot({
         // Keys repeat faster than renders, so each applies to the latest
         // camera. Zoom keeps the middle of the drawing where it is.
         setCurrent((previous) => {
-          const c = previous.reset === key ? previous : fresh(key);
+          const c = limited(previous.reset === key ? previous : fresh(key));
           if (e.key === "Home") return { x: 0, y: 0, zoom: 1, reset: key };
-          const zoom = Math.max(0.1, Math.min(20, c.zoom * k)),
+          const zoom = Math.max(0.1, Math.min(zoomLimit, c.zoom * k)),
             ratio = zoom / c.zoom;
           return {
             ...c,
@@ -569,7 +622,7 @@ export function Plot({
         const ratio = Math.max(W / r.width, H / r.height);
         // Moves can outpace renders, so each applies to the latest camera.
         setCurrent((previous) => {
-          const c = previous.reset === key ? previous : fresh(key);
+          const c = limited(previous.reset === key ? previous : fresh(key));
           if (motion.kind === "drag")
             return {
               ...c,
@@ -578,7 +631,10 @@ export function Plot({
             };
           // A pinch zooms about the point between the fingers, which stays
           // where it is, and their shared movement pans.
-          const zoom = Math.max(0.1, Math.min(20, c.zoom * motion.scale));
+          const zoom = Math.max(
+            0.1,
+            Math.min(zoomLimit, c.zoom * motion.scale),
+          );
           const k = zoom / c.zoom;
           const u = (motion.mid.x - (r.left + r.width / 2)) * ratio,
             v = (motion.mid.y - (r.top + r.height / 2)) * ratio;

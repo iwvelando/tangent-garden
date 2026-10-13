@@ -35,7 +35,7 @@ import {
   type HeldProbe,
   type PlanarProbe,
 } from "./planar-probe";
-import { refineBudget, refineDepth } from "./refinement";
+import { refineBudget, refineDepth, viewHelp } from "./refinement";
 import type { LineWeight } from "./line-weight";
 import {
   isHarmonic,
@@ -55,6 +55,7 @@ import {
   type AttractorMap,
   type Roll,
   type Vec,
+  type ViewRect,
   refinesBetweenSamples,
 } from "./types";
 import { EngineClient, EngineError, boundText } from "./engine-client";
@@ -289,14 +290,45 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   // The probe asks Go for the base curve's diagnostics (planar-probe.ts).
   const [probe, setProbe] = useState<PlanarProbe>(defaultProbe);
   const probing = probe.enabled && probeSupported(config);
-  const requestKey = JSON.stringify([config, bounds, probing]);
+  // A study refined to its view is refined to what the drawing shows while
+  // it is zoomed in, once the camera has rested for a moment; until then
+  // the drawing is busy, so nothing exports the coarser curve.
+  const refineView =
+    refinesBetweenSamples(config.curve.format) &&
+    !!config.adaptive &&
+    !!config.adaptiveView;
+  const [focus, setFocus] = useState<ViewRect | null>(null);
+  const [focusPending, setFocusPending] = useState(false);
+  const focusTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const onFocus = useCallback((next: ViewRect | null) => {
+    clearTimeout(focusTimer.current);
+    const settle = () => {
+      setFocus((previous) =>
+        JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
+      );
+      setFocusPending(false);
+    };
+    if (!next) settle();
+    else {
+      setFocusPending(true);
+      focusTimer.current = setTimeout(settle, 200);
+    }
+  }, []);
+  useEffect(() => () => clearTimeout(focusTimer.current), []);
+  const view = refineView ? focus : null;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const requestKey = JSON.stringify([config, bounds, probing, view]);
   // Derive readiness from the exact inputs, so neither export nor animation can
   // briefly consume the previous frame before the debounce effect runs.
   // Fields whose constant expressions Go is still evaluating, or rejected.
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
   const scalarStates = Object.values(scalars);
   const scalarError = scalarStates.find((s) => s.error);
-  const busy = settledKey !== requestKey || scalarStates.some((s) => s.pending);
+  const busy =
+    settledKey !== requestKey ||
+    (refineView && focusPending) ||
+    scalarStates.some((s) => s.pending);
   const error = busy
     ? ""
     : scalarError
@@ -368,7 +400,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     let cancelled = false;
     const timer = setTimeout(() => {
       client
-        .current!.compute(config, bounds, { diagnostics: probing })
+        .current!.compute(config, bounds, {
+          diagnostics: probing,
+          ...(view && { view }),
+        })
         .then((next) => {
           if (cancelled) return;
           setFrame(next);
@@ -389,7 +424,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [config, bounds, probing]);
+  }, [config, bounds, probing, view]);
   // Between samples, Go places the probe at its own t over the drawn
   // study, apart from the study itself, so moving it redraws only the
   // probe. A point belongs to the frame and position it was asked for, and
@@ -1226,10 +1261,12 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     // once, steadily (timing.ts).
     setRestoredAnimation({
       id: -++presetAnimations.current,
+      // A camera path belongs to its own study.
       settings: presets[index].animation ?? {
         ...(animationSettings.current ?? defaultAnimation),
         repeat: "once",
         pace: "steady",
+        path: undefined,
       },
     });
   };
@@ -2230,6 +2267,11 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                     refined={
                       result?.adaptive && Object.values(result.adaptive).flat()
                     }
+                    view={{
+                      checked: !!config.adaptiveView,
+                      onChange: (adaptiveView) => update({ adaptiveView }),
+                      help: viewHelp,
+                    }}
                   />
                 )}
               </section>
@@ -2256,6 +2298,12 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
             />
             <AnimationPanel
               getCurrentView={() => manualView.current}
+              getFocus={() => viewRef.current}
+              refineView={refineView}
+              onShowCamera={(camera) => {
+                setRestoredCamera({ reset: reset + 1, camera });
+                setReset(reset + 1);
+              }}
               dark={dark}
               layers={layers}
               weight={weight}
@@ -2324,6 +2372,8 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 layers={layers}
                 weight={weight}
                 probe={heldProbe}
+                refineView={refineView}
+                onFocus={onFocus}
                 dark={dark}
                 length={animation?.length ?? length}
                 stop={animation?.stop ?? stopAtCaustic}

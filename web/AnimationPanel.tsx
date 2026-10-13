@@ -51,7 +51,13 @@ import {
   type Track,
   type Viewport,
 } from "./animation";
-import { studyName, type Config, type Frame, type ProbeQuery } from "./types";
+import {
+  studyName,
+  type Config,
+  type Frame,
+  type ProbeQuery,
+  type ViewRect,
+} from "./types";
 import { fitFrame, viewRect, type Layers } from "./Plot";
 import {
   arrivalAt,
@@ -87,6 +93,25 @@ import {
 } from "./export-formats";
 import { saveFile } from "./export-image";
 import { Field } from "./Field";
+import { KeyViews } from "./KeyViews";
+import { pathLeg, pathStyles, type PathStyle } from "./key-views";
+import {
+  asFirst,
+  defaultPlanarPath,
+  flightPieces,
+  pieceAt,
+  type Piece,
+  describeKey,
+  keyCamera,
+  keyFromViewport,
+  planarPathError,
+  planarPathHelp,
+  planarPathView,
+  type Fit,
+  type PlanarPath,
+} from "./planar-path";
+import { plainZoom, viewZoom } from "./refinement";
+import type { PlotCamera } from "./planar-link";
 import { tiered } from "./help";
 import { useDisclosure } from "./useDisclosure";
 
@@ -102,6 +127,21 @@ type Session = {
   timeline?: Timeline;
   camera: CameraMode;
   heldView?: Viewport;
+  // The view a study refined to its view is refined to, held with the
+  // current view: every calculated frame is refined to it too.
+  focus?: ViewRect;
+  // Present only while flying a camera path: the path when playback began,
+  // the study's fitted framing its views are taken about, whether each
+  // frame is refined to its own view, and the study refined to no view,
+  // which frames at the fitted zoom or wider draw.
+  path?: PlanarPath;
+  fit?: Fit;
+  refine?: boolean;
+  plain?: Frame;
+  // The flight's pieces (planar-path.ts), each refined once when first
+  // needed and kept for the session, playback and export alike.
+  pieces?: Piece[];
+  refined?: Map<number, Promise<Frame>>;
   duration: number;
   repeat: Repeat;
   pace: Pace;
@@ -123,12 +163,13 @@ type Session = {
 // a probe moved between samples. Every other frame is cut from the
 // prepared study.
 const calculates = (
-  s: Pick<Session, "mode" | "tracks" | "original" | "between">,
+  s: Pick<Session, "mode" | "tracks" | "original" | "between" | "refine">,
 ) =>
   (s.mode === "parameters" &&
     !s.tracks.every((t) => t.target === "rayLength")) ||
   (s.mode === "reveal" && !!s.original.result.attractor) ||
-  (s.mode === "probe" && !!s.between);
+  (s.mode === "probe" && !!s.between) ||
+  (s.mode === "path" && !!s.refine);
 type Props = {
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
@@ -143,6 +184,13 @@ type Props = {
   // The probe, when it is on (planar-probe.ts).
   probe: PlanarProbe | null;
   getCurrentView: () => Viewport | undefined;
+  // What the study is refined to (see Plot's onFocus), or null.
+  getFocus: () => ViewRect | null;
+  // Whether the study is refined to its view, which lets a camera path zoom
+  // to viewZoom and refines each frame to its own view.
+  refineView: boolean;
+  // Shows a key view: sets the drawing's manual camera.
+  onShowCamera: (camera: PlotCamera) => void;
   onView: (view: AnimationView | null) => void;
   onRunning: (running: boolean) => void;
   // Called when playback starts or resumes, so the drawing can be shown.
@@ -167,6 +215,9 @@ export function AnimationPanel({
   weight,
   probe,
   getCurrentView,
+  getFocus,
+  refineView,
+  onShowCamera,
   onView,
   onRunning,
   onPlay,
@@ -180,6 +231,7 @@ export function AnimationPanel({
   const [pace, setPace] = useState<Pace>("steady");
   const [tracks, setTracks] = useState<Track[]>([]);
   const [probeMotion, setProbeMotion] = useState<ProbeMotion>("stays");
+  const [path, setPath] = useState<PlanarPath>(defaultPlanarPath);
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
@@ -279,6 +331,8 @@ export function AnimationPanel({
       repeat,
       pace,
       probeMotion,
+      // A link records a path only where there is one.
+      ...(path.keys.length > 0 && { path }),
     };
   // After the retention and trace fallbacks above, which then see the
   // linked study's own frame.
@@ -293,6 +347,7 @@ export function AnimationPanel({
     setRepeat(restore.settings.repeat);
     setPace(restore.settings.pace);
     setProbeMotion(restore.settings.probeMotion);
+    setPath(restore.settings.path ?? defaultPlanarPath);
     // A refusal belongs to the setup it judged.
     setError("");
   }, [restore]);
@@ -403,6 +458,12 @@ export function AnimationPanel({
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
     let current: Frame;
     let held: HeldProbe | number | string | null | undefined;
+    // A camera path's view at p, which a study refined to its view is
+    // refined to once it zooms in, as the manual camera's is.
+    const flown =
+      s.mode === "path"
+        ? planarPathView(s.path!, s.fit!, p, s.repeat === "loop")
+        : undefined;
     const attractor = s.original.result.attractor;
     // An iterated map's density cannot be cut back, so each revealed frame
     // counts a prefix of the iterates afresh, live and exported alike.
@@ -429,6 +490,11 @@ export function AnimationPanel({
         result: trace(s.original.result, s.timeline!, p),
       };
     else if (s.mode === "probe") current = s.original;
+    else if (flown)
+      current =
+        s.refine && flown.scale > s.fit!.scale
+          ? await piece(s, pieceAt(s.pieces!, p), engine)
+          : s.plain!;
     else if (
       s.mode === "parameters" &&
       s.between &&
@@ -441,6 +507,7 @@ export function AnimationPanel({
       current = await engine.compute(values.config, undefined, {
         diagnostics: true,
         ...(typeof query !== "string" && { probe: query }),
+        ...(s.focus && { view: s.focus }),
       });
       held =
         typeof query === "string"
@@ -455,6 +522,7 @@ export function AnimationPanel({
     else
       current = await engine.compute(values.config, undefined, {
         diagnostics: !!s.probe,
+        ...(s.focus && { view: s.focus }),
       });
     // The probe moves along the fixed study, from the start of the domain
     // to its end, exactly: one sample at a time, or between them. While the
@@ -493,8 +561,9 @@ export function AnimationPanel({
     return {
       frame: current,
       final: s.final,
-      camera: s.camera,
-      heldView: s.heldView,
+      ...(flown
+        ? { camera: "current" as const, heldView: flown }
+        : { camera: s.camera, heldView: s.heldView }),
       length: s.mode === "parameters" ? values.length : s.length,
       stop: s.stop,
       progress: p,
@@ -503,6 +572,26 @@ export function AnimationPanel({
       ...(held && typeof held === "object" && { probe: held }),
       ...(typeof held === "string" && { probeAway: held }),
     };
+  }
+  // A flight's piece k, refined once to its area: started when first
+  // needed, with the pieces either side, so the next is ready when the
+  // flight reaches it, whichever way it is going.
+  function piece(s: Session, k: number, engine: EngineClient) {
+    const start = (j: number) => {
+      if (j < 0 || j >= s.pieces!.length || s.refined!.has(j)) return;
+      const refined = engine.compute(s.original.config, undefined, {
+        diagnostics: !!s.probe,
+        view: s.pieces![j].view,
+      });
+      s.refined!.set(j, refined);
+      // A failed piece is tried again when a frame next needs it.
+      refined.catch(() => s.refined!.delete(j));
+    };
+    start(k);
+    const needed = s.refined!.get(k)!;
+    start(k + 1);
+    start(k - 1);
+    return needed;
   }
   // Ray-length tracks keep the study fixed.
   const fixedParameters = (s: Session) =>
@@ -582,6 +671,7 @@ export function AnimationPanel({
         `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`,
       );
     else if (s.mode === "probe") setLive(probeWhere(view));
+    else if (s.mode === "path") setLive(pathLeg(s.path!, view.progress));
     else
       setLive(
         [
@@ -654,11 +744,16 @@ export function AnimationPanel({
     setError("");
     setExportNotice("");
     changeStatus("preparing");
-    const heldView = camera === "current" ? getCurrentView() : undefined;
+    // A camera path is the camera itself.
+    const holds = mode !== "path" && camera === "current";
+    const heldView = holds ? getCurrentView() : undefined;
+    // Frames held at the current view are refined to it, as the study is.
+    const focus = (holds && getFocus()) || undefined;
+    const view = focus && { view: focus };
     try {
       if (!Number.isFinite(duration) || duration < 0.1 || duration > 3600)
         throw new Error("Duration must be between 0.1 and 3600 seconds.");
-      if (camera === "current" && !heldView)
+      if (holds && !heldView)
         throw new Error("The current view is not ready yet.");
       if (save) exportTiming(duration, fps);
       // The probe moves along the curve, is held while the parameters
@@ -719,7 +814,7 @@ export function AnimationPanel({
             .compute(
               applyTracks(frame.config, numeric, 0, length).config,
               undefined,
-              { diagnostics: drawsProbe },
+              { diagnostics: drawsProbe, ...view },
             )
             .catch((reason) => {
               throw new Error(`At animation start: ${reason.message}`);
@@ -728,13 +823,44 @@ export function AnimationPanel({
             .compute(
               applyTracks(frame.config, numeric, 1, length).config,
               undefined,
-              { diagnostics: drawsProbe },
+              { diagnostics: drawsProbe, ...view },
             )
             .catch((reason) => {
               throw new Error(`At animation end: ${reason.message}`);
             }),
         ]);
         [first, final] = results;
+      }
+      if (epoch.current !== token) return;
+      // A camera path flies about the study's fitted framing, its frames
+      // refined each to its own view, or drawn from the study refined to
+      // none.
+      let flight: Pick<
+        Session,
+        "path" | "fit" | "refine" | "plain" | "pieces" | "refined"
+      > = {};
+      if (mode === "path") {
+        const refused = planarPathError(
+          path,
+          refineView ? viewZoom : plainZoom,
+        );
+        if (refused) throw new Error(`${refused.field} ${refused.message}`);
+        const fit = fitFrame(frame.result, frame.config);
+        flight = {
+          path: structuredClone(path),
+          fit,
+          refine: refineView,
+          pieces: refineView
+            ? flightPieces(path, fit, repeat === "loop", viewRect)
+            : [],
+          refined: new Map(),
+          plain:
+            refineView && getFocus()
+              ? await client.current.compute(frame.config, undefined, {
+                  diagnostics: drawsProbe,
+                })
+              : frame,
+        };
       }
       if (epoch.current !== token) return;
       // Light enters the view the animation holds, and each ray is drawn as
@@ -759,6 +885,8 @@ export function AnimationPanel({
         timeline,
         camera,
         heldView,
+        focus,
+        ...flight,
         duration,
         repeat,
         pace,
@@ -912,36 +1040,38 @@ export function AnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "probe"
-                ? probe && frame && probeBetween(frame.config, probe)
-                  ? "Move the probe from start to end through every t. The geometry stays fixed."
-                  : "Move the probe from start to end, sample by sample. The geometry stays fixed."
-                : mode === "trace"
-                  ? tiered(
-                      "Send light from the source; each caustic point appears as its ray reaches it.",
-                      "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
-                    )
-                  : mode === "reveal"
-                    ? iterated
-                      ? "Count the iterates in order, in the finished drawing's window and grid."
-                      : tiered(
-                          "Draw the study from its domain start to its end.",
-                          "Each frame keeps the finished drawing's sample spacing and arc-length anchor.",
-                        )
-                    : tiered(
-                        <>
-                          Tracks vary together, linearly. Use <var>a</var> in a
-                          curve expression to animate any coefficient.
-                        </>,
-                        <>
-                          For example,{" "}
-                          <code>
-                            <var>a</var>*cos(t)
-                          </code>
-                          . Counts change in whole steps. Endpoints accept
-                          constants such as pi.
-                        </>,
+              mode === "path"
+                ? planarPathHelp.mode
+                : mode === "probe"
+                  ? probe && frame && probeBetween(frame.config, probe)
+                    ? "Move the probe from start to end through every t. The geometry stays fixed."
+                    : "Move the probe from start to end, sample by sample. The geometry stays fixed."
+                  : mode === "trace"
+                    ? tiered(
+                        "Send light from the source; each caustic point appears as its ray reaches it.",
+                        "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
                       )
+                    : mode === "reveal"
+                      ? iterated
+                        ? "Count the iterates in order, in the finished drawing's window and grid."
+                        : tiered(
+                            "Draw the study from its domain start to its end.",
+                            "Each frame keeps the finished drawing's sample spacing and arc-length anchor.",
+                          )
+                      : tiered(
+                          <>
+                            Tracks vary together, linearly. Use <var>a</var> in
+                            a curve expression to animate any coefficient.
+                          </>,
+                          <>
+                            For example,{" "}
+                            <code>
+                              <var>a</var>*cos(t)
+                            </code>
+                            . Counts change in whole steps. Endpoints accept
+                            constants such as pi.
+                          </>,
+                        )
             }
           >
             <select
@@ -956,8 +1086,61 @@ export function AnimationPanel({
               {probe && (
                 <option value="probe">Move the probe along the curve</option>
               )}
+              <option value="path">Fly through key views</option>
             </select>
           </Field>
+          {mode === "path" && (
+            <>
+              <Field
+                label="Path"
+                help={
+                  path.style === "smooth"
+                    ? planarPathHelp.smooth
+                    : planarPathHelp.steady
+                }
+              >
+                <select
+                  value={path.style}
+                  onChange={(e) => {
+                    const style = e.target.value as PathStyle;
+                    setPath((p) => ({ ...p, style }));
+                  }}
+                >
+                  {pathStyles.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <KeyViews
+                keys={path.keys}
+                onChange={(change) =>
+                  setPath((p) => ({ ...p, keys: change(p.keys) }))
+                }
+                asFirst={asFirst}
+                describe={describeKey}
+                drawn={() => {
+                  const view = getCurrentView();
+                  return frame && view
+                    ? keyFromViewport(
+                        view,
+                        fitFrame(frame.result, frame.config),
+                      )
+                    : null;
+                }}
+                onShow={(key) => {
+                  if (!frame) return;
+                  if (status === "complete") stop();
+                  onShowCamera(
+                    keyCamera(key, fitFrame(frame.result, frame.config)),
+                  );
+                }}
+                help={planarPathHelp.keys}
+                loop={repeat === "loop"}
+              />
+            </>
+          )}
           {mode === "parameters" && probe && (
             <Field
               label="Probe"
@@ -1092,35 +1275,37 @@ export function AnimationPanel({
               </select>
             </Field>
           </div>
-          <Field
-            label="Animation camera"
-            help={
-              camera === "current"
-                ? "Keeps your current pan and zoom throughout, including export."
-                : camera === "hold"
-                  ? "Frames the final result once and holds that view."
-                  : tiered(
-                      camera === "follow"
-                        ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
-                        : "Recenters and zooms to fit the evolving geometry.",
-                      asymptoteHelp,
-                    )
-            }
-          >
-            <select
-              value={camera}
-              onChange={(e) => setCamera(e.target.value as CameraMode)}
+          {mode !== "path" && (
+            <Field
+              label="Animation camera"
+              help={
+                camera === "current"
+                  ? "Keeps your current pan and zoom throughout, including export."
+                  : camera === "hold"
+                    ? "Frames the final result once and holds that view."
+                    : tiered(
+                        camera === "follow"
+                          ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
+                          : "Recenters and zooms to fit the evolving geometry.",
+                        asymptoteHelp,
+                      )
+              }
             >
-              <option value="hold">Hold final view</option>
-              <option value="current">Hold current view</option>
-              {mode !== "trace" && (
-                <>
-                  <option value="follow">Follow center, fixed zoom</option>
-                  <option value="fit">Fit each frame</option>
-                </>
-              )}
-            </select>
-          </Field>
+              <select
+                value={camera}
+                onChange={(e) => setCamera(e.target.value as CameraMode)}
+              >
+                <option value="hold">Hold final view</option>
+                <option value="current">Hold current view</option>
+                {mode !== "trace" && (
+                  <>
+                    <option value="follow">Follow center, fixed zoom</option>
+                    <option value="fit">Fit each frame</option>
+                  </>
+                )}
+              </select>
+            </Field>
+          )}
           <details
             id="export-settings"
             className="subsection"

@@ -53,6 +53,17 @@ type Path[P any] struct {
 	Exhausted  bool
 }
 
+// Focus is a view to refine more finely than the rest of a path: a segment
+// that meets it is refined to Tolerance, finer than the path's own, and to
+// chords no longer than Chord, ahead of every segment that does not. Meets
+// reports whether the bounding box of points, grown by grow on every side,
+// meets the view.
+type Focus[P any] struct {
+	Tolerance float64
+	Chord     float64
+	Meets     func(points []*P, grow float64) bool
+}
+
 // Metric measures a caller's points: Distance from p to the chord ab, and
 // Length of the chord ab.
 type Metric[P any] struct {
@@ -65,7 +76,10 @@ type Metric[P any] struct {
 // curve's points at a + k(b − a)/2^level for k from 1 to 2^level − 1: its
 // quarter points (level 2) until the scan adds more. score is the largest
 // distance of a probe from the chord, infinite when a probe is undefined;
-// quarter is that of the quarter points alone.
+// quarter is that of the quarter points alone. Under a focus, a segment
+// that meets the view is focused, tol is its tolerance, and excess is how
+// far it is from both of its limits, as a multiple of them: above 1 when it
+// needs refining.
 type segment[P any] struct {
 	a, b    float64
 	pa, pb  *P
@@ -74,6 +88,9 @@ type segment[P any] struct {
 	depth   int
 	score   float64
 	quarter float64
+	focused bool
+	tol     float64
+	excess  float64
 }
 
 // probe is the segment's probe at a + k(b − a)/2^level.
@@ -82,7 +99,20 @@ func (s *segment[P]) probe(k int) *P { return s.probes[k-1] }
 type segments[P any] []*segment[P]
 
 func (s segments[P]) Len() int { return len(s) }
+
+// Under a focus, the segments that need refining come first, those that
+// meet the view ahead of the rest; without one, excess is zero throughout
+// and the worst score comes first.
 func (s segments[P]) Less(i, j int) bool {
+	if over, other := s[i].excess > 1, s[j].excess > 1; over != other {
+		return over
+	}
+	if s[i].focused != s[j].focused {
+		return s[i].focused
+	}
+	if s[i].excess != s[j].excess {
+		return s[i].excess > s[j].excess
+	}
 	if s[i].score != s[j].score {
 		return s[i].score > s[j].score
 	}
@@ -109,11 +139,23 @@ func (s *segments[P]) Pop() any {
 // and Unseen times as far as its quarter points, is refined as before. It
 // returns the intervals refinement broke, in order.
 func Refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P], lo, hi, tolerance float64, budget int) (*Path[P], []int) {
-	return refine(points, breaks, at, m, lo, hi, tolerance, budget, Scan)
+	return refine(points, breaks, at, m, lo, hi, tolerance, budget, Scan, nil)
 }
 
-// refine is Refine with at most scan probes for the scan.
-func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P], lo, hi, tolerance float64, budget, scan int) (*Path[P], []int) {
+// RefineFocused is Refine with a view refined more finely, first (see
+// Focus). A focus whose tolerance is no finer than tolerance is ignored, so
+// a view that shows the whole path changes nothing. Breaks are judged
+// against tolerance alone, so a view does not move them.
+func RefineFocused[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P], lo, hi, tolerance float64, budget int, focus Focus[P]) (*Path[P], []int) {
+	if !(focus.Tolerance < tolerance) {
+		return Refine(points, breaks, at, m, lo, hi, tolerance, budget)
+	}
+	return refine(points, breaks, at, m, lo, hi, tolerance, budget, Scan, &focus)
+}
+
+// refine is Refine with at most scan probes for the scan, and an optional
+// focus.
+func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P], lo, hi, tolerance float64, budget, scan int, focus *Focus[P]) (*Path[P], []int) {
 	n := len(points) - 1
 	param := func(u float64) float64 { return lo*(1-u/float64(n)) + hi*u/float64(n) }
 	eval := func(u float64) *P { return at(param(u)) }
@@ -128,10 +170,14 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 		return worst
 	}
 	score := func(s *segment[P]) {
+		s.tol = tolerance
 		if s.pa == nil || s.pb == nil {
 			// Only localizing remains: after every segment above
 			// tolerance.
 			s.score = 2 * tolerance
+			if focus != nil {
+				s.excess = 2
+			}
 			return
 		}
 		q := 1 << (s.level - 2)
@@ -140,6 +186,27 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 		if s.level > 2 {
 			s.score = stray(s, s.probes)
 		}
+		if focus == nil {
+			return
+		}
+		// The curve strays from the chord by about score, so a segment
+		// whose points' box, grown by that, misses the view cannot show
+		// in it.
+		s.focused = focus.Meets(append([]*P{s.pa, s.pb}, s.probes...), s.score)
+		if s.focused {
+			s.tol = focus.Tolerance
+			s.excess = math.Max(s.score/s.tol, m.Length(*s.pa, *s.pb)/focus.Chord)
+		} else {
+			s.excess = s.score / s.tol
+		}
+	}
+	// over reports whether a segment needs refining. Without a focus it is
+	// the score against the tolerance, exactly as it always was.
+	over := func(s *segment[P]) bool {
+		if focus == nil {
+			return s.score > tolerance
+		}
+		return s.excess > 1
 	}
 	// A child takes its parent's probes on its half; one with fewer than
 	// its quarter points evaluates them around the middle it is given.
@@ -182,7 +249,7 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 	refineQueue := func() {
 		for queue.Len() > 0 {
 			s := heap.Pop(&queue).(*segment[P])
-			if s.score <= tolerance {
+			if !over(s) {
 				within = append(within, s)
 				within = append(within, queue...)
 				queue = queue[:0]
@@ -193,7 +260,9 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 				switch {
 				case s.pa == nil || s.pb == nil:
 					// Localized to the finest step: the break stands.
-				case s.score == math.Inf(1) || m.Length(*s.pa, *s.pb) > Jump*tolerance:
+				case s.score == math.Inf(1) || s.score > tolerance && m.Length(*s.pa, *s.pb) > Jump*tolerance:
+					// A segment refined this far only for a view is not a
+					// jump: breaks do not depend on the view.
 					inserted = append(inserted, vertex{(s.a + s.b) / 2, nil})
 					brokenAt[interval] = true
 				default:
@@ -207,7 +276,7 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 					path.Unresolved++
 				}
 				for _, rest := range queue {
-					if rest.score > tolerance && rest.pa != nil && rest.pb != nil {
+					if over(rest) && rest.pa != nil && rest.pb != nil {
 						path.Unresolved++
 					}
 				}
@@ -267,7 +336,7 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 				s.probes, s.level = append(probes, eval(s.b-w)), s.level+1
 			}
 			score(s)
-			if s.score > tolerance && s.score > Unseen*s.quarter {
+			if s.score > s.tol && s.score > Unseen*s.quarter {
 				heap.Push(&queue, s)
 			} else {
 				kept = append(kept, s)

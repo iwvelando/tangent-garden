@@ -2,6 +2,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
 import { isTiered, withMore, type Help } from "../web/help";
 import { svgWeightHelp } from "../web/line-weight";
+import { viewHelp } from "../web/refinement";
+import { planarPathHelp } from "../web/planar-path";
 import { backAndForthHelp, onceHelp, paceHelp } from "../web/timing";
 import { repeatHelp as planarRepeatHelp } from "../web/animation";
 import { presets } from "../web/presets";
@@ -192,6 +194,8 @@ test("every help a setting reveals keeps to the same limits", () => {
   table("3D repeat", spatialRepeatHelp);
   table("4D repeat", tesseractRepeatHelp);
   add("2D between samples", planarBetweenHelp);
+  add("2D refinement to the view", viewHelp);
+  table("2D key views", planarPathHelp);
   add("2D probe motion", curveProbeMotionHelp);
   add("2D probe motion between samples", betweenMotionHelp);
   add("3D between samples", spatialBetweenHelp);

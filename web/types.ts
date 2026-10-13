@@ -206,6 +206,21 @@ export type Config = {
   // Refines the drawn curves between their samples (engine/adaptive.go);
   // absent or false draws the samples alone, as before refinement existed.
   adaptive?: boolean;
+  // With adaptive, refines what the zoomed-in drawing shows to its own scale
+  // and lets the drawing zoom to viewZoom (refinement.ts); absent or false
+  // refines to the study's tolerance alone.
+  adaptiveView?: boolean;
+};
+// Mirrors engine.View: the rectangle of the plane the drawing shows, which
+// refinement refines to when it is zoomed in, and the half diagonal its
+// tolerance is a fraction of when that is not its own (a camera path's
+// piece).
+export type ViewRect = {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  radius?: number;
 };
 // Whether a curve format can be evaluated between its samples: not an
 // integrated chase or trajectory, nor a level set or iterated map.

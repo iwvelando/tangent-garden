@@ -26,6 +26,9 @@ type RefinedPath struct {
 	Unresolved int       `json:"unresolved"`
 	Exhausted  bool      `json:"exhausted"`
 	Virtual    []bool    `json:"virtual,omitempty"`
+	// View is the tolerance of the pieces that meet the view, when a view
+	// finer than the study's tolerance was given.
+	View float64 `json:"view,omitempty"`
 }
 
 // AdaptiveResult holds the refined curves a study draws: the base curve, the
@@ -134,17 +137,65 @@ func spreadUnit(points []*Vec) float64 {
 	return binade(s)
 }
 
+// focus is the refinement of a view (see refine.Focus): the pieces that
+// meet it, or the margin of half its width and height on each side that a
+// wider panel or a short pan shows, are refined to refine.Epsilon of its
+// half diagonal, the fraction of the study's radius the rest is refined
+// to, and to chords no longer than a quarter of that half diagonal, ahead
+// of the rest.
+func (v View) focus() refine.Focus[Vec] {
+	r := math.Hypot(v.X1-v.X0, v.Y1-v.Y0) / 2
+	if v.Radius != 0 {
+		r = v.Radius
+	}
+	mx, my := (v.X1-v.X0)/2, (v.Y1-v.Y0)/2
+	return refine.Focus[Vec]{
+		Tolerance: refine.Epsilon * r,
+		Chord:     r / 4,
+		Meets: func(points []*Vec, grow float64) bool {
+			x0, y0, x1, y1 := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+			for _, p := range points {
+				if p != nil {
+					x0, y0 = math.Min(x0, p.X), math.Min(y0, p.Y)
+					x1, y1 = math.Max(x1, p.X), math.Max(y1, p.Y)
+				}
+			}
+			return x0-grow <= v.X1+mx && x1+grow >= v.X0-mx && y0-grow <= v.Y1+my && y1+grow >= v.Y0-my
+		},
+	}
+}
+
+// valid reports whether a view is a rectangle with finite corners, and its
+// radius, when given, positive and finite.
+func (v View) valid() bool {
+	return Vec{v.X0, v.Y0}.Valid() && Vec{v.X1, v.Y1}.Valid() && v.X1 > v.X0 && v.Y1 > v.Y0 &&
+		(v.Radius == 0 || v.Radius > 0 && !math.IsInf(v.Radius, 1))
+}
+
 // refinePath refines points, broken after each interval in broken, with the
 // curve evaluated by at (see refine.Refine), at refine.Epsilon of the
-// path's own robust radius. It returns the intervals refinement broke.
-func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, hi float64) (*RefinedPath, []int) {
+// path's own robust radius, and more finely where it meets the view, when
+// there is one. It returns the intervals refinement broke.
+func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, hi float64, view *View) (*RefinedPath, []int) {
 	breaks := make([]bool, len(points))
 	for i := range broken {
 		breaks[i+1] = true
 	}
 	tolerance := refine.Epsilon * studyRadius(points)
-	path, found := refine.Refine(points, breaks, at, plane, lo, hi, tolerance, refine.Budget)
+	var path *refine.Path[Vec]
+	var found []int
+	var focused float64
+	if view == nil {
+		path, found = refine.Refine(points, breaks, at, plane, lo, hi, tolerance, refine.Budget)
+	} else {
+		focus := view.focus()
+		path, found = refine.RefineFocused(points, breaks, at, plane, lo, hi, tolerance, refine.Budget, focus)
+		if focus.Tolerance < tolerance {
+			focused = focus.Tolerance
+		}
+	}
 	return &RefinedPath{
+		View:       focused,
 		Points:     path.Points,
 		At:         path.At,
 		Tolerance:  path.Tolerance,
@@ -175,10 +226,10 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 	}
 	a := &AdaptiveResult{}
 	var found []int
-	a.Base, found = refinePath(out.Base, nil, position(f), lo, hi)
+	a.Base, found = refinePath(out.Base, nil, position(f), lo, hi, q.View)
 	note(found)
 	if out.Input != nil {
-		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi)
+		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi, q.View)
 		note(found)
 	}
 	if derived := q.derivedAt(f, g, out); derived != nil {
@@ -186,7 +237,7 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 			// The passage test's breaks give way to refinement's.
 			out.Inversion.Breaks = []int{}
 		}
-		a.Derived, found = refinePath(out.Derived, broken, derived, lo, hi)
+		a.Derived, found = refinePath(out.Derived, broken, derived, lo, hi, q.View)
 		note(found)
 		if at := q.virtualAt(f, g, out); at != nil {
 			n := float64(q.Samples - 1)
@@ -199,7 +250,7 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 	// break in its neighbors.
 	for _, member := range out.Family {
 		if at := q.memberAt(f, g, out, member); at != nil {
-			path, _ := refinePath(member.Points, broken, at, lo, hi)
+			path, _ := refinePath(member.Points, broken, at, lo, hi, q.View)
 			a.Family = append(a.Family, path)
 		}
 	}

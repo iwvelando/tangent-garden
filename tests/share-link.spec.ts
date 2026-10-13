@@ -416,3 +416,38 @@ test("a 4D link reopens the object's parameters, layers, views, and motion", asy
   ).toHaveValue("4");
   await other.context().close();
 });
+
+test("a 2D link's camera is held once through playback at the current view, not twice", async ({
+  page,
+  browser,
+}) => {
+  await page.goto("/");
+  await planarReady(page);
+  const box = (await page.locator("#artwork").boundingBox())!;
+  await page.mouse.move(box.x + 300, box.y + 250);
+  await page.mouse.wheel(0, -400);
+  await planarReady(page);
+  const other = await recipient(browser, await copyLink(page));
+  await planarReady(other);
+  const linked = await planarDrawing(other);
+  await openAnimation(other);
+  await other
+    .getByRole("combobox", { name: "Animate", exact: true })
+    .selectOption("reveal");
+  await other
+    .getByRole("combobox", { name: "Animation camera" })
+    .selectOption("current");
+  await other.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("3");
+  await other.getByRole("button", { name: "Play animation" }).click();
+  await expect
+    .poll(async () =>
+      Number(
+        await other.locator("#artwork").getAttribute("data-animation-progress"),
+      ),
+    )
+    .toBeGreaterThan(0.05);
+  await other.getByRole("button", { name: "Pause", exact: true }).click();
+  const playing = await planarDrawing(other);
+  expect(playing.scale).toBe(linked.scale);
+  expect(playing.center).toBe(linked.center);
+});
