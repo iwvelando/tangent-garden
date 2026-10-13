@@ -1618,6 +1618,21 @@ test("a link carries refinement between samples; older links draw on the even sa
   await refused(() => spatialStudy(bad), "config.adaptive");
 });
 
+test("a link carries refining the surface along the curve; older links leave the surface on the even samples", async () => {
+  const study = spatial();
+  study.config = { ...study.config, adaptive: true, adaptiveSurface: true };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A link made before the setting leaves it out, which keeps the surface
+  // on the even samples.
+  const older = structuredClone(study) as any;
+  delete older.config.adaptiveSurface;
+  assert.equal(spatialStudy(older).config.adaptiveSurface, undefined);
+  const bad = structuredClone(study) as any;
+  bad.config.adaptiveSurface = "yes";
+  await refused(() => spatialStudy(bad), "config.adaptiveSurface");
+});
+
 test("a 2D link carries refinement between samples; older links draw on the even samples", async () => {
   for (const adaptive of [true, false]) {
     const study = planar();

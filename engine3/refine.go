@@ -59,6 +59,15 @@ type AdaptiveResult struct {
 	// Meridians holds the canal's meridians, indexed like its result's
 	// meridians.
 	Meridians []*RefinedPath `json:"meridians,omitempty"`
+	// Minus and Plus are a developable's or framed ribbon's edges, refined
+	// when its surface is.
+	Minus *RefinedPath `json:"minus,omitempty"`
+	Plus  *RefinedPath `json:"plus,omitempty"`
+	// Columns counts the positions between samples added to the surface,
+	// when it is refined too; Capped is set when the budget left a level
+	// of them out.
+	Columns int  `json:"columns,omitempty"`
+	Capped  bool `json:"capped,omitempty"`
 }
 
 // space measures points for refinement.

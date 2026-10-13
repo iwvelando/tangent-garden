@@ -112,7 +112,7 @@ func (q RuledRequest) partner(evaluate evaluation, lo, hi float64, closed bool) 
 
 // ruledSurface builds the surface, and its probe when surface diagnostics
 // are requested, from the base's accelerations.
-func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec3, bool, bool), tangents, accelerations []Vec3, speeds []float64, lo, hi float64, closed bool) error {
+func ruledSurface(c Request, out *Result, evaluate evaluation, partner func(float64) (Vec3, Vec3, Vec3, bool, bool), tangents, accelerations []Vec3, speeds []float64, lo, hi float64, closed bool) error {
 	n, m := c.Samples, c.Ruled.Rate
 	step := (hi - lo) / float64(n)
 	at := func(i float64) float64 { return lo*(1-i/float64(n)) + hi*i/float64(n) }
@@ -192,6 +192,22 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec
 		normal  Vec3
 		defined bool
 	}
+	// column is the ruling from a with direction d = b∘φ − a, where a moves
+	// at da and b∘φ at velocity, and whether its every point is regular.
+	column := func(a, d, da, velocity Vec3) ([]point, bool, bool) {
+		coincident := d.norm() <= 1e-9*size
+		singular := false
+		g := make([]point, ruledStrips+1)
+		for k := range g {
+			u := float64(k) / ruledStrips
+			st := da.mul(1 - u).add(velocity.mul(u))
+			normal := st.cross(d)
+			defined := !coincident && st.norm() > 1e-9*(da.norm()+velocity.norm()) && normal.norm() > 1e-6*st.norm()*d.norm()
+			singular = singular || !defined
+			g[k] = point{a.add(d.mul(u)), normal.unit(), defined}
+		}
+		return g, coincident, singular
+	}
 	grid := make([][]point, n+1)
 	for i := 0; i <= n; i++ {
 		if out.Base[i] == nil || plus[i] == nil {
@@ -199,17 +215,8 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec
 		}
 		a, d := *out.Base[i], plus[i].sub(*out.Base[i])
 		da := tangents[i].mul(speeds[i])
-		coincident := d.norm() <= 1e-9*size
-		singular := false
-		grid[i] = make([]point, ruledStrips+1)
-		for k := range grid[i] {
-			u := float64(k) / ruledStrips
-			st := da.mul(1 - u).add(velocity[i].mul(u))
-			normal := st.cross(d)
-			defined := !coincident && st.norm() > 1e-9*(da.norm()+velocity[i].norm()) && normal.norm() > 1e-6*st.norm()*d.norm()
-			singular = singular || !defined
-			grid[i][k] = point{a.add(d.mul(u)), normal.unit(), defined}
-		}
+		var coincident, singular bool
+		grid[i], coincident, singular = column(a, d, da, velocity[i])
 		if i > last {
 			continue
 		}
@@ -224,50 +231,87 @@ func ruledSurface(c Request, out *Result, partner func(float64) (Vec3, Vec3, Vec
 		q.Deviation = math.Max(q.Deviation, math.Abs(da.dot(d.cross(dd)))/(da.norm()*d.norm()*(da.norm()+dd.norm())))
 	}
 	q.Developable = q.Deviation <= 1e-6
+	// Refined along the curve, the surface gains a ruling at each column
+	// where the base and partner are both defined, placed as at a sample.
+	var columns [][]float64
+	between := map[float64][]point{}
+	if c.refinesSurface() {
+		columns, _, out.Adaptive.Capped = surfaceColumns(n, func(i int) bool { return !q.Breaks[i+1] }, surfaceVertices/(ruledStrips+1), out.Adaptive.Base, out.Adaptive.Partner)
+		for i, positions := range columns {
+			kept := positions[:0]
+			for _, at := range positions {
+				t := parameterAt(lo, hi, n, at)
+				r, v, _, ok := evaluate(t)
+				p, pv, _, defined, inside := partner(m*t + c.Ruled.Shift)
+				if !ok || !r.valid() || !v.valid() || c.units.still(v) || !defined || !inside {
+					continue
+				}
+				between[at], _, _ = column(r, p.sub(r), v, pv.mul(m))
+				kept = append(kept, at)
+			}
+			columns[i] = kept
+			out.Adaptive.Columns += len(kept)
+		}
+	}
+	gridAt := func(at float64) []point {
+		if at == math.Trunc(at) {
+			return grid[int(at)]
+		}
+		return between[at]
+	}
 	// A grid point with a normal is listed once and shared by every
 	// triangle at it; a corner without one takes its own triangle's face
 	// normal.
-	listed := map[[2]int]int32{}
+	type key struct {
+		at float64
+		k  int
+	}
+	listed := map[key]int32{}
 	for i := 0; i < n; i++ {
 		if q.Breaks[i+1] {
 			out.Omitted++
 			continue
 		}
-		// Both triangles of each cell are ordered so their face normal runs
-		// along S_t × S_u, the fallback where a vertex normal is undefined.
-		for k := 0; k < ruledStrips; k++ {
-			corners := [][2]int{{i, k}, {i + 1, k}, {i, k + 1}, {i + 1, k}, {i + 1, k + 1}, {i, k + 1}}
-			for f := 0; f < 6; f += 3 {
-				g := [3]point{}
-				for j := range g {
-					g[j] = grid[corners[f+j][0]][corners[f+j][1]]
-				}
-				face := g[1].at.sub(g[0].at).cross(g[2].at.sub(g[0].at))
-				flat := !(face.norm() > 1e-12*g[1].at.sub(g[0].at).norm()*g[2].at.sub(g[0].at).norm())
-				// A flat triangle with a corner that has no normal is left out.
-				dropped := false
-				for _, p := range g {
-					dropped = dropped || (!p.defined && flat)
-				}
-				if dropped {
-					continue
-				}
-				var vertices [3]int32
-				for j, p := range g {
-					corner := corners[f+j]
-					phase := float64(corner[0]) / float64(n)
-					if !p.defined {
-						vertices[j] = out.Mesh.vertex(p.at, face.unit(), phase)
+		stops := stations(i, columns)
+		for s := 1; s < len(stops); s++ {
+			from, to := stops[s-1], stops[s]
+			// Both triangles of each cell are ordered so their face normal
+			// runs along S_t × S_u, the fallback where a vertex normal is
+			// undefined.
+			for k := 0; k < ruledStrips; k++ {
+				corners := []key{{from, k}, {to, k}, {from, k + 1}, {to, k}, {to, k + 1}, {from, k + 1}}
+				for f := 0; f < 6; f += 3 {
+					g := [3]point{}
+					for j := range g {
+						g[j] = gridAt(corners[f+j].at)[corners[f+j].k]
+					}
+					face := g[1].at.sub(g[0].at).cross(g[2].at.sub(g[0].at))
+					flat := !(face.norm() > 1e-12*g[1].at.sub(g[0].at).norm()*g[2].at.sub(g[0].at).norm())
+					// A flat triangle with a corner that has no normal is left out.
+					dropped := false
+					for _, p := range g {
+						dropped = dropped || (!p.defined && flat)
+					}
+					if dropped {
 						continue
 					}
-					v, ok := listed[corner]
-					if !ok {
-						v = out.Mesh.vertex(p.at, p.normal, phase)
-						listed[corner] = v
+					var vertices [3]int32
+					for j, p := range g {
+						corner := corners[f+j]
+						phase := corner.at / float64(n)
+						if !p.defined {
+							vertices[j] = out.Mesh.vertex(p.at, face.unit(), phase)
+							continue
+						}
+						v, ok := listed[corner]
+						if !ok {
+							v = out.Mesh.vertex(p.at, p.normal, phase)
+							listed[corner] = v
+						}
+						vertices[j] = v
 					}
-					vertices[j] = v
+					out.Mesh.triangle(i+1, vertices[0], vertices[1], vertices[2])
 				}
-				out.Mesh.triangle(i+1, vertices[0], vertices[1], vertices[2])
 			}
 		}
 	}

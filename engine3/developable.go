@@ -95,6 +95,10 @@ type Request struct {
 	// Adaptive refines the drawn curves between their uniform samples (see
 	// refinePath); surface, ray, and implicit studies ignore it.
 	Adaptive bool `json:"adaptive"`
+	// AdaptiveSurface, with Adaptive, also adds columns to the surface a
+	// curve construction draws where refinement adds points to the curves
+	// on it (see surfaceColumns); without Adaptive it changes nothing.
+	AdaptiveSurface bool `json:"adaptiveSurface"`
 	// Probe asks for the curve the construction acts on described at one
 	// parameter, at or between samples (see ProbePoint), for a torus knot,
 	// harmonic or custom curve. It asks for the diagnostics too, and changes
@@ -451,29 +455,100 @@ func compute(c Request) (Result, error) {
 	}
 	// Each sheet's vertices at a sample, on the curve and on its edge, are
 	// shared by the intervals on both sides of it.
-	listed := map[[3]int]int32{}
+	type station struct {
+		base, minus, plus *Vec3
+		normal            Vec3
+	}
+	joined := func(i int) bool {
+		return !out.Breaks[i+1] && valid[i] && valid[i+1] && normals[i].dot(normals[i+1]) >= 0
+	}
+	var columns [][]float64
+	between := map[float64]station{}
+	if developable && c.refinesSurface() {
+		// Refined along the curve, the sheets gain a tangent at each column
+		// where the curve and its edges r ± LT drew points and its normal is
+		// defined, turning with neither sample's. A gap or jump an edge finds
+		// between samples leaves that interval's faces out.
+		edge := func(sign float64) func(float64) Vec3 {
+			return func(t float64) Vec3 {
+				r, v, _, ok := evaluate(t)
+				if !ok || !r.valid() || !v.valid() || c.units.still(v) {
+					return Vec3{math.NaN(), 0, 0}
+				}
+				return r.add(v.unit().mul(sign * c.Length))
+			}
+		}
+		minus, broken := refinePath(out.Minus, out.Breaks, edge(-1), lo, hi, pathTolerance(out.Minus), refineBudget)
+		plus, more := refinePath(out.Plus, out.Breaks, edge(1), lo, hi, pathTolerance(out.Plus), refineBudget)
+		out.Adaptive.Minus, out.Adaptive.Plus = minus, plus
+		torn := map[int]bool{}
+		for _, i := range append(broken, more...) {
+			torn[i] = true
+		}
+		sheets := joined
+		surface := func(i int) bool { return sheets(i) && !torn[i] }
+		columns, _, out.Adaptive.Capped = surfaceColumns(n, surface, surfaceVertices/4, out.Adaptive.Base, minus, plus)
+		for i, positions := range columns {
+			kept := positions[:0]
+			for _, at := range positions {
+				r, v, a, ok := evaluate(parameterAt(lo, hi, n, at))
+				if !ok || !r.valid() || !v.valid() || c.units.still(v) {
+					continue
+				}
+				normal, defined := c.binormal(v, a, lo, hi)
+				if !defined || normal.dot(normals[i]) < 0 || normal.dot(normals[i+1]) < 0 {
+					continue
+				}
+				d := v.unit().mul(c.Length)
+				m, p := r.sub(d), r.add(d)
+				between[at] = station{&r, &m, &p, normal}
+				kept = append(kept, at)
+			}
+			columns[i] = kept
+			out.Adaptive.Columns += len(kept)
+		}
+		joined = surface
+	}
+	stationAt := func(at float64) station {
+		if at == math.Trunc(at) {
+			j := int(at)
+			return station{out.Base[j], out.Minus[j], out.Plus[j], normals[j]}
+		}
+		return between[at]
+	}
+	type key struct {
+		side, on int
+		at       float64
+	}
+	listed := map[key]int32{}
 	for i := 0; i < n && developable; i++ {
-		if out.Breaks[i+1] || !valid[i] || !valid[i+1] || normals[i].dot(normals[i+1]) < 0 {
+		if !joined(i) {
 			out.Omitted++
 			continue
 		}
-		for _, side := range []int{-1, 1} {
-			edge := out.Plus
-			if side < 0 {
-				edge = out.Minus
-			}
-			vertex := func(j, on int, point *Vec3) int32 {
-				key := [3]int{side, on, j}
-				v, ok := listed[key]
-				if !ok {
-					v = out.Mesh.vertex(*point, normals[j].mul(float64(side)), float64(j)/float64(n))
-					listed[key] = v
+		stops := stations(i, columns)
+		for s := 1; s < len(stops); s++ {
+			from, to := stationAt(stops[s-1]), stationAt(stops[s])
+			for _, side := range []int{-1, 1} {
+				vertex := func(at float64, on int, g station) int32 {
+					k := key{side, on, at}
+					v, ok := listed[k]
+					if !ok {
+						point := g.base
+						if on == 1 && side < 0 {
+							point = g.minus
+						} else if on == 1 {
+							point = g.plus
+						}
+						v = out.Mesh.vertex(*point, g.normal.mul(float64(side)), at/float64(n))
+						listed[k] = v
+					}
+					return v
 				}
-				return v
+				a, b, c, d := vertex(stops[s-1], 0, from), vertex(stops[s-1], 1, from), vertex(stops[s], 0, to), vertex(stops[s], 1, to)
+				out.Mesh.triangle(i+1, a, b, c)
+				out.Mesh.triangle(i+1, b, d, c)
 			}
-			a, b, c, d := vertex(i, 0, out.Base[i]), vertex(i, 1, edge[i]), vertex(i+1, 0, out.Base[i+1]), vertex(i+1, 1, edge[i+1])
-			out.Mesh.triangle(i+1, a, b, c)
-			out.Mesh.triangle(i+1, b, d, c)
 		}
 	}
 	// A harmonic curve's generating vectors and ellipses, and a field's
@@ -550,6 +625,9 @@ func compute(c Request) (Result, error) {
 				out.Adaptive.Strands = append(out.Adaptive.Strands, path)
 			}
 		}
+		if c.Frame.Width > 0 {
+			frame.ribbon(c, &out, evaluate, lo, hi)
+		}
 		if c.SurfaceDiagnostics && c.Frame.Width > 0 {
 			out.Probe = framedProbe(c, evaluate, lo, hi, out.Base, velocities, accelerations, frame)
 		}
@@ -577,7 +655,7 @@ func compute(c Request) (Result, error) {
 				at.Plus = pointAt(p)
 			}
 		})
-		if err := ruledSurface(c, &out, partner, tangents, accelerations, speeds, lo, hi, closed); err != nil {
+		if err := ruledSurface(c, &out, evaluate, partner, tangents, accelerations, speeds, lo, hi, closed); err != nil {
 			return Result{}, err
 		}
 		out.Bounds = fit(append([][]*Vec3{out.Base, out.Plus}, generating...)...)

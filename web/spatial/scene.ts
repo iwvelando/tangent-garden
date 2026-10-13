@@ -563,13 +563,19 @@ export function buildScene(result: SpatialResult) {
   // A framed ribbon's edges are also broken where a Frenet normal reverses.
   // A ruled surface's partner thread (its plus) is broken where the
   // partner is missing or jumps, and drawn from its own refinement when the
-  // study has one.
+  // study has one; a refined surface's edges are drawn from theirs.
   const edgeBreaks =
     result.frame?.breaks ?? result.ruled?.breaks ?? result.breaks;
   // A ribbon's edges and a partner thread bound a sheet: lighter than the
   // curve they accompany.
-  const minus = path(result.minus, edgeBreaks, 2, undefined, 1.4);
-  const plus = path(result.plus, edgeBreaks, 2, refined?.partner, 1.4);
+  const minus = path(result.minus, edgeBreaks, 2, refined?.minus, 1.4);
+  const plus = path(
+    result.plus,
+    edgeBreaks,
+    2,
+    refined?.partner ?? refined?.plus,
+    1.4,
+  );
   const rulings = batch(
     result.rulings
       .flatMap((r) => [r.from, r.to])

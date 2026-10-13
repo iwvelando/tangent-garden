@@ -3732,4 +3732,62 @@ export const spatialPresets: {
       plots: "both",
     },
   },
+  // A tube of radius 0.11 round a coil 0.45 off a ring of radius 2,
+  // winding forty times round it: about six samples a turn. Refining the
+  // surface along the curve adds rings wherever the coil, its meridians
+  // and the tube's seams gain points, so the tube follows every turn round.
+  {
+    name: "A spring of tubing closed into a ring",
+    detail:
+      "A tube around a coil that winds forty times round a ring, every turn drawn round",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      curve: {
+        x: "(2+0.45*cos(40*t))*cos(t)",
+        y: "(2+0.45*cos(40*t))*sin(t)",
+        z: "0.45*sin(40*t)",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      canal: { radius: 0.11, profile: "1", meridians: 4 },
+      frame: { ...base.frame, closure: "distribute" },
+      samples: 240,
+      lines: 24,
+      adaptive: true,
+      adaptiveSurface: true,
+    },
+    layers: { circles: false, frames: false, seam: false },
+    view: { yaw: 0, pitch: 0.7, zoom: 1.2, panX: 0, panY: 0 },
+  },
+  // A ribbon of half-width 0.22 along the trefoil, carried by its
+  // rotation-minimizing frame and twisted forty times, the return angle
+  // spread along the knot so it closes: six samples a twist. Refined along
+  // the curve, the ribbon gains cross-sections wherever its edges gain
+  // points, and every twist turns smoothly.
+  {
+    name: "A ribbon twisted forty times along a trefoil",
+    detail:
+      "A narrow band carried round the knot, turning forty times about it as it goes",
+    config: {
+      ...base,
+      construction: "framed",
+      samples: 240,
+      lines: 24,
+      adaptive: true,
+      adaptiveSurface: true,
+      frame: {
+        ...base.frame,
+        twist: 40,
+        width: 0.22,
+        offset: 0,
+        strands: 0,
+        closure: "distribute",
+      },
+    },
+    layers: { frames: false, seam: false, rulings: false },
+    view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
+  },
 ];

@@ -358,6 +358,112 @@ test("each meridian is drawn from its own refinement, and revealed with it", () 
   expect(reveal(input, 1).adaptive).toEqual(input.adaptive);
 });
 
+test("a refined surface's edges are drawn from their refinement, and revealed with it", () => {
+  const input = study();
+  input.minus = [at(0), at(1), at(2), at(3)];
+  input.plus = [at(0), at(1), at(2), at(3)];
+  input.adaptive = {
+    minus: refined([0, 0.5, 1], [0, 0.5, 1]),
+    plus: refined([0, 0.25, 0.75, 1], [0, 0.25, 0.75, 1]),
+    columns: 3,
+  };
+  const scene = buildScene(input);
+  expect(xs(scene.minus.data)).toEqual([0, 0.5, 0.5, 1]);
+  expect(xs(scene.plus.data)).toEqual([0, 0.25, 0.25, 0.75, 0.75, 1]);
+  // Without refinement each edge joins its uniform samples, as before.
+  expect(xs(buildScene({ ...input, adaptive: undefined }).minus.data)).toEqual([
+    0, 1, 1, 2,
+  ]);
+  const frame = reveal(input, 0);
+  expect(frame.adaptive?.minus?.at).toEqual([0]);
+  expect(frame.adaptive?.plus?.at).toEqual([0]);
+  expect(frame.adaptive?.columns).toBe(3);
+  expect(reveal(input, 1).adaptive).toEqual(input.adaptive);
+});
+
+const refineSurface = (page: Page) =>
+  page.getByRole("checkbox", { name: "Refine the surface too", exact: true });
+
+test("refining the surface is offered with refinement where a construction draws one, and changes only its mesh", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A screw band coiled round a ring" });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(refineSurface(page)).not.toBeChecked();
+  await expect(readout(page)).toHaveCount(1);
+  const flat = await pixels(page);
+  const linework = await lines(page);
+  await refineSurface(page).check();
+  await settled(page);
+  expect((await config(page)).adaptiveSurface).toBe(true);
+  await expect(readout(page).nth(1)).toHaveText(
+    /^[\d,]+ columns added to the surface\.$/,
+  );
+  expect(await pixels(page)).not.toBe(flat);
+  // The ruled surface's edges are its curves, refined already: the lines
+  // are the same, and only the shaded surface changes.
+  expect(await lines(page)).toBe(linework);
+  // Unchecking drops the field, as in a link made before it.
+  await refineSurface(page).uncheck();
+  await settled(page);
+  expect("adaptiveSurface" in (await config(page))).toBe(false);
+  expect(await pixels(page)).toBe(flat);
+  // Offered only while the curves are refined.
+  await refine(page).uncheck();
+  await settled(page);
+  await expect(refineSurface(page)).toHaveCount(0);
+  await refine(page).check();
+  await settled(page);
+  await expect(refineSurface(page)).not.toBeChecked();
+  // An involute draws no surface.
+  await page
+    .getByLabel("Construction", { exact: true })
+    .selectOption("involute");
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(refineSurface(page)).toHaveCount(0);
+});
+
+test("the twisted ribbon opens with its surface refined, and its edges are exported refined", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, {
+    label: "A ribbon twisted forty times along a trefoil",
+  });
+  await settled(page);
+  await openSampling(page);
+  await expect(refineSurface(page)).toBeChecked();
+  await expect(readout(page).nth(1)).toHaveText(
+    /^[\d,]+ columns added to the surface\.$/,
+  );
+  const refined = await lines(page);
+  await refineSurface(page).uncheck();
+  await settled(page);
+  // The edges, refined with the surface, carry more points than the samples.
+  expect(refined).toBeGreaterThan((await lines(page)) + 240);
+});
+
+test("the spring of tubing opens with every turn's rings in its mesh", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A spring of tubing closed into a ring" });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(refineSurface(page)).toBeChecked();
+  // Forty turns at six samples a turn take four bisections of every
+  // interval: 15 × 240 columns, well within the budget.
+  await expect(readout(page).nth(1)).toHaveText(
+    "3,600 columns added to the surface.",
+  );
+});
+
 async function openAnimation(page: Page) {
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)

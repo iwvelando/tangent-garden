@@ -934,6 +934,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
   // A refined curve shows its points up to the last revealed sample.
   const shown = (path: RefinedPath | undefined) => revealRefined(path, last);
   const adaptive = result.adaptive && {
+    ...result.adaptive,
     base: shown(result.adaptive.base),
     parent: shown(result.adaptive.parent),
     projection: shown(result.adaptive.projection),
@@ -942,6 +943,8 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     strands: result.adaptive.strands?.map((path) => shown(path)!),
     partner: shown(result.adaptive.partner),
     meridians: result.adaptive.meridians?.map((path) => shown(path)!),
+    minus: shown(result.adaptive.minus),
+    plus: shown(result.adaptive.plus),
   };
   // The seam compares the last sample with the first, so it appears only
   // once the whole curve is shown.

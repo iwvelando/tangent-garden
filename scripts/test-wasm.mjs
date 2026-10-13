@@ -2285,9 +2285,27 @@ const spatialCanal = (canal, frame = {}, study = {}) =>
     spatialCanal({ meridians: 3 }, { twist: 30 }, { samples: 240 }).adaptive,
     undefined,
   );
+  // Refined along the curve too, the torus gains a ring of 25 vertices at
+  // each column, every one on the torus, and the meridians are unchanged.
+  const ringed = spatialCanal(
+    { meridians: 3 },
+    { twist: 30 },
+    { samples: 240, adaptive: true, adaptiveSurface: true },
+  );
+  assert.ok(ringed.adaptive.columns > 0);
+  assert.equal(
+    meshVertexCount(ringed.mesh),
+    (meshVertexCount(wound.mesh) / 25 + ringed.adaptive.columns) * 25,
+  );
+  const v = ringed.mesh.vertices;
+  for (let k = 0; k < v.length; k += 7) {
+    const off = Math.hypot(Math.hypot(v[k], v[k + 1]) - 2, v[k + 2]);
+    assert.ok(Math.abs(off - 0.5) < 1e-9, `ring vertex ${k / 7} off the torus`);
+  }
+  assert.deepEqual(ringed.adaptive.meridians, wound.adaptive.meridians);
 }
 console.log(
-  "WASM canal surface: torus, lost envelope, refined meridians and validation passed",
+  "WASM canal surface: torus, lost envelope, refined meridians and surface, and validation passed",
 );
 const spatialField = (field, construction = "none") =>
   spatialResult(

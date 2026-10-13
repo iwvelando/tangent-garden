@@ -295,6 +295,9 @@ export type SpatialConfig = {
   // Refine the drawn curves between their uniform samples (see
   // AdaptiveResult). Surface, ray and implicit studies ignore it.
   adaptive: boolean;
+  // With adaptive, also refines the surface a construction draws along the
+  // curve (engine3/surfacerefine.go). Absent means off.
+  adaptiveSurface?: boolean;
 };
 // Mirrors engine3.RefinedPath (see ../refinement.ts).
 export type RefinedPath = SharedRefinedPath<Vec3>;
@@ -314,6 +317,14 @@ export type AdaptiveResult = {
   strands?: RefinedPath[];
   partner?: RefinedPath;
   meridians?: RefinedPath[];
+  // A developable's or framed ribbon's edges (minus, plus), refined when
+  // its surface is.
+  minus?: RefinedPath;
+  plus?: RefinedPath;
+  // Present when the surface was refined too: the positions between
+  // samples added to its mesh, and whether the budget left the finest out.
+  columns?: number;
+  capped?: boolean;
 };
 // Mirrors engine3.CurveMesh, which the engine sends typed, not as JSON
 // (cmd/wasm/mesh.go): seven numbers per vertex in vertices (position x, y,

@@ -1,4 +1,9 @@
 import { StudyExplanation } from "../StudyExplanation";
+import {
+  drawsSurface,
+  RefineSurfaceCheck,
+  refinedPaths,
+} from "./surface-refine";
 import { RefineBetweenSamples } from "../RefineBetweenSamples";
 import { StopAtCaustic } from "../StopAtCaustic";
 import {
@@ -3496,14 +3501,25 @@ export default function SpatialApp({
                         }
                         refined={
                           shown?.result.adaptive &&
-                          Object.values(shown.result.adaptive).flat()
+                          refinedPaths(shown.result.adaptive)
                         }
                       />
+                      {config.adaptive && drawsSurface(config) && (
+                        <RefineSurfaceCheck
+                          checked={!!config.adaptiveSurface}
+                          onChange={(on) =>
+                            update(({ adaptiveSurface: _, ...c }) =>
+                              on ? { ...c, adaptiveSurface: true } : c,
+                            )
+                          }
+                          refined={shown?.result.adaptive}
+                        />
+                      )}
                     </>
                   )}
                   <SamplingNote brief="Finite sampling can miss fine detail; compare resolutions near poles, stationary points and tight folds.">
                     {refinable &&
-                      "Refinement halves a sample interval up to 10 times where the chord strays from the curve by over 1/5000 of its fitted radius, adding at most 16,384 points per curve. Gaps and jumps it finds break the curve; surfaces stay on the even samples. "}
+                      "Refinement halves a sample interval up to 10 times where the chord strays from the curve by over 1/5000 of its fitted radius, adding at most 16,384 points per curve. Gaps and jumps it finds break the curve; surfaces stay on the samples unless refined too. "}
                     Invalid samples leave gaps.
                     {canal &&
                       " A canal is drawn on at most 480 contact circles."}

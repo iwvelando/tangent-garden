@@ -332,6 +332,7 @@ const config: SchemaOf<SpatialConfig> = {
     samples: "number",
     lines: "number",
     adaptive: "boolean",
+    adaptiveSurface: { optional: "boolean" },
   },
 };
 
