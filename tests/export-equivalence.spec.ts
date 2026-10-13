@@ -70,13 +70,18 @@ function difference(a: Image, b: Image) {
 }
 // 3D: the live WebGL canvas, read back (it preserves its drawing buffer).
 const spatialStage = (page: Page) => page.locator(".spatial-stage");
-const spatialSettled = (page: Page) =>
-  expect(spatialStage(page)).toHaveAttribute("aria-busy", "false");
+const spatialSettled = (page: Page, timeout = 5000) =>
+  expect(spatialStage(page)).toHaveAttribute("aria-busy", "false", {
+    timeout,
+  });
 async function spatial(page: Page, label: string) {
   await page.goto("/?study=3d");
   await spatialSettled(page);
   await choosePreset(page, { label });
-  await spatialSettled(page);
+  // The nested tori settle in about 2.7 s here, 0.6 s of it counting the
+  // sheet layers in software WebGL, and in more than five seconds on CI.
+  // Keep waiting for the actual completed drawing.
+  await spatialSettled(page, 30_000);
   await pin(page, ".spatial-canvas-wrap");
   // The renderer redraws on resize; wait for the canvas to take the size.
   await expect
