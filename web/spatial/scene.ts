@@ -8,6 +8,7 @@ import type {
   Bounds3,
   ReceiverResult,
   ImplicitResult,
+  RefinementView,
 } from "./types";
 import type { Basis } from "../named-views";
 import { curveInputs } from "./inputs";
@@ -1364,6 +1365,41 @@ function perspective(
     focus: focus / E,
     width: size.width,
     height: size.height,
+  };
+}
+// What a camera shows, as Go refines curves to it (engine3.View): the
+// middle of the page, its directions and half extents on the plane through
+// it, and a perspective's eye distance and near distance, read from the
+// camera's own arithmetic (see clip).
+export function refinementView(
+  view: View,
+  size: { width: number; height: number },
+): RefinementView {
+  const k = camera(view, size),
+    r = k.rotation;
+  const right = { x: r[0], y: r[3], z: r[6] },
+    up = { x: r[1], y: r[4], z: r[7] };
+  // The orthographic pan moves the page across the drawing.
+  const center = {
+    x: k.center.x - k.pan[0] * right.x - k.pan[1] * up.x,
+    y: k.center.y - k.pan[0] * right.y - k.pan[1] * up.y,
+    z: k.center.z - k.pan[0] * right.z - k.pan[1] * up.z,
+  };
+  const shown = {
+    center,
+    right,
+    up,
+    width: 1 / k.framing[0],
+    height: 1 / k.framing[1],
+  };
+  if (!(k.lens[0] > 0)) return shown;
+  // w is 1 on the plane through center and 0 at the eye; the near plane
+  // is where clip depth equals −w.
+  const distance = 1 / k.lens[0];
+  return {
+    ...shown,
+    distance,
+    near: (distance * -k.lens[2]) / (k.lens[1] + 1),
   };
 }
 // A point in homogeneous clip coordinates, each of x, y and depth within

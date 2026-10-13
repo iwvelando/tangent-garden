@@ -537,7 +537,7 @@ func refineMeridians(c Request, out *Result, q *CanalResult, circles func(float6
 			if current(k, breaks) {
 				continue
 			}
-			paths[k], found[k] = refinePath(points, breaks, meridian(k), lo, hi, pathTolerance(points), refineBudget)
+			paths[k], found[k] = c.refine(points, breaks, meridian(k), lo, hi)
 			given[k], refined = breaks, true
 		}
 		if !refined {

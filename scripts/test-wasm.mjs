@@ -1250,6 +1250,57 @@ assert.ok(
     ),
   ).error,
 );
+// Refined to a view through the bridge: a trefoil's pieces in a small
+// window about its sample at t = 1, looked at from above, meet a tolerance
+// of the window's own size, reported as view, while every sample stays
+// on the knot; a view no finer than the study changes nothing, and one that
+// is not a frame of a page is refused.
+const knotView = (view) =>
+  spatialResult(
+    globalThis.tangentGardenSpatial(
+      JSON.stringify({
+        radius: 2.4,
+        tube: 0.85,
+        length: 2.3,
+        p: 2,
+        q: 3,
+        samples: 240,
+        lines: 24,
+        construction: "none",
+        adaptive: true,
+        ...(view && { view }),
+      }),
+    ),
+  );
+const knotAt = (t) => {
+  const h = 2.4 + 0.85 * Math.cos(3 * t);
+  return {
+    x: h * Math.cos(2 * t),
+    y: h * Math.sin(2 * t),
+    z: 0.85 * Math.sin(3 * t),
+  };
+};
+const above = (center, half) => ({
+  center,
+  right: { x: 1, y: 0, z: 0 },
+  up: { x: 0, y: 1, z: 0 },
+  width: half,
+  height: half,
+});
+const unviewed = knotView().adaptive.base;
+const viewed = knotView(above(knotAt(1), 0.02)).adaptive.base;
+assert.equal(unviewed.view, undefined);
+assert.ok(Math.abs(viewed.view - 2e-4 * Math.hypot(0.02, 0.02)) < 1e-15);
+assert.ok(viewed.inserted > unviewed.inserted);
+assert.equal(viewed.unresolved, 0);
+assert.deepEqual(
+  knotView(above({ x: 0, y: 0, z: 0 }, 100)).adaptive,
+  knotView().adaptive,
+);
+assert.match(
+  knotView({ ...above(knotAt(1), 0.02), right: { x: 2, y: 0, z: 0 } }).error,
+  /view/,
+);
 // The spatial probe between samples: the trefoil at t = 0.3, off its
 // samples, lies on the torus knot ((R + r cos 3t) cos 2t, …, r sin 3t);
 // the probe alone is the full study's probe, its ruling spans the tangent

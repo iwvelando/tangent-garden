@@ -232,6 +232,10 @@ export const maxImplicitGrid = 262144;
 export const maxImplicitRefine = 3;
 export const maxRefinedTetrahedra = 100000;
 export const maxSections = 24;
+// Whether a curve format can be evaluated between its samples: one given
+// by a formula, not an integrated trajectory or chase, nor a surface.
+export const refinesFormat = (format: SpatialConfig["format"]) =>
+  format === "torus" || format === "parametric" || format === "harmonic";
 export type SpatialConfig = {
   format:
     | "torus"
@@ -298,6 +302,24 @@ export type SpatialConfig = {
   // With adaptive, also refines the surface a construction draws along the
   // curve (engine3/surfacerefine.go). Absent means off.
   adaptiveSurface?: boolean;
+  // With adaptive, refines what the zoomed-in drawing shows to its own
+  // scale and lets the drawing zoom to viewZoom (../refinement.ts); absent
+  // or false refines to the study's tolerance alone.
+  adaptiveView?: boolean;
+};
+// Mirrors engine3.View: what the drawing shows, which refinement refines to
+// when it is zoomed in. center is the middle of the page, right and up its
+// directions, width and height its half extents on the plane through
+// center; a perspective's eye is distance behind center and draws nothing
+// nearer than near.
+export type RefinementView = {
+  center: Vec3;
+  right: Vec3;
+  up: Vec3;
+  width: number;
+  height: number;
+  distance?: number;
+  near?: number;
 };
 // Mirrors engine3.RefinedPath (see ../refinement.ts).
 export type RefinedPath = SharedRefinedPath<Vec3>;

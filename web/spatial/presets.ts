@@ -3875,4 +3875,50 @@ export const spatialPresets: {
     layers: { planes: false, box: false },
     view: { yaw: 0.55, pitch: 0.6, zoom: 1.3, panX: 0, panY: 0 },
   },
+  // Refinement to the view (see engine3/view.go): a cardioid,
+  // (3 cos t − 1.5 cos 2t, 3 sin t − 1.5 sin 2t), lifted by 0.5 cos 2t,
+  // which stops at its cusp at t = 0, wound with a coil of radius 0.01
+  // turning 100 times round its course, in planes x = const that face the
+  // cusp. The cardioid leaves the cusp at about 3.6|t|, so within about
+  // t = ±0.28 the coil, at speed 1, outruns it and closes into loops;
+  // farther out it is drawn into a spring. The view opens 70×
+  // closer on the loops.
+  {
+    name: "A spring folded into a cusp",
+    detail:
+      "A coil a few thousandths of a cardioid's size closes into loops where the curve stops, seen 70 times closer",
+    config: {
+      ...base,
+      format: "harmonic",
+      construction: "none",
+      samples: 600,
+      lines: 12,
+      adaptive: true,
+      adaptiveView: true,
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 3, y: 0, z: 0 },
+            sine: { x: 0, y: 3, z: 0 },
+          },
+          {
+            frequency: 2,
+            cosine: { x: -1.5, y: 0, z: 0.5 },
+            sine: { x: 0, y: -1.5, z: 0 },
+          },
+          {
+            frequency: 100,
+            cosine: { x: 0, y: 0.01, z: 0 },
+            sine: { x: 0, y: 0, z: 0.01 },
+          },
+        ],
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    layers: { vectors: false, ellipses: false },
+    view: { yaw: -0.9, pitch: 0.4, zoom: 70, panX: -0.6164, panY: 0.5875 },
+  },
 ];

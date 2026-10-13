@@ -75,6 +75,9 @@ self.onmessage = async ({
   // Asks Go to refine a 2D study's refined curves to the view the drawing
   // shows (see engine.View).
   view?: import("./types").ViewRect;
+  // Asks Go to refine a 3D study's refined curves to what the drawing shows
+  // (see engine3.View).
+  spatialView?: import("./spatial/types").RefinementView;
   // Asks Go for a surface's diagnostics (see engine3.SurfaceDiagnostics).
   surfaceDiagnostics?: boolean;
   // Asks Go for the light leaving a mirror or interface (see
@@ -606,6 +609,7 @@ self.onmessage = async ({
           focalDiagnostics: data.focalDiagnostics,
         }),
         ...(data.probe && { probe: data.probe }),
+        ...(data.spatialView && { view: data.spatialView }),
       });
       if (data.probeOnly) {
         const reply = JSON.parse(tangentGardenSpatialProbe(request));

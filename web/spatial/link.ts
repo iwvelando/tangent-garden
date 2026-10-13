@@ -42,6 +42,7 @@ import {
 } from "./cut";
 import { defaultSight, legacyWeight, opacityRange, type Sight } from "./sight";
 import { lineWeightSchema } from "../line-weight";
+import { viewZoom } from "../refinement";
 import {
   defaultPath,
   legRange,
@@ -333,15 +334,17 @@ const config: SchemaOf<SpatialConfig> = {
     lines: "number",
     adaptive: "boolean",
     adaptiveSurface: { optional: "boolean" },
+    adaptiveView: { optional: "boolean" },
   },
 };
 
-// The orbit and zoom limits of the drawing's own controls.
+// The orbit and zoom limits of the drawing's own controls; a study not
+// refined to its view draws a deeper zoom at spatialPlainZoom.
 const view: SchemaOf<SpatialCamera> = {
   fields: {
     yaw: "number",
     pitch: { range: [-1.5, 1.5] },
-    zoom: { range: [0.2, 8] },
+    zoom: { range: [0.2, viewZoom] },
     panX: "number",
     panY: "number",
   },

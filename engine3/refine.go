@@ -24,7 +24,9 @@ const (
 // interval the uniform study breaks, or one refinement found (Breaks counts
 // the uniform intervals it broke). A segment still farther than Tolerance
 // from the curve at the finest step, or when the budget ran out
-// (Exhausted), is counted in Unresolved.
+// (Exhausted), is counted in Unresolved. View is the finest tolerance a
+// piece the view shows was refined to, when it was finer than Tolerance
+// (see View).
 type RefinedPath struct {
 	Points     []*Vec3   `json:"points"`
 	At         []float64 `json:"at"`
@@ -33,6 +35,7 @@ type RefinedPath struct {
 	Breaks     int       `json:"breaks"`
 	Unresolved int       `json:"unresolved"`
 	Exhausted  bool      `json:"exhausted"`
+	View       float64   `json:"view,omitempty"`
 }
 
 // AdaptiveResult holds the refined curves a study draws: the curve its
@@ -81,13 +84,33 @@ var space = refine.Metric[Vec3]{
 // with at, whose undefined points are nonfinite (see refine.Refine). It
 // returns the intervals refinement broke, in order.
 func refinePath(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi, tolerance float64, budget int) (*RefinedPath, []int) {
-	path, broken := refine.Refine(points, breaks, func(t float64) *Vec3 {
+	return refineViewed(points, breaks, at, lo, hi, tolerance, budget, nil)
+}
+
+// refine refines a path of the study (see refinePath) at refineEpsilon of
+// its own robust radius, within the budget, and to the study's view, when
+// it has one.
+func (c Request) refine(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi float64) (*RefinedPath, []int) {
+	return refineViewed(points, breaks, at, lo, hi, pathTolerance(points), refineBudget, c.View)
+}
+
+// refineViewed is refinePath refined to a view as well, when there is one.
+func refineViewed(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi, tolerance float64, budget int, view *View) (*RefinedPath, []int) {
+	evaluate := func(t float64) *Vec3 {
 		if p := at(t); p.valid() {
 			return &p
 		}
 		return nil
-	}, space, lo, hi, tolerance, budget)
+	}
+	var path *refine.Path[Vec3]
+	var broken []int
+	if view == nil {
+		path, broken = refine.Refine(points, breaks, evaluate, space, lo, hi, tolerance, budget)
+	} else {
+		path, broken = refine.RefineFocused(points, breaks, evaluate, space, lo, hi, tolerance, budget, view.focus())
+	}
 	return &RefinedPath{
+		View:       path.Finest,
 		Points:     path.Points,
 		At:         path.At,
 		Tolerance:  path.Tolerance,

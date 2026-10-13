@@ -19,23 +19,33 @@ export type RefinedPath<P> = {
   breaks: number;
   unresolved: number;
   exhausted: boolean;
-  // The tolerance of the pieces in view, when a 2D drawing is refined to a
-  // view finer than the study.
+  // The tolerance of the pieces in view, when a drawing is refined to a
+  // view finer than the study: in 3D, the finest, at the nearest depth.
   view?: number;
 };
 
 // The limits Go enforces, which help text states.
 export const refineDepth = 10;
 export const refineBudget = 16384;
-// How far a 2D drawing zooms: refined to its view, or not.
+// How far a drawing zooms refined to its view, and how far a 2D drawing
+// zooms without.
 export const viewZoom = 1000;
 export const plainZoom = 20;
+// How far a 3D drawing zooms without, as its key views do (spatial/path.ts).
+export const spatialPlainZoom = 8;
 
 // Refinement to the view's help, stating the limits Go enforces
 // (engine/adaptive.go, View.focus).
 export const viewHelp = tiered(
   `Once you zoom in, refines what is in view to its own scale, and zooms to ${viewZoom.toLocaleString("en-US")}×.`,
   `In view, each chord stays within 2 × 10⁻⁴ of the view's half diagonal of the curve, and shorter than a quarter of it; elsewhere the study's tolerance holds. A view is refined once the drawing rests, and playback at the current view uses it. Without this, zoom stops at ${plainZoom}×.`,
+);
+
+// The 3D notebook's, where a perspective's tolerances grow with depth
+// (engine3/view.go, View.focus).
+export const spatialViewHelp = tiered(
+  `Once you zoom in, refines what is in view to its own scale, and zooms to ${viewZoom.toLocaleString("en-US")}×.`,
+  `In view, each chord stays within 2 × 10⁻⁴ of the view's half diagonal of the curve, and shorter than a quarter of it; in a perspective, both grow with distance from the eye. Elsewhere the study's tolerance holds. Playback at the current view uses it. Without this, zoom stops at ${spatialPlainZoom}×.`,
 );
 
 // A refined curve's points up to the last revealed sample; the inserted
