@@ -3790,4 +3790,42 @@ export const spatialPresets: {
     layers: { frames: false, seam: false, rulings: false },
     view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
   },
+  // Dashes measured on the page (see sight.ts): a tube of radius 0.5 round
+  // a helix of radius 2 and six turns, seen through the wide lens from
+  // beside its near end, as the braided cable is. The core inside the tube
+  // and the far halves of its 72 contact circles and four meridians are
+  // dashed through the wall, one dash every 1% of the page's shorter side
+  // from the coil sweeping past the eye to the last one at the vanishing
+  // point.
+  {
+    name: "A coiled tube running into the distance",
+    detail:
+      "Its core and the far side of every ring dashed through the wall, each dash one length from the nearest coil to the farthest",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      samples: 600,
+      lines: 72,
+      canal: { radius: 0.5, profile: "1", meridians: 4 },
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)",
+        z: "0.7*a*t",
+        a: 1,
+        min: -6 * Math.PI,
+        max: 6 * Math.PI,
+      },
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "dashed",
+      weight: "regular",
+      dashes: "page",
+    },
+    layers: { frames: false, seam: false },
+    projection: "wide",
+    view: { yaw: -0.8, pitch: 0.4, zoom: 1.6, panX: 5, panY: 3 },
+  },
 ];

@@ -107,6 +107,7 @@ export async function imageFile(
         hidden: sight.hidden,
         weight: sight.weight,
         depth: sight.depth,
+        dashes: sight.dashes,
         // The work a page's visibility testing needs grows with its area,
         // so the limit does too: a view that exports at one size exports
         // at every size.
@@ -120,7 +121,10 @@ export async function imageFile(
     // drawn, when they are tested at all.
     const lined =
       occlusion === "sampled" &&
-      sightRecord({ ...defaultSight, hidden: sight.hidden }, false);
+      sightRecord(
+        { ...defaultSight, hidden: sight.hidden, dashes: sight.dashes },
+        false,
+      );
     signal.throwIfAborted();
     const svg = linesSvg(groups, {
       ...page,

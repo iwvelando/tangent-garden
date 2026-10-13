@@ -112,6 +112,9 @@ const spatialCases = [
   { label: "An engraved trefoil tube", weight: "bold" },
   // See-through sheets, composited over the background.
   { label: "A Klein bottle passing through itself", weight: "regular" },
+  // Dashes measured on the page through a lens, hairlines and strokes.
+  { label: "A coiled tube running into the distance", weight: "hairline" },
+  { label: "A coiled tube running into the distance", weight: "regular" },
 ] as const;
 for (const { label, weight } of spatialCases)
   for (const scheme of ["light", "dark"] as const)

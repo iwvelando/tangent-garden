@@ -26,13 +26,16 @@ import {
   arcLengths,
   dashOn,
   dashedOpacity,
+  dashesPerPixel,
   dashesPerUnit,
   faintOpacity,
+  pagePhases,
   sheetOffset,
   strokeWidth,
   taperBound,
   taperBreaks,
   taperStepOf,
+  type DashMeasure,
   type HiddenLines,
   type LineWeight,
   type StrokeDepth,
@@ -66,6 +69,8 @@ export type LineworkOptions = {
   weight?: LineWeight;
   // Whether strokes taper with depth through a lens; even by default.
   depth?: StrokeDepth;
+  // Where dashed hidden lines' dashes are measured; in space by default.
+  dashes?: DashMeasure;
   // Bounds visibility testing: the pixels tried in each sheet triangle's
   // rows (see span), one per row, plus line samples.
   limit?: number;
@@ -123,7 +128,9 @@ export function linework(
     raster && options.hidden && options.hidden !== "hide"
       ? options.hidden
       : undefined;
-  const perUnit = dashesPerUnit(view);
+  const perUnit = dashesPerUnit(view),
+    paged = options.dashes === "page",
+    perPixel = dashesPerPixel(options);
   // Each layer's paths by color and stroke width.
   type Strokes = Map<
     string,
@@ -207,7 +214,12 @@ export function linework(
     // The camera and planes for positions measured from the batch's origin.
     const own = cameraFrom(k, origin),
       kept = cutting ? planes!.map((p) => planeFrom(p, origin)) : undefined;
-    const arcs = behind === "dashed" ? arcLengths(data) : undefined;
+    const arcs =
+      behind === "dashed"
+        ? paged
+          ? pagePhases(data, own, perPixel)
+          : arcLengths(data)
+        : undefined;
     const width = strokeWidth(pass.batch, weight, options);
     for (let i = 0; i + 13 < data.length; i += 14) {
       for (const part of kept
@@ -238,7 +250,36 @@ export function linework(
               run.from,
               run.to,
             );
-          else if (arcs) {
+          else if (arcs && paged) {
+            // The phase is affine on the page, measured from whichever end
+            // lies ahead of the near plane (see sight.ts's pagePhases).
+            const v = i / 7,
+              a = clip(own, data[i], data[i + 1], data[i + 2]);
+            const phase =
+              a[2] + a[3] >= 0
+                ? (p: Point) => {
+                    const o = page(own, a);
+                    return (
+                      arcs[v] + perPixel * Math.hypot(p.x - o.x, p.y - o.y)
+                    );
+                  }
+                : (p: Point) => {
+                    const o = page(
+                      own,
+                      clip(own, data[i + 7], data[i + 8], data[i + 9]),
+                    );
+                    return (
+                      arcs[v + 1] - perPixel * Math.hypot(o.x - p.x, o.y - p.y)
+                    );
+                  };
+            for (const [p, q] of dashes(
+              run.from,
+              run.to,
+              phase(run.from),
+              phase(run.to),
+            ))
+              draw(hiddenGroups, pass.layer, color, width, piece, p, q);
+          } else if (arcs) {
             // Arc length is affine along the segment in space, and so along
             // the kept part and the clipped piece; on the page it is affine
             // only without perspective.

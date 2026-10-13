@@ -2,11 +2,13 @@ import { Field } from "../Field";
 import { ScalarInput } from "../ScalarInput";
 import { LineWeightField } from "../LineWeightField";
 import {
+  dashMeasures,
   hiddenLines,
   sheetSights,
   strokeDepths,
   sightFields,
   sightHelp,
+  type DashMeasure,
   type HiddenLines,
   type Sight,
   type SheetSight,
@@ -33,7 +35,8 @@ export function SightPanel({
   unstroked?: boolean;
   lensed?: boolean;
 }) {
-  const through = sight.sheets === "through";
+  const through = sight.sheets === "through",
+    dashed = sight.hidden === "dashed";
   return (
     <>
       <fieldset className="spatial-sight">
@@ -107,15 +110,34 @@ export function SightPanel({
               </select>
             </Field>
           </div>
-          {through && (
+          {(through || dashed) && (
             <div className="pair">
-              <Field label="Opacity α" help={sightHelp.opacity}>
-                <ScalarInput
-                  name={sightFields.opacity}
-                  value={sight.opacity}
-                  onChange={(opacity) => onSight((s) => ({ ...s, opacity }))}
-                />
-              </Field>
+              {through && (
+                <Field label="Opacity α" help={sightHelp.opacity}>
+                  <ScalarInput
+                    name={sightFields.opacity}
+                    value={sight.opacity}
+                    onChange={(opacity) => onSight((s) => ({ ...s, opacity }))}
+                  />
+                </Field>
+              )}
+              {dashed && (
+                <Field label="Dashes" help={sightHelp.dashes}>
+                  <select
+                    value={sight.dashes ?? "space"}
+                    onChange={(e) => {
+                      const dashes = e.target.value as DashMeasure;
+                      onSight((s) => ({ ...s, dashes }));
+                    }}
+                  >
+                    {dashMeasures.map((d) => (
+                      <option key={d.value} value={d.value}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </div>
           )}
           {through && error && (

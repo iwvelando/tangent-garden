@@ -487,6 +487,8 @@ const sight: SchemaOf<Sight> = {
     weight: lineWeightSchema,
     // Even in links made before strokes could taper.
     depth: { optional: { options: { even: true, taper: true } } },
+    // In space in links made before dashes could be measured on the page.
+    dashes: { optional: { options: { space: true, page: true } } },
   },
 };
 
