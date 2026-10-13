@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
 import { isTiered, withMore, type Help } from "../web/help";
 import { svgWeightHelp } from "../web/line-weight";
-import { viewHelp } from "../web/refinement";
+import { spatialViewHelp, viewHelp } from "../web/refinement";
 import { planarPathHelp } from "../web/planar-path";
 import { backAndForthHelp, onceHelp, paceHelp } from "../web/timing";
 import { repeatHelp as planarRepeatHelp } from "../web/animation";
@@ -199,6 +199,7 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("2D probe motion", curveProbeMotionHelp);
   add("2D probe motion between samples", betweenMotionHelp);
   add("3D between samples", spatialBetweenHelp);
+  add("3D refinement to the view", spatialViewHelp);
   add("involute restart", restartHelp);
   const { add: _title, ...cutHelps } = cutHelp;
   table("cut", cutHelps, ["offset", "cuts", "beyond"]);

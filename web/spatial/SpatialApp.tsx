@@ -5,6 +5,7 @@ import {
   refinedPaths,
 } from "./surface-refine";
 import { RefineBetweenSamples } from "../RefineBetweenSamples";
+import { spatialViewHelp } from "../refinement";
 import { StopAtCaustic } from "../StopAtCaustic";
 import {
   useCallback,
@@ -102,6 +103,8 @@ import {
   maxImplicitRefine,
   maxRefinedTetrahedra,
   maxSections,
+  refinesFormat,
+  type RefinementView,
 } from "./types";
 import { curveInputs } from "./inputs";
 import { implicitGrid, implicitNote } from "./implicit";
@@ -273,11 +276,41 @@ export default function SpatialApp({
   const viewport = useRef<View | undefined>(undefined),
     plotWrap = useRef<HTMLDivElement>(null),
     imageAbort = useRef<AbortController | null>(null);
+  // A study refined to its view is refined to what the drawing shows while
+  // it is zoomed in, once the camera has rested for a moment; until then
+  // the drawing is busy, so nothing exports the coarser curve.
+  const refineView =
+    refinesFormat(config.format) && config.adaptive && !!config.adaptiveView;
+  const [focus, setFocus] = useState<RefinementView | null>(null);
+  const [focusPending, setFocusPending] = useState(false);
+  const focusTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const onFocus = useCallback((next: RefinementView | null) => {
+    clearTimeout(focusTimer.current);
+    const settle = () => {
+      setFocus((previous) =>
+        JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
+      );
+      setFocusPending(false);
+    };
+    if (!next) settle();
+    else {
+      setFocusPending(true);
+      focusTimer.current = setTimeout(settle, 200);
+    }
+  }, []);
+  useEffect(() => () => clearTimeout(focusTimer.current), []);
+  const view = refineView ? focus : null;
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const pending = Object.values(states).some((s) => s.pending),
     scalarError = Object.values(states).find((s) => s.error);
   const key = JSON.stringify(config),
-    request = probing ? `${key}\u0000probe:${target}` : key,
-    busy = settled !== request || pending;
+    request = [
+      key,
+      ...(probing ? [`probe:${target}`] : []),
+      ...(view ? [`view:${JSON.stringify(view)}`] : []),
+    ].join("\u0000"),
+    busy = settled !== request || pending || (refineView && focusPending);
   const revision = JSON.stringify([key, states, active]);
   useEffect(() => {
     client.current = new EngineClient();
@@ -299,6 +332,7 @@ export default function SpatialApp({
       client
         .current!.computeSpatial(config, {
           ...(probing ? probeOptions(target) : {}),
+          ...(view && { view }),
         })
         .then((value) => {
           if (current) {
@@ -566,7 +600,7 @@ export default function SpatialApp({
   const leveled = config.format === "implicit";
   const curveless = patched || leveled;
   // Only a curve given by a formula can be evaluated between its samples.
-  const refinable = !curveless && !flowing && !chasing;
+  const refinable = refinesFormat(config.format);
   const setCanal = (change: (q: CanalConfig) => CanalConfig) =>
     update((c) => ({ ...c, canal: change(c.canal) }));
   const setRuling = (change: (r: RuledConfig) => RuledConfig) =>
@@ -3509,6 +3543,14 @@ export default function SpatialApp({
                           shown?.result.adaptive &&
                           refinedPaths(shown.result.adaptive)
                         }
+                        view={{
+                          checked: !!config.adaptiveView,
+                          onChange: (on) =>
+                            update(({ adaptiveView: _, ...c }) =>
+                              on ? { ...c, adaptiveView: true } : c,
+                            ),
+                          help: spatialViewHelp,
+                        }}
                       />
                       {config.adaptive && drawsSurface(config) && (
                         <RefineSurfaceCheck
@@ -3564,6 +3606,7 @@ export default function SpatialApp({
             getCurrentView={() =>
               viewport.current ? structuredClone(viewport.current) : undefined
             }
+            getFocus={() => viewRef.current}
             onView={setAnimation}
             onRunning={setRunning}
             onPlay={showPlot}
@@ -3738,6 +3781,8 @@ export default function SpatialApp({
                   projection={lensing}
                   lensAngle={lensAngle}
                   turn={turn}
+                  refineView={refineView}
+                  onFocus={onFocus}
                 />
               ) : (
                 <div className="loading">

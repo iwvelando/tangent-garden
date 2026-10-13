@@ -99,6 +99,9 @@ type Request struct {
 	// curve construction draws where refinement adds points to the curves
 	// on it (see surfaceColumns); without Adaptive it changes nothing.
 	AdaptiveSurface bool `json:"adaptiveSurface"`
+	// View is what the drawing shows, when it is zoomed in and refined to
+	// it (see View); it changes nothing but the refined curves.
+	View *View `json:"view,omitempty"`
 	// Probe asks for the curve the construction acts on described at one
 	// parameter, at or between samples (see ProbePoint), for a torus knot,
 	// harmonic or custom curve. It asks for the diagnostics too, and changes
@@ -249,6 +252,11 @@ func compute(c Request) (Result, error) {
 	}
 	if c.Format == "implicit" {
 		return implicit(c.Implicit)
+	}
+	if c.View != nil {
+		if err := c.View.validate(); err != nil {
+			return Result{}, err
+		}
 	}
 	if c.Samples < 240 || c.Samples > 2400 {
 		return Result{}, fieldErr("samples", "use 240–2400 samples and 12–240 rulings")
@@ -445,7 +453,7 @@ func compute(c Request) (Result, error) {
 			position = unwoundAt
 		}
 		var broken []int
-		out.Adaptive.Base, broken = refinePath(out.Base, out.Breaks, position, lo, hi, pathTolerance(out.Base), refineBudget)
+		out.Adaptive.Base, broken = c.refine(out.Base, out.Breaks, position, lo, hi)
 		for _, i := range broken {
 			out.Breaks[i+1] = true
 		}
@@ -478,8 +486,8 @@ func compute(c Request) (Result, error) {
 				return r.add(v.unit().mul(sign * c.Length))
 			}
 		}
-		minus, broken := refinePath(out.Minus, out.Breaks, edge(-1), lo, hi, pathTolerance(out.Minus), refineBudget)
-		plus, more := refinePath(out.Plus, out.Breaks, edge(1), lo, hi, pathTolerance(out.Plus), refineBudget)
+		minus, broken := c.refine(out.Minus, out.Breaks, edge(-1), lo, hi)
+		plus, more := c.refine(out.Plus, out.Breaks, edge(1), lo, hi)
 		out.Adaptive.Minus, out.Adaptive.Plus = minus, plus
 		torn := map[int]bool{}
 		for _, i := range append(broken, more...) {
@@ -594,7 +602,7 @@ func compute(c Request) (Result, error) {
 				out.Adaptive = &AdaptiveResult{}
 			}
 			curve := out.Composition.Curve
-			out.Adaptive.Parent, _ = refinePath(curve, out.Composition.Breaks, c.baseOnly().position(baseEvaluate), lo, hi, pathTolerance(curve), refineBudget)
+			out.Adaptive.Parent, _ = c.refine(curve, out.Composition.Breaks, c.baseOnly().position(baseEvaluate), lo, hi)
 		}
 		generating = append(generating, out.Composition.Curve)
 		if c.projected() {
@@ -621,7 +629,7 @@ func compute(c Request) (Result, error) {
 		if out.Adaptive != nil {
 			// Each strand on its own, like the involutes.
 			for k, strand := range out.Frame.Strands {
-				path, _ := refinePath(strand, out.Frame.Breaks, frame.strand(c, evaluate, k, lo, hi), lo, hi, pathTolerance(strand), refineBudget)
+				path, _ := c.refine(strand, out.Frame.Breaks, frame.strand(c, evaluate, k, lo, hi), lo, hi)
 				out.Adaptive.Strands = append(out.Adaptive.Strands, path)
 			}
 		}
@@ -670,13 +678,13 @@ func compute(c Request) (Result, error) {
 		out.Projection = projections(c, out.Base, tangents)
 		if out.Adaptive != nil {
 			points := out.Projection.Points
-			out.Adaptive.Projection, _ = refinePath(points, out.Breaks, func(t float64) Vec3 {
+			out.Adaptive.Projection, _ = c.refine(points, out.Breaks, func(t float64) Vec3 {
 				r, v, _, ok := evaluate(t)
 				if !ok || !r.valid() || !v.valid() || c.units.still(v) {
 					return Vec3{math.NaN(), 0, 0}
 				}
 				return project(c.Construction, c.Pole, r, v.unit())
-			}, lo, hi, pathTolerance(points), refineBudget)
+			}, lo, hi)
 		}
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
 		out.Bounds = fit(append([][]*Vec3{out.Base, out.Projection.Points, out.Projection.Feet, {&out.Projection.Pole}}, generating...)...)
@@ -695,13 +703,13 @@ func compute(c Request) (Result, error) {
 			// the uniform midpoint test.
 			q.Breaks, q.Crossings = append([]bool(nil), out.Breaks...), 0
 			var broken []int
-			out.Adaptive.Image, broken = refinePath(q.Points, q.Breaks, func(t float64) Vec3 {
+			out.Adaptive.Image, broken = c.refine(q.Points, q.Breaks, func(t float64) Vec3 {
 				r, v, _, ok := evaluate(t)
 				if !ok || !r.valid() || !v.valid() || c.units.still(v) {
 					return Vec3{math.NaN(), 0, 0}
 				}
 				return invert(q.Center, q.Radius, c.Inversion.source(c.Pole, r, v.unit()))
-			}, lo, hi, pathTolerance(q.Points), refineBudget)
+			}, lo, hi)
 			for _, i := range broken {
 				q.Breaks[i+1] = true
 			}
@@ -729,7 +737,7 @@ func compute(c Request) (Result, error) {
 		if out.Adaptive != nil {
 			// Each member on its own: one's break is not another's.
 			for _, m := range result.Members {
-				path, _ := refinePath(m.Points, out.Breaks, arcs.member(m.Offset), lo, hi, pathTolerance(m.Points), refineBudget)
+				path, _ := c.refine(m.Points, out.Breaks, arcs.member(m.Offset), lo, hi)
 				out.Adaptive.Involute = append(out.Adaptive.Involute, path)
 			}
 		}

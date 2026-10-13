@@ -38,7 +38,7 @@ import {
   type Track,
   type Viewport,
 } from "./animation";
-import type { Bounds3, Frame, SpatialConfig } from "./types";
+import type { Bounds3, Frame, RefinementView, SpatialConfig } from "./types";
 import type { Flight } from "./presets";
 import {
   probeIndex,
@@ -170,6 +170,9 @@ type Session = {
   ride?: { path: RidePath; around: Bounds3; total: number };
   camera: CameraMode;
   heldView?: Viewport;
+  // Present only while parameters vary under the current view in a study
+  // refined to it: what that view shows, which every frame is refined to.
+  focus?: RefinementView;
   duration: number;
   // How the duration is spent (see timing.ts): the progress is the time
   // the timeline stands at.
@@ -200,6 +203,9 @@ type Props = {
   dark: boolean;
   layers: Layers;
   getCurrentView: () => Viewport | undefined;
+  // What the drawing shows, while the study is refined to its view and
+  // zoomed in, else null.
+  getFocus?: () => RefinementView | null;
   onView: (view: AnimationView | null) => void;
   onRunning: (running: boolean) => void;
   // Called when playback starts or resumes, so the drawing can be shown.
@@ -234,6 +240,7 @@ export function SpatialAnimationPanel({
   dark,
   layers,
   getCurrentView,
+  getFocus,
   onView,
   onRunning,
   onPlay,
@@ -538,6 +545,7 @@ export function SpatialAnimationPanel({
       current = await engine.computeSpatial(values.config, {
         diagnostics: true,
         ...(typeof query !== "string" && { probe: query }),
+        ...(s.focus && { view: s.focus }),
       });
       held =
         typeof query === "string"
@@ -566,10 +574,12 @@ export function SpatialAnimationPanel({
     else if (p === 0) current = s.first;
     else if (p === 1) current = s.final;
     else
-      current = await engine.computeSpatial(
-        values.config,
-        s.probe ? probeOptions(probeTarget(s.original.config, s.probe)) : {},
-      );
+      current = await engine.computeSpatial(values.config, {
+        ...(s.probe
+          ? probeOptions(probeTarget(s.original.config, s.probe))
+          : {}),
+        ...(s.focus && { view: s.focus }),
+      });
     // The probe moves along the fixed study from the start of the curve
     // (or a surface's first row) to its end, exactly: one sample at a time,
     // or through every t between them. While parameters vary it stands on
@@ -814,6 +824,11 @@ export function SpatialAnimationPanel({
     setExportNotice("");
     changeStatus("preparing");
     const heldView = getCurrentView();
+    // Frames held at the current view are refined to what it shows, as the
+    // still is.
+    const focus =
+      (mode === "parameters" && camera === "current" && getFocus?.()) ||
+      undefined;
     try {
       if (!Number.isFinite(duration) || duration < 0.1 || duration > 3600)
         throw new Error("Duration must be between 0.1 and 3600 seconds.");
@@ -919,7 +934,10 @@ export function SpatialAnimationPanel({
           client.current
             .computeSpatial(
               applyTracks(frame.config, numeric, 0, length).config,
-              drawsProbe ? probeOptions(target) : {},
+              {
+                ...(drawsProbe ? probeOptions(target) : {}),
+                ...(focus && { view: focus }),
+              },
             )
             .catch((reason) => {
               throw new Error(`At animation start: ${reason.message}`);
@@ -927,7 +945,10 @@ export function SpatialAnimationPanel({
           (helper.current ?? client.current)
             .computeSpatial(
               applyTracks(frame.config, numeric, 1, length).config,
-              drawsProbe ? probeOptions(target) : {},
+              {
+                ...(drawsProbe ? probeOptions(target) : {}),
+                ...(focus && { view: focus }),
+              },
             )
             .catch((reason) => {
               throw new Error(`At animation end: ${reason.message}`);
@@ -994,6 +1015,7 @@ export function SpatialAnimationPanel({
         }),
         camera,
         heldView,
+        ...(focus && { focus }),
         duration,
         repeat,
         pace,

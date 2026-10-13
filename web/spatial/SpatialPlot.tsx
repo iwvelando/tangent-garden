@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { SpatialResult } from "./types";
+import type { RefinementView, SpatialResult } from "./types";
 import type { SpatialCamera } from "./link";
 import { createGesture } from "../gestures";
 import { useDrawingTouch } from "../MobileNotebookNav";
@@ -9,7 +9,8 @@ import {
   type Layers,
   type View,
 } from "./renderer";
-import type { Batch, Projection } from "./scene";
+import { refinementView, type Batch, type Projection } from "./scene";
+import { spatialPlainZoom, viewZoom } from "../refinement";
 import type { CutSpec } from "./cut";
 import { defaultSight, isPlain, type Sight } from "./sight";
 import { turnTo, type NamedView } from "../named-views";
@@ -47,6 +48,8 @@ export function SpatialPlot({
   projection = "orthographic",
   lensAngle,
   turn = null,
+  refineView = false,
+  onFocus,
 }: {
   result: SpatialResult;
   dark: boolean;
@@ -87,6 +90,13 @@ export function SpatialPlot({
   lensAngle?: number;
   // A named view to turn the shown camera to, once per id.
   turn?: { id: number; to: NamedView } | null;
+  // Whether the study is refined to its view: the drawing then zooms to
+  // viewZoom, and reports what it shows once zoomed in.
+  refineView?: boolean;
+  // What the shown camera shows while it is zoomed in and the study is
+  // refined to its view, or null, whenever that changes; an animation's
+  // camera reports nothing.
+  onFocus?: (view: RefinementView | null) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     renderer = useRef<ReturnType<typeof createRenderer> | null>(null);
@@ -115,6 +125,8 @@ export function SpatialPlot({
     onGeometry,
     projection,
     lensAngle,
+    refineView,
+    onFocus,
   });
   state.current = {
     dark,
@@ -131,8 +143,31 @@ export function SpatialPlot({
     onGeometry,
     projection,
     lensAngle,
+    refineView,
+    onFocus,
   };
   const [error, setError] = useState("");
+  const zoomLimit = () =>
+    state.current.refineView ? viewZoom : spatialPlainZoom;
+  // Zooms the shown camera by factor about a point of the page, which
+  // stays where it is: the target's plane is drawn at the orthographic
+  // scale, which pan moves in world units.
+  const zoomAbout = (factor: number, x: number, y: number) => {
+    const element = canvas.current!;
+    const r = element.getBoundingClientRect();
+    const v = target();
+    const zoom = Math.max(0.2, Math.min(zoomLimit(), v.zoom * factor));
+    const unit =
+      (2 * current().radius * 1.16) /
+      Math.min(element.clientWidth, element.clientHeight);
+    const u = x - (r.left + r.width / 2),
+      w = y - (r.top + r.height / 2);
+    v.panX -= u * unit * (1 / v.zoom - 1 / zoom);
+    v.panY += w * unit * (1 / v.zoom - 1 / zoom);
+    v.zoom = zoom;
+  };
+  // What was last reported to onFocus.
+  const focused = useRef("null");
   const projected = (v: View): View => {
     const { projection: _, lensAngle: __, ...rest } = v;
     const { projection: p, lensAngle } = state.current;
@@ -154,6 +189,10 @@ export function SpatialPlot({
     // Nothing is drawn or reported while the context is lost; a restored
     // one draws the camera as it then stands.
     if (!canvas.current?.clientWidth || lost.current) return;
+    // A camera zoomed past the limit, as where refinement to the view was
+    // turned off, zooms out about the middle of the drawing.
+    const shownCamera = explored.current ?? manual.current;
+    shownCamera.zoom = Math.min(shownCamera.zoom, zoomLimit());
     const v = current();
     renderer.current?.setCut(state.current.cut);
     const shown = state.current.sight;
@@ -187,6 +226,22 @@ export function SpatialPlot({
     state.current.onStrokes?.(stroked);
     state.current.onViewport(v);
     state.current.onCamera?.({ ...manual.current });
+    // What the study is refined to: the view while zoomed in, or nothing.
+    // An animation keeps the study's refinement as it was.
+    if (!state.current.override && state.current.onFocus) {
+      const focus =
+        state.current.refineView && v.zoom > 1
+          ? refinementView(v, {
+              width: canvas.current.clientWidth,
+              height: canvas.current.clientHeight,
+            })
+          : null;
+      const text = JSON.stringify(focus);
+      if (text !== focused.current) {
+        focused.current = text;
+        state.current.onFocus(focus);
+      }
+    }
   };
   useEffect(() => {
     const element = canvas.current!;
@@ -206,8 +261,8 @@ export function SpatialPlot({
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       if (state.current.override) return;
-      const v = target();
-      v.zoom = Math.max(0.2, Math.min(8, v.zoom * Math.exp(-e.deltaY * 0.001)));
+      // The wheel zooms about the pointer, which stays where it is.
+      zoomAbout(Math.exp(-e.deltaY * 0.001), e.clientX, e.clientY);
       draw();
     };
     // A lost context keeps the camera, the study and every setting, which
@@ -265,7 +320,16 @@ export function SpatialPlot({
     renderer.current?.setProbe(probe);
     draw();
   }, [probe]);
-  useEffect(draw, [dark, layers, override, cut, sight, projection, lensAngle]);
+  useEffect(draw, [
+    dark,
+    layers,
+    override,
+    cut,
+    sight,
+    projection,
+    lensAngle,
+    refineView,
+  ]);
   useEffect(() => {
     manual.current =
       restored?.reset === reset
@@ -327,9 +391,9 @@ export function SpatialPlot({
           if (!motion || override) return;
           const v = target();
           // One finger or the mouse orbits, or pans with shift; two fingers
-          // pinch to zoom and pan together.
+          // pinch to zoom about the point between them and pan together.
           if (motion.kind === "pinch")
-            v.zoom = Math.max(0.2, Math.min(8, v.zoom * motion.scale));
+            zoomAbout(motion.scale, motion.mid.x, motion.mid.y);
           if (motion.kind === "pinch" || panning.current) {
             const unit =
               (2 * current().radius * 1.16) /
@@ -375,7 +439,7 @@ export function SpatialPlot({
               break;
             case "+":
             case "=":
-              v.zoom = Math.min(8, v.zoom * 1.1);
+              v.zoom = Math.min(zoomLimit(), v.zoom * 1.1);
               break;
             case "-":
               v.zoom = Math.max(0.2, v.zoom / 1.1);

@@ -1,5 +1,6 @@
 import { restore } from "./lifted";
 import type {
+  RefinementView,
   SpatialConfig,
   SpatialProbePoint,
   SpatialResult,
@@ -23,6 +24,9 @@ export type SpatialOptions = {
   focalDiagnostics?: 1 | 2;
   // The curve probe at one parameter (see engine3.ProbePoint).
   probe?: ProbeQuery;
+  // What the drawing shows, which refined curves are refined to (see
+  // engine3.View).
+  view?: RefinementView;
 };
 
 // One worker per app, plus temporary ones during parameter-animation export
@@ -148,6 +152,7 @@ export class EngineClient {
           ? { focalDiagnostics: options.focalDiagnostics }
           : {}),
         ...(options.probe ? { probe: options.probe } : {}),
+        ...(options.view ? { spatialView: options.view } : {}),
       })
     ).result;
   }

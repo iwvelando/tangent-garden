@@ -584,7 +584,7 @@ test("3D and 4D fields are refused by name", async () => {
     ["config.implicit.refine", (s) => (s.config.implicit.refine = "2")],
     ["config.rays.stop", (s) => (s.config.rays.stop = 1)],
     ["view.pitch", (s) => (s.view.pitch = 2)],
-    ["view.zoom", (s) => (s.view.zoom = 9)],
+    ["view.zoom", (s) => (s.view.zoom = 1001)],
     ["probe.position", (s) => (s.probe.position = 1.5)],
     ["probe.enabled", (s) => (s.probe.enabled = "yes")],
     ["probe.glow", (s) => (s.probe.glow = true)],
@@ -1664,6 +1664,22 @@ test("a link carries refining the surface along the curve; older links leave the
   const bad = structuredClone(study) as any;
   bad.config.adaptiveSurface = "yes";
   await refused(() => spatialStudy(bad), "config.adaptiveSurface");
+});
+
+test("a 3D link carries refinement to the view with its deep zoom; older links refine to the study alone", async () => {
+  const study = spatial();
+  study.config = { ...study.config, adaptive: true, adaptiveView: true };
+  study.view = { ...study.view, zoom: 400 };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A link made before the setting leaves it out, which refines to the
+  // study's tolerance alone.
+  const older = structuredClone(study) as any;
+  delete older.config.adaptiveView;
+  assert.equal(spatialStudy(older).config.adaptiveView, undefined);
+  const bad = structuredClone(study) as any;
+  bad.config.adaptiveView = "yes";
+  await refused(() => spatialStudy(bad), "config.adaptiveView");
 });
 
 test("a 2D link carries refinement between samples; older links draw on the even samples", async () => {

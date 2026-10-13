@@ -42,7 +42,9 @@ const (
 // uniform study breaks, or one refinement found (Breaks counts the uniform
 // intervals it broke). A segment still farther than Tolerance from the
 // curve at the finest step, or when the budget ran out (Exhausted), is
-// counted in Unresolved.
+// counted in Unresolved. Under a focus with a Scale, Finest is the finest
+// tolerance a piece meeting the view was refined to, or 0 if none was finer
+// than Tolerance.
 type Path[P any] struct {
 	Points     []*P
 	At         []float64
@@ -51,17 +53,22 @@ type Path[P any] struct {
 	Breaks     int
 	Unresolved int
 	Exhausted  bool
+	Finest     float64
 }
 
 // Focus is a view to refine more finely than the rest of a path: a segment
 // that meets it is refined to Tolerance, finer than the path's own, and to
 // chords no longer than Chord, ahead of every segment that does not. Meets
 // reports whether the bounding box of points, grown by grow on every side,
-// meets the view.
+// meets the view. Scale, when it is not nil, multiplies Tolerance and Chord
+// for a segment that meets the view, from its points: a perspective's depth.
+// A segment whose tolerance is then no finer than the path's own is treated
+// as one that does not meet the view.
 type Focus[P any] struct {
 	Tolerance float64
 	Chord     float64
 	Meets     func(points []*P, grow float64) bool
+	Scale     func(points []*P) float64
 }
 
 // Metric measures a caller's points: Distance from p to the chord ab, and
@@ -143,11 +150,11 @@ func Refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 }
 
 // RefineFocused is Refine with a view refined more finely, first (see
-// Focus). A focus whose tolerance is no finer than tolerance is ignored, so
-// a view that shows the whole path changes nothing. Breaks are judged
-// against tolerance alone, so a view does not move them.
+// Focus). A focus whose tolerance is no finer than tolerance, without a
+// Scale, is ignored, so a view that shows the whole path changes nothing.
+// Breaks are judged against tolerance alone, so a view does not move them.
 func RefineFocused[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P], lo, hi, tolerance float64, budget int, focus Focus[P]) (*Path[P], []int) {
-	if !(focus.Tolerance < tolerance) {
+	if focus.Scale == nil && !(focus.Tolerance < tolerance) {
 		return Refine(points, breaks, at, m, lo, hi, tolerance, budget)
 	}
 	return refine(points, breaks, at, m, lo, hi, tolerance, budget, Scan, &focus)
@@ -157,6 +164,8 @@ func RefineFocused[P any](points []*P, breaks []bool, at func(float64) *P, m Met
 // focus.
 func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P], lo, hi, tolerance float64, budget, scan int, focus *Focus[P]) (*Path[P], []int) {
 	n := len(points) - 1
+	// The finest tolerance of a segment that met the view, under a Scale.
+	finest := 0.0
 	param := func(u float64) float64 { return lo*(1-u/float64(n)) + hi*u/float64(n) }
 	eval := func(u float64) *P { return at(param(u)) }
 	stray := func(s *segment[P], probes []*P) float64 {
@@ -192,10 +201,24 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 		// The curve strays from the chord by about score, so a segment
 		// whose points' box, grown by that, misses the view cannot show
 		// in it.
-		s.focused = focus.Meets(append([]*P{s.pa, s.pb}, s.probes...), s.score)
+		points := append([]*P{s.pa, s.pb}, s.probes...)
+		s.focused = focus.Meets(points, s.score)
+		chord := focus.Chord
 		if s.focused {
 			s.tol = focus.Tolerance
-			s.excess = math.Max(s.score/s.tol, m.Length(*s.pa, *s.pb)/focus.Chord)
+			if focus.Scale != nil {
+				k := focus.Scale(points)
+				s.tol, chord = k*s.tol, k*chord
+				if s.focused = s.tol < tolerance; !s.focused {
+					s.tol = tolerance
+				}
+			}
+		}
+		if s.focused {
+			if finest == 0 || s.tol < finest {
+				finest = s.tol
+			}
+			s.excess = math.Max(s.score/s.tol, m.Length(*s.pa, *s.pb)/chord)
 		} else {
 			s.excess = s.score / s.tol
 		}
@@ -371,6 +394,9 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 		}
 	}
 	path.Breaks = len(broken)
+	if focus != nil && focus.Scale != nil {
+		path.Finest = finest
+	}
 	return path, broken
 }
 

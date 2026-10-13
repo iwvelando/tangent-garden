@@ -175,13 +175,13 @@ func ruledSurface(c Request, out *Result, evaluate evaluation, partner func(floa
 		// The partner is evaluated pointwise, as at the samples; a gap or jump
 		// refinement finds between samples breaks the surface there too.
 		var broken []int
-		out.Adaptive.Partner, broken = refinePath(plus, q.Breaks, func(t float64) Vec3 {
+		out.Adaptive.Partner, broken = c.refine(plus, q.Breaks, func(t float64) Vec3 {
 			p, _, _, ok, inside := partner(m*t + c.Ruled.Shift)
 			if !ok || !inside {
 				return Vec3{math.NaN(), 0, 0}
 			}
 			return p
-		}, lo, hi, pathTolerance(plus), refineBudget)
+		}, lo, hi)
 		for _, i := range broken {
 			q.Breaks[i+1] = true
 		}

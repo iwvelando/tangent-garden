@@ -306,8 +306,8 @@ func (f carried) ribbon(c Request, out *Result, evaluate evaluation, lo, hi floa
 				return g.r.add(g.direction(c.Frame.Angle).mul(sign * c.Frame.Width))
 			}
 		}
-		minus, broken := refinePath(out.Minus, q.Breaks, edge(-1), lo, hi, pathTolerance(out.Minus), refineBudget)
-		plus, more := refinePath(out.Plus, q.Breaks, edge(1), lo, hi, pathTolerance(out.Plus), refineBudget)
+		minus, broken := c.refine(out.Minus, q.Breaks, edge(-1), lo, hi)
+		plus, more := c.refine(out.Plus, q.Breaks, edge(1), lo, hi)
 		out.Adaptive.Minus, out.Adaptive.Plus = minus, plus
 		torn := map[int]bool{}
 		for _, i := range append(broken, more...) {
