@@ -17,10 +17,12 @@ import {
   arcLengths,
   dashOn,
   dashedOpacity,
+  dashesPerPixel,
   dashesPerUnit,
   defaultSight,
   faintOpacity,
   isPlain,
+  pagePhases,
   seeSampling,
   seeSamples,
   sheetOffset,
@@ -43,7 +45,8 @@ const vertexSource = `
 attribute vec3 position;
 attribute vec3 normal;
 attribute float phase;
-// Length along a line in space, for dashes (see sight.ts).
+// Length along a line in space, for dashes (see sight.ts), or for dashes
+// on the page, the phase itself.
 attribute float arc;
 uniform float dashes;
 uniform mat3 rotation;
@@ -60,6 +63,9 @@ varying float U;
 varying vec3 C;
 varying vec3 E;
 varying highp float D;
+// The phase on the page times w, and w: interpolated perspective-correctly,
+// their ratio is linear on the page.
+varying highp vec2 Q;
 // Each cut plane's (n̂·p − d) / radius, positive beyond it: planes 1–3 and
 // 4–6, computed at the vertex stage's precision and linear across every
 // primitive. A plane the cut lacks is a constant that never decides.
@@ -79,6 +85,7 @@ void main() {
   C = lowSides(position);
   E = highSides(position);
   float w = 1.0 - P.z * lens.x;
+  Q = vec2(arc * w, w);
   gl_Position = vec4((P.x + pan.x) * framing.x, (P.y + pan.y) * framing.y, -P.z * framing.z + lens.y * w + lens.z, w);
 }`;
 // Strokes: each line segment as a quad two pixels longer and wider than its
@@ -117,6 +124,8 @@ uniform mediump float cutEvery;
 // only those two pixels wide or more on average (1) or thinner (2).
 uniform vec3 taper;
 uniform float split;
+// Dash periods a pixel for dashes on the page, or 0 for dashes in space.
+uniform float paged;
 varying float U;
 varying vec3 C;
 varying vec3 E;
@@ -280,7 +289,10 @@ void main() {
     C = vec3(own, start.x);
     E = vec3(start.y, finish);
   }
-  D = (end ? sb : sa) * dashes;
+  // On the page, the phase where the drawn segment starts: its own start,
+  // or where it comes from behind the near plane, measured back from its
+  // end. The fragment stage adds its distance along.
+  D = paged > 0.0 ? (na < 0.0 ? arcTo - paged * len : arcFrom) : (end ? sb : sa) * dashes;
 }`;
 // The drawing's colors, for sheets and hairlines, and for strokes with
 // STROKE defined, where coverage of the stroke becomes alpha.
@@ -289,6 +301,11 @@ precision mediump float;
 #ifndef STROKE
 varying vec3 N;
 varying vec3 P;
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+varying highp vec2 Q;
+#else
+varying mediump vec2 Q;
+#endif
 #else
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 varying highp vec3 S;
@@ -337,6 +354,13 @@ uniform float cutEvery;
 // sheets, faint or dashed.
 uniform float gather;
 uniform float behind;
+// Dash periods a pixel when dashes are measured on the page, or 0: highp,
+// since it multiplies distances of up to a page.
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+uniform highp float pageDashes;
+#else
+uniform float pageDashes;
+#endif
 #ifdef STROKE
 bool kept(float t, vec2 span) {
   return cutEvery > 0.5 ? !(t > span.x && t < span.y) : t >= span.x && t <= span.y;
@@ -411,7 +435,7 @@ void main() {
   }
   if (gather > 0.5) gl_FragColor = vec4(color,1.0);
   else if (behind > 1.5) {
-    if (fract(D) >= ${dashOn.toFixed(4)}) discard;
+    if (fract(pageDashes > 0.0 ? Q.x / Q.y : D) >= ${dashOn.toFixed(4)}) discard;
     gl_FragColor = vec4(color,${dashedOpacity.toFixed(4)});
   } else if (behind > 0.5) gl_FragColor = vec4(color,${faintOpacity.toFixed(4)});
   else gl_FragColor = vec4(color,1.0);
@@ -450,7 +474,7 @@ void main() {
   cover *= faded;
   if (cover < 0.004) discard;
   if (behind > 1.5) {
-    if (fract(D) >= ${dashOn.toFixed(4)}) discard;
+    if (fract(pageDashes > 0.0 ? D + pageDashes * s.x : D) >= ${dashOn.toFixed(4)}) discard;
     gl_FragColor = vec4(color,${dashedOpacity.toFixed(4)}*cover);
   } else if (behind > 0.5) gl_FragColor = vec4(color,${faintOpacity.toFixed(4)}*cover);
   else gl_FragColor = vec4(color,cover);
@@ -543,6 +567,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       "gather",
       "behind",
       "dashes",
+      "pageDashes",
     ].map((n) => [n, gl.getUniformLocation(program, n)]),
   );
   // Strokes need instancing (ANGLE_instanced_arrays, near universal in
@@ -595,6 +620,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
             "taper",
             "split",
             "coverTaper",
+            "paged",
+            "pageDashes",
           ].map((n) => [n, gl.getUniformLocation(stroke, n)]),
         ),
       };
@@ -696,6 +723,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     elements?: WebGLBuffer;
     // A line batch's arc lengths, made when first dashed.
     arcs?: WebGLBuffer;
+    // Its dash phases on the page, remade with every drawing.
+    phases?: WebGLBuffer;
     // A line batch's joints, made when first stroked.
     joins?: WebGLBuffer;
   };
@@ -821,6 +850,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     gl!.depthFunc(gl!.LEQUAL);
     const k = camera(view, { width, height });
     const stroked = !!strokes && sight.weight !== "hairline";
+    // Dashes on the page: periods a pixel, or 0 for dashes in space.
+    const perPixel =
+      sight.hidden === "dashed" && sight.dashes === "page"
+        ? dashesPerPixel({ width, height })
+        : 0;
     // Strokes taper with depth only through a lens.
     const tapering = stroked && sight.depth === "taper" && k.lens[0] > 0;
     // The camera, theme, cut and dashes, for either program.
@@ -831,6 +865,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.uniform3f(u.lens, ...k.lens);
       gl!.uniform1f(u.dark, dark ? 1 : 0);
       gl!.uniform1f(u.dashes, dashesPerUnit(view));
+      gl!.uniform1f(u.pageDashes, perPixel);
+      if (u.paged) gl!.uniform1f(u.paged, perPixel);
       // The planes relative to the view center, scaled by the radius. A
       // missing plane is +1 everywhere when hidden beyond every plane and
       // −1 beyond any, so it never decides.
@@ -902,6 +938,29 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       }
       return v.arcs;
     };
+    // A line batch's dash phases on the page, for this camera and page.
+    const phasesOf = (v: Uploaded) => {
+      if (!v.phases) {
+        v.phases = gl!.createBuffer()!;
+        (probe.includes(v.batch)
+          ? probeBuffers
+          : edge?.batch === v.batch
+            ? edgeBuffers
+            : buffers
+        ).push(v.phases);
+        uploaded.get(v.batch)!.phases = v.phases;
+      }
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, v.phases);
+      gl!.bufferData(
+        gl!.ARRAY_BUFFER,
+        Float32Array.from(
+          pagePhases(v.batch.data, cameraFrom(k, v.batch.origin), perPixel),
+        ),
+        gl!.DYNAMIC_DRAW,
+      );
+      return v.phases;
+    };
+    const dashing = (v: Uploaded) => (perPixel ? phasesOf(v) : arcsOf(v));
     // A line batch's joints, made when first stroked.
     const joinsOf = (v: Uploaded) => {
       if (!v.joins) {
@@ -972,7 +1031,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         ext.vertexAttribDivisorANGLE(loc, 1);
       }
       if (how.behind === 2) {
-        gl!.bindBuffer(gl!.ARRAY_BUFFER, arcsOf(v));
+        gl!.bindBuffer(gl!.ARRAY_BUFFER, dashing(v));
         for (const [loc, offset] of [
           [4, 0],
           [5, 4],
@@ -1038,7 +1097,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.uniform1f(uniforms.gather, how.gather ? 1 : 0);
       gl!.uniform1f(uniforms.behind, how.behind ?? 0);
       if (how.behind === 2) {
-        gl!.bindBuffer(gl!.ARRAY_BUFFER, arcsOf(v));
+        gl!.bindBuffer(gl!.ARRAY_BUFFER, dashing(v));
         gl!.enableVertexAttribArray(arcAttribute);
         gl!.vertexAttribPointer(arcAttribute, 1, gl!.FLOAT, false, 4, 0);
       } else {

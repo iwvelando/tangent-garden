@@ -14,6 +14,7 @@ export { lineWeights, weightScale, type LineWeight } from "../line-weight";
 export type SheetSight = "opaque" | "through";
 export type HiddenLines = "hide" | "faint" | "dashed";
 export type StrokeDepth = "even" | "taper";
+export type DashMeasure = "space" | "page";
 export type Sight = {
   sheets: SheetSight;
   // Each sheet layer's opacity α when sheets are seen through.
@@ -21,6 +22,9 @@ export type Sight = {
   hidden: HiddenLines;
   weight: LineWeight;
   depth?: StrokeDepth;
+  // Where dashed hidden lines' dashes are measured: along the line in space
+  // (the default, and every link made before the choice) or on the page.
+  dashes?: DashMeasure;
 };
 export const defaultSight: Sight = {
   sheets: "opaque",
@@ -37,7 +41,7 @@ export const faintOpacity = 0.35;
 export const dashedOpacity = 0.8;
 // One dash and gap per this fraction of the page's shorter side, the dash
 // taking the first dashOn of it, measured along the line in space at the
-// drawing's scale.
+// drawing's scale, or along the line as drawn on the page.
 export const dashPeriod = 0.01;
 export const dashOn = 0.55;
 
@@ -49,6 +53,10 @@ export const hiddenLines: { value: HiddenLines; label: string }[] = [
   { value: "hide", label: "Hidden" },
   { value: "faint", label: "Faint" },
   { value: "dashed", label: "Dashed" },
+];
+export const dashMeasures: { value: DashMeasure; label: string }[] = [
+  { value: "space", label: "In space" },
+  { value: "page", label: "On the page" },
 ];
 // Line weights (../line-weight.ts, shared with the 2D and 4D notebooks). A
 // stroke's width is a share of the page, as in the 2D notebook: its weight
@@ -212,7 +220,11 @@ export const sightHelp = {
   flat: "Strokes taper only through a perspective lens: choose one with Projection above the drawing, or ride a ray.",
   hidden: tiered(
     "How lines behind the nearest sheet are drawn: hidden, faint, or dashed.",
-    `Faint lines are drawn at ${faintOpacity * 100}% opacity, dashed ones at ${dashedOpacity * 100}%, with dashes measured in space, so they shorten as a line recedes. A line lying on a sheet counts as in front of it.`,
+    `Faint lines are drawn at ${faintOpacity * 100}% opacity, dashed ones at ${dashedOpacity * 100}%, one dash every ${dashPeriod * 100}% of the page's shorter side. A line lying on a sheet counts as in front of it.`,
+  ),
+  dashes: tiered(
+    "Measure dashes along the line in space, or evenly on the page.",
+    "In space, dashes shorten as a line tilts away or recedes through a lens. On the page, every dash is the same length wherever the line lies, and dashes restart where a line comes from behind the eye.",
   ),
   unstroked:
     "This device's graphics cannot draw strokes (they need instanced drawing), so lines are drawn as hairlines here and in exports.",
@@ -318,6 +330,68 @@ export function strokeJoins(data: Float32Array): Float32Array {
 // half of it.
 export const dashesPerUnit = (view: { zoom: number; radius: number }) =>
   view.zoom / (1.16 * view.radius * 2 * dashPeriod);
+// Dash periods per pixel along the line as drawn, for dashes on the page.
+export const dashesPerPixel = (size: { width: number; height: number }) =>
+  1 / (dashPeriod * Math.min(size.width, size.height));
+// The dash phase on the page at each vertex of a batch's line pairs (7
+// floats per vertex), in periods, for camera k (measured from the batch's
+// origin) and perPixel periods a pixel. Along a segment the phase is
+// affine on the page. A segment that starts exactly where the previous one
+// ended, ahead of the near plane (where the previous one ended ahead of it
+// too), continues its polyline from the previous
+// phase's fractional part; any other starts anew at 0, and a segment
+// coming from behind the near plane is 0 where it crosses it.
+//
+// A vertex behind the near plane has no place on the page, but a phase
+// still: the one that keeps (phase·w, w), interpolated linearly in clip
+// space as the GPU interpolates a hairline's varyings, equal to the phase
+// on the page at every point ahead of the plane. In terms of the ends'
+// clip coordinates that is φ_b = φ_a + k·|x_b·w_a − x_a·w_b| / (w_a·w_b),
+// which is φ_a + k times the page distance when both lie ahead of the eye.
+export function pagePhases(
+  data: Float32Array,
+  k: Camera,
+  perPixel: number,
+): Float64Array {
+  const count = data.length / 7,
+    out = new Float64Array(count),
+    hw = k.width / 2,
+    hh = k.height / 2;
+  // The page distance between two clip points, signed by their w (see
+  // above); a w of exactly 0 is taken a hair behind the eye.
+  const signed = (a: number[], b: number[]) => {
+    const wa = a[3] || -1e-12,
+      wb = b[3] || -1e-12;
+    const d = Math.hypot(
+      (b[0] / wb - a[0] / wa) * hw,
+      (b[1] / wb - a[1] / wa) * hh,
+    );
+    return wa * wb > 0 ? d : -d;
+  };
+  for (let v = 0; v + 1 < count; v += 2) {
+    const i = 7 * v;
+    const a = clip(k, data[i], data[i + 1], data[i + 2]),
+      b = clip(k, data[i + 7], data[i + 8], data[i + 9]);
+    const na = a[2] + a[3],
+      nb = b[2] + b[3];
+    if (na >= 0) {
+      const joined =
+        data[i] === data[i - 7] &&
+        data[i + 1] === data[i - 6] &&
+        data[i + 2] === data[i - 5];
+      const from = joined ? out[v - 1] - Math.floor(out[v - 1]) : 0;
+      out[v] = from;
+      out[v + 1] = from + perPixel * signed(a, b);
+    } else if (nb >= 0) {
+      // From the near plane, where it starts anew.
+      const t = na / (na - nb),
+        p = a.map((x, j) => x + (b[j] - x) * t);
+      out[v + 1] = perPixel * signed(p, b);
+      out[v] = out[v + 1] - perPixel * signed(a, b);
+    }
+  }
+  return out;
+}
 
 // The setting as an export's metadata records it, only when it changes the
 // drawing, so plain files are unchanged. `through` is whether the device
@@ -338,14 +412,16 @@ export function sightRecord(spec: Sight, through: boolean) {
     statements.push(
       `Lines behind the nearest sheet are drawn at ${faintOpacity * 100}% opacity.`,
     );
-  else if (spec.hidden === "dashed")
+  const paged = spec.hidden === "dashed" && spec.dashes === "page";
+  if (spec.hidden === "dashed")
     statements.push(
-      `Lines behind the nearest sheet are dashed at ${dashedOpacity * 100}% opacity, one dash every 1% of the shorter side, measured along the line in space.`,
+      `Lines behind the nearest sheet are dashed at ${dashedOpacity * 100}% opacity, one dash every 1% of the shorter side, measured along the line ${paged ? "on the page, restarting where a line comes from behind the eye" : "in space"}.`,
     );
   return {
     sheets,
     ...(sheets === "through" && { opacity: spec.opacity }),
     hidden: spec.hidden,
+    ...(paged && { dashes: "page" as const }),
     statement: statements.join(" "),
   };
 }

@@ -90,9 +90,8 @@ Items 4 and 5 need a decision or a profile before any code. Item 6 lists limits 
 **Open:**
 
 - Lines behind several see-through layers are not attenuated per layer.
-- Dash length is set in space, so near dashes look longer under perspective.
 
-**Start from:** `mathematics.md` (**Spatial line weights**, the see-through section, which now covers its 2 × 2 sampling), `web/spatial/sight.ts` and `web/spatial/renderer.ts`.
+**Start from:** `mathematics.md` (**Spatial line weights**, the see-through section, which now covers its 2 × 2 sampling and dashes on the page), `web/spatial/sight.ts` and `web/spatial/renderer.ts`.
 
 **Watch for:** the hairline path must stay the original program and `gl.LINES`. The 1 × PNG must still equal the live canvas pixel for pixel (`tests/export-equivalence.spec.ts`), including see-through sheets.
 
@@ -141,6 +140,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - See-through sheets on a phone (the Klein bottle and the torus's tunnel): since #137 they are sampled 2 × 2 only when the device's limits allow, and a large high-DPR canvas falls back to one sample.
 - The 2D probe, refinement and line-weight controls at phone width, including the probe's **At any t, between samples** checkbox and its continuous slider.
 - The camera path's key views at phone width: **Move up** and **Move down**, and long names wrapping in their fields.
+- Dashes on the page (**A coiled tube running into the distance**) on a phone GPU while orbiting: even dash lengths near and far, and the **Dashes** control beside **Opacity α** at phone width.
 
 Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07.
 
