@@ -489,6 +489,9 @@ const sight: SchemaOf<Sight> = {
     depth: { optional: { options: { even: true, taper: true } } },
     // In space in links made before dashes could be measured on the page.
     dashes: { optional: { options: { space: true, page: true } } },
+    // Once, behind the nearest sheet, in links made before fading behind
+    // each layer.
+    fade: { optional: { options: { nearest: true, each: true } } },
   },
 };
 

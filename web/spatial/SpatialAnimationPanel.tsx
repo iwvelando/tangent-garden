@@ -79,7 +79,7 @@ import type { ProbeQuery } from "../types";
 import type { Layers } from "./renderer";
 import { buildScene, scenePasses } from "./scene";
 import { movedCut, sweepExtent, sweepOffset, type CutSpec } from "./cut";
-import type { Sight } from "./sight";
+import { needsTarget, type Sight } from "./sight";
 import { trace, traceTimeline, type Timeline } from "./raytrace";
 import {
   defaultScale,
@@ -301,9 +301,9 @@ export function SpatialAnimationPanel({
   const [scaleChoice, setExportScale] = useState(defaultScale);
   // Only resolutions this device draws are offered; a larger choice waits.
   const topScale = useMemo(() => {
-    const fits = spatialFits(sight.sheets === "through");
+    const fits = spatialFits(needsTarget(sight));
     return largestScale((size) => fits(size, false));
-  }, [sight.sheets]);
+  }, [sight]);
   const exportScale = Math.min(scaleChoice, topScale);
   const resetScale = Math.min(defaultScale, topScale);
   // Each format keeps its own quality, starting from its default.

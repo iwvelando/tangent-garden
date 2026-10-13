@@ -20,6 +20,9 @@ import {
   dashesPerPixel,
   dashesPerUnit,
   defaultSight,
+  fadeLayers,
+  fadeStep,
+  fadesByLayer,
   faintOpacity,
   isPlain,
   pagePhases,
@@ -354,6 +357,21 @@ uniform float cutEvery;
 // sheets, faint or dashed.
 uniform float gather;
 uniform float behind;
+// Fading behind each layer: the factor a layer, or 1 without, and the
+// sheet layers in front of the nearest line at each pixel, counted in
+// 255ths of the target's alpha (see countLayers).
+uniform float fadeStep;
+uniform sampler2D fadeCount;
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+uniform highp vec2 fadeSize;
+#else
+uniform vec2 fadeSize;
+#endif
+float layerFade() {
+  if (fadeStep >= 1.0) return 1.0;
+  float n = floor(texture2D(fadeCount, (floor(gl_FragCoord.xy) + 0.5) / fadeSize).a * 255.0 + 0.5);
+  return pow(fadeStep, clamp(n, 1.0, ${fadeLayers.toFixed(1)}) - 1.0);
+}
 // Dash periods a pixel when dashes are measured on the page, or 0: highp,
 // since it multiplies distances of up to a page.
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -436,8 +454,8 @@ void main() {
   if (gather > 0.5) gl_FragColor = vec4(color,1.0);
   else if (behind > 1.5) {
     if (fract(pageDashes > 0.0 ? Q.x / Q.y : D) >= ${dashOn.toFixed(4)}) discard;
-    gl_FragColor = vec4(color,${dashedOpacity.toFixed(4)});
-  } else if (behind > 0.5) gl_FragColor = vec4(color,${faintOpacity.toFixed(4)});
+    gl_FragColor = vec4(color,${dashedOpacity.toFixed(4)}*layerFade());
+  } else if (behind > 0.5) gl_FragColor = vec4(color,${faintOpacity.toFixed(4)}*layerFade());
   else gl_FragColor = vec4(color,1.0);
 #else
   // The share of the pixel inside the stroke: its distance from the
@@ -475,8 +493,8 @@ void main() {
   if (cover < 0.004) discard;
   if (behind > 1.5) {
     if (fract(pageDashes > 0.0 ? D + pageDashes * s.x : D) >= ${dashOn.toFixed(4)}) discard;
-    gl_FragColor = vec4(color,${dashedOpacity.toFixed(4)}*cover);
-  } else if (behind > 0.5) gl_FragColor = vec4(color,${faintOpacity.toFixed(4)}*cover);
+    gl_FragColor = vec4(color,${dashedOpacity.toFixed(4)}*layerFade()*cover);
+  } else if (behind > 0.5) gl_FragColor = vec4(color,${faintOpacity.toFixed(4)}*layerFade()*cover);
   else gl_FragColor = vec4(color,cover);
 #endif
 }`;
@@ -568,8 +586,15 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       "behind",
       "dashes",
       "pageDashes",
+      "fadeStep",
+      "fadeCount",
+      "fadeSize",
     ].map((n) => [n, gl.getUniformLocation(program, n)]),
   );
+  // The layer count is read from texture unit 1 (unit 0 holds the
+  // see-through target, which the programs draw into).
+  gl.useProgram(program);
+  gl.uniform1i(uniforms.fadeCount, 1);
   // Strokes need instancing (ANGLE_instanced_arrays, near universal in
   // WebGL 1); without it every weight is drawn as hairlines. They read each
   // line batch's own buffer, two vertices an instance.
@@ -587,6 +612,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         "before",
         "after",
       ]);
+      gl.useProgram(stroke);
+      gl.uniform1i(gl.getUniformLocation(stroke, "fadeCount"), 1);
       const corners = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, corners);
       gl.bufferData(
@@ -622,6 +649,9 @@ export function createRenderer(canvas: HTMLCanvasElement) {
             "coverTaper",
             "paged",
             "pageDashes",
+            "fadeStep",
+            "fadeCount",
+            "fadeSize",
           ].map((n) => [n, gl.getUniformLocation(stroke, n)]),
         ),
       };
@@ -712,6 +742,74 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         ]),
       ),
     });
+  }
+  // Fading behind each layer: a target of the page's size whose alpha
+  // counts, at each pixel, the sheet layers in front of the nearest line
+  // there, with a depth buffer of its own. Made when first drawn.
+  let count:
+    | {
+        texture: WebGLTexture;
+        framebuffer: WebGLFramebuffer;
+        depth: WebGLRenderbuffer;
+        width: number;
+        height: number;
+      }
+    | undefined;
+  function counting(width: number, height: number) {
+    if (!count) {
+      count = {
+        texture: gl!.createTexture()!,
+        framebuffer: gl!.createFramebuffer()!,
+        depth: gl!.createRenderbuffer()!,
+        width: 0,
+        height: 0,
+      };
+      gl!.bindTexture(gl!.TEXTURE_2D, count.texture);
+      for (const p of [gl!.TEXTURE_MIN_FILTER, gl!.TEXTURE_MAG_FILTER])
+        gl!.texParameteri(gl!.TEXTURE_2D, p, gl!.NEAREST);
+      for (const p of [gl!.TEXTURE_WRAP_S, gl!.TEXTURE_WRAP_T])
+        gl!.texParameteri(gl!.TEXTURE_2D, p, gl!.CLAMP_TO_EDGE);
+    }
+    const c = count;
+    if (c.width !== width || c.height !== height) {
+      gl!.bindTexture(gl!.TEXTURE_2D, c.texture);
+      gl!.texImage2D(
+        gl!.TEXTURE_2D,
+        0,
+        gl!.RGBA,
+        width,
+        height,
+        0,
+        gl!.RGBA,
+        gl!.UNSIGNED_BYTE,
+        null,
+      );
+      gl!.bindRenderbuffer(gl!.RENDERBUFFER, c.depth);
+      gl!.renderbufferStorage(
+        gl!.RENDERBUFFER,
+        gl!.DEPTH_STENCIL,
+        width,
+        height,
+      );
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, c.framebuffer);
+      gl!.framebufferTexture2D(
+        gl!.FRAMEBUFFER,
+        gl!.COLOR_ATTACHMENT0,
+        gl!.TEXTURE_2D,
+        c.texture,
+        0,
+      );
+      gl!.framebufferRenderbuffer(
+        gl!.FRAMEBUFFER,
+        gl!.DEPTH_STENCIL_ATTACHMENT,
+        gl!.RENDERBUFFER,
+        c.depth,
+      );
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+      c.width = width;
+      c.height = height;
+    }
+    return c;
   }
   let sight: Sight = defaultSight;
   const wideIndices = !!gl.getExtension("OES_element_index_uint");
@@ -857,6 +955,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         : 0;
     // Strokes taper with depth only through a lens.
     const tapering = stroked && sight.depth === "taper" && k.lens[0] > 0;
+    // Lines behind sheets fade behind each layer when asked, on a page
+    // the count's target can hold (an export larger is refused below).
+    const most = pageLimits(gl!),
+      fading =
+        fadesByLayer(sight) &&
+        Math.max(width, height) <= Math.min(most.side, most.texture);
     // The camera, theme, cut and dashes, for either program.
     const place = (u: Record<string, WebGLUniformLocation | null>) => {
       gl!.uniformMatrix3fv(u.rotation, false, new Float32Array(k.rotation));
@@ -867,6 +971,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.uniform1f(u.dashes, dashesPerUnit(view));
       gl!.uniform1f(u.pageDashes, perPixel);
       if (u.paged) gl!.uniform1f(u.paged, perPixel);
+      gl!.uniform1f(u.fadeStep, 1);
+      gl!.uniform2f(u.fadeSize, width, height);
       // The planes relative to the view center, scaled by the radius. A
       // missing plane is +1 everywhere when hidden beyond every plane and
       // −1 beyond any, so it never decides.
@@ -1170,6 +1276,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
           `This device draws see-through 3D images at most ${most} pixels a side. Choose a smaller size.`,
         );
     }
+    if (fadesByLayer(sight) && !fading && size)
+      throw new Error(
+        `This device fades lines behind each sheet in 3D images at most ${Math.min(most.side, most.texture)} pixels a side. Choose a smaller size.`,
+      );
     if (target) {
       const limits = pageLimits(gl!),
         samples = seeSampling(
@@ -1185,17 +1295,76 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       gl!.colorMask(true, true, true, true);
     } else sheets.forEach(sheet);
     if (sight.hidden !== "hide") {
+      const behind = sight.hidden === "dashed" ? 2 : 1;
+      // Fading behind each layer, the count, then its factor for the lines
+      // behind (place set it to 1, which the visible lines keep).
+      if (fading && sheets.length) {
+        countLayers(
+          width,
+          height,
+          () => lines.forEach((v) => line(v, { behind })),
+          () => sheets.forEach(sheet),
+        );
+        const programs = [{ p: program, u: uniforms }];
+        if (stroked)
+          programs.push({ p: strokes!.program, u: strokes!.uniforms });
+        for (const { p, u } of programs) {
+          use(p);
+          gl!.uniform1f(u.fadeStep, fadeStep);
+        }
+      }
       gl!.depthFunc(gl!.GREATER);
       gl!.depthMask(false);
       gl!.enable(gl!.BLEND);
       gl!.blendFunc(gl!.SRC_ALPHA, gl!.ONE_MINUS_SRC_ALPHA);
-      const behind = sight.hidden === "dashed" ? 2 : 1;
       lines.forEach((v) => line(v, { behind }));
       gl!.disable(gl!.BLEND);
       gl!.depthMask(true);
       gl!.depthFunc(gl!.LEQUAL);
     }
     inOrder(lines).forEach((draw) => draw());
+  }
+  // The sheet layers in front of the nearest line at each pixel, on the
+  // count's target: the lines' depth alone (drawn as they are behind
+  // sheets, so dashes' gaps are left out), then each sheet fragment nearer
+  // than it, pushed back by the drawing's polygon offset as sheets always
+  // are, adds 1/255 to the alpha, in any order. Lines lying on a sheet are
+  // in front of it, as the drawing has them. The target is then read from
+  // texture unit 1.
+  function countLayers(
+    width: number,
+    height: number,
+    lines: () => void,
+    sheets: () => void,
+  ) {
+    const c = counting(width, height);
+    // A texture a program samples must not be drawn into: unit 1 is empty
+    // until the count is made.
+    gl!.activeTexture(gl!.TEXTURE1);
+    gl!.bindTexture(gl!.TEXTURE_2D, null);
+    gl!.activeTexture(gl!.TEXTURE0);
+    gl!.bindFramebuffer(gl!.FRAMEBUFFER, c.framebuffer);
+    gl!.viewport(0, 0, width, height);
+    gl!.clearColor(0, 0, 0, 0);
+    gl!.clear(gl!.COLOR_BUFFER_BIT | gl!.DEPTH_BUFFER_BIT);
+    gl!.depthFunc(gl!.LESS);
+    gl!.colorMask(false, false, false, false);
+    lines();
+    gl!.colorMask(true, true, true, true);
+    gl!.depthMask(false);
+    gl!.enable(gl!.BLEND);
+    gl!.blendColor(0, 0, 0, 1 / 255);
+    gl!.blendFuncSeparate(gl!.ZERO, gl!.ONE, gl!.CONSTANT_ALPHA, gl!.ONE);
+    sheets();
+    gl!.disable(gl!.BLEND);
+    gl!.blendFunc(gl!.ONE, gl!.ZERO);
+    gl!.depthMask(true);
+    gl!.depthFunc(gl!.LEQUAL);
+    gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+    gl!.viewport(0, 0, width, height);
+    gl!.activeTexture(gl!.TEXTURE1);
+    gl!.bindTexture(gl!.TEXTURE_2D, c.texture);
+    gl!.activeTexture(gl!.TEXTURE0);
   }
   // Every sheet layer's shaded color and a count of one, summed at each
   // sample of the target without depth testing, so no order matters. The
@@ -1312,6 +1481,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         gl.deleteTexture(see.texture);
         gl.deleteFramebuffer(see.framebuffer);
         gl.deleteProgram(see.program);
+      }
+      if (count) {
+        gl.deleteTexture(count.texture);
+        gl.deleteFramebuffer(count.framebuffer);
+        gl.deleteRenderbuffer(count.depth);
       }
       if (strokes) {
         gl.deleteBuffer(strokes.corners);

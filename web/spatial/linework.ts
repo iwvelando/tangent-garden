@@ -25,10 +25,10 @@ import {
 import {
   arcLengths,
   dashOn,
-  dashedOpacity,
   dashesPerPixel,
   dashesPerUnit,
-  faintOpacity,
+  fadeLayers,
+  hiddenOpacity,
   pagePhases,
   sheetOffset,
   strokeWidth,
@@ -37,6 +37,7 @@ import {
   taperStepOf,
   type DashMeasure,
   type HiddenLines,
+  type LayerFade,
   type LineWeight,
   type StrokeDepth,
 } from "./sight";
@@ -50,12 +51,17 @@ import {
 // cut.ts) hides what the drawing hides: sheet pixels beyond its plane leave
 // the raster, cut lines end exactly at the plane, and its edge is a layer.
 // With sampled occlusion, hidden lines drawn faint or dashed (see sight.ts)
-// are the parts the test leaves out, in groups of their own.
+// are the parts the test leaves out, in groups of their own. Faded behind
+// each layer, they are grouped by how many sheet layers lie in front of
+// them, up to fadeLayers, counted against the nearest layers at each pixel.
 export type Occlusion = "none" | "sampled";
 export type LineGroup = {
   layer: string;
   // Set on a group of lines behind sheets.
   hidden?: "faint" | "dashed";
+  // Set on such a group when lines fade behind each layer: how many sheet
+  // layers lie in front of its lines, from 1 to fadeLayers.
+  layers?: number;
   // A stroke's width on the page, when lines are not hairlines.
   strokes: { color: string; width?: number; paths: [number, number][][] }[];
 };
@@ -71,6 +77,8 @@ export type LineworkOptions = {
   depth?: StrokeDepth;
   // Where dashed hidden lines' dashes are measured; in space by default.
   dashes?: DashMeasure;
+  // Whether hidden lines fade again behind each layer; once by default.
+  fade?: LayerFade;
   // Bounds visibility testing: the pixels tried in each sheet triangle's
   // rows (see span), one per row, plus line samples.
   limit?: number;
@@ -122,12 +130,16 @@ export function linework(
             options,
             taperBound(k, view, options.depth),
           ),
+          options.hidden && options.hidden !== "hide" && options.fade === "each"
+            ? fadeLayers
+            : 1,
         )
       : undefined;
   const behind =
     raster && options.hidden && options.hidden !== "hide"
       ? options.hidden
       : undefined;
+  const layered = !!raster && raster.layers > 1;
   const perUnit = dashesPerUnit(view),
     paged = options.dashes === "page",
     perPixel = dashesPerPixel(options);
@@ -136,8 +148,13 @@ export function linework(
     string,
     { color: string; width?: number; paths: [number, number][][] }
   >;
+  // Hidden lines by the sheet layers in front of them (all at 1 unless
+  // layered).
   const groups = new Map<string, Strokes>(),
-    hiddenGroups = new Map<string, Strokes>();
+    hiddenGroups = Array.from(
+      { length: (raster?.layers ?? 1) + 1 },
+      () => new Map<string, Strokes>(),
+    );
   const paths = (
     into: Map<string, Strokes>,
     layer: string,
@@ -238,18 +255,11 @@ export function linework(
           continue;
         }
         for (const run of runs(raster, piece, work)) {
-          if (run.shown)
+          const into = hiddenGroups[run.layers];
+          if (!run.layers)
             draw(groups, pass.layer, color, width, piece, run.from, run.to);
           else if (behind === "faint")
-            draw(
-              hiddenGroups,
-              pass.layer,
-              color,
-              width,
-              piece,
-              run.from,
-              run.to,
-            );
+            draw(into, pass.layer, color, width, piece, run.from, run.to);
           else if (arcs && paged) {
             // The phase is affine on the page, measured from whichever end
             // lies ahead of the near plane (see sight.ts's pagePhases).
@@ -278,7 +288,7 @@ export function linework(
               phase(run.from),
               phase(run.to),
             ))
-              draw(hiddenGroups, pass.layer, color, width, piece, p, q);
+              draw(into, pass.layer, color, width, piece, p, q);
           } else if (arcs) {
             // Arc length is affine along the segment in space, and so along
             // the kept part and the clipped piece; on the page it is affine
@@ -303,22 +313,33 @@ export function linework(
                 ? undefined
                 : (f) => (pageAt(w, s0 + (s1 - s0) * f) - r0) / (r1 - r0),
             ))
-              draw(hiddenGroups, pass.layer, color, width, piece, a, b);
+              draw(into, pass.layer, color, width, piece, a, b);
           }
         }
       }
     }
   }
-  const listed = (into: Map<string, Strokes>, hidden?: "faint" | "dashed") =>
+  const listed = (
+    into: Map<string, Strokes>,
+    hidden?: "faint" | "dashed",
+    layers?: number,
+  ) =>
     [...into]
       .map(([layer, strokes]) => ({
         layer,
         ...(hidden && { hidden }),
+        ...(hidden && layers !== undefined && { layers }),
         strokes: [...strokes.values()].filter((s) => s.paths.length),
       }))
       .filter((g) => g.strokes.length);
-  // Lines behind sheets lie beneath the rest.
-  return [...listed(hiddenGroups, behind), ...listed(groups)];
+  // Lines behind sheets lie beneath the rest, those behind more layers
+  // beneath those behind fewer.
+  return [
+    ...hiddenGroups
+      .slice(1)
+      .flatMap((into, n) => listed(into, behind, layered ? n + 1 : undefined)),
+    ...listed(groups),
+  ];
 }
 
 // The dashes of a page run whose dash phase runs from sa to sb: the parts
@@ -495,7 +516,9 @@ const pageAt = ([w0, w1]: [number, number], s: number) =>
   w0 === w1 ? s : (s * w1) / ((1 - s) * w0 + s * w1);
 
 // The shown sheets' triangles on the page, and which of them is nearest at
-// each pixel center (−1 where there is none). Points hold each corner's page
+// each pixel center (−1 where there is none), or the nearest few layers,
+// nearest first: a pixel's entries l of layers are at layers·pixel + l, and
+// two triangles at one depth there (two sides of one edge) are one layer. Points hold each corner's page
 // x, y and depth; corners hold each triangle's three points. A cut
 // triangle's points also hold n̂ᵢ·p − dᵢ for each plane in sides, and its
 // pixels the planes hide are left out, as the drawing discards them.
@@ -504,6 +527,7 @@ type Raster = {
   height: number;
   depth: Float32Array;
   nearest: Int32Array;
+  layers: number;
   points: Float64Array;
   corners: Uint32Array;
   sides: Float64Array;
@@ -521,6 +545,7 @@ function depthRaster(
   signal?: AbortSignal,
   cutting?: { planes: Plane[]; beyond: CutBeyond },
   offset = 1,
+  layers = 1,
 ): Raster {
   const planes = cutting?.planes ?? [],
     count = planes.length;
@@ -607,8 +632,9 @@ function depthRaster(
   const r: Raster = {
     width,
     height,
-    depth: new Float32Array(width * height).fill(Infinity),
-    nearest: new Int32Array(width * height).fill(-1),
+    depth: new Float32Array(width * height * layers).fill(Infinity),
+    nearest: new Int32Array(width * height * layers).fill(-1),
+    layers,
     points: Float64Array.from(points),
     corners: Uint32Array.from(corners),
     sides: Float64Array.from(sides),
@@ -711,12 +737,35 @@ function rasterize(
       // The drawing clips depth to [0, 1] too.
       if (z < 0 || z > 1) continue;
       const i = y * r.width + x;
-      if (z < r.depth[i]) {
-        r.depth[i] = z;
-        r.nearest[i] = t;
-      }
+      if (r.layers === 1) {
+        if (z < r.depth[i]) {
+          r.depth[i] = z;
+          r.nearest[i] = t;
+        }
+      } else insertLayer(r, r.layers * i, z, t);
     }
   }
+}
+// Two depths at a point within this are one layer: the sides of one edge.
+const oneLayer = 1e-7;
+// A triangle at depth z into a pixel's layers from `at`, nearest first,
+// unless it is a layer there already, when the nearer depth stays.
+function insertLayer(r: Raster, at: number, z: number, t: number) {
+  const end = at + r.layers;
+  let j = at;
+  while (j < end && r.depth[j] < z - oneLayer) j++;
+  if (j === end) return;
+  if (Math.abs(r.depth[j] - z) <= oneLayer) {
+    if (z < r.depth[j]) {
+      r.depth[j] = z;
+      r.nearest[j] = t;
+    }
+    return;
+  }
+  r.depth.copyWithin(j + 1, j, end - 1);
+  r.nearest.copyWithin(j + 1, j, end - 1);
+  r.depth[j] = z;
+  r.nearest[j] = t;
 }
 // The pixels from x0 to x1 of a row whose centers lie at height y that a
 // triangle can cover: those between where its edges cross the row, and one
@@ -747,54 +796,71 @@ const overLimit = () =>
     "These lines and sheets need more visibility testing than the export's work limit allows. Hide a layer, or export every line without hiding.",
   );
 
-// Whether a page point is hidden: behind a sheet triangle that contains it
-// by more than the drawing's own polygon offset (the triangle's steepest
-// depth change per pixel, plus a small constant), so lines lying on a sheet
-// stay visible, as they are drawn. The triangles tried are those nearest at
-// the nine pixel centers around the point, and their depth is found at the
-// point itself, inside the triangle. When none contains it (a triangle
-// smaller than a pixel), the nearest at its own pixel center is used, with
-// one more offset for the half pixel between them.
+// How many sheet layers hide a page point, up to the raster's layers (so 0
+// or 1 with one): those behind which it lies, inside a triangle that
+// contains it, by more than the drawing's own polygon offset (the
+// triangle's steepest depth change per pixel, plus a small constant), so
+// lines lying on a sheet stay visible, as they are drawn. The triangles
+// tried are those nearest at the nine pixel centers around the point, and
+// their depth is found at the point itself, inside the triangle; two at
+// one depth there are one layer. When none contains it (a triangle smaller
+// than a pixel), the nearest at its own pixel center are used, with one
+// more offset for the half pixel between them.
 function hidden(r: Raster, x: number, y: number, depth: number) {
   const px = Math.min(r.width - 1, Math.max(0, Math.floor(x))),
     py = Math.min(r.height - 1, Math.max(0, Math.floor(y)));
-  const tried: number[] = [];
+  const L = r.layers,
+    tried: number[] = [],
+    hiding: number[] = [];
   let found = false;
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
       const u = px + dx,
         v = py + dy;
       if (u < 0 || v < 0 || u >= r.width || v >= r.height) continue;
-      const t = r.nearest[v * r.width + u];
-      if (t < 0 || tried.includes(t)) continue;
-      tried.push(t);
-      const q = plane(r, t)!;
-      if (!inside(q, x, y, 1e-9) || beyond(r, t, q, x, y)) continue;
-      const z = depthAt(q, x, y);
-      if (z < 0 || z > 1) continue;
-      found = true;
-      if (
-        depth >
-        z + r.offset * Math.max(Math.abs(q.dx), Math.abs(q.dy)) + 1e-6
-      )
-        return true;
+      for (let l = 0; l < L; l++) {
+        const t = r.nearest[L * (v * r.width + u) + l];
+        if (t < 0) break;
+        if (tried.includes(t)) continue;
+        tried.push(t);
+        const q = plane(r, t)!;
+        if (!inside(q, x, y, 1e-9) || beyond(r, t, q, x, y)) continue;
+        const z = depthAt(q, x, y);
+        if (z < 0 || z > 1) continue;
+        found = true;
+        if (
+          depth >
+            z + r.offset * Math.max(Math.abs(q.dx), Math.abs(q.dy)) + 1e-6 &&
+          hiding.every((h) => Math.abs(h - z) > oneLayer)
+        ) {
+          hiding.push(z);
+          if (hiding.length >= L) return L;
+        }
+      }
     }
-  if (found) return false;
-  const t = r.nearest[py * r.width + px];
-  if (t < 0) return false;
-  const q = plane(r, t)!;
-  return (
-    depth >
-    r.depth[py * r.width + px] +
-      (r.offset + 1) * Math.max(Math.abs(q.dx), Math.abs(q.dy)) +
-      1e-6
-  );
+  if (found) return hiding.length;
+  let count = 0;
+  for (let l = 0; l < L; l++) {
+    const i = L * (py * r.width + px) + l,
+      t = r.nearest[i];
+    if (t < 0) break;
+    const q = plane(r, t)!;
+    if (
+      depth >
+      r.depth[i] +
+        (r.offset + 1) * Math.max(Math.abs(q.dx), Math.abs(q.dy)) +
+        1e-6
+    )
+      count++;
+  }
+  return count;
 }
 
 // The visible and hidden parts of a page segment, in order, sampled along
 // it, each with its ends as fractions of the segment. Visibility changes
-// halfway between samples that disagree.
-type Run = { from: Point; to: Point; shown: boolean; r: [number, number] };
+// halfway between samples that disagree. Layers is how many sheet layers
+// hide a run (see hidden): 0 where it is shown.
+type Run = { from: Point; to: Point; layers: number; r: [number, number] };
 function runs(
   r: Raster,
   [a, b]: Piece,
@@ -816,22 +882,22 @@ function runs(
             y: a.y + (b.y - a.y) * t,
             depth: a.depth + (b.depth - a.depth) * t,
           };
-  const shown = (t: number) => {
+  const layers = (t: number) => {
     const p = at(t);
-    return !hidden(r, p.x, p.y, p.depth);
+    return hidden(r, p.x, p.y, p.depth);
   };
   const out: Run[] = [];
   let start = 0,
-    on = shown(0);
+    on = layers(0);
   for (let s = 1; s <= n; s++) {
-    const next = shown(s / n);
+    const next = layers(s / n);
     if (next === on) continue;
     const edge = (s - 0.5) / n;
-    out.push({ from: at(start), to: at(edge), shown: on, r: [start, edge] });
+    out.push({ from: at(start), to: at(edge), layers: on, r: [start, edge] });
     start = edge;
     on = next;
   }
-  out.push({ from: at(start), to: at(1), shown: on, r: [start, 1] });
+  out.push({ from: at(start), to: at(1), layers: on, r: [start, 1] });
   return out;
 }
 
@@ -857,7 +923,7 @@ export function linesSvg(
   const body = groups
     .map(
       (g) =>
-        `<g id="${g.hidden ? `hidden-${g.layer}` : g.layer}" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${g.hidden ? ` stroke-opacity="${g.hidden === "faint" ? faintOpacity : dashedOpacity}"` : ""}>${g.strokes
+        `<g id="${g.hidden ? `hidden-${g.layer}${(g.layers ?? 1) > 1 ? `-${g.layers}` : ""}` : g.layer}" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${g.hidden ? ` stroke-opacity="${hiddenOpacity(g.hidden, g.layers)}"` : ""}>${g.strokes
           .map(
             (s) =>
               `<path stroke="${s.color}"${s.width === undefined ? "" : ` stroke-width="${fixed(s.width)}"`} d="${s.paths

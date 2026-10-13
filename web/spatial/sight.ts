@@ -15,6 +15,7 @@ export type SheetSight = "opaque" | "through";
 export type HiddenLines = "hide" | "faint" | "dashed";
 export type StrokeDepth = "even" | "taper";
 export type DashMeasure = "space" | "page";
+export type LayerFade = "nearest" | "each";
 export type Sight = {
   sheets: SheetSight;
   // Each sheet layer's opacity α when sheets are seen through.
@@ -25,6 +26,10 @@ export type Sight = {
   // Where dashed hidden lines' dashes are measured: along the line in space
   // (the default, and every link made before the choice) or on the page.
   dashes?: DashMeasure;
+  // Whether lines behind sheets fade once, behind the nearest sheet (the
+  // default, and every link made before the choice), or again behind each
+  // further layer.
+  fade?: LayerFade;
 };
 export const defaultSight: Sight = {
   sheets: "opaque",
@@ -39,6 +44,16 @@ export const opacityRange: [number, number] = [0.05, 0.8];
 // other, over whatever is in front of them.
 export const faintOpacity = 0.35;
 export const dashedOpacity = 0.8;
+// Fading behind each layer: a line behind n sheet layers is drawn at its
+// opacity behind one times fadeStep^(n − 1), n counted up to fadeLayers.
+// The count is the sheets' layers in front of the line where it is drawn,
+// however the sheets themselves are drawn.
+export const fadeStep = 0.5;
+export const fadeLayers = 3;
+export function hiddenOpacity(hidden: "faint" | "dashed", layers = 1) {
+  const o = hidden === "faint" ? faintOpacity : dashedOpacity;
+  return o * fadeStep ** (Math.min(Math.max(layers, 1), fadeLayers) - 1);
+}
 // One dash and gap per this fraction of the page's shorter side, the dash
 // taking the first dashOn of it, measured along the line in space at the
 // drawing's scale, or along the line as drawn on the page.
@@ -53,6 +68,10 @@ export const hiddenLines: { value: HiddenLines; label: string }[] = [
   { value: "hide", label: "Hidden" },
   { value: "faint", label: "Faint" },
   { value: "dashed", label: "Dashed" },
+];
+export const layerFades: { value: LayerFade; label: string }[] = [
+  { value: "nearest", label: "Once, behind the nearest" },
+  { value: "each", label: "Again behind each sheet" },
 ];
 export const dashMeasures: { value: DashMeasure; label: string }[] = [
   { value: "space", label: "In space" },
@@ -222,6 +241,10 @@ export const sightHelp = {
     "How lines behind the nearest sheet are drawn: hidden, faint, or dashed.",
     `Faint lines are drawn at ${faintOpacity * 100}% opacity, dashed ones at ${dashedOpacity * 100}%, one dash every ${dashPeriod * 100}% of the page's shorter side. A line lying on a sheet counts as in front of it.`,
   ),
+  fade: tiered(
+    "Fade lines once behind the nearest sheet, or again behind each further layer.",
+    `Each further layer in front halves a line's opacity, counted up to ${fadeLayers} layers: faint lines go from ${faintOpacity * 100}% to ${hiddenOpacity("faint", fadeLayers) * 100}%, dashed ones from ${dashedOpacity * 100}% to ${hiddenOpacity("dashed", fadeLayers) * 100}%. Layers are counted the same whether sheets are opaque or seen through.`,
+  ),
   dashes: tiered(
     "Measure dashes along the line in space, or evenly on the page.",
     "In space, dashes shorten as a line tilts away or recedes through a lens. On the page, every dash is the same length wherever the line lies, and dashes restart where a line comes from behind the eye.",
@@ -275,6 +298,14 @@ export function seeSampling(
     ? s
     : 1;
 }
+// Whether lines behind sheets fade again behind each layer: the drawing
+// then counts layers on a target of the page's size.
+export const fadesByLayer = (s: Sight) =>
+  s.hidden !== "hide" && s.fade === "each";
+// Whether the drawing needs a target the page's size: see-through sheets'
+// or the layer count's.
+export const needsTarget = (s: Sight) =>
+  s.sheets === "through" || fadesByLayer(s);
 // Whether the drawing is the plain opaque one, drawn exactly as before.
 export const isPlain = (s: Sight) =>
   s.sheets === "opaque" && s.hidden === "hide";
@@ -417,11 +448,17 @@ export function sightRecord(spec: Sight, through: boolean) {
     statements.push(
       `Lines behind the nearest sheet are dashed at ${dashedOpacity * 100}% opacity, one dash every 1% of the shorter side, measured along the line ${paged ? "on the page, restarting where a line comes from behind the eye" : "in space"}.`,
     );
+  const layered = fadesByLayer(spec);
+  if (layered)
+    statements.push(
+      `That opacity is halved behind each further sheet layer in front of the line, counted up to three layers.`,
+    );
   return {
     sheets,
     ...(sheets === "through" && { opacity: spec.opacity }),
     hidden: spec.hidden,
     ...(paged && { dashes: "page" as const }),
+    ...(layered && { fade: "each" as const }),
     statement: statements.join(" "),
   };
 }

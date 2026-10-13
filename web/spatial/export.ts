@@ -108,6 +108,7 @@ export async function imageFile(
         weight: sight.weight,
         depth: sight.depth,
         dashes: sight.dashes,
+        fade: sight.fade,
         // The work a page's visibility testing needs grows with its area,
         // so the limit does too: a view that exports at one size exports
         // at every size.
@@ -122,7 +123,12 @@ export async function imageFile(
     const lined =
       occlusion === "sampled" &&
       sightRecord(
-        { ...defaultSight, hidden: sight.hidden, dashes: sight.dashes },
+        {
+          ...defaultSight,
+          hidden: sight.hidden,
+          dashes: sight.dashes,
+          fade: sight.fade,
+        },
         false,
       );
     signal.throwIfAborted();
@@ -145,7 +151,7 @@ export async function imageFile(
           statement:
             occlusion === "none"
               ? "Every shown line is drawn, including lines behind surfaces. Shaded surfaces are not drawn."
-              : `Lines behind a shown surface are ${lined ? `drawn ${sight.hidden}, in groups named hidden- and their layer,` : "left out"} where sampled every ${sampleStep} px against a ${page.width} × ${page.height} depth raster of the surfaces, with the drawing's polygon offset. This approximates hidden lines; it is not exact hidden-line removal. Lines do not hide lines, and shaded surfaces are not drawn.`,
+              : `Lines behind a shown surface are ${lined ? `drawn ${sight.hidden}, in groups named hidden- and their layer${lined.fade ? " (and -2 or -3 when behind that many sheet layers, counted against the raster's three nearest at each pixel)" : ""},` : "left out"} where sampled every ${sampleStep} px against a ${page.width} × ${page.height} depth raster of the surfaces, with the drawing's polygon offset. This approximates hidden lines; it is not exact hidden-line removal. Lines do not hide lines, and shaded surfaces are not drawn.`,
         },
       },
     });

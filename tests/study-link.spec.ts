@@ -996,7 +996,7 @@ test("a link carries the cut and a peel; refuses a zero normal and a peel withou
   );
 });
 
-test("a link carries seeing through, line weight, taper and dashes; refuses an opacity outside its range or an unknown way", async () => {
+test("a link carries seeing through, line weight, taper, dashes and fading; refuses an opacity outside its range or an unknown way", async () => {
   for (const hidden of ["hide", "faint", "dashed"] as const)
     for (const sheets of ["opaque", "through"] as const)
       for (const opacity of [0.05, 0.8])
@@ -1032,6 +1032,19 @@ test("a link carries seeing through, line weight, taper and dashes; refuses an o
   }
   assert.equal(defaultSight.dashes, undefined);
   assert.equal(spatialStudy(spatial()).sight.dashes, undefined);
+  // Hidden lines fade once or behind each layer; links made before the
+  // choice have none and fade once.
+  for (const fade of ["nearest", "each"] as const)
+    for (const hidden of ["faint", "dashed"] as const) {
+      const study: SpatialStudy = {
+        ...spatial(),
+        sight: { ...defaultSight, sheets: "through", hidden, fade },
+      };
+      const read = await readStudyLink(await writeStudyLink("3d", study));
+      assert.deepEqual(spatialStudy(read.study), study);
+    }
+  assert.equal(defaultSight.fade, undefined);
+  assert.equal(spatialStudy(spatial()).sight.fade, undefined);
   // Missing fields take their defaults, except the line weight: a link
   // without one was made before weights and keeps its hairlines.
   const partial = structuredClone(spatial()) as any;
@@ -1074,6 +1087,10 @@ test("a link carries seeing through, line weight, taper and dashes; refuses an o
   await refused(
     bad((v) => (v.dashes = "dotted")),
     "sight.dashes",
+  );
+  await refused(
+    bad((v) => (v.fade = "every")),
+    "sight.fade",
   );
   await refused(
     bad((v) => (v.extra = 1)),
