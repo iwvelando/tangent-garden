@@ -170,6 +170,12 @@ const calculates = (
   (s.mode === "reveal" && !!s.original.result.attractor) ||
   (s.mode === "probe" && !!s.between) ||
   (s.mode === "path" && !!s.refine);
+// Whether the session's frames come without calculating, so playback may
+// aim for 60 a second: every mode but those calculate lists, and a flight,
+// whose pieces are calculated once each, not every frame.
+export const redraws = (
+  s: Pick<Session, "mode" | "tracks" | "original" | "between" | "refine">,
+) => !calculates(s) || s.mode === "path";
 type Props = {
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
@@ -721,6 +727,7 @@ export function AnimationPanel({
       from,
       duration: s.duration * 1000,
       repeat: cycles(s.repeat),
+      redraw: redraws(s),
       lanes: engines.map((engine) => (time: number) => sample(s, time, engine)),
       show: (view) => {
         if (epoch.current === token) display(s, view);

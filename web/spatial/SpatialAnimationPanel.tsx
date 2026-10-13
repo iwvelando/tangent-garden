@@ -178,6 +178,12 @@ type Session = {
   length: number;
   progress: number;
 };
+// Whether the session's frames come without calculating, so playback may
+// aim for 60 a second: they are calculated while parameters vary or the
+// probe moves between samples, and every other mode draws the prepared
+// study.
+export const redraws = (s: Pick<Session, "mode" | "between">) =>
+  !(s.mode === "parameters" || (s.mode === "probe" && !!s.between));
 type Props = {
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
@@ -783,6 +789,7 @@ export function SpatialAnimationPanel({
       from,
       duration: s.duration * 1000,
       repeat: cycles(s.repeat),
+      redraw: redraws(s),
       lanes: engines.map((engine) => (p: number) => sample(s, p, engine)),
       show: (view) => {
         if (epoch.current === token) display(s, view);
