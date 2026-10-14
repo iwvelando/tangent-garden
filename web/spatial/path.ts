@@ -16,18 +16,29 @@ import {
   locate,
   maxKeys,
   moveKeys,
+  pieceSteps,
+  pieceZoom,
   removeKeys,
   slopes,
   type PathError,
   type PathStyle,
 } from "../key-views";
-import type { Bounds3, Vec3 } from "./types";
-import { camera, clip, turntableAngle, type Pass, type View } from "./scene";
+import type { Bounds3, RefinementView, Vec3 } from "./types";
+import {
+  camera,
+  clip,
+  refinementView,
+  turntableAngle,
+  type Pass,
+  type View,
+} from "./scene";
+import { spatialPlainZoom, viewZoom } from "../refinement";
 import { hiddenBy, isCut, specPlanes, type CutSpec } from "./cut";
 import { clippedLine, keptLine, spaceAt } from "./linework";
 
 export {
   keyLabel,
+  pieceAt,
   keyTimes,
   legRange,
   maxKeyName,
@@ -64,9 +75,10 @@ export type CameraPath = {
 };
 export const defaultPath: CameraPath = { style: "steady", keys: [] };
 export const maxTurns = 8;
-// The drawing's own orbit and zoom limits.
+// The drawing's own orbit and zoom limits: it zooms to spatialPlainZoom,
+// or to viewZoom in a study refined to its view.
 export const pitchRange: [number, number] = [-1.5, 1.5];
-export const zoomRange: [number, number] = [0.2, 8];
+export const zoomRange: [number, number] = [0.2, viewZoom];
 
 export const pathPivots: { value: PathPivot; label: string }[] = [
   { value: "plane", label: "Center plane" },
@@ -91,9 +103,10 @@ export const removeKey = (path: CameraPath, k: number): CameraPath => ({
   ...path,
   keys: removeKeys(path.keys, k, asFirst),
 });
-// The camera's framing, which both flights share.
+// The camera's framing, which both flights share, and how their frames are
+// refined.
 const framing =
-  "The camera turns about the middle of the page; while a leg zooms, the place you framed comes straight toward the middle.";
+  "The camera turns about the page's middle; while a leg zooms, the framed place comes straight to the middle. A study refined to its view is refined to each frame's.";
 export const pathHelp = {
   mode: tiered(
     "Fly the camera through your key views in order. Geometry stays fixed.",
@@ -101,7 +114,7 @@ export const pathHelp = {
   ),
   camera: tiered(
     "Flies the camera through your key views in order while the geometry moves.",
-    `Each leg takes its share of the duration by its leg time. Views are taken about the study as drawn when playback starts, so geometry that grows far beyond it can leave the page. ${framing}`,
+    `Each leg takes its share of the duration by its leg time. Views are taken about the study as playback starts; geometry growing far beyond it can leave the page. ${framing}`,
   ),
   steady:
     "Each leg turns, tilts and zooms at a steady rate, changing course only at a view.",
@@ -122,13 +135,16 @@ export const pathHelp = {
   ),
   keys: tiered(
     `Up to ${maxKeys} views. Add the drawing's view; to adjust one, show it, change the drawing, and set it again.`,
-    "Turns and leg time move with their view. A view that becomes the first, by moving or removal, loses them.",
+    `Turns and leg time move with their view. A view that becomes the first, by moving or removal, loses them. Views zoom up to ${spatialPlainZoom}×, or ${viewZoom.toLocaleString("en-US")}× in a study refined to its view.`,
   ),
 };
 
 // Why a path cannot play, naming the field, or null. The field and the
-// message read as one sentence.
-export function pathError(path: CameraPath): PathError | null {
+// message read as one sentence. zoomLimit is the drawing's.
+export function pathError(
+  path: CameraPath,
+  zoomLimit = spatialPlainZoom,
+): PathError | null {
   return keysError(path.keys, (key, name, k) => {
     if (
       ![key.yaw, key.pitch, key.zoom, key.panX, key.panY].every(
@@ -137,11 +153,14 @@ export function pathError(path: CameraPath): PathError | null {
       key.pitch < pitchRange[0] ||
       key.pitch > pitchRange[1] ||
       key.zoom < zoomRange[0] ||
-      key.zoom > zoomRange[1]
+      key.zoom > zoomLimit
     )
       return {
         field: name,
-        message: "is outside the drawing's orbit and zoom limits.",
+        message:
+          key.zoom > zoomLimit && zoomLimit < viewZoom
+            ? `zooms past ${zoomLimit}×; refine the study to its view to zoom further.`
+            : "is outside the drawing's orbit and zoom limits.",
       };
     if (k === 0 && key.turns !== 0)
       return {
@@ -182,11 +201,13 @@ const manual = (key: KeyView, bounds: Bounds3): View => ({
 // where the view drew it: a finished animation's camera may be framed about
 // other bounds. Depth keeps the study's own range. Through a lens the eye
 // stays put: its distance behind the new target, which moves along the line
-// of sight with the center, sets the zoom (see scene.ts's turntableLens).
+// of sight with the center, sets the zoom (see scene.ts's turntableLens),
+// within the drawing's zoom limit.
 export function keyFromView(
   view: View,
   bounds: Bounds3,
   name: string,
+  limit = spatialPlainZoom,
 ): KeyView {
   const [x, y, back] = rows(view.yaw, view.pitch);
   const d = [
@@ -209,13 +230,13 @@ export function keyFromView(
   const zoom = fov
     ? behind > 0
       ? (1.16 * bounds.radius) / (behind * tan)
-      : zoomRange[1]
+      : limit
     : view.zoom * (bounds.radius / view.radius);
   return {
     name,
     yaw: view.yaw,
     pitch: view.pitch,
-    zoom: Math.min(zoomRange[1], Math.max(zoomRange[0], zoom)),
+    zoom: Math.min(limit, Math.max(zoomRange[0], zoom)),
     panX: view.panX + dot(x),
     panY: view.panY + dot(y),
     turns: 0,
@@ -534,4 +555,144 @@ export function pathView(
     view.framedTarget = { point: t, distance: Math.exp(at(distances)) };
   }
   return view;
+}
+
+// A piece of a flight (see key-views.ts): its zoomed-in frames are drawn
+// from one refinement, to a few of their own views (engine3.View), which
+// Go refines each piece of curve to as finely as the finest it meets asks.
+export type Piece = { from: number; to: number; views: RefinementView[] };
+// At most this many views per piece, within engine3's maxViews. A frame
+// is kept as a view of its piece once it has moved from the last kept by
+// more than a step: its zoom by more than stepZoom, or, by more than a
+// quarter of the narrower frame's half shorter side, its framed point
+// across the line of sight or, as the camera turns, geometry anywhere in
+// the study. Every frame between two kept views is then within both's
+// margins and nearly as finely refined as it needs.
+export const pieceViews = 16;
+const stepZoom = 1.05;
+
+// The point a view frames in the middle of its page, the half shorter side
+// of the page at it, and its line of sight: the turntable's target, or a
+// geometry pivot's (see pathView), which a lens draws at the orthographic
+// scale of the zoom its distance gives.
+function framedBy(view: View) {
+  const [right, up, back] = rows(view.yaw, view.pitch);
+  const fov = turntableAngle(view);
+  const half = 1.16 * view.radius;
+  if (view.framedTarget && fov)
+    return {
+      point: view.framedTarget.point,
+      half: view.framedTarget.distance * Math.tan((fov * Math.PI) / 360),
+      back,
+    };
+  return {
+    point: {
+      x: view.center.x - view.panX * right[0] - view.panY * up[0],
+      y: view.center.y - view.panX * right[1] - view.panY * up[1],
+      z: view.center.z - view.panX * right[2] - view.panY * up[2],
+    },
+    half: half / view.zoom,
+    back,
+  };
+}
+type Framed = ReturnType<typeof framedBy>;
+
+// Whether frame b has moved from frame a by more than a step (see
+// pieceViews), with the study's geometry within reach of a's framed point.
+function stepped(a: Framed, b: Framed, bounds: Bounds3) {
+  const low = Math.min(a.half, b.half);
+  if (Math.max(a.half, b.half) / low > stepZoom) return true;
+  // Across the line of sight: sliding along it, as the plane's point does
+  // while the camera turns, moves nothing on the page.
+  const d = [
+    b.point.x - a.point.x,
+    b.point.y - a.point.y,
+    b.point.z - a.point.z,
+  ];
+  const along = d[0] * b.back[0] + d[1] * b.back[1] + d[2] * b.back[2];
+  const drift = Math.hypot(...d.map((x, c) => x - along * b.back[c]));
+  // Turning by θ moves a point at depth s from the framed point s θ across
+  // the page; the study's geometry lies within its radius of its center.
+  const turn = Math.acos(
+    Math.min(
+      1,
+      a.back[0] * b.back[0] + a.back[1] * b.back[1] + a.back[2] * b.back[2],
+    ),
+  );
+  const reach =
+    Math.hypot(
+      a.point.x - bounds.center.x,
+      a.point.y - bounds.center.y,
+      a.point.z - bounds.center.z,
+    ) + bounds.radius;
+  return drift + turn * reach > low / 4;
+}
+
+// A flight's pieces, in order, over the progress where it zooms in past the
+// fitted framing (zoom above 1, as the drawing refines to its view); frames
+// at the fitted zoom or wider need no piece. A piece spans a zoom of at
+// most pieceZoom. size is the page's.
+export function flightPieces(
+  path: CameraPath,
+  bounds: Bounds3,
+  cyclic: boolean,
+  size: { width: number; height: number },
+  depths?: number[],
+  lens: Pick<View, "projection" | "lensAngle"> = {},
+): Piece[] {
+  const n = Math.max(1, path.keys.length - 1) * pieceSteps;
+  const pieces: Piece[] = [];
+  type Open = {
+    from: number;
+    last: Framed;
+    low: number;
+    high: number;
+    views: View[];
+  };
+  let open: Open | null = null;
+  // Closes the open piece at progress to, where the frame view begins the
+  // next stretch: frames between its last kept view and that one belong to
+  // it, so that frame is kept too.
+  const close = (to: number, view?: View) => {
+    if (!open) return;
+    pieces.push({
+      from: open.from,
+      to,
+      views: (view ? [...open.views, view] : open.views).map((v) =>
+        refinementView(v, size),
+      ),
+    });
+    open = null;
+  };
+  for (let k = 0; k <= n; k++) {
+    const p = k / n,
+      view = pathView(path, bounds, p, cyclic, depths, lens);
+    if (!(view.zoom > 1)) {
+      close(p, view);
+      continue;
+    }
+    const at = framedBy(view);
+    const current = open as Open | null;
+    if (current) {
+      const low = Math.min(current.low, at.half),
+        high = Math.max(current.high, at.half);
+      if (high / low > pieceZoom) close(p, view);
+      else {
+        current.low = low;
+        current.high = high;
+        if (stepped(current.last, at, bounds)) {
+          // The closing frame is kept as well, so a piece keeps room for it.
+          if (current.views.length === pieceViews - 1) close(p, view);
+          else {
+            current.views.push(view);
+            current.last = at;
+          }
+        }
+      }
+    }
+    if (!open)
+      open = { from: p, last: at, low: at.half, high: at.half, views: [view] };
+  }
+  close(1);
+  return pieces;
 }

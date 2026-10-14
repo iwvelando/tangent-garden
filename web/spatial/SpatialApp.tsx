@@ -301,6 +301,8 @@ export default function SpatialApp({
   useEffect(() => () => clearTimeout(focusTimer.current), []);
   const view = refineView ? focus : null;
   const viewRef = useRef(view);
+  // The drawing's page, whose size a refined flight's frames are taken at.
+  const canvasWrap = useRef<HTMLDivElement>(null);
   viewRef.current = view;
   const pending = Object.values(states).some((s) => s.pending),
     scalarError = Object.values(states).find((s) => s.error);
@@ -3607,6 +3609,15 @@ export default function SpatialApp({
               viewport.current ? structuredClone(viewport.current) : undefined
             }
             getFocus={() => viewRef.current}
+            refineView={refineView}
+            getPage={() =>
+              canvasWrap.current?.clientWidth
+                ? {
+                    width: canvasWrap.current.clientWidth,
+                    height: canvasWrap.current.clientHeight,
+                  }
+                : undefined
+            }
             onView={setAnimation}
             onRunning={setRunning}
             onPlay={showPlot}
@@ -3749,7 +3760,7 @@ export default function SpatialApp({
             </div>
           </div>
           <div className="plot-wrap" ref={plotWrap}>
-            <div className="spatial-canvas-wrap">
+            <div className="spatial-canvas-wrap" ref={canvasWrap}>
               {shown ? (
                 <SpatialPlot
                   onGeometry={(result, drawable) =>

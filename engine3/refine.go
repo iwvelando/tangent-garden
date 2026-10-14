@@ -88,14 +88,14 @@ func refinePath(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi, to
 }
 
 // refine refines a path of the study (see refinePath) at refineEpsilon of
-// its own robust radius, within the budget, and to the study's view, when
-// it has one.
+// its own robust radius, within the budget, and to the study's view or
+// flight's piece, when it has one.
 func (c Request) refine(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi float64) (*RefinedPath, []int) {
-	return refineViewed(points, breaks, at, lo, hi, pathTolerance(points), refineBudget, c.View)
+	return refineViewed(points, breaks, at, lo, hi, pathTolerance(points), refineBudget, c.focus())
 }
 
 // refineViewed is refinePath refined to a view as well, when there is one.
-func refineViewed(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi, tolerance float64, budget int, view *View) (*RefinedPath, []int) {
+func refineViewed(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi, tolerance float64, budget int, focus *refine.Focus[Vec3]) (*RefinedPath, []int) {
 	evaluate := func(t float64) *Vec3 {
 		if p := at(t); p.valid() {
 			return &p
@@ -104,10 +104,10 @@ func refineViewed(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi, 
 	}
 	var path *refine.Path[Vec3]
 	var broken []int
-	if view == nil {
+	if focus == nil {
 		path, broken = refine.Refine(points, breaks, evaluate, space, lo, hi, tolerance, budget)
 	} else {
-		path, broken = refine.RefineFocused(points, breaks, evaluate, space, lo, hi, tolerance, budget, view.focus())
+		path, broken = refine.RefineFocused(points, breaks, evaluate, space, lo, hi, tolerance, budget, *focus)
 	}
 	return &RefinedPath{
 		View:       path.Finest,

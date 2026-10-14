@@ -196,3 +196,34 @@ export function pathLeg(path: KeyPath, p: number): string {
   if (f === 0) return keyLabel(path, i);
   return `${keyLabel(path, i)} → ${keyLabel(path, i + 1)}`;
 }
+
+// A flight is refined in pieces: stretches of progress, [from, to), whose
+// zoomed-in frames are all drawn from one refinement (planar-path.ts,
+// spatial/path.ts). Refining a piece once, rather than every frame, keeps
+// playback in time; playback and export cut the same pieces, so they draw
+// the same curves. Progress is sampled pieceSteps times per leg to cut
+// them, and a piece spans a zoom of at most pieceZoom.
+export const pieceSteps = 512;
+export const pieceZoom = 2;
+export type PieceSpan = { from: number; to: number };
+
+// The piece a frame at progress p is drawn from: the one containing p, or,
+// for a frame just zoomed in between samples, the nearest.
+export function pieceAt(pieces: PieceSpan[], p: number): number {
+  let best = 0,
+    gap = Infinity;
+  pieces.forEach((piece, k) => {
+    const last = k === pieces.length - 1;
+    const d =
+      p < piece.from
+        ? piece.from - p
+        : p < piece.to || (last && p <= piece.to)
+          ? 0
+          : p - piece.to;
+    if (d < gap) {
+      gap = d;
+      best = k;
+    }
+  });
+  return best;
+}

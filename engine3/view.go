@@ -28,6 +28,9 @@ type View struct {
 	Near     float64 `json:"near,omitempty"`
 }
 
+// maxViews is the most views a piece of a flight may have.
+const maxViews = 32
+
 // validate refuses a view that is not a frame of a page.
 func (v View) validate() error {
 	positive := func(x float64) bool { return x > 0 && !math.IsInf(x, 1) }
@@ -114,7 +117,7 @@ func (v View) focus() refine.Focus[Vec3] {
 		},
 	}
 	if perspective {
-		focus.Scale = func(points []*Vec3) float64 {
+		focus.Scale = func(points []*Vec3, _ float64) float64 {
 			w := math.Inf(1)
 			for _, p := range points {
 				if p != nil {
@@ -125,7 +128,77 @@ func (v View) focus() refine.Focus[Vec3] {
 			return math.Max(w, nearest)
 		}
 	} else {
-		focus.Scale = func([]*Vec3) float64 { return 1 }
+		focus.Scale = func([]*Vec3, float64) float64 { return 1 }
 	}
 	return focus
+}
+
+// viewsFocus is the refinement of a piece of a flight, several views at
+// once (see focus): a piece that meets any of them is refined as finely as
+// the finest of those it meets asks at its depth, ahead of the rest. Each
+// view's tolerance and chord limit are the same multiples of its size, so
+// they are the first view's, scaled by each view's size over the first's;
+// one view is refined exactly as alone.
+func viewsFocus(views []View) refine.Focus[Vec3] {
+	foci := make([]refine.Focus[Vec3], len(views))
+	for k, v := range views {
+		foci[k] = v.focus()
+	}
+	return refine.Focus[Vec3]{
+		Tolerance: foci[0].Tolerance,
+		Chord:     foci[0].Chord,
+		Meets: func(points []*Vec3, grow float64) bool {
+			for _, f := range foci {
+				if f.Meets(points, grow) {
+					return true
+				}
+			}
+			return false
+		},
+		Scale: func(points []*Vec3, grow float64) float64 {
+			k := math.Inf(1)
+			for _, f := range foci {
+				if f.Meets(points, grow) {
+					k = math.Min(k, f.Tolerance/foci[0].Tolerance*f.Scale(points, grow))
+				}
+			}
+			return k
+		},
+	}
+}
+
+// focus is the request's refinement to what the drawing shows: its view,
+// a flight's piece, or nil for neither.
+func (c Request) focus() *refine.Focus[Vec3] {
+	switch {
+	case c.View != nil:
+		f := c.View.focus()
+		return &f
+	case len(c.Views) > 0:
+		f := viewsFocus(c.Views)
+		return &f
+	}
+	return nil
+}
+
+// validateViews refuses a request's views that are not frames of the page,
+// a piece of more than maxViews, or both a view and a piece.
+func (c Request) validateViews() error {
+	if c.View != nil && len(c.Views) > 0 {
+		return fmt.Errorf("a study is refined to one view or to a flight's views, not both")
+	}
+	if len(c.Views) > maxViews {
+		return fmt.Errorf("a flight's piece has at most %d views", maxViews)
+	}
+	if c.View != nil {
+		if err := c.View.validate(); err != nil {
+			return err
+		}
+	}
+	for _, v := range c.Views {
+		if err := v.validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

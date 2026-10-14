@@ -3921,4 +3921,112 @@ export const spatialPresets: {
     layers: { vectors: false, ellipses: false },
     view: { yaw: -0.9, pitch: 0.4, zoom: 70, panX: -0.6164, panY: 0.5875 },
   },
+  // Refinement along a flight (see path.ts's flightPieces): four circles,
+  // each riding the one before, turning 1, 6, 36 and 216 times round the
+  // domain, each a third the radius of the last, in planes that differ
+  // from one wheel to the next. Each turns faster than the wheels it rides
+  // on, so it curls into loops; the smallest, 1/27 the size of the first,
+  // pass about eleven samples each, enough that no turn between samples
+  // is taken for a cusp. The flight descends about t = 0.9 from the whole
+  // to one curl, 79 times closer, each frame refined to what it shows.
+  {
+    name: "Wheels within wheels",
+    detail:
+      "Four circles, each riding the last and turning six times as fast, flown into from the whole to a single curl",
+    config: {
+      ...base,
+      format: "harmonic",
+      construction: "none",
+      samples: 2400,
+      lines: 12,
+      adaptive: true,
+      adaptiveView: true,
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 3, y: 0, z: 0 },
+            sine: { x: 0, y: 3, z: 0 },
+          },
+          {
+            frequency: 6,
+            cosine: { x: 0, y: 0, z: 1 },
+            sine: { x: 1, y: 0, z: 0 },
+          },
+          {
+            frequency: 36,
+            cosine: { x: 0, y: 1 / 3, z: 0 },
+            sine: { x: 0, y: 0, z: 1 / 3 },
+          },
+          {
+            frequency: 216,
+            cosine: { x: 1 / 9, y: 0, z: 0 },
+            sine: { x: 0, y: 1 / 9, z: 0 },
+          },
+        ],
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    layers: { vectors: false, ellipses: false },
+    // The curve alone, without the probe a study before may have left on.
+    probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
+    // Each view frames the curve about t = 0.9, ever closer: the first the
+    // whole, the next two the point the next wheel turns about, the last two
+    // the curve itself.
+    flight: {
+      duration: 30,
+      path: {
+        style: "smooth",
+        keys: [
+          {
+            name: "Four wheels",
+            yaw: 0.3,
+            pitch: 0.75,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Six loops",
+            yaw: 0.6,
+            pitch: 0.9,
+            zoom: 3.2,
+            panX: -1.5293,
+            panY: -2.2931,
+            turns: 0,
+          },
+          {
+            name: "Thirty-six",
+            yaw: 0.2,
+            pitch: 0.5,
+            zoom: 9.5,
+            panX: -1.1922,
+            panY: -1.8723,
+            turns: 0,
+          },
+          {
+            name: "Two hundred sixteen",
+            yaw: -0.3,
+            pitch: 0.9,
+            zoom: 28,
+            panX: -0.876,
+            panY: -0.6004,
+            turns: 0,
+          },
+          {
+            name: "A single curl",
+            yaw: 0.9,
+            pitch: 0.3,
+            zoom: 79.4,
+            panX: -1.4445,
+            panY: -2.4904,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
 ];
