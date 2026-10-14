@@ -39,7 +39,13 @@ import {
   type Track,
   type Viewport,
 } from "./animation";
-import type { Bounds3, Frame, RefinementView, SpatialConfig } from "./types";
+import type {
+  Bounds3,
+  Frame,
+  RefinementView,
+  SpatialConfig,
+  SurfaceQuery,
+} from "./types";
 import type { Flight } from "./presets";
 import {
   probeIndex,
@@ -58,6 +64,11 @@ import {
   probeMotions,
   probeMotionHelp,
   probeBetween,
+  probeBetweenGrid,
+  probePlaced,
+  isGridPoint,
+  surfaceQuery,
+  type GridPoint,
   parameterAt,
   curveDomain,
   curveStep,
@@ -154,9 +165,10 @@ type Session = {
   // vary (see heldProbe).
   probe?: Probe;
   motion?: ProbeMotion;
-  // The curve probe on the study as it begins, and whether it stands
-  // between samples, where Go places it in each frame.
-  point?: CurveProbe | null;
+  // The probe on the study as it begins, the curve probe or a patch's
+  // point, and whether it stands between samples, where Go places it in
+  // each frame.
+  point?: CurveProbe | GridPoint | null;
   between?: boolean;
   // The entered cut when playback began, drawn by every mode, and the
   // range a peel moves it over.
@@ -307,7 +319,14 @@ export function SpatialAnimationPanel({
   // How the probe moves while parameters vary; a grid has no length, so
   // keeping its share falls back to staying.
   const [probeMotion, setProbeMotion] = useState<ProbeMotion>("stays");
-  const motions = frame && probing ? probeMotions(frame.config, target) : [];
+  const motions =
+    frame && probing
+      ? probeMotions(
+          frame.config,
+          target,
+          probeBetweenGrid(frame.config, probe!),
+        )
+      : [];
   useEffect(() => {
     if (motions.length && !motions.some((m) => m.value === probeMotion))
       setProbeMotion("stays");
@@ -563,7 +582,20 @@ export function SpatialAnimationPanel({
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
     let current: Frame;
     let held: ProbePlace | GridPlace | string | null | undefined;
-    if (s.mode === "parameters" && s.between) {
+    if (s.mode === "parameters" && s.between && isGridPoint(s.point)) {
+      // Between a patch's samples, likewise, at its (u, v).
+      const query = gridQuery(s, values.config, p);
+      current = await engine.computeSpatial(values.config, {
+        ...probeOptions(probeTarget(s.original.config, s.probe!)),
+        ...(typeof query !== "string" && { surfaceProbe: query }),
+        ...(s.focus && { view: s.focus }),
+        ...(s.page && { view: flownView(s, p) }),
+      });
+      held =
+        typeof query === "string"
+          ? query
+          : { grid: current.result.surfaceProbe! };
+    } else if (s.mode === "parameters" && s.between) {
       // Between samples, each frame's probe is placed by Go with the frame
       // itself, the ends included.
       const query = heldQuery(s, values.config, p);
@@ -615,34 +647,42 @@ export function SpatialAnimationPanel({
     // once a reveal has drawn it.
     if (held === undefined)
       held =
-        s.mode === "probe" && s.between
-          ? await engine.spatialProbe(s.original.config, {
-              t: parameterAt(
-                s.original.result.diagnostics!.min,
-                s.original.result.diagnostics!.max,
-                p,
+        s.mode === "probe" && s.between && isGridPoint(s.point)
+          ? {
+              grid: await engine.spatialSurfaceProbe(
+                s.original.config,
+                probeOptions(probeTarget(s.original.config, s.probe!)),
+                surfaceQuery(s.original.config, p, s.probe!.across),
               ),
-            })
-          : s.mode === "probe"
-            ? probeIndex(
-                p,
-                probeSteps(
-                  s.original.result,
-                  probeTarget(s.original.config, s.probe!),
-                )!,
-              )
-            : s.mode === "parameters" && s.probe
-              ? heldProbe(
-                  s.original.result,
-                  s.probe,
-                  probeTarget(s.original.config, s.probe),
-                  s.motion!,
-                  current.result,
+            }
+          : s.mode === "probe" && s.between
+            ? await engine.spatialProbe(s.original.config, {
+                t: parameterAt(
+                  s.original.result.diagnostics!.min,
+                  s.original.result.diagnostics!.max,
                   p,
+                ),
+              })
+            : s.mode === "probe"
+              ? probeIndex(
+                  p,
+                  probeSteps(
+                    s.original.result,
+                    probeTarget(s.original.config, s.probe!),
+                  )!,
                 )
-              : s.probe
-                ? fixedProbe(s, p)
-                : null;
+              : s.mode === "parameters" && s.probe
+                ? heldProbe(
+                    s.original.result,
+                    s.probe,
+                    probeTarget(s.original.config, s.probe),
+                    s.motion!,
+                    current.result,
+                    p,
+                  )
+                : s.probe
+                  ? fixedProbe(s, p)
+                  : null;
     // A grid probe held at its point stands in its own column, drawn and
     // read as the share across the frame's grid that picks it.
     let setup = s.probe;
@@ -741,8 +781,17 @@ export function SpatialAnimationPanel({
   // put it, once a reveal has drawn the sample (or a surface's row) it
   // describes; between samples, once it has drawn the sample after it.
   function fixedProbe(s: Session, p: number): ProbePlace | string | null {
+    if (s.between && isGridPoint(s.point)) {
+      // A patch's point is reached once the row after it is revealed.
+      const rows = s.original.result.surfaceDiagnostics!.u.length - 1;
+      return s.mode === "reveal" &&
+        Math.ceil(s.probe!.position * rows) >
+          revealedThrough(s.original.result, p)
+        ? unreached
+        : s.point!;
+    }
     if (s.between) {
-      const at = s.point;
+      const at = s.point as CurveProbe | null;
       if (!at) return null;
       return s.mode === "reveal" &&
         Math.ceil(curveStep(s.original.result, at)) >
@@ -770,7 +819,7 @@ export function SpatialAnimationPanel({
   ): ProbeQuery | string {
     const [min, max] = curveDomain(config);
     if (s.motion === "along") return { t: parameterAt(min, max, p) };
-    const at = s.point;
+    const at = s.point as CurveProbe | null;
     if (!at) return "This frame has no curve for the probe to describe.";
     if (s.motion === "stays")
       return at.t >= min && at.t <= max
@@ -780,6 +829,28 @@ export function SpatialAnimationPanel({
     return at.length === null || !(whole > 0)
       ? noShare
       : { share: Math.min(1, at.length / whole) };
+  }
+  // Where Go is to place a patch's probe between samples in a frame whose
+  // study is config, at progress p: at the same shares of its domain, at
+  // its own (u, v), or through every u at its share of v; or why it has no
+  // place there.
+  function gridQuery(
+    s: Session,
+    config: SpatialConfig,
+    p: number,
+  ): SurfaceQuery | string {
+    const probe = s.probe!;
+    if (s.motion === "along") return surfaceQuery(config, p, probe.across);
+    if (s.motion === "stays")
+      return surfaceQuery(config, probe.position, probe.across);
+    const { u, v } = (s.point as GridPoint).grid,
+      { uMin, uMax, vMin, vMax } = config.surface,
+      names = surfaceTerms(config, probeTarget(config, probe));
+    return !(u[0] >= uMin && u[0] <= uMax)
+      ? outsideFrame(u[0], uMin, uMax, names.along)
+      : !(v[0] >= vMin && v[0] <= vMax)
+        ? outsideFrame(v[0], vMin, vMax, names.around)
+        : { u: u[0], v: v[0] };
   }
   function display(s: Session, view: AnimationView) {
     s.progress = view.time!;
@@ -992,23 +1063,31 @@ export function SpatialAnimationPanel({
       }
       // A probe between samples stands at its own t, which Go places on the
       // study as it begins.
-      const between = drawsProbe && probeBetween(frame.config, probe!);
+      const between = drawsProbe && probePlaced(frame.config, probe!);
       const point = !drawsProbe
         ? undefined
-        : between
-          ? await client.current.spatialProbe(original.config, {
-              t: parameterAt(
-                original.result.diagnostics!.min,
-                original.result.diagnostics!.max,
-                probe!.position,
+        : between && target !== "curve"
+          ? {
+              grid: await client.current.spatialSurfaceProbe(
+                original.config,
+                probeOptions(target),
+                surfaceQuery(original.config, probe!.position, probe!.across),
               ),
-            })
-          : target === "curve"
-            ? sampleProbe(
-                original.result,
-                probeIndex(probe!.position, original.result.base.length - 1),
-              )
-            : undefined;
+            }
+          : between
+            ? await client.current.spatialProbe(original.config, {
+                t: parameterAt(
+                  original.result.diagnostics!.min,
+                  original.result.diagnostics!.max,
+                  probe!.position,
+                ),
+              })
+            : target === "curve"
+              ? sampleProbe(
+                  original.result,
+                  probeIndex(probe!.position, original.result.base.length - 1),
+                )
+              : undefined;
       if (epoch.current !== token) return;
       // The geometry a path's views frame, as drawn now, through the held
       // view's projection, which the path flies in.
@@ -1426,20 +1505,28 @@ export function SpatialAnimationPanel({
                       "The plane moves from the farthest point it reaches to the nearest, peeling from the side the normal points to; flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks.",
                     )
                   : mode === "probe"
-                    ? gridded(target) && frame
+                    ? gridded(target) &&
+                      frame &&
+                      probe &&
+                      probeBetweenGrid(frame.config, probe)
                       ? tiered(
-                          `Move the probe along the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
-                          `It runs from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles.`,
+                          `Move the probe through every ${surfaceTerms(frame.config, target).along} of the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
+                          `It runs from its first ${surfaceTerms(frame.config, target).along} to its last at its ${surfaceTerms(frame.config, target).around}, between the grid's rows, with its principal directions and circles.`,
                         )
-                      : probe && frame && probeBetween(frame.config, probe)
+                      : gridded(target) && frame
                         ? tiered(
-                            "Move the probe through every t of the curve. Geometry stays fixed.",
-                            "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                            `Move the probe along the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
+                            `It runs from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles.`,
                           )
-                        : tiered(
-                            "Move the probe along the curve, sample by sample. Geometry stays fixed.",
-                            "It carries its frame, osculating circle and readout from the start of the curve to its end.",
-                          )
+                        : probe && frame && probeBetween(frame.config, probe)
+                          ? tiered(
+                              "Move the probe through every t of the curve. Geometry stays fixed.",
+                              "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                            )
+                          : tiered(
+                              "Move the probe along the curve, sample by sample. Geometry stays fixed.",
+                              "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                            )
                     : mode === "trace"
                       ? tiered(
                           "Send light from the source to the surface and on; each caustic point appears as its ray reaches it.",
@@ -1566,7 +1653,7 @@ export function SpatialAnimationPanel({
                   help={probeMotionHelp(
                     frame.config,
                     target,
-                    !!probe && probeBetween(frame.config, probe),
+                    !!probe && probePlaced(frame.config, probe),
                   )}
                 >
                   <select

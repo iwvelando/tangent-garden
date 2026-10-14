@@ -233,6 +233,34 @@ test("a 3D link carries a probe between samples; older ones snap it", async () =
   }
 });
 
+test("a 3D link carries a patch's probe between grid samples; older ones snap it", async () => {
+  const umbilic = spatialPresets.find(
+    (p) => p.name === "Through an ellipsoid's umbilic",
+  )!;
+  const probe = {
+    enabled: true,
+    position: 0.123456,
+    target: "focal1" as const,
+    across: 0.654321,
+  };
+  const study: SpatialStudy = {
+    ...spatial(),
+    config: structuredClone(umbilic.config),
+    probe: { ...probe, betweenGrid: true },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study).probe, study.probe);
+  // Links made before it, and a probe set back to snap, carry no flag.
+  for (const betweenGrid of [undefined, false]) {
+    const old = structuredClone(study) as any;
+    old.probe = {
+      ...probe,
+      ...(betweenGrid !== undefined && { betweenGrid }),
+    };
+    assert.deepEqual(spatialStudy(old).probe, probe);
+  }
+});
+
 test("a 3D link carries the surface probe's plots; older ones plot along the rows", async () => {
   const torus = spatialPresets.findIndex(
     (p) => p.name === "A torus revealing its centers",
@@ -591,6 +619,7 @@ test("3D and 4D fields are refused by name", async () => {
     ["probe.target", (s) => (s.probe.target = "ribbon")],
     ["probe.across", (s) => (s.probe.across = -0.1)],
     ["probe.between", (s) => (s.probe.between = 1), /true or false/],
+    ["probe.betweenGrid", (s) => (s.probe.betweenGrid = "on"), /true or false/],
     ["probe.plots", (s) => (s.probe.plots = "columns")],
     ["probe.plots", (s) => (s.probe.plots = 2)],
     ["layers.glow", (s) => (s.layers.glow = true)],

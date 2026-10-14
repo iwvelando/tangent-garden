@@ -115,6 +115,11 @@ type Request struct {
 	// harmonic or custom curve. It asks for the diagnostics too, and changes
 	// nothing else in the result.
 	Probe *ProbeQuery `json:"probe,omitempty"`
+	// SurfaceProbe asks a surface study for its probe at one point, at or
+	// between grid samples (see pointProbe): the patch's, or its offset's or
+	// focal sheet's when their diagnostics are asked for, which it asks for
+	// too. It changes nothing else in the result.
+	SurfaceProbe *SurfaceQuery `json:"surfaceProbe,omitempty"`
 	// units are the base curve's units (see units), which compute sets
 	// from its size.
 	units units
@@ -178,6 +183,12 @@ type Result struct {
 	Adaptive *AdaptiveResult `json:"adaptive,omitempty"`
 	// CurveProbe is present only when requested, for a curve.
 	CurveProbe *ProbePoint `json:"probe,omitempty"`
+	// SurfaceProbe is present only when requested, for a surface patch: one
+	// row and one column at the asked (u, v).
+	SurfaceProbe *SurfaceDiagnostics `json:"surfaceProbe,omitempty"`
+	// surfaceScale is a surface study's size, which sets its probe's
+	// tolerances.
+	surfaceScale float64
 	// probing places the curve probe over the computed study.
 	probing *probing
 }
@@ -212,12 +223,23 @@ func Compute(c Request) (Result, error) {
 		}
 		c.Diagnostics = true
 	}
+	if c.SurfaceProbe != nil {
+		if c.Format != "surface" {
+			return Result{}, errSurfacePoint
+		}
+		c.surfaceTarget()
+	}
 	out, err := compute(c)
 	if err == nil && out.Diagnostics != nil {
 		out.Diagnostics.clip(out.Bounds.Radius)
 	}
 	if err == nil && c.Probe != nil {
 		out.CurveProbe = out.probing.probe(*c.Probe, out.Diagnostics, out.Bounds.Radius)
+	}
+	if err == nil && c.SurfaceProbe != nil {
+		if out.SurfaceProbe, err = out.surfacePoint(c.Surface, *c.SurfaceProbe); err != nil {
+			return Result{}, err
+		}
 	}
 	// A patch, its offset, its focal sheets and a wavefront place their own
 	// focal points: the patch and its offset as its focal sheets, a focal

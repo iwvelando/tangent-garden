@@ -52,14 +52,23 @@ func main() {
 		}
 		var q engine3.Request
 		err := json.Unmarshal([]byte(args[0].String()), &q)
-		var at *engine3.ProbePoint
-		if err == nil {
-			at, err = engine3.ProbeOnly(q)
+		// A surface probe's point, or else the curve probe's.
+		var reply map[string]any
+		if err == nil && q.SurfaceProbe != nil {
+			var at *engine3.SurfaceDiagnostics
+			if at, err = engine3.SurfaceProbeOnly(q); err == nil {
+				reply = map[string]any{"surfaceProbe": at}
+			}
+		} else if err == nil {
+			var at *engine3.ProbePoint
+			if at, err = engine3.ProbeOnly(q); err == nil {
+				reply = map[string]any{"probe": at}
+			}
 		}
 		if err != nil {
 			return refusal(err)
 		}
-		b, err := json.Marshal(map[string]any{"probe": at})
+		b, err := json.Marshal(reply)
 		if err != nil {
 			return `{"error":"non-finite probe"}`
 		}

@@ -119,40 +119,52 @@ func (d *SurfaceDiagnostics) clip(radius float64) {
 	}
 }
 
-// patchProbe describes the patch at its own samples, from the same
-// evaluations as its focal sheets.
-func patchProbe(q SurfaceRequest, samples [][]surfacePoint, scale float64) *SurfaceDiagnostics {
+// patchGrid allocates a patch's diagnostics of kind on its own grid: row
+// i is u sample i, column j is v sample j.
+func patchGrid(q SurfaceRequest, kind string) *SurfaceDiagnostics {
 	nu, nv := q.USamples, q.VSamples
-	d := newSurfaceDiagnostics("patch", nu+1, nv+1)
+	d := newSurfaceDiagnostics(kind, nu+1, nv+1)
 	for i := 0; i <= nu; i++ {
 		d.Along[i], d.U[i] = i, lerp(q.UMin, q.UMax, i, nu)
 	}
 	for j := 0; j <= nv; j++ {
 		d.V[j] = lerp(q.VMin, q.VMax, j, nv)
 	}
+	return d
+}
+
+// patchProbe describes the patch at its own samples, from the same
+// evaluations as its focal sheets.
+func patchProbe(q SurfaceRequest, samples [][]surfacePoint, scale float64) *SurfaceDiagnostics {
+	d := patchGrid(q, "patch")
 	for i, row := range samples {
 		for j, s := range row {
-			x, n := s.X, s.N
-			d.Points[i][j] = &x
-			if !s.Normal {
-				d.Singular++
-				continue
-			}
-			d.Normals[i][j] = &n
-			if s.Umbilic {
-				d.Umbilics++
-			}
-			for k := 0; k < 2; k++ {
-				kappa, e := s.Kappa[k], s.Dir[k]
-				d.Curvature[k][i][j] = &kappa
-				if !s.Umbilic {
-					d.Direction[k][i][j] = &e
-				}
-			}
+			d.patchAt(i, j, s)
 		}
 	}
 	d.clip(scale)
 	return d
+}
+
+// patchAt describes the patch at sample (i, j), whose geometry is s.
+func (d *SurfaceDiagnostics) patchAt(i, j int, s surfacePoint) {
+	x, n := s.X, s.N
+	d.Points[i][j] = &x
+	if !s.Normal {
+		d.Singular++
+		return
+	}
+	d.Normals[i][j] = &n
+	if s.Umbilic {
+		d.Umbilics++
+	}
+	for k := 0; k < 2; k++ {
+		kappa, e := s.Kappa[k], s.Dir[k]
+		d.Curvature[k][i][j] = &kappa
+		if !s.Umbilic {
+			d.Direction[k][i][j] = &e
+		}
+	}
 }
 
 // offsetProbe describes the offset X_d = X + d·n at the patch's own
@@ -166,45 +178,45 @@ func patchProbe(q SurfaceRequest, samples [][]surfacePoint, scale float64) *Surf
 // singular; where (1 − dκ₁)(1 − dκ₂) < 0 it lies beyond one focal sheet
 // and has folded, and κ₁ < κ₂ is possible there.
 func offsetProbe(q SurfaceRequest, samples [][]surfacePoint, scale float64) *SurfaceDiagnostics {
-	nu, nv := q.USamples, q.VSamples
-	d := newSurfaceDiagnostics("offset", nu+1, nv+1)
-	d.Distance, d.Folds = q.Offset, grid2[bool](nu+1, nv+1)
-	for i := 0; i <= nu; i++ {
-		d.Along[i], d.U[i] = i, lerp(q.UMin, q.UMax, i, nu)
-	}
-	for j := 0; j <= nv; j++ {
-		d.V[j] = lerp(q.VMin, q.VMax, j, nv)
-	}
+	d := patchGrid(q, "offset")
+	d.Distance, d.Folds = q.Offset, grid2[bool](len(d.U), len(d.V))
 	for i, row := range samples {
 		for j, s := range row {
-			if !s.Normal {
-				// The chart has no normal here, so the offset has no point.
-				d.Singular++
-				continue
-			}
-			x, n := s.X.add(s.N.mul(q.Offset)), s.N
-			d.Points[i][j] = &x
-			stretch := [2]float64{1 - q.Offset*s.Kappa[0], 1 - q.Offset*s.Kappa[1]}
-			d.Folds[i][j] = stretch[0]*stretch[1] < 0
-			if !(math.Abs(stretch[0]) > 1e-9*(1+math.Abs(q.Offset*s.Kappa[0]))) || !(math.Abs(stretch[1]) > 1e-9*(1+math.Abs(q.Offset*s.Kappa[1]))) {
-				d.Singular++
-				continue
-			}
-			d.Normals[i][j] = &n
-			if s.Umbilic {
-				d.Umbilics++
-			}
-			for k := 0; k < 2; k++ {
-				kappa, e := s.Kappa[k]/stretch[k], s.Dir[k]
-				d.Curvature[k][i][j] = &kappa
-				if !s.Umbilic {
-					d.Direction[k][i][j] = &e
-				}
-			}
+			d.offsetAt(i, j, s)
 		}
 	}
 	d.clip(scale)
 	return d
+}
+
+// offsetAt describes the offset at sample (i, j), whose patch geometry is
+// s.
+func (d *SurfaceDiagnostics) offsetAt(i, j int, s surfacePoint) {
+	if !s.Normal {
+		// The chart has no normal here, so the offset has no point.
+		d.Singular++
+		return
+	}
+	dist := d.Distance
+	x, n := s.X.add(s.N.mul(dist)), s.N
+	d.Points[i][j] = &x
+	stretch := [2]float64{1 - dist*s.Kappa[0], 1 - dist*s.Kappa[1]}
+	d.Folds[i][j] = stretch[0]*stretch[1] < 0
+	if !(math.Abs(stretch[0]) > 1e-9*(1+math.Abs(dist*s.Kappa[0]))) || !(math.Abs(stretch[1]) > 1e-9*(1+math.Abs(dist*s.Kappa[1]))) {
+		d.Singular++
+		return
+	}
+	d.Normals[i][j] = &n
+	if s.Umbilic {
+		d.Umbilics++
+	}
+	for k := 0; k < 2; k++ {
+		kappa, e := s.Kappa[k]/stretch[k], s.Dir[k]
+		d.Curvature[k][i][j] = &kappa
+		if !s.Umbilic {
+			d.Direction[k][i][j] = &e
+		}
+	}
 }
 
 // focalProbe describes focal sheet number sheet, F = X + n/κ with κ the
@@ -228,67 +240,64 @@ func offsetProbe(q SurfaceRequest, samples [][]surfacePoint, scale float64) *Sur
 // whole sheet is a curve or a point, as a surface of revolution's
 // parallels' sheet is its axis.
 func focalProbe(q SurfaceRequest, sheet int, samples [][]surfacePoint, scale float64) *SurfaceDiagnostics {
-	nu, nv := q.USamples, q.VSamples
-	k := sheet - 1
-	d := newSurfaceDiagnostics("focal", nu+1, nv+1)
-	d.Sheet, d.Feet = sheet, grid2[*Vec3](nu+1, nv+1)
-	for i := 0; i <= nu; i++ {
-		d.Along[i], d.U[i] = i, lerp(q.UMin, q.UMax, i, nu)
-	}
-	for j := 0; j <= nv; j++ {
-		d.V[j] = lerp(q.VMin, q.VMax, j, nv)
-	}
-	reach := focalReach * scale
+	d := patchGrid(q, "focal")
+	d.Sheet, d.Feet = sheet, grid2[*Vec3](len(d.U), len(d.V))
 	for i, row := range samples {
 		for j, s := range row {
-			f, ok := s.focal(k, reach)
-			if !ok {
-				continue
+			// The sample before it at the same v, or else along v.
+			var before *Vec3
+			if i > 0 {
+				before = d.Normals[i-1][j]
 			}
-			x := s.X
-			d.Feet[i][j], d.Points[i][j] = &x, &f
-			if s.Umbilic {
-				d.Singular++
-				continue
+			if before == nil && j > 0 {
+				before = d.Normals[i][j-1]
 			}
-			fu, fv, m, mu, mv := q.focalFrame(d.U[i], d.V[j], s, k)
-			area := fu.cross(fv).norm()
-			big := math.Max(fu.norm(), fv.norm())
-			if !(area > 1e-9*big*big) {
-				d.Singular++
-				continue
-			}
-			for _, prior := range [][2]int{{i - 1, j}, {i, j - 1}} {
-				if prior[0] < 0 || prior[1] < 0 {
-					continue
-				}
-				if before := d.Normals[prior[0]][prior[1]]; before != nil {
-					if before.dot(m) < 0 {
-						m, mu, mv = m.mul(-1), mu.mul(-1), mv.mul(-1)
-					}
-					break
-				}
-			}
-			p := principal(f, fu, fv, m, -fu.dot(mu), -(fu.dot(mv)+fv.dot(mu))/2, -fv.dot(mv), area, scale)
-			if !finite(p.Kappa[0]) || !finite(p.Kappa[1]) {
-				d.Unknown++
-				continue
-			}
-			d.Normals[i][j] = &m
-			if p.Umbilic {
-				d.Umbilics++
-			}
-			for b := 0; b < 2; b++ {
-				kappa, e := p.Kappa[b], p.Dir[b]
-				d.Curvature[b][i][j] = &kappa
-				if !p.Umbilic {
-					d.Direction[b][i][j] = &e
-				}
-			}
+			d.focalAt(q, i, j, s, before, scale)
 		}
 	}
 	d.clip(scale)
 	return d
+}
+
+// focalAt describes the focal sheet at sample (i, j), whose patch geometry
+// is s, with its normal oriented as before, where that is known.
+func (d *SurfaceDiagnostics) focalAt(q SurfaceRequest, i, j int, s surfacePoint, before *Vec3, scale float64) {
+	f, ok := s.focal(d.Sheet-1, focalReach*scale)
+	if !ok {
+		return
+	}
+	x := s.X
+	d.Feet[i][j], d.Points[i][j] = &x, &f
+	if s.Umbilic {
+		d.Singular++
+		return
+	}
+	fu, fv, m, mu, mv := q.focalFrame(d.U[i], d.V[j], s, d.Sheet-1)
+	area := fu.cross(fv).norm()
+	big := math.Max(fu.norm(), fv.norm())
+	if !(area > 1e-9*big*big) {
+		d.Singular++
+		return
+	}
+	if before != nil && before.dot(m) < 0 {
+		m, mu, mv = m.mul(-1), mu.mul(-1), mv.mul(-1)
+	}
+	p := principal(f, fu, fv, m, -fu.dot(mu), -(fu.dot(mv)+fv.dot(mu))/2, -fv.dot(mv), area, scale)
+	if !finite(p.Kappa[0]) || !finite(p.Kappa[1]) {
+		d.Unknown++
+		return
+	}
+	d.Normals[i][j] = &m
+	if p.Umbilic {
+		d.Umbilics++
+	}
+	for b := 0; b < 2; b++ {
+		kappa, e := p.Kappa[b], p.Dir[b]
+		d.Curvature[b][i][j] = &kappa
+		if !p.Umbilic {
+			d.Direction[b][i][j] = &e
+		}
+	}
 }
 
 // focalFrame returns the partial derivatives F_u and F_v of focal sheet k,

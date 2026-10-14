@@ -414,7 +414,14 @@ export type SpatialResult = {
   adaptive?: AdaptiveResult;
   // Present only when the curve probe asked for one parameter.
   probe?: SpatialProbePoint;
+  // Present only when the surface probe asked for one point of a patch:
+  // its surface diagnostics at that (u, v) alone, one row and one column
+  // (see SurfaceQuery).
+  surfaceProbe?: SurfaceDiagnostics;
 };
+// Mirrors engine3.SurfaceQuery: the surface probe at the parameters (u, v)
+// of a patch, at or between its grid samples.
+export type SurfaceQuery = { u: number; v: number };
 // Mirrors engine3.ProbePoint: the curve a construction acts on, described
 // at the parameter t as DiagnosticsResult does at a sample, each null where
 // a sample would have none, with the arc length to it; and the points the

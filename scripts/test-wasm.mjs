@@ -2677,6 +2677,62 @@ const spatialSurface = (surface, study = {}) =>
   );
   assert.ok(Math.abs(foot.z - 0.75 * 0.5) < 1e-12);
   assert.ok(evolute.points[4][9] && !evolute.normals[4][9]);
+  // Between samples, the probe alone and the whole study place the same
+  // point on the same sheet: (u, v) itself, one row and one column, on
+  // the meridian's evolute at that latitude.
+  const between = { u: 0.3, v: Math.PI / 5 },
+    spheroid = {
+      format: "surface",
+      surface: {
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1.5,
+        c: 0.75,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 36,
+        vSamples: 18,
+        curves: 7,
+        reverse: false,
+        offset: 0,
+        reach: 1,
+      },
+      focalDiagnostics: 2,
+      surfaceProbe: between,
+    };
+  const pointOnly = JSON.parse(
+    tangentGardenSpatialProbe(JSON.stringify(spheroid)),
+  );
+  const pointed = spatialResult(tangentGardenSpatial(JSON.stringify(spheroid)));
+  assert.deepEqual(pointOnly, { surfaceProbe: pointed.surfaceProbe });
+  assert.equal(pointed.surfaceDiagnostics.kind, "focal");
+  const sheetPoint = pointed.surfaceProbe;
+  assert.deepEqual(
+    [sheetPoint.kind, sheetPoint.sheet, sheetPoint.u, sheetPoint.v],
+    ["focal", 2, [between.u], [between.v]],
+  );
+  const onEvolute = sheetPoint.points[0][0];
+  assert.ok(
+    Math.abs(
+      Math.hypot(onEvolute.x, onEvolute.y) -
+        ((1.5 ** 2 - 0.75 ** 2) / 1.5) * Math.cos(between.v) ** 3,
+    ) < 1e-12,
+  );
+  assert.ok(
+    Math.abs(
+      onEvolute.z + ((1.5 ** 2 - 0.75 ** 2) / 0.75) * Math.sin(between.v) ** 3,
+    ) < 1e-12,
+  );
+  assert.match(
+    JSON.parse(
+      tangentGardenSpatialProbe(
+        JSON.stringify({ ...spheroid, surfaceProbe: { u: 7, v: 0 } }),
+      ),
+    ).error,
+    /domain/,
+  );
   const axis = spatialSurface(
     { c: 0.75, offset: 0 },
     { focalDiagnostics: 1 },

@@ -4114,4 +4114,56 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // A quarter of the ellipsoid (1.5, 1, 0.7) about the meridian u = 2π,
+  // seen from inside, with the probe standing between its grid samples.
+  // Its umbilics lie in the plane y = 0 where sin v = √((b² − c²)/(a² −
+  // c²)), v ≈ 0.5684, which falls between columns 16 and 17 of 24. The
+  // probe starts on the upper umbilic at u = 2π (row 30 of 60): both
+  // curvatures are −1.05, every direction is principal, and no direction
+  // or circle is drawn. Played, it runs through every u at that v, its
+  // circles closing to one as it nears the umbilic, and its principal
+  // directions turn a quarter turn as it crosses.
+  {
+    name: "Through an ellipsoid's umbilic",
+    detail:
+      "Where both principal curvatures agree, every direction is principal; gliding through it, the principal directions turn a quarter turn",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 0.7,
+        // A quarter about the umbilics' meridian, open towards the view.
+        uMin: (7 * Math.PI) / 4,
+        uMax: (9 * Math.PI) / 4,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 60,
+        vSamples: 24,
+        curves: 12,
+        offset: 0,
+        reach: 0,
+      },
+    },
+    layers: { focal1: false, focal2: false },
+    view: { yaw: 2, pitch: 0.36, zoom: 2, panX: 0, panY: 0 },
+    probe: {
+      enabled: true,
+      position: 0.5,
+      target: "surface",
+      across: (Math.asin(Math.sqrt(0.51 / 1.76)) + Math.PI / 2) / Math.PI,
+      betweenGrid: true,
+    },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];
