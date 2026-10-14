@@ -602,6 +602,9 @@ test("repeat and pace travel in a copied link", async ({ page }) => {
 test("the loop presets bring their repeat, pace and camera, and pass the closure check", async ({
   page,
 }) => {
+  // It opens and plays four studies in turn, which a loaded CI runner,
+  // drawing in software, can take longer than the default to do.
+  test.setTimeout(60_000);
   await ready(page);
   const choose = async (label: string) => {
     await page
