@@ -523,7 +523,7 @@ func pointers(points []Vec) []*Vec {
 
 // checkCopies computes each preset and its copies under ms, with the base's
 // diagnostics and refinement between samples where it has them.
-func checkCopies(t *testing.T, ms []similarity, skip func(preset, similarity) string) {
+func checkCopies(t *testing.T, ms []similarity, skip func(preset, *copies) string) {
 	for _, p := range loadPresets(t) {
 		q := p.Config
 		q.Diagnostics = refines(q.Curve.Format)
@@ -540,14 +540,15 @@ func checkCopies(t *testing.T, ms []similarity, skip func(preset, similarity) st
 				if !ok {
 					t.Skip("the definition cannot carry the map")
 				}
-				if why := skip(p, m); why != "" {
+				c := newCopies(t, want, m)
+				if why := skip(p, c); why != "" {
 					t.Skip(why)
 				}
 				got, err := Compute(copy)
 				if err != nil {
 					t.Fatal(err)
 				}
-				newCopies(t, want, m).result(q, want, got)
+				c.result(q, want, got)
 			})
 		}
 	}
@@ -556,16 +557,21 @@ func checkCopies(t *testing.T, ms []similarity, skip func(preset, similarity) st
 // Every preset scaled by a power of two draws the image of the original,
 // exactly, with the same gaps, breaks, refinement and diagnostics.
 func TestScaledPresetsDrawTheOriginalsImage(t *testing.T) {
-	checkCopies(t, scaledCopies, func(preset, similarity) string { return "" })
+	checkCopies(t, scaledCopies, func(preset, *copies) string { return "" })
 }
 
 // Every preset carried hundreds of diameters from the origin draws the
 // image of the original within the translation budget, with the same gaps,
-// breaks and diagnostics.
+// breaks and diagnostics. A study so small for its distance that the
+// budget for its centers of curvature exceeds its size has a curvature
+// within rounding there, as a few thousandths of a unit 36,000 units out.
 func TestTranslatedPresetsDrawTheOriginalsImage(t *testing.T) {
-	checkCopies(t, translatedCopies, func(p preset, _ similarity) string {
+	checkCopies(t, translatedCopies, func(p preset, c *copies) string {
 		if order(p.Config) > 2 {
 			return "a construction on an evolute reads three derivatives, past the translation budget"
+		}
+		if c.b.derivative(2) > 1 {
+			return "its curvature is within rounding this far out"
 		}
 		return ""
 	})

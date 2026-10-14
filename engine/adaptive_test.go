@@ -782,3 +782,34 @@ func TestRefinedConstructionsAgreeWithTheSamples(t *testing.T) {
 		t.Fatalf("gaps: %v", gaps)
 	}
 }
+
+// Refinement probes a stack's members at the same parameters, and each
+// member is its base offset along the base's own normal there: the base's
+// position and stencil derivatives are evaluated once per parameter for
+// the whole stack, not once per member, so a stack of thirteen costs about
+// what a stack of two does.
+func TestStackMembersShareTheirBasesEvaluations(t *testing.T) {
+	calls := func(count int) int {
+		q := ellipseRequest("offset")
+		q.Adaptive = true
+		q.Stack = Stack{Enabled: true, From: 0.1, To: 0.5, Count: count}
+		r := compute(t, q)
+		f, err := compile(q.Curve)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		counted := func(s float64) Vec { n++; return f(s) }
+		g := inputCurve(q.Input, counted, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
+		r.Adaptive = nil
+		q.adapt(&r, counted, g)
+		if len(r.Adaptive.Family) != count {
+			t.Fatalf("%d members refined, want %d", len(r.Adaptive.Family), count)
+		}
+		return n
+	}
+	two, thirteen := calls(2), calls(13)
+	if thirteen > two*3/2 {
+		t.Errorf("a stack of 13 evaluates its base %d times, a stack of 2 %d: want about as many", thirteen, two)
+	}
+}

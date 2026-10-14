@@ -123,8 +123,17 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
       "43",
     ])
       setups.push(async () => {
-        await page.goto("/?study=3d");
+        // A preset replaces the whole study, so these share one page: each
+        // reload restarts the 3D notebook, about a second locally and three
+        // on CI's software WebGL.
+        if (!page.url().includes("study=3d")) await page.goto("/?study=3d");
         await choosePreset(page, preset);
+        // Its pairs mount as it settles; sweeping before then would find
+        // the previous study's.
+        await expect(page.locator(".spatial-stage")).toHaveAttribute(
+          "aria-busy",
+          "false",
+        );
         if (
           (await page
             .locator("#spatial-animation-section")
@@ -344,8 +353,10 @@ for (const width of [1440, 390])
       await page.setViewportSize({ width, height: 1000 });
       const list = await setups(page);
       // The sweep grows with every example; a fixed limit runs out as the
-      // gallery grows. About a second a setup locally, so three is ample.
-      test.setTimeout(60_000 + 3_000 * list.length);
+      // gallery grows. A setup and its sweep take up to about two and a half
+      // seconds locally and four and a half on CI, whose software WebGL
+      // makes each reload of the 3D notebook slow, so six is ample.
+      test.setTimeout(60_000 + 6_000 * list.length);
       // Guard against a sweep that silently finds nothing.
       expect(await sweepPairs(page, list)).toBeGreaterThanOrEqual(3);
     });

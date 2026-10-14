@@ -90,14 +90,21 @@ var plane = refine.Metric[Vec]{
 // not apply.
 func studyRadius(points []*Vec) float64 {
 	unit := spreadUnit(points)
-	scaled := make([]*Vec, len(points))
+	// One allocation for every scaled point, not one each: allocation
+	// costs WASM's collector more than the arithmetic.
+	scaled, values := make([]*Vec, len(points)), make([]Vec, len(points))
 	for i, p := range points {
 		if p != nil {
-			q := p.Mul(1 / unit)
-			scaled[i] = &q
+			values[i] = p.Mul(1 / unit)
+			scaled[i] = &values[i]
 		}
 	}
-	return unit * refine.Radius(scaled, func(p Vec) []float64 { return []float64{p.X, p.Y} })
+	// Radius reads each point's coordinates before asking for the next.
+	coords := make([]float64, 2)
+	return unit * refine.Radius(scaled, func(p Vec) []float64 {
+		coords[0], coords[1] = p.X, p.Y
+		return coords
+	})
 }
 
 // spreadUnit is the power of two at or below the larger interquartile
@@ -257,8 +264,9 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 	// Each member of a stack, or branch of a circle envelope, is broken
 	// where its input is, not where another is: one member's fold is not a
 	// break in its neighbors.
+	stations := q.sharedStations(f, g)
 	for _, member := range out.Family {
-		if at := q.memberAt(f, g, out, member); at != nil {
+		if at := q.memberAlong(stations, out, member); at != nil {
 			path, _ := refinePath(member.Points, broken, at, lo, hi, q.View)
 			a.Family = append(a.Family, path)
 		}
@@ -410,11 +418,23 @@ func (q Request) rollingAt(f, g curveFunc, run *rollingRun) func(float64) *Vec {
 // memberAt evaluates a member of an offset stack, or a branch of a circle
 // envelope, at any t, or is nil for a study with neither.
 func (q Request) memberAt(f, g curveFunc, out *Result, member Path) func(float64) *Vec {
+	return q.memberAlong(q.stations(f, g), out, member)
+}
+
+// memberAlong is memberAt with its input read from at, which a family's
+// members share (see sharedStations).
+func (q Request) memberAlong(at func(float64) station, out *Result, member Path) func(float64) *Vec {
 	switch {
 	case q.Kind == "offset" && q.Stack.Enabled:
-		return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, member.Distance) })
+		var slab vecSlab
+		return q.alongStations(at, func(_ float64, p, d, _ Vec) *Vec {
+			if o, ok := offsetAt(p, d, member.Distance); ok {
+				return slab.keep(o)
+			}
+			return nil
+		})
 	case q.Kind == "envelope" && out != nil && out.circleFamily != nil:
-		return q.along(f, g, func(t float64, p, d, _ Vec) *Vec {
+		return q.alongStations(at, func(t float64, p, d, _ Vec) *Vec {
 			circle := out.circleFamily.at(t, p, d)
 			if member.Branch == "left" {
 				return circle.left
@@ -453,22 +473,72 @@ func (q Request) virtualAt(f, g curveFunc, out *Result) func(float64) (*Vec, boo
 // where the base or the input is undefined, or the derivatives either
 // needs are ill-conditioned, each checked as at the samples.
 func (q Request) along(f, g curveFunc, construct func(t float64, p, d, dd Vec) *Vec) func(float64) *Vec {
+	return q.alongStations(q.stations(f, g), construct)
+}
+
+// alongStations is along with its input read from at.
+func (q Request) alongStations(at func(float64) station, construct func(t float64, p, d, dd Vec) *Vec) func(float64) *Vec {
+	return func(t float64) *Vec {
+		s := at(t)
+		if !s.ok {
+			return nil
+		}
+		return construct(t, s.p, s.d, s.dd)
+	}
+}
+
+// vecSlab keeps points in blocks, one allocation for many: allocation
+// costs WASM's collector more than refinement's arithmetic.
+type vecSlab []Vec
+
+func (s *vecSlab) keep(v Vec) *Vec {
+	if len(*s) == cap(*s) {
+		*s = make([]Vec, 0, 512)
+	}
+	*s = append(*s, v)
+	return &(*s)[len(*s)-1]
+}
+
+// station is what along builds a construction from at one t: its input's
+// position and stencil derivatives, and whether they passed its checks.
+type station struct {
+	p, d, dd Vec
+	ok       bool
+}
+
+// stations evaluates along's input at any t.
+func (q Request) stations(f, g curveFunc) func(float64) station {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	base := baseStencil(lo, hi)
-	return func(t float64) *Vec {
+	return func(t float64) station {
 		p := f(t)
 		d, dd := base.derivatives(f, t)
 		if !p.Valid() || !base.conditioned(f, t, d, dd, derivativeOrder(q)) {
-			return nil
+			return station{}
 		}
 		if composed(q.Input) {
 			p = g(t)
 			d, dd = base.derivatives(g, t)
 			if !p.Valid() || !inputStencil(lo, hi).conditioned(g, t, d, dd, constructionOrder(q.Kind)) {
-				return nil
+				return station{}
 			}
 		}
-		return construct(t, p, d, dd)
+		return station{p, d, dd, true}
+	}
+}
+
+// sharedStations is stations remembered by t, for a family's members:
+// refinement probes each at the same parameters, wherever it has nothing
+// to insert, so the input is evaluated there once for them all.
+func (q Request) sharedStations(f, g curveFunc) func(float64) station {
+	at, seen := q.stations(f, g), map[float64]station{}
+	return func(t float64) station {
+		s, ok := seen[t]
+		if !ok {
+			s = at(t)
+			seen[t] = s
+		}
+		return s
 	}
 }
 
