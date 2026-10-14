@@ -675,27 +675,54 @@ export function applyTracks(
 // Camera fitting only; no curve evaluation. Fit families independently so a
 // short base never hides a distant derived edge. Same outer Tukey rule as Go.
 export function fitBounds(...families: (Vec3 | null)[][]): Bounds3 {
+  return fitFamilies(families.map((points) => ({ points })));
+}
+// A family that frames the drawing: its samples, and its reach between them
+// (a refined curve's, when the study frames it).
+export type Framing = { points: (Vec3 | null)[]; reach?: Vec3[] };
+// fitBounds with each family's reach, which joins its family where it lies
+// within the fences the family's samples set on every axis, as Go's
+// fitReach does.
+export function fitFamilies(families: Framing[]): Bounds3 {
   const lo = [Infinity, Infinity, Infinity],
     hi = [-Infinity, -Infinity, -Infinity];
+  const axes = ["x", "y", "z"] as const;
+  const reached: Vec3[] = [];
   for (const family of families) {
-    const points = family.filter((p): p is Vec3 => p !== null);
+    const points = family.points.filter((p): p is Vec3 => p !== null);
     if (!points.length) continue;
-    (["x", "y", "z"] as const).forEach((key, i) => {
+    const fences = axes.map((key, i) => {
       const vs = points.map((p) => p[key]).sort((a, b) => a - b);
       let a = vs[0],
-        b = vs.at(-1)!;
+        b = vs.at(-1)!,
+        fence = [-Infinity, Infinity];
       if (vs.length >= 8) {
         const q1 = vs[Math.floor(vs.length / 4)],
           q3 = vs[Math.floor((3 * vs.length) / 4)],
           spread = q3 - q1;
         if (spread > 1e-12) {
-          a = vs.find((v) => v >= q1 - 3 * spread)!;
-          b = [...vs].reverse().find((v) => v <= q3 + 3 * spread)!;
+          fence = [q1 - 3 * spread, q3 + 3 * spread];
+          a = vs.find((v) => v >= fence[0])!;
+          b = [...vs].reverse().find((v) => v <= fence[1])!;
         }
       }
       lo[i] = Math.min(lo[i], a);
       hi[i] = Math.max(hi[i], b);
+      return fence;
     });
+    for (const p of family.reach ?? []) {
+      if (
+        !axes.every(
+          (key, i) => p[key] >= fences[i][0] && p[key] <= fences[i][1],
+        )
+      )
+        continue;
+      reached.push(p);
+      axes.forEach((key, i) => {
+        lo[i] = Math.min(lo[i], p[key]);
+        hi[i] = Math.max(hi[i], p[key]);
+      });
+    }
   }
   if (!Number.isFinite(lo[0]))
     return { center: { x: 0, y: 0, z: 0 }, radius: 1 };
@@ -706,7 +733,7 @@ export function fitBounds(...families: (Vec3 | null)[][]): Bounds3 {
   };
   let radius = 1e-4;
   for (const family of families)
-    for (const p of family)
+    for (const p of family.points)
       if (
         p &&
         p.x >= lo[0] &&
@@ -720,6 +747,11 @@ export function fitBounds(...families: (Vec3 | null)[][]): Bounds3 {
           radius,
           Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z),
         );
+  for (const p of reached)
+    radius = Math.max(
+      radius,
+      Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z),
+    );
   return { center, radius };
 }
 // A surface frames as Go frames it: its points with the normal lines' ends,
@@ -989,11 +1021,24 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     polygons: result.pursuit.polygons.filter((g) => g.sampleIndex <= last),
     final: reached(result.pursuit.paths[0]) ? result.pursuit.final : [],
   };
-  const generating = [
-    ...harmonicFamilies(harmonic),
-    ...(field?.paths ?? []),
-    ...(pursuit?.paths ?? []),
-    ...(composition ? [composition.curve, [composition.pole]] : []),
+  // Each family frames the drawing with the reach of the refined curve
+  // drawn on it, as far as it is revealed, when the study frames its reach.
+  const framing = (points: (Vec3 | null)[], path?: RefinedPath): Framing => ({
+    points,
+    reach: path?.reach,
+  });
+  const generating: Framing[] = [
+    ...[
+      ...harmonicFamilies(harmonic),
+      ...(field?.paths ?? []),
+      ...(pursuit?.paths ?? []),
+    ].map((points) => ({ points })),
+    ...(composition
+      ? [
+          framing(composition.curve, adaptive?.parent),
+          { points: [composition.pole] },
+        ]
+      : []),
   ];
   return {
     ...result,
@@ -1014,37 +1059,46 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     ruled,
     canal,
     adaptive,
-    bounds: inversion
-      ? fitBounds(
-          base,
-          inversion.source,
-          inversion.points,
-          [inversion.center],
-          ...generating,
-        )
-      : projection
-        ? fitBounds(
-            base,
-            projection.points,
-            projection.feet,
-            [projection.pole],
+    bounds: fitFamilies(
+      inversion
+        ? [
+            framing(base, adaptive?.base),
+            { points: inversion.source },
+            framing(inversion.points, adaptive?.image),
+            { points: [inversion.center] },
             ...generating,
-          )
-        : involute
-          ? fitBounds(
-              base,
-              ...involute.members.map((m) => m.points),
+          ]
+        : projection
+          ? [
+              framing(base, adaptive?.base),
+              framing(projection.points, adaptive?.projection),
+              { points: projection.feet },
+              { points: [projection.pole] },
               ...generating,
-            )
-          : fitBounds(
-              base,
-              minus,
-              plus,
-              ...(frame?.strands ?? []),
-              ...(canal?.meridians ?? []),
-              (canal?.circles ?? []).flatMap((g) => g.points),
-              ...generating,
-            ),
+            ]
+          : involute
+            ? [
+                framing(base, adaptive?.base),
+                ...involute.members.map((m, k) =>
+                  framing(m.points, adaptive?.involute?.[k]),
+                ),
+                ...generating,
+              ]
+            : [
+                framing(base, adaptive?.base),
+                framing(minus, adaptive?.minus),
+                // A ruled surface's partner thread is its upper edge.
+                framing(plus, adaptive?.partner ?? adaptive?.plus),
+                ...(frame?.strands ?? []).map((points, k) =>
+                  framing(points, adaptive?.strands?.[k]),
+                ),
+                ...(canal?.meridians ?? []).map((points, k) =>
+                  framing(points, adaptive?.meridians?.[k]),
+                ),
+                { points: (canal?.circles ?? []).flatMap((g) => g.points) },
+                ...generating,
+              ],
+    ),
   };
 }
 // The projection a camera path flies in: the held view's, since key views

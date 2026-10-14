@@ -4069,4 +4069,49 @@ export const spatialPresets: {
     projection: "wide",
     view: { yaw: 0.1, pitch: 0.08, zoom: 1.6, panX: 0, panY: 0 },
   },
+  // Framing by the points between samples (engine3/refine.go, Reach): a
+  // spiral turning seven times over the unit sphere from pole to pole,
+  // r = 1 + 1.2a·exp(−1200(1 − cos(60t − π/10))) from the center, with a
+  // seed every 2π/60. Each tip, at r = 1 + 1.2a, lies a quarter of a step
+  // past one of the 300 samples, about 1/2000 wide in t, so the samples
+  // and their derivatives' stencils, never nearer it than 0.004, see less
+  // than 10⁻¹² of it; refinement finds every seed between samples.
+  {
+    name: "A dandelion clock",
+    detail:
+      "Sixty seeds on a spiral round a sphere, each finer than the step between samples, found by refinement and framed whole; play to grow them",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "none",
+      samples: 300,
+      lines: 12,
+      adaptive: true,
+      adaptiveView: true,
+      adaptiveFrame: true,
+      curve: {
+        x: "(1 + 1.2*a*exp(-1200*(1 - cos(60*t - pi/10))))*sin(t/2)*cos(7*t)",
+        y: "(1 + 1.2*a*exp(-1200*(1 - cos(60*t - pi/10))))*sin(t/2)*sin(7*t)",
+        z: "(1 + 1.2*a*exp(-1200*(1 - cos(60*t - pi/10))))*cos(t/2)",
+        a: 1,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+    },
+    probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
+    view: { yaw: 0.5, pitch: 0.35, zoom: 1, panX: 0, panY: 0 },
+    // The seeds grow from the sphere to their full length and back,
+    // framed all along as they are at full length.
+    flight: {
+      duration: 8,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "hold",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "0", to: "1" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

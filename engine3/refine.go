@@ -26,7 +26,12 @@ const (
 // from the curve at the finest step, or when the budget ran out
 // (Exhausted), is counted in Unresolved. View is the finest tolerance a
 // piece the view shows was refined to, when it was finer than Tolerance
-// (see View).
+// (see View). Reach, when the study asks for it (AdaptiveFrame), is what
+// the points between samples add to the path's extent: those outside the
+// box of their interval's two samples, in order (see refine.Reach), refined
+// to the path's own tolerance whatever the view, so zooming never moves the
+// framing. ReachAt is each one's position in sample steps, so a reveal
+// frames only what it has reached.
 type RefinedPath struct {
 	Points     []*Vec3   `json:"points"`
 	At         []float64 `json:"at"`
@@ -36,6 +41,8 @@ type RefinedPath struct {
 	Unresolved int       `json:"unresolved"`
 	Exhausted  bool      `json:"exhausted"`
 	View       float64   `json:"view,omitempty"`
+	Reach      []Vec3    `json:"reach,omitempty"`
+	ReachAt    []float64 `json:"reachAt,omitempty"`
 }
 
 // AdaptiveResult holds the refined curves a study draws: the curve its
@@ -89,9 +96,28 @@ func refinePath(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi, to
 
 // refine refines a path of the study (see refinePath) at refineEpsilon of
 // its own robust radius, within the budget, and to the study's view or
-// flight's piece, when it has one.
+// flight's piece, when it has one. A study that frames its reach has it
+// from the path refined without the view, whose breaks are the same, since
+// a view never moves a break.
 func (c Request) refine(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi float64) (*RefinedPath, []int) {
-	return refineViewed(points, breaks, at, lo, hi, pathTolerance(points), refineBudget, c.focus())
+	tolerance, focus := pathTolerance(points), c.focus()
+	path, broken := refineViewed(points, breaks, at, lo, hi, tolerance, refineBudget, focus)
+	if c.AdaptiveFrame {
+		study := path
+		if focus != nil {
+			study, _ = refineViewed(points, breaks, at, lo, hi, tolerance, refineBudget, nil)
+		}
+		path.Reach, path.ReachAt = refine.Reach(study.Points, study.At, func(p Vec3) []float64 { return []float64{p.X, p.Y, p.Z} })
+	}
+	return path, broken
+}
+
+// reachOf is a refined path's reach, nil for a path not refined.
+func reachOf(path *RefinedPath) []Vec3 {
+	if path == nil {
+		return nil
+	}
+	return path.Reach
 }
 
 // refineViewed is refinePath refined to a view as well, when there is one.

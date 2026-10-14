@@ -8,8 +8,8 @@ type Option = { checked: boolean; onChange: (on: boolean) => void; help: Help };
 
 // The control that refines a study's drawn curves between their samples,
 // with a readout of what refinement did, in the 2D and 3D notebooks. Both
-// also offer refinement to the view beneath it while it is on, and the 2D
-// notebook framing by the points between samples.
+// also offer refinement to the view and framing by the points between
+// samples beneath it while it is on.
 export function RefineBetweenSamples({
   checked,
   onChange,

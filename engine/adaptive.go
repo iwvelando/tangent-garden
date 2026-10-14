@@ -298,33 +298,11 @@ func (q Request) reach(out *Result, f, g curveFunc) {
 	}
 }
 
-// reachOf is the points of a refined path between samples that lie outside
-// the box of their interval's two samples: all that refinement can add to
-// the extent of the samples on either side of them, with their positions.
+// reachOf is a refined path's reach (see refine.Reach): its points between
+// samples outside the box of their interval's two samples, with their
+// positions.
 func reachOf(path *RefinedPath) ([]Vec, []float64) {
-	var reach []Vec
-	var at []float64
-	var a *Vec
-	for k, p := range path.Points {
-		u := path.At[k]
-		if u == math.Trunc(u) {
-			a = p
-			continue
-		}
-		if p == nil || a == nil {
-			continue
-		}
-		// The interval's next sample follows its points between samples.
-		j := k + 1
-		for path.At[j] != math.Trunc(path.At[j]) {
-			j++
-		}
-		b := path.Points[j]
-		if b == nil || p.X < math.Min(a.X, b.X) || p.X > math.Max(a.X, b.X) || p.Y < math.Min(a.Y, b.Y) || p.Y > math.Max(a.Y, b.Y) {
-			reach, at = append(reach, *p), append(at, u)
-		}
-	}
-	return reach, at
+	return refine.Reach(path.Points, path.At, func(p Vec) []float64 { return []float64{p.X, p.Y} })
 }
 
 // derivedAt evaluates a study's derived curve at any t from the base f, the

@@ -5,7 +5,7 @@ import {
   refinedPaths,
 } from "./surface-refine";
 import { RefineBetweenSamples } from "../RefineBetweenSamples";
-import { spatialViewHelp } from "../refinement";
+import { frameHelp, spatialViewHelp } from "../refinement";
 import { StopAtCaustic } from "../StopAtCaustic";
 import {
   useCallback,
@@ -3552,6 +3552,15 @@ export default function SpatialApp({
                               on ? { ...c, adaptiveView: true } : c,
                             ),
                           help: spatialViewHelp,
+                        }}
+                        frame={{
+                          checked: !!config.adaptiveFrame,
+                          // Left out when off, as in a study made before it.
+                          onChange: (on) =>
+                            update(({ adaptiveFrame: _, ...c }) =>
+                              on ? { ...c, adaptiveFrame: true } : c,
+                            ),
+                          help: frameHelp,
                         }}
                       />
                       {config.adaptive && drawsSurface(config) && (

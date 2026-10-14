@@ -306,6 +306,9 @@ export type SpatialConfig = {
   // scale and lets the drawing zoom to viewZoom (../refinement.ts); absent
   // or false refines to the study's tolerance alone.
   adaptiveView?: boolean;
+  // With adaptive, frames the drawing by its points between samples too
+  // (their reach, engine3/refine.go); absent frames the samples alone.
+  adaptiveFrame?: boolean;
 };
 // Mirrors engine3.View: what the drawing shows, which refinement refines to
 // when it is zoomed in. center is the middle of the page, right and up its

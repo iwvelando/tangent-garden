@@ -337,6 +337,7 @@ const config: SchemaOf<SpatialConfig> = {
     adaptive: "boolean",
     adaptiveSurface: { optional: "boolean" },
     adaptiveView: { optional: "boolean" },
+    adaptiveFrame: { optional: "boolean" },
   },
 };
 
