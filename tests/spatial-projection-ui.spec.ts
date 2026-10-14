@@ -631,9 +631,6 @@ test("a link and Reset view keep the chosen angle, an animation holds it, and ex
 test("the tunnel opens through its own chosen angle with the eye inside the tube, and loops once around", async ({
   page,
 }) => {
-  // It opens and plays two studies in turn, which a loaded CI runner,
-  // drawing in software, can take longer than the default to do.
-  test.setTimeout(60_000);
   await page.goto("/?study=3d");
   await settled(page);
   await openPanel(page);
