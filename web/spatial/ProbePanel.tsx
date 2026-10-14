@@ -2,12 +2,17 @@ import { Field, HelpText, HelpToggle, useHelp } from "../Field";
 import { ProbePlot } from "../ProbePlot";
 import { hex, lineColor } from "./palette";
 import {
+  atPoint,
+  betweenGridHelp,
   betweenHelp,
   curveStep,
   describeHelp,
   evaluatedAnywhere,
   gridded,
+  isGridPoint,
   lightProbeReadout,
+  patchProbed,
+  probeBetweenGrid,
   probeLegend,
   probeBetween,
   probeHelp,
@@ -67,9 +72,11 @@ function Plot({
 // result with diagnostics, or null while they are computed or while an
 // animation that does not move the probe plays. `held` is the curve probe
 // it describes, at a sample or between samples, or absent while Go places
-// it. `at` is where an animation has moved the probe to: the curve probe,
-// or a surface's row; the slider waits until it stops. `away` says why an
-// animation that draws the probe has none on the frame it shows.
+// it. `point` is a patch's probe that Go has placed between its grid
+// samples, absent while it is placed. `at` is where an animation has moved
+// the probe to: the curve probe, a surface's row or a patch's point; the
+// slider waits until it stops. `away` says why an animation that draws the
+// probe has none on the frame it shows.
 export function ProbePanel({
   config,
   frame,
@@ -77,6 +84,7 @@ export function ProbePanel({
   onProbe,
   animating,
   held,
+  point,
   at: moving,
   across,
   away,
@@ -88,6 +96,7 @@ export function ProbePanel({
   onProbe: (change: (p: Probe) => Probe) => void;
   animating: boolean;
   held?: CurveProbe;
+  point?: SurfaceDiagnostics;
   at?: ProbePlace;
   // The share across a grid an animation moving the probe holds it at,
   // when that is not the probe's own (see heldProbe).
@@ -97,6 +106,7 @@ export function ProbePanel({
 }) {
   const help = useHelp();
   const betweenHelpState = useHelp();
+  const betweenGridHelpState = useHelp();
   const support = probeSupport(config);
   if (!support.available) return null;
   const target = probeTarget(config, probe);
@@ -104,7 +114,7 @@ export function ProbePanel({
   const d = frame?.result.diagnostics;
   const n = d ? d.curvature.length - 1 : 0;
   const between = probeBetween(config, probe);
-  const at = typeof moving === "object" ? moving : held;
+  const at = typeof moving === "object" && !isGridPoint(moving) ? moving : held;
   const readout = frame && d && at ? probeReadout(at) : null;
   const step = frame && at ? curveStep(frame.result, at) : 0;
   const swatch = (ink: number) => ({
@@ -153,7 +163,7 @@ export function ProbePanel({
         </div>
         <HelpText help={help}>
           {gridded(target)
-            ? surfaceProbeHelp(config, target)
+            ? surfaceProbeHelp(config, target, probeBetweenGrid(config, probe))
             : probeHelp(config, between)}
         </HelpText>
         {probe.enabled && target === "curve" && evaluatedAnywhere(config) && (
@@ -176,6 +186,29 @@ export function ProbePanel({
           </div>
         )}
         <HelpText help={betweenHelpState}>{betweenHelp}</HelpText>
+        {probe.enabled && patchProbed(config, target) && (
+          <div className="probe-switch">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={!!probe.betweenGrid}
+                disabled={moving !== undefined || away !== undefined}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  onProbe(({ betweenGrid: _, ...p }) =>
+                    on ? { ...p, betweenGrid: true } : p,
+                  );
+                }}
+              />
+              At any u and v, between samples
+            </label>
+            <HelpToggle
+              topic="between grid samples"
+              help={betweenGridHelpState}
+            />
+          </div>
+        )}
+        <HelpText help={betweenGridHelpState}>{betweenGridHelp}</HelpText>
         {probe.enabled && gridded(target) && (
           <SurfaceProbe
             config={config}
@@ -187,6 +220,7 @@ export function ProbePanel({
             }
             onProbe={onProbe}
             animating={animating}
+            point={point}
             at={typeof moving === "number" ? moving : undefined}
             away={away}
             dark={dark}
@@ -346,13 +380,16 @@ export function ProbePanel({
 
 // The surface probe's controls and readout, as ProbePanel's for the curve.
 // The grid sample is the nearest row and column to the probe's fractions;
-// an animation moving the probe gives its row as `at`.
+// an animation moving the probe gives its row as `at`. Between a patch's
+// samples, the sliders move freely and the readout describes `point`,
+// where Go placed the probe.
 function SurfaceProbe({
   config,
   frame,
   probe,
   onProbe,
   animating,
+  point,
   at: moving,
   away,
   dark,
@@ -362,6 +399,7 @@ function SurfaceProbe({
   probe: Probe;
   onProbe: (change: (p: Probe) => Probe) => void;
   animating: boolean;
+  point?: SurfaceDiagnostics;
   at?: number;
   away?: string;
   dark: boolean;
@@ -382,13 +420,29 @@ function SurfaceProbe({
           : "Finding the principal curvatures and centres…"}
       </p>
     );
+  const between = probeBetweenGrid(frame.config, probe);
+  if (between && !point)
+    return (
+      <p className="spatial-caption">
+        Finding the principal curvatures and centres…
+      </p>
+    );
   const terms = surfaceTerms(frame.config, probeTarget(frame.config, probe));
   const rows = d.u.length - 1,
     columns = d.v.length;
   const place = surfaceProbeAt(d, probe.position, probe.across);
   const row = moving ?? place.row,
     column = place.column;
-  const r = surfaceProbeReadout(frame.result, row, column)!;
+  const r = between
+    ? surfaceProbeReadout(atPoint(frame.result, { grid: point! }), 0, 0)!
+    : surfaceProbeReadout(frame.result, row, column)!;
+  // Where the probe stands among the rows and columns, between them.
+  const amid = between
+    ? {
+        row: probe.position * rows,
+        column: probe.across * (d.periodic ? columns : columns - 1),
+      }
+    : undefined;
   const swatch = (ink: number) => ({
     background: hex(lineColor(ink, 0, dark)),
   });
@@ -410,39 +464,69 @@ function SurfaceProbe({
           value={`${terms.along} = ${short(r.u)}`}
           className="probe-slider"
         >
-          <input
-            type="range"
-            min={0}
-            max={rows}
-            step={1}
-            value={row}
-            disabled={moving !== undefined}
-            aria-valuetext={`${terms.along} = ${short(r.u)}, row ${row} of ${rows}`}
-            onChange={(e) => {
-              const position = e.target.valueAsNumber / rows;
-              onProbe((p) => ({ ...p, position }));
-            }}
-          />
+          {between ? (
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step="any"
+              value={probe.position}
+              aria-valuetext={`${terms.along} = ${short(r.u)}`}
+              onChange={(e) => {
+                const position = e.target.valueAsNumber;
+                onProbe((p) => ({ ...p, position }));
+              }}
+            />
+          ) : (
+            <input
+              type="range"
+              min={0}
+              max={rows}
+              step={1}
+              value={row}
+              disabled={moving !== undefined}
+              aria-valuetext={`${terms.along} = ${short(r.u)}, row ${row} of ${rows}`}
+              onChange={(e) => {
+                const position = e.target.valueAsNumber / rows;
+                onProbe((p) => ({ ...p, position }));
+              }}
+            />
+          )}
         </Field>
         <Field
           label={terms.sliders[1]}
           value={`${terms.around} = ${short(r.v)}`}
           className="probe-slider"
         >
-          <input
-            type="range"
-            min={0}
-            max={columns - 1}
-            step={1}
-            value={column}
-            disabled={moving !== undefined}
-            aria-valuetext={`${terms.around} = ${short(r.v)}, column ${column} of ${columns - 1}`}
-            onChange={(e) => {
-              const across =
-                e.target.valueAsNumber / (d.periodic ? columns : columns - 1);
-              onProbe((p) => ({ ...p, across }));
-            }}
-          />
+          {between ? (
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step="any"
+              value={probe.across}
+              aria-valuetext={`${terms.around} = ${short(r.v)}`}
+              onChange={(e) => {
+                const across = e.target.valueAsNumber;
+                onProbe((p) => ({ ...p, across }));
+              }}
+            />
+          ) : (
+            <input
+              type="range"
+              min={0}
+              max={columns - 1}
+              step={1}
+              value={column}
+              disabled={moving !== undefined}
+              aria-valuetext={`${terms.around} = ${short(r.v)}, column ${column} of ${columns - 1}`}
+              onChange={(e) => {
+                const across =
+                  e.target.valueAsNumber / (d.periodic ? columns : columns - 1);
+                onProbe((p) => ({ ...p, across }));
+              }}
+            />
+          )}
         </Field>
       </div>
       {d.light ? (
@@ -501,6 +585,7 @@ function SurfaceProbe({
             onProbe={onProbe}
             row={row}
             column={column}
+            amid={amid}
             dark={dark}
           />
           <ul className="probe-legend">
@@ -693,6 +778,7 @@ function SurfacePlotsFor({
   onProbe,
   row,
   column,
+  amid,
   dark,
 }: {
   frame: Frame;
@@ -701,6 +787,8 @@ function SurfacePlotsFor({
   onProbe: (change: (p: Probe) => Probe) => void;
   row: number;
   column: number;
+  // Where the probe stands among the rows and columns, between them.
+  amid?: { row: number; column: number };
   dark: boolean;
 }) {
   const target = probeTarget(frame.config, probe),
@@ -725,7 +813,7 @@ function SurfacePlotsFor({
           ))}
         </select>
       </Field>
-      {surfacePlotSeries(d, terms, row, column, plots).map((plot) => (
+      {surfacePlotSeries(d, terms, row, column, plots, amid).map((plot) => (
         <Plot key={plot.label} {...plot} fromZero={false} dark={dark} />
       ))}
     </>

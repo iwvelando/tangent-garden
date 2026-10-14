@@ -72,6 +72,10 @@ self.onmessage = async ({
   // already drawn.
   probe?: import("./types").ProbeQuery;
   probeOnly?: boolean;
+  // Asks Go for a surface patch described at one (u, v), at or between its
+  // grid samples (see engine3.SurfaceQuery); with probeOnly, the reply
+  // carries that point alone.
+  surfaceProbe?: import("./spatial/types").SurfaceQuery;
   // Asks Go to refine a 2D study's refined curves to the view the drawing
   // shows (see engine.View).
   view?: import("./types").ViewRect;
@@ -611,6 +615,7 @@ self.onmessage = async ({
           focalDiagnostics: data.focalDiagnostics,
         }),
         ...(data.probe && { probe: data.probe }),
+        ...(data.surfaceProbe && { surfaceProbe: data.surfaceProbe }),
         ...(data.spatialView && { view: data.spatialView }),
         ...(data.spatialViews && { views: data.spatialViews }),
       });

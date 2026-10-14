@@ -375,6 +375,9 @@ const probe: SchemaOf<Probe> = {
     // Absent in links made before the curve probe stood between samples,
     // which snap it to the nearest sample.
     between: { optional: "boolean" },
+    // Absent in links made before a patch's probe stood between its grid
+    // samples, which snap it to the nearest sample.
+    betweenGrid: { optional: "boolean" },
     // Absent in links made before the surface probe plotted across its
     // columns, whose plots run along the rows.
     plots: { optional: { options: { along: true, around: true, both: true } } },
@@ -615,10 +618,11 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode traces light only in a mirror or interface study.",
     );
-  // A probe snapped to samples carries no between flag, as the notebook
-  // keeps it, so a link's false and its absence open the same study.
-  // Plots along the rows, likewise, carry no plots field.
-  const { between, plots, ...snapped } = conform(
+  // A probe snapped to samples carries no between flag, nor one snapped to
+  // a grid a betweenGrid flag, as the notebook keeps them, so a link's
+  // false and its absence open the same study. Plots along the rows,
+  // likewise, carry no plots field.
+  const { between, betweenGrid, plots, ...snapped } = conform(
     raw.probe,
     probe,
     defaultProbe,
@@ -627,6 +631,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
   const probed: Probe = {
     ...snapped,
     ...(between && { between }),
+    ...(betweenGrid && { betweenGrid }),
     ...(plots && plots !== "along" && { plots }),
   };
   // A surface patch offered no probe before the probe had a target, so a

@@ -4,6 +4,8 @@ import type {
   SpatialConfig,
   SpatialProbePoint,
   SpatialResult,
+  SurfaceDiagnostics,
+  SurfaceQuery,
 } from "./spatial/types";
 import type {
   Bounds,
@@ -24,6 +26,8 @@ export type SpatialOptions = {
   focalDiagnostics?: 1 | 2;
   // The curve probe at one parameter (see engine3.ProbePoint).
   probe?: ProbeQuery;
+  // The surface probe at one point of a patch (see engine3.SurfaceQuery).
+  surfaceProbe?: SurfaceQuery;
   // What the drawing shows, which refined curves are refined to (see
   // engine3.View), or, in its place, the frames of a piece of a camera
   // flight (engine3.Request.Views).
@@ -154,6 +158,7 @@ export class EngineClient {
           ? { focalDiagnostics: options.focalDiagnostics }
           : {}),
         ...(options.probe ? { probe: options.probe } : {}),
+        ...(options.surfaceProbe ? { surfaceProbe: options.surfaceProbe } : {}),
         ...(options.view ? { spatialView: options.view } : {}),
         ...(options.views ? { spatialViews: options.views } : {}),
       })
@@ -173,6 +178,27 @@ export class EngineClient {
         probeOnly: true,
       })
     ).probe;
+  }
+  // The surface probe alone at one point of a patch, for a probe moved over
+  // a study already drawn: options name what it describes, the patch, its
+  // offset or a focal sheet (see probeOptions).
+  async spatialSurfaceProbe(
+    config: SpatialConfig,
+    options: Pick<
+      SpatialOptions,
+      "surfaceDiagnostics" | "offsetDiagnostics" | "focalDiagnostics"
+    >,
+    query: SurfaceQuery,
+  ): Promise<SurfaceDiagnostics> {
+    return (
+      await this.request({
+        action: "spatial",
+        spatial: config,
+        ...options,
+        surfaceProbe: query,
+        probeOnly: true,
+      })
+    ).surfaceProbe;
   }
   async tesseract(
     config: import("./tesseract/types").Config,

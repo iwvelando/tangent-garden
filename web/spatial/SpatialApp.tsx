@@ -155,6 +155,10 @@ import {
   defaultProbe,
   parameterAt,
   probeBetween,
+  probeBetweenGrid,
+  isGridPoint,
+  surfaceQuery,
+  type GridPoint,
   probeDrawing as drawProbe,
   probeIndex,
   probeRecord,
@@ -1559,85 +1563,116 @@ export default function SpatialApp({
         probeSteps(frame.result, probeTarget(frame.config, probe)) !== null
       ? frame
       : null;
-  // Between samples, Go places the curve probe at its own t over the drawn
-  // study, apart from the study itself, so moving it redraws only the
-  // probe. A point belongs to the frame and position it was asked for, and
-  // the drawing is busy until it arrives (or the study refuses it). At most
-  // one request is in flight: while it runs, moves only update the place
-  // wanted, and its reply asks for the latest one, so a drag never queues
-  // work behind it.
+  // Between samples, Go places the curve probe at its own t, or a patch's
+  // probe at its own (u, v), over the drawn study, apart from the study
+  // itself, so moving it redraws only the probe. A point belongs to the
+  // frame and place it was asked for, and the drawing is busy until it
+  // arrives (or the study refuses it). At most one request is in flight:
+  // while it runs, moves only update the place wanted, and its reply asks
+  // for the latest one, so a drag never queues work behind it.
   const between = probing && probeBetween(config, probe);
-  const [placed, setPlaced] = useState<{
-    frame: Frame;
-    position: number;
-    at: CurveProbe | null;
-  } | null>(null);
-  const wanted = useRef<{ frame: Frame; position: number } | null>(null);
+  const betweenGrid = probing && probeBetweenGrid(config, probe);
+  type Place = { frame: Frame; position: number; across: number };
+  const [placed, setPlaced] = useState<
+    (Place & { at: CurveProbe | GridPoint | null }) | null
+  >(null);
+  const wanted = useRef<Place | null>(null);
   const asking = useRef(false);
   function askForProbe() {
     const want = wanted.current;
     if (asking.current || !want || !client.current) return;
-    const d = want.frame.result.diagnostics!;
+    const { config, result } = want.frame,
+      target = probeTarget(config, probe);
     asking.current = true;
-    client.current
-      .spatialProbe(want.frame.config, {
-        t: parameterAt(d.min, d.max, want.position),
-      })
+    (target === "curve"
+      ? client.current.spatialProbe(config, {
+          t: parameterAt(
+            result.diagnostics!.min,
+            result.diagnostics!.max,
+            want.position,
+          ),
+        })
+      : client.current
+          .spatialSurfaceProbe(
+            config,
+            probeOptions(target),
+            surfaceQuery(config, want.position, want.across),
+          )
+          .then((grid): GridPoint => ({ grid }))
+    )
       // A study that fails is reported by its own computation.
       .then(
-        (at): CurveProbe | null => at,
+        (at): CurveProbe | GridPoint | null => at,
         () => null,
       )
       .then((at) => {
         asking.current = false;
         setPlaced({ ...want, at });
         const next = wanted.current;
-        if (
-          next &&
-          (next.frame !== want.frame || next.position !== want.position)
-        )
-          askForProbe();
+        if (next && !samePlace(next, want)) askForProbe();
       });
   }
+  const samePlace = (a: Place, b: Place) =>
+    a.frame === b.frame && a.position === b.position && a.across === b.across;
+  // Whether the drawn study is ready for Go to place the probe on it: it
+  // has the diagnostics the probe's target needs.
+  const placeable =
+    !animation &&
+    !!frame &&
+    (between
+      ? !!frame.result.diagnostics
+      : betweenGrid &&
+        probeSteps(frame.result, probeTarget(frame.config, probe)) !== null);
   useEffect(() => {
-    wanted.current =
-      between && !animation && frame?.result.diagnostics
-        ? { frame, position: probe.position }
-        : null;
+    wanted.current = placeable
+      ? {
+          frame: frame!,
+          position: probe.position,
+          // A curve probe has no place across.
+          across: between ? 0 : probe.across,
+        }
+      : null;
     askForProbe();
-  }, [between, !animation, frame, probe.position]);
+  }, [placeable, frame, probe.position, probe.across, between]);
   const current = placed?.frame === frame ? placed : null;
   const placing =
-    between &&
-    !animation &&
-    !!frame?.result.diagnostics &&
-    current?.position !== probe.position;
+    placeable &&
+    (current?.position !== probe.position ||
+      (!between && current?.across !== probe.across));
   // The curve probe the panel describes when no animation moves it.
   const heldProbe = useMemo<CurveProbe | undefined>(
     () =>
       !probeFrame || moving || probeTarget(probeFrame.config, probe) !== "curve"
         ? undefined
         : between
-          ? (current?.at ?? undefined)
+          ? ((current?.at as CurveProbe | null) ?? undefined)
           : (sampleProbe(
               probeFrame.result,
               probeIndex(probe.position, probeFrame.result.base.length - 1),
             ) ?? undefined),
     [probeFrame, !!moving, probe.target, probe.position, between, current],
   );
-  // Where the probe stands: the curve probe, or a surface's row (whose
-  // column follows probe.across); nothing while Go places it.
+  // A patch's probe between its samples, where Go has placed it.
+  const heldPoint =
+    !moving && betweenGrid && isGridPoint(current?.at ?? undefined)
+      ? (current!.at as GridPoint)
+      : undefined;
+  // Where the probe stands: the curve probe, a surface's row (whose column
+  // follows probe.across), or a patch's point between its samples; nothing
+  // while Go places it.
   const probeAt: ProbePlace | undefined = moving
     ? moving.probe!
     : probeFrame && probeTarget(probeFrame.config, probe) === "curve"
       ? heldProbe
-      : probeFrame
-        ? probeStep(
-            probeFrame.result,
-            probeTarget(probeFrame.config, probe),
-            probe,
-          )
-        : undefined;
+      : probeFrame && betweenGrid
+        ? heldPoint
+        : probeFrame
+          ? probeStep(
+              probeFrame.result,
+              probeTarget(probeFrame.config, probe),
+              probe,
+            )
+          : undefined;
   const probeSetup = moving?.probeSetup ?? probe;
   // The cut as drawn: where an animation that moves it has taken it, or the
   // entered plane.
@@ -3338,6 +3373,7 @@ export default function SpatialApp({
             onProbe={setProbe}
             animating={!!animation && !moving}
             held={heldProbe}
+            point={heldPoint?.grid}
             at={moving?.probe}
             across={moving?.probeSetup?.across}
             away={moving ? undefined : animation?.probeAway}
@@ -3646,13 +3682,24 @@ export default function SpatialApp({
           // Where the curve probe is drawn: its t, and its sample when it
           // stands on one.
           data-probe-t={
-            typeof probeAt === "object" && probeDrawing.length
+            typeof probeAt === "object" &&
+            !isGridPoint(probeAt) &&
+            probeDrawing.length
               ? probeAt.t
               : undefined
           }
           data-probe-sample={
-            typeof probeAt === "object" && probeDrawing.length
+            typeof probeAt === "object" &&
+            !isGridPoint(probeAt) &&
+            probeDrawing.length
               ? probeAt.sample
+              : undefined
+          }
+          // Where a patch's probe is drawn between its samples: its u and
+          // v.
+          data-probe-uv={
+            isGridPoint(probeAt) && probeDrawing.length
+              ? `${probeAt.grid.u[0]},${probeAt.grid.v[0]}`
               : undefined
           }
           data-config={shown ? JSON.stringify(shown.config) : undefined}

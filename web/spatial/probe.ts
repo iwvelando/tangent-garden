@@ -32,6 +32,7 @@ import type {
   SpatialProbePoint,
   SpatialResult,
   SurfaceDiagnostics,
+  SurfaceQuery,
   Vec3,
 } from "./types";
 
@@ -63,7 +64,9 @@ export const probeOptions = (t: ProbeTarget) =>
 // t or u) and, on a surface, across its columns (around θ, or along v).
 // The target is what it describes where the study offers both. The curve
 // probe snaps to the nearest sample unless it stands between samples
-// (between), which links made before it leave out. On a grid, plots says
+// (between), which links made before it leave out; a patch's probe
+// likewise snaps to its grid unless it stands at any (u, v) (betweenGrid),
+// which links made before it leave out. On a grid, plots says
 // which way its curvature plots run (see SurfacePlots); absent, along the
 // rows, as links made before the choice drew them.
 export type Probe = {
@@ -72,6 +75,7 @@ export type Probe = {
   target: ProbeTarget;
   across: number;
   between?: boolean;
+  betweenGrid?: boolean;
   plots?: SurfacePlots;
 };
 export const defaultProbe: Probe = {
@@ -92,6 +96,33 @@ export const evaluatedAnywhere = (c: SpatialConfig) =>
 export const probeBetween = (c: SpatialConfig, p: Probe) =>
   !!p.between && probeTarget(c, p) === "curve" && evaluatedAnywhere(c);
 
+// Whether a study's surface probe can stand between grid samples: on a
+// patch, its offset or a focal sheet, which Go evaluates at any (u, v); not
+// a surface built on a curve, nor a mirror or its light.
+export const patchProbed = (c: SpatialConfig, target: ProbeTarget) =>
+  c.format === "surface" && gridded(target);
+
+// Whether the surface probe stands between grid samples in this study:
+// asked for, on a patch's target.
+export const probeBetweenGrid = (c: SpatialConfig, p: Probe) =>
+  !!p.betweenGrid && patchProbed(c, probeTarget(c, p));
+
+// Whether Go places the probe in this study, at its own t or (u, v), rather
+// than the probe snapping to a sample.
+export const probePlaced = (c: SpatialConfig, p: Probe) =>
+  probeBetween(c, p) || probeBetweenGrid(c, p);
+
+// The patch's (u, v) at the probe's fractions of its domain, as Go samples
+// it, so that a fraction at a grid sample asks for exactly that sample.
+export const surfaceQuery = (
+  c: SpatialConfig,
+  position: number,
+  across: number,
+): SurfaceQuery => ({
+  u: parameterAt(c.surface.uMin, c.surface.uMax, position),
+  v: parameterAt(c.surface.vMin, c.surface.vMax, across),
+});
+
 // The parameter at a fraction of the domain [min, max], as Go samples it,
 // so that the ends and a symmetric domain's middle are exact.
 export const parameterAt = (min: number, max: number, position: number) =>
@@ -110,8 +141,21 @@ export function curveDomain(c: SpatialConfig): [number, number] {
 // The curve probe as drawn: Go's description at its parameter, with its
 // sample when it is snapped to one.
 export type CurveProbe = SpatialProbePoint & { sample?: number };
-// Where the probe stands in a frame: the curve probe, or a surface's row.
-export type ProbePlace = CurveProbe | number;
+// A patch's probe as Go places it at one (u, v): its diagnostics there
+// alone, one row and one column (engine3.Result.SurfaceProbe).
+export type GridPoint = { grid: SurfaceDiagnostics };
+// Where the probe stands in a frame: the curve probe, a surface's row, or
+// a patch's point between its samples.
+export type ProbePlace = CurveProbe | number | GridPoint;
+export const isGridPoint = (p: ProbePlace | null | undefined): p is GridPoint =>
+  typeof p === "object" && p !== null && "grid" in p;
+// A frame's result with its surface diagnostics replaced by a point's, so
+// that the grid's drawing and readout describe the point as row 0, column
+// 0.
+export const atPoint = (r: SpatialResult, at: GridPoint): SpatialResult => ({
+  ...r,
+  surfaceDiagnostics: at.grid,
+});
 
 // The curve probe at sample j, from the result's diagnostics and its own
 // per-sample arrays, described as Go describes it between samples.
@@ -363,6 +407,12 @@ export const betweenHelp = tiered(
   "The highlighted construction is described at that t too. A trajectory or a pursuit, integrated step by step, snaps to its samples regardless.",
 );
 
+// Help for standing between a patch's grid samples.
+export const betweenGridHelp = tiered(
+  "Lets the probe stand at any u and v, not only at a grid sample, describing the surface exactly there.",
+  "The offset and focal sheets are described there too; a focal sheet's normal keeps the nearest sample's side. The plots still read the grid's samples.",
+);
+
 // The curve probe's drawing at its point: the highlighted construction, the
 // osculating circle (from Go's centre, with radius 1/κ, in the plane of T
 // and N) and a three-axis mark at the point, all in the probe ink, then
@@ -494,6 +544,9 @@ const ruledTerms = {
   through: "ruling",
   unknownBranch: "both curvatures are",
 } as const;
+// What a patch's help says of the probe on its grid, which standing
+// between samples replaces.
+const gridMoves = "It moves between the patch's grid samples.";
 const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
   patch: {
     ...curvatureWords,
@@ -506,7 +559,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "The patch has no point here.",
     unknownBranch: "κ₂ is",
     unknown: "where its derivatives are unstable",
-    help: "It moves between the patch's grid samples. Curvatures are numbered κ₁ ≥ κ₂ with the chosen normal.",
+    help: `${gridMoves} Curvatures are numbered κ₁ ≥ κ₂ with the chosen normal.`,
   },
   offset: {
     ...curvatureWords,
@@ -673,7 +726,11 @@ export function probeLegend(c: SpatialConfig, target: ProbeTarget) {
 
 // The help beside the probe's switch for a surface, the light or a
 // mirror.
-export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
+export function surfaceProbeHelp(
+  c: SpatialConfig,
+  target: ProbeTarget,
+  between = false,
+) {
   const t = surfaceTerms(c, target);
   if (target === "light") {
     const m = t.surface;
@@ -688,7 +745,7 @@ export function surfaceProbeHelp(c: SpatialConfig, target: ProbeTarget) {
   }
   return tiered(
     `Describes the ${t.surface} at a point: its normal, principal directions and curvatures (A = −dn), with circles.`,
-    `${t.help} A sphere with outward normal has κ = −1/R; centers beyond 100 study radii are not drawn.`,
+    `${between ? t.help.replace(gridMoves, "It stands at any u and v, evaluated exactly there.") : t.help} A sphere with outward normal has κ = −1/R; centers beyond 100 study radii are not drawn.`,
   );
 }
 
@@ -738,6 +795,9 @@ export function surfacePlotSeries(
   row: number,
   column: number,
   plots: SurfacePlots = "along",
+  // Where the probe stands among the rows and columns, when it stands
+  // between them; otherwise at row and column.
+  between?: { row: number; column: number },
 ): SurfacePlot[] {
   const scale = (lines: (number | null)[][]) =>
     1e-4 *
@@ -749,7 +809,7 @@ export function surfacePlotSeries(
     lines.forEach((values, b) =>
       out.push({
         values,
-        at: row,
+        at: between?.row ?? row,
         label: `${terms.branches[b]} along ${terms.along}`,
         resolution,
       }),
@@ -764,7 +824,7 @@ export function surfacePlotSeries(
     lines.forEach((values, b) =>
       out.push({
         values,
-        at: column,
+        at: between?.column ?? column,
         label: `${terms.branches[b]} along ${terms.around}`,
         resolution,
       }),
@@ -1074,11 +1134,17 @@ export const spatialProbeMotionSchema: SchemaOf<ProbeMotion> = {
 export function probeMotions(
   c: SpatialConfig,
   target: ProbeTarget,
+  between = false,
 ): { value: ProbeMotion; label: string }[] {
   if (gridded(target)) {
     const t = surfaceTerms(c, target);
     return [
-      { value: "stays", label: "Stays at its row and column" },
+      {
+        value: "stays",
+        label: between
+          ? `Keeps its share of ${t.along} and ${t.around}`
+          : "Stays at its row and column",
+      },
       { value: "point", label: `Stays at its ${t.along} and ${t.around}` },
       { value: "along", label: `Moves along the ${t.surface}` },
     ];
@@ -1100,6 +1166,13 @@ export function probeMotionHelp(
   target: ProbeTarget,
   between = false,
 ) {
+  if (between && gridded(target)) {
+    const t = surfaceTerms(c, target);
+    return tiered(
+      "Where the probe stands while the parameters vary.",
+      `Share: the same fractions of each frame's ${t.along} and ${t.around} domains. ${t.along} and ${t.around}: exactly those values, absent from a frame whose domain leaves one out. Moves along: through every ${t.along}, at your share of ${t.around}. The readout describes each frame.`,
+    );
+  }
   if (between) return betweenMotionHelp;
   if (gridded(target)) {
     const t = surfaceTerms(c, target);
@@ -1213,7 +1286,7 @@ export function columnShare(d: SurfaceDiagnostics, column: number) {
 
 // The curve probe at a place: as given, or at a sample.
 const curveAt = (result: SpatialResult, i: ProbePlace) =>
-  typeof i === "number" ? sampleProbe(result, i) : i;
+  typeof i === "number" ? sampleProbe(result, i) : (i as CurveProbe);
 
 // The probe's drawing at its place: the curve probe at its point (or at
 // sample i), or the surface probe at row i in the column the probe stands
@@ -1228,6 +1301,7 @@ export function probeDrawing(
     const at = curveAt(result, i);
     return at ? probeBatches(result, config, at) : [];
   }
+  if (isGridPoint(i)) return surfaceProbeBatches(atPoint(result, i), 0, 0);
   const d = result.surfaceDiagnostics;
   if (!d || typeof i !== "number") return [];
   return surfaceProbeBatches(
@@ -1239,7 +1313,7 @@ export function probeDrawing(
 
 // What an export records of the probe at its place: the curve probe's t,
 // with its sample when it stands on one, or the surface probe's grid sample
-// and its parameters.
+// and its parameters, or only its parameters between samples.
 export function probeRecord(
   result: SpatialResult,
   config: SpatialConfig,
@@ -1252,6 +1326,12 @@ export function probeRecord(
       ? { index: at.sample, t: at.t }
       : { t: at.t };
   }
+  if (isGridPoint(i))
+    return {
+      target: probeTarget(config, probe),
+      u: i.grid.u[0],
+      v: i.grid.v[0],
+    };
   if (typeof i !== "number")
     throw new Error("A surface probe stands on a row.");
   const d = result.surfaceDiagnostics!,
