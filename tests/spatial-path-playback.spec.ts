@@ -521,7 +521,9 @@ test("long view names wrap in full at phone width", async ({ page }) => {
 test("pausing holds the camera, resuming continues, and a change of study stops the flight", async ({
   page,
 }) => {
-  await open(page, study(flight, 3));
+  // A flight far longer than the test, so a slow runner never reaches its
+  // end before the pause lands: paused at the end, it has nothing to resume.
+  await open(page, study(flight, 30));
   await button(page, "Play animation").click();
   await expect(stage(page)).toHaveAttribute("data-mode", "path");
   await button(page, "Pause").click();
