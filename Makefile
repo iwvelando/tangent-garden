@@ -1,4 +1,4 @@
-.PHONY: install wasm bench preset-hashes test test-go test-wasm test-browser test-webkit typecheck vet format format-check build dev dev-lan preview preview-lan check clean share-card thumbnails
+.PHONY: install wasm bench preset-hashes test test-go test-wasm test-browser test-webkit test-durations typecheck vet format format-check build dev dev-lan preview preview-lan check clean share-card thumbnails
 
 install:
 	npm ci
@@ -36,6 +36,12 @@ test-browser: build
 	npx playwright test
 test-webkit: build
 	WEBKIT=1 npx playwright test --project=webkit
+# Records each spec file's duration from a CI run's timing reports, which
+# CI's Chromium shards are packed by (tests/shards.ts).
+test-durations:
+	@test -n "$(RUN)" || { echo "usage: make test-durations RUN=<CI run id>"; exit 2; }
+	@dir=$$(mktemp -d) && gh run download $(RUN) -p 'chromium-test-timings-*' -D "$$dir" && \
+		node scripts/test-durations.mjs "$$dir"/*/test-timings.json; status=$$?; rm -rf "$$dir"; exit $$status
 build:
 	npm run build
 share-card: build

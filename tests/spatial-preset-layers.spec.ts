@@ -71,23 +71,22 @@ test("a preset opens with its own layers, and one without shows every layer", as
   await expect(layer(page, "Tangent rulings")).toBeChecked();
   await expect(stage(page)).not.toHaveAttribute("data-layers", /./);
   expect(await exported(page)).toEqual(defaultLayers);
-  // Each preset with layers opens with them, in the drawing and its export.
-  for (const i of layered) {
-    await choosePreset(page, i);
-    await settled(page);
-    await expect(stage(page)).toHaveAttribute(
-      "data-layers",
-      JSON.stringify(spatialPresets[i].layers),
-    );
-    expect(await exported(page)).toEqual({
-      ...defaultLayers,
-      ...spatialPresets[i].layers,
-    });
-  }
+  // From one preset with layers straight to another, the second's own.
+  const other = layered.find((i) => i !== focal)!;
+  await choosePreset(page, other);
+  await settled(page);
+  await expect(stage(page)).toHaveAttribute(
+    "data-layers",
+    JSON.stringify(spatialPresets[other].layers),
+  );
   // The focal surface's shell is hidden and its sheets shown, and the
   // checkboxes say so and still work.
   await choosePreset(page, focal);
   await settled(page);
+  expect(await exported(page)).toEqual({
+    ...defaultLayers,
+    ...spatialPresets[focal].layers,
+  });
   await expect(layer(page, "Surface patch")).not.toBeChecked();
   await expect(layer(page, "Focal sheet 1 · κ₁")).toBeChecked();
   await expect(layer(page, "Focal sheet 2 · κ₂")).toBeChecked();
@@ -104,3 +103,22 @@ test("a preset opens with its own layers, and one without shows every layer", as
   await settled(page);
   expect(await exported(page)).toEqual(defaultLayers);
 });
+
+// Each preset with layers opens with them, in the drawing and its export.
+// One test each, so no test sweeps every heavy preset on a slow runner.
+for (const i of layered)
+  test(`${spatialPresets[i].name} opens with its own layers`, async ({
+    page,
+  }) => {
+    await ready(page);
+    await choosePreset(page, i);
+    await settled(page);
+    await expect(stage(page)).toHaveAttribute(
+      "data-layers",
+      JSON.stringify(spatialPresets[i].layers),
+    );
+    expect(await exported(page)).toEqual({
+      ...defaultLayers,
+      ...spatialPresets[i].layers,
+    });
+  });
