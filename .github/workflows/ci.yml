@@ -89,7 +89,7 @@ jobs:
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     name: chromium (${{ matrix.shard }}/${{ matrix.total }})
     runs-on: ubuntu-latest
-    # The slowest shard takes about 12 minutes, and 15 on a slow day.
+    # Each shard takes about 10 minutes, and 15 on a slow day.
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -150,11 +150,15 @@ jobs:
           # apt leaves the archive root-owned; the cache is saved as the runner.
           sudo chown -R "$(id -u):$(id -g)" "$archives"
       # Runs against the production build in dist/, under the production CSP.
-      # The JSON report records each test's duration, which the dot reporter
-      # does not, so a slow or slowing shard can be compared test by test
-      # with another run's.
-      - run: npx playwright test --shard=${{ matrix.shard }}/${{ matrix.total }} --reporter=dot,json
+      # TEST_SHARD packs the shards by each spec file's recorded duration
+      # (tests/shards.ts, tests/test-durations.json), not by test count as
+      # --shard does. The JSON report records each test's duration, which the
+      # dot reporter does not, so a slow or slowing shard can be compared
+      # test by test with another run's, and the recorded durations refreshed
+      # from it (`make test-durations RUN=<run id>`).
+      - run: npx playwright test --reporter=dot,json
         env:
+          TEST_SHARD: ${{ matrix.shard }}/${{ matrix.total }}
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-timings.json
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
