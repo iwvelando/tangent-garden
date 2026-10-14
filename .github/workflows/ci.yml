@@ -89,7 +89,8 @@ jobs:
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     name: chromium (${{ matrix.shard }}/${{ matrix.total }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The slowest shard takes about 12 minutes, and 15 on a slow day.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
