@@ -147,6 +147,7 @@ export function sameCamera(a: View, b: View) {
     close(a.radius, b.radius, r) &&
     close(a.panX, b.panX, r) &&
     close(a.panY, b.panY, r) &&
+    close(a.targetDepth ?? 0, b.targetDepth ?? 0, r) &&
     close(a.center.x, b.center.x, r) &&
     close(a.center.y, b.center.y, r) &&
     close(a.center.z, b.center.z, r)

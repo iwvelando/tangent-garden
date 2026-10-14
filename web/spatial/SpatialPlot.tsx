@@ -9,7 +9,14 @@ import {
   type Layers,
   type View,
 } from "./renderer";
-import { refinementView, type Batch, type Projection } from "./scene";
+import {
+  refinementView,
+  turntableAngle,
+  type Batch,
+  type Projection,
+} from "./scene";
+import { zoomAbout as zoomed, type PagePoint } from "./zoom";
+import type { Vec3 } from "./types";
 import { spatialPlainZoom, viewZoom } from "../refinement";
 import type { CutSpec } from "./cut";
 import { defaultSight, isPlain, type Sight } from "./sight";
@@ -149,22 +156,44 @@ export function SpatialPlot({
   const [error, setError] = useState("");
   const zoomLimit = () =>
     state.current.refineView ? viewZoom : spatialPlainZoom;
-  // Zooms the shown camera by factor about a point of the page, which
-  // stays where it is: the target's plane is drawn at the orthographic
-  // scale, which pan moves in world units.
+  // The point last zoomed toward through a lens, and the camera that zoom
+  // left, so a run of wheel steps at one place picks it once: until the
+  // camera, the pointer or what is drawn changes, it stays under the
+  // pointer, nearest the viewer.
+  const anchor = useRef<{
+    key: unknown[];
+    at: PagePoint;
+    camera: string;
+    point: Vec3 | null;
+  } | null>(null);
+  // Zooms the shown camera by factor about a point of the page, in client
+  // coordinates, which stays where it is (see zoom.ts). Through a lens it
+  // zooms toward the geometry drawn there.
   const zoomAbout = (factor: number, x: number, y: number) => {
     const element = canvas.current!;
     const r = element.getBoundingClientRect();
-    const v = target();
-    const zoom = Math.max(0.2, Math.min(zoomLimit(), v.zoom * factor));
-    const unit =
-      (2 * current().radius * 1.16) /
-      Math.min(element.clientWidth, element.clientHeight);
-    const u = x - (r.left + r.width / 2),
-      w = y - (r.top + r.height / 2);
-    v.panX -= u * unit * (1 / v.zoom - 1 / zoom);
-    v.panY += w * unit * (1 / v.zoom - 1 / zoom);
-    v.zoom = zoom;
+    const size = { width: element.clientWidth, height: element.clientHeight };
+    const at = {
+      x: x - (r.left + r.width / 2) + size.width / 2,
+      y: y - (r.top + r.height / 2) + size.height / 2,
+    };
+    const v = target(),
+      shown = current();
+    let point: Vec3 | null = null;
+    if (turntableAngle(shown)) {
+      const { result, layers, probe, cut } = state.current;
+      const key = [result, layers, probe, cut, size.width, size.height];
+      const last = anchor.current;
+      point =
+        last &&
+        last.camera === JSON.stringify(v) &&
+        Math.hypot(last.at.x - at.x, last.at.y - at.y) <= 1 &&
+        last.key.every((k, i) => k === key[i])
+          ? last.point
+          : (renderer.current?.pick(shown, layers, size, at) ?? null);
+      Object.assign(v, zoomed(shown, size, at, factor, zoomLimit(), point));
+      anchor.current = { key, at, camera: JSON.stringify(v), point };
+    } else Object.assign(v, zoomed(shown, size, at, factor, zoomLimit()));
   };
   // What was last reported to onFocus.
   const focused = useRef("null");
@@ -437,13 +466,19 @@ export function SpatialPlot({
               if (e.shiftKey) v.panY -= delta;
               else v.pitch = Math.min(1.5, v.pitch + 0.1);
               break;
+            // About the middle of the drawing, toward the geometry there
+            // through a lens.
             case "+":
             case "=":
-              v.zoom = Math.min(zoomLimit(), v.zoom * 1.1);
+            case "-": {
+              const r = e.currentTarget.getBoundingClientRect();
+              zoomAbout(
+                e.key === "-" ? 1 / 1.1 : 1.1,
+                r.left + r.width / 2,
+                r.top + r.height / 2,
+              );
               break;
-            case "-":
-              v.zoom = Math.max(0.2, v.zoom / 1.1);
-              break;
+            }
             case "Home":
               if (explored.current && released)
                 explored.current = { ...released };

@@ -1177,6 +1177,27 @@ test("a link carries the chosen lens angle in whole degrees, the normal lens's i
   }
 });
 
+test("a link carries a lens's target depth; older links have none, and nonfinite ones are refused", async () => {
+  for (const targetDepth of [-3.25, 0, 7.5]) {
+    const study: SpatialStudy = {
+      ...spatial(),
+      view: { ...spatial().view, targetDepth },
+    };
+    const read = await readStudyLink(await writeStudyLink("3d", study));
+    assert.deepEqual(spatialStudy(read.study), study);
+  }
+  // A view that never zoomed toward a detail has none, as older links.
+  const plain = spatialStudy(
+    (await readStudyLink(await writeStudyLink("3d", spatial()))).study,
+  );
+  assert.equal("targetDepth" in plain.view, false);
+  for (const value of ["near", null, Infinity, NaN]) {
+    const s = structuredClone(spatial()) as any;
+    s.view.targetDepth = value;
+    await refused(() => spatialStudy(s), "view.targetDepth");
+  }
+});
+
 test("a link carries how the probe moves while parameters vary; a grid's probe stays", async () => {
   for (const probeMotion of ["stays", "length", "along"] as const) {
     const study: SpatialStudy = {

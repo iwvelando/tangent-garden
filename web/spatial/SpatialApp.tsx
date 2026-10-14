@@ -3650,9 +3650,12 @@ export default function SpatialApp({
           // The entered cut while it is on, as a preset's fingerprint
           // includes it (see examples/index.ts).
           data-cut={cut.enabled ? JSON.stringify(cut) : undefined}
-          // The entered sight when it is not the default, likewise.
+          // The entered sight when it is not the default, likewise,
+          // strokes tapering with depth included.
           data-sight={
-            isPlain(sight) && sight.weight === defaultSight.weight
+            isPlain(sight) &&
+            sight.weight === defaultSight.weight &&
+            sight.depth !== "taper"
               ? undefined
               : JSON.stringify(sight)
           }

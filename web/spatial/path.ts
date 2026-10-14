@@ -225,7 +225,9 @@ export function keyFromView(
         back[0] * (framed.point.x - bounds.center.x) +
         back[1] * (framed.point.y - bounds.center.y) +
         back[2] * (framed.point.z - bounds.center.z)
-      : (1.16 * view.radius) / (view.zoom * tan) - dot(back)
+      : (1.16 * view.radius) / (view.zoom * tan) +
+        (view.targetDepth ?? 0) -
+        dot(back)
     : 0;
   const zoom = fov
     ? behind > 0

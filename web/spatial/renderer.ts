@@ -12,6 +12,7 @@ import {
 } from "./scene";
 import { glsl, palette, vec3 } from "./palette";
 import { pageLimits } from "./limits";
+import { pickAt, type PagePoint, type Size } from "./zoom";
 import { cutEdges, isCut, maxCutPlanes, specPlanes, type CutSpec } from "./cut";
 import {
   arcLengths,
@@ -1456,6 +1457,18 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     strokes: () => !!strokes,
     // The layers the uploaded scene has something to draw for.
     layers: () => (scene ? sceneLayers(scene) : null),
+    // The drawn geometry nearest the viewer at a point of a page this size
+    // (see zoom.ts), with these layers, the probe and the cut.
+    pick: (view: View, layers: Layers, size: Size, at: PagePoint) =>
+      scene
+        ? pickAt(
+            scenePasses(scene, layers, probe, cutEdge(layers)),
+            view,
+            size,
+            at,
+            cut,
+          )
+        : null,
     draw,
     // The drawn page's pixels, top row first, as RGBA.
     pixels: () => {

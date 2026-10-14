@@ -59,7 +59,9 @@ import { loops } from "./loop";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
-export type SpatialCamera = typeof initialView;
+// A lens's target depth (see scene.ts's View) is absent from views that
+// never zoomed toward a detail through one, and from links made before it.
+export type SpatialCamera = typeof initialView & { targetDepth?: number };
 // The camera path, flown by the path mode or as the animation camera while
 // the geometry moves, travels with the animation setup; links made before
 // it fly none.
@@ -347,6 +349,7 @@ const view: SchemaOf<SpatialCamera> = {
     zoom: { range: [0.2, viewZoom] },
     panX: "number",
     panY: "number",
+    targetDepth: { optional: "number" },
   },
 };
 
