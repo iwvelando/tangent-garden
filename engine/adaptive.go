@@ -9,8 +9,9 @@ import (
 // Refinement between samples: points inserted between a drawn curve's
 // uniform samples wherever the chord joining them strays from the curve
 // (engine/refine, shared with the spatial engine). The uniform samples stay
-// the study's identity: its construction lines and circles, framing, reveal
-// and probe keep them.
+// the study's identity: its construction lines and circles, reveal and
+// probe keep them, and so does framing unless the study asks for each
+// curve's reach (Request.AdaptiveFrame).
 
 // RefinedPath is a drawn curve with its refinement (see refine.Path):
 // points in parameter order, each at its position in sample steps, with a
@@ -29,6 +30,14 @@ type RefinedPath struct {
 	// View is the tolerance of the pieces that meet the view, when a view
 	// finer than the study's tolerance was given.
 	View float64 `json:"view,omitempty"`
+	// Reach, when the study asks for it (AdaptiveFrame), is what the
+	// points between samples add to the curve's extent: those outside the
+	// box of their interval's two samples, in order, refined to the
+	// curve's own tolerance whatever the view, so zooming never moves the
+	// framing. ReachAt is each one's position in sample steps, so a reveal
+	// shows only what it has reached.
+	Reach   []Vec     `json:"reach,omitempty"`
+	ReachAt []float64 `json:"reachAt,omitempty"`
 }
 
 // AdaptiveResult holds the refined curves a study draws: the base curve, the
@@ -261,6 +270,61 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 		sort.Ints(out.Inversion.Breaks)
 	}
 	out.Adaptive = a
+}
+
+// reach gives each of out's refined curves its reach, from the curves
+// refined to their own tolerance: under a view, refined again without it,
+// in a copy of out, since refinement replaces an inversion's breaks.
+func (q Request) reach(out *Result, f, g curveFunc) {
+	study := out.Adaptive
+	if q.View != nil {
+		plain, copied := q, *out
+		plain.View = nil
+		if out.Inversion != nil {
+			inversion := *out.Inversion
+			copied.Inversion = &inversion
+		}
+		plain.adapt(&copied, f, g)
+		study = copied.Adaptive
+	}
+	a := out.Adaptive
+	for _, pair := range [][2]*RefinedPath{{a.Base, study.Base}, {a.Input, study.Input}, {a.Derived, study.Derived}} {
+		if pair[0] != nil {
+			pair[0].Reach, pair[0].ReachAt = reachOf(pair[1])
+		}
+	}
+	for i, member := range a.Family {
+		member.Reach, member.ReachAt = reachOf(study.Family[i])
+	}
+}
+
+// reachOf is the points of a refined path between samples that lie outside
+// the box of their interval's two samples: all that refinement can add to
+// the extent of the samples on either side of them, with their positions.
+func reachOf(path *RefinedPath) ([]Vec, []float64) {
+	var reach []Vec
+	var at []float64
+	var a *Vec
+	for k, p := range path.Points {
+		u := path.At[k]
+		if u == math.Trunc(u) {
+			a = p
+			continue
+		}
+		if p == nil || a == nil {
+			continue
+		}
+		// The interval's next sample follows its points between samples.
+		j := k + 1
+		for path.At[j] != math.Trunc(path.At[j]) {
+			j++
+		}
+		b := path.Points[j]
+		if b == nil || p.X < math.Min(a.X, b.X) || p.X > math.Max(a.X, b.X) || p.Y < math.Min(a.Y, b.Y) || p.Y > math.Max(a.Y, b.Y) {
+			reach, at = append(reach, *p), append(at, u)
+		}
+	}
+	return reach, at
 }
 
 // derivedAt evaluates a study's derived curve at any t from the base f, the

@@ -372,7 +372,8 @@ export function Plot({
   const inversion = result.inversion;
   const breaks = new Set(inversion?.breaks);
   // Curves refined between their samples are drawn from their refined
-  // points, whose nulls carry every break; framing keeps the samples.
+  // points, whose nulls carry every break; framing keeps the samples, with
+  // their reach when the study frames it.
   const refined = result.adaptive ?? {};
   // The probe's drawing at its point, in its own inks: the highlighted
   // construction, the osculating circle and its center, the point, and the
@@ -1426,16 +1427,23 @@ export function pathData(
 // Fit each point family independently: a short base arc must not discard a
 // distant but coherent derived arc. Outer Tukey fences suppress isolated tails
 // near asymptotes without clipping ordinary extrema to percentile bounds.
-export function framingPoints(points: (Vec | null)[]): Vec[] {
-  const finite = points.filter(
-    (p): p is Vec =>
-      !!p &&
-      Number.isFinite(p.x) &&
-      Number.isFinite(p.y) &&
-      Math.abs(p.x) < 1e10 &&
-      Math.abs(p.y) < 1e10,
-  );
-  if (finite.length < 8) return finite;
+// A family's points that frame the drawing: its finite samples within a
+// fence of three interquartile ranges beyond their quartiles, which leaves
+// out asymptotic outliers, and with them its reach between samples within
+// the same fence.
+export function framingPoints(
+  points: (Vec | null)[],
+  reach: Vec[] = [],
+): Vec[] {
+  const usable = (p: Vec | null): p is Vec =>
+    !!p &&
+    Number.isFinite(p.x) &&
+    Number.isFinite(p.y) &&
+    Math.abs(p.x) < 1e10 &&
+    Math.abs(p.y) < 1e10;
+  const finite = points.filter(usable);
+  const reached = reach.filter(usable);
+  if (finite.length < 8) return [...finite, ...reached];
   const fence = (values: number[]) => {
     values.sort((a, b) => a - b);
     const q1 = values[Math.floor((values.length - 1) * 0.25)];
@@ -1445,7 +1453,9 @@ export function framingPoints(points: (Vec | null)[]): Vec[] {
   };
   const [x0, x1] = fence(finite.map((p) => p.x));
   const [y0, y1] = fence(finite.map((p) => p.y));
-  return finite.filter((p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
+  return [...finite, ...reached].filter(
+    (p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1,
+  );
 }
 // The part of the unbounded line through p along u inside the rectangle
 // [x0, x1] × [y0, y1], or null where it misses.
@@ -1560,11 +1570,18 @@ export function fitFrame(result: Result, config: Config) {
           { center: { x: 0, y: 0 }, radius: roulette.fixedRadius },
         ])
       : [];
+  // A study that frames its points between samples takes in each refined
+  // curve's reach with its samples, an offset stack's members and a circle
+  // envelope's branches in the result's order.
+  const refined = config.adaptiveFrame ? result.adaptive : undefined;
+  const reach = (path?: RefinedPath<Vec>) => path?.reach ?? [];
   const points = [
-    ...framingPoints(result.base),
+    ...framingPoints(result.base, reach(refined?.base)),
     ...framingPoints(result.second ?? []),
-    ...framingPoints(result.derived),
-    ...result.family.flatMap((path) => framingPoints(path.points)),
+    ...framingPoints(result.derived, reach(refined?.derived)),
+    ...result.family.flatMap((path, i) =>
+      framingPoints(path.points, reach(refined?.family?.[i])),
+    ),
     ...framingPoints(extents),
     ...framingPoints(fixed),
     ...framingPoints(circleExtents(roulette?.positions ?? [])),
@@ -1590,7 +1607,7 @@ export function fitFrame(result: Result, config: Config) {
     // A derived input, and the circle of inversion, are their own families:
     // an input can be far smaller or larger than the curve, and so can an
     // image.
-    ...framingPoints(result.input ?? []),
+    ...framingPoints(result.input ?? [], reach(refined?.input)),
     ...framingPoints(circleExtents(result.inversion ? [result.inversion] : [])),
   ];
   if (!points.length) return { cx: 0, cy: 0, scale: 100, span: 5 };

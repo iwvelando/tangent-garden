@@ -38,6 +38,9 @@ type Request struct {
 	// Adaptive refines the drawn curves between their uniform samples (see
 	// engine/adaptive.go); integrated and unparametrized curves ignore it.
 	Adaptive bool `json:"adaptive"`
+	// AdaptiveFrame, with Adaptive, gives each refined curve its reach (see
+	// RefinedPath), which the drawing's framing takes in.
+	AdaptiveFrame bool `json:"adaptiveFrame,omitempty"`
 	// Diagnostics describes the base curve at every sample for the probe
 	// (see Diagnostics); it changes nothing else in the result.
 	Diagnostics bool `json:"diagnostics"`
@@ -581,6 +584,9 @@ func Compute(q Request) (Result, error) {
 	}
 	if q.Adaptive && refines(q.Curve.Format) {
 		q.adapt(&out, f, g)
+		if q.AdaptiveFrame {
+			q.reach(&out, f, g)
+		}
 	}
 	if q.Diagnostics {
 		out.Diagnostics = diagnose(f, out.Base, lo, hi)

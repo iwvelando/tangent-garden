@@ -1803,6 +1803,23 @@ test("a 2D link carries refinement to the view and its deeper zoom; older links 
   await refused(() => planarStudy(far), "camera.zoom");
 });
 
+test("a 2D link carries framing by the points between samples; older links frame the samples alone", async () => {
+  const study: PlanarStudy = {
+    ...planar(),
+    config: { ...planar().config, adaptive: true, adaptiveFrame: true },
+  };
+  const read = await readStudyLink(await writeStudyLink("2d", study));
+  assert.deepEqual(planarStudy(read.study), study);
+  // A link made before the setting leaves it out, which frames the
+  // samples alone.
+  const older = structuredClone(study) as any;
+  delete older.config.adaptiveFrame;
+  assert.equal(planarStudy(older).config.adaptiveFrame, undefined);
+  const bad = structuredClone(study) as any;
+  bad.config.adaptiveFrame = 1;
+  await refused(() => planarStudy(bad), "config.adaptiveFrame");
+});
+
 test("a 2D link carries the probe and how it moves; older links open without it; it moves only while on", async () => {
   for (const probeMotion of ["stays", "length", "along"] as const) {
     const study: PlanarStudy = {
