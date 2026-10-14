@@ -82,8 +82,10 @@ jobs:
 
   # The Chromium suite, split across runners. Each shard builds its own copy of
   # the production app, which takes seconds, rather than waiting on `check`.
-  # Shards get whole spec files, so they are uneven; six keep the slowest near
-  # the `check` and `webkit` jobs while setup stays a small share of each.
+  # Shards get whole spec files, so they are uneven. Eight keep the slowest
+  # near the `check` and `webkit` jobs and well inside the job's timeout,
+  # which six no longer did (about 13 of 15 minutes, October 2026), while
+  # setup stays a small share of each.
   browser:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
@@ -93,8 +95,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-        total: [6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        total: [8]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
