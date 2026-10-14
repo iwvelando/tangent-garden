@@ -882,9 +882,6 @@ test("still exports include the probe as drawn; a reveal draws it once reached",
 test("an orbit, a peel and a camera path draw the probe at the user's point", async ({
   page,
 }) => {
-  // It plays three animations in turn, which a CI runner shared with
-  // another heavy test can take longer than the default to do.
-  test.setTimeout(60_000);
   await ready(page);
   await choosePreset(page, helix);
   await probeSwitch(page).check();
