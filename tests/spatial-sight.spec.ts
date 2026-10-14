@@ -35,12 +35,8 @@ import { decodePng } from "./png";
 // SwiftShader), so here each must come back byte-identical after the
 // setting has been changed and returned to plain.
 const stage = (page: Page) => page.locator(".spatial-stage");
-// The sheets' studies are heavy: on a loaded CI runner, drawing in software,
-// one can take longer than the default 5 s to settle.
 const settled = (page: Page) =>
-  expect(stage(page)).toHaveAttribute("aria-busy", "false", {
-    timeout: 20_000,
-  });
+  expect(stage(page)).toHaveAttribute("aria-busy", "false");
 async function ready(page: Page) {
   await page.goto("/?study=3d");
   await settled(page);
