@@ -210,6 +210,10 @@ export type Config = {
   // and lets the drawing zoom to viewZoom (refinement.ts); absent or false
   // refines to the study's tolerance alone.
   adaptiveView?: boolean;
+  // With adaptive, frames the drawing by its points between samples too
+  // (their reach, engine/adaptive.go); absent or false frames the samples
+  // alone.
+  adaptiveFrame?: boolean;
 };
 // Mirrors engine.View: the rectangle of the plane the drawing shows, which
 // refinement refines to when it is zoomed in, and the half diagonal its

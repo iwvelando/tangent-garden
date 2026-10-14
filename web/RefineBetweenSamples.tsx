@@ -2,22 +2,28 @@ import { HelpText, HelpToggle, useHelp } from "./Field";
 import type { Help } from "./help";
 import { refinementReadout, type RefinedPath } from "./refinement";
 
+// A setting beneath the control while refinement is on: its checkbox, in
+// line with its help toggle, and its help.
+type Option = { checked: boolean; onChange: (on: boolean) => void; help: Help };
+
 // The control that refines a study's drawn curves between their samples,
-// with a readout of what refinement did, in the 2D and 3D notebooks. The 2D
-// notebook also offers refinement to the view, beneath it while it is on.
+// with a readout of what refinement did, in the 2D and 3D notebooks. Both
+// also offer refinement to the view beneath it while it is on, and the 2D
+// notebook framing by the points between samples.
 export function RefineBetweenSamples({
   checked,
   onChange,
   refined,
   view,
+  frame,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   // The refined curves of the drawing shown, once refinement has run.
   refined?: (RefinedPath<unknown> | undefined)[];
-  view?: { checked: boolean; onChange: (on: boolean) => void; help: Help };
+  view?: Option;
+  frame?: Option;
 }) {
-  const help = useHelp();
   return (
     <>
       <label className="check">
@@ -29,24 +35,50 @@ export function RefineBetweenSamples({
         Refine between samples
       </label>
       {checked && view && (
-        <>
-          <div className="probe-switch view-switch">
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={view.checked}
-                onChange={(e) => view.onChange(e.target.checked)}
-              />
-              Refine to the view as you zoom
-            </label>
-            <HelpToggle topic="refining to the view" help={help} />
-          </div>
-          <HelpText help={help}>{view.help}</HelpText>
-        </>
+        <Setting
+          option={view}
+          label="Refine to the view as you zoom"
+          topic="refining to the view"
+        />
+      )}
+      {checked && frame && (
+        <Setting
+          option={frame}
+          label="Frame the points between samples"
+          topic="framing between samples"
+        />
       )}
       {checked && refined && (
         <p className="refinement-readout">{refinementReadout(refined)}</p>
       )}
+    </>
+  );
+}
+
+function Setting({
+  option,
+  label,
+  topic,
+}: {
+  option: Option;
+  label: string;
+  topic: string;
+}) {
+  const help = useHelp();
+  return (
+    <>
+      <div className="probe-switch view-switch">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={option.checked}
+            onChange={(e) => option.onChange(e.target.checked)}
+          />
+          {label}
+        </label>
+        <HelpToggle topic={topic} help={help} />
+      </div>
+      <HelpText help={help}>{option.help}</HelpText>
     </>
   );
 }

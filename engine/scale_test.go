@@ -482,6 +482,7 @@ func (c *copies) result(q Request, want, got Result) {
 			if c.b.exact {
 				c.same(name+" inserted, breaks, unresolved", []int{x.Inserted, x.Breaks, x.Unresolved}, []int{y.Inserted, y.Breaks, y.Unresolved})
 				c.path(name, x.Points, y.Points, limit)
+				c.path(name+" reach", pointers(x.Reach), pointers(y.Reach), limit)
 				return
 			}
 			// Refinement stops within its tolerance of the curve, so a
@@ -527,6 +528,7 @@ func checkCopies(t *testing.T, ms []similarity, skip func(preset, similarity) st
 		q := p.Config
 		q.Diagnostics = refines(q.Curve.Format)
 		q.Adaptive = refines(q.Curve.Format)
+		q.AdaptiveFrame = q.Adaptive
 		want, err := Compute(q)
 		if err != nil {
 			t.Fatalf("%s: %v", p.Title, err)

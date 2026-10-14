@@ -44,7 +44,7 @@ These come from the handoffs. Each was paid for at least once.
 ## Recommended order
 
 1. Scale and translation: the 2D drawing
-2. Refinement between samples, remaining constructions (3D and 2D)
+2. Refinement between samples, remaining constructions (3D)
 
 Items 3 and 4 need a decision or a profile before any code. Item 5 lists limits to fix only when a study runs into them.
 
@@ -64,17 +64,17 @@ Items 3 and 4 need a decision or a profile before any code. Item 5 lists limits 
 
 ### 2. Refinement between samples: remaining constructions
 
-**Applies to:** 3D and 2D. 4D has no user curve.
+**Applies to:** 3D (2D's framing is done). 4D has no user curve.
 
 **Open:**
 
-- **Both:** framing that ignores refined points.
+- **3D:** framing that ignores refined points. The 2D notebook frames them with **Frame the points between samples** (`adaptiveFrame`; [framing between samples](mathematics.md#refinement-between-samples)): each refined curve's reach, the points between samples beyond their interval's two samples, always from the study refined to its own tolerance so the view never moves it. In 3D the bounds come from Go's `fit` per format (`engine3/curve.go`) and from `fitBounds` in a reveal (`web/spatial/animation.ts`).
 
 **Start from:** `engine/refine` (point type supplied with its chord distance and length; since #134 it also scans between its probes for narrow features, with a `Scan` budget, and refines a `Focus` first), `engine3/refine.go`, `web/refinement.ts`, and `mathematics.md` (**Refinement between samples**, its **Refinement to the view**, and **Spatial refinement between samples**).
 
 **Watch for:**
 
-- Uniform samples remain the study's identity for construction lines, framing, reveal and probe, and for surfaces unless **Refine the surface too** is on (see [surfaces along the curve](mathematics.md#surfaces-along-the-curve)).
+- Uniform samples remain the study's identity for construction lines, reveal and probe, and for framing unless a 2D study frames its reach, and for surfaces unless **Refine the surface too** is on (see [surfaces along the curve](mathematics.md#surfaces-along-the-curve)).
 - Breaks found between samples must reach every curve built on that curve.
 - Anything drawn from a refined curve must follow the reveal and traced light, as `arrivalAt` in `web/raytrace.ts` does (#141).
 - Keep the feature opt-in and off for older links.

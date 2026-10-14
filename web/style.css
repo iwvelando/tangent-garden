@@ -1267,6 +1267,10 @@ header {
 .view-switch .check {
   margin-bottom: 0;
 }
+/* Refinement's settings stack as closely as the checkbox above them. */
+.view-switch:has(+ .hint[hidden] + .view-switch) {
+  margin-bottom: 4px;
+}
 .probe-slider input {
   width: 100%;
   accent-color: #638f82;

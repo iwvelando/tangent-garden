@@ -35,7 +35,7 @@ import {
   type HeldProbe,
   type PlanarProbe,
 } from "./planar-probe";
-import { refineBudget, refineDepth, viewHelp } from "./refinement";
+import { frameHelp, refineBudget, refineDepth, viewHelp } from "./refinement";
 import type { LineWeight } from "./line-weight";
 import {
   isHarmonic,
@@ -2271,6 +2271,13 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                       checked: !!config.adaptiveView,
                       onChange: (adaptiveView) => update({ adaptiveView }),
                       help: viewHelp,
+                    }}
+                    frame={{
+                      checked: !!config.adaptiveFrame,
+                      // Left out when off, as in a study made before it.
+                      onChange: (on) =>
+                        update({ adaptiveFrame: on || undefined }),
+                      help: frameHelp,
                     }}
                   />
                 )}

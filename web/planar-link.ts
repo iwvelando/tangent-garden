@@ -261,6 +261,7 @@ const config: SchemaOf<Config> = {
     lines: "number",
     adaptive: { optional: "boolean" },
     adaptiveView: { optional: "boolean" },
+    adaptiveFrame: { optional: "boolean" },
   },
 };
 

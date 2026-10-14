@@ -13,7 +13,7 @@ async function settled(page: Page) {
 }
 
 for (const [path, count] of [
-  ["/", 63],
+  ["/", 64],
   ["/?study=3d", 115],
   ["/?study=4d", 13],
 ] as const)

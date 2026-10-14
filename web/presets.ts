@@ -1338,4 +1338,40 @@ export const presets: {
       adaptiveView: true,
     },
   },
+  {
+    title: "A sea urchin turned inside out",
+    note: "Twenty-five spines, each narrower than the step between samples, found by refinement and framed whole; inversion in a circle turns them into needles pointing to the center; play to grow them",
+    config: {
+      ...base,
+      kind: "inversion",
+      // r = 1 + 0.8a·exp(−140(1 − cos(25t − π/16))): a spine every 2π/25,
+      // whose tip, at r = 1 + 0.8a, lies exactly halfway between two of
+      // the 401 samples, where the spine has fallen to about 1 + 0.054a.
+      // The circle of radius 0.8 inverts the body near 0.64 and the tips
+      // to 0.64/(1 + 0.8a).
+      curve: {
+        ...base.curve,
+        format: "polar",
+        r: "1 + 0.8*a*exp(-140*(1 - cos(25*t - pi/16)))",
+        a: 1,
+      },
+      inversion: { center: { x: 0, y: 0 }, radius: 0.8 },
+      samples: 401,
+      lines: 50,
+      adaptive: true,
+      adaptiveView: true,
+      adaptiveFrame: true,
+    },
+    // The spines grow from a circle to their full length and back, framed
+    // all along as they are at full length.
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 8,
+      tracks: [{ target: "a", from: "0", to: "1" }],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
 ];
