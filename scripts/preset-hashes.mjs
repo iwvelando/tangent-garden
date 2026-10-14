@@ -18,6 +18,9 @@
 // time is the median of --runs runs (default 1) after one warm-up, of the
 // worker's whole reply: resolving fields, Go's work and encoding, and
 // decoding. --only keeps the presets whose name contains its text.
+// --refine on (or off) draws every 2D and 3D preset with refinement between
+// samples on (or off) instead of as the preset sets it, since a reader can
+// turn it either way on any preset; 4D studies have no such setting.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -27,7 +30,13 @@ import { Script, createContext, runInThisContext } from "node:vm";
 import { createServer } from "vite";
 
 export function parseOptions(args) {
-  const options = { runs: 1, engine: "public/", compare: "", only: "" };
+  const options = {
+    runs: 1,
+    engine: "public/",
+    compare: "",
+    only: "",
+    refine: "preset",
+  };
   for (let k = 0; k < args.length; k += 2) {
     const key = args[k].replace(/^--/, "");
     if (!Object.hasOwn(options, key) && key !== "child")
@@ -39,7 +48,16 @@ export function parseOptions(args) {
   }
   if (!Number.isSafeInteger(options.runs) || options.runs < 1)
     throw new Error("--runs must be a finite positive whole number");
+  if (!["preset", "on", "off"].includes(options.refine))
+    throw new Error("--refine must be on, off or preset");
   return options;
+}
+
+// A preset's configuration with refinement between samples as --refine asks.
+export function withRefinement(config, refine) {
+  return refine === "preset"
+    ? config
+    : { ...config, adaptive: refine === "on" };
 }
 
 // Refused studies are not drawings: two identical errors cannot establish
@@ -109,20 +127,22 @@ async function requests(server) {
   );
   const all = [];
   for (const p of presets) {
-    all.push({ name: `2D ${p.title}`, action: "compute", config: p.config });
+    const config = withRefinement(p.config, options.refine);
+    all.push({ name: `2D ${p.title}`, action: "compute", config });
     all.push({
       name: `2D ${p.title} · diagnostics`,
       action: "compute",
-      config: p.config,
+      config,
       diagnostics: true,
     });
   }
   for (const p of spatialPresets) {
-    all.push({ name: `3D ${p.name}`, action: "spatial", spatial: p.config });
+    const spatial = withRefinement(p.config, options.refine);
+    all.push({ name: `3D ${p.name}`, action: "spatial", spatial });
     all.push({
       name: `3D ${p.name} · diagnostics`,
       action: "spatial",
-      spatial: p.config,
+      spatial,
       diagnostics: true,
     });
   }
@@ -248,6 +268,7 @@ export function childOptions(source, options) {
     "--runs",
     String(options.runs),
     ...(options.only ? ["--only", options.only] : []),
+    ...(options.refine !== "preset" ? ["--refine", options.refine] : []),
   ];
 }
 

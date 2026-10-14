@@ -6,6 +6,7 @@ import {
   childOptions,
   digest,
   parseOptions,
+  withRefinement,
 } from "./preset-hashes.mjs";
 
 test("comparison requires the same nonempty set of successful presets", () => {
@@ -62,6 +63,20 @@ test("options reject missing values and nonfinite or fractional run counts", () 
   assert.throws(() => parseOptions(["--compare"]), /value/);
   assert.throws(() => parseOptions(["--only", "--runs", "2"]), /value/);
   assert.throws(() => parseOptions(["--unknown", "x"]), /Unknown/);
+  assert.equal(parseOptions([]).refine, "preset");
+  for (const value of ["on", "off"])
+    assert.equal(parseOptions(["--refine", value]).refine, value);
+  assert.throws(() => parseOptions(["--refine", "yes"]), /refine/);
+});
+
+test("refinement can be forced either way without changing the preset", () => {
+  const config = { curve: "x", adaptive: false, samples: 9 };
+  const on = withRefinement(config, "on");
+  assert.deepEqual(on, { ...config, adaptive: true });
+  assert.equal(config.adaptive, false);
+  assert.equal(withRefinement(on, "off").adaptive, false);
+  assert.equal(withRefinement({ curve: "x" }, "off").adaptive, false);
+  assert.equal(withRefinement(config, "preset"), config);
 });
 
 test("child process options preserve the default unfiltered comparison", () => {
@@ -70,7 +85,14 @@ test("child process options preserve the default unfiltered comparison", () => {
     ...defaults,
     child: "public/",
   });
-  const filtered = parseOptions(["--only", "spring", "--runs", "3"]);
+  const filtered = parseOptions([
+    "--only",
+    "spring",
+    "--runs",
+    "3",
+    "--refine",
+    "on",
+  ]);
   assert.deepEqual(parseOptions(childOptions("public/", filtered)), {
     ...filtered,
     child: "public/",
