@@ -13,12 +13,15 @@ import {
   keysError,
   locate,
   maxKeys,
+  pieceSteps,
+  pieceZoom,
   slopes,
   type KeyBase,
   type PathError,
   type PathStyle,
 } from "./key-views";
 import type { PlotCamera } from "./planar-link";
+export { pieceAt } from "./key-views";
 import { plainZoom, viewZoom } from "./refinement";
 import type { ViewRect } from "./types";
 
@@ -142,11 +145,8 @@ export type Piece = {
   to: number;
   view: ViewRect & { radius: number };
 };
-// Progress is sampled this finely per leg to cut pieces. A piece spans a
-// zoom of at most pieceZoom, and its center drifts at most a quarter of its
-// narrowest frame's width.
-const pieceSteps = 512;
-export const pieceZoom = 2;
+// A piece spans a zoom of at most pieceZoom, and its center drifts at most
+// a quarter of its narrowest frame's width.
 
 // A flight's pieces, in order, over the progress where it zooms in past
 // the fitted framing; frames at the fitted zoom or wider need no piece.
@@ -222,25 +222,4 @@ export function flightPieces(
   }
   close(1);
   return pieces;
-}
-
-// The piece a frame at progress p is drawn from: the one containing p, or,
-// for a frame just zoomed in between samples, the nearest.
-export function pieceAt(pieces: Piece[], p: number): number {
-  let best = 0,
-    gap = Infinity;
-  pieces.forEach((piece, k) => {
-    const last = k === pieces.length - 1;
-    const d =
-      p < piece.from
-        ? piece.from - p
-        : p < piece.to || (last && p <= piece.to)
-          ? 0
-          : p - piece.to;
-    if (d < gap) {
-      gap = d;
-      best = k;
-    }
-  });
-  return best;
 }

@@ -25,8 +25,10 @@ export type SpatialOptions = {
   // The curve probe at one parameter (see engine3.ProbePoint).
   probe?: ProbeQuery;
   // What the drawing shows, which refined curves are refined to (see
-  // engine3.View).
+  // engine3.View), or, in its place, the frames of a piece of a camera
+  // flight (engine3.Request.Views).
   view?: RefinementView;
+  views?: RefinementView[];
 };
 
 // One worker per app, plus temporary ones during parameter-animation export
@@ -153,6 +155,7 @@ export class EngineClient {
           : {}),
         ...(options.probe ? { probe: options.probe } : {}),
         ...(options.view ? { spatialView: options.view } : {}),
+        ...(options.views ? { spatialViews: options.views } : {}),
       })
     ).result;
   }

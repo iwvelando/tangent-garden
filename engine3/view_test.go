@@ -442,12 +442,12 @@ func TestViewPlacesPieces(t *testing.T) {
 		{box(Vec3{0, 0, 0.5}, Vec3{0, 0, -1}), 0.5},
 		{box(Vec3{0, 0, 2}, Vec3{0, 0, -1}), 0.25},
 	} {
-		if got := f.Scale(c.points); math.Abs(got-c.want) > 1e-15 {
+		if got := f.Scale(c.points, 0); math.Abs(got-c.want) > 1e-15 {
 			t.Fatalf("depth %g, want %g", got, c.want)
 		}
 	}
 	// An orthographic view has no depth.
-	if got := o.Scale(box(Vec3{0, 0, 100}, Vec3{0, 0, -100})); got != 1 {
+	if got := o.Scale(box(Vec3{0, 0, 100}, Vec3{0, 0, -100}), 0); got != 1 {
 		t.Fatalf("orthographic depth %g", got)
 	}
 }

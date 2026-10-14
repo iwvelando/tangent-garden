@@ -25,6 +25,7 @@ import { loopGap, loops, repeatHelp, smoothLoopHelp } from "./loop";
 import {
   applyTracks,
   availableTargets,
+  flightLens,
   integerTargets,
   reveal,
   revealedThrough,
@@ -104,10 +105,13 @@ import type { SpatialCamera } from "./link";
 import {
   defaultPath,
   asFirst,
+  flightPieces,
   keyFromView,
   keyLabel,
   maxTurns,
   pathError,
+  pathView,
+  pieceAt,
   framedDepths,
   pathHelp,
   pathPivots,
@@ -117,7 +121,10 @@ import {
   type KeyView,
   type PathPivot,
   type PathStyle,
+  type Piece,
 } from "./path";
+import { refinementView } from "./scene";
+import { spatialPlainZoom, viewZoom } from "../refinement";
 import {
   rideChoices,
   rideError,
@@ -165,6 +172,17 @@ type Session = {
   // How far each view's framed point stands from the plane through the
   // center, when the path turns about the geometry (see framedDepths).
   depths?: number[];
+  // Present only while flying a path in a study refined to its view: the
+  // page's size, which each frame's view is taken at. Over a fixed study
+  // (every mode but parameters), the flight's pieces (path.ts), each
+  // refined once when first needed and kept for the session, playback and
+  // export alike, and the study refined to no view, which frames at the
+  // fitted zoom or wider draw. While parameters vary, each frame is
+  // refined to its own view.
+  page?: { width: number; height: number };
+  pieces?: Piece[];
+  refined?: Map<number, Promise<Frame>>;
+  plain?: Frame;
   // Present only while riding a ray: its polyline, the bounds its lens is
   // framed about, and the trace's total optical path.
   ride?: { path: RidePath; around: Bounds3; total: number };
@@ -206,6 +224,11 @@ type Props = {
   // What the drawing shows, while the study is refined to its view and
   // zoomed in, else null.
   getFocus?: () => RefinementView | null;
+  // Whether the study is refined to its view, which lets a camera path zoom
+  // to viewZoom and refines each frame to its own view, and the drawing's
+  // page size then.
+  refineView?: boolean;
+  getPage?: () => { width: number; height: number } | undefined;
   onView: (view: AnimationView | null) => void;
   onRunning: (running: boolean) => void;
   // Called when playback starts or resumes, so the drawing can be shown.
@@ -241,6 +264,8 @@ export function SpatialAnimationPanel({
   layers,
   getCurrentView,
   getFocus,
+  refineView = false,
+  getPage,
   onView,
   onRunning,
   onPlay,
@@ -546,6 +571,7 @@ export function SpatialAnimationPanel({
         diagnostics: true,
         ...(typeof query !== "string" && { probe: query }),
         ...(s.focus && { view: s.focus }),
+        ...(s.page && { view: flownView(s, p) }),
       });
       held =
         typeof query === "string"
@@ -557,7 +583,7 @@ export function SpatialAnimationPanel({
     } else if (s.mode === "reveal")
       current = {
         config: s.original.config,
-        result: reveal(s.original.result, p),
+        result: reveal((await fixedStudy(s, p, engine)).result, p),
       };
     else if (
       s.mode === "orbit" ||
@@ -565,11 +591,11 @@ export function SpatialAnimationPanel({
       s.mode === "cut" ||
       s.mode === "path"
     )
-      current = s.original;
+      current = await fixedStudy(s, p, engine);
     else if (s.mode === "trace")
       current = {
         config: s.original.config,
-        result: trace(s.original.result, s.timeline!, p),
+        result: trace((await fixedStudy(s, p, engine)).result, s.timeline!, p),
       };
     else if (p === 0) current = s.first;
     else if (p === 1) current = s.final;
@@ -579,6 +605,7 @@ export function SpatialAnimationPanel({
           ? probeOptions(probeTarget(s.original.config, s.probe))
           : {}),
         ...(s.focus && { view: s.focus }),
+        ...(s.page && { view: flownView(s, p) }),
       });
     // The probe moves along the fixed study from the start of the curve
     // (or a surface's first row) to its end, exactly: one sample at a time,
@@ -657,6 +684,58 @@ export function SpatialAnimationPanel({
         cut: movedCut(s.cut!, sweepOffset(p, s.extent!)),
       }),
     };
+  }
+  // The fixed study a frame at progress p draws: under a flight in a study
+  // refined to its view, zoomed in, its piece's refinement, or else the
+  // study refined to no view; otherwise the study as it stood.
+  async function fixedStudy(s: Session, p: number, engine: EngineClient) {
+    if (!s.pieces) return s.original;
+    return flownView(s, p) !== undefined
+      ? await piece(s, pieceAt(s.pieces, p), engine)
+      : s.plain!;
+  }
+  // What a flown frame at progress p shows, as its study is refined to it,
+  // while it is zoomed in past the fitted framing in a study refined to its
+  // view; else undefined.
+  function flownView(s: Session, p: number): RefinementView | undefined {
+    if (!s.page || !s.path) return undefined;
+    const view = pathView(
+      s.path,
+      s.around!,
+      p,
+      s.repeat === "loop",
+      s.depths,
+      flightLens(s.heldView!),
+    );
+    return view.zoom > 1 ? refinementView(view, s.page) : undefined;
+  }
+  // A flight's piece k, refined once to its views: started when first
+  // needed, with the two pieces after it and the one before, so the next is
+  // ready when the flight reaches it, whichever way it is going. While
+  // playback has a helper engine, the pieces alternate between the two.
+  function piece(s: Session, k: number, engine: EngineClient) {
+    const engines = helper.current ? [engine, helper.current] : [engine];
+    const start = (j: number) => {
+      if (j < 0 || j >= s.pieces!.length || s.refined!.has(j)) return;
+      const refined = engines[j % engines.length].computeSpatial(
+        s.original.config,
+        {
+          ...(s.probe
+            ? probeOptions(probeTarget(s.original.config, s.probe))
+            : {}),
+          views: s.pieces![j].views,
+        },
+      );
+      s.refined!.set(j, refined);
+      // A failed piece is tried again when a frame next needs it.
+      refined.catch(() => s.refined!.delete(j));
+    };
+    start(k);
+    const needed = s.refined!.get(k)!;
+    start(k + 1);
+    start(k + 2);
+    start(k - 1);
+    return needed;
   }
   // The probe in an animation that keeps the study fixed: where the user
   // put it, once a reveal has drawn the sample (or a surface's row) it
@@ -785,8 +864,13 @@ export function SpatialAnimationPanel({
     const token = epoch.current;
     changeStatus("playing");
     // Parameter frames are calculated; while one engine calculates, a helper
-    // can calculate the next. Other modes draw from the prepared study.
-    if (s.mode === "parameters" && !helper.current && playbackEngineCount() > 1)
+    // can calculate the next. A flight's pieces are shared between the two
+    // (see piece). Other modes draw from the prepared study.
+    if (
+      (s.mode === "parameters" || s.pieces) &&
+      !helper.current &&
+      playbackEngineCount() > 1
+    )
       helper.current = new EngineClient();
     const engines =
       s.mode === "parameters" && helper.current
@@ -864,7 +948,10 @@ export function SpatialAnimationPanel({
         }
       }
       if (flies) {
-        const problem = pathError(path);
+        const problem = pathError(
+          path,
+          refineView ? viewZoom : spatialPlainZoom,
+        );
         if (problem) throw new Error(`${problem.field} ${problem.message}`);
       }
       const ray = rides ? snapRide(frame.result, ride) : null;
@@ -923,6 +1010,37 @@ export function SpatialAnimationPanel({
               )
             : undefined;
       if (epoch.current !== token) return;
+      // The geometry a path's views frame, as drawn now, through the held
+      // view's projection, which the path flies in.
+      const depths =
+        flies && path.pivot === "geometry"
+          ? framedDepths(
+              path,
+              scenePasses(buildScene(frame.result), layers),
+              frame.result.bounds,
+              {
+                projection: heldView.projection,
+                lensAngle: heldView.lensAngle,
+              },
+              cut,
+            )
+          : undefined;
+      // A flight in a study refined to its view refines each frame to its
+      // own view, at the page's size.
+      const page = flies && refineView ? getPage?.() : undefined;
+      if (flies && refineView && !page)
+        throw new Error("The current view is not ready yet.");
+      const flown: Pick<Session, "path" | "around" | "depths" | "page"> = {
+        ...(flies && {
+          path: structuredClone(path),
+          around: frame.result.bounds,
+          ...(depths && { depths }),
+          ...(page && { page }),
+        }),
+      };
+      // While the geometry moves, a flown end is refined to its own view.
+      const endView = (p: number) =>
+        page ? flownView({ ...flown, heldView, repeat } as Session, p) : focus;
       let first = original,
         final = original;
       if (mode === "parameters") {
@@ -936,7 +1054,7 @@ export function SpatialAnimationPanel({
               applyTracks(frame.config, numeric, 0, length).config,
               {
                 ...(drawsProbe ? probeOptions(target) : {}),
-                ...(focus && { view: focus }),
+                view: endView(0),
               },
             )
             .catch((reason) => {
@@ -947,7 +1065,7 @@ export function SpatialAnimationPanel({
               applyTracks(frame.config, numeric, 1, length).config,
               {
                 ...(drawsProbe ? probeOptions(target) : {}),
-                ...(focus && { view: focus }),
+                view: endView(1),
               },
             )
             .catch((reason) => {
@@ -995,24 +1113,27 @@ export function SpatialAnimationPanel({
         cut,
         extent,
         sight,
-        ...(flies && {
-          path: structuredClone(path),
-          around: frame.result.bounds,
-          // The geometry the views frame, as drawn now, through the held
-          // view's projection, which the path flies in.
-          ...(path.pivot === "geometry" && {
-            depths: framedDepths(
+        ...flown,
+        // Over a fixed study, the flight is refined in pieces; frames at
+        // the fitted zoom or wider draw the study refined to no view.
+        ...(mode !== "parameters" &&
+          page && {
+            pieces: flightPieces(
               path,
-              scenePasses(buildScene(frame.result), layers),
               frame.result.bounds,
-              {
-                projection: heldView.projection,
-                lensAngle: heldView.lensAngle,
-              },
-              cut,
+              repeat === "loop",
+              page,
+              depths,
+              flightLens(heldView),
             ),
+            refined: new Map(),
+            plain: getFocus?.()
+              ? await client.current.computeSpatial(
+                  original.config,
+                  drawsProbe ? probeOptions(target) : {},
+                )
+              : original,
           }),
-        }),
         camera,
         heldView,
         ...(focus && { focus }),
@@ -1114,7 +1235,14 @@ export function SpatialAnimationPanel({
   // The drawing's view as a key view about the study's bounds.
   const drawn = (): KeyView | null => {
     const view = getCurrentView();
-    return frame && view ? keyFromView(view, frame.result.bounds, "") : null;
+    return frame && view
+      ? keyFromView(
+          view,
+          frame.result.bounds,
+          "",
+          refineView ? viewZoom : spatialPlainZoom,
+        )
+      : null;
   };
   const degrees = (x: number) => {
     const d = Math.round((((x * 180) / Math.PI) % 360) + 360) % 360;

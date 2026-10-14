@@ -1047,6 +1047,14 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
             ),
   };
 }
+// The projection a camera path flies in: the held view's, since key views
+// have none of their own.
+export const flightLens = (
+  held?: Pick<View, "projection" | "lensAngle">,
+): Pick<View, "projection" | "lensAngle"> => ({
+  ...(held?.projection && { projection: held.projection }),
+  ...(held?.projection === "chosen" && { lensAngle: held.lensAngle }),
+});
 export function animationCamera(view: AnimationView): View {
   // A camera path is the whole camera, about the study's own bounds, at the
   // time of the frame it draws.
@@ -1059,14 +1067,7 @@ export function animationCamera(view: AnimationView): View {
       view.progress,
       view.cyclic,
       view.depths,
-      {
-        ...(view.heldView?.projection && {
-          projection: view.heldView.projection,
-        }),
-        ...(view.heldView?.projection === "chosen" && {
-          lensAngle: view.heldView.lensAngle,
-        }),
-      },
+      flightLens(view.heldView),
     );
   // So is the ride, at the optical path the frame's light has reached.
   if (view.ride)

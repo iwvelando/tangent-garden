@@ -1680,6 +1680,14 @@ test("a 3D link carries refinement to the view with its deep zoom; older links r
   const bad = structuredClone(study) as any;
   bad.config.adaptiveView = "yes";
   await refused(() => spatialStudy(bad), "config.adaptiveView");
+  // Its key views zoom as deep as its drawing, and no deeper.
+  const flown = structuredClone(study);
+  flown.animation.path.keys[1].zoom = 800;
+  const back = await readStudyLink(await writeStudyLink("3d", flown));
+  assert.deepEqual(spatialStudy(back.study), flown);
+  const deep = structuredClone(flown) as any;
+  deep.animation.path.keys[1].zoom = 1001;
+  await refused(() => spatialStudy(deep), "animation.path.keys[1].zoom");
 });
 
 test("a 2D link carries refinement between samples; older links draw on the even samples", async () => {

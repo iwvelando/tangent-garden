@@ -61,14 +61,15 @@ type Path[P any] struct {
 // chords no longer than Chord, ahead of every segment that does not. Meets
 // reports whether the bounding box of points, grown by grow on every side,
 // meets the view. Scale, when it is not nil, multiplies Tolerance and Chord
-// for a segment that meets the view, from its points: a perspective's depth.
+// for a segment that meets the view, from its points and the same growth: a
+// perspective's depth, or which of several views it meets.
 // A segment whose tolerance is then no finer than the path's own is treated
 // as one that does not meet the view.
 type Focus[P any] struct {
 	Tolerance float64
 	Chord     float64
 	Meets     func(points []*P, grow float64) bool
-	Scale     func(points []*P) float64
+	Scale     func(points []*P, grow float64) float64
 }
 
 // Metric measures a caller's points: Distance from p to the chord ab, and
@@ -207,7 +208,7 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 		if s.focused {
 			s.tol = focus.Tolerance
 			if focus.Scale != nil {
-				k := focus.Scale(points)
+				k := focus.Scale(points, s.score)
 				s.tol, chord = k*s.tol, k*chord
 				if s.focused = s.tol < tolerance; !s.focused {
 					s.tol = tolerance

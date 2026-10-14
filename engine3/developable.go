@@ -102,6 +102,10 @@ type Request struct {
 	// View is what the drawing shows, when it is zoomed in and refined to
 	// it (see View); it changes nothing but the refined curves.
 	View *View `json:"view,omitempty"`
+	// Views are the frames of a piece of a camera flight, in place of
+	// View: each refined curve is refined, where it meets any of them, as
+	// finely as the finest it meets asks (see viewsFocus).
+	Views []View `json:"views,omitempty"`
 	// Probe asks for the curve the construction acts on described at one
 	// parameter, at or between samples (see ProbePoint), for a torus knot,
 	// harmonic or custom curve. It asks for the diagnostics too, and changes
@@ -253,10 +257,8 @@ func compute(c Request) (Result, error) {
 	if c.Format == "implicit" {
 		return implicit(c.Implicit)
 	}
-	if c.View != nil {
-		if err := c.View.validate(); err != nil {
-			return Result{}, err
-		}
+	if err := c.validateViews(); err != nil {
+		return Result{}, err
 	}
 	if c.Samples < 240 || c.Samples > 2400 {
 		return Result{}, fieldErr("samples", "use 240–2400 samples and 12–240 rulings")
