@@ -1430,7 +1430,10 @@ export function pathData(
 // A family's points that frame the drawing: its finite samples within a
 // fence of three interquartile ranges beyond their quartiles, which leaves
 // out asymptotic outliers, and with them its reach between samples within
-// the same fence.
+// the same fence. An axis along which the family hardly spreads, such as a
+// line's, is fenced a fifth of the family's size apart, so that the fences
+// are the same for the study at any scale or position (see
+// docs/mathematics.md, "Scale and translation").
 export function framingPoints(
   points: (Vec | null)[],
   reach: Vec[] = [],
@@ -1444,18 +1447,57 @@ export function framingPoints(
   const finite = points.filter(usable);
   const reached = reach.filter(usable);
   if (finite.length < 8) return [...finite, ...reached];
+  const xs = finite.map((p) => p.x).sort((a, b) => a - b),
+    ys = finite.map((p) => p.y).sort((a, b) => a - b);
+  const quartile = (values: number[], q: number) =>
+    values[Math.floor((values.length - 1) * q)];
+  const least = 0.2 * familyUnit(xs, ys, quartile);
   const fence = (values: number[]) => {
-    values.sort((a, b) => a - b);
-    const q1 = values[Math.floor((values.length - 1) * 0.25)];
-    const q3 = values[Math.floor((values.length - 1) * 0.75)];
-    const spread = Math.max(q3 - q1, 0.1);
+    const q1 = quartile(values, 0.25),
+      q3 = quartile(values, 0.75);
+    const spread = Math.max(q3 - q1, least);
     return [q1 - 3 * spread, q3 + 3 * spread];
   };
-  const [x0, x1] = fence(finite.map((p) => p.x));
-  const [y0, y1] = fence(finite.map((p) => p.y));
+  const [x0, x1] = fence(xs);
+  const [y0, y1] = fence(ys);
   return [...finite, ...reached].filter(
     (p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1,
   );
+}
+// The power of two at or below a positive number, which scales exactly
+// with a study scaled by a power of two.
+function binade(v: number) {
+  const b = 2 ** Math.floor(Math.log2(v));
+  return b > v ? b / 2 : 2 * b <= v ? 2 * b : b;
+}
+// A family's size, as the engine measures a study's (spreadUnit in
+// engine/adaptive.go): the power of two at or below the larger
+// interquartile range of its sorted coordinates, or of their full range
+// where that is zero, or of their quartiles' magnitude where the spread is
+// only rounding, as where a curve collapses to a point; 1 for points all
+// at the origin.
+function familyUnit(
+  xs: number[],
+  ys: number[],
+  quartile: (values: number[], q: number) => number,
+) {
+  const spread = (full: boolean) =>
+    Math.max(
+      ...[xs, ys].map((vs) =>
+        full
+          ? vs[vs.length - 1] - vs[0]
+          : quartile(vs, 0.75) - quartile(vs, 0.25),
+      ),
+    );
+  let s = spread(false) || spread(true);
+  const magnitude = Math.max(
+    ...[xs, ys].flatMap((vs) => [
+      Math.abs(quartile(vs, 0.25)),
+      Math.abs(quartile(vs, 0.75)),
+    ]),
+  );
+  if (s <= 2 ** -40 * magnitude) s = magnitude;
+  return s > 0 ? binade(s) : 1;
 }
 // The part of the unbounded line through p along u inside the rectangle
 // [x0, x1] × [y0, y1], or null where it misses.
@@ -1622,7 +1664,13 @@ export function fitFrame(result: Result, config: Config) {
     maxY = Math.max(maxY, p.y);
   };
   points.forEach(include);
-  const extent = Math.max(maxX - minX, maxY - minY, 0.1);
+  // The drawing is framed by its own extent, at any scale. One within
+  // rounding of a point, which has none, is framed 0.1 across.
+  const point =
+    Math.max(maxX - minX, maxY - minY) <=
+    2 ** -40 * Math.max(-minX, maxX, -minY, maxY);
+  const least = point ? 0.1 : 0;
+  const extent = Math.max(maxX - minX, maxY - minY, least);
   if (
     (usesPole(config.kind) || (result.input && usesPole(config.input))) &&
     Math.hypot(
@@ -1645,10 +1693,11 @@ export function fitFrame(result: Result, config: Config) {
   return {
     cx: (minX + maxX) / 2,
     cy: (minY + maxY) / 2,
+    // An axis with no extent, as a line's across it, sets no limit.
     scale: Math.min(
-      (W * 0.78) / Math.max(maxX - minX, 0.1),
-      (H * 0.78) / Math.max(maxY - minY, 0.1),
+      (W * 0.78) / Math.max(maxX - minX, least),
+      (H * 0.78) / Math.max(maxY - minY, least),
     ),
-    span: Math.max(maxX - minX, maxY - minY, 0.1),
+    span: extent,
   };
 }

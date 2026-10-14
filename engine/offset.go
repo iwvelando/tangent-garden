@@ -9,10 +9,23 @@ import (
 // required: where 1-dκ = 0 the offset has a cusp on the evolute, which is a
 // valid point even though the offset's own speed vanishes there.
 func Offset(p, derivative Vec, d float64) *Vec {
-	if !p.Valid() || !derivative.Valid() || !finite(d) || derivative.Norm() < 1e-9 {
-		return nil
+	if o, ok := offsetAt(p, derivative, d); ok {
+		return &o
 	}
-	return point(p.Add(derivative.Perp().Unit().Mul(d)))
+	return nil
+}
+
+// offsetAt is Offset as a value, with whether there is one, for refinement
+// to keep its points without an allocation each. It is never inlined, so
+// the sample loop and refinement run the same compiled arithmetic.
+//
+//go:noinline
+func offsetAt(p, derivative Vec, d float64) (Vec, bool) {
+	if !p.Valid() || !derivative.Valid() || !finite(d) || derivative.Norm() < 1e-9 {
+		return Vec{}, false
+	}
+	o := p.Add(derivative.Perp().Unit().Mul(d))
+	return o, o.Valid()
 }
 
 // Stack requests count offsets at evenly spaced distances from From to To,

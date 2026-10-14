@@ -1374,4 +1374,44 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "Swallowtails at a star's point",
+    note: "Thirteen parallel curves stepping inward from the tip of a four-pointed star, a hundredth of a unit across and four units out: each rounds the tip in a smaller arc until, past its center of curvature, it folds into a swallowtail; play to sweep them in",
+    config: {
+      ...base,
+      kind: "offset",
+      // The tip of the hypotrochoid of "Inside a star's point",
+      // (3 cos t + c cos 3t, 3 sin t − c sin 3t) with c = 0.96, alone: its
+      // point at (3.96, 0), where the radius of curvature is
+      // (3 − 3c)²/(3 + 9c) ≈ 0.00124, about 0.004 deep and 0.006 wide.
+      curve: {
+        ...base.curve,
+        x: "3*cos(t) + 0.96*cos(3*t)",
+        y: "3*sin(t) - 0.96*sin(3*t)",
+        min: -0.025,
+        max: 0.025,
+      },
+      // d = 0.0003k for k = 1…13, inward: four short of the center and
+      // nine past it.
+      stack: { enabled: true, from: 0.0003, to: 0.0039, count: 13 },
+      // As few samples as already follow every curve within refinement's
+      // tolerance, so that each frame of the sweep calculates quickly;
+      // zooming in refines what the view shows.
+      samples: 400,
+      lines: 64,
+      adaptive: true,
+      adaptiveView: true,
+    },
+    // The stack opens from the first offset, rounding the tip, to all
+    // thirteen, which fold one after another as they pass the center.
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 10,
+      tracks: [{ target: "stackTo", from: "0.0003", to: "0.0039" }],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
 ];

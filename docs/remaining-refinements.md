@@ -43,25 +43,11 @@ These come from the handoffs. Each was paid for at least once.
 
 ## Recommended order
 
-1. Scale and translation: the 2D drawing
-
-Items 2 and 3 need a decision or a profile before any code. Item 4 lists limits to fix only when a study runs into them.
+Items 1 and 2 need a decision or a profile before any code. Item 3 lists limits to fix only when a study runs into them.
 
 ---
 
-### 1. Scale and translation: the 2D drawing
-
-**Applies to:** 2D. The engines' budgets are done and documented: 2D in [scale and translation](mathematics.md#scale-and-translation) (#139), 3D in [spatial scale and translation](mathematics.md#spatial-scale-and-translation) (#136), 4D in the 4D roadmap (#138). The 3D drawing measures its positions from a drawing origin near the study (the same section's **Drawing**). What remains is the 2D drawing.
-
-**Open:**
-
-- **2D: the drawing's coordinates for a study far from the origin.** `xy` in `web/Plot.tsx` already subtracts the frame's center in double precision before writing page coordinates, so this may need only a test: a translated and a scaled copy of existing presets draw the original's SVG to within about 0.001 px. Check the grid and axes, ray glyphs, the probe, and the exports too.
-
-**Start with:** a translated and scaled copy of existing presets compared against the originals, as the engine's tests do (`engine/scale_test.go`: tiny 2⁻²⁰, huge 2¹³, about 860 and 36,000 units out) and as `tests/spatial-rebase.spec.ts` does for the 3D drawing. Compare drawn geometry, not PNG bytes. Expect tolerance constants such as 10⁻⁹ and 10⁻⁶ that are absolute rather than relative.
-
-**Watch for:** every existing preset's drawing stays identical (hash the SVG, not PNGs).
-
-### 2. Composition and comparison
+### 1. Composition and comparison
 
 **Applies to:**
 
@@ -73,7 +59,7 @@ Items 2 and 3 need a decision or a profile before any code. Item 4 lists limits 
 - **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another. Agree the design with the user before building.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
-### 3. Transport and efficiency, when profiled
+### 2. Transport and efficiency, when profiled
 
 **Applies to:** 3D first, then 4D.
 
@@ -85,7 +71,7 @@ Items 2 and 3 need a decision or a profile before any code. Item 4 lists limits 
 
 **Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical. In refined paths, profile allocations (`-benchmem`, `-memprofile`) before arithmetic: once the 2D stencil (`stencilAt`) stopped allocating, refined 2D presets calculated 2.4–2.6× faster in WASM, every preset unchanged bit for bit, because allocation through WASM's single-threaded collector cost more than the arithmetic.
 
-### 4. Smaller limits, to fix if they bite
+### 3. Smaller limits, to fix if they bite
 
 Each is known and documented; none is worth a branch until a study needs it.
 
@@ -94,7 +80,7 @@ Each is known and documented; none is worth a branch until a study needs it.
   - A surface probe held at its (u, v) snaps to each frame's grid: Go evaluates surfaces only at their samples.
 - **3D camera paths** (`web/spatial/path.ts`, `mathematics.md#spatial-camera-paths`; watch a loop's seam slope, `cyclic`, and links' `animation.path`): geometry that grows past the starting bounds can leave the page under a path, as under Hold current view.
 - **3D engine scale floors** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): the absolute stability floors for differenced r‴ (`jerk`, in `engine3/diagnostics.go`) and τ′ (`ruledprobe.go`), the framed ribbon probe's comparison of differently dimensioned tangents (`ruledprobe.go`), and the field's absolute resting-speed and acceleration-stability floors (`flow.go`; the resting limit is also stated in the UI). Far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic.
-- **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute past about five diameters, and the absolute constants below 2⁻²⁰.
+- **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute past about five diameters, curvature on a study millions of its diameters out (beyond the second-derivative budget), and the absolute constants below 2⁻²⁰.
 
 ## Pending on-device checks
 

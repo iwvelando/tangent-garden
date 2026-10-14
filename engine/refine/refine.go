@@ -232,11 +232,27 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 		}
 		return s.excess > 1
 	}
+	// Segments and probe lists are taken from blocks, one allocation for
+	// many: allocation costs WASM's collector more than the arithmetic.
+	var segmentBlock []segment[P]
+	var probeBlock []*P
+	probeList := func(n int) []*P {
+		if cap(probeBlock)-len(probeBlock) < n {
+			probeBlock = make([]*P, 0, max(1024, n))
+		}
+		k := len(probeBlock)
+		probeBlock = probeBlock[:k+n]
+		return probeBlock[k : k+n : k+n]
+	}
 	// A child takes its parent's probes on its half; one with fewer than
 	// its quarter points evaluates them around the middle it is given.
 	newSegment := func(a, b float64, pa, pb *P, probes []*P, depth int) *segment[P] {
 		w := b - a
-		s := &segment[P]{a: a, b: b, pa: pa, pb: pb, depth: depth}
+		if len(segmentBlock) == cap(segmentBlock) {
+			segmentBlock = make([]segment[P], 0, 256)
+		}
+		segmentBlock = append(segmentBlock, segment[P]{a: a, b: b, pa: pa, pb: pb, depth: depth})
+		s := &segmentBlock[len(segmentBlock)-1]
 		if len(probes) >= 3 {
 			s.probes, s.level = probes, bits.Len(uint(len(probes)))
 		} else {
@@ -244,7 +260,9 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 			if len(probes) == 1 {
 				middle = probes[0]
 			}
-			s.probes, s.level = []*P{eval(a + w/4), middle, eval(a + 3*w/4)}, 2
+			quarter := eval(a + w/4)
+			s.probes, s.level = probeList(3), 2
+			s.probes[0], s.probes[1], s.probes[2] = quarter, middle, eval(a+3*w/4)
 			if middle == nil && depth == 0 {
 				s.probes[1] = eval(a + w/2)
 			}
@@ -353,7 +371,7 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 			}
 			for s.depth+s.level < level {
 				w := (s.b - s.a) / float64(int(1)<<(s.level+1))
-				probes := make([]*P, 0, 2*len(s.probes)+1)
+				probes := probeList(2*len(s.probes) + 1)[:0]
 				for k, p := range s.probes {
 					probes = append(probes, eval(s.a+float64(2*k+1)*w), p)
 				}
