@@ -19,6 +19,10 @@ export type View = Bounds3 & {
   zoom: number;
   panX: number;
   panY: number;
+  // How far the turntable's target stands toward the viewer from the plane
+  // through the center, 0 when absent: zooming toward a detail through a
+  // lens moves it there (see zoom.ts). Orthographic views ignore it.
+  targetDepth?: number;
   // A perspective camera in place of the orthographic turntable, when
   // present: only the camera that rides a ray (see ride.ts) draws with one.
   lens?: Lens;
@@ -1264,7 +1268,8 @@ export function camera(
 }
 // The turntable seen through a lens: its rows right (c, 0, s), up
 // (b s, a, −b c) and back (−a s, b, a c), about a target panned from the
-// center along right and up. The eye is d = 1.16 radius / (zoom tan(fov/2))
+// center along right and up, and moved toward the viewer by its target
+// depth. The eye is d = 1.16 radius / (zoom tan(fov/2))
 // behind the target, so the plane through the target is drawn at the
 // orthographic scale, panning moves it as before and zooming dollies the
 // eye. Far reaches four radii past the center, as the orthographic depth;
@@ -1294,8 +1299,9 @@ function turntableLens(view: View, fov: number): Lens & { target: number } {
     back = { x: -a * s, y: b, z: a * c };
   const d =
     (1.16 * view.radius) / (view.zoom * Math.tan((fov * Math.PI) / 360));
+  const depth = view.targetDepth ?? 0;
   const shift = (k: "x" | "y" | "z") =>
-    -view.panX * right[k] - view.panY * up[k] + d * back[k];
+    -view.panX * right[k] - view.panY * up[k] + (depth + d) * back[k];
   const eye = view.framedTarget
     ? {
         x: view.framedTarget.point.x + view.framedTarget.distance * back.x,

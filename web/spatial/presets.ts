@@ -4029,4 +4029,44 @@ export const spatialPresets: {
       },
     },
   },
+  // Zooming toward the detail under the pointer (see zoom.ts): a helix of
+  // radius 2 rising 0.7 a radian through six turns, wound with a circle of
+  // radius 0.3 turning 24 times a turn in the planes through its axis. The
+  // circle, at speed 7.2, outruns the helix (about 2.1), so it closes into
+  // 144 loops. The wide lens looks down the axis from inside the near
+  // turns, so loops stand at every depth from beside the eye to the
+  // vanishing point, and each can be zoomed into, refined to the view.
+  {
+    name: "A corridor of loops",
+    detail:
+      "A helix wound with 144 loops, seen down its axis from inside; point at any loop, near or far, and zoom into it",
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "none",
+      samples: 2400,
+      lines: 12,
+      adaptive: true,
+      adaptiveView: true,
+      curve: {
+        x: "(2 + 0.3*cos(24*t))*cos(t)",
+        y: "(2 + 0.3*cos(24*t))*sin(t)",
+        z: "0.7*a*t + 0.3*sin(24*t)",
+        a: 1,
+        min: -6 * Math.PI,
+        max: 6 * Math.PI,
+      },
+    },
+    probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
+    // Strokes taper with depth, so near loops read nearer.
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "hide",
+      weight: "regular",
+      depth: "taper",
+    },
+    projection: "wide",
+    view: { yaw: 0.1, pitch: 0.08, zoom: 1.6, panX: 0, panY: 0 },
+  },
 ];

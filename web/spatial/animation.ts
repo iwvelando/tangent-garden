@@ -1089,8 +1089,11 @@ export function animationCamera(view: AnimationView): View {
               radius: view.final.result.bounds.radius,
             }
           : view.frame.result.bounds;
+  // Only the current view keeps its target's depth; the framings draw
+  // about the plane through their center.
+  const { targetDepth: _, ...framed } = held;
   return {
-    ...held,
+    ...(view.camera === "current" ? held : framed),
     ...bounds,
     zoom: view.camera === "current" ? held.zoom : 1,
     panX: view.camera === "current" ? held.panX : 0,

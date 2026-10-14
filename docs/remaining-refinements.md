@@ -68,7 +68,6 @@ Items 3 and 4 need a decision or a profile before any code. Item 5 lists limits 
 
 **Open:**
 
-- **3D: zooming into a detail in perspective.** The turntable's zoom moves the eye toward the plane through the study's center, so a detail far from that plane passes behind the eye before it fills the page; deep zoom works in orthographic views and on details near that plane. Zooming toward the point under the pointer, as a geometry pivot does for flights, would lift this.
 - **Both:** framing that ignores refined points.
 
 **Start from:** `engine/refine` (point type supplied with its chord distance and length; since #134 it also scans between its probes for narrow features, with a `Scan` budget, and refines a `Focus` first), `engine3/refine.go`, `web/refinement.ts`, and `mathematics.md` (**Refinement between samples**, its **Refinement to the view**, and **Spatial refinement between samples**).
@@ -132,7 +131,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - A 3D flight refined in pieces on a phone: **Wheels within wheels** playing in time, without stalls where a piece is still being refined (each refines the whole study, so a slow phone may wait at a piece's start).
 - Playback at 60 frames a second (`web/playback.ts`) on a 120 Hz display and on a slower phone, watching for an even fall to 30 where frames come late. The thresholds (a request 1.4 intervals after the last is late, two late in ten fall back, a 2 s hold doubling to 16 s) are first choices, to tune from what is seen.
 
-Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13.
+Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13. Zooming toward a detail through a lens (**A corridor of loops**, wheel and pinch) was checked locally and on a phone on 2026-10-14.
 
 ## Conditional and declined
 
