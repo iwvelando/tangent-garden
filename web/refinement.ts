@@ -22,9 +22,9 @@ export type RefinedPath<P> = {
   // The tolerance of the pieces in view, when a drawing is refined to a
   // view finer than the study: in 3D, the finest, at the nearest depth.
   view?: number;
-  // In 2D, when the study frames its points between samples: those beyond
-  // the box of their interval's two samples, refined to the study's own
-  // tolerance whatever the view, and their positions in sample steps.
+  // When the study frames its points between samples: those beyond the box
+  // of their interval's two samples, refined to the study's own tolerance
+  // whatever the view, and their positions in sample steps.
   reach?: P[];
   reachAt?: number[];
 };
@@ -46,8 +46,8 @@ export const viewHelp = tiered(
   `In view, each chord stays within 2 × 10⁻⁴ of the view's half diagonal of the curve, and shorter than a quarter of it; elsewhere the study's tolerance holds. A view is refined once the drawing rests, and playback at the current view uses it. Without this, zoom stops at ${plainZoom}×.`,
 );
 
-// Framing by the points between samples' help (engine/adaptive.go, reach),
-// in the 2D notebook.
+// Framing by the points between samples' help (engine/refine, Reach), in
+// the 2D and 3D notebooks.
 export const frameHelp = tiered(
   "Fits the drawing to the curve between its samples too, not to the samples alone.",
   "Only points beyond both samples of their step widen it, taken at the study's own tolerance, so zooming in never moves the framing. As with samples, points far beyond the rest, as near an asymptote, are left out.",

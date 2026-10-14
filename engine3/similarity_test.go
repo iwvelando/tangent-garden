@@ -248,7 +248,7 @@ var kinds = map[string]kind{
 	"bounds.center": asPosition, "bounds.radius": asLength,
 	"base": asPosition, "minus": asPosition, "plus": asPosition, "radius": asLength,
 	"rulings.from": asPosition, "rulings.to": asPosition,
-	"adaptive.*.points": asPosition, "adaptive.*.at": asUnchanged, "adaptive.*.tolerance": asLength,
+	"adaptive.*.points": asPosition, "adaptive.*.at": asUnchanged, "adaptive.*.reach": asPosition, "adaptive.*.reachAt": asUnchanged, "adaptive.*.tolerance": asLength,
 	"canal.circles.center": asPosition, "canal.circles.points": asPosition, "canal.circles.radius": asLength,
 	"canal.circles.sphere": asLength, "canal.meridians": asPosition, "canal.gap": asLength, "canal.steepest": asUnchanged,
 	"composition.constructions.contact": asPosition, "composition.constructions.foot": asPosition,

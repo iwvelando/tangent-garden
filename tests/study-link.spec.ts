@@ -1687,6 +1687,21 @@ test("a link carries refining the surface along the curve; older links leave the
   await refused(() => spatialStudy(bad), "config.adaptiveSurface");
 });
 
+test("a 3D link carries framing by the points between samples; older links frame the samples alone", async () => {
+  const study = spatial();
+  study.config = { ...study.config, adaptive: true, adaptiveFrame: true };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A link made before the setting leaves it out, which frames the
+  // samples alone.
+  const older = structuredClone(study) as any;
+  delete older.config.adaptiveFrame;
+  assert.equal(spatialStudy(older).config.adaptiveFrame, undefined);
+  const bad = structuredClone(study) as any;
+  bad.config.adaptiveFrame = 1;
+  await refused(() => spatialStudy(bad), "config.adaptiveFrame");
+});
+
 test("a 3D link carries refinement to the view with its deep zoom; older links refine to the study alone", async () => {
   const study = spatial();
   study.config = { ...study.config, adaptive: true, adaptiveView: true };

@@ -439,3 +439,37 @@ func TestRefineScanIsBounded(t *testing.T) {
 		}
 	}
 }
+
+// A path's reach is its points between samples outside the box of their
+// interval's two samples, in order, with their positions. Points inside that
+// box and the samples themselves add nothing; a point beside a missing
+// sample has no box to lie in.
+func TestReachIsThePointsBeyondTheirIntervalsBox(t *testing.T) {
+	path := points(
+		pair{0, 0},     // sample 0
+		pair{0.5, 0.5}, // inside the box of samples 0 and 1
+		pair{0.7, 1.5}, // above it
+		pair{1, 1},     // sample 1
+		pair{1.5, 1},   // on the box's edge
+		pair{2.5, 1.2}, // beyond it in x
+		pair{2, 2},     // sample 2
+		pair{2, 3},     // before a missing sample
+	)
+	path = append(path, nil)
+	path = append(path, points(pair{5, 5}, pair{4, 4})...)
+	at := []float64{0, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4}
+	reach, reachAt := Reach(path, at, coords)
+	want, wantAt := []pair{{0.7, 1.5}, {2.5, 1.2}, {2, 3}, {5, 5}}, []float64{0.75, 1.5, 2.5, 3.5}
+	if len(reach) != len(want) || len(reachAt) != len(want) {
+		t.Fatalf("reach %v at %v, want %v at %v", reach, reachAt, want, wantAt)
+	}
+	for k := range want {
+		if reach[k] != want[k] || reachAt[k] != wantAt[k] {
+			t.Fatalf("reach %v at %v, want %v at %v", reach, reachAt, want, wantAt)
+		}
+	}
+	// A path with nothing beyond its samples has no reach at all.
+	if r, a := Reach(points(pair{0, 0}, pair{0.5, 0.5}, pair{1, 1}), []float64{0, 0.5, 1}, coords); r != nil || a != nil {
+		t.Fatalf("reach without points beyond their samples %v at %v", r, a)
+	}
+}

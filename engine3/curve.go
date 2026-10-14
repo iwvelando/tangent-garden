@@ -220,11 +220,19 @@ func derivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64) (Vec3,
 
 // Robust bounds are fitted independently per point family before unioning.
 // Outer Tukey fences trim isolated asymptotic tails, never a whole distant edge.
-func fit(families ...[]*Vec3) Bounds {
+func fit(families ...[]*Vec3) Bounds { return fitReach(families, nil) }
+
+// fitReach is fit with each family's reach between samples, reach[k] for
+// families[k] (none past the end of reach; see RefinedPath). A point of a
+// reach joins its family's extent when it lies within the fences its
+// family's samples set on every axis, so an excursion toward an asymptote
+// is left out as an outlying sample is.
+func fitReach(families [][]*Vec3, reach [][]Vec3) Bounds {
 	low := Vec3{math.Inf(1), math.Inf(1), math.Inf(1)}
 	high := low.mul(-1)
 	found := false
-	for _, family := range families {
+	var reached []Vec3
+	for k, family := range families {
 		values := [3][]float64{}
 		for _, p := range family {
 			if p != nil {
@@ -245,13 +253,16 @@ func fit(families ...[]*Vec3) Bounds {
 			sort.Float64s(vs)
 			core = math.Max(core, math.Max(math.Abs(vs[len(vs)/4]), math.Abs(vs[3*len(vs)/4])))
 		}
+		var lows, highs, fenceLow, fenceHigh [3]float64
 		for axis, vs := range values {
 			l, h := vs[0], vs[len(vs)-1]
+			fenceLow[axis], fenceHigh[axis] = math.Inf(-1), math.Inf(1)
 			if len(vs) >= 8 {
 				q1, q3 := vs[len(vs)/4], vs[3*len(vs)/4]
 				spread := q3 - q1
 				if spread > 1e-12*core {
 					a, b := q1-3*spread, q3+3*spread
+					fenceLow[axis], fenceHigh[axis] = a, b
 					for _, v := range vs {
 						if v >= a {
 							l = v
@@ -266,30 +277,44 @@ func fit(families ...[]*Vec3) Bounds {
 					}
 				}
 			}
-			switch axis {
-			case 0:
-				low.X = math.Min(low.X, l)
-				high.X = math.Max(high.X, h)
-			case 1:
-				low.Y = math.Min(low.Y, l)
-				high.Y = math.Max(high.Y, h)
-			case 2:
-				low.Z = math.Min(low.Z, l)
-				high.Z = math.Max(high.Z, h)
+			lows[axis], highs[axis] = l, h
+		}
+		if k < len(reach) {
+			for _, p := range reach[k] {
+				c := [3]float64{p.X, p.Y, p.Z}
+				inside := true
+				for axis, v := range c {
+					inside = inside && v >= fenceLow[axis] && v <= fenceHigh[axis]
+				}
+				if !inside {
+					continue
+				}
+				reached = append(reached, p)
+				for axis, v := range c {
+					lows[axis], highs[axis] = math.Min(lows[axis], v), math.Max(highs[axis], v)
+				}
 			}
 		}
+		low = Vec3{math.Min(low.X, lows[0]), math.Min(low.Y, lows[1]), math.Min(low.Z, lows[2])}
+		high = Vec3{math.Max(high.X, highs[0]), math.Max(high.Y, highs[1]), math.Max(high.Z, highs[2])}
 	}
 	if !found {
 		return Bounds{Vec3{}, 1}
 	}
 	center := low.add(high).mul(0.5)
 	radius := 0.0
+	inside := func(p Vec3) bool {
+		return p.X >= low.X && p.X <= high.X && p.Y >= low.Y && p.Y <= high.Y && p.Z >= low.Z && p.Z <= high.Z
+	}
 	for _, family := range families {
 		for _, p := range family {
-			if p != nil && p.X >= low.X && p.X <= high.X && p.Y >= low.Y && p.Y <= high.Y && p.Z >= low.Z && p.Z <= high.Z {
+			if p != nil && inside(*p) {
 				radius = math.Max(radius, p.sub(center).norm())
 			}
 		}
+	}
+	for _, p := range reached {
+		radius = math.Max(radius, p.sub(center).norm())
 	}
 	// Points apart by no more than rounding have no size of their own, so a
 	// lone point keeps a radius to be framed by; any other study's radius

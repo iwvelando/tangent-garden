@@ -469,3 +469,45 @@ func Radius[P any](points []*P, coords func(P) []float64) float64 {
 	}
 	return radius
 }
+
+// Reach is what a refined path's points between samples add to the extent
+// of its samples: those outside the box of their interval's two samples,
+// in order, with their positions in sample steps (see Path). A point inside
+// that box lies within the extent of two points already counted; a point
+// beside a missing sample has no box, so it reaches. coords gives a
+// point's coordinates. Both are nil when nothing reaches.
+func Reach[P any](points []*P, at []float64, coords func(P) []float64) ([]P, []float64) {
+	var reach []P
+	var positions []float64
+	var a *P
+	for k, p := range points {
+		u := at[k]
+		if u == math.Trunc(u) {
+			a = p
+			continue
+		}
+		if p == nil {
+			continue
+		}
+		// The interval's next sample follows its points between samples.
+		j := k + 1
+		for at[j] != math.Trunc(at[j]) {
+			j++
+		}
+		b := points[j]
+		outside := a == nil || b == nil
+		if !outside {
+			ca, cb := coords(*a), coords(*b)
+			for axis, v := range coords(*p) {
+				if v < math.Min(ca[axis], cb[axis]) || v > math.Max(ca[axis], cb[axis]) {
+					outside = true
+					break
+				}
+			}
+		}
+		if outside {
+			reach, positions = append(reach, *p), append(positions, u)
+		}
+	}
+	return reach, positions
+}

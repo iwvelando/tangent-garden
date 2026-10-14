@@ -8,16 +8,16 @@ Nothing here is implemented, scheduled, or authorized for merge or deployment. W
 
 These are the facts that decide where a refinement applies.
 
-|                | 2D                                                                                                                                                    | 3D                                                                                                           | 4D                                                           |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| Drawing        | SVG (`web/Plot.tsx`)                                                                                                                                  | WebGL (`web/spatial/renderer.ts`, geometry in `scene.ts`)                                                    | SVG of an orbitable 3D projection (`web/tesseract/Plot.tsx`) |
-| Camera         | Pan and zoom, key-view paths                                                                                                                          | Turntable orbit (pitch ±1.5 rad), three perspective lenses, key-view paths, ray ride                         | Turntable orbit (pitch ±1.5 rad), orthographic               |
-| Pointer, touch | Drag, scroll, pinch (`web/gestures.ts`, shared)                                                                                                       | Same                                                                                                         | Same                                                         |
-| Keyboard       | Arrows pan, +/− zoom, Home fits                                                                                                                       | Arrows orbit, shift-arrows pan, +/− zoom, Home                                                               | Same as 3D                                                   |
-| Still export   | SVG; PNG at 1–4 × the page, optionally transparent (`web/ExportImageMenu.tsx`, shared)                                                                | PNG, SVG with embedded PNG and Lines (SVG), all at 1–4 × the page, optionally transparent                    | As 2D                                                        |
-| Probe          | Curve                                                                                                                                                 | Curve, surface, offset, focal sheets, light                                                                  | None (no user curve)                                         |
-| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes; to the zoomed view | Base, derived input (involute too), projections, inversion, involutes, strands, surfaces; to the zoomed view and each flight frame's | None (no user curve)                                         |
-| Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`)                         | Same                                                                                                         | Same                                                         |
+|                | 2D                                                                                                                                                                                           | 3D                                                                                                                                                                          | 4D                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Drawing        | SVG (`web/Plot.tsx`)                                                                                                                                                                         | WebGL (`web/spatial/renderer.ts`, geometry in `scene.ts`)                                                                                                                   | SVG of an orbitable 3D projection (`web/tesseract/Plot.tsx`) |
+| Camera         | Pan and zoom, key-view paths                                                                                                                                                                 | Turntable orbit (pitch ±1.5 rad), three perspective lenses, key-view paths, ray ride                                                                                        | Turntable orbit (pitch ±1.5 rad), orthographic               |
+| Pointer, touch | Drag, scroll, pinch (`web/gestures.ts`, shared)                                                                                                                                              | Same                                                                                                                                                                        | Same                                                         |
+| Keyboard       | Arrows pan, +/− zoom, Home fits                                                                                                                                                              | Arrows orbit, shift-arrows pan, +/− zoom, Home                                                                                                                              | Same as 3D                                                   |
+| Still export   | SVG; PNG at 1–4 × the page, optionally transparent (`web/ExportImageMenu.tsx`, shared)                                                                                                       | PNG, SVG with embedded PNG and Lines (SVG), all at 1–4 × the page, optionally transparent                                                                                   | As 2D                                                        |
+| Probe          | Curve                                                                                                                                                                                        | Curve, surface, offset, focal sheets, light                                                                                                                                 | None (no user curve)                                         |
+| Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes; to the zoomed view; framing by the points between samples | Base, derived input (involute too), projections, inversion, involutes, strands, surfaces; to the zoomed view and each flight frame's; framing by the points between samples | None (no user curve)                                         |
+| Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`)                                                                | Same                                                                                                                                                                        | Same                                                         |
 
 The 3D-only features are 3D-only by nature: cut, see-through, surface and light probes, the ride, perspective lenses, typed mesh transport and adaptive implicit meshes. Do not port them to 2D or 4D unless an item below says so.
 
@@ -44,9 +44,8 @@ These come from the handoffs. Each was paid for at least once.
 ## Recommended order
 
 1. Scale and translation: the 2D drawing
-2. Refinement between samples, remaining constructions (3D)
 
-Items 3 and 4 need a decision or a profile before any code. Item 5 lists limits to fix only when a study runs into them.
+Items 2 and 3 need a decision or a profile before any code. Item 4 lists limits to fix only when a study runs into them.
 
 ---
 
@@ -62,26 +61,7 @@ Items 3 and 4 need a decision or a profile before any code. Item 5 lists limits 
 
 **Watch for:** every existing preset's drawing stays identical (hash the SVG, not PNGs).
 
-### 2. Refinement between samples: remaining constructions
-
-**Applies to:** 3D (2D's framing is done). 4D has no user curve.
-
-**Open:**
-
-- **3D:** framing that ignores refined points. The 2D notebook frames them with **Frame the points between samples** (`adaptiveFrame`; [framing between samples](mathematics.md#refinement-between-samples)): each refined curve's reach, the points between samples beyond their interval's two samples, always from the study refined to its own tolerance so the view never moves it. In 3D the bounds come from Go's `fit` per format (`engine3/curve.go`) and from `fitBounds` in a reveal (`web/spatial/animation.ts`).
-
-**Start from:** `engine/refine` (point type supplied with its chord distance and length; since #134 it also scans between its probes for narrow features, with a `Scan` budget, and refines a `Focus` first), `engine3/refine.go`, `web/refinement.ts`, and `mathematics.md` (**Refinement between samples**, its **Refinement to the view**, and **Spatial refinement between samples**).
-
-**Watch for:**
-
-- Uniform samples remain the study's identity for construction lines, reveal and probe, and for framing unless a 2D study frames its reach, and for surfaces unless **Refine the surface too** is on (see [surfaces along the curve](mathematics.md#surfaces-along-the-curve)).
-- Breaks found between samples must reach every curve built on that curve.
-- Anything drawn from a refined curve must follow the reveal and traced light, as `arrivalAt` in `web/raytrace.ts` does (#141).
-- Keep the feature opt-in and off for older links.
-- Refinement is the largest cost of the twisted spring's frame (item 4); measure with `make bench`.
-- The 2D stencil (`stencilAt`) no longer allocates: refined 2D presets calculate 2.4–2.6× faster in WASM, every preset unchanged bit for bit. Allocation, through WASM's single-threaded collector, cost more than the arithmetic; profile allocations (`-benchmem`, `-memprofile`) before arithmetic in the other refined paths.
-
-### 3. Composition and comparison
+### 2. Composition and comparison
 
 **Applies to:**
 
@@ -93,7 +73,7 @@ Items 3 and 4 need a decision or a profile before any code. Item 5 lists limits 
 - **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another. Agree the design with the user before building.
 - **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
-### 4. Transport and efficiency, when profiled
+### 3. Transport and efficiency, when profiled
 
 **Applies to:** 3D first, then 4D.
 
@@ -103,9 +83,9 @@ Items 3 and 4 need a decision or a profile before any code. Item 5 lists limits 
 - 2D results still travel as plain JSON (`tangentGardenCompute`). Measured on 2026-10-09 across the 2D presets: the largest results are Van der Pol (2.9 MB; natively 24 ms compute and 8 ms encoding, and 15 ms to decode and copy in Node), the pendulum (2.0 MB) and the star's ripples (1.8 MB); about fifty are 0.1–0.4 MB, where JSON costs a millisecond or two. JSON is at most about a third of a frame on the largest, against 75–90% of a tube frame before spatial transport moved off JSON, so it is not worth doing yet. If a 2D study grows large, add `engine.Vec` (and its pointer, for gaps) as a kind in `cmd/wasm/lift` and `web/lifted.ts`, send the planar result through `liftReply` as the 4D bridge does, and restore it where the worker parses the planar reply. Re-measured on 2026-10-13 for the heaviest new case, **Inside a star's point** refined to a zoomed view: a 1.48 MB reply parses in 2.2 ms, now once per piece of a flight, and building the drawing's path strings for its 14,630 points takes 1.2 ms a frame. Its flight plays at the 30 fps cap, as the 1,000-point ellipse does, so points and transport do not hold it back; lifting 2D off JSON remains unmerited.
 - Worker pools. A third playback engine was rejected at about 100 MB per engine.
 
-**Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical.
+**Rule:** profile first (`make bench`, `scripts/playback-probe.js`). Every preset must reassemble bit for bit identical. In refined paths, profile allocations (`-benchmem`, `-memprofile`) before arithmetic: once the 2D stencil (`stencilAt`) stopped allocating, refined 2D presets calculated 2.4–2.6× faster in WASM, every preset unchanged bit for bit, because allocation through WASM's single-threaded collector cost more than the arithmetic.
 
-### 5. Smaller limits, to fix if they bite
+### 4. Smaller limits, to fix if they bite
 
 Each is known and documented; none is worth a branch until a study needs it.
 
@@ -125,6 +105,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - The probe while parameters vary, including the 3D surface probe's **Stays at its u and v** (#123).
 - See-through sheets on a phone (the Klein bottle and the torus's tunnel): since #137 they are sampled 2 × 2 only when the device's limits allow, and a large high-DPR canvas falls back to one sample.
 - The 2D probe, refinement and line-weight controls at phone width, including the probe's **At any t, between samples** checkbox and its continuous slider.
+- **Frame the points between samples** in 3D at phone width, and **A dandelion clock** in motion on a phone.
 - The camera path's key views at phone width: **Move up** and **Move down**, and long names wrapping in their fields.
 - Dashes on the page (**A coiled tube running into the distance**) on a phone GPU while orbiting: even dash lengths near and far, and the **Dashes** control beside **Opacity α** at phone width.
 - Refinement to the view in 3D: pinching to 1,000× about the fingers on **A spring folded into a cusp**, and the **Refine to the view as you zoom** control at phone width.

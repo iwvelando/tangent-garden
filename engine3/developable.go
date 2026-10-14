@@ -99,6 +99,10 @@ type Request struct {
 	// curve construction draws where refinement adds points to the curves
 	// on it (see surfaceColumns); without Adaptive it changes nothing.
 	AdaptiveSurface bool `json:"adaptiveSurface"`
+	// AdaptiveFrame, with Adaptive, gives each refined curve its reach
+	// (see RefinedPath), which the bounds take in; without Adaptive it
+	// changes nothing.
+	AdaptiveFrame bool `json:"adaptiveFrame,omitempty"`
 	// View is what the drawing shows, when it is zoomed in and refined to
 	// it (see View); it changes nothing but the refined curves.
 	View *View `json:"view,omitempty"`
@@ -596,6 +600,7 @@ func compute(c Request) (Result, error) {
 		}
 	}
 	// The base under a derived input frames with the pole as its own family.
+	parent := -1
 	if composed {
 		out.Composition = composition(c, baseCurve, baseTangents, baseBreaks, closed, out.Base, out.Breaks, reached)
 		out.Composition.Restarts = restarts
@@ -606,15 +611,36 @@ func compute(c Request) (Result, error) {
 			curve := out.Composition.Curve
 			out.Adaptive.Parent, _ = c.refine(curve, out.Composition.Breaks, c.baseOnly().position(baseEvaluate), lo, hi)
 		}
+		parent = len(generating)
 		generating = append(generating, out.Composition.Curve)
 		if c.projected() {
 			generating = append(generating, []*Vec3{&out.Composition.Pole})
 		}
 	}
+	// bound frames the study: its families, each with the reach of the
+	// refined path drawn on it (paths[k] for families[k], when the study
+	// frames its reach), and the generating families, the curve beneath a
+	// derived input with its own.
+	bound := func(families [][]*Vec3, paths ...*RefinedPath) {
+		all := append(families, generating...)
+		reach := make([][]Vec3, len(all))
+		for k, path := range paths {
+			reach[k] = reachOf(path)
+		}
+		if parent >= 0 && out.Adaptive != nil {
+			reach[len(families)+parent] = reachOf(out.Adaptive.Parent)
+		}
+		out.Bounds = fitReach(all, reach)
+		out.Radius = out.Bounds.Radius
+	}
+	// The refined paths, none when the study is not refined.
+	refined := out.Adaptive
+	if refined == nil {
+		refined = &AdaptiveResult{}
+	}
 	if none {
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
-		out.Bounds = fit(append([][]*Vec3{out.Base}, generating...)...)
-		out.Radius = out.Bounds.Radius
+		bound([][]*Vec3{out.Base}, refined.Base)
 		return out, nil
 	}
 	if framed {
@@ -643,8 +669,7 @@ func compute(c Request) (Result, error) {
 		}
 		families := [][]*Vec3{out.Base, out.Minus, out.Plus}
 		families = append(families, out.Frame.Strands...)
-		out.Bounds = fit(append(families, generating...)...)
-		out.Radius = out.Bounds.Radius
+		bound(families, append([]*RefinedPath{refined.Base, refined.Minus, refined.Plus}, refined.Strands...)...)
 		return out, nil
 	}
 	if canal {
@@ -654,9 +679,9 @@ func compute(c Request) (Result, error) {
 		if err := canalSurface(c, &out, evaluate, radius, frame, tangents, accelerations, speeds, middles, lo, hi, closed); err != nil {
 			return Result{}, err
 		}
+		// The meridians come first among what the canal draws.
 		families := append([][]*Vec3{out.Base}, out.Canal.drawn()...)
-		out.Bounds = fit(append(families, generating...)...)
-		out.Radius = out.Bounds.Radius
+		bound(families, append([]*RefinedPath{refined.Base}, refined.Meridians...)...)
 		return out, nil
 	}
 	if ruled {
@@ -668,8 +693,7 @@ func compute(c Request) (Result, error) {
 		if err := ruledSurface(c, &out, evaluate, partner, tangents, accelerations, speeds, lo, hi, closed); err != nil {
 			return Result{}, err
 		}
-		out.Bounds = fit(append([][]*Vec3{out.Base, out.Plus}, generating...)...)
-		out.Radius = out.Bounds.Radius
+		bound([][]*Vec3{out.Base, out.Plus}, refined.Base, refined.Partner)
 		return out, nil
 	}
 	if projection {
@@ -689,8 +713,7 @@ func compute(c Request) (Result, error) {
 			}, lo, hi)
 		}
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
-		out.Bounds = fit(append([][]*Vec3{out.Base, out.Projection.Points, out.Projection.Feet, {&out.Projection.Pole}}, generating...)...)
-		out.Radius = out.Bounds.Radius
+		bound([][]*Vec3{out.Base, out.Projection.Points, out.Projection.Feet, {&out.Projection.Pole}}, refined.Base, refined.Projection)
 		return out, nil
 	}
 	if inversion {
@@ -720,8 +743,7 @@ func compute(c Request) (Result, error) {
 		out.Inversion = q
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
 		// A base source repeats the base, which leaves the fit unchanged.
-		out.Bounds = fit(append([][]*Vec3{out.Base, q.Source, q.Points, {&q.Center}}, generating...)...)
-		out.Radius = out.Bounds.Radius
+		bound([][]*Vec3{out.Base, q.Source, q.Points, {&q.Center}}, refined.Base, nil, refined.Image)
 		return out, nil
 	}
 	if involute {
@@ -748,8 +770,7 @@ func compute(c Request) (Result, error) {
 		for _, m := range result.Members {
 			families = append(families, m.Points)
 		}
-		out.Bounds = fit(append(families, generating...)...)
-		out.Radius = out.Bounds.Radius
+		bound(families, append([]*RefinedPath{refined.Base}, refined.Involute...)...)
 		return out, nil
 	}
 	out.probing.highlight(func(_ float64, r, tangent Vec3, at *ProbePoint) {
@@ -765,7 +786,6 @@ func compute(c Request) (Result, error) {
 	if c.SurfaceDiagnostics {
 		out.Probe = developableProbe(c, evaluate, lo, hi, closed, out.Base, velocities, accelerations, valid)
 	}
-	out.Bounds = fit(append([][]*Vec3{out.Base, out.Minus, out.Plus}, generating...)...)
-	out.Radius = out.Bounds.Radius
+	bound([][]*Vec3{out.Base, out.Minus, out.Plus}, refined.Base, refined.Minus, refined.Plus)
 	return out, nil
 }
