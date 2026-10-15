@@ -2280,6 +2280,77 @@ const spatialCanal = (canal, frame = {}, study = {}) =>
     [probe.singular, probe.umbilics, probe.unknown, probe.clipped[0]],
     [0, 0, 0, 0],
   );
+  // Between samples: the probe alone is the whole study's point, on the
+  // torus with its closed-form curvature across, and it carries its
+  // contact circle, closed, through the point.
+  const between = { u: 1.2345, v: 2.1 };
+  const study = (extra) =>
+    JSON.stringify({
+      format: "harmonic",
+      construction: "canal",
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 2, y: 0, z: 0 },
+            sine: { x: 0, y: 2, z: 0 },
+          },
+        ],
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      canal: { radius: 0.5, profile: "1", meridians: 4 },
+      frame: {
+        kind: "rotation-minimizing",
+        reference: { x: 0, y: 0, z: 1 },
+        angle: 0,
+        twist: 0,
+        offset: 0,
+        width: 0,
+        strands: 0,
+        closure: "seam",
+      },
+      samples: 480,
+      lines: 24,
+      surfaceDiagnostics: true,
+      ...extra,
+    });
+  const pointOnly = JSON.parse(
+    tangentGardenSpatialProbe(study({ surfaceProbe: between })),
+  );
+  const pointed = spatialResult(
+    tangentGardenSpatial(study({ surfaceProbe: between })),
+  );
+  assert.deepEqual(pointOnly, { surfaceProbe: pointed.surfaceProbe });
+  const at = pointed.surfaceProbe;
+  assert.deepEqual(
+    [at.kind, at.u, at.v, at.periodic],
+    ["canal", [between.u], [between.v], true],
+  );
+  const x = at.points[0][0],
+    cos = (Math.hypot(x.x, x.y) - 2) / 0.5;
+  assert.ok(Math.abs(at.curvature[0][0][0] + 2) < 1e-12);
+  assert.ok(Math.abs(at.curvature[1][0][0] + cos / (2 + 0.5 * cos)) < 1e-6);
+  assert.equal(at.through.length, 49);
+  assert.ok(
+    Math.hypot(
+      at.through[0].x - at.through[48].x,
+      at.through[0].y - at.through[48].y,
+      at.through[0].z - at.through[48].z,
+    ) < 1e-12,
+  );
+  at.through.forEach((p) =>
+    assert.ok(
+      Math.abs((Math.hypot(p.x, p.y) - 2) ** 2 + p.z ** 2 - 0.25) < 1e-12,
+    ),
+  );
+  assert.match(
+    JSON.parse(
+      tangentGardenSpatialProbe(study({ surfaceProbe: { u: 1, v: 7 } })),
+    ).error,
+    /outside/,
+  );
   assert.equal(q.constant, true);
   assert.equal(q.closed, true);
   assert.equal(q.imaginary, 0);

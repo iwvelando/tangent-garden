@@ -219,7 +219,8 @@ func TestBeadsProbeIsSurfaceOfRevolution(t *testing.T) {
 	for row := range d.U {
 		s := d.U[row]
 		i := d.Along[row]
-		if f := float64(i) / float64(c.Samples); s != -2*math.Pi*(1-f)+2*math.Pi*f {
+		// Rounded at each step, as WebAssembly rounds it: arm64 may fuse.
+		if f := float64(i) / float64(c.Samples); s != float64(-2*math.Pi*(1-f))+float64(2*math.Pi*f) {
 			t.Fatalf("row %d: t %g for sample %d", row, s, i)
 		}
 		for k := range d.V {

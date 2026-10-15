@@ -97,31 +97,80 @@ export const probeBetween = (c: SpatialConfig, p: Probe) =>
   !!p.between && probeTarget(c, p) === "curve" && evaluatedAnywhere(c);
 
 // Whether a study's surface probe can stand between grid samples: on a
-// patch, its offset or a focal sheet, which Go evaluates at any (u, v); not
-// a surface built on a curve, nor a mirror or its light.
-export const patchProbed = (c: SpatialConfig, target: ProbeTarget) =>
-  c.format === "surface" && gridded(target);
+// patch, its offset or a focal sheet, which Go evaluates at any (u, v), or
+// on a surface built on a curve Go evaluates at any parameter, at any t and
+// any place across it; not on a mirror or its light.
+export const pointProbed = (c: SpatialConfig, target: ProbeTarget) =>
+  c.format === "surface"
+    ? gridded(target)
+    : target === "surface" && !!surfaceKind(c) && evaluatedAnywhere(c);
 
 // Whether the surface probe stands between grid samples in this study:
-// asked for, on a patch's target.
+// asked for, on a target Go places at any point.
 export const probeBetweenGrid = (c: SpatialConfig, p: Probe) =>
-  !!p.betweenGrid && patchProbed(c, probeTarget(c, p));
+  !!p.betweenGrid && pointProbed(c, probeTarget(c, p));
 
 // Whether Go places the probe in this study, at its own t or (u, v), rather
 // than the probe snapping to a sample.
 export const probePlaced = (c: SpatialConfig, p: Probe) =>
   probeBetween(c, p) || probeBetweenGrid(c, p);
 
-// The patch's (u, v) at the probe's fractions of its domain, as Go samples
-// it, so that a fraction at a grid sample asks for exactly that sample.
-export const surfaceQuery = (
+// The domain the surface probe stands on between grid samples: a patch's
+// u and v, or on a surface built on a curve the curve's t and the place
+// across it, as the grid's columns measure it (engine3.SurfaceDiagnostics):
+// the turn from θ₀ around a canal's contact circle, or u along a ruling.
+export function gridDomain(c: SpatialConfig): {
+  u: [number, number];
+  v: [number, number];
+} {
+  if (c.format === "surface")
+    return {
+      u: [c.surface.uMin, c.surface.uMax],
+      v: [c.surface.vMin, c.surface.vMax],
+    };
+  const u = curveDomain(c);
+  switch (surfaceKind(c)) {
+    case "canal":
+      return { u, v: [0, 2 * Math.PI] };
+    case "framed":
+      return { u, v: [-c.frame.width, c.frame.width] };
+    case "ruled":
+      return { u, v: [0, 1] };
+  }
+  return { u, v: [-c.length, c.length] };
+}
+
+// A tangent developable's grid columns, u = ±L·k/12 for k = 1…12 as Go
+// places them, leaving out the edge of regression u = 0.
+const developableColumns = (length: number) => [
+  ...Array.from({ length: 12 }, (_, k) => (-length * (12 - k)) / 12),
+  ...Array.from({ length: 12 }, (_, k) => (length * (k + 1)) / 12),
+];
+
+// The point at the probe's fractions of its domain, as Go samples it, so
+// that a fraction at a grid row asks for exactly that row's parameter. On a
+// tangent developable the share across runs through its columns, which
+// skip u = 0, at an even pace between each two, so that the probe stands
+// where the snapped probe's column share would put it.
+export function surfaceQuery(
   c: SpatialConfig,
   position: number,
   across: number,
-): SurfaceQuery => ({
-  u: parameterAt(c.surface.uMin, c.surface.uMax, position),
-  v: parameterAt(c.surface.vMin, c.surface.vMax, across),
-});
+): SurfaceQuery {
+  const { u, v } = gridDomain(c);
+  const at = { u: parameterAt(u[0], u[1], position) };
+  if (c.format !== "surface" && surfaceKind(c) === "developable") {
+    const columns = developableColumns(c.length),
+      x = Math.min(1, Math.max(0, across)) * (columns.length - 1),
+      j = Math.min(columns.length - 2, Math.floor(x)),
+      f = x - j;
+    return {
+      ...at,
+      v: f === 0 ? columns[j] : columns[j] * (1 - f) + columns[j + 1] * f,
+    };
+  }
+  return { ...at, v: parameterAt(v[0], v[1], across) };
+}
 
 // The parameter at a fraction of the domain [min, max], as Go samples it,
 // so that the ends and a symmetric domain's middle are exact.
@@ -407,11 +456,32 @@ export const betweenHelp = tiered(
   "The highlighted construction is described at that t too. A trajectory or a pursuit, integrated step by step, snaps to its samples regardless.",
 );
 
-// Help for standing between a patch's grid samples.
-export const betweenGridHelp = tiered(
-  "Lets the probe stand at any u and v, not only at a grid sample, describing the surface exactly there.",
-  "The offset and focal sheets are described there too; a focal sheet's normal keeps the nearest sample's side. The plots still read the grid's samples.",
-);
+// What a surface built on a curve evaluates at t between samples.
+const evaluatedAt: Partial<Record<SurfaceKind, string>> = {
+  canal:
+    "The curve, the sphere's radius and the frame carrying θ₀ are evaluated at t.",
+  developable:
+    "The curve and its derivatives are evaluated at t; u = 0, the edge of regression, is singular.",
+  framed: "The curve and the frame carried to t are evaluated there.",
+  ruled: "The curve and its partner are evaluated at t.",
+};
+// The checkbox for standing between grid samples, and its help.
+export function betweenGridLabel(c: SpatialConfig, target: ProbeTarget) {
+  const t = surfaceTerms(c, target);
+  return `At any ${t.along} and ${t.around}, between samples`;
+}
+export function betweenGridHelp(c: SpatialConfig, target: ProbeTarget) {
+  const t = surfaceTerms(c, target);
+  return c.format === "surface"
+    ? tiered(
+        "Lets the probe stand at any u and v, not only at a grid sample, describing the surface exactly there.",
+        "The offset and focal sheets are described there too; a focal sheet's normal keeps the nearest sample's side. The plots still read the grid's samples.",
+      )
+    : tiered(
+        `Lets the probe stand at any ${t.along} and ${t.around}, not only at a sample, describing the surface there.`,
+        `${evaluatedAt[surfaceKind(c)!]} The plots still read the grid's samples.`,
+      );
+}
 
 // The curve probe's drawing at its point: the highlighted construction, the
 // osculating circle (from Go's centre, with radius 1/κ, in the plane of T
@@ -529,6 +599,9 @@ type SurfaceTerms = {
   unknownBranch: string;
   unknown: string;
   singular?: string;
+  // How the probe moves on the grid, which standing between samples
+  // replaces, and the rest of its help.
+  moves?: string;
   help: string;
 };
 const rows = "(at most 481)";
@@ -544,9 +617,6 @@ const ruledTerms = {
   through: "ruling",
   unknownBranch: "both curvatures are",
 } as const;
-// What a patch's help says of the probe on its grid, which standing
-// between samples replaces.
-const gridMoves = "It moves between the patch's grid samples.";
 const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
   patch: {
     ...curvatureWords,
@@ -559,7 +629,8 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "The patch has no point here.",
     unknownBranch: "κ₂ is",
     unknown: "where its derivatives are unstable",
-    help: `${gridMoves} Curvatures are numbered κ₁ ≥ κ₂ with the chosen normal.`,
+    moves: "It moves between the patch's grid samples.",
+    help: "Curvatures are numbered κ₁ ≥ κ₂ with the chosen normal.",
   },
   offset: {
     ...curvatureWords,
@@ -601,7 +672,8 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "No surface here: no real contact circle at this t.",
     unknownBranch: "κ across it is",
     unknown: "where its derivatives are unstable",
-    help: `It moves between the mesh rings along t ${rows} and 24 turns around each contact circle, from θ₀. Around the circle the curvature is −1/R, centered on the curve; across it, the other has its own center.`,
+    moves: `It moves between the mesh rings along t ${rows} and 24 turns around each contact circle, from θ₀.`,
+    help: `Around the circle the curvature is −1/R, centered on the curve; across it, the other has its own center.`,
   },
   developable: {
     ...ruledTerms,
@@ -610,7 +682,8 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     sliders: ["Along t", "Across the ruling"],
     missing: "No surface here: the curve has no regular point at this t.",
     unknown: "where the curve's third derivative is unstable",
-    help: `It moves between rows along t ${rows} and 24 points per ruling, u = ±L·k/12, skipping the edge of regression u = 0. The normal is ±B, the binormal. Along the ruling κ = 0; across it, τ/(κ|u|).`,
+    moves: `It moves between rows along t ${rows} and 24 points per ruling, u = ±L·k/12, skipping the edge of regression u = 0.`,
+    help: `The normal is ±B, the binormal. Along the ruling κ = 0; across it, τ/(κ|u|).`,
   },
   framed: {
     ...ruledTerms,
@@ -620,7 +693,8 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "No ribbon here: the frame is undefined at this t.",
     unknown:
       "where the curve's third derivative, or a Frenet frame's τ′, is unstable",
-    help: `It moves between rows along t ${rows} and 25 points across each cross-line, u = −w to w. The normal is D × S_t. Ruled, it has K ≤ 0, and K = 0 untwisted and rotation-minimizing.`,
+    moves: `It moves between rows along t ${rows} and 25 points across each cross-line, u = −w to w.`,
+    help: `The normal is D × S_t. Ruled, it has K ≤ 0, and K = 0 untwisted and rotation-minimizing.`,
   },
   ruled: {
     ...ruledTerms,
@@ -629,7 +703,8 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     sliders: ["Along t", "Along the ruling"],
     missing: "No surface here: the partner is missing at this t.",
     unknown: "where a thread's second derivative is unstable",
-    help: `It moves between rows along t ${rows} and 25 points along each ruling, from the curve (u = 0) to its partner (u = 1). The normal is S_t × S_u, and K ≤ 0.`,
+    moves: `It moves between rows along t ${rows} and 25 points along each ruling, from the curve (u = 0) to its partner (u = 1).`,
+    help: `The normal is S_t × S_u, and K ≤ 0.`,
   },
   // The light leaving a mirror or interface, whose name surfaceTerms
   // supplies. Its help is the whole of the switch's help (see
@@ -745,7 +820,11 @@ export function surfaceProbeHelp(
   }
   return tiered(
     `Describes the ${t.surface} at a point: its normal, principal directions and curvatures (A = −dn), with circles.`,
-    `${between ? t.help.replace(gridMoves, "It stands at any u and v, evaluated exactly there.") : t.help} A sphere with outward normal has κ = −1/R; centers beyond 100 study radii are not drawn.`,
+    `${
+      t.moves
+        ? `${between ? `It stands at any ${t.along} and ${t.around}, evaluated exactly there.` : t.moves} `
+        : ""
+    }${t.help} A sphere with outward normal has κ = −1/R; centers beyond 100 study radii are not drawn.`,
   );
 }
 
@@ -863,7 +942,8 @@ const plus = (p: Vec3, d: Vec3, s: number) => ({
 
 // The surface probe's drawing at grid sample (row, column): a mark at the
 // point (with a canal's contact circle, or a ruled surface's ruling,
-// through it), the normal line through
+// through it, from its row or, at one point between samples, from Go's
+// line through it), the normal line through
 // the point and both finite focal points, and for each branch its direction
 // glyph, a cross at its focal point and its normal-section circle in the
 // plane of n and its direction. Nothing where the surface has no point.
@@ -897,7 +977,12 @@ export function surfaceProbeBatches(
   // which touches the sheet there.
   const source = d.kind === "focal" ? d.feet?.[row]?.[column] : null;
   if (source) marked.push(...cross(source), source, p);
-  if (d.kind === "canal") {
+  if (d.through) {
+    // One point between samples carries its own circle or ruling.
+    d.through.forEach((q, k) => {
+      if (k > 0) marked.push(d.through![k - 1], q);
+    });
+  } else if (d.kind === "canal") {
     const ring = d.points[row];
     ring.forEach((q, k) => {
       const next = ring[(k + 1) % ring.length];

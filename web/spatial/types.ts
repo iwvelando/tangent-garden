@@ -509,6 +509,10 @@ export type SurfaceDiagnostics = {
   // point X whose center each point is (null where the sheet has none).
   sheet?: 1 | 2;
   feet?: (Vec3 | null)[][];
+  // One point of a surface built on a curve only: the line drawn through
+  // it, which a grid draws from its own row (a canal's contact circle,
+  // closed, or a ruling from end to end).
+  through?: Vec3[];
 };
 // Mirrors engine3.LightDiagnostics: on the wavefront's grid, the incident
 // direction (null at a singularity or the source), the surface's normal

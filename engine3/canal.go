@@ -445,7 +445,53 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 	}
 	out.Canal = q
 	if c.SurfaceDiagnostics {
-		out.Probe = canalProbe(n, closed && q.Closed, lo, hi, at, radius, base, R, slope, sphere, circled, frame, tangents, accelerations, speeds)
+		ring := func(i int) (canalRing, bool) {
+			if !sphere[i] || !circled[i] || !frame.ok[i] {
+				return canalRing{}, false
+			}
+			second := func() float64 {
+				_, _, second, _ := radius(at(float64(i)))
+				return second
+			}
+			return canalRingAt(*base[i], tangents[i], speeds[i], accelerations[i], R[i], slope[i], second, func(turn float64) Vec3 { return frame.direction(i, turn) }), true
+		}
+		joined := closed && q.Closed
+		out.Probe = canalProbe(n, joined, lo, hi, ring)
+		// Between samples, the sphere, its contact circle and the frame
+		// carried to t, as the samples find them; a closed canal's end is
+		// its start, as its grid's last row is.
+		carriedTo := frame.along(c, evaluate, lo, hi)
+		between := func(t float64) (canalRing, bool) {
+			g, ok := carriedTo(t)
+			if !ok {
+				return canalRing{}, false
+			}
+			r, slope, second, defined := radius(t)
+			if !defined || !finite(r) || !finite(slope) || r <= 0 {
+				return canalRing{}, false
+			}
+			speed := g.v.norm()
+			if _, _, real, _ := contact(r, slope, speed); !real {
+				return canalRing{}, false
+			}
+			_, _, a, _ := evaluate(t)
+			return canalRingAt(g.r, g.v.unit(), speed, a, r, slope, func() float64 { return second }, func(turn float64) Vec3 { return g.direction(c.Frame.Angle + turn) }), true
+		}
+		out.surfaceAt = curvePoint("canal", n, lo, hi, 0, 2*math.Pi, true, func(d *SurfaceDiagnostics, t float64, sample int, turn float64) {
+			if joined && sample == n {
+				sample = 0
+			}
+			g, ok := canalRing{}, false
+			if sample >= 0 {
+				g, ok = ring(sample)
+			} else {
+				g, ok = between(t)
+			}
+			if ok {
+				d.canalAt(0, 0, g, turn)
+				d.Through = g.circle()
+			}
+		})
 	}
 	return nil
 }

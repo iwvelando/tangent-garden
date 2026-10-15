@@ -68,6 +68,7 @@ import {
   probePlaced,
   isGridPoint,
   surfaceQuery,
+  gridDomain,
   type GridPoint,
   parameterAt,
   curveDomain,
@@ -583,7 +584,7 @@ export function SpatialAnimationPanel({
     let current: Frame;
     let held: ProbePlace | GridPlace | string | null | undefined;
     if (s.mode === "parameters" && s.between && isGridPoint(s.point)) {
-      // Between a patch's samples, likewise, at its (u, v).
+      // Between a surface's samples, likewise, at its (u, v) or (t, v).
       const query = gridQuery(s, values.config, p);
       current = await engine.computeSpatial(values.config, {
         ...probeOptions(probeTarget(s.original.config, s.probe!)),
@@ -782,8 +783,11 @@ export function SpatialAnimationPanel({
   // describes; between samples, once it has drawn the sample after it.
   function fixedProbe(s: Session, p: number): ProbePlace | string | null {
     if (s.between && isGridPoint(s.point)) {
-      // A patch's point is reached once the row after it is revealed.
-      const rows = s.original.result.surfaceDiagnostics!.u.length - 1;
+      // A surface's point is reached once the row (a patch's) or base
+      // sample (a surface built on a curve's) after it is revealed.
+      const rows = s.original.result.surface
+        ? s.original.result.surfaceDiagnostics!.u.length - 1
+        : revealedThrough(s.original.result, 1);
       return s.mode === "reveal" &&
         Math.ceil(s.probe!.position * rows) >
           revealedThrough(s.original.result, p)
@@ -830,7 +834,7 @@ export function SpatialAnimationPanel({
       ? noShare
       : { share: Math.min(1, at.length / whole) };
   }
-  // Where Go is to place a patch's probe between samples in a frame whose
+  // Where Go is to place a surface's probe between samples in a frame whose
   // study is config, at progress p: at the same shares of its domain, at
   // its own (u, v), or through every u at its share of v; or why it has no
   // place there.
@@ -844,7 +848,10 @@ export function SpatialAnimationPanel({
     if (s.motion === "stays")
       return surfaceQuery(config, probe.position, probe.across);
     const { u, v } = (s.point as GridPoint).grid,
-      { uMin, uMax, vMin, vMax } = config.surface,
+      {
+        u: [uMin, uMax],
+        v: [vMin, vMax],
+      } = gridDomain(config),
       names = surfaceTerms(config, probeTarget(config, probe));
     return !(u[0] >= uMin && u[0] <= uMax)
       ? outsideFrame(u[0], uMin, uMax, names.along)

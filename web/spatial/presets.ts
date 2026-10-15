@@ -4166,4 +4166,68 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // The hyperboloid x² + z² − y²/c² = 1 with c = 1.25, about the vertical,
+  // as the lines (cos t − s sin t, cs, −sin t − s cos t) from s = −0.6 on a
+  // ring below to s = 1.4 on a ring above. Its throat, s = 0, lies at u = 0.3 along every
+  // ruling, between the grid's columns 7 and 8 of 24, and the probe stands
+  // on it between samples. There the parallel and the meridian are the
+  // principal directions, with κ = −1 round the throat (its circle is the
+  // throat itself) and 1/c² = 0.64 along the meridian's vertex, so
+  // K = −1/c² = −0.64, the most negative on each ruling. Played, the probe
+  // glides once round the throat, its readout holding still.
+  {
+    name: "Round a hyperboloid's throat",
+    detail:
+      "Straight rulings between two rings pass closest to the axis on a circle, where the surface bends most sharply",
+    config: {
+      ...base,
+      // The ring below as one harmonic, (cos t + 0.6 sin t, −0.75,
+      // 0.6 cos t − sin t), so the surface closes and the probe's glide
+      // loops.
+      format: "harmonic",
+      construction: "ruled",
+      samples: 480,
+      lines: 48,
+      harmonic: {
+        center: { x: 0, y: -0.75, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 1, y: 0, z: 0.6 },
+            sine: { x: 0.6, y: 0, z: -1 },
+          },
+        ],
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      ruled: {
+        partner: "thread",
+        thread: {
+          x: "cos(t)-1.4*sin(t)",
+          y: "1.75",
+          z: "-sin(t)-1.4*cos(t)",
+        },
+        rate: 1,
+        shift: 0,
+      },
+    },
+    // From a little above, the probe a little to the left of the front.
+    view: { yaw: 3.3, pitch: 0.3, zoom: 0.9, panX: 0, panY: 0 },
+    probe: {
+      enabled: true,
+      position: 0.125,
+      target: "surface",
+      across: 0.3,
+      betweenGrid: true,
+      plots: "around",
+    },
+    flight: {
+      duration: 16,
+      repeat: "loop",
+      pace: "steady",
+      camera: "current",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

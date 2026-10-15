@@ -324,21 +324,42 @@ func ruledSurface(c Request, out *Result, evaluate evaluation, partner func(floa
 	out.Minus, out.Plus, out.Ruled = []*Vec3{}, plus, q
 	if c.SurfaceDiagnostics {
 		// S = a + u d with d = b∘φ − a, so S_t = a′ + u d′, S_tt = a″ + u d″
-		// and S_tu = d′, regular by the drawing's own guards.
+		// and S_tu = d′, regular by the drawing's own guards. The ruling
+		// from a, moving at da with acceleration dda, to b∘φ = p, moving at
+		// dp with acceleration ddp:
+		ruling := func(a, p, da, dda, dp, ddp Vec3, u float64) ruledSample {
+			d := p.sub(a)
+			dd := dp.sub(da)
+			st := da.add(dd.mul(u))
+			regular := d.norm() > 1e-9*size && st.norm() > 1e-9*(da.norm()+dp.norm()) && st.cross(d).norm() > 1e-6*st.norm()*d.norm()
+			ddd := ddp.sub(dda)
+			return ruledSample{X: a.add(d.mul(u)), St: st, Su: d, Stt: dda.add(ddd.mul(u)), Stu: dd,
+				Point: true, Regular: regular, Known: dda.valid() && ddp.valid()}
+		}
 		at := func(i int, u float64) ruledSample {
 			if out.Base[i] == nil || plus[i] == nil {
 				return ruledSample{}
 			}
-			a, d := *out.Base[i], plus[i].sub(*out.Base[i])
-			da := tangents[i].mul(speeds[i])
-			dd := velocity[i].sub(da)
-			st := da.add(dd.mul(u))
-			regular := d.norm() > 1e-9*size && st.norm() > 1e-9*(da.norm()+velocity[i].norm()) && st.cross(d).norm() > 1e-6*st.norm()*d.norm()
-			ddd := acceleration[i].sub(accelerations[i])
-			return ruledSample{X: a.add(d.mul(u)), St: st, Su: d, Stt: accelerations[i].add(ddd.mul(u)), Stu: dd,
-				Point: true, Regular: regular, Known: accelerations[i].valid() && acceleration[i].valid()}
+			return ruling(*out.Base[i], *plus[i], tangents[i].mul(speeds[i]), accelerations[i], velocity[i], acceleration[i], u)
 		}
-		out.Probe = ruledProbe("ruled", n, closed && q.Closed, lo, hi, spanned(0, 1), at, func(float64) bool { return false }, false)
+		// Between samples, the curve and its partner at t as the sampling
+		// loops find them at a sample.
+		between := func(t, u float64) ruledSample {
+			r, v, a, ok := evaluate(t)
+			if !ok || !r.valid() || !v.valid() || c.units.still(v) {
+				return ruledSample{}
+			}
+			p, pv, pa, fine, inside := partner(m*t + c.Ruled.Shift)
+			if !inside || !fine {
+				return ruledSample{}
+			}
+			return ruling(r, p, v.unit().mul(v.norm()), a, pv.mul(m), pa.mul(m*m), u)
+		}
+		columns, flip := spanned(0, 1), func(float64) bool { return false }
+		var grid float64
+		joined := closed && q.Closed
+		out.Probe, grid = ruledProbe("ruled", n, joined, lo, hi, columns, at, flip, false)
+		out.surfaceAt = ruledPoint("ruled", n, joined, lo, hi, columns, at, between, flip, false, grid)
 	}
 	return nil
 }

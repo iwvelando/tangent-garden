@@ -183,12 +183,18 @@ type Result struct {
 	Adaptive *AdaptiveResult `json:"adaptive,omitempty"`
 	// CurveProbe is present only when requested, for a curve.
 	CurveProbe *ProbePoint `json:"probe,omitempty"`
-	// SurfaceProbe is present only when requested, for a surface patch: one
-	// row and one column at the asked (u, v).
+	// SurfaceProbe is present only when requested, for a surface patch or a
+	// surface built on a curve evaluated at any parameter: one row and one
+	// column at the asked (u, v) or (t, v).
 	SurfaceProbe *SurfaceDiagnostics `json:"surfaceProbe,omitempty"`
 	// surfaceScale is a surface study's size, which sets its probe's
 	// tolerances.
 	surfaceScale float64
+	// surfaceAt describes a surface built on a curve at one point, for its
+	// probe between samples (see curvePoint); it is set with the surface's
+	// probe, and asked for only where the curve is evaluated at any
+	// parameter (see pointedAnywhere).
+	surfaceAt func(SurfaceQuery) (*SurfaceDiagnostics, error)
 	// probing places the curve probe over the computed study.
 	probing *probing
 }
@@ -224,7 +230,7 @@ func Compute(c Request) (Result, error) {
 		c.Diagnostics = true
 	}
 	if c.SurfaceProbe != nil {
-		if c.Format != "surface" {
+		if !c.pointedAnywhere() {
 			return Result{}, errSurfacePoint
 		}
 		c.surfaceTarget()
@@ -237,7 +243,7 @@ func Compute(c Request) (Result, error) {
 		out.CurveProbe = out.probing.probe(*c.Probe, out.Diagnostics, out.Bounds.Radius)
 	}
 	if err == nil && c.SurfaceProbe != nil {
-		if out.SurfaceProbe, err = out.surfacePoint(c.Surface, *c.SurfaceProbe); err != nil {
+		if out.SurfaceProbe, err = out.surfacePoint(c, *c.SurfaceProbe); err != nil {
 			return Result{}, err
 		}
 	}
@@ -687,7 +693,7 @@ func compute(c Request) (Result, error) {
 			frame.ribbon(c, &out, evaluate, lo, hi)
 		}
 		if c.SurfaceDiagnostics && c.Frame.Width > 0 {
-			out.Probe = framedProbe(c, evaluate, lo, hi, out.Base, velocities, accelerations, frame)
+			out.Probe, out.surfaceAt = framedProbe(c, evaluate, lo, hi, out.Base, velocities, accelerations, frame)
 		}
 		families := [][]*Vec3{out.Base, out.Minus, out.Plus}
 		families = append(families, out.Frame.Strands...)
@@ -806,7 +812,7 @@ func compute(c Request) (Result, error) {
 		}
 	}
 	if c.SurfaceDiagnostics {
-		out.Probe = developableProbe(c, evaluate, lo, hi, closed, out.Base, velocities, accelerations, valid)
+		out.Probe, out.surfaceAt = developableProbe(c, evaluate, lo, hi, closed, out.Base, velocities, accelerations, valid)
 	}
 	bound([][]*Vec3{out.Base, out.Minus, out.Plus}, refined.Base, refined.Minus, refined.Plus)
 	return out, nil
