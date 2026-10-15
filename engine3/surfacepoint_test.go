@@ -299,8 +299,8 @@ func TestSurfacePointBringsTheSurfaceDiagnostics(t *testing.T) {
 	}
 }
 
-// The point is refused outside the domain, for a study that is not a
-// patch, and where it is not finite.
+// The point is refused outside the domain, for a curve study without a
+// surface, and where it is not finite.
 func TestSurfacePointRefusals(t *testing.T) {
 	c := coarseEllipsoid()
 	for _, at := range [][2]float64{{-4, 0}, {0, 2}, {math.NaN(), 0}, {0, math.Inf(1)}} {
@@ -310,13 +310,18 @@ func TestSurfacePointRefusals(t *testing.T) {
 		}
 	}
 	for name, study := range probeStudies() {
+		switch study.Construction {
+		case "", "developable", "canal", "framed", "ruled":
+			// A surface built on the curve (see curvesurfacepoint_test.go).
+			continue
+		}
 		study.SurfaceProbe = &SurfaceQuery{}
 		if _, err := Compute(study); err == nil || !strings.Contains(err.Error(), "patch") {
-			t.Fatalf("%s: a curve study took a surface point: %v", name, err)
+			t.Fatalf("%s: a curve study without a surface took a surface point: %v", name, err)
 		}
 	}
-	if _, err := SurfaceProbeOnly(Request{Format: "torus", SurfaceProbe: &SurfaceQuery{}}); err == nil {
-		t.Fatal("a torus knot took a surface point")
+	if _, err := SurfaceProbeOnly(Request{Format: "torus", Construction: "none", SurfaceProbe: &SurfaceQuery{}}); err == nil {
+		t.Fatal("a bare torus knot took a surface point")
 	}
 	if _, err := SurfaceProbeOnly(Request{Format: "surface"}); err == nil {
 		t.Fatal("no point was asked for, yet one was given")

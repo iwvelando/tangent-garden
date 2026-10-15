@@ -587,7 +587,7 @@ func TestRuledProbeCountsEachSample(t *testing.T) {
 		return s
 	}
 	for _, closed := range []bool{false, true} {
-		d := ruledProbe("ruled", 240, closed, 0, 1, spanned(0, 1), at, func(float64) bool { return false }, false)
+		d, _ := ruledProbe("ruled", 240, closed, 0, 1, spanned(0, 1), at, func(float64) bool { return false }, false)
 		counted := len(d.U)
 		if closed {
 			counted--
@@ -616,7 +616,7 @@ func TestRuledProbeCountsEachSample(t *testing.T) {
 		}
 	}
 	// Without such a sample the grid is left out.
-	if d := ruledProbe("ruled", 240, false, 0, 1, spanned(0.5, 1), at, func(float64) bool { return false }, false); d.UnknownPlane != nil {
+	if d, _ := ruledProbe("ruled", 240, false, 0, 1, spanned(0.5, 1), at, func(float64) bool { return false }, false); d.UnknownPlane != nil {
 		t.Fatal("an unknown plane on a regular grid")
 	}
 }

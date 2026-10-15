@@ -35,8 +35,9 @@ type ruledSample struct {
 // named by line of curvature, 0 along the ruling and 1 across it, as on a
 // developable, where the ruling is a principal direction; otherwise they
 // are numbered κ₁ ≥ κ₂. A closed surface's last row repeats its first and
-// is not counted.
-func ruledProbe(kind string, n int, closed bool, lo, hi float64, columns []float64, at func(i int, u float64) ruledSample, flip func(u float64) bool, named bool) *SurfaceDiagnostics {
+// is not counted, as a canal's does. It also returns the grid's size, the farthest of its
+// points from the first, which scales its tolerances.
+func ruledProbe(kind string, n int, closed bool, lo, hi float64, columns []float64, at func(i int, u float64) ruledSample, flip func(u float64) bool, named bool) (*SurfaceDiagnostics, float64) {
 	rows := probeRows(n)
 	d := newSurfaceDiagnostics(kind, len(rows), len(columns))
 	d.closed = closed
@@ -45,8 +46,7 @@ func ruledProbe(kind string, n int, closed bool, lo, hi float64, columns []float
 	size := 0.0
 	var origin *Vec3
 	for r, i := range rows {
-		f := float64(i) / float64(n)
-		d.Along[r], d.U[r] = i, lo*(1-f)+hi*f
+		d.Along[r], d.U[r] = i, sampleAt(lo, hi, i, n)
 		for k, u := range d.V {
 			s := at(i, u)
 			samples[r][k] = s
@@ -54,7 +54,6 @@ func ruledProbe(kind string, n int, closed bool, lo, hi float64, columns []float
 				continue
 			}
 			x := s.X
-			d.Points[r][k] = &x
 			if origin == nil {
 				origin = &x
 			}
@@ -64,60 +63,111 @@ func ruledProbe(kind string, n int, closed bool, lo, hi float64, columns []float
 	if size == 0 {
 		size = 1
 	}
-	for r := range rows {
-		counted := d.counted(r)
-		count := func(c *int) {
-			if counted {
-				*c++
-			}
+	for r, i := range rows {
+		if closed && i == n {
+			d.repeatFirst(r)
+			continue
 		}
 		for k, u := range d.V {
-			s := samples[r][k]
-			if !s.Point {
-				continue
-			}
-			if !s.Regular {
-				count(&d.Singular)
-				continue
-			}
-			if !s.St.valid() {
-				// No tangent plane can be found: r″ or r‴ is unknown.
-				count(&d.Unknown)
-				count(&d.UnknownPlanes)
-				d.markUnknownPlane(r, k)
-				continue
-			}
-			p := shape(s.X, s.St, s.Su, s.Stt, s.Stu, Vec3{}, flip(u), size)
-			if !p.Normal {
-				count(&d.Singular)
-				continue
-			}
-			nrm := p.N
-			d.Normals[r][k] = &nrm
-			if !s.Known || !finite(p.Kappa[0]) || !finite(p.Kappa[1]) {
-				count(&d.Unknown)
-				continue
-			}
-			order := [2]int{0, 1}
-			if named {
-				ruling := s.Su.unit()
-				if math.Abs(p.Dir[1].dot(ruling)) > math.Abs(p.Dir[0].dot(ruling)) {
-					order = [2]int{1, 0}
-				}
-			}
-			for b, from := range order {
-				kappa, e := p.Kappa[from], p.Dir[from]
-				d.Curvature[b][r][k] = &kappa
-				if !p.Umbilic {
-					d.Direction[b][r][k] = &e
-				}
-			}
-			if p.Umbilic {
-				count(&d.Umbilics)
-			}
+			d.ruledAt(r, k, samples[r][k], flip(u), named, size)
 		}
 	}
-	return d
+	return d, size
+}
+
+// repeatFirst makes row r, a closed surface's last, its first row again,
+// so that the probe reads the same at both ends.
+func (d *SurfaceDiagnostics) repeatFirst(r int) {
+	copy(d.Points[r], d.Points[0])
+	copy(d.Normals[r], d.Normals[0])
+	for k := 0; k < 2; k++ {
+		copy(d.Curvature[k][r], d.Curvature[k][0])
+		copy(d.Direction[k][r], d.Direction[k][0])
+	}
+	if d.UnknownPlane != nil {
+		copy(d.UnknownPlane[r], d.UnknownPlane[0])
+	}
+}
+
+// ruledAt describes the ruled surface at grid point (r, k), whose sample is
+// s, with its normal reversed by flip and its branches named as ruledProbe
+// names them, against the grid's size.
+func (d *SurfaceDiagnostics) ruledAt(r, k int, s ruledSample, flip, named bool, size float64) {
+	if !s.Point {
+		return
+	}
+	x := s.X
+	d.Points[r][k] = &x
+	counted := d.counted(r)
+	count := func(c *int) {
+		if counted {
+			*c++
+		}
+	}
+	if !s.Regular {
+		count(&d.Singular)
+		return
+	}
+	if !s.St.valid() {
+		// No tangent plane can be found: r″ or r‴ is unknown.
+		count(&d.Unknown)
+		count(&d.UnknownPlanes)
+		d.markUnknownPlane(r, k)
+		return
+	}
+	p := shape(s.X, s.St, s.Su, s.Stt, s.Stu, Vec3{}, flip, size)
+	if !p.Normal {
+		count(&d.Singular)
+		return
+	}
+	nrm := p.N
+	d.Normals[r][k] = &nrm
+	if !s.Known || !finite(p.Kappa[0]) || !finite(p.Kappa[1]) {
+		count(&d.Unknown)
+		return
+	}
+	order := [2]int{0, 1}
+	if named {
+		ruling := s.Su.unit()
+		if math.Abs(p.Dir[1].dot(ruling)) > math.Abs(p.Dir[0].dot(ruling)) {
+			order = [2]int{1, 0}
+		}
+	}
+	for b, from := range order {
+		kappa, e := p.Kappa[from], p.Dir[from]
+		d.Curvature[b][r][k] = &kappa
+		if !p.Umbilic {
+			d.Direction[b][r][k] = &e
+		}
+	}
+	if p.Umbilic {
+		count(&d.Umbilics)
+	}
+}
+
+// ruledPoint describes a ruled surface at one point (t, u) for its probe
+// between samples, as ruledProbe describes its grid: from the sample's own
+// at a sample (at), and otherwise from the curve evaluated at t (between),
+// against the grid's size, with the ruling through it. A closed surface's
+// end reads as its start, as its grid's last row does.
+func ruledPoint(kind string, n int, closed bool, lo, hi float64, columns []float64, at func(i int, u float64) ruledSample, between func(t, u float64) ruledSample, flip func(u float64) bool, named bool, size float64) func(SurfaceQuery) (*SurfaceDiagnostics, error) {
+	return curvePoint(kind, n, lo, hi, columns[0], columns[len(columns)-1], false, func(d *SurfaceDiagnostics, t float64, sample int, u float64) {
+		if closed && sample == n {
+			sample = 0
+		}
+		sampled := func(u float64) ruledSample {
+			if sample >= 0 {
+				return at(sample, u)
+			}
+			return between(t, u)
+		}
+		s := sampled(u)
+		d.ruledAt(0, 0, s, flip(u), named, size)
+		// The ruling through it, from end to end.
+		if from, to := sampled(columns[0]), sampled(columns[len(columns)-1]); s.Point && from.Point && to.Point {
+			d.Through = []Vec3{from.X, to.X}
+		}
+	})
 }
 
 // developableProbe describes the tangent developable r + uT for
@@ -128,26 +178,41 @@ func ruledProbe(kind string, n int, closed bool, lo, hi float64, columns []float
 // normal is sign(u)·B, which is the reverse of S_t × S_u on both sides.
 // A sample without the drawing's binormal is singular along its whole
 // ruling, as the drawing leaves its faces out, unless r″ is unknown there:
-// its tangent plane is then unknown.
-func developableProbe(c Request, evaluate evaluation, lo, hi float64, closed bool, base []*Vec3, velocities, accelerations []Vec3, defined []bool) *SurfaceDiagnostics {
+// its tangent plane is then unknown. It also returns the surface's
+// description at any point (see ruledPoint).
+func developableProbe(c Request, evaluate evaluation, lo, hi float64, closed bool, base []*Vec3, velocities, accelerations []Vec3, defined []bool) (*SurfaceDiagnostics, func(SurfaceQuery) (*SurfaceDiagnostics, error)) {
 	n := len(base) - 1
 	third := jerk(c, evaluate, lo, hi)
+	// The ruling at t, through r with velocity v and acceleration a, and
+	// whether the drawing's binormal is defined there.
+	ruling := func(r, v, a Vec3, defined bool, t, u float64) ruledSample {
+		w := u / v.norm()
+		// Without r″ the binormal is unknown rather than absent, and so is
+		// S_t: the tangent plane is unknown, not singular.
+		s := ruledSample{X: r.add(v.mul(w)), St: v.add(a.mul(w)), Su: v, Stu: a, Point: true, Regular: defined || !a.valid()}
+		if !defined {
+			return s
+		}
+		j, ok := third(t, v)
+		s.Stt, s.Known = a.add(j.mul(w)), ok
+		return s
+	}
 	at := func(i int, u float64) ruledSample {
 		if base[i] == nil {
 			return ruledSample{}
 		}
-		r, v, a := *base[i], velocities[i], accelerations[i]
-		w := u / v.norm()
-		// Without r″ the binormal is unknown rather than absent, and so is
-		// S_t: the tangent plane is unknown, not singular.
-		s := ruledSample{X: r.add(v.mul(w)), St: v.add(a.mul(w)), Su: v, Stu: a, Point: true, Regular: defined[i] || !a.valid()}
-		if !defined[i] {
-			return s
-		}
 		f := float64(i) / float64(n)
-		j, ok := third(lo*(1-f)+hi*f, v)
-		s.Stt, s.Known = a.add(j.mul(w)), ok
-		return s
+		return ruling(*base[i], velocities[i], accelerations[i], defined[i], lo*(1-f)+hi*f, u)
+	}
+	// Between samples, as the sampling loop finds the curve and its
+	// binormal at a sample.
+	between := func(t, u float64) ruledSample {
+		r, v, a, ok := evaluate(t)
+		if !ok || !r.valid() || !v.valid() || c.units.still(v) {
+			return ruledSample{}
+		}
+		_, defined := c.binormal(v, a, lo, hi)
+		return ruling(r, v, a, defined, t, u)
 	}
 	half := ruledColumns / 2
 	columns := make([]float64, 0, ruledColumns)
@@ -157,7 +222,9 @@ func developableProbe(c Request, evaluate evaluation, lo, hi float64, closed boo
 	for k := 1; k <= half; k++ {
 		columns = append(columns, c.Length*float64(k)/float64(half))
 	}
-	return ruledProbe("developable", n, closed, lo, hi, columns, at, func(float64) bool { return true }, true)
+	flip := func(float64) bool { return true }
+	d, size := ruledProbe("developable", n, closed, lo, hi, columns, at, flip, true)
+	return d, ruledPoint("developable", n, closed, lo, hi, columns, at, between, flip, true, size)
 }
 
 // framedProbe describes the framed ribbon r + uD for |u| ≤ Width from the
@@ -170,22 +237,19 @@ func developableProbe(c Request, evaluate evaluation, lo, hi float64, closed boo
 // so D_ss = −(bent_s·D + 2Ω bent·P)T − (bent·D)bent + Ω_s P − Ω²D. Ω is the
 // frame's spin for a rotation-minimizing frame, and τ + 2π·Twist/L for a
 // Frenet frame, whose Ω_s = τ_s is differenced from τ at nearby t. These
-// need r‴; the drawn normal is D × S_t.
-func framedProbe(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, velocities, accelerations []Vec3, frame carried) *SurfaceDiagnostics {
+// need r‴; the drawn normal is D × S_t. Between samples D is the frame
+// carried to t (see along). It also returns the ribbon's description at
+// any point (see ruledPoint).
+func framedProbe(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, velocities, accelerations []Vec3, frame carried) (*SurfaceDiagnostics, func(SurfaceQuery) (*SurfaceDiagnostics, error)) {
 	n := len(base) - 1
 	third := jerk(c, evaluate, lo, hi)
 	frenet := c.Frame.Kind == "frenet"
 	twist := frame.spin
 	turning := torsionSlope(c, evaluate, lo, hi, third)
-	at := func(i int, u float64) ruledSample {
-		if !frame.ok[i] {
-			return ruledSample{}
-		}
-		r, v, a := *base[i], velocities[i], accelerations[i]
-		D := frame.direction(i, 0)
+	// The cross-line at t, through r with velocity v and acceleration a,
+	// along D.
+	line := func(r, v, a, D Vec3, t, u float64) ruledSample {
 		s := ruledSample{X: r.add(D.mul(u)), Su: D, Point: true, Regular: true}
-		f := float64(i) / float64(n)
-		t := lo*(1-f) + hi*f
 		j, ok := third(t, v)
 		if !a.valid() || !ok {
 			s.St = Vec3{math.NaN(), math.NaN(), math.NaN()}
@@ -214,7 +278,26 @@ func framedProbe(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, v
 		s.Stt, s.Known = a.add(Dtt.mul(u)), known && finite(omega) && finite(omegaS)
 		return s
 	}
-	return ruledProbe("framed", n, frame.closed, lo, hi, spanned(-c.Frame.Width, c.Frame.Width), at, func(float64) bool { return true }, false)
+	at := func(i int, u float64) ruledSample {
+		if !frame.ok[i] {
+			return ruledSample{}
+		}
+		f := float64(i) / float64(n)
+		return line(*base[i], velocities[i], accelerations[i], frame.direction(i, 0), lo*(1-f)+hi*f, u)
+	}
+	carriedTo := frame.along(c, evaluate, lo, hi)
+	between := func(t, u float64) ruledSample {
+		g, ok := carriedTo(t)
+		if !ok {
+			return ruledSample{}
+		}
+		_, _, a, _ := evaluate(t)
+		return line(g.r, g.v, a, g.direction(c.Frame.Angle), t, u)
+	}
+	columns := spanned(-c.Frame.Width, c.Frame.Width)
+	flip := func(float64) bool { return true }
+	d, size := ruledProbe("framed", n, frame.closed, lo, hi, columns, at, flip, false)
+	return d, ruledPoint("framed", n, frame.closed, lo, hi, columns, at, between, flip, false, size)
 }
 
 // torsionSlope returns dτ/dt. With b = r′ × r″, τ = b·r‴/|b|² and

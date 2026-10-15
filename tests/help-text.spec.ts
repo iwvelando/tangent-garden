@@ -28,7 +28,7 @@ import {
   probeSupport,
   surfacePlotsHelp,
   surfaceProbeHelp,
-  patchProbed,
+  pointProbed,
   betweenGridHelp,
 } from "../web/spatial/probe";
 import { restartHelp } from "../web/spatial/restart";
@@ -243,7 +243,7 @@ test("every help a setting reveals keeps to the same limits", () => {
           `${name} ${target} probe motion`,
           spatialProbeMotionHelp(config, target),
         );
-        if (patchProbed(config, target)) {
+        if (pointProbed(config, target)) {
           add(
             `${name} ${target} probe between grid samples`,
             surfaceProbeHelp(config, target, true),
@@ -252,9 +252,12 @@ test("every help a setting reveals keeps to the same limits", () => {
             `${name} ${target} probe motion between grid samples`,
             spatialProbeMotionHelp(config, target, true),
           );
+          add(
+            `${name} ${target} between grid samples`,
+            betweenGridHelp(config, target),
+          );
         }
       }
-    add(`${name} between grid samples`, betweenGridHelp);
   }
   for (const { name, config } of tesseractPresets) {
     const object = objects[config.object];

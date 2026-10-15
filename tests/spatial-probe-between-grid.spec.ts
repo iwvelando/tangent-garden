@@ -308,7 +308,9 @@ test("a frame whose domain leaves the probe's u out has no probe", async ({
   );
 });
 
-test("only a patch offers its probe between grid samples", async ({ page }) => {
+test("a patch offers its probe between grid samples, and a mirror does not", async ({
+  page,
+}) => {
   await page.goto("/?study=3d");
   await settled(page);
   await choosePreset(page, { label: "A torus revealing its centers" });

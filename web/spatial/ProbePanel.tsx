@@ -4,6 +4,7 @@ import { hex, lineColor } from "./palette";
 import {
   atPoint,
   betweenGridHelp,
+  betweenGridLabel,
   betweenHelp,
   curveStep,
   describeHelp,
@@ -11,7 +12,7 @@ import {
   gridded,
   isGridPoint,
   lightProbeReadout,
-  patchProbed,
+  pointProbed,
   probeBetweenGrid,
   probeLegend,
   probeBetween,
@@ -72,7 +73,7 @@ function Plot({
 // result with diagnostics, or null while they are computed or while an
 // animation that does not move the probe plays. `held` is the curve probe
 // it describes, at a sample or between samples, or absent while Go places
-// it. `point` is a patch's probe that Go has placed between its grid
+// it. `point` is a surface's probe that Go has placed between its grid
 // samples, absent while it is placed. `at` is where an animation has moved
 // the probe to: the curve probe, a surface's row or a patch's point; the
 // slider waits until it stops. `away` says why an animation that draws the
@@ -186,7 +187,7 @@ export function ProbePanel({
           </div>
         )}
         <HelpText help={betweenHelpState}>{betweenHelp}</HelpText>
-        {probe.enabled && patchProbed(config, target) && (
+        {probe.enabled && pointProbed(config, target) && (
           <div className="probe-switch">
             <label className="check">
               <input
@@ -200,7 +201,7 @@ export function ProbePanel({
                   );
                 }}
               />
-              At any u and v, between samples
+              {betweenGridLabel(config, target)}
             </label>
             <HelpToggle
               topic="between grid samples"
@@ -208,7 +209,11 @@ export function ProbePanel({
             />
           </div>
         )}
-        <HelpText help={betweenGridHelpState}>{betweenGridHelp}</HelpText>
+        {gridded(target) && (
+          <HelpText help={betweenGridHelpState}>
+            {betweenGridHelp(config, target)}
+          </HelpText>
+        )}
         {probe.enabled && gridded(target) && (
           <SurfaceProbe
             config={config}
@@ -380,7 +385,7 @@ export function ProbePanel({
 
 // The surface probe's controls and readout, as ProbePanel's for the curve.
 // The grid sample is the nearest row and column to the probe's fractions;
-// an animation moving the probe gives its row as `at`. Between a patch's
+// an animation moving the probe gives its row as `at`. Between a surface's
 // samples, the sliders move freely and the readout describes `point`,
 // where Go placed the probe.
 function SurfaceProbe({

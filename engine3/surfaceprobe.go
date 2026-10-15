@@ -64,9 +64,14 @@ type SurfaceDiagnostics struct {
 	Folds    [][]bool `json:"folds,omitempty"`
 	// Sheet and Feet are present only for a patch's focal sheet: its
 	// number, 1 or 2, and the patch's point X whose center each point is.
-	Sheet  int       `json:"sheet,omitempty"`
-	Feet   [][]*Vec3 `json:"feet,omitempty"`
-	closed bool
+	Sheet int       `json:"sheet,omitempty"`
+	Feet  [][]*Vec3 `json:"feet,omitempty"`
+	// Through is present only for one point of a surface built on a curve
+	// (see curvePoint): the line the probe draws through it, which a grid
+	// draws from its own row: a canal's contact circle, closed, or a
+	// ruling from end to end.
+	Through []Vec3 `json:"through,omitempty"`
+	closed  bool
 }
 
 // newSurfaceDiagnostics allocates a grid of rows × columns.
@@ -407,17 +412,93 @@ func probeRows(n int) []int {
 	return append(rows, n)
 }
 
+// canalRing is the canal at one parameter, as its probe describes it: the
+// sphere's centre c on the curve, its radius R, the curve's unit tangent T
+// and curvature vector bent, the slope Ṙ = dR/ds and Ṙ̈ (NaN where it is
+// unknown, and bent then too), and the direction from c at a turn from θ₀
+// in the frame that carries the meridians.
+type canalRing struct {
+	center, T, bent Vec3
+	R, dR, ddR      float64
+	direction       func(turn float64) Vec3
+}
+
+// canalRingAt is the canal's ring where the curve has its centre c, unit
+// tangent T, speed and acceleration a, and the sphere's radius R and its
+// slope dR/dt; second gives d²R/dt², needed only where a is known.
+func canalRingAt(center, T Vec3, speed float64, a Vec3, R, slope float64, second func() float64, direction func(float64) Vec3) canalRing {
+	g := canalRing{center: center, T: T, R: R, dR: slope / speed, ddR: math.NaN(), direction: direction}
+	if a.valid() {
+		along := T.dot(a)
+		g.bent = a.sub(T.mul(along)).mul(1 / (speed * speed))
+		g.ddR = (second() - g.dR*along) / (speed * speed)
+	}
+	return g
+}
+
+// canalAt describes the canal at grid point (r, k), the turn from θ₀
+// around the contact circle of ring g.
+func (d *SurfaceDiagnostics) canalAt(r, k int, g canalRing, turn float64) {
+	collapsed := math.Abs(g.dR) >= 1-1e-9
+	around := -1 / g.R
+	T := g.T
+	e := g.direction(turn)
+	sigma := math.Sqrt(math.Max(0, 1-g.dR*g.dR))
+	nrm := T.mul(-g.dR).add(e.mul(sigma))
+	x := g.center.add(nrm.mul(g.R))
+	if collapsed {
+		x = g.center.add(T.mul(-g.R * math.Copysign(1, g.dR)))
+	}
+	d.Points[r][k] = &x
+	if collapsed {
+		d.Singular++
+		return
+	}
+	circle := T.cross(e).unit()
+	if !finite(g.ddR) {
+		d.Normals[r][k] = &nrm
+		d.Curvature[0][r][k] = &around
+		across := nrm.cross(circle)
+		d.Direction[0][r][k], d.Direction[1][r][k] = &circle, &across
+		d.Unknown++
+		return
+	}
+	kappa, across, ok := canalAcross(T, g.bent, e, g.R, g.dR, g.ddR)
+	if !ok || !finite(kappa) {
+		d.Singular++
+		return
+	}
+	d.Normals[r][k] = &nrm
+	d.Curvature[0][r][k], d.Curvature[1][r][k] = &around, &kappa
+	d.Direction[0][r][k], d.Direction[1][r][k] = &circle, &across
+}
+
+// circle is the ring's contact circle, closed, at 2·canalSegments turns
+// from θ₀, or nil where it has collapsed to a point.
+func (g canalRing) circle() []Vec3 {
+	if math.Abs(g.dR) >= 1-1e-9 {
+		return nil
+	}
+	sigma := math.Sqrt(1 - g.dR*g.dR)
+	points := make([]Vec3, 2*canalSegments+1)
+	for m := range points {
+		e := g.direction(math.Pi * float64(m) / canalSegments)
+		points[m] = g.center.add(g.T.mul(-g.dR).add(e.mul(sigma)).mul(g.R))
+	}
+	return points
+}
+
 // canalProbe describes the canal at canalSegments turns around each row's
 // contact circle, measured from θ₀ in the frame that carries the
-// meridians. R and slope are R and dR/dt at each sample, sphere and circled
-// say where the sphere and its real contact circle exist.
-// A closed canal's last row is its first.
+// meridians. ring gives sample i's ring, false where the sphere, its real
+// contact circle or the frame is missing. A closed canal's last row is its
+// first.
 //
 // A canal has no umbilic at a regular point. With n = (X − c)/R,
 // dn(X_s) = (X_s − T − Ṙq)/R and dn(T × e) = (T × e)/R, so
 // dn(w) = (w − T − Ṙq)/R, which is w/R only where T = −Ṙq: where the
 // circle has collapsed.
-func canalProbe(n int, closed bool, lo, hi float64, at func(float64) float64, radius func(float64) (float64, float64, float64, bool), base []*Vec3, R, slope []float64, sphere, circled []bool, frame carried, tangents, accelerations []Vec3, speeds []float64) *SurfaceDiagnostics {
+func canalProbe(n int, closed bool, lo, hi float64, ring func(i int) (canalRing, bool)) *SurfaceDiagnostics {
 	rows := probeRows(n)
 	d := newSurfaceDiagnostics("canal", len(rows), canalSegments)
 	d.Periodic, d.closed = true, closed
@@ -427,62 +508,17 @@ func canalProbe(n int, closed bool, lo, hi float64, at func(float64) float64, ra
 	for r, i := range rows {
 		// t as the curve probe reports it, so a symmetric domain's middle
 		// is exactly 0.
-		f := float64(i) / float64(n)
-		d.Along[r], d.U[r] = i, lo*(1-f)+hi*f
+		d.Along[r], d.U[r] = i, sampleAt(lo, hi, i, n)
 		if closed && i == n {
-			copy(d.Points[r], d.Points[0])
-			copy(d.Normals[r], d.Normals[0])
-			for k := 0; k < 2; k++ {
-				copy(d.Curvature[k][r], d.Curvature[k][0])
-				copy(d.Direction[k][r], d.Direction[k][0])
-			}
+			d.repeatFirst(r)
 			continue
 		}
-		if !sphere[i] || !circled[i] || !frame.ok[i] {
+		g, ok := ring(i)
+		if !ok {
 			continue
 		}
-		T, v, a := tangents[i], speeds[i], accelerations[i]
-		dR := slope[i] / v
-		var bent Vec3
-		ddR := math.NaN()
-		if a.valid() {
-			along := T.dot(a)
-			bent = a.sub(T.mul(along)).mul(1 / (v * v))
-			_, _, second, _ := radius(at(float64(i)))
-			ddR = (second - dR*along) / (v * v)
-		}
-		collapsed := math.Abs(dR) >= 1-1e-9
-		around := -1 / R[i]
 		for k := range d.V {
-			e := frame.direction(i, d.V[k])
-			sigma := math.Sqrt(math.Max(0, 1-dR*dR))
-			nrm := T.mul(-dR).add(e.mul(sigma))
-			x := base[i].add(nrm.mul(R[i]))
-			if collapsed {
-				x = base[i].add(T.mul(-R[i] * math.Copysign(1, dR)))
-			}
-			d.Points[r][k] = &x
-			if collapsed {
-				d.Singular++
-				continue
-			}
-			circle := T.cross(e).unit()
-			if !finite(ddR) {
-				d.Normals[r][k] = &nrm
-				d.Curvature[0][r][k] = &around
-				across := nrm.cross(circle)
-				d.Direction[0][r][k], d.Direction[1][r][k] = &circle, &across
-				d.Unknown++
-				continue
-			}
-			kappa, across, ok := canalAcross(T, bent, e, R[i], dR, ddR)
-			if !ok || !finite(kappa) {
-				d.Singular++
-				continue
-			}
-			d.Normals[r][k] = &nrm
-			d.Curvature[0][r][k], d.Curvature[1][r][k] = &around, &kappa
-			d.Direction[0][r][k], d.Direction[1][r][k] = &circle, &across
+			d.canalAt(r, k, g, d.V[k])
 		}
 	}
 	return d
