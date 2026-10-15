@@ -52,7 +52,7 @@ jobs:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     outputs:
       tree: ${{ steps.tree.outputs.sha }}
     steps:
