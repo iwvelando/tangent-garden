@@ -353,7 +353,10 @@ func TestCurveSurfacePointCarriesItsCircleOrRuling(t *testing.T) {
 		}
 		// Its ends are the surface's points at the first and last columns.
 		for e, v := range []float64{grid.V[0], grid.V[len(grid.V)-1]} {
-			_, end := pointProbed(t, c, at.U, v)
+			end, err := r.surfacePoint(c, SurfaceQuery{U: at.U, V: v})
+			if err != nil {
+				t.Fatal(err)
+			}
 			if end.Points[0][0] == nil || end.Points[0][0].sub(line[e]).norm() > 1e-12*(1+r.Bounds.Radius) {
 				t.Fatalf("%s: end %d of the ruling is %v, not the surface's %v", name, e, line[e], end.Points[0][0])
 			}
@@ -406,8 +409,20 @@ func TestClosedCurveSurfaceEndsReadAlike(t *testing.T) {
 			if a, b := cell(t, grid, 0, k), cell(t, grid, last, k); a != b {
 				t.Fatalf("%s column %d: the last row says\n%s\nthe first\n%s", name, k, b, a)
 			}
-			_, start := pointProbed(t, c, grid.U[0], grid.V[k])
-			_, end := pointProbed(t, c, grid.U[last], grid.V[k])
+			// Placed on the study as Compute places them; one pair through
+			// Compute itself.
+			start, err := r.surfacePoint(c, SurfaceQuery{U: grid.U[0], V: grid.V[k]})
+			if err != nil {
+				t.Fatal(err)
+			}
+			end, err := r.surfacePoint(c, SurfaceQuery{U: grid.U[last], V: grid.V[k]})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if k == 1 {
+				_, start = pointProbed(t, c, grid.U[0], grid.V[k])
+				_, end = pointProbed(t, c, grid.U[last], grid.V[k])
+			}
 			if a, b := cell(t, start, 0, 0), cell(t, end, 0, 0); a != b {
 				t.Fatalf("%s column %d: the end says\n%s\nthe start\n%s", name, k, b, a)
 			}
