@@ -758,7 +758,11 @@ test("a straight base curve says so, and a curved one does not", async ({
   await expect(page.locator(".probe-plot")).toHaveCount(0);
   // The middle of [−2π, 2π] is exactly 0, as Go samples it.
   await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 0, /);
+  // The next example opens with the probe off, as its own study.
   await choosePreset(page, { label: "A necklace of spheres" });
+  await settled(page);
+  await expect(probeSwitch(page)).not.toBeChecked();
+  await probeSwitch(page).check();
   await settled(page);
   await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
   await expect(note).toHaveCount(0);
@@ -774,26 +778,32 @@ test("the probe follows presets and formats, and describes a surface study's sur
   await point(page).focus();
   await page.keyboard.press("Home");
   await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = -9\.425, /);
-  // Another preset keeps the probe on, at the middle of its curve.
+  // Another preset opens with the probe off, as its own study; turned on,
+  // the probe stands at the middle of its curve.
   await choosePreset(page, { label: "Trefoil · (2, 3)" });
   await settled(page);
-  await expect(probeSwitch(page)).toBeChecked();
+  await expect(probeSwitch(page)).not.toBeChecked();
+  await probeSwitch(page).check();
+  await settled(page);
   await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 3\.142, /);
   await expect(readout(page)).toHaveCount(3);
   // A surface study has no curve to probe: the probe describes its surface.
   await choosePreset(page, { label: "A torus revealing its centers" });
   await settled(page);
   await expect(probeSwitch(page)).toHaveCount(0);
-  await expect(
-    page.getByRole("checkbox", {
-      name: "Principal curvatures & centres at a point",
-    }),
-  ).toBeChecked();
+  const surfaceSwitch = page.getByRole("checkbox", {
+    name: "Principal curvatures & centres at a point",
+  });
+  await expect(surfaceSwitch).not.toBeChecked();
+  await surfaceSwitch.check();
+  await settled(page);
   await expect(readout(page)).toHaveCount(4);
-  // Back on a curve, it returns as it was.
+  // Back on a curve, the probe is off until turned on again.
   await choosePreset(page, { label: "Chords of a rising helix" });
   await settled(page);
-  await expect(probeSwitch(page)).toBeChecked();
+  await expect(probeSwitch(page)).not.toBeChecked();
+  await probeSwitch(page).check();
+  await settled(page);
   await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
 });
 

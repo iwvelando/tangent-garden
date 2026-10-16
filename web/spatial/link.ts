@@ -15,7 +15,7 @@ import {
   type SpatialConfig,
   type Vec3,
 } from "./types";
-import { spatialPresets } from "./presets";
+import { spatialPresets, type Flight } from "./presets";
 import { defaultLayers, initialView, type Layers } from "./renderer";
 import { lensAngles, projections, type Projection } from "./scene";
 import {
@@ -112,6 +112,46 @@ export const defaultAnimation: SpatialAnimation = {
   pace: "steady",
   probeMotion: "stays",
 };
+// A preset's flight as the animation setup (see presets.ts's Flight): its
+// camera path flown with the geometry fixed, or while the geometry moves,
+// or none.
+function flightAnimation(flight?: Flight): SpatialAnimation {
+  if (!flight) return structuredClone(defaultAnimation);
+  const flown = {
+    ...structuredClone(defaultAnimation),
+    path: structuredClone(flight.path),
+    duration: flight.duration,
+    repeat: flight.repeat ?? defaultAnimation.repeat,
+    pace: flight.pace ?? defaultAnimation.pace,
+  };
+  const { animate, ride } = flight;
+  if (!animate) return { ...flown, mode: "path" };
+  return {
+    ...flown,
+    mode: animate.mode,
+    // The ray is ridden, or the path flown, while the geometry moves.
+    camera: ride ? "ride" : (flight.camera ?? "path"),
+    ride: structuredClone(ride ?? defaultRide),
+    tracks: structuredClone(animate.tracks ?? []),
+    probeMotion: animate.probe ?? defaultAnimation.probeMotion,
+  };
+}
+// The study an example opens: its own fields, and the notebook's defaults
+// for every other, so that nothing of the study before it remains.
+export function presetStudy(index: number): SpatialStudy {
+  const preset = spatialPresets[index];
+  return {
+    config: structuredClone(preset.config),
+    layers: { ...defaultLayers, ...preset.layers },
+    view: { ...(preset.view ?? initialView) },
+    animation: flightAnimation(preset.flight),
+    probe: structuredClone(preset.probe ?? defaultProbe),
+    cut: structuredClone(preset.cut ?? defaultCut),
+    sight: structuredClone(preset.sight ?? defaultSight),
+    projection: preset.projection ?? "orthographic",
+    lensAngle: preset.lensAngle ?? lensAngles.initial,
+  };
+}
 
 const vec3 = {
   fields: { x: "number", y: "number", z: "number" },

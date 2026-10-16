@@ -206,10 +206,9 @@ export type Flight = {
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts), its own camera path to fly (see Flight), and its own
 // projection (with its lens angle when chosen) and manual view (see
-// scene.ts), its own layers, and its own
-// probe (see probe.ts); choosing one without turns them off, orthographic
-// from the default view with every layer shown, but keeps the probe on or
-// off.
+// scene.ts), its own layers, and its own probe (see probe.ts); choosing one
+// without opens the default for each (link.ts's presetStudy), so nothing of
+// the study before it remains.
 export const spatialPresets: {
   name: string;
   detail: string;
@@ -223,8 +222,8 @@ export const spatialPresets: {
   view?: SpatialCamera;
   // Only the layers it hides, or shows against the default.
   layers?: Partial<Layers>;
-  // A preset may open with the probe on at its own point; one without
-  // keeps the probe as it was, returning it to the middle of the curve.
+  // A preset may open with the probe on at its own point; one without opens
+  // with the probe off.
   probe?: Probe;
 }[] = [
   {

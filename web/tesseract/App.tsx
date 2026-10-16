@@ -54,7 +54,13 @@ import { objects, modes } from "./objects";
 import { axes, fieldLabel, labels } from "./fields";
 import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
-import { tesseractStudy, type TesseractStudy } from "./link";
+import {
+  defaultDuration,
+  defaultLayers,
+  presetStudy,
+  tesseractStudy,
+  type TesseractStudy,
+} from "./link";
 import { cycles, progressAt, type Pace, type Repeat } from "../timing";
 import "./style.css";
 
@@ -93,16 +99,11 @@ export default function TesseractApp({
     media.addEventListener("change", change);
     return () => media.removeEventListener("change", change);
   }, []);
-  const [layers, setLayers] = useState<Layers>({
-    edges: true,
-    guides: true,
-    faces: true,
-    selectedSection: 0,
-  });
+  const [layers, setLayers] = useState<Layers>(defaultLayers);
   const [motion, setMotion] = useState<Motion>("double"),
     [progress, setProgress] = useState(0),
     [playing, setPlaying] = useState(false),
-    [duration, setDuration] = useState(12),
+    [duration, setDuration] = useState(defaultDuration),
     // How the duration is spent (../timing.ts); progress is the time on
     // the timeline, from which the motion's progress follows.
     [repeat, setRepeat] = useState<Repeat>("once"),
@@ -322,35 +323,18 @@ export default function TesseractApp({
       />
     </Field>
   );
-  const choose = (i: number) => {
-    touched.current = null;
-    stop();
-    generation.current++;
-    setScalars({});
-    setConfig(structuredClone(tesseractPresets[i].config));
-    setPreset(i);
-    setMotion(tesseractPresets[i].motion);
-    setRepeat(tesseractPresets[i].repeat ?? "once");
-    setPace(tesseractPresets[i].pace ?? "steady");
-    setLoopError("");
-    setProgress(0);
-    setPreview(false);
-    setView({ ...initialView });
-    setDiagramView({ ...initialView });
-    pairedShadow.current = null;
-    setSpinning(false);
-    setError("");
-  };
+  // An example replaces the whole study, as a link does (link.ts).
+  const choose = (i: number) => openStudy(presetStudy(i), i);
   // A shared study replaces the whole study, as a preset does, and restores
   // the sender's layers, views, and motion.
   const [linkNotice, setLinkNotice] = useState("");
-  const openStudy = (study: TesseractStudy) => {
+  const openStudy = (study: TesseractStudy, preset: number | null = null) => {
     touched.current = null;
     stop();
     generation.current++;
     setScalars({});
     setConfig(study.config);
-    setPreset(null);
+    setPreset(preset);
     setLayers(study.layers);
     setMotion(study.motion);
     setDuration(study.duration);

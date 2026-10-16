@@ -20,8 +20,10 @@ import {
   type PoleKind,
   type Vec,
   type Window,
+  usesPole,
 } from "./types";
 import { presets } from "./presets";
+import { boundText } from "./engine-client";
 import {
   availableTargets,
   canTrace,
@@ -82,6 +84,26 @@ export const defaultAnimation: PlanarAnimation = {
   ...defaultTiming,
   probeMotion: "stays",
 };
+export const defaultLength = 0.8;
+export const defaultCamera: PlotCamera = { x: 0, y: 0, zoom: 1 };
+// The study an example opens: its own fields, and the notebook's defaults
+// for every other, so that nothing of the study before it remains.
+export function presetStudy(index: number): PlanarStudy {
+  const preset = presets[index];
+  const { kind, curve } = preset.config;
+  return {
+    config: structuredClone(preset.config),
+    bounds: { min: boundText(curve.min), max: boundText(curve.max) },
+    length: defaultLength,
+    stop: !!preset.stop,
+    poleKind: usesPole(kind) ? kind : "pedal",
+    layers: { ...defaultLayers },
+    camera: { ...defaultCamera },
+    weight: "regular",
+    probe: structuredClone(preset.probe ?? defaultProbe),
+    animation: structuredClone(preset.animation ?? defaultAnimation),
+  };
+}
 
 const vec = { fields: { x: "number", y: "number" } } satisfies SchemaOf<Vec>;
 const window = {
@@ -354,7 +376,12 @@ export function planarStudy(value: unknown): PlanarStudy {
       undefined,
       "bounds",
     ),
-    length: conform<number>(raw.length, { range: [0.1, 3] }, 0.8, "length"),
+    length: conform<number>(
+      raw.length,
+      { range: [0.1, 3] },
+      defaultLength,
+      "length",
+    ),
     stop: conform<boolean>(raw.stop, "boolean", false, "stop"),
     poleKind: conform<PoleKind>(
       raw.poleKind,
@@ -366,7 +393,7 @@ export function planarStudy(value: unknown): PlanarStudy {
     camera: conform<PlotCamera>(
       raw.camera,
       { fields: { x: "number", y: "number", zoom: { range: zoomRange } } },
-      { x: 0, y: 0, zoom: 1 },
+      defaultCamera,
       "camera",
     ),
     weight: conform<LineWeight>(

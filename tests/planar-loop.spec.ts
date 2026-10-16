@@ -312,7 +312,7 @@ test("the loop preset brings its tracks, repeat and pace, and passes the closure
     await expect(error(page)).toHaveCount(0);
     await button(page, "Stop").click();
   }
-  // A preset without an animation setup keeps the tracks it can, and plays
+  // A preset without an animation setup opens with the default one, played
   // once, steadily.
   await choosePreset(page, "0");
   await settled(page);

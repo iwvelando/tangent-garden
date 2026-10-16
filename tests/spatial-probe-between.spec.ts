@@ -407,7 +407,11 @@ test("only a curve evaluated at any parameter offers to stand between samples", 
   await probe.check();
   await settled(page);
   await expect(betweenSwitch(page)).toHaveCount(0);
+  // The next example opens with the probe off, as its own study.
   await choosePreset(page, { label: "Helix · a ribbon staircase" });
+  await settled(page);
+  await expect(probe).not.toBeChecked();
+  await probe.check();
   await settled(page);
   await expect(betweenSwitch(page)).toHaveCount(1);
 });

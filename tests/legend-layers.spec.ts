@@ -260,7 +260,11 @@ test("4D direction and section keys follow the layers that draw them", async ({
   await expect.poll(() => shown(legend)).toEqual([]);
 
   // A single section's translucent faces carry the inks of its cells' axes.
+  // The example opens with its edges drawn, so they are hidden again.
   await choosePreset(page, { label: "An octahedron within" });
+  await four.settle(page);
+  await expect(layer(page, "Edges & section contours")).toBeChecked();
+  await layer(page, "Edges & section contours").uncheck();
   await layer(page, "Translucent section faces").check();
   await four.settle(page);
   const faced = await shown(legend);
@@ -270,10 +274,10 @@ test("4D direction and section keys follow the layers that draw them", async ({
   await expect.poll(() => shown(legend)).toEqual([]);
   await layer(page, "Translucent section faces").check();
 
-  // Layers persist from study to study.
+  // Each example opens with its own layers, not those hidden before it.
   await choosePreset(page, { label: "A sphere in passing" });
-  await layer(page, "Edges & section contours").check();
   await four.settle(page);
+  await expect(layer(page, "Edges & section contours")).toBeChecked();
   const sections = await legend.locator("[data-section]").count();
   expect(sections).toBeGreaterThan(1);
   await expect.poll(async () => (await shown(legend)).length).toBe(sections);

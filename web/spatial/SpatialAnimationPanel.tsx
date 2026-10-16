@@ -46,7 +46,6 @@ import type {
   SpatialConfig,
   SurfaceQuery,
 } from "./types";
-import type { Flight } from "./presets";
 import {
   probeIndex,
   probeSteps,
@@ -248,20 +247,12 @@ type Props = {
   onPlay: () => void;
   // The animation setup, kept current for a study link.
   settings?: { current: SpatialAnimation | null };
-  // A setup from a study link, applied once per id. The notebook passes it
-  // only once the frame belongs to the linked study, so neither its tracks
-  // nor a trace mode is judged against the previous study.
+  // A setup from a study link or an example, applied once per id. The
+  // notebook passes it only once the frame belongs to that study, so
+  // neither its tracks nor a trace mode is judged against the previous one.
   restore?: { id: number; settings: SpatialAnimation } | null;
   // Shows a key view in the drawing as its manual camera, to adjust it.
   onShowView: (view: SpatialCamera) => void;
-  // A chosen preset's camera path and duration, or none, applied once per
-  // id: a preset brings its own path, or clears the path. The notebook
-  // passes it only once the frame belongs to the preset, so a mode or
-  // tracks it brings are judged against the preset's own study.
-  flight?: {
-    id: number;
-    flight?: Flight;
-  } | null;
 };
 
 export function SpatialAnimationPanel({
@@ -285,7 +276,6 @@ export function SpatialAnimationPanel({
   settings,
   restore,
   onShowView,
-  flight,
 }: Props) {
   const [mode, setMode] = useState<AnimationMode>("reveal");
   const probing = probe !== null;
@@ -434,7 +424,7 @@ export function SpatialAnimationPanel({
     };
   // After the retention and trace fallbacks above, which then see the
   // linked study's own frame.
-  const restored = useRef(-1);
+  const restored = useRef<number | null>(null);
   useEffect(() => {
     if (!restore || restore.id === restored.current) return;
     restored.current = restore.id;
@@ -448,32 +438,6 @@ export function SpatialAnimationPanel({
     setRepeat(restore.settings.repeat);
     setPace(restore.settings.pace);
   }, [restore]);
-  const flown = useRef(-1);
-  useEffect(() => {
-    if (!flight || flight.id === flown.current) return;
-    flown.current = flight.id;
-    const brought = flight.flight;
-    setPath(brought ? structuredClone(brought.path) : defaultPath);
-    // A preset brings its own repeat and pace, or the defaults.
-    setRepeat(brought?.repeat ?? "once");
-    setPace(brought?.pace ?? "steady");
-    if (brought?.animate) {
-      // The path flies, or the ray is ridden, while the geometry moves.
-      setMode(brought.animate.mode);
-      setCamera(brought.ride ? "ride" : (brought.camera ?? "path"));
-      if (brought.ride) setRide(structuredClone(brought.ride));
-      if (brought.animate.tracks)
-        setTracks(structuredClone(brought.animate.tracks));
-      setProbeMotion(brought.animate.probe ?? "stays");
-      setDuration(brought.duration);
-    } else if (brought) {
-      setMode("path");
-      setDuration(brought.duration);
-    } else {
-      setMode((m) => (m === "path" ? "reveal" : m));
-      setCamera((c) => (c === "path" || c === "ride" ? "hold" : c));
-    }
-  }, [flight]);
   const running =
     status === "playing" || status === "preparing" || status === "exporting";
   const active = status !== "idle";
