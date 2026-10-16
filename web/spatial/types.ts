@@ -899,13 +899,24 @@ export type ImplicitResult = {
   triangles: Int32Array;
   cut: Int32Array;
   open: Int32Array;
-  components: { triangles: number; euler: number; closed: boolean }[];
+  // Pairs of vertex indices: the edges along which two sheets cross, each
+  // shared by four triangles.
+  crossings: Int32Array;
+  components: {
+    triangles: number;
+    euler: number;
+    closed: boolean;
+    crossings: number;
+  }[];
   sections: ImplicitSection[];
   marks: Vec3[];
   nonfinite: number;
   discontinuities: number;
   ambiguous: number;
   singular: number;
+  cones: number;
+  crossingsUnresolved: number;
+  crossingsExhausted: boolean;
   sectionDiscontinuities: number;
   sectionsSkipped: number;
   truncated: boolean;

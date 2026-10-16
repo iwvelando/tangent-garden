@@ -160,6 +160,12 @@ test("notes report each surface's pieces, genus and sections", async ({
   page,
 }) => {
   await ready(page);
+  // The Klein bottle is meshed through the curve where it meets itself.
+  await choosePreset(page, { label: "A Klein bottle passing through itself" });
+  await settled(page);
+  await expect(note(page)).toContainText(
+    /^The mesh is one piece, closed, meeting itself along [\d,]+ edges \(Euler characteristic 0\)\./,
+  );
   await choosePreset(page, latitudes);
   await settled(page);
   await expect(note(page)).toHaveText(
@@ -316,15 +322,20 @@ test("poles, undefined regions and ambiguous faces are reported, never meshed", 
   await expect(note(page)).toContainText(
     "grid faces have corners alternating in sign",
   );
-  // A double cone whose apex lies inside a cell is meshed as two nappes;
-  // on a grid point, they meet at a vertex with no normal.
+  // A double cone whose apex lies on a cell's diagonal edge is meshed as
+  // two nappes meeting apart beside it; on a grid point, they meet at a
+  // vertex with no normal.
   await f.fill("x^2 + y^2 - z^2");
   await settled(page);
   await expect(note(page)).toContainText("The mesh has two pieces");
+  await expect(note(page)).not.toContainText("isolated point");
   await field(page, "x from").fill("-1.3");
   await field(page, "y from").fill("-1.3");
   await settled(page);
   await expect(note(page)).toContainText("The mesh is one piece");
+  await expect(note(page)).toContainText(
+    "Its sheets meet at 1 isolated point, as at a cone's apex.",
+  );
   await expect(note(page)).toContainText("1 vertex has no normal");
 });
 
@@ -550,7 +561,8 @@ function study(): SpatialResult {
     triangles: new Int32Array([0, 1, 2, 0, 2, 3, 0, 1, 4]),
     cut: new Int32Array([0, 1, 1, 4]),
     open: new Int32Array([2, 3]),
-    components: [{ triangles: 3, euler: 1, closed: false }],
+    crossings: new Int32Array(),
+    components: [{ triangles: 3, euler: 1, closed: false, crossings: 0 }],
     sections: [
       {
         offset: 0.5,
@@ -577,6 +589,9 @@ function study(): SpatialResult {
     discontinuities: 2,
     ambiguous: 0,
     singular: 0,
+    cones: 0,
+    crossingsUnresolved: 0,
+    crossingsExhausted: false,
     sectionDiscontinuities: 0,
     sectionsSkipped: 0,
     truncated: false,
@@ -725,14 +740,45 @@ test("the grid and the note follow Go's shapes and wording", () => {
   const mixed = {
     ...r,
     components: [
-      { triangles: 1, euler: 2, closed: true },
-      { triangles: 1, euler: -2, closed: true },
-      { triangles: 1, euler: 2, closed: true },
+      { triangles: 1, euler: 2, closed: true, crossings: 0 },
+      { triangles: 1, euler: -2, closed: true, crossings: 0 },
+      { triangles: 1, euler: 2, closed: true, crossings: 0 },
     ],
     sections: [],
   };
   expect(implicitNote(mixed)[0]).toBe(
     "The mesh has three pieces: two closed, of genus 0 (Euler characteristic 2); one closed, of genus 2 (Euler characteristic −2).",
+  );
+  // A piece that meets itself has no genus to read; isolated meetings,
+  // what was left out, and an exhausted budget are each said once.
+  const crossed = {
+    ...r,
+    components: [{ triangles: 9, euler: 0, closed: true, crossings: 186 }],
+    sections: [],
+    open: new Int32Array(),
+    cut: new Int32Array(),
+    discontinuities: 0,
+    marks: [],
+    cones: 1,
+    crossingsUnresolved: 3,
+    singular: 187,
+  };
+  expect(implicitNote(crossed)).toEqual([
+    "The mesh is one piece, closed, meeting itself along 186 edges (Euler characteristic 0).",
+    "It has 3 triangles on 5 vertices, from a 4 × 4 × 4 grid.",
+    "Its sheets meet at 1 isolated point, as at a cone's apex.",
+    "3 tetrahedra where sheets meet could not be meshed and are left out, as where three sheets meet.",
+    "187 vertices have no normal: ∇F vanishes there, as at a cone point or where the surface crosses itself, or is not finite.",
+  ]);
+  expect(
+    implicitNote({
+      ...crossed,
+      cones: 0,
+      crossingsUnresolved: 0,
+      crossingsExhausted: true,
+    }),
+  ).toContain(
+    "The surface meets itself across too many cells to mesh as crossings, so it is meshed without them: use fewer cells.",
   );
   // Refinement, when asked for, and how it ended.
   const levels = (refinement: ImplicitResult["refinement"], more = {}) =>

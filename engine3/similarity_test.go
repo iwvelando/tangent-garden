@@ -489,8 +489,8 @@ func budgetFor(q Request, m similarity) budget {
 		// of the copy's, and every point of the copy within 10⁻⁹ of a cell
 		// of the original's level set.
 		b.skipped = prefixed("implicit.positions", "implicit.normals", "implicit.triangles", "implicit.cut",
-			"implicit.open", "implicit.components", "implicit.sections.paths", "implicit.sections.polygon", "implicit.marks")
-		b.worst["cells"], b.worst["level"] = 1e-2, 1e-9
+			"implicit.open", "implicit.crossings", "implicit.components", "implicit.sections.paths", "implicit.sections.polygon", "implicit.marks")
+		b.worst["cells"], b.worst["level"], b.worst["crossing"] = 1e-2, 1e-9, 1e-4
 	}
 	return b
 }
@@ -887,7 +887,32 @@ func compare(t *testing.T, q Request, m similarity) (*deviation, budget, bool) {
 		worst("cells", "an original mesh vertex", farthest(moved(wm), gm))
 		worst("cells", "an original section point", farthest(moved(ws), gs))
 		worst("cells", "a section plane's corner", nearby(m, wp, gp))
-		for _, p := range append(gm, gs...) {
+		// A vertex without a normal, where ∇F vanishes, such as a node
+		// where sheets cross, has no distance to the level that F − c
+		// over |∇F| measures; the crossing tests place those. A crossing
+		// tetrahedron's vertex, within two cells of one, lies on F shifted
+		// by 10⁻⁴ of a cell where F only touches its edge, so is held to
+		// that, as "crossing".
+		var singular []Vec3
+		for k, p := range gm {
+			if got.Implicit.normal(int32(k)) == (Vec3{}) {
+				singular = append(singular, p)
+			}
+		}
+		for k, p := range gm {
+			if got.Implicit.normal(int32(k)) == (Vec3{}) {
+				continue
+			}
+			class := "level"
+			for _, y := range singular {
+				if y.sub(p).norm() <= 2*cell*m.scale {
+					class = "crossing"
+					break
+				}
+			}
+			worst(class, "a moved point off the level set", offLevel(f, ref.Implicit.Level, p.sub(m.shift).mul(1/m.scale), cell))
+		}
+		for _, p := range gs {
 			worst("level", "a moved point off the level set", offLevel(f, ref.Implicit.Level, p.sub(m.shift).mul(1/m.scale), cell))
 		}
 	}

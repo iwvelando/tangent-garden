@@ -75,6 +75,8 @@ Items 1 and 2 need a decision or a profile before any code. Item 3 lists limits 
 
 Each is known and documented; none is worth a branch until a study needs it.
 
+- **Implicit self-crossings** (`engine3/crossing.go`): a level set that crosses itself is meshed as sheets sharing crossing edges, whose node vertices have no normal, so the seam shades flat and some jaggedness shows when zoomed in. The note cannot name the surface either. Re-stitching each sheet through the crossing would fix both; the plan, with everything needed to start, is in [implicit-crossings-restitch.md](implicit-crossings-restitch.md).
+
 - **3D probe** (`web/spatial/probe.ts`, `engine3/probe.go`, `engine3/diagnostics.go`; diagnostics are requested only while the probe is on, and studies without it must stay byte-identical, which Go tests assert per format):
   - Probe lines are depth-tested, so sheets hide them.
   - A mirror's surface probe, and its light's, snaps to each frame's grid. A patch's, and a canal's or ruled surface's on a curve evaluated at any parameter, can stand between samples (**At any u and v**, **At any t and u**); a mirror is evaluated only at its samples.
