@@ -2423,6 +2423,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
 type NotebookKind = "2d" | "3d" | "4d";
+const canonicalOrigin = "https://tangent-garden.isaacvelando.com";
 const notebookKind = (): NotebookKind => {
   const study = new URLSearchParams(location.search).get("study");
   return study === "3d" || study === "4d" ? study : "2d";
@@ -2449,6 +2450,17 @@ function Notebook() {
     else url.searchParams.set("study", next);
     history.pushState(null, "", url);
   };
+  // Each notebook is its own canonical address, matching public/sitemap.xml.
+  useEffect(() => {
+    const url = new URL("/", canonicalOrigin);
+    if (mode !== "2d") url.searchParams.set("study", mode);
+    document
+      .querySelector('link[rel="canonical"]')
+      ?.setAttribute("href", url.href);
+    document
+      .querySelector('meta[property="og:url"]')
+      ?.setAttribute("content", url.href);
+  }, [mode]);
   useEffect(() => {
     const pop = () => show(notebookKind());
     window.addEventListener("popstate", pop);

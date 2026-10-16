@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- One address per notebook. Each page names itself canonical (web/main.tsx). -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://tangent-garden.isaacvelando.com/</loc>
+  </url>
+  <url>
+    <loc>https://tangent-garden.isaacvelando.com/?study=3d</loc>
+  </url>
+  <url>
+    <loc>https://tangent-garden.isaacvelando.com/?study=4d</loc>
+  </url>
+</urlset>

@@ -80,7 +80,7 @@ Serve **the contents of `dist/`** over HTTP(S), preserving its structure. Use th
 
 The build pairs the Go WASM runtime with the installed compiler and checks the resulting distribution for its required assets and notices. Static-host compression is useful for the several-megabyte WASM module.
 
-The live site is **https://tangent-garden.isaacvelando.com**. Every push to `main` that passes verification deploys the tested `dist/` there, through the `production` environment. Browser smoke tests (`tests/smoke.spec.ts` and `tests/share.spec.ts`) then check the live site. Run them yourself with `BASE_URL=https://tangent-garden.isaacvelando.com npx playwright test --grep @smoke`. A failed run on `main` opens a "Production deploy failed" issue. Serve these headers wherever you host it:
+The live site is **https://tangent-garden.isaacvelando.com**. Every push to `main` that passes verification deploys the tested `dist/` there, through the `production` environment. Browser smoke tests (`tests/smoke.spec.ts`, `tests/share.spec.ts` and `tests/sitemap.spec.ts`) then check the live site. `public/sitemap.xml` lists one address per notebook (`/`, `/?study=3d`, `/?study=4d`), `public/robots.txt` names it, and each notebook sets its canonical link to its own address; a new notebook needs an entry there. Run them yourself with `BASE_URL=https://tangent-garden.isaacvelando.com npx playwright test --grep @smoke`. A failed run on `main` opens a "Production deploy failed" issue. Serve these headers wherever you host it:
 
 - **Content-Security-Policy:** the value in [`deploy/content-security-policy.txt`](deploy/content-security-policy.txt). `make preview` sends it too, so the browser tests run under it.
 - **Content type:** serve `engine.wasm` as `application/wasm`.
