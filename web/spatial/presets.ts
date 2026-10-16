@@ -2888,7 +2888,9 @@ export const spatialPresets: {
   // of the ring shows through the see-through wall. The pan turns with the
   // yaw, so one whole turn of yaw carries the target once around the core
   // circle: a steady leg of one turn flies the tunnel's length, and its
-  // last frame is its first, so it loops.
+  // last frame is its first, so it loops. Strokes taper with depth: even
+  // strokes give the near rings, swept large past the eye, the same
+  // weight as the far ones, so the rings look unevenly drawn.
   {
     name: "Down a torus's tunnel",
     detail:
@@ -2913,6 +2915,7 @@ export const spatialPresets: {
       opacity: 0.25,
       hidden: "faint",
       weight: "regular",
+      depth: "taper",
     },
     layers: { frames: false, seam: false },
     projection: "chosen",
