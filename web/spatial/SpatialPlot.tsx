@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefinementView, SpatialResult } from "./types";
 import type { SpatialCamera } from "./link";
 import { createGesture } from "../gestures";
@@ -272,7 +272,9 @@ export function SpatialPlot({
       }
     }
   };
-  useEffect(() => {
+  // A layout effect, so the renderer exists when the first result is
+  // uploaded below.
+  useLayoutEffect(() => {
     const element = canvas.current!;
     try {
       renderer.current = createRenderer(element);
@@ -338,7 +340,11 @@ export function SpatialPlot({
       renderer.current = null;
     };
   }, []);
-  useEffect(() => {
+  // Before the page can see the frame as settled: a frame whose bounds move
+  // the view it is refined to (as a preset's first frame does, refined to
+  // the view the previous study's bounds framed) reports the new view in
+  // the same task, so the drawing never reads idle in between.
+  useLayoutEffect(() => {
     renderer.current?.upload(result);
     renderer.current?.setProbe(state.current.probe);
     const drawable = renderer.current?.layers();
