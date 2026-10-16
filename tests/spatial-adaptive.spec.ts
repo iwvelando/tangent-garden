@@ -630,7 +630,7 @@ const band = "A screw band coiled round a ring",
 
 const addedPoints = async (page: Page) =>
   Number(
-    (await readout(page).textContent())!
+    (await readout(page).first().textContent())!
       .match(/^([\d,]+) points/)![1]
       .replace(/,/g, ""),
   );
@@ -702,7 +702,10 @@ test("the striped trefoil's meridians open refined and are exported with their r
   await settled(page);
   await openSampling(page);
   await expect(refine(page)).toBeChecked();
-  await expect(readout(page)).toHaveText(
+  // The skin is refined with the stripes, or its flat facets would hide
+  // them where the tube is concave.
+  await expect(refineSurface(page)).toBeChecked();
+  await expect(readout(page).first()).toHaveText(
     /^[\d,]+ points added between samples\.$/,
   );
   // Twelve meridians, each winding thirty times round the knot at about
@@ -727,6 +730,7 @@ test("the cord's strands open refined and lose their refinement as they unwind",
   await settled(page);
   await openSampling(page);
   await expect(refine(page)).toBeChecked();
+  await expect(refineSurface(page)).toBeChecked();
   // Twisted 30 turns, eight samples a turn, every meridian needs points
   // between samples.
   const opening = await addedPoints(page);

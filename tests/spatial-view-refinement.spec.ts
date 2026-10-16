@@ -224,3 +224,44 @@ test("playback held at the current view refines every frame to it", async ({
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
   await expect.poll(() => pixels(page)).toBe(still);
 });
+
+test("a study refined to its view stays busy until it is refined to the view it opens at", async ({
+  page,
+}) => {
+  // A slow engine, as on a loaded runner: each request reaches the worker
+  // 300 ms late, so a preset's first frame returns after its camera has
+  // rested, refined to the view as the previous study's bounds framed it.
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (
+      this: Worker,
+      ...args: Parameters<Worker["postMessage"]>
+    ) {
+      setTimeout(() => post.apply(this, args), 300);
+    } as Worker["postMessage"];
+  });
+  await page.goto("/?study=3d");
+  await settled(page);
+  // aria-busy as each task leaves it, so a value React sets and replaces
+  // before the page can run anything else is not counted.
+  await stage(page).evaluate((element) => {
+    const seen: string[] = [];
+    (window as unknown as { busy: string[] }).busy = seen;
+    new MutationObserver(() =>
+      seen.push(element.getAttribute("aria-busy")!),
+    ).observe(element, { attributes: true, attributeFilter: ["aria-busy"] });
+  });
+  await choosePreset(page, spring);
+  await settled(page);
+  await expect(readout(page)).toContainText("finer in view");
+  // Past another rest of the camera and another delayed calculation.
+  await page.waitForTimeout(1500);
+  await settled(page);
+  const seen = await page.evaluate(
+    () => (window as unknown as { busy: string[] }).busy,
+  );
+  // Busy, then idle once: never idle with the drawing still to be refined
+  // to the view it shows.
+  expect(seen).toContain("false");
+  expect(seen.slice(seen.indexOf("false"))).not.toContain("true");
+});

@@ -2741,7 +2741,8 @@ export const spatialPresets: {
   // 0.35 sin 9t), with twelve meridians wound 30 times about the knot, the
   // frame's return angle spread along it so every stripe closes. About
   // eight samples a turn; refining between samples draws every stripe as a
-  // smooth spiral over the beads.
+  // smooth spiral over the beads, and refining the surface with them keeps
+  // the skin's flat facets from hiding the stripes where it is concave.
   {
     name: "A beaded trefoil wound with spiral stripes",
     detail:
@@ -2752,6 +2753,7 @@ export const spatialPresets: {
       samples: 240,
       lines: 12,
       adaptive: true,
+      adaptiveSurface: true,
       canal: { radius: 0.3, profile: "1+0.35*sin(9*t)", meridians: 12 },
       frame: { ...base.frame, twist: 30, closure: "distribute" },
     },
@@ -2761,7 +2763,8 @@ export const spatialPresets: {
   // times along it, eight samples a turn, steep as a cord's strands, and
   // unwind until they follow the carried frame and back; the helix is
   // open, so every frame ends without a seam, and refining between samples
-  // keeps each strand smooth.
+  // keeps each strand smooth. The surface is refined with the strands, or
+  // the flat facets between rings would hide them on each coil's inside.
   {
     name: "A cord twisted round a spring",
     detail:
@@ -2773,6 +2776,7 @@ export const spatialPresets: {
       samples: 240,
       lines: 12,
       adaptive: true,
+      adaptiveSurface: true,
       canal: { radius: 0.3, profile: "1+0.2*sin(5*t)", meridians: 6 },
       frame: { ...base.frame, reference: { x: 0, y: 1, z: 0 }, twist: 30 },
       curve: {
