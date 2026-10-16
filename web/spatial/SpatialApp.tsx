@@ -145,6 +145,7 @@ import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
 import {
   defaultAnimation,
+  presetStudy,
   spatialStudy,
   type SpatialAnimation,
   type SpatialCamera,
@@ -389,43 +390,13 @@ export default function SpatialApp({
     setPreset("");
     setConfig(change);
   };
+  // An example replaces the whole study, as a link does (link.ts). Reset
+  // view and Home return to its opening view while the study is its own.
   const choose = (index: string) => {
     if (index === "") return;
-    generation.current++;
-    touched.current = null;
-    setStates({});
-    setPreset(index);
-    setCustomOpened(spatialPresets[+index].config.format === "parametric");
-    setConfig(structuredClone(spatialPresets[+index].config));
-    // A preset brings its own cut, or none, so it draws as its picture.
-    setCut(structuredClone(spatialPresets[+index].cut ?? defaultCut));
-    setSight(structuredClone(spatialPresets[+index].sight ?? defaultSight));
-    // And its own layers, or every one shown.
-    setLayers({ ...defaultLayers, ...spatialPresets[+index].layers });
-    // And its own camera path, or none.
-    setPresetFlight((f) => ({
-      id: (f?.id ?? 0) + 1,
-      flight: spatialPresets[+index].flight,
-    }));
-    const probed = spatialPresets[+index].probe;
-    setProbe((p) =>
-      probed
-        ? structuredClone(probed)
-        : {
-            ...p,
-            position: defaultProbe.position,
-            across: defaultProbe.across,
-          },
-    );
-    // And its own projection and opening view, or orthographic from the
-    // default view.
-    setLensing(spatialPresets[+index].projection ?? "orthographic");
-    setLensAngle(spatialPresets[+index].lensAngle ?? lensAngles.initial);
-    // Reset view and Home return to it while the study is the preset's.
+    openStudy(-++presetAnimations.current, presetStudy(+index), index);
     const opening = spatialPresets[+index].view;
     setHome(opening ? { ...opening } : null);
-    setRestoredView(null);
-    setReset(reset + 1);
   };
   // A shared study replaces the whole study, as a preset does, and restores
   // the sender's layers, camera, and animation setup.
@@ -439,19 +410,17 @@ export default function SpatialApp({
   // view, until another preset or a link replaces the study, or the default.
   const [home, setHome] = useState<SpatialCamera | null>(null);
   const animationSettings = useRef<SpatialAnimation | null>(null);
-  const [presetFlight, setPresetFlight] = useState<{
-    id: number;
-    flight?: (typeof spatialPresets)[number]["flight"];
-  } | null>(null);
+  // Preset setups count down from -1, apart from links' ids.
+  const presetAnimations = useRef(0);
   const [restoredAnimation, setRestoredAnimation] = useState<{
     id: number;
     settings: SpatialAnimation;
   } | null>(null);
-  const openStudy = (id: number, study: SpatialStudy) => {
+  const openStudy = (id: number, study: SpatialStudy, preset = "") => {
     generation.current++;
     touched.current = null;
     setStates({});
-    setPreset("");
+    setPreset(preset);
     setCustomOpened(study.config.format === "parametric");
     setConfig(study.config);
     setLayers(study.layers);
@@ -3668,7 +3637,6 @@ export default function SpatialApp({
             onPlay={showPlot}
             settings={animationSettings}
             restore={busy ? null : restoredAnimation}
-            flight={busy ? null : presetFlight}
             onShowView={(view) => {
               setRestoredView({ reset: reset + 1, view });
               setReset(reset + 1);

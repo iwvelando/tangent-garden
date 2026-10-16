@@ -26,7 +26,6 @@ import { RefineBetweenSamples } from "./RefineBetweenSamples";
 import { StopAtCaustic } from "./StopAtCaustic";
 import { PlanarProbePanel } from "./PlanarProbePanel";
 import {
-  defaultProbe,
   parameterAt,
   probeBetween,
   probeSample,
@@ -58,7 +57,7 @@ import {
   type ViewRect,
   refinesBetweenSamples,
 } from "./types";
-import { EngineClient, EngineError, boundText } from "./engine-client";
+import { EngineClient, EngineError } from "./engine-client";
 import { fieldLabel } from "./planar-fields";
 import { useTheme } from "./useTheme";
 import { AnimationPanel } from "./AnimationPanel";
@@ -76,6 +75,7 @@ import {
 import {
   defaultAnimation,
   planarStudy,
+  presetStudy,
   type PlanarAnimation,
   type PlanarStudy,
   type PlotCamera,
@@ -257,16 +257,15 @@ function setIn(config: Config, path: string[], value: number): Config {
   parent[path.at(-1)!] = value;
   return next;
 }
+// The notebook opens on its first example.
+const opening = presetStudy(0);
 function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
-  const [config, setConfig] = useState<Config>(presets[0].config);
+  const [config, setConfig] = useState<Config>(opening.config);
   const [preset, setPreset] = useState("0");
   // Remembers the pole construction while another tab is selected.
-  const [poleKind, setPoleKind] = useState<PoleKind>("pedal");
+  const [poleKind, setPoleKind] = useState<PoleKind>(opening.poleKind);
   const [frame, setFrame] = useState<Frame | null>(null);
-  const [bounds, setBounds] = useState<Bounds>({
-    min: boundText(config.curve.min),
-    max: boundText(config.curve.max),
-  });
+  const [bounds, setBounds] = useState<Bounds>(opening.bounds);
   const [animation, setAnimation] = useState<AnimationView | null>(null);
   const [animationRunning, setAnimationRunning] = useState(false);
   // The engine's error, and the configuration path of the field it names.
@@ -288,7 +287,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   }, []);
   const [settledKey, setSettledKey] = useState("");
   // The probe asks Go for the base curve's diagnostics (planar-probe.ts).
-  const [probe, setProbe] = useState<PlanarProbe>(defaultProbe);
+  const [probe, setProbe] = useState<PlanarProbe>(opening.probe);
   const probing = probe.enabled && probeSupported(config);
   // A study refined to its view is refined to what the drawing shows while
   // it is zoomed in, once the camera has rested for a moment; until then
@@ -338,17 +337,10 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   const { dark, preference } = theme;
   const [reset, setReset] = useState(0);
   const [refit, setRefit] = useState(0);
-  const [length, setLength] = useState(0.8);
-  const [stopAtCaustic, setStopAtCaustic] = useState(false);
-  const [layers, setLayers] = useState<Layers>({
-    base: true,
-    derived: true,
-    lines: true,
-    incident: true,
-    virtual: true,
-    axes: false,
-  });
-  const [weight, setWeight] = useState<LineWeight>("regular");
+  const [length, setLength] = useState(opening.length);
+  const [stopAtCaustic, setStopAtCaustic] = useState(opening.stop);
+  const [layers, setLayers] = useState<Layers>(opening.layers);
+  const [weight, setWeight] = useState<LineWeight>(opening.weight);
   const narrow = useMediaQuery("(max-width: 700px)");
   const expressions = useDisclosure("expressions");
   const indices = useDisclosure("indices");
@@ -1243,33 +1235,9 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       )}
     </StudyExplanation>
   );
-  const choosePreset = (index: number) => {
-    touched.current = null;
-    setPreset(String(index));
-    scalarGeneration.current++;
-    const next = presets[index].config;
-    if (usesPole(next.kind)) setPoleKind(next.kind);
-    setConfig(structuredClone(next));
-    setProbe(presets[index].probe ?? defaultProbe);
-    setStopAtCaustic(!!presets[index].stop);
-    setBounds({
-      min: boundText(next.curve.min),
-      max: boundText(next.curve.max),
-    });
-    setReset(reset + 1);
-    // A preset brings its own animation setup, or plays the current one
-    // once, steadily (timing.ts).
-    setRestoredAnimation({
-      id: -++presetAnimations.current,
-      // A camera path belongs to its own study.
-      settings: presets[index].animation ?? {
-        ...(animationSettings.current ?? defaultAnimation),
-        repeat: "once",
-        pace: "steady",
-        path: undefined,
-      },
-    });
-  };
+  // An example replaces the whole study, as a link does (planar-link.ts).
+  const choosePreset = (index: number) =>
+    openStudy(-++presetAnimations.current, presetStudy(index), String(index));
   // A shared study replaces the whole study, as a preset does, and restores
   // the sender's layers, framing, and animation setup.
   const [linkNotice, setLinkNotice] = useState("");
@@ -1285,9 +1253,9 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     id: number;
     settings: PlanarAnimation;
   } | null>(null);
-  const openStudy = (id: number, study: PlanarStudy) => {
+  const openStudy = (id: number, study: PlanarStudy, preset = "custom") => {
     touched.current = null;
-    setPreset("custom");
+    setPreset(preset);
     scalarGeneration.current++;
     setPoleKind(study.poleKind);
     setConfig(study.config);

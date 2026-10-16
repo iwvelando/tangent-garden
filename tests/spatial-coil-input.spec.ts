@@ -369,8 +369,8 @@ test("an SVG built on a coil names it and records it in the metadata", async ({
 test("the cord opens without the probe the gallery's previous example leaves on", async ({
   page,
 }) => {
-  // The example before it probes a focal sheet; a preset without its own
-  // probe keeps the probe on, which would mark the cord's picture.
+  // The example before it probes a focal sheet; a preset replaces the whole
+  // study, so the cord's picture is drawn without it.
   expect(spatialPresets[+cord - 1].probe?.enabled).toBe(true);
   await ready(page);
   await choosePreset(page, String(+cord - 1));

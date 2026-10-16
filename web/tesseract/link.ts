@@ -8,6 +8,7 @@ import {
   type Timing,
 } from "../study-link";
 import { objects, defaultConfig } from "./objects";
+import { tesseractPresets } from "./presets";
 import { lineWeightSchema } from "../line-weight";
 import {
   initialView,
@@ -125,12 +126,29 @@ const layers: SchemaOf<Layers> = {
     weight: { optional: lineWeightSchema },
   },
 };
-const defaultLayers: Layers = {
+export const defaultLayers: Layers = {
   edges: true,
   guides: true,
   faces: true,
   selectedSection: 0,
 };
+
+export const defaultDuration = 12;
+// The study an example opens: its own fields, and the notebook's defaults
+// for every other, so that nothing of the study before it remains.
+export function presetStudy(index: number): TesseractStudy {
+  const preset = tesseractPresets[index];
+  return {
+    config: structuredClone(preset.config),
+    layers: { ...defaultLayers },
+    view: { ...initialView },
+    diagramView: { ...initialView },
+    motion: preset.motion,
+    duration: defaultDuration,
+    repeat: preset.repeat ?? "once",
+    pace: preset.pace ?? "steady",
+  };
+}
 
 export function tesseractStudy(value: unknown): TesseractStudy {
   if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -202,7 +220,7 @@ export function tesseractStudy(value: unknown): TesseractStudy {
     duration: conform<number>(
       raw.duration,
       { range: durationRange },
-      12,
+      defaultDuration,
       "duration",
     ),
     ...timing,
