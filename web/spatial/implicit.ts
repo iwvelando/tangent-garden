@@ -34,9 +34,12 @@ export function implicitGrid(box: ImplicitBox, cells: number) {
   ];
 }
 // A piece of the mesh by its topology: a closed orientable surface of
-// Euler characteristic χ has genus (2 − χ)/2.
+// Euler characteristic χ has genus (2 − χ)/2. A piece that meets itself
+// has no genus to read.
 function piece(c: ImplicitResult["components"][number]) {
   const euler = `Euler characteristic ${c.euler.toLocaleString().replace("-", "−")}`;
+  if (c.crossings)
+    return `${c.closed ? "closed" : "open"}, meeting itself along ${count(c.crossings, "edge", "edges")} (${euler})`;
   if (!c.closed) return `open, with ${euler}`;
   return c.euler % 2 === 0 && c.euler <= 2
     ? `closed, of genus ${(2 - c.euler) / 2} (${euler})`
@@ -98,9 +101,21 @@ export function implicitNote(r: ImplicitResult): string[] {
     out.push(
       `${count(r.discontinuities, "grid edge changes", "grid edges change")} sign across a pole or a jump rather than a root: ${r.marks.length < r.discontinuities ? `the first ${r.marks.length.toLocaleString()} are` : r.discontinuities === 1 ? "it is" : "they are"} marked with crosses and never meshed.`,
     );
+  if (r.cones)
+    out.push(
+      `Its sheets meet at ${count(r.cones, "isolated point", "isolated points")}, as at a cone's apex.`,
+    );
+  if (r.crossingsUnresolved)
+    out.push(
+      `${count(r.crossingsUnresolved, "tetrahedron", "tetrahedra")} where sheets meet could not be meshed and ${r.crossingsUnresolved === 1 ? "is" : "are"} left out, as where three sheets meet.`,
+    );
+  if (r.crossingsExhausted)
+    out.push(
+      "The surface meets itself across too many cells to mesh as crossings, so it is meshed without them: use fewer cells.",
+    );
   if (r.singular)
     out.push(
-      `${count(r.singular, "vertex has", "vertices have")} no normal: ∇F vanishes there, as at a cone point, or is not finite.`,
+      `${count(r.singular, "vertex has", "vertices have")} no normal: ∇F vanishes there, as at a cone point or where the surface crosses itself, or is not finite.`,
     );
   if (r.ambiguous)
     out.push(

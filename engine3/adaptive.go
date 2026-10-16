@@ -274,6 +274,8 @@ type adaptive struct {
 	points    map[point]int32
 	rejected  map[[2]point]Vec3
 	exhausted bool
+	// deepest lists the leaves still flagged at the deepest level.
+	deepest []int32
 }
 
 func newAdaptive(s *field, levels int) *adaptive {
@@ -437,6 +439,7 @@ func (a *adaptive) refine() (int, error) {
 			}
 			if int(a.r.tets[t].gen) >= a.maxGen {
 				unresolved++
+				a.deepest = append(a.deepest, t)
 				continue
 			}
 			if !room() {
@@ -521,9 +524,11 @@ func (a *adaptive) march(v [4]point) {
 	a.marchTet(g, at, func(u, w int) (int32, bool) { return a.vertex(v[u], v[w]) })
 }
 
-// mesh marches the cubes in grid order: a cube never refined as its six
-// tetrahedra, like the uniform grid, and a refined one leaf by leaf.
-func (a *adaptive) mesh(fail func() error) error {
+// each visits the tetrahedra in mesh order: a cube never refined as its
+// six tetrahedra, like the uniform grid, and a refined one leaf by leaf;
+// after each of a cube's six tetrahedra, or its leaves, done is called,
+// and visiting stops at its first error.
+func (a *adaptive) each(visit func(tet), done func() error) error {
 	for c := range a.n[0] * a.n[1] * a.n[2] {
 		first, refined := a.r.roots[c]
 		if !refined && !a.defined(c) {
@@ -532,17 +537,73 @@ func (a *adaptive) mesh(fail func() error) error {
 		for t := range 6 {
 			if refined {
 				for _, l := range a.r.walk(first+int32(t), nil) {
-					a.march(a.r.tets[l].v)
+					visit(a.r.tets[l].v)
 				}
 			} else {
-				a.march(a.kuhn(c, t))
+				visit(a.kuhn(c, t))
 			}
-			if err := fail(); err != nil {
+			if err := done(); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// mesh marches the tetrahedra in mesh order, meshing crossing ones as
+// such.
+func (a *adaptive) mesh(x *crossings, fail func() error) error {
+	return a.each(func(v tet) {
+		if x.has(v) {
+			x.emit(v)
+		} else {
+			a.march(v)
+		}
+	}, fail)
+}
+
+// crossings meshes the refined mesh's crossing tetrahedra, on the
+// refiner's lattice.
+func (a *adaptive) crossings() *crossings {
+	leaves := func(cube int) []tet {
+		first, refined := a.r.roots[cube]
+		var out []tet
+		for t := range 6 {
+			if refined {
+				for _, l := range a.r.walk(first+int32(t), nil) {
+					out = append(out, a.r.tets[l].v)
+				}
+			} else {
+				out = append(out, a.kuhn(cube, t))
+			}
+		}
+		return out
+	}
+	of := func(cube, t int) []tet {
+		first, refined := a.r.roots[cube]
+		if !refined {
+			return []tet{a.kuhn(cube, t)}
+		}
+		var out []tet
+		for _, l := range a.r.walk(first+int32(t), nil) {
+			out = append(out, a.r.tets[l].v)
+		}
+		return out
+	}
+	return newCrossings(a.field, a.r.scale, a.value, a.at, a.vertex, leaves, of)
+}
+
+// meshedUnresolved counts the leaves left flagged at the deepest level
+// that were meshed as crossings: a crossing disagrees with samples at
+// every scale.
+func (a *adaptive) meshedUnresolved(x *crossings) int {
+	n := 0
+	for _, t := range a.deepest {
+		if x.has(a.r.tets[t].v) {
+			n++
+		}
+	}
+	return n
 }
 
 // marks lists the rejected edges' points in edge order, and their number.

@@ -63,11 +63,13 @@ type ImplicitSection struct {
 }
 
 // ImplicitComponent is one connected piece of the mesh: its triangles, its
-// Euler characteristic V − E + F, and whether it has no boundary edge.
+// Euler characteristic V − E + F, whether it has no boundary edge, and the
+// edges along which it meets itself (see crossing.go).
 type ImplicitComponent struct {
 	Triangles int  `json:"triangles"`
 	Euler     int  `json:"euler"`
 	Closed    bool `json:"closed"`
+	Crossings int  `json:"crossings"`
 }
 
 // ImplicitResult is the level set as an indexed mesh. Positions and Normals
@@ -81,7 +83,13 @@ type ImplicitComponent struct {
 // edge order; Discontinuities counts them all. Nonfinite counts the grid
 // points where F is not a finite number, and Ambiguous the grid faces
 // whose corners alternate in sign; with refinement, Nonfinite also counts
-// the points sampled between grid points.
+// the points sampled between grid points. Crossings holds pairs of vertex
+// indices: the edges along which two sheets of the level set cross, each
+// shared by four triangles. Cones counts the isolated points where sheets
+// meet, each a vertex shared by the cones' triangles; CrossingsUnresolved
+// counts the tetrahedra near a crossing that could not be meshed and are
+// left out; CrossingsExhausted is set when the crossings would need more
+// than their budget of tetrahedra and none were meshed as crossings.
 type ImplicitResult struct {
 	Box                    Box                 `json:"box"`
 	Grid                   [3]int              `json:"grid"`
@@ -90,6 +98,10 @@ type ImplicitResult struct {
 	Triangles              []int32             `json:"triangles"`
 	Cut                    []int32             `json:"cut"`
 	Open                   []int32             `json:"open"`
+	Crossings              []int32             `json:"crossings"`
+	Cones                  int                 `json:"cones"`
+	CrossingsUnresolved    int                 `json:"crossingsUnresolved"`
+	CrossingsExhausted     bool                `json:"crossingsExhausted"`
 	Components             []ImplicitComponent `json:"components"`
 	Sections               []ImplicitSection   `json:"sections"`
 	Marks                  []Vec3              `json:"marks"`
@@ -387,6 +399,25 @@ func (s *field) newVertex(x Vec3, slope float64) int32 {
 	return v
 }
 
+// crossings meshes the grid's crossing tetrahedra, on the grid points.
+func (s *field) crossings() *crossings {
+	value := func(p point) float64 { return s.values[s.index(int(p[0]), int(p[1]), int(p[2]))] }
+	at := func(p point) Vec3 { return s.node(int(p[0]), int(p[1]), int(p[2])) }
+	single := func(p, q point) (int32, bool) {
+		bits := int(q[0]-p[0]) | int(q[1]-p[1])<<1 | int(q[2]-p[2])<<2
+		return s.vertex(s.index(int(p[0]), int(p[1]), int(p[2])), bits)
+	}
+	leaves := func(cube int) []tet {
+		out := make([]tet, 6)
+		for t := range 6 {
+			out[t] = kuhnTet(s.n, 1, cube, t)
+		}
+		return out
+	}
+	of := func(cube, t int) []tet { return []tet{kuhnTet(s.n, 1, cube, t)} }
+	return newCrossings(s, 1, value, at, single, leaves, of)
+}
+
 // The six tetrahedra of a cube, each a path from corner 0 to corner 7 along
 // the cube's edges, in the bits x + 2y + 4z of its corners. Neighbouring
 // cubes split each shared face along the same diagonal.
@@ -589,6 +620,9 @@ func (m *ImplicitResult) topology() {
 		}
 		return false
 	}
+	for k := 0; k < len(m.Crossings); k += 2 {
+		m.Components[piece[find(m.Crossings[k])]].Crossings++
+	}
 	for _, e := range order {
 		c := &m.Components[piece[find(e[0])]]
 		c.Euler--
@@ -760,6 +794,7 @@ func implicit(q ImplicitRequest) (Result, error) {
 		return nil
 	}
 	refinement := ImplicitRefinement{Levels: q.Refine}
+	var x *crossings
 	var marks []Vec3
 	discontinuities := 0
 	if q.Refine > 0 {
@@ -768,9 +803,12 @@ func implicit(q ImplicitRequest) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if err := a.mesh(fail); err != nil {
+		x = a.crossings()
+		x.find()
+		if err := a.mesh(x, fail); err != nil {
 			return Result{}, err
 		}
+		unresolved -= a.meshedUnresolved(x)
 		marks, discontinuities = a.marks()
 		refinement.Reached, refinement.Unresolved, refinement.Exhausted = a.reached(), unresolved, a.exhausted
 		for _, x := range a.r.tets {
@@ -779,6 +817,8 @@ func implicit(q ImplicitRequest) (Result, error) {
 			}
 		}
 	} else {
+		x = s.crossings()
+		x.find()
 		for k := 0; k < s.n[2]; k++ {
 			for j := 0; j < s.n[1]; j++ {
 				for i := 0; i < s.n[0]; i++ {
@@ -791,8 +831,12 @@ func implicit(q ImplicitRequest) (Result, error) {
 					if !defined {
 						continue
 					}
-					for _, tet := range tetrahedra {
-						s.march(corners[0], corners, tet)
+					for t, tet := range tetrahedra {
+						if x.plans != nil && x.has(kuhnTet(s.n, 1, i+s.n[0]*(j+s.n[1]*k), t)) {
+							x.emit(kuhnTet(s.n, 1, i+s.n[0]*(j+s.n[1]*k), t))
+						} else {
+							s.march(corners[0], corners, tet)
+						}
 						if err := fail(); err != nil {
 							return Result{}, err
 						}
@@ -811,9 +855,15 @@ func implicit(q ImplicitRequest) (Result, error) {
 		}
 		discontinuities = len(edges)
 	}
+	x.fold()
+	x.meet()
 	out := &ImplicitResult{Box: q.Box, Grid: s.n, Positions: s.positions, Normals: s.normals, Triangles: s.triangles,
-		Cut: []int32{}, Open: []int32{}, Components: []ImplicitComponent{}, Sections: []ImplicitSection{}, Marks: marks,
-		Nonfinite: s.nonfinite, Discontinuities: discontinuities, Ambiguous: s.ambiguous(), Singular: s.singular, Refinement: refinement}
+		Cut: []int32{}, Open: []int32{}, Crossings: []int32{}, Components: []ImplicitComponent{}, Sections: []ImplicitSection{}, Marks: marks,
+		Nonfinite: s.nonfinite, Discontinuities: discontinuities, Ambiguous: s.ambiguous(), Singular: s.singular, Refinement: refinement,
+		Cones: x.cones, CrossingsUnresolved: x.unresolved, CrossingsExhausted: x.exhausted}
+	if x.pairs != nil {
+		out.Crossings = x.pairs
+	}
 	out.topology()
 	budget := &engine.ContourBudget{}
 	cells := min(maxSectionCells, 4*q.Cells)
