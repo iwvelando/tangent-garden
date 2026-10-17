@@ -209,6 +209,10 @@ test("playback held at the current view refines every frame to it", async ({
   await page
     .getByLabel("Animation camera", { exact: true })
     .selectOption("current");
+  // Test a single traversal with timeline time equal to motion progress,
+  // independently of the preset's approach flight.
+  await page.getByLabel("Repeat", { exact: true }).selectOption("once");
+  await page.getByLabel("Pace", { exact: true }).selectOption("steady");
   await page.getByLabel("Duration (seconds)").fill("3");
   await settled(page);
   await page

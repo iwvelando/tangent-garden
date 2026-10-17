@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
-import { choosePreset } from "./helpers";
+import { choosePreset, svgConfigOrder } from "./helpers";
 import {
   cutEdges,
   cutInk,
@@ -19,8 +19,9 @@ import {
 } from "../web/spatial/cut";
 import { buildScene, type Batch, type Pass } from "../web/spatial/scene";
 import { linework, type LineGroup } from "../web/spatial/linework";
-import { defaultLayers } from "../web/spatial/renderer";
+import { defaultLayers, initialView } from "../web/spatial/renderer";
 import { spatialPresets } from "../web/spatial/presets";
+import { presetStudy } from "../web/spatial/link";
 import { hex, lineColor } from "../web/spatial/palette";
 import type { SpatialResult, Vec3 } from "../web/spatial/types";
 import { curveMesh } from "./curve-mesh";
@@ -81,14 +82,18 @@ test("line drawings of studies without a cut are unchanged", async ({
   const weight = page
     .getByRole("group", { name: "Lines" })
     .getByLabel("Weight", { exact: true });
-  // Preserve the recordings' original grids as well as their geometry.
+  // Preserve the recordings' original camera and grids as well as their
+  // geometry, independently of the gallery's current opening views.
   const originalUSamples: Record<string, number> = {
     "The focal sheets of an ellipsoid": 96,
     "A spherical bowl's cusped caustic": 96,
   };
   for (const label of Object.keys(recorded)) {
-    await choosePreset(page, { label });
-    await settled(page);
+    const index = spatialPresets.findIndex((p) => p.name === label);
+    await openLink(page, {
+      ...presetStudy(index),
+      view: initialView,
+    });
     if (label in originalUSamples) {
       const sampling = page.locator("summary", {
         hasText: "Sampling & definition",
@@ -101,9 +106,11 @@ test("line drawings of studies without a cut are unchanged", async ({
       await settled(page);
     }
     await weight.selectOption("hairline");
+    const originalOrder = async (kind: string) =>
+      svgConfigOrder(await download(page, kind), spatialPresets[index].config);
     seen[label] = {
-      every: sha(predating(await download(page, every))),
-      shown: sha(predating(await download(page, shown))),
+      every: sha(predating(await originalOrder(every))),
+      shown: sha(predating(await originalOrder(shown))),
     };
   }
   expect(seen).toEqual(recorded);

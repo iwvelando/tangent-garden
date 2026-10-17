@@ -197,6 +197,9 @@ for (const camera of ["hold", "current", "follow", "fit"])
     await choosePreset(page, braid);
     await settled(page);
     const base = await config(page);
+    const opening = JSON.parse(
+      (await page.locator("#spatial-artwork").getAttribute("data-view"))!,
+    );
     await openAnimation(page);
     await page
       .getByLabel("Animate", { exact: true })
@@ -232,7 +235,7 @@ for (const camera of ["hold", "current", "follow", "fit"])
     if (camera === "hold" || camera === "current") expect(last).toEqual(first);
     if (camera === "follow") expect(last.radius).toBe(first.radius);
     if (camera === "fit") expect(last.radius).not.toBe(first.radius);
-    expect(first.zoom).toBe(camera === "current" ? 1.1 : 1);
+    expect(first.zoom).toBe(camera === "current" ? opening.zoom * 1.1 : 1);
     await slider.fill("0.5");
     await page.getByRole("button", { name: "Stop", exact: true }).click();
     await expect(stage(page)).not.toHaveAttribute("data-progress");

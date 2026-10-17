@@ -1031,7 +1031,7 @@ export const presets: {
     },
     animation: {
       mode: "parameters",
-      camera: "hold",
+      camera: "fit",
       duration: 12,
       tracks: [{ target: "offset", from: "0", to: "-20" }],
       repeat: "back-and-forth",

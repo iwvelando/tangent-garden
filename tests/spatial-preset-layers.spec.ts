@@ -173,3 +173,44 @@ test("refined presets open with smooth skins, tapered tube lines and a continuou
       betweenGrid: true,
     });
 });
+
+test("a preset's composed opening view survives its default reveal", () => {
+  for (const [i, preset] of spatialPresets.entries()) {
+    if (
+      !preset.view ||
+      (preset.flight && preset.flight.animate?.mode !== "reveal")
+    )
+      continue;
+    expect.soft(presetStudy(i).animation.camera, preset.name).toBe("current");
+  }
+});
+
+test("parameter presets with composed views retain their opening camera", () => {
+  for (const name of [
+    "Treads folding into cones round a ring",
+    "A cord twisted round a spring",
+    "An ellipsoid's parallel surface",
+    "A spheroid's evolute, spun about its axis",
+    "A coiled cord round a trefoil",
+  ]) {
+    const i = spatialPresets.findIndex((p) => p.name === name);
+    expect.soft(presetStudy(i).animation.camera, name).toBe("current");
+  }
+});
+
+test("detail presets approach the detail with the whole geometry present", () => {
+  for (const name of [
+    "A braided cable running to the horizon",
+    "A coiled tube running into the distance",
+    "A spring folded into a cusp",
+    "A corridor of loops",
+  ]) {
+    const i = spatialPresets.findIndex((p) => p.name === name),
+      study = presetStudy(i);
+    expect.soft(study.animation.mode, name).toBe("path");
+    const keys = study.animation.path.keys;
+    expect.soft(keys.length, name).toBeGreaterThanOrEqual(2);
+    expect.soft(keys.at(-1), name).toMatchObject(study.view);
+    expect.soft(study.animation.repeat, name).toBe("back-and-forth");
+  }
+});
