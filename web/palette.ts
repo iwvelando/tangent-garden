@@ -1,5 +1,5 @@
-// The drawing's colours by role. The plot draws with them, and the example
-// gallery's thumbnails, which record each colour's role rather than its value
+// The drawing's colors by role. The plot draws with them, and the example
+// gallery's thumbnails, which record each color's role rather than its value
 // (scripts/build-thumbnails.mjs), take them from here in either theme.
 export const plotPalette = (dark: boolean) =>
   dark

@@ -1085,7 +1085,7 @@ test("spatial mirror light, source and ray length share the bounded scalar parse
     ["Source z", "2*phi", 2 * phi, "z"],
   ] as const)
     await check(name, text, value, ["rays", "source", key]);
-  // An interface's indices, and a receiver's plane, window and centre.
+  // An interface's indices, and a receiver's plane, window and center.
   await page.getByLabel("Interaction", { exact: true }).selectOption("refract");
   await page.getByLabel("Receiver", { exact: true }).selectOption("y");
   for (const [name, text, value, path] of [
@@ -1093,8 +1093,8 @@ test("spatial mirror light, source and ray length share the bounded scalar parse
     ["Index n₂", "phi", phi, ["rays", "n2"]],
     ["Plane at c", "-pi", -Math.PI, ["rays", "receiver", "at"]],
     ["Window size s", "2*e", 2 * Math.E, ["rays", "receiver", "size"]],
-    ["Centre z", "1/phi", 1 / phi, ["rays", "receiver", "c1"]],
-    ["Centre x", "-e/2", -Math.E / 2, ["rays", "receiver", "c2"]],
+    ["Center z", "1/phi", 1 / phi, ["rays", "receiver", "c1"]],
+    ["Center x", "-e/2", -Math.E / 2, ["rays", "receiver", "c2"]],
   ] as const)
     await check(name, text, value, path);
 });

@@ -172,7 +172,7 @@ for (const setup of setups) {
   }) => {
     test.setTimeout(120_000);
     await setup.open(page);
-    // The default, labelled with its real size.
+    // The default, labeled with its real size.
     await imageButton(page).click();
     await expect(
       page.getByRole("menuitem", {

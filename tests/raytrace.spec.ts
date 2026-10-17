@@ -102,7 +102,7 @@ test("parallel light reaches a parabola's focus along equal optical paths", () =
   for (const ray of after.rays) near(ray.traced!.to, ray.origin);
 });
 
-test("a point source at a circle's centre returns there at twice the radius", () => {
+test("a point source at a circle's center returns there at twice the radius", () => {
   const base = Array.from({ length: 24 }, (_, j) => {
     const t = (2 * Math.PI * j) / 24;
     return { x: 2 * Math.cos(t), y: 2 * Math.sin(t) };

@@ -120,7 +120,7 @@ export function implicitNote(r: ImplicitResult): string[] {
   if (r.ambiguous)
     out.push(
       levels > 0
-        ? `${count(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; refinement samples each face's centre, and splits the face where the grid's diagonal disagrees with it.`
+        ? `${count(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; refinement samples each face's center, and splits the face where the grid's diagonal disagrees with it.`
         : `${count(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; there the grid's diagonal, not F, decides whether the surface joins across, so compare a finer grid.`,
     );
   if (r.sections.length) {

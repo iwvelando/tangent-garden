@@ -194,7 +194,7 @@ test("notes report caustic shapes, virtual parts, and samples without a reflecti
   await expect(note(page)).toHaveText(
     "Caustic 1 (μ₁) is real, ahead of the mirror: a surface. Caustic 2 (μ₂) lies wholly at infinity. 26 samples are unlit: the light grazes the mirror there or arrives behind its mirror side.",
   );
-  // A monkey saddle's flat centre sends its caustics to infinity.
+  // A monkey saddle's flat center sends its caustics to infinity.
   await page.getByLabel("Surface", { exact: true }).selectOption("monkey");
   await page.getByLabel("Mirror side", { exact: true }).selectOption("forward");
   await field(page, "Elevation β (°)").fill("-90");

@@ -8,7 +8,7 @@ import (
 
 // HarmonicTerm is one generating vector A cos(ωt) + B sin(ωt): it turns
 // around an ellipse spanned by A and B (a segment when they are parallel),
-// from A at t = 0 towards B, at frequency ω radians per unit t. A zero
+// from A at t = 0 toward B, at frequency ω radians per unit t. A zero
 // frequency makes it the fixed translation A.
 type HarmonicTerm struct {
 	Frequency float64 `json:"frequency"`

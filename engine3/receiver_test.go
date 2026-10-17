@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// receive adds a receiver on plane axis = at, a window of side size centred
+// receive adds a receiver on plane axis = at, a window of side size centered
 // on (c1, c2), with bins × bins bins.
 func receive(c Request, axis string, at, c1, c2, size float64, bins int) Request {
 	c.Rays.Receiver = ReceiverRequest{Plane: axis, At: at, C1: c1, C2: c2, Size: size, Bins: bins}
@@ -153,7 +153,7 @@ func TestReceiverFocus(t *testing.T) {
 		}
 	}
 	if math.Abs(g.Emitted-4) > 1e-12 || math.Abs(g.Received-4) > 1e-9 || math.Abs(g.Irradiance[4][4]*bin*bin-4) > 1e-9 {
-		t.Fatalf("emitted %v, received %v, centre %v", g.Emitted, g.Received, g.Irradiance[4][4]*bin*bin)
+		t.Fatalf("emitted %v, received %v, center %v", g.Emitted, g.Received, g.Irradiance[4][4]*bin*bin)
 	}
 }
 
@@ -176,7 +176,7 @@ func TestReceiverAccounting(t *testing.T) {
 		t.Fatalf("the edge's flux shrinks with the grid: %v", edges)
 	}
 	// Beyond the critical angle, sin θ₁ > 2/3, the lamp's light stays in
-	// the glass: 0.94 from the centre, it reaches that far on 1.2.
+	// the glass: 0.94 from the center, it reaches that far on 1.2.
 	c := glass(inside(mirror("ellipsoid", R, R, R, 0, 2*math.Pi, -math.Pi/2, math.Pi/2, 160, 80, lamp(Vec3{.3, .4, .8}))), 1.5, 1)
 	g := received(t, receive(c, "y", -2, 0, 0, 6, 24))
 	accounted(t, g)
@@ -350,7 +350,7 @@ func TestReceiverClean(t *testing.T) {
 	g := received(t, receive(c, "z", -1.9, 0, 0, .6, 60))
 	accounted(t, g)
 	bin := .6 / 60
-	rim, centre := 0.0, g.Irradiance[30][30]
+	rim, center := 0.0, g.Irradiance[30][30]
 	for a, column := range g.Irradiance {
 		for b, e := range column {
 			r := math.Hypot(-.3+(float64(a)+.5)*bin, -.3+(float64(b)+.5)*bin)
@@ -362,7 +362,7 @@ func TestReceiverClean(t *testing.T) {
 			}
 		}
 	}
-	if !(rim > 5*centre && centre > 0) {
-		t.Fatalf("rim %v, centre %v", rim, centre)
+	if !(rim > 5*center && center > 0) {
+		t.Fatalf("rim %v, center %v", rim, center)
 	}
 }

@@ -134,7 +134,7 @@ test("the probe draws the Frenet frame and osculating circle at its sample", () 
     close(s[0][0], p, f32);
     close(s[0][1], at(p.x + d.x * arm, p.y + d.y * arm, p.z + d.z * arm), f32);
   }
-  // The osculating circle: every vertex at radius 1/κ from the centre, in
+  // The osculating circle: every vertex at radius 1/κ from the center, in
   // the osculating plane (normal to B through the point), passing through
   // the point itself.
   const circleSegments = byInk(batches, probeInk.mark).filter(
@@ -170,7 +170,7 @@ test("a flat sample draws only its point and tangent", () => {
     );
 });
 
-test("a centre at infinity draws the frame without a circle", () => {
+test("a center at infinity draws the frame without a circle", () => {
   const r = circle();
   r.diagnostics!.center[1] = null;
   const batches = batchesAt(r, config("none"), 1);
@@ -591,7 +591,7 @@ test("the probe adds passes last and changes nothing when absent", () => {
   expect(passes.slice(plain.length).every((p) => !p.sheet)).toBe(true);
 });
 
-test("probe inks have their own colours, in the live drawing and in linework", () => {
+test("probe inks have their own colors, in the live drawing and in linework", () => {
   const inks = [
     probeInk.mark,
     probeInk.tangent,
@@ -599,12 +599,12 @@ test("probe inks have their own colours, in the live drawing and in linework", (
     probeInk.binormal,
   ];
   for (const dark of [false, true]) {
-    const colours = inks.map((ink) => hex(lineColor(ink, 0, dark)));
+    const colors = inks.map((ink) => hex(lineColor(ink, 0, dark)));
     const existing = [1, 2, 3, 4, 5, 6].map((ink) =>
       hex(lineColor(ink, 0, dark)),
     );
-    expect(new Set(colours).size).toBe(4);
-    for (const c of colours) expect(existing).not.toContain(c);
+    expect(new Set(colors).size).toBe(4);
+    for (const c of colors) expect(existing).not.toContain(c);
   }
   const r = circle();
   const view: View = {
@@ -654,8 +654,8 @@ const pixels = (page: Page) =>
   page
     .locator("#spatial-artwork")
     .evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
-// Pixels within a small distance of a colour, in an image's data URL.
-function coloured(page: Page, url: string, rgb: [number, number, number]) {
+// Pixels within a small distance of a color, in an image's data URL.
+function colored(page: Page, url: string, rgb: [number, number, number]) {
   return page.evaluate(
     async ({ url, rgb }) => {
       const image = new Image();
@@ -681,7 +681,7 @@ function coloured(page: Page, url: string, rgb: [number, number, number]) {
     { url, rgb },
   );
 }
-const probeColour = (dark = false) =>
+const probeColor = (dark = false) =>
   lineColor(probeInk.mark, 0, dark).map((c) => Math.round(c * 255)) as [
     number,
     number,
@@ -696,7 +696,7 @@ test("the helix's probe reads its analytic curvature and torsion", async ({
   await choosePreset(page, helix);
   await settled(page);
   const original = await pixels(page);
-  expect(await coloured(page, original, probeColour())).toBe(0);
+  expect(await colored(page, original, probeColor())).toBe(0);
   await expect(point(page)).toHaveCount(0);
   await probeSwitch(page).check();
   await settled(page);
@@ -704,15 +704,15 @@ test("the helix's probe reads its analytic curvature and torsion", async ({
   // (1/3)/(4 + 1/9) = 3/37 at every point, radius 37/18.
   await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
   await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 0, /);
-  const centred = await pixels(page);
+  const centered = await pixels(page);
   // One-pixel lines: the circle alone spans more than 50 pixels.
-  expect(await coloured(page, centred, probeColour())).toBeGreaterThan(50);
+  expect(await colored(page, centered, probeColor())).toBeGreaterThan(50);
   // The last sample, t = 3π, where the curvature is the same.
   await point(page).focus();
   await page.keyboard.press("End");
   await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 9\.425, /);
   await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
-  expect(await pixels(page)).not.toBe(centred);
+  expect(await pixels(page)).not.toBe(centered);
   await expect(page.locator(".probe-plot figcaption").first()).toHaveText(
     /^κ from 0 to 0\.4865/,
   );
@@ -792,7 +792,7 @@ test("the probe follows presets and formats, and describes a surface study's sur
   await settled(page);
   await expect(probeSwitch(page)).toHaveCount(0);
   const surfaceSwitch = page.getByRole("checkbox", {
-    name: "Principal curvatures & centres at a point",
+    name: "Principal curvatures & centers at a point",
   });
   await expect(surfaceSwitch).not.toBeChecked();
   await surfaceSwitch.check();
@@ -848,7 +848,7 @@ test("still exports include the probe as drawn; a reveal draws it once reached",
   // The PNG carries the probe's ink as the live drawing does.
   const png = await download("PNG image · 2000 × 1520");
   const url = `data:image/png;base64,${png.toString("base64")}`;
-  expect(await coloured(page, url, probeColour())).toBeGreaterThan(200);
+  expect(await colored(page, url, probeColor())).toBeGreaterThan(200);
   // A reveal draws the probe, at the user's last sample, only once the
   // drawing reaches it: halfway along, the panel says why it is missing.
   const probed = await pixels(page);
@@ -869,7 +869,7 @@ test("still exports include the probe as drawn; a reveal draws it once reached",
   await expect(page.locator(".spatial-probe")).toContainText(
     "The drawing has not reached the probe yet.",
   );
-  expect(await coloured(page, await pixels(page), probeColour())).toBe(0);
+  expect(await colored(page, await pixels(page), probeColor())).toBe(0);
   await slider.fill("1");
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
   await expect(point(page)).toHaveAttribute(
@@ -917,7 +917,7 @@ test("an orbit, a peel and a camera path draw the probe at the user's point", as
     await expect(point(page)).toBeDisabled();
     await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
     expect(
-      await coloured(page, await pixels(page), probeColour()),
+      await colored(page, await pixels(page), probeColor()),
     ).toBeGreaterThan(50);
   }
   await midway("orbit");
@@ -934,9 +934,9 @@ test("an orbit, a peel and a camera path draw the probe at the user's point", as
   await slider.fill("1");
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
   await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
-  expect(
-    await coloured(page, await pixels(page), probeColour()),
-  ).toBeGreaterThan(50);
+  expect(await colored(page, await pixels(page), probeColor())).toBeGreaterThan(
+    50,
+  );
   await button("Back to study").click();
   await box.getByRole("checkbox", { name: "Cut with a plane" }).uncheck();
   // Two key views a few turns apart.
@@ -951,7 +951,7 @@ test("an orbit, a peel and a camera path draw the probe at the user's point", as
   await expect(point(page)).toBeEnabled();
 });
 
-test("the probe's colours hold in the dark theme", async ({ page }) => {
+test("the probe's colors hold in the dark theme", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await ready(page);
   await choosePreset(page, helix);
@@ -959,7 +959,7 @@ test("the probe's colours hold in the dark theme", async ({ page }) => {
   await settled(page);
   await expect(readout(page)).toHaveCount(3);
   expect(
-    await coloured(page, await pixels(page), probeColour(true)),
+    await colored(page, await pixels(page), probeColor(true)),
   ).toBeGreaterThan(50);
 });
 
@@ -1034,7 +1034,7 @@ test("the trefoil example flies round its probe, face on and edge on", async ({
     await slider.fill(p);
     await expect(stage(page)).toHaveAttribute("data-progress", p);
     await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
-    return coloured(page, await pixels(page), probeColour());
+    return colored(page, await pixels(page), probeColor());
   };
   const face = await at("0"),
     edge = await at("0.25"),
@@ -1093,7 +1093,7 @@ test("the epicycles example carries its chain of vectors and their ellipses on t
   near2(minus(j1, c0), plus([0, 0], minus(j2, j1), 5));
   near2(minus(j2, j1), minus(j3, j2));
   near2(end, j3);
-  // The point's three-axis mark is centred on the chain's end.
+  // The point's three-axis mark is centered on the chain's end.
   const arms = strokes.slice(-3);
   for (const arm of arms) {
     expect(arm).toHaveLength(2);

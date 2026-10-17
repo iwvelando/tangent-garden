@@ -653,9 +653,9 @@ export default function SpatialApp({
     <>
       <p className="note">
         r(t) = c₀ + Σ [Aₖ cos(ωₖ t) + Bₖ sin(ωₖ t)]. Each term is a vector
-        turning around the ellipse spanned by Aₖ and Bₖ, from Aₖ at t = 0
-        towards Bₖ, at ωₖ radians per unit t. The vectors are chained from c₀ in
-        this order.
+        turning around the ellipse spanned by Aₖ and Bₖ, from Aₖ at t = 0 toward
+        Bₖ, at ωₖ radians per unit t. The vectors are chained from c₀ in this
+        order.
       </p>
       <div className="pair trio">
         {(["x", "y", "z"] as const).map((axis) =>
@@ -1128,12 +1128,12 @@ export default function SpatialApp({
           </div>
           <div className="pair">
             {vector(
-              `Centre ${first}`,
+              `Center ${first}`,
               config.rays.receiver.c1,
               (c1) => setReceiver((r) => ({ ...r, c1 })),
               "The window's center on the plane, each coordinate within ±100000.",
             )}
-            {vector(`Centre ${second}`, config.rays.receiver.c2, (c2) =>
+            {vector(`Center ${second}`, config.rays.receiver.c2, (c2) =>
               setReceiver((r) => ({ ...r, c2 })),
             )}
           </div>
@@ -1754,7 +1754,7 @@ export default function SpatialApp({
         "Angle θ₀",
         config.frame.angle,
         (angle) => setFraming((f) => ({ ...f, angle })),
-        "Where D starts, in radians from U towards V, within ±1000.",
+        "Where D starts, in radians from U toward V, within ±1000.",
       )}
       {vector(
         "Twist (turns)",
@@ -2025,7 +2025,7 @@ export default function SpatialApp({
       {config.input === "coil" ? (
         <>
           Built on the coil g(t) = r(t) + d D(t) of the base curve r, drawn in
-          grey with representative arms. D turns about the tangent at angle θ₀ +
+          gray with representative arms. D turns about the tangent at angle θ₀ +
           2πN s/L in the base's rotation-minimizing frame, so the coil winds N
           times around the curve. The construction below acts on it in place of
           r: its frame is carried from the samples and its derivatives are
@@ -2034,7 +2034,7 @@ export default function SpatialApp({
       ) : config.input === "involute" ? (
         <>
           Built on the involute I(t) = r(t) + (c − s(t)) T(t) of the base curve
-          r, unwound by a string of length c from its anchor, drawn in grey with
+          r, unwound by a string of length c from its anchor, drawn in gray with
           representative strings. The involute runs along the base's principal
           normal, so the base lies in its normal planes. The construction below
           acts on it in place of r: arc length is integrated at every point,
@@ -2046,7 +2046,7 @@ export default function SpatialApp({
           {config.input === "orthotomic"
             ? "tangent-line orthotomic Q(t) = 2H(t) − P"
             : "tangent-foot curve H(t) = r(t) + ((P − r(t)) · T(t)) T(t)"}{" "}
-          of the base curve r, drawn in grey with its perpendiculars from the
+          of the base curve r, drawn in gray with its perpendiculars from the
           pole P. The construction below acts on that curve in place of r: it is
           evaluated from the base at every sample, never redrawn from a
           polyline.
@@ -2072,7 +2072,7 @@ export default function SpatialApp({
           F(x, y, z) = c <span>n = ∇F / |∇F|</span>
         </>
       }
-      note="Gold curves are the sections, on planes outlined in grey with the box. Teal edges are where the box cuts the surface open; rust edges and crosses mark where it stops beside cells left out, and where F changes sign across a pole or a jump."
+      note="Gold curves are the sections, on planes outlined in gray with the box. Teal edges are where the box cuts the surface open; rust edges and crosses mark where it stops beside cells left out, and where F changes sign across a pole or a jump."
       diagnostics={
         levelSet &&
         (levelSet.discontinuities > 0 ||
@@ -2089,7 +2089,7 @@ export default function SpatialApp({
         An expression F gives every point of space a number, and the points
         where it equals c form a <em>level surface</em>. It has no parameters,
         so it is found rather than traced: F is sampled on a grid, and the
-        surface passes wherever F − c changes sign between neighbouring points,
+        surface passes wherever F − c changes sign between neighboring points,
         with ∇F square to it, pointing to larger F. Sweeping c sweeps a family
         of surfaces whose shape changes as c passes a critical value: two drops
         join through a saddle, a torus closes its hole. A plane cuts the surface
@@ -2114,7 +2114,7 @@ export default function SpatialApp({
           </>
         )
       }
-      note={`Gold lines are ${refracting ? "transmitted" : "reflected"} rays where the parameter curves cross, grey their incident rays and, where a caustic point lies behind the ${face}, their virtual extensions${refracting ? "; beyond the critical angle, grey rays are totally reflected" : ""}. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross.${receiving ? " The receiver's shade is irradiance, darker (lighter in the dark theme) where more light lands." : ""}`}
+      note={`Gold lines are ${refracting ? "transmitted" : "reflected"} rays where the parameter curves cross, gray their incident rays and, where a caustic point lies behind the ${face}, their virtual extensions${refracting ? "; beyond the critical angle, gray rays are totally reflected" : ""}. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross.${receiving ? " The receiver's shade is irradiance, darker (lighter in the dark theme) where more light lands." : ""}`}
       diagnostics={
         mirror &&
         (mirror.unlit > 0 ||
@@ -2130,12 +2130,12 @@ export default function SpatialApp({
     >
       {refracting ? (
         <p>
-          Light meets the interface at X travelling along I, in a medium of
-          index n₁ on the side n points to, and crosses into index n₂ along T,
-          bent by Snell&rsquo;s law, n₁ sin θ₁ = n₂ sin θ₂, with η = n₁/n₂, c =
-          −I·n and k = 1 − η²(1 − c²). Where k &lt; 0, light leaving the denser
-          side beyond the critical angle cannot cross and is totally reflected.
-          Neighbouring transmitted rays cross, nearly, at the centres of
+          Light meets the interface at X traveling along I, in a medium of index
+          n₁ on the side n points to, and crosses into index n₂ along T, bent by
+          Snell&rsquo;s law, n₁ sin θ₁ = n₂ sin θ₂, with η = n₁/n₂, c = −I·n and
+          k = 1 − η²(1 − c²). Where k &lt; 0, light leaving the denser side
+          beyond the critical angle cannot cross and is totally reflected.
+          Neighboring transmitted rays cross, nearly, at the centers of
           curvature of the transmitted wavefront, which form the{" "}
           <em>caustic</em>, real ahead of the interface (μ &gt; 0) or virtual
           behind it. An ellipsoid whose eccentricity is 1/n brings a parallel
@@ -2145,9 +2145,9 @@ export default function SpatialApp({
         </p>
       ) : (
         <p>
-          Light meets the mirror at X travelling along I and leaves along its
-          reflection R. Neighbouring reflected rays cross, nearly, at up to two
-          places along each ray: the centres of curvature of the reflected
+          Light meets the mirror at X traveling along I and leaves along its
+          reflection R. Neighboring reflected rays cross, nearly, at up to two
+          places along each ray: the centers of curvature of the reflected
           wavefront, where it bends by μ₁ and μ₂. Together those points form the{" "}
           <em>caustic</em>, the bright fold where reflected light gathers.
           Converging rays (μ &gt; 0) cross ahead of the mirror, in a real
@@ -2178,7 +2178,7 @@ export default function SpatialApp({
           Fᵢ = X + n / κᵢ <span>X_d = X + d n</span>
         </>
       }
-      note="Grey lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross."
+      note="Gray lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross."
       diagnostics={
         shown?.result.surface &&
         (shown.result.surface.singular > 0 ||
@@ -2192,12 +2192,12 @@ export default function SpatialApp({
     >
       <p>
         At each point of a surface the normal line stands square to it, and
-        nearby normals cross it at up to two places: the centres of the two
+        nearby normals cross it at up to two places: the centers of the two
         principal curvatures κ₁ and κ₂, the most and least the surface bends
         there. Together they form the two <em>focal sheets</em>. A
-        sphere&rsquo;s normals all meet at its centre; a torus&rsquo;s meet its
+        sphere&rsquo;s normals all meet at its center; a torus&rsquo;s meet its
         core circle and its axis, so both sheets collapse to curves. Where a
-        curvature vanishes its centre runs off to infinity. The offset X + d n
+        curvature vanishes its center runs off to infinity. The offset X + d n
         keeps the same normals, and turns inside out wherever it passes a focal
         sheet.
       </p>
@@ -2212,7 +2212,7 @@ export default function SpatialApp({
             pᵢ′ = vᵢ (pᵢ₊₁ − pᵢ) / |pᵢ₊₁ − pᵢ| <span>pᵢ(t₀) = start</span>
           </>
         }
-        note="Grey polygons join the pursuers, in chase order, at evenly spaced times; crosses mark the starts and, when the chase stops early, where everyone stood."
+        note="Gray polygons join the pursuers, in chase order, at evenly spaced times; crosses mark the starts and, when the chase stops early, where everyone stood."
         diagnostics={
           shown?.result.pursuit &&
           (shown.result.pursuit.capture || shown.result.pursuit.exhausted) && (
@@ -2243,7 +2243,7 @@ export default function SpatialApp({
             r′(t) = V(r(t), t) <span>r(t₀) = seed</span>
           </>
         }
-        note="Grey strokes show the field's direction, not its speed, at evenly spaced times; crosses mark the seeds and any trajectory that stops early."
+        note="Gray strokes show the field's direction, not its speed, at evenly spaced times; crosses mark the seeds and any trajectory that stops early."
         diagnostics={
           shown?.result.field?.ends.some((e) => e.reason !== "end") && (
             <p className="bottom-note">
@@ -2293,7 +2293,7 @@ export default function SpatialApp({
           |X − c|² = R², (X − c) · c′ = −RR′ <span>R = R·ρ(t)</span>
         </>
       }
-      note="Circles mark where representative spheres touch the surface; grey great circles mark spheres with no real circle. Meridians show how the frame carries the angle."
+      note="Circles mark where representative spheres touch the surface; gray great circles mark spheres with no real circle. Meridians show how the frame carries the angle."
       diagnostics={
         shown &&
         (shown.result.invalid > 0 || shown.result.omitted > 0) && (
@@ -2306,13 +2306,13 @@ export default function SpatialApp({
       }
     >
       <p>
-        Roll a sphere along the curve, its centre on the curve and its radius
+        Roll a sphere along the curve, its center on the curve and its radius
         R(t) changing as it goes. The surface that touches every sphere is their{" "}
         <em>envelope</em>, a canal surface. Each sphere touches it along a
-        circle: the points of the sphere that the neighbouring spheres share.
+        circle: the points of the sphere that the neighboring spheres share.
         With a constant radius that circle stands square to the curve, and the
         envelope is a tube. As the radius grows it leans back along the tangent
-        and shrinks; where the radius changes as fast as the centre moves, the
+        and shrinks; where the radius changes as fast as the center moves, the
         circle closes to a point, and faster still the spheres nest inside one
         another with no envelope at all. Nothing is trimmed: a tube wider than
         the curve can turn folds through itself, and it is drawn that way.
@@ -2347,7 +2347,7 @@ export default function SpatialApp({
         other, and the rulings cross to weave a curved surface. Shading uses the
         true surface normal S<sub>t</sub> × S<sub>u</sub>, which turns along a
         ruling unless the surface is developable, as a cylinder or cone is.
-        Nothing is trimmed: where neighbouring rulings pass through one another,
+        Nothing is trimmed: where neighboring rulings pass through one another,
         as at the waist of the harmonic loom, the sheet crosses itself.
       </p>
     </StudyExplanation>
@@ -2360,7 +2360,7 @@ export default function SpatialApp({
           S(t, u) = r(t) + u D(t) <span>D = cos θ U + sin θ V</span>
         </>
       }
-      note="At representative samples the longer arm marks U, the shorter V, and the grey arm the tangent T. Gold arms at the start of a closed loop mark the seam."
+      note="At representative samples the longer arm marks U, the shorter V, and the gray arm the tangent T. Gold arms at the start of a closed loop mark the seam."
       diagnostics={
         shown &&
         (shown.result.invalid > 0 || shown.result.omitted > 0) && (

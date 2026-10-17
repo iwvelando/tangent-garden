@@ -110,7 +110,7 @@ function decode(page: Page, bytes: Buffer) {
       let hash = 0;
       for (let j = 0; j < pixels.length; j += 4)
         hash = (Math.imul(hash, 31) + (pixels[j] >> 3)) | 0;
-      // The most common colour is the background, wherever lines fall.
+      // The most common color is the background, wherever lines fall.
       const counts = new Map<number, number>();
       for (let j = 0; j < pixels.length; j += 4) {
         const key = (pixels[j] << 16) | (pixels[j + 1] << 8) | pixels[j + 2];
@@ -160,7 +160,7 @@ function decode(page: Page, bytes: Buffer) {
   }, Array.from(bytes));
 }
 
-// Decode every actual frame independently; allow codec colour rounding rather
+// Decode every actual frame independently; allow codec color rounding rather
 // than requiring lossy H.264 endpoint hashes to match an intra-coded frame.
 export function frameCoverage(
   path: string,

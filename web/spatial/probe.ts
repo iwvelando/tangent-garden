@@ -1,7 +1,7 @@
 // The parameter probe: the curve's Frenet frame, osculating circle and
 // construction lines at one parameter, at a sample or between samples, and
 // its curvature and torsion around it; or, on a surface, one point's
-// principal directions, curvatures and centres. Every quantity comes from
+// principal directions, curvatures and centers. Every quantity comes from
 // Go (engine3.DiagnosticsResult and engine3.ProbePoint for the curve,
 // engine3.SurfaceDiagnostics for a surface) or the study's own per-sample
 // arrays; this module only selects and draws them.
@@ -484,7 +484,7 @@ export function betweenGridHelp(c: SpatialConfig, target: ProbeTarget) {
 }
 
 // The curve probe's drawing at its point: the highlighted construction, the
-// osculating circle (from Go's centre, with radius 1/κ, in the plane of T
+// osculating circle (from Go's center, with radius 1/κ, in the plane of T
 // and N) and a three-axis mark at the point, all in the probe ink, then
 // the frame glyphs, each its own ink. Nothing where the curve has no point.
 export function probeBatches(
@@ -538,7 +538,7 @@ export function probeBatches(
 
 // The curve probe's numbers: its parameter, κ, the radius of curvature 1/κ
 // (null where κ is 0 or unknown), τ, whether it is flat there, and whether
-// its centre is at infinity.
+// its center is at infinity.
 export function probeReadout(at: SpatialProbePoint) {
   const k = at.curvature;
   const flat = k === 0;
@@ -606,9 +606,9 @@ type SurfaceTerms = {
 };
 const rows = "(at most 481)";
 const curvatureWords = {
-  switch: "Principal curvatures & centres at a point",
+  switch: "Principal curvatures & centers at a point",
   normal: "Normal",
-  legend: "direction, circle & centre",
+  legend: "direction, circle & center",
 } as const;
 const ruledTerms = {
   ...curvatureWords,
@@ -1006,7 +1006,7 @@ export function surfaceProbeBatches(
     if (rays.length) out.push(lines(rays, probeInk.normal));
   }
   if (!n) return out;
-  // The normal line spans the point, its glyph and both finite centres;
+  // The normal line spans the point, its glyph and both finite centers;
   // the outgoing ray also spans ℓ, and an offset's line its patch point.
   const reach = [
     0,
@@ -1050,7 +1050,7 @@ export function surfaceProbeBatches(
 
 // The numbers at grid sample (row, column): its parameters, each branch's
 // curvature (0 where it is lost in rounding beside the other), radius 1/κ (null where κ is 0 or unknown) and whether its
-// centre is at infinity, the Gaussian and mean curvatures, and whether the
+// center is at infinity, the Gaussian and mean curvatures, and whether the
 // surface is missing, singular or umbilic there, its tangent plane is
 // unknown (unknownPlane, which is not singular), or, an offset, folded.
 export function surfaceProbeReadout(
@@ -1106,7 +1106,7 @@ export function surfaceProbeStatus(
   if (r.folded)
     return "Folded here: the offset lies beyond one focal sheet, turned inside out.";
   if (r.infinite.some(Boolean))
-    return "A centre lies beyond 100 study radii, at infinity: its circle is not drawn.";
+    return "A center lies beyond 100 study radii, at infinity: its circle is not drawn.";
   return "";
 }
 

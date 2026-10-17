@@ -5,7 +5,7 @@ import { targetLabel, type Target } from "./animation";
 import { receiverAxes } from "./rays";
 import type { SpatialConfig } from "./types";
 
-// Fields whose control is labelled as its animation track is.
+// Fields whose control is labeled as its animation track is.
 const tracked: Record<string, Target> = {
   samples: "samples",
   lines: "lines",
@@ -69,7 +69,7 @@ const tracked: Record<string, Target> = {
   "implicit.sections.to": "sectionTo",
 };
 // Fields whose control has a label of its own.
-const labelled: Record<string, string> = {
+const labeled: Record<string, string> = {
   construction: "Construction",
   format: "Spatial definition",
   input: "Built on",
@@ -105,7 +105,7 @@ const labelled: Record<string, string> = {
 };
 
 export function fieldLabel(c: SpatialConfig, path: string): string | undefined {
-  if (path in labelled) return labelled[path];
+  if (path in labeled) return labeled[path];
   if (path in tracked) return targetLabel(c, tracked[path]);
   let m = /^(curve|field|ruled\.thread)\.([xyz])$/.exec(path);
   if (m)
@@ -137,7 +137,7 @@ export function fieldLabel(c: SpatialConfig, path: string): string | undefined {
   if (m) {
     const plane =
       c.rays.receiver.plane === "none" ? "z" : c.rays.receiver.plane;
-    return `Centre ${receiverAxes[plane][+m[1] - 1]}`;
+    return `Center ${receiverAxes[plane][+m[1] - 1]}`;
   }
   m = /^implicit\.box\.([xyz])(Min|Max)$/.exec(path);
   if (m) return `${m[1]} ${m[2] === "Min" ? "from" : "to"}`;

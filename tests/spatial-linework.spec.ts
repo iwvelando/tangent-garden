@@ -387,7 +387,7 @@ test("rulings lying on a curved sheet stay whole where it turns edge-on", () => 
 
 // A hyperbolic paraboloid z = x·y/…, meshed like a ruled surface between two
 // twisted threads: long, thin triangles whose planes differ sharply from
-// their neighbours'. Seen near edge-on, each ruling (a mesh edge) lies on
+// their neighbors'. Seen near edge-on, each ruling (a mesh edge) lies on
 // the sheet and must not flicker in and out along its length.
 test("rulings on a twisted, thinly meshed sheet stay whole", () => {
   const columns = 160,

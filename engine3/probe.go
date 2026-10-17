@@ -26,7 +26,7 @@ type ProbeQuery struct {
 
 // ProbePoint describes the curve the construction acts on (the base, or its
 // derived input) at the parameter T as DiagnosticsResult does at a sample:
-// its point, Frenet frame, curvature, torsion and osculating centre, each
+// its point, Frenet frame, curvature, torsion and osculating center, each
 // null where the sample would be, and the drawn arc length to it, the
 // length at the last sample at or before T continued over the rest of the
 // way by Simpson's rule on the speed at its ends and midpoint. On a closed
@@ -119,7 +119,7 @@ func (p *probing) sampleBefore(t float64) int {
 }
 
 // probe describes the study at its query, with its diagnostics d and its
-// framing radius, beyond 100 of which a centre is at infinity.
+// framing radius, beyond 100 of which a center is at infinity.
 func (p *probing) probe(q ProbeQuery, d *DiagnosticsResult, radius float64) *ProbePoint {
 	var t float64
 	if q.T != nil {

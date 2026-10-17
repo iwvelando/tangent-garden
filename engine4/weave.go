@@ -51,7 +51,7 @@ func (s sphereCircle) at(t float64) Vec4 {
 }
 
 // weaveLatitudes returns the ordered latitudes, snapping rounding-distance
-// neighbours of the endpoints onto 0 and π/2.
+// neighbors of the endpoints onto 0 and π/2.
 func weaveLatitudes(alpha, spread float64, n int) []float64 {
 	out := make([]float64, n)
 	for k := range out {

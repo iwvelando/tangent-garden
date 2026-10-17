@@ -36,7 +36,7 @@ import type {
 import { curveMesh } from "./curve-mesh";
 
 // The surface probe: a point's principal directions, curvatures and
-// centres, on a canal or a surface patch. Expected values follow from the
+// centers, on a canal or a surface patch. Expected values follow from the
 // definitions, not from the code under test.
 const at = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
 const sub = (a: Vec3, b: Vec3) => at(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -64,9 +64,9 @@ const byInk = (batches: Batch[], ink: number) =>
   batches.filter((b) => b.ink === ink).flatMap(segments);
 
 // One row of a sphere-like grid, by hand: at p = (1, 0, 0) with n = x, the
-// curvatures −1 and −1/2 along y and z put their centres at the origin and
+// curvatures −1 and −1/2 along y and z put their centers at the origin and
 // at (−1, 0, 0). The second column has no point; the third no normal; the
-// fourth is an umbilic; the fifth has its second centre at infinity.
+// fourth is an umbilic; the fifth has its second center at infinity.
 function grid(kind: "patch" | "canal" = "patch"): SpatialResult {
   const p = at(1, 0, 0),
     n = at(1, 0, 0);
@@ -290,20 +290,20 @@ test("the surface probe snaps to the nearest row and column, wrapping around a c
   });
 });
 
-test("the surface probe draws the normal line, directions, centres and principal circles", () => {
+test("the surface probe draws the normal line, directions, centers and principal circles", () => {
   const r = grid(),
     glyph = r.bounds.radius * 0.2;
   const batches = surfaceProbeBatches(r, 0, 0);
-  // The normal line runs from the farther centre, (−1, 0, 0), past the
+  // The normal line runs from the farther center, (−1, 0, 0), past the
   // point by the glyph length.
   const normal = byInk(batches, probeInk.normal);
   expect(normal).toHaveLength(1);
   expect(length(sub(normal[0][0], at(-1, 0, 0)))).toBeLessThan(f32);
   expect(length(sub(normal[0][1], at(1 + glyph, 0, 0)))).toBeLessThan(f32);
   const branch = (b: 0 | 1) => byInk(batches, surfaceInk[b]);
-  // Each branch: its direction glyph first, then a cross at its centre,
+  // Each branch: its direction glyph first, then a cross at its center,
   // then its circle through the point in the plane of n and its direction.
-  for (const [b, e, centre, radius, flat] of [
+  for (const [b, e, center, radius, flat] of [
     [0, at(0, 1, 0), at(0, 0, 0), 1, "z"],
     [1, at(0, 0, 1), at(-1, 0, 0), 2, "y"],
   ] as const) {
@@ -317,14 +317,14 @@ test("the surface probe draws the normal line, directions, centres and principal
     expect(length(sub(circle[0][0], at(1, 0, 0)))).toBeLessThan(f32);
     expect(length(sub(circle[127][1], at(1, 0, 0)))).toBeLessThan(f32);
     for (const [q] of circle) {
-      expect(Math.abs(length(sub(q, centre)) - radius)).toBeLessThan(f32);
+      expect(Math.abs(length(sub(q, center)) - radius)).toBeLessThan(f32);
       expect(Math.abs(q[flat])).toBeLessThan(f32);
     }
-    // The cross at the centre.
+    // The cross at the center.
     const arms = s.slice(1, 4);
     for (const [a, c] of arms) {
       const mid = at((a.x + c.x) / 2, (a.y + c.y) / 2, (a.z + c.z) / 2);
-      expect(length(sub(mid, centre))).toBeLessThan(f32);
+      expect(length(sub(mid, center))).toBeLessThan(f32);
     }
   }
   // The point's mark, and a patch has no ring.
@@ -343,12 +343,12 @@ test("missing, singular, umbilic and infinite points draw only what is defined",
   // Singular: the mark alone.
   const singular = surfaceProbeBatches(r, 0, 2);
   expect(singular.map((b) => b.ink)).toEqual([probeInk.mark]);
-  // Umbilic: no directions or circles, only both centres (one point).
+  // Umbilic: no directions or circles, only both centers (one point).
   const umbilic = surfaceProbeBatches(r, 0, 3);
   expect(byInk(umbilic, surfaceInk[0])).toHaveLength(3);
   expect(byInk(umbilic, surfaceInk[1])).toHaveLength(3);
-  // κ = 0: the second branch has its direction, but no centre or circle,
-  // and the normal line reaches only the first centre.
+  // κ = 0: the second branch has its direction, but no center or circle,
+  // and the normal line reaches only the first center.
   const flat = surfaceProbeBatches(r, 0, 4);
   expect(byInk(flat, surfaceInk[1])).toHaveLength(1);
   expect(byInk(flat, surfaceInk[0])).toHaveLength(1 + 3 + 128);
@@ -381,7 +381,7 @@ test("the surface readout gives curvatures, radii, K and H, and marks undefined 
     missing: false,
     singular: true,
     curvature: [null, null],
-    // An unknown curvature has no centre, but not one at infinity.
+    // An unknown curvature has no center, but not one at infinity.
     infinite: [false, false],
   });
   expect(surfaceProbeReadout(r, 0, 3)).toMatchObject({ umbilic: true });
@@ -458,7 +458,7 @@ test("the surface readout tells an unknown tangent plane from a singular one", (
     "The patch has no point here.",
     "Singular here: no normal or principal curvatures.",
     "An umbilic: every direction is principal, so none is drawn.",
-    "A centre lies beyond 100 study radii, at infinity: its circle is not drawn.",
+    "A center lies beyond 100 study radii, at infinity: its circle is not drawn.",
   ]);
 });
 
@@ -493,7 +493,7 @@ async function ready(page: Page) {
 }
 const surfaceSwitch = (page: Page) =>
   page.getByRole("checkbox", {
-    name: "Principal curvatures & centres at a point",
+    name: "Principal curvatures & centers at a point",
   });
 const describe = (page: Page) => page.getByLabel("Describe", { exact: true });
 // The targets the Describe menu offers, by value.
@@ -919,7 +919,7 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
   await u.fill("20");
   await expect(status).toHaveText("");
   // Nearing the edge one curvature grows steadily, while the other falls
-  // towards 0, its center at infinity.
+  // toward 0, its center at infinity.
   const away = await largest();
   let before = away;
   for (const row of [30, 35, 38, 39]) {
@@ -934,7 +934,7 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
   }
   expect(before).toBeGreaterThan(10 * away);
   await expect(status).toHaveText(
-    "A centre lies beyond 100 study radii, at infinity: its circle is not drawn.",
+    "A center lies beyond 100 study radii, at infinity: its circle is not drawn.",
   );
   for (const row of ["40", "90"]) {
     await u.fill(row);
@@ -1122,7 +1122,7 @@ test("the surface probe moves along t as an animation and returns on Stop", asyn
   expect(await pixels(page)).toBe(study);
 });
 
-test("the surface probe's colours hold in the dark theme", async ({ page }) => {
+test("the surface probe's colors hold in the dark theme", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await probeBeads(page);
   await along(page, "Along t").fill("270");
@@ -1130,8 +1130,8 @@ test("the surface probe's colours hold in the dark theme", async ({ page }) => {
   const legend = page.locator(".probe-legend li");
   await expect(legend).toHaveText([
     "Normal",
-    "κ around the circle: direction, circle & centre",
-    "κ across it: direction, circle & centre",
+    "κ around the circle: direction, circle & center",
+    "κ across it: direction, circle & center",
     "Point & contact circle",
   ]);
 });
@@ -1193,7 +1193,7 @@ test("a helix's tangent ribbon reads τ/(κ|u|) across its rulings and K = 0", a
   within(r.k1, 4 / 3);
   within(r.H, 2 / 3);
   await expect(page.getByTestId("probe-status")).toHaveText(
-    "A centre lies beyond 100 study radii, at infinity: its circle is not drawn.",
+    "A center lies beyond 100 study radii, at infinity: its circle is not drawn.",
   );
   expect(await pixels(page)).not.toBe(original);
   // The far edge on the other sheet, u = −1.5: κ = 1/9, with the normal −B.
@@ -1215,12 +1215,12 @@ test("a helix's tangent ribbon reads τ/(κ|u|) across its rulings and K = 0", a
   ]);
   await expect(page.locator(".probe-legend li")).toHaveText([
     "Normal",
-    "κ along the ruling: direction, circle & centre",
-    "κ across it: direction, circle & centre",
+    "κ along the ruling: direction, circle & center",
+    "κ across it: direction, circle & center",
     "Point & ruling",
   ]);
   await expect(page.locator(".probe-notes")).toHaveText(
-    "11,544 centres of κ along the ruling lie beyond 100 study radii, at infinity.",
+    "11,544 centers of κ along the ruling lie beyond 100 study radii, at infinity.",
   );
   // Back to the curve: its probe stands at the same t, unchanged.
   await describe(page).selectOption("curve");
@@ -1272,7 +1272,7 @@ test("a tangent ribbon reads an unknown tangent plane as unknown, not singular",
   await expect(page.locator(".probe-notes")).not.toContainText(
     /singular|both curvatures/,
   );
-  // A neighbouring row is regular.
+  // A neighboring row is regular.
   await along(page, "Along t").fill("241");
   await expect(page.getByTestId("probe-status")).not.toHaveText(
     /Tangent plane unknown|Singular/,
@@ -1488,7 +1488,7 @@ test("a mirror's probe describes the light or the mirror, in their own words", (
   expect(light.branches).toEqual(["μ₁", "μ₂"]);
   const own = surfaceTerms(mirror, "mirror");
   expect(own.surface).toBe("mirror");
-  expect(own.switch).toBe("Principal curvatures & centres at a point");
+  expect(own.switch).toBe("Principal curvatures & centers at a point");
   expect(own.branches).toEqual(["κ₁", "κ₂"]);
   // Help states what the engine does: θ′ and the critical angle only where
   // light is transmitted.
@@ -1569,7 +1569,7 @@ test("a patch with an offset probes the patch or its offset, in their own words"
   expect(helpText(describeHelp(patchStudy(0)))).not.toMatch(/offset/);
   const own = surfaceTerms(c, "offset");
   expect(own.surface).toBe("offset surface");
-  expect(own.switch).toBe("Principal curvatures & centres at a point");
+  expect(own.switch).toBe("Principal curvatures & centers at a point");
   expect(own.branches).toEqual(["κ₁", "κ₂"]);
   expect(own.sliders).toEqual(["Along u", "Along v"]);
   expect(surfaceTerms(c, "surface").surface).toBe("surface");
@@ -1765,23 +1765,23 @@ test("the light probe draws its rays, foci and wavefront circles", () => {
     [at(0, 0, 1.5), p],
     [at(0, 0, -1), at(0, 0, 1.5)],
   ]);
-  // Each wavefront circle passes through the point, centred on its focus,
+  // Each wavefront circle passes through the point, centered on its focus,
   // in the plane of the ray and its direction.
-  for (const [b, centre, radius, flat] of [
+  for (const [b, center, radius, flat] of [
     [0, at(0, 0, 0.5), 0.5, "y"],
     [1, at(0, 0, -1), 1, "x"],
   ] as const) {
     const pairs = byInk(at0, surfaceInk[b]),
       ends = pairs.flat();
     expect(ends.length).toBeGreaterThan(200);
-    // The focus is marked by a cross centred on it.
+    // The focus is marked by a cross centered on it.
     expect(
       pairs.filter(([a, c]) =>
-        close(at((a.x + c.x) / 2, (a.y + c.y) / 2, (a.z + c.z) / 2), centre),
+        close(at((a.x + c.x) / 2, (a.y + c.y) / 2, (a.z + c.z) / 2), center),
       ).length,
     ).toBe(3);
     const ring = ends.filter(
-      (q) => Math.abs(length(sub(q, centre)) - radius) < f32,
+      (q) => Math.abs(length(sub(q, center)) - radius) < f32,
     );
     expect(ring.length).toBeGreaterThan(250);
     expect(ring.every((q) => Math.abs(q[flat]) < f32)).toBe(true);

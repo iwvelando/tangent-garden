@@ -74,7 +74,7 @@ func (c *Chase) Velocity(_ float64, y, out []float64) {
 }
 
 // Run integrates the chase from the flattened starting positions at lo
-// towards hi with the Dormand–Prince 5(4) pair, holding each step's local
+// toward hi with the Dormand–Prince 5(4) pair, holding each step's local
 // error to tol of the smallest gap at its start, within budget attempted
 // steps.
 func Run(start []float64, dim int, speeds []float64, eps, lo, hi, tol float64, budget int) *Chase {

@@ -182,7 +182,7 @@ for (const colorScheme of ["light", "dark"] as const)
     expect(
       await gallery(page).evaluate((d) => d.scrollWidth - d.clientWidth),
     ).toBeLessThanOrEqual(0);
-    // Thumbnails take the theme's paper, not a fixed colour.
+    // Thumbnails take the theme's paper, not a fixed color.
     const card = gallery(page).locator('[data-example="0"] .example-thumb');
     await expect(card).toHaveAttribute("data-state", "ready");
     const [paper, thumb] = await card.evaluate((t) => [

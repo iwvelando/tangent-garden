@@ -22,7 +22,7 @@ export type Example = {
   fingerprint: string;
 };
 
-// A thumbnail is either the plot's own SVG, with colours recorded by role, or
+// A thumbnail is either the plot's own SVG, with colors recorded by role, or
 // a pair of raster images, one per theme, for drawings SVG cannot carry.
 export type Thumbnail =
   | { kind: "svg"; markup: string }
@@ -348,7 +348,7 @@ function ExampleThumb({
       live = false;
     };
   }, [example, near, source]);
-  // The thumbnail's colours follow the theme through the plot's palette.
+  // The thumbnail's colors follow the theme through the plot's palette.
   const palette = plotPalette(dark);
   const style = Object.fromEntries(
     Object.entries(palette).map(([role, value]) => [`--tg-${role}`, value]),

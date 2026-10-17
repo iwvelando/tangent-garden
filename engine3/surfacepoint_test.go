@@ -125,8 +125,8 @@ func TestSurfacePointAtASampleIsTheSample(t *testing.T) {
 }
 
 // Between samples, a sphere with its outward normal has κ = −1/R in every
-// direction at every point: an umbilic, without directions, both centres
-// at its centre.
+// direction at every point: an umbilic, without directions, both centers
+// at its center.
 func TestSurfacePointOnASphere(t *testing.T) {
 	const R = 1.7
 	c := probedAs(sphere(R, 12, 12), "surface")
@@ -135,7 +135,7 @@ func TestSurfacePointOnASphere(t *testing.T) {
 		closeVec3(t, "point", d.Points[0][0], Vec3{R * math.Cos(at[1]) * math.Cos(at[0]), R * math.Cos(at[1]) * math.Sin(at[0]), R * math.Sin(at[1])}, 1e-12)
 		for k := 0; k < 2; k++ {
 			closeNumber(t, "κ", d.Curvature[k][0][0], -1/R, 1e-12)
-			closeVec3(t, "centre", d.Focal[k][0][0], Vec3{}, 1e-12)
+			closeVec3(t, "center", d.Focal[k][0][0], Vec3{}, 1e-12)
 			if d.Direction[k][0][0] != nil {
 				t.Fatalf("a direction at an umbilic: %v", *d.Direction[k][0][0])
 			}
@@ -148,7 +148,7 @@ func TestSurfacePointOnASphere(t *testing.T) {
 
 // Between samples of a triaxial ellipsoid x²/a² + y²/b² + z²/c² = 1, the
 // Gaussian curvature is 1/(a²b²c²(x²/a⁴ + y²/b⁴ + z²/c⁴)²), the normal is
-// along the gradient, and each centre is X + n/κ.
+// along the gradient, and each center is X + n/κ.
 func TestSurfacePointOnAnEllipsoid(t *testing.T) {
 	const a, b, cc = 3.0, 2.0, 1.0
 	c := probedAs(coarseEllipsoid(), "surface")
@@ -170,7 +170,7 @@ func TestSurfacePointOnAnEllipsoid(t *testing.T) {
 		}
 		for k := 0; k < 2; k++ {
 			kappa := *d.Curvature[k][0][0]
-			closeVec3(t, "centre", d.Focal[k][0][0], x.add(n.mul(1/kappa)), 1e-12)
+			closeVec3(t, "center", d.Focal[k][0][0], x.add(n.mul(1/kappa)), 1e-12)
 		}
 		if *d.Direction[0][0][0] == (Vec3{}) || math.Abs(d.Direction[0][0][0].dot(*n)) > 1e-12 {
 			t.Fatalf("the first direction %v is not tangent", d.Direction[0][0][0])
@@ -204,7 +204,7 @@ func TestSurfacePointFindsAnUmbilicTheGridMisses(t *testing.T) {
 }
 
 // Between samples, the offset by d stands at X + d·n with curvatures
-// κᵢ/(1 − dκᵢ) and the patch's own centres; a focal sheet stands at
+// κᵢ/(1 − dκᵢ) and the patch's own centers; a focal sheet stands at
 // X + n/κᵢ, its foot X, its normal the patch's principal direction eᵢ.
 func TestSurfacePointOffsetAndFocalSheets(t *testing.T) {
 	c := coarseEllipsoid()
@@ -221,7 +221,7 @@ func TestSurfacePointOffsetAndFocalSheets(t *testing.T) {
 		for k := 0; k < 2; k++ {
 			kappa := *patch.Curvature[k][0][0]
 			closeNumber(t, "offset κ", offset.Curvature[k][0][0], kappa/(1-dist*kappa), 1e-12)
-			closeVec3(t, "offset centre", offset.Focal[k][0][0], *patch.Focal[k][0][0], 1e-12)
+			closeVec3(t, "offset center", offset.Focal[k][0][0], *patch.Focal[k][0][0], 1e-12)
 		}
 		for sheet := 1; sheet <= 2; sheet++ {
 			k := sheet - 1
@@ -254,7 +254,7 @@ func TestSurfacePointFocalNormalFollowsTheGrid(t *testing.T) {
 		for _, at := range [][2]int{{2, 5}, {9, 14}, {17, 20}} {
 			u0, v0 := q.at(at[0], at[1])
 			u1, v1 := q.at(at[0]+1, at[1]+1)
-			// A little nearer the sample than its neighbour.
+			// A little nearer the sample than its neighbor.
 			u, v := u0+0.3*(u1-u0), v0+0.3*(v1-v0)
 			_, d := pointProbed(t, study, u, v)
 			m, near := d.Normals[0][0], grid.Normals[at[0]][at[1]]

@@ -35,7 +35,7 @@ export function ruledNote(result: SpatialResult): string[] {
     );
   if (q.singular > 0)
     out.push(
-      `On ${q.singular === 1 ? "one ruling" : `${q.singular} rulings`} S_t × S_u vanishes, as at a cone's apex; the shading there uses the neighbouring faces.`,
+      `On ${q.singular === 1 ? "one ruling" : `${q.singular} rulings`} S_t × S_u vanishes, as at a cone's apex; the shading there uses the neighboring faces.`,
     );
   if (regular)
     out.push(

@@ -171,7 +171,7 @@ export function arrivalAt(timeline: Timeline, step: number) {
 // its ray reaches it, and is never joined across one that has not. A caustic
 // refined between samples is traced the same way, each inserted point at
 // its interpolated arrival. Each representative ray carries the part of its
-// path travelled so far. p = 1 is the complete study, with every ray at its
+// path traveled so far. p = 1 is the complete study, with every ray at its
 // full length.
 export function trace(result: Result, timeline: Timeline, p: number): Result {
   const tau = tauAt(timeline, p);
@@ -200,9 +200,8 @@ export function trace(result: Result, timeline: Timeline, p: number): Result {
       if (!from || !beam || !Number.isFinite(t))
         return { ...ray, traced: undefined };
       const length = t / timeline.nIncident;
-      const travelled = tau / timeline.nIncident;
-      const to =
-        travelled >= length ? ray.origin : along(from, beam, travelled);
+      const traveled = tau / timeline.nIncident;
+      const to = traveled >= length ? ray.origin : along(from, beam, traveled);
       const tail = along(from, beam, -timeline.behind);
       const speed = ray.tir ? timeline.nIncident : timeline.nTransmitted;
       const { ahead, behind } = reach(ray, timeline.distance, timeline.stop);

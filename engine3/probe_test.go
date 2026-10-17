@@ -141,7 +141,7 @@ func probeStudies() map[string]Request {
 	frenetRibbon := ribbon(helixStudy(), "frenet", Vec3{0, 0, 1}, 0.4, 0, 0.3)
 	threadedRing := threaded(ring(0), "cos(t)", "sin(t)", "1 + 0.3*sin(2*t)", 1, 0.5)
 	chorded := chords(study(), 1, 1.1)
-	canalTube := canalled(study(), 0.3, "1", 6)
+	canalTube := canaled(study(), 0.3, "1", 6)
 	harmonic := harmonicStudy(0, 2*math.Pi, Vec3{0.1, 0, 0}, HarmonicTerm{1, Vec3{2, 0, 0}, Vec3{0, 2, 0}}, HarmonicTerm{3, Vec3{0, 0, 0.5}, Vec3{0.3, 0, 0}})
 	harmonic.Construction = "developable"
 	footInput := study()
@@ -219,7 +219,7 @@ func TestCurveProbeAtASampleIsTheSample(t *testing.T) {
 			sameVec(t, what("tangent"), p.Tangent, d.Tangent[j])
 			sameVec(t, what("normal"), p.Normal, d.Normal[j])
 			sameVec(t, what("binormal"), p.Binormal, d.Binormal[j])
-			sameVec(t, what("centre"), p.Center, d.Center[j])
+			sameVec(t, what("center"), p.Center, d.Center[j])
 			sameNumber(t, what("curvature"), p.Curvature, d.Curvature[j])
 			sameNumber(t, what("torsion"), p.Torsion, d.Torsion[j])
 			sameNumber(t, what("length"), p.Length, d.Length[j])
@@ -285,7 +285,7 @@ func itoa(i int) string {
 }
 
 // A helix (a cos t, a sin t, bt) between samples: κ = a/w², τ = b/w², with
-// w² = a² + b², N points at the axis, B = T × N, the centre lies 1/κ along
+// w² = a² + b², N points at the axis, B = T × N, the center lies 1/κ along
 // N, and the arc length from the domain's start is w(t − t₀).
 func TestCurveProbeBetweenSamplesOfAHelix(t *testing.T) {
 	c := helixStudy()
@@ -302,7 +302,7 @@ func TestCurveProbeBetweenSamplesOfAHelix(t *testing.T) {
 		closeVec3(t, "binormal", p.Binormal, T.cross(N), 1e-6)
 		closeNumber(t, "curvature", p.Curvature, helixA/w2, 1e-7)
 		closeNumber(t, "torsion", p.Torsion, helixB/w2, 1e-5)
-		closeVec3(t, "centre", p.Center, r.add(N.mul(w2/helixA)), 1e-5)
+		closeVec3(t, "center", p.Center, r.add(N.mul(w2/helixA)), 1e-5)
 		closeNumber(t, "length", p.Length, helixW*(s-lo), 1e-8)
 	}
 }
@@ -452,7 +452,7 @@ func TestCurveProbeAtTheEndOfAClosedCurve(t *testing.T) {
 }
 
 // Where the curve is straight, κ is 0 and the frame's normal, binormal,
-// torsion and centre are undefined; where it is undefined, nothing is.
+// torsion and center are undefined; where it is undefined, nothing is.
 func TestCurveProbeWhereFlatOrUndefined(t *testing.T) {
 	line := custom("t", "2*t", "1 - t", -1, 1)
 	line.Samples = 240
@@ -469,14 +469,14 @@ func TestCurveProbeWhereFlatOrUndefined(t *testing.T) {
 	}
 }
 
-// A centre of curvature beyond 100 study radii is at infinity, as the
+// A center of curvature beyond 100 study radii is at infinity, as the
 // diagnostics put it.
 func TestCurveProbeClipsAFarCentre(t *testing.T) {
 	c := custom("t", "1e-4*t^2", "0", -1, 1)
 	c.Samples = 240
 	p := probeAt(t, c, 0.0123)
 	if p.Curvature == nil || *p.Curvature <= 0 || p.Normal == nil || p.Center != nil {
-		t.Fatalf("a far centre: κ %v, centre %v", deref(p.Curvature), p.Center)
+		t.Fatalf("a far center: κ %v, center %v", deref(p.Curvature), p.Center)
 	}
 }
 

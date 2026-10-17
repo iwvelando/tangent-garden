@@ -1,6 +1,6 @@
 // Renders the link-preview card (public/og-image.png) and the home-screen icon
 // (public/apple-touch-icon.png) from the built site, so they carry the garden's
-// own drawing, type, and colours. Run after `npm run build`, check the images by
+// own drawing, type, and colors. Run after `npm run build`, check the images by
 // eye, and commit them; they change only when the site's look does.
 import { chromium } from "@playwright/test";
 import { preview } from "vite";
@@ -18,7 +18,7 @@ try {
     () => document.querySelectorAll("#artwork line").length > 20,
   );
 
-  // The default study, cropped to its own lines, over the header's brand. Centred
+  // The default study, cropped to its own lines, over the header's brand. Centered
   // so a square crop keeps both.
   await page.evaluate(() => {
     const art = document.getElementById("artwork");

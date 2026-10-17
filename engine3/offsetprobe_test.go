@@ -233,7 +233,7 @@ func TestOffsetDiagnosticsFlag(t *testing.T) {
 	mirror.Format = "rays"
 	mirror.Surface.Offset = 0.4
 	mirror.Rays = RaysRequest{Interaction: "reflect", Light: "parallel", Azimuth: 0, Elevation: 90, Length: 1, Receiver: ReceiverRequest{Plane: "none"}}
-	for _, c := range []Request{torusPatch(2, 0.7, 24, 24), offsetBy(torusPatch(2, 0.7, 24, 24), 0.3), offsetBy(sphere(1.5, 24, 12), -1.5), mirror, canalled(circle(), 0.5, "1", 4), custom("cos(t)", "sin(t)", "t", 0, 4)} {
+	for _, c := range []Request{torusPatch(2, 0.7, 24, 24), offsetBy(torusPatch(2, 0.7, 24, 24), 0.3), offsetBy(sphere(1.5, 24, 12), -1.5), mirror, canaled(circle(), 0.5, "1", 4), custom("cos(t)", "sin(t)", "t", 0, 4)} {
 		before, err := Compute(c)
 		if err != nil {
 			t.Fatal(err)

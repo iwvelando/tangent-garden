@@ -178,7 +178,7 @@ for (const study of [
         durations.push(image.duration);
         ctx.drawImage(image, 0, 0);
         const pixels = ctx.getImageData(0, 0, 2000, 1520).data;
-        // The most common colour is the background, wherever lines fall.
+        // The most common color is the background, wherever lines fall.
         const counts = new Map<number, number>();
         for (let j = 0; j < pixels.length; j += 4) {
           const key = (pixels[j] << 16) | (pixels[j + 1] << 8) | pixels[j + 2];

@@ -46,7 +46,7 @@ for (const [width, height] of [
     await page.goto("/");
     await choosePreset(page, preset("Hypotrochoid & its evolute"));
     await settled(page);
-    // Its pair neighbour does not move: compared with the field itself,
+    // Its pair neighbor does not move: compared with the field itself,
     // since the page may scroll to bring the error into view.
     const offset = async () => {
       const a = (await textbox(page, "Fixed radius R").boundingBox())!;

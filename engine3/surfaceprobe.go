@@ -18,7 +18,7 @@ import "math"
 // focal points X + n/κ. A patch, framed ribbon and ruled surface number
 // them κ₁ ≥ κ₂. A canal numbers them by line of curvature: branch 0 runs
 // around the contact circle, where κ = −1/R and the focal point is the
-// sphere's centre on the base; branch 1 runs across it. A developable's
+// sphere's center on the base; branch 1 runs across it. A developable's
 // branch 0 runs along the ruling, where κ = 0, and branch 1 across it.
 //
 // A point is nil where the surface has none (no real contact circle, no
@@ -381,7 +381,7 @@ func (q SurfaceRequest) focalFrame(u, v float64, s surfacePoint, k int) (fu, fv,
 // canalAcross returns the principal curvature of the canal X = c + Rq
 // across its contact circle, and that direction, at the point where
 // q = −Ṙ T + σ e with σ = √(1 − Ṙ²) and e a unit vector normal to T. Dots
-// are derivatives in the arc length s of the centre c, whose curvature
+// are derivatives in the arc length s of the center c, whose curvature
 // vector is bent = κN. The contact circle is a line of curvature, so the
 // other principal direction is w, the part of X_s normal to the circle's
 // tangent T × e, and κ = −q_s·w/w·w with A = −dn and n = q. The frame's own
@@ -413,7 +413,7 @@ func probeRows(n int) []int {
 }
 
 // canalRing is the canal at one parameter, as its probe describes it: the
-// sphere's centre c on the curve, its radius R, the curve's unit tangent T
+// sphere's center c on the curve, its radius R, the curve's unit tangent T
 // and curvature vector bent, the slope Ṙ = dR/ds and Ṙ̈ (NaN where it is
 // unknown, and bent then too), and the direction from c at a turn from θ₀
 // in the frame that carries the meridians.
@@ -423,7 +423,7 @@ type canalRing struct {
 	direction       func(turn float64) Vec3
 }
 
-// canalRingAt is the canal's ring where the curve has its centre c, unit
+// canalRingAt is the canal's ring where the curve has its center c, unit
 // tangent T, speed and acceleration a, and the sphere's radius R and its
 // slope dR/dt; second gives d²R/dt², needed only where a is known.
 func canalRingAt(center, T Vec3, speed float64, a Vec3, R, slope float64, second func() float64, direction func(float64) Vec3) canalRing {

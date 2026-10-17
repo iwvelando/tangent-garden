@@ -160,7 +160,7 @@ const descriptions: Record<
   envelope: {
     title: "The envelope of turning lines",
     description:
-      "Through each point of the curve passes a line, turned to the direction angle θ(t). Neighbouring lines cross ever closer together; the curve they all touch is their envelope.",
+      "Through each point of the curve passes a line, turned to the direction angle θ(t). Neighboring lines cross ever closer together; the curve they all touch is their envelope.",
     formula: "E = r + λu,  det(r′ + λu′, u) = 0",
   },
   inversion: {
@@ -174,14 +174,14 @@ const descriptions: Record<
 const chordDescription = {
   title: "The envelope of chords",
   description:
-    "Join each point of the curve to a second point moving with the same t. Neighbouring chords cross ever closer together; the curve they all touch is their envelope. Dashed parts lie on the chords' extensions, beyond the segments.",
+    "Join each point of the curve to a second point moving with the same t. Neighboring chords cross ever closer together; the curve they all touch is their envelope. Dashed parts lie on the chords' extensions, beyond the segments.",
   formula: "E = r + λ(q − r),  det(r′ + λu′, u) = 0",
 };
 // Circles share the envelope tab but explain their two branches.
 const circleDescription = {
   title: "The envelope of moving circles",
   description:
-    "Center a circle of radius R(t) on each point of the curve. Neighbouring circles cross ever closer together, touching their envelope on either side of travel. The branches meet where the radius changes as fast as the center moves, and vanish where it changes faster: there each circle nests inside its neighbours.",
+    "Center a circle of radius R(t) on each point of the curve. Neighboring circles cross ever closer together, touching their envelope on either side of travel. The branches meet where the radius changes as fast as the center moves, and vanish where it changes faster: there each circle nests inside its neighbors.",
   formula: "E = c + R(−kT ± √(1−k²) N),  k = R′/|c′|",
 };
 // A rolling curve shares the rolling tab but explains contact matching.
@@ -389,7 +389,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     return () => engine.dispose();
   }, []);
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     const timer = setTimeout(() => {
       client
         .current!.compute(config, bounds, {
@@ -397,13 +397,13 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
           ...(view && { view }),
         })
         .then((next) => {
-          if (cancelled) return;
+          if (canceled) return;
           setFrame(next);
           setError({ message: "" });
           setSettledKey(requestKey);
         })
         .catch((reason) => {
-          if (cancelled) return;
+          if (canceled) return;
           // The previous valid study stays in view, marked as such.
           setError({
             message: reason.message,
@@ -413,7 +413,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
         });
     }, 120);
     return () => {
-      cancelled = true;
+      canceled = true;
       clearTimeout(timer);
     };
   }, [config, bounds, probing, view]);
@@ -2098,7 +2098,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                       </Field>
                       <p className="note">
                         Lines are unbounded and drawn across the view. Parallel
-                        neighbours meet at infinity, so the envelope has gaps
+                        neighbors meet at infinity, so the envelope has gaps
                         there.
                       </p>
                     </>

@@ -178,7 +178,7 @@ test("axial light reaches a paraboloid's focus along equal optical paths", () =>
   }
 });
 
-test("a point source at a sphere's centre returns there at twice the radius", () => {
+test("a point source at a sphere's center returns there at twice the radius", () => {
   const sphere = sheet(n, (i, j) => {
     const u = (Math.PI * (i + 1)) / (n + 1),
       v = (2 * Math.PI * j) / n;
@@ -188,10 +188,10 @@ test("a point source at a sphere's centre returns there at twice the radius", ()
       z: 2 * Math.cos(u),
     };
   });
-  const centre = { x: 0, y: 0, z: 0 };
+  const center = { x: 0, y: 0, z: 0 };
   const caustics = [
     part(
-      sheet(n, () => centre),
+      sheet(n, () => center),
       1,
       false,
     ),
@@ -199,12 +199,12 @@ test("a point source at a sphere's centre returns there at twice the radius", ()
     part(none, 2, false),
     part(none, 2, true),
   ];
-  const bounds = { center: centre, radius: 2 };
-  const result = mirror(sphere, caustics, rays(sphere, centre, 3), bounds);
-  result.rays!.source = centre;
+  const bounds = { center: center, radius: 2 };
+  const result = mirror(sphere, caustics, rays(sphere, center, 3), bounds);
+  result.rays!.source = center;
   const timeline = traceTimeline(
     result,
-    lit({ light: "point", source: centre }),
+    lit({ light: "point", source: center }),
     bounds,
   );
   for (const row of timeline.hit)
@@ -213,11 +213,11 @@ test("a point source at a sphere's centre returns there at twice the radius", ()
     for (const t of row) expect(t).toBeCloseTo(4, 12);
   const halfway = trace(result, timeline, 1 / timeline.total).rays!;
   for (const line of halfway.lines) {
-    near(line.start, centre);
+    near(line.start, center);
     const hit = result.rays!.lines.find(
       (l) => l.i === line.i && l.j === line.j,
     )!;
-    near(line.point, add(centre, hit.point, 0.5));
+    near(line.point, add(center, hit.point, 0.5));
   }
 });
 

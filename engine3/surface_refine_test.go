@@ -248,7 +248,7 @@ func TestRefinedRuledSurfaceKeepsTheBreak(t *testing.T) {
 // plane, and every refined meridian lies within a segment's sagitta of the
 // mesh, where the uniform rings leave it far behind.
 func TestRefinedTubeFollowsACoil(t *testing.T) {
-	c := canalled(custom("(2+0.3*cos(40*t))*cos(t)", "(2+0.3*cos(40*t))*sin(t)", "0.3*sin(40*t)", 0, 2*math.Pi), 0.1, "1", 2)
+	c := canaled(custom("(2+0.3*cos(40*t))*cos(t)", "(2+0.3*cos(40*t))*sin(t)", "0.3*sin(40*t)", 0, 2*math.Pi), 0.1, "1", 2)
 	c.Samples = 240
 	curves, r := surfaceRefined(t, c)
 	if r.Adaptive.Capped {
@@ -439,7 +439,7 @@ func TestSurfaceRefinementNeedsRefinement(t *testing.T) {
 // that draws no meridian: refining the curves alone cannot see it, but the
 // refined surface's own seams find it and leave no face across it.
 func TestRefinedTubeFindsALostEnvelope(t *testing.T) {
-	c := canalled(custom("t", "0", "0", 0, 2), 1, "3+1.0000001*sin(t-1.00104)", 0)
+	c := canaled(custom("t", "0", "0", 0, 2), 1, "3+1.0000001*sin(t-1.00104)", 0)
 	crack := 241
 	curves := refinedStudy(t, c)
 	if curves.Canal.Breaks[crack] || curves.Omitted != 0 {
@@ -466,7 +466,7 @@ func TestRefinedTubeFindsALostEnvelope(t *testing.T) {
 // points is a vertex.
 func TestRefinedTubeCloses(t *testing.T) {
 	for _, closure := range []string{"distribute", "seam"} {
-		c := canalled(study(), 0.3, "1", 3)
+		c := canaled(study(), 0.3, "1", 3)
 		c.Samples = 240
 		c.Frame.Closure = closure
 		curves, r := surfaceRefined(t, c)

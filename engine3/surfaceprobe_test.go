@@ -82,7 +82,7 @@ func TestTubeProbeIsTorus(t *testing.T) {
 		cos := (math.Hypot(x.X, x.Y) - R) / r
 		return -cos / (R + r*cos)
 	}
-	out, d := probed(t, canalled(circle(), r, "1", 4))
+	out, d := probed(t, canaled(circle(), r, "1", 4))
 	if d.Kind != "canal" || !d.Periodic || len(d.V) != canalSegments || len(d.U) != 481 || d.Singular != 0 || d.Umbilics != 0 || d.Unknown != 0 || d.Clipped[0] != 0 {
 		t.Fatalf("summary kind %s periodic %v rows %d columns %d singular %d umbilics %d unknown %d clipped %v", d.Kind, d.Periodic, len(d.U), len(d.V), d.Singular, d.Umbilics, d.Unknown, d.Clipped)
 	}
@@ -172,7 +172,7 @@ func TestPatchProbeAgreesWithFocalSheets(t *testing.T) {
 
 // Every point of a sphere is an umbilic: no principal directions, both
 // curvatures −1/R with the outward normal, and both focal points at the
-// centre. Reversing the normal reverses the curvatures, not the centre.
+// center. Reversing the normal reverses the curvatures, not the center.
 // The poles are chart singularities, with no normal.
 func TestSphereProbeUmbilics(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
@@ -208,7 +208,7 @@ func TestSphereProbeUmbilics(t *testing.T) {
 // contact circle. This is the preset "Beads that lose their envelope",
 // whose spheres have no envelope where |R′| > 1.
 func TestBeadsProbeIsSurfaceOfRevolution(t *testing.T) {
-	c := canalled(custom("t", "0", "0", -2*math.Pi, 2*math.Pi), 0.7, "1+0.8*sin(2*t)", 0)
+	c := canaled(custom("t", "0", "0", -2*math.Pi, 2*math.Pi), 0.7, "1+0.8*sin(2*t)", 0)
 	R := func(t float64) float64 { return 0.7 * (1 + 0.8*math.Sin(2*t)) }
 	slope := func(t float64) float64 { return 1.12 * math.Cos(2*t) }
 	profile := func(t float64) [2]float64 {
@@ -275,14 +275,14 @@ func TestBeadsProbeIsSurfaceOfRevolution(t *testing.T) {
 // contact circle: that curvature is 0 and its focal point at infinity.
 // With R = t every circle collapses to the apex, a singular point.
 func TestCanalProbeConeAndCollapse(t *testing.T) {
-	_, d := probed(t, canalled(custom("0", "0", "t", 0.5, 3), 1, "t/2", 4))
+	_, d := probed(t, canaled(custom("0", "0", "t", 0.5, 3), 1, "t/2", 4))
 	points := 0
 	eachProbed(d, func(row, k int, x, n Vec3, kappa [2]*float64) {
 		points++
 		closeTo(t, "around", kappa[0], -2/d.U[row], 1e-9)
 		closeTo(t, "across", kappa[1], 0, 1e-7)
 		if d.Focal[1][row][k] != nil {
-			t.Fatalf("(%d, %d) cone generator with a finite centre", row, k)
+			t.Fatalf("(%d, %d) cone generator with a finite center", row, k)
 		}
 		// The generator runs from the apex through the point.
 		if e := d.Direction[1][row][k]; math.Abs(math.Abs(e.dot(x.unit()))-1) > 1e-9 {
@@ -292,7 +292,7 @@ func TestCanalProbeConeAndCollapse(t *testing.T) {
 	if points != 481*canalSegments || d.Clipped[1] != points || d.Clipped[0] != 0 || d.Singular != 0 {
 		t.Fatalf("points %d clipped %v singular %d", points, d.Clipped, d.Singular)
 	}
-	_, d = probed(t, canalled(custom("0", "0", "t", 0.5, 3), 1, "t", 4))
+	_, d = probed(t, canaled(custom("0", "0", "t", 0.5, 3), 1, "t", 4))
 	if d.Singular != 481*canalSegments {
 		t.Fatalf("singular %d", d.Singular)
 	}
@@ -310,7 +310,7 @@ func TestCanalProbeConeAndCollapse(t *testing.T) {
 // and no normal. Where R″ is unstable, the curvature across the circle is
 // unknown, but the circle's own curvature and both directions are not.
 func TestCanalProbeCuspAndUnknown(t *testing.T) {
-	_, d := probed(t, canalled(circle(), 2, "1", 0))
+	_, d := probed(t, canaled(circle(), 2, "1", 0))
 	cusps := 0
 	for row := range d.Points {
 		for k := range d.Points[row] {
@@ -327,7 +327,7 @@ func TestCanalProbeCuspAndUnknown(t *testing.T) {
 	if cusps != 480 || d.Singular != cusps {
 		t.Fatalf("%d cusps, singular %d", cusps, d.Singular)
 	}
-	_, d = probed(t, canalled(custom("t", "0", "0", -1, 1), 0.3, "1+0.1*abs(t)^1.5", 0))
+	_, d = probed(t, canaled(custom("t", "0", "0", -1, 1), 0.3, "1+0.1*abs(t)^1.5", 0))
 	if d.Unknown != canalSegments || d.Singular != 0 {
 		t.Fatalf("unknown %d singular %d", d.Unknown, d.Singular)
 	}
@@ -347,14 +347,14 @@ func TestCanalProbeCuspAndUnknown(t *testing.T) {
 // helixCanal is a canal of varying radius around a helix, with meridians
 // every quarter turn.
 func helixCanal(samples int) Request {
-	c := canalled(custom("cos(t)", "sin(t)", "t/2", 0, 4*math.Pi), 0.3, "1+0.5*sin(3*t)", 4)
+	c := canaled(custom("cos(t)", "sin(t)", "t/2", 0, 4*math.Pi), 0.3, "1+0.5*sin(3*t)", 4)
 	c.Samples = samples
 	return c
 }
 
 // At every regular sample, n is the unit sphere normal (X − c)/R, the two
 // directions are orthonormal and tangent, the contact circle's direction is
-// T × n, and its focal point is the sphere's centre.
+// T × n, and its focal point is the sphere's center.
 func TestCanalProbeFrame(t *testing.T) {
 	out, d := probed(t, helixCanal(480))
 	if d.Singular != 0 || d.Unknown != 0 || d.Umbilics != 0 {
@@ -432,7 +432,7 @@ func TestSurfaceDiagnosticsOffLeaveResultsUnchanged(t *testing.T) {
 	band := ribbon(study(), "rotation-minimizing", Vec3{0, 0, 1}, 0.3, 2, 0.35)
 	strands := ribbon(study(), "frenet", Vec3{}, 0, 1, 0)
 	strands.Frame.Offset, strands.Frame.Strands = 0.4, 3
-	for _, c := range []Request{canalled(circle(), 0.5, "1", 4), helixCanal(480), torusPatch(2, 0.7, 24, 24), custom("cos(t)", "sin(t)", "t", 0, 4), study(), unwound, band, strands, threaded(ring(-1), "cos(t)", "sin(t)", "1", 1, 1.3), chords(study(), 1, 2), canalled(custom("t", "0", "0", -2*math.Pi, 2*math.Pi), 0.7, "1+0.8*sin(2*t)", 0), mirror} {
+	for _, c := range []Request{canaled(circle(), 0.5, "1", 4), helixCanal(480), torusPatch(2, 0.7, 24, 24), custom("cos(t)", "sin(t)", "t", 0, 4), study(), unwound, band, strands, threaded(ring(-1), "cos(t)", "sin(t)", "1", 1, 1.3), chords(study(), 1, 2), canaled(custom("t", "0", "0", -2*math.Pi, 2*math.Pi), 0.7, "1+0.8*sin(2*t)", 0), mirror} {
 		for _, curve := range []bool{false, true} {
 			c.Diagnostics = curve
 			before, err := Compute(c)
@@ -491,7 +491,7 @@ func TestCanalProbeRowsAreBounded(t *testing.T) {
 // radius as a function of the axial position x, so the curvature across
 // each circle is that of the meridian γ(x) = (x − R̂R̂′, R̂√(1 − R̂′²)).
 func TestCanalProbeIgnoresSpineSpeed(t *testing.T) {
-	c := canalled(custom("t+0.4*sin(t)", "0", "0", -3, 3), 0.5, "1+0.3*sin(t+0.4*sin(t))", 0)
+	c := canaled(custom("t+0.4*sin(t)", "0", "0", -3, 3), 0.5, "1+0.3*sin(t+0.4*sin(t))", 0)
 	_, d := probed(t, c)
 	R := func(x float64) float64 { return 0.5 * (1 + 0.3*math.Sin(x)) }
 	checked := 0
@@ -525,7 +525,7 @@ func TestCanalProbeIgnoresSpineSpeed(t *testing.T) {
 // radii. A nearly cylindrical canal has curvatures across its circles on
 // both sides of that threshold.
 func TestCanalProbeClipThreshold(t *testing.T) {
-	out, d := probed(t, canalled(custom("t", "0", "0", 0, 2*math.Pi), 0.5, "1+0.02*sin(t)", 0))
+	out, d := probed(t, canaled(custom("t", "0", "0", 0, 2*math.Pi), 0.5, "1+0.02*sin(t)", 0))
 	reach := focalReach * out.Bounds.Radius
 	finite, clipped := 0, 0
 	eachProbed(d, func(row, k int, x, n Vec3, kappa [2]*float64) {

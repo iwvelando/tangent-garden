@@ -7,7 +7,7 @@ import (
 	"tangentgarden/engine/expr"
 )
 
-// CanalRequest describes the envelope of the spheres centred on the curve
+// CanalRequest describes the envelope of the spheres centered on the curve
 // c(t) with radius R(t) = Radius·ρ(t), where Profile is ρ, written in t
 // without a. A profile of 1 gives the tube of constant radius. The angle
 // around each contact circle is carried by the rotation-minimizing frame of
@@ -23,7 +23,7 @@ type CanalRequest struct {
 // CanalCircle is the contact circle at a representative sample: the circle
 // where the sphere of radius Sphere touches the envelope, with its Center on
 // the tangent line and its Radius. Real is false where the sphere has no real
-// contact circle (|R′| > v); Center is then the sphere's centre, Radius is 0
+// contact circle (|R′| > v); Center is then the sphere's center, Radius is 0
 // and Points is empty. Points close on themselves.
 type CanalCircle struct {
 	SampleIndex int     `json:"sampleIndex"`
@@ -41,7 +41,7 @@ type CanalCircle struct {
 // returns to its start with the same slope; otherwise, on a closed curve,
 // Gap is the distance between the first and last contact circles, which
 // share an axis. Steepest is the largest |R′|/v. Undefined counts samples
-// with a regular centre but without a positive, finite radius and slope;
+// with a regular center but without a positive, finite radius and slope;
 // Imaginary counts samples where |R′| > v, and Between intervals whose own
 // samples have circles but whose midpoint has none; Collapsed counts samples
 // where |R′| = v and the circle is a point; Folded where the surface turns back on itself, as a
@@ -127,7 +127,7 @@ func (q CanalRequest) radius(span float64) (func(float64) (float64, float64, flo
 	}, nil
 }
 
-// contact gives the contact circle of the sphere of radius R whose centre
+// contact gives the contact circle of the sphere of radius R whose center
 // moves at speed v while R changes at R′: its signed offset along T, its
 // radius, and whether it is real and whether it has collapsed.
 func contact(R, slope, speed float64) (axial, radius float64, ok, collapsed bool) {
@@ -189,7 +189,7 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 			R[n], slope[n] = R[0], slope[0]
 		}
 	}
-	// Contact circles: centre on the tangent line, radius, and the mesh frame,
+	// Contact circles: center on the tangent line, radius, and the mesh frame,
 	// which spreads any holonomy along a closed loop so the rings match up.
 	centers, radii := make([]Vec3, n+1), make([]float64, n+1)
 	circled := make([]bool, n+1)
@@ -528,7 +528,7 @@ func contacts(c Request, frame carried, evaluate evaluation, radius func(float64
 	}
 }
 
-// contactCircle is a contact circle between samples: its centre and radius,
+// contactCircle is a contact circle between samples: its center and radius,
 // and the frame that measures the angle round it.
 type contactCircle struct {
 	frameAt

@@ -63,7 +63,7 @@ export function raysNote(r: RaysResult, light: RaysConfig): string[] {
       : []),
     ...(r.total
       ? [
-          `${count(r.total, "sample is", "samples are")} at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in grey.`,
+          `${count(r.total, "sample is", "samples are")} at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in gray.`,
         ]
       : []),
     ...(r.singular

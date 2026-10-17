@@ -805,6 +805,6 @@ test("the grid and the note follow Go's shapes and wording", () => {
     "The box cuts it open along 2 edges.",
     "F is not finite at 7 points sampled: the cells beside them are left out, and the mesh stops there.",
     "2 grid edges change sign across a pole or a jump rather than a root: they are marked with crosses and never meshed.",
-    "2 grid faces have corners alternating in sign; refinement samples each face's centre, and splits the face where the grid's diagonal disagrees with it.",
+    "2 grid faces have corners alternating in sign; refinement samples each face's center, and splits the face where the grid's diagonal disagrees with it.",
   ]);
 });

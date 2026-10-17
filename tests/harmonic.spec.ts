@@ -257,7 +257,7 @@ test("reveal turns the vectors with the trace; framing holds every circle", () =
   expect(reveal({ ...result, harmonic: undefined }, 0.5).harmonic).toBe(
     undefined,
   );
-  // The largest circle, from −20 to 21 with its neighbour, is framed in full
+  // The largest circle, from −20 to 21 with its neighbor, is framed in full
   // although the trace is short.
   const config = preset(fourierTitle);
   expect(fitFrame(result, config).span).toBeGreaterThanOrEqual(41);
