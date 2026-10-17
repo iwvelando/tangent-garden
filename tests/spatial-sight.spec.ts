@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
-import { choosePreset } from "./helpers";
+import { choosePreset, svgConfigOrder } from "./helpers";
 import {
   arcLengths,
   defaultSight,
@@ -20,9 +20,10 @@ import {
 } from "../web/spatial/sight";
 import { buildScene } from "../web/spatial/scene";
 import { linework, linesSvg, type LineGroup } from "../web/spatial/linework";
-import { defaultLayers } from "../web/spatial/renderer";
+import { defaultLayers, initialView } from "../web/spatial/renderer";
 import type { SpatialResult, Vec3 } from "../web/spatial/types";
 import { spatialPresets } from "../web/spatial/presets";
+import { presetStudy } from "../web/spatial/link";
 import { defaultCut, type Cut } from "../web/spatial/cut";
 import { hex, lineColor, palette } from "../web/spatial/palette";
 import { curveMesh } from "./curve-mesh";
@@ -93,14 +94,18 @@ test("studies drawn opaque with hidden lines hidden are unchanged", async ({
   const weight = page
     .getByRole("group", { name: "Lines" })
     .getByLabel("Weight", { exact: true });
-  // Preserve the recordings' original grids as well as their geometry.
+  // Preserve the recordings' original camera and grids as well as their
+  // geometry, independently of the gallery's current opening views.
   const originalUSamples: Record<string, number> = {
     "The focal sheets of an ellipsoid": 96,
     "A lamp sealed in an ellipsoid": 72,
   };
   for (const label of Object.keys(recorded)) {
-    await choosePreset(page, { label });
-    await settled(page);
+    const index = spatialPresets.findIndex((p) => p.name === label);
+    await openLink(page, {
+      ...presetStudy(index),
+      view: initialView,
+    });
     if (label in originalUSamples) {
       const sampling = page.locator("summary", {
         hasText: "Sampling & definition",
@@ -113,7 +118,14 @@ test("studies drawn opaque with hidden lines hidden are unchanged", async ({
       await settled(page);
     }
     await weight.selectOption("hairline");
-    seen[label] = sha(predating(await download(page, shown)));
+    seen[label] = sha(
+      predating(
+        svgConfigOrder(
+          await download(page, shown),
+          spatialPresets[index].config,
+        ),
+      ),
+    );
     const plain = await download(page, png);
     await sheets.selectOption("through");
     await behind.selectOption("dashed");

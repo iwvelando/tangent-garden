@@ -373,13 +373,13 @@ test("3D tracing is offered only for mirrors and interfaces, with fixed cameras"
 }) => {
   await ready(page, spatialPresets[0].name);
   await expect(animate(page).locator("option[value=trace]")).toHaveCount(0);
-  await page
-    .getByRole("combobox", { name: "Animation camera" })
-    .selectOption("follow");
   await choosePreset(page, { label: "A paraboloid gathering light" });
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
-  await animate(page).selectOption("trace");
   const camera = page.getByRole("combobox", { name: "Animation camera" });
+  // Presets replace the animation setup too. Set the unsupported camera
+  // on this study so switching to tracing exercises its fallback.
+  await camera.selectOption("follow");
+  await animate(page).selectOption("trace");
   await expect(camera).toHaveValue("hold");
   // Cameras that frame each frame's geometry would chase the light; a
   // flight through key views does not depend on it, and riding a ray

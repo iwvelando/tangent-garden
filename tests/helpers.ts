@@ -1,5 +1,29 @@
 import type { Page } from "@playwright/test";
 
+// Links conform configuration fields in schema order. Historical SVG
+// recordings use the preset's order; preserve every observed field and
+// value while restoring only that order in their metadata.
+export function svgConfigOrder(svg: Buffer, original: object): Buffer {
+  return Buffer.from(
+    svg.toString("utf8").replace(/<desc>(.*?)<\/desc>/s, (_, desc: string) => {
+      const metadata = JSON.parse(
+        desc
+          .replaceAll("&lt;", "<")
+          .replaceAll("&gt;", ">")
+          .replaceAll("&amp;", "&"),
+      );
+      const config = metadata.config;
+      const keys = new Set([...Object.keys(original), ...Object.keys(config)]);
+      metadata.config = Object.fromEntries(
+        [...keys]
+          .filter((key) => Object.hasOwn(config, key))
+          .map((key) => [key, config[key]]),
+      );
+      return `<desc>${JSON.stringify(metadata).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</desc>`;
+    }),
+  );
+}
+
 // The animation section starts open and its export settings collapsed, and a
 // visitor's choice is remembered, so tests that drive them open the
 // disclosures first. Opening an open section is a no-op.
