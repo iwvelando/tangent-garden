@@ -334,7 +334,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       ? `${scalarError.name}: ${scalarError.error}`
       : computeError.message;
   const theme = useTheme();
-  const { dark, preference } = theme;
+  const { dark, preference, scheme } = theme;
   const [reset, setReset] = useState(0);
   const [refit, setRefit] = useState(0);
   const [length, setLength] = useState(opening.length);
@@ -1315,6 +1315,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   return (
     <div
       className={dark ? "app dark" : "app"}
+      style={theme.style}
       data-theme-preference={preference}
     >
       <AppHeader theme={theme}>
@@ -2280,6 +2281,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 setReset(reset + 1);
               }}
               dark={dark}
+              scheme={scheme}
               layers={layers}
               weight={weight}
               probe={probing ? probe : null}
@@ -2350,6 +2352,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 refineView={refineView}
                 onFocus={onFocus}
                 dark={dark}
+                scheme={scheme}
                 length={animation?.length ?? length}
                 stop={animation?.stop ?? stopAtCaustic}
                 reset={reset}

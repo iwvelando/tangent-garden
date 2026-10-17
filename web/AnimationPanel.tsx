@@ -1,3 +1,4 @@
+import type { ColorScheme } from "./color-schemes";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { FrameRateField } from "./FrameRateField";
 import { ProgressSlider } from "./ProgressSlider";
@@ -185,6 +186,7 @@ type Props = {
   revision: string;
   disabled: boolean;
   dark: boolean;
+  scheme?: ColorScheme;
   layers: Layers;
   weight: LineWeight;
   // The probe, when it is on (planar-probe.ts).
@@ -217,6 +219,7 @@ export function AnimationPanel({
   revision,
   disabled,
   dark,
+  scheme = "default",
   layers,
   weight,
   probe,
@@ -961,6 +964,7 @@ export function AnimationPanel({
           cyclic: cycles(repeat),
           settings: { scale: exportScale, quality },
           dark,
+          scheme,
           layers: { ...layers },
           weight,
           signal: controller.signal,

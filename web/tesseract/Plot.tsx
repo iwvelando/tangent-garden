@@ -1,3 +1,4 @@
+import type { ColorScheme } from "../color-schemes";
 import { useEffect, useRef } from "react";
 import { createGesture } from "../gestures";
 import { useDrawingTouch } from "../MobileNotebookNav";
@@ -20,6 +21,7 @@ export function Plot({
   result,
   config,
   dark,
+  scheme,
   layers,
   view,
   onView,
@@ -29,6 +31,7 @@ export function Plot({
   result: Result;
   config: Config;
   dark: boolean;
+  scheme?: ColorScheme;
   layers: Layers;
   view: View;
   onView: (v: View) => void;
@@ -158,7 +161,7 @@ export function Plot({
         onView(v);
       }}
     >
-      <Drawing {...{ result, config, view, layers, dark }} />
+      <Drawing {...{ result, config, view, layers, dark, scheme }} />
     </svg>
   );
 }

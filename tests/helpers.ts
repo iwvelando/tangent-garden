@@ -80,3 +80,11 @@ export async function openShapeExport(page: Page) {
   await openShapeAnimation(page);
   await open(page, "#shape-export-settings");
 }
+
+export async function chooseColorScheme(page: Page, id: string) {
+  const header = page.locator(".app:visible header");
+  await header
+    .getByRole("button", { name: "Color scheme", exact: true })
+    .click();
+  await header.locator(`[role="menuitemradio"][data-scheme="${id}"]`).click();
+}

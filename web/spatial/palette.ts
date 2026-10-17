@@ -1,3 +1,4 @@
+import { schemeInks, type ColorScheme } from "../color-schemes";
 // The 3D drawing's colors, as [light theme, dark theme] RGB pairs from 0 to
 // 1. The WebGL fragment shader is written from these values, and vector
 // linework uses them directly, so both draw a line in the same color.
@@ -84,6 +85,38 @@ export const palette = {
   ],
 } satisfies Record<string, Pair>;
 
+// Keep the original floating-point inks intact for the default scheme.
+// Alternate surfaces, families and vector lines share these same pairs.
+const schemes = new Map<ColorScheme, typeof palette>();
+export function spatialPalette(
+  scheme: ColorScheme = "default",
+): typeof palette {
+  if (scheme === "default") return palette;
+  const cached = schemes.get(scheme);
+  if (cached) return cached;
+  const rgb = (hex: string): RGB =>
+    hex.match(/[a-f\d]{2}/gi)!.map((x) => parseInt(x, 16) / 255) as RGB;
+  const pair = (role: number): [RGB, RGB] => [
+    rgb(schemeInks(scheme, false)[role]),
+    rgb(schemeInks(scheme, true)[role]),
+  ];
+  const colors = {
+    ...palette,
+    teal: pair(0),
+    gold: pair(1),
+    rust: pair(4),
+    slate: pair(3),
+    recede: pair(2),
+    familyFirst: pair(0),
+    familyLast: pair(1),
+    construction: pair(0),
+    curve: pair(1),
+    offset: pair(2),
+  };
+  schemes.set(scheme, colors);
+  return colors;
+}
+
 // A color as a GLSL literal, and a pair chosen by the shader's `dark`
 // uniform, 0 or 1.
 export const vec3 = (c: RGB) =>
@@ -97,7 +130,13 @@ const mixed = (a: RGB, b: RGB, t: number): RGB =>
 // The color the shader gives a line of this ink and phase. Only lines are
 // covered: shaded sheets (ink 0 and below) and receiver bins (7) are not.
 // The cut's edge is ink 12.
-export function lineColor(ink: number, phase: number, dark: boolean): RGB {
+export function lineColor(
+  ink: number,
+  phase: number,
+  dark: boolean,
+  scheme: ColorScheme = "default",
+): RGB {
+  const palette = spatialPalette(scheme);
   const k = dark ? 1 : 0;
   if (ink > 11.5) return palette.cut[k];
   if (ink > 10.5) return palette.probeBinormal[k];

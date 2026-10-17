@@ -1,3 +1,4 @@
+import type { ColorScheme } from "../color-schemes";
 import {
   camera,
   cameraFrom,
@@ -66,6 +67,7 @@ export type LineGroup = {
   strokes: { color: string; width?: number; paths: [number, number][][] }[];
 };
 export type LineworkOptions = {
+  scheme?: ColorScheme;
   width: number;
   height: number;
   occlusion: Occlusion;
@@ -249,7 +251,9 @@ export function linework(
           clip(own, ends[7], ends[8], ends[9]),
         );
         if (!piece) continue;
-        const color = hex(lineColor(pass.batch.ink, data[i + 6], dark));
+        const color = hex(
+          lineColor(pass.batch.ink, data[i + 6], dark, options.scheme),
+        );
         if (!raster) {
           draw(groups, pass.layer, color, width, piece, piece[0], piece[1]);
           continue;

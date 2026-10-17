@@ -78,7 +78,7 @@ export default function TesseractApp({
 }) {
   const theme = useTheme(),
     narrow = useMediaQuery("(max-width: 700px)"),
-    { dark } = theme;
+    { dark, scheme } = theme;
   const [config, setConfig] = useState<Config>(() =>
     structuredClone(tesseractPresets[0].config),
   );
@@ -429,6 +429,7 @@ export default function TesseractApp({
         diagramView: { ...diagramView },
         layers: { ...layers },
         dark,
+        scheme,
         duration,
         repeat,
         pace,
@@ -453,7 +454,7 @@ export default function TesseractApp({
   };
   useEffect(() => {
     controller.current?.abort();
-  }, [dark]);
+  }, [dark, scheme]);
   const descriptor = objects[config.object];
   const layout: ExportLayout | undefined =
     config.mode === "paired" && descriptor.pairedModes
@@ -646,7 +647,10 @@ export default function TesseractApp({
     </div>
   );
   return (
-    <div className={`app tesseract-app ${dark ? "dark" : ""}`}>
+    <div
+      style={theme.style}
+      className={`app tesseract-app ${dark ? "dark" : ""}`}
+    >
       <AppHeader theme={theme}>
         <ShareLink
           notebook="4d"
@@ -1153,7 +1157,7 @@ export default function TesseractApp({
                 <StudyPlot
                   result={frame.result}
                   config={frame.config}
-                  {...{ view, diagramView, layers, dark }}
+                  {...{ view, diagramView, layers, dark, scheme }}
                   layout={liveLayout}
                   onDiagramView={(v) => {
                     if (held || exporting) return;
@@ -1198,7 +1202,9 @@ export default function TesseractApp({
                             content: (
                               <>
                                 <i
-                                  style={{ background: sectionInk(i, dark) }}
+                                  style={{
+                                    background: sectionInk(i, dark, scheme),
+                                  }}
                                 />
                                 <span className="section-number">{number}</span>
                                 <span className="section-level">{level}</span>
@@ -1213,7 +1219,7 @@ export default function TesseractApp({
                                 frame?.config ?? config,
                               )
                             : drawnDescriptor.legendItems) ??
-                          inks(dark).map((_, i) => ({
+                          inks(dark, scheme).map((_, i) => ({
                             label: ["x", "y", "z", "w"][i],
                             family: i,
                             roles: undefined,
@@ -1230,7 +1236,11 @@ export default function TesseractApp({
                             ),
                           content: (
                             <>
-                              <i style={{ background: inks(dark)[family] }} />
+                              <i
+                                style={{
+                                  background: inks(dark, scheme)[family],
+                                }}
+                              />
                               {label}
                             </>
                           ),

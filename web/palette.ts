@@ -1,7 +1,8 @@
+import { schemeInks, type ColorScheme } from "./color-schemes";
 // The drawing's colors by role. The plot draws with them, and the example
 // gallery's thumbnails, which record each color's role rather than its value
 // (scripts/build-thumbnails.mjs), take them from here in either theme.
-export const plotPalette = (dark: boolean) =>
+const defaultPalette = (dark: boolean) =>
   dark
     ? {
         bg: "#0b1517",
@@ -29,10 +30,23 @@ export const plotPalette = (dark: boolean) =>
         probeTangent: "#cc291f",
         probeNormal: "#1a802e",
       };
+export const plotPalette = (dark: boolean, scheme: ColorScheme = "default") => {
+  const p = defaultPalette(dark);
+  if (scheme === "default") return p;
+  const [base, derived, line] = schemeInks(scheme, dark);
+  return { ...p, base, derived, line };
+};
 export type PlotPalette = ReturnType<typeof plotPalette>;
 // The coordinate axes' inks, x, y, z and w: the 4D drawing's edge families
 // and the orientation indicator beside the 3D and 4D drawings.
-export const axisInks = (dark: boolean) =>
-  dark
-    ? ["#7ddbcc", "#ecc47d", "#bdacf0", "#ec9fa8"]
-    : ["#147669", "#a16b1d", "#7050a2", "#ad5265"];
+export const axisInks = (dark: boolean, scheme: ColorScheme = "default") =>
+  scheme !== "default"
+    ? [
+        schemeInks(scheme, dark)[0],
+        schemeInks(scheme, dark)[1],
+        schemeInks(scheme, dark)[3],
+        schemeInks(scheme, dark)[4],
+      ]
+    : dark
+      ? ["#7ddbcc", "#ecc47d", "#bdacf0", "#ec9fa8"]
+      : ["#147669", "#a16b1d", "#7050a2", "#ad5265"];

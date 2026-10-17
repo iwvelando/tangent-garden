@@ -1,3 +1,4 @@
+import type { ColorScheme } from "./color-schemes";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { LineWeight } from "./line-weight";
 import { Plot, type Layers } from "./Plot";
@@ -20,6 +21,7 @@ type Options = {
   cyclic?: boolean;
   settings: ExportSettings;
   dark: boolean;
+  scheme?: ColorScheme;
   layers: Layers;
   weight: LineWeight;
   signal: AbortSignal;
@@ -65,6 +67,7 @@ export async function exportAnimation(options: Options): Promise<Blob> {
           layers={layers}
           weight={weight}
           dark={dark}
+          scheme={options.scheme}
           length={view.length}
           stop={view.stop}
           animation={view}

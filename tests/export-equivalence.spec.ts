@@ -408,3 +408,29 @@ test("4D paired: the 1 × PNG and the SVG are both panels shown", async ({
   await expect(imageButton(page)).toBeEnabled();
   await vectorEquivalence(page, "#tesseract-artwork", [2000, 760], 5);
 });
+
+for (const scheme of ["light", "dark"] as const)
+  for (const dimension of ["2d", "3d", "4d"] as const)
+    test(`${dimension}, ${scheme}: alternate scheme exports match the live drawing`, async ({
+      page,
+    }) => {
+      const { chooseColorScheme } = await import("./helpers");
+      await page.emulateMedia({ colorScheme: scheme });
+      if (dimension === "3d") {
+        await spatial(page, "Trefoil · (2, 3)");
+        await chooseColorScheme(page, "forest");
+        const live = await liveCanvas(page);
+        const file = decodePng(await save(page, /^PNG image/, "1000 × 760"));
+        expect(digest(file)).toBe(digest(live));
+      } else {
+        await page.goto(dimension === "4d" ? "/?study=4d" : "/");
+        await expect(imageButton(page)).toBeEnabled();
+        await chooseColorScheme(page, dimension === "4d" ? "plum" : "cobalt");
+        await vectorEquivalence(
+          page,
+          dimension === "4d" ? "#tesseract-artwork" : "#artwork",
+          [1000, 760],
+          dimension === "4d" ? 5 : 1.5,
+        );
+      }
+    });

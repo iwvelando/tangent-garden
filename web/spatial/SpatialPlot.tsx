@@ -1,3 +1,4 @@
+import type { ColorScheme } from "../color-schemes";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefinementView, SpatialResult } from "./types";
 import type { SpatialCamera } from "./link";
@@ -35,6 +36,7 @@ const cameraKeys = [
 export function SpatialPlot({
   result,
   dark,
+  scheme = "default",
   layers,
   reset,
   spinning,
@@ -60,6 +62,7 @@ export function SpatialPlot({
 }: {
   result: SpatialResult;
   dark: boolean;
+  scheme?: ColorScheme;
   layers: Layers;
   reset: number;
   spinning: boolean;
@@ -277,7 +280,9 @@ export function SpatialPlot({
   useLayoutEffect(() => {
     const element = canvas.current!;
     try {
-      renderer.current = createRenderer(element);
+      renderer.current = createRenderer(element, scheme);
+      lost.current = false;
+      setError("");
       onError("");
     } catch (e) {
       const text = (e as Error).message;
@@ -312,7 +317,7 @@ export function SpatialPlot({
     // rebuilt on it.
     const regained = () => {
       try {
-        renderer.current = createRenderer(element);
+        renderer.current = createRenderer(element, scheme);
       } catch (e) {
         const text = (e as Error).message;
         setError(text);
@@ -339,7 +344,7 @@ export function SpatialPlot({
       renderer.current?.dispose();
       renderer.current = null;
     };
-  }, []);
+  }, [scheme]);
   // Before the page can see the frame as settled: a frame whose bounds move
   // the view it is refined to (as a preset's first frame does, refined to
   // the view the previous study's bounds framed) reports the new view in
@@ -350,7 +355,7 @@ export function SpatialPlot({
     const drawable = renderer.current?.layers();
     if (drawable) onGeometry?.(result, drawable);
     draw();
-  }, [result]);
+  }, [result, scheme]);
   useEffect(() => {
     renderer.current?.setProbe(probe);
     draw();

@@ -1,3 +1,4 @@
+import type { ColorScheme } from "../color-schemes";
 import {
   useEffect,
   useMemo,
@@ -231,6 +232,7 @@ type Props = {
   // The sight as drawn (see sight.ts).
   sight: Sight;
   dark: boolean;
+  scheme?: ColorScheme;
   layers: Layers;
   getCurrentView: () => Viewport | undefined;
   // What the drawing shows, while the study is refined to its view and
@@ -265,6 +267,7 @@ export function SpatialAnimationPanel({
   cut,
   sight,
   dark,
+  scheme = "default",
   layers,
   getCurrentView,
   getFocus,
@@ -1221,6 +1224,7 @@ export function SpatialAnimationPanel({
           cyclic: cycles(s.repeat),
           settings: { scale: exportScale, quality },
           dark,
+          scheme,
           layers: { ...layers },
           cut: s.cut,
           sight: s.sight,

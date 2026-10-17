@@ -1,3 +1,4 @@
+import type { ColorScheme } from "../color-schemes";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Composition } from "./Composition";
 import { EngineClient } from "../engine-client";
@@ -24,6 +25,7 @@ export async function exportMotion(
     diagramView?: View;
     layers: Layers;
     dark: boolean;
+    scheme?: ColorScheme;
     duration: number;
     repeat: Repeat;
     pace: Pace;
