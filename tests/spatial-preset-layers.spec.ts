@@ -1,3 +1,4 @@
+import { presetStudy } from "../web/spatial/link";
 import { defaultLayers } from "../web/spatial/scene";
 import { spatialPresets } from "../web/spatial/presets";
 import { test, expect, type Page } from "@playwright/test";
@@ -122,3 +123,53 @@ for (const i of layered)
       ...spatialPresets[i].layers,
     });
   });
+
+// These are deliberate opening choices: presetStudy is also what choosing
+// an example restores after edits and what a copied study link records.
+test("smoother surface presets open with their requested u sample counts", () => {
+  for (const [name, count] of [
+    ["A torus revealing its centers", 216],
+    ["A sphere collapsing to one focus", 216],
+    ["The focal sheets of an ellipsoid", 150],
+    ["An elliptic cylinder and its evolute", 216],
+    ["An ellipsoid hiding its centers", 150],
+    ["An ellipsoid with a corner cut away", 150],
+    ["Where an ellipsoid's curvatures meet", 150],
+    ["A paraboloid gathering light", 150],
+    ["A tilted beam folding into coma", 150],
+    ["A spherical bowl's cusped caustic", 150],
+    ["An ellipsoid refocusing its lamp", 150],
+    ["A cup's nephroid", 216],
+    ["A lamp sealed in an ellipsoid", 216],
+    ["A glass ellipsoid focusing a beam", 216],
+    ["A glass dome's ring of light", 150],
+    ["A lamp in water over air", 150],
+    ["A cup's nephroid on its floor", 216],
+  ] as const) {
+    const i = spatialPresets.findIndex((p) => p.name === name);
+    expect(i, name).toBeGreaterThanOrEqual(0);
+    expect.soft(presetStudy(i).config.surface.uSamples, name).toBe(count);
+  }
+});
+
+test("refined presets open with smooth skins, tapered tube lines and a continuous focal probe", () => {
+  const study = (name: string) =>
+    presetStudy(spatialPresets.findIndex((p) => p.name === name));
+  for (const name of [
+    "A screw band coiled round a ring",
+    "Treads folding into cones round a ring",
+    "A coiled cord round a trefoil",
+  ]) {
+    expect
+      .soft(study(name).config, name)
+      .toMatchObject({ adaptive: true, adaptiveSurface: true });
+  }
+  expect.soft(study("Inside a trefoil's tube").sight.depth).toBe("taper");
+  expect
+    .soft(study("The curvature of an ellipsoid's focal sheet").probe)
+    .toMatchObject({
+      enabled: true,
+      target: "focal1",
+      betweenGrid: true,
+    });
+});

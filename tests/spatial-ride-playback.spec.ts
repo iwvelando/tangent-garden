@@ -38,7 +38,11 @@ const coma = spatialPresets.findIndex(
 );
 const manual = { yaw: -0.4, pitch: 0.2, zoom: 1.3, panX: 0.2, panY: 0.1 };
 const study = (animation: object = {}) => ({
-  config: spatialPresets[coma].config,
+  // This camera/export fixture rides u = 0.8 exactly, row 72 of 96.
+  config: {
+    ...spatialPresets[coma].config,
+    surface: { ...spatialPresets[coma].config.surface, uSamples: 96 },
+  },
   layers: defaultLayers,
   view: manual,
   animation: {
@@ -95,47 +99,53 @@ async function headOffCenter(page: Page, layer: string) {
   return Math.min(...ends.map(([x, y]) => Math.hypot(x - 1000, y - 760)));
 }
 
-test("a ray is ridden only while light is traced, chosen at a crossing, with its distances under the camera", async ({
-  page,
-}) => {
-  await open(page, study({ camera: "hold", ride: defaultRide }));
-  await expect(mode(page)).toHaveValue("trace");
-  await expect(cameraField(page).locator("option[value='ride']")).toHaveCount(
-    1,
-  );
-  await cameraField(page).selectOption("ride");
-  await expect(page.locator("#spatial-animation-section")).toContainText(
-    "perspective",
-  );
-  // The middle crossing of the coma's 9 × 9 curves, by default.
-  const u = page.getByLabel("Ray at u", { exact: true }),
-    v = page.getByLabel("Ray at v", { exact: true });
-  await expect(u).toHaveValue("48");
-  await expect(v).toHaveValue("48");
-  await expect(u.locator("option")).toHaveCount(9);
-  await expect(u.locator("option").nth(6)).toHaveText("u = 0.8");
-  await page.getByLabel("Follow distance", { exact: true }).fill("0");
-  await button(page, "Play animation").click();
-  await expect(page.locator(".animation-error")).toContainText(
-    "Follow distance must be more than 0 and at most 4 radii.",
-  );
-  await page.getByLabel("Follow distance", { exact: true }).fill("0.1");
-  // Another animation has no ray to ride: the camera falls back, and the
-  // ride's fields go.
-  for (const other of ["reveal", "orbit"]) {
-    await mode(page).selectOption(other);
-    await expect(cameraField(page)).toHaveValue("hold");
+for (const [uSamples, middle, sixth] of [
+  [96, "48", "u = 0.8"],
+  [150, "75", "u = 0.7893"],
+] as const)
+  test(`a ray is ridden only while light is traced, chosen at a crossing, with its distances under the camera (${uSamples} u samples)`, async ({
+    page,
+  }) => {
+    const s = study({ camera: "hold", ride: defaultRide });
+    s.config.surface.uSamples = uSamples;
+    await open(page, s);
+    await expect(mode(page)).toHaveValue("trace");
     await expect(cameraField(page).locator("option[value='ride']")).toHaveCount(
-      0,
+      1,
     );
-    await expect(u).toHaveCount(0);
-    // A select shows its first option for a value it lacks, so the camera
-    // is checked once the ride is offered again.
-    await mode(page).selectOption("trace");
-    await expect(cameraField(page)).toHaveValue("hold");
     await cameraField(page).selectOption("ride");
-  }
-});
+    await expect(page.locator("#spatial-animation-section")).toContainText(
+      "perspective",
+    );
+    // The middle crossing of the coma's 9 × 9 curves, by default.
+    const u = page.getByLabel("Ray at u", { exact: true }),
+      v = page.getByLabel("Ray at v", { exact: true });
+    await expect(u).toHaveValue(middle);
+    await expect(v).toHaveValue("48");
+    await expect(u.locator("option")).toHaveCount(9);
+    await expect(u.locator("option").nth(6)).toHaveText(sixth);
+    await page.getByLabel("Follow distance", { exact: true }).fill("0");
+    await button(page, "Play animation").click();
+    await expect(page.locator(".animation-error")).toContainText(
+      "Follow distance must be more than 0 and at most 4 radii.",
+    );
+    await page.getByLabel("Follow distance", { exact: true }).fill("0.1");
+    // Another animation has no ray to ride: the camera falls back, and the
+    // ride's fields go.
+    for (const other of ["reveal", "orbit"]) {
+      await mode(page).selectOption(other);
+      await expect(cameraField(page)).toHaveValue("hold");
+      await expect(
+        cameraField(page).locator("option[value='ride']"),
+      ).toHaveCount(0);
+      await expect(u).toHaveCount(0);
+      // A select shows its first option for a value it lacks, so the camera
+      // is checked once the ride is offered again.
+      await mode(page).selectOption("trace");
+      await expect(cameraField(page)).toHaveValue("hold");
+      await cameraField(page).selectOption("ride");
+    }
+  });
 
 test("each frame looks along the ridden ray from behind its head, which stays in the middle of the page", async ({
   page,

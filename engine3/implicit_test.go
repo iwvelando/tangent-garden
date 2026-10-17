@@ -602,3 +602,41 @@ func TestSectionFrame(t *testing.T) {
 		}
 	}
 }
+
+// The default rise runs through the box's height. Keep the surface close
+// enough to both ends that at 10% it has faces and at 90% it still grows.
+func TestImplicitPresetRevealRange(t *testing.T) {
+	presets := spatialPresets(t)
+	for _, name := range []string{"A double torus", "A thread between two drops"} {
+		t.Run(name, func(t *testing.T) {
+			m := levelSet(t, presets[name].Implicit)
+			below := func(p float64) int {
+				top := m.Box.ZMin + p*(m.Box.ZMax-m.Box.ZMin)
+				n := 0
+				for k := 0; k < len(m.Triangles); k += 3 {
+					if m.vertex(m.Triangles[k]).Z <= top && m.vertex(m.Triangles[k+1]).Z <= top && m.vertex(m.Triangles[k+2]).Z <= top {
+						n++
+					}
+				}
+				return n
+			}
+			if n := below(0.1); n == 0 {
+				t.Error("the first tenth reveals no triangles")
+			}
+			if n := below(0.9); n == len(m.Triangles)/3 {
+				t.Error("the whole surface is already revealed before the last tenth")
+			}
+			if len(m.Components) != 1 || !m.Components[0].Closed {
+				t.Fatalf("the surface is not one closed piece: %+v", m.Components)
+			}
+			if name == "A thread between two drops" {
+				q := presets[name].Implicit
+				q.Refine = 0
+				coarse := levelSet(t, q)
+				if len(coarse.Components) != 2 {
+					t.Errorf("the coarse grid should miss the neck, leaving two drops: %+v", coarse.Components)
+				}
+			}
+		})
+	}
+}

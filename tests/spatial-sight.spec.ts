@@ -93,9 +93,25 @@ test("studies drawn opaque with hidden lines hidden are unchanged", async ({
   const weight = page
     .getByRole("group", { name: "Lines" })
     .getByLabel("Weight", { exact: true });
+  // Preserve the recordings' original grids as well as their geometry.
+  const originalUSamples: Record<string, number> = {
+    "The focal sheets of an ellipsoid": 96,
+    "A lamp sealed in an ellipsoid": 72,
+  };
   for (const label of Object.keys(recorded)) {
     await choosePreset(page, { label });
     await settled(page);
+    if (label in originalUSamples) {
+      const sampling = page.locator("summary", {
+        hasText: "Sampling & definition",
+      });
+      if ((await sampling.locator("..").getAttribute("open")) === null)
+        await sampling.click();
+      await page
+        .getByRole("spinbutton", { name: "u samples", exact: true })
+        .fill(String(originalUSamples[label]));
+      await settled(page);
+    }
     await weight.selectOption("hairline");
     seen[label] = sha(predating(await download(page, shown)));
     const plain = await download(page, png);

@@ -11,12 +11,14 @@ if (reports.length === 0) {
   process.exit(2);
 }
 const seconds = {};
-function walk(suite) {
+// A helper can declare tests for several spec files; the top-level suite
+// names the file that actually runs them and belongs in the shard plan.
+function walk(suite, file = suite.file) {
   for (const spec of suite.specs ?? [])
     for (const test of spec.tests)
       for (const result of test.results)
-        seconds[spec.file] = (seconds[spec.file] ?? 0) + result.duration / 1000;
-  for (const child of suite.suites ?? []) walk(child);
+        seconds[file] = (seconds[file] ?? 0) + result.duration / 1000;
+  for (const child of suite.suites ?? []) walk(child, file);
 }
 for (const report of reports)
   for (const suite of JSON.parse(readFileSync(report, "utf8")).suites)

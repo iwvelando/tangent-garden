@@ -582,8 +582,8 @@ test("an ellipsoid's parallel surface reads radii less d as d sweeps", async ({
   await expect(readout(page).nth(2)).toHaveText(radii(-0.25));
 });
 
-// The torus patch, u from 0 to 2π in 72 rows and v from −π/3 to π/3 in 24
-// columns: the probe starts at its middle, u = π (row 36) and v = 0
+// The torus patch, u from 0 to 2π in 216 rows and v from −π/3 to π/3 in 24
+// columns: the probe starts at its middle, u = π (row 108) and v = 0
 // (column 12). Held at its u and v it keeps those parameters as tracks
 // stretch the domain; at its row and column it keeps its share instead.
 test("a surface probe held at its u and v keeps them as the domain stretches", async ({
@@ -605,7 +605,7 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
     around = page.getByRole("slider", { name: "Along v" });
   await expect(along).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 36 of 72",
+    "u = 3.142, row 108 of 216",
   );
   await expect(around).toHaveAttribute("aria-valuetext", /, column 12 of 24$/);
   const panel = page.locator("#spatial-animation-section");
@@ -619,12 +619,12 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
     ["along", "Moves along the surface"],
   ]);
   // At its share of the rows, u = 2π at the end; at its own u, π, which
-  // is row 18 of the stretched domain's 72.
+  // is row 54 of the stretched domain's 216.
   await playPaused(page);
   await seek(page, "1");
   await expect(along).toHaveAttribute(
     "aria-valuetext",
-    "u = 6.283, row 36 of 72",
+    "u = 6.283, row 108 of 216",
   );
   await button(page, "Back to study").click();
   await motion(page).selectOption("point");
@@ -632,7 +632,7 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
   await seek(page, "1");
   await expect(along).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 18 of 72",
+    "u = 3.142, row 54 of 216",
   );
   // The probe does not move, so the readout names only the track.
   await expect(values(page)).toHaveText("u to = 12.5664");
@@ -668,7 +668,7 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
   await settled(page);
   await expect(along).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 36 of 72",
+    "u = 3.142, row 108 of 216",
   );
   await expect(around).toHaveAttribute("aria-valuetext", /, column 12 of 24$/);
 });
