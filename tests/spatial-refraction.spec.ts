@@ -176,7 +176,7 @@ test("notes report total internal reflection and where the receiver's light went
   await choosePreset(page, water);
   await settled(page);
   await expect(note(page)).toHaveText(
-    "Caustic 1 (μ₁) is virtual, behind the interface: a curve. Caustic 2 (μ₂) is virtual, behind the interface: a surface. 6,516 samples are at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in gray. 1 sample is stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.",
+    "Caustic 1 (μ₁) is virtual, behind the interface: a curve. Caustic 2 (μ₂) is virtual, behind the interface: a surface. 10,100 samples are at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in gray. 1 sample is stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.",
   );
   const trapped = await pixels(page);
   // Gray totally reflected rays are drawn with the transmitted ones.
@@ -199,7 +199,7 @@ test("notes report total internal reflection and where the receiver's light went
   await choosePreset(page, dome);
   await settled(page);
   await expect(note(page)).toHaveText(
-    "Caustic 1 (μ₁) is real, ahead of the interface: a surface. Caustic 2 (μ₂) is real, ahead of the interface: a curve. 121 samples are chart singularities, with no normal and no refraction. The receiver on z = -1.9 collects over 99.9% of the light the surface intercepts (4.82 units of beam area); under 0.1% falls in cells at the edge of the light. Its shade is irradiance on a logarithmic scale over three decades up to its peak, 233 times the beam's own, averaged over each bin, with no Fresnel losses or shadows.",
+    "Caustic 1 (μ₁) is real, ahead of the interface: a surface. Caustic 2 (μ₂) is real, ahead of the interface: a curve. 151 samples are chart singularities, with no normal and no refraction. The receiver on z = -1.9 collects over 99.9% of the light the surface intercepts (4.82 units of beam area); under 0.1% falls in cells at the edge of the light. Its shade is irradiance on a logarithmic scale over three decades up to its peak, 233 times the beam's own, averaged over each bin, with no Fresnel losses or shadows.",
   );
   await choosePreset(page, floor);
   await settled(page);

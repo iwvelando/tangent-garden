@@ -81,9 +81,25 @@ test("line drawings of studies without a cut are unchanged", async ({
   const weight = page
     .getByRole("group", { name: "Lines" })
     .getByLabel("Weight", { exact: true });
+  // Preserve the recordings' original grids as well as their geometry.
+  const originalUSamples: Record<string, number> = {
+    "The focal sheets of an ellipsoid": 96,
+    "A spherical bowl's cusped caustic": 96,
+  };
   for (const label of Object.keys(recorded)) {
     await choosePreset(page, { label });
     await settled(page);
+    if (label in originalUSamples) {
+      const sampling = page.locator("summary", {
+        hasText: "Sampling & definition",
+      });
+      if ((await sampling.locator("..").getAttribute("open")) === null)
+        await sampling.click();
+      await page
+        .getByRole("spinbutton", { name: "u samples", exact: true })
+        .fill(String(originalUSamples[label]));
+      await settled(page);
+    }
     await weight.selectOption("hairline");
     seen[label] = {
       every: sha(predating(await download(page, every))),
