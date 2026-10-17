@@ -206,7 +206,7 @@ func TestInversionCrossingInfinity(t *testing.T) {
 }
 
 // A sample exactly on O has its image at infinity: a gap, which already
-// separates its neighbours' images, so no break is added across it.
+// separates its neighbors' images, so no break is added across it.
 func TestInversionSampleOnCenter(t *testing.T) {
 	q := inversionRequest("t", "t^2", -2, 2, Vec{}, 1)
 	q.Samples = 65

@@ -283,7 +283,7 @@ func TestInputCuspsBetweenSamples(t *testing.T) {
 				paths = append(paths, m.Points)
 			}
 		}
-		// A joined jump is a step far longer than both of its neighbours.
+		// A joined jump is a step far longer than both of its neighbors.
 		step := func(path []*Vec, j int) float64 {
 			if j < 1 || j >= len(path) || path[j-1] == nil || path[j] == nil {
 				return math.NaN()

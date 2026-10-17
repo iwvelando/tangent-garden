@@ -419,7 +419,7 @@ func (s *field) crossings() *crossings {
 }
 
 // The six tetrahedra of a cube, each a path from corner 0 to corner 7 along
-// the cube's edges, in the bits x + 2y + 4z of its corners. Neighbouring
+// the cube's edges, in the bits x + 2y + 4z of its corners. Neighboring
 // cubes split each shared face along the same diagonal.
 var tetrahedra = [6][4]int{{0, 1, 3, 7}, {0, 1, 5, 7}, {0, 2, 3, 7}, {0, 2, 6, 7}, {0, 4, 5, 7}, {0, 4, 6, 7}}
 

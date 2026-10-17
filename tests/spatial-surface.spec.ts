@@ -176,7 +176,7 @@ test("notes report focal shapes, chart singularities, umbilics and folds", async
     "Focal sheet 1 (κ₁) is a surface. Focal sheet 2 (κ₂) lies wholly at infinity.",
   );
   expect(await pixels(page)).not.toBe(forward);
-  // A plane has no centres of curvature at all.
+  // A plane has no centers of curvature at all.
   await page.getByLabel("Surface", { exact: true }).selectOption("paraboloid");
   await field(page, "Curvature k₁").fill("0");
   await field(page, "Curvature k₂").fill("0");

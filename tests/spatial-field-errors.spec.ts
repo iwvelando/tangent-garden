@@ -49,7 +49,7 @@ for (const [width, height] of [
     await ready(page);
     await control(page, "Built on").selectOption("involute");
     await settled(page);
-    // Its pair neighbour does not move: compared with the field itself,
+    // Its pair neighbor does not move: compared with the field itself,
     // since the page may scroll to bring the error into view.
     const offset = async () => {
       const a = (await textbox(page, "Input anchor t₀").boundingBox())!;

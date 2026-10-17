@@ -206,7 +206,7 @@ const joined = (page: Page) =>
 const short = (v: number) => String(Number(v.toPrecision(4)));
 const curvatureSwitch = (page: Page) =>
   page.getByRole("checkbox", {
-    name: "Principal curvatures & centres at a point",
+    name: "Principal curvatures & centers at a point",
   });
 
 // The torus preset: R = 2, r = 0.8, u over the whole circle in 216 steps and
@@ -316,37 +316,37 @@ for (const [preset, target, name, words] of [
   [
     "A torus revealing its centers",
     "surface",
-    "Principal curvatures & centres at a point",
+    "Principal curvatures & centers at a point",
     ["κ₁", "κ₂", "u", "v"],
   ],
   [
     "Beads that lose their envelope",
     "surface",
-    "Principal curvatures & centres at a point",
+    "Principal curvatures & centers at a point",
     ["κ around the circle", "κ across it", "t", "θ − θ₀"],
   ],
   [
     "Helix · a ribbon staircase",
     "surface",
-    "Principal curvatures & centres at a point",
+    "Principal curvatures & centers at a point",
     ["κ along the ruling", "κ across it", "t", "u"],
   ],
   [
     "The seam of a carried frame",
     "surface",
-    "Principal curvatures & centres at a point",
+    "Principal curvatures & centers at a point",
     ["κ₁", "κ₂", "t", "u"],
   ],
   [
     "Chords of a rising helix",
     "surface",
-    "Principal curvatures & centres at a point",
+    "Principal curvatures & centers at a point",
     ["κ₁", "κ₂", "t", "u"],
   ],
   [
     "The curvature of an ellipsoid's focal sheet",
     "focal1",
-    "Principal curvatures & centres at a point",
+    "Principal curvatures & centers at a point",
     ["κ₁", "κ₂", "u", "v"],
   ],
   [
@@ -358,7 +358,7 @@ for (const [preset, target, name, words] of [
   [
     "A lamp in water over air",
     "mirror",
-    "Principal curvatures & centres at a point",
+    "Principal curvatures & centers at a point",
     ["κ₁", "κ₂", "u", "v"],
   ],
 ] as const)

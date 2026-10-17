@@ -369,7 +369,7 @@ export function ProbePanel({
                     d.unknown > 0 &&
                       `τ is unknown at ${count(d.unknown, "sample", "samples")}, where r‴ is unstable`,
                     d.clipped > 0 &&
-                      `${count(d.clipped, "centre lies", "centres lie")} beyond 100 study radii, at infinity`,
+                      `${count(d.clipped, "center lies", "centers lie")} beyond 100 study radii, at infinity`,
                   ]
                     .filter(Boolean)
                     .join("; ")}
@@ -422,14 +422,14 @@ function SurfaceProbe({
       <p className="spatial-caption">
         {target === "light"
           ? "Finding the light's wavefront and foci…"
-          : "Finding the principal curvatures and centres…"}
+          : "Finding the principal curvatures and centers…"}
       </p>
     );
   const between = probeBetweenGrid(frame.config, probe);
   if (between && !point)
     return (
       <p className="spatial-caption">
-        Finding the principal curvatures and centres…
+        Finding the principal curvatures and centers…
       </p>
     );
   const terms = surfaceTerms(frame.config, probeTarget(frame.config, probe));
@@ -601,7 +601,7 @@ function SurfaceProbe({
             {[0, 1].map((b) => (
               <li key={b}>
                 <span className="probe-dot" style={swatch(surfaceInk[b])} />
-                {terms.branches[b]}: direction, circle & centre
+                {terms.branches[b]}: direction, circle & center
               </li>
             ))}
             <li>
@@ -631,7 +631,7 @@ function SurfaceProbe({
                 ...[0, 1].map(
                   (b) =>
                     d.clipped[b] > 0 &&
-                    `${count(d.clipped[b], "centre", "centres")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
+                    `${count(d.clipped[b], "center", "centers")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
                 ),
               ]
                 .filter(Boolean)

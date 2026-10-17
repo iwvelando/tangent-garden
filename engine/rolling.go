@@ -84,7 +84,7 @@ const stillSpeed = 1e-9
 type travel struct {
 	g       curveFunc
 	lo, hi  float64
-	heading Vec     // the last tangent with a direction, as travelled
+	heading Vec     // the last tangent with a direction, as traveled
 	at      float64 // where it was taken
 	known   bool
 	orient  float64 // +1, or −1 after an odd number of cusps

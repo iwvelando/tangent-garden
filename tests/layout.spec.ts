@@ -165,7 +165,7 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
             .selectOption("surface");
         await page
           .getByRole("checkbox", {
-            name: "Principal curvatures & centres at a point",
+            name: "Principal curvatures & centers at a point",
           })
           .check();
         await expect(page.locator(".spatial-probe .pair")).toBeVisible();
@@ -180,7 +180,7 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
       [
         "A lamp in water over air",
         "mirror",
-        "Principal curvatures & centres at a point",
+        "Principal curvatures & centers at a point",
       ],
     ] as const)
       setups.push(async () => {
@@ -347,7 +347,7 @@ async function sweepPairs(page: Page, setups: Setup[]) {
 
 for (const width of [1440, 390])
   for (const [notebook, setups] of Object.entries(pairSetups))
-    test(`help text in paired fields moves neither neighbour at ${width}px in ${notebook}`, async ({
+    test(`help text in paired fields moves neither neighbor at ${width}px in ${notebook}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 1000 });
@@ -624,7 +624,7 @@ test("the surface probe's plots fit a phone, and their help moves nothing above"
   await page.getByLabel("Describe", { exact: true }).selectOption("surface");
   await page
     .getByRole("checkbox", {
-      name: "Principal curvatures & centres at a point",
+      name: "Principal curvatures & centers at a point",
     })
     .check();
   // A bead's widest row, which has a contact circle to plot around.

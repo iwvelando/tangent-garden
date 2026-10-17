@@ -4,7 +4,7 @@
 // preset, look at the gallery, and commit web/examples.
 //
 // 2D thumbnails keep the drawing's geometry, rounded to whole units of the
-// plot's 1000 × 760 frame, with each colour replaced by its role in the plot's
+// plot's 1000 × 760 frame, with each color replaced by its role in the plot's
 // palette (web/palette.ts) so the thumbnail follows the theme. Strokes are
 // thickened so they survive a quarter-scale picture.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -15,13 +15,13 @@ const port = 4175;
 const out = "web/examples";
 const stroke = 2.5;
 const recorded = { "2d": {}, "3d": {}, "4d": {} };
-// Each palette colour, in either theme, by its role.
+// Each palette color, in either theme, by its role.
 const roles = Object.fromEntries(
   [
     ...readFileSync("web/palette.ts", "utf8").matchAll(
       /(\w+): "(#[0-9a-f]{6})"/g,
     ),
-  ].map(([, role, colour]) => [colour, role]),
+  ].map(([, role, color]) => [color, role]),
 );
 
 const server = await preview({
@@ -222,7 +222,7 @@ async function planarThumbnail({ name, stroke, roles }) {
         e.setAttribute(attr, fine(value));
     }
   }
-  // An iterated map's density becomes a mask over the base colour, at the
+  // An iterated map's density becomes a mask over the base color, at the
   // thumbnail's resolution rather than one pixel per cell.
   for (const image of art.querySelectorAll("image")) {
     const source = new Image();

@@ -118,10 +118,10 @@ export function NotebookMain({ children }: { children: ReactNode }) {
         return;
       const top = navTop() + bar.offsetHeight + 8;
       const bottom = screenBottom() - 8;
-      const labelled = field.closest(".field")?.getBoundingClientRect();
+      const labeled = field.closest(".field")?.getBoundingClientRect();
       const box =
-        labelled && labelled.height <= bottom - top
-          ? labelled
+        labeled && labeled.height <= bottom - top
+          ? labeled
           : field.getBoundingClientRect();
       if (box.top < top) window.scrollBy(0, box.top - top);
       else if (box.bottom > bottom)

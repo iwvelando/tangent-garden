@@ -89,7 +89,7 @@ export type RuledConfig = {
   rate: number;
   shift: number;
 };
-// The envelope of spheres centred on the curve with radius R(t) =
+// The envelope of spheres centered on the curve with radius R(t) =
 // radius·ρ(t), `profile` being ρ written in t (1 gives a tube). The angle
 // around each contact circle is carried by the rotation-minimizing frame of
 // `frame` (N₀, θ₀, twist and closure only); `meridians` (0–12) curves
@@ -135,7 +135,7 @@ export const maxSpatialPursuers = 16;
 // the paraboloid z = (k₁x² + k₂y²)/2 at its vertex; or the height k of the
 // monkey saddle z = k(x³ − 3xy²). The normal is X_u × X_v normalized, or its
 // opposite when `reverse` is set; the shape operator is −dn, so κ > 0 where
-// the surface bends towards n. The offset is X + offset·n (none at 0), and
+// the surface bends toward n. The offset is X + offset·n (none at 0), and
 // each normal line runs from X to X + reach·n. Mirrors engine3.SurfaceRequest.
 export type SurfaceKind =
   "ellipsoid" | "torus" | "cylinder" | "paraboloid" | "monkey";
@@ -173,7 +173,7 @@ export const maxSurfaceCurves = 48;
 export type RaysLight = "parallel" | "point";
 export type RaysInteraction = "reflect" | "refract";
 // A receiver on the plane `plane` = at, with a square window of side `size`
-// centred on (c1, c2) in the plane's cyclic coordinates ((y, z) on x = at,
+// centered on (c1, c2) in the plane's cyclic coordinates ((y, z) on x = at,
 // (z, x) on y = at, (x, y) on z = at), divided into bins × bins bins; the
 // other fields are read only when the plane is not "none". Mirrors
 // engine3.ReceiverRequest.
@@ -536,10 +536,10 @@ export type LightDiagnostics = {
 // Mirrors engine3.DiagnosticsResult, indexed like base; sample i is at t =
 // min + (max − min)·i/n. κ = |r′ × r″|/|r′|³, B = (r′ × r″)/|r′ × r″|, N =
 // B × T, τ = (r′ × r″)·r‴/|r′ × r″|² (positive for a right-handed helix),
-// and the osculating centre r + N/κ. Curvature is null where r″ is unknown
+// and the osculating center r + N/κ. Curvature is null where r″ is unknown
 // and 0 at a flat sample (|r′ × r″| below the developable's binormal guard),
-// where N, B, τ and the centre are null; torsion is null also where r‴ is
-// unknown; a centre beyond 100 study radii is null (at infinity). Counts
+// where N, B, τ and the center are null; torsion is null also where r‴ is
+// unknown; a center beyond 100 study radii is null (at infinity). Counts
 // leave out a closed curve's repeated last sample. length is the drawn
 // curve's arc length from its first sample, null where it is not drawn and
 // not growing across a break.
@@ -722,7 +722,7 @@ export type RuledResult = {
 };
 // Mirrors engine3.CanalResult. Breaks add every interval with a sample or
 // midpoint without a real contact circle to the base's. A circle that is not
-// real (|R′| > v) keeps its sphere's centre and radius, with no points.
+// real (|R′| > v) keeps its sphere's center and radius, with no points.
 // Between counts intervals whose midpoint alone has no real circle.
 // Steepest is the largest |R′|/v; gap is the distance between the first and
 // last contact circles of a closed curve whose surface does not close.

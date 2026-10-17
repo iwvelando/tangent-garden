@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// canalled turns a study into the canal construction with sphere radius
+// canaled turns a study into the canal construction with sphere radius
 // R·ρ(t), carried by a rotation-minimizing frame started from N₀ = z.
-func canalled(c Request, radius float64, profile string, meridians int) Request {
+func canaled(c Request, radius float64, profile string, meridians int) Request {
 	c.Construction = "canal"
 	c.Canal = CanalRequest{Radius: radius, Profile: profile, Meridians: meridians}
 	c.Frame = FrameRequest{Kind: "rotation-minimizing", Reference: Vec3{0, 0, 1}, Closure: "seam"}
@@ -42,7 +42,7 @@ func row(r Result, v Vertex) int { return int(math.Round(v.Phase * float64(len(r
 // A constant radius around a circle is the torus (√(x²+y²) − 2)² + z² = R²,
 // whose normal points away from the core circle.
 func TestTubeAroundCircleIsTorus(t *testing.T) {
-	r := canal(t, canalled(circle(), 0.5, "1", 6))
+	r := canal(t, canaled(circle(), 0.5, "1", 6))
 	q := r.Canal
 	if !q.Constant || !q.Closed || q.Gap != 0 || q.Imaginary != 0 || q.Collapsed != 0 || q.Folded != 0 || q.Undefined != 0 || q.Steepest != 0 || r.Omitted != 0 {
 		t.Fatalf("summary %+v omitted %d", q, r.Omitted)
@@ -81,7 +81,7 @@ func TestTubeAroundCircleIsTorus(t *testing.T) {
 
 // Around a straight line the tube is a cylinder; open, so it does not close.
 func TestTubeAroundLineIsCylinder(t *testing.T) {
-	r := canal(t, canalled(custom("0", "0", "t", -2, 2), 0.7, "1", 4))
+	r := canal(t, canaled(custom("0", "0", "t", -2, 2), 0.7, "1", 4))
 	if r.Canal.Closed || !r.Canal.Constant || r.Canal.Folded != 0 {
 		t.Fatalf("summary %+v", r.Canal)
 	}
@@ -96,7 +96,7 @@ func TestTubeAroundLineIsCylinder(t *testing.T) {
 // Every point satisfies both envelope equations, |q|² = R² and q·c′ = −RR′,
 // and its normal is q/R.
 func TestCanalEnvelopeEquations(t *testing.T) {
-	c := canalled(custom("cos(t)", "sin(t)", "t/2", 0, 4*math.Pi), 0.3, "1+0.5*sin(3*t)", 5)
+	c := canaled(custom("cos(t)", "sin(t)", "t/2", 0, 4*math.Pi), 0.3, "1+0.5*sin(3*t)", 5)
 	r := canal(t, c)
 	q := r.Canal
 	speed := math.Sqrt(1.25)
@@ -138,7 +138,7 @@ func TestCanalEnvelopeEquations(t *testing.T) {
 // sphere normal is the surface normal.
 func TestCanalNormalConvergence(t *testing.T) {
 	deviation := func(samples int) float64 {
-		c := canalled(custom("cos(t)", "sin(t)", "t/2", 0, 4*math.Pi), 0.3, "1+0.5*sin(3*t)", 5)
+		c := canaled(custom("cos(t)", "sin(t)", "t/2", 0, 4*math.Pi), 0.3, "1+0.5*sin(3*t)", 5)
 		c.Samples = samples
 		r := canal(t, c)
 		worst := 0.0
@@ -161,7 +161,7 @@ func TestCanalNormalConvergence(t *testing.T) {
 // (√3/4)t: a cone of half-angle 30°. With R = t every circle collapses to
 // the apex.
 func TestCanalConeAndCollapse(t *testing.T) {
-	r := canal(t, canalled(custom("0", "0", "t", 0.5, 3), 1, "t/2", 4))
+	r := canal(t, canaled(custom("0", "0", "t", 0.5, 3), 1, "t/2", 4))
 	if r.Canal.Collapsed != 0 || math.Abs(r.Canal.Steepest-0.5) > 1e-9 {
 		t.Fatalf("summary %+v", r.Canal)
 	}
@@ -178,7 +178,7 @@ func TestCanalConeAndCollapse(t *testing.T) {
 			t.Fatalf("circle %+v", g)
 		}
 	}
-	r = canal(t, canalled(custom("0", "0", "t", 0.5, 3), 1, "t", 4))
+	r = canal(t, canaled(custom("0", "0", "t", 0.5, 3), 1, "t", 4))
 	if r.Canal.Collapsed != 481 || r.Canal.Imaginary != 0 {
 		t.Fatalf("summary %+v", r.Canal)
 	}
@@ -194,11 +194,11 @@ func TestCanalConeAndCollapse(t *testing.T) {
 	}
 }
 
-// Where the radius changes faster than the centre moves, |R′| > v, the
+// Where the radius changes faster than the center moves, |R′| > v, the
 // spheres have no real envelope: those samples have no circle, and the
 // surface is not joined across them.
 func TestNoRealEnvelope(t *testing.T) {
-	c := canalled(custom("0", "0", "t", -3, 3), 1, "1+0.8*sin(2*t)", 3)
+	c := canaled(custom("0", "0", "t", -3, 3), 1, "1+0.8*sin(2*t)", 3)
 	r := canal(t, c)
 	q := r.Canal
 	missing := 0
@@ -241,7 +241,7 @@ func TestNoRealEnvelope(t *testing.T) {
 func TestEnvelopeVanishesBetweenSamples(t *testing.T) {
 	// Samples t = (i − 239.5)h, so t = 0 is the midpoint of interval 239.
 	h := 6.0 / 480
-	c := canalled(custom("0", "0", "t", -239.5*h, 240.5*h), 1, "3+1.00001*sin(t)", 3)
+	c := canaled(custom("0", "0", "t", -239.5*h, 240.5*h), 1, "3+1.00001*sin(t)", 3)
 	r := canal(t, c)
 	q := r.Canal
 	if q.Imaginary != 0 || q.Collapsed != 0 || q.Steepest > 1 {
@@ -262,10 +262,10 @@ func TestEnvelopeVanishesBetweenSamples(t *testing.T) {
 // and is drawn so.
 func TestTubeFoldsBeyondRadiusOfCurvature(t *testing.T) {
 	helix := custom("cos(t)", "sin(t)", "t/2", 0, 4*math.Pi)
-	if r := canal(t, canalled(helix, 1.2, "1", 0)); r.Canal.Folded != 0 {
+	if r := canal(t, canaled(helix, 1.2, "1", 0)); r.Canal.Folded != 0 {
 		t.Fatalf("folded %d", r.Canal.Folded)
 	}
-	r := canal(t, canalled(helix, 1.3, "1", 0))
+	r := canal(t, canaled(helix, 1.3, "1", 0))
 	if r.Canal.Folded != 481 || r.Omitted != 0 || len(corners(r.Mesh)) != 480*canalSegments*6 {
 		t.Fatalf("folded %d, omitted %d", r.Canal.Folded, r.Omitted)
 	}
@@ -274,19 +274,19 @@ func TestTubeFoldsBeyondRadiusOfCurvature(t *testing.T) {
 // A periodic profile closes the surface; a drifting one leaves a gap. The
 // meridians show the frame's seam, but the mesh always closes.
 func TestCanalClosureAndSeam(t *testing.T) {
-	if r := canal(t, canalled(circle(), 0.4, "1+0.3*sin(t)", 4)); !r.Canal.Closed || r.Canal.Gap != 0 || r.Canal.Constant {
+	if r := canal(t, canaled(circle(), 0.4, "1+0.3*sin(t)", 4)); !r.Canal.Closed || r.Canal.Gap != 0 || r.Canal.Constant {
 		t.Fatalf("summary %+v", r.Canal)
 	}
 	// Coaxial contact circles: the axial offset −RR′/v and the radius both
 	// change between the ends.
-	r := canal(t, canalled(circle(), 0.4, "1+0.1*t", 4))
+	r := canal(t, canaled(circle(), 0.4, "1+0.1*t", 4))
 	start, end := 0.4, 0.4*(1+0.2*math.Pi)
 	offset := func(R float64) float64 { return R * 0.04 / 2 }
 	radius := func(R float64) float64 { return R * math.Sqrt(1-0.02*0.02) }
 	if gap := math.Hypot(offset(end)-offset(start), radius(end)-radius(start)); r.Canal.Closed || math.Abs(r.Canal.Gap-gap) > 1e-9 {
 		t.Fatalf("summary %+v", r.Canal)
 	}
-	knot := canalled(study(), 0.3, "1", 4)
+	knot := canaled(study(), 0.3, "1", 4)
 	r = canal(t, knot)
 	if !r.Canal.Closed || r.Frame.Kind != "rotation-minimizing" || math.Abs(r.Frame.Holonomy) < 0.01 || r.Frame.Seam == nil {
 		t.Fatalf("frame %+v", r.Frame)
@@ -324,22 +324,22 @@ func TestCanalClosureAndSeam(t *testing.T) {
 	}
 }
 
-// A stationary centre has no contact circle, and a nonpositive radius no
+// A stationary center has no contact circle, and a nonpositive radius no
 // sphere: both are gaps.
 func TestCanalGaps(t *testing.T) {
-	r := canal(t, canalled(custom("t^3", "t", "0", -1, 1), 0.2, "1", 2))
+	r := canal(t, canaled(custom("t^3", "t", "0", -1, 1), 0.2, "1", 2))
 	if r.Canal.Undefined != 0 || r.Omitted != 0 {
 		t.Fatalf("summary %+v omitted %d", r.Canal, r.Omitted)
 	}
-	r = canal(t, canalled(custom("t^3", "0", "0", -1, 1), 0.2, "1", 2))
+	r = canal(t, canaled(custom("t^3", "0", "0", -1, 1), 0.2, "1", 2))
 	if r.Invalid != 1 || r.Canal.Meridians[0][240] != nil || !r.Canal.Breaks[240] || !r.Canal.Breaks[241] || r.Omitted != 2 {
 		t.Fatalf("invalid %d, omitted %d", r.Invalid, r.Omitted)
 	}
-	r = canal(t, canalled(custom("0", "0", "t", -1, 1), 0.5, "t", 2))
+	r = canal(t, canaled(custom("0", "0", "t", -1, 1), 0.5, "t", 2))
 	if r.Canal.Undefined != 241 || r.Canal.Meridians[0][240] != nil || r.Canal.Meridians[0][241] == nil {
 		t.Fatalf("undefined %d", r.Canal.Undefined)
 	}
-	r = canal(t, canalled(custom("0", "0", "t", -1, 1), 0.5, "sqrt(t)", 2))
+	r = canal(t, canaled(custom("0", "0", "t", -1, 1), 0.5, "sqrt(t)", 2))
 	if r.Canal.Undefined != 241 {
 		t.Fatalf("undefined %d", r.Canal.Undefined)
 	}
@@ -348,7 +348,7 @@ func TestCanalGaps(t *testing.T) {
 // At the largest sample count, the mesh is drawn on fewer rings, but always
 // on the ring beside a gap, so the surface reaches it.
 func TestCanalMeshRingsReachGaps(t *testing.T) {
-	c := canalled(custom("0", "0", "t", -3, 3), 1, "1+0.8*sin(2*t)", 0)
+	c := canaled(custom("0", "0", "t", -3, 3), 1, "1+0.8*sin(2*t)", 0)
 	c.Samples = 2400
 	r := canal(t, c)
 	rows := map[int]bool{}
@@ -384,14 +384,14 @@ func TestCanalMeshRingsReachGaps(t *testing.T) {
 }
 
 func TestCanalRigidMotionAndReparameterization(t *testing.T) {
-	c := canalled(custom("2*cos(t)", "2*sin(t)", "t/2", 0, 4*math.Pi), 0.4, "1+0.3*cos(t)", 3)
+	c := canaled(custom("2*cos(t)", "2*sin(t)", "t/2", 0, 4*math.Pi), 0.4, "1+0.3*cos(t)", 3)
 	c.Frame.Reference, c.Frame.Twist = Vec3{0.3, -1, 0.2}, 1.5
 	r := canal(t, c)
-	turned := canalled(custom("t/2", "2*cos(t)", "2*sin(t)", 0, 4*math.Pi), 0.4, "1+0.3*cos(t)", 3)
+	turned := canaled(custom("t/2", "2*cos(t)", "2*sin(t)", 0, 4*math.Pi), 0.4, "1+0.3*cos(t)", 3)
 	turned.Frame.Reference, turned.Frame.Twist = Vec3{0.2, 0.3, -1}, 1.5
 	m := canal(t, turned)
 	rotate := func(v Vec3) Vec3 { return Vec3{v.Z, v.X, v.Y} }
-	faster := canalled(custom("2*cos(2*t)", "2*sin(2*t)", "t", 0, 2*math.Pi), 0.4, "1+0.3*cos(2*t)", 3)
+	faster := canaled(custom("2*cos(2*t)", "2*sin(2*t)", "t", 0, 2*math.Pi), 0.4, "1+0.3*cos(2*t)", 3)
 	faster.Frame.Reference, faster.Frame.Twist = Vec3{0.3, -1, 0.2}, 1.5
 	f := canal(t, faster)
 	for k := range r.Canal.Meridians {
@@ -417,14 +417,14 @@ func TestCanalRigidMotionAndReparameterization(t *testing.T) {
 }
 
 func TestCanalBoundsHoldTube(t *testing.T) {
-	r := canal(t, canalled(custom("cos(t)", "sin(t)", "0", 0, 2*math.Pi), 30, "1", 0))
+	r := canal(t, canaled(custom("cos(t)", "sin(t)", "0", 0, 2*math.Pi), 30, "1", 0))
 	if r.Bounds.Radius < 30 {
 		t.Fatalf("bounds %+v", r.Bounds)
 	}
 }
 
 func TestCanalValidation(t *testing.T) {
-	good := canalled(circle(), 0.5, "1", 4)
+	good := canaled(circle(), 0.5, "1", 4)
 	for _, tc := range []struct {
 		edit func(*Request)
 		want string

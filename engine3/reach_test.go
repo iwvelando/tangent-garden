@@ -272,7 +272,7 @@ func TestReachOfEveryRefinedCurve(t *testing.T) {
 	ruled.Ruled = RuledRequest{Partner: "thread", Rate: 1, Thread: Thread{
 		X: "2.4*cos(t)", Y: "2.4*sin(t)", Z: "1.6 + exp(-((t + pi - 100.25*pi/120)/0.001)^2)",
 	}}
-	canal := canalled(bump, 0.2, "1", 3)
+	canal := canaled(bump, 0.2, "1", 3)
 	involute := bump
 	involute.Construction = "involute"
 	involute.Involute = InvoluteRequest{Anchor: math.Pi, Family: InvoluteFamily{Enabled: true, From: -1, To: 1, Count: 3}}

@@ -30,7 +30,7 @@ func corners(m CurveMesh) []Vertex {
 // curveMeshes are curve studies of every kind that makes a mesh, with a
 // canal broken by a gap and a ribbon of width 0, which makes none.
 func curveMeshes() map[string]Request {
-	gap := canalled(custom("t^3", "0", "0", -1, 1), 0.2, "1", 2)
+	gap := canaled(custom("t^3", "0", "0", -1, 1), 0.2, "1", 2)
 	flat := framedCustom("cos(t)", "sin(t)", "t/3", 0, 6)
 	flat.Frame.Width = 0
 	refined := func(c Request) Request {
@@ -39,12 +39,12 @@ func curveMeshes() map[string]Request {
 	}
 	return map[string]Request{
 		"refined developable": refined(study()),
-		"refined torus":       refined(canalled(circle(), 0.5, "1", 6)),
+		"refined torus":       refined(canaled(circle(), 0.5, "1", 6)),
 		"refined canal gap":   refined(gap),
 		"refined ribbon":      refined(framedCustom("cos(t)", "sin(t)", "t/3", 0, 6)),
 		"refined ruled":       refined(threaded(ring(0), "cos(5*t)", "sin(5*t)", "1", 1, 0.5)),
 		"developable":         study(),
-		"torus":               canalled(circle(), 0.5, "1", 6),
+		"torus":               canaled(circle(), 0.5, "1", 6),
 		"canal gap":           gap,
 		"ribbon":              framedCustom("cos(t)", "sin(t)", "t/3", 0, 6),
 		"no ribbon":           flat,
@@ -118,7 +118,7 @@ func TestCurveMeshIsIndexed(t *testing.T) {
 // closing point: 481 rings round a closed torus, where the seam ring is
 // listed at both ends.
 func TestCanalMeshSharesRings(t *testing.T) {
-	r := canal(t, canalled(circle(), 0.5, "1", 6))
+	r := canal(t, canaled(circle(), 0.5, "1", 6))
 	if got := len(r.Mesh.Vertices) / 7; got != 481*(canalSegments+1) {
 		t.Fatalf("%d vertices, want %d", got, 481*(canalSegments+1))
 	}
@@ -129,7 +129,7 @@ func TestCanalMeshSharesRings(t *testing.T) {
 
 // The mesh survives JSON as the numbers it holds, bit for bit.
 func TestCurveMeshJSON(t *testing.T) {
-	r, err := Compute(canalled(circle(), 0.5, "1", 6))
+	r, err := Compute(canaled(circle(), 0.5, "1", 6))
 	if err != nil {
 		t.Fatal(err)
 	}

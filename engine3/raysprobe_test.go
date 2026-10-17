@@ -120,7 +120,7 @@ func checkWavefront(t *testing.T, d *SurfaceDiagnostics, r *RaysResult) {
 }
 
 // A concave spherical mirror under parallel light: the incident ray is the
-// light, the surface normal points to the centre, the outgoing ray is the
+// light, the surface normal points to the center, the outgoing ray is the
 // reflection, and the wavefront's curvatures are Coddington's, μ_t =
 // 2/(R cos θ) across the meridian and μ_s = 2 cos θ/R. The tangential
 // direction lies in the meridian plane and the sagittal one across it. The

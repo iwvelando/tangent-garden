@@ -430,7 +430,7 @@ test("back and forth turns at the end halfway, and easing follows a half cosine"
 });
 
 // Every frame of an exported video, decoded by ffmpeg at a small size, as
-// grey levels.
+// gray levels.
 function frames(path: string, width = 160, height = 122) {
   const bytes = execFileSync(
     "ffmpeg",

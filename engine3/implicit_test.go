@@ -418,7 +418,7 @@ func TestImplicitSections(t *testing.T) {
 }
 
 // A torus's bitangent plane cuts it in two Villarceau circles of radius R,
-// centred at (0, ±r, 0).
+// centered at (0, ±r, 0).
 func TestImplicitVillarceau(t *testing.T) {
 	q := implicitStudy("(sqrt(x^2+y^2) - a)^2 + z^2", 0.25, Box{-1.6, 1.6, -1.6, 1.6, -0.6, 0.6}, 32)
 	q.A = 1

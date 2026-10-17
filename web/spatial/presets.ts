@@ -611,7 +611,7 @@ export const spatialPresets: {
   {
     name: "Beads that lose their envelope",
     detail:
-      "Where the radius grows faster than the centre moves, the spheres have no envelope",
+      "Where the radius grows faster than the center moves, the spheres have no envelope",
     config: {
       ...base,
       format: "parametric",
@@ -669,7 +669,7 @@ export const spatialPresets: {
   },
   {
     name: "A ribbon along Rössler's band",
-    detail: "One trajectory spiralling out and folding back, carried by a band",
+    detail: "One trajectory spiraling out and folding back, carried by a band",
     config: {
       ...base,
       format: "field",
@@ -784,7 +784,7 @@ export const spatialPresets: {
   },
   {
     name: "A sphere collapsing to one focus",
-    detail: "Every normal runs to the centre, both focal sheets with them",
+    detail: "Every normal runs to the center, both focal sheets with them",
     config: {
       ...base,
       format: "surface",
@@ -794,7 +794,7 @@ export const spatialPresets: {
         a: 1.2,
         b: 1.2,
         c: 1.2,
-        // Open towards the default view.
+        // Open toward the default view.
         uMin: (4 * Math.PI) / 5,
         uMax: (23 * Math.PI) / 10,
         vMin: -Math.PI / 2,
@@ -809,7 +809,7 @@ export const spatialPresets: {
   },
   {
     name: "The focal sheets of an ellipsoid",
-    detail: "Two sheets of centres, folded along cuspidal edges",
+    detail: "Two sheets of centers, folded along cuspidal edges",
     config: {
       ...base,
       format: "surface",
@@ -819,7 +819,7 @@ export const spatialPresets: {
         a: 1.5,
         b: 1,
         c: 0.7,
-        // The far half, open towards the default view.
+        // The far half, open toward the default view.
         uMin: (11 * Math.PI) / 10,
         uMax: (21 * Math.PI) / 10,
         vMin: -Math.PI / 2,
@@ -834,7 +834,7 @@ export const spatialPresets: {
   {
     name: "An elliptic cylinder and its evolute",
     detail:
-      "The centres of curvature sweep the ellipse's evolute along the axis",
+      "The centers of curvature sweep the ellipse's evolute along the axis",
     config: {
       ...base,
       format: "surface",
@@ -949,7 +949,7 @@ export const spatialPresets: {
         b: 0.75,
         c: 0.75,
         reverse: true,
-        // The far half, open towards the default view.
+        // The far half, open toward the default view.
         uMin: Math.PI,
         uMax: 2 * Math.PI,
         vMin: -Math.PI / 2,
@@ -1001,11 +1001,11 @@ export const spatialPresets: {
         ...base.surface,
         kind: "ellipsoid",
         // Semi-axes c√(1 − 1/n²) across and c along the axis, n = 1.5: the
-        // far focus is c/n below the centre.
+        // far focus is c/n below the center.
         a: 1.5 * Math.sqrt(5 / 9),
         b: 1.5 * Math.sqrt(5 / 9),
         c: 1.5,
-        // The far half of the upper cap, open towards the default view.
+        // The far half of the upper cap, open toward the default view.
         uMin: Math.PI,
         uMax: 2 * Math.PI,
         vMin: 0.1,
@@ -1020,7 +1020,7 @@ export const spatialPresets: {
   {
     name: "A glass dome's ring of light",
     detail:
-      "A spherical cap focuses its rim short of its centre; a plane across the caustic catches a bright ring",
+      "A spherical cap focuses its rim short of its center; a plane across the caustic catches a bright ring",
     config: {
       ...base,
       format: "rays",
@@ -1172,7 +1172,7 @@ export const spatialPresets: {
     config: {
       ...base,
       format: "implicit",
-      // The bitangent plane through the centre, tilted by asin(r/R) = 30°:
+      // The bitangent plane through the center, tilted by asin(r/R) = 30°:
       // two circles of radius R = 1 about (0, ±r, 0).
       implicit: {
         f: "(sqrt(x^2 + y^2) - a)^2 + z^2",
@@ -1429,7 +1429,7 @@ export const spatialPresets: {
         length: 0.8,
       },
     },
-    // Lengthwise through both foci, slanting towards the default view.
+    // Lengthwise through both foci, slanting toward the default view.
     cut: {
       enabled: true,
       normal: { x: 0.3, y: 0.5, z: 1 },
@@ -3200,7 +3200,7 @@ export const spatialPresets: {
   // steady rise y′ = a: a seed at radius ρ circles at angular speed 1/ρ², so
   // the seeds set out along the x-axis lie at time t on the spiral θ = t/ρ²,
   // all at height a·t. Seeds spaced evenly in 1/ρ² (to four decimals) keep
-  // neighbours an equal angle 0.04t apart, so the timeline is an evenly
+  // neighbors an equal angle 0.04t apart, so the timeline is an evenly
   // turning polygonal spiral. The probe rides the innermost trajectory, and its
   // timeline winds up behind it.
   {
@@ -3506,7 +3506,7 @@ export const spatialPresets: {
         a: 1.5,
         b: 1,
         c: 0.7,
-        // The far half, open towards the default view.
+        // The far half, open toward the default view.
         uMin: (11 * Math.PI) / 10,
         uMax: (21 * Math.PI) / 10,
         vMin: -Math.PI / 2,
@@ -3559,7 +3559,7 @@ export const spatialPresets: {
         a: 1.2,
         b: 1.2,
         c: 0.6,
-        // The half behind the axis, open towards the view.
+        // The half behind the axis, open toward the view.
         uMin: Math.PI / 10,
         uMax: (11 * Math.PI) / 10,
         vMin: -Math.PI / 2,
@@ -3609,7 +3609,7 @@ export const spatialPresets: {
         a: 1.5,
         b: 1,
         c: 0.7,
-        // The far half, open towards the default view.
+        // The far half, open toward the default view.
         uMin: (11 * Math.PI) / 10,
         uMax: (21 * Math.PI) / 10,
         vMin: -Math.PI / 2,
@@ -3739,7 +3739,7 @@ export const spatialPresets: {
         a: 1.5,
         b: 1,
         c: 0.7,
-        // The far half, open towards the default view.
+        // The far half, open toward the default view.
         uMin: (11 * Math.PI) / 10,
         uMax: (21 * Math.PI) / 10,
         vMin: -Math.PI / 2,
@@ -4164,7 +4164,7 @@ export const spatialPresets: {
         a: 1.5,
         b: 1,
         c: 0.7,
-        // A quarter about the umbilics' meridian, open towards the view.
+        // A quarter about the umbilics' meridian, open toward the view.
         uMin: (7 * Math.PI) / 4,
         uMax: (9 * Math.PI) / 4,
         vMin: -Math.PI / 2,

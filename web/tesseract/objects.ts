@@ -260,8 +260,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     explanation: (c) => explanations[c.mode as keyof typeof explanations],
     colorNote: (c) =>
       c.mode === "section"
-        ? "Colours identify the original cell axis. Faces are translucent; all contours remain visible."
-        : "Colours identify the original edge direction, before 4D rotation. Thin threads subdivide square faces; they are construction lines, not additional tesseract edges.",
+        ? "Colors identify the original cell axis. Faces are translucent; all contours remain visible."
+        : "Colors identify the original edge direction, before 4D rotation. Thin threads subdivide square faces; they are construction lines, not additional tesseract edges.",
     legend: "directions",
     sectionDetail: tesseractSectionDetail,
     diagnostics: (r) =>
@@ -810,7 +810,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           ]
         : [],
     colorNote: (c) =>
-      `Each numbered latitude has its own colour and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
+      `Each numbered latitude has its own color and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
     explanation: (c) =>
       c.weave!.family === "tori"
         ? [

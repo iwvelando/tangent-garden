@@ -105,7 +105,7 @@ func TestSurfacePatchDerivatives(t *testing.T) {
 }
 
 // A sphere's outward normal gives κ = −1/R everywhere under A = −dn: every
-// sample is an umbilic, both focal sheets collapse to the centre, and the
+// sample is an umbilic, both focal sheets collapse to the center, and the
 // offset is the sphere of radius R + d. The poles are chart singularities.
 func TestSphereCurvatureFocusAndOffset(t *testing.T) {
 	c := sphere(1.5, 48, 24)
@@ -429,20 +429,20 @@ func TestOffsetFolds(t *testing.T) {
 	}
 }
 
-// A monkey saddle's centre is a flat umbilic: both focal points are at
+// A monkey saddle's center is a flat umbilic: both focal points are at
 // infinity there, and no focal edge is joined across it. Along its axis
 // line κ₁ touches zero without changing sign, so only the midpoint check
-// can break the edge that passes over the centre between samples.
+// can break the edge that passes over the center between samples.
 func TestMonkeySaddleFlatUmbilic(t *testing.T) {
 	q := surfaced(t, surfaceStudy("monkey", .5, 0, 0, -1, 1, -1, 1, 12, 12))
 	if q.Umbilics != 1 || q.Focal[0].Points[6][6] != nil || q.Focal[1].Points[6][6] != nil {
-		t.Fatalf("umbilics %d, focal points at the centre %v %v", q.Umbilics, q.Focal[0].Points[6][6], q.Focal[1].Points[6][6])
+		t.Fatalf("umbilics %d, focal points at the center %v %v", q.Umbilics, q.Focal[0].Points[6][6], q.Focal[1].Points[6][6])
 	}
 	c := surfaceStudy("monkey", .5, 0, 0, -1, 1, -1, 1, 13, 12)
 	q = surfaced(t, c)
 	f := q.Focal[0]
 	if f.Points[6][6] == nil || f.Points[7][6] == nil {
-		t.Fatal("the samples beside the centre have no focal point")
+		t.Fatal("the samples beside the center have no focal point")
 	}
 	u0, _ := grid(c.Surface, 6, 6)
 	u1, _ := grid(c.Surface, 7, 6)
@@ -451,10 +451,10 @@ func TestMonkeySaddleFlatUmbilic(t *testing.T) {
 		t.Fatalf("κ₁ %v %v", a.Kappa[0], b.Kappa[0])
 	}
 	if f.AlongU[6][6] {
-		t.Fatal("focal edge joined across the flat centre")
+		t.Fatal("focal edge joined across the flat center")
 	}
 	if !f.AlongU[5][6] || !f.AlongU[7][6] {
-		t.Fatal("the neighbouring focal edges are broken")
+		t.Fatal("the neighboring focal edges are broken")
 	}
 }
 
@@ -507,7 +507,7 @@ func TestSpindleTorusSingularities(t *testing.T) {
 }
 
 // Normal lines stand at the crossings of the representative parameter
-// curves, reaching ℓ along the normal: inwards on a torus with ℓ = −r, each
+// curves, reaching ℓ along the normal: inward on a torus with ℓ = −r, each
 // ends on the core circle.
 func TestNormalLinesAndParameterCurves(t *testing.T) {
 	c := torusPatch(2, .8, 36, 24)

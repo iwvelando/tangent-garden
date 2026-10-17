@@ -66,12 +66,12 @@ export function plotScale(
     .sort((a, b) => a - b);
   let lo = known[0] ?? 0,
     hi = known.at(-1) ?? 1;
-  const centre = (lo + hi) / 2;
+  const center = (lo + hi) / 2;
   const constant =
     known.length && hi - lo <= resolution
-      ? Math.abs(centre) <= resolution
+      ? Math.abs(center) <= resolution
         ? 0
-        : centre
+        : center
       : null;
   if (known.length >= 8) {
     const q1 = known[Math.floor(known.length / 4)],

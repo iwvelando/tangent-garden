@@ -49,7 +49,7 @@ func weaveLevel(q Request, k int) float64 {
 }
 func closedPath(p Path) bool { return len(p.Points) > 2 && p.Points[0] == p.Points[len(p.Points)-1] }
 
-// circle4 returns the circumcircle of three points of R⁴ as a centre, radius
+// circle4 returns the circumcircle of three points of R⁴ as a center, radius
 // and orthonormal plane basis starting at a.
 func circle4(a, b, c Vec4) (Vec4, float64, Vec4, Vec4) {
 	var u, v Vec4
@@ -320,7 +320,7 @@ func TestWeaveClipsExactlyAtTheWindow(t *testing.T) {
 }
 
 // The zw circle passes through the pole at t = π/2. With nine subdivisions
-// both neighbouring samples lie inside a radius-12 window, so a sampled chord
+// both neighboring samples lie inside a radius-12 window, so a sampled chord
 // would bridge the pole. The clipped image is a segment of the z-axis.
 func TestWeavePoleBetweenSamples(t *testing.T) {
 	q := weaveRequest("fibers", 1, 4, math.Pi/2, 0)
@@ -328,7 +328,7 @@ func TestWeavePoleBetweenSamples(t *testing.T) {
 	r := weaveCompute(t, q)
 	k := windowLevel(q.Clip)
 	if math.Sin(2*math.Pi*2/9) > k || math.Sin(2*math.Pi*3/9) > k {
-		t.Fatal("fixture no longer puts both neighbouring samples inside the window")
+		t.Fatal("fixture no longer puts both neighboring samples inside the window")
 	}
 	var arcs []Path
 	for _, p := range r.Paths {

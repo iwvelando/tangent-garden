@@ -737,7 +737,7 @@ export function Plot({
             )
           );
         }
-        // A traced ray is drawn as far as its light has travelled.
+        // A traced ray is drawn as far as its light has traveled.
         const traced = ray.traced;
         return (
           <g key={i}>

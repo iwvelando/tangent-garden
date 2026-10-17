@@ -81,7 +81,7 @@ type familyLine struct {
 }
 
 // at is the line through p, where the base has derivative dp, at t. The
-// envelope's point solves det(r′ + λu′, u) = 0 on r + λu. Neighbouring
+// envelope's point solves det(r′ + λu′, u) = 0 on r + λu. Neighboring
 // directions are aligned with this one before differentiating, so the
 // line's own orientation never matters. A chord's point is virtual when it
 // lies beyond the segment and the chord is not extended. The sample loop

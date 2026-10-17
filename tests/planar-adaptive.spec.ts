@@ -401,7 +401,7 @@ const meetings = async (page: Page, reach: number) => {
   ).length;
 };
 
-// Light travelling along +x gathers ahead of the half of the cup it meets
+// Light traveling along +x gathers ahead of the half of the cup it meets
 // face on, x > 0, and appears to gather behind the other: the solid real
 // caustic keeps to the right of the cup's center and the dashed virtual
 // one to the left. The page center is the middle of the drawn cup.

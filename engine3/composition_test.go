@@ -210,7 +210,7 @@ func TestOrthotomicInputIsTheScaledTangentFoot(t *testing.T) {
 // its orthotomic is the circle doubled, so a tube around them is a torus.
 func TestTubeAroundOrthotomicOfCircleIsTorus(t *testing.T) {
 	for _, input := range []string{"tangent-foot", "orthotomic"} {
-		c := canalled(circle(), 0.5, "1", 6)
+		c := canaled(circle(), 0.5, "1", 6)
 		c.Input = input
 		r := composed(t, c)
 		core := 2.0
@@ -351,7 +351,7 @@ func TestComposedDiagnosticsDescribeTheInput(t *testing.T) {
 		near(t, tangent, r.Plus[i].sub(*r.Base[i]).mul(1/c.Length), 1e-9)
 		if k := d.Curvature[i]; k != nil && *k > 0 {
 			defined++
-			// The centre lies in the normal direction at distance 1/κ.
+			// The center lies in the normal direction at distance 1/κ.
 			if d.Center[i] != nil {
 				near(t, d.Center[i], r.Base[i].add(d.Normal[i].mul(1 / *k)), 1e-9)
 			}

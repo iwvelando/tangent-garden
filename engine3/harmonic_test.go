@@ -218,7 +218,7 @@ func TestHarmonicTranslatedStudy(t *testing.T) {
 }
 
 func TestHarmonicBoundsHoldGeneratingGeometry(t *testing.T) {
-	// A large slow vector nearly cancelled by an opposite one leaves a small
+	// A large slow vector nearly canceled by an opposite one leaves a small
 	// curve; its generating vectors and ellipses reach far beyond it.
 	big := HarmonicTerm{Frequency: 1, Cosine: Vec3{5, 0, 0}, Sine: Vec3{0, 5, 0}}
 	back := HarmonicTerm{Frequency: 1, Cosine: Vec3{-4.8, 0, 0}, Sine: Vec3{0, -4.8, 0}}

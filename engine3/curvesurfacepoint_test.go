@@ -16,10 +16,10 @@ import (
 // curveSurfaces are the surfaces built on a curve that the probe describes,
 // open and closed, analytic and differenced, with every kind of frame.
 func curveSurfaces() map[string]Request {
-	profiled := canalled(study(), 0.3, "1 + 0.4*sin(3*t)", 4)
-	twisted := canalled(helixStudy(), 0.4, "1 + 0.2*t", 0)
+	profiled := canaled(study(), 0.3, "1 + 0.4*sin(3*t)", 4)
+	twisted := canaled(helixStudy(), 0.4, "1 + 0.2*t", 0)
 	twisted.Frame.Twist, twisted.Frame.Angle = 1.5, 0.3
-	distributed := canalled(study(), 0.25, "1", 0)
+	distributed := canaled(study(), 0.25, "1", 0)
 	distributed.Frame.Closure = "distribute"
 	return map[string]Request{
 		"knot developable":   study(),
@@ -27,7 +27,7 @@ func curveSurfaces() map[string]Request {
 		"knot canal":         profiled,
 		"helix canal":        twisted,
 		"distributed canal":  distributed,
-		"torus":              canalled(circle(), 0.5, "1", 6),
+		"torus":              canaled(circle(), 0.5, "1", 6),
 		"rmf ribbon":         ribbon(study(), "rotation-minimizing", Vec3{0, 0, 1}, 0.4, 1, 0.3),
 		"frenet ribbon":      ribbon(helixStudy(), "frenet", Vec3{0, 0, 1}, 0.4, 0, 0.3),
 		"chords":             chords(study(), 1, 1.1),
@@ -121,7 +121,7 @@ func TestCurveSurfacePointConvergesOnTheSamples(t *testing.T) {
 // the Gaussian curvature is K = (ρ − 2)/(r²ρ), whatever the frame.
 func TestCurveSurfacePointOnATorus(t *testing.T) {
 	const r = 0.5
-	c := canalled(circle(), r, "1", 0)
+	c := canaled(circle(), r, "1", 0)
 	c.SurfaceDiagnostics = true
 	for _, at := range [][2]float64{{0.0123, 0.1}, {1.7171, 2.2}, {3.3, 4.71}, {6.2, 5.9}} {
 		_, d := pointProbed(t, c, at[0], at[1])
@@ -267,7 +267,7 @@ func TestCurveSurfacePointRefusals(t *testing.T) {
 		}
 		refused[name] = c
 	}
-	refused["field canal"] = canalled(fieldRequest("-y", "x", "0.2", []Vec3{{1, 0, 0}}, 0, 6), 0.3, "1", 0)
+	refused["field canal"] = canaled(fieldRequest("-y", "x", "0.2", []Vec3{{1, 0, 0}}, 0, 6), 0.3, "1", 0)
 	for name, c := range refused {
 		c.SurfaceProbe = &SurfaceQuery{U: 0.5, V: 0}
 		if _, err := Compute(c); err == nil {
@@ -331,10 +331,10 @@ func TestCurveSurfacePointCarriesItsCircleOrRuling(t *testing.T) {
 			}
 			// Every point lies as far from the curve's point as X does, and
 			// the circle passes through X.
-			centre := x.sub(d.Normals[0][0].mul(-1 / *d.Curvature[0][0][0]))
+			center := x.sub(d.Normals[0][0].mul(-1 / *d.Curvature[0][0][0]))
 			closest := math.Inf(1)
 			for _, p := range line {
-				if e := math.Abs(p.sub(centre).norm() - x.sub(centre).norm()); e > 1e-9 {
+				if e := math.Abs(p.sub(center).norm() - x.sub(center).norm()); e > 1e-9 {
 					t.Fatalf("%s: a circle point lies %g off the sphere", name, e)
 				}
 				closest = math.Min(closest, p.sub(x).norm())

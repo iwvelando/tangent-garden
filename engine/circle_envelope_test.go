@@ -132,7 +132,7 @@ func TestCircleEnvelopeFocusAndDirectrix(t *testing.T) {
 
 // Circles centered on the axis with radius t²/2 + 1/2 have a real envelope
 // only while |R′| = |t| ≤ 1 = |c′|; the branches merge at t = ±1 and vanish
-// beyond, where each circle nests inside its neighbours.
+// beyond, where each circle nests inside its neighbors.
 func TestCircleEnvelopeBranchesMergeAndVanish(t *testing.T) {
 	q := circlesRequest("t", "0", -2, 2, "t^2/2+1/2")
 	r := compute(t, q)

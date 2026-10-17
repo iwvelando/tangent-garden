@@ -561,7 +561,7 @@ test("an ellipsoid's parallel surface reads radii less d as d sweeps", async ({
   await expect(motion(page)).toHaveValue("stays");
   await expect(
     page.getByRole("checkbox", {
-      name: "Principal curvatures & centres at a point",
+      name: "Principal curvatures & centers at a point",
     }),
   ).toBeChecked();
   await playPaused(page);
@@ -597,7 +597,7 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
   await choosePreset(page, { label: "A torus revealing its centers" });
   await page
     .getByRole("checkbox", {
-      name: "Principal curvatures & centres at a point",
+      name: "Principal curvatures & centers at a point",
     })
     .check();
   await settled(page);

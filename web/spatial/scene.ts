@@ -381,7 +381,7 @@ export function planeFrom<P extends { normal: Vec3; offset: number }>(
 export const harmonicChain = (s: HarmonicPosition) =>
   s.joints.flatMap((j, k) => [j, s.joints[k + 1] ?? s.point]);
 // Each turning term's ellipse around its joint at that sample, as point
-// pairs, from A (φ = 0) towards B; a fixed translation has none.
+// pairs, from A (φ = 0) toward B; a fixed translation has none.
 export const harmonicEllipses = (terms: HarmonicTerm[], s: HarmonicPosition) =>
   terms.flatMap((term, k) =>
     term.frequency === 0
@@ -683,7 +683,7 @@ export function buildScene(result: SpatialResult) {
     4,
   );
   // Contact circles where the spheres touch their envelope; a sphere with
-  // no real circle is drawn by its great circles, in grey. Meridians shade
+  // no real circle is drawn by its great circles, in gray. Meridians shade
   // across the family like offset strands.
   const canal = result.canal;
   const real = (canal?.circles ?? []).filter((g) => g.real);
@@ -971,7 +971,7 @@ export function buildScene(result: SpatialResult) {
     0.9,
   );
   // Beyond the critical angle nothing is transmitted: the totally
-  // reflected rays recede in grey.
+  // reflected rays recede in gray.
   const totalRays = batch(
     vertices(rayLines.filter((l) => l.total).flatMap((l) => [l.point, l.end])),
     "lines",

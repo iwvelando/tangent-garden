@@ -336,7 +336,7 @@ func TestViewRefinesEveryCurve(t *testing.T) {
 	framed.Frame = frameRequest()
 	framed.Frame.Strands, framed.Frame.Offset, framed.Frame.Width = 2, 0.4, 0.3
 	framed.AdaptiveSurface = true
-	canal := canalled(study(), 0.2, "1", 3)
+	canal := canaled(study(), 0.2, "1", 3)
 	involute := study()
 	involute.Construction = "involute"
 	involute.Involute = InvoluteRequest{Anchor: 0, Family: InvoluteFamily{Enabled: true, From: -1, To: 1, Count: 3}}

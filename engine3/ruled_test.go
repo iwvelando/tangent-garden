@@ -228,7 +228,7 @@ func TestCoincidentChordsAndCone(t *testing.T) {
 
 // ownFaces checks that every triangle with a corner at a point where the
 // surface has no normal shades that corner with its own face normal, which
-// its neighbours there do not share.
+// its neighbors there do not share.
 func ownFaces(t *testing.T, r Result, at Vec3) {
 	t.Helper()
 	mesh := corners(r.Mesh)
