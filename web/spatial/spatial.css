@@ -82,16 +82,16 @@
 }
 /* Swatches match the renderer's thread and ribbon inks. */
 .thread-dot {
-  background: #804017;
+  background: var(--thread-ink);
 }
 .ribbon-dot {
-  background: #4d9e8f;
+  background: var(--surface-ink);
 }
 .dark .thread-dot {
-  background: #ffde94;
+  background: var(--thread-ink);
 }
 .dark .ribbon-dot {
-  background: #3bb3ab;
+  background: var(--surface-ink);
 }
 /* Over whatever the canvas shows, including the browser's own placeholder
    for a lost context, so it carries its own background. */
@@ -153,29 +153,29 @@
 }
 /* A surface study's swatches match its sheet and focal inks. */
 .surface-dot {
-  background: #4d9e8f;
+  background: var(--surface-ink);
 }
 .focal-dot {
-  background: #b85c42;
+  background: var(--focal-ink);
 }
 .focal-dot.second {
-  background: #5466a8;
+  background: var(--second-focal-ink);
 }
 .dark .surface-dot {
-  background: #3bb3ab;
+  background: var(--surface-ink);
 }
 .dark .focal-dot {
-  background: #e68c6b;
+  background: var(--focal-ink);
 }
 .dark .focal-dot.second {
-  background: #94a8eb;
+  background: var(--second-focal-ink);
 }
 /* The base curve under a derived input: palette.recede. */
 .parent-dot {
-  background: #94a8a1;
+  background: var(--parent-ink);
 }
 .dark .parent-dot {
-  background: #3d5e5e;
+  background: var(--parent-ink);
 }
 /* The cut's edge: palette.cut. */
 .cut-dot {

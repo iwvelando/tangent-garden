@@ -1,3 +1,4 @@
+import type { ColorScheme } from "../color-schemes";
 import type { ReactNode } from "react";
 import { Drawing } from "./Drawing";
 import { objects } from "./objects";
@@ -16,6 +17,7 @@ export type DrawingProps = {
   view: View;
   layers: Layers;
   dark: boolean;
+  scheme?: ColorScheme;
 };
 export type CompositionProps = DrawingProps & {
   diagramView?: View;
@@ -89,7 +91,7 @@ export function Composition(
       <rect
         width={size.width}
         height={size.height}
-        fill={plotPalette(p.dark).bg}
+        fill={plotPalette(p.dark, p.scheme).bg}
       />
       {panels.map((panel, index) => {
         const viewport = {
@@ -117,7 +119,7 @@ export function Composition(
       })}
       <path
         d={layout === "columns" ? "M1000,0V760" : "M0,760H1000"}
-        stroke={plotPalette(p.dark).axis}
+        stroke={plotPalette(p.dark, p.scheme).axis}
         strokeWidth="1"
       />
     </>

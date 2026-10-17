@@ -1,3 +1,4 @@
+import type { ColorScheme } from "../color-schemes";
 import { composes, type Frame } from "./types";
 import { curveInputs } from "./inputs";
 import { createRenderer, type View, type Layers } from "./renderer";
@@ -85,6 +86,7 @@ export async function imageFile(
   // The page's size and background, which every format here draws at,
   // recorded only when they are not the defaults.
   still: Still = defaultStill,
+  scheme: ColorScheme = "default",
 ): Promise<Blob> {
   const lensed = projectionRecord(view);
   const page = stillSize(still);
@@ -103,6 +105,7 @@ export async function imageFile(
       dark,
       {
         ...page,
+        scheme,
         occlusion,
         hidden: sight.hidden,
         weight: sight.weight,
@@ -158,7 +161,7 @@ export async function imageFile(
     return new Blob([svg], { type: "image/svg+xml" });
   }
   const drawing = document.createElement("canvas"),
-    renderer = createRenderer(drawing);
+    renderer = createRenderer(drawing, scheme);
   try {
     renderer.upload(frame.result);
     renderer.setProbe(probe?.batches ?? []);
@@ -224,6 +227,7 @@ export async function exportAnimation(options: {
   cyclic: boolean;
   settings: ExportSettings;
   dark: boolean;
+  scheme?: ColorScheme;
   layers: Layers;
   // The entered cut when playback began; a frame that moves it carries its
   // own.
@@ -237,7 +241,7 @@ export async function exportAnimation(options: {
   const timing = exportTiming(options.duration, options.fps, options.cyclic),
     encoding = exportEncoding(options.settings);
   const canvas = document.createElement("canvas"),
-    renderer = createRenderer(canvas);
+    renderer = createRenderer(canvas, options.scheme);
   let sink: ReturnType<typeof mp4Sink> | undefined;
   try {
     sink =

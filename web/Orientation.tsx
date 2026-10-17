@@ -1,3 +1,4 @@
+import { useTheme } from "./useTheme";
 import { useEffect, useState } from "react";
 import { axisInks } from "./palette";
 import { namedViews, type Basis, type NamedView } from "./named-views";
@@ -21,7 +22,8 @@ export function Orientation({
   disabled?: boolean;
   onTurn: (name: NamedView) => void;
 }) {
-  const inks = axisInks(dark);
+  const { scheme } = useTheme();
+  const inks = axisInks(dark, scheme);
   const axes = (["x", "y", "z"] as const)
     .map((name, k) => {
       const across = basis.right[k],

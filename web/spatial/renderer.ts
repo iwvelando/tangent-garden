@@ -1,3 +1,4 @@
+import type { ColorScheme } from "../color-schemes";
 import type { SpatialResult } from "./types";
 import {
   buildScene,
@@ -10,7 +11,7 @@ import {
   type Scene,
   type View,
 } from "./scene";
-import { glsl, palette, vec3 } from "./palette";
+import { glsl, spatialPalette, vec3 } from "./palette";
 import { pageLimits } from "./limits";
 import { pickAt, type PagePoint, type Size } from "./zoom";
 import { cutEdges, isCut, maxCutPlanes, specPlanes, type CutSpec } from "./cut";
@@ -300,7 +301,7 @@ void main() {
 }`;
 // The drawing's colors, for sheets and hairlines, and for strokes with
 // STROKE defined, where coverage of the stroke becomes alpha.
-const fragmentBody = `
+const fragmentBody = (palette: ReturnType<typeof spatialPalette>) => `
 precision mediump float;
 #ifndef STROKE
 varying vec3 N;
@@ -499,8 +500,7 @@ void main() {
   else gl_FragColor = vec4(color,cover);
 #endif
 }`;
-const fragmentSource = fragmentBody,
-  strokeFragmentSource = "#define STROKE\n" + fragmentBody;
+
 // See-through sheets: every layer's shaded color and a count were summed at
 // each sample, so the mean color covers the background by 1 − (1 − α)ⁿ.
 // A pixel is the mean of its samples, samples × samples texels (1 or 2).
@@ -530,7 +530,13 @@ void main() {
 // Rendering only: all curve samples, analytic normals and mesh topology come
 // from Go. The camera is orthographic with identical scale on all three axes,
 // or a perspective camera while riding a ray (see scene.ts).
-export function createRenderer(canvas: HTMLCanvasElement) {
+export function createRenderer(
+  canvas: HTMLCanvasElement,
+  scheme: ColorScheme = "default",
+) {
+  const palette = spatialPalette(scheme);
+  const fragmentSource = fragmentBody(palette),
+    strokeFragmentSource = "#define STROKE\n" + fragmentSource;
   const gl = canvas.getContext("webgl", {
     antialias: true,
     alpha: false,

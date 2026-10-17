@@ -1,3 +1,5 @@
+import type { ColorScheme } from "./color-schemes";
+import { useTheme } from "./useTheme";
 import {
   useEffect,
   useId,
@@ -65,6 +67,7 @@ export function ExampleGallery({
   thumbnail: ThumbnailSource;
   dark: boolean;
 }) {
+  const { scheme } = useTheme();
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -168,6 +171,7 @@ export function ExampleGallery({
           example={currentExample}
           source={thumbnail}
           dark={dark}
+          scheme={scheme}
           eager
         />
         <span className="example-trigger-text">
@@ -282,6 +286,7 @@ export function ExampleGallery({
                           example={example}
                           source={thumbnail}
                           dark={dark}
+                          scheme={scheme}
                         />
                         <span className="example-card-title">
                           {example.title}
@@ -312,11 +317,13 @@ function ExampleThumb({
   example,
   source,
   dark,
+  scheme,
   eager,
 }: {
   example?: Example;
   source: ThumbnailSource;
   dark: boolean;
+  scheme: ColorScheme;
   eager?: boolean;
 }) {
   const box = useRef<HTMLSpanElement>(null);
@@ -349,7 +356,7 @@ function ExampleThumb({
     };
   }, [example, near, source]);
   // The thumbnail's colors follow the theme through the plot's palette.
-  const palette = plotPalette(dark);
+  const palette = plotPalette(dark, scheme);
   const style = Object.fromEntries(
     Object.entries(palette).map(([role, value]) => [`--tg-${role}`, value]),
   ) as CSSProperties;

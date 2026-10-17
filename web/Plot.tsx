@@ -1,3 +1,4 @@
+import type { ColorScheme } from "./color-schemes";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { svgStroke, type LineWeight } from "./line-weight";
 import { probeHighlight, type HeldProbe } from "./planar-probe";
@@ -31,6 +32,7 @@ type Props = {
   config: Config;
   layers: Layers;
   dark: boolean;
+  scheme?: ColorScheme;
   length: number;
   // Whether optical rays stop at their caustic points (raytrace.ts reach).
   stop?: boolean;
@@ -157,6 +159,7 @@ export function Plot({
   config,
   layers,
   dark,
+  scheme = "default",
   length,
   stop = false,
   reset,
@@ -240,7 +243,7 @@ export function Plot({
     svg.addEventListener("wheel", zoom, { passive: false });
     return () => svg.removeEventListener("wheel", zoom);
   }, [key, locked, exploring, zoomLimit]);
-  const palette = plotPalette(dark);
+  const palette = plotPalette(dark, scheme);
   const currentFrame = useMemo(
     () => fitFrame(result, config),
     [result, config],

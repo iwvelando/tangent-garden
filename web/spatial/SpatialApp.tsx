@@ -1,3 +1,4 @@
+import { describeColors } from "../color-schemes";
 import { StudyExplanation } from "../StudyExplanation";
 import {
   drawsSurface,
@@ -1664,6 +1665,7 @@ export default function SpatialApp({
       view: viewport.current,
       layers,
       dark: theme.dark,
+      scheme: theme.scheme,
       cut: drawnCut,
       sight: userSight.spec,
     });
@@ -1694,6 +1696,7 @@ export default function SpatialApp({
         snapshot.cut,
         snapshot.sight,
         still,
+        snapshot.scheme,
       );
       controller.signal.throwIfAborted();
       saveFile(
@@ -2025,20 +2028,22 @@ export default function SpatialApp({
       {config.input === "coil" ? (
         <>
           Built on the coil g(t) = r(t) + d D(t) of the base curve r, drawn in
-          gray with representative arms. D turns about the tangent at angle θ₀ +
-          2πN s/L in the base's rotation-minimizing frame, so the coil winds N
-          times around the curve. The construction below acts on it in place of
-          r: its frame is carried from the samples and its derivatives are
-          written from the base's own, never measured along a polyline.
+          {describeColors("gray", theme.scheme)} with representative arms. D
+          turns about the tangent at angle θ₀ + 2πN s/L in the base's
+          rotation-minimizing frame, so the coil winds N times around the curve.
+          The construction below acts on it in place of r: its frame is carried
+          from the samples and its derivatives are written from the base's own,
+          never measured along a polyline.
         </>
       ) : config.input === "involute" ? (
         <>
           Built on the involute I(t) = r(t) + (c − s(t)) T(t) of the base curve
-          r, unwound by a string of length c from its anchor, drawn in gray with
-          representative strings. The involute runs along the base's principal
-          normal, so the base lies in its normal planes. The construction below
-          acts on it in place of r: arc length is integrated at every point,
-          never measured along a polyline.
+          r, unwound by a string of length c from its anchor, drawn in{" "}
+          {describeColors("gray", theme.scheme)} with representative strings.
+          The involute runs along the base's principal normal, so the base lies
+          in its normal planes. The construction below acts on it in place of r:
+          arc length is integrated at every point, never measured along a
+          polyline.
         </>
       ) : (
         <>
@@ -2046,10 +2051,10 @@ export default function SpatialApp({
           {config.input === "orthotomic"
             ? "tangent-line orthotomic Q(t) = 2H(t) − P"
             : "tangent-foot curve H(t) = r(t) + ((P − r(t)) · T(t)) T(t)"}{" "}
-          of the base curve r, drawn in gray with its perpendiculars from the
-          pole P. The construction below acts on that curve in place of r: it is
-          evaluated from the base at every sample, never redrawn from a
-          polyline.
+          of the base curve r, drawn in {describeColors("gray", theme.scheme)}{" "}
+          with its perpendiculars from the pole P. The construction below acts
+          on that curve in place of r: it is evaluated from the base at every
+          sample, never redrawn from a polyline.
         </>
       )}
       {composition && composition.cusps > 0
@@ -2072,7 +2077,10 @@ export default function SpatialApp({
           F(x, y, z) = c <span>n = ∇F / |∇F|</span>
         </>
       }
-      note="Gold curves are the sections, on planes outlined in gray with the box. Teal edges are where the box cuts the surface open; rust edges and crosses mark where it stops beside cells left out, and where F changes sign across a pole or a jump."
+      note={describeColors(
+        "Gold curves are the sections, on planes outlined in gray with the box. Teal edges are where the box cuts the surface open; rust edges and crosses mark where it stops beside cells left out, and where F changes sign across a pole or a jump.",
+        theme.scheme,
+      )}
       diagnostics={
         levelSet &&
         (levelSet.discontinuities > 0 ||
@@ -2114,7 +2122,10 @@ export default function SpatialApp({
           </>
         )
       }
-      note={`Gold lines are ${refracting ? "transmitted" : "reflected"} rays where the parameter curves cross, gray their incident rays and, where a caustic point lies behind the ${face}, their virtual extensions${refracting ? "; beyond the critical angle, gray rays are totally reflected" : ""}. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross.${receiving ? " The receiver's shade is irradiance, darker (lighter in the dark theme) where more light lands." : ""}`}
+      note={describeColors(
+        `Gold lines are ${refracting ? "transmitted" : "reflected"} rays where the parameter curves cross, gray their incident rays and, where a caustic point lies behind the ${face}, their virtual extensions${refracting ? "; beyond the critical angle, gray rays are totally reflected" : ""}. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross.${receiving ? " The receiver's shade is irradiance, darker (lighter in the dark theme) where more light lands." : ""}`,
+        theme.scheme,
+      )}
       diagnostics={
         mirror &&
         (mirror.unlit > 0 ||
@@ -2178,7 +2189,10 @@ export default function SpatialApp({
           Fᵢ = X + n / κᵢ <span>X_d = X + d n</span>
         </>
       }
-      note="Gray lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross."
+      note={describeColors(
+        "Gray lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross.",
+        theme.scheme,
+      )}
       diagnostics={
         shown?.result.surface &&
         (shown.result.surface.singular > 0 ||
@@ -2212,7 +2226,10 @@ export default function SpatialApp({
             pᵢ′ = vᵢ (pᵢ₊₁ − pᵢ) / |pᵢ₊₁ − pᵢ| <span>pᵢ(t₀) = start</span>
           </>
         }
-        note="Gray polygons join the pursuers, in chase order, at evenly spaced times; crosses mark the starts and, when the chase stops early, where everyone stood."
+        note={describeColors(
+          "Gray polygons join the pursuers, in chase order, at evenly spaced times; crosses mark the starts and, when the chase stops early, where everyone stood.",
+          theme.scheme,
+        )}
         diagnostics={
           shown?.result.pursuit &&
           (shown.result.pursuit.capture || shown.result.pursuit.exhausted) && (
@@ -2243,7 +2260,10 @@ export default function SpatialApp({
             r′(t) = V(r(t), t) <span>r(t₀) = seed</span>
           </>
         }
-        note="Gray strokes show the field's direction, not its speed, at evenly spaced times; crosses mark the seeds and any trajectory that stops early."
+        note={describeColors(
+          "Gray strokes show the field's direction, not its speed, at evenly spaced times; crosses mark the seeds and any trajectory that stops early.",
+          theme.scheme,
+        )}
         diagnostics={
           shown?.result.field?.ends.some((e) => e.reason !== "end") && (
             <p className="bottom-note">
@@ -2279,8 +2299,9 @@ export default function SpatialApp({
         }
       >
         <p>
-          The gold thread is the curve itself, with nothing built on it. Every
-          construction in this notebook starts here.
+          The {describeColors("gold", theme.scheme)} thread is the curve itself,
+          with nothing built on it. Every construction in this notebook starts
+          here.
         </p>
       </StudyExplanation>
     )
@@ -2293,7 +2314,10 @@ export default function SpatialApp({
           |X − c|² = R², (X − c) · c′ = −RR′ <span>R = R·ρ(t)</span>
         </>
       }
-      note="Circles mark where representative spheres touch the surface; gray great circles mark spheres with no real circle. Meridians show how the frame carries the angle."
+      note={describeColors(
+        "Circles mark where representative spheres touch the surface; gray great circles mark spheres with no real circle. Meridians show how the frame carries the angle.",
+        theme.scheme,
+      )}
       diagnostics={
         shown &&
         (shown.result.invalid > 0 || shown.result.omitted > 0) && (
@@ -2360,7 +2384,10 @@ export default function SpatialApp({
           S(t, u) = r(t) + u D(t) <span>D = cos θ U + sin θ V</span>
         </>
       }
-      note="At representative samples the longer arm marks U, the shorter V, and the gray arm the tangent T. Gold arms at the start of a closed loop mark the seam."
+      note={describeColors(
+        "At representative samples the longer arm marks U, the shorter V, and the gray arm the tangent T. Gold arms at the start of a closed loop mark the seam.",
+        theme.scheme,
+      )}
       diagnostics={
         shown &&
         (shown.result.invalid > 0 || shown.result.omitted > 0) && (
@@ -2522,14 +2549,15 @@ export default function SpatialApp({
       <p>
         At every regular point of the curve, extend a straight line in the
         tangent direction. Together those lines sweep a{" "}
-        <em>tangent developable</em>. The gold thread marks the original curve;
-        the two sheets meet there in a sharp fold, except where the curve
-        momentarily stops twisting.
+        <em>tangent developable</em>. The {describeColors("gold", theme.scheme)}{" "}
+        thread marks the original curve; the two sheets meet there in a sharp
+        fold, except where the curve momentarily stops twisting.
       </p>
     </StudyExplanation>
   );
   return (
     <div
+      style={theme.style}
       className={`app spatial-app${theme.dark ? " dark" : ""}`}
       data-theme-preference={theme.preference}
     >
@@ -3618,6 +3646,7 @@ export default function SpatialApp({
             cut={userCut.spec}
             sight={userSight.spec}
             dark={theme.dark}
+            scheme={theme.scheme}
             layers={layers}
             getCurrentView={() =>
               viewport.current ? structuredClone(viewport.current) : undefined
@@ -3795,6 +3824,7 @@ export default function SpatialApp({
                   }
                   result={shown.result}
                   dark={theme.dark}
+                  scheme={theme.scheme}
                   layers={layers}
                   reset={reset}
                   spinning={spinning && active}

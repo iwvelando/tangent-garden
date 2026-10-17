@@ -1,11 +1,16 @@
+import { sectionHue, type ColorScheme } from "../color-schemes";
 import { objects } from "./objects";
 import { axisInks, plotPalette } from "../palette";
 import { svgStroke } from "../line-weight";
 import type { Config, Result, View, Layers, Vec3 } from "./types";
 export const inks = axisInks;
 // Index colors separate coincident levels without reusing coordinate inks.
-export const sectionInk = (index: number, dark: boolean) =>
-  `hsl(${(170 + index * 137.508) % 360} 55% ${dark ? 72 : 36}%)`;
+export const sectionInk = (
+  index: number,
+  dark: boolean,
+  scheme: ColorScheme = "default",
+) =>
+  `hsl(${(sectionHue(scheme) + index * 137.508) % 360} 55% ${dark ? 72 : 36}%)`;
 // Whether these layers draw a path or marker: guides, the missing region's
 // guide, displacement connectors and comparison points have their own
 // layers, and edges draw the rest.
@@ -45,14 +50,16 @@ export function Drawing({
   view,
   layers,
   dark,
+  scheme = "default",
 }: {
   result: Result;
   config: Config;
   view: View;
   layers: Layers;
   dark: boolean;
+  scheme?: ColorScheme;
 }) {
-  const colors = inks(dark),
+  const colors = inks(dark, scheme),
     scale = (310 * view.zoom) / result.radius,
     stroke = svgStroke(layers.weight ?? "regular");
   const descriptor = objects[config.object];
@@ -171,7 +178,7 @@ export function Drawing({
           rendering: "transparent vector construction",
         })}
       </desc>
-      <rect width="1000" height="760" fill={plotPalette(dark).bg} />
+      <rect width="1000" height="760" fill={plotPalette(dark, scheme).bg} />
       {faces.map((f, i) => (
         <path
           key={`f${i}`}
@@ -196,7 +203,7 @@ export function Drawing({
           fill="none"
           stroke={
             curved || (latitudes && p.sectionId)
-              ? sectionInk(sectionIndex(p.sectionId), dark)
+              ? sectionInk(sectionIndex(p.sectionId), dark, scheme)
               : colors[p.family]
           }
           strokeDasharray={
@@ -266,7 +273,7 @@ export function Drawing({
               cx={x}
               cy={y}
               r={curved && index === selected ? 4 : 3}
-              fill={curved ? sectionInk(index, dark) : colors[0]}
+              fill={curved ? sectionInk(index, dark, scheme) : colors[0]}
             />
           );
         })}
