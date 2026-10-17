@@ -30,7 +30,7 @@ const readout = (p: Page, label: string) =>
 
 for (const width of [1440, 390])
   for (const theme of ["light", "dark"] as const)
-    test(`rings from a sphere draws latitude-coloured fibers with readouts outside the viewport at ${width}px ${theme}`, async ({
+    test(`rings from a sphere draws latitude-colored fibers with readouts outside the viewport at ${width}px ${theme}`, async ({
       page,
     }, info) => {
       await page.setViewportSize({ width, height: 1000 });
@@ -44,7 +44,7 @@ for (const width of [1440, 390])
       expect(m.weave.family).toBe("fibers");
       const fibers = page.locator('#tesseract-artwork path[data-role="fiber"]');
       await expect(fibers).toHaveCount(40);
-      // Each latitude has its own colour, matching its key entry.
+      // Each latitude has its own color, matching its key entry.
       const keys = page.locator(".tesseract-legend > span[data-section]");
       await expect(keys).toHaveCount(4);
       const inks = await fibers.evaluateAll((es) => {
@@ -58,7 +58,7 @@ for (const width of [1440, 390])
         }
         return [...bySection.values()].map((strokes) => [...strokes]);
       });
-      // One colour per latitude, and a different colour for every latitude.
+      // One color per latitude, and a different color for every latitude.
       expect(inks).toHaveLength(4);
       for (const strokes of inks) expect(strokes).toHaveLength(1);
       expect(new Set(inks.flat()).size).toBe(4);

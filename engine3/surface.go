@@ -15,7 +15,7 @@ import (
 //
 // The normal is n = X_u × X_v / |X_u × X_v|, or its opposite when Reverse
 // is set. The shape operator is A = −dn, so κ > 0 where the surface bends
-// towards n; a sphere with its outward normal has κ = −1/R. The offset is
+// toward n; a sphere with its outward normal has κ = −1/R. The offset is
 // X + Offset·n, and each normal line runs from X to X + Reach·n.
 type SurfaceRequest struct {
 	Kind     string  `json:"kind"`

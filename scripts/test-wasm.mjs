@@ -2082,7 +2082,7 @@ const spatialFrame = (frame, study = {}) =>
   for (const g of q.frames) {
     assert.ok(Math.abs(g.normal.z - 1) < 1e-12);
     const t = (2 * Math.PI * g.sampleIndex) / 480;
-    // V = T × e_z is the outward radius; D turns from e_z towards it.
+    // V = T × e_z is the outward radius; D turns from e_z toward it.
     const p = q.strands[0][g.sampleIndex];
     const want = {
       x: Math.cos(t) * (1 + 0.5 * Math.sin(t)),
@@ -2210,9 +2210,9 @@ const spatialRuled = (ruled, study = {}) =>
 console.log(
   "WASM ruled surface: hyperboloid, chords, collapse and validation passed",
 );
-// Canal surface: spheres of radius 0.5ρ(t) centred on a circle of radius 2.
+// Canal surface: spheres of radius 0.5ρ(t) centered on a circle of radius 2.
 // With ρ = 1 the envelope is the torus (√(x² + y²) − 2)² + z² = 1/4; a
-// profile that grows faster than the centre moves has no real envelope.
+// profile that grows faster than the center moves has no real envelope.
 const spatialCanal = (canal, frame = {}, study = {}) =>
   spatialResult(
     tangentGardenSpatial(
@@ -2673,7 +2673,7 @@ const spatialSurface = (surface, study = {}) =>
   );
 {
   // A sphere of radius 1.5: its offset by 0.5 is the sphere of radius 2,
-  // both focal sheets collapse to the centre, and its poles are chart
+  // both focal sheets collapse to the center, and its poles are chart
   // singularities.
   const round = spatialSurface({});
   const q = round.surface;
@@ -3049,7 +3049,7 @@ const spatialRays = (surface, rays, flags = {}) =>
 }
 {
   // The light probe: the paraboloid's reflected wavefront is stigmatic,
-  // curving 1/|F − X| towards the focus F at every sample, and the plane
+  // curving 1/|F − X| toward the focus F at every sample, and the plane
   // mirror's diverges from the virtual image of its lamp.
   assert.equal(spatialRays({}, {}).surfaceDiagnostics, undefined);
   const light = spatialRays(

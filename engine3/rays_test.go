@@ -372,7 +372,7 @@ func TestPlaneMirror(t *testing.T) {
 			t.Fatal(p.Shape)
 		}
 	}
-	// The source on the mirror, at its centre sample; its light grazes the
+	// The source on the mirror, at its center sample; its light grazes the
 	// rest of the plane.
 	c.Rays = lamp(Vec3{})
 	r = rayed(t, c)
@@ -518,7 +518,7 @@ func TestCausticBranches(t *testing.T) {
 	if virtuals == 0 {
 		t.Fatal("no virtual rays")
 	}
-	// A monkey saddle's flat umbilic at the centre is stigmatic, with the
+	// A monkey saddle's flat umbilic at the center is stigmatic, with the
 	// caustic at infinity there.
 	r = rayed(t, mirror("monkey", .5, 0, 0, -1, 1, -1, 1, 36, 36, parallel(0, -90)))
 	if r.Stigmatic != 1 || r.Clipped[0] == 0 || r.Clipped[1] == 0 {
@@ -572,7 +572,7 @@ func TestRaysGrazing(t *testing.T) {
 // A caustic sheet is not joined across its cuspidal edge, where the sheet
 // folds back on itself. Under oblique light a concave sphere's tangential
 // caustic has a cusp on the meridian of the chief ray, the ray through the
-// centre, which meets this bowl at u = 0, v = −π/3, halfway between samples
+// center, which meets this bowl at u = 0, v = −π/3, halfway between samples
 // 8 and 9.
 func TestCausticCusp(t *testing.T) {
 	c := bowl(1, 12, 24, parallel(0, -60))

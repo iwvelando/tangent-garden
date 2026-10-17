@@ -128,8 +128,8 @@ test("a receiver has its own controls, layer and validation", async ({
   await expect(page.getByLabel("Receiver", { exact: true })).toHaveValue("z");
   await expect(field(page, "Plane at c")).toHaveValue("-0.5");
   await expect(field(page, "Window size s")).toHaveValue("3.2");
-  await expect(field(page, "Centre x")).toHaveValue("0");
-  await expect(field(page, "Centre y")).toHaveValue("0");
+  await expect(field(page, "Center x")).toHaveValue("0");
+  await expect(field(page, "Center y")).toHaveValue("0");
   await expect(page.getByLabel("Bins", { exact: true })).toHaveValue("160");
   const original = await pixels(page);
   await layer(page, "Receiver irradiance").uncheck();
@@ -139,7 +139,7 @@ test("a receiver has its own controls, layer and validation", async ({
   for (const [name, text, message] of [
     ["Window size s", "0", "receiver's size"],
     ["Plane at c", "2e5", "receiver's position"],
-    ["Centre y", "x", "x is not allowed"],
+    ["Center y", "x", "x is not allowed"],
   ] as const) {
     const before = await field(page, name).inputValue();
     await field(page, name).fill(text);
@@ -156,12 +156,12 @@ test("a receiver has its own controls, layer and validation", async ({
   const coarse = await pixels(page);
   expect(coarse).not.toBe(original);
   expect((await config(page)).rays.receiver.bins).toBe(24);
-  // The window's centre is named in the plane's own coordinates.
+  // The window's center is named in the plane's own coordinates.
   await page.getByLabel("Receiver", { exact: true }).selectOption("x");
   await settled(page);
-  await expect(field(page, "Centre y")).toBeVisible();
-  await expect(field(page, "Centre z")).toBeVisible();
-  await expect(field(page, "Centre x")).toHaveCount(0);
+  await expect(field(page, "Center y")).toBeVisible();
+  await expect(field(page, "Center z")).toBeVisible();
+  await expect(field(page, "Center x")).toHaveCount(0);
   await page.getByLabel("Receiver", { exact: true }).selectOption("none");
   await settled(page);
   await expect(field(page, "Plane at c")).toHaveCount(0);
@@ -176,10 +176,10 @@ test("notes report total internal reflection and where the receiver's light went
   await choosePreset(page, water);
   await settled(page);
   await expect(note(page)).toHaveText(
-    "Caustic 1 (μ₁) is virtual, behind the interface: a curve. Caustic 2 (μ₂) is virtual, behind the interface: a surface. 6,516 samples are at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in grey. 1 sample is stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.",
+    "Caustic 1 (μ₁) is virtual, behind the interface: a curve. Caustic 2 (μ₂) is virtual, behind the interface: a surface. 6,516 samples are at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in gray. 1 sample is stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.",
   );
   const trapped = await pixels(page);
-  // Grey totally reflected rays are drawn with the transmitted ones.
+  // Gray totally reflected rays are drawn with the transmitted ones.
   await layer(page, "Transmitted rays").uncheck();
   expect(await pixels(page)).not.toBe(trapped);
   await layer(page, "Transmitted rays").check();

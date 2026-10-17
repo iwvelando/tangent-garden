@@ -527,7 +527,7 @@ input[type="range"] {
    help.
    Labels align to the bottom of their row, so a wrapped label keeps the
    controls level, and help opens in its own row below both controls instead
-   of pushing the neighbouring field down. */
+   of pushing the neighboring field down. */
 .pair {
   display: grid;
   grid-template-columns: 1fr 1fr;

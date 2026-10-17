@@ -58,7 +58,7 @@ type refiner struct {
 // newRefiner divides each of the n grid cells into 2^(levels+1) lattice
 // steps. After 3m generations a tetrahedron's corners are corners of a
 // cube 2^(levels+1−m) steps wide, and the next two generations add its
-// centre and face centres; so up to 3·levels generations every corner
+// center and face centers; so up to 3·levels generations every corner
 // lies on a lattice of even steps, and the midpoint of every edge, which
 // refinement samples, lies on the lattice.
 func newRefiner(n [3]int, levels int) *refiner {
@@ -267,7 +267,7 @@ type adaptive struct {
 	maxGen int
 	// half holds F − c at the midpoints of the seven grid edges leaving
 	// each grid point toward larger coordinates, which are also the
-	// centres of its faces and cube; fine holds F − c at other points.
+	// centers of its faces and cube; fine holds F − c at other points.
 	half      []float64
 	fine      map[point]float64
 	edges     map[[2]point]int32
@@ -338,7 +338,7 @@ func mid(p, q point) point { return point{(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, 
 // side of the level and whose midpoint lies on the other: the edge crosses
 // the level set twice or more, unseen, as where a neck, a gap or a piece
 // is thinner than the tetrahedron, or a grid face's diagonal joins corners
-// the face's centre separates. Every tetrahedron is tested, however far
+// the face's center separates. Every tetrahedron is tested, however far
 // from the surface the grid places it, since a piece the grid misses
 // leaves no trace at its corners. A tetrahedron with a corner where F is
 // not finite is not flagged, nor is an edge whose midpoint is.

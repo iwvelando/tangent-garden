@@ -39,7 +39,7 @@ func parameter(d *DiagnosticsResult, i int) float64 {
 }
 
 // frenet checks the frame's identities wherever it is defined, and that the
-// osculating centre lies 1/κ along N.
+// osculating center lies 1/κ along N.
 func frenet(t *testing.T, r Result, d *DiagnosticsResult) (defined int) {
 	t.Helper()
 	for i := range r.Base {
@@ -65,7 +65,7 @@ func frenet(t *testing.T, r Result, d *DiagnosticsResult) (defined int) {
 		if c := d.Center[i]; c != nil {
 			want := r.Base[i].add(N.mul(1 / *d.Curvature[i]))
 			if c.sub(want).norm() > 1e-9*math.Max(1, want.norm()) {
-				t.Fatalf("sample %d: centre %+v, want %+v", i, *c, want)
+				t.Fatalf("sample %d: center %+v, want %+v", i, *c, want)
 			}
 		}
 	}
@@ -117,7 +117,7 @@ func TestTwistedCubicCurvatureAndTorsion(t *testing.T) {
 
 func TestPlanarEllipseDiagnostics(t *testing.T) {
 	// (a cos t, b sin t, 0): κ = a/b² at t = 0 and b/a² at t = π/2, τ = 0,
-	// and the centres trace the evolute ((a²−b²)/a cos³t, (b²−a²)/b sin³t).
+	// and the centers trace the evolute ((a²−b²)/a cos³t, (b²−a²)/b sin³t).
 	a, b := 3.0, 1.5
 	c := harmonicStudy(0, 2*math.Pi, Vec3{}, HarmonicTerm{Frequency: 1, Cosine: Vec3{a, 0, 0}, Sine: Vec3{0, b, 0}})
 	r, d := diagnosed(t, c)
@@ -139,7 +139,7 @@ func TestPlanarEllipseDiagnostics(t *testing.T) {
 		cu, su := math.Cos(u), math.Sin(u)
 		evolute := Vec3{(a*a - b*b) / a * cu * cu * cu, (b*b - a*a) / b * su * su * su, 0}
 		if d.Center[i].sub(evolute).norm() > 1e-9 {
-			t.Fatalf("sample %d: centre %+v off the evolute %+v", i, *d.Center[i], evolute)
+			t.Fatalf("sample %d: center %+v off the evolute %+v", i, *d.Center[i], evolute)
 		}
 	}
 	// A closed curve's last sample repeats its first.
@@ -209,7 +209,7 @@ func TestDiagnosticsInvariance(t *testing.T) {
 	}
 	// A regular reparameterization u ↦ s = u³/4 + u, increasing, passes the
 	// same points at other parameters: compare with the original curve on a
-	// unit domain centred on s, whose middle sample is at s.
+	// unit domain centered on s, whose middle sample is at s.
 	re := custom("cos(t^3/4+t)", "sin(2*(t^3/4+t))", "0.4*(t^3/4+t)", -1.2, 1.2)
 	_, p := diagnosed(t, re)
 	for i := 0; i < len(p.Curvature); i += 24 {
@@ -295,7 +295,7 @@ func TestInflectionIsFlatOnlyThere(t *testing.T) {
 func TestDistantCentresAreClipped(t *testing.T) {
 	// The shallow parabola (t, εt², 0) has κ = 2ε/(1+4ε²t²)^{3/2} ≈ 2ε: its
 	// radius of curvature, about 5000, is beyond 100 study radii, so its
-	// centre is at infinity, though κ and the frame are defined.
+	// center is at infinity, though κ and the frame are defined.
 	c := custom("t", "0.0001*t^2", "0", -1, 1)
 	c.Construction = "none"
 	r, d := diagnosed(t, c)
@@ -306,15 +306,15 @@ func TestDistantCentresAreClipped(t *testing.T) {
 		u := parameter(d, i)
 		kappa := 2e-4 / math.Pow(1+4e-8*u*u, 1.5)
 		if d.Center[i] != nil || d.Normal[i] == nil || math.Abs(*d.Curvature[i]-kappa) > 1e-9 {
-			t.Fatalf("sample %d: centre %v, κ %v", i, d.Center[i], d.Curvature[i])
+			t.Fatalf("sample %d: center %v, κ %v", i, d.Center[i], d.Curvature[i])
 		}
 	}
-	// A smaller circle keeps its centre.
+	// A smaller circle keeps its center.
 	near := custom("3*cos(t)", "3*sin(t)", "0", -1, 1)
 	near.Construction = "none"
 	_, e := diagnosed(t, near)
 	if e.Clipped != 0 || e.Center[0].norm() > 1e-6 {
-		t.Fatalf("clipped %d, centre %+v", e.Clipped, e.Center[0])
+		t.Fatalf("clipped %d, center %+v", e.Clipped, e.Center[0])
 	}
 }
 
@@ -384,7 +384,7 @@ func TestNumericalJerkConverges(t *testing.T) {
 
 func TestClipThresholdIsHundredStudyRadii(t *testing.T) {
 	// Arcs over t ∈ [−1, 1] span a study radius of about 1: radius 50 keeps
-	// its centre, radius 200 does not.
+	// its center, radius 200 does not.
 	for _, tc := range []struct {
 		radius  string
 		clipped bool

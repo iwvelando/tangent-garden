@@ -610,10 +610,10 @@ func Compute(q Request) (Result, error) {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius is not positive (or undefined), so there is no circle; they are left as gaps.", unsized))
 	}
 	if stationary > 0 {
-		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the center is stationary, so neighbouring circles are concentric or the same; they have no envelope point.", stationary))
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the center is stationary, so neighboring circles are concentric or the same; they have no envelope point.", stationary))
 	}
 	if nested > 0 {
-		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius changes faster than the center moves (|R′| > |c′|): each circle nests inside its neighbours, with no real envelope point.", nested))
+		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the radius changes faster than the center moves (|R′| > |c′|): each circle nests inside its neighbors, with no real envelope point.", nested))
 	}
 	if onCenter > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf("At %d samples the inverted curve lies exactly on the center of inversion, whose image is at infinity; they are left as gaps.", onCenter))

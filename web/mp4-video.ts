@@ -102,7 +102,7 @@ const unity = fields(
   [0x40000000, 4],
 );
 
-// ISO/IEC 23091-2 code points for the colour spaces WebCodecs reports.
+// ISO/IEC 23091-2 code points for the color spaces WebCodecs reports.
 const primaries: Record<string, number> = {
   bt709: 1,
   bt470bg: 5,

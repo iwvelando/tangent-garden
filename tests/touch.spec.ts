@@ -29,7 +29,7 @@ async function fingers(page: Page, from: Point[], to: Point[], steps = 8) {
   });
   await cdp.detach();
 }
-async function centre(target: Locator): Promise<Point> {
+async function center(target: Locator): Promise<Point> {
   const box = (await target.boundingBox())!;
   return [box.x + box.width / 2, box.y + box.height / 2];
 }
@@ -64,8 +64,8 @@ test("2D: pinch zooms about the fingers, two fingers pan, one finger pans", asyn
   await expect(art).toBeVisible();
   await page.getByRole("button", { name: "Adjust view", exact: true }).click();
   await art.scrollIntoViewIfNeeded();
-  const c = await centre(art);
-  // An off-centre pinch keeps the point between the fingers in place.
+  const c = await center(art);
+  // An off-center pinch keeps the point between the fingers in place.
   const mid = plus(c, 60, 30);
   const before = await world(page, mid);
   await fingers(
@@ -78,13 +78,13 @@ test("2D: pinch zooms about the fingers, two fingers pan, one finger pans", asyn
   expect(Math.abs(after.x - before.x) * after.scale).toBeLessThan(1.5);
   expect(Math.abs(after.y - before.y) * after.scale).toBeLessThan(1.5);
   // Moving both fingers together pans at the same scale.
-  const centred = await art.getAttribute("data-camera-center");
+  const centered = await art.getAttribute("data-camera-center");
   await fingers(
     page,
     [plus(c, -40), plus(c, 40)],
     [plus(c, 20, 50), plus(c, 100, 50)],
   );
-  await expect(art).not.toHaveAttribute("data-camera-center", centred!);
+  await expect(art).not.toHaveAttribute("data-camera-center", centered!);
   expect(Number(await art.getAttribute("data-camera-scale"))).toBeCloseTo(
     after.scale,
     6,
@@ -106,7 +106,7 @@ test("2D: gestures wait while an animation holds the camera", async ({
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await art.scrollIntoViewIfNeeded();
   const scale = await art.getAttribute("data-camera-scale");
-  const c = await centre(art);
+  const c = await center(art);
   await fingers(page, [plus(c, -30), plus(c, 30)], [plus(c, -90), plus(c, 90)]);
   await expect(art).toHaveAttribute("data-camera-scale", scale!);
 });
@@ -131,7 +131,7 @@ for (const dimension of ["3d", "4d"] as const)
       .getByRole("button", { name: "Adjust view", exact: true })
       .click();
     await art.scrollIntoViewIfNeeded();
-    const c = await centre(art);
+    const c = await center(art);
     const start = await view();
     await fingers(
       page,

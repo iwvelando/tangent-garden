@@ -257,7 +257,7 @@ func TestAdaptiveGap(t *testing.T) {
 
 // Across the saddle of xy = 0.001 the grid face's corners alternate, and
 // the grid's diagonal joins the positive corners, so the mesh's pieces
-// cross from x < 0 to x > 0. The face's centre, the diagonal's midpoint,
+// cross from x < 0 to x > 0. The face's center, the diagonal's midpoint,
 // is on the negative side; refinement there separates the hyperbola's two
 // branches. The alternating face is still counted.
 func TestAdaptiveAmbiguous(t *testing.T) {
@@ -305,9 +305,9 @@ func TestAdaptiveAmbiguous(t *testing.T) {
 	}
 }
 
-// A tube of radius 0.3 of a cell along the cells' centres joins two
+// A tube of radius 0.3 of a cell along the cells' centers joins two
 // spheres. No grid point lies in it, and F is the same at every corner of
-// the cells it passes through, but the centres of their faces lie on its
+// the cells it passes through, but the centers of their faces lie on its
 // axis; refinement finds it along its whole length.
 func TestAdaptiveTube(t *testing.T) {
 	// min(u, v) = (u + v − |u − v|)/2.

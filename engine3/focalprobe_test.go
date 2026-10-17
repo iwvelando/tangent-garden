@@ -399,7 +399,7 @@ func TestFocalDiagnosticsFlag(t *testing.T) {
 	mirror := surfaceStudy("paraboloid", 1, 1, 0, 0, 1, 0, 2*math.Pi, 24, 24)
 	mirror.Format = "rays"
 	mirror.Rays = RaysRequest{Interaction: "reflect", Light: "parallel", Azimuth: 0, Elevation: 90, Length: 1, Receiver: ReceiverRequest{Plane: "none"}}
-	for _, c := range []Request{surfaceStudy("ellipsoid", 1.5, 1, 0.7, 0, 2*math.Pi, -1.4, 1.4, 30, 24), offsetBy(torusPatch(2, 0.7, 24, 24), 0.3), mirror, canalled(circle(), 0.5, "1", 4), custom("cos(t)", "sin(t)", "t", 0, 4)} {
+	for _, c := range []Request{surfaceStudy("ellipsoid", 1.5, 1, 0.7, 0, 2*math.Pi, -1.4, 1.4, 30, 24), offsetBy(torusPatch(2, 0.7, 24, 24), 0.3), mirror, canaled(circle(), 0.5, "1", 4), custom("cos(t)", "sin(t)", "t", 0, 4)} {
 		before, err := Compute(c)
 		if err != nil {
 			t.Fatal(err)
@@ -455,7 +455,7 @@ func TestFocalFrameDerivatives(t *testing.T) {
 			s := q.point(u, v, 1)
 			for k := 0; k < 2; k++ {
 				fu, fv, m, mu, mv := q.focalFrame(u, v, s, k)
-				// The direction at a neighbour, signed as e here.
+				// The direction at a neighbor, signed as e here.
 				e := func(du, dv float64) Vec3 {
 					d := q.point(u+du, v+dv, 1).Dir[k]
 					if d.dot(m) < 0 {

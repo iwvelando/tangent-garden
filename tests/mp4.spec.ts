@@ -198,7 +198,7 @@ test("MP4 writer puts the index first and records exact sample timing", async ()
   );
 });
 
-test("MP4 writer omits colour information it cannot describe exactly", async () => {
+test("MP4 writer omits color information it cannot describe exactly", async () => {
   const writer = new Mp4Writer(500, 380);
   writer.configure(description, { primaries: "bt709", matrix: "bt709" });
   writer.add(new Uint8Array([1]), 50, true);

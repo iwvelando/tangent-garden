@@ -271,7 +271,7 @@ for (const format of ["mp4", "webp"] as const)
       const difference = frameDifference(path, 500, 380, 7, reference);
       if (difference !== null) {
         console.log("Decoded MP4/live drawing parity", difference);
-        // H.264 colour quantization/chroma subsampling can change thin strokes;
+        // H.264 color quantization/chroma subsampling can change thin strokes;
         // verify their positions in both directions with a one-pixel allowance.
         expect(difference.meanDifference).toBeLessThan(6);
         expect(difference.unmatchedInk).toBeLessThan(0.02);

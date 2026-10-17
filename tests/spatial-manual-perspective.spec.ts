@@ -76,7 +76,7 @@ const points = [
   at(-0.2, -3, 0.5),
 ];
 
-test("the projections are labelled, with orthographic first, three lenses and a chosen angle", () => {
+test("the projections are labeled, with orthographic first, three lenses and a chosen angle", () => {
   expect(Object.keys(projections)).toEqual([
     "orthographic",
     "narrow",

@@ -510,7 +510,7 @@ export const presets: {
       ...base,
       kind: "pedal",
       // x = sin(3t + π/2), y = sin(2t) closes after t spans 2π; its pedal
-      // about the center is a four-petalled flower.
+      // about the center is a four-petaled flower.
       curve: { ...base.curve, format: "lissajous" },
       samples: 2000,
       lines: 48,

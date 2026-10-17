@@ -1,7 +1,7 @@
 // The control a 4D validation error is about. Go names the field by its
 // request path (engine4.FieldError); the notebook shows the message under
-// the control with that label. An object's own fields are labelled by its
-// descriptor; the controls every object shares are labelled here.
+// the control with that label. An object's own fields are labeled by its
+// descriptor; the controls every object shares are labeled here.
 import { objects } from "./objects";
 import type { Config } from "./types";
 

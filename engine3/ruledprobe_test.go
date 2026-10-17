@@ -32,7 +32,7 @@ func relative(t *testing.T, what string, got *float64, want, tol float64) {
 const differenced = 5e-5
 
 // The tangent developable r + uT of a helix of radius a and pitch b, with
-// the drawn normal sign(u)·B, has κ = 0 along each ruling, whose centre is
+// the drawn normal sign(u)·B, has κ = 0 along each ruling, whose center is
 // at infinity, and κ = τ/(κ_c|u|) = b/(a|u|) across it, in the direction of
 // the principal normal; its Gaussian curvature vanishes. The grid leaves out
 // u = 0, the edge of regression, where the surface is singular: its columns
@@ -72,7 +72,7 @@ func TestDevelopableProbeOnHelix(t *testing.T) {
 				t.Fatalf("row %d column %d: direction across the ruling %v, want ±N", row, k, e)
 			}
 			if d.Focal[0][row][k] != nil {
-				t.Fatalf("row %d column %d: a finite centre along the ruling", row, k)
+				t.Fatalf("row %d column %d: a finite center along the ruling", row, k)
 			}
 			kappa := b / (a * math.Abs(u))
 			near(t, d.Focal[1][row][k], r.add(T.mul(u)).add(B.mul(math.Copysign(1/kappa, u))), differenced/kappa)
@@ -110,7 +110,7 @@ func TestDevelopableProbeOnKnot(t *testing.T) {
 }
 
 // The developable of a plane curve is flat: every regular point is a flat
-// umbilic, with both curvatures zero and both centres at infinity.
+// umbilic, with both curvatures zero and both centers at infinity.
 func TestDevelopableProbeOfPlaneCurveIsFlat(t *testing.T) {
 	_, d := probed(t, custom("cos(t)", "2*sin(t)", "0", 0, 2*math.Pi))
 	points := 0
@@ -437,7 +437,7 @@ func TestRuledProbeQuadrics(t *testing.T) {
 		closeTo(t, "cylinder κ₁", kappa[0], 0, 1e-9)
 		closeTo(t, "cylinder κ₂", kappa[1], -1, 1e-9)
 		if cylinder.Focal[0][row][k] != nil {
-			t.Fatal("the cylinder's straight direction has a finite centre")
+			t.Fatal("the cylinder's straight direction has a finite center")
 		}
 	})
 

@@ -415,7 +415,7 @@ test("exports embed the density as a PNG of its cells, under the policy", async 
   expect([embedded.width, embedded.height]).toEqual([columns, rows]);
   expect(embedded.shaded).toBe(visited(text));
   // The PNG is drawn from the vectors and the cells at 2000 × 1520: the
-  // busiest cells are the preset's own colour.
+  // busiest cells are the preset's own color.
   const pngDownload = page.waitForEvent("download");
   await exportImage(page, "PNG");
   const png = await readFile((await (await pngDownload).path())!);

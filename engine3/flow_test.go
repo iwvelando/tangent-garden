@@ -292,7 +292,7 @@ func TestLorenzConventions(t *testing.T) {
 		t.Fatal("a moving seed reported at rest")
 	}
 	// The trajectory stays on the attractor's familiar box and keeps
-	// switching lobes; this is aggregate, not bit-for-bit, behaviour.
+	// switching lobes; this is aggregate, not bit-for-bit, behavior.
 	crossings, last := 0, 0.0
 	for i, p := range q.Paths[0] {
 		if p == nil || math.Abs(p.X) > 25 || math.Abs(p.Y) > 35 || p.Z < 0 || p.Z > 55 {

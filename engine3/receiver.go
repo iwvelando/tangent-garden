@@ -7,7 +7,7 @@ import (
 
 // ReceiverRequest declares a receiver: the plane Plane = At, for Plane "x",
 // "y" or "z" (or "none", with no receiver), and on it a square window of
-// side Size centred on (C1, C2), divided into Bins × Bins bins. The plane's
+// side Size centered on (C1, C2), divided into Bins × Bins bins. The plane's
 // coordinates run cyclically: (y, z) on x = At, (z, x) on y = At, and
 // (x, y) on z = At.
 type ReceiverRequest struct {
@@ -83,7 +83,7 @@ func (r ReceiverRequest) validate() error {
 		} else if !bounded(r.C1) {
 			field = "rays.receiver.c1"
 		}
-		return fieldErr(field, "the receiver's position and centre must be finite and within ±100000")
+		return fieldErr(field, "the receiver's position and center must be finite and within ±100000")
 	}
 	if !finite(r.Size) || r.Size <= 0 || r.Size > 1e5 {
 		return fieldErr("rays.receiver.size", "the receiver's size must be finite, positive and at most 100000")

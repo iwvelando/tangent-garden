@@ -19,8 +19,8 @@ export function exportBaseSize(layout?: ExportLayout) {
 export const frameRates = [15, 30, 60];
 
 // 2000 × 1520. At 1000 × 760 construction lines are about one pixel wide, and
-// H.264 and lossy WebP store colour at half resolution, so thin lines lose
-// their colour and soften; at twice the size they stay crisp.
+// H.264 and lossy WebP store color at half resolution, so thin lines lose
+// their color and soften; at twice the size they stay crisp.
 export const defaultScale = 2;
 
 export function exportEncoding({ scale, quality, layout }: ExportSettings) {

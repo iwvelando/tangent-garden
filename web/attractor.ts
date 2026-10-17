@@ -42,7 +42,7 @@ export function attractorNote(result: AttractorResult, discard: number) {
   return notes.join(" ");
 }
 
-// One RGBA pixel per cell, top row first, in the given "#rrggbb" colour.
+// One RGBA pixel per cell, top row first, in the given "#rrggbb" color.
 // Opacity is log(1 + visits) / log(1 + the busiest cell's visits), so a
 // cell never visited is clear and the busiest is opaque.
 export function densityPixels(result: AttractorResult, color: string) {
@@ -63,7 +63,7 @@ export function densityPixels(result: AttractorResult, color: string) {
 }
 
 // The density as a PNG data URL, one pixel per cell, embedded in the SVG so
-// the drawing and every export carry it. Cached per result and colour.
+// the drawing and every export carry it. Cached per result and color.
 const images = new WeakMap<AttractorResult, Map<string, string>>();
 export function densityImage(result: AttractorResult, color: string) {
   let cached = images.get(result);

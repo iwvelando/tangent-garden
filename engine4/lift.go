@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-// The slab has a fixed modelling half-thickness, in the source's units.
+// The slab has a fixed modeling half-thickness, in the source's units.
 const liftThickness = .02
 
 // The circular strand is (circleRadius cos 2πt, circleRadius sin 2πt,

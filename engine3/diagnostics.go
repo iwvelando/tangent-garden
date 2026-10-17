@@ -7,12 +7,12 @@ import "math"
 // parameter derivatives, the curvature is κ = |r′ × r″|/|r′|³, the binormal
 // B = (r′ × r″)/|r′ × r″|, the principal normal N = B × T, the torsion
 // τ = (r′ × r″)·r‴/|r′ × r″|² (positive for a right-handed helix), and the
-// osculating centre r + N/κ.
+// osculating center r + N/κ.
 //
 // Curvature is null where r″ is unknown and 0 where |r′ × r″| is below the
 // same guard that leaves the developable's binormal undefined; Flat counts
-// those samples, whose N, B, τ, and centre are null. Torsion is also null
-// where r‴ is unknown, counted by Unknown. A centre whose radius of
+// those samples, whose N, B, τ, and center are null. Torsion is also null
+// where r‴ is unknown, counted by Unknown. A center whose radius of
 // curvature exceeds 100 study radii is null, at infinity, counted by Clipped.
 // A closed curve's last sample repeats its first and is not counted.
 //
@@ -237,7 +237,7 @@ func (d *DiagnosticsResult) measure(base []*Vec3, speeds, middles []float64, bre
 	}
 }
 
-// clip puts centres whose radius of curvature exceeds 100 study radii at
+// clip puts centers whose radius of curvature exceeds 100 study radii at
 // infinity.
 func (d *DiagnosticsResult) clip(radius float64) {
 	n := len(d.Center) - 1

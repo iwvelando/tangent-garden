@@ -1,6 +1,6 @@
 import { inflateSync } from "node:zlib";
 
-// A decoder for the PNGs browsers write (8-bit grey, RGB or RGBA, not
+// A decoder for the PNGs browsers write (8-bit gray, RGB or RGBA, not
 // interlaced, not paletted), independent of the browser that wrote them.
 // Pixels come back as straight (not premultiplied) RGBA.
 export function decodePng(bytes: Buffer) {

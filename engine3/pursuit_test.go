@@ -94,7 +94,7 @@ func TestSpatialPursuitPlanarReduction(t *testing.T) {
 
 // Equal speeds from a regular polygon in a tilted plane: every path is the
 // planar logarithmic spiral r = r0 exp(−tan(π/n)(θ − θ0)), carried into the
-// plane, and neighbours close to ε when r = ε / (2 sin(π/n)).
+// plane, and neighbors close to ε when r = ε / (2 sin(π/n)).
 func TestSpatialPursuitTiltedPolygon(t *testing.T) {
 	for _, n := range []int{2, 3, 7} {
 		r0, v, eps := 1.5, 1.2, 1e-3
@@ -130,7 +130,7 @@ func TestSpatialPursuitTiltedPolygon(t *testing.T) {
 				near(t, *p, tilt.apply(Vec3{r * math.Cos(theta), r * math.Sin(theta), 0}), 1e-9)
 			}
 		}
-		// Every pursuer is exactly ε from its neighbour at the capture.
+		// Every pursuer is exactly ε from its neighbor at the capture.
 		for j, p := range q.Final {
 			if d := q.Final[(j+1)%n].sub(p).norm(); math.Abs(d-eps) > 1e-12 {
 				t.Fatalf("n=%d: final gap %d is %v", n, j+1, d)

@@ -107,7 +107,7 @@ export function surfaceNote(s: SurfaceResult): string[] {
       (f, k) =>
         `Focal sheet ${k + 1} (κ${k === 0 ? "₁" : "₂"}) ${shapes[f.shape]}${
           f.clipped && f.shape !== "none"
-            ? `; at ${count(f.clipped, "sample", "samples")} its centre of curvature is beyond 100 surface radii, treated as at infinity`
+            ? `; at ${count(f.clipped, "sample", "samples")} its center of curvature is beyond 100 surface radii, treated as at infinity`
             : ""
         }.`,
     ),

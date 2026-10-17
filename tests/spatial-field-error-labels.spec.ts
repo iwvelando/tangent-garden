@@ -322,7 +322,7 @@ const cases: Case[] = [
     "rays.receiver.c2",
     "A glass dome's ring of light",
     (c) => (c.rays.receiver.c2 = 2e5),
-    "Centre y",
+    "Center y",
   ],
   [
     "rays.receiver.size",

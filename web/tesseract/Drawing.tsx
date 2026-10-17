@@ -3,7 +3,7 @@ import { axisInks, plotPalette } from "../palette";
 import { svgStroke } from "../line-weight";
 import type { Config, Result, View, Layers, Vec3 } from "./types";
 export const inks = axisInks;
-// Index colours separate coincident levels without reusing coordinate inks.
+// Index colors separate coincident levels without reusing coordinate inks.
 export const sectionInk = (index: number, dark: boolean) =>
   `hsl(${(170 + index * 137.508) % 360} 55% ${dark ? 72 : 36}%)`;
 // Whether these layers draw a path or marker: guides, the missing region's
@@ -57,7 +57,7 @@ export function Drawing({
     stroke = svgStroke(layers.weight ?? "regular");
   const descriptor = objects[config.object];
   const curved = descriptor.legend === "sections";
-  // Latitude studies share the section key's colours, without its selection.
+  // Latitude studies share the section key's colors, without its selection.
   const latitudes = descriptor.legend === "latitudes";
   const flat = descriptor.flat?.(config);
   const selected = Math.min(

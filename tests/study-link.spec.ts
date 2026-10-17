@@ -546,7 +546,7 @@ test("every invalid field is refused by name", async () => {
     ["config.curve.format", (s) => (s.config.curve.format = "spline")],
     ["config.kind", (s) => (s.config.kind = "toString")],
     ["config.kind", (s) => (s.config.kind = "__proto__")],
-    ["config.curve.colour", (s) => (s.config.curve.colour = 1), /known/],
+    ["config.curve.color", (s) => (s.config.curve.color = 1), /known/],
     ["config.__proto__", (s) => (s.config = JSON.parse(`{"__proto__":{}}`))],
     ["config.curve", (s) => (s.config.curve = [])],
     ["config.curve.terms", (s) => (s.config.curve.terms = {}), /list/],

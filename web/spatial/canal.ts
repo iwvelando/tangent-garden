@@ -4,7 +4,7 @@ const short = (v: number) => Number(v.toPrecision(3)).toString();
 const samples = (n: number) => (n === 1 ? "one sample" : `${n} samples`);
 
 // Whether the spheres keep a real envelope, where it closes, collapses,
-// vanishes or folds, and why a centre has no circle.
+// vanishes or folds, and why a center has no circle.
 export function canalNote(result: SpatialResult): string[] {
   const q = result.canal!;
   const out = [
@@ -21,7 +21,7 @@ export function canalNote(result: SpatialResult): string[] {
   else out.push("The curve is open, so the surface has two open ends.");
   if (q.imaginary > 0)
     out.push(
-      `On ${samples(q.imaginary)} the radius changes faster than the centre moves, |R′| > v: those spheres have no real envelope, and the surface stops.`,
+      `On ${samples(q.imaginary)} the radius changes faster than the center moves, |R′| > v: those spheres have no real envelope, and the surface stops.`,
     );
   if (q.between > 0)
     out.push(
@@ -37,7 +37,7 @@ export function canalNote(result: SpatialResult): string[] {
     );
   if (result.invalid > 0)
     out.push(
-      `${result.invalid === 1 ? "One sample has" : `${result.invalid} samples have`} no regular centre, where the curve stops or is undefined; no contact circle is defined there.`,
+      `${result.invalid === 1 ? "One sample has" : `${result.invalid} samples have`} no regular center, where the curve stops or is undefined; no contact circle is defined there.`,
     );
   if (q.folded > 0)
     out.push(

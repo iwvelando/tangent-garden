@@ -445,9 +445,9 @@ like a dewdrop on a web.
   - So hostility of the kind the book elsewhere calls "dark forest" happens only
     between those sharing the same number of dimensions.
 
-**Modeling note.** Natural 4D analogues of the book's shapes:
+**Modeling note.** Natural 4D analogs of the book's shapes:
 
-| Shape in the book | 4D analogue |
+| Shape in the book | 4D analog |
 |---|---|
 | Ring | **Spherinder torus** or **ditorus** (a torus swept around a circle), or a **duocylinder** |
 | Pyramid | **5-cell** (4-simplex), or a pyramid with a cube base |

@@ -335,7 +335,7 @@ func (x *crossings) find() {
 }
 
 // meets reports whether a crossing passes through a tetrahedron: a node
-// in one of its faces, sought from the face's centre, or an apex inside
+// in one of its faces, sought from the face's center, or an apex inside
 // it, sought from its own, each within eight Newton steps. It looks no
 // further, and samples no edge, so candidates far from any crossing cost
 // little; a crossing it misses here is found from another tetrahedron on
@@ -738,7 +738,7 @@ func (x *crossings) face(a, b, c point) *face {
 		}
 		return out, top
 	}
-	// Seek a node from the centre (where the chords between opposite
+	// Seek a node from the center (where the chords between opposite
 	// crossings cross, for four) and from each crossing.
 	dirs := []Vec3{corner[1].sub(corner[0]), corner[2].sub(corner[0])}
 	starts := [][]float64{{1.0 / 3, 1.0 / 3}}
@@ -756,7 +756,7 @@ func (x *crossings) face(a, b, c point) *face {
 	}
 	const slack = 1e-9
 	var nodes []Vec3
-	saddle, centre := false, corner[0].add(dirs[0].mul(starts[0][0])).add(dirs[1].mul(starts[0][1]))
+	saddle, center := false, corner[0].add(dirs[0].mul(starts[0][0])).add(dirs[1].mul(starts[0][1]))
 	for k, start := range starts {
 		u, converged, indefinite := x.critical(corner[0], dirs, start, 0, 20)
 		if !converged || !indefinite || u[0] < -slack || u[1] < -slack || u[0]+u[1] > 1+slack {
@@ -765,7 +765,7 @@ func (x *crossings) face(a, b, c point) *face {
 		at := corner[0].add(dirs[0].mul(u[0])).add(dirs[1].mul(u[1]))
 		if !x.onLevel(at, g) {
 			if k == 0 {
-				saddle, centre = true, at
+				saddle, center = true, at
 			}
 			continue
 		}
@@ -822,7 +822,7 @@ func (x *crossings) face(a, b, c point) *face {
 		// from the second crossing to the third has the sign after the
 		// second, and where the saddle has that sign it joins that
 		// boundary to the one from the fourth crossing to the first.
-		if (x.f(centre) >= 0) == after[1] {
+		if (x.f(center) >= 0) == after[1] {
 			f.paths = [][]pid{{marks[0].id, marks[1].id}, {marks[2].id, marks[3].id}}
 		} else {
 			f.paths = [][]pid{{marks[1].id, marks[2].id}, {marks[3].id, marks[0].id}}
@@ -1022,7 +1022,7 @@ func (x *crossings) analyze(v tet) *plan {
 }
 
 // snap moves an edge's root i, found with the shift, onto F itself where
-// F − c changes sign between halfway to the edge's neighbouring roots on
+// F − c changes sign between halfway to the edge's neighboring roots on
 // either side (or its ends), as it does wherever the shift only moved a
 // crossing rather than made it. Elsewhere, as where a sheet only touches
 // the edge without the shift, the root stays within the shift of F.

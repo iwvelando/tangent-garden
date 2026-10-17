@@ -35,7 +35,7 @@ func refinedMeridians(t *testing.T, c Request) (Result, Result, []*RefinedPath) 
 // on its winding and every chord within tolerance of it, and the study is
 // otherwise unchanged.
 func TestRefinedMeridiansOnATorus(t *testing.T) {
-	c := canalled(circle(), 0.5, "1", 3)
+	c := canaled(circle(), 0.5, "1", 3)
 	c.Samples = 240
 	c.Frame.Angle, c.Frame.Twist = 0.4, 30
 	uniform, r, paths := refinedMeridians(t, c)
@@ -71,13 +71,13 @@ func TestRefinedMeridiansOnATorus(t *testing.T) {
 
 // Along the unit-speed z axis the transported frame is constant, so a
 // canal of radius R(t) = 0.5 + 0.2 sin t is a surface of revolution whose
-// contact circle at t is centred at t − RR′ on the axis, with radius
+// contact circle at t is centered at t − RR′ on the axis, with radius
 // R√(1 − R′²). Meridian k turns about the axis at θ = θ₀ + 2πk/m +
 // 2πN(t − t₀)/L. Between samples the circle follows the profile's own
 // radius and slope, not an interpolation of the samples', so refined points
 // lie on the closed form as closely as the samples do.
 func TestRefinedMeridiansFollowAVaryingRadius(t *testing.T) {
-	c := canalled(custom("0", "0", "t", 0, 6), 1, "0.5+0.2*sin(t)", 2)
+	c := canaled(custom("0", "0", "t", 0, 6), 1, "0.5+0.2*sin(t)", 2)
 	c.Frame.Reference = Vec3{1, 0, 0}
 	c.Samples = 240
 	c.Frame.Angle, c.Frame.Twist = 0.3, 20
@@ -110,7 +110,7 @@ func TestRefinedMeridiansFollowAVaryingRadius(t *testing.T) {
 // θ = πk + 40πt. Its tolerance follows its own size, about four times the
 // segment's, not the base's.
 func TestRefinedMeridiansFollowTheirOwnSize(t *testing.T) {
-	c := canalled(custom("0", "0", "t", 0, 1), 2, "1", 2)
+	c := canaled(custom("0", "0", "t", 0, 1), 2, "1", 2)
 	c.Frame.Reference = Vec3{1, 0, 0}
 	c.Samples = 240
 	c.Frame.Twist = 20
@@ -143,7 +143,7 @@ func TestRefinedMeridiansFollowTheirOwnSize(t *testing.T) {
 // shown or its correction distributed.
 func TestRefinedMeridiansFollowAFinerStudy(t *testing.T) {
 	for _, closure := range []string{"seam", "distribute"} {
-		c := canalled(study(), 0.3, "1+0.4*sin(3*t)", 4)
+		c := canaled(study(), 0.3, "1+0.4*sin(3*t)", 4)
 		c.Frame.Closure, c.Frame.Twist = closure, 12
 		c.Samples = 240
 		fine := c
@@ -182,7 +182,7 @@ func TestRefinedMeridiansFollowAFinerStudy(t *testing.T) {
 // refinement finds it, breaks every meridian and the surface there, and
 // draws no face across it.
 func TestRefinedMeridiansBreakTheSurface(t *testing.T) {
-	c := canalled(custom("t", "0", "0", 0, 2), 0.3, "1+0*sqrt((t-1.00104)^2-0.00000009)", 3)
+	c := canaled(custom("t", "0", "0", 0, 2), 0.3, "1+0*sqrt((t-1.00104)^2-0.00000009)", 3)
 	uniform, r, paths := refinedMeridians(t, c)
 	crack := 241
 	if uniform.Canal.Breaks[crack] || uniform.Omitted != 0 {
@@ -217,7 +217,7 @@ func TestRefinedMeridiansBreakTheSurface(t *testing.T) {
 // have real circles, but refinement finds the lost envelope and breaks the
 // surface there.
 func TestRefinedMeridiansFindALostEnvelope(t *testing.T) {
-	c := canalled(custom("t", "0", "0", 0, 2), 1, "3+1.0000001*sin(t-1.00104)", 2)
+	c := canaled(custom("t", "0", "0", 0, 2), 1, "3+1.0000001*sin(t-1.00104)", 2)
 	uniform, r, paths := refinedMeridians(t, c)
 	crack := 241
 	if uniform.Canal.Breaks[crack] || uniform.Canal.Imaginary != 0 || uniform.Omitted != 0 {
@@ -242,7 +242,7 @@ func TestRefinedMeridiansFindALostEnvelope(t *testing.T) {
 // breaks; refinement inserts nothing there, keeps every circle it has, and
 // finds no break of its own.
 func TestRefinedMeridiansKeepImaginaryCircles(t *testing.T) {
-	c := canalled(custom("0", "0", "t", -3, 3), 1, "1+0.8*sin(2*t)", 2)
+	c := canaled(custom("0", "0", "t", -3, 3), 1, "1+0.8*sin(2*t)", 2)
 	c.Frame.Reference = Vec3{1, 0, 0}
 	c.Frame.Twist = 4
 	uniform, r, paths := refinedMeridians(t, c)
@@ -262,7 +262,7 @@ func TestRefinedMeridiansKeepImaginaryCircles(t *testing.T) {
 // Meridians are refined only when asked, and only when the canal draws
 // some.
 func TestMeridiansRefinedOnlyWhenAsked(t *testing.T) {
-	c := canalled(circle(), 0.5, "1", 3)
+	c := canaled(circle(), 0.5, "1", 3)
 	if r := canal(t, c); r.Adaptive != nil {
 		t.Fatal("refined without being asked")
 	}

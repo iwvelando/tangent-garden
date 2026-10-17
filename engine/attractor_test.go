@@ -189,7 +189,7 @@ func TestAttractorFixedPoint(t *testing.T) {
 			t.Fatalf("a collapsed window widens to 0.000001, got %v", w)
 		}
 	}
-	// The iterates round to neighbouring floats about the window's center,
+	// The iterates round to neighboring floats about the window's center,
 	// a cell corner, so they may share its four cells.
 	visited := 0
 	for k, c := range r.Counts {

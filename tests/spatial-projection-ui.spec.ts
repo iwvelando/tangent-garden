@@ -139,7 +139,7 @@ function agreement(
   return points.filter(([x, y]) => inked(x, y)).length / points.length;
 }
 
-test("Projection is orthographic by default and offers three labelled lenses", async ({
+test("Projection is orthographic by default and offers three labeled lenses", async ({
   page,
 }) => {
   await page.goto("/?study=3d");
