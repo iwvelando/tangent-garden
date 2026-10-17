@@ -437,6 +437,7 @@ test("the perspective presets open in their own projection and view, and fly in 
   // The tube turns once about the knot's axis, and loops.
   await choosePreset(page, { label: "Inside a trefoil's tube" });
   await settled(page);
+  await expect(page.getByLabel("Depth", { exact: true })).toHaveValue("taper");
   await expect(projection(page)).toHaveValue("wide");
   await expect(page.getByLabel("Repeat", { exact: true })).toHaveValue("loop");
   await button(page, "Play animation").click();

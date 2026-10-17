@@ -685,7 +685,7 @@ test("a torus patch reads κ₁ and κ₂ against the closed form", async ({
   const v = along(page, "Along v");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 36 of 72",
+    "u = 3.142, row 108 of 216",
   );
   await expect(v).toHaveAttribute("aria-valuetext", "v = 0, column 12 of 24");
   const expected = (v: number) => {
@@ -756,7 +756,7 @@ test("a torus's offset reads the offset torus through the Offset d control", asy
   await settled(page);
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 36 of 72",
+    "u = 3.142, row 108 of 216",
   );
   await expect(readout(page)).toHaveText(torus(1.2));
   await expect(status).toHaveText("");
@@ -768,7 +768,7 @@ test("a torus's offset reads the offset torus through the Offset d control", asy
     "Folded here: the offset lies beyond one focal sheet, turned inside out.",
   );
   await expect(page.locator(".probe-notes")).toContainText(
-    "1,825 points have folded, beyond a focal sheet",
+    "5,425 points have folded, beyond a focal sheet",
   );
   // On the core circle itself.
   await offset.fill("-0.8");
@@ -904,6 +904,14 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
   });
   await settled(page);
   await expect(describe(page)).toHaveValue("focal1");
+  const between = page.getByRole("checkbox", {
+    name: "At any u and v, between samples",
+    exact: true,
+  });
+  await expect(between).toBeChecked();
+  // Keep the sampled cuspidal-edge regression as well as the new default.
+  await between.uncheck();
+  await settled(page);
   const u = along(page, "Along u"),
     status = page.getByTestId("probe-status");
   await expect(along(page, "Along v")).toHaveAttribute(
@@ -1910,7 +1918,7 @@ test("a spherical bowl's light reads Coddington's foci; its mirror is umbilic", 
   await settled(page);
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 4.712, row 48 of 96",
+    "u = 4.712, row 75 of 150",
   );
   await expect(along(page, "Along v")).toHaveAttribute(
     "aria-valuetext",
@@ -1936,7 +1944,7 @@ test("a spherical bowl's light reads Coddington's foci; its mirror is umbilic", 
   );
   await expect(readout(page)).toHaveText(["—", "—", "—", "—", "—"]);
   await expect(page.locator(".probe-notes")).toHaveText(
-    "97 points are singular, without a normal.",
+    "151 points are singular, without a normal.",
   );
   await along(page, "Along v").fill("24");
   // The mirror itself: a sphere seen from inside, κ = 1/R everywhere.
@@ -1969,7 +1977,7 @@ test("a spherical bowl's light reads Coddington's foci; its mirror is umbilic", 
       .replaceAll("&gt;", ">")
       .replaceAll("&amp;", "&"),
   );
-  expect(meta.probe).toMatchObject({ target: "light", row: 48, column: 24 });
+  expect(meta.probe).toMatchObject({ target: "light", row: 75, column: 24 });
   // The link names the light, though the probe was never told to describe
   // it, and reopens the same point.
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -1992,7 +2000,7 @@ test("a spherical bowl's light reads Coddington's foci; its mirror is umbilic", 
 });
 
 // A lamp 1 above still water (n₁ = 1.33) over air: the plane z = 0, on a
-// 96 × 96 grid over [−1.8, 1.8]². Straight below the lamp the light is
+// 150 × 96 grid over [−1.8, 1.8]². Straight below the lamp the light is
 // stigmatic, imaged virtually at n₂/n₁ of its height; beyond tan θ = 1.8 ·
 // sin θ_c = 1/1.33 it is totally reflected. Off axis the plane's
 // closed form gives μ = −n₁cos²θ/(n₂ s cos²θ′) across and −n₁/(n₂ s) around,
@@ -2086,7 +2094,7 @@ test("the light probe moves along the mirror as an animation and returns on Stop
   await seek("0");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 0 of 96",
+    "u = 3.142, row 0 of 150",
   );
   // The bowl is a surface of revolution under axial light: every row reads
   // the same at its column.
@@ -2094,19 +2102,19 @@ test("the light probe moves along the mirror as an animation and returns on Stop
   await seek("1");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 6.283, row 96 of 96",
+    "u = 6.283, row 150 of 150",
   );
   await expect(readout(page)).toHaveText(coddington(175 / 3));
   await seek("0.25");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.927, row 24 of 96",
+    "u = 3.937, row 38 of 150",
   );
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(stage(page)).not.toHaveAttribute("data-progress");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 4.712, row 48 of 96",
+    "u = 4.712, row 75 of 150",
   );
   expect(await pixels(page)).toBe(study);
 });

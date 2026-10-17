@@ -209,7 +209,7 @@ const curvatureSwitch = (page: Page) =>
     name: "Principal curvatures & centres at a point",
   });
 
-// The torus preset: R = 2, r = 0.8, u over the whole circle in 72 steps and
+// The torus preset: R = 2, r = 0.8, u over the whole circle in 216 steps and
 // v from −π/3 to π/3 in 24, with the outward normal: κ₁ = −cos v/(2 +
 // 0.8 cos v), constant along u, and κ₂ = −1/0.8 everywhere.
 test("a torus plots κ₁ varying along v and constant along u", async ({
@@ -248,7 +248,9 @@ test("a torus plots κ₁ varying along v and constant along u", async ({
     `κ₁ along v from ${short(k1(0))} to ${short(k1(Math.PI / 3))}`,
     "κ₂ along v: constant at -1.25",
   ]);
-  expect(await marks(page)).toEqual([10 / 72, 10 / 72, 0.25, 0.25].map(places));
+  expect(await marks(page)).toEqual(
+    [10 / 216, 10 / 216, 0.25, 0.25].map(places),
+  );
   // Back to the rows: exactly today's plots.
   await plots(page).selectOption("along");
   await expect(captions(page)).toHaveCount(2);
@@ -457,7 +459,7 @@ test("an ellipsoid's curvatures meet at an umbilic down its meridian", async ({
   await expect(plots(page)).toHaveValue("both");
   await expect(slider(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 6.283, row 90 of 100",
+    "u = 6.283, row 135 of 150",
   );
   await expect(slider(page, "Along v")).toHaveAttribute(
     "aria-valuetext",

@@ -392,7 +392,9 @@ test("refining the surface is offered with refinement where a construction draws
   await settled(page);
   await openSampling(page);
   await expect(refine(page)).toBeChecked();
-  await expect(refineSurface(page)).not.toBeChecked();
+  await expect(refineSurface(page)).toBeChecked();
+  await refineSurface(page).uncheck();
+  await settled(page);
   await expect(readout(page)).toHaveCount(1);
   const flat = await pixels(page);
   const linework = await lines(page);
@@ -642,8 +644,9 @@ test("the screw band's partner thread opens refined and is exported with its ref
   await choosePreset(page, { label: band });
   await settled(page);
   await openSampling(page);
+  await expect(refineSurface(page)).toBeChecked();
   await expect(refine(page)).toBeChecked();
-  await expect(readout(page)).toHaveText(
+  await expect(readout(page).first()).toHaveText(
     /^[\d,]+ points added between samples\.$/,
   );
   // The circle needs nothing between its 240 samples; the thread's 24
@@ -667,6 +670,7 @@ test("the folding treads' thread stays refined as the shift slides", async ({
   await choosePreset(page, { label: cones });
   await settled(page);
   await openSampling(page);
+  await expect(refineSurface(page)).toBeChecked();
   await expect(refine(page)).toBeChecked();
   const opening = await addedPoints(page);
   expect(opening).toBeGreaterThan(240 * 4);
@@ -683,7 +687,7 @@ test("the folding treads' thread stays refined as the shift slides", async ({
   // is refined as finely as it opened.
   await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
-  await expect(readout(page)).toHaveText(
+  await expect(readout(page).first()).toHaveText(
     /^[\d,]+ points added between samples\.$/,
   );
   await expect
@@ -749,4 +753,17 @@ test("the cord's strands open refined and lose their refinement as they unwind",
   await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
   await expect.poll(() => addedPoints(page)).toBeLessThan(opening / 2);
+});
+
+test("the coiled cord opens with both curve and surface refinement", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A coiled cord round a trefoil" });
+  await settled(page);
+  await openSampling(page);
+  await expect(refine(page)).toBeChecked();
+  await expect(refineSurface(page)).toBeChecked();
+  await expect(readout(page)).toHaveCount(2);
+  expect((await config(page)).adaptiveSurface).toBe(true);
 });

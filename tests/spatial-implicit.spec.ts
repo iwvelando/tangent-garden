@@ -12,6 +12,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
 import { engines, watchEngines, type EngineLog } from "./engines";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { probe, decodeVideo } from "./video";
 import { curveMesh } from "./curve-mesh";
 const stage = (page: Page) => page.locator(".spatial-stage");
@@ -227,13 +228,13 @@ test("refinement joins a neck the grid misses, within its levels", async ({
   await settled(page);
   const status = page.locator(".spatial-status");
   await expect(status).toHaveText(
-    "20 × 13 × 13 cells · 3 section planes · up to 3 refinement levels",
+    "20 × 13 × 7 cells · 3 section planes · up to 3 refinement levels",
   );
   await expect(note(page)).toContainText(
     "The mesh is one piece, closed, of genus 0",
   );
   await expect(note(page)).toContainText(
-    "Refinement bisected 582 tetrahedra, reaching 2 of 3 levels, where an edge's midpoint lay across the level from both its ends.",
+    "Refinement bisected 556 tetrahedra, reaching 2 of 3 levels, where an edge's midpoint lay across the level from both its ends.",
   );
   await openSampling(page);
   const refinement = page.getByLabel("Refinement levels", { exact: true });
@@ -246,7 +247,7 @@ test("refinement joins a neck the grid misses, within its levels", async ({
     "The mesh has two pieces, each closed, of genus 0",
   );
   await expect(note(page)).not.toContainText("Refinement");
-  await expect(status).toHaveText("20 × 13 × 13 cells · 3 section planes");
+  await expect(status).toHaveText("20 × 13 × 7 cells · 3 section planes");
   expect((await config(page)).implicit.refine).toBe(0);
   expect(await pixels(page)).not.toBe(refined);
   for (const [text, message] of [
@@ -262,7 +263,7 @@ test("refinement joins a neck the grid misses, within its levels", async ({
   await settled(page);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(note(page)).toContainText(
-    "Refinement bisected 402 tetrahedra, reaching 1 of 1 level, where an edge's midpoint lay across the level from both its ends.",
+    "Refinement bisected 344 tetrahedra, reaching 1 of 1 level, where an edge's midpoint lay across the level from both its ends.",
   );
   await expect(note(page)).toContainText(
     "16 tetrahedra at the deepest level still disagree with a sample: the surface there is finer than refinement reaches.",
@@ -272,7 +273,7 @@ test("refinement joins a neck the grid misses, within its levels", async ({
   await settled(page);
   expect((await config(page)).implicit).toMatchObject({ cells: 16, refine: 1 });
   await expect(status).toHaveText(
-    "16 × 11 × 11 cells · 3 section planes · up to 1 refinement level",
+    "16 × 11 × 5 cells · 3 section planes · up to 1 refinement level",
   );
   // A preset brings its own levels.
   await choosePreset(page, drops);
@@ -808,3 +809,43 @@ test("the grid and the note follow Go's shapes and wording", () => {
     "2 grid faces have corners alternating in sign; refinement samples each face's centre, and splits the face where the grid's diagonal disagrees with it.",
   ]);
 });
+
+for (const name of ["A double torus", "A thread between two drops"])
+  test(`${name} reveals geometry near both ends of its animation`, async ({
+    page,
+  }) => {
+    await ready(page);
+    await choosePreset(page, { label: name });
+    await settled(page);
+    await openAnimation(page);
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const slider = page.getByRole("slider", { name: "Animation progress" });
+    const frames: string[] = [];
+    for (const p of ["0", "0.1", "0.9", "1"]) {
+      await slider.fill(p);
+      await expect(stage(page)).toHaveAttribute("data-progress", p);
+      frames.push(
+        createHash("sha256")
+          .update(await pixels(page))
+          .digest("hex"),
+      );
+    }
+    expect
+      .soft(frames[1], "geometry appears within the first tenth")
+      .not.toBe(frames[0]);
+    expect
+      .soft(frames[2], "geometry is still growing in the last tenth")
+      .not.toBe(frames[3]);
+    await page
+      .getByRole("button", { name: "Back to study", exact: true })
+      .click();
+    await expect(stage(page)).not.toHaveAttribute("data-progress");
+    expect(
+      createHash("sha256")
+        .update(await pixels(page))
+        .digest("hex"),
+    ).toBe(frames[3]);
+  });

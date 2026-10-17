@@ -69,7 +69,7 @@ test("a mirror study has its own controls, layers and validated fields", async (
     "Mirror Reflected rays Caustic 1 Caustic 2",
   );
   await expect(page.locator(".spatial-status")).toHaveText(
-    "96 × 96 cells · 9 parameter curves",
+    "150 × 96 cells · 9 parameter curves",
   );
   const original = await pixels(page);
   for (const name of [
@@ -142,13 +142,13 @@ test("notes report caustic shapes, virtual parts, and samples without a reflecti
   await choosePreset(page, dish);
   await settled(page);
   await expect(note(page)).toHaveText(
-    "Caustic 1 (μ₁) is real, ahead of the mirror: a point. Caustic 2 (μ₂) is real, ahead of the mirror: a point. 2,401 samples are stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.",
+    "Caustic 1 (μ₁) is real, ahead of the mirror: a point. Caustic 2 (μ₂) is real, ahead of the mirror: a point. 7,399 samples are stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.",
   );
   // From behind the mirror nothing is lit.
   await page.getByLabel("Mirror side", { exact: true }).selectOption("reverse");
   await settled(page);
   await expect(note(page)).toHaveText(
-    "Caustic 1 (μ₁) lies wholly at infinity. Caustic 2 (μ₂) lies wholly at infinity. 2,401 samples are unlit: the light grazes the mirror there or arrives behind its mirror side.",
+    "Caustic 1 (μ₁) lies wholly at infinity. Caustic 2 (μ₂) lies wholly at infinity. 7,399 samples are unlit: the light grazes the mirror there or arrives behind its mirror side.",
   );
   await page.getByLabel("Mirror side", { exact: true }).selectOption("forward");
   // A dome under the same light spreads it from a virtual focus, drawn
@@ -181,13 +181,13 @@ test("notes report caustic shapes, virtual parts, and samples without a reflecti
   await field(page, "Source z").fill("0");
   await settled(page);
   await expect(note(page)).toContainText(
-    "2,400 samples are unlit: the light grazes the mirror there or arrives behind its mirror side. 1 sample lies at the source, with no incident direction.",
+    "7,398 samples are unlit: the light grazes the mirror there or arrives behind its mirror side. 1 sample lies at the source, with no incident direction.",
   );
 
   await choosePreset(page, bowl);
   await settled(page);
   await expect(note(page)).toHaveText(
-    "Caustic 1 (μ₁) is real, ahead of the mirror: a surface. Caustic 2 (μ₂) is real, ahead of the mirror: a curve. 97 samples are chart singularities, with no normal and no reflection.",
+    "Caustic 1 (μ₁) is real, ahead of the mirror: a surface. Caustic 2 (μ₂) is real, ahead of the mirror: a curve. 151 samples are chart singularities, with no normal and no reflection.",
   );
   await choosePreset(page, cup);
   await settled(page);

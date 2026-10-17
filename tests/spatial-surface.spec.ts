@@ -68,7 +68,7 @@ test("a surface study has its own controls, layers and validated fields", async 
     "Surface Focal sheet 1 Focal sheet 2",
   );
   await expect(page.locator(".spatial-status")).toHaveText(
-    "72 × 24 cells · 13 parameter curves",
+    "216 × 24 cells · 13 parameter curves",
   );
   const original = await pixels(page);
   for (const name of [
@@ -147,7 +147,7 @@ test("notes report focal shapes, chart singularities, umbilics and folds", async
   await field(page, "Offset d").fill("-1.2");
   await settled(page);
   await expect(note(page)).toContainText(
-    "1,825 offset samples lie beyond one focal sheet",
+    "5,425 offset samples lie beyond one focal sheet",
   );
   const folded = await pixels(page);
   await layer(page, "Offset surface").uncheck();
@@ -159,9 +159,9 @@ test("notes report focal shapes, chart singularities, umbilics and folds", async
     "Focal sheet 1 (κ₁) collapses to a point. Focal sheet 2 (κ₂) collapses to a point.",
   );
   await expect(note(page)).toContainText(
-    "110 samples are chart singularities, where X_u × X_v vanishes",
+    "434 samples are chart singularities, where X_u × X_v vanishes",
   );
-  await expect(note(page)).toContainText("1,925 samples are umbilics");
+  await expect(note(page)).toContainText("7,595 samples are umbilics");
 
   await choosePreset(page, cylinder);
   await settled(page);
