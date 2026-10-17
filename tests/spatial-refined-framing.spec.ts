@@ -3,10 +3,24 @@ import { runInThisContext } from "node:vm";
 import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
 import { curveMesh } from "./curve-mesh";
-import { fitBounds, fitFamilies, reveal } from "../web/spatial/animation";
+import {
+  fitBounds,
+  fitFamilies,
+  reveal,
+  animationCamera,
+  applyTracks,
+} from "../web/spatial/animation";
+import { presetStudy } from "../web/spatial/link";
 import { spatialPresets } from "../web/spatial/presets";
 import { restore } from "../web/lifted";
-import { camera, project } from "../web/spatial/scene";
+import {
+  camera,
+  project,
+  buildScene,
+  scenePasses,
+  defaultLayers,
+  initialView,
+} from "../web/spatial/scene";
 import type { View } from "../web/spatial/renderer";
 import type {
   RefinedPath,
@@ -128,6 +142,7 @@ function computed(config: SpatialConfig): SpatialResult {
   expect(typeof reply).toBe("object");
   const result = restore(JSON.parse(reply.json), reply.lifted);
   result.mesh = reply.mesh;
+  if (result.implicit) Object.assign(result.implicit, reply.implicit);
   return result;
 }
 // Every refined curve of a result, by name.
@@ -304,4 +319,184 @@ test("the dandelion's seeds, found between samples, are framed whole, and only w
   await frameCheck(page).check();
   await settled(page);
   expect(await shown(page)).toEqual(framed);
+});
+
+for (const viewport of [
+  { width: 1440, height: 1000 },
+  { width: 390, height: 844 },
+])
+  test(`the trefoil chase fills its ${viewport.width}px view and keeps that framing throughout playback`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/?study=3d");
+    await settled(page);
+    const preset = spatialPresets.find(
+      (p) => p.name === "A chase untangling a trefoil",
+    )!;
+    await choosePreset(page, { label: preset.name });
+    await settled(page);
+    const result = computed(preset.config);
+    const opening = await shown(page);
+    const s = await size(page);
+    const k = camera(opening, s);
+    // The actual integrated paths, including every pursuer's start and
+    // capture, must have breathing room on a wide page and a tall phone.
+    const points = result.pursuit!.paths.flat().filter((p): p is Vec3 => !!p);
+    const projected = points.map((p) => project(k, p));
+    const xs = projected.map((p) => p.x),
+      ys = projected.map((p) => p.y);
+    const extent = {
+      left: Math.min(...xs) / s.width,
+      right: Math.max(...xs) / s.width,
+      top: Math.min(...ys) / s.height,
+      bottom: Math.max(...ys) / s.height,
+    };
+    expect(
+      Math.max(extent.right - extent.left, extent.bottom - extent.top),
+    ).toBeGreaterThan(0.72);
+    for (const gap of [
+      extent.left,
+      1 - extent.right,
+      extent.top,
+      1 - extent.bottom,
+    ])
+      expect(gap).toBeGreaterThan(0.035);
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    for (const p of ["0", "0.15", "0.5", "0.85", "1"]) {
+      await page.getByRole("slider", { name: "Animation progress" }).fill(p);
+      await expect(stage(page)).toHaveAttribute("data-progress", p);
+      expect(await shown(page)).toEqual(opening);
+    }
+    await page
+      .getByRole("button", { name: "Back to study", exact: true })
+      .click();
+    expect(await shown(page)).toEqual(opening);
+  });
+
+for (const name of [
+  "An ellipsoid's parallel surface",
+  "A coiled cord round a trefoil",
+  "A spring of tubing closed into a ring",
+  "A knot shedding filaments",
+  "A trefoil turned inside out",
+  "Strands braided on a helix",
+  "Chords of a rising helix",
+  "A necklace of spheres",
+  "The focal sheets of an ellipsoid",
+  "Where a helix's tangents land",
+  "A trefoil's string, unwound",
+  "A sheet of Viviani's normals",
+  "A helix unwound into a veil",
+  "The whole focal surface of an ellipsoid",
+  "A Klein bottle in twenty-four slices",
+  "Where an ellipsoid's curvatures meet",
+  "A paraboloid gathering light",
+  "A spherical bowl's cusped caustic",
+  "An ellipsoid refocusing its lamp",
+  "A cup's nephroid",
+  "A lamp in water over air",
+  "A cup's nephroid on its floor",
+  "A lamp sealed in an ellipsoid",
+])
+  test(`${name} frames its complete visible geometry with less empty space`, () => {
+    const preset = spatialPresets.find((p) => p.name === name)!;
+    const result = computed(preset.config);
+    const passes = scenePasses(buildScene(result), {
+      ...defaultLayers,
+      ...preset.layers,
+    });
+    for (const size of [
+      { width: 1060, height: 675 },
+      { width: 356, height: 464 },
+    ]) {
+      const k = camera(
+        { ...initialView, ...preset.view, ...result.bounds },
+        size,
+      );
+      const xs: number[] = [],
+        ys: number[] = [];
+      for (const { batch } of passes)
+        for (let i = 0; i < batch.data.length; i += 7) {
+          const p = project(k, {
+            x: batch.data[i] + (batch.origin?.x ?? 0),
+            y: batch.data[i + 1] + (batch.origin?.y ?? 0),
+            z: batch.data[i + 2] + (batch.origin?.z ?? 0),
+          });
+          xs.push(p.x);
+          ys.push(p.y);
+        }
+      const loX = xs.reduce((a, b) => Math.min(a, b), Infinity),
+        hiX = xs.reduce((a, b) => Math.max(a, b), -Infinity),
+        loY = ys.reduce((a, b) => Math.min(a, b), Infinity),
+        hiY = ys.reduce((a, b) => Math.max(a, b), -Infinity);
+      expect(
+        Math.max(hiX - loX, hiY - loY) / Math.min(size.width, size.height),
+      ).toBeGreaterThan(0.75);
+      for (const gap of [
+        loX / size.width,
+        1 - hiX / size.width,
+        loY / size.height,
+        1 - hiY / size.height,
+      ])
+        expect(gap).toBeGreaterThan(0.04);
+    }
+  });
+
+test("the crown's sweeping string stays framed between both endpoints", () => {
+  const i = spatialPresets.findIndex(
+    (p) => p.name === "A string swept across a four-cornered crown",
+  );
+  const study = presetStudy(i),
+    original = computed(study.config);
+  const frame = (p: number) => {
+    const config = applyTracks(
+      study.config,
+      [{ target: "offset", from: -8, to: 8 }],
+      p,
+    ).config;
+    return { config, result: computed(config) };
+  };
+  const final = frame(1);
+  for (const progress of [0, 0.15, 0.3, 0.5, 0.7, 0.85, 1]) {
+    const current = frame(progress);
+    const view = animationCamera({
+      frame: current,
+      final,
+      heldView: { ...study.view, ...original.bounds },
+      camera: study.animation.camera,
+      mode: "parameters",
+      progress,
+      length: 1,
+      complete: progress === 1,
+    });
+    for (const size of [
+      { width: 1060, height: 675 },
+      { width: 356, height: 464 },
+    ]) {
+      const k = camera(view, size);
+      let left = Infinity,
+        right = -Infinity,
+        top = Infinity,
+        bottom = -Infinity;
+      for (const p of [
+        ...current.result.base,
+        ...current.result.involute!.members.flatMap((m) => m.points),
+      ]) {
+        if (!p) continue;
+        const at = project(k, p);
+        left = Math.min(left, at.x);
+        right = Math.max(right, at.x);
+        top = Math.min(top, at.y);
+        bottom = Math.max(bottom, at.y);
+      }
+      expect(left / size.width, `${progress}: left`).toBeGreaterThan(0.04);
+      expect(right / size.width, `${progress}: right`).toBeLessThan(0.96);
+      expect(top / size.height, `${progress}: top`).toBeGreaterThan(0.04);
+      expect(bottom / size.height, `${progress}: bottom`).toBeLessThan(0.96);
+    }
+  }
 });

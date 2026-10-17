@@ -203,6 +203,45 @@ export type Flight = {
   repeat?: Repeat;
   pace?: Pace;
 };
+// A composed opening is also the reveal camera: keep its pan and zoom
+// while the fixed geometry is drawn, including detail and perspective views.
+const revealInPlace: Flight = {
+  duration: 10,
+  camera: "current",
+  animate: { mode: "reveal" },
+  path: { style: "steady", keys: [] },
+};
+
+// A detail is easier to follow by approaching it through the complete
+// drawing than by revealing a curve that has not yet reached the close view.
+function approach(view: SpatialCamera): {
+  view: SpatialCamera;
+  flight: Flight;
+} {
+  return {
+    view,
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      path: {
+        style: "steady",
+        keys: [
+          {
+            ...view,
+            name: "The whole study",
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          { ...view, name: "The detail", turns: 0 },
+        ],
+      },
+    },
+  };
+}
+
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts), its own camera path to fly (see Flight), and its own
 // projection (with its lens angle when chosen) and manual view (see
@@ -301,6 +340,8 @@ export const spatialPresets: {
   {
     name: "A knot shedding filaments",
     detail: "Seven strings unwound from a (3, 4) knot",
+    view: { ...initialView, zoom: 1.31, panX: 5.25, panY: -10.53 },
+    flight: revealInPlace,
     config: {
       ...base,
       p: 3,
@@ -366,6 +407,8 @@ export const spatialPresets: {
   {
     name: "A trefoil turned inside out",
     detail: "Inside and outside trade places across one sphere",
+    view: { ...initialView, zoom: 1.18, panX: 0.09, panY: 0.2 },
+    flight: revealInPlace,
     config: {
       ...base,
       construction: "inversion",
@@ -477,6 +520,8 @@ export const spatialPresets: {
   {
     name: "Strands braided on a helix",
     detail: "Three offset threads turning five times around a staircase",
+    view: { ...initialView, zoom: 1.25, panX: 0.19, panY: -0.09 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "parametric",
@@ -560,6 +605,8 @@ export const spatialPresets: {
   {
     name: "Chords of a rising helix",
     detail: "Half-turn chords through the axis, stopping where the helix ends",
+    view: { ...initialView, zoom: 1.29, panX: 0.15, panY: -0.06 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "parametric",
@@ -591,6 +638,8 @@ export const spatialPresets: {
     name: "A necklace of spheres",
     detail:
       "A swelling radius on a helix, each sphere touching along a tilted circle",
+    view: { ...initialView, zoom: 1.2, panX: 0.11, panY: 0.09 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "parametric",
@@ -711,6 +760,10 @@ export const spatialPresets: {
   {
     name: "A chase untangling a trefoil",
     detail: "Nine equal pursuers start around a knot and close in on a point",
+    // The chase lies well inside its bounding sphere from this direction.
+    // Keep room for all nine starts on the phone's narrower drawing, too.
+    view: { ...initialView, zoom: 1.55 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "pursuit",
@@ -810,6 +863,8 @@ export const spatialPresets: {
   {
     name: "The focal sheets of an ellipsoid",
     detail: "Two sheets of centers, folded along cuspidal edges",
+    view: { ...initialView, zoom: 1.33, panX: 0, panY: -0.02 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "surface",
@@ -859,6 +914,8 @@ export const spatialPresets: {
     name: "A paraboloid gathering light",
     detail:
       "Light along the axis reflects through one focus: both caustics collapse to it",
+    view: { ...initialView, zoom: 1.95, panX: -0.5, panY: 1.23 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "rays",
@@ -913,6 +970,8 @@ export const spatialPresets: {
     name: "A spherical bowl's cusped caustic",
     detail:
       "A sphere folds parallel light into a nephroid sheet and a line on its axis",
+    view: { ...initialView, zoom: 1.85, panX: -0.37, panY: 0.05 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "rays",
@@ -939,6 +998,8 @@ export const spatialPresets: {
   {
     name: "An ellipsoid refocusing its lamp",
     detail: "Light from one focus of a spheroid meets again at the other",
+    view: { ...initialView, zoom: 1.65, panX: 0, panY: -0.23 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "rays",
@@ -969,6 +1030,8 @@ export const spatialPresets: {
   {
     name: "A cup's nephroid",
     detail: "Slanting light inside a cylinder folds along a sheet of nephroids",
+    view: { ...initialView, zoom: 1.7, panX: -0.07, panY: -0.42 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "rays",
@@ -1053,6 +1116,8 @@ export const spatialPresets: {
     name: "A lamp in water over air",
     detail:
       "Only a cone of the lamp's light escapes the water; the rest is totally reflected, and what escapes seems to leave a smeared virtual lamp",
+    view: { ...initialView, zoom: 1.25, panX: -0.17, panY: 0.29 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "rays",
@@ -1087,6 +1152,8 @@ export const spatialPresets: {
     name: "A cup's nephroid on its floor",
     detail:
       "The light a cup's wall reflects gathers on the floor in a bright cusped curve",
+    view: { ...initialView, zoom: 1.55, panX: -0.02, panY: -0.64 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "rays",
@@ -1403,6 +1470,8 @@ export const spatialPresets: {
     name: "A lamp sealed in an ellipsoid",
     detail:
       "The whole spheroidal mirror, cut open: every ray from one focus meets again at the other",
+    view: { ...initialView, zoom: 1.6, panX: 0, panY: 0 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "rays",
@@ -1675,6 +1744,8 @@ export const spatialPresets: {
   {
     name: "Where a helix's tangents land",
     detail: "Every string unwound from the helix ends on one flat spiral",
+    view: { ...initialView, zoom: 1.59, panX: -0.39, panY: 1.84 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "parametric",
@@ -1700,6 +1771,8 @@ export const spatialPresets: {
   {
     name: "A trefoil's string, unwound",
     detail: "A tube around the involute of the whole knot, spiraling outward",
+    view: { ...initialView, zoom: 1.33, panX: 1.83, panY: -8.17 },
+    flight: revealInPlace,
     config: {
       ...base,
       construction: "canal",
@@ -1717,6 +1790,8 @@ export const spatialPresets: {
   {
     name: "A sheet of Viviani's normals",
     detail: "A developable on an involute, ruled along the curve's normals",
+    view: { ...initialView, zoom: 1.66, panX: -0.11, panY: 0.21 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "parametric",
@@ -2182,6 +2257,7 @@ export const spatialPresets: {
       "A helix's tangent ribbon through a wide lens: orthographic, one ring; in perspective, every turn falls away to a vanishing point",
     config: stairwell,
     projection: "wide",
+    flight: revealInPlace,
     view: { yaw: 0.3, pitch: 1.5, zoom: 1.2, panX: 0, panY: 0 },
   },
   // The same stair through the normal lens, flown by a camera path. Zoom
@@ -2474,6 +2550,8 @@ export const spatialPresets: {
     name: "A helix unwound into a veil",
     detail:
       "Five involutes peeled off a rising helix by two hundred forty taut strings, heavier filaments over a fine veil",
+    view: { ...initialView, zoom: 1.38, panX: 0, panY: -0.83 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "parametric",
@@ -2528,6 +2606,7 @@ export const spatialPresets: {
         max: 2 * Math.PI,
       },
     },
+    flight: revealInPlace,
     view: { yaw: 0.5, pitch: 0.75, zoom: 1, panX: 0, panY: 0 },
   },
   // An astroid, (3 cos t + cos 3t, 3 sin t − sin 3t), lifted into a
@@ -2561,12 +2640,12 @@ export const spatialPresets: {
         max: 2 * Math.PI,
       },
     },
-    view: { yaw: 0.4, pitch: 0.8, zoom: 1, panX: 0, panY: 0 },
+    view: { yaw: 1, pitch: 0.8, zoom: 1, panX: 0, panY: 0 },
     flight: {
       duration: 16,
       repeat: "back-and-forth",
       pace: "ease",
-      camera: "hold",
+      camera: "fit",
       animate: {
         mode: "parameters",
         tracks: [{ target: "offset", from: "-8", to: "8" }],
@@ -2601,6 +2680,7 @@ export const spatialPresets: {
         max: 2 * Math.PI,
       },
     },
+    flight: revealInPlace,
     view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
   },
   // Six strands laid round the trefoil at a distance of 0.32, carried by
@@ -2700,6 +2780,7 @@ export const spatialPresets: {
         shift: 0,
       },
     },
+    flight: revealInPlace,
     view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
   },
   // The same kind of band with thirty coils, eight samples a coil. Its
@@ -2743,7 +2824,7 @@ export const spatialPresets: {
       duration: 12,
       repeat: "back-and-forth",
       pace: "ease",
-      camera: "hold",
+      camera: "current",
       animate: {
         mode: "parameters",
         tracks: [{ target: "shift", from: "0", to: "pi/15" }],
@@ -2806,7 +2887,7 @@ export const spatialPresets: {
       duration: 14,
       repeat: "back-and-forth",
       pace: "ease",
-      camera: "hold",
+      camera: "current",
       animate: {
         mode: "parameters",
         tracks: [{ target: "twist", from: "30", to: "0" }],
@@ -2823,6 +2904,8 @@ export const spatialPresets: {
     name: "The whole focal surface of an ellipsoid",
     detail:
       "Its shell hidden: two sheets of centers, meeting at the centers of its four umbilics",
+    view: { ...initialView, zoom: 1.24, panX: 0, panY: 0 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "surface",
@@ -2869,6 +2952,13 @@ export const spatialPresets: {
     name: "A Klein bottle in twenty-four slices",
     detail:
       "Its sections alone: where the neck runs inside the body, one curve lies within another",
+    view: {
+      ...turnTo(initialView, "isometric"),
+      zoom: 1.55,
+      panX: -0.26,
+      panY: 0.04,
+    },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "implicit",
@@ -2895,7 +2985,6 @@ export const spatialPresets: {
       },
     },
     layers: { surface: false, planes: false, box: false },
-    view: turnTo(initialView, "isometric"),
   },
   // A tube of radius 0.6 about the circle of radius 2 in the xz-plane, seen
   // through a 140° lens from inside. Yaw π with pan 2 puts the target on the
@@ -3369,7 +3458,7 @@ export const spatialPresets: {
     },
     layers: { frames: false, seam: false },
     projection: "wide",
-    view: { yaw: -0.8, pitch: 0.4, zoom: 2, panX: 9, panY: 5 },
+    ...approach({ yaw: -0.8, pitch: 0.4, zoom: 2, panX: 9, panY: 5 }),
   },
   // Six strands coiled forty times round the trefoil, seen close through
   // the normal lens: the lobe nearest the eye is drawn in heavy strokes and
@@ -3402,6 +3491,7 @@ export const spatialPresets: {
     },
     layers: { frames: false, seam: false },
     projection: "normal",
+    flight: revealInPlace,
     view: { yaw: 0.8, pitch: 0.7, zoom: 1.5, panX: 0.3, panY: -0.2 },
   },
   // Viviani's curve, where the sphere of radius 2 about the origin meets
@@ -3525,7 +3615,7 @@ export const spatialPresets: {
       duration: 14,
       repeat: "back-and-forth",
       pace: "ease",
-      camera: "hold",
+      camera: "current",
       animate: {
         mode: "parameters",
         tracks: [{ target: "surfaceOffset", from: "-0.1", to: "-0.9" }],
@@ -3579,7 +3669,7 @@ export const spatialPresets: {
       duration: 14,
       repeat: "back-and-forth",
       pace: "ease",
-      camera: "hold",
+      camera: "current",
       animate: {
         mode: "parameters",
         tracks: [{ target: "surfaceC", from: "0.6", to: "0.95" }],
@@ -3662,12 +3752,12 @@ export const spatialPresets: {
     },
     layers: { connectors: false, circles: false, frames: false, seam: false },
     probe: { enabled: false, position: 0.5, target: "curve", across: 0.5 },
-    view: { yaw: 0, pitch: 0.55, zoom: 1.25, panX: 0, panY: 0 },
+    view: { yaw: 0, pitch: 0.55, zoom: 1.1, panX: 0, panY: 0 },
     flight: {
       duration: 16,
       repeat: "back-and-forth",
       pace: "ease",
-      camera: "hold",
+      camera: "current",
       animate: {
         mode: "parameters",
         tracks: [{ target: "inputTurns", from: "0", to: "36" }],
@@ -3717,6 +3807,7 @@ export const spatialPresets: {
       hidden: "hide",
       weight: "bold",
     },
+    flight: revealInPlace,
     view: { yaw: 0.5, pitch: 0.3, zoom: 1.15, panX: 0, panY: 0 },
   },
   // The ellipsoid (1.5, 1, 0.7) of "The focal sheets of an ellipsoid",
@@ -3730,6 +3821,8 @@ export const spatialPresets: {
     name: "Where an ellipsoid's curvatures meet",
     detail:
       "Down one meridian the two principal curvatures close in and touch twice, at umbilics",
+    view: { ...initialView, zoom: 1.65, panX: 0, panY: 0 },
+    flight: revealInPlace,
     config: {
       ...base,
       format: "surface",
@@ -3788,7 +3881,8 @@ export const spatialPresets: {
       adaptiveSurface: true,
     },
     layers: { circles: false, frames: false, seam: false },
-    view: { yaw: 0, pitch: 0.7, zoom: 1.2, panX: 0, panY: 0 },
+    flight: revealInPlace,
+    view: { yaw: 0, pitch: 0.7, zoom: 1.05, panX: 0, panY: 0 },
   },
   // A ribbon of half-width 0.22 along the trefoil, carried by its
   // rotation-minimizing frame and twisted forty times, the return angle
@@ -3816,6 +3910,7 @@ export const spatialPresets: {
       },
     },
     layers: { frames: false, seam: false, rulings: false },
+    flight: revealInPlace,
     view: { ...turnTo(initialView, "isometric"), zoom: 1.1 },
   },
   // Dashes measured on the page (see sight.ts): a tube of radius 0.5 round
@@ -3854,7 +3949,7 @@ export const spatialPresets: {
     },
     layers: { frames: false, seam: false },
     projection: "wide",
-    view: { yaw: -0.8, pitch: 0.4, zoom: 1.6, panX: 5, panY: 3 },
+    ...approach({ yaw: -0.8, pitch: 0.4, zoom: 1.6, panX: 5, panY: 3 }),
   },
   // Fading behind each layer (see sight.ts): three tori about one core
   // circle of radius 2, of tube radii 0.3, 0.65 and 1, as one level set,
@@ -3901,6 +3996,7 @@ export const spatialPresets: {
       fade: "each",
     },
     layers: { planes: false, box: false },
+    flight: revealInPlace,
     view: { yaw: 0.55, pitch: 0.6, zoom: 1.3, panX: 0, panY: 0 },
   },
   // Refinement to the view (see engine3/view.go): a cardioid,
@@ -3947,7 +4043,13 @@ export const spatialPresets: {
       },
     },
     layers: { vectors: false, ellipses: false },
-    view: { yaw: -0.9, pitch: 0.4, zoom: 70, panX: -0.6164, panY: 0.5875 },
+    ...approach({
+      yaw: -0.9,
+      pitch: 0.4,
+      zoom: 70,
+      panX: -0.6164,
+      panY: 0.5875,
+    }),
   },
   // Refinement along a flight (see path.ts's flightPieces): four circles,
   // each riding the one before, turning 1, 6, 36 and 216 times round the
@@ -4095,7 +4197,7 @@ export const spatialPresets: {
       depth: "taper",
     },
     projection: "wide",
-    view: { yaw: 0.1, pitch: 0.08, zoom: 1.6, panX: 0, panY: 0 },
+    ...approach({ yaw: 0.1, pitch: 0.08, zoom: 1.6, panX: 0, panY: 0 }),
   },
   // Framing by the points between samples (engine3/refine.go, Reach): a
   // spiral turning seven times over the unit sphere from pole to pole,
