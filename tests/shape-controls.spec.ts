@@ -24,17 +24,52 @@ for (const width of [320, 390, 1440]) {
       await expect(page.locator("#tesseract-artwork")).toBeVisible();
       await expect(choice("4D")).toBeFocused();
       await expect(choice("4D")).toBeChecked();
-      const buttons = page.locator(".app:visible .header-actions");
-      const row = await buttons
-        .locator(":scope > button, :scope > div > button")
-        .evaluateAll((es) =>
-          es.map(
-            (e) =>
-              e.getBoundingClientRect().y +
-              e.getBoundingClientRect().height / 2,
-          ),
+      const header = page.locator(".app:visible header");
+      const appearance = header.locator(".appearance-controls button");
+      const actions = header.locator(".study-actions button");
+      await expect(appearance).toHaveCount(3);
+      await expect(actions).toHaveCount(3);
+      const boxes = async (buttons: typeof appearance) =>
+        buttons.evaluateAll((es) =>
+          es.map((e) => {
+            const r = e.getBoundingClientRect();
+            return {
+              left: r.left,
+              right: r.right,
+              top: r.top,
+              bottom: r.bottom,
+              center: r.y + r.height / 2,
+            };
+          }),
         );
-      expect(Math.max(...row) - Math.min(...row)).toBeLessThan(2);
+      const appearanceRow = await boxes(appearance),
+        actionRow = await boxes(actions);
+      // Every appearance and study action is checked, including controls nested
+      // in menus. Phones place the groups on separate, internally aligned rows.
+      for (const row of [appearanceRow, actionRow]) {
+        const centers = row.map((b) => b.center);
+        expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2);
+        for (const button of row) {
+          expect(button.left).toBeGreaterThanOrEqual(0);
+          expect(button.right).toBeLessThanOrEqual(width);
+        }
+      }
+      if (width <= 700) {
+        expect(Math.min(...actionRow.map((b) => b.top))).toBeGreaterThan(
+          Math.max(...appearanceRow.map((b) => b.bottom)),
+        );
+        const brand = (await header.locator(".brand").boundingBox())!;
+        expect(brand.x + brand.width).toBeLessThanOrEqual(
+          appearanceRow[0].left,
+        );
+        expect(
+          Math.abs(brand.y + brand.height / 2 - appearanceRow[0].center),
+        ).toBeLessThan(2);
+      } else {
+        expect(
+          Math.abs(appearanceRow[0].center - actionRow[0].center),
+        ).toBeLessThan(2);
+      }
       await expect(page.locator("#shape-animation-section")).toHaveAttribute(
         "open",
       );
