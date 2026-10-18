@@ -109,7 +109,8 @@ import {
   type Formats,
 } from "../export-formats";
 import { saveFile } from "../export-image";
-import { KeyViews } from "../KeyViews";
+import { KeyViews, KeyViewEasing } from "../KeyViews";
+import { easedPathHelp } from "../key-views";
 import { Field } from "../Field";
 import { tiered, withMore } from "../help";
 import { useDisclosure } from "../useDisclosure";
@@ -1307,11 +1308,13 @@ export function SpatialAnimationPanel({
       <Field
         label="Path"
         help={
-          path.style === "smooth"
-            ? repeat === "loop"
-              ? withMore(pathHelp.smooth, smoothLoopHelp)
-              : pathHelp.smooth
-            : pathHelp.steady
+          path.ease
+            ? easedPathHelp
+            : path.style === "smooth"
+              ? repeat === "loop"
+                ? withMore(pathHelp.smooth, smoothLoopHelp)
+                : pathHelp.smooth
+              : pathHelp.steady
         }
       >
         <select
@@ -1328,6 +1331,10 @@ export function SpatialAnimationPanel({
           ))}
         </select>
       </Field>
+      <KeyViewEasing
+        checked={path.ease ?? false}
+        onChange={(ease) => setPath((p) => ({ ...p, ease }))}
+      />
       <Field
         label="Turn about"
         help={path.pivot === "geometry" ? pathHelp.geometry : pathHelp.plane}

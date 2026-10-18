@@ -96,6 +96,38 @@ const at = (bounds: object, key: CameraPath["keys"][number]) => ({
   panY: key.panY,
 });
 
+test("key-view easing is edited directly, scrubs the eased camera, and switching it off restores the original flight", async ({
+  page,
+}) => {
+  await open(page, study());
+  const toggle = page.getByRole("checkbox", {
+    name: "Ease key-view transitions",
+    exact: true,
+  });
+  await expect(toggle).not.toBeChecked();
+  const idle = await shownView(page);
+  await toggle.check();
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  await seek(page, "0.125");
+  const bounds = { center: idle.center, radius: idle.radius };
+  const eased = pathView(
+    { ...flight, ease: true } as CameraPath,
+    bounds,
+    0.125,
+  );
+  for (const field of ["yaw", "pitch", "zoom", "panX", "panY"] as const)
+    expect((await animationCamera(page))[field]).toBeCloseTo(eased[field], 12);
+  await button(page, "Stop").click();
+  expect(await shownView(page)).toEqual(idle);
+  await toggle.uncheck();
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  await seek(page, "0.125");
+  expect(await animationCamera(page)).toEqual(pathView(flight, bounds, 0.125));
+  await button(page, "Stop").click();
+});
+
 test("key views are taken from the drawing, shown, set again and removed", async ({
   page,
 }) => {
@@ -289,56 +321,80 @@ test("leg times set each leg's share of the flight: the camera keeps to them, th
   await expect(views(page)).toContainText("reached 100% of the way");
 });
 
-test("a path's export starts at its first view and ends at its last", async ({
-  page,
-}) => {
-  await open(page, study());
-  // Stills at the two ends, from the manual camera.
-  const stills: Buffer[] = [];
-  for (const k of [1, 3]) {
-    await button(page, `Show view ${k}`).click();
-    await expect
-      .poll(async () => (await shownView(page)).yaw)
-      .toBe(flight.keys[k - 1].yaw);
-    stills.push(await still(page));
-  }
-  await page.getByLabel("Duration (seconds)").fill("0.4");
-  await openDetails(page, "#spatial-export-settings");
-  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
-  await page.getByLabel("Export frame rate").selectOption("15");
-  await page
-    .getByRole("slider", { name: "Export resolution", exact: true })
-    .fill("2");
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: /Export MP4/ }).click();
-  const file = await download;
-  expect(file.suggestedFilename()).toBe("tangent-garden-spatial-path.mp4");
-  const path = (await file.path())!;
-  const data = probe(path);
-  if (data) {
-    expect(data.frames).toBe(6);
-    expect([data.width, data.height]).toEqual([2000, 1520]);
-    expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
-  }
-  const video = await decodeVideo(page, await readFile(path));
-  expect(video.duration).toBeCloseTo(0.4, 3);
-  expect(video.first.hash).not.toBe(video.last.hash);
-  const match = (index: number, reference: Buffer) =>
-    frameDifference(path, 2000, 1520, index, reference);
-  const ends = [match(0, stills[0]), match(5, stills[1])];
-  const crossed = [match(0, stills[1]), match(5, stills[0])];
-  if (ends[0] && ends[1] && crossed[0] && crossed[1]) {
-    console.log("Path endpoints", { ends, crossed });
-    for (const d of ends) {
-      expect(d.meanDifference).toBeLessThan(3);
-      expect(d.unmatchedInk).toBeLessThan(0.05);
+for (const ease of [false, true]) {
+  test(`a path's export starts at its first view and ends at its last${ease ? " with eased transitions" : ""}`, async ({
+    page,
+  }) => {
+    await open(page, study());
+    if (ease)
+      await page
+        .getByRole("checkbox", {
+          name: "Ease key-view transitions",
+          exact: true,
+        })
+        .check();
+    // Stills at the two ends, from the manual camera.
+    const stills: Buffer[] = [];
+    for (const k of [1, 3]) {
+      await button(page, `Show view ${k}`).click();
+      await expect
+        .poll(async () => (await shownView(page)).yaw)
+        .toBe(flight.keys[k - 1].yaw);
+      stills.push(await still(page));
     }
-    for (const d of crossed) expect(d.unmatchedInk).toBeGreaterThan(0.3);
-  }
-  // The export leaves the study and its manual camera as they were.
-  await expect(stage(page)).not.toHaveAttribute("data-progress");
-  expect((await shownView(page)).yaw).toBe(flight.keys[2].yaw);
-});
+    await page.getByLabel("Duration (seconds)").fill("0.4");
+    await openDetails(page, "#spatial-export-settings");
+    await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+    await page.getByLabel("Export frame rate").selectOption("15");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("2");
+    let middle: Buffer | undefined;
+    if (ease) {
+      await button(page, "Play animation").click();
+      await expect(button(page, "Back to study")).toBeVisible();
+      await seek(page, "0.4");
+      middle = await still(page);
+      await button(page, "Stop").click();
+    }
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /Export MP4/ }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("tangent-garden-spatial-path.mp4");
+    const path = (await file.path())!;
+    const data = probe(path);
+    if (data) {
+      expect(data.frames).toBe(6);
+      expect([data.width, data.height]).toEqual([2000, 1520]);
+      expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    }
+    const video = await decodeVideo(page, await readFile(path));
+    expect(video.duration).toBeCloseTo(0.4, 3);
+    expect(video.first.hash).not.toBe(video.last.hash);
+    const match = (index: number, reference: Buffer) =>
+      frameDifference(path, 2000, 1520, index, reference);
+    const ends = [match(0, stills[0]), match(5, stills[1])];
+    if (middle) {
+      const between = match(2, middle);
+      if (between) {
+        expect(between.meanDifference).toBeLessThan(3);
+        expect(between.unmatchedInk).toBeLessThan(0.05);
+      }
+    }
+    const crossed = [match(0, stills[1]), match(5, stills[0])];
+    if (ends[0] && ends[1] && crossed[0] && crossed[1]) {
+      console.log("Path endpoints", { ends, crossed });
+      for (const d of ends) {
+        expect(d.meanDifference).toBeLessThan(3);
+        expect(d.unmatchedInk).toBeLessThan(0.05);
+      }
+      for (const d of crossed) expect(d.unmatchedInk).toBeGreaterThan(0.3);
+    }
+    // The export leaves the study and its manual camera as they were.
+    await expect(stage(page)).not.toHaveAttribute("data-progress");
+    expect((await shownView(page)).yaw).toBe(flight.keys[2].yaw);
+  });
+}
 
 async function still(page: Page) {
   await button(page, "Export image").click();
@@ -365,6 +421,9 @@ async function still(page: Page) {
 
 test("the path and its views travel in a copied link", async ({ page }) => {
   await open(page, study());
+  await page
+    .getByRole("checkbox", { name: "Ease key-view transitions", exact: true })
+    .check();
   await page.getByLabel("View 2 name", { exact: true }).fill("Edge on");
   await page.getByLabel("Path", { exact: true }).selectOption("steady");
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -377,6 +436,12 @@ test("the path and its views travel in a copied link", async ({ page }) => {
   await settled(other);
   await openPanel(other);
   await expect(mode(other)).toHaveValue("path");
+  await expect(
+    other.getByRole("checkbox", {
+      name: "Ease key-view transitions",
+      exact: true,
+    }),
+  ).toBeChecked();
   await expect(other.getByLabel("Path", { exact: true })).toHaveValue("steady");
   await expect(other.getByLabel("View 2 name", { exact: true })).toHaveValue(
     "Edge on",
@@ -524,6 +589,9 @@ test("pausing holds the camera, resuming continues, and a change of study stops 
   // A flight far longer than the test, so a slow runner never reaches its
   // end before the pause lands: paused at the end, it has nothing to resume.
   await open(page, study(flight, 30));
+  await page
+    .getByRole("checkbox", { name: "Ease key-view transitions", exact: true })
+    .check();
   await button(page, "Play animation").click();
   await expect(stage(page)).toHaveAttribute("data-mode", "path");
   await button(page, "Pause").click();

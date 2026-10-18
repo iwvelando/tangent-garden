@@ -9,8 +9,35 @@ import {
   maxKeys,
   moveKeys,
   removeKeys,
+  transitionHelp,
   type KeyBase,
 } from "./key-views";
+
+export function KeyViewEasing({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const help = useHelp();
+  return (
+    <>
+      <div className="probe-switch view-switch">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => onChange(e.target.checked)}
+          />
+          Ease key-view transitions
+        </label>
+        <HelpToggle topic="easing key-view transitions" help={help} />
+      </div>
+      <HelpText help={help}>{transitionHelp}</HelpText>
+    </>
+  );
+}
 
 // The key views of a camera path, in the 2D and 3D notebooks: each view's
 // name, the fields a notebook adds (3D: turns), its leg time, where it is

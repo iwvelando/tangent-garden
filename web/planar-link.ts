@@ -292,6 +292,7 @@ const config: SchemaOf<Config> = {
 const planarPath: SchemaOf<PlanarPath> = {
   fields: {
     style: { options: { steady: true, smooth: true } },
+    ease: { optional: "boolean" },
     keys: {
       list: {
         fields: {
