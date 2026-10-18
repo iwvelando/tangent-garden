@@ -114,15 +114,14 @@ func TestCurveMeshIsIndexed(t *testing.T) {
 	}
 }
 
-// A tube's mesh holds each drawn ring once, its 24 segments with the
-// closing point: 481 rings round a closed torus, where the seam ring is
-// listed at both ends.
+// A tube's mesh holds each ring once: 24 segments, 48 at a displayed
+// contact circle, plus the closing point. The seam ring is at both ends.
 func TestCanalMeshSharesRings(t *testing.T) {
 	r := canal(t, canaled(circle(), 0.5, "1", 6))
-	if got := len(r.Mesh.Vertices) / 7; got != 481*(canalSegments+1) {
-		t.Fatalf("%d vertices, want %d", got, 481*(canalSegments+1))
+	if got := len(r.Mesh.Vertices) / 7; got != 481*(canalSegments+1)+len(r.Canal.Circles)*canalSegments {
+		t.Fatalf("%d vertices, want %d", got, 481*(canalSegments+1)+len(r.Canal.Circles)*canalSegments)
 	}
-	if len(r.Mesh.SampleIndex) != 480*canalSegments*2 {
+	if len(r.Mesh.SampleIndex) != 480*canalSegments*2+(2*len(r.Canal.Circles)-2)*canalSegments {
 		t.Fatalf("%d triangles", len(r.Mesh.SampleIndex))
 	}
 }

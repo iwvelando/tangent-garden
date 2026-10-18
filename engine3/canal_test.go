@@ -2,7 +2,9 @@ package engine3
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -47,7 +49,7 @@ func TestTubeAroundCircleIsTorus(t *testing.T) {
 	if !q.Constant || !q.Closed || q.Gap != 0 || q.Imaginary != 0 || q.Collapsed != 0 || q.Folded != 0 || q.Undefined != 0 || q.Steepest != 0 || r.Omitted != 0 {
 		t.Fatalf("summary %+v omitted %d", q, r.Omitted)
 	}
-	if len(corners(r.Mesh)) != 480*canalSegments*6 || len(q.Circles) != 24 || len(q.Meridians) != 6 || len(r.Rulings) != 0 {
+	if len(corners(r.Mesh)) != 480*canalSegments*6+(2*len(q.Circles)-2)*canalSegments*3 || len(q.Circles) != 24 || len(q.Meridians) != 6 || len(r.Rulings) != 0 {
 		t.Fatalf("%d vertices, %d circles, %d meridians, %d rulings", len(corners(r.Mesh)), len(q.Circles), len(q.Meridians), len(r.Rulings))
 	}
 	torus := func(p Vec3) float64 { return math.Pow(math.Hypot(p.X, p.Y)-2, 2) + p.Z*p.Z - 0.25 }
@@ -266,7 +268,7 @@ func TestTubeFoldsBeyondRadiusOfCurvature(t *testing.T) {
 		t.Fatalf("folded %d", r.Canal.Folded)
 	}
 	r := canal(t, canaled(helix, 1.3, "1", 0))
-	if r.Canal.Folded != 481 || r.Omitted != 0 || len(corners(r.Mesh)) != 480*canalSegments*6 {
+	if r.Canal.Folded != 481 || r.Omitted != 0 || len(corners(r.Mesh)) != 480*canalSegments*6+(2*len(r.Canal.Circles)-2)*canalSegments*3 {
 		t.Fatalf("folded %d, omitted %d", r.Canal.Folded, r.Omitted)
 	}
 }
@@ -380,6 +382,104 @@ func TestCanalMeshRingsReachGaps(t *testing.T) {
 	}
 	if edges < 4 {
 		t.Fatalf("%d gap edges", edges)
+	}
+}
+
+// From inside a tube, an inscribed mesh hides finer circle chords lying
+// outside it. Every drawn contact-circle segment must be an edge of the
+// actual mesh, even when its sample falls between the mesh's regular rows.
+func TestContactCirclesAreMeshEdges(t *testing.T) {
+	presets := spatialPresets(t)
+	for _, name := range []string{"Inside a trefoil's tube", "Down a torus's tunnel"} {
+		for _, refined := range []bool{false, true} {
+			for _, samples := range []int{0, 240, 2400} {
+				t.Run(fmt.Sprintf("%s/refined=%t/samples=%d", name, refined, samples), func(t *testing.T) {
+					c := presets[name]
+					if samples > 0 {
+						c.Samples, c.Lines = samples, 239
+						c.Frame.Angle, c.Frame.Twist = math.Pi/7, 1.25
+						c.Canal.Profile = "1+0.2*cos(3*t)"
+					}
+					c.Adaptive, c.AdaptiveSurface = refined, refined
+					r := canal(t, c)
+					edges := map[[2]Vec3]bool{}
+					m := r.Mesh
+					at := func(i int32) Vec3 { v := m.Vertices[7*i:]; return Vec3{v[0], v[1], v[2]} }
+					for k := 0; k < len(m.Triangles); k += 3 {
+						tri := m.Triangles[k : k+3]
+						for j := 0; j < 3; j++ {
+							a, b := at(tri[j]), at(tri[(j+1)%3])
+							edges[[2]Vec3{a, b}], edges[[2]Vec3{b, a}] = true, true
+						}
+					}
+					for _, g := range r.Canal.Circles {
+						for j := 1; j < len(g.Points); j++ {
+							if !edges[[2]Vec3{g.Points[j-1], g.Points[j]}] {
+								t.Fatalf("contact circle at sample %d, segment %d is not a mesh edge", g.SampleIndex, j-1)
+							}
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestCanalRefinedMeshVertexBudget(t *testing.T) {
+	c := spatialPresets(t)["A spring of tubing closed into a ring"]
+	c.Samples = 480
+	c.Curve.X = strings.ReplaceAll(c.Curve.X, "40*t", "80*t")
+	c.Curve.Y = strings.ReplaceAll(c.Curve.Y, "40*t", "80*t")
+	c.Curve.Z = strings.ReplaceAll(c.Curve.Z, "40*t", "80*t")
+	c.Adaptive, c.AdaptiveSurface = true, false
+	base := canal(t, c)
+	c.AdaptiveSurface = true
+	r := canal(t, c)
+	added := (len(r.Mesh.Vertices) - len(base.Mesh.Vertices)) / 7
+	if added > surfaceVertices {
+		t.Fatalf("refinement added %d vertices, budget %d", added, surfaceVertices)
+	}
+	if added == 0 {
+		t.Fatal("no surface refinement exercised")
+	}
+}
+
+// Joining rings with different angular resolutions must leave no hanging
+// edges, inconsistent winding, or holes. Only the cylinder's ends are open.
+func TestCanalMixedRingsAreWatertight(t *testing.T) {
+	c := canaled(custom("0", "0", "t", -2, 2), 0.7, "1", 4)
+	r := canal(t, c)
+	type point [3]int64
+	key := func(p Vec3) point {
+		return point{int64(math.Round(p.X * 1e9)), int64(math.Round(p.Y * 1e9)), int64(math.Round(p.Z * 1e9))}
+	}
+	edges := map[[2]point]int{}
+	for tri := range slices.Chunk(corners(r.Mesh), 3) {
+		a, b, d := tri[0].Position, tri[1].Position, tri[2].Position
+		// Canal triangles wind inward; the returned normals point outward.
+		if b.sub(a).cross(d.sub(a)).dot(tri[0].Normal) >= 0 {
+			t.Fatal("degenerate or inconsistently wound cylinder face")
+		}
+		for j := 0; j < 3; j++ {
+			a, b := key(tri[j].Position), key(tri[(j+1)%3].Position)
+			if slices.Compare(a[:], b[:]) > 0 {
+				a, b = b, a
+			}
+			edges[[2]point{a, b}]++
+		}
+	}
+	boundary := 0
+	for edge, count := range edges {
+		if count == 2 {
+			continue
+		}
+		if count != 1 || edge[0][2] != edge[1][2] || math.Abs(float64(edge[0][2])) != 2e9 {
+			t.Fatalf("open or nonmanifold edge %v has %d faces", edge, count)
+		}
+		boundary++
+	}
+	if boundary != 96 {
+		t.Fatalf("%d boundary segments, want the two 48-segment end rings", boundary)
 	}
 }
 

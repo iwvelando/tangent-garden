@@ -61,19 +61,22 @@ type CanalResult struct {
 	Folded    int           `json:"folded"`
 }
 
-// canalSegments divides each contact circle of the mesh, and canalRings caps
-// the circles joined into it; a circle beside a gap is always included.
+// Diagnostics keep 24 angles. Displayed contact circles and their mesh rings
+// share 48 segments, so the wall cannot hide finer chords from an inside view.
+// canalRings bounds the regular rows; representative circles and gap edges
+// are also included.
 const (
-	canalSeams    = 4
-	canalSegments = 24
-	canalRings    = 480
-	maxMeridians  = 12
+	canalSeams        = 4
+	canalSegments     = 24
+	canalMeshSegments = 2 * canalSegments
+	canalRings        = 480
+	maxMeridians      = 12
 )
 
 // The mesh angles' cosines and sines, each computed once.
-var canalCosines, canalSines = func() (cosines, sines [canalSegments + 1]float64) {
+var canalCosines, canalSines = func() (cosines, sines [canalMeshSegments + 1]float64) {
 	for k := range cosines {
-		theta := 2 * math.Pi * float64(k) / canalSegments
+		theta := 2 * math.Pi * float64(k) / canalMeshSegments
 		cosines[k], sines[k] = math.Cos(theta), math.Sin(theta)
 	}
 	return
@@ -273,7 +276,7 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 			seams[k] = make([]*Vec3, n+1)
 			for i := range base {
 				if circled[i] {
-					p := hoopAt(i).at(k * canalSegments / canalSeams)
+					p := hoopAt(i).at(k * canalMeshSegments / canalSeams)
 					seams[k][i] = &p
 				}
 			}
@@ -287,13 +290,13 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 				if !ok {
 					return Vec3{math.NaN(), 0, 0}
 				}
-				return g.at(k * canalSegments / canalSeams)
+				return g.at(k * canalMeshSegments / canalSeams)
 			}
 		}, lo, hi)
 	}
 	cosines, sines := canalCosines, canalSines
 	grid := func(i, k int) Vec3 {
-		return centers[i].add(us[i].mul(radii[i] * cosines[k]).add(vs[i].mul(radii[i] * sines[k])))
+		return centers[i].add(us[i].mul(radii[i] * cosines[2*k]).add(vs[i].mul(radii[i] * sines[2*k])))
 	}
 	normal := func(i int, p Vec3) Vec3 { return p.sub(*base[i]).mul(1 / R[i]) }
 	// Folds: X_θ × X_t turns against the outward normal q/R. X_t is a
@@ -327,19 +330,23 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 			default:
 				continue
 			}
-			around := vs[i].mul(cosines[k]).sub(us[i].mul(sines[k]))
+			around := vs[i].mul(cosines[2*k]).sub(us[i].mul(sines[2*k]))
 			if around.cross(along).dot(normal(i, grid(i, k))) < -1e-6*along.norm() {
 				q.Folded++
 				break
 			}
 		}
 	}
-	// Mesh rings: every stride-th circle and every circle beside a gap.
+	// Mesh rings: regular rows, displayed circles, and every ring beside a gap.
 	stride := (n + canalRings - 1) / canalRings
+	representative := make([]bool, n+1)
+	for line := 0; line < c.Lines; line++ {
+		representative[line*n/(c.Lines-1)] = true
+	}
 	rings := []int{}
 	for i := 0; i <= n; i++ {
 		edge := i == 0 || i == n || !circled[i-1] || !circled[i+1] || q.Breaks[i] || q.Breaks[i+1]
-		if circled[i] && (i%stride == 0 || edge) {
+		if circled[i] && (i%stride == 0 || representative[i] || edge) {
 			rings = append(rings, i)
 		}
 	}
@@ -385,10 +392,25 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 	for i := range listed {
 		listed[i] = -1
 	}
-	strips := max(len(stops)-1, 0)
-	out.Mesh.Vertices = slices.Grow(out.Mesh.Vertices, 7*(canalSegments+1)*len(stops))
-	out.Mesh.Triangles = slices.Grow(out.Mesh.Triangles, 3*2*canalSegments*strips)
-	out.Mesh.SampleIndex = slices.Grow(out.Mesh.SampleIndex, 2*canalSegments*strips)
+	// Only displayed circles need the finer ring. Intermediate rings keep
+	// the original resolution and refinement's vertex budget.
+	stepAt := func(at float64) int {
+		if at == math.Trunc(at) && representative[int(at)] {
+			return 1
+		}
+		return 2
+	}
+	vertices, triangles := 0, 0
+	for j, at := range stops {
+		segments := canalMeshSegments / stepAt(at)
+		vertices += segments + 1
+		if j > 0 {
+			triangles += segments + canalMeshSegments/stepAt(stops[j-1])
+		}
+	}
+	out.Mesh.Vertices = slices.Grow(out.Mesh.Vertices, 7*vertices)
+	out.Mesh.Triangles = slices.Grow(out.Mesh.Triangles, 3*triangles)
+	out.Mesh.SampleIndex = slices.Grow(out.Mesh.SampleIndex, triangles)
 	vertex := func(at float64, k int) int32 {
 		var first int32
 		var ok bool
@@ -407,12 +429,12 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 				listedBetween[at] = first
 			}
 			g := hoopOf(at)
-			for m := 0; m <= canalSegments; m++ {
+			for m := 0; m <= canalMeshSegments; m += stepAt(at) {
 				p := g.at(m)
 				out.Mesh.vertex(p, g.normal(p), at/float64(n))
 			}
 		}
-		return first + int32(k)
+		return first + int32(k/stepAt(at))
 	}
 	for j := 1; j < len(stops); j++ {
 		a, b := stops[j-1], stops[j]
@@ -424,9 +446,17 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 		if !connected {
 			continue
 		}
-		for k := 0; k < canalSegments; k++ {
-			out.Mesh.triangle(sample, vertex(a, k), vertex(b, k), vertex(a, k+1))
-			out.Mesh.triangle(sample, vertex(b, k), vertex(b, k+1), vertex(a, k+1))
+		// Zip the two rings in angular order. A finer ring contributes
+		// its midpoint to the strip without a crack or a hanging edge.
+		for ka, kb := 0, 0; ka < canalMeshSegments || kb < canalMeshSegments; {
+			nextA, nextB := ka+stepAt(a), kb+stepAt(b)
+			if nextA <= nextB {
+				out.Mesh.triangle(sample, vertex(a, ka), vertex(b, kb), vertex(a, nextA))
+				ka = nextA
+			} else {
+				out.Mesh.triangle(sample, vertex(a, ka), vertex(b, kb), vertex(b, nextB))
+				kb = nextB
+			}
 		}
 	}
 	for line := 0; line < c.Lines; line++ {
@@ -437,8 +467,8 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 		g := CanalCircle{SampleIndex: i, Real: circled[i], Sphere: R[i], Center: *base[i], Points: []Vec3{}}
 		if circled[i] {
 			g.Center, g.Radius = centers[i], radii[i]
-			for m := 0; m <= 2*canalSegments; m++ {
-				g.Points = append(g.Points, centers[i].add(frame.direction(i, math.Pi*float64(m)/canalSegments).mul(radii[i])))
+			for m := 0; m <= canalMeshSegments; m++ {
+				g.Points = append(g.Points, hoopAt(i).at(m))
 			}
 		}
 		q.Circles = append(q.Circles, g)
