@@ -453,6 +453,7 @@ const cut: SchemaOf<Cut> = {
 const path: SchemaOf<CameraPath> = {
   fields: {
     style: { options: { steady: true, smooth: true } },
+    ease: { optional: "boolean" },
     // Links made before the pivot have none: the plane.
     pivot: { optional: { options: { plane: true, geometry: true } } },
     keys: {

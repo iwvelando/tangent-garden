@@ -30,6 +30,7 @@ import {
 } from "../web/spatial/scene";
 import { linework } from "../web/spatial/linework";
 import { curveMesh } from "./curve-mesh";
+import { spatialPresets } from "../web/spatial/presets";
 import type { CutSpec } from "../web/spatial/cut";
 import type { Bounds3, SpatialResult, Vec3 } from "../web/spatial/types";
 
@@ -92,6 +93,93 @@ const tour = [
   key({ name: "Close", yaw: -2.8, pitch: 1.2, zoom: 6, panY: -0.7, turns: 1 }),
   key({ name: "Back", yaw: 0.3, pitch: 0.75, turns: -2 }),
 ];
+
+test("eased key-view transitions settle both velocity and acceleration at every view", () => {
+  for (const name of [
+    "A rhumb line spiraling into its pole",
+    "Viviani's curve, from every side",
+  ]) {
+    const original = spatialPresets.find((p) => p.name === name)!.flight!.path;
+    for (const style of ["steady", "smooth"] as const) {
+      const p = { ...original, style, ease: true };
+      const times = keyTimes(p);
+      for (const cyclic of [false, true]) {
+        for (const lens of [{}, { projection: "normal" as const }]) {
+          for (const depths of [undefined, p.keys.map(() => 0.05)]) {
+            const at = (t: number) =>
+              pages(pathView(p, bounds, t, cyclic, depths, lens)).flatMap(
+                (v) => [v.x, v.y, v.depth],
+              );
+            times.forEach((t, k) => {
+              expect(pathView(p, bounds, t, cyclic, depths, lens)).toEqual({
+                ...manual(p.keys[k]),
+                ...lens,
+              });
+              for (const side of [-1, 1]) {
+                if (
+                  (k === 0 && side < 0) ||
+                  (k === times.length - 1 && side > 0)
+                )
+                  continue;
+                const leg = side < 0 ? t - times[k - 1] : times[k + 1] - t;
+                const rates = (fraction: number) => {
+                  const h = leg * fraction * side,
+                    a = at(t),
+                    b = at(t + h),
+                    c = at(t + 2 * h);
+                  return [
+                    Math.max(
+                      ...a.map((v, i) => Math.abs(b[i] - v) / Math.abs(h)),
+                    ),
+                    Math.max(
+                      ...a.map(
+                        (v, i) => Math.abs(c[i] - 2 * b[i] + v) / (h * h),
+                      ),
+                    ),
+                  ];
+                };
+                const full = rates(0.001),
+                  half = rates(0.0005);
+                // A settled join has O(h²) velocity and O(h) acceleration
+                // estimates. Halving h distinguishes it from a hard stop
+                // or ordinary cubic easing, even at the loop seam.
+                expect(
+                  half[0],
+                  `${name}, view ${k}, side ${side}`,
+                ).toBeLessThan(full[0] * 0.35 + 1e-5);
+                expect(
+                  half[1],
+                  `${name}, view ${k}, side ${side}`,
+                ).toBeLessThan(full[1] * 0.65 + 0.1);
+              }
+            });
+          }
+        }
+      }
+    }
+  }
+});
+
+test("key-view easing keeps the existing route and is opt-in, including a two-view turn", () => {
+  const p = path([tour[0], { ...tour[0], turns: 1 }]);
+  // Independent orbit identity protects the original two-view flight.
+  for (const f of [0, 0.125, 0.5, 0.875, 1]) {
+    const plain = pathView(p, bounds, f);
+    expect(
+      apart(plain, { ...manual(tour[0]), yaw: tour[0].yaw + 2 * Math.PI * f }),
+    ).toBeLessThan(1e-9);
+    expect(pathView({ ...p, ease: false } as CameraPath, bounds, f)).toEqual(
+      plain,
+    );
+  }
+  const eased = { ...p, ease: true };
+  // The same route, with a slower departure and unchanged midpoint/end.
+  expect(pathView(eased, bounds, 0.125).yaw).toBeLessThan(
+    pathView(p, bounds, 0.125).yaw,
+  );
+  for (const f of [0, 0.5, 1])
+    expect(pathView(eased, bounds, f)).toEqual(pathView(p, bounds, f));
+});
 
 test("the camera stands exactly at each key view at its share of the duration, in either style", () => {
   for (const style of ["steady", "smooth"] as const) {

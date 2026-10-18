@@ -19,6 +19,7 @@ import {
   smoothLoopHelp,
 } from "../web/spatial/loop";
 import { pathHelp } from "../web/spatial/path";
+import { easedPathHelp, transitionHelp } from "../web/key-views";
 import { spatialPresets } from "../web/spatial/presets";
 import {
   betweenHelp as spatialBetweenHelp,
@@ -198,6 +199,8 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("2D between samples", planarBetweenHelp);
   add("2D refinement to the view", viewHelp);
   table("2D key views", planarPathHelp);
+  add("eased key-view path", easedPathHelp);
+  add("key-view easing", transitionHelp);
   add("2D probe motion", curveProbeMotionHelp);
   add("2D probe motion between samples", betweenMotionHelp);
   add("3D between samples", spatialBetweenHelp);

@@ -89,6 +89,32 @@ async function openStar(page: Page, duration = "2") {
   return fit;
 }
 
+test("the planar easing toggle changes the scrubbed camera and resets with a new preset", async ({
+  page,
+}) => {
+  const fit = await openStar(page, "0.4");
+  const toggle = page.getByRole("checkbox", {
+    name: "Ease key-view transitions",
+    exact: true,
+  });
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await button(page, "Play animation").click();
+  await expect(button(page, "Replay")).toBeVisible({ timeout: 30_000 });
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .fill("0.25");
+  await ready(page);
+  // Quintic easing at a quarter leg is exactly 53/512.
+  await expect
+    .poll(async () => (await camera(page)).scale / fit.scale)
+    .toBeCloseTo(800 ** (53 / 512), 8);
+  await button(page, "Stop").click();
+  await choosePreset(page, { label: star });
+  await ready(page);
+  await expect(toggle).not.toBeChecked();
+});
+
 test("the flight stands at each view exactly as the manual camera shows it, refined as finely", async ({
   page,
 }) => {
@@ -227,51 +253,78 @@ test("views are taken from the drawing, set again and removed, and a path refuse
   );
 });
 
-test("a flight's export starts at its first view and ends at its last", async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await openStar(page, "0.4");
-  const stills: Buffer[] = [];
-  for (const k of [1, 2]) {
-    if (k === 1) {
-      await button(page, "Show view 1").click();
-      await ready(page);
-    } else await showZoomed(page, `Show view ${k}`);
-    stills.push(await still(page));
-  }
-  await open(page, "#export-settings");
-  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
-  await page.getByLabel("Export frame rate").selectOption("15");
-  await page
-    .getByRole("slider", { name: "Export resolution", exact: true })
-    .fill("2");
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: /Export MP4/ }).click();
-  const file = await download;
-  expect(file.suggestedFilename()).toBe("tangent-garden-offset-path.mp4");
-  const path = (await file.path())!;
-  const data = probe(path);
-  if (data) {
-    expect(data.frames).toBe(6);
-    expect([data.width, data.height]).toEqual([2000, 1520]);
-    expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
-  }
-  const video = await decodeVideo(page, await readFile(path));
-  expect(video.duration).toBeCloseTo(0.4, 3);
-  expect(video.first.hash).not.toBe(video.last.hash);
-  const match = (index: number, reference: Buffer) =>
-    frameDifference(path, 2000, 1520, index, reference);
-  const ends = [match(0, stills[0]), match(5, stills[1])];
-  const crossed = [match(0, stills[1]), match(5, stills[0])];
-  if (ends[0] && ends[1] && crossed[0] && crossed[1]) {
-    for (const d of ends) {
-      expect(d.meanDifference).toBeLessThan(3);
-      expect(d.unmatchedInk).toBeLessThan(0.05);
+for (const ease of [false, true]) {
+  test(`a flight's export starts at its first view and ends at its last${ease ? " with eased transitions" : ""}`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await openStar(page, "0.4");
+    if (ease)
+      await page
+        .getByRole("checkbox", {
+          name: "Ease key-view transitions",
+          exact: true,
+        })
+        .check();
+    const stills: Buffer[] = [];
+    for (const k of [1, 2]) {
+      if (k === 1) {
+        await button(page, "Show view 1").click();
+        await ready(page);
+      } else await showZoomed(page, `Show view ${k}`);
+      stills.push(await still(page));
     }
-    for (const d of crossed) expect(d.unmatchedInk).toBeGreaterThan(0.3);
-  }
-});
+    await open(page, "#export-settings");
+    await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+    await page.getByLabel("Export frame rate").selectOption("15");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("2");
+    let middle: Buffer | undefined;
+    if (ease) {
+      await button(page, "Play animation").click();
+      await expect(button(page, "Replay")).toBeVisible({ timeout: 30_000 });
+      await page
+        .getByRole("slider", { name: "Animation progress", exact: true })
+        .fill("0.4");
+      await ready(page);
+      middle = await still(page);
+      await button(page, "Stop").click();
+    }
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /Export MP4/ }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("tangent-garden-offset-path.mp4");
+    const path = (await file.path())!;
+    const data = probe(path);
+    if (data) {
+      expect(data.frames).toBe(6);
+      expect([data.width, data.height]).toEqual([2000, 1520]);
+      expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    }
+    const video = await decodeVideo(page, await readFile(path));
+    expect(video.duration).toBeCloseTo(0.4, 3);
+    expect(video.first.hash).not.toBe(video.last.hash);
+    const match = (index: number, reference: Buffer) =>
+      frameDifference(path, 2000, 1520, index, reference);
+    const ends = [match(0, stills[0]), match(5, stills[1])];
+    if (middle) {
+      const between = match(2, middle);
+      if (between) {
+        expect(between.meanDifference).toBeLessThan(3);
+        expect(between.unmatchedInk).toBeLessThan(0.05);
+      }
+    }
+    const crossed = [match(0, stills[1]), match(5, stills[0])];
+    if (ends[0] && ends[1] && crossed[0] && crossed[1]) {
+      for (const d of ends) {
+        expect(d.meanDifference).toBeLessThan(3);
+        expect(d.unmatchedInk).toBeLessThan(0.05);
+      }
+      for (const d of crossed) expect(d.unmatchedInk).toBeGreaterThan(0.3);
+    }
+  });
+}
 
 // The drawing as a PNG at the page's size, as RGBA bytes.
 async function still(page: Page) {

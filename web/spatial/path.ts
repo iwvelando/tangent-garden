@@ -70,6 +70,7 @@ export type KeyView = {
 // Absent, the pivot is the plane, so older paths fly as they did.
 export type CameraPath = {
   style: PathStyle;
+  ease?: boolean;
   pivot?: PathPivot;
   keys: KeyView[];
 };

@@ -12,7 +12,13 @@ export type PathStyle = "steady" | "smooth";
 // times fly their views equally spaced. The first view has no leg before
 // it.
 export type KeyBase = { name: string; leg?: number };
-export type KeyPath = { keys: KeyBase[] };
+export type KeyPath = { keys: KeyBase[]; ease?: boolean };
+export const easedPathHelp =
+  "Keeps the selected path's route, easing to rest at every view.";
+export const transitionHelp = tiered(
+  "Gently slows to rest at each view, then starts the next leg.",
+  "Pan, rotation and zoom ease together, with speed and acceleration reaching zero at every view, including a loop's seam. Key views and leg times stay fixed. Applies to either path style, with two views or more, in playback and exports; Pace still controls the overall timeline.",
+);
 export const maxKeys = 12;
 export const maxKeyName = 60;
 export const legRange: [number, number] = [0.1, 10];
@@ -169,7 +175,8 @@ export function hermite(
 }
 
 // Where progress p ∈ [0, 1] stands: on leg i, a fraction f along it, with f
-// exactly 0 at a view. A progress within rounding of a view's own time
+// exactly 0 at a view. With easing on, f is the eased leg fraction.
+// A progress within rounding of a view's own time
 // (keyTimes) is that view.
 export function locate(path: KeyPath, p: number) {
   const { h, t } = knots(path),
@@ -183,7 +190,16 @@ export function locate(path: KeyPath, p: number) {
   if (Math.abs(x - t[i + 1]) <= near && i + 1 < n - 1)
     return { h, i: i + 1, f: 0, end: false };
   if (Math.abs(x - t[i + 1]) <= near) return { h, i, f: 1, end: true };
-  return { h, i, f: x - t[i] <= near ? 0 : (x - t[i]) / h[i], end: false };
+  let f = x - t[i] <= near ? 0 : (x - t[i]) / h[i];
+  if (path.ease) {
+    // Quintic time easing: zero first and second derivatives at both
+    // ends. Reparameterizing the entire leg preserves its route while
+    // settling pan, angles, zoom and geometry pivots together. Evaluate
+    // symmetrically to avoid cancellation close to arrival.
+    const ease = (u: number) => u * u * u * (10 + u * (-15 + 6 * u));
+    f = f <= 0.5 ? ease(f) : 1 - ease(1 - f);
+  }
+  return { h, i, f, end: false };
 }
 
 // The readout: the view the camera stands at, or the two a leg flies

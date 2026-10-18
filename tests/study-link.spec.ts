@@ -1370,6 +1370,25 @@ test("a link carries a camera path, its leg times and its flight; refuses turns,
   );
 });
 
+test("links preserve optional key-view easing and reject nonboolean values", async () => {
+  for (const notebook of ["2d", "3d"] as const) {
+    const s = notebook === "3d" ? spatial() : planar();
+    const conform = notebook === "3d" ? spatialStudy : planarStudy;
+    const study = s as any;
+    study.animation.path ??= { style: "steady", keys: [] };
+    assert.equal("ease" in conform(study).animation.path!, false);
+    for (const ease of [true, false]) {
+      study.animation.path.ease = ease;
+      const back = await readStudyLink(await writeStudyLink(notebook, study));
+      assert.equal((conform(back.study).animation.path as any).ease, ease);
+    }
+    for (const ease of ["true", 1, null]) {
+      study.animation.path.ease = ease;
+      await refused(() => conform(study), "animation.path.ease");
+    }
+  }
+});
+
 test("a link carries what a camera path turns about; older links turn about the plane", async () => {
   const study: SpatialStudy = {
     ...spatial(),

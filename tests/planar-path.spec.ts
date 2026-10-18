@@ -36,6 +36,38 @@ const onPage = (
   p: { x: number; y: number },
 ) => ({ x: (p.x - v.cx) * v.scale, y: -(p.y - v.cy) * v.scale });
 
+test("eased planar flights settle a pan before zooming, keeping key times and their route", () => {
+  for (const style of ["steady", "smooth"] as const) {
+    const p = {
+      ...path([key(0, 0, 1), key(2, 1, 1, 0.5), key(2, 1, 8, 3)], style),
+      ease: true,
+    };
+    const time = keyTimes(p)[1];
+    const at = (t: number) => onPage(planarPathView(p, fit, t), { x: 3, y: 2 });
+    for (const side of [-1, 1]) {
+      const h = side * 1e-4;
+      const a = at(time),
+        b = at(time + h),
+        c = at(time + h / 2);
+      const full = Math.hypot(b.x - a.x, b.y - a.y),
+        half = Math.hypot(c.x - a.x, c.y - a.y);
+      expect(half).toBeLessThan(full * 0.2 + 1e-10);
+    }
+    keyTimes(p).forEach((t, k) => {
+      const v = planarPathView(p, fit, t);
+      expect(v).toEqual({
+        cx: p.keys[k].x,
+        cy: p.keys[k].y,
+        scale: fit.scale * p.keys[k].zoom,
+        span: fit.span / p.keys[k].zoom,
+      });
+    });
+    const early = planarPathView(p, fit, time / 4);
+    expect(early.cx).toBeLessThan(0.5);
+    expect(early.cy / early.cx).toBeCloseTo(0.5, 12);
+  }
+});
+
 test("a path stands exactly at each view at its time, in both styles", () => {
   const keys = [key(0.25, -0.5, 1), key(3.9, 0, 800, 3), key(-1, 2, 4, 0.5)];
   for (const style of ["steady", "smooth"] as const) {

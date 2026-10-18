@@ -26,7 +26,11 @@ import { plainZoom, viewZoom } from "./refinement";
 import type { ViewRect } from "./types";
 
 export type PlanarKeyView = KeyBase & { x: number; y: number; zoom: number };
-export type PlanarPath = { style: PathStyle; keys: PlanarKeyView[] };
+export type PlanarPath = {
+  style: PathStyle;
+  keys: PlanarKeyView[];
+  ease?: boolean;
+};
 export const defaultPlanarPath: PlanarPath = { style: "steady", keys: [] };
 // The drawing's fitted framing: its center, scale (page units per unit of
 // the plane) and span.

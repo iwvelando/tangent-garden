@@ -94,8 +94,13 @@ import {
 } from "./export-formats";
 import { saveFile } from "./export-image";
 import { Field } from "./Field";
-import { KeyViews } from "./KeyViews";
-import { pathLeg, pathStyles, type PathStyle } from "./key-views";
+import { KeyViews, KeyViewEasing } from "./KeyViews";
+import {
+  easedPathHelp,
+  pathLeg,
+  pathStyles,
+  type PathStyle,
+} from "./key-views";
 import {
   asFirst,
   defaultPlanarPath,
@@ -1105,9 +1110,11 @@ export function AnimationPanel({
               <Field
                 label="Path"
                 help={
-                  path.style === "smooth"
-                    ? planarPathHelp.smooth
-                    : planarPathHelp.steady
+                  path.ease
+                    ? easedPathHelp
+                    : path.style === "smooth"
+                      ? planarPathHelp.smooth
+                      : planarPathHelp.steady
                 }
               >
                 <select
@@ -1124,6 +1131,10 @@ export function AnimationPanel({
                   ))}
                 </select>
               </Field>
+              <KeyViewEasing
+                checked={path.ease ?? false}
+                onChange={(ease) => setPath((p) => ({ ...p, ease }))}
+              />
               <KeyViews
                 keys={path.keys}
                 onChange={(change) =>
