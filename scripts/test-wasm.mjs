@@ -2361,10 +2361,13 @@ const spatialCanal = (canal, frame = {}, study = {}) =>
   assert.equal(torus.frame.kind, "rotation-minimizing");
   assert.equal(torus.minus.length, 0);
   assert.equal(torus.rulings.length, 0);
-  assert.equal(meshSize(torus.mesh), 480 * 24 * 6);
-  // Each ring once, its 24 segments and the closing point, the seam ring
-  // at both ends.
-  assert.equal(meshVertexCount(torus.mesh), 481 * 25);
+  assert.equal(
+    meshSize(torus.mesh),
+    480 * 24 * 6 + (2 * q.circles.length - 2) * 24 * 3,
+  );
+  // Each regular ring has 24 segments, each displayed contact ring 48,
+  // plus the closing point. The seam ring is stored at both ends.
+  assert.equal(meshVertexCount(torus.mesh), 481 * 25 + q.circles.length * 24);
   for (const v of meshVertices(torus.mesh)) {
     const p = v.position;
     assert.ok(

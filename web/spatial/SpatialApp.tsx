@@ -3614,7 +3614,7 @@ export default function SpatialApp({
                       "Refinement halves a sample interval up to 10 times where the chord strays from the curve by over 1/5000 of its fitted radius, adding at most 16,384 points per curve. Gaps and jumps it finds break the curve; surfaces stay on the samples unless refined too. "}
                     Invalid samples leave gaps.
                     {canal &&
-                      " A canal is drawn on at most 480 contact circles."}
+                      " Canals retain regular rings, displayed circles, and gap boundaries."}
                     {flowing &&
                       " Trajectories are integrated by adaptive Dormand–Prince steps, within 50,000 steps each."}
                     {chasing &&

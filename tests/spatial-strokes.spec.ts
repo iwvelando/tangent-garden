@@ -401,12 +401,12 @@ const tubeStudy = (
 });
 // The pixels where lines change the drawing without them, and which of
 // those lie over a sheet rather than the background or a sheet's edge.
-async function inkMask(page: Page, a: Buffer, b: Buffer) {
+async function inkMask(page: Page, a: Buffer, b: Buffer, threshold = 10) {
   const ground = scale255(palette.background[0]);
   const other = await page.context().newPage();
   try {
     return await other.evaluate(
-      async ([a, b, ground]) => {
+      async ([a, b, ground, threshold]) => {
         const read = async (bytes: number[]) => {
           const bitmap = await createImageBitmap(
             new Blob([new Uint8Array(bytes)], { type: "image/png" }),
@@ -427,7 +427,7 @@ async function inkMask(page: Page, a: Buffer, b: Buffer) {
             Math.abs(p[i + 1] - q[i + 1]),
             Math.abs(p[i + 2] - q[i + 2]),
           );
-          if (d <= 10) continue;
+          if (d <= threshold) continue;
           ink.push(i / 4);
           const s = Math.max(
             Math.abs(q[i] - ground[0]),
@@ -438,7 +438,7 @@ async function inkMask(page: Page, a: Buffer, b: Buffer) {
         }
         return { ink, sheet };
       },
-      [Array.from(a), Array.from(b), ground] as const,
+      [Array.from(a), Array.from(b), ground, threshold] as const,
     );
   } finally {
     await other.close();
@@ -471,10 +471,15 @@ function reach(
   }
   return near;
 }
-function visibleSegments(svg: string) {
-  const out: { a: [number, number]; b: [number, number]; half: number }[] = [];
+function visibleSegments(svg: string, omitted: string[] = []) {
+  const out: {
+    a: [number, number];
+    b: [number, number];
+    half: number;
+    layer: string;
+  }[] = [];
   for (const g of svg.matchAll(/<g id="([a-z0-9-]+)"([^>]*)>(.*?)<\/g>/gs)) {
-    if (g[1].startsWith("hidden-")) continue;
+    if (g[1].startsWith("hidden-") || omitted.includes(g[1])) continue;
     const groupWidth = +(g[2].match(/stroke-width="([\d.]+)"/)?.[1] ?? 1.5);
     for (const p of g[3].matchAll(/<path([^>]*)\/>/g)) {
       const width = +(p[1].match(/stroke-width="([\d.]+)"/)?.[1] ?? groupWidth);
@@ -482,7 +487,8 @@ function visibleSegments(svg: string) {
       let last: [number, number] | undefined;
       for (const m of d.matchAll(/([ML])(-?[\d.]+) (-?[\d.]+)/g)) {
         const at: [number, number] = [+m[2], +m[3]];
-        if (m[1] === "L" && last) out.push({ a: last, b: at, half: width / 2 });
+        if (m[1] === "L" && last)
+          out.push({ a: last, b: at, half: width / 2, layer: g[1] });
         last = at;
       }
     }
@@ -494,6 +500,12 @@ async function agreeWithLinework(
   study: object,
   // The same study with its line layers hidden.
   bareStudy: object,
+  options: {
+    inkThreshold?: number;
+    omitted?: string[];
+    minimumWidth?: number;
+    coverageLayers?: string[];
+  } = {},
 ) {
   await openLink(page, study);
   const lined = await download(page, png);
@@ -505,9 +517,9 @@ async function agreeWithLinework(
   );
   await openLink(page, bareStudy);
   const bare = await download(page, png);
-  const { ink, sheet } = await inkMask(page, lined, bare);
+  const { ink, sheet } = await inkMask(page, lined, bare, options.inkThreshold);
   const mask = ink;
-  const segments = visibleSegments(svg);
+  const segments = visibleSegments(svg, options.omitted);
   const { width, height } = page2000;
   // Over a sheet, ink belongs to a visible line. Elsewhere a wide stroke
   // may show beside the sheet that hides its center, so ink belongs to some
@@ -522,7 +534,10 @@ async function agreeWithLinework(
   for (const i of mask) inked[i] = 1;
   let tried = 0,
     hit = 0;
-  for (const { a, b } of segments) {
+  for (const { a, b, half, layer } of segments) {
+    if (2 * half < (options.minimumWidth ?? 0)) continue;
+    if (options.coverageLayers && !options.coverageLayers.includes(layer))
+      continue;
     const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
     for (let s = 0; s <= length; s += 3) {
       const x = a[0] + ((b[0] - a[0]) * s) / Math.max(length, 1e-9),
@@ -569,6 +584,57 @@ test("strokes ink only lines the vector export finds visible, and ink those, ort
     // offset lets a stroke just behind show by up to its half width.
     expect(r.stray / r.ink, name).toBeLessThan(0.02);
     expect(r.hit / r.tried, name).toBeGreaterThan(0.97);
+  }
+});
+
+test("contact rings stay inked from inside the animated trefoil and torus in PNG and vector exports", async ({
+  page,
+}) => {
+  test.slow();
+  for (const [name, progress] of [
+    ["Inside a trefoil's tube", 0.48],
+    ["Inside a trefoil's tube", 0.54],
+    ["Down a torus's tunnel", 0.14],
+  ] as const) {
+    const p = spatialPresets.find((p) => p.name === name)!;
+    const study = {
+      config: p.config,
+      view: { ...p.view!, yaw: p.view!.yaw + 2 * Math.PI * progress },
+      layers: { ...defaultLayers, ...p.layers },
+      sight: { ...defaultSight, ...p.sight },
+      projection: p.projection,
+      lensAngle: p.lensAngle,
+    };
+    const r = await agreeWithLinework(
+      page,
+      study,
+      {
+        ...study,
+        layers: {
+          ...study.layers,
+          circles: false,
+          meridians: false,
+          frames: false,
+          seam: false,
+        },
+      },
+      {
+        // Only the toggled layers enter the difference mask. Check the
+        // near rings at least a pixel wide; subpixel far rings can fall
+        // below even a low threshold when blended through the tube.
+        inkThreshold: 3,
+        omitted: ["base"],
+        minimumWidth: 1,
+        // Meridians can project onto the unchanged base curve in the
+        // torus's equatorial view; this regression concerns contact rings.
+        coverageLayers: ["circles"],
+      },
+    );
+    console.log("Inside contact rings", name, progress, r);
+    expect(r.tried).toBeGreaterThan(500);
+    expect(r.hit / r.tried).toBeGreaterThan(0.97);
+    if (study.sight.hidden === "hide")
+      expect(r.stray / r.ink).toBeLessThan(0.02);
   }
 });
 

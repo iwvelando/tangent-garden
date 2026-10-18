@@ -137,7 +137,7 @@ func edge(r Result, pick func(Vertex) bool) ([]*Vec3, []float64) {
 
 // turned is the largest turn, as a fraction of the tube's radius, of any
 // mesh angle between neighboring rings of a canal's mesh beyond the move of
-// their centers: rings are listed whole, 25 vertices each, and a ring
+// their centers: rings are listed whole, and a ring
 // between samples turned unlike the samples' rings jumps against them.
 func turned(r Result, radius float64) float64 {
 	m := r.Mesh
@@ -146,13 +146,19 @@ func turned(r Result, radius float64) float64 {
 		points []Vec3
 	}
 	var rings []ring
-	for first := 0; first < len(m.Vertices)/7; first += canalSegments + 1 {
+	for first := 0; first < len(m.Vertices)/7; {
+		end := first + 1
+		for end < len(m.Vertices)/7 && m.Vertices[7*end+6] == m.Vertices[7*first+6] {
+			end++
+		}
+		step := (end - first - 1) / canalSegments
 		g := ring{m.Vertices[7*first+6], nil}
 		for k := 0; k <= canalSegments; k++ {
-			x := m.Vertices[7*(first+k):]
+			x := m.Vertices[7*(first+k*step):]
 			g.points = append(g.points, Vec3{x[0], x[1], x[2]})
 		}
 		rings = append(rings, g)
+		first = end
 	}
 	slices.SortFunc(rings, func(a, b ring) int { return compareVec(Vec3{a.phase, 0, 0}, Vec3{b.phase, 0, 0}) })
 	center := func(g ring) Vec3 {
