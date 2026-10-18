@@ -30,8 +30,9 @@ import { curveMesh } from "./curve-mesh";
 import { decodePng } from "./png";
 
 // Seeing through the drawing. Studies drawn with opaque sheets and hidden
-// lines hidden must not change. Their line drawings are computed on the CPU
-// and were recorded before seeing through existed. Their PNGs depend on the
+// lines hidden must not change. Their line drawings, computed on the CPU,
+// were recorded before seeing through existed, except for the tube baseline
+// updated for shared contact-circle mesh edges. Their PNGs depend on the
 // machine's rasterizer (they matched main at 0e7ad8f on macOS, not on CI's
 // SwiftShader), so here each must come back byte-identical after the
 // setting has been changed and returned to plain.
@@ -67,12 +68,13 @@ const predating = (b: Buffer) =>
       .replace('"adaptive":false,', ""),
   );
 
-// Line drawings recorded from main at 0e7ad8f, before seeing through.
+// Line drawings recorded from main at 0e7ad8f, before seeing through; the
+// tube includes the intentional contact-circle mesh alignment.
 const recorded: Record<string, string> = {
   "The focal sheets of an ellipsoid":
     "f7ef384c68a1ce46ed25942bb4691645c19a75b7024791881f10d3a785c3779f",
   "A tube around the trefoil":
-    "90d24495b3d7c85e94e564c1b1ac4aa7a1d741787be9f49bce99557c0f125ea5",
+    "f0b35e4237a18bc6598f0a044fd932ea79ddee247b1ad6314e7e7d3dfa35516d",
   "A gyroid, cut open":
     "4c1a8b9fc31085e41e181039519499b93cb5c3fd42133356dc7e642715fff02f",
   "A lamp sealed in an ellipsoid":
