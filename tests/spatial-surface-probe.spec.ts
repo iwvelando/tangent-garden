@@ -909,21 +909,52 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
     exact: true,
   });
   await expect(between).toBeChecked();
-  // Keep the sampled cuspidal-edge regression as well as the new default.
-  await between.uncheck();
-  await settled(page);
   const u = along(page, "Along u"),
     status = page.getByTestId("probe-status");
-  await expect(along(page, "Along v")).toHaveAttribute(
-    "aria-valuetext",
-    "v = 0.3927, column 60 of 96",
-  );
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  const progress = page.getByRole("slider", { name: "Animation progress" });
   const largest = async () =>
     Math.max(
       ...(await readout(page).allTextContents())
         .slice(0, 2)
         .map((t) => Math.abs(Number(t))),
     );
+  // Played between samples, the probe glides over both edges: back and
+  // forth at a steady pace, time 0.2 is progress 0.4, u = 3π/2, and time
+  // 0.45 progress 0.9, u = 2π, while time 0.198 stands a fifth of a row
+  // short, where the sheet's curvature is already large.
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "probe");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  for (const time of ["0.2", "0.45"]) {
+    await progress.fill(time);
+    await expect(stage(page)).toHaveAttribute("data-time", time);
+    await expect(status).toHaveText(
+      "Singular here: no tangent plane, as on a cuspidal edge.",
+    );
+  }
+  await progress.fill("0.198");
+  await expect(stage(page)).toHaveAttribute("data-time", "0.198");
+  await expect(u).toHaveAttribute("aria-valuetext", "u = 4.7");
+  await expect(u).toHaveValue("0.396");
+  await expect(u).toBeDisabled();
+  await expect(status).toHaveText(
+    "A center lies beyond 100 study radii, at infinity: its circle is not drawn.",
+  );
+  expect(await largest()).toBeGreaterThan(10);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(stage(page)).not.toHaveAttribute("data-progress");
+  // Keep the sampled cuspidal-edge regression as well as the default.
+  await between.uncheck();
+  await settled(page);
+  await expect(along(page, "Along v")).toHaveAttribute(
+    "aria-valuetext",
+    "v = 0.3927, column 60 of 96",
+  );
   await u.fill("20");
   await expect(status).toHaveText("");
   // Nearing the edge one curvature grows steadily, while the other falls
@@ -951,9 +982,6 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
     );
   }
   // The animation moves the probe along the sheet, over both edges.
-  const panel = page.locator("#spatial-animation-section");
-  if ((await panel.getAttribute("open")) === null)
-    await panel.locator(":scope > summary").click();
   const mode = page.getByLabel("Animate", { exact: true });
   await expect(mode).toHaveValue("probe");
   await expect(mode.locator('option[value="probe"]')).toHaveText(
@@ -970,7 +998,7 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
     ["0.2", 40],
     ["0.45", 90],
   ] as const) {
-    await page.getByRole("slider", { name: "Animation progress" }).fill(time);
+    await progress.fill(time);
     await expect(stage(page)).toHaveAttribute("data-time", time);
     await expect(u).toHaveAttribute(
       "aria-valuetext",
@@ -2119,7 +2147,7 @@ test("the light probe moves along the mirror as an animation and returns on Stop
   expect(await pixels(page)).toBe(study);
 });
 
-// A canal's rows are its mesh rings, every other base sample on the beads:
+// A canal's probe rows are its regular rows, every other base sample on the beads:
 // row 250 is base sample 500, at t = −2π + 250π/120. A reveal draws the
 // surface probe once it has drawn that sample, not that row's number.
 test("a reveal draws a canal's surface probe once it reaches the probe's row", async ({

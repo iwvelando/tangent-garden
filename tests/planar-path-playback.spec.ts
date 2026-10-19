@@ -287,6 +287,9 @@ for (const ease of [false, true]) {
       await page
         .getByRole("slider", { name: "Animation progress", exact: true })
         .fill("0.4");
+      // The drawing is idle before the scrubbed frame starts, so wait for
+      // the frame itself.
+      await expect(art(page)).toHaveAttribute("data-animation-progress", "0.4");
       await ready(page);
       middle = await still(page);
       await button(page, "Stop").click();

@@ -214,6 +214,8 @@ const revealInPlace: Flight = {
 
 // A detail is easier to follow by approaching it through the complete
 // drawing than by revealing a curve that has not yet reached the close view.
+// The flight starts on the detail the preset opens with, so Play never cuts
+// away from it: out to the whole study, then back in.
 function approach(view: SpatialCamera): {
   view: SpatialCamera;
   flight: Flight;
@@ -227,6 +229,7 @@ function approach(view: SpatialCamera): {
       path: {
         style: "steady",
         keys: [
+          { ...view, name: "The detail", turns: 0 },
           {
             ...view,
             name: "The whole study",
@@ -235,7 +238,6 @@ function approach(view: SpatialCamera): {
             panY: 0,
             turns: 0,
           },
-          { ...view, name: "The detail", turns: 0 },
         ],
       },
     },
@@ -3712,6 +3714,8 @@ export const spatialPresets: {
       },
     },
     layers: { focal2: false },
+    // Between samples, so that played it glides over the edges rather than
+    // stepping from row to row. Progress 0.4 and 0.9 still land on them.
     probe: {
       enabled: true,
       position: 0,

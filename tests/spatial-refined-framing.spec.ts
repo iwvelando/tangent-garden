@@ -452,12 +452,19 @@ test("the crown's sweeping string stays framed between both endpoints", () => {
   );
   const study = presetStudy(i),
     original = computed(study.config);
+  // The preset's own sweep, whose plain numbers need no resolving.
+  const tracks = study.animation.tracks.map((t) => ({
+    ...t,
+    from: Number(t.from),
+    to: Number(t.to),
+  }));
+  expect(tracks.map((t) => t.target)).toEqual(["offset"]);
+  for (const t of tracks) {
+    expect(Number.isFinite(t.from) && Number.isFinite(t.to)).toBe(true);
+    expect(t.from).not.toBe(t.to);
+  }
   const frame = (p: number) => {
-    const config = applyTracks(
-      study.config,
-      [{ target: "offset", from: -8, to: 8 }],
-      p,
-    ).config;
+    const config = applyTracks(study.config, tracks, p).config;
     return { config, result: computed(config) };
   };
   const final = frame(1);

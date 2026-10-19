@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { colorSchemes, schemeInks, type ColorScheme } from "./color-schemes";
+import { useQuietFocus } from "./quiet-focus";
 
 export function ColorSchemeMenu({
   scheme,
@@ -14,12 +15,15 @@ export function ColorSchemeMenu({
   const wrap = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const { quiet, ring, ...via } = useQuietFocus(wrap);
   const close = () => {
     setOpen(false);
+    quiet();
     trigger.current?.focus();
   };
   useEffect(() => {
     if (!open) return;
+    quiet();
     menu.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
     const outside = (event: PointerEvent) => {
       if (!wrap.current?.contains(event.target as Node)) setOpen(false);
@@ -33,8 +37,11 @@ export function ColorSchemeMenu({
     <div
       className="scheme-picker"
       ref={wrap}
+      {...via}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        setOpen(false);
+        ring();
       }}
     >
       <button
@@ -46,7 +53,13 @@ export function ColorSchemeMenu({
         aria-expanded={open}
         data-scheme={scheme}
         title={`Color scheme: ${current.label}`}
-        onClick={() => setOpen(!open)}
+        // Safari never focuses a clicked button: pressing this one would
+        // blur the open menu's item to nothing, closing the menu before
+        // the click reopened it. Focus stays in the menu until the click.
+        onMouseDown={(e) => {
+          if (open) e.preventDefault();
+        }}
+        onClick={() => (open ? close() : setOpen(true))}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();

@@ -1237,7 +1237,7 @@ export default function SpatialApp({
       {receiverControls}
       <p className="note" data-testid="rays-note">
         {mirror && frame
-          ? raysNote(mirror, frame.config.rays).join(" ")
+          ? raysNote(mirror, frame.config.rays, theme.scheme).join(" ")
           : "Following the light…"}
       </p>
     </>
@@ -3373,8 +3373,10 @@ export default function SpatialApp({
             point={heldPoint?.grid}
             at={moving?.probe}
             across={moving?.probeSetup?.across}
+            position={moving?.probeSetup?.position}
             away={moving ? undefined : animation?.probeAway}
             dark={theme.dark}
+            scheme={theme.scheme}
           />
           <FieldErrorContext.Provider value={fieldError}>
             <details className="spatial-details">
@@ -3614,7 +3616,7 @@ export default function SpatialApp({
                       "Refinement halves a sample interval up to 10 times where the chord strays from the curve by over 1/5000 of its fitted radius, adding at most 16,384 points per curve. Gaps and jumps it finds break the curve; surfaces stay on the samples unless refined too. "}
                     Invalid samples leave gaps.
                     {canal &&
-                      " Canals retain regular rings, displayed circles, and gap boundaries."}
+                      " Canal meshes keep ≤481 regular rings, plus circles."}
                     {flowing &&
                       " Trajectories are integrated by adaptive Dormand–Prince steps, within 50,000 steps each."}
                     {chasing &&

@@ -110,7 +110,7 @@ import {
 } from "../export-formats";
 import { saveFile } from "../export-image";
 import { KeyViews, KeyViewEasing } from "../KeyViews";
-import { easedPathHelp } from "../key-views";
+import { easedPath } from "../key-views";
 import { Field } from "../Field";
 import { tiered, withMore } from "../help";
 import { useDisclosure } from "../useDisclosure";
@@ -662,6 +662,9 @@ export function SpatialAnimationPanel({
       };
       held = held.row;
     }
+    // A probe moved between grid samples stands at the motion's progress.
+    if (s.mode === "probe" && typeof held !== "string" && isGridPoint(held))
+      setup = { ...s.probe!, position: p };
     // The curve probe at a sample is described as between samples.
     if (
       typeof held === "number" &&
@@ -1309,7 +1312,9 @@ export function SpatialAnimationPanel({
         label="Path"
         help={
           path.ease
-            ? easedPathHelp
+            ? easedPath(
+                path.style === "smooth" ? pathHelp.smooth : pathHelp.steady,
+              )
             : path.style === "smooth"
               ? repeat === "loop"
                 ? withMore(pathHelp.smooth, smoothLoopHelp)

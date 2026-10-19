@@ -646,9 +646,11 @@ test("the screw band's partner thread opens refined and is exported with its ref
   await openSampling(page);
   await expect(refineSurface(page)).toBeChecked();
   await expect(refine(page)).toBeChecked();
-  await expect(readout(page).first()).toHaveText(
+  // The curve's readout, then the surface's, and no other.
+  await expect(readout(page)).toHaveText([
     /^[\d,]+ points added between samples\.$/,
-  );
+    /^[\d,]+ columns? added to the surface\.$/,
+  ]);
   // The circle needs nothing between its 240 samples; the thread's 24
   // coils, ten samples each, need several points in every interval.
   const added = await addedPoints(page);
@@ -687,9 +689,11 @@ test("the folding treads' thread stays refined as the shift slides", async ({
   // is refined as finely as it opened.
   await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
-  await expect(readout(page).first()).toHaveText(
+  // The curve's readout, then the surface's, and no other.
+  await expect(readout(page)).toHaveText([
     /^[\d,]+ points added between samples\.$/,
-  );
+    /^[\d,]+ columns? added to the surface\.$/,
+  ]);
   await expect
     .poll(async () => Math.abs((await addedPoints(page)) - opening) / opening)
     .toBeLessThan(0.1);
@@ -709,9 +713,11 @@ test("the striped trefoil's meridians open refined and are exported with their r
   // The skin is refined with the stripes, or its flat facets would hide
   // them where the tube is concave.
   await expect(refineSurface(page)).toBeChecked();
-  await expect(readout(page).first()).toHaveText(
+  // The curve's readout, then the surface's, and no other.
+  await expect(readout(page)).toHaveText([
     /^[\d,]+ points added between samples\.$/,
-  );
+    /^[\d,]+ columns? added to the surface\.$/,
+  ]);
   // Twelve meridians, each winding thirty times round the knot at about
   // eight samples a turn, need several points in every interval.
   const added = await addedPoints(page);

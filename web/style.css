@@ -1232,6 +1232,11 @@ h1 {
 .notebook-mode[data-quiet] input:focus-visible {
   outline: none;
 }
+/* And into or out of a menu a tap opened (quiet-focus.ts). */
+.scheme-picker[data-quiet] :focus-visible,
+.export-menu[data-quiet] :focus-visible {
+  outline: none;
+}
 .animation-jump span {
   padding-left: 10px;
 }

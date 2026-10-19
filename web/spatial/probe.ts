@@ -672,7 +672,7 @@ const surfaceTermsByKind: Record<SurfaceKind, SurfaceTerms> = {
     missing: "No surface here: no real contact circle at this t.",
     unknownBranch: "κ across it is",
     unknown: "where its derivatives are unstable",
-    moves: `It moves between the mesh rings along t ${rows} and 24 turns around each contact circle, from θ₀.`,
+    moves: `It moves between regular rows along t ${rows} and 24 turns around each contact circle, from θ₀.`,
     help: `Around the circle the curvature is −1/R, centered on the curve; across it, the other has its own center.`,
   },
   developable: {
