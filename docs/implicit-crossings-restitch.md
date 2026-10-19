@@ -113,7 +113,7 @@ In `engine3/implicit_crossing_test.go`, each seen failing first:
 - **Normals:** every copy has a unit normal, parallel (in line) to its sheet's limiting normal; for the sphere × plane, sheet A's copies are along the radius and B's along z.
 - **Unchanged:** cones, Cassini's drops touching, the Whitney umbrella, Steiner's Roman surface (edges on one, two or four triangles become one or two), the budget fallback, and every non-crossing preset (`TestCrossingPresetsUnchanged`).
 
-Then run the targeted mutation pass described in `AGENTS.md`:
+Then run the targeted mutation pass described in [contributing](contributing.md), **Mutation testing**:
 
 - swap the two path indices on one side of a node face;
 - key copies by face only;

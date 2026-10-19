@@ -48,7 +48,7 @@ test("packing is the same every time, whatever order files are listed in", () =>
 // Only recorded files are packed here: a new file has no duration to
 // balance, and the packer would place it at the average while the loads
 // counted it as nothing, judging a packing the shards don't run. A new
-// file is recorded by refreshing the durations (AGENTS.md).
+// file is recorded by refreshing the durations (docs/contributing.md).
 test("the recorded durations pack into shards of about equal length", () => {
   const files = specFiles(webkitOnly).filter((f) => f in durations);
   const total = files.reduce((s, f) => s + durations[f], 0);

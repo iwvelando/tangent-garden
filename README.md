@@ -65,7 +65,7 @@ Outside CI, the browser tests reuse any server already listening on port 4173, e
 
 `make test-go` runs every native test twice: once with race detection and once with coverage. Keeping the instrumentation separate avoids the cost of race-checking atomic coverage counters in the numerical loops.
 
-Commit source, tests, docs, and `package-lock.json`; dependency directories, build output, browser reports, and generated WASM/runtime files are ignored. Read [AGENTS.md](AGENTS.md) for contribution boundaries and verification expectations; [CLAUDE.md](CLAUDE.md) points to the same instructions. Proposals, fixes, and tests should respect the mathematical-art focus.
+Commit source, tests, docs, and `package-lock.json`; dependency directories, build output, browser reports, and generated WASM/runtime files are ignored. Read [AGENTS.md](AGENTS.md) for contribution boundaries and verification expectations, and [contributing](docs/contributing.md) for the steps particular changes need; [CLAUDE.md](CLAUDE.md) points to the same instructions. Proposals, fixes, and tests should respect the mathematical-art focus.
 
 ## Build and host
 
@@ -110,6 +110,7 @@ The engine uses numerical differentiation, arc-length integration, and ray envel
 
 - [Mathematical definitions and numerical conventions](docs/mathematics.md)
 - [Architecture and extension boundaries](docs/architecture.md)
+- [Procedures for particular changes](docs/contributing.md)
 
 ## Project map
 
