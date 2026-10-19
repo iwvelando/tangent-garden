@@ -4551,4 +4551,65 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // The parabolic dish z = (x² + y²)/4 over [−1.5, 1.5]², a mirror under
+  // parallel light tilted θ = 30° from its axis, with the light probe
+  // standing between grid samples on y = 0. Its normal leans φ, tan φ =
+  // x/2, and where φ = θ/2 the angle of incidence is θ/2 too, so
+  // Coddington's tangential and sagittal powers agree at cos²(θ/2): the
+  // light leaves along the axis, stigmatic, from x* = 2 tan 15° ≈ 0.5359,
+  // between rows 32 and 33 of 48, to a focus 1/cos²15° ≈ 1.072 above it,
+  // where the two caustic sheets touch. The probe opens there, seen from
+  // the side, along −y and a little above, with the sheets see-through and
+  // the probe dashed behind them; the representative reflected rays are
+  // hidden so that the probe's own stand out. Played, it glides back and
+  // forth across the dish at y = 0, its two foci parting along the caustic
+  // sheets on either side and meeting again at x*.
+  {
+    name: "Where a tilted dish focuses sharply",
+    detail:
+      "Slanting light reaches a single sharp focus only where it leaves the dish along its axis; there the two caustic sheets touch",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "paraboloid",
+        a: 0.5,
+        b: 0.5,
+        c: 0,
+        uMin: -1.5,
+        uMax: 1.5,
+        vMin: -1.5,
+        vMax: 1.5,
+        uSamples: 48,
+        vSamples: 48,
+        curves: 9,
+      },
+      rays: { ...base.rays, azimuth: 0, elevation: -60, length: 1.6 },
+    },
+    layers: { reflected: false, virtual: false },
+    view: { yaw: 0, pitch: -1.35, zoom: 2, panX: -0.421, panY: -0.145 },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+      probe: "dashed",
+    },
+    probe: {
+      enabled: true,
+      position: (2 * Math.tan(Math.PI / 12) + 1.5) / 3,
+      target: "light",
+      across: 0.5,
+      betweenGrid: true,
+    },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

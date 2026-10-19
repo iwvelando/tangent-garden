@@ -962,9 +962,11 @@ func TestSimilarPresets(t *testing.T) {
 	for _, m := range similarities {
 		for _, name := range names {
 			t.Run(m.name+"/"+name, func(t *testing.T) {
-				// Each case repeatedly exercises the same evaluation paths.
-				// Running them together makes atomic coverage counters contend
-				// severely under -race -cover, exceeding the CI time budget.
+				// The cases are independent, and over half of engine3's
+				// time: run in parallel, they keep its race pass well
+				// within CI's limit. (Race and coverage run as separate
+				// passes, so no atomic coverage counters contend.)
+				t.Parallel()
 				if chaotic[name] && m.shift != (Vec3{}) {
 					t.Skip("chaotic: a far copy's trajectories separate from the original's")
 				}

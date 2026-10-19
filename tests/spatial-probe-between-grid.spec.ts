@@ -308,7 +308,7 @@ test("a frame whose domain leaves the probe's u out has no probe", async ({
   );
 });
 
-test("a patch offers its probe between grid samples, and a mirror does not", async ({
+test("a patch and a mirror offer their probes between grid samples", async ({
   page,
 }) => {
   await page.goto("/?study=3d");
@@ -319,12 +319,122 @@ test("a patch offers its probe between grid samples, and a mirror does not", asy
   await probe.check();
   await settled(page);
   await expect(gridSwitch(page)).toHaveCount(1);
-  // A mirror's probe stays on its grid.
+  // A mirror offers it for the light leaving it and for the mirror.
   await choosePreset(page, { label: "A paraboloid gathering light" });
   await settled(page);
   await page.locator(".spatial-probe .probe-switch input").first().check();
   await settled(page);
-  await expect(gridSwitch(page)).toHaveCount(0);
+  await expect(gridSwitch(page)).toHaveCount(1);
+  await page.getByLabel("Describe", { exact: true }).selectOption("mirror");
+  await settled(page);
+  await expect(gridSwitch(page)).toHaveCount(1);
+});
+
+// The parabolic dish z = (x² + y²)/4 on [−1.5, 1.5]², 48 × 48, under
+// parallel light tilted θ = 30° from its axis. Where its normal leans θ/2,
+// tan(θ/2) = x/2, the light leaves along the axis, stigmatic, with both
+// wavefront curvatures cos²(θ/2): Coddington's tangential and sagittal
+// powers 2κ_m/cos φ and 2κ_s cos φ, with κ_m = a cos³φ and κ_s = a cos φ.
+const dishX = 2 * Math.tan(Math.PI / 12),
+  dishMu = Math.cos(Math.PI / 12) ** 2;
+const dish = (page: Page) =>
+  choosePreset(page, { label: "Where a tilted dish focuses sharply" });
+
+test("the light probe stands between a mirror's samples, traced exactly there", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await settled(page);
+  await dish(page);
+  await settled(page);
+  await expect(gridSwitch(page)).toBeChecked();
+  await expect(page.getByLabel("Describe", { exact: true })).toHaveValue(
+    "light",
+  );
+  const [u, v] = (await stage(page).getAttribute("data-probe-uv"))!
+    .split(",")
+    .map(Number);
+  expect(u).toBeCloseTo(dishX, 12);
+  expect(v).toBe(0);
+  // Rows are 1/16 apart; x* lies between rows 32 and 33.
+  expect(((dishX + 1.5) / 3) * 48 - 32).toBeCloseTo(0.574, 3);
+  await expect(alongU(page)).toHaveAttribute("step", "any");
+  await expect(alongU(page)).toHaveAttribute(
+    "aria-valuetext",
+    `u = ${short(dishX)}`,
+  );
+  await expect(status(page)).toHaveText(
+    "Stigmatic: both foci coincide, so no direction is drawn.",
+  );
+  await expect(readout(page)).toHaveText([
+    short(dishMu),
+    short(dishMu),
+    `${short(1 / dishMu)}, ${short(1 / dishMu)}`,
+    "0",
+    "15°",
+  ]);
+  // Snapped to the nearest row, 33, the light is astigmatic.
+  await gridSwitch(page).uncheck();
+  await settled(page);
+  await expect(stage(page)).not.toHaveAttribute("data-probe-uv", /./);
+  await expect(alongU(page)).toHaveAttribute(
+    "aria-valuetext",
+    `u = ${short(-1.5 + 33 / 16)}, row 33 of 48`,
+  );
+  await expect(status(page)).not.toHaveText(/Stigmatic/);
+  await expect(readout(page).nth(3)).not.toHaveText("0");
+  await gridSwitch(page).check();
+  await settled(page);
+  await expect(status(page)).toHaveText(/Stigmatic/);
+  // The mirror itself between samples: the paraboloid's curvatures, the
+  // sagittal a cos φ and the meridional a cos³φ, with cos φ = cos 15°.
+  await page.getByLabel("Describe", { exact: true }).selectOption("mirror");
+  await settled(page);
+  await expect(gridSwitch(page)).toBeChecked();
+  const c = Math.cos(Math.PI / 12);
+  await expect(readout(page).nth(0)).toHaveText(short(0.5 * c));
+  await expect(readout(page).nth(1)).toHaveText(short(0.5 * c ** 3));
+});
+
+test("the tilted dish's own animation glides the light probe between samples", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await settled(page);
+  await dish(page);
+  await settled(page);
+  await openAnimation(page);
+  await expect(mode(page)).toHaveValue("probe");
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "probe");
+  await button(page, "Pause").click();
+  // Through every u at y = 0, eased, out and back: from the first edge at
+  // time 0 to the last at 0.5. Between them it stands at its own u, not at
+  // a row.
+  const placed = async (time: string) => {
+    await page.getByRole("slider", { name: "Animation progress" }).fill(time);
+    await expect(stage(page)).toHaveAttribute("data-time", time);
+    await settled(page);
+    const [u, v] = (await stage(page).getAttribute("data-probe-uv"))!
+      .split(",")
+      .map(Number);
+    expect(v).toBe(0);
+    return u;
+  };
+  expect(await placed("0")).toBe(-1.5);
+  expect(await placed("0.5")).toBe(1.5);
+  const middle = await placed("0.13");
+  expect(middle).toBeGreaterThan(-1.5);
+  expect(middle).toBeLessThan(0);
+  const row = ((middle + 1.5) / 3) * 48;
+  expect(Math.abs(row - Math.round(row))).toBeGreaterThan(1e-6);
+  await button(page, "Stop").click();
+  await settled(page);
+  const [u] = (await stage(page).getAttribute("data-probe-uv"))!
+    .split(",")
+    .map(Number);
+  expect(u).toBeCloseTo(dishX, 12);
+  await expect(status(page)).toHaveText(/Stigmatic/);
 });
 
 test("the umbilic example stands exactly on an umbilic the grid steps over", async ({
@@ -377,4 +487,82 @@ test("a reveal draws the patch's probe once it reaches the row after it", async 
     "data-probe-uv",
     placedAt(at(position), at(across)),
   );
+});
+
+// The values beside the sliders vary in length as the probe moves (u =
+// 0.1052, u = 0.02981, u = −0.0001234), and the sliders and the readout
+// below them must not move, at a desktop and a phone width.
+test("the probe's values never move the sliders as they change length", async ({
+  page,
+}) => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/?study=3d");
+    await settled(page);
+    await dish(page);
+    await settled(page);
+    const places: number[][] = [];
+    // u = 0.1052, 0.02981, −0.00012, 1.5 and −1.5.
+    for (const [p, u] of [
+      ["0.535067", "0.1052"],
+      ["0.509937", "0.02981"],
+      ["0.49996", "-0.00012"],
+      ["1", "1.5"],
+      ["0", "-1.5"],
+    ]) {
+      await alongU(page).fill(p);
+      await settled(page);
+      await expect(alongU(page)).toHaveAttribute("aria-valuetext", `u = ${u}`);
+      const boxes = await Promise.all(
+        [alongU(page), alongV(page), readout(page).first()].map(
+          async (l) => (await l.boundingBox())!.y,
+        ),
+      );
+      places.push(boxes);
+    }
+    for (const p of places) expect(p).toEqual(places[0]);
+  }
+});
+
+// While the probe glides, the playback readout's u changes length (u =
+// -1.5, u = -0.723811) and v stays 0. On a phone, where playback docks to
+// the bottom of the screen, neither v's place nor the bar's buttons move.
+test("the playback readout keeps each value in its place as u changes length", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=3d");
+  await settled(page);
+  await dish(page);
+  await settled(page);
+  await openAnimation(page);
+  await button(page, "Play animation").click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "probe");
+  await button(page, "Pause").click();
+  const values = page.locator(".animation-values");
+  const places: number[][] = [];
+  for (const time of ["0", "0.07", "0.13", "0.25", "0.5"]) {
+    await page.getByRole("slider", { name: "Animation progress" }).fill(time);
+    await expect(stage(page)).toHaveAttribute("data-time", time);
+    await settled(page);
+    await expect(values).toContainText(/^Probe at u = \S+, v = 0$/);
+    // Where "v = 0" starts, found in the text however it is wrapped.
+    const v = await values.evaluate((output) => {
+      const walk = document.createTreeWalker(output, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const at = n.textContent!.indexOf("v =");
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(n, at);
+        range.setEnd(n, at + 1);
+        const r = range.getBoundingClientRect();
+        return [r.left, r.top];
+      }
+      return [NaN, NaN];
+    });
+    const stop = (await button(page, "Stop").boundingBox())!;
+    // To a tenth of a pixel: a text range's edge can round differently.
+    places.push([...v, stop.x, stop.y].map((x) => Math.round(x * 10) / 10));
+  }
+  for (const p of places) expect(p).toEqual(places[0]);
 });

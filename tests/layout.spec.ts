@@ -674,7 +674,10 @@ test("the surface probe's plots fit a phone, and their help moves nothing above"
 
 // A field's label, its help toggle and any value at the end of its row
 // share one line, in the probe panel as everywhere else: its checkbox's
-// own label styles must not reach the fields beside it.
+// own label styles must not reach the fields beside it. The one exception
+// is a paired probe slider's value, which changes length as the probe
+// moves and so always takes its own line, flush under the label, rather
+// than wrapping there for some values and not others.
 for (const label of [
   "Helix · a ribbon staircase",
   "A sphere collapsing to one focus",
@@ -702,12 +705,22 @@ for (const label of [
           return r.top + r.height / 2;
         };
         const text = row.querySelector("label")!;
+        const below = row.matches(".pair > .probe-slider > .field-label")
+          ? row.querySelector("b")
+          : null;
         return {
           label: text.textContent,
           font: getComputedStyle(text).fontSize,
           offsets: [...row.children]
-            .filter((e) => e !== text)
+            .filter((e) => e !== text && e !== below)
             .map((e) => Math.abs(middle(e) - middle(text))),
+          below: below && {
+            drop: middle(below) - middle(text),
+            left: Math.abs(
+              below.getBoundingClientRect().left -
+                text.getBoundingClientRect().left,
+            ),
+          },
         };
       }),
     );
@@ -717,5 +730,14 @@ for (const label of [
       expect(row, row.label!).toMatchObject({ font: "13px" });
       for (const offset of row.offsets)
         expect(offset, row.label!).toBeLessThan(1.5);
+      // One line lower, at the label's left edge.
+      if (row.below) {
+        expect(row.below.drop, row.label!).toBeGreaterThan(12);
+        expect(row.below.drop, row.label!).toBeLessThan(24);
+        expect(row.below.left, row.label!).toBeLessThan(0.5);
+      }
     }
+    // The sphere's surface probe has its paired sliders.
+    if (label === "A sphere collapsing to one focus")
+      expect(rows.filter((r) => r.below)).toHaveLength(2);
   });
