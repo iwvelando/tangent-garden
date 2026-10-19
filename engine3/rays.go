@@ -432,7 +432,7 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool) (Result, er
 		families = append(families, corners)
 	}
 	bounds := fit(families...)
-	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: emptyMesh(), Rulings: []Ruling{}, Rays: out}
+	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: emptyMesh(), Rulings: []Ruling{}, Rays: out, surfaceScale: scale}
 	switch {
 	case light:
 		result.Probe = lightProbe(q, r, samples, reach)
@@ -495,58 +495,81 @@ func lightProbe(q SurfaceRequest, r RaysRequest, samples [][]mirrorPoint, reach 
 	for j := 0; j <= nv; j++ {
 		d.V[j] = lerp(q.VMin, q.VMax, j, nv)
 	}
-	l := &LightDiagnostics{Length: r.Length, Incident: grid2[*Vec3](nu+1, nv+1), Surface: grid2[*Vec3](nu+1, nv+1), Outgoing: grid2[*Vec3](nu+1, nv+1), State: grid2[int](nu+1, nv+1)}
-	d.Light = l
+	d.Light = newLightDiagnostics(r.Length, nu+1, nv+1)
 	for i, row := range samples {
 		for j, s := range row {
-			x := s.X
-			d.Points[i][j] = &x
-			if !s.Normal {
-				l.State[i][j] = lightSingular
-				d.Singular++
-				continue
-			}
-			n := s.N
-			l.Surface[i][j] = &n
-			if s.AtSource {
-				l.State[i][j] = lightAtSource
-				l.AtSource++
-				continue
-			}
-			in := s.I
-			l.Incident[i][j] = &in
-			if !s.Lit {
-				l.State[i][j] = lightUnlit
-				l.Unlit++
-				continue
-			}
-			if s.Total {
-				reflected := in.sub(n.mul(2 * in.dot(n)))
-				l.Outgoing[i][j] = &reflected
-				l.State[i][j] = lightTotal
-				l.Total++
-				continue
-			}
-			ray := s.R
-			d.Normals[i][j], l.Outgoing[i][j] = &ray, &ray
-			if s.Stigmatic {
-				d.Umbilics++
-			}
-			for k := 0; k < 2; k++ {
-				mu := s.Mu[k]
-				d.Curvature[k][i][j] = &mu
-				if !s.Stigmatic {
-					e := s.Dir[k]
-					d.Direction[k][i][j] = &e
-				}
-				if !s.finite(k, reach) {
-					d.Clipped[k]++
-					continue
-				}
-				c := s.caustic(k)
-				d.Focal[k][i][j] = &c
-			}
+			d.lightAt(i, j, s, reach)
 		}
 	}
 	return d
+}
+
+// lightPoint describes the light at the one point (u, v), as lightProbe
+// describes each sample: one row and one column, whose Along is the
+// nearest row. The light is traced there exactly, so a point at a sample
+// reads exactly what the sample does.
+func lightPoint(q SurfaceRequest, r RaysRequest, at SurfaceQuery, scale float64) *SurfaceDiagnostics {
+	d := newSurfaceDiagnostics("wavefront", 1, 1)
+	d.Along[0], d.U[0], d.V[0] = nearest(at.U, q.UMin, q.UMax, q.USamples), at.U, at.V
+	d.Light = newLightDiagnostics(r.Length, 1, 1)
+	d.lightAt(0, 0, q.ray(r, at.U, at.V, scale), focalReach*scale)
+	return d
+}
+
+// newLightDiagnostics allocates the light's grids of rows × columns.
+func newLightDiagnostics(length float64, rows, columns int) *LightDiagnostics {
+	return &LightDiagnostics{Length: length, Incident: grid2[*Vec3](rows, columns), Surface: grid2[*Vec3](rows, columns), Outgoing: grid2[*Vec3](rows, columns), State: grid2[int](rows, columns)}
+}
+
+// lightAt describes the light at sample (i, j), whose reflection or
+// refraction is s, and counts the sample's state.
+func (d *SurfaceDiagnostics) lightAt(i, j int, s mirrorPoint, reach float64) {
+	l := d.Light
+	x := s.X
+	d.Points[i][j] = &x
+	if !s.Normal {
+		l.State[i][j] = lightSingular
+		d.Singular++
+		return
+	}
+	n := s.N
+	l.Surface[i][j] = &n
+	if s.AtSource {
+		l.State[i][j] = lightAtSource
+		l.AtSource++
+		return
+	}
+	in := s.I
+	l.Incident[i][j] = &in
+	if !s.Lit {
+		l.State[i][j] = lightUnlit
+		l.Unlit++
+		return
+	}
+	if s.Total {
+		reflected := in.sub(n.mul(2 * in.dot(n)))
+		l.Outgoing[i][j] = &reflected
+		l.State[i][j] = lightTotal
+		l.Total++
+		return
+	}
+	ray := s.R
+	d.Normals[i][j], l.Outgoing[i][j] = &ray, &ray
+	if s.Stigmatic {
+		d.Umbilics++
+	}
+	for k := 0; k < 2; k++ {
+		mu := s.Mu[k]
+		d.Curvature[k][i][j] = &mu
+		if !s.Stigmatic {
+			e := s.Dir[k]
+			d.Direction[k][i][j] = &e
+		}
+		if !s.finite(k, reach) {
+			d.Clipped[k]++
+			continue
+		}
+		c := s.caustic(k)
+		d.Focal[k][i][j] = &c
+	}
 }

@@ -111,6 +111,11 @@ fieldset:disabled {
   overflow-wrap: anywhere;
   margin-top: 7px;
 }
+/* A segment holding its value's widest width (see AnimationValues). */
+.animation-value {
+  display: inline-block;
+  white-space: pre;
+}
 var {
   font-family: Georgia, serif;
   font-style: italic;
@@ -1381,6 +1386,23 @@ header {
 .probe-slider input {
   width: 100%;
   accent-color: #638f82;
+}
+/* A probe slider's value changes length as the probe moves (u = 0.1052,
+   u = 0.02981). Even digits keep it from shimmering; in a pair, where it
+   would wrap beside some values and not others, it always takes its own
+   line under the label, so the sliders below never move. */
+.probe-slider > .field-label b {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pair > .probe-slider > .field-label {
+  flex-wrap: wrap;
+}
+.pair > .probe-slider > .field-label b {
+  flex-basis: 100%;
+  margin-left: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .probe-readout {
   display: grid;

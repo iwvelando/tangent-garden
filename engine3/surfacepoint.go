@@ -29,13 +29,14 @@ type SurfaceQuery struct {
 
 // errSurfacePoint refuses a surface point on a study without a surface it
 // can evaluate at any point.
-var errSurfacePoint = errors.New("the surface probe stands between samples only on a surface patch, or on a canal, ribbon or ruled surface built on a curve evaluated at any parameter")
+var errSurfacePoint = errors.New("the surface probe stands between samples only on a surface patch, a mirror or interface, or on a canal, ribbon or ruled surface built on a curve evaluated at any parameter")
 
 // pointedAnywhere reports whether a study's surface can be described at any
-// point: a patch, or a surface built on a curve evaluated at any parameter.
-// A ribbon without a width has no surface, which surfacePoint refuses.
+// point: a patch, a mirror or interface (or the light leaving it), or a
+// surface built on a curve evaluated at any parameter. A ribbon without a
+// width has no surface, which surfacePoint refuses.
 func (c Request) pointedAnywhere() bool {
-	if c.Format == "surface" {
+	if c.Format == "surface" || c.Format == "rays" {
 		return true
 	}
 	switch c.Construction {
@@ -123,12 +124,13 @@ func pointProbe(q SurfaceRequest, grid *SurfaceDiagnostics, at SurfaceQuery, sca
 	return d
 }
 
-// surfacePoint places a study's surface probe at its query: a patch's from
-// the study's own diagnostics, or a surface built on a curve's by its own
+// surfacePoint places a study's surface probe at its query: a patch's or a
+// mirror's from the study's own diagnostics, the light leaving a mirror by
+// tracing it there, or a surface built on a curve's by its own
 // description, with centers judged against the study's size as its grid's
 // are.
 func (out *Result) surfacePoint(c Request, at SurfaceQuery) (*SurfaceDiagnostics, error) {
-	if c.Format != "surface" {
+	if c.Format != "surface" && c.Format != "rays" {
 		if out.surfaceAt == nil {
 			return nil, errors.New("the surface probe needs a surface to describe: a ribbon needs a width")
 		}
@@ -145,6 +147,9 @@ func (out *Result) surfacePoint(c Request, at SurfaceQuery) (*SurfaceDiagnostics
 	}
 	if out.Probe == nil {
 		return nil, errors.New("the surface probe needs the patch, its offset or a focal sheet to describe")
+	}
+	if out.Probe.Kind == "wavefront" {
+		return lightPoint(q, c.Rays, at, out.surfaceScale), nil
 	}
 	return pointProbe(q, out.Probe, at, out.surfaceScale), nil
 }
@@ -184,9 +189,10 @@ func SurfaceProbeOnly(c Request) (*SurfaceDiagnostics, error) {
 }
 
 // surfaceTarget asks a study probed at a point for its surface's
-// diagnostics, unless it asks for a patch's offset's or focal sheet's.
+// diagnostics, unless it asks for a patch's offset's or focal sheet's, or
+// a mirror's light's.
 func (c *Request) surfaceTarget() {
-	if !c.OffsetDiagnostics && c.FocalDiagnostics == 0 {
+	if !c.OffsetDiagnostics && c.FocalDiagnostics == 0 && !(c.LightDiagnostics && c.Format == "rays") {
 		c.SurfaceDiagnostics = true
 	}
 }

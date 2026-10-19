@@ -97,11 +97,12 @@ export const probeBetween = (c: SpatialConfig, p: Probe) =>
   !!p.between && probeTarget(c, p) === "curve" && evaluatedAnywhere(c);
 
 // Whether a study's surface probe can stand between grid samples: on a
-// patch, its offset or a focal sheet, which Go evaluates at any (u, v), or
-// on a surface built on a curve Go evaluates at any parameter, at any t and
-// any place across it; not on a mirror or its light.
+// patch, its offset or a focal sheet, or on a mirror or interface or the
+// light leaving it, which Go evaluates or traces at any (u, v), or on a
+// surface built on a curve Go evaluates at any parameter, at any t and any
+// place across it.
 export const pointProbed = (c: SpatialConfig, target: ProbeTarget) =>
-  c.format === "surface"
+  c.format === "surface" || c.format === "rays"
     ? gridded(target)
     : target === "surface" && !!surfaceKind(c) && evaluatedAnywhere(c);
 
@@ -116,14 +117,14 @@ export const probePlaced = (c: SpatialConfig, p: Probe) =>
   probeBetween(c, p) || probeBetweenGrid(c, p);
 
 // The domain the surface probe stands on between grid samples: a patch's
-// u and v, or on a surface built on a curve the curve's t and the place
+// (or a mirror's) u and v, or on a surface built on a curve the curve's t and the place
 // across it, as the grid's columns measure it (engine3.SurfaceDiagnostics):
 // the turn from θ₀ around a canal's contact circle, or u along a ruling.
 export function gridDomain(c: SpatialConfig): {
   u: [number, number];
   v: [number, number];
 } {
-  if (c.format === "surface")
+  if (c.format === "surface" || c.format === "rays")
     return {
       u: [c.surface.uMin, c.surface.uMax],
       v: [c.surface.vMin, c.surface.vMax],
@@ -472,6 +473,16 @@ export function betweenGridLabel(c: SpatialConfig, target: ProbeTarget) {
 }
 export function betweenGridHelp(c: SpatialConfig, target: ProbeTarget) {
   const t = surfaceTerms(c, target);
+  if (c.format === "rays")
+    return target === "light"
+      ? tiered(
+          `Lets the probe stand at any u and v, not only at a grid sample, tracing the light exactly there.`,
+          `Its rays, wavefront and foci are those of the light meeting the ${t.surface} there. The plots still read the grid's samples.`,
+        )
+      : tiered(
+          `Lets the probe stand at any u and v, not only at a grid sample, describing the ${t.surface} exactly there.`,
+          "The plots still read the grid's samples.",
+        );
   return c.format === "surface"
     ? tiered(
         "Lets the probe stand at any u and v, not only at a grid sample, describing the surface exactly there.",

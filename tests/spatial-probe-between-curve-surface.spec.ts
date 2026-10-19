@@ -267,7 +267,7 @@ test("a reveal draws a canal's probe once it reaches the sample after it", async
   );
 });
 
-test("a surface built on an integrated curve, or a mirror, stays on its grid", async ({
+test("a surface built on an integrated curve stays on its grid", async ({
   page,
 }) => {
   await page.goto("/?study=3d");
@@ -290,11 +290,6 @@ test("a surface built on an integrated curve, or a mirror, stays on its grid", a
   await page.getByLabel("Construction", { exact: true }).selectOption("canal");
   await settled(page);
   await page.getByLabel("Describe", { exact: true }).selectOption("surface");
-  await settled(page);
-  await expect(anyGridSwitch(page)).toHaveCount(0);
-  await choosePreset(page, { label: "A paraboloid gathering light" });
-  await settled(page);
-  await page.locator(".spatial-probe .probe-switch input").first().check();
   await settled(page);
   await expect(anyGridSwitch(page)).toHaveCount(0);
 });

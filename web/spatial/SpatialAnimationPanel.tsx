@@ -1,4 +1,5 @@
 import type { ColorScheme } from "../color-schemes";
+import { AnimationValues } from "../AnimationValues";
 import {
   useEffect,
   useMemo,
@@ -1904,7 +1905,7 @@ export function SpatialAnimationPanel({
                         ? "Preparing"
                         : `${(progress * duration).toFixed(1)} / ${duration} s`}
               </div>
-              <output className="animation-values">{live}</output>
+              <AnimationValues text={live} />
               <p className="note playback-tip">
                 {status === "exporting"
                   ? "Cancel export discards the file; your study stays as it was."

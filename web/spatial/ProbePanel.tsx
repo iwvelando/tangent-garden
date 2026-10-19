@@ -444,7 +444,9 @@ function SurfaceProbe({
   if (between && !point)
     return (
       <p className="spatial-caption">
-        Finding the principal curvatures and centers…
+        {target === "light"
+          ? "Finding the light's wavefront and foci…"
+          : "Finding the principal curvatures and centers…"}
       </p>
     );
   const terms = surfaceTerms(frame.config, probeTarget(frame.config, probe));
@@ -559,6 +561,8 @@ function SurfaceProbe({
           onProbe={onProbe}
           row={row}
           column={column}
+          point={between ? point : undefined}
+          amid={amid}
           dark={dark}
           scheme={scheme}
         />
@@ -663,10 +667,12 @@ function SurfaceProbe({
   );
 }
 
-// The light probe's readout at grid sample (row, column): the outgoing
-// wavefront's curvatures, the signed distances along the ray to its foci,
-// the astigmatic interval between them and the angles at the surface,
-// then a status, the curvature plots, the legend and the study's counts.
+// The light probe's readout at grid sample (row, column), or at the point
+// Go traced between samples: the outgoing wavefront's curvatures, the
+// signed distances along the ray to its foci, the astigmatic interval
+// between them and the angles at the surface, then a status, the
+// curvature plots (marked amid the samples for a point), the legend and
+// the study's counts.
 function LightReadout({
   frame,
   d,
@@ -674,6 +680,8 @@ function LightReadout({
   onProbe,
   row,
   column,
+  point,
+  amid,
   dark,
   scheme,
 }: {
@@ -683,10 +691,16 @@ function LightReadout({
   onProbe: (change: (p: Probe) => Probe) => void;
   row: number;
   column: number;
+  point?: SurfaceDiagnostics;
+  amid?: { row: number; column: number };
   dark: boolean;
   scheme: ColorScheme;
 }) {
-  const r = lightProbeReadout(frame.result, row, column)!,
+  const r = (
+      point
+        ? lightProbeReadout(atPoint(frame.result, { grid: point }), 0, 0)
+        : lightProbeReadout(frame.result, row, column)
+    )!,
     light = d.light!,
     terms = surfaceTerms(frame.config, "light"),
     m = terms.surface,
@@ -741,6 +755,7 @@ function LightReadout({
         onProbe={onProbe}
         row={row}
         column={column}
+        amid={amid}
         dark={dark}
       />
       <ul className="probe-legend">

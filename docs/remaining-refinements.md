@@ -75,8 +75,6 @@ Items 1 and 2 need a decision or a profile before any code. Item 3 lists limits 
 
 Each is known and documented; none is worth a branch until a study needs it.
 
-- **3D probe** (`web/spatial/probe.ts`, `engine3/probe.go`, `engine3/diagnostics.go`; diagnostics are requested only while the probe is on, and studies without it must stay byte-identical, which Go tests assert per format):
-  - A mirror's surface probe, and its light's, snaps to each frame's grid. A patch's, and a canal's or ruled surface's on a curve evaluated at any parameter, can stand between samples (**At any u and v**, **At any t and u**); a mirror is evaluated only at its samples.
 - **3D camera paths** (`web/spatial/path.ts`, `mathematics.md#spatial-camera-paths`; watch a loop's seam slope, `cyclic`, and links' `animation.path`): geometry that grows past the starting bounds can leave the page under a path, as under Hold current view.
 - **3D engine scale floors** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): the absolute stability floors for differenced r‴ (`jerk`, in `engine3/diagnostics.go`) and τ′ (`ruledprobe.go`), the framed ribbon probe's comparison of differently dimensioned tangents (`ruledprobe.go`), and the field's absolute resting-speed and acceleration-stability floors (`flow.go`; the resting limit is also stated in the UI). Far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic.
 - **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute past about five diameters, curvature on a study millions of its diameters out (beyond the second-derivative budget), and the absolute constants below 2⁻²⁰.
@@ -90,6 +88,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - The probe while parameters vary, including the 3D surface probe's **Stays at its u and v** (#123).
 - See-through sheets on a phone (the Klein bottle and the torus's tunnel): since #137 they are sampled 2 × 2 only when the device's limits allow, and a large high-DPR canvas falls back to one sample.
 - The 3D surface probe's **At any u and v, between samples** checkbox and its free **Along u** and **Along v** sliders at phone width, and **Through an ellipsoid's umbilic** in motion on a phone.
+- The same checkbox on a mirror's light at phone width, and **Where a tilted dish focuses sharply** in motion on a phone.
 - The same checkbox on a canal and a ruled surface (**At any t and θ − θ₀**, **At any t and u**) at phone width, and **Round a hyperboloid's throat** in motion on a phone.
 - The 2D probe, refinement and line-weight controls at phone width, including the probe's **At any t, between samples** checkbox and its continuous slider.
 - **Frame the points between samples** in 3D at phone width, and **A dandelion clock** in motion on a phone.
