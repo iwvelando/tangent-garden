@@ -543,6 +543,8 @@ const sight: SchemaOf<Sight> = {
     // Once, behind the nearest sheet, in links made before fading behind
     // each layer.
     fade: { optional: { options: { nearest: true, each: true } } },
+    // As other lines, in links made before the probe had its own way.
+    probe: { optional: { options: { hide: true, faint: true, dashed: true } } },
   },
 };
 

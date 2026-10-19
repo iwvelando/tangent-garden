@@ -52,7 +52,8 @@ import {
 // cut.ts) hides what the drawing hides: sheet pixels beyond its plane leave
 // the raster, cut lines end exactly at the plane, and its edge is a layer.
 // With sampled occlusion, hidden lines drawn faint or dashed (see sight.ts)
-// are the parts the test leaves out, in groups of their own. Faded behind
+// are the parts the test leaves out, in groups of their own; the probe's
+// may be drawn its own way. Faded behind
 // each layer, they are grouped by how many sheet layers lie in front of
 // them, up to fadeLayers, counted against the nearest layers at each pixel.
 export type Occlusion = "none" | "sampled";
@@ -81,6 +82,8 @@ export type LineworkOptions = {
   dashes?: DashMeasure;
   // Whether hidden lines fade again behind each layer; once by default.
   fade?: LayerFade;
+  // The probe's lines behind sheets, when not as other lines (see sight.ts).
+  probe?: HiddenLines;
   // Bounds visibility testing: the pixels tried in each sheet triangle's
   // rows (see span), one per row, plus line samples.
   limit?: number;
@@ -132,15 +135,18 @@ export function linework(
             options,
             taperBound(k, view, options.depth),
           ),
-          options.hidden && options.hidden !== "hide" && options.fade === "each"
+          options.fade === "each" &&
+            [options.hidden, options.probe].some((h) => h && h !== "hide")
             ? fadeLayers
             : 1,
         )
       : undefined;
-  const behind =
-    raster && options.hidden && options.hidden !== "hide"
-      ? options.hidden
-      : undefined;
+  // How a pass's lines behind sheets are drawn, if at all.
+  const behindOf = (layer: string) => {
+    const h =
+      layer === "probe" ? (options.probe ?? options.hidden) : options.hidden;
+    return raster && h && h !== "hide" ? h : undefined;
+  };
   const layered = !!raster && raster.layers > 1;
   const perUnit = dashesPerUnit(view),
     paged = options.dashes === "page",
@@ -151,12 +157,12 @@ export function linework(
     { color: string; width?: number; paths: [number, number][][] }
   >;
   // Hidden lines by the sheet layers in front of them (all at 1 unless
-  // layered).
+  // layered), faint and dashed apart.
   const groups = new Map<string, Strokes>(),
-    hiddenGroups = Array.from(
-      { length: (raster?.layers ?? 1) + 1 },
-      () => new Map<string, Strokes>(),
-    );
+    hiddenGroups = Array.from({ length: (raster?.layers ?? 1) + 1 }, () => ({
+      faint: new Map<string, Strokes>(),
+      dashed: new Map<string, Strokes>(),
+    }));
   const paths = (
     into: Map<string, Strokes>,
     layer: string,
@@ -229,7 +235,8 @@ export function linework(
     options.signal?.throwIfAborted();
     if (!groups.has(pass.layer)) groups.set(pass.layer, new Map());
     const { data, origin } = pass.batch;
-    const cutting = cut && isCut(pass, cut.scope);
+    const cutting = cut && isCut(pass, cut.scope),
+      behind = behindOf(pass.layer);
     // The camera and planes for positions measured from the batch's origin.
     const own = cameraFrom(k, origin),
       kept = cutting ? planes!.map((p) => planeFrom(p, origin)) : undefined;
@@ -259,10 +266,13 @@ export function linework(
           continue;
         }
         for (const run of runs(raster, piece, work)) {
-          const into = hiddenGroups[run.layers];
-          if (!run.layers)
+          if (!run.layers) {
             draw(groups, pass.layer, color, width, piece, run.from, run.to);
-          else if (behind === "faint")
+            continue;
+          }
+          if (!behind) continue;
+          const into = hiddenGroups[run.layers][behind];
+          if (behind === "faint")
             draw(into, pass.layer, color, width, piece, run.from, run.to);
           else if (arcs && paged) {
             // The phase is affine on the page, measured from whichever end
@@ -341,7 +351,11 @@ export function linework(
   return [
     ...hiddenGroups
       .slice(1)
-      .flatMap((into, n) => listed(into, behind, layered ? n + 1 : undefined)),
+      .flatMap((into, n) =>
+        (["faint", "dashed"] as const).flatMap((h) =>
+          listed(into[h], h, layered ? n + 1 : undefined),
+        ),
+      ),
     ...listed(groups),
   ];
 }

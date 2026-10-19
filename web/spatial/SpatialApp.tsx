@@ -57,6 +57,7 @@ import {
   isPlain,
   needsTarget,
   sightSpec,
+  unprobed,
   type Sight,
 } from "./sight";
 import { spatialFits } from "./limits";
@@ -263,7 +264,11 @@ export default function SpatialApp({
   // Seeing through sheets and drawing lines behind them: a drawing setting
   // too. seeThrough is whether the device could draw see-through sheets.
   const [sight, setSight] = useState<Sight>(defaultSight);
-  const userSight = useMemo(() => sightSpec(sight), [sight]);
+  // The probe's own way behind sheets counts only while it is drawn.
+  const userSight = useMemo(
+    () => sightSpec(probing ? sight : unprobed(sight)),
+    [sight, probing],
+  );
   // The image sizes this device draws, as the sight stands.
   const imageFits = useMemo(
     () => spatialFits(needsTarget(userSight.spec)),
@@ -3355,6 +3360,7 @@ export default function SpatialApp({
                 error={userSight.error}
                 unavailable={!seeThrough}
                 unstroked={!stroking}
+                probing={probing}
                 lensed={
                   lensing !== "orthographic" ||
                   !!camera?.lens ||

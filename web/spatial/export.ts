@@ -7,7 +7,13 @@ import { linework, linesSvg, sampleStep, workLimit } from "./linework";
 import { animationCamera, type AnimationView } from "./animation";
 import { probeDrawing } from "./probe";
 import { cutRecord, type CutSpec } from "./cut";
-import { defaultSight, sightRecord, strokeRecord, type Sight } from "./sight";
+import {
+  defaultSight,
+  sightRecord,
+  strokeRecord,
+  type HiddenLines,
+  type Sight,
+} from "./sight";
 import { mp4Sink, webpSink } from "../export-sinks";
 import {
   exportEncoding,
@@ -112,6 +118,7 @@ export async function imageFile(
         depth: sight.depth,
         dashes: sight.dashes,
         fade: sight.fade,
+        probe: sight.probe,
         // The work a page's visibility testing needs grows with its area,
         // so the limit does too: a view that exports at one size exports
         // at every size.
@@ -131,9 +138,12 @@ export async function imageFile(
           hidden: sight.hidden,
           dashes: sight.dashes,
           fade: sight.fade,
+          probe: sight.probe,
         },
         false,
       );
+    const drawnAs = (h: HiddenLines) =>
+      h === "hide" ? "left out" : `drawn ${h}`;
     signal.throwIfAborted();
     const svg = linesSvg(groups, {
       ...page,
@@ -154,7 +164,7 @@ export async function imageFile(
           statement:
             occlusion === "none"
               ? "Every shown line is drawn, including lines behind surfaces. Shaded surfaces are not drawn."
-              : `Lines behind a shown surface are ${lined ? `drawn ${sight.hidden}, in groups named hidden- and their layer${lined.fade ? " (and -2 or -3 when behind that many sheet layers, counted against the raster's three nearest at each pixel)" : ""},` : "left out"} where sampled every ${sampleStep} px against a ${page.width} × ${page.height} depth raster of the surfaces, with the drawing's polygon offset. This approximates hidden lines; it is not exact hidden-line removal. Lines do not hide lines, and shaded surfaces are not drawn.`,
+              : `Lines behind a shown surface are ${lined ? `${drawnAs(sight.hidden)}${lined.probe ? ` (the probe's ${drawnAs(lined.probe)})` : ""}, in groups named hidden- and their layer${lined.fade ? " (and -2 or -3 when behind that many sheet layers, counted against the raster's three nearest at each pixel)" : ""},` : "left out"} where sampled every ${sampleStep} px against a ${page.width} × ${page.height} depth raster of the surfaces, with the drawing's polygon offset. This approximates hidden lines; it is not exact hidden-line removal. Lines do not hide lines, and shaded surfaces are not drawn.`,
         },
       },
     });
