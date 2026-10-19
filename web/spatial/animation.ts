@@ -938,6 +938,9 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     ...result.projection,
     points: result.projection.points.slice(0, last + 1),
     feet: result.projection.feet.slice(0, last + 1),
+    ...(result.projection.breaks && {
+      breaks: result.projection.breaks.slice(0, last + 1),
+    }),
     constructions: result.projection.constructions.filter(
       (c) => c.sampleIndex <= last,
     ),

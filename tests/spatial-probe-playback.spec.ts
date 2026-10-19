@@ -107,9 +107,20 @@ test("probe playback visits every sample from the first to the last, then restor
   await button(page, "Play animation").click();
   await expect(stage(page)).toHaveAttribute("data-mode", "probe");
   await button(page, "Pause").click();
-  const paused = await stage(page).getAttribute("data-progress");
-  await page.waitForTimeout(100);
-  expect(await stage(page).getAttribute("data-progress")).toBe(paused);
+  // A frame shown just before the pause can still be reaching the page on a
+  // loaded runner; once it lands, progress must hold.
+  const progress = () => stage(page).getAttribute("data-progress");
+  let paused = await progress();
+  await expect
+    .poll(async () => {
+      const before = paused;
+      await page.waitForTimeout(100);
+      paused = await progress();
+      return paused === before;
+    })
+    .toBe(true);
+  await page.waitForTimeout(300);
+  expect(await progress()).toBe(paused);
   // The panel follows the animation's sample; its slider waits.
   await expect(point(page)).toBeDisabled();
   // 0.001 of 960 samples is 0.96 of a step: the nearest sample is 1.

@@ -43,7 +43,9 @@ const preset = (name: string) =>
   String(spatialPresets.findIndex((p) => p.name === name));
 const cusp = preset("Filaments off a cusp"),
   horn = preset("A horn of perpendicular feet"),
-  chords = preset("Chords across a knot's reflection");
+  chords = preset("Chords across a knot's reflection"),
+  // Its tangent line, and the tube, run on through the base's cusps.
+  crossing = preset("A tube through a deltoid's reflections");
 // The involute's own showcases, in the same gallery family (see
 // spatial-involute-input.spec.ts).
 const unwound = [
@@ -190,6 +192,7 @@ test("earlier presets are built on the base and keep their layers", async ({
     +cusp,
     +horn,
     +chords,
+    +crossing,
     ...unwound.map(Number),
     ...coiled.map(Number),
   ]);
@@ -219,20 +222,21 @@ test("the cusp preset reports its cusp, and every showcase builds on a derived c
     .getByRole("group", { name: "Example family" })
     .getByRole("button", { name: /Built on a derived curve/ })
     .click();
-  await expect(gallery.locator("[data-example]")).toHaveCount(8);
+  await expect(gallery.locator("[data-example]")).toHaveCount(9);
   expect(
     await gallery
       .locator("[data-example]")
       .evaluateAll((cards) =>
         cards.map((c) => (c as HTMLElement).dataset.example),
       ),
-  ).toEqual([cusp, horn, chords, ...unwound, ...coiled]);
+  ).toEqual([cusp, horn, chords, ...unwound, ...coiled, crossing]);
   await page.keyboard.press("Escape");
   await gallery.waitFor({ state: "hidden" });
   for (const [k, input, text] of [
     [cusp, "tangent-foot", "1 cusp"],
     [horn, "tangent-foot", ""],
     [chords, "orthotomic", ""],
+    [crossing, "orthotomic", "runs on through the base's 3 cusps"],
   ] as const) {
     await choosePreset(page, k);
     await settled(page);
@@ -242,6 +246,8 @@ test("the cusp preset reports its cusp, and every showcase builds on a derived c
     await expect(note).toBeVisible();
     if (text) await expect(note).toContainText(text);
     else await expect(note).not.toContainText("cusp");
+    if (k === crossing)
+      await expect(note).not.toContainText("broken rather than joined");
     for (const name of composedLayers)
       await expect(layer(page, name)).toBeChecked();
   }

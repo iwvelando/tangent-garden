@@ -611,7 +611,7 @@ export function buildScene(result: SpatialResult) {
         ? cross(at, result.bounds.radius * 0.025)
         : curve(
             result.projection?.points ?? [],
-            result.breaks,
+            result.projection?.breaks ?? result.breaks,
             refined?.projection,
           ),
     ),

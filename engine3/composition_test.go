@@ -487,19 +487,29 @@ func TestBaseBreaksBreakTheInput(t *testing.T) {
 		base.Construction, base.Input, base.Pole = "involute", "tangent-foot", Vec3{0.5, 0.5, 0.3}
 		base.Involute = InvoluteRequest{Anchor: 0.5, Offset: 0}
 		r := composed(t, base)
+		cusp := base.Curve.X == "t^2"
 		broken := 0
 		for i, b := range r.Composition.Breaks {
 			if b {
 				broken++
-				if !r.Breaks[i] {
+				// The tangent line, and so the input, continues across the
+				// semicubical cusp alone.
+				if !r.Breaks[i] && !cusp {
 					t.Fatalf("%s: base break %d joined in the input", base.Curve.Y, i)
+				}
+				if r.Breaks[i] && cusp {
+					t.Fatalf("%s: the input is broken at the base's cusp %d", base.Curve.Y, i)
 				}
 			}
 		}
 		// Near an asymptote the base straightens (κ → 0), so its foot may
 		// stop there too; a cusp of the base is the base's, not the input's.
-		if broken == 0 || base.Curve.X == "t^2" && r.Composition.Cusps != 0 {
-			t.Fatalf("%s: %d base breaks, %d cusps", base.Curve.Y, broken, r.Composition.Cusps)
+		crossed := 0
+		if cusp {
+			crossed = 1
+		}
+		if broken == 0 || cusp && r.Composition.Cusps != 0 || r.Composition.Crossed != crossed {
+			t.Fatalf("%s: %d base breaks, %d cusps, %d crossed", base.Curve.Y, broken, r.Composition.Cusps, r.Composition.Crossed)
 		}
 	}
 }

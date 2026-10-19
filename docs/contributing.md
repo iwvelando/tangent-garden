@@ -8,6 +8,8 @@
 - `make test-browser` runs the production integration checks. It needs a Chromium installation (`npx playwright install chromium`).
 - Playwright tests the production build in `dist/`. `make test-browser`, `make test-webkit` and `make thumbnails` rebuild it first. A targeted `npx playwright test` does not, and locally it reuses a preview already serving port 4173.
 - `make thumbnails` rewrites `web/examples/thumbnails.json` after it builds, so run `npm run build` again before a targeted run.
+- Prettier formats `web/`, `scripts/` and `tests/` only (`npm run format`). Never run it over `docs/` or `README.md`: it rewraps the Markdown.
+- A test that opens a study by changing only the fragment of the current path (`page.goto("/?study=4d#s=…")`) does not reload the page, so the previous study can still be settled on screen. Wait for the app to remove `#s=`, which it does once it has read the link, and poll reads rather than reading once, as `tests/tesseract-loop.spec.ts` does. To reproduce such a race, defer the app's `hashchange` listener in an init script.
 - TypeScript checks (`make typecheck`, and `tsc` in the build) cover `web/` only, not `tests/` or `scripts/`. A test fixture that builds a result type by hand is not checked against it, so when a result gains a field, search the tests for its other fields (`rg crossingsExhausted tests`) and add it there too.
 
 ## Thumbnails
@@ -27,6 +29,17 @@ Preset fingerprints cover definitions, not numerical or rendering output, so unc
 - Tests choose presets through `choosePreset` in `tests/helpers.ts`.
 - A preset that turns an option on needs a test that plays the preset's own animation with the option on.
 - Run `make thumbnails` and commit the new thumbnail (AGENTS.md, **Verification**).
+- The 3D engine never treats a `parametric` curve as closed, even one that returns over a whole period, so a loop (`repeat: "loop"`) on it is refused. Write a curve that should loop as `harmonic`.
+
+### Framing a 3D preset
+
+Compute a 3D preset's `view` rather than adjusting it by screenshot. The turntable's eye lies along `(−cos p·sin y, sin p, cos p·cos y)` for yaw y and pitch p (`camera` in `web/spatial/scene.ts`), so solve y and p from the direction to look from, then check once.
+
+- The screen's rows are right = `(cos y, 0, sin y)` and up = `(sin p·sin y, cos p, −sin p·cos y)`. To center a point q in an orthographic view, set `panX = −right·(q − c)` and `panY = −up·(q − c)`, with c the study's bounds center (`Result.Bounds.Center`). The visible height is about `2·1.16·radius/zoom`.
+- y is up on the page at pitch 0, so a curve in the xy-plane faces the reader at yaw 0, pitch 0; z stays upright only near p = −π/2.
+- To try framings without rebuilding, open the study by link, `/?study=3d#s=` followed by base64url(deflateRaw(JSON `{v: 1, notebook: "3d", study}`)), with `study` built from `presetStudy(index)` and overrides, in a throwaway spec.
+- A closed convex patch hides what lies inside it, such as the surface probe's centers and normal-section circles. Set `sight.probe` to show them behind sheets, or look into an open patch from its concave side. Principal circles lie in planes containing the normal, so look about 45° off the normal, diagonal to both principal directions.
+- A probe flight with `camera: "hold"` reframes to take in the probe's circles, which can shrink the drawing; `"current"` keeps the preset's view.
 
 ## Adding a numeric field
 
@@ -59,6 +72,7 @@ A new or renamed configuration, layer or animation field needs:
 - Time a transport or engine change against the deployed site with `make bench ARGS="--compare <site>"` (3D only) or `make preset-hashes ARGS="--compare <site> --only <name>"` (any notebook), never by headless frame rate. In WASM, allocation costs more than arithmetic, so profile allocations first ([architecture](architecture.md), **Measuring**).
 - Check that every preset's result is bit for bit identical with `make preset-hashes ARGS="--compare <site>"`, and again with `--refine on` and `--refine off`, since a reader can switch refinement on any preset.
 - Native Go tests can disagree between arm64 and amd64: arm64 fuses multiply-adds, and the default amd64 build and WASM do not. On an arm64 machine, a borderline numerical change needs `GOARCH=amd64 go test` too.
+- Which multiply-adds arm64 fuses depends on where a function is inlined. An evaluator that must return a sample's point exactly, such as refinement between samples, has to call the very function the sample loop calls (as `(*caustic).at` is shared), not a copy of its arithmetic.
 
 ## CI shards
 
@@ -68,6 +82,12 @@ CI runs the Chromium tests in six shards packed by each spec file's recorded dur
 - `tests/shards.spec.ts` checks the balance of recorded files only, so an unrecorded file never fails it, but it packs at the average and can leave one shard minutes longer than the rest.
 - A single file longer than a balanced shard's share can't be packed around. Split that file instead.
 - Changing the shard count needs only the matrix in `.github/workflows/ci.yml`.
+
+When a shard fails on a wait for a study to settle (`aria-busy` = "false") or on a test's time limit:
+
+- Rerun the failed shards once (`gh run rerun --failed`) before investigating. Headless Chromium renders WebGL in software, using every core it can, so a heavy 3D study is far slower on a runner than locally, and an extra render pass adds settle time no GPU shows.
+- If the same wait fails again, compare its test's duration with main's from the same day's runs, using the `chromium-test-timings-<shard>` reports (`startTime`, `duration` and `file:line` also show what ran beside it), before blaming the branch.
+- A test that reads the drawing between a result's arrival and its redraw can see the previous study's state for a few milliseconds. To reproduce it, delay `Worker.prototype.postMessage` in an init script and record `aria-busy` with a `MutationObserver`; effects that redraw a result should be layout effects.
 
 ## Mutation testing
 
