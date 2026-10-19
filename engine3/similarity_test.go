@@ -21,9 +21,7 @@ import (
 // testdata/presets.json holds every spatial preset's configuration, exactly
 // as web/spatial/presets.ts gives it to the engine (keyed by name; a
 // configuration is the request). Regenerate it after adding or changing a
-// spatial preset (Vite resolves the presets' imports, which Node cannot):
-//
-//	node --input-type=module -e 'import {createServer} from "vite"; const s = await createServer({logLevel: "silent", server: {ws: false}}); const {spatialPresets} = await s.ssrLoadModule("/web/spatial/presets.ts"); await s.close(); process.stdout.write("{\n" + spatialPresets.map((p) => JSON.stringify(p.name) + ": " + JSON.stringify(p.config)).join(",\n") + "\n}\n")' > engine3/testdata/presets.json
+// spatial preset with `make preset-fixtures` (scripts/preset-fixtures.mjs).
 
 // similarity is the map p ↦ s p + T.
 type similarity struct {

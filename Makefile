@@ -1,4 +1,4 @@
-.PHONY: install wasm bench preset-hashes test test-go test-wasm test-scripts test-browser test-webkit test-durations typecheck vet format format-check build dev dev-lan preview preview-lan check pre-pr clean share-card thumbnails
+.PHONY: install wasm bench preset-hashes preset-fixtures test test-go test-wasm test-scripts test-browser test-webkit test-durations typecheck vet format format-check build dev dev-lan preview preview-lan check pre-pr clean share-card thumbnails
 
 install:
 	npm ci
@@ -71,3 +71,6 @@ clean:
 	rm -rf dist public/engine.wasm public/wasm_exec.js public/GO-LICENSE.txt public/LICENSE.txt public/THIRD-PARTY-NOTICES.txt
 thumbnails: build
 	node scripts/build-thumbnails.mjs
+# Rewrites the engines' copies of the 2D and 3D presets that their Go tests read.
+preset-fixtures:
+	node scripts/preset-fixtures.mjs

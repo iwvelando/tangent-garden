@@ -8,6 +8,7 @@
 - `make test-browser` runs the production integration checks. It needs a Chromium installation (`npx playwright install chromium`).
 - Playwright tests the production build in `dist/`. `make test-browser`, `make test-webkit` and `make thumbnails` rebuild it first. A targeted `npx playwright test` does not, and locally it reuses a preview already serving port 4173.
 - `make thumbnails` rewrites `web/examples/thumbnails.json` after it builds, so run `npm run build` again before a targeted run.
+- TypeScript checks (`make typecheck`, and `tsc` in the build) cover `web/` only, not `tests/` or `scripts/`. A test fixture that builds a result type by hand is not checked against it, so when a result gains a field, search the tests for its other fields (`rg crossingsExhausted tests`) and add it there too.
 
 ## Thumbnails
 
@@ -20,8 +21,8 @@ Preset fingerprints cover definitions, not numerical or rendering output, so unc
 
 ## Adding a preset
 
-- A new 2D or 3D preset needs its engine's copy of the presets regenerated: `engine/testdata/presets.json` and `engine3/testdata/presets.json`. The commands are in `engine/scale_test.go` and `engine3/similarity_test.go`.
-- Raise the preset counts in `tests/gallery.spec.ts` and `tests/notebook-consistency.spec.ts`.
+- A new 2D or 3D preset needs its engine's copy of the presets regenerated, `engine/testdata/presets.json` and `engine3/testdata/presets.json`: run `make preset-fixtures`.
+- Raise every count of the notebook's presets: in `tests/gallery.spec.ts`, and in `tests/notebook-consistency.spec.ts`, where the 3D test counts both the example titles and their eyebrows.
 - Choosing a preset replaces the whole study, as a link does. Each notebook's `presetStudy` (`planar-link.ts`, `spatial/link.ts`, `tesseract/link.ts`) returns its full link study, the preset's own fields over the notebook's defaults, so nothing of the previous study (animation, probe, layers, line weight) carries over. `tests/preset-study.ts` checks every preset against that.
 - Tests choose presets through `choosePreset` in `tests/helpers.ts`.
 - A preset that turns an option on needs a test that plays the preset's own animation with the option on.
