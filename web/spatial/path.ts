@@ -67,11 +67,15 @@ export type KeyView = {
   // The first view has no leg before it.
   leg?: number;
 };
-// Absent, the pivot is the plane, so older paths fly as they did.
+// Absent, the pivot is the plane, so older paths fly as they did. With
+// `fit`, a flight over parameters that vary draws each frame scaled and
+// moved onto the study it started from, less so zoomed in (see fitFrame);
+// absent, every frame is drawn about the starting study's bounds.
 export type CameraPath = {
   style: PathStyle;
   ease?: boolean;
   pivot?: PathPivot;
+  fit?: boolean;
   keys: KeyView[];
 };
 export const defaultPath: CameraPath = { style: "steady", keys: [] };
@@ -115,7 +119,11 @@ export const pathHelp = {
   ),
   camera: tiered(
     "Flies the camera through your key views in order while the geometry moves.",
-    `Each leg takes its share of the duration by its leg time. Views are taken about the study as playback starts; geometry growing far beyond it can leave the page. ${framing}`,
+    `Each leg takes its share of the duration by its leg time. Views frame the starting study; growing geometry can leave the page unless each frame is fitted. ${framing}`,
+  ),
+  fit: tiered(
+    "Draws each frame scaled and centered as the study was at the start, so growing geometry stays framed.",
+    "Frames are matched by their bounds, so a shape that grows or moves as a whole keeps its views. Zoomed in to k×, fitting fades to 1/k, moving the page no more than at 1×: a detail that stays put stays framed, but one carried along by a moving shape can leave the page.",
   ),
   steady:
     "Each leg turns, tilts and zooms at a steady rate, changing course only at a view.",
@@ -558,6 +566,57 @@ export function pathView(
     view.framedTarget = { point: t, distance: Math.exp(at(distances)) };
   }
   return view;
+}
+
+// The camera `view`, taken about bounds `around`, carried by the similarity
+// that takes `around` onto `to`: each point X is drawn where `view` draws
+// C₀ + (r₀/r)(X − C). Zoom is relative to the radius, so only the center,
+// the radius, the pan, a target's depth and a framed target change.
+function fittedView(view: View, around: Bounds3, to: Bounds3): View {
+  const k = to.radius / around.radius;
+  const moved = (p: Vec3): Vec3 => ({
+    x: to.center.x + k * (p.x - around.center.x),
+    y: to.center.y + k * (p.y - around.center.y),
+    z: to.center.z + k * (p.z - around.center.z),
+  });
+  return {
+    ...view,
+    center: to.center,
+    radius: to.radius,
+    panX: k * view.panX,
+    panY: k * view.panY,
+    ...(view.targetDepth !== undefined && {
+      targetDepth: k * view.targetDepth,
+    }),
+    ...(view.framedTarget && {
+      framedTarget: {
+        point: moved(view.framedTarget.point),
+        distance: k * view.framedTarget.distance,
+      },
+    }),
+  };
+}
+
+// A flight's camera `view` at a frame with bounds `frame`, fitted to it: by
+// the whole similarity from `around` at the fitted framing or wider, and
+// zoomed in to z×, by the share 1/z of it, the bounds' center moved that
+// share of the way and their radius that share of the way in its
+// logarithm. Bounds shift whenever a shape changes, not only as it grows
+// or moves as a whole, and a view zoomed in z× magnifies their shift z
+// times; so zoomed in, fitting moves the page no more than at 1×.
+export function fitFrame(view: View, around: Bounds3, frame: Bounds3): View {
+  const w = Math.min(1, 1 / view.zoom);
+  if (w === 1) return fittedView(view, around, frame);
+  const c = around.center,
+    d = frame.center;
+  return fittedView(view, around, {
+    center: {
+      x: c.x + w * (d.x - c.x),
+      y: c.y + w * (d.y - c.y),
+      z: c.z + w * (d.z - c.z),
+    },
+    radius: around.radius * (frame.radius / around.radius) ** w,
+  });
 }
 
 // A piece of a flight (see key-views.ts): its zoomed-in frames are drawn

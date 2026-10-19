@@ -27,6 +27,7 @@ import { loopGap, loops, repeatHelp, smoothLoopHelp } from "./loop";
 import {
   applyTracks,
   availableTargets,
+  fitsFrames,
   flightLens,
   integerTargets,
   reveal,
@@ -110,7 +111,7 @@ import {
   type Formats,
 } from "../export-formats";
 import { saveFile } from "../export-image";
-import { KeyViews, KeyViewEasing } from "../KeyViews";
+import { KeyViews, KeyViewEasing, KeyViewSwitch } from "../KeyViews";
 import { easedPath } from "../key-views";
 import { Field } from "../Field";
 import { tiered, withMore } from "../help";
@@ -124,6 +125,7 @@ import {
   keyLabel,
   maxTurns,
   pathError,
+  fitFrame,
   pathView,
   pieceAt,
   framedDepths,
@@ -555,12 +557,13 @@ export function SpatialAnimationPanel({
     if (s.mode === "parameters" && s.between && isGridPoint(s.point)) {
       // Between a surface's samples, likewise, at its (u, v) or (t, v).
       const query = gridQuery(s, values.config, p);
-      current = await engine.computeSpatial(values.config, {
-        ...probeOptions(probeTarget(s.original.config, s.probe!)),
-        ...(typeof query !== "string" && { surfaceProbe: query }),
-        ...(s.focus && { view: s.focus }),
-        ...(s.page && { view: flownView(s, p) }),
-      });
+      current = await refinedFrame(s, p, (view) =>
+        engine.computeSpatial(values.config, {
+          ...probeOptions(probeTarget(s.original.config, s.probe!)),
+          ...(typeof query !== "string" && { surfaceProbe: query }),
+          ...(view && { view }),
+        }),
+      );
       held =
         typeof query === "string"
           ? query
@@ -569,12 +572,13 @@ export function SpatialAnimationPanel({
       // Between samples, each frame's probe is placed by Go with the frame
       // itself, the ends included.
       const query = heldQuery(s, values.config, p);
-      current = await engine.computeSpatial(values.config, {
-        diagnostics: true,
-        ...(typeof query !== "string" && { probe: query }),
-        ...(s.focus && { view: s.focus }),
-        ...(s.page && { view: flownView(s, p) }),
-      });
+      current = await refinedFrame(s, p, (view) =>
+        engine.computeSpatial(values.config, {
+          diagnostics: true,
+          ...(typeof query !== "string" && { probe: query }),
+          ...(view && { view }),
+        }),
+      );
       held =
         typeof query === "string"
           ? query
@@ -602,13 +606,14 @@ export function SpatialAnimationPanel({
     else if (p === 0) current = s.first;
     else if (p === 1) current = s.final;
     else
-      current = await engine.computeSpatial(values.config, {
-        ...(s.probe
-          ? probeOptions(probeTarget(s.original.config, s.probe))
-          : {}),
-        ...(s.focus && { view: s.focus }),
-        ...(s.page && { view: flownView(s, p) }),
-      });
+      current = await refinedFrame(s, p, (view) =>
+        engine.computeSpatial(values.config, {
+          ...(s.probe
+            ? probeOptions(probeTarget(s.original.config, s.probe))
+            : {}),
+          ...(view && { view }),
+        }),
+      );
     // The probe moves along the fixed study from the start of the curve
     // (or a surface's first row) to its end, exactly: one sample at a time,
     // or through every t between them. While parameters vary it stands on
@@ -709,10 +714,15 @@ export function SpatialAnimationPanel({
   }
   // What a flown frame at progress p shows, as its study is refined to it,
   // while it is zoomed in past the fitted framing in a study refined to its
-  // view; else undefined.
-  function flownView(s: Session, p: number): RefinementView | undefined {
+  // view; else undefined. A flight that fits each frame needs the frame's
+  // own bounds.
+  function flownView(
+    s: Session,
+    p: number,
+    bounds?: Bounds3,
+  ): RefinementView | undefined {
     if (!s.page || !s.path) return undefined;
-    const view = pathView(
+    const flown = pathView(
       s.path,
       s.around!,
       p,
@@ -720,7 +730,27 @@ export function SpatialAnimationPanel({
       s.depths,
       flightLens(s.heldView!),
     );
+    const view = fitsFrames(s.path, s.mode)
+      ? fitFrame(flown, s.around!, bounds!)
+      : flown;
     return view.zoom > 1 ? refinementView(view, s.page) : undefined;
+  }
+  // A parameter frame at progress p, refined to the current view when it is
+  // held, or to its own view under a flight in a study refined to its view.
+  // A flight that fits each frame draws it about the frame's own bounds,
+  // which refining to a view never moves: zoomed in, the frame is computed
+  // once to find them, and again refined to the view they give.
+  async function refinedFrame(
+    s: Session,
+    p: number,
+    compute: (view?: RefinementView) => Promise<Frame>,
+  ): Promise<Frame> {
+    if (!s.page) return compute(s.focus);
+    if (!fitsFrames(s.path!, s.mode)) return compute(flownView(s, p));
+    // Fitting keeps the zoom, so only a zoomed-in frame needs its bounds.
+    if (flownView(s, p, s.around) === undefined) return compute();
+    const plain = await compute();
+    return compute(flownView(s, p, plain.result.bounds));
   }
   // A flight's piece k, refined once to its views: started when first
   // needed, with the two pieces after it and the one before, so the next is
@@ -1097,8 +1127,19 @@ export function SpatialAnimationPanel({
         }),
       };
       // While the geometry moves, a flown end is refined to its own view.
-      const endView = (p: number) =>
-        page ? flownView({ ...flown, heldView, repeat } as Session, p) : focus;
+      const end = (p: number, engine: EngineClient) =>
+        refinedFrame(
+          { ...flown, heldView, repeat, mode, focus } as Session,
+          p,
+          (view) =>
+            engine.computeSpatial(
+              applyTracks(frame.config, numeric, p, length).config,
+              {
+                ...(drawsProbe ? probeOptions(target) : {}),
+                view,
+              },
+            ),
+        );
       let first = original,
         final = original;
       if (mode === "parameters") {
@@ -1107,28 +1148,12 @@ export function SpatialAnimationPanel({
         if (!save && playbackEngineCount() > 1)
           helper.current = new EngineClient();
         const results = await Promise.all([
-          client.current
-            .computeSpatial(
-              applyTracks(frame.config, numeric, 0, length).config,
-              {
-                ...(drawsProbe ? probeOptions(target) : {}),
-                view: endView(0),
-              },
-            )
-            .catch((reason) => {
-              throw new Error(`At animation start: ${reason.message}`);
-            }),
-          (helper.current ?? client.current)
-            .computeSpatial(
-              applyTracks(frame.config, numeric, 1, length).config,
-              {
-                ...(drawsProbe ? probeOptions(target) : {}),
-                view: endView(1),
-              },
-            )
-            .catch((reason) => {
-              throw new Error(`At animation end: ${reason.message}`);
-            }),
+          end(0, client.current).catch((reason) => {
+            throw new Error(`At animation start: ${reason.message}`);
+          }),
+          end(1, helper.current ?? client.current).catch((reason) => {
+            throw new Error(`At animation end: ${reason.message}`);
+          }),
         ]);
         [first, final] = results;
       }
@@ -1341,6 +1366,18 @@ export function SpatialAnimationPanel({
         checked={path.ease ?? false}
         onChange={(ease) => setPath((p) => ({ ...p, ease }))}
       />
+      {mode === "parameters" && (
+        <KeyViewSwitch
+          checked={path.fit ?? false}
+          // Off is the default, which links leave out.
+          onChange={(fit) =>
+            setPath(({ fit: _, ...p }) => (fit ? { ...p, fit } : p))
+          }
+          label="Fit each frame to the views"
+          topic="fitting each frame to the views"
+          help={pathHelp.fit}
+        />
+      )}
       <Field
         label="Turn about"
         help={path.pivot === "geometry" ? pathHelp.geometry : pathHelp.plane}

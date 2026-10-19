@@ -1751,3 +1751,135 @@ test("smooth about the geometry flies a path backward as its views reversed, ope
     );
   }
 });
+
+test("fitted to each frame, a flight draws every frame as the path draws it moved onto the starting study, the fit fading as 1/z once zoomed in", () => {
+  // The frame's bounds: the geometry has grown 3.7 times about a moved
+  // center. At zoom z the fit is applied with weight w = min(1, 1/z): the
+  // bounds it fits to are C + w(C′ − C) with radius r(r′/r)^w, and each
+  // point X of the frame must be drawn where the unfitted camera draws
+  // C + (r/r_w)(X − C_w). At zoom 1 or wider that is the similarity that
+  // takes the frame's bounds onto the starting study's.
+  const grown: Bounds3 = { center: { x: -2.4, y: 3.1, z: 0.9 }, radius: 11.1 };
+  const moved =
+    (zoom: number) =>
+    (p: Vec3): Vec3 => {
+      const w = Math.min(1, 1 / zoom);
+      const r = bounds.radius * (grown.radius / bounds.radius) ** w;
+      const c = {
+        x: bounds.center.x + w * (grown.center.x - bounds.center.x),
+        y: bounds.center.y + w * (grown.center.y - bounds.center.y),
+        z: bounds.center.z + w * (grown.center.z - bounds.center.z),
+      };
+      const k = bounds.radius / r;
+      return {
+        x: bounds.center.x + k * (p.x - c.x),
+        y: bounds.center.y + k * (p.y - c.y),
+        z: bounds.center.z + k * (p.z - c.z),
+      };
+    };
+  const far: Vec3[] = [
+    grown.center,
+    { x: 6.2, y: -4, z: 3.3 },
+    { x: -9.5, y: 8.8, z: -2 },
+    { x: -1, y: 0.4, z: 7.6 },
+  ];
+  let faded = 0;
+  for (const projection of [undefined, "normal", "chosen"] as const) {
+    const lens = projection
+      ? { projection, ...(projection === "chosen" && { lensAngle: 20 }) }
+      : {};
+    for (const style of ["steady", "smooth"] as const) {
+      for (const depths of [undefined, [0.4, -0.3, 0.8, 0.1]]) {
+        const p = { ...path(tour, style), fit: true };
+        const view = (progress: number, mode: string, fit = true) =>
+          animationCamera({
+            mode,
+            camera: "hold",
+            frame: { result: { bounds: grown } },
+            final: { result: { bounds: grown } },
+            path: fit ? p : { ...p, fit: false },
+            around: bounds,
+            ...(depths && { depths }),
+            heldView: { ...manual(tour[0]), ...lens },
+            progress,
+          } as unknown as AnimationView);
+        for (const progress of [0, 0.17, 0.5, 2 / 3, 0.91, 1]) {
+          const unfitted = pathView(p, bounds, progress, false, depths, lens);
+          const plain = camera(unfitted, size);
+          const fitted = camera(view(progress, "parameters"), size);
+          if (unfitted.zoom > 1) faded++;
+          for (const x of far) {
+            const a = project(fitted, x),
+              b = project(plain, moved(unfitted.zoom)(x));
+            const at = `${projection} ${style} ${depths} ${progress}`;
+            expect(Math.abs(a.x - b.x), at).toBeLessThan(1e-6);
+            expect(Math.abs(a.y - b.y), at).toBeLessThan(1e-6);
+            expect(Math.abs(a.depth - b.depth), at).toBeLessThan(1e-9);
+          }
+          // Unfitted, or while the geometry is fixed, the path is flown
+          // about the starting study exactly as before.
+          expect(view(progress, "parameters", false)).toEqual(unfitted);
+          for (const mode of ["reveal", "trace", "probe", "cut"])
+            expect(view(progress, mode)).toEqual(unfitted);
+        }
+      }
+    }
+  }
+  // Both sides of 1× were flown.
+  expect(faded).toBeGreaterThan(20);
+});
+
+test("zoomed in, fitting moves a framed detail on the page no more than it does at the fitted framing", () => {
+  // A frame whose bounds shifted a twentieth of a radius and grew 2%, as a
+  // shape changing other than as a whole shifts them: a detail held in
+  // the middle of views from 1× to 1,000× moves on the page about as far
+  // as at 1×, where the full similarity would carry it off the page.
+  const shifted: Bounds3 = {
+    center: {
+      x: bounds.center.x + 0.15,
+      y: bounds.center.y,
+      z: bounds.center.z,
+    },
+    radius: bounds.radius * 1.02,
+  };
+  const detail: Vec3 = { x: 2.2, y: 0.4, z: 1.1 };
+  const moves = [1, 3, 28, 79.4, 1000].map((zoom) => {
+    const framed = framing(key({ yaw: 0.6, pitch: 0.4, zoom }), detail);
+    const p = { ...path([framed, { ...framed, yaw: 0.9 }]), fit: true };
+    const view = (fit: boolean) =>
+      camera(
+        animationCamera({
+          mode: "parameters",
+          camera: "hold",
+          frame: { result: { bounds: shifted } },
+          final: { result: { bounds: shifted } },
+          path: { ...p, fit },
+          around: bounds,
+          heldView: manual(framed),
+          progress: 0,
+        } as unknown as AnimationView),
+        size,
+      );
+    const [a, b] = [project(view(true), detail), project(view(false), detail)];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  });
+  expect(moves[0]).toBeGreaterThan(5);
+  for (const m of moves.slice(1)) expect(m).toBeLessThan(1.5 * moves[0]);
+});
+
+test("a fitted frame with the starting study's own bounds is the path's own camera", () => {
+  const p = { ...path(tour, "smooth"), fit: true };
+  for (const progress of [0, 0.3, 0.75, 1])
+    expect(
+      animationCamera({
+        mode: "parameters",
+        camera: "hold",
+        frame: { result: { bounds } },
+        final: { result: { bounds } },
+        path: p,
+        around: bounds,
+        heldView: manual(tour[0]),
+        progress,
+      } as unknown as AnimationView),
+    ).toEqual(pathView(p, bounds, progress));
+});

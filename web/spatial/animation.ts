@@ -19,7 +19,7 @@ import type {
 } from "./types";
 import type { CurveMesh } from "./types";
 import type { View } from "./renderer";
-import { pathView, type CameraPath } from "./path";
+import { fitFrame, pathView, type CameraPath } from "./path";
 import { rideView, type RidePath } from "./ride";
 export type { Frame };
 export type Viewport = View;
@@ -144,7 +144,8 @@ export type AnimationView = {
   cut?: import("./cut").CutSpec;
   // The camera path, when the animation flies it, and the bounds its key
   // views were taken about: the study's own when playback began, whatever
-  // bounds each frame has.
+  // bounds each frame has (a path fitted to each frame carries its camera
+  // from them toward the frame's; see fitFrame).
   path?: CameraPath;
   around?: Bounds3;
   // A loop's path passes its seam smoothly (see pathView).
@@ -1101,6 +1102,10 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     ),
   };
 }
+// Whether a flight fits each frame: only while parameters vary, since
+// every other animation that flies a path keeps the study fixed.
+export const fitsFrames = (path: CameraPath, mode: AnimationMode) =>
+  !!path.fit && mode === "parameters";
 // The projection a camera path flies in: the held view's, since key views
 // have none of their own.
 export const flightLens = (
@@ -1114,8 +1119,8 @@ export function animationCamera(view: AnimationView): View {
   // time of the frame it draws.
   // It flies in the held view's projection: key views have none of their
   // own.
-  if (view.path)
-    return pathView(
+  if (view.path) {
+    const flown = pathView(
       view.path,
       view.around!,
       view.progress,
@@ -1123,6 +1128,13 @@ export function animationCamera(view: AnimationView): View {
       view.depths,
       flightLens(view.heldView),
     );
+    // Fitted, while parameters vary, each frame is drawn as the path draws
+    // it scaled and moved onto the study it started from, less so zoomed
+    // in.
+    return fitsFrames(view.path, view.mode)
+      ? fitFrame(flown, view.around!, view.frame.result.bounds)
+      : flown;
+  }
   // So is the ride, at the optical path the frame's light has reached.
   if (view.ride)
     return rideView(

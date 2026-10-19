@@ -456,6 +456,9 @@ const path: SchemaOf<CameraPath> = {
     ease: { optional: "boolean" },
     // Links made before the pivot have none: the plane.
     pivot: { optional: { options: { plane: true, geometry: true } } },
+    // Links made before fitting have none: every frame is drawn about the
+    // study as playback starts.
+    fit: { optional: "boolean" },
     keys: {
       list: {
         fields: {

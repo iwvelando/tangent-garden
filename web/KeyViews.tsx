@@ -13,12 +13,19 @@ import {
   type KeyBase,
 } from "./key-views";
 
-export function KeyViewEasing({
+// A camera path's setting that is on or off, with its help.
+export function KeyViewSwitch({
   checked,
   onChange,
+  label,
+  topic,
+  help: text,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
+  label: string;
+  topic: string;
+  help: Help;
 }) {
   const help = useHelp();
   return (
@@ -30,14 +37,26 @@ export function KeyViewEasing({
             checked={checked}
             onChange={(e) => onChange(e.target.checked)}
           />
-          Ease key-view transitions
+          {label}
         </label>
-        <HelpToggle topic="easing key-view transitions" help={help} />
+        <HelpToggle topic={topic} help={help} />
       </div>
-      <HelpText help={help}>{transitionHelp}</HelpText>
+      <HelpText help={help}>{text}</HelpText>
     </>
   );
 }
+
+export const KeyViewEasing = (props: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) => (
+  <KeyViewSwitch
+    {...props}
+    label="Ease key-view transitions"
+    topic="easing key-view transitions"
+    help={transitionHelp}
+  />
+);
 
 // The key views of a camera path, in the 2D and 3D notebooks: each view's
 // name, the fields a notebook adds (3D: turns), its leg time, where it is
