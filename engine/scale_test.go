@@ -12,10 +12,8 @@ import (
 )
 
 // The presets' configurations, as web/presets.ts defines them, which
-// scripts/test-wasm.mjs checks. Regenerate after changing a preset (Node
-// 22.6 or later, from the repository root):
-//
-//	node --experimental-strip-types -e 'const {presets} = await import("./web/presets.ts"); process.stdout.write("[\n" + presets.map((p) => JSON.stringify({title: p.title, config: p.config})).join(",\n") + "\n]\n")' > engine/testdata/presets.json
+// scripts/test-wasm.mjs checks. Regenerate after changing a preset with
+// `make preset-fixtures` (scripts/preset-fixtures.mjs).
 type preset struct {
 	Title  string  `json:"title"`
 	Config Request `json:"config"`
