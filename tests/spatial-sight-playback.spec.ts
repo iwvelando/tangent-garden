@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { probe, decodeVideo, frameDifference } from "./video";
+import { choosePreset } from "./helpers";
 import { spatialPresets } from "../web/spatial/presets";
 import { defaultLayers } from "../web/spatial/renderer";
 import { defaultSight, type Sight } from "../web/spatial/sight";
@@ -136,3 +137,72 @@ test("an orbit's export draws the sight it began with and ends on the still", as
     expect(other.meanDifference).toBeGreaterThan(3 * d.meanDifference);
   }
 });
+
+// The presets that draw the probe its own way behind sheets play their
+// own glides with it: every frame draws the probe dashed through the
+// sheets, and switching it back to other lines' way hides that part.
+for (const name of [
+  "A frame riding inside a tube",
+  "Centers of curvature inside an ellipsoid",
+])
+  test(`${name} glides its probe dashed behind the sheets`, async ({
+    page,
+  }) => {
+    test.slow();
+    const preset = spatialPresets.find((p) => p.name === name)!;
+    expect(preset.sight?.probe).toBe("dashed");
+    expect(preset.flight?.animate).toEqual({ mode: "probe" });
+    await page.goto("/?study=3d");
+    await choosePreset(page, { label: name });
+    await settled(page);
+    const opening = await page
+      .locator("#spatial-artwork")
+      .getAttribute("data-view");
+    const panel = page.locator("#spatial-animation-section");
+    if ((await panel.getAttribute("open")) === null)
+      await panel.locator(":scope > summary").click();
+    await button(page, "Play animation").click();
+    await expect(stage(page)).toHaveAttribute("data-mode", "probe");
+    await expect
+      .poll(
+        async () => +((await stage(page).getAttribute("data-progress")) ?? 0),
+      )
+      .toBeGreaterThan(0);
+    expect((await drawnSight(page)).probe).toBe("dashed");
+    await button(page, "Pause").click();
+    const slider = page.getByRole("slider", { name: "Animation progress" });
+    await slider.fill("0.4");
+    // The glide's place, eased and turning back where the preset asks.
+    await expect(slider).toHaveValue("0.4");
+    await settled(page);
+    // The camera holds the view the preset opens with.
+    expect(
+      await page.locator("#spatial-artwork").getAttribute("data-view"),
+    ).toBe(opening);
+    const dashed = await still(page);
+    const own = box(page).getByLabel("Probe behind sheets", { exact: true });
+    await expect(own).toHaveValue("dashed");
+    await own.selectOption("lines");
+    await expect
+      .poll(async () => (await drawnSight(page))?.probe)
+      .toBeUndefined();
+    const hidden = await still(page);
+    // Same frame; only the probe's hidden part differs.
+    let changed = 0;
+    for (let i = 0; i < dashed.length; i += 4)
+      if (
+        Math.abs(dashed[i] - hidden[i]) +
+          Math.abs(dashed[i + 1] - hidden[i + 1]) +
+          Math.abs(dashed[i + 2] - hidden[i + 2]) >
+        30
+      )
+        changed++;
+    expect(changed).toBeGreaterThan(200);
+    expect(changed).toBeLessThan(0.02 * (dashed.length / 4));
+    await own.selectOption("dashed");
+    await button(page, "Stop").click();
+    await expect(stage(page)).not.toHaveAttribute("data-progress");
+    expect(
+      await page.locator("#spatial-artwork").getAttribute("data-view"),
+    ).toBe(opening);
+  });

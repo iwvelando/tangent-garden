@@ -30,6 +30,10 @@ export type Sight = {
   // default, and every link made before the choice), or again behind each
   // further layer.
   fade?: LayerFade;
+  // How the probe's lines behind sheets are drawn, whatever other lines
+  // do; absent (the default, and every link made before the choice), as
+  // other lines are.
+  probe?: HiddenLines;
 };
 export const defaultSight: Sight = {
   sheets: "opaque",
@@ -69,6 +73,18 @@ export const hiddenLines: { value: HiddenLines; label: string }[] = [
   { value: "faint", label: "Faint" },
   { value: "dashed", label: "Dashed" },
 ];
+// The probe's own way behind sheets, "lines" standing for none.
+export const probeSights: { value: HiddenLines | "lines"; label: string }[] = [
+  { value: "lines", label: "Like other lines" },
+  ...hiddenLines,
+];
+// How the probe's lines behind sheets are drawn.
+export const probeHidden = (s: Sight): HiddenLines => s.probe ?? s.hidden;
+// The setting without the probe's own way, for a drawing without the probe.
+export const unprobed = ({ probe: _, ...s }: Sight): Sight => s;
+// Whether any line behind sheets is dashed: other lines or the probe's.
+export const dashesAny = (s: Sight) =>
+  s.hidden === "dashed" || probeHidden(s) === "dashed";
 export const layerFades: { value: LayerFade; label: string }[] = [
   { value: "nearest", label: "Once, behind the nearest" },
   { value: "each", label: "Again behind each sheet" },
@@ -237,6 +253,10 @@ export const sightHelp = {
     `They have the weight's width on the plane through the view's target (one study radius ahead when riding a ray), twice it at half the distance, from ${taperRange[0]}× to ${taperRange[1]}×. Orthographic views and hairlines are always even.`,
   ),
   flat: "Strokes taper only through a perspective lens: choose one with Projection above the drawing, or ride a ray.",
+  probe: tiered(
+    "How the probe is drawn behind sheets, whatever other lines do.",
+    "Like other lines follows Lines behind sheets. Otherwise the probe is hidden, faint or dashed there on its own, so a frame or circle inside a closed surface stays in view; it fades and its dashes are measured as other lines' do.",
+  ),
   hidden: tiered(
     "How lines behind the nearest sheet are drawn: hidden, faint, or dashed.",
     `Faint lines are drawn at ${faintOpacity * 100}% opacity, dashed ones at ${dashedOpacity * 100}%, one dash every ${dashPeriod * 100}% of the page's shorter side. A line lying on a sheet counts as in front of it.`,
@@ -301,14 +321,14 @@ export function seeSampling(
 // Whether lines behind sheets fade again behind each layer: the drawing
 // then counts layers on a target of the page's size.
 export const fadesByLayer = (s: Sight) =>
-  s.hidden !== "hide" && s.fade === "each";
+  (s.hidden !== "hide" || probeHidden(s) !== "hide") && s.fade === "each";
 // Whether the drawing needs a target the page's size: see-through sheets'
 // or the layer count's.
 export const needsTarget = (s: Sight) =>
   s.sheets === "through" || fadesByLayer(s);
 // Whether the drawing is the plain opaque one, drawn exactly as before.
 export const isPlain = (s: Sight) =>
-  s.sheets === "opaque" && s.hidden === "hide";
+  s.sheets === "opaque" && s.hidden === "hide" && probeHidden(s) === "hide";
 
 // The cumulative length in space at each vertex of a batch's line pairs (7
 // floats per vertex): a segment that starts exactly where the previous one
@@ -443,10 +463,19 @@ export function sightRecord(spec: Sight, through: boolean) {
     statements.push(
       `Lines behind the nearest sheet are drawn at ${faintOpacity * 100}% opacity.`,
     );
-  const paged = spec.hidden === "dashed" && spec.dashes === "page";
+  const paged = dashesAny(spec) && spec.dashes === "page";
   if (spec.hidden === "dashed")
     statements.push(
       `Lines behind the nearest sheet are dashed at ${dashedOpacity * 100}% opacity, one dash every 1% of the shorter side, measured along the line ${paged ? "on the page, restarting where a line comes from behind the eye" : "in space"}.`,
+    );
+  // The probe's own way, only when it differs from other lines'.
+  const probe =
+    probeHidden(spec) !== spec.hidden ? probeHidden(spec) : undefined;
+  if (probe === "hide")
+    statements.push("The probe's lines behind sheets are hidden.");
+  else if (probe)
+    statements.push(
+      `The probe's lines behind the nearest sheet are ${probe === "faint" ? `drawn at ${faintOpacity * 100}% opacity` : `dashed at ${dashedOpacity * 100}% opacity, one dash every 1% of the shorter side, measured along the line ${paged ? "on the page" : "in space"}`}.`,
     );
   const layered = fadesByLayer(spec);
   if (layered)
@@ -457,6 +486,7 @@ export function sightRecord(spec: Sight, through: boolean) {
     sheets,
     ...(sheets === "through" && { opacity: spec.opacity }),
     hidden: spec.hidden,
+    ...(probe && { probe }),
     ...(paged && { dashes: "page" as const }),
     ...(layered && { fade: "each" as const }),
     statement: statements.join(" "),

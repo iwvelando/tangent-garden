@@ -1074,6 +1074,20 @@ test("a link carries seeing through, line weight, taper, dashes and fading; refu
     }
   assert.equal(defaultSight.fade, undefined);
   assert.equal(spatialStudy(spatial()).sight.fade, undefined);
+  // The probe behind sheets has its own way, whatever other lines do;
+  // links made before the choice have none, and the probe is drawn as
+  // other lines are.
+  for (const probe of ["hide", "faint", "dashed"] as const)
+    for (const hidden of ["hide", "faint"] as const) {
+      const study: SpatialStudy = {
+        ...spatial(),
+        sight: { ...defaultSight, hidden, probe },
+      };
+      const read = await readStudyLink(await writeStudyLink("3d", study));
+      assert.deepEqual(spatialStudy(read.study), study);
+    }
+  assert.equal(defaultSight.probe, undefined);
+  assert.equal(spatialStudy(spatial()).sight.probe, undefined);
   // Missing fields take their defaults, except the line weight: a link
   // without one was made before weights and keeps its hairlines.
   const partial = structuredClone(spatial()) as any;
@@ -1120,6 +1134,10 @@ test("a link carries seeing through, line weight, taper, dashes and fading; refu
   await refused(
     bad((v) => (v.fade = "every")),
     "sight.fade",
+  );
+  await refused(
+    bad((v) => (v.probe = "lines")),
+    "sight.probe",
   );
   await refused(
     bad((v) => (v.extra = 1)),

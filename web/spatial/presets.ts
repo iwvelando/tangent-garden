@@ -4455,4 +4455,100 @@ export const spatialPresets: {
     },
     layers: { planes: false, box: false },
   },
+  // The trefoil's tube, opaque, with the knot inside it drawn faint and
+  // the curve probe dashed wherever the wall hides it: its point, its
+  // Frenet frame and its osculating circle, whose radius is larger than
+  // the tube's, so the circle leaves through the wall and returns. The
+  // probe stands between samples, so it glides; played, it rides once
+  // round the knot and loops.
+  {
+    name: "A frame riding inside a tube",
+    detail:
+      "Inside an opaque tube, the knot's Frenet frame and osculating circle ride round, the circle passing out through the wall and back",
+    config: {
+      ...base,
+      construction: "canal",
+      lines: 48,
+      canal: { radius: 0.32, profile: "1", meridians: 4 },
+    },
+    view: { yaw: 0, pitch: 0.2, zoom: 1.1, panX: 0, panY: 0 },
+    probe: {
+      enabled: true,
+      position: 0.1,
+      target: "curve",
+      across: 0.5,
+      between: true,
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+      probe: "dashed",
+    },
+    flight: {
+      duration: 24,
+      repeat: "loop",
+      pace: "steady",
+      camera: "current",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // The whole ellipsoid (1.5, 1, 0.7), opaque, seen from outside. Its
+  // normal X_u × X_v points outward, so both principal centers and both
+  // normal-section circles lie inward, mostly inside the shell; the probe
+  // is dashed wherever the shell hides it. It stands between grid samples
+  // at the umbilics' latitude, sin v = √((b² − c²)/(a² − c²)), on
+  // u ∈ [π/2, 5π/2], so played back and forth it passes both upper
+  // umbilics, at u = π and 2π, where its two circles become one.
+  {
+    name: "Centers of curvature inside an ellipsoid",
+    detail:
+      "Each point's two principal circles and centers lie within the closed shell, merging into one at the umbilics",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 0.7,
+        uMin: Math.PI / 2,
+        uMax: (5 * Math.PI) / 2,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 96,
+        vSamples: 48,
+        curves: 12,
+        offset: 0,
+        reach: 0,
+      },
+    },
+    layers: { focal1: false, focal2: false },
+    view: { yaw: 0.88, pitch: 0.35, zoom: 1.4, panX: 0, panY: 0 },
+    probe: {
+      enabled: true,
+      position: 0.375,
+      target: "surface",
+      across: (Math.asin(Math.sqrt(0.51 / 1.76)) + Math.PI / 2) / Math.PI,
+      betweenGrid: true,
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "hide",
+      weight: "regular",
+      probe: "dashed",
+    },
+    flight: {
+      duration: 20,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: { mode: "probe" },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

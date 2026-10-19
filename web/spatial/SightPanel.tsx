@@ -3,8 +3,11 @@ import { ScalarInput } from "../ScalarInput";
 import { LineWeightField } from "../LineWeightField";
 import {
   dashMeasures,
+  dashesAny,
   hiddenLines,
   layerFades,
+  probeHidden,
+  probeSights,
   sheetSights,
   strokeDepths,
   sightFields,
@@ -20,8 +23,9 @@ import {
 
 // The lines' weight and seeing through the drawing. Everything they show
 // comes from sight.ts. `unavailable` is set when the device cannot draw
-// see-through sheets, `unstroked` when it cannot draw strokes, and
-// `lensed` when the drawing is seen through a perspective lens.
+// see-through sheets, `unstroked` when it cannot draw strokes, `lensed`
+// when the drawing is seen through a perspective lens, and `probing` while
+// the probe is drawn.
 export function SightPanel({
   sight,
   onSight,
@@ -29,6 +33,7 @@ export function SightPanel({
   unavailable,
   unstroked = false,
   lensed = false,
+  probing = false,
 }: {
   sight: Sight;
   onSight: (change: (s: Sight) => Sight) => void;
@@ -36,9 +41,12 @@ export function SightPanel({
   unavailable: boolean;
   unstroked?: boolean;
   lensed?: boolean;
+  probing?: boolean;
 }) {
   const through = sight.sheets === "through",
-    dashed = sight.hidden === "dashed";
+    // The probe's own way counts only while it is drawn.
+    seen = probing ? sight : { ...sight, probe: "hide" as const },
+    dashed = dashesAny(seen);
   return (
     <>
       <fieldset className="spatial-sight">
@@ -112,6 +120,25 @@ export function SightPanel({
               </select>
             </Field>
           </div>
+          {probing && (
+            <Field label="Probe behind sheets" help={sightHelp.probe}>
+              <select
+                value={sight.probe ?? "lines"}
+                onChange={(e) => {
+                  const way = e.target.value as HiddenLines | "lines";
+                  onSight(({ probe: _, ...s }) =>
+                    way === "lines" ? s : { ...s, probe: way },
+                  );
+                }}
+              >
+                {probeSights.map((h) => (
+                  <option key={h.value} value={h.value}>
+                    {h.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           {(through || dashed) && (
             <div className="pair">
               {through && (
@@ -142,7 +169,7 @@ export function SightPanel({
               )}
             </div>
           )}
-          {sight.hidden !== "hide" && (
+          {(sight.hidden !== "hide" || probeHidden(seen) !== "hide") && (
             <Field label="Fade behind layers" help={sightHelp.fade}>
               <select
                 value={sight.fade ?? "nearest"}

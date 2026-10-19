@@ -8,9 +8,12 @@ import {
   defaultSight,
   fadeLayers,
   fadeStep,
+  fadesByLayer,
   hiddenOpacity,
   isPlain,
   layerFades,
+  probeHidden,
+  probeSights,
   seeSampling,
   sightRecord,
   sightSpec,
@@ -18,7 +21,8 @@ import {
   type LayerFade,
   type Sight,
 } from "../web/spatial/sight";
-import { buildScene } from "../web/spatial/scene";
+import { buildScene, type Batch } from "../web/spatial/scene";
+import { probeInk } from "../web/spatial/probe";
 import { linework, linesSvg, type LineGroup } from "../web/spatial/linework";
 import { defaultLayers, initialView } from "../web/spatial/renderer";
 import type { SpatialResult, Vec3 } from "../web/spatial/types";
@@ -496,6 +500,171 @@ test("dashed hidden lines are dashes measured along the line in space, one per 1
   expect(svg).toMatch(/<g id="hidden-base"[^>]* stroke-opacity="0\.8"/);
 });
 
+// A probe line along y = −0.2, behind the square for |x| < 0.5 as the
+// base is, and the same line at depth −0.5 behind the stacked squares.
+const probeLine = (z: number): Batch => ({
+  mode: "lines",
+  ink: probeInk.mark,
+  data: Float32Array.from([
+    ...[-1, -0.2, z, 0, 0, 1, 0],
+    ...[0, -0.2, z, 0, 0, 1, 0],
+    ...[0, -0.2, z, 0, 0, 1, 0],
+    ...[1, -0.2, z, 0, 0, 1, 0],
+  ]),
+});
+const probed = (
+  result: SpatialResult,
+  z: number,
+  occlusion: "none" | "sampled",
+  options: { hidden?: HiddenLines; probe?: HiddenLines; fade?: LayerFade },
+) =>
+  linework(
+    buildScene(result),
+    front,
+    defaultLayers,
+    false,
+    { ...page, occlusion, ...options },
+    [probeLine(z)],
+  );
+
+test("the probe behind sheets is drawn its own way, or as other lines are when it has none", () => {
+  const square = squareStudy(behind);
+  const hiddenOf = (groups: LineGroup[]) =>
+    groups.filter((g) => g.hidden).map((g) => [g.layer, g.hidden, g.layers]);
+  // Without its own way, the probe is hidden, faint or dashed with the rest.
+  expect(hiddenOf(probed(square, -0.2, "sampled", {}))).toEqual([]);
+  expect(
+    hiddenOf(probed(square, -0.2, "sampled", { hidden: "faint" })),
+  ).toEqual([
+    ["base", "faint", undefined],
+    ["probe", "faint", undefined],
+  ]);
+  // Its own way changes only the probe's hidden part.
+  const plain = probed(square, -0.2, "sampled", {});
+  for (const [hidden, probe] of [
+    ["hide", "dashed"],
+    ["hide", "faint"],
+    ["faint", "dashed"],
+    ["dashed", "faint"],
+    ["faint", "hide"],
+  ] as const) {
+    const groups = probed(square, -0.2, "sampled", { hidden, probe });
+    expect(shownGroups(groups)).toEqual(shownGroups(plain));
+    const others = probed(square, -0.2, "sampled", { hidden });
+    // Other lines are drawn exactly as without the probe's own way.
+    expect(groups.filter((g) => g.hidden && g.layer !== "probe")).toEqual(
+      others.filter((g) => g.hidden && g.layer !== "probe"),
+    );
+    const own = groups.filter((g) => g.hidden && g.layer === "probe");
+    if (probe === "hide") {
+      expect(own).toEqual([]);
+      continue;
+    }
+    expect(own.map((g) => g.hidden)).toEqual([probe]);
+    // As the base would be drawn that way, along its own line.
+    const alike = probed(square, -0.2, "sampled", { hidden: probe }).filter(
+      (g) => g.hidden && g.layer === "probe",
+    );
+    expect(own).toEqual(alike);
+    // Hidden across the square, |x| < 0.5, dashes within a period
+    // (15.2 px) of its ends.
+    const paths = own.flatMap((g) => g.strokes.flatMap((s) => s.paths)),
+      within = probe === "dashed" ? 15.2 : 1;
+    expect(Math.abs(paths[0][0][0] - px(-0.5))).toBeLessThan(within);
+    expect(Math.abs(paths.at(-1)!.at(-1)![0] - px(0.5))).toBeLessThan(within);
+  }
+  // A probe in front of the square has nothing hidden.
+  expect(hiddenOf(probed(square, 0.2, "sampled", { probe: "dashed" }))).toEqual(
+    [],
+  );
+  // Every line is drawn without hiding, whatever the setting.
+  expect(probed(square, -0.2, "none", { probe: "dashed" })).toEqual(
+    probed(square, -0.2, "none", {}),
+  );
+  // Behind each further layer it fades as other lines would.
+  const stacked = stackedStudy(deep);
+  expect(
+    hiddenOf(
+      probed(stacked, -0.5, "sampled", { probe: "faint", fade: "each" }),
+    ),
+  ).toEqual([
+    ["probe", "faint", 1],
+    ["probe", "faint", 2],
+    ["probe", "faint", 3],
+  ]);
+  expect(
+    hiddenOf(
+      probed(stacked, -0.5, "sampled", {
+        hidden: "faint",
+        probe: "dashed",
+        fade: "each",
+      }),
+    ),
+  ).toEqual([
+    ["base", "faint", 1],
+    ["probe", "dashed", 1],
+    ["base", "faint", 2],
+    ["probe", "dashed", 2],
+    ["base", "faint", 3],
+    ["probe", "dashed", 3],
+  ]);
+  // The file draws each group at its own way's opacity.
+  const svg = linesSvg(
+    probed(square, -0.2, "sampled", { hidden: "faint", probe: "dashed" }),
+    { ...page, dark: false, title: "t", metadata: {} },
+  );
+  expect(svg).toMatch(/<g id="hidden-base"[^>]* stroke-opacity="0\.35"/);
+  expect(svg).toMatch(/<g id="hidden-probe"[^>]* stroke-opacity="0\.8"/);
+  // The drawing is plain only while the probe is hidden too.
+  expect(isPlain({ ...defaultSight, probe: "hide" })).toBe(true);
+  expect(isPlain({ ...defaultSight, probe: "dashed" })).toBe(false);
+  expect(probeHidden(defaultSight)).toBe("hide");
+  expect(probeHidden({ ...defaultSight, hidden: "faint" })).toBe("faint");
+  expect(probeHidden({ ...defaultSight, hidden: "faint", probe: "hide" })).toBe(
+    "hide",
+  );
+  expect(probeSights.map((s) => s.value)).toEqual([
+    "lines",
+    "hide",
+    "faint",
+    "dashed",
+  ]);
+  // Fading behind each layer counts for the probe's own way too.
+  expect(fadesByLayer({ ...defaultSight, fade: "each" })).toBe(false);
+  expect(fadesByLayer({ ...defaultSight, probe: "faint", fade: "each" })).toBe(
+    true,
+  );
+  expect(fadesByLayer({ ...defaultSight, probe: "faint" })).toBe(false);
+});
+
+test("an export records the probe's own way only when it differs from other lines'", () => {
+  for (const hidden of ["hide", "faint", "dashed"] as const)
+    expect(
+      sightRecord({ ...defaultSight, hidden, probe: hidden }, true),
+    ).toEqual(sightRecord({ ...defaultSight, hidden }, true));
+  const own = sightRecord({ ...defaultSight, probe: "dashed" }, true)!;
+  expect(own).toEqual({
+    sheets: "opaque",
+    hidden: "hide",
+    probe: "dashed",
+    statement: expect.stringMatching(
+      /The probe's lines behind the nearest sheet are dashed at 80% opacity/,
+    ),
+  });
+  const hiddenProbe = sightRecord(
+    { ...defaultSight, hidden: "faint", probe: "hide" },
+    true,
+  )!;
+  expect(hiddenProbe).toMatchObject({ hidden: "faint", probe: "hide" });
+  expect(hiddenProbe.statement).toMatch(
+    /The probe's lines behind sheets are hidden/,
+  );
+  // Dashes on the page are recorded for the probe's dashes too.
+  expect(
+    sightRecord({ ...defaultSight, probe: "dashed", dashes: "page" }, true),
+  ).toMatchObject({ dashes: "page" });
+});
+
 test("an export records seeing through only when it is on, and states its rule", () => {
   expect(sightRecord(defaultSight, true)).toBeUndefined();
   const xray = sightRecord(through(0.35), true)!;
@@ -922,6 +1091,150 @@ test("lines behind sheets are drawn faint or dashed over the sheet in front, and
   expect(seen.same / seen.plain).toBeGreaterThan(0.999);
 });
 
+// The trefoil's curve probe stands inside its tube: its osculating circle
+// and the canal's contact circle are mostly hidden by it. Its pixels in
+// the mark's ink, drawn without the tube, are compared as the knot's are
+// above.
+test("the probe behind sheets is drawn its own way over the sheet in front, and nothing else changes", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const probe = {
+    enabled: true,
+    position: 0.3,
+    target: "curve",
+    across: 0.5,
+  };
+  const images: Record<string, Buffer> = {};
+  for (const [name, study] of [
+    ["alone", tube(onlyLayers())],
+    ["opaque", tube(onlyLayers("surface"), {})],
+    ["faint", tube(onlyLayers("surface"), { probe: "faint" })],
+    ["dashed", tube(onlyLayers("surface"), { probe: "dashed" })],
+    ["paged", tube(onlyLayers("surface"), { probe: "dashed", dashes: "page" })],
+    ["follows", tube(onlyLayers("surface"), { hidden: "faint" })],
+    ["hidden", tube(onlyLayers("surface"), { hidden: "faint", probe: "hide" })],
+    // The same faint knot without the probe.
+    ["others", tube(onlyLayers("surface"), { hidden: "faint" })],
+  ] as const) {
+    await openLink(page, {
+      ...study,
+      probe: { ...probe, enabled: name !== "others" },
+    });
+    images[name] = await download(page, png);
+  }
+  const L = rgb(lineColor(probeInk.mark, 0, false));
+  const other = await page.context().newPage();
+  try {
+    const seen = await other.evaluate(
+      async ([images, L, B]) => {
+        const read = async (bytes: number[]) => {
+          const bitmap = await createImageBitmap(
+            new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+          );
+          const canvas = document.createElement("canvas");
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+          ctx.drawImage(bitmap, 0, 0);
+          return ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+        };
+        const [P, A, F, D, G, S, H, O] = await Promise.all(
+          [
+            "alone",
+            "opaque",
+            "faint",
+            "dashed",
+            "paged",
+            "follows",
+            "hidden",
+            "others",
+          ].map((k) => read(images[k])),
+        );
+        const near = (
+          p: ArrayLike<number>,
+          i: number,
+          q: number[],
+          tol: number,
+        ) =>
+          Math.abs(p[i] - q[0]) <= tol &&
+          Math.abs(p[i + 1] - q[1]) <= tol &&
+          Math.abs(p[i + 2] - q[2]) <= tol;
+        const at = (p: ArrayLike<number>, i: number) => [
+          p[i],
+          p[i + 1],
+          p[i + 2],
+        ];
+        const mix = (a: number[], o: number) =>
+          a.map((v, c) => (1 - o) * v + o * L[c]);
+        const out = {
+          hidden: 0,
+          faint: 0,
+          dash: 0,
+          gap: 0,
+          odd: 0,
+          paged: 0,
+          moved: 0,
+          follows: 0,
+          stays: 0,
+          away: 0,
+          same: 0,
+        };
+        for (let i = 0; i < A.length; i += 4) {
+          const a = at(A, i);
+          const mark = near(P, i, L, 2);
+          if (mark && !near(A, i, L, 40)) {
+            out.hidden++;
+            if (near(F, i, mix(a, 0.35), 3)) out.faint++;
+            if (near(D, i, mix(a, 0.8), 3)) out.dash++;
+            else if (near(D, i, a, 1)) out.gap++;
+            else out.odd++;
+            // Dashes on the page fall elsewhere than dashes in space.
+            if (near(G, i, mix(a, 0.8), 3)) out.paged++;
+            if (near(G, i, mix(a, 0.8), 3) !== near(D, i, mix(a, 0.8), 3))
+              out.moved++;
+            // Over the faint knot, where it crosses the probe.
+            const o = at(O, i);
+            if (near(S, i, mix(o, 0.35), 3)) out.follows++;
+            if (near(H, i, o, 1)) out.stays++;
+          } else if (near(P, i, B, 0) && !near(A, i, B, 0)) {
+            // Where the tube alone is drawn.
+            out.away++;
+            if (near(F, i, a, 1) && near(D, i, a, 1)) out.same++;
+          }
+        }
+        return out;
+      },
+      [
+        Object.fromEntries(
+          Object.entries(images).map(([k, v]) => [k, Array.from(v)]),
+        ),
+        L,
+        rgb(palette.background[0]),
+      ] as const,
+    );
+    // Much of the probe is inside the tube.
+    expect(seen.hidden).toBeGreaterThan(500);
+    // Faint or dashed by its own way, with other lines hidden.
+    expect(seen.faint / seen.hidden).toBeGreaterThan(0.95);
+    expect(seen.dash / seen.hidden).toBeGreaterThan(0.4);
+    expect(seen.dash / seen.hidden).toBeLessThan(0.7);
+    expect(seen.odd / seen.hidden).toBeLessThan(0.05);
+    expect(seen.paged / seen.hidden).toBeGreaterThan(0.4);
+    expect(seen.paged / seen.hidden).toBeLessThan(0.7);
+    expect(seen.moved / seen.hidden).toBeGreaterThan(0.1);
+    // Without its own way it is drawn as other lines are; hidden by its
+    // own way, it stays hidden while other lines are faint.
+    expect(seen.follows / seen.hidden).toBeGreaterThan(0.9);
+    expect(seen.stays / seen.hidden).toBeGreaterThan(0.9);
+    // The rest of the drawing is unchanged.
+    expect(seen.away).toBeGreaterThan(300_000);
+    expect(seen.same / seen.away).toBeGreaterThan(0.999);
+  } finally {
+    await other.close();
+  }
+});
+
 const sightBox = (page: Page) =>
   page.getByRole("group", { name: "See through" });
 const drawnSight = async (page: Page) => {
@@ -1029,6 +1342,74 @@ test("the panel sets how sheets and lines behind them are drawn, names an invali
   );
 });
 
+test("while the probe is on, the panel sets how it is drawn behind sheets, and a preset resets it", async ({
+  page,
+}) => {
+  await openLink(page, tube(onlyLayers("surface")));
+  const box = sightBox(page);
+  const own = box.getByLabel("Probe behind sheets", { exact: true }),
+    behind = box.getByLabel("Lines behind sheets", { exact: true }),
+    dashes = box.getByLabel("Dashes", { exact: true }),
+    fade = box.getByLabel("Fade behind layers", { exact: true });
+  // Offered only while the probe is on.
+  await expect(own).toHaveCount(0);
+  await page
+    .getByRole("checkbox", { name: "Frame, curvature & torsion at a point" })
+    .check();
+  await settled(page);
+  await expect(own).toHaveValue("lines");
+  expect(await drawnSight(page)).toBeNull();
+  await own.selectOption("dashed");
+  await expect
+    .poll(() => drawnSight(page))
+    .toEqual({
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "hide",
+      probe: "dashed",
+    });
+  // Its dashes are measured as other lines' are, and it fades behind
+  // layers as they do.
+  await expect(dashes).toHaveValue("space");
+  await expect(fade).toHaveValue("nearest");
+  await dashes.selectOption("page");
+  await expect.poll(async () => (await drawnSight(page))?.dashes).toBe("page");
+  await behind.selectOption("faint");
+  await own.selectOption("hide");
+  await expect(dashes).toHaveCount(0);
+  await expect.poll(async () => (await drawnSight(page))?.probe).toBe("hide");
+  // Like other lines again, the field leaves the sight.
+  await own.selectOption("lines");
+  await expect
+    .poll(async () => (await drawnSight(page))?.probe)
+    .toBeUndefined();
+  await expect(own).toHaveValue("lines");
+  await own.selectOption("faint");
+  // Turning the probe off hides the field and keeps the choice.
+  await page
+    .getByRole("checkbox", { name: "Frame, curvature & torsion at a point" })
+    .uncheck();
+  await expect(own).toHaveCount(0);
+  // Without the probe the drawing has no way of its own to draw it.
+  await expect
+    .poll(() => drawnSight(page))
+    .toEqual({
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "faint",
+      dashes: "page",
+    });
+  await page
+    .getByRole("checkbox", { name: "Frame, curvature & torsion at a point" })
+    .check();
+  await expect(own).toHaveValue("faint");
+  await expect.poll(async () => (await drawnSight(page))?.probe).toBe("faint");
+  // A preset brings its own sight, here the plain drawing.
+  await choosePreset(page, { label: "Cinquefoil · (2, 5)" });
+  await settled(page);
+  expect(await drawnSight(page)).toBeNull();
+});
+
 test("without half-float targets, see-through sheets are drawn opaque and say so, and the lines' setting still applies", async ({
   page,
 }) => {
@@ -1088,6 +1469,22 @@ test("the visible-lines export draws lines behind sheets as the drawing does, an
     );
   expect(layered).toMatch(/halved behind each further sheet layer/);
   expect(layered).toMatch(/-2 or -3 when behind that many sheet layers/);
+  // The probe drawn its own way: its own group and opacity, recorded and
+  // stated, while other lines behind the tube are left out.
+  await openLink(page, {
+    ...tube(onlyLayers("surface"), { probe: "dashed" }),
+    probe: { enabled: true, position: 0.3, target: "curve", across: 0.5 },
+  });
+  const probed = (await download(page, shown)).toString();
+  expect(probed).toMatch(/<g id="hidden-probe"[^>]*stroke-opacity="0.8"/);
+  expect(probed).not.toMatch(/hidden-base/);
+  expect(probed).toMatch(/"probe":"dashed"/);
+  expect(probed).toMatch(
+    /Lines behind a shown surface are left out \(the probe's drawn dashed\), in groups named hidden-/,
+  );
+  expect(probed).toMatch(
+    /The probe's lines behind the nearest sheet are dashed/,
+  );
 });
 
 test("the Klein bottle opens seen through, its sections inside its wall dashed", async ({

@@ -19,6 +19,7 @@ import {
   arcLengths,
   dashOn,
   dashedOpacity,
+  dashesAny,
   dashesPerPixel,
   dashesPerUnit,
   defaultSight,
@@ -28,6 +29,7 @@ import {
   faintOpacity,
   isPlain,
   pagePhases,
+  probeHidden,
   seeSampling,
   seeSamples,
   sheetOffset,
@@ -957,7 +959,7 @@ export function createRenderer(
     const stroked = !!strokes && sight.weight !== "hairline";
     // Dashes on the page: periods a pixel, or 0 for dashes in space.
     const perPixel =
-      sight.hidden === "dashed" && sight.dashes === "page"
+      dashesAny(sight) && sight.dashes === "page"
         ? dashesPerPixel({ width, height })
         : 0;
     // Strokes taper with depth only through a lens.
@@ -1301,15 +1303,21 @@ export function createRenderer(
       sheets.forEach(sheet);
       gl!.colorMask(true, true, true, true);
     } else sheets.forEach(sheet);
-    if (sight.hidden !== "hide") {
-      const behind = sight.hidden === "dashed" ? 2 : 1;
+    // How each line is drawn behind sheets: hidden (0), faint (1) or
+    // dashed (2), the probe its own way when it has one.
+    const behindOf = (v: (typeof passes)[number]) => {
+      const h = probe.includes(v.batch) ? probeHidden(sight) : sight.hidden;
+      return h === "dashed" ? 2 : h === "faint" ? 1 : 0;
+    };
+    const behind = lines.filter((v) => behindOf(v));
+    if (behind.length) {
       // Fading behind each layer, the count, then its factor for the lines
       // behind (place set it to 1, which the visible lines keep).
       if (fading && sheets.length) {
         countLayers(
           width,
           height,
-          () => lines.forEach((v) => line(v, { behind })),
+          () => behind.forEach((v) => line(v, { behind: behindOf(v) })),
           () => sheets.forEach(sheet),
         );
         const programs = [{ p: program, u: uniforms }];
@@ -1324,7 +1332,7 @@ export function createRenderer(
       gl!.depthMask(false);
       gl!.enable(gl!.BLEND);
       gl!.blendFunc(gl!.SRC_ALPHA, gl!.ONE_MINUS_SRC_ALPHA);
-      lines.forEach((v) => line(v, { behind }));
+      behind.forEach((v) => line(v, { behind: behindOf(v) }));
       gl!.disable(gl!.BLEND);
       gl!.depthMask(true);
       gl!.depthFunc(gl!.LEQUAL);
