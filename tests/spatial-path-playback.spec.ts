@@ -922,3 +922,23 @@ test("a rhumb line's flight drops above its pole quickly, sinks in slowly with t
     expect(off * perUnit).toBeLessThan(1);
   }
 });
+
+test("easing keeps the path style's limits in the Path help", async ({
+  page,
+}) => {
+  const { pathHelp } = await import("../web/spatial/path");
+  const { easedPathHelp } = await import("../web/key-views");
+  await open(page, study());
+  const path = page.getByLabel("Path", { exact: true });
+  await expect(path).toHaveValue("smooth");
+  await page
+    .getByRole("checkbox", { name: "Ease key-view transitions", exact: true })
+    .check();
+  await page.getByRole("button", { name: "About Path", exact: true }).click();
+  const hint = page.locator(".hint:visible").filter({ hasText: easedPathHelp });
+  await expect(hint.locator(".hint-brief")).toContainText(easedPathHelp);
+  await hint.getByRole("button", { name: "Show more" }).click();
+  await expect(hint.locator(".hint-more")).toHaveText(
+    (pathHelp.smooth as { more: string }).more,
+  );
+});

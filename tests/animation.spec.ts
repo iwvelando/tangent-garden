@@ -387,39 +387,40 @@ test("a completed animation releases pan and zoom without Reset view", async ({
   await expect(artwork.locator("path").first()).toHaveAttribute("d", manual!);
 });
 
-for (const width of [1440, 390])
-  test(`the star's winding string stays inside its ${width}px animation view`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
-    await ready(page);
-    await choosePreset(page, {
-      label: "A string wound back onto a four-pointed star",
-    });
-    await page
-      .getByRole("button", { name: "Play animation", exact: true })
-      .click();
-    await page.getByRole("button", { name: "Pause", exact: true }).click();
-    for (const time of ["0", "0.15", "0.3", "0.5", "0.7", "0.85", "1"]) {
-      await page.getByRole("slider", { name: "Animation progress" }).fill(time);
-      await expect(page.locator("#artwork")).toHaveAttribute(
-        "data-animation-time",
-        time,
-      );
-      const bounds = await page
-        .getByTestId("derived-curve")
-        .evaluate((path: SVGGraphicsElement) => {
-          const b = path.getBBox();
-          return {
-            x: b.x,
-            y: b.y,
-            right: b.x + b.width,
-            bottom: b.y + b.height,
-          };
-        });
-      expect(bounds.x, time).toBeGreaterThan(40);
-      expect(bounds.y, time).toBeGreaterThan(30);
-      expect(bounds.right, time).toBeLessThan(960);
-      expect(bounds.bottom, time).toBeLessThan(730);
-    }
+// The drawing's viewBox is fixed and always shown whole, so these bounds,
+// in its units, hold at every window width.
+test("the star's winding string stays inside its animation view", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await ready(page);
+  await choosePreset(page, {
+    label: "A string wound back onto a four-pointed star",
   });
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  for (const time of ["0", "0.15", "0.3", "0.5", "0.7", "0.85", "1"]) {
+    await page.getByRole("slider", { name: "Animation progress" }).fill(time);
+    await expect(page.locator("#artwork")).toHaveAttribute(
+      "data-animation-time",
+      time,
+    );
+    const bounds = await page
+      .getByTestId("derived-curve")
+      .evaluate((path: SVGGraphicsElement) => {
+        const b = path.getBBox();
+        return {
+          x: b.x,
+          y: b.y,
+          right: b.x + b.width,
+          bottom: b.y + b.height,
+        };
+      });
+    expect(bounds.x, time).toBeGreaterThan(40);
+    expect(bounds.y, time).toBeGreaterThan(30);
+    expect(bounds.right, time).toBeLessThan(960);
+    expect(bounds.bottom, time).toBeLessThan(730);
+  }
+});

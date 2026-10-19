@@ -3,7 +3,7 @@
 // monotone interpolation the smooth style uses. Each notebook's own module
 // says what a view is and how the camera moves between two of them (2D:
 // planar-path.ts; 3D: spatial/path.ts). See mathematics.md#spatial-camera-paths.
-import { tiered } from "./help";
+import { isTiered, tiered, withMore, type Help } from "./help";
 
 export type PathStyle = "steady" | "smooth";
 // A key view as both notebooks keep it: a name, and the time of the leg
@@ -15,9 +15,13 @@ export type KeyBase = { name: string; leg?: number };
 export type KeyPath = { keys: KeyBase[]; ease?: boolean };
 export const easedPathHelp =
   "Keeps the selected path's route, easing to rest at every view.";
+// The Path help with easing on: easing replaces the style's own account of
+// the camera's speed, but the limits on its route still hold.
+export const easedPath = (style: Help<string>) =>
+  isTiered(style) ? withMore(easedPathHelp, style.more) : easedPathHelp;
 export const transitionHelp = tiered(
   "Gently slows to rest at each view, then starts the next leg.",
-  "Pan, rotation and zoom ease together, with speed and acceleration reaching zero at every view, including a loop's seam. Key views and leg times stay fixed. Applies to either path style, with two views or more, in playback and exports; Pace still controls the overall timeline.",
+  "Pan, rotation and zoom come to rest together at every view, including a loop's seam. Key views and leg times are unchanged, and Pace still sets the overall timing.",
 );
 export const maxKeys = 12;
 export const maxKeyName = 60;

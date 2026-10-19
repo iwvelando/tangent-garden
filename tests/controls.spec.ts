@@ -140,7 +140,7 @@ test("color schemes preserve the default inks and keep alternate inks legible", 
   const { plotPalette, axisInks } = await import("../web/palette");
   const { colorSchemes, validColorScheme } =
     await import("../web/color-schemes");
-  const { spatialPalette, lineColor, hex } =
+  const { spatialPalette, lineColor, hex, palette } =
     await import("../web/spatial/palette");
   expect(plotPalette(false)).toMatchObject({
     bg: "#f3f1ea",
@@ -194,6 +194,25 @@ test("color schemes preserve the default inks and keep alternate inks legible", 
         const s = spatialPalette(id);
         expect(s.rust).not.toEqual(s.curve);
         expect(s.rust).not.toEqual(s.slate);
+        // Construction lines stand apart from the lit surface and the
+        // receding lines stay fainter than offsets, as in the default.
+        const k = dark ? 1 : 0;
+        expect(s.construction[k]).not.toEqual(s.teal[k]);
+        expect(s.recede[k]).not.toEqual(s.offset[k]);
+        expect(contrast(hex(s.construction[k]), p.bg)).toBeGreaterThan(
+          contrast(hex(s.teal[k]), p.bg),
+        );
+        // The shaded surface is softer than the scheme's 2D ink, as the
+        // default's is, so shading leaves its lines visible.
+        expect(contrast(hex(s.teal[k]), p.bg)).toBeLessThan(
+          contrast(p.base, p.bg),
+        );
+        expect(contrast(hex(palette.teal[k]), p.bg)).toBeLessThan(
+          contrast(plotPalette(dark).base, p.bg),
+        );
+        expect(contrast(hex(s.recede[k]), p.bg)).toBeLessThan(
+          contrast(hex(s.offset[k]), p.bg),
+        );
         expect(hex(lineColor(1, 0, dark, id))).toBe(
           hex(s.construction[dark ? 1 : 0]),
         );
@@ -678,3 +697,73 @@ for (const width of [320, 768, 1024, 1440])
         await page.emulateMedia({ colorScheme });
       }
     });
+
+test("3D probe legend swatches follow the selected color scheme", async ({
+  page,
+}) => {
+  const { choosePreset } = await import("./helpers");
+  const { lineColor, hex } = await import("../web/spatial/palette");
+  const { surfaceInk } = await import("../web/spatial/probe");
+  await page.goto("/?study=3d");
+  await choosePreset(page, {
+    label: "A spheroid's evolute, spun about its axis",
+  });
+  await chooseColorScheme(page, "forest");
+  const legend = page.locator(".spatial-probe .probe-legend .probe-dot");
+  const rgb = (h: string) =>
+    `rgb(${h
+      .match(/[a-f\d]{2}/gi)!
+      .map((x) => parseInt(x, 16))
+      .join(", ")})`;
+  for (const b of [0, 1])
+    await expect(legend.nth(1 + b)).toHaveCSS(
+      "background-color",
+      rgb(hex(lineColor(surfaceInk[b], 0, false, "forest"))),
+    );
+});
+
+test("the totally reflected rays' note names the selected scheme's color", async () => {
+  const { raysNote } = await import("../web/spatial/rays");
+  const sheets = [1, 2].flatMap((branch) =>
+    [false, true].map((virtual) => ({ branch, virtual, shape: "none" })),
+  );
+  const r = { caustics: sheets, clipped: [0, 0], total: 3 } as any;
+  const light = { interaction: "refract" } as any;
+  const note = (scheme?: "cobalt") => raysNote(r, light, scheme).join(" ");
+  expect(note()).toContain("drawn totally reflected, in gray.");
+  expect(note("cobalt")).toContain("drawn totally reflected, in blue-gray.");
+});
+
+// iOS Safari shows a ring for focus moved by script after a tap, which no
+// local engine reproduces, so the menus mark such focus quiet themselves.
+test("menus opened by a tap move focus quietly, and by keyboard with a ring", async ({
+  page,
+}) => {
+  const { imageButton } = await import("./helpers");
+  await page.goto("/");
+  await expect(imageButton(page)).toBeEnabled();
+  const outline = (name: string) =>
+    page
+      .getByRole("menu", { name, exact: true })
+      .locator(":focus")
+      .evaluate((e) => getComputedStyle(e).outlineStyle);
+  for (const [trigger, name, wrap] of [
+    [
+      page.getByRole("button", { name: "Color scheme", exact: true }),
+      "Color scheme",
+      ".scheme-picker",
+    ],
+    [imageButton(page), "Export image", ".export-menu"],
+  ] as const) {
+    const wrapper = page.locator(wrap).filter({ has: trigger });
+    await trigger.click();
+    await expect(wrapper).toHaveAttribute("data-quiet", "");
+    expect(await outline(name)).toBe("none");
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    await trigger.press("Enter");
+    await expect(wrapper).not.toHaveAttribute("data-quiet");
+    expect(await outline(name)).not.toBe("none");
+    await page.keyboard.press("Escape");
+  }
+});

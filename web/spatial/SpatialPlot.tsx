@@ -279,27 +279,10 @@ export function SpatialPlot({
   // uploaded below.
   useLayoutEffect(() => {
     const element = canvas.current!;
-    try {
-      renderer.current = createRenderer(element, scheme);
-      lost.current = false;
-      setError("");
-      onError("");
-    } catch (e) {
+    const failed = (e: unknown) => {
       const text = (e as Error).message;
       setError(text);
       onError(text);
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      if (element.clientWidth) draw();
-    });
-    observer.observe(element);
-    const wheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (state.current.override) return;
-      // The wheel zooms about the pointer, which stays where it is.
-      zoomAbout(Math.exp(-e.deltaY * 0.001), e.clientX, e.clientY);
-      draw();
     };
     // A lost context keeps the camera, the study and every setting, which
     // live here rather than on the device: restoring it rebuilds the
@@ -319,9 +302,7 @@ export function SpatialPlot({
       try {
         renderer.current = createRenderer(element, scheme);
       } catch (e) {
-        const text = (e as Error).message;
-        setError(text);
-        onError(text);
+        failed(e);
         return;
       }
       lost.current = false;
@@ -333,14 +314,40 @@ export function SpatialPlot({
       onError("");
       draw();
     };
-    element.addEventListener("wheel", wheel, { passive: false });
+    // Listening before building, so a context lost while the scheme
+    // changes, which no renderer can be built on, is still rebuilt on
+    // restore, in that scheme.
     element.addEventListener("webglcontextlost", lose);
     element.addEventListener("webglcontextrestored", regained);
+    const unlisten = () => {
+      element.removeEventListener("webglcontextlost", lose);
+      element.removeEventListener("webglcontextrestored", regained);
+    };
+    if (!lost.current)
+      try {
+        renderer.current = createRenderer(element, scheme);
+        setError("");
+        onError("");
+      } catch (e) {
+        failed(e);
+        return unlisten;
+      }
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth) draw();
+    });
+    observer.observe(element);
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (state.current.override) return;
+      // The wheel zooms about the pointer, which stays where it is.
+      zoomAbout(Math.exp(-e.deltaY * 0.001), e.clientX, e.clientY);
+      draw();
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
     return () => {
       observer.disconnect();
       element.removeEventListener("wheel", wheel);
-      element.removeEventListener("webglcontextlost", lose);
-      element.removeEventListener("webglcontextrestored", regained);
+      unlisten();
       renderer.current?.dispose();
       renderer.current = null;
     };

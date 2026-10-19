@@ -85,8 +85,15 @@ export const palette = {
   ],
 } satisfies Record<string, Pair>;
 
+const mixed = (a: RGB, b: RGB, t: number): RGB =>
+  a.map((x, i) => x + (b[i] - x) * t) as RGB;
+
 // Keep the original floating-point inks intact for the default scheme.
 // Alternate surfaces, families and vector lines share these same pairs.
+// As in the default, the shaded surface takes a softer shade of the scheme's
+// first ink (toward the background), its construction lines a deeper one
+// (toward full contrast), and receding lines a faint shade of its third
+// ink, so lines stay apart from the surface and the offsets.
 const schemes = new Map<ColorScheme, typeof palette>();
 export function spatialPalette(
   scheme: ColorScheme = "default",
@@ -100,16 +107,20 @@ export function spatialPalette(
     rgb(schemeInks(scheme, false)[role]),
     rgb(schemeInks(scheme, true)[role]),
   ];
+  const toward = (role: number, end: Pair, t: number): [RGB, RGB] => {
+    const [light, dark] = pair(role);
+    return [mixed(light, end[0], t), mixed(dark, end[1], t)];
+  };
   const colors = {
     ...palette,
-    teal: pair(0),
+    teal: toward(0, palette.background, 0.3),
     gold: pair(1),
     rust: pair(4),
     slate: pair(3),
-    recede: pair(2),
+    recede: toward(2, palette.background, 0.5),
     familyFirst: pair(0),
     familyLast: pair(1),
-    construction: pair(0),
+    construction: toward(0, palette.full, 0.4),
     curve: pair(1),
     offset: pair(2),
   };
@@ -123,9 +134,6 @@ export const vec3 = (c: RGB) =>
   `vec3(${c.map((n) => (Number.isInteger(n) ? n.toFixed(1) : String(n))).join(",")})`;
 export const glsl = (pair: Pair) =>
   `mix(${vec3(pair[0])},${vec3(pair[1])},dark)`;
-
-const mixed = (a: RGB, b: RGB, t: number): RGB =>
-  a.map((x, i) => x + (b[i] - x) * t) as RGB;
 
 // The color the shader gives a line of this ink and phase. Only lines are
 // covered: shaded sheets (ink 0 and below) and receiver bins (7) are not.

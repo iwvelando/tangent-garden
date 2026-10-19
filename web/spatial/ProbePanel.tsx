@@ -1,6 +1,7 @@
 import { Field, HelpText, HelpToggle, useHelp } from "../Field";
 import { ProbePlot } from "../ProbePlot";
 import { hex, lineColor } from "./palette";
+import type { ColorScheme } from "../color-schemes";
 import {
   atPoint,
   betweenGridHelp,
@@ -88,8 +89,10 @@ export function ProbePanel({
   point,
   at: moving,
   across,
+  position,
   away,
   dark,
+  scheme,
 }: {
   config: SpatialConfig;
   frame: Frame | null;
@@ -100,10 +103,13 @@ export function ProbePanel({
   point?: SurfaceDiagnostics;
   at?: ProbePlace;
   // The share across a grid an animation moving the probe holds it at,
-  // when that is not the probe's own (see heldProbe).
+  // when that is not the probe's own (see heldProbe), and the share along
+  // it an animation has moved a point between samples to.
   across?: number;
+  position?: number;
   away?: string;
   dark: boolean;
+  scheme: ColorScheme;
 }) {
   const help = useHelp();
   const betweenHelpState = useHelp();
@@ -119,7 +125,7 @@ export function ProbePanel({
   const readout = frame && d && at ? probeReadout(at) : null;
   const step = frame && at ? curveStep(frame.result, at) : 0;
   const swatch = (ink: number) => ({
-    background: hex(lineColor(ink, 0, dark)),
+    background: hex(lineColor(ink, 0, dark, scheme)),
   });
   return (
     <fieldset className="spatial-probe">
@@ -221,14 +227,18 @@ export function ProbePanel({
             probe={
               typeof moving === "number" && across !== undefined
                 ? { ...probe, across }
-                : probe
+                : isGridPoint(moving) && position !== undefined
+                  ? { ...probe, position }
+                  : probe
             }
             onProbe={onProbe}
             animating={animating}
-            point={point}
+            point={isGridPoint(moving) ? moving.grid : point}
             at={typeof moving === "number" ? moving : undefined}
+            moved={moving !== undefined}
             away={away}
             dark={dark}
+            scheme={scheme}
           />
         )}
         {probe.enabled &&
@@ -387,7 +397,7 @@ export function ProbePanel({
 // The grid sample is the nearest row and column to the probe's fractions;
 // an animation moving the probe gives its row as `at`. Between a surface's
 // samples, the sliders move freely and the readout describes `point`,
-// where Go placed the probe.
+// where Go placed the probe, or where an animation has moved it.
 function SurfaceProbe({
   config,
   frame,
@@ -396,8 +406,10 @@ function SurfaceProbe({
   animating,
   point,
   at: moving,
+  moved,
   away,
   dark,
+  scheme,
 }: {
   config: SpatialConfig;
   frame: Frame | null;
@@ -406,8 +418,11 @@ function SurfaceProbe({
   animating: boolean;
   point?: SurfaceDiagnostics;
   at?: number;
+  // Whether an animation moves or holds the probe, at a row or a point.
+  moved: boolean;
   away?: string;
   dark: boolean;
+  scheme: ColorScheme;
 }) {
   const d = frame?.result.surfaceDiagnostics;
   if (animating)
@@ -449,7 +464,7 @@ function SurfaceProbe({
       }
     : undefined;
   const swatch = (ink: number) => ({
-    background: hex(lineColor(ink, 0, dark)),
+    background: hex(lineColor(ink, 0, dark, scheme)),
   });
   // Where an offset has folded, beyond one focal sheet.
   const folded = (d.folds ?? []).flat().filter(Boolean).length;
@@ -476,6 +491,7 @@ function SurfaceProbe({
               max={1}
               step="any"
               value={probe.position}
+              disabled={moved}
               aria-valuetext={`${terms.along} = ${short(r.u)}`}
               onChange={(e) => {
                 const position = e.target.valueAsNumber;
@@ -510,6 +526,7 @@ function SurfaceProbe({
               max={1}
               step="any"
               value={probe.across}
+              disabled={moved}
               aria-valuetext={`${terms.around} = ${short(r.v)}`}
               onChange={(e) => {
                 const across = e.target.valueAsNumber;
@@ -543,6 +560,7 @@ function SurfaceProbe({
           row={row}
           column={column}
           dark={dark}
+          scheme={scheme}
         />
       ) : (
         <>
@@ -657,6 +675,7 @@ function LightReadout({
   row,
   column,
   dark,
+  scheme,
 }: {
   frame: Frame;
   d: SurfaceDiagnostics;
@@ -665,6 +684,7 @@ function LightReadout({
   row: number;
   column: number;
   dark: boolean;
+  scheme: ColorScheme;
 }) {
   const r = lightProbeReadout(frame.result, row, column)!,
     light = d.light!,
@@ -672,7 +692,7 @@ function LightReadout({
     m = terms.surface,
     refract = frame.config.rays.interaction === "refract";
   const swatch = (ink: number) => ({
-    background: hex(lineColor(ink, 0, dark)),
+    background: hex(lineColor(ink, 0, dark, scheme)),
   });
   // Nothing leaves the point: every value but the angle is blank.
   const blank = r.state !== "traced";

@@ -99,3 +99,27 @@ test("a context restored after a study change draws the current study", async ({
   await expect.poll(() => pixels(page)).toBe(expected);
   expect(errors).toEqual([]);
 });
+
+test("a context lost while the color scheme changes is rebuilt in the new scheme", async ({
+  page,
+}) => {
+  const { chooseColorScheme } = await import("./helpers");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await ready(page);
+  await chooseColorScheme(page, "forest");
+  await expect(stage(page)).toHaveAttribute("aria-busy", "false");
+  const expected = await pixels(page);
+  await chooseColorScheme(page, "default");
+  await expect.poll(() => pixels(page)).not.toBe(expected);
+
+  await lose(page);
+  await expect(page.getByRole("alert")).toContainText("context was lost");
+  await chooseColorScheme(page, "forest");
+  // Still the loss, not a failure to build on the lost context.
+  await expect(page.getByRole("alert")).toContainText("context was lost");
+  await restore(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect.poll(() => pixels(page)).toBe(expected);
+  expect(errors).toEqual([]);
+});

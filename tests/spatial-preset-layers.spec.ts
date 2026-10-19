@@ -198,7 +198,7 @@ test("parameter presets with composed views retain their opening camera", () => 
   }
 });
 
-test("detail presets approach the detail with the whole geometry present", () => {
+test("detail presets start their flight on the detail and visit the whole geometry", () => {
   for (const name of [
     "A braided cable running to the horizon",
     "A coiled tube running into the distance",
@@ -210,7 +210,10 @@ test("detail presets approach the detail with the whole geometry present", () =>
     expect.soft(study.animation.mode, name).toBe("path");
     const keys = study.animation.path.keys;
     expect.soft(keys.length, name).toBeGreaterThanOrEqual(2);
-    expect.soft(keys.at(-1), name).toMatchObject(study.view);
+    // Play starts where the preset opens, on the detail, with no cut,
+    // flies out to the whole study, and returns.
+    expect.soft(keys[0], name).toMatchObject(study.view);
+    expect.soft(keys.at(-1), name).toMatchObject({ zoom: 1, panX: 0, panY: 0 });
     expect.soft(study.animation.repeat, name).toBe("back-and-forth");
   }
 });

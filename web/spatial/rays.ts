@@ -1,3 +1,4 @@
+import { describeColors, type ColorScheme } from "../color-schemes";
 import type {
   CausticSheet,
   FocalShape,
@@ -28,7 +29,11 @@ export const receiverAxes = {
 } as const;
 // Where each caustic branch is real and virtual and what each part spans,
 // and every sample left without an outgoing ray, with why.
-export function raysNote(r: RaysResult, light: RaysConfig): string[] {
+export function raysNote(
+  r: RaysResult,
+  light: RaysConfig,
+  scheme: ColorScheme = "default",
+): string[] {
   const refracting = light.interaction === "refract";
   const surface = refracting ? "the interface" : "the mirror";
   const branch = (b: 1 | 2) => {
@@ -63,7 +68,7 @@ export function raysNote(r: RaysResult, light: RaysConfig): string[] {
       : []),
     ...(r.total
       ? [
-          `${count(r.total, "sample is", "samples are")} at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in gray.`,
+          `${count(r.total, "sample is", "samples are")} at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in ${describeColors("gray", scheme)}.`,
         ]
       : []),
     ...(r.singular

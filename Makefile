@@ -1,4 +1,4 @@
-.PHONY: install wasm bench preset-hashes test test-go test-wasm test-browser test-webkit test-durations typecheck vet format format-check build dev dev-lan preview preview-lan check clean share-card thumbnails
+.PHONY: install wasm bench preset-hashes test test-go test-wasm test-scripts test-browser test-webkit test-durations typecheck vet format format-check build dev dev-lan preview preview-lan check pre-pr clean share-card thumbnails
 
 install:
 	npm ci
@@ -11,9 +11,12 @@ test-go:
 	go test -race -timeout 20m ./...
 	go test -cover -timeout 20m ./...
 test-wasm: wasm
-	node --test scripts/preset-hashes.test.mjs scripts/test-durations.test.mjs
+	node --test scripts/preset-hashes.test.mjs
 	node scripts/test-wasm.mjs
 	node scripts/test-dev-worker.mjs
+# Tests of the project scripts that need no engine.
+test-scripts:
+	node --test scripts/test-durations.test.mjs
 # Times large implicit surfaces and curve meshes; ARGS="--compare <site or directory>" adds another engine.
 bench: wasm
 	node scripts/bench-spatial.mjs $(ARGS)
@@ -31,7 +34,7 @@ format:
 format-check:
 	@files=$$(gofmt -l engine engine3 engine4 cmd); if [ -n "$$files" ]; then printf 'Run gofmt on:\n%s\n' "$$files"; exit 1; fi
 	npm run format:check
-test: test-go test-wasm typecheck
+test: test-go test-wasm test-scripts typecheck
 test-browser: build
 	npx playwright test
 test-webkit: build
@@ -47,6 +50,13 @@ build:
 share-card: build
 	node scripts/build-share-card.mjs
 check: format-check vet test build
+# Everything a pull request needs locally (AGENTS.md, Verification). The
+# browser suite rebuilds, since thumbnails rewrites web/examples after its
+# build, and regenerated thumbnails must be committed.
+pre-pr: check thumbnails
+	$(MAKE) test-browser
+	@dirty=$$(git status --porcelain web/examples); if [ -n "$$dirty" ]; then printf 'Commit the regenerated gallery files:\n%s\n' "$$dirty"; exit 1; fi
+	@echo "pre-pr: check, thumbnails and the full browser suite passed"
 dev:
 	npm run dev
 # Reachable from other devices on the local network, such as a phone.

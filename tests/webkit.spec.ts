@@ -856,3 +856,23 @@ test.describe("on an iPhone", () => {
       }
     });
 });
+
+// Safari does not focus a button it clicks, so pressing the palette button
+// while its menu is open blurs the focused item to nothing first.
+test("the palette button closes its open menu in WebKit", async ({ page }) => {
+  await page.goto("/");
+  const button = page.getByRole("button", {
+    name: "Color scheme",
+    exact: true,
+  });
+  const menu = page.getByRole("menu", { name: "Color scheme", exact: true });
+  await button.click();
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitemradio").first()).toBeFocused();
+  await button.click();
+  await expect(menu).toHaveCount(0);
+  await expect(button).toHaveAttribute("aria-expanded", "false");
+  // And opens it again on the next press.
+  await button.click();
+  await expect(menu).toBeVisible();
+});

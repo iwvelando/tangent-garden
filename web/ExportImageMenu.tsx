@@ -20,6 +20,7 @@ import {
   type Fits,
   type Still,
 } from "./export-image";
+import { useQuietFocus } from "./quiet-focus";
 
 // A PNG rasterized from vectors needs only a canvas of its size.
 const rasterFits: Fits = (size) => canvasFits(size);
@@ -79,6 +80,7 @@ export function ExportImageMenu({
   };
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const { quiet, ring, ...via } = useQuietFocus(wrap);
   useLayoutEffect(() => {
     if (!open && !error) return setOffset(0);
     const position = () => {
@@ -97,7 +99,9 @@ export function ExportImageMenu({
     return () => window.removeEventListener("resize", position);
   }, [open, error]);
   useEffect(() => {
-    if (open) popup.current?.querySelector("button")?.focus();
+    if (!open) return;
+    quiet();
+    popup.current?.querySelector("button")?.focus();
   }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -112,6 +116,7 @@ export function ExportImageMenu({
   }, [disabled]);
   function close() {
     setOpen(false);
+    quiet();
     button.current?.focus();
   }
   function keys(e: KeyboardEvent) {
@@ -156,7 +161,14 @@ export function ExportImageMenu({
     }
   }
   return (
-    <div className="export-menu" ref={wrap}>
+    <div
+      className="export-menu"
+      ref={wrap}
+      {...via}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) ring();
+      }}
+    >
       <button
         ref={button}
         className="export"

@@ -95,12 +95,7 @@ import {
 import { saveFile } from "./export-image";
 import { Field } from "./Field";
 import { KeyViews, KeyViewEasing } from "./KeyViews";
-import {
-  easedPathHelp,
-  pathLeg,
-  pathStyles,
-  type PathStyle,
-} from "./key-views";
+import { easedPath, pathLeg, pathStyles, type PathStyle } from "./key-views";
 import {
   asFirst,
   defaultPlanarPath,
@@ -1111,7 +1106,11 @@ export function AnimationPanel({
                 label="Path"
                 help={
                   path.ease
-                    ? easedPathHelp
+                    ? easedPath(
+                        path.style === "smooth"
+                          ? planarPathHelp.smooth
+                          : planarPathHelp.steady,
+                      )
                     : path.style === "smooth"
                       ? planarPathHelp.smooth
                       : planarPathHelp.steady

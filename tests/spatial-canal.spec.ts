@@ -51,7 +51,7 @@ test("a canal surface has its own layers and validated fields", async ({
   await choosePreset(page, tube);
   await settled(page);
   await expect(page.locator(".sampling-note")).toContainText(
-    "Canals retain regular rings, displayed circles, and gap boundaries.",
+    "Canal meshes keep ≤481 regular rings, plus circles.",
   );
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "A surface enveloping spheres",
