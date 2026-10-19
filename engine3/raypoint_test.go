@@ -49,6 +49,25 @@ func lightPointProbed(t *testing.T, c Request, u, v float64) (Result, *SurfaceDi
 	return r, d
 }
 
+// alone is the point at (u, v) asked of the study already computed, as
+// the page moving the probe asks for it (SurfaceProbeOnly), with
+// pointProbed's checks of its shape.
+func alone(t *testing.T, c Request, u, v float64) *SurfaceDiagnostics {
+	t.Helper()
+	c.SurfaceProbe = &SurfaceQuery{U: u, V: v}
+	d, err := SurfaceProbeOnly(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.U) != 1 || len(d.V) != 1 || d.U[0] != u || d.V[0] != v || len(d.Points) != 1 || len(d.Points[0]) != 1 {
+		t.Fatalf("the point is not one sample at (%g, %g): u %v, v %v", u, v, d.U, d.V)
+	}
+	if (c.LightDiagnostics && c.Format == "rays") != (d.Light != nil) {
+		t.Fatalf("the point at (%g, %g) has the wrong target: kind %q", u, v, d.Kind)
+	}
+	return d
+}
+
 // Ray studies that between them reflect and refract, from parallel light
 // and a lamp, with chart singularities, unlit samples, total internal
 // reflection, a lamp standing on the surface, and a dish so shallow that
@@ -91,14 +110,18 @@ func TestRayPointAtASampleIsTheSample(t *testing.T) {
 					if checkSurfacePoint(q, SurfaceQuery{U: u, V: v}) != nil {
 						continue
 					}
-					var point *SurfaceDiagnostics
-					var got, want string
-					if target == "light" {
-						_, point = lightPointProbed(t, c, u, v)
-						got, want = lightCell(t, point, 0, 0), lightCell(t, grid, i, j)
-					} else {
+					// One point through the whole study; the rest through
+					// the study kept for the probe alone, which
+					// TestRayProbeOnlyIsTheStudysPoint holds to the whole
+					// study's, so the study is computed once, not once a
+					// sample.
+					point := alone(t, study, u, v)
+					if i == q.USamples/2 && j == q.VSamples/2 {
 						_, point = pointProbed(t, study, u, v)
-						got, want = cell(t, point, 0, 0), cell(t, grid, i, j)
+					}
+					got, want := cell(t, point, 0, 0), cell(t, grid, i, j)
+					if target == "light" {
+						got, want = lightCell(t, point, 0, 0), lightCell(t, grid, i, j)
 					}
 					if got != want {
 						t.Fatalf("%s %s at sample (%d, %d): the point says\n%s\nthe grid says\n%s", name, target, i, j, got, want)
