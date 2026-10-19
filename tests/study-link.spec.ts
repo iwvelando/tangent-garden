@@ -1431,6 +1431,30 @@ test("a link carries what a camera path turns about; older links turn about the 
   }
 });
 
+test("a link carries a flight that fits each frame; older links draw every frame about the starting study", async () => {
+  const study: SpatialStudy = {
+    ...spatial(),
+    animation: { ...spatial().animation, mode: "parameters", camera: "path" },
+  };
+  // A path without the setting, as every link made before it, keeps none:
+  // its frames are drawn about the study as playback starts.
+  assert.equal(
+    "fit" in spatialStudy(structuredClone(study)).animation.path,
+    false,
+  );
+  for (const fit of [true, false]) {
+    const s = structuredClone(study);
+    s.animation.path.fit = fit;
+    const read = await readStudyLink(await writeStudyLink("3d", s));
+    assert.equal(spatialStudy(read.study).animation.path.fit, fit);
+  }
+  for (const fit of ["true", 1, null]) {
+    const s = structuredClone(study) as any;
+    s.animation.path.fit = fit;
+    await refused(() => spatialStudy(s), "animation.path.fit");
+  }
+});
+
 test("a link carries a camera flying its path while the geometry moves; never while orbiting", async () => {
   // Revealing, varying parameters, tracing, probing and peeling may fly the
   // path; the path mode keeps a chosen camera it ignores.

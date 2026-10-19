@@ -497,3 +497,85 @@ test("light followed into a trough: end-on, every cross-section is one circle an
     "· Down onto the cusp",
   );
 });
+
+test("a seashell grows on its spiral, fitted to the views: it stays on the page, and two whorls on it draws its first frame again", async ({
+  page,
+}) => {
+  await ready(page);
+  await chooseExample(page, "A seashell growing on its spiral");
+  await expect(mode(page)).toHaveValue("parameters");
+  await expect(cameraField(page)).toHaveValue("path");
+  const fit = page.getByLabel("Fit each frame to the views");
+  await expect(fit).toBeChecked();
+  await page.keyboard.press("Escape");
+  // The base spiral's vertices in a line drawing, and the page's size.
+  const spiral = async () => {
+    await button(page, "Export image").click();
+    const event = page.waitForEvent("download");
+    await page
+      .getByRole("menuitem", { name: "Lines (SVG) · every line", exact: true })
+      .click();
+    const svg = (await readFile((await (await event).path())!)).toString();
+    const [, w, h] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)!.map(Number);
+    const group = svg.match(/<g id="base"[^>]*>(.*?)<\/g>/)![1];
+    const points = [...group.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map(
+      (v) => [+v[1], +v[2]] as const,
+    );
+    expect(points.length).toBeGreaterThan(100);
+    return { w, h, points };
+  };
+  const extent = (points: (readonly [number, number])[]) => {
+    const xs = points.map((p) => p[0]),
+      ys = points.map((p) => p[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  };
+  // The line drawing cuts strokes at the page's edges, so a spiral that
+  // leaves the page has vertices on them.
+  const onPage = ({ w, h, points }: Awaited<ReturnType<typeof spiral>>) =>
+    points.every(([x, y]) => x > 1 && x < w - 1 && y > 1 && y < h - 1);
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  const radius = async () =>
+    JSON.parse((await snapshot(page)).camera!).radius as number;
+  const drawn: Awaited<ReturnType<typeof spiral>>[] = [],
+    radii: number[] = [];
+  for (const p of ["0", "0.25", "0.5", "0.75", "1"]) {
+    await seek(page, p);
+    const d = await spiral();
+    expect(onPage(d), `at ${p}`).toBe(true);
+    drawn.push(d);
+    radii.push(await radius());
+  }
+  // Each frame is drawn about its own bounds, e^{4πa} ≈ 4.52 times as wide
+  // at the end.
+  for (let k = 1; k < radii.length; k++)
+    expect(radii[k]).toBeGreaterThan(radii[k - 1]);
+  expect(radii[4] / radii[0]).toBeGreaterThan(4.4);
+  expect(radii[4] / radii[0]).toBeLessThan(4.7);
+  // Two whorls on, the spiral is the first scaled about its apex and turned
+  // twice about its axis: the last view, the first again a turn on, draws
+  // it where the first frame drew it, within a few pixels of a page
+  // hundreds wide (the bounds see a tiny innermost whorl less).
+  const [first, last] = [extent(drawn[0].points), extent(drawn[4].points)];
+  first.forEach((v, k) => expect(Math.abs(v - last[k])).toBeLessThan(4));
+  // Unfitted, the views keep the starting study's scale, and the grown
+  // shell leaves the page.
+  await button(page, "Back to study").click();
+  await settled(page);
+  await fit.uncheck();
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  await seek(page, "1");
+  const grown = await spiral();
+  expect(onPage(grown)).toBe(false);
+  expect(await radius()).toBeCloseTo(radii[0], 6);
+  // Only a parameter animation offers it: every other keeps the study
+  // fixed.
+  await button(page, "Back to study").click();
+  await settled(page);
+  await mode(page).selectOption("reveal");
+  await cameraField(page).selectOption("path");
+  await expect(fit).toHaveCount(0);
+  await mode(page).selectOption("parameters");
+  await expect(fit).not.toBeChecked();
+});

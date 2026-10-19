@@ -2,6 +2,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { choosePreset } from "./helpers";
 import { camera, project, refinementView } from "../web/spatial/scene";
+import { pathView } from "../web/spatial/path";
+import { spatialPresets } from "../web/spatial/presets";
 import type { View } from "../web/spatial/renderer";
 import type { Vec3 } from "../web/spatial/types";
 
@@ -88,6 +90,13 @@ function chords(svg: string) {
 // crosses the page (a few hundredths of a pixel apart).
 async function stray(page: Page) {
   const view = await shown(page);
+  // The frame's own harmonic center moves the whole curve.
+  const center = JSON.parse((await stage(page).getAttribute("data-config"))!)
+    .harmonic.center;
+  const at = (t: number): Vec3 => {
+    const p = curve(t);
+    return { x: p.x + center.x, y: p.y + center.y, z: p.z + center.z };
+  };
   const size = await canvas(page).evaluate((c: HTMLCanvasElement) => ({
     width: c.clientWidth,
     height: c.clientHeight,
@@ -111,10 +120,9 @@ async function stray(page: Page) {
   const coarse = 1e-4,
     fine = 2e-4 / Math.max(1, scale);
   for (let t = 0; t < 2 * Math.PI; t += coarse) {
-    if (!near(project(k, curve(t))) && !near(project(k, curve(t + coarse))))
-      continue;
+    if (!near(project(k, at(t))) && !near(project(k, at(t + coarse)))) continue;
     for (let u = t; u < t + coarse; u += fine) {
-      const p = project(k, curve(u));
+      const p = project(k, at(u));
       const key = `${Math.floor(p.x)},${Math.floor(p.y)}`;
       let cell = cells.get(key);
       if (!cell) cells.set(key, (cell = []));
@@ -242,4 +250,66 @@ test("without refinement to the view, a flight stops at 8×", async ({
   await expect(page.locator("#spatial-animation-section")).toContainText(
     "View 3 zooms past 8×; refine the study to its view to zoom further.",
   );
+});
+
+test("fitted while the domain start moves, a deep flight keeps each view's detail where the unfitted flight draws it, refined to each frame's view", async ({
+  page,
+}) => {
+  // From π to 0, each frame is part of the study, and its bounds shift by
+  // a fraction of their radius though nothing it draws moves. Zoomed in 9.5
+  // to 79 times, the fit fades to a share 1/z of that shift, so the curve
+  // stays within a pixel or two of where the views put it, where the whole
+  // similarity carries it tens of pixels away.
+  test.setTimeout(120_000);
+  await open(page);
+  await page.getByLabel("Animate", { exact: true }).selectOption("parameters");
+  await page.getByLabel("Parameter 1", { exact: true }).selectOption("min");
+  await page.getByLabel("Track 1 from").fill("pi");
+  await page.getByLabel("Track 1 to").fill("0");
+  await page
+    .getByLabel("Animation camera", { exact: true })
+    .selectOption("path");
+  await page.getByLabel("Fit each frame to the views").check();
+  await page.getByLabel("Duration (seconds)").fill("3");
+  await settled(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // The last frame is the whole study, whose bounds the views were taken
+  // about, so its camera is the path's own.
+  await seek(page, "1");
+  const start = await shown(page);
+  const path = spatialPresets.find((s) => s.name === wheels.label)!.flight!
+    .path;
+  const size = await canvas(page).evaluate((c: HTMLCanvasElement) => ({
+    width: c.clientWidth,
+    height: c.clientHeight,
+  }));
+  for (const p of ["0.7", "0.8", "0.9", "1"]) {
+    await seek(page, p);
+    const { view, worst, measured } = await stray(page);
+    expect(view.zoom).toBeGreaterThan(9);
+    expect(measured, `at ${p}`).toBeGreaterThan(40);
+    expect(worst, `at ${p}`).toBeLessThanOrEqual(1.5);
+    // Where the unfitted flight draws the curve's points near the middle
+    // of the page, and where this frame draws them.
+    const plain = camera(
+      pathView(path, { center: start.center, radius: start.radius }, +p),
+      size,
+    );
+    const fitted = camera(view, size);
+    let most = 0,
+      near = 0;
+    for (let t = 0; t < 2 * Math.PI; t += 2e-5) {
+      const a = project(plain, curve(t));
+      if (Math.hypot(a.x - size.width / 2, a.y - size.height / 2) > 100)
+        continue;
+      const b = project(fitted, curve(t));
+      most = Math.max(most, Math.hypot(a.x - b.x, a.y - b.y));
+      near++;
+    }
+    expect(near, `at ${p}`).toBeGreaterThan(10);
+    expect(most, `at ${p}`).toBeLessThan(3);
+  }
 });

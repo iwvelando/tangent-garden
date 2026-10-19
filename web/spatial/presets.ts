@@ -4612,4 +4612,90 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // A seashell: spheres of radius 0.42t on the conical logarithmic spiral
+  // t(cos θ, −1.1, sin θ), θ = ln(t)/a, a = 0.12, t being the distance from
+  // the axis. Its axis is y, the turntable's axis. Scaling the spiral by k
+  // turns it by ln(k)/a about y, so a whorl is the one before it e^{2πa} ≈
+  // 2.12 times larger, and the tube, its radius in proportion to t, grows
+  // with it. Samples are even in t, so every frame spreads them over the
+  // shell alike, most on its outer whorls. The domain end runs from 1 to
+  // e^{4πa}, two whorls on, while the camera circles the shell, looks down
+  // into its spire and returns to where it began, never zoomed in past the
+  // fitted framing, where fitting is whole. Every frame is fitted to the
+  // views, so the shell, 4.5 times wider at the end, stays on the page;
+  // two whorls on it is the shell it started as, scaled and turned twice
+  // about its axis, so the last frame draws almost exactly the first.
+  {
+    name: "A seashell growing on its spiral",
+    detail:
+      "A tube swelling along a logarithmic spiral: each whorl is the last one scaled, so the shell keeps its shape as it grows",
+    view: { ...initialView, yaw: 0.6, pitch: 0.35 },
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "canal",
+      lines: 96,
+      samples: 900,
+      canal: { radius: 0.42, profile: "t", meridians: 6 },
+      frame: { ...base.frame, reference: { x: 0, y: 1, z: 0 } },
+      curve: {
+        x: "t*cos(ln(t)/a)",
+        y: "-1.1*t",
+        z: "t*sin(ln(t)/a)",
+        a: 0.12,
+        // About eight whorls in from t = 1, where the apex is under a pixel.
+        min: 0.0025,
+        max: 1,
+      },
+    },
+    flight: {
+      duration: 20,
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "max", from: "1", to: "exp(0.48*pi)" }],
+      },
+      path: {
+        style: "smooth",
+        fit: true,
+        keys: [
+          {
+            name: "From the side",
+            yaw: 0.6,
+            pitch: 0.35,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Around the aperture",
+            yaw: 2.4,
+            pitch: 0.1,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Down into the spire",
+            yaw: 3.6,
+            pitch: 1.3,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "From the side again",
+            yaw: 0.6,
+            pitch: 0.35,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 1,
+          },
+        ],
+      },
+    },
+  },
 ];
