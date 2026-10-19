@@ -63,19 +63,21 @@ type ImplicitSection struct {
 }
 
 // ImplicitComponent is one connected piece of the mesh: its triangles, its
-// Euler characteristic V − E + F, whether it has no boundary edge, and the
-// edges along which it meets itself (see crossing.go).
+// Euler characteristic V − E + F, whether it has no boundary edge, whether
+// it is two-sided, and its edges along which it passes through itself or
+// another piece (see crossing.go).
 type ImplicitComponent struct {
-	Triangles int  `json:"triangles"`
-	Euler     int  `json:"euler"`
-	Closed    bool `json:"closed"`
-	Crossings int  `json:"crossings"`
+	Triangles  int  `json:"triangles"`
+	Euler      int  `json:"euler"`
+	Closed     bool `json:"closed"`
+	Orientable bool `json:"orientable"`
+	Crossings  int  `json:"crossings"`
 }
 
 // ImplicitResult is the level set as an indexed mesh. Positions and Normals
 // hold three coordinates per vertex; a normal is ∇F/|∇F|, pointing toward
-// larger F, or zero where ∇F vanishes or is not finite (counted in
-// Singular). Triangles hold three vertex indices each, counterclockwise
+// larger F, or on a crossing its own sheet's (listed in OnCrossing), or
+// zero where ∇F vanishes or is not finite (counted in Singular). Triangles hold three vertex indices each, counterclockwise
 // seen from larger F. Cut and Open hold pairs of vertex indices: the edges
 // of a single triangle, where the box's faces cut the level set, and
 // elsewhere, beside cells left out. Marks are the first of the grid edges
@@ -85,7 +87,13 @@ type ImplicitComponent struct {
 // whose corners alternate in sign; with refinement, Nonfinite also counts
 // the points sampled between grid points. Crossings holds pairs of vertex
 // indices: the edges along which two sheets of the level set cross, each
-// shared by four triangles. Cones counts the isolated points where sheets
+// sheet's own, on two of its triangles, beside the other sheet's at the
+// same points. Twins holds pairs of vertex indices: a vertex on a crossing
+// and the other sheet's copy of it. OnCrossing lists the vertices on or
+// beside a crossing whose normal is their own sheet's rather than ∇F's
+// (see sheets): larger F lies on the other side of the crossing along a
+// sheet, so their triangles on either side of it face opposite ways, some
+// against the normal. Cones counts the isolated points where sheets
 // meet, each a vertex shared by the cones' triangles; CrossingsUnresolved
 // counts the tetrahedra near a crossing that could not be meshed and are
 // left out; CrossingsExhausted is set when the crossings would need more
@@ -99,6 +107,8 @@ type ImplicitResult struct {
 	Cut                    []int32             `json:"cut"`
 	Open                   []int32             `json:"open"`
 	Crossings              []int32             `json:"crossings"`
+	Twins                  []int32             `json:"twins"`
+	OnCrossing             []int32             `json:"onCrossing"`
 	Cones                  int                 `json:"cones"`
 	CrossingsUnresolved    int                 `json:"crossingsUnresolved"`
 	CrossingsExhausted     bool                `json:"crossingsExhausted"`
@@ -594,7 +604,7 @@ func (m *ImplicitResult) topology() {
 		r := find(m.Triangles[k])
 		if _, ok := piece[r]; !ok {
 			piece[r] = len(m.Components)
-			m.Components = append(m.Components, ImplicitComponent{Closed: true})
+			m.Components = append(m.Components, ImplicitComponent{Closed: true, Orientable: true})
 		}
 		m.Components[piece[r]].Triangles++
 		m.Components[piece[r]].Euler++
@@ -623,6 +633,15 @@ func (m *ImplicitResult) topology() {
 	for k := 0; k < len(m.Crossings); k += 2 {
 		m.Components[piece[find(m.Crossings[k])]].Crossings++
 	}
+	// Sides: each piece's triangles are turned, from its first, to agree
+	// across every edge with two triangles. The stored winding faces
+	// larger F, which turns over across a crossing on each sheet, so it is
+	// not used. A piece whose triangles cannot all agree is one-sided.
+	// Without crossings the winding agrees everywhere, the mesh bounding
+	// F − c ≥ 0, so every piece is two-sided.
+	if len(m.Crossings) > 0 || len(m.Twins) > 0 {
+		m.orient(edges, piece, find)
+	}
 	for _, e := range order {
 		c := &m.Components[piece[find(e[0])]]
 		c.Euler--
@@ -634,6 +653,59 @@ func (m *ImplicitResult) topology() {
 			m.Cut = append(m.Cut, e[0], e[1])
 		} else {
 			m.Open = append(m.Open, e[0], e[1])
+		}
+	}
+}
+
+// orient finds which pieces are one-sided (see topology), given the count
+// of triangles on each edge and each vertex's piece.
+func (m *ImplicitResult) orient(edges map[[2]int32]int, piece map[int32]int, find func(int32) int32) {
+	across := make([]int32, len(m.Triangles))
+	first := map[[2]int32]int32{}
+	for k := range m.Triangles {
+		across[k] = -1
+		a, b := m.Triangles[k], m.Triangles[k-k%3+(k%3+1)%3]
+		e := [2]int32{min(a, b), max(a, b)}
+		if edges[e] != 2 {
+			continue
+		}
+		if j, ok := first[e]; ok {
+			across[k], across[j] = j, int32(k)
+		} else {
+			first[e] = int32(k)
+		}
+	}
+	side := make([]int8, len(m.Triangles)/3)
+	var stack []int
+	for t := range side {
+		if side[t] != 0 {
+			continue
+		}
+		c := &m.Components[piece[find(m.Triangles[3*t])]]
+		side[t] = 1
+		stack = append(stack[:0], t)
+		for len(stack) > 0 {
+			u := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			for e := range 3 {
+				j := across[3*u+e]
+				if j < 0 {
+					continue
+				}
+				// Neighbors agree when they run along their shared edge
+				// in opposite directions.
+				want := side[u]
+				if m.Triangles[j] == m.Triangles[3*u+e] {
+					want = -want
+				}
+				switch w := int(j) / 3; side[w] {
+				case 0:
+					side[w] = want
+					stack = append(stack, w)
+				case -want:
+					c.Orientable = false
+				}
+			}
 		}
 	}
 }
@@ -856,13 +928,21 @@ func implicit(q ImplicitRequest) (Result, error) {
 		discontinuities = len(edges)
 	}
 	x.fold()
+	x.split()
 	x.meet()
+	x.sheets()
 	out := &ImplicitResult{Box: q.Box, Grid: s.n, Positions: s.positions, Normals: s.normals, Triangles: s.triangles,
-		Cut: []int32{}, Open: []int32{}, Crossings: []int32{}, Components: []ImplicitComponent{}, Sections: []ImplicitSection{}, Marks: marks,
+		Cut: []int32{}, Open: []int32{}, Crossings: []int32{}, Twins: []int32{}, OnCrossing: []int32{}, Components: []ImplicitComponent{}, Sections: []ImplicitSection{}, Marks: marks,
 		Nonfinite: s.nonfinite, Discontinuities: discontinuities, Ambiguous: s.ambiguous(), Singular: s.singular, Refinement: refinement,
 		Cones: x.cones, CrossingsUnresolved: x.unresolved, CrossingsExhausted: x.exhausted}
 	if x.pairs != nil {
 		out.Crossings = x.pairs
+	}
+	if x.twins != nil {
+		out.Twins = x.twins
+	}
+	if x.onCrossing != nil {
+		out.OnCrossing = x.onCrossing
 	}
 	out.topology()
 	budget := &engine.ContourBudget{}

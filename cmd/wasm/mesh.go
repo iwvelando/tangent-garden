@@ -29,7 +29,8 @@ type ints struct {
 // lifted }: mesh holds the curve study's indexed triangles
 // (engine3.CurveMesh: vertices, seven numbers each, triangles, and
 // sampleIndex, one per triangle), implicit, only for an implicit surface,
-// its positions, normals, triangles, cut, open and crossings, and lifted the result's
+// its positions, normals, triangles, cut, open, crossings, twins and
+// onCrossing, and lifted the result's
 // other large arrays (see liftReply). The JSON keeps every other field,
 // with null in place of each array. WebAssembly and every browser are
 // little-endian, so the bytes are copied as they lie in memory.
@@ -40,9 +41,9 @@ func meshReply(result *engine3.Result, refused string) any {
 	if m := result.Implicit; m != nil {
 		fs = append(fs, floats{"implicit", "positions", m.Positions}, floats{"implicit", "normals", m.Normals})
 		is = append(is, ints{"implicit", "triangles", m.Triangles}, ints{"implicit", "cut", m.Cut}, ints{"implicit", "open", m.Open},
-			ints{"implicit", "crossings", m.Crossings})
+			ints{"implicit", "crossings", m.Crossings}, ints{"implicit", "twins", m.Twins}, ints{"implicit", "onCrossing", m.OnCrossing})
 		groups["implicit"] = map[string]any{}
-		m.Positions, m.Normals, m.Triangles, m.Cut, m.Open, m.Crossings = nil, nil, nil, nil, nil, nil
+		m.Positions, m.Normals, m.Triangles, m.Cut, m.Open, m.Crossings, m.Twins, m.OnCrossing = nil, nil, nil, nil, nil, nil, nil, nil
 	}
 	result.Mesh = engine3.CurveMesh{}
 	return liftReply(result, refused, fs, is, groups)

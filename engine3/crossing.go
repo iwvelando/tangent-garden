@@ -26,9 +26,11 @@ import (
 // the tetrahedron, and each loop is fanned. A loop through two nodes is
 // split there into the two halves of its sheet, both fanned from the
 // first node, so the edge between the nodes is shared by both halves of
-// both sheets: four triangles. Without nodes, two or more loops around an
-// apex are fanned to it. Every face is decided once, for both tetrahedra
-// on it, so the mesh stays conforming.
+// that sheet. Each node has a copy for each sheet, so each sheet is whole
+// through the crossing, with its own normals along it (see sheets).
+// Without nodes, two or more loops around an apex are fanned to it. Every
+// face is decided once, for both tetrahedra on it, so the mesh stays
+// conforming.
 //
 // A crossing often lies in a grid plane, or meets a grid line, as where a
 // symmetric surface crosses itself on its plane of symmetry in a symmetric
@@ -49,7 +51,8 @@ var maxCrossingTetrahedra = 50000
 type tet = [4]point
 
 // A crossing tetrahedron's points: root i along an edge from its first
-// lattice point, a face's node, or a tetrahedron's apex.
+// lattice point, a face's node on its path i (each sheet's own copy of the
+// node), or a tetrahedron's apex.
 const (
 	onEdge = iota
 	atNode
@@ -75,7 +78,8 @@ type roots struct {
 }
 
 // face is a face's paths, each a list of points running from one edge
-// crossing to another, through the node where the face has one. ok is
+// crossing to another, through the node where the face has one: the first
+// two paths then, one for each sheet, each through its own copy. ok is
 // false where the face cannot be meshed.
 type face struct {
 	ok    bool
@@ -85,11 +89,13 @@ type face struct {
 }
 
 // plan is how a crossing tetrahedron is meshed: its triangles, the edges
-// where sheets cross, and whether it holds an apex. ok is false where it
-// cannot be meshed and is left out.
+// where sheets cross, one on each sheet, and whether it holds an apex. ok
+// is false where it cannot be meshed and is left out.
 type plan struct {
-	// merged are roots that become this tetrahedron's apex.
+	// merged are roots that become this tetrahedron's apex, and joined the
+	// node faces where one sheet passes both copies, as at a pinch point.
 	merged    []pid
+	joined    [][3]point
 	ok        bool
 	unusual   [][2]point
 	triangles [][3]pid
@@ -121,7 +127,13 @@ type crossings struct {
 	faces map[[3]point]*face
 	plans map[tet]*plan
 	own   map[[2]point][]int32
-	nodes map[[3]point]int32
+	nodes map[copyKey]int32
+	// joined holds the faces whose node is one vertex for both sheets;
+	// order lists node faces in the order of their first copy, and sheet
+	// the vertices that take their own sheet's normal (see sheets).
+	joined map[[3]point]bool
+	order  [][3]point
+	sheet  []int32
 	// merge sends a root to the tetrahedron whose apex it becomes.
 	merge map[pid]tet
 	// apexes holds each tetrahedron's apex vertex, and made the indices
@@ -133,6 +145,14 @@ type crossings struct {
 	cones      int
 	exhausted  bool
 	pairs      []int32
+	twins      []int32
+	onCrossing []int32
+}
+
+// copyKey names one sheet's copy of a face's node.
+type copyKey struct {
+	face [3]point
+	i    int8
 }
 
 func newCrossings(s *field, scale int32, exact func(point) float64, at func(point) Vec3, single func(p, q point) (int32, bool), leaves func(int) []tet, of func(int, int) []tet) *crossings {
@@ -320,11 +340,28 @@ func (x *crossings) find() {
 				queue = append(queue, x.around([]point{c})...)
 			}
 		}
+		// Where sheets cross at a shallow angle they run within a cell of
+		// each other beyond the crossing, through tetrahedra without one:
+		// a tetrahedron sharing a corner with a crossing one, whose
+		// corners change sign and that has an edge crossing both sheets,
+		// its ends on one side, is meshed as a crossing too, each sheet
+		// its own, where marching would join the sheets.
+		for _, c := range v {
+			for _, w := range x.around([]point{c}) {
+				if _, ok := x.plans[sorted(w)]; !ok && x.between(w) {
+					queue = append(queue, w)
+				}
+			}
+		}
 	}
-	x.merge = map[pid]tet{}
+	x.merge, x.joined = map[pid]tet{}, map[[3]point]bool{}
 	for key, p := range x.plans {
 		if !p.ok {
 			x.unresolved++
+		} else {
+			for _, f := range p.joined {
+				x.joined[f] = true
+			}
 		}
 		for _, id := range p.merged {
 			if q, ok := x.merge[id]; !ok || less4(key, q) {
@@ -378,6 +415,35 @@ func (x *crossings) meets(v tet, slopes *[4]Vec3) bool {
 	u, converged, saddle := x.critical(o, dirs, []float64{0.25, 0.25, 0.25}, mean(g[:]), 8)
 	return converged && saddle && u[0] >= -slack && u[1] >= -slack && u[2] >= -slack && u[0]+u[1]+u[2] <= 1+slack &&
 		x.onLevel(o.add(dirs[0].mul(u[0])).add(dirs[1].mul(u[1])).add(dirs[2].mul(u[2])), g[:])
+}
+
+// between reports whether a tetrahedron's corners change sign, on F moved
+// by the shift, and one of its edges whose ends lie on one side crosses
+// the level, as an edge between two sheets near a crossing does.
+func (x *crossings) between(v tet) bool {
+	var side [4]bool
+	positive := 0
+	for c, p := range v {
+		g := x.value(p)
+		if math.IsNaN(g) {
+			return false
+		}
+		if side[c] = g >= 0; side[c] {
+			positive++
+		}
+	}
+	if positive == 0 || positive == 4 {
+		return false
+	}
+	for _, e := range tetEdges {
+		if side[e[0]] != side[e[1]] {
+			continue
+		}
+		if r := x.edge(v[e[0]], v[e[1]]); r.ok && r.unusual {
+			return true
+		}
+	}
+	return false
 }
 
 // around lists the tetrahedra with all the given lattice points as
@@ -514,6 +580,19 @@ func (x *crossings) edge(a, b point) *roots {
 		expected = 1
 	}
 	r.unusual = len(r.t) != expected
+	// An end exactly on the level, as every grid point of a sheet lying
+	// along a grid plane is, is where marching puts the edge's vertex. The
+	// edge's crossing, with the shift, is that end's own sheet, moved by the
+	// shift, where F between the end and it already has the other end's
+	// sign; otherwise another sheet crosses the edge there, as beside a
+	// crossing with such a sheet.
+	if len(r.t) == 1 && r.t[0] > 0 && r.t[0] < 1 {
+		ea, eb := x.exact(e[0]), x.exact(e[1])
+		if ea == 0 && eb != 0 && (x.s.f(along(r.t[0]/2))-x.s.c >= 0) != (eb >= 0) ||
+			eb == 0 && ea != 0 && (x.s.f(along((1+r.t[0])/2))-x.s.c >= 0) != (ea >= 0) {
+			r.unusual = true
+		}
+	}
 	return r
 }
 
@@ -530,39 +609,17 @@ func (x *crossings) edge(a, b point) *roots {
 func (x *crossings) critical(o Vec3, dirs []Vec3, u []float64, scale float64, steps int) ([]float64, bool, bool) {
 	n := len(dirs)
 	const step = 1e-4
-	at := func(u []float64, off ...[2]int) float64 {
+	f := func(u []float64) float64 {
 		p := o
 		for k := range n {
-			c := u[k]
-			for _, d := range off {
-				if d[0] == k {
-					c += float64(d[1]) * step
-				}
-			}
-			p = p.add(dirs[k].mul(c))
+			p = p.add(dirs[k].mul(u[k]))
 		}
 		return x.f(p)
 	}
 	u = append([]float64(nil), u...)
-	g := make([]float64, n)
-	h := make([][]float64, n)
-	for k := range h {
-		h[k] = make([]float64, n)
-	}
 	last := math.Inf(1)
 	for range steps {
-		f0 := at(u)
-		for k := range n {
-			plus, minus := at(u, [2]int{k, 1}), at(u, [2]int{k, -1})
-			g[k] = (plus - minus) / (2 * step)
-			h[k][k] = (plus - 2*f0 + minus) / (step * step)
-			for j := k + 1; j < n; j++ {
-				pp, pm := at(u, [2]int{k, 1}, [2]int{j, 1}), at(u, [2]int{k, 1}, [2]int{j, -1})
-				mp, mm := at(u, [2]int{k, -1}, [2]int{j, 1}), at(u, [2]int{k, -1}, [2]int{j, -1})
-				h[k][j] = (pp - pm - mp + mm) / (4 * step * step)
-				h[j][k] = h[k][j]
-			}
-		}
+		f0, g, h := differences(f, u, step)
 		s, ok := solve(h, g)
 		if !ok {
 			return u, false, false
@@ -592,6 +649,39 @@ func (x *crossings) critical(o Vec3, dirs []Vec3, u []float64, scale float64, st
 		last = size
 	}
 	return u, false, false
+}
+
+// differences is f's value at u with its gradient and Hessian by central
+// differences a step wide in each coordinate: 1 + 2n² evaluations in n
+// coordinates.
+func differences(f func([]float64) float64, u []float64, step float64) (float64, []float64, [][]float64) {
+	n := len(u)
+	c := make([]float64, n)
+	at := func(off ...[2]int) float64 {
+		copy(c, u)
+		for _, d := range off {
+			c[d[0]] += float64(d[1]) * step
+		}
+		return f(c)
+	}
+	g := make([]float64, n)
+	h := make([][]float64, n)
+	for k := range h {
+		h[k] = make([]float64, n)
+	}
+	f0 := at()
+	for k := range n {
+		plus, minus := at([2]int{k, 1}), at([2]int{k, -1})
+		g[k] = (plus - minus) / (2 * step)
+		h[k][k] = (plus - 2*f0 + minus) / (step * step)
+		for j := k + 1; j < n; j++ {
+			pp, pm := at([2]int{k, 1}, [2]int{j, 1}), at([2]int{k, 1}, [2]int{j, -1})
+			mp, mm := at([2]int{k, -1}, [2]int{j, 1}), at([2]int{k, -1}, [2]int{j, -1})
+			h[k][j] = (pp - pm - mp + mm) / (4 * step * step)
+			h[j][k] = h[k][j]
+		}
+	}
+	return f0, g, h
 }
 
 // solve solves h s = g for a symmetric 2 × 2 or 3 × 3 h by Cramer's rule.
@@ -787,7 +877,7 @@ func (x *crossings) face(a, b, c point) *face {
 		// Four arms meet at the node, opposite arms on one sheet; the
 		// other crossings pair within the sectors between the arms.
 		f.node, f.x = true, nodes[0]
-		node := pid{kind: atNode, v: [4]point{key[0], key[1], key[2]}}
+		node := func(i int8) pid { return pid{kind: atNode, i: i, v: [4]point{key[0], key[1], key[2]}} }
 		top := -1.0
 		for i := 0; i < n; i++ {
 			for j := i + 1; j < n; j += 2 {
@@ -811,7 +901,7 @@ func (x *crossings) face(a, b, c point) *face {
 						}
 						if score > top {
 							top = score
-							f.paths = append([][]pid{{marks[i].id, node, marks[k].id}, {marks[j].id, node, marks[l].id}}, paths...)
+							f.paths = append([][]pid{{marks[i].id, node(0), marks[k].id}, {marks[j].id, node(1), marks[l].id}}, paths...)
 						}
 					}
 				}
@@ -971,10 +1061,10 @@ func (x *crossings) analyze(v tet) *plan {
 			loop = append(append([]pid(nil), loop[at[0]:]...), loop[:at[0]]...)
 		}
 		switch {
-		case len(at) == 2 && loop[0] != loop[at[1]-at[0]]:
-			// A sheet through two nodes: its halves on either side of the
-			// edge between them, n1 … n2 and n2 … n1, each closed by that
-			// edge and fanned from n1.
+		case len(at) == 2 && loop[0].v != loop[at[1]-at[0]].v:
+			// A sheet through two nodes, on its own copies of them: its
+			// halves on either side of the edge between them, n1 … n2 and
+			// n2 … n1, each closed by that edge and fanned from n1.
 			split := at[1] - at[0]
 			n1, n2 := loop[0], loop[split]
 			first := loop[:split+1]
@@ -984,10 +1074,7 @@ func (x *crossings) analyze(v tet) *plan {
 			}
 			fan(first)
 			fan(second)
-			pair := [2]pid{n1, n2}
-			if len(p.crossings) == 0 || p.crossings[0] != pair && p.crossings[0] != [2]pid{n2, n1} {
-				p.crossings = append(p.crossings, pair)
-			}
+			p.crossings = append(p.crossings, [2]pid{n1, n2})
 		case len(at) == 0 && p.cone:
 			// A nappe that only grazes an edge beside its apex closes in
 			// a cap whose two arcs are both drawn as the chord between
@@ -1009,12 +1096,26 @@ func (x *crossings) analyze(v tet) *plan {
 				p.triangles = append(p.triangles, [3]pid{apex, loop[k], loop[(k+1)%len(loop)]})
 			}
 		default:
-			// No node, or a loop through one node (once, or twice where
-			// sheets join, as at a pinch point): fanned from its start.
+			// No node, or a loop through one node: once, or through both
+			// its copies where the sheets join, as at a pinch point, which
+			// makes them one vertex. Fanned from its start.
+			if len(at) == 2 {
+				p.joined = append(p.joined, [3]point{loop[0].v[0], loop[0].v[1], loop[0].v[2]})
+			}
 			fan(loop)
 		}
 	}
-	if len(p.crossings) > 1 {
+	// At most one crossing edge, between one pair of nodes, on each sheet.
+	if len(p.crossings) == 2 {
+		a, b := p.crossings[0], p.crossings[1]
+		if b[0].v == a[1].v {
+			b[0], b[1] = b[1], b[0]
+		}
+		if a[0].v != b[0].v || a[1].v != b[1].v {
+			return p
+		}
+	}
+	if len(p.crossings) > 2 {
 		return p
 	}
 	p.ok = true
@@ -1026,7 +1127,7 @@ func (x *crossings) analyze(v tet) *plan {
 // either side (or its ends), as it does wherever the shift only moved a
 // crossing rather than made it. Elsewhere, as where a sheet only touches
 // the edge without the shift, the root stays within the shift of F.
-func (x *crossings) snap(e [2]point, r *roots, i int) Vec3 {
+func (x *crossings) snap(e [2]point, r *roots, i int) (Vec3, bool) {
 	p, q := x.at(e[0]), x.at(e[1])
 	lo, hi := 0.0, 1.0
 	if i > 0 {
@@ -1040,13 +1141,13 @@ func (x *crossings) snap(e [2]point, r *roots, i int) Vec3 {
 	// A bracket ending exactly on the level would put the root at a
 	// lattice point, as at an apex on one, beside the apex's own vertex.
 	if !finite(ga) || !finite(gb) || ga == 0 || gb == 0 || (ga >= 0) == (gb >= 0) {
-		return r.x[i]
+		return r.x[i], false
 	}
 	t, ok := x.s.root(a, b, ga, gb)
 	if !ok {
-		return r.x[i]
+		return r.x[i], false
 	}
-	return a.add(b.sub(a).mul(t))
+	return a.add(b.sub(a).mul(t)), true
 }
 
 // less4 orders tetrahedra by their corners in lattice order.
@@ -1079,39 +1180,122 @@ func (x *crossings) meet() {
 		}
 	}
 	for v, ts := range around {
-		// Fans: triangles at the apex sharing another vertex.
-		parent := make([]int, len(ts))
-		for k := range parent {
-			parent[k] = k
-		}
-		var find func(int) int
-		find = func(k int) int {
-			for parent[k] != k {
-				k = parent[k]
-			}
-			return k
-		}
-		first := map[int32]int{}
-		for k, t := range ts {
-			for _, w := range s.triangles[3*t : 3*t+3] {
-				if w == v {
-					continue
-				}
-				if j, ok := first[w]; ok {
-					parent[find(k)] = find(j)
-				} else {
-					first[w] = k
-				}
-			}
-		}
-		fans := 0
-		for k := range parent {
-			if find(k) == k {
-				fans++
-			}
-		}
-		if fans >= 2 {
+		if _, n := x.fans(v, ts); n >= 2 {
 			x.cones++
+		}
+	}
+}
+
+// fans groups the triangles ts at the vertex v into fans, triangles at v
+// sharing another vertex, returning each one's fan, numbered from 0 in
+// the order of the fans' first triangles, and the number of fans.
+func (x *crossings) fans(v int32, ts []int) ([]int, int) {
+	s := x.s
+	parent := make([]int, len(ts))
+	for k := range parent {
+		parent[k] = k
+	}
+	var find func(int) int
+	find = func(k int) int {
+		for parent[k] != k {
+			k = parent[k]
+		}
+		return k
+	}
+	first := map[int32]int{}
+	for k, t := range ts {
+		for _, w := range s.triangles[3*t : 3*t+3] {
+			if w == v {
+				continue
+			}
+			if j, ok := first[w]; ok {
+				parent[find(k)] = find(j)
+			} else {
+				first[w] = k
+			}
+		}
+	}
+	fan := make([]int, len(ts))
+	number := map[int]int{}
+	for k := range ts {
+		r := find(k)
+		if _, ok := number[r]; !ok {
+			number[r] = len(number)
+		}
+		fan[k] = number[r]
+	}
+	return fan, len(number)
+}
+
+// split gives each sheet its own copy of a vertex both sheets' triangles
+// share, as where a crossing passes through a lattice point on the level,
+// which marching makes one vertex for every edge that finds it: a vertex
+// on a crossing (one without a normal, or one that takes its sheet's
+// normal) whose triangles fall into fans joined only through it. Each fan
+// after the first takes a copy, the first's twin, and every such vertex
+// takes its sheet's normal (see sheets). An apex, where nappes meet at a
+// point of the surface itself, stays one vertex.
+func (x *crossings) split() {
+	if x == nil || len(x.made) == 0 {
+		return
+	}
+	s := x.s
+	keep := map[int32]bool{}
+	for _, v := range x.apexes {
+		keep[v] = true
+	}
+	for _, v := range x.nodes {
+		keep[v] = true
+	}
+	flagged := map[int32]bool{}
+	for _, v := range x.sheet {
+		flagged[v] = true
+	}
+	around := map[int32][]int{}
+	var order []int32
+	for t := 0; t < len(s.triangles)/3; t++ {
+		for _, v := range s.triangles[3*t : 3*t+3] {
+			if keep[v] || !flagged[v] && (s.normals[3*v] != 0 || s.normals[3*v+1] != 0 || s.normals[3*v+2] != 0) {
+				continue
+			}
+			if _, ok := around[v]; !ok {
+				order = append(order, v)
+			}
+			around[v] = append(around[v], t)
+		}
+	}
+	for _, v := range order {
+		ts := around[v]
+		fan, n := x.fans(v, ts)
+		if n < 2 {
+			// On one sheet only, it still takes that sheet's normal.
+			if !flagged[v] {
+				x.sheet = append(x.sheet, v)
+			}
+			continue
+		}
+		copies := make([]int32, n)
+		copies[0] = v
+		for k := 1; k < n; k++ {
+			c := int32(len(s.positions) / 3)
+			s.positions = append(s.positions, s.positions[3*v:3*v+3]...)
+			s.normals = append(s.normals, s.normals[3*v:3*v+3]...)
+			if s.normals[3*c] == 0 && s.normals[3*c+1] == 0 && s.normals[3*c+2] == 0 {
+				s.singular++
+			}
+			copies[k] = c
+			x.twins = append(x.twins, v, c)
+		}
+		if !flagged[v] {
+			x.sheet = append(x.sheet, v)
+		}
+		x.sheet = append(x.sheet, copies[1:]...)
+		for k, t := range ts {
+			for c := 3 * t; c < 3*t+3; c++ {
+				if s.triangles[c] == v {
+					s.triangles[c] = copies[fan[k]]
+				}
+			}
 		}
 	}
 }
@@ -1191,7 +1375,7 @@ func (x *crossings) emit(v tet) {
 		return
 	}
 	if x.own == nil {
-		x.own, x.nodes, x.apexes = map[[2]point][]int32{}, map[[3]point]int32{}, map[tet]int32{}
+		x.own, x.nodes, x.apexes = map[[2]point][]int32{}, map[copyKey]int32{}, map[tet]int32{}
 	}
 	apexOf := func(key tet) int32 {
 		n, ok := x.apexes[key]
@@ -1207,10 +1391,18 @@ func (x *crossings) emit(v tet) {
 		}
 		switch id.kind {
 		case atNode:
-			key := [3]point{id.v[0], id.v[1], id.v[2]}
+			face := [3]point{id.v[0], id.v[1], id.v[2]}
+			key := copyKey{face, id.i}
+			if x.joined[face] {
+				key.i = 0
+			}
 			n, ok := x.nodes[key]
 			if !ok {
-				n = x.singularVertex(x.faces[key].x)
+				if _, other := x.nodes[copyKey{face, 1 - key.i}]; !other {
+					x.order = append(x.order, face)
+				}
+				n = x.singularVertex(x.faces[face].x)
+				x.sheet = append(x.sheet, n)
 				x.nodes[key] = n
 			}
 			return n
@@ -1229,7 +1421,14 @@ func (x *crossings) emit(v tet) {
 			ga, gb := x.value(e[0]), x.value(e[1])
 			slope := (math.Abs(ga) + math.Abs(gb)) / x.at(e[1]).sub(x.at(e[0])).norm()
 			for i := range r.t {
-				own = append(own, x.s.newVertex(x.snap(e, r, i), slope))
+				at, moved := x.snap(e, r, i)
+				v := x.s.newVertex(at, slope)
+				// Left within the shift of the level, as beside a crossing
+				// in a grid plane, its ∇F can lean toward the other sheet.
+				if !moved {
+					x.sheet = append(x.sheet, v)
+				}
+				own = append(own, v)
 			}
 			x.own[e] = own
 		}
@@ -1255,4 +1454,155 @@ func (x *crossings) emit(v tet) {
 	for _, e := range p.crossings {
 		x.pairs = append(x.pairs, vertex(e[0]), vertex(e[1]))
 	}
+}
+
+// sheets gives each sheet's copy of a node, and each vertex beside a
+// crossing whose ∇F leans toward the other sheet, its own sheet's normal,
+// and pairs the copies as twins. Near a crossing F − c ≈ g·h, and its
+// Hessian H = ∇g∇hᵀ + ∇h∇gᵀ has eigenvalues λ₁ > 0 > λ₃ along u₁ and u₃
+// and a third near zero, along the crossing curve; the sheets are the
+// planes √λ₁ u₁·d = ±√−λ₃ u₃·d, of normals √λ₁ u₁ ∓ √−λ₃ u₃. A vertex takes
+// the one nearer in line to its triangles' normals, which lie on its
+// sheet, signed as they mostly face. A vertex left a distance ε off one
+// sheet, at a distance d from the other, has ∇F = d∇h + ε∇g, whose line is
+// off by about ε/d ≈ |F − c| ‖H‖ / |∇F|². The sheet's normal is the
+// crossing's own, off by the sheet's turn over d ≈ |∇F| / ‖H‖, at most
+// about d over a lattice step for a sheet the grid resolves. A vertex keeps
+// ∇F's normal where that is the smaller error and ∇F's line is nearer its
+// own sheet's than the other's. (A vertex within the shift of both sheets, exactly on one, has
+// that one's normal for ∇F, though its triangles may lie on the other.) Where H is not of that form, as at a pinch
+// point, a triple point or a cone, a vertex keeps ∇F's normal, or none.
+func (x *crossings) sheets() {
+	if x == nil {
+		return
+	}
+	for _, f := range x.order {
+		a, okA := x.nodes[copyKey{f, 0}]
+		b, okB := x.nodes[copyKey{f, 1}]
+		if okA && okB {
+			x.twins = append(x.twins, a, b)
+		}
+	}
+	if len(x.sheet) == 0 {
+		return
+	}
+	s := x.s
+	along := make(map[int32]Vec3, len(x.sheet))
+	for _, v := range x.sheet {
+		along[v] = Vec3{}
+	}
+	for t := 0; t < len(s.triangles); t += 3 {
+		corners := s.triangles[t : t+3]
+		var n Vec3
+		for _, v := range corners {
+			if _, ok := along[v]; !ok {
+				continue
+			}
+			if n == (Vec3{}) {
+				a, b, c := s.at(corners[0]), s.at(corners[1]), s.at(corners[2])
+				n = b.sub(a).cross(c.sub(a))
+				if l := n.norm(); l > 0 {
+					n = n.mul(1 / l)
+				}
+			}
+			if along[v].dot(n) < 0 {
+				along[v] = along[v].sub(n)
+			} else {
+				along[v] = along[v].add(n)
+			}
+		}
+	}
+	cell := math.Min(s.h[0], math.Min(s.h[1], s.h[2])) / float64(x.scale)
+	step := 1e-3 * cell
+	for _, v := range x.sheet {
+		p := s.at(v)
+		n, other, size, ok := x.sheetNormal(p, along[v], step)
+		if !ok {
+			continue
+		}
+		if s.normals[3*v] == 0 && s.normals[3*v+1] == 0 && s.normals[3*v+2] == 0 {
+			s.singular--
+		} else if g := s.gradient(p).norm(); math.Abs(s.f(p)-s.c)*size*size*cell < g*g*g && math.Abs(s.gradient(p).dot(n)) > math.Abs(s.gradient(p).dot(other)) {
+			continue
+		}
+		s.normals[3*v], s.normals[3*v+1], s.normals[3*v+2] = n.X, n.Y, n.Z
+		x.onCrossing = append(x.onCrossing, v)
+	}
+}
+
+// sheetNormal is the unit normal at p of the sheet nearest in line to
+// along, and the other sheet's, from F's Hessian by central differences a
+// step wide, with the Hessian's largest eigenvalue in size, or false where
+// the Hessian there is not that of two sheets crossing: its middle
+// eigenvalue more than a tenth of the smaller of the others.
+func (x *crossings) sheetNormal(p, along Vec3, step float64) (Vec3, Vec3, float64, bool) {
+	if !(along.norm() > 0) {
+		return Vec3{}, Vec3{}, 0, false
+	}
+	_, _, h := differences(func(u []float64) float64 { return x.s.f(Vec3{u[0], u[1], u[2]}) }, []float64{p.X, p.Y, p.Z}, step)
+	values, vectors := eigen3([3][3]float64{{h[0][0], h[0][1], h[0][2]}, {h[1][0], h[1][1], h[1][2]}, {h[2][0], h[2][1], h[2][2]}})
+	lo, mid, hi := values[0], values[1], values[2]
+	if !(hi > 0 && lo < 0) || !(math.Abs(mid) <= 0.1*math.Min(hi, -lo)) {
+		return Vec3{}, Vec3{}, 0, false
+	}
+	a, b := vectors[2].mul(math.Sqrt(hi)), vectors[0].mul(math.Sqrt(-lo))
+	n, m := a.add(b), a.sub(b)
+	n, m = n.mul(1/n.norm()), m.mul(1/m.norm())
+	if math.Abs(m.dot(along)) > math.Abs(n.dot(along)) {
+		n, m = m, n
+	}
+	if n.dot(along) < 0 {
+		n = n.mul(-1)
+	}
+	return n, m, math.Max(hi, -lo), finite(n.X) && finite(n.Y) && finite(n.Z) && finite(m.X) && finite(m.Y) && finite(m.Z)
+}
+
+// eigen3 is a symmetric 3 × 3 matrix's eigenvalues in increasing order,
+// with unit eigenvectors, by cyclic Jacobi rotations.
+func eigen3(a [3][3]float64) ([3]float64, [3]Vec3) {
+	v := [3][3]float64{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}
+	for range 50 {
+		off := math.Abs(a[0][1]) + math.Abs(a[0][2]) + math.Abs(a[1][2])
+		if !(off > 1e-300) {
+			break
+		}
+		for _, pq := range [3][2]int{{0, 1}, {0, 2}, {1, 2}} {
+			p, q := pq[0], pq[1]
+			if a[p][q] == 0 {
+				continue
+			}
+			theta := (a[q][q] - a[p][p]) / (2 * a[p][q])
+			t := 1 / (math.Abs(theta) + math.Sqrt(theta*theta+1))
+			if theta < 0 {
+				t = -t
+			}
+			c := 1 / math.Sqrt(t*t+1)
+			s := t * c
+			for k := range 3 {
+				akp, akq := a[k][p], a[k][q]
+				a[k][p], a[k][q] = c*akp-s*akq, s*akp+c*akq
+			}
+			for k := range 3 {
+				apk, aqk := a[p][k], a[q][k]
+				a[p][k], a[q][k] = c*apk-s*aqk, s*apk+c*aqk
+			}
+			for k := range 3 {
+				vkp, vkq := v[k][p], v[k][q]
+				v[k][p], v[k][q] = c*vkp-s*vkq, s*vkp+c*vkq
+			}
+		}
+	}
+	order := [3]int{0, 1, 2}
+	for i := 1; i < 3; i++ {
+		for j := i; j > 0 && a[order[j]][order[j]] < a[order[j-1]][order[j-1]]; j-- {
+			order[j], order[j-1] = order[j-1], order[j]
+		}
+	}
+	var values [3]float64
+	var vectors [3]Vec3
+	for k, i := range order {
+		values[k] = a[i][i]
+		vectors[k] = Vec3{v[0][i], v[1][i], v[2][i]}
+	}
+	return values, vectors
 }

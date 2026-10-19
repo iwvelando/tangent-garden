@@ -1144,6 +1144,8 @@ const implicitArrays = {
   cut: Int32Array,
   open: Int32Array,
   crossings: Int32Array,
+  twins: Int32Array,
+  onCrossing: Int32Array,
 };
 function spatialResult(reply) {
   if (typeof reply === "string") return JSON.parse(reply);
@@ -3165,6 +3167,7 @@ const spatialImplicit = (implicit) => {
       triangles: m.triangles.length / 3,
       euler: 2,
       closed: true,
+      orientable: true,
       crossings: 0,
     },
   ]);
@@ -3220,6 +3223,7 @@ const spatialImplicit = (implicit) => {
       triangles: joined.triangles.length / 3,
       euler: 2,
       closed: true,
+      orientable: true,
       crossings: 0,
     },
   ]);
@@ -3232,8 +3236,10 @@ const spatialImplicit = (implicit) => {
   }
   assert.match(spatialImplicit({ refine: 4 }).error, /0–3 refinement levels/);
   // A sphere crossed by a plane meets itself along the unit circle: its
-  // crossing edges arrive typed, each an edge of four triangles, its two
-  // ends on the circle within the crossings' shift.
+  // crossing edges arrive typed, each sheet's own, an edge of two of its
+  // triangles, their ends on the circle within the crossings' shift, each
+  // with its twin on the other sheet at the same point, and each with its
+  // own sheet's normal, radial on the sphere and along z on the plane.
   const crossed = spatialImplicit({
     f: "(x^2 + y^2 + z^2 - 1) * z",
     box: {
@@ -3249,7 +3255,16 @@ const spatialImplicit = (implicit) => {
   assert.equal(crossed.cones, 0);
   assert.equal(crossed.crossingsUnresolved, 0);
   assert.equal(crossed.crossingsExhausted, false);
-  assert.equal(crossed.components[0].crossings, crossed.crossings.length / 2);
+  assert.equal(crossed.components.length, 2);
+  for (const c of crossed.components) {
+    assert.equal(c.orientable, true);
+    assert.equal(c.crossings, crossed.crossings.length / 4);
+  }
+  assert.deepEqual(crossed.components.map((c) => [c.closed, c.euler]).sort(), [
+    [false, 1],
+    [true, 2],
+  ]);
+  assert.equal(crossed.singular, 0);
   const sharing = new Map();
   for (let k = 0; k < crossed.triangles.length; k += 3)
     for (const [u, w] of [
@@ -3266,12 +3281,33 @@ const spatialImplicit = (implicit) => {
     const [a, b] = [crossed.crossings[k], crossed.crossings[k + 1]].sort(
       (p, q) => p - q,
     );
-    assert.equal(sharing.get(`${a} ${b}`), 4);
+    assert.equal(sharing.get(`${a} ${b}`), 2);
     for (const v of [a, b]) {
       const [x, y, z] = crossed.positions.slice(3 * v, 3 * v + 3);
       assert.ok(Math.abs(z) < 1e-5 && Math.abs(Math.hypot(x, y) - 1) < 1e-5);
     }
   }
+  const twin = new Map();
+  for (let k = 0; k < crossed.twins.length; k += 2) {
+    const [a, b] = [crossed.twins[k], crossed.twins[k + 1]];
+    assert.deepEqual(
+      [...crossed.positions.slice(3 * a, 3 * a + 3)],
+      [...crossed.positions.slice(3 * b, 3 * b + 3)],
+    );
+    twin.set(a, b).set(b, a);
+  }
+  const sheets = new Set();
+  for (const v of crossed.crossings) {
+    assert.ok(twin.has(v), `crossing vertex ${v} has a twin`);
+    const [x, y, z] = crossed.positions.slice(3 * v, 3 * v + 3);
+    const [nx, ny, nz] = crossed.normals.slice(3 * v, 3 * v + 3);
+    const radial = Math.abs(nx * x + ny * y + nz * z) / Math.hypot(x, y, z);
+    const up = Math.abs(nz);
+    assert.ok(Math.max(radial, up) > 1 - 1e-6, `normal at ${v}`);
+    sheets.add(radial > up ? "sphere" : "plane");
+  }
+  assert.deepEqual([...sheets].sort(), ["plane", "sphere"]);
+  assert.ok(crossed.onCrossing.length >= crossed.twins.length);
   // On a sphere of radius 2 the positions and unit normals differ, so each
   // array must arrive in its own place.
   const wide = spatialImplicit({

@@ -35,7 +35,14 @@ declare const tangentGardenSpatial: (json: string) =>
       mesh: import("./spatial/types").CurveMesh;
       implicit?: Pick<
         import("./spatial/types").ImplicitResult,
-        "positions" | "normals" | "triangles" | "cut" | "open" | "crossings"
+        | "positions"
+        | "normals"
+        | "triangles"
+        | "cut"
+        | "open"
+        | "crossings"
+        | "twins"
+        | "onCrossing"
       >;
     };
 declare const tangentGardenScalars: (json: string) => string;

@@ -4364,4 +4364,95 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // The Klein bottle of "A Klein bottle passing through itself", close on
+  // the circle where the neck passes through the wall: centered x = 1, its
+  // radius √2, in the plane z = 0. The default turn looks along the neck,
+  // and the pan centers (1, 0.9, 0), inside the circle toward the eye's
+  // up. Seen through, the doubled layer within the circle ends on it, and
+  // each sheet runs on through it. Played, the camera draws back to the
+  // whole bottle and returns.
+  {
+    name: "Where a Klein bottle's neck passes through its wall",
+    detail:
+      "Close on the circle where the neck pierces the body, each sheet running on through it: one closed, one-sided surface",
+    ...approach({
+      ...initialView,
+      zoom: 2.2,
+      panX: -0.669,
+      panY: -0.799,
+    }),
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "(x^2 + y^2 + z^2 + 2*x - 1)*((x^2 + y^2 + z^2 - 2*x - 1)^2 - 8*z^2) + 16*y*z*(x^2 + y^2 + z^2 - 2*x - 1)",
+        a: 1,
+        level: 0,
+        box: {
+          xMin: -2.7,
+          xMax: 3.3,
+          yMin: -3.1,
+          yMax: 3.1,
+          zMin: -3.9,
+          zMax: 3.9,
+        },
+        cells: 48,
+        refine: 1,
+        sections: { normal: { x: 1, y: 0, z: 0 }, from: 0, to: 0, count: 0 },
+      },
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.4,
+      hidden: "dashed",
+      weight: "regular",
+    },
+    layers: { planes: false, box: false },
+  },
+  // A ring and a sphere as one level set, F = T·S: the torus T = 0 of
+  // radii 2 and 0.65 about y, and the sphere S = 0 of radius 2, through
+  // the ring's core circle. They cross along two circles, y = ±0.64 on
+  // ρ = 1.9, near square to each other, and each is meshed whole through
+  // them: the note reads two closed pieces, of genus 1 and 0. The box is
+  // a little off center, so no crossing lies in a grid plane. The planes
+  // across y cut the sphere in one circle and the ring in up to two.
+  {
+    name: "A ring through a sphere",
+    detail:
+      "Two surfaces in one equation, crossing along two circles: each is whole, a ring of genus 1 and a sphere of genus 0",
+    view: { ...initialView, pitch: 0.32, zoom: 1.6 },
+    flight: revealInPlace,
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "((x^2 + y^2 + z^2 + 3.5775)^2 - 16*(x^2 + z^2))*(x^2 + y^2 + z^2 - 4)",
+        a: 1,
+        level: 0,
+        box: {
+          xMin: -2.93,
+          xMax: 2.87,
+          yMin: -2.23,
+          yMax: 2.17,
+          zMin: -2.91,
+          zMax: 2.89,
+        },
+        cells: 48,
+        refine: 1,
+        sections: {
+          normal: { x: 0, y: 1, z: 0 },
+          from: -1.8,
+          to: 1.8,
+          count: 7,
+        },
+      },
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.3,
+      hidden: "dashed",
+      weight: "regular",
+    },
+    layers: { planes: false, box: false },
+  },
 ];

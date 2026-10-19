@@ -874,11 +874,12 @@ export type RaysResult = {
   receiver: ReceiverResult | null;
 };
 // Mirrors engine3.ImplicitResult: an indexed mesh with three coordinates per
-// vertex in positions and normals (a normal is ∇F/|∇F|, toward larger F, or
-// zero where ∇F vanishes or is not finite) and three vertex indices per
+// vertex in positions and normals (a normal is ∇F/|∇F|, toward larger F, its
+// own sheet's on a crossing, or zero where ∇F vanishes or is not finite) and
+// three vertex indices per
 // triangle, counterclockwise seen from larger F. Cut and open are pairs of
 // vertex indices: boundary edges on the box's faces, and beside cells left
-// out. The engine sends these five arrays typed, not as JSON (see
+// out. The engine sends these arrays typed, not as JSON (see
 // cmd/wasm/mesh.go). Marks are where F changes sign without crossing the
 // level, up to 4,096 of them; discontinuities counts them all. Refinement
 // reports the levels asked for and the deepest reached, the tetrahedra
@@ -900,12 +901,22 @@ export type ImplicitResult = {
   cut: Int32Array;
   open: Int32Array;
   // Pairs of vertex indices: the edges along which two sheets cross, each
-  // shared by four triangles.
+  // sheet's own, on two of its triangles, beside the other sheet's.
   crossings: Int32Array;
+  // Pairs of vertex indices: a vertex on a crossing and the other sheet's
+  // copy of it, at the same point.
+  twins: Int32Array;
+  // Vertices on or beside a crossing whose normal is their own sheet's:
+  // their triangles on either side of the crossing face opposite ways, so
+  // the drawing turns the normal to each triangle's side.
+  onCrossing: Int32Array;
+  // Each connected piece: closed when no edge is on one triangle,
+  // orientable when two-sided, and its crossing edges.
   components: {
     triangles: number;
     euler: number;
     closed: boolean;
+    orientable: boolean;
     crossings: number;
   }[];
   sections: ImplicitSection[];

@@ -161,11 +161,23 @@ test("notes report each surface's pieces, genus and sections", async ({
   page,
 }) => {
   await ready(page);
-  // The Klein bottle is meshed through the curve where it meets itself.
+  // The Klein bottle is meshed through the curve where it meets itself,
+  // and read as the surface it is.
+  // Heavy studies, such as these level sets through themselves, take
+  // seconds while other tests run beside them.
+  const heavy = { timeout: 30000 };
   await choosePreset(page, { label: "A Klein bottle passing through itself" });
-  await settled(page);
+  await expect(stage(page)).toHaveAttribute("aria-busy", "false", heavy);
   await expect(note(page)).toContainText(
-    /^The mesh is one piece, closed, meeting itself along [\d,]+ edges \(Euler characteristic 0\)\./,
+    /^The mesh is one piece, closed and one-sided, a Klein bottle \(Euler characteristic 0\)\. .* It passes through itself along [\d,]+ edges, each sheet whole through them\./,
+    heavy,
+  );
+  // One equation for a ring and a sphere crossing it: each read whole.
+  await choosePreset(page, { label: "A ring through a sphere" });
+  await expect(stage(page)).toHaveAttribute("aria-busy", "false", heavy);
+  await expect(note(page)).toContainText(
+    /^The mesh has two pieces: one closed, of genus 1 \(Euler characteristic 0\); one closed, of genus 0 \(Euler characteristic 2\)\. .* It passes through itself along [\d,]+ edges, each sheet whole through them\./,
+    heavy,
   );
   await choosePreset(page, latitudes);
   await settled(page);
@@ -563,7 +575,11 @@ function study(): SpatialResult {
     cut: new Int32Array([0, 1, 1, 4]),
     open: new Int32Array([2, 3]),
     crossings: new Int32Array(),
-    components: [{ triangles: 3, euler: 1, closed: false, crossings: 0 }],
+    twins: new Int32Array(),
+    onCrossing: new Int32Array(),
+    components: [
+      { triangles: 3, euler: 1, closed: false, orientable: true, crossings: 0 },
+    ],
     sections: [
       {
         offset: 0.5,
@@ -671,6 +687,75 @@ test("an implicit mesh is drawn from shared vertices", () => {
   expect(corner(6)).toEqual([0, 0, 2, 0, -1, 0, 0.75]);
 });
 
+// Along a sheet, larger F lies on the other side of a crossing, so the
+// triangles on either side of a vertex there face opposite ways and its
+// sheet's normal points against some of them. Such a vertex, listed in
+// onCrossing, is copied with its normal turned for each triangle it points
+// against, so no triangle blends a normal with its opposite; an unlisted
+// vertex is drawn as the engine gave it.
+test("a vertex on a crossing is turned to each triangle's side", () => {
+  const m = study().implicit!;
+  // The square 0, 1, 2, 3 in z = 0 faces +z, and 0, 3, 2 reversed faces
+  // −z: vertex 2 has the normal +z, against the second triangle.
+  m.normals = new Float64Array(15);
+  for (const v of [0, 1, 2, 3]) m.normals[3 * v + 2] = 1;
+  m.triangles = new Int32Array([0, 1, 2, 0, 3, 2]);
+  const plain = implicitMesh(m);
+  expect(plain.vertices.length).toBe(7 * 5);
+  expect(Array.from(plain.indices)).toEqual([0, 1, 2, 0, 3, 2]);
+  m.onCrossing = new Int32Array([2]);
+  const { vertices, indices } = implicitMesh(m);
+  const corner = (i: number) => Array.from(vertices.slice(7 * i, 7 * i + 7));
+  // One copy of vertex 2, its normal turned, for the second triangle only;
+  // vertices 0 and 3, unlisted, keep theirs.
+  expect(vertices.length).toBe(7 * 6);
+  expect(Array.from(indices)).toEqual([0, 1, 2, 0, 3, 5]);
+  expect(corner(2)).toEqual([1, 1, 0, 0, 0, 1, 0]);
+  expect(corner(5)).toEqual([1, 1, 0, -0, -0, -1, 0]);
+});
+
+// The Klein bottle close on the circle where its neck passes through its
+// wall opens seen through, read as a Klein bottle, and its own flight,
+// back to the whole bottle and in again, plays with the sheets still seen
+// through.
+test("the Klein bottle's crossing opens close, seen through, and its flight plays", async ({
+  page,
+}) => {
+  await ready(page);
+  const name = "Where a Klein bottle's neck passes through its wall";
+  const preset = spatialPresets.find((p) => p.name === name)!;
+  await choosePreset(page, { label: name });
+  await settled(page);
+  const artwork = page.locator("#spatial-artwork");
+  const sight = async () =>
+    JSON.parse((await artwork.getAttribute("data-sight"))!);
+  await expect.poll(sight).toMatchObject({ sheets: "through", opacity: 0.4 });
+  await expect(note(page)).toContainText(
+    /^The mesh is one piece, closed and one-sided, a Klein bottle \(Euler characteristic 0\)\./,
+  );
+  await expect(note(page)).not.toContainText("no normal");
+  await openAnimation(page);
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue("path");
+  await expect(page.getByLabel("Repeat", { exact: true })).toHaveValue(
+    preset.flight!.repeat!,
+  );
+  const play = page.getByRole("button", {
+    name: "Play animation",
+    exact: true,
+  });
+  await play.click();
+  const pause = page.getByRole("button", { name: "Pause", exact: true });
+  await expect(pause).toBeVisible({ timeout: 20000 });
+  await expect(page.locator(".animation-error")).toHaveCount(0);
+  await pause.click();
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-time", "0.5");
+  expect(await sight()).toMatchObject({ sheets: "through" });
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect(await sight()).toMatchObject({ sheets: "through" });
+});
+
 test("implicit tracks move the level, a, sections and cells", () => {
   const surface = structuredClone(spatialPresets[+drops].config);
   expect(availableTargets(surface)).toEqual([
@@ -741,20 +826,30 @@ test("the grid and the note follow Go's shapes and wording", () => {
   const mixed = {
     ...r,
     components: [
-      { triangles: 1, euler: 2, closed: true, crossings: 0 },
-      { triangles: 1, euler: -2, closed: true, crossings: 0 },
-      { triangles: 1, euler: 2, closed: true, crossings: 0 },
+      { triangles: 1, euler: 2, closed: true, orientable: true, crossings: 0 },
+      { triangles: 1, euler: -2, closed: true, orientable: true, crossings: 0 },
+      { triangles: 1, euler: 2, closed: true, orientable: true, crossings: 0 },
     ],
     sections: [],
   };
   expect(implicitNote(mixed)[0]).toBe(
     "The mesh has three pieces: two closed, of genus 0 (Euler characteristic 2); one closed, of genus 2 (Euler characteristic −2).",
   );
-  // A piece that meets itself has no genus to read; isolated meetings,
-  // what was left out, and an exhausted budget are each said once.
+  // A piece is read through its crossings, each sheet whole: one-sided,
+  // by its cross-caps; isolated meetings, what was left out, and an
+  // exhausted budget are each said once.
   const crossed = {
     ...r,
-    components: [{ triangles: 9, euler: 0, closed: true, crossings: 186 }],
+    components: [
+      {
+        triangles: 9,
+        euler: 0,
+        closed: true,
+        orientable: false,
+        crossings: 372,
+      },
+    ],
+    crossings: new Int32Array(4 * 186),
     sections: [],
     open: new Int32Array(),
     cut: new Int32Array(),
@@ -762,14 +857,62 @@ test("the grid and the note follow Go's shapes and wording", () => {
     marks: [],
     cones: 1,
     crossingsUnresolved: 3,
-    singular: 187,
+    singular: 2,
   };
   expect(implicitNote(crossed)).toEqual([
-    "The mesh is one piece, closed, meeting itself along 186 edges (Euler characteristic 0).",
+    "The mesh is one piece, closed and one-sided, a Klein bottle (Euler characteristic 0).",
     "It has 3 triangles on 5 vertices, from a 4 × 4 × 4 grid.",
+    "It passes through itself along 186 edges, each sheet whole through them.",
     "Its sheets meet at 1 isolated point, as at a cone's apex.",
     "3 tetrahedra where sheets meet could not be meshed and are left out, as where three sheets meet.",
-    "187 vertices have no normal: ∇F vanishes there, as at a cone point or where the surface crosses itself, or is not finite.",
+    "2 vertices have no normal: ∇F vanishes there, as at a cone's apex or where a crossing ends, or is not finite.",
+  ]);
+  const sided = (euler: number, closed: boolean) =>
+    implicitNote({
+      ...r,
+      sections: [],
+      components: [
+        { triangles: 9, euler, closed, orientable: false, crossings: 0 },
+      ],
+    })[0];
+  expect(sided(1, true)).toBe(
+    "The mesh is one piece, closed and one-sided, a projective plane (Euler characteristic 1).",
+  );
+  expect(sided(-1, true)).toBe(
+    "The mesh is one piece, closed and one-sided, with 3 cross-caps (Euler characteristic −1).",
+  );
+  expect(sided(0, false)).toBe(
+    "The mesh is one piece, open and one-sided, with Euler characteristic 0.",
+  );
+  // Two pieces passing through each other, each whole.
+  expect(
+    implicitNote({
+      ...crossed,
+      cones: 0,
+      crossingsUnresolved: 0,
+      singular: 0,
+      crossings: new Int32Array(4 * 40),
+      components: [
+        {
+          triangles: 9,
+          euler: 2,
+          closed: true,
+          orientable: true,
+          crossings: 40,
+        },
+        {
+          triangles: 9,
+          euler: 0,
+          closed: true,
+          orientable: true,
+          crossings: 40,
+        },
+      ],
+    }).slice(0, 3),
+  ).toEqual([
+    "The mesh has two pieces: one closed, of genus 0 (Euler characteristic 2); one closed, of genus 1 (Euler characteristic 0).",
+    "It has 3 triangles on 5 vertices, from a 4 × 4 × 4 grid.",
+    "It passes through itself along 40 edges, each sheet whole through them.",
   ]);
   expect(
     implicitNote({
