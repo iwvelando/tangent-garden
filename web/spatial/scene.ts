@@ -218,9 +218,12 @@ function receiverVertices(g: ReceiverResult | null | undefined) {
 
 // An implicit surface as the engine's shared vertices, each with its normal
 // and phase, and three indices per triangle. A corner whose vertex has no
-// normal (∇F gave none) takes the triangle's own, as a copy of the vertex;
-// a triangle without area is left out. The phase is the height in the box
-// (decorative, not a measured quantity).
+// normal (∇F gave none) takes the triangle's own, as a copy of the vertex.
+// A vertex on a crossing has its sheet's normal, which points against the
+// triangles on one side of the crossing, where larger F lies the other way:
+// there it is turned, as a copy, so no triangle blends a normal with its
+// opposite. A triangle without area is left out. The phase is the height
+// in the box (decorative, not a measured quantity).
 export function implicitMesh(m: ImplicitResult | undefined, origin?: Vec3) {
   if (!m) return { vertices: new Float32Array(), indices: new Uint32Array() };
   const { x: x0, y: y0, z: z0 } = origin ?? { x: 0, y: 0, z: 0 };
@@ -231,8 +234,10 @@ export function implicitMesh(m: ImplicitResult | undefined, origin?: Vec3) {
     span = m.box.zMax - m.box.zMin;
   const count = p.length / 3;
   const own = (v: number) => n[v] !== 0 || n[v + 1] !== 0 || n[v + 2] !== 0;
+  const turned = new Set(m.onCrossing);
   let copies = 0;
-  for (let k = 0; k < t.length; k++) if (!own(3 * t[k])) copies++;
+  for (let k = 0; k < t.length; k++)
+    if (!own(3 * t[k]) || turned.has(t[k])) copies++;
   const vertices = new Float32Array(7 * (count + copies));
   const put = (i: number, v: number, a: number, b: number, c: number) => {
     const o = 7 * i;
@@ -265,11 +270,16 @@ export function implicitMesh(m: ImplicitResult | undefined, origin?: Vec3) {
     const size = Math.hypot(x, y, z);
     if (!(size > 0)) continue;
     for (const v of [a, b, c]) {
-      if (own(v)) indices[used++] = v / 3;
-      else {
+      if (!own(v)) {
         put(next, v, x / size, y / size, z / size);
         indices[used++] = next++;
-      }
+      } else if (
+        turned.has(v / 3) &&
+        n[v] * x + n[v + 1] * y + n[v + 2] * z < 0
+      ) {
+        put(next, v, -n[v], -n[v + 1], -n[v + 2]);
+        indices[used++] = next++;
+      } else indices[used++] = v / 3;
     }
   }
   return {

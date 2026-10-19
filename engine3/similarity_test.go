@@ -887,20 +887,30 @@ func compare(t *testing.T, q Request, m similarity) (*deviation, budget, bool) {
 		worst("cells", "an original mesh vertex", farthest(moved(wm), gm))
 		worst("cells", "an original section point", farthest(moved(ws), gs))
 		worst("cells", "a section plane's corner", nearby(m, wp, gp))
-		// A vertex without a normal, where ∇F vanishes, such as a node
-		// where sheets cross, has no distance to the level that F − c
-		// over |∇F| measures; the crossing tests place those. A crossing
+		// A vertex without a normal, where ∇F vanishes, or on a crossing
+		// (a twin, as each sheet's copy of a node is), where ∇F all but
+		// vanishes, has no distance to the level that F − c over |∇F|
+		// measures; the crossing tests place those. A crossing
 		// tetrahedron's vertex, within two cells of one, lies on F shifted
 		// by 10⁻⁴ of a cell where F only touches its edge, so is held to
 		// that, as "crossing".
+		on := map[int32]bool{}
+		for _, v := range got.Implicit.Twins {
+			on[v] = true
+		}
+		for k := range gm {
+			if got.Implicit.normal(int32(k)) == (Vec3{}) {
+				on[int32(k)] = true
+			}
+		}
 		var singular []Vec3
 		for k, p := range gm {
-			if got.Implicit.normal(int32(k)) == (Vec3{}) {
+			if on[int32(k)] {
 				singular = append(singular, p)
 			}
 		}
 		for k, p := range gm {
-			if got.Implicit.normal(int32(k)) == (Vec3{}) {
+			if on[int32(k)] {
 				continue
 			}
 			class := "level"

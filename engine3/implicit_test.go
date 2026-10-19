@@ -3,6 +3,7 @@ package engine3
 import (
 	"encoding/json"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -41,7 +42,7 @@ func levelSet(t *testing.T, q ImplicitRequest) *ImplicitResult {
 		p, q, s := m.vertex(a), m.vertex(b), m.vertex(c)
 		face := q.sub(p).cross(s.sub(p))
 		along := m.normal(a).add(m.normal(b)).add(m.normal(c))
-		if face.norm() > 1e-12*h*h && face.dot(along) < 0 {
+		if face.norm() > 1e-12*h*h && face.dot(along) < 0 && !besideCrossing(m, [3]int32{a, b, c}, h) {
 			t.Fatalf("triangle %d faces %v against its normals %v", k/3, face, along)
 		}
 	}
@@ -51,6 +52,28 @@ func levelSet(t *testing.T, q ImplicitRequest) *ImplicitResult {
 		}
 	}
 	return m
+}
+
+// besideCrossing reports whether a corner is a twin, or lies within a
+// hundredth of a cell h of a crossing edge. Along one sheet, larger F lies on the other side of
+// a crossing, so the triangles on either side of a vertex there face
+// opposite ways, and its sheet's normal is against some of them.
+func besideCrossing(m *ImplicitResult, corners [3]int32, h float64) bool {
+	for _, v := range corners {
+		if slices.Contains(m.Twins, v) {
+			return true
+		}
+		p := m.vertex(v)
+		for k := 0; k < len(m.Crossings); k += 2 {
+			a, b := m.vertex(m.Crossings[k]), m.vertex(m.Crossings[k+1])
+			d := b.sub(a)
+			s := math.Max(0, math.Min(1, p.sub(a).dot(d)/d.dot(d)))
+			if p.sub(a.add(d.mul(s))).norm() < 1e-2*h {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // residual checks every vertex against F = c.

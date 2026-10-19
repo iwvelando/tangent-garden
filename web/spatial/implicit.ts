@@ -33,14 +33,23 @@ export function implicitGrid(box: ImplicitBox, cells: number) {
     number,
   ];
 }
-// A piece of the mesh by its topology: a closed orientable surface of
-// Euler characteristic χ has genus (2 − χ)/2. A piece that meets itself
-// has no genus to read.
+// A piece of the mesh by its topology, each sheet whole through its
+// crossings: a closed orientable surface of Euler characteristic χ has
+// genus (2 − χ)/2, and a closed one-sided surface 2 − χ cross-caps, one a
+// projective plane and two a Klein bottle.
 function piece(c: ImplicitResult["components"][number]) {
   const euler = `Euler characteristic ${c.euler.toLocaleString().replace("-", "−")}`;
-  if (c.crossings)
-    return `${c.closed ? "closed" : "open"}, meeting itself along ${count(c.crossings, "edge", "edges")} (${euler})`;
-  if (!c.closed) return `open, with ${euler}`;
+  const sides = c.orientable ? "" : " and one-sided";
+  if (!c.closed) return `open${sides}, with ${euler}`;
+  if (!c.orientable) {
+    const caps = 2 - c.euler;
+    if (caps === 1)
+      return `closed and one-sided, a projective plane (${euler})`;
+    if (caps === 2) return `closed and one-sided, a Klein bottle (${euler})`;
+    return caps > 2
+      ? `closed and one-sided, with ${caps} cross-caps (${euler})`
+      : `closed and one-sided, with ${euler}`;
+  }
   return c.euler % 2 === 0 && c.euler <= 2
     ? `closed, of genus ${(2 - c.euler) / 2} (${euler})`
     : `closed, with ${euler}`;
@@ -67,6 +76,11 @@ export function implicitNote(r: ImplicitResult): string[] {
           : `The mesh has ${number(r.components.length)} pieces: ${kinds.join("; ")}.`,
       `It has ${count(triangles, "triangle", "triangles")} on ${count(r.positions.length / 3, "vertex", "vertices")}, from a ${r.grid.join(" × ")} grid.`,
     );
+    // Each crossing edge is listed once for each of its two sheets.
+    if (r.crossings.length)
+      out.push(
+        `It passes through itself along ${count(r.crossings.length / 4, "edge", "edges")}, each sheet whole through them.`,
+      );
   }
   const { levels, reached, bisected, unresolved, exhausted } = r.refinement;
   if (levels > 0) {
@@ -115,7 +129,7 @@ export function implicitNote(r: ImplicitResult): string[] {
     );
   if (r.singular)
     out.push(
-      `${count(r.singular, "vertex has", "vertices have")} no normal: ∇F vanishes there, as at a cone point or where the surface crosses itself, or is not finite.`,
+      `${count(r.singular, "vertex has", "vertices have")} no normal: ∇F vanishes there, as at a cone's apex or where a crossing ends, or is not finite.`,
     );
   if (r.ambiguous)
     out.push(
