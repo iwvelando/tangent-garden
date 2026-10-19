@@ -150,6 +150,12 @@ func TestSpatialProjectionGapsAndBounds(t *testing.T) {
 			r := projected(t, c)
 			broken := false
 			for i, p := range r.Base {
+				// Only the cusp of (t², t³, t²) at t = 0 has a limiting line,
+				// along r″(0) = (2, 0, 2).
+				if x == "t^2" && i == 240 {
+					near(t, r.Projection.Points[i], project(kind, c.Pole, Vec3{}, Vec3{1, 0, 1}.unit()), 1e-9)
+					continue
+				}
 				if p == nil && r.Projection.Points[i] != nil {
 					t.Fatal("invalid tangent gained image")
 				}

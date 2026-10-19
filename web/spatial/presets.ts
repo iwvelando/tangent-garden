@@ -4698,4 +4698,75 @@ export const spatialPresets: {
       },
     },
   },
+  // The deltoid (2cos t + cos 2t, 2sin t − sin 2t) lifted by z = cos(3t)/2
+  // keeps its three cusps, where r′ = 0 and r″ ≠ 0. Its tangent line turns
+  // smoothly through each, so the feet of the perpendiculars from the
+  // center below it trace one closed three-leaved curve.
+  {
+    name: "A deltoid's feet, through its cusps",
+    detail:
+      "Perpendicular feet on a lifted deltoid's tangents, running smoothly through all three cusps",
+    view: { ...initialView, yaw: 0, pitch: 0.45 },
+    flight: revealInPlace,
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "tangent-foot",
+      pole: { x: 0, y: 0, z: 0 },
+      curve: {
+        x: "2*cos(t)+cos(2*t)",
+        y: "2*sin(t)-sin(2*t)",
+        z: "cos(3*t)/2",
+        min: -1,
+        max: 2 * Math.PI - 1,
+        a: 1,
+      },
+      samples: 1200,
+      lines: 48,
+    },
+  },
+  // The same lifted deltoid, written as its three harmonics so that it
+  // closes, and its orthotomic from its center, the half-turn of the center
+  // about each tangent line, threaded with a tube that runs on through the
+  // three cusps of the curve beneath.
+  {
+    name: "A tube through a deltoid's reflections",
+    detail:
+      "A tube around the center's half-turns about a lifted deltoid's tangents, whole through its cusps",
+    layers: { vectors: false, ellipses: false },
+    view: { ...initialView, yaw: 0, pitch: 0.45 },
+    flight: revealInPlace,
+    config: {
+      ...base,
+      format: "harmonic",
+      construction: "canal",
+      input: "orthotomic",
+      pole: { x: 0, y: 0, z: 0 },
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 2, y: 0, z: 0 },
+            sine: { x: 0, y: 2, z: 0 },
+          },
+          {
+            frequency: 2,
+            cosine: { x: 1, y: 0, z: 0 },
+            sine: { x: 0, y: -1, z: 0 },
+          },
+          {
+            frequency: 3,
+            cosine: { x: 0, y: 0, z: 0.5 },
+            sine: { x: 0, y: 0, z: 0 },
+          },
+        ],
+        min: -1,
+        max: 2 * Math.PI - 1,
+      },
+      canal: { radius: 0.16, profile: "1", meridians: 8 },
+      samples: 1200,
+      lines: 72,
+    },
+  },
 ];

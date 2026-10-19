@@ -49,15 +49,11 @@ Items 1 and 2 need a decision or a profile before any code. Item 3 lists limits 
 
 ### 1. Composition and comparison
 
-**Applies to:**
-
-- Comparison: 2D with 3D.
-- Other bullets: 3D.
+**Applies to:** 2D with 3D.
 
 **Open:**
 
 - **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another. Agree the design with the user before building.
-- **3D derived curve across a base cusp.** A derived curve whose limit is continuous across a base cusp is still broken there. This is deliberate; change it only with a proof-backed rule.
 
 ### 2. Transport and efficiency, when profiled
 
@@ -75,7 +71,8 @@ Items 1 and 2 need a decision or a profile before any code. Item 3 lists limits 
 
 Each is known and documented; none is worth a branch until a study needs it.
 
-- **3D engine scale floors** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): the absolute stability floors for differenced r‴ (`jerk`, in `engine3/diagnostics.go`) and τ′ (`ruledprobe.go`), the framed ribbon probe's comparison of differently dimensioned tangents (`ruledprobe.go`), and the field's absolute resting-speed and acceleration-stability floors (`flow.go`; the resting limit is also stated in the UI). Far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic.
+- **3D engine scale floors** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): the absolute stability floors for differenced r‴ (`jerk`, in `engine3/diagnostics.go`) and τ′ (`ruledprobe.go`), the framed ribbon probe's comparison of differently dimensioned tangents (`ruledprobe.go`), and the field's absolute resting-speed and acceleration-stability floors (`flow.go`; the resting limit is also stated in the UI). Far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic. Near a cusp of an expression curve thousands of its sizes from the origin, the rounded velocity leaves the tangent's direction noisy, so a construction built on its tangent projection breaks there again; a harmonic or knot base, with exact derivatives, keeps the crossing (the cusp presets are harmonic or plain projections for this reason).
+- **Sphere inversion across a base cusp** (3D): the tangent projections and constructions built on them run on through a cusp of the base where the tangent line continues ([across a cusp of the base](mathematics.md#spatial-tangent-foot-projection-and-orthotomic)), but sphere inversion of a projection still breaks there. It would take the projection's crossings with its own passage test through the center.
 - **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute past about five diameters, curvature on a study millions of its diameters out (beyond the second-derivative budget), and the absolute constants below 2⁻²⁰.
 
 ## Pending on-device checks

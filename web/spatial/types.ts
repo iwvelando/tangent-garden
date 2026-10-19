@@ -566,11 +566,16 @@ export type InvoluteResult = {
 };
 export type Frame = { config: SpatialConfig; result: SpatialResult };
 
-// Mirrors engine3.ProjectionResult; paths share base indices and breaks.
+// Mirrors engine3.ProjectionResult; paths share base indices and breaks,
+// except across the base's cusps, where the tangent line continues: then
+// `breaks`, present only then, replaces the base's, and `crossed` counts
+// the cusps it joins.
 export type ProjectionResult = {
   pole: Vec3;
   points: (Vec3 | null)[];
   feet: (Vec3 | null)[];
+  breaks?: boolean[];
+  crossed?: number;
   constructions: {
     sampleIndex: number;
     contact: Vec3;
@@ -627,6 +632,7 @@ export type SpatialHarmonicResult = {
 // back while the base continues: not at an open curve's ends, and once
 // where a closed curve's ends meet. Unreached counts base samples the
 // involute's arc length cannot reach across a break, which are not cusps.
+// Crossed counts the base's own cusps a tangent projection runs on across.
 // The involute and the coil use no pole and leave it zero.
 export type CompositionResult = {
   input: CurveInput;
@@ -636,6 +642,7 @@ export type CompositionResult = {
   constructions: ProjectionResult["constructions"];
   cusps: number;
   unreached: number;
+  crossed?: number;
   // The involute input's restarted anchors, in increasing t, when asked.
   restarts?: number[];
 };

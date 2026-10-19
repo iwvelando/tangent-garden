@@ -2065,6 +2065,9 @@ export default function SpatialApp({
       {composition && composition.cusps > 0
         ? ` It stops or turns back at ${composition.cusps} ${composition.cusps === 1 ? "cusp" : "cusps"}, where the construction is broken rather than joined across.`
         : ""}
+      {composition?.crossed
+        ? ` It runs on through ${composition.crossed === 1 ? "the base's cusp" : `the base's ${composition.crossed} cusps`}, where the tangent line continues along r″.`
+        : ""}
       {composition && composition.unreached > 0
         ? ` Arc length does not cross a break of the base, so ${composition.unreached} ${composition.unreached === 1 ? "sample lies" : "samples lie"} beyond the involute's reach.`
         : ""}
@@ -2474,17 +2477,29 @@ export default function SpatialApp({
       }
       note="The small crosses mark tangent feet H; the larger cross marks the fixed pole P."
       diagnostics={
-        shown &&
-        (shown.result.invalid > 0 ||
-          (shown.result.projection?.invalid ?? 0) > 0 ||
-          shown.result.projection?.collapsed) && (
-          <p className="bottom-note">
-            {shown.result.invalid} invalid base samples ·{" "}
-            {shown.result.projection?.invalid ?? 0} invalid image samples.
-            Undefined tangents and unresolved intervals leave gaps.
-            {shown.result.projection?.collapsed &&
-              " The image collapses to a point, shown as a cross."}
-          </p>
+        shown && (
+          <>
+            {(shown.result.invalid > 0 ||
+              (shown.result.projection?.invalid ?? 0) > 0 ||
+              shown.result.projection?.collapsed) && (
+              <p className="bottom-note">
+                {shown.result.invalid} invalid base samples ·{" "}
+                {shown.result.projection?.invalid ?? 0} invalid image samples.
+                Undefined tangents and unresolved intervals leave gaps.
+                {shown.result.projection?.collapsed &&
+                  " The image collapses to a point, shown as a cross."}
+              </p>
+            )}
+            {!!shown.result.projection?.crossed && (
+              <p className="bottom-note crossed-note">
+                The image runs on through{" "}
+                {shown.result.projection.crossed === 1
+                  ? "a cusp"
+                  : `${shown.result.projection.crossed} cusps`}{" "}
+                of the curve, where the tangent line continues along r″.
+              </p>
+            )}
+          </>
         )
       }
     >

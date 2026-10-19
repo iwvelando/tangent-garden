@@ -1,4 +1,5 @@
 import { applyTracks, reveal } from "../web/spatial/animation";
+import { buildScene } from "../web/spatial/scene";
 import { spatialPresets } from "../web/spatial/presets";
 import type { SpatialResult } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
@@ -258,6 +259,71 @@ test("projection reveal keeps correspondence, gaps and independent bounds", () =
     z: 4,
   });
   expect(base.pole).toEqual({ x: 0, y: 0, z: 2 });
+});
+
+// Across a cusp the base is broken while its tangent line, and so the
+// projection, runs on: the projection's own breaks join it there, a reveal
+// keeps them with its points, and without them it takes the base's.
+test("a projection's own breaks join it across the base's cusps", () => {
+  const at = (x: number) => ({ x, y: x * x, z: 0 });
+  const points = [at(0), at(0.1), at(0.2), at(0.3)];
+  const result: SpatialResult = {
+    base: [at(1), at(0.5), null, at(0.5)],
+    minus: [],
+    plus: [],
+    mesh: curveMesh(),
+    rulings: [],
+    breaks: [false, false, true, true],
+    bounds: { center: at(0), radius: 1 },
+    radius: 1,
+    invalid: 1,
+    omitted: 0,
+    projection: {
+      pole: at(0),
+      points,
+      feet: points,
+      breaks: [false, false, false, false],
+      crossed: 1,
+      invalid: 0,
+      collapsed: false,
+      constructions: [],
+    },
+  };
+  // A line batch holds two vertices of seven numbers per segment.
+  const segments = (r: SpatialResult) =>
+    buildScene(r).projection.data.length / 14;
+  expect(segments(result)).toBe(3);
+  expect(segments(reveal(result, 2 / 3))).toBe(2);
+  expect(reveal(result, 2 / 3).projection?.breaks).toEqual([
+    false,
+    false,
+    false,
+  ]);
+  const { breaks: _, ...shared } = result.projection!;
+  expect(segments({ ...result, projection: shared })).toBe(1);
+});
+
+// The lifted deltoid's presets cross all three of its cusps, and say so.
+test("the deltoid presets run on through the curve's three cusps", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A deltoid's feet, through its cusps" });
+  await settled(page);
+  await expect(page.locator(".crossed-note")).toHaveText(
+    "The image runs on through 3 cusps of the curve, where the tangent line continues along r″.",
+  );
+  await expect(page.getByText(/invalid base samples/)).toHaveCount(0);
+  await choosePreset(page, {
+    label: "A tube through a deltoid's reflections",
+  });
+  await settled(page);
+  await expect(page.locator(".composition-note")).toContainText(
+    "It runs on through the base's 3 cusps, where the tangent line continues along r″.",
+  );
+  await expect(page.locator(".composition-note")).not.toContainText(
+    "broken rather than joined",
+  );
 });
 
 for (const [preset, title] of [

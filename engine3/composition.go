@@ -26,6 +26,7 @@ type CompositionResult struct {
 	Constructions []ProjectionConstruction `json:"constructions"`
 	Cusps         int                      `json:"cusps"`
 	Unreached     int                      `json:"unreached"`
+	Crossed       int                      `json:"crossed,omitempty"`
 	Restarts      []float64                `json:"restarts,omitempty"`
 }
 
@@ -87,11 +88,12 @@ func (c Request) analytic() string {
 // are measured in the input's, or in u if it has no size.
 func composedEvaluation(kind string, pole Vec3, base evaluation, lo, hi float64, u units) evaluation {
 	f := func(t float64) Vec3 {
-		r, v, _, ok := base(t)
-		if !ok || !r.valid() || !v.valid() || u.still(v) {
+		r, v, a, ok := base(t)
+		line, defined := u.line(v, a)
+		if !ok || !r.valid() || !defined {
 			return Vec3{math.NaN(), 0, 0}
 		}
-		return project(kind, pole, r, v.unit())
+		return project(kind, pole, r, line)
 	}
 	return sampled(f, lo, hi, hi-lo, sized(extent(f, lo, hi), hi-lo, u))
 }

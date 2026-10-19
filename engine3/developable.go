@@ -383,8 +383,13 @@ func compute(c Request) (Result, error) {
 	// The involute or coil input's position alone, for refinement.
 	var unwoundAt func(float64) Vec3
 	baseEvaluate := evaluate
+	// The base's cusps that a projected input continues across.
+	var crossing map[int]float64
 	if composed {
 		baseCurve, baseTangents, baseBreaks = baseSamples(c, evaluate, lo, hi, c.Samples, closed)
+		if c.projected() {
+			crossing = baseUnits.crossings(evaluate, baseBreaks, lo, hi, closed)
+		}
 		switch {
 		case c.projected():
 			evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi, baseUnits)
@@ -475,8 +480,14 @@ func compute(c Request) (Result, error) {
 		// the sphere with diameter from the base point to the pole, and an
 		// involute point lies |c − s| from the base point, so it breaks
 		// where the base does.
-		disconnected = disconnected || composed && baseBreaks[i+1]
+		_, crosses := crossing[i]
+		disconnected = disconnected || composed && baseBreaks[i+1] && !crosses
 		out.Breaks[i+1] = disconnected
+	}
+	// A projection joins across the cusps of the base that its tangent
+	// line continues through.
+	if projection {
+		crossing = c.units.crossings(evaluate, out.Breaks, lo, hi, closed)
 	}
 	// Refinement breaks the intervals where it finds the curve stopping or
 	// jumping between samples, so no surface is joined across them.
@@ -631,6 +642,7 @@ func compute(c Request) (Result, error) {
 	parent := -1
 	if composed {
 		out.Composition = composition(c, baseCurve, baseTangents, baseBreaks, closed, out.Base, out.Breaks, reached)
+		out.Composition.Crossed = crossed(crossing, out.Breaks)
 		out.Composition.Restarts = restarts
 		if c.refines() {
 			if out.Adaptive == nil {
@@ -730,15 +742,30 @@ func compute(c Request) (Result, error) {
 			at.Image = pointAt(project(c.Construction, c.Pole, r, tangent))
 		})
 		out.Projection = projections(c, out.Base, tangents)
+		out.Projection.cross(c, evaluate, crossing, out.Breaks, lo, hi)
 		if out.Adaptive != nil {
-			points := out.Projection.Points
-			out.Adaptive.Projection, _ = c.refine(points, out.Breaks, func(t float64) Vec3 {
-				r, v, _, ok := evaluate(t)
-				if !ok || !r.valid() || !v.valid() || c.units.still(v) {
+			points, breaks := out.Projection.Points, out.Breaks
+			if out.Projection.Breaks != nil {
+				breaks = out.Projection.Breaks
+			}
+			var broken []int
+			out.Adaptive.Projection, broken = c.refine(points, breaks, func(t float64) Vec3 {
+				r, v, a, ok := evaluate(t)
+				line, defined := c.units.line(v, a)
+				if !ok || !r.valid() || !defined {
 					return Vec3{math.NaN(), 0, 0}
 				}
-				return project(c.Construction, c.Pole, r, v.unit())
+				return project(c.Construction, c.Pole, r, line)
 			}, lo, hi)
+			// Refinement may yet find a crossed cusp broken between samples.
+			for _, i := range broken {
+				if _, crosses := crossing[i]; crosses {
+					out.Projection.Breaks[i+1] = true
+				}
+			}
+			if out.Projection.Breaks != nil {
+				out.Projection.Crossed = crossed(crossing, out.Projection.Breaks)
+			}
 		}
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
 		bound([][]*Vec3{out.Base, out.Projection.Points, out.Projection.Feet, {&out.Projection.Pole}}, refined.Base, refined.Projection)

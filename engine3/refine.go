@@ -181,8 +181,19 @@ func (c Request) position(base evaluation) func(float64) Vec3 {
 	undefined := Vec3{math.NaN(), 0, 0}
 	if c.projected() {
 		return func(t float64) Vec3 {
-			r, v, _, ok := base(t)
-			if !ok || !r.valid() || !v.valid() || v.norm() < 1e-9 {
+			r, v, a, ok := base(t)
+			if !ok || !r.valid() || !v.valid() {
+				return undefined
+			}
+			// At a cusp of the base the line is the limit along r″.
+			if c.units.still(v) {
+				line, defined := c.units.line(v, a)
+				if !defined {
+					return undefined
+				}
+				return project(c.Input, c.Pole, r, line)
+			}
+			if v.norm() < 1e-9 {
 				return undefined
 			}
 			return project(c.Input, c.Pole, r, v.unit())

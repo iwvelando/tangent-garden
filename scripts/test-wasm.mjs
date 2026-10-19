@@ -1641,10 +1641,42 @@ for (const construction of ["tangent-foot", "orthotomic"]) {
     assert.deepEqual(s.foot, q.projection.feet[s.sampleIndex]);
     assert.deepEqual(s.image, q.projection.points[s.sampleIndex]);
   }
+  // A regular helix has no cusp to cross: the base's breaks stand.
+  assert.equal(q.projection.breaks, undefined);
+  assert.equal(q.projection.crossed, undefined);
 }
 console.log(
   "WASM spatial projections: helix feet, half-turns and sample identities passed",
 );
+// Across the semicubical parabola's cusp at t = 0, sample 240, the tangent
+// line is the x-axis, along r″(0) = (2, 0, 0): the projection carries its
+// own breaks, joined there, and the foot (0.5, 0, 0) where the base has no
+// tangent.
+for (const construction of ["tangent-foot", "orthotomic"]) {
+  const q = spatialResult(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "parametric",
+        construction,
+        pole: { x: 0.5, y: 0.5, z: 0.3 },
+        curve: { x: "t^2", y: "t^3", z: "0", min: -1, max: 1, a: 1 },
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+  assert.equal(q.base[240], null);
+  assert.ok(q.breaks[240] && q.breaks[241]);
+  assert.equal(q.projection.crossed, 1);
+  assert.ok(q.projection.breaks.every((b) => !b));
+  const want =
+    construction === "tangent-foot"
+      ? { x: 0.5, y: 0, z: 0 }
+      : { x: 0.5, y: -0.5, z: -0.3 };
+  for (const axis of ["x", "y", "z"])
+    assert.ok(Math.abs(q.projection.points[240][axis] - want[axis]) < 1e-9);
+}
+console.log("WASM spatial projections across a base cusp passed");
 // Sphere inversion: a circle through the center becomes the line x = R²/2,
 // broken once where the source passes through the center between samples.
 const sphereInversion = (inversion, extra = {}) =>
