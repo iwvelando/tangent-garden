@@ -153,7 +153,7 @@ export function shadowNote(
 
 // The study with its shadow's plane chosen: none removes the shadow, the
 // same plane changes nothing, and a new one stands just beyond the drawn
-// study (shadowAt).
+// study (shadowAt), keeping the grid of views if it is on.
 export function withShadowPlane(
   c: SpatialConfig,
   plane: ShadowPlane | "none",
@@ -164,6 +164,10 @@ export function withShadowPlane(
     return rest;
   }
   if (c.shadow?.plane === plane) return c;
-  const shadow: ShadowConfig = { plane, at: shadowAt(plane, bounds) };
+  const shadow: ShadowConfig = {
+    plane,
+    at: shadowAt(plane, bounds),
+    ...(c.shadow?.grid ? { grid: true } : {}),
+  };
   return { ...c, shadow };
 }

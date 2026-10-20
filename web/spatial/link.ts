@@ -383,6 +383,7 @@ const config: SchemaOf<SpatialConfig> = {
         fields: {
           plane: { options: { x: true, y: true, z: true } },
           at: "number",
+          grid: { optional: "boolean" },
         },
       },
     },

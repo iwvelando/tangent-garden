@@ -81,7 +81,15 @@ export async function detectFormats(
   if (typeof VideoEncoder !== "undefined") {
     if (await encodes(settings, fps)) mp4 = "yes";
     else if (
-      await encodes({ scale: 0.5, quality: 1, layout: settings.layout }, 15)
+      await encodes(
+        {
+          scale: 0.5,
+          quality: 1,
+          layout: settings.layout,
+          captions: settings.captions,
+        },
+        15,
+      )
     )
       mp4 = "size";
   }

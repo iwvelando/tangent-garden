@@ -173,10 +173,13 @@ import {
   probeTarget,
   probeOptions,
   sampleProbe,
+  probePoint,
   type CurveProbe,
   type Probe,
   type ProbePlace,
 } from "./probe";
+import { gridLayout, gridPage, gridViews, viewCaption } from "./grid";
+import { PlaneCell, usePlaneFraming } from "./PlaneViews";
 import { ProbePanel } from "./ProbePanel";
 import { RestartCheck, restartedAt } from "./restart";
 import "./spatial.css";
@@ -1535,6 +1538,18 @@ export default function SpatialApp({
     // A finished animation hands its camera over to be explored.
     override = animation?.complete ? undefined : camera,
     released = animation?.complete ? camera : undefined;
+  // The face-on views beside the drawing, when the shown study has them,
+  // and their shared framing.
+  const planeViews =
+    shown?.result.shadow && gridViews(shown.config)
+      ? gridViews(shown.config)
+      : null;
+  const plane = usePlaneFraming(
+    planeViews ? shown!.result.shadow : undefined,
+    !!animation,
+    !!animation?.complete,
+    reset,
+  );
   const ready = !!frame && !busy && !failure && !renderError;
   // The probe draws on the study's own result, or on the animation's frame
   // where the animation stands it (moving it, or holding it at the user's
@@ -1670,6 +1685,12 @@ export default function SpatialApp({
         : [],
     [probeFrame, probeAt, probeSetup.target, probeSetup.across],
   );
+  // Where the curve probe stands on the drawing shown, which the face-on
+  // views mark below it.
+  const drawnProbePoint =
+    probeFrame && probeFrame === shown && probeAt !== undefined
+      ? probePoint(probeFrame.result, probeFrame.config, probeSetup, probeAt)
+      : null;
   async function save(format: string, still: Still) {
     if (!shown || !viewport.current) return;
     imageAbort.current?.abort();
@@ -1713,6 +1734,14 @@ export default function SpatialApp({
         snapshot.sight,
         still,
         snapshot.scheme,
+        planeViews && plane.framing
+          ? {
+              views: planeViews,
+              framing: plane.framing,
+              weight: snapshot.sight.weight,
+              probe: drawnProbePoint,
+            }
+          : undefined,
       );
       controller.signal.throwIfAborted();
       saveFile(
@@ -2601,6 +2630,7 @@ export default function SpatialApp({
           svgLabel="SVG · embedded 3D image"
           sizeLabel="Image size"
           fits={imageFits}
+          base={planeViews ? gridPage(planeViews) : undefined}
           extraItems={[
             { format: "svg-lines", label: "Lines (SVG) · every line" },
             {
@@ -3384,6 +3414,16 @@ export default function SpatialApp({
                   }
                   layers={layers}
                   onLayer={(key, on) => setLayers((s) => ({ ...s, [key]: on }))}
+                  onGrid={(on) =>
+                    update((c) => {
+                      if (!c.shadow) return c;
+                      const { grid: _, ...shadow } = c.shadow;
+                      return {
+                        ...c,
+                        shadow: on ? { ...shadow, grid: true } : shadow,
+                      };
+                    })
+                  }
                   note={
                     shown?.config.shadow && shown.result.shadow
                       ? shadowNote(
@@ -3879,52 +3919,88 @@ export default function SpatialApp({
             </div>
           </div>
           <div className="plot-wrap" ref={plotWrap}>
-            <div className="spatial-canvas-wrap" ref={canvasWrap}>
-              {shown ? (
-                <SpatialPlot
-                  onGeometry={(result, drawable) =>
-                    feedGeometry(geometryFeed.current, result, drawable)
-                  }
-                  result={shown.result}
-                  dark={theme.dark}
-                  scheme={theme.scheme}
-                  layers={layers}
-                  reset={reset}
-                  spinning={spinning && active}
-                  override={override}
-                  released={released}
-                  refit={refit}
-                  onViewport={(v) => {
-                    viewport.current = v;
-                    feedOrientation(orientation.current, viewBasis(v));
-                  }}
-                  onError={setRenderError}
-                  restored={restoredView}
-                  home={home}
-                  onCamera={(c) => {
-                    manualCamera.current = c;
-                  }}
-                  probe={probeDrawing}
-                  cut={drawnCut}
-                  sight={userSight.spec}
-                  onSeeThrough={setSeeThrough}
-                  onStrokes={setStroking}
-                  projection={lensing}
-                  lensAngle={lensAngle}
-                  turn={turn}
-                  refineView={refineView}
-                  onFocus={onFocus}
-                />
-              ) : (
-                <div className="loading">
-                  {failure
-                    ? "Check the study definition to begin."
-                    : "Preparing the spatial engine…"}
+            <div
+              className="spatial-canvas-wrap"
+              ref={canvasWrap}
+              data-layout={planeViews ? gridLayout(planeViews) : undefined}
+            >
+              <figure className="grid-cell">
+                {planeViews && (
+                  <figcaption>
+                    {viewCaption("drawing", shown!.config)}
+                  </figcaption>
+                )}
+                <div className="cell-drawing">
+                  {shown ? (
+                    <SpatialPlot
+                      onGeometry={(result, drawable) =>
+                        feedGeometry(geometryFeed.current, result, drawable)
+                      }
+                      result={shown.result}
+                      dark={theme.dark}
+                      scheme={theme.scheme}
+                      layers={layers}
+                      reset={reset}
+                      spinning={spinning && active}
+                      override={override}
+                      released={released}
+                      refit={refit}
+                      onViewport={(v) => {
+                        viewport.current = v;
+                        feedOrientation(orientation.current, viewBasis(v));
+                      }}
+                      onError={setRenderError}
+                      restored={restoredView}
+                      home={home}
+                      onCamera={(c) => {
+                        manualCamera.current = c;
+                      }}
+                      probe={probeDrawing}
+                      cut={drawnCut}
+                      sight={userSight.spec}
+                      onSeeThrough={setSeeThrough}
+                      onStrokes={setStroking}
+                      projection={lensing}
+                      lensAngle={lensAngle}
+                      turn={turn}
+                      refineView={refineView}
+                      onFocus={onFocus}
+                    />
+                  ) : (
+                    <div className="loading">
+                      {failure
+                        ? "Check the study definition to begin."
+                        : "Preparing the spatial engine…"}
+                    </div>
+                  )}
+                  {frame && failure && (
+                    <span className="stale-study">Previous valid study</span>
+                  )}
                 </div>
-              )}
-              {frame && failure && (
-                <span className="stale-study">Previous valid study</span>
-              )}
+              </figure>
+              {planeViews &&
+                plane.framing &&
+                planeViews.map((view) => (
+                  <figure className="grid-cell" key={view}>
+                    <figcaption>{viewCaption(view, shown!.config)}</figcaption>
+                    <div className="cell-drawing">
+                      <PlaneCell
+                        view={view}
+                        caption={viewCaption(view, shown!.config)}
+                        result={shown!.result}
+                        framing={plane.framing!}
+                        locked={plane.locked}
+                        onCamera={plane.setCamera}
+                        layers={layers}
+                        dark={theme.dark}
+                        scheme={theme.scheme}
+                        weight={userSight.spec.weight}
+                        progress={animation?.progress}
+                        probe={drawnProbePoint}
+                      />
+                    </div>
+                  </figure>
+                ))}
             </div>
             <div className="plot-meta">
               <SpatialLegend

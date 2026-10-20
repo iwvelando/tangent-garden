@@ -1,5 +1,6 @@
 import type { RefinedPath as SharedRefinedPath } from "../refinement";
 import { curveInputs } from "./inputs";
+import type { Result as PlanarResult, Vec as PlanarVec } from "../types";
 export type Vec3 = { x: number; y: number; z: number };
 export type Bounds3 = { center: Vec3; radius: number };
 // Arc length s is measured from the anchor t₀ (a parameter value inside the
@@ -317,7 +318,9 @@ export type SpatialConfig = {
 // shadow, with the 2D construction of that shadow that corresponds to its
 // own beside the shadow of its own. Mirrors engine3.ShadowRequest.
 export type ShadowPlane = "x" | "y" | "z";
-export type ShadowConfig = { plane: ShadowPlane; at: number };
+// grid draws the plane face on in views beside the drawing (shadow.ts);
+// absent draws the one drawing.
+export type ShadowConfig = { plane: ShadowPlane; at: number; grid?: boolean };
 export const maxShadowAt = 100000;
 // Mirrors engine3.View: what the drawing shows, which refinement refines to
 // when it is zoomed in. center is the middle of the page, right and up its
@@ -460,6 +463,21 @@ export type ShadowResult = {
     planar?: RefinedPath[];
     cast?: RefinedPath[];
   };
+  // Present only when the grid asks for it and the 2D construction was
+  // drawn (see PlaneStudy).
+  study?: PlaneStudy;
+};
+// Mirrors engine3.PlaneStudy: the 2D engine's study of the shadow, for the
+// 2D notebook's own drawing of the plane, in the plane's coordinates
+// (u, v) in units of unit: (y, z) on x = c, (z, x) on y = c and (x, y) on
+// z = c.
+export type PlaneStudy = {
+  unit: number;
+  kind: "involute" | "pedal" | "orthotomic" | "inversion";
+  input: string;
+  pole: PlanarVec;
+  inversion: { center: PlanarVec; radius: number };
+  result: PlanarResult;
 };
 // Mirrors engine3.SurfaceQuery: the surface probe at the parameters (u, v)
 // of a patch, at or between its grid samples.

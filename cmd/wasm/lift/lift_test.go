@@ -30,6 +30,12 @@ func restore(t *testing.T, text []byte, floats []float64, places []Place) any {
 				return nil, at + 3
 			}
 			return map[string]any{"x": x, "y": y, "z": z}, at + 3
+		case "point2", "vector2":
+			x, y := floats[at], floats[at+1]
+			if kind == "point2" && math.IsNaN(x) {
+				return nil, at + 2
+			}
+			return map[string]any{"x": x, "y": y}, at + 2
 		case "triple":
 			return []any{floats[at], floats[at+1], floats[at+2]}, at + 3
 		case "quad":
@@ -191,7 +197,14 @@ func size(p Place) int {
 
 func preset(t *testing.T, name string) engine3.Request {
 	t.Helper()
-	b, err := os.ReadFile("testdata/presets.json")
+	return presetIn(t, "testdata/presets.json", name)
+}
+
+// presetIn is a preset from a fixture: this package's own, or the 3D
+// engine's copy of every preset.
+func presetIn(t *testing.T, file, name string) engine3.Request {
+	t.Helper()
+	b, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,6 +425,35 @@ func TestTesseractRoundTrip(t *testing.T) {
 				}
 				if p := got["paths.0.parameters"]; p.Kind != "number" {
 					t.Errorf("parameters: %+v", p)
+				}
+			}
+		})
+	}
+}
+
+// The grid's 2D study of a shadow carries the 2D engine's points, which
+// leave the JSON as the spatial ones do and come back exactly: points with
+// gaps as {x, y} or null, and a probe's or ray's single points as they
+// were.
+func TestPlaneStudyRoundTrip(t *testing.T) {
+	for _, name := range []string{"A trefoil's feet and their shadow", "A staircase's shadow, unwinding"} {
+		t.Run(name, func(t *testing.T) {
+			request := presetIn(t, "../../../engine3/testdata/presets.json", name)
+			request.Shadow.Grid = true
+			result, err := engine3.Compute(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Shadow.Study == nil {
+				t.Fatal("no 2D study")
+			}
+			result.Mesh = engine3.CurveMesh{}
+			result.Shadow.Study.Result.Base[2] = nil
+			places, _, _ := roundTrip(t, &result)
+			got := paths(places)
+			for _, p := range []string{"shadow.study.result.base", "shadow.study.result.derived"} {
+				if got[p].Kind != "point2" {
+					t.Errorf("%s: kind %q; lifted %v", p, got[p].Kind, keys(got))
 				}
 			}
 		})

@@ -23,6 +23,7 @@ test("each kind of array comes back where it was, with its nulls", () => {
       canal: { meridians: null, circles: [{ points: null }, { points: [] }] },
       paths: [{ points: null, family: 2 }],
       probe: { curvature: [null, null] },
+      study: { base: null, rays: null },
       count: 7,
     },
     lifted(
@@ -62,6 +63,13 @@ test("each kind of array comes back where it was, with its nulls", () => {
         nan,
         0.25,
         0.75,
+        // study.base: a 2D point and a gap; study.rays: a 2D vector.
+        1.5,
+        -2.5,
+        nan,
+        nan,
+        3,
+        4,
       ],
       [
         { path: ["base"], kind: "point", offset: 0, count: 3 },
@@ -91,6 +99,8 @@ test("each kind of array comes back where it was, with its nulls", () => {
           rows: [2],
         },
         { path: ["probe", "u"], kind: "number", offset: 27, count: 2 },
+        { path: ["study", "base"], kind: "point2", offset: 29, count: 2 },
+        { path: ["study", "rays"], kind: "vector2", offset: 33, count: 1 },
       ],
     ),
   );
@@ -116,6 +126,7 @@ test("each kind of array comes back where it was, with its nulls", () => {
       },
     ],
     probe: { curvature: [null, [[0.5, null]]], u: [0.25, 0.75] },
+    study: { base: [{ x: 1.5, y: -2.5 }, null], rays: [{ x: 3, y: 4 }] },
     count: 7,
   });
   // −0 stays −0, as JSON delivers it.
@@ -164,7 +175,13 @@ test("every preset's lifted arrays come back, leaving the JSON small", () => {
       if (p.name === "The whole focal surface of an ellipsoid")
         expect(reply.json.length, p.name).toBeLessThan(1_000_000);
     }
-  expect([...kinds].sort()).toEqual(["maybe", "number", "point", "vector"]);
+  expect([...kinds].sort()).toEqual([
+    "maybe",
+    "number",
+    "point",
+    "point2",
+    "vector",
+  ]);
   // Most of what the presets send is now lifted: a float is about 18
   // characters of JSON.
   expect(18 * floats).toBeGreaterThan(4 * text);

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"tangentgarden/engine"
 	"tangentgarden/engine3"
 )
 
@@ -26,7 +27,9 @@ import (
 // Kinds: "point" is an engine3 *Vec3, {x, y, z} or null (three NaN);
 // "vector" an engine3 Vec3; "triple" a [3]float64, such as an engine4
 // Vec3, [x, y, z]; "quad" a [4]float64, such as an engine4 Vec4;
-// "number" a float64; "maybe" a *float64, a number or null (NaN).
+// "number" a float64; "maybe" a *float64, a number or null (NaN);
+// "point2" an engine *Vec, {x, y} or null (two NaN), as a shadow's 2D
+// study holds; "vector2" an engine Vec.
 type Place struct {
 	Path   []any  `json:"path"`
 	Kind   string `json:"kind"`
@@ -44,6 +47,7 @@ var errNonFinite = errors.New("non-finite number")
 
 var (
 	vec3   = reflect.TypeOf(engine3.Vec3{})
+	vec    = reflect.TypeOf(engine.Vec{})
 	number = reflect.TypeOf(0.0)
 )
 
@@ -55,6 +59,11 @@ func kind(t reflect.Type) string {
 		return "vector"
 	case reflect.PointerTo(vec3):
 		return "point"
+	case vec:
+		// Two float64 fields, laid out as two consecutive float64.
+		return "vector2"
+	case reflect.PointerTo(vec):
+		return "point2"
 	case number:
 		return "number"
 	case reflect.PointerTo(number):
@@ -292,7 +301,7 @@ func (l *lifter) lift(v reflect.Value) error {
 func (l *lifter) items(v reflect.Value, k string) error {
 	nan, start := math.NaN(), len(l.floats)
 	switch k {
-	case "vector", "triple", "quad", "number":
+	case "vector", "vector2", "triple", "quad", "number":
 		// Each of these lies in memory as consecutive float64 values.
 		l.floats = append(l.floats, unsafe.Slice((*float64)(v.UnsafePointer()), width(k)*v.Len())...)
 	case "point":
@@ -305,6 +314,18 @@ func (l *lifter) items(v reflect.Value, k string) error {
 				return errNonFinite
 			}
 			l.floats = append(l.floats, p.X, p.Y, p.Z)
+		}
+		return nil
+	case "point2":
+		for _, p := range v.Interface().([]*engine.Vec) {
+			if p == nil {
+				l.floats = append(l.floats, nan, nan)
+				continue
+			}
+			if !finite(p.X) || !finite(p.Y) {
+				return errNonFinite
+			}
+			l.floats = append(l.floats, p.X, p.Y)
 		}
 		return nil
 	case "maybe":
@@ -336,6 +357,8 @@ func width(k string) int {
 		return 1
 	case "quad":
 		return 4
+	case "point2", "vector2":
+		return 2
 	}
 	return 3
 }

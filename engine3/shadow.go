@@ -13,6 +13,10 @@ import (
 type ShadowRequest struct {
 	Plane string  `json:"plane"`
 	At    float64 `json:"at"`
+	// Grid, for the grid of views beside the drawing, asks for the 2D
+	// engine's whole study of the shadow too (see PlaneStudy); it changes
+	// nothing else.
+	Grid bool `json:"grid,omitempty"`
 }
 
 // ShadowPath is a path on the plane, indexed like the curve's samples, with
@@ -50,6 +54,24 @@ type ShadowResult struct {
 	// Adaptive holds the shadows refined between samples, present only
 	// when the study refines its curves (see ShadowAdaptive).
 	Adaptive *ShadowAdaptive `json:"adaptive,omitempty"`
+	// Study is present only when the grid asks for it and the study has a
+	// 2D counterpart that was drawn.
+	Study *PlaneStudy `json:"study,omitempty"`
+}
+
+// PlaneStudy is the 2D engine's study of the shadow, for the 2D notebook's
+// own drawing of the plane: its kind and input, pole and inversion circle,
+// and result, all in the plane's coordinates (see ShadowRequest.flat) in
+// units of Unit. Its derived curve and family are Planar's paths, scaled
+// down: an involute family's first string is the derived curve, the rest
+// its family, and each representative string reaches the first.
+type PlaneStudy struct {
+	Unit      float64          `json:"unit"`
+	Kind      string           `json:"kind"`
+	Input     string           `json:"input"`
+	Pole      engine.Vec       `json:"pole"`
+	Inversion engine.Inversion `json:"inversion"`
+	Result    engine.Result    `json:"result"`
 }
 
 // ShadowAdaptive is a refined study's shadows refined between samples:
@@ -169,7 +191,7 @@ func (c Request) planarKind() string {
 // its points are in those units: the 2D engine keeps a few absolute
 // constants, which hold for studies 2⁻²⁰ to 2¹³ across, and a power of two
 // changes nothing else, exactly.
-func (c Request) planar(kind string, sh *shadowing, unit float64) ([][]*engine.Vec, []*engine.RefinedPath, engine.Result, error) {
+func (c Request) planar(kind string, sh *shadowing, unit float64) ([][]*engine.Vec, []*engine.RefinedPath, engine.Result, engine.Request, error) {
 	q := *c.Shadow
 	flat := func(p Vec3) engine.Vec { return q.flat(p).Mul(1 / unit) }
 	f := func(t float64) engine.Vec {
@@ -187,18 +209,23 @@ func (c Request) planar(kind string, sh *shadowing, unit float64) ([][]*engine.V
 		Lines:    2,
 		Adaptive: c.refines(),
 	}
+	// The grid draws the study's own number of representative lines; the
+	// construction's points do not depend on how many.
+	if q.Grid {
+		request.Lines = c.Lines
+	}
 	switch kind {
 	case "involute":
 		request.Input = planarInputs[c.Input]
 		strings, err := c.Involute.offsets(c.Samples)
 		if err != nil {
-			return nil, nil, engine.Result{}, err
+			return nil, nil, engine.Result{}, request, err
 		}
 		for k := range strings {
 			strings[k] /= unit
 		}
 		family, err := engine.AnchoredInvolutes(request, f, c.Involute.Anchor, strings)
-		return family.Members, family.Refined, family.Result, err
+		return family.Members, family.Refined, family.Result, request, err
 	case "inversion":
 		request.Input = planarInputs[c.Inversion.Input]
 		request.Inversion = engine.Inversion{Center: flat(c.Inversion.Center), Radius: c.Inversion.Radius / unit}
@@ -208,7 +235,33 @@ func (c Request) planar(kind string, sh *shadowing, unit float64) ([][]*engine.V
 	if r.Adaptive != nil && r.Adaptive.Derived != nil {
 		refined = []*engine.RefinedPath{r.Adaptive.Derived}
 	}
-	return [][]*engine.Vec{r.Derived}, refined, r, err
+	return [][]*engine.Vec{r.Derived}, refined, r, request, err
+}
+
+// planeStudy is the 2D study of the shadow as the 2D notebook draws it,
+// from the planar construction's members and their refinements: an
+// involute family's result is the involute with offset 0, so its first
+// member becomes the derived curve, the rest its family, and each string
+// is drawn to the first member.
+func planeStudy(kind string, request engine.Request, unit float64, r engine.Result, members [][]*engine.Vec, refined []*engine.RefinedPath) *PlaneStudy {
+	if kind == "involute" {
+		r.Derived, r.Family = members[0], []engine.Path{}
+		for _, m := range members[1:] {
+			r.Family = append(r.Family, engine.Path{Points: m})
+		}
+		rays := make([]engine.Ray, 0, len(r.Rays))
+		for _, ray := range r.Rays {
+			ray.Target = members[0][ray.SampleIndex]
+			if ray.Target != nil {
+				rays = append(rays, ray)
+			}
+		}
+		r.Rays = rays
+		if len(refined) > 0 {
+			r.Adaptive = &engine.AdaptiveResult{Derived: refined[0], Family: refined[1:]}
+		}
+	}
+	return &PlaneStudy{Unit: unit, Kind: kind, Input: request.Input, Pole: request.Pole, Inversion: request.Inversion, Result: r}
 }
 
 // refined is a refined path on the plane: the 2D engine's, in units of
@@ -269,9 +322,11 @@ func (out *Result) cast(c Request) {
 			s.Cast = append(s.Cast, q.path(out.Inversion.Points, out.Inversion.Breaks))
 		}
 		unit := binade(out.Bounds.Radius)
-		members, refined, r, err := c.planar(s.Kind, sh, unit)
+		members, refined, r, request, err := c.planar(s.Kind, sh, unit)
 		if err != nil {
 			s.Notes = append(s.Notes, fmt.Sprintf("The 2D construction of the shadow is not drawn: %s.", err))
+		} else if q.Grid {
+			s.Study = planeStudy(s.Kind, request, unit, r, members, refined)
 		}
 		s.Notes = append(s.Notes, r.Warnings...)
 		for _, member := range members {
