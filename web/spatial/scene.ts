@@ -87,9 +87,10 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // circles and meridians; trajectories, arrows and seeds to a vector field
 // under any construction, and trajectories, polygons and seeds to a pursuit,
 // whose other paths and starts they draw. A surface study draws its patch
-// as the surface, with its parameter curves, normal lines, offset, and each
-// focal sheet (its faces, its parameter curves, and a cross when it is a
-// point) as their own layers. A ray study draws its mirror or interface as
+// as the surface, with its parameter curves, normal lines, offset, the
+// offset's cuspidal edges when they are located, and each focal sheet (its
+// faces, its parameter curves, and a cross when it is a point) as their
+// own layers. A ray study draws its mirror or interface as
 // the surface, with its parameter curves; each caustic branch's real part
 // as a focal sheet; its incident rays (with the source), outgoing rays
 // (reflected, transmitted, or totally reflected), and virtual rays with the
@@ -133,6 +134,7 @@ export type Layers = {
   curves: boolean;
   normals: boolean;
   offset: boolean;
+  cusps: boolean;
   focal1: boolean;
   focal2: boolean;
   incident: boolean;
@@ -174,6 +176,7 @@ export const defaultLayers: Layers = {
   curves: true,
   normals: true,
   offset: true,
+  cusps: true,
   focal1: true,
   focal2: true,
   incident: true,
@@ -952,6 +955,24 @@ export function buildScene(result: SpatialResult) {
     4,
   );
   const offsetSheet = sheetBatch(surface?.offset ?? empty, -1);
+  // The offset's cuspidal edges, each closed one back to its start, broad
+  // in the curves' ink.
+  const offsetEdges = batch(
+    vertices(
+      (surface?.edges ?? []).flatMap((e) =>
+        e.points.flatMap((p, k, all) =>
+          k + 1 < all.length
+            ? [p, all[k + 1]]
+            : e.closed && all.length > 2
+              ? [p, all[0]]
+              : [],
+        ),
+      ),
+    ),
+    "lines",
+    2,
+    1.8,
+  );
   // A branch drawn as lines: its parameter curves, or a cross when it is
   // a point.
   const branchLines = (f: SurfaceSheet & { shape: string }, k: number) => {
@@ -1152,6 +1173,7 @@ export function buildScene(result: SpatialResult) {
     sheetCurves,
     normalLines,
     offsetSheet,
+    offsetEdges,
     focalSheets,
     focalCurves,
     virtualCaustics,
@@ -1213,6 +1235,14 @@ export function scenePasses(
   s.focalCurves.forEach((f, k) => add(focal(k), layers[focal(k)], false, f));
   add("curves", layers.curves, false, s.sheetCurves);
   add("normals", layers.normals, false, s.normalLines);
+  // As with a shadow's passes below, only an offset with cuspidal edges
+  // has their pass, so their stroke moves no other study's sheets.
+  add(
+    "cusps",
+    layers.cusps && s.offsetEdges.data.length > 0,
+    false,
+    s.offsetEdges,
+  );
   add("incident", layers.incident, false, s.incidentRays, s.lamp);
   add("reflected", layers.reflected, false, s.reflectedRays, s.totalRays);
   add("receiver", layers.receiver, true, s.receiverSheet);

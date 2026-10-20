@@ -48,7 +48,8 @@ const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 // The recordings predate the metadata's construction input and its base
 // curve layer, which a study built on the base records as "base" and shown,
 // the involute and coil inputs' settings, which it records at their
-// defaults, and the shadow's layers, which it records as shown.
+// defaults, and the shadow's layers and an offset's cuspidal edges, which
+// it records as shown.
 const predating = (b: Buffer) =>
   Buffer.from(
     b
@@ -58,7 +59,8 @@ const predating = (b: Buffer) =>
       .replace('"coil":{"radius":0.3,"angle":0,"turns":8},', "")
       .replace('"parent":true,', "")
       .replace('"adaptive":false,', "")
-      .replace(',"shadow":true,"planar":true,"cast":true', ""),
+      .replace(',"shadow":true,"planar":true,"cast":true', "")
+      .replace('"cusps":true,', ""),
   );
 
 // Recorded from main at 672ef89, before the cut. Regenerate only when a

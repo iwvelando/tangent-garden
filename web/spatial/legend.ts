@@ -45,6 +45,15 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
       { layer: "surface", swatch: "surface-dot", label: "Surface" },
       { layer: "focal1", swatch: "focal-dot", label: "Focal sheet 1" },
       { layer: "focal2", swatch: "focal-dot second", label: "Focal sheet 2" },
+      ...(c.surface.edges && c.surface.offset !== 0
+        ? [
+            {
+              layer: "cusps",
+              swatch: "thread-dot",
+              label: "Cuspidal edges",
+            } as const,
+          ]
+        : []),
     ];
   // A curve study: the curve (a derived input drawn as the curve, or a
   // field's or pursuit's first path), what its construction draws in the

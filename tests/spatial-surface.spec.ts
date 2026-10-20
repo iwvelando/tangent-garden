@@ -6,14 +6,21 @@ import {
 } from "../web/spatial/animation";
 import { spatialPresets } from "../web/spatial/presets";
 import { surfaceDefaults } from "../web/spatial/surface";
+import {
+  buildScene,
+  defaultLayers,
+  sceneLayers,
+  scenePasses,
+} from "../web/spatial/scene";
 import type {
+  CuspidalEdge,
   FocalSheet,
   SpatialResult,
   SurfaceSheet,
   Vec3,
 } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
-import { choosePreset } from "./helpers";
+import { chooseColorScheme, choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
 import { curveMesh } from "./curve-mesh";
@@ -184,6 +191,128 @@ test("notes report focal shapes, chart singularities, umbilics and folds", async
   await expect(note(page)).toContainText(
     "Focal sheet 1 (κ₁) lies wholly at infinity. Focal sheet 2 (κ₂) lies wholly at infinity.",
   );
+});
+
+// The far half of the ellipsoid (1.5, 1, 0.7), offset inward by 0.6. Its
+// larger curvature, against the outward normal, runs from a/c² ≈ 3.06 at
+// the end of the long axis to b/c² ≈ 2.04 at the end of the middle one, all
+// above 1/0.6 along the equator, so the offset meets the second focal sheet
+// in two edges, north and south of the equator, each running the half's
+// whole width.
+test("an offset's cuspidal edges are located on request, drawn and named", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, ellipsoid);
+  await settled(page);
+  const check = page.getByRole("checkbox", {
+    name: "Locate cuspidal edges",
+    exact: true,
+  });
+  // A hidden legend entry keeps its place, out of sight.
+  const named = page.locator('.legend [data-legend="cusps"]:not(.legend-off)');
+  // An offset of 0 offers nothing to locate.
+  await field(page, "Offset d").fill("0");
+  await settled(page);
+  await expect(check).toHaveCount(0);
+  await field(page, "Offset d").fill("-0.6");
+  await settled(page);
+  await expect(check).not.toBeChecked();
+  await expect(note(page)).not.toContainText("cuspidal");
+  await expect(named).toHaveCount(0);
+  await expect(layer(page, "Cuspidal edges")).toHaveCount(0);
+  const before = await pixels(page);
+  await check.check();
+  await settled(page);
+  expect((await config(page)).surface.edges).toBe(true);
+  await expect(note(page)).toContainText(
+    "The offset folds along 2 cuspidal edges (2 on focal sheet 2), where it touches the focal sheet.",
+  );
+  await expect(named).toHaveText("Cuspidal edges");
+  await expect(
+    page.locator(".bottom-note", { hasText: "normals at the crossings" }),
+  ).toContainText("Gold curves are the offset's cuspidal edges.");
+  // The note names the edges' color in the scheme they are drawn in.
+  await chooseColorScheme(page, "forest");
+  await expect(
+    page.locator(".bottom-note", { hasText: "normals at the crossings" }),
+  ).toContainText("Berry curves are the offset's cuspidal edges.");
+  await chooseColorScheme(page, "default");
+  const located = await pixels(page);
+  expect(located).not.toBe(before);
+  // Hidden, they leave exactly the drawing they were added to.
+  await layer(page, "Cuspidal edges").uncheck();
+  expect(await pixels(page)).toBe(before);
+  await expect(named).toHaveCount(0);
+  await layer(page, "Cuspidal edges").check();
+  expect(await pixels(page)).toBe(located);
+  // Short of every radius of curvature there are none, and the legend
+  // names none.
+  await field(page, "Offset d").fill("-0.1");
+  await settled(page);
+  await expect(note(page)).toContainText(
+    "The offset has no cuspidal edge: d is neither radius of curvature anywhere on the patch.",
+  );
+  await expect(named).toHaveCount(0);
+  // Unchecked, the field is dropped, as in links made before it.
+  await check.uncheck();
+  await settled(page);
+  expect("edges" in (await config(page)).surface).toBe(false);
+  await expect(note(page)).not.toContainText("cuspidal");
+});
+
+// The preset plays its own sweep with the edges located: each frame is
+// the study at its own d, with its own edges, which the frame draws and
+// hiding their layer takes away. The note describes the preset's own study,
+// four closed edges at d = −1.2, two on each focal sheet.
+test("the cuspidal edges preset plays its sweep with its edges located", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, {
+    label: "The cuspidal edges of a parallel surface",
+  });
+  await settled(page);
+  expect((await config(page)).surface.edges).toBe(true);
+  await expect(note(page)).toContainText(
+    "The offset folds along 4 cuspidal edges (2 on focal sheet 1, 2 on focal sheet 2), each a closed curve",
+  );
+  await expect(
+    page.locator(".legend .legend-entry:not(.legend-off)"),
+  ).toHaveText(["Cuspidal edges"]);
+  const opening = await pixels(page);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "parameters");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const frames: string[] = [];
+  // Out to d = −0.35 as the sweep turns back half way, then home.
+  for (const [time, d] of [
+    ["0.5", -0.35],
+    ["0", -1.2],
+  ] as const) {
+    await slider.fill(time);
+    await expect(stage(page)).toHaveAttribute("data-time", time);
+    await settled(page);
+    expect((await config(page)).surface).toMatchObject({
+      offset: d,
+      edges: true,
+    });
+    const drawn = await pixels(page);
+    await layer(page, "Cuspidal edges").uncheck();
+    expect(await pixels(page)).not.toBe(drawn);
+    await layer(page, "Cuspidal edges").check();
+    expect(await pixels(page)).toBe(drawn);
+    frames.push(drawn);
+  }
+  expect(frames[0]).not.toBe(frames[1]);
+  expect(frames[1]).toBe(opening);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect((await config(page)).surface.offset).toBe(-1.2);
 });
 
 test("surface reveal, pause, resume and edits invalidate stale playback", async ({
@@ -379,6 +508,179 @@ test("surface reveal grows every sheet along u with its edges and lines", () => 
   expect(whole.surface).toEqual(input.surface);
   expect(whole.bounds.center.z).toBeCloseTo(18.5, 12);
   expect(input.surface!.surface.points).toHaveLength(3);
+});
+
+// An offset's cuspidal edges: a closed loop of four points about row 1 and
+// an open edge across rows 0 to 2. Revealed through row 1 the loop, whose
+// points all stand at or before it, stays closed; the open edge keeps its
+// first two points, and an edge split at a row is no longer closed.
+test("surface reveal grows an offset's cuspidal edges along u", () => {
+  const at = (x: number, z = 0): Vec3 => ({ x, y: 0, z });
+  const loop: CuspidalEdge = {
+    branch: 1,
+    closed: true,
+    points: [at(0.5), at(1, 1), at(0.5, 2), at(0, 1)],
+    i: [0.5, 1, 0.5, 0],
+    j: [0, 0.5, 1, 0.5],
+  };
+  const open: CuspidalEdge = {
+    branch: 2,
+    closed: false,
+    points: [at(0, 3), at(1, 3), at(1.5, 3), at(2, 3)],
+    i: [0, 1, 1.5, 2],
+    j: [1, 1, 1, 1],
+  };
+  // A loop round row 1, split where it runs past row 1.
+  const later: CuspidalEdge = {
+    branch: 1,
+    closed: true,
+    points: [at(1.5, 1), at(1), at(0.5, 1), at(1, 2)],
+    i: [1.5, 1, 0.5, 1],
+    j: [0.5, 0, 0.5, 1],
+  };
+  const sheet: SurfaceSheet = {
+    points: [0, 1, 2].map((i) => [at(i), at(i, 1)]),
+    normals: [0, 1, 2].map(() => [null, null]),
+    alongU: [
+      [true, true],
+      [true, true],
+    ],
+    alongV: [[true], [true], [true]],
+    faces: [[true], [true]],
+  };
+  const input: SpatialResult = {
+    base: [],
+    minus: [],
+    plus: [],
+    mesh: curveMesh(),
+    rulings: [],
+    breaks: [],
+    bounds: { center: at(0), radius: 4 },
+    radius: 4,
+    invalid: 0,
+    omitted: 0,
+    surface: {
+      surface: sheet,
+      offset: sheet,
+      focal: [],
+      lines: [],
+      uCurves: [],
+      vCurves: [],
+      singular: 0,
+      umbilics: 0,
+      folded: 0,
+      edges: [loop, open, later],
+    },
+  };
+  const edges = reveal(input, 0.5).surface!.edges!;
+  expect(edges[0]).toEqual(loop);
+  expect(edges[1]).toEqual({
+    ...open,
+    points: open.points.slice(0, 2),
+    i: [0, 1],
+    j: [1, 1],
+  });
+  // The split loop runs on from its point past row 1, open.
+  expect(edges[2]).toEqual({
+    ...later,
+    closed: false,
+    points: later.points.slice(1),
+    i: [1, 0.5, 1],
+    j: [0, 0.5, 1],
+  });
+  expect(edges).toHaveLength(3);
+  // Split in its middle, a loop runs on across its own start.
+  const wrapped = reveal(
+    {
+      ...input,
+      surface: {
+        ...input.surface!,
+        edges: [{ ...later, i: [1, 1.5, 0.5, 1] }],
+      },
+    },
+    0.5,
+  ).surface!.edges!;
+  expect(wrapped.map((e) => [e.closed, e.i, e.points])).toEqual([
+    [false, [0.5, 1, 1], [later.points[2], later.points[3], later.points[0]]],
+  ]);
+  // A run of a single point is no edge.
+  const dot = reveal(
+    {
+      ...input,
+      surface: {
+        ...input.surface!,
+        edges: [{ ...later, i: [1.5, 2, 1.5, 1] }],
+      },
+    },
+    0.5,
+  ).surface!.edges;
+  expect(dot).toEqual([]);
+  expect(reveal(input, 1).surface!.edges).toEqual([loop, open, later]);
+  // A study without located edges reveals without them.
+  const plain = structuredClone(input);
+  delete plain.surface!.edges;
+  expect("edges" in reveal(plain, 0.5).surface!).toBe(false);
+});
+
+// The edges' pass: each closed edge back to its start, in the curves' ink,
+// and only when there are edges, so a study without them draws, and pushes
+// its sheets back, exactly as before.
+test("an offset's cuspidal edges draw in their own layer, closed loops closed", () => {
+  const at = (x: number, y: number): Vec3 => ({ x, y, z: 0 });
+  const result = (edges?: CuspidalEdge[]): SpatialResult => ({
+    base: [],
+    minus: [],
+    plus: [],
+    mesh: curveMesh(),
+    rulings: [],
+    breaks: [],
+    bounds: { center: at(0, 0), radius: 1 },
+    radius: 1,
+    invalid: 0,
+    omitted: 0,
+    surface: {
+      surface: { points: [], normals: [], alongU: [], alongV: [], faces: [] },
+      offset: { points: [], normals: [], alongU: [], alongV: [], faces: [] },
+      focal: [],
+      lines: [],
+      uCurves: [],
+      vCurves: [],
+      singular: 0,
+      umbilics: 0,
+      folded: 0,
+      ...(edges && { edges }),
+    },
+  });
+  const square = [at(0, 0), at(1, 0), at(1, 1), at(0, 1)];
+  const edge = (closed: boolean): CuspidalEdge => ({
+    branch: 1,
+    closed,
+    points: square,
+    i: [0, 1, 1, 0],
+    j: [0, 0, 1, 1],
+  });
+  const cusps = (r: SpatialResult, layers = defaultLayers) =>
+    scenePasses(buildScene(r), layers).filter((p) => p.layer === "cusps");
+  for (const r of [result(), result([])]) {
+    expect(cusps(r)).toEqual([]);
+    expect(sceneLayers(buildScene(r)).has("cusps")).toBe(false);
+  }
+  // Seven floats a vertex, two vertices a segment: three segments open,
+  // four closed.
+  const [open] = cusps(result([edge(false)])),
+    [closed] = cusps(result([edge(true)]));
+  expect([open.batch.ink, open.batch.mode, open.sheet]).toEqual([
+    2,
+    "lines",
+    false,
+  ]);
+  expect(open.batch.data.length).toBe(3 * 2 * 7);
+  expect(closed.batch.data.length).toBe(4 * 2 * 7);
+  expect(Array.from(closed.batch.data.slice(-7, -4))).toEqual([0, 0, 0]);
+  expect(
+    cusps(result([edge(true)]), { ...defaultLayers, cusps: false }),
+  ).toEqual([]);
+  expect(sceneLayers(buildScene(result([edge(true)]))).has("cusps")).toBe(true);
 });
 
 test("surface tracks move the shape, chart, offset, reach and grid only", () => {
