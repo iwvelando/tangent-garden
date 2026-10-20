@@ -100,6 +100,8 @@ const labeled: Record<string, string> = {
   "rays.light": "Light",
   "rays.receiver.plane": "Receiver",
   "rays.receiver.bins": "Bins",
+  "shadow.plane": "Shadow on",
+  "shadow.at": "Plane at c",
   "implicit.f": "F(x, y, z)",
   "implicit.refine": "Refinement levels",
 };

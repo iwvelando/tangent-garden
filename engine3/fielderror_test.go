@@ -149,6 +149,8 @@ func TestValidationNamesItsField(t *testing.T) {
 		{"source", "rays.source.z", func() Request { return rays(lamp(Vec3{0, 0, 2e5})) }},
 		{"light", "rays.light", func() Request { c := rays(parallel(0, 90)); c.Rays.Light = "laser"; return c }},
 		{"ray length", "rays.length", func() Request { c := rays(parallel(0, 90)); c.Rays.Length = -1; return c }},
+		{"shadow plane", "shadow.plane", func() Request { c := study(); c.Shadow = &ShadowRequest{Plane: "w"}; return c }},
+		{"shadow at", "shadow.at", func() Request { c := study(); c.Shadow = &ShadowRequest{Plane: "y", At: nan}; return c }},
 		{"receiver plane", "rays.receiver.plane", func() Request { return receive(rays(parallel(0, 90)), "w", 0, 0, 0, 1, 24) }},
 		{"receiver at", "rays.receiver.at", func() Request { return receive(rays(parallel(0, 90)), "z", nan, 0, 0, 1, 24) }},
 		{"receiver center", "rays.receiver.c2", func() Request { return receive(rays(parallel(0, 90)), "z", 0, 0, 2e5, 1, 24) }},

@@ -19,7 +19,7 @@ These are the facts that decide where a refinement applies.
 | Refinement     | Base, derived input, pedal, contrapedal, orthotomic, evolute, offset and stack, caustics, inversion, involute, rolling, envelopes; to the zoomed view; framing by the points between samples | Base, derived input (involute too), projections, inversion, involutes, strands, surfaces; to the zoomed view and each flight frame's; framing by the points between samples | None (no user curve)                                         |
 | Shared already | Links, field errors, repeat/pace, 60 fps WebP, line weights, pipelined playback (`web/playback.ts`), timing (`web/timing.ts`)                                                                | Same                                                                                                                                                                        | Same                                                         |
 
-The 3D-only features are 3D-only by nature: cut, see-through, surface and light probes, the ride, perspective lenses, typed mesh transport and adaptive implicit meshes. Do not port them to 2D or 4D unless an item below says so.
+The 3D-only features are 3D-only by nature: cut, see-through, the shadow on a plane, surface and light probes, the ride, perspective lenses, typed mesh transport and adaptive implicit meshes. Do not port them to 2D or 4D unless an item below says so.
 
 ## Conventions every item inherits
 
@@ -47,13 +47,13 @@ Items 1 and 2 need a decision or a profile before any code. Item 3 lists limits 
 
 ---
 
-### 1. Composition and comparison
+### 1. Synchronized views beside the drawing
 
-**Applies to:** 2D with 3D.
+**Applies to:** 3D, borrowing the 2D drawing.
 
 **Open:**
 
-- **2D/3D comparison.** A side-by-side 2D/3D view, or a declared planar embedding, to explain reductions. The two notebooks' studies must not overwrite one another. Agree the design with the user before building.
+- **A grid of synchronized views.** The 3D notebook's shadow on a plane (`engine3/shadow.go`, [Spatial shadows on a plane](mathematics.md#spatial-shadows-on-a-plane)) draws a curve's shadow, the 2D construction of that shadow and the shadow of the 3D construction inside the orbitable scene. The 4D notebook's **Beside the wall** shows how much a second, linked view adds. A 2×2 grid could show the 3D drawing beside the plane seen face on in the 2D notebook's own drawing, with the 2D construction and the cast construction each in a square of its own, or the shadows on two planes. Every view draws the same animation frame, and stills and videos export the grid as one image. The geometry already exists; what is open is which views earn a square, whether each has its own camera, the layout at phone width, and export. Agree the design with the user before building.
 
 ### 2. Transport and efficiency, when profiled
 
@@ -91,6 +91,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - Dashes on the page (**A coiled tube running into the distance**) on a phone GPU while orbiting: even dash lengths near and far, and the **Dashes** control beside **Opacity α** at phone width.
 - Refinement to the view in 3D: pinching to 1,000× about the fingers on **A spring folded into a cusp**, and the **Refine to the view as you zoom** control at phone width.
 - A 3D flight refined in pieces on a phone: **Wheels within wheels** playing in time, without stalls where a piece is still being refined (each refines the whole study, so a slow phone may wait at a piece's start).
+- The **Shadow on a plane** panel at phone width (its select, **Plane at c** beside it, its layer checkboxes and note), and **A staircase's shadow, unwinding** in motion on a phone.
 - Playback at 60 frames a second (`web/playback.ts`) on a 120 Hz display and on a slower phone, watching for an even fall to 30 where frames come late. The thresholds (a request 1.4 intervals after the last is late, two late in ten fall back, a 2 s hold doubling to 16 s) are first choices, to tune from what is seen.
 
 Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13. Zooming toward a detail through a lens (**A corridor of loops**, wheel and pinch) was checked locally and on a phone on 2026-10-14. **Fit each frame to the views** and **A seashell growing on its spiral** were checked on a phone on 2026-10-19.

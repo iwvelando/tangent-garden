@@ -52,6 +52,9 @@ type Request struct {
 	// and refined to it (see engine/adaptive.go); it changes nothing but
 	// the refined curves.
 	View *View `json:"view,omitempty"`
+	// given, when set, is the curve in place of Curve's formula (see
+	// ComputeOn).
+	given curveFunc
 }
 
 // View is a rectangle of the plane, from (X0, Y0) to (X1, Y1). Radius,
@@ -121,6 +124,9 @@ type Result struct {
 	// arcs is the involute's arc length at each sample where it is drawn,
 	// NaN elsewhere, from which refinement continues between samples.
 	arcs []float64
+	// contacts are the involute's input point and velocity at each sample
+	// where it is drawn, from which another string is unwound at once.
+	contacts []contact
 	// rolled is a rolling study's progress at each sample where its trace
 	// is drawn, from which refinement continues between samples.
 	rolled *rollingRun
@@ -236,7 +242,7 @@ func Compute(q Request) (Result, error) {
 	if q.Kind == "diacaustic" && !index(q.NTransmitted) {
 		return out, fieldErr("nTransmitted", "medium indices must be 0.01–10")
 	}
-	f, err := compile(q.Curve)
+	f, err := q.compiled()
 	if err != nil {
 		return out, within("curve", err)
 	}
@@ -350,6 +356,7 @@ func Compute(q Request) (Result, error) {
 	arcOK := true
 	arcLength := q.Kind == "involute" || q.Kind == "rolling"
 	if q.Kind == "involute" {
+		out.contacts = make([]contact, q.Samples)
 		out.arcs = make([]float64, q.Samples)
 		for j := range out.arcs {
 			out.arcs[j] = math.NaN()
@@ -524,6 +531,7 @@ func Compute(q Request) (Result, error) {
 			if arcOK {
 				if target = q.unwound(g, t, arc, t, p, dp); target != nil {
 					out.arcs[j] = arc
+					out.contacts[j] = contact{p, dp}
 				}
 			}
 		default:

@@ -309,7 +309,16 @@ export type SpatialConfig = {
   // With adaptive, frames the drawing by its points between samples too
   // (their reach, engine3/refine.go); absent frames the samples alone.
   adaptiveFrame?: boolean;
+  // The plane a curve study casts its shadow on (see ShadowConfig); absent
+  // casts none. Surface, ray and implicit studies ignore it.
+  shadow?: ShadowConfig;
 };
+// A plane x = at, y = at or z = at on which a curve study casts its
+// shadow, with the 2D construction of that shadow that corresponds to its
+// own beside the shadow of its own. Mirrors engine3.ShadowRequest.
+export type ShadowPlane = "x" | "y" | "z";
+export type ShadowConfig = { plane: ShadowPlane; at: number };
+export const maxShadowAt = 100000;
 // Mirrors engine3.View: what the drawing shows, which refinement refines to
 // when it is zoomed in. center is the middle of the page, right and up its
 // directions, width and height its half extents on the plane through
@@ -414,10 +423,43 @@ export type SpatialResult = {
   adaptive?: AdaptiveResult;
   // Present only when the curve probe asked for one parameter.
   probe?: SpatialProbePoint;
+  // Present only when a curve study casts a shadow on a plane.
+  shadow?: ShadowResult;
   // Present only when the surface probe asked for one point of a patch:
   // its surface diagnostics at that (u, v) alone, one row and one column
   // (see SurfaceQuery).
   surfaceProbe?: SurfaceDiagnostics;
+};
+// Mirrors engine3.ShadowPath: a path on the shadow's plane, indexed like
+// the curve's samples.
+export type ShadowPath = { points: (Vec3 | null)[]; breaks: boolean[] };
+// Mirrors engine3.ShadowResult. kind names the 2D construction of the
+// shadow, "" when the construction has none; planar holds it and cast the
+// shadow of the study's own, path for path. deviation is the largest
+// distance between them at a sample over size, the shadow's radius, when
+// any sample has both (counting `compared`). notes are the 2D engine's
+// warnings; corners a square window on the plane.
+export type ShadowResult = {
+  plane: ShadowPlane;
+  at: number;
+  corners: [Vec3, Vec3, Vec3, Vec3];
+  curve: ShadowPath;
+  kind: "" | "involute" | "pedal" | "orthotomic" | "inversion";
+  planar: ShadowPath[];
+  cast: ShadowPath[];
+  deviation?: number;
+  compared: number;
+  size: number;
+  notes: string[];
+  // Present only when the study refines its curves: the curve's shadow,
+  // the 2D construction and the cast construction refined between
+  // samples, indexed like curve, planar and cast. Mirrors
+  // engine3.ShadowAdaptive.
+  adaptive?: {
+    curve?: RefinedPath;
+    planar?: RefinedPath[];
+    cast?: RefinedPath[];
+  };
 };
 // Mirrors engine3.SurfaceQuery: the surface probe at the parameters (u, v)
 // of a patch, at or between its grid samples.

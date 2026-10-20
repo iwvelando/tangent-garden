@@ -33,27 +33,35 @@ type Curve struct {
 }
 type curveFunc func(float64) Vec
 
-func compile(c Curve) (curveFunc, error) {
+// checkDomain refuses a parameter interval the engine cannot sample.
+func (c Curve) checkDomain() error {
 	if !finite(c.Min) {
-		return nil, fieldErr("min", "domain bounds must be finite numbers")
+		return fieldErr("min", "domain bounds must be finite numbers")
 	}
 	if !finite(c.Max) {
-		return nil, fieldErr("max", "domain bounds must be finite numbers")
+		return fieldErr("max", "domain bounds must be finite numbers")
 	}
 	if c.Min == c.Max {
-		return nil, fieldErr("max", "domain start and end are equal (%g): the interval has zero width; keep the start below the end", c.Min)
+		return fieldErr("max", "domain start and end are equal (%g): the interval has zero width; keep the start below the end", c.Min)
 	}
 	if c.Min > c.Max {
-		return nil, fieldErr("max", "domain start (%g) is greater than domain end (%g); keep the start below the end", c.Min, c.Max)
+		return fieldErr("max", "domain start (%g) is greater than domain end (%g); keep the start below the end", c.Min, c.Max)
 	}
 	if math.Abs(c.Min) > 1e6 {
-		return nil, fieldErr("min", "domain bounds must stay within ±1000000")
+		return fieldErr("min", "domain bounds must stay within ±1000000")
 	}
 	if math.Abs(c.Max) > 1e6 {
-		return nil, fieldErr("max", "domain bounds must stay within ±1000000")
+		return fieldErr("max", "domain bounds must stay within ±1000000")
 	}
 	if span := c.Max - c.Min; span < 1e-6 || span > 1e5 {
-		return nil, fieldErr("max", "domain width is %g; supported widths are 0.000001–100000", span)
+		return fieldErr("max", "domain width is %g; supported widths are 0.000001–100000", span)
+	}
+	return nil
+}
+
+func compile(c Curve) (curveFunc, error) {
+	if err := c.checkDomain(); err != nil {
+		return nil, err
 	}
 	if c.Format == "roulette" {
 		if err := c.Roulette.validate(); err != nil {

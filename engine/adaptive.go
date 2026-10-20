@@ -231,23 +231,13 @@ func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, h
 // replaces.
 func (q Request) adapt(out *Result, f, g curveFunc) {
 	lo, hi := q.Curve.Min, q.Curve.Max
-	position := func(c curveFunc) func(float64) *Vec {
-		return func(t float64) *Vec { return point(c(t)) }
-	}
-	broken := map[int]bool{}
+	a, broken := q.adaptCurves(out, f, g)
 	note := func(intervals []int) {
 		for _, i := range intervals {
 			broken[i] = true
 		}
 	}
-	a := &AdaptiveResult{}
 	var found []int
-	a.Base, found = refinePath(out.Base, nil, position(f), lo, hi, q.View)
-	note(found)
-	if out.Input != nil {
-		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi, q.View)
-		note(found)
-	}
 	if derived := q.derivedAt(f, g, out); derived != nil {
 		if out.Inversion != nil {
 			// The passage test's breaks give way to refinement's.
@@ -278,6 +268,31 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 		sort.Ints(out.Inversion.Breaks)
 	}
 	out.Adaptive = a
+}
+
+// adaptCurves refines a computed study's base from f and its derived
+// input from g, and gives the intervals they find broken, which every
+// curve built on them is broken at too.
+func (q Request) adaptCurves(out *Result, f, g curveFunc) (*AdaptiveResult, map[int]bool) {
+	lo, hi := q.Curve.Min, q.Curve.Max
+	position := func(c curveFunc) func(float64) *Vec {
+		return func(t float64) *Vec { return point(c(t)) }
+	}
+	broken := map[int]bool{}
+	note := func(intervals []int) {
+		for _, i := range intervals {
+			broken[i] = true
+		}
+	}
+	a := &AdaptiveResult{}
+	var found []int
+	a.Base, found = refinePath(out.Base, nil, position(f), lo, hi, q.View)
+	note(found)
+	if out.Input != nil {
+		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi, q.View)
+		note(found)
+	}
+	return a, broken
 }
 
 // reach gives each of out's refined curves its reach, from the curves

@@ -612,6 +612,11 @@ self.onmessage = async ({
           "canal.meridians",
           "The number of meridians must be a whole number.",
         );
+      else if (data.spatial.shadow && !Number.isFinite(data.spatial.shadow.at))
+        throw fieldError(
+          "shadow.at",
+          "Fill in where the shadow's plane stands with a finite number.",
+        );
       const request = JSON.stringify({
         ...data.spatial,
         ...(data.diagnostics && { diagnostics: true }),

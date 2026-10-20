@@ -120,6 +120,9 @@ type Request struct {
 	// focal sheet's when their diagnostics are asked for, which it asks for
 	// too. It changes nothing else in the result.
 	SurfaceProbe *SurfaceQuery `json:"surfaceProbe,omitempty"`
+	// Shadow declares a plane on which a curve study casts its shadow (see
+	// ShadowRequest); absent, or on no plane, there is none.
+	Shadow *ShadowRequest `json:"shadow,omitempty"`
 	// units are the base curve's units (see units), which compute sets
 	// from its size.
 	units units
@@ -195,8 +198,12 @@ type Result struct {
 	// probe, and asked for only where the curve is evaluated at any
 	// parameter (see pointedAnywhere).
 	surfaceAt func(SurfaceQuery) (*SurfaceDiagnostics, error)
+	// Shadow is present only when a curve study casts a shadow on a plane.
+	Shadow *ShadowResult `json:"shadow,omitempty"`
 	// probing places the curve probe over the computed study.
 	probing *probing
+	// shadowing holds what casts the shadow, when there is one.
+	shadowing *shadowing
 }
 
 // knot gives r, r′, r″ analytically; no numerical derivative or hidden
@@ -235,6 +242,11 @@ func Compute(c Request) (Result, error) {
 		}
 		c.surfaceTarget()
 	}
+	if c.shadowed() {
+		if err := c.Shadow.validate(); err != nil {
+			return Result{}, err
+		}
+	}
 	out, err := compute(c)
 	if err == nil && out.Diagnostics != nil {
 		out.Diagnostics.clip(out.Bounds.Radius)
@@ -255,6 +267,11 @@ func Compute(c Request) (Result, error) {
 	case out.Probe.Kind == "patch", out.Probe.Kind == "offset", out.Probe.Kind == "focal", out.Probe.Kind == "wavefront":
 	default:
 		out.Probe.clip(out.Bounds.Radius)
+	}
+	// The shadow is cast last, so the study it casts is framed, probed and
+	// clipped exactly as without it; only the bounds grow to take it in.
+	if err == nil && out.shadowing != nil {
+		out.cast(c)
 	}
 	return out, err
 }
@@ -420,6 +437,11 @@ func compute(c Request) (Result, error) {
 	}
 	n := c.Samples
 	out := Result{Base: make([]*Vec3, n+1), Minus: make([]*Vec3, n+1), Plus: make([]*Vec3, n+1), Breaks: make([]bool, n+1), Mesh: emptyMesh(), Rulings: make([]Ruling, 0, c.Lines)}
+	if c.shadowed() {
+		// The 2D engine needs only the base's position: an expression
+		// curve's, without the derivatives its evaluator differences.
+		out.shadowing = &shadowing{position: c.baseOnly().position(baseEvaluate), lo: lo, hi: hi}
+	}
 	// Only a study asked for the probe keeps what places it; constructions
 	// fill in their points below.
 	if c.Probe != nil {
@@ -672,6 +694,9 @@ func compute(c Request) (Result, error) {
 		}
 		out.Bounds = fitReach(all, reach)
 		out.Radius = out.Bounds.Radius
+		if out.shadowing != nil {
+			out.shadowing.families, out.shadowing.reach = all, reach
+		}
 	}
 	// The refined paths, none when the study is not refined.
 	refined := out.Adaptive
