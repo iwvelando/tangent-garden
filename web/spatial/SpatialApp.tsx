@@ -8,7 +8,12 @@ import {
 import { RefineBetweenSamples } from "../RefineBetweenSamples";
 import { frameHelp, spatialViewHelp } from "../refinement";
 import { StopAtCaustic } from "../StopAtCaustic";
-import { CuspidalEdgesCheck } from "./cuspidal";
+import {
+  CuspidalEdgesCheck,
+  goldEdges,
+  locatesEdges,
+  RidgesCheck,
+} from "./cuspidal";
 import {
   useCallback,
   useEffect,
@@ -1367,6 +1372,14 @@ export default function SpatialApp({
               ),
             )}
           </div>
+          <RidgesCheck
+            checked={!!config.surface.ridges}
+            onChange={(on) =>
+              setSurface(({ ridges: _, ...s }) =>
+                on ? { ...s, ridges: true } : s,
+              )
+            }
+          />
           {config.surface.offset !== 0 && (
             <CuspidalEdgesCheck
               checked={!!config.surface.edges}
@@ -2249,7 +2262,7 @@ export default function SpatialApp({
         </>
       }
       note={describeColors(
-        `Gray lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross.${config.surface.edges && config.surface.offset !== 0 ? " Gold curves are the offset's cuspidal edges." : ""}`,
+        `Gray lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross.${goldEdges(config.surface)}${config.surface.ridges ? " Each ridge, where a principal curvature is extremal along its own line of curvature, is drawn on the surface in its focal sheet's color." : ""}`,
         theme.scheme,
       )}
       diagnostics={
@@ -3294,8 +3307,11 @@ export default function SpatialApp({
                         ["surface", "Surface patch"],
                         ["curves", "Parameter curves"],
                         ["normals", "Normal lines"],
+                        ...(config.surface.ridges
+                          ? ([["ridges", "Ridges"]] as const)
+                          : []),
                         ["offset", "Offset surface"],
-                        ...(config.surface.edges && config.surface.offset !== 0
+                        ...(locatesEdges(config.surface)
                           ? ([["cusps", "Cuspidal edges"]] as const)
                           : []),
                         ["focal1", "Focal sheet 1 · κ₁"],

@@ -275,7 +275,7 @@ func TestParaboloidOffsetEdgeIsOneLoop(t *testing.T) {
 // and 2, and its center −c is above with them only for c ≤ 0.
 func TestMarchSplitsSaddlesByTheirCenter(t *testing.T) {
 	saddle := func(c float64) ([4]float64, func() float64) {
-		return [4]float64{1 - c, -1 - c, 1 - c, -1 - c}, func() float64 { return -c }
+		return [4]float64{1 - c, -1 - c, 1 - c, -1 - c}, func() float64 { return 0 - c }
 	}
 	for _, tc := range []struct {
 		c    float64
@@ -297,6 +297,10 @@ func TestMarchSplitsSaddlesByTheirCenter(t *testing.T) {
 	}
 	if got := march([4]float64{0, 1, 2, 3}, never); got != nil {
 		t.Fatalf("a cell wholly above, a zero counting as above, joins %v", got)
+	}
+	// A negative zero, an oriented level's zero turned over, is below.
+	if got := march([4]float64{math.Copysign(0, -1), 1, 2, 3}, never); !slices.Equal(got, [][2]int{{0, 3}}) {
+		t.Fatalf("a cell with a corner at −0 joins %v", got)
 	}
 	// Without a center value the corners' mean decides.
 	corner, _ := saddle(0.5)
@@ -335,6 +339,17 @@ func TestRootBracketsAndConverges(t *testing.T) {
 	}
 	if _, ok := root(func(t float64) float64 { return math.NaN() }, 1, -1); ok {
 		t.Fatal("a missing value went unreported")
+	}
+	// An end at −0, an oriented level's zero turned over, is below: the
+	// root is that end, not the other.
+	slope := func(t float64) float64 {
+		if t == 1 {
+			return math.Copysign(0, -1)
+		}
+		return 1 - t
+	}
+	if r, ok := root(slope, 1, slope(1)); !ok || r < 1-1e-12 {
+		t.Fatalf("from 1 to −0 the root is %v (ok %v), not the end at −0", r, ok)
 	}
 }
 

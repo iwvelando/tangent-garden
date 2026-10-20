@@ -308,7 +308,48 @@ func (d *SurfaceDiagnostics) focalAt(q SurfaceRequest, i, j int, s surfacePoint,
 // focalFrame returns the partial derivatives F_u and F_v of focal sheet k,
 // F = X + n/κ, at the patch's regular, non-umbilic sample s at (u, v), and
 // the sheet's normal, the principal direction e, with its own partial
-// derivatives.
+// derivatives (see pencil).
+func (q SurfaceRequest) focalFrame(u, v float64, s surfacePoint, k int) (fu, fv, m, mu, mv Vec3) {
+	p := q.pencil(u, v, s)
+	other, kappa := 1-k, s.Kappa[k]
+	var df, de [2]Vec3
+	for l := 0; l < 2; l++ {
+		dk, c, half := p.change(l, k)
+		dw := [2]float64{c*p.w[other][0] - half*p.w[k][0], c*p.w[other][1] - half*p.w[k][1]}
+		de[l] = p.second[0][l].mul(p.w[k][0]).add(p.second[1][l].mul(p.w[k][1])).add(p.first[0].mul(dw[0])).add(p.first[1].mul(dw[1]))
+		df[l] = p.first[l].add(p.dn[l].mul(1 / kappa)).sub(p.n.mul(dk / (kappa * kappa)))
+	}
+	return df[0], df[1], s.Dir[k], de[0], de[1]
+}
+
+// extremality returns dκ(e), how branch k's principal curvature changes
+// along its own principal direction e = s.Dir[k] at the patch's regular,
+// non-umbilic sample s at (u, v), per unit length. It is odd in e, so its
+// sign means something only with e oriented. Where it vanishes the patch
+// has a ridge, and focal sheet k a cuspidal edge (see ridges).
+func (q SurfaceRequest) extremality(u, v float64, s surfacePoint, k int) float64 {
+	p := q.pencil(u, v, s)
+	du, _, _ := p.change(0, k)
+	dv, _, _ := p.change(1, k)
+	return du*p.w[k][0] + dv*p.w[k][1]
+}
+
+// pencilFrame is the patch's first derivatives, second derivatives and
+// normal at a regular sample, its principal directions w in the parameters,
+// the normal's derivatives, and the derivatives along each parameter of the
+// pencil b − κg of its fundamental forms (see pencil).
+type pencilFrame struct {
+	first  [2]Vec3
+	second [2][2]Vec3
+	n      Vec3
+	kappa  [2]float64
+	w      [2][2]float64
+	dn     [2]Vec3
+	dg, db [2][2][2]float64
+}
+
+// pencil differentiates the patch's principal curvatures and directions at
+// its regular sample s at (u, v), from its third derivatives.
 //
 // In the parameters, with first and second fundamental forms g and b,
 // e = X_u w¹ + X_v w² where b w = κ g w and wᵀg w = 1. Along each
@@ -317,12 +358,11 @@ func (d *SurfaceDiagnostics) focalAt(q SurfaceRequest, i, j int, s surfacePoint,
 // w′ = c w̄ − ½(wᵀg′w) w, where w̄ is the other branch's and
 // c = w̄ᵀ(b′ − κg′)w/(κ − κ̄). Then e′ = X_u′w¹ + X_v′w² + X_u w¹′ + X_v w²′,
 // n′ = −dX(g⁻¹b), and F′ = X′ + n′/κ − κ′n/κ².
-func (q SurfaceRequest) focalFrame(u, v float64, s surfacePoint, k int) (fu, fv, m, mu, mv Vec3) {
+func (q SurfaceRequest) pencil(u, v float64, s surfacePoint) pencilFrame {
 	_, xu, xv, xuu, xuv, xvv := q.patch(u, v)
 	xuuu, xuuv, xuvv, xvvv := q.third(u, v)
-	n := s.N
-	first := [2]Vec3{xu, xv}
-	second := [2][2]Vec3{{xuu, xuv}, {xuv, xvv}}
+	p := pencilFrame{first: [2]Vec3{xu, xv}, second: [2][2]Vec3{{xuu, xuv}, {xuv, xvv}}, n: s.N, kappa: s.Kappa}
+	n, first, second := p.n, p.first, p.second
 	// third[i][j][l] = X_ijl, symmetric in its indices.
 	third := [2][2][2]Vec3{{{xuuu, xuuv}, {xuuv, xuvv}}, {{xuuv, xuvv}, {xuvv, xvvv}}}
 	var g, b [2][2]float64
@@ -333,49 +373,49 @@ func (q SurfaceRequest) focalFrame(u, v float64, s surfacePoint, k int) (fu, fv,
 	}
 	det := g[0][0]*g[1][1] - g[0][1]*g[1][0]
 	inverse := [2][2]float64{{g[1][1] / det, -g[0][1] / det}, {-g[1][0] / det, g[0][0] / det}}
-	apply := func(m [2][2]float64, w [2]float64) [2]float64 {
-		return [2]float64{m[0][0]*w[0] + m[0][1]*w[1], m[1][0]*w[0] + m[1][1]*w[1]}
-	}
-	form := func(m [2][2]float64, a, c [2]float64) float64 {
-		w := apply(m, c)
-		return a[0]*w[0] + a[1]*w[1]
-	}
 	// The principal directions in the parameters.
-	var w [2][2]float64
 	for c := 0; c < 2; c++ {
-		w[c] = apply(inverse, [2]float64{xu.dot(s.Dir[c]), xv.dot(s.Dir[c])})
+		p.w[c] = apply2(inverse, [2]float64{xu.dot(s.Dir[c]), xv.dot(s.Dir[c])})
 	}
-	var dn [2]Vec3
 	for l := 0; l < 2; l++ {
 		// Column l of g⁻¹b.
-		shape := apply(inverse, [2]float64{b[0][l], b[1][l]})
-		dn[l] = xu.mul(-shape[0]).sub(xv.mul(shape[1]))
+		shape := apply2(inverse, [2]float64{b[0][l], b[1][l]})
+		p.dn[l] = xu.mul(-shape[0]).sub(xv.mul(shape[1]))
 	}
-	other := 1 - k
-	kappa := s.Kappa[k]
-	var df, de [2]Vec3
 	for l := 0; l < 2; l++ {
-		var dg, db [2][2]float64
 		for i := 0; i < 2; i++ {
 			for j := 0; j < 2; j++ {
-				dg[i][j] = second[i][l].dot(first[j]) + first[i].dot(second[j][l])
-				db[i][j] = third[i][j][l].dot(n) + second[i][j].dot(dn[l])
+				p.dg[l][i][j] = second[i][l].dot(first[j]) + first[i].dot(second[j][l])
+				p.db[l][i][j] = third[i][j][l].dot(n) + second[i][j].dot(p.dn[l])
 			}
 		}
-		var a [2][2]float64
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
-				a[i][j] = db[i][j] - kappa*dg[i][j]
-			}
-		}
-		dk := form(a, w[k], w[k])
-		c := form(a, w[other], w[k]) / (kappa - s.Kappa[other])
-		half := form(dg, w[k], w[k]) / 2
-		dw := [2]float64{c*w[other][0] - half*w[k][0], c*w[other][1] - half*w[k][1]}
-		de[l] = second[0][l].mul(w[k][0]).add(second[1][l].mul(w[k][1])).add(xu.mul(dw[0])).add(xv.mul(dw[1]))
-		df[l] = first[l].add(dn[l].mul(1 / kappa)).sub(n.mul(dk / (kappa * kappa)))
 	}
-	return df[0], df[1], s.Dir[k], de[0], de[1]
+	return p
+}
+
+// change returns, along parameter l, branch k's κ′, its direction's turn
+// toward the other branch c, and the half ½wᵀg′w of its rescaling (see
+// pencil). c is infinite at an umbilic.
+func (p pencilFrame) change(l, k int) (dk, c, half float64) {
+	form := func(m [2][2]float64, a, c [2]float64) float64 {
+		w := apply2(m, c)
+		return a[0]*w[0] + a[1]*w[1]
+	}
+	other, kappa := 1-k, p.kappa[k]
+	var a [2][2]float64
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 2; j++ {
+			a[i][j] = p.db[l][i][j] - kappa*p.dg[l][i][j]
+		}
+	}
+	dk = form(a, p.w[k], p.w[k])
+	c = form(a, p.w[other], p.w[k]) / (kappa - p.kappa[other])
+	half = form(p.dg[l], p.w[k], p.w[k]) / 2
+	return dk, c, half
+}
+
+func apply2(m [2][2]float64, w [2]float64) [2]float64 {
+	return [2]float64{m[0][0]*w[0] + m[0][1]*w[1], m[1][0]*w[0] + m[1][1]*w[1]}
 }
 
 // canalAcross returns the principal curvature of the canal X = c + Rq

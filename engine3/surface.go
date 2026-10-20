@@ -17,7 +17,9 @@ import (
 // is set. The shape operator is A = −dn, so κ > 0 where the surface bends
 // toward n; a sphere with its outward normal has κ = −1/R. The offset is
 // X + Offset·n, and each normal line runs from X to X + Reach·n. Edges asks
-// for the offset's cuspidal edges (see cuspidalEdges).
+// for the offset's cuspidal edges (see cuspidalEdges), and Ridges for the
+// patch's ridges and the focal sheets' cuspidal edges over them (see
+// ridges).
 type SurfaceRequest struct {
 	Kind     string  `json:"kind"`
 	A        float64 `json:"a"`
@@ -34,6 +36,7 @@ type SurfaceRequest struct {
 	Offset   float64 `json:"offset"`
 	Reach    float64 `json:"reach"`
 	Edges    bool    `json:"edges,omitempty"`
+	Ridges   bool    `json:"ridges,omitempty"`
 }
 
 // SurfaceSheet is a surface sampled on the parameter grid. Points[i][j] is
@@ -81,7 +84,8 @@ type SurfaceNormal struct {
 // offset lies beyond one focal sheet, (1 − dκ₁)(1 − dκ₂) < 0. Edges are
 // the offset's cuspidal edges, when the request asks for them and has an
 // offset (an empty list when there are none), and nil, with no key,
-// otherwise.
+// otherwise. Ridges are the patch's ridges, each point on its focal sheet
+// with its foot on the patch, likewise only when asked for.
 type SurfaceResult struct {
 	Surface  SurfaceSheet    `json:"surface"`
 	Offset   *SurfaceSheet   `json:"offset"`
@@ -93,6 +97,7 @@ type SurfaceResult struct {
 	Umbilics int             `json:"umbilics"`
 	Folded   int             `json:"folded"`
 	Edges    *[]CuspidalEdge `json:"edges,omitempty"`
+	Ridges   *[]CuspidalEdge `json:"ridges,omitempty"`
 }
 
 const (
@@ -477,6 +482,10 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 		f := FocalSheet{SurfaceSheet: sheet(focal[k][0], focal[k][1], join, scale), Clipped: clipped[k]}
 		f.Shape = spans(f.SurfaceSheet, scale)
 		out.Focal = append(out.Focal, f)
+	}
+	if q.Ridges {
+		ridges := q.ridges(samples, out.Focal, scale)
+		out.Ridges = &ridges
 	}
 	if q.Reach != 0 {
 		for _, i := range out.VCurves {
