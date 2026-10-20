@@ -57,6 +57,11 @@ type Props = {
   // The rectangle the manual camera shows while it is zoomed in and the
   // study is refined to its view, or null, whenever that changes.
   onFocus?: (view: ViewRect | null) => void;
+  // A framing decided outside the drawing, as a synchronized view's in
+  // the 3D notebook's grid (spatial/grid.ts): the drawing shows it, and has
+  // no camera of its own.
+  framing?: { cx: number; cy: number; scale: number; span: number };
+  id?: string;
 };
 const W = 1000,
   H = 760;
@@ -173,6 +178,8 @@ export function Plot({
   probe,
   refineView = false,
   onFocus,
+  framing,
+  id = "artwork",
 }: Props) {
   // Every stroke's regular width, at the chosen line weight.
   const stroke = svgStroke(weight);
@@ -185,7 +192,7 @@ export function Plot({
   // animation's framing, so the manual one is intact when the study returns.
   const [explore, setExplore] = useState({ x: 0, y: 0, zoom: 1, reset: refit });
   const exploring = !!animation?.complete;
-  const locked = !!animation && !exploring;
+  const locked = !!framing || (!!animation && !exploring);
   useEffect(() => {
     if (!exploring) setExplore({ x: 0, y: 0, zoom: 1, reset: refit });
   }, [exploring]);
@@ -255,8 +262,9 @@ export function Plot({
         : null,
     [animation?.final],
   );
-  const frame =
-    animation?.camera === "current" && animation.heldView
+  const frame = framing
+    ? framing
+    : animation?.camera === "current" && animation.heldView
       ? animation.heldView
       : !animation || !finalFrame || animation.camera === "fit"
         ? currentFrame
@@ -571,7 +579,7 @@ export function Plot({
   return (
     <svg
       ref={svgRef}
-      id="artwork"
+      id={id}
       xmlns="http://www.w3.org/2000/svg"
       width={W * pixelRatio}
       height={H * pixelRatio}
@@ -589,7 +597,10 @@ export function Plot({
             : `${config.kind} construction with ${config.lines} representative lines`) +
         ". Drag or arrow keys to pan; scroll, pinch, or plus and minus to zoom; Home fits the view."
       }
-      tabIndex={0}
+      // A framed drawing is a synchronized view's, whose cell carries the
+      // label and the controls.
+      tabIndex={framing ? undefined : 0}
+      aria-hidden={framing ? true : undefined}
       style={{
         background: palette.bg,
         touchAction: touchEnabled ? "none" : "pan-y pinch-zoom",

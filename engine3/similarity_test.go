@@ -878,6 +878,17 @@ func compare(t *testing.T, q Request, m similarity) (*deviation, budget, bool) {
 		}
 	}
 	d := &deviation{worst: map[string]float64{}, where: map[string]string{}, unknown: map[string]bool{}}
+	// The grid's 2D study of the shadow is the plane's 2D construction in
+	// units of a power of two, bit for bit (TestShadowGridStudy), so the
+	// plane's paths, compared below, stand for it.
+	if want.Shadow != nil && got.Shadow != nil {
+		if (want.Shadow.Study == nil) != (got.Shadow.Study == nil) {
+			d.discrete = append(d.discrete, "shadow.study: present in one copy alone")
+		}
+		ws, gs := *want.Shadow, *got.Shadow
+		ws.Study, gs.Study = nil, nil
+		want.Shadow, got.Shadow = &ws, &gs
+	}
 	comparison{m: m, q: ref, b: b, radius: want.Bounds.Radius, d: d}.walk("", reflect.ValueOf(want), reflect.ValueOf(got))
 	if want.Implicit != nil && b.skipped("implicit.positions") {
 		// The moved mesh and sections have every point of the original's

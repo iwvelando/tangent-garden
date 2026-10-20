@@ -49,6 +49,8 @@ import type {
   SpatialConfig,
   SurfaceQuery,
 } from "./types";
+import { gridLayout, gridViews } from "./grid";
+import type { ExportLayout } from "../export-quality";
 import {
   probeIndex,
   probeSteps,
@@ -347,12 +349,23 @@ export function SpatialAnimationPanel({
   const exportSection = useDisclosure("spatial-export");
   const [fps, setFPS] = useState(30);
   const [loop, setLoop] = useState(false);
+  // Whether a grid's video names its views; off until chosen.
+  const [captionChoice, setCaptions] = useState(false);
   const [scaleChoice, setExportScale] = useState(defaultScale);
   // Only resolutions this device draws are offered; a larger choice waits.
+  // A study shown beside its face-on views exports them all, in their
+  // layout.
+  const planeViews = frame ? gridViews(frame.config) : null;
+  const layout: ExportLayout | undefined = planeViews
+    ? gridLayout(planeViews) === "grid"
+      ? "grid"
+      : "columns"
+    : undefined;
+  const captions = !!planeViews && captionChoice;
   const topScale = useMemo(() => {
     const fits = spatialFits(needsTarget(sight));
-    return largestScale((size) => fits(size, false));
-  }, [sight]);
+    return largestScale((size) => fits(size, false), layout, captions);
+  }, [sight, layout, captions]);
   const exportScale = Math.min(scaleChoice, topScale);
   const resetScale = Math.min(defaultScale, topScale);
   // Each format keeps its own quality, starting from its default.
@@ -364,14 +377,19 @@ export function SpatialAnimationPanel({
   // cannot encode canvas WebP; some encoders refuse large H.264 frames.
   useEffect(() => {
     let current = true;
-    const settings = { scale: exportScale, quality: qualities.mp4 };
+    const settings = {
+      scale: exportScale,
+      quality: qualities.mp4,
+      layout,
+      captions,
+    };
     void detectFormats(settings, fps).then((found) => {
       if (current) setFormats(found);
     });
     return () => {
       current = false;
     };
-  }, [exportScale, qualities.mp4, fps]);
+  }, [exportScale, qualities.mp4, fps, layout, captions]);
   // MP4 is far smaller at comparable quality, so it leads when available.
   const offered = (["mp4", "webp"] satisfies ExportFormat[]).filter(
     (f) => formats && formats[f] !== "no",
@@ -381,8 +399,18 @@ export function SpatialAnimationPanel({
   const quality = qualities[chosen];
   const setQuality = (value: number) =>
     setQualities((q) => ({ ...q, [chosen]: value }));
-  const exportSize = exportEncoding({ scale: exportScale, quality });
-  const defaultSize = exportEncoding({ scale: resetScale, quality });
+  const exportSize = exportEncoding({
+    scale: exportScale,
+    quality,
+    layout,
+    captions,
+  });
+  const defaultSize = exportEncoding({
+    scale: resetScale,
+    quality,
+    layout,
+    captions,
+  });
   const exportReady = formats?.[chosen] === "yes";
   const exportHint = !formats
     ? ""
@@ -1252,7 +1280,10 @@ export function SpatialAnimationPanel({
           // A repeating animation loops forever.
           loop: chosen === "webp" && (loop || cycles(s.repeat)),
           cyclic: cycles(s.repeat),
-          settings: { scale: exportScale, quality },
+          settings: { scale: exportScale, quality, layout, captions },
+          grid: planeViews
+            ? { views: planeViews, weight: sight.weight }
+            : undefined,
           dark,
           scheme,
           layers: { ...layers },
@@ -1809,7 +1840,7 @@ export function SpatialAnimationPanel({
             <Field
               label="Export resolution"
               value={`${exportSize.width} × ${exportSize.height}`}
-              help={resolutionHelp(topScale)}
+              help={resolutionHelp(topScale, layout, captions)}
             >
               <input
                 aria-label="Export resolution"
@@ -1838,6 +1869,16 @@ export function SpatialAnimationPanel({
                 onChange={(e) => setQuality(+e.target.value)}
               />
             </Field>
+            {planeViews && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={captionChoice}
+                  onChange={(e) => setCaptions(e.target.checked)}
+                />
+                Include view captions
+              </label>
+            )}
             {chosen === "webp" && cycles(repeat) ? (
               <p className="hint">
                 This animation repeats, so the file loops forever.

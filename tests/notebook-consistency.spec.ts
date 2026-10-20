@@ -153,7 +153,7 @@ test("each 3D example names itself above a shared construction title", async ({
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
-  expect(titles).toHaveLength(130);
+  expect(titles).toHaveLength(132);
   // The construction, not the example, titles the drawing.
   const involutes = [
     "A staircase's shadow, unwinding",
@@ -275,7 +275,8 @@ test("each 3D example names itself above a shared construction title", async ({
         label === "A cinquefoil strung to its center" ||
         label === "A trefoil's perpendicular feet, swept at any t" ||
         label === "A deltoid's feet, through its cusps" ||
-        label === "A trefoil's feet and their shadow"
+        label === "A trefoil's feet and their shadow" ||
+        label === "A tilting circle's cardioid, face on"
         ? "Tangent-foot curve"
         : label === "A coil hidden between samples" ||
             label === "A trefoil's osculating circle, all the way round" ||
@@ -286,7 +287,8 @@ test("each 3D example names itself above a shared construction title", async ({
             label === "A corridor of loops" ||
             label === "A dandelion clock"
           ? "A curve in space"
-          : label === "Half-turns around a helix"
+          : label === "Half-turns around a helix" ||
+              label === "A rippling rose's mirror images, face on"
             ? "Tangent-line orthotomic"
             : involutes.includes(label)
               ? "Filaments unwound from a curve"
@@ -317,7 +319,7 @@ test("each 3D example names itself above a shared construction title", async ({
     );
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
-  expect(eyebrows.size).toBe(130);
+  expect(eyebrows.size).toBe(132);
   expect(eyebrows).toContain("THREE HARMONICS; THE THREAD PAUSES TWICE");
   await choosePreset(page, { label: titles[4] });
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");

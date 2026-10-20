@@ -3,6 +3,7 @@ package engine3
 import (
 	"encoding/json"
 	"math"
+	"tangentgarden/engine"
 	"testing"
 )
 
@@ -379,5 +380,127 @@ func TestShadowRefinesTheSwings(t *testing.T) {
 				t.Fatalf("the window leaves out %v", q)
 			}
 		}
+	}
+}
+
+// The grid of views asks for the 2D engine's whole study of the shadow,
+// for the 2D notebook's own drawing of the plane. It is the very study
+// whose curve the plane draws, in units of a power of two: scaled back and
+// lifted, its construction is each planar path bit for bit, an involute
+// family's first string its derived curve and the rest its family, and its
+// pole and inversion circle the study's projected. Each representative
+// line is the construction's own: a tangent foot sees the pole square to
+// the tangent through the curve's point, an orthotomic point is the pole
+// reflected across that tangent, an image lies on the ray from the center,
+// and a string reaches its involute's point. Without the grid, or with no
+// 2D counterpart, there is no study and nothing else changes.
+func TestShadowGridStudy(t *testing.T) {
+	for _, tc := range []struct {
+		construction, kind string
+		members            int
+	}{
+		{"tangent-foot", "pedal", 1},
+		{"orthotomic", "orthotomic", 1},
+		{"inversion", "inversion", 1},
+		{"involute", "involute", 1},
+		{"involute", "involute", 4},
+	} {
+		c := custom("2*cos(t)+0.2*cos(3*t)", "sin(t)", "0.4*sin(2*t)", 0, 2*math.Pi)
+		c.Samples, c.Lines = 480, 36
+		c.Construction, c.Input = tc.construction, "base"
+		c.Pole = Vec3{0.4, -0.3, 2.2}
+		c.Involute = InvoluteRequest{Anchor: 1, Offset: 0.6}
+		if tc.members > 1 {
+			c.Involute.Family = InvoluteFamily{Enabled: true, From: -1, To: 2, Count: tc.members}
+		}
+		c.Inversion = InversionRequest{Center: Vec3{0.2, 0.1, 1.3}, Radius: 1.4, Input: "base"}
+		c.Shadow = &ShadowRequest{Plane: "y", At: -2}
+		name := tc.construction
+		plain := shadowed(t, c).Shadow
+		if plain.Study != nil {
+			t.Fatalf("%s: a study without the grid", name)
+		}
+		c.Shadow = &ShadowRequest{Plane: "y", At: -2, Grid: true}
+		s := shadowed(t, c).Shadow
+		study := s.Study
+		if study == nil {
+			t.Fatalf("%s: no study with the grid", name)
+		}
+		was, _ := json.Marshal(plain)
+		s.Study = nil
+		now, _ := json.Marshal(s)
+		s.Study = study
+		if string(was) != string(now) {
+			t.Fatalf("%s: the grid changed the shadow", name)
+		}
+		if study.Kind != tc.kind || study.Unit != binade(shadowed(t, c).Bounds.Radius) {
+			t.Fatalf("%s: kind %q in units of %v", name, study.Kind, study.Unit)
+		}
+		q, unit, r := *c.Shadow, study.Unit, study.Result
+		lift := func(p engine.Vec) Vec3 { return q.lift(p.Mul(unit)) }
+		paths := append([][]*engine.Vec{r.Derived}, func() (m [][]*engine.Vec) {
+			for _, f := range r.Family {
+				m = append(m, f.Points)
+			}
+			return
+		}()...)
+		if len(paths) != tc.members {
+			t.Fatalf("%s: %d paths for %d members", name, len(paths), tc.members)
+		}
+		for k, path := range paths {
+			for i, p := range path {
+				want := s.Planar[k].Points[i]
+				if (p == nil) != (want == nil) || (p != nil && lift(*p) != *want) {
+					t.Fatalf("%s: member %d point %d is %v, the plane's %v", name, k, i, p, want)
+				}
+			}
+		}
+		for i, p := range r.Base {
+			if p != nil && lift(*p).sub(*s.Curve.Points[i]).norm() > 1e-12 {
+				t.Fatalf("%s: base point %d off the shadow", name, i)
+			}
+		}
+		if lift(study.Pole) != q.lift(q.flat(c.Pole)) {
+			t.Fatalf("%s: pole %v", name, study.Pole)
+		}
+		if tc.kind == "inversion" && (lift(study.Inversion.Center) != q.lift(q.flat(c.Inversion.Center)) || study.Inversion.Radius*unit != c.Inversion.Radius) {
+			t.Fatalf("%s: inversion %+v", name, study.Inversion)
+		}
+		if len(r.Rays) < c.Lines-1 {
+			t.Fatalf("%s: %d representative lines for %d", name, len(r.Rays), c.Lines)
+		}
+		pole := study.Pole
+		for _, ray := range r.Rays {
+			if ray.Target == nil {
+				continue
+			}
+			o, g := ray.Origin, *ray.Target
+			var miss float64
+			switch tc.kind {
+			case "pedal":
+				// The tangent through o and the foot g, square to g − pole.
+				d := r.Derived[ray.SampleIndex]
+				miss = g.Sub(pole).Dot(g.Sub(o))/(g.Sub(pole).Norm()*g.Sub(o).Norm()+1e-300) + (*d).Sub(g).Norm()
+			case "orthotomic":
+				// The foot, halfway to the image, is square to the pole.
+				h := g.Add(pole).Mul(0.5)
+				miss = h.Sub(pole).Dot(h.Sub(o)) / (h.Sub(pole).Norm()*h.Sub(o).Norm() + 1e-300)
+			case "inversion":
+				center := study.Inversion.Center
+				a, b := o.Sub(center), g.Sub(center)
+				miss = math.Abs(a.X*b.Y-a.Y*b.X)/(a.Norm()*b.Norm()) + math.Abs(a.Norm()*b.Norm()-study.Inversion.Radius*study.Inversion.Radius)
+			case "involute":
+				miss = g.Sub(*r.Derived[ray.SampleIndex]).Norm()
+			}
+			if math.Abs(miss) > 1e-9 {
+				t.Fatalf("%s: line at sample %d misses by %v", name, ray.SampleIndex, miss)
+			}
+		}
+	}
+	c := study()
+	c.Construction = "developable"
+	c.Shadow = &ShadowRequest{Plane: "z", At: -3, Grid: true}
+	if s := shadowed(t, c).Shadow; s.Study != nil {
+		t.Fatalf("a developable has no 2D study: %+v", s.Study)
 	}
 }

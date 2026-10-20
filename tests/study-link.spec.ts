@@ -1813,6 +1813,23 @@ test("a 3D link carries the shadow's plane; older links cast none", async () => 
   }
 });
 
+test("a 3D link carries the grid of views beside a shadow; older links draw one", async () => {
+  const study = spatial();
+  study.config = {
+    ...study.config,
+    shadow: { plane: "z", at: -2, grid: true },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A link made before the grid leaves it out, which draws one view.
+  const older = structuredClone(study) as any;
+  delete older.config.shadow.grid;
+  assert.equal(spatialStudy(older).config.shadow!.grid, undefined);
+  const bad = structuredClone(study) as any;
+  bad.config.shadow.grid = "yes";
+  await refused(() => spatialStudy(bad), "config.shadow.grid");
+});
+
 test("a 3D link carries refinement to the view with its deep zoom; older links refine to the study alone", async () => {
   const study = spatial();
   study.config = { ...study.config, adaptive: true, adaptiveView: true };

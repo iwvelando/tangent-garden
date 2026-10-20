@@ -1,18 +1,37 @@
 import { withMore } from "./help";
 
-export type ExportLayout = "columns" | "rows";
+// Two pages side by side or stacked (a 4D pair, or a 3D drawing beside one
+// face-on view), or two rows of two (the 3D grid of views).
+export type ExportLayout = "columns" | "rows" | "grid";
+// With captions, a layout's panels are named in a band above each row of
+// them, outside every drawing (the 3D grid's videos); absent means none.
 export type ExportSettings = {
   scale: number;
   quality: number;
   layout?: ExportLayout;
+  captions?: boolean;
 };
-// Optional paired compositions preserve each panel's 1000 × 760 coordinate scale.
-export function exportBaseSize(layout?: ExportLayout) {
-  if (layout === "columns") return { width: 2000, height: 760 };
-  if (layout === "rows") return { width: 1000, height: 1520 };
-  if (layout !== undefined)
-    throw new Error("Choose a columns or rows export layout.");
-  return { width: 1000, height: 760 };
+// The band above each row of panels that names them, in page units: even,
+// so that every offered resolution keeps H.264's even dimensions.
+export const captionBand = 40;
+// Optional paired compositions preserve each panel's 1000 × 760 coordinate
+// scale; captions add a band above each row.
+export function exportBaseSize(layout?: ExportLayout, captions = false) {
+  const size =
+    layout === "columns"
+      ? { width: 2000, height: 760, rows: 1 }
+      : layout === "rows"
+        ? { width: 1000, height: 1520, rows: 2 }
+        : layout === "grid"
+          ? { width: 2000, height: 1520, rows: 2 }
+          : layout === undefined
+            ? { width: 1000, height: 760, rows: 1 }
+            : null;
+  if (!size) throw new Error("Choose a columns, rows or grid export layout.");
+  return {
+    width: size.width,
+    height: size.height + (captions ? size.rows * captionBand : 0),
+  };
 }
 
 // Every format offers all three; a 60 fps WebP is about twice the size.
@@ -23,12 +42,17 @@ export const frameRates = [15, 30, 60];
 // their color and soften; at twice the size they stay crisp.
 export const defaultScale = 2;
 
-export function exportEncoding({ scale, quality, layout }: ExportSettings) {
+export function exportEncoding({
+  scale,
+  quality,
+  layout,
+  captions,
+}: ExportSettings) {
   if (!Number.isFinite(scale) || scale < 0.5 || scale > 2)
     throw new Error("Export resolution must be between 50% and 200%.");
   if (!Number.isInteger(quality) || quality < 1 || quality > 100)
     throw new Error("Export quality must be a whole number from 1 to 100.");
-  const size = exportBaseSize(layout);
+  const size = exportBaseSize(layout, captions);
   return {
     width: Math.round(size.width * scale),
     height: Math.round(size.height * scale),
@@ -46,16 +70,21 @@ export const exportScales = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 export function largestScale(
   fits: (size: { width: number; height: number }) => boolean,
   layout?: ExportLayout,
+  captions?: boolean,
 ) {
   let top = exportScales[0];
   for (const scale of exportScales.slice(1)) {
-    if (!fits(exportEncoding({ scale, quality: 100, layout }))) break;
+    if (!fits(exportEncoding({ scale, quality: 100, layout, captions }))) break;
     top = scale;
   }
   return top;
 }
 // The resolution's help, with the device's limit when it is below 200%.
-export function resolutionHelp(top: number, layout?: ExportLayout) {
+export function resolutionHelp(
+  top: number,
+  layout?: ExportLayout,
+  captions?: boolean,
+) {
   const help =
     "More pixels keep finer detail, with larger files and slower export.";
   if (top >= exportScales.at(-1)!) return help;
@@ -63,6 +92,7 @@ export function resolutionHelp(top: number, layout?: ExportLayout) {
     scale: top,
     quality: 100,
     layout,
+    captions,
   });
   return withMore(
     help,

@@ -7,11 +7,20 @@
 // Mirrors cmd/wasm/lift.Place: where a lifted array goes back. A "point"
 // is {x, y, z} or null (three NaN), a "vector" {x, y, z}, a "triple"
 // [x, y, z], a "quad" [x, y, z, w], a "number" a number, and a "maybe" a
-// number or null (NaN). An array of arrays has rows, each row's length,
+// number or null (NaN); a "point2" is {x, y} or null (two NaN), and a
+// "vector2" {x, y}, as a shadow's 2D study holds. An array of arrays has rows, each row's length,
 // -1 for null; any other array has count.
 export type Place = {
   path: (string | number)[];
-  kind: "point" | "vector" | "triple" | "quad" | "number" | "maybe";
+  kind:
+    | "point"
+    | "vector"
+    | "point2"
+    | "vector2"
+    | "triple"
+    | "quad"
+    | "number"
+    | "maybe";
   offset: number;
   count?: number;
   rows?: number[];
@@ -21,7 +30,16 @@ export type Place = {
 // JSON.
 export type Lifted = { floats: Float64Array; places: string };
 
-const width = { point: 3, vector: 3, triple: 3, quad: 4, number: 1, maybe: 1 };
+const width = {
+  point: 3,
+  vector: 3,
+  point2: 2,
+  vector2: 2,
+  triple: 3,
+  quad: 4,
+  number: 1,
+  maybe: 1,
+};
 
 // The n items of kind starting at float at.
 function items(
@@ -41,6 +59,16 @@ function items(
           kind === "point" && Number.isNaN(x)
             ? null
             : { x, y: floats[at + 1], z: floats[at + 2] };
+      }
+      break;
+    case "point2":
+    case "vector2":
+      for (let k = 0; k < n; k++, at += 2) {
+        const x = floats[at];
+        out[k] =
+          kind === "point2" && Number.isNaN(x)
+            ? null
+            : { x, y: floats[at + 1] };
       }
       break;
     case "triple":

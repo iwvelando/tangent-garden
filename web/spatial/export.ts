@@ -26,10 +26,33 @@ import {
   browserLimit,
   defaultStill,
   drawable,
+  pngFile,
   stillRecord,
   stillSize,
+  svgFile,
   type Still,
 } from "../export-image";
+import {
+  drawingImage,
+  drawingLines,
+  gridCanvas,
+  gridFrame,
+  gridRecord,
+  gridSvg,
+  type GridPlanes,
+} from "./grid-export";
+import { captionBand } from "../export-quality";
+import {
+  viewCaption,
+  gridCells,
+  gridPage,
+  framing as planeFraming,
+  grow,
+  planeRect,
+  type PlaneRect,
+  type PlaneView,
+} from "./grid";
+import { probePoint } from "./probe";
 
 // The study's name, for a file's title.
 function studyTitle(frame: Frame) {
@@ -93,14 +116,31 @@ export async function imageFile(
   // recorded only when they are not the defaults.
   still: Still = defaultStill,
   scheme: ColorScheme = "default",
+  // The face-on views beside the drawing, when it has them: the file then
+  // holds every view, each cell at the drawing's own page size.
+  grid?: GridPlanes,
 ): Promise<Blob> {
   const lensed = projectionRecord(view);
   const page = stillSize(still);
+  const whole = grid && stillSize(still, gridPage(grid.views));
+  // The grid's file around the 3D drawing's own markup.
+  const gridded = (drawing: string, title: string, metadata: object) =>
+    gridSvg({
+      drawing,
+      result: frame.result,
+      planes: grid!,
+      layers,
+      dark,
+      scheme,
+      size: whole!,
+      title,
+      metadata: { ...metadata, grid: gridRecord(grid!, frame.result) },
+    });
   const probed = {
     ...(probe ? { probe: probe.record } : {}),
     ...(cut ? { cut: cutRecord(cut) } : {}),
     ...(lensed ? { projection: lensed } : {}),
-    ...stillRecord(still),
+    ...stillRecord(still, grid && gridPage(grid.views)),
   };
   if (format === "svg-lines" || format === "svg-visible") {
     const occlusion = format === "svg-lines" ? "none" : "sampled";
@@ -145,11 +185,12 @@ export async function imageFile(
     const drawnAs = (h: HiddenLines) =>
       h === "hide" ? "left out" : `drawn ${h}`;
     signal.throwIfAborted();
+    const title = `Tangent Garden — ${studyTitle(frame)} (lines)`;
     const svg = linesSvg(groups, {
       ...page,
       dark,
       transparent: still.transparent,
-      title: `Tangent Garden — ${studyTitle(frame)} (lines)`,
+      title,
       metadata: {
         config: frame.config,
         view,
@@ -168,6 +209,18 @@ export async function imageFile(
         },
       },
     });
+    if (grid)
+      return svgFile(
+        gridded(drawingLines(svg), title, {
+          config: frame.config,
+          view,
+          layers,
+          dark,
+          ...probed,
+          rendering: "vector linework beside face-on vector views",
+        }),
+        still.transparent,
+      );
     return new Blob([svg], { type: "image/svg+xml" });
   }
   const drawing = document.createElement("canvas"),
@@ -203,6 +256,25 @@ export async function imageFile(
       );
     } else renderer.draw(view, layers, dark, page);
     signal.throwIfAborted();
+    if (grid) {
+      const file = gridded(
+        drawingImage(canvas.toDataURL("image/png")),
+        `Tangent Garden — ${studyTitle(frame)}`,
+        {
+          config: frame.config,
+          view,
+          layers,
+          dark,
+          ...probed,
+          ...(seen ? { sight: seen } : {}),
+          ...strokesOf(stroked),
+          rendering: "embedded PNG beside face-on vector views",
+        },
+      );
+      return format === "png"
+        ? pngFile(file, whole!.width, whole!.height, still.transparent)
+        : svgFile(file, still.transparent);
+    }
     const png = await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("PNG encoding failed."))),
@@ -247,11 +319,24 @@ export async function exportAnimation(options: {
   // The frame at a time on the timeline.
   sample: (time: number) => Promise<AnimationView>;
   onProgress: (completed: number, total: number) => void;
+  // The face-on views beside the drawing, when it has them (settings then
+  // name the grid's layout): framed as playback frames them, by every
+  // window shown since the start (grid.ts grow).
+  grid?: { views: PlaneView[]; weight: GridPlanes["weight"] };
 }): Promise<Blob> {
   const timing = exportTiming(options.duration, options.fps, options.cyclic),
     encoding = exportEncoding(options.settings);
   const canvas = document.createElement("canvas"),
     renderer = createRenderer(canvas, options.scheme);
+  const grid = options.grid,
+    cells = grid && gridCells(grid.views),
+    composite = grid && gridCanvas(encoding.width, encoding.height);
+  let shown: PlaneRect | null = null;
+  // The band above each row that names its cells, in pixels, if any.
+  const band =
+    grid && options.settings.captions
+      ? captionBand * (encoding.width / gridPage(grid.views).width)
+      : 0;
   let sink: ReturnType<typeof mp4Sink> | undefined;
   try {
     sink =
@@ -280,9 +365,46 @@ export async function exportAnimation(options: {
         animationCamera(view),
         options.layers,
         options.dark,
-        encoding,
+        cells
+          ? {
+              width: encoding.width / cells.columns,
+              height: encoding.height / cells.rows - band,
+            }
+          : encoding,
       );
-      await sink.add(canvas, timing[i].duration, i);
+      const own =
+        view.frame.result.shadow && planeRect(view.frame.result.shadow);
+      if (own) shown = grow(shown, own);
+      if (composite && shown)
+        await gridFrame(
+          composite.context,
+          canvas,
+          view.frame.result,
+          {
+            views: grid.views,
+            weight: grid.weight,
+            framing: planeFraming(shown, { x: 0, y: 0, zoom: 1 }),
+            probe:
+              view.probe === undefined
+                ? null
+                : probePoint(
+                    view.frame.result,
+                    view.frame.config,
+                    view.probeSetup!,
+                    view.probe,
+                  ),
+          },
+          options.layers,
+          options.dark,
+          options.scheme ?? "default",
+          options.settings.captions
+            ? (["drawing", ...grid.views] as const).map((v) =>
+                viewCaption(v, view.frame.config),
+              )
+            : undefined,
+        );
+      options.signal.throwIfAborted();
+      await sink.add(composite?.canvas ?? canvas, timing[i].duration, i);
       options.signal.throwIfAborted();
       options.onProgress(i + 1, timing.length);
       await new Promise((resolve) => setTimeout(resolve, 0));

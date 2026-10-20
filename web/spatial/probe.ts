@@ -1384,6 +1384,17 @@ export function columnShare(d: SurfaceDiagnostics, column: number) {
 const curveAt = (result: SpatialResult, i: ProbePlace) =>
   typeof i === "number" ? sampleProbe(result, i) : (i as CurveProbe);
 
+// Where the curve probe stands, or null for a surface's probe or none.
+export function probePoint(
+  result: SpatialResult,
+  config: SpatialConfig,
+  probe: Probe,
+  i: ProbePlace,
+): Vec3 | null {
+  if (probeTarget(config, probe) !== "curve") return null;
+  return curveAt(result, i)?.point ?? null;
+}
+
 // The probe's drawing at its place: the curve probe at its point (or at
 // sample i), or the surface probe at row i in the column the probe stands
 // in.

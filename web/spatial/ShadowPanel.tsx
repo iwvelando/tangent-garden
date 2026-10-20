@@ -1,4 +1,5 @@
-import { Field } from "../Field";
+import { Field, HelpText, HelpToggle, useHelp } from "../Field";
+import { gridHelp } from "./grid";
 import { ScalarInput } from "../ScalarInput";
 import type { Layers } from "./scene";
 import { shadowHelp, shadowLayers, shadowPlanes } from "./shadow";
@@ -14,16 +15,19 @@ export function ShadowPanel({
   onAt,
   layers,
   onLayer,
+  onGrid,
   note,
 }: {
   config: SpatialConfig;
   onPlane: (plane: ShadowPlane | "none") => void;
   onAt: (at: number) => void;
+  onGrid: (on: boolean) => void;
   layers: Layers;
   onLayer: (layer: "shadow" | "planar" | "cast", on: boolean) => void;
   note?: string;
 }) {
   const shadow = config.shadow;
+  const help = useHelp();
   return (
     <fieldset className="spatial-shadow">
       <legend>Shadow on a plane</legend>
@@ -56,6 +60,18 @@ export function ShadowPanel({
         </div>
         {shadow && (
           <>
+            <div className="probe-switch view-switch">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={!!shadow.grid}
+                  onChange={(e) => onGrid(e.target.checked)}
+                />
+                Face-on views beside the drawing
+              </label>
+              <HelpToggle topic="face-on views" help={help} />
+            </div>
+            <HelpText help={help}>{gridHelp}</HelpText>
             <div className="spatial-layers shadow-layers">
               {shadowLayers(config).map(([key, label]) => (
                 <label key={key}>

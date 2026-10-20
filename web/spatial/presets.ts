@@ -4935,4 +4935,87 @@ export const spatialPresets: {
       shadow: { plane: "y", at: -2.5 },
     },
   },
+  // A circle of radius 2 standing in the plane y = 0, tilted by a about
+  // the x axis, with the pole on it at (2, 0, 0). Its tangent feet lie in
+  // its own plane, where they trace the circle's cardioid; on the floor
+  // y = −2.5 the cardioid casts a squashed copy. The circle's shadow is an
+  // ellipse, whose pedal from the pole's shadow is another curve: a pedal
+  // does not survive a squash. The grid shows the floor face on: the
+  // ellipse's pedal with its feet as the 2D notebook draws them, the cast
+  // cardioid, and the two over each other. Played, the circle lies flat and
+  // the two become one cardioid.
+  {
+    name: "A tilting circle's cardioid, face on",
+    detail:
+      "Beside the 3D drawing, the floor seen face on: the pedal of a circle's shadow and the shadow of its cardioid, meeting as the circle lies flat",
+    view: { ...initialView, yaw: 0.3, pitch: 0.6, zoom: 1.2 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "0.9", to: "0" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "tangent-foot",
+      pole: { x: 2, y: 0, z: 0 },
+      lines: 36,
+      samples: 1200,
+      curve: {
+        x: "2*cos(t)",
+        y: "2*sin(t)*sin(a)",
+        z: "2*sin(t)*cos(a)",
+        a: 0.9,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      shadow: { plane: "y", at: -2.5, grid: true },
+    },
+  },
+  // A three-petaled rose of radius 2 on the floor's plane y = 0, rippling
+  // across it by a, and its orthotomic from the pole (0.5, 0, 0.3): the pole
+  // reflected in each tangent line. On the floor y = −2.5 the grid shows,
+  // face on, the 2D orthotomic of the rose's shadow with its mirror lines,
+  // the shadow of the 3D orthotomic, and both together. Played, the ripple
+  // dies away and the two orthotomics close onto one.
+  {
+    name: "A rippling rose's mirror images, face on",
+    detail:
+      "Beside the 3D drawing, a rose's shadow seen face on with its 2D orthotomic and the shadow of its 3D one, closing together as the rose flattens",
+    view: { ...initialView, yaw: 0.3, pitch: 0.6, zoom: 1.2 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "0.4", to: "0" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "orthotomic",
+      pole: { x: 0.5, y: 0, z: 0.3 },
+      lines: 36,
+      samples: 1200,
+      curve: {
+        x: "2*cos(3*t)*cos(t)",
+        y: "a*sin(6*t)",
+        z: "2*cos(3*t)*sin(t)",
+        a: 0.4,
+        min: 0,
+        max: Math.PI,
+      },
+      shadow: { plane: "y", at: -2.5, grid: true },
+    },
+  },
 ];
