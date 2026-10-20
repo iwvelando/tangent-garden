@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openAnimation, exportImage, choosePreset } from "./helpers";
+import {
+  openAnimation,
+  exportImage,
+  choosePreset,
+  stalePause,
+} from "./helpers";
 import { applyTracks, reveal } from "../web/animation";
 import { presets } from "../web/presets";
 import type { Result } from "../web/types";
@@ -385,6 +390,26 @@ test("a completed animation releases pan and zoom without Reset view", async ({
     .getByRole("button", { name: "Back to study", exact: true })
     .click();
   await expect(artwork.locator("path").first()).toHaveAttribute("d", manual!);
+});
+
+// A Pause click that reaches its handler as playback ends leaves the
+// animation complete, not paused at its last frame.
+test("pausing as the animation ends leaves it complete", async ({ page }) => {
+  await ready(page);
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("1");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  const pause = await stalePause(page);
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeVisible();
+  await pause();
+  await expect(
+    page.getByRole("button", { name: "Back to study", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeVisible();
+  expect(await progress(page)).toBe(1);
 });
 
 // The drawing's viewBox is fixed and always shown whole, so these bounds,

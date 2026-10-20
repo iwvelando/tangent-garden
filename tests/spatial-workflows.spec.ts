@@ -1,6 +1,6 @@
 import { chooseNotebook } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
-import { choosePreset } from "./helpers";
+import { choosePreset, stalePause } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
 const stage = (page: Page) => page.locator(".spatial-stage");
@@ -447,6 +447,31 @@ test("a completed 3D animation releases the orbit camera without Back to study",
     .getByRole("button", { name: "Back to study", exact: true })
     .click();
   await expect(stage(page)).not.toHaveAttribute("data-progress");
+});
+
+// A Pause click that reaches its handler as playback ends leaves the
+// animation complete, not paused at its last frame, where seeking to the
+// end would no longer move the slider to finish it.
+test("pausing as a 3D animation ends leaves it complete", async ({ page }) => {
+  await ready(page);
+  await animation(page);
+  await page.getByLabel("Animate", { exact: true }).selectOption("orbit");
+  await page.getByLabel("Duration (seconds)").fill("1");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  const pause = await stalePause(page);
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeVisible();
+  await pause();
+  await expect(
+    page.getByRole("button", { name: "Back to study", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeVisible();
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
 });
 
 test("each sampling explainer waits behind an info toggle", async ({

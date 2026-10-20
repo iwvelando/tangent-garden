@@ -998,7 +998,10 @@ export function AnimationPanel({
       if (epoch.current === token) fail(error, save ? "Export" : "Animation");
     }
   }
+  // A click can reach Pause after playback ended, before Replay is drawn
+  // in its place; the animation stays complete.
   function pause() {
+    if (!playing.current) return;
     cancel();
     changeStatus("paused");
   }

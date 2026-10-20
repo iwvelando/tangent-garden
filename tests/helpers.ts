@@ -112,3 +112,24 @@ export async function chooseColorScheme(page: Page, id: string) {
     .click();
   await header.locator(`[role="menuitemradio"][data-scheme="${id}"]`).click();
 }
+
+// Holds the Pause button's click handler as React rendered it while the
+// animation played, and returns a call to it. A click that lands after
+// playback ends, but before React draws the Replay button in Pause's place,
+// reaches this same handler; calling it later reproduces that click.
+export async function stalePause(page: Page) {
+  await page
+    .getByRole("button", { name: "Pause", exact: true })
+    .evaluate((button) => {
+      const key = Object.keys(button).find((k) =>
+        k.startsWith("__reactProps$"),
+      )!;
+      (window as unknown as { stalePause: () => void }).stalePause = (
+        button as unknown as Record<string, { onClick: () => void }>
+      )[key].onClick;
+    });
+  return () =>
+    page.evaluate(() =>
+      (window as unknown as { stalePause: () => void }).stalePause(),
+    );
+}
