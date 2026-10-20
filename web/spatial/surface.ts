@@ -1,3 +1,4 @@
+import { edgesNote } from "./cuspidal";
 import type {
   FocalShape,
   SurfaceConfig,
@@ -126,5 +127,6 @@ export function surfaceNote(s: SurfaceResult): string[] {
           `${count(s.folded, "offset sample lies", "offset samples lie")} beyond one focal sheet, where the offset turns inside out; it is drawn, not trimmed.`,
         ]
       : []),
+    ...edgesNote(s),
   ];
 }

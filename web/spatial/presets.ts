@@ -5018,4 +5018,61 @@ export const spatialPresets: {
       shadow: { plane: "y", at: -2.5, grid: true },
     },
   },
+  // The ellipsoid (1.5, 1, 0.7) of "An ellipsoid's parallel surface",
+  // whole, drawn only by its parameter curves, and offset inward with its
+  // cuspidal edges located: where d is one of the ellipsoid's radii of
+  // curvature, the offset meets that focal sheet and folds back sharply.
+  // The radii are smallest at the ends of the long axis, c²/a ≈ 0.33 and
+  // b²/a ≈ 0.67, then c²/b = 0.49 at (0, ±1, 0). At d = −1.2 the offset
+  // is a cushion bounded by four closed edges: two on focal sheet 1
+  // ringing the ends of the long axis, two on sheet 2 round the short axis.
+  // As d sweeps to −0.35 the first pair vanishes at d ≈ −0.67, and the
+  // second closes in on the equator, reconnects at (0, ±1, 0) at d = −0.49
+  // into two rings round the ends of the long axis, and shrinks toward
+  // them.
+  {
+    name: "The cuspidal edges of a parallel surface",
+    detail:
+      "An ellipsoid offset inward folds sharply along curves where the offset equals a radius of curvature",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 0.7,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 96,
+        vSamples: 96,
+        curves: 12,
+        offset: -1.2,
+        reach: 0,
+        edges: true,
+      },
+    },
+    layers: { surface: false, focal1: false, focal2: false },
+    view: { yaw: 0.3, pitch: 1, zoom: 1.6, panX: 0, panY: 0 },
+    sight: {
+      sheets: "through",
+      opacity: 0.45,
+      hidden: "faint",
+      weight: "regular",
+    },
+    flight: {
+      duration: 14,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceOffset", from: "-1.2", to: "-0.35" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

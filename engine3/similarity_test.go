@@ -302,6 +302,7 @@ var kinds = map[string]kind{
 	"shadow.at": asOffset, "shadow.corners": asPosition, "shadow.curve.points": asPosition,
 	"shadow.planar.points": asPosition, "shadow.cast.points": asPosition,
 	"shadow.deviation": asUnchanged, "shadow.size": asLength,
+	"surface.edges.points": asPosition, "surface.edges.i": asUnchanged, "surface.edges.j": asUnchanged,
 	"surface.focal.normals": asUnchanged, "surface.focal.points": asPosition, "surface.lines.end": asPosition,
 	"surface.lines.point": asPosition, "surface.offset.normals": asUnchanged, "surface.offset.points": asPosition,
 	"surface.surface.normals": asUnchanged, "surface.surface.points": asPosition,

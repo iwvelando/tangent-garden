@@ -17,7 +17,7 @@ import type {
   SpatialHarmonicResult,
   SurfaceSheet,
 } from "./types";
-import type { CurveMesh, ShadowPath } from "./types";
+import type { CurveMesh, CuspidalEdge, ShadowPath } from "./types";
 import type { View } from "./renderer";
 import { fitFrame, pathView, type CameraPath } from "./path";
 import { rideView, type RidePath } from "./ride";
@@ -881,6 +881,35 @@ function revealImplicit(
     sections,
   };
 }
+// An offset's cuspidal edges through row `last`: each is split where it
+// runs past the row, and an edge that is split is no longer closed.
+function revealEdges(edges: CuspidalEdge[], last: number): CuspidalEdge[] {
+  return edges.flatMap((e) => {
+    if (e.i.every((i) => i <= last)) return [e];
+    const runs: CuspidalEdge[] = [];
+    let run: number[] = [];
+    const n = e.points.length;
+    const start = e.closed ? e.i.findIndex((i) => i > last) : 0;
+    const flush = () => {
+      if (run.length > 1)
+        runs.push({
+          ...e,
+          closed: false,
+          points: run.map((k) => e.points[k]),
+          i: run.map((k) => e.i[k]),
+          j: run.map((k) => e.j[k]),
+        });
+      run = [];
+    };
+    for (let k = 0; k < n; k++) {
+      const at = (start + k) % n;
+      if (e.i[at] <= last) run.push(at);
+      else flush();
+    }
+    flush();
+    return runs;
+  });
+}
 // The last sample (or a surface's row) a reveal at progress p draws, over
 // what it reveals along: a surface's or mirror's rows along u, or the
 // curve's samples. A level surface reveals through its box instead.
@@ -903,6 +932,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       ...s,
       surface: revealSheet(s.surface, last),
       offset: s.offset && revealSheet(s.offset, last),
+      ...(s.edges && { edges: revealEdges(s.edges, last) }),
       focal: s.focal.map((f) => revealSheet(f, last)),
       lines: s.lines.filter((l) => l.i <= last),
     };

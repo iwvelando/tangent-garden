@@ -16,7 +16,8 @@ import (
 // The normal is n = X_u × X_v / |X_u × X_v|, or its opposite when Reverse
 // is set. The shape operator is A = −dn, so κ > 0 where the surface bends
 // toward n; a sphere with its outward normal has κ = −1/R. The offset is
-// X + Offset·n, and each normal line runs from X to X + Reach·n.
+// X + Offset·n, and each normal line runs from X to X + Reach·n. Edges asks
+// for the offset's cuspidal edges (see cuspidalEdges).
 type SurfaceRequest struct {
 	Kind     string  `json:"kind"`
 	A        float64 `json:"a"`
@@ -32,6 +33,7 @@ type SurfaceRequest struct {
 	Reverse  bool    `json:"reverse"`
 	Offset   float64 `json:"offset"`
 	Reach    float64 `json:"reach"`
+	Edges    bool    `json:"edges,omitempty"`
 }
 
 // SurfaceSheet is a surface sampled on the parameter grid. Points[i][j] is
@@ -76,7 +78,10 @@ type SurfaceNormal struct {
 // runs, and VCurves the u indices of those along which v runs. Normal lines
 // stand where they cross. Singular counts samples where X_u × X_v vanishes,
 // with no normal; Umbilics those where κ₁ = κ₂; Folded those where the
-// offset lies beyond one focal sheet, (1 − dκ₁)(1 − dκ₂) < 0.
+// offset lies beyond one focal sheet, (1 − dκ₁)(1 − dκ₂) < 0. Edges are
+// the offset's cuspidal edges, when the request asks for them and has an
+// offset (an empty list when there are none), and nil, with no key,
+// otherwise.
 type SurfaceResult struct {
 	Surface  SurfaceSheet    `json:"surface"`
 	Offset   *SurfaceSheet   `json:"offset"`
@@ -87,6 +92,7 @@ type SurfaceResult struct {
 	Singular int             `json:"singular"`
 	Umbilics int             `json:"umbilics"`
 	Folded   int             `json:"folded"`
+	Edges    *[]CuspidalEdge `json:"edges,omitempty"`
 }
 
 const (
@@ -452,6 +458,10 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 	if offsets != nil {
 		s := sheet(offsets, offsetNormals, always, scale)
 		out.Offset = &s
+		if q.Edges {
+			edges := q.cuspidalEdges(samples, scale)
+			out.Edges = &edges
+		}
 	}
 	for k := range focal {
 		join := func(i, j, di, dj int) bool {

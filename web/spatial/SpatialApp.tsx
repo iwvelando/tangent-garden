@@ -8,6 +8,7 @@ import {
 import { RefineBetweenSamples } from "../RefineBetweenSamples";
 import { frameHelp, spatialViewHelp } from "../refinement";
 import { StopAtCaustic } from "../StopAtCaustic";
+import { CuspidalEdgesCheck } from "./cuspidal";
 import {
   useCallback,
   useEffect,
@@ -1366,6 +1367,16 @@ export default function SpatialApp({
               ),
             )}
           </div>
+          {config.surface.offset !== 0 && (
+            <CuspidalEdgesCheck
+              checked={!!config.surface.edges}
+              onChange={(on) =>
+                setSurface(({ edges: _, ...s }) =>
+                  on ? { ...s, edges: true } : s,
+                )
+              }
+            />
+          )}
           <p className="note" data-testid="surface-note">
             {patch ? surfaceNote(patch).join(" ") : "Measuring the curvature…"}
           </p>
@@ -2238,7 +2249,7 @@ export default function SpatialApp({
         </>
       }
       note={describeColors(
-        "Gray lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross.",
+        `Gray lines are normals at the crossings of the parameter curves. Rust marks the first focal sheet (the larger curvature κ₁), slate the second; a sheet that collapses is drawn by its parameter curves, or as a cross.${config.surface.edges && config.surface.offset !== 0 ? " Gold curves are the offset's cuspidal edges." : ""}`,
         theme.scheme,
       )}
       diagnostics={
@@ -3284,6 +3295,9 @@ export default function SpatialApp({
                         ["curves", "Parameter curves"],
                         ["normals", "Normal lines"],
                         ["offset", "Offset surface"],
+                        ...(config.surface.edges && config.surface.offset !== 0
+                          ? ([["cusps", "Cuspidal edges"]] as const)
+                          : []),
                         ["focal1", "Focal sheet 1 · κ₁"],
                         ["focal2", "Focal sheet 2 · κ₂"],
                       ] as const)
