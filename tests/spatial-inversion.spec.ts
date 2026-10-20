@@ -125,6 +125,35 @@ test("a curve through the center is reported, not joined across infinity", async
   await expect(page.getByText(/1 passages through the center/)).toBeVisible();
 });
 
+// The deltoid's inverted feet run on through its three cusps and say so;
+// the inverted base, with no tangent line to continue, does not, and the
+// orthotomic's image crosses them again.
+test("an inverted projection runs on through the base's cusps", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "Three petals from a deltoid's feet" });
+  await settled(page);
+  const crossedNote = page.locator(".crossed-note");
+  await expect(crossedNote).toHaveText(
+    "The image runs on through 3 cusps of the curve, where the tangent line continues along r″.",
+  );
+  await expect(page.getByText(/passages through the center/)).toHaveCount(0);
+  const input = page.getByLabel("Curve to invert", { exact: true });
+  await input.selectOption("base");
+  await expect
+    .poll(async () => (await config(page))?.inversion?.input)
+    .toBe("base");
+  await settled(page);
+  await expect(crossedNote).toHaveCount(0);
+  await input.selectOption("orthotomic");
+  await expect
+    .poll(async () => (await config(page))?.inversion?.input)
+    .toBe("orthotomic");
+  await settled(page);
+  await expect(crossedNote).toHaveText(/runs on through 3 cusps/);
+});
+
 test("inversion reveal, pause/resume and edits preserve the original study", async ({
   page,
 }) => {
