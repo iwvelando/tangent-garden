@@ -7,6 +7,7 @@ import { composes, type SpatialConfig } from "./types";
 import { curveInputs } from "./inputs";
 import { shadowLegend } from "./shadow";
 import type { Pass } from "./scene";
+import { locatesEdges } from "./cuspidal";
 
 export type SpatialLegendEntry = {
   layer: Pass["layer"];
@@ -45,7 +46,10 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
       { layer: "surface", swatch: "surface-dot", label: "Surface" },
       { layer: "focal1", swatch: "focal-dot", label: "Focal sheet 1" },
       { layer: "focal2", swatch: "focal-dot second", label: "Focal sheet 2" },
-      ...(c.surface.edges && c.surface.offset !== 0
+      ...(c.surface.ridges
+        ? [{ layer: "ridges", swatch: "ridge-dot", label: "Ridges" } as const]
+        : []),
+      ...(locatesEdges(c.surface)
         ? [
             {
               layer: "cusps",

@@ -102,5 +102,5 @@ Revisit these only if a study needs them:
 - In 2D only parameter tracks loop. In 4D a drift, support, route or latitude sweep cannot loop.
 - The SVG loop check falls back to a raster threshold of 10⁻⁴ of pixels, not a proof of identity.
 - A 3D closed curve run on by less than a period is refused for a loop even when its shape returns.
-- 3D surface, mirror and implicit studies use uniform grids. An offset's cuspidal edges can be located; a focal sheet's or a caustic's are not. The mirror and refraction studies have one interaction, no occlusion, and axis-aligned receiver planes only.
+- 3D surface, mirror and implicit studies use uniform grids. An offset's cuspidal edges and a focal sheet's, over the patch's ridges, can be located; a caustic's are not. The mirror and refraction studies have one interaction, no occlusion, and axis-aligned receiver planes only.
 - The 2D hairline is one CSS pixel (two device pixels on dense screens).

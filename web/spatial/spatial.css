@@ -276,6 +276,14 @@
 .dark .focal-dot.second {
   background: var(--second-focal-ink);
 }
+/* Ridges are drawn in their focal sheet's ink, the first's or the second's. */
+.ridge-dot {
+  background: linear-gradient(
+    90deg,
+    var(--focal-ink) 50%,
+    var(--second-focal-ink) 50%
+  );
+}
 /* The base curve under a derived input: palette.recede. */
 .parent-dot {
   background: var(--parent-ink);

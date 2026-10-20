@@ -53,6 +53,12 @@ const torus = "30",
   ellipsoid = "32",
   cylinder = "33";
 const note = (page: Page) => page.getByTestId("surface-note");
+// The far half of the ellipsoid (1.5, 1, 0.7), preset 32: the half
+// meridian x = 0 and the arc of y = 0 round the end of the long axis
+// between umbilics (κ₁), and the arcs of y = 0 from the umbilics to the
+// poles and the half equator (κ₂), none closed in the half.
+const RIDGES_NOTE =
+  "The patch has 5 ridges (2 of κ₁, 3 of κ₂), over which its focal sheets fold in cuspidal edges.";
 const layer = (page: Page, name: string) =>
   page.getByRole("checkbox", { name, exact: true });
 const count = (page: Page, name: string) =>
@@ -315,6 +321,135 @@ test("the cuspidal edges preset plays its sweep with its edges located", async (
   expect((await config(page)).surface.offset).toBe(-1.2);
 });
 
+// The far half of the ellipsoid (1.5, 1, 0.7). Its ridges are the arcs of
+// its principal sections in the half: the equator, the ellipse x = 0 split
+// by the poles, and the ellipse y = 0 broken at its umbilics. Over each,
+// its focal sheet folds in a gold cuspidal edge, and the ridge itself is
+// drawn on the surface in that sheet's ink. Ridges need no offset; with
+// the offset's edges located too, the note names both in gold.
+test("a surface's ridges are located on request, drawn and named", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, ellipsoid);
+  await settled(page);
+  expect((await config(page)).surface.offset).toBe(0);
+  const check = page.getByRole("checkbox", {
+    name: "Locate ridges",
+    exact: true,
+  });
+  const named = (name: string) =>
+    page.locator(`.legend [data-legend="${name}"]:not(.legend-off)`);
+  const explanation = page.locator(".bottom-note", {
+    hasText: "normals at the crossings",
+  });
+  await expect(check).not.toBeChecked();
+  await expect(note(page)).not.toContainText("ridge");
+  await expect(named("ridges")).toHaveCount(0);
+  await expect(layer(page, "Ridges")).toHaveCount(0);
+  await expect(layer(page, "Cuspidal edges")).toHaveCount(0);
+  const before = await pixels(page);
+  await check.check();
+  await settled(page);
+  expect((await config(page)).surface.ridges).toBe(true);
+  await expect(note(page)).toContainText(RIDGES_NOTE);
+  await expect(named("ridges")).toHaveText("Ridges");
+  await expect(named("cusps")).toHaveText("Cuspidal edges");
+  await expect(explanation).toContainText(
+    "Gold curves are the focal sheets' cuspidal edges. Each ridge, where a principal curvature is extremal along its own line of curvature, is drawn on the surface in its focal sheet's color.",
+  );
+  // The note names the edges' color in the scheme they are drawn in.
+  await chooseColorScheme(page, "forest");
+  await expect(explanation).toContainText(
+    "Berry curves are the focal sheets' cuspidal edges.",
+  );
+  await chooseColorScheme(page, "default");
+  const located = await pixels(page);
+  expect(located).not.toBe(before);
+  // Each layer draws something of its own; hidden together they leave
+  // exactly the drawing they were added to.
+  for (const name of ["Ridges", "Cuspidal edges"]) {
+    await layer(page, name).uncheck();
+    expect(await pixels(page)).not.toBe(located);
+    await layer(page, name).check();
+    expect(await pixels(page)).toBe(located);
+  }
+  await layer(page, "Ridges").uncheck();
+  await layer(page, "Cuspidal edges").uncheck();
+  expect(await pixels(page)).toBe(before);
+  await expect(named("ridges")).toHaveCount(0);
+  await layer(page, "Ridges").check();
+  await layer(page, "Cuspidal edges").check();
+  // With the offset's edges too, gold names both.
+  await field(page, "Offset d").fill("-0.6");
+  await settled(page);
+  await page
+    .getByRole("checkbox", { name: "Locate cuspidal edges", exact: true })
+    .check();
+  await settled(page);
+  await expect(explanation).toContainText(
+    "Gold curves are the offset's and the focal sheets' cuspidal edges.",
+  );
+  await expect(note(page)).toContainText(RIDGES_NOTE);
+  // Unchecked, the field is dropped, as in links made before it, and the
+  // offset's edges remain.
+  await check.uncheck();
+  await settled(page);
+  expect("ridges" in (await config(page)).surface).toBe(false);
+  await expect(note(page)).not.toContainText("ridge");
+  await expect(explanation).toContainText(
+    "Gold curves are the offset's cuspidal edges.",
+  );
+  await expect(layer(page, "Ridges")).toHaveCount(0);
+});
+
+// The preset plays its own sweep of b with its ridges located: each frame
+// is the study at its own b, with its own ridges and edges, which the
+// frame draws and hiding their layers takes away.
+test("the ridges preset plays its sweep with its ridges located", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "The ridges of an ellipsoid" });
+  await settled(page);
+  expect((await config(page)).surface.ridges).toBe(true);
+  await expect(note(page)).toContainText(
+    "The patch has 9 ridges (4 of κ₁, 5 of κ₂), 1 closed, over which its focal sheets fold in cuspidal edges.",
+  );
+  const opening = await pixels(page);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "parameters");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const frames: string[] = [];
+  // Out to b = 0.85 as the sweep turns back half way, then home.
+  for (const [time, b] of [
+    ["0.5", 0.85],
+    ["0", 1.25],
+  ] as const) {
+    await slider.fill(time);
+    await expect(stage(page)).toHaveAttribute("data-time", time);
+    await settled(page);
+    expect((await config(page)).surface).toMatchObject({ b, ridges: true });
+    const drawn = await pixels(page);
+    for (const name of ["Ridges", "Cuspidal edges"]) {
+      await layer(page, name).uncheck();
+      expect(await pixels(page)).not.toBe(drawn);
+      await layer(page, name).check();
+      expect(await pixels(page)).toBe(drawn);
+    }
+    frames.push(drawn);
+  }
+  expect(frames[0]).not.toBe(frames[1]);
+  expect(frames[1]).toBe(opening);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect((await config(page)).surface.b).toBe(1.25);
+});
+
 test("surface reveal, pause, resume and edits invalidate stale playback", async ({
   page,
 }) => {
@@ -514,6 +649,65 @@ test("surface reveal grows every sheet along u with its edges and lines", () => 
 // an open edge across rows 0 to 2. Revealed through row 1 the loop, whose
 // points all stand at or before it, stays closed; the open edge keeps its
 // first two points, and an edge split at a row is no longer closed.
+// A ridge is revealed as an edge is, its feet split with its points.
+test("surface reveal grows a ridge's feet with its points", () => {
+  const at = (x: number, z = 0): Vec3 => ({ x, y: 0, z });
+  const ridge: CuspidalEdge = {
+    branch: 2,
+    closed: false,
+    points: [at(0, 3), at(1, 3), at(2, 3)],
+    i: [0, 1, 2],
+    j: [1, 1, 1],
+    feet: [at(0), at(1), at(2)],
+  };
+  const sheet: SurfaceSheet = {
+    points: [0, 1, 2].map((i) => [at(i), at(i, 1)]),
+    normals: [0, 1, 2].map(() => [null, null]),
+    alongU: [
+      [true, true],
+      [true, true],
+    ],
+    alongV: [[true], [true], [true]],
+    faces: [[true], [true]],
+  };
+  const input: SpatialResult = {
+    base: [],
+    minus: [],
+    plus: [],
+    mesh: curveMesh(),
+    rulings: [],
+    breaks: [],
+    bounds: { center: at(0), radius: 4 },
+    radius: 4,
+    invalid: 0,
+    omitted: 0,
+    surface: {
+      surface: sheet,
+      offset: null,
+      focal: [],
+      lines: [],
+      uCurves: [],
+      vCurves: [],
+      singular: 0,
+      umbilics: 0,
+      folded: 0,
+      ridges: [ridge],
+    },
+  };
+  const revealed = reveal(input, 0.5).surface!;
+  expect(revealed.ridges).toEqual([
+    {
+      ...ridge,
+      points: ridge.points.slice(0, 2),
+      i: [0, 1],
+      j: [1, 1],
+      feet: [at(0), at(1)],
+    },
+  ]);
+  expect("edges" in revealed).toBe(false);
+  expect(reveal(input, 1).surface!.ridges).toEqual([ridge]);
+});
+
 test("surface reveal grows an offset's cuspidal edges along u", () => {
   const at = (x: number, z = 0): Vec3 => ({ x, y: 0, z });
   const loop: CuspidalEdge = {
@@ -681,6 +875,71 @@ test("an offset's cuspidal edges draw in their own layer, closed loops closed", 
     cusps(result([edge(true)]), { ...defaultLayers, cusps: false }),
   ).toEqual([]);
   expect(sceneLayers(buildScene(result([edge(true)]))).has("cusps")).toBe(true);
+});
+
+// Ridges' passes: each ridge on the surface, through its feet, in its focal
+// sheet's ink (rust 5 for κ₁, slate 6 for κ₂), and the sheets' cuspidal
+// edges over them, through their points, in the edges' gold pass; none
+// without ridges.
+test("ridges draw on the surface in their sheet's ink, their edges in gold", () => {
+  const at = (x: number, y: number, z = 0): Vec3 => ({ x, y, z });
+  const result = (ridges?: CuspidalEdge[]): SpatialResult => ({
+    base: [],
+    minus: [],
+    plus: [],
+    mesh: curveMesh(),
+    rulings: [],
+    breaks: [],
+    bounds: { center: at(0, 0), radius: 1 },
+    radius: 1,
+    invalid: 0,
+    omitted: 0,
+    surface: {
+      surface: { points: [], normals: [], alongU: [], alongV: [], faces: [] },
+      offset: null,
+      focal: [],
+      lines: [],
+      uCurves: [],
+      vCurves: [],
+      singular: 0,
+      umbilics: 0,
+      folded: 0,
+      ...(ridges && { ridges }),
+    },
+  });
+  const ridge = (branch: 1 | 2, closed: boolean): CuspidalEdge => ({
+    branch,
+    closed,
+    points: [at(0, 0, branch), at(1, 0, branch), at(1, 1, branch)],
+    i: [0, 1, 1],
+    j: [0, 0, 1],
+    feet: [at(0, 0, -branch), at(1, 0, -branch), at(1, 1, -branch)],
+  });
+  const passes = (r: SpatialResult, layer: string, layers = defaultLayers) =>
+    scenePasses(buildScene(r), layers).filter((p) => p.layer === layer);
+  for (const r of [result(), result([])]) {
+    expect(passes(r, "ridges")).toEqual([]);
+    expect(passes(r, "cusps")).toEqual([]);
+  }
+  const r = result([ridge(1, false), ridge(2, true)]);
+  const ridges = passes(r, "ridges");
+  expect(ridges.map((p) => [p.batch.ink, p.batch.mode, p.sheet])).toEqual([
+    [5, "lines", false],
+    [6, "lines", false],
+  ]);
+  // Seven floats a vertex: z is the third, rebased on the bounds' center.
+  const zs = (data: ArrayLike<number>) =>
+    Array.from(data).filter((_, k) => k % 7 === 2);
+  expect(ridges[0].batch.data.length).toBe(2 * 2 * 7);
+  expect(new Set(zs(ridges[0].batch.data))).toEqual(new Set([-1]));
+  expect(ridges[1].batch.data.length).toBe(3 * 2 * 7);
+  expect(new Set(zs(ridges[1].batch.data))).toEqual(new Set([-2]));
+  const [gold] = passes(r, "cusps");
+  expect(gold.batch.ink).toBe(2);
+  expect(gold.batch.data.length).toBe((2 + 3) * 2 * 7);
+  expect(new Set(zs(gold.batch.data))).toEqual(new Set([1, 2]));
+  expect(passes(r, "ridges", { ...defaultLayers, ridges: false })).toEqual([]);
+  expect(sceneLayers(buildScene(r)).has("ridges")).toBe(true);
 });
 
 test("surface tracks move the shape, chart, offset, reach and grid only", () => {

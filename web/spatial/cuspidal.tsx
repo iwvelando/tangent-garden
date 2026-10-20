@@ -1,6 +1,22 @@
 import { HelpText, HelpToggle, useHelp } from "../Field";
-import { tiered } from "../help";
-import type { SurfaceResult } from "./types";
+import { tiered, type Help } from "../help";
+import type { SurfaceConfig, SurfaceResult } from "./types";
+
+// Whether a surface study locates cuspidal edges, on its offset or over its
+// ridges.
+const offsetEdges = (s: SurfaceConfig) => !!s.edges && s.offset !== 0;
+export const locatesEdges = (s: SurfaceConfig) => offsetEdges(s) || !!s.ridges;
+
+// The sentence naming whose cuspidal edges are drawn in gold, if any.
+export function goldEdges(s: SurfaceConfig) {
+  const whose = [
+    offsetEdges(s) && "the offset's",
+    s.ridges && "the focal sheets'",
+  ].filter(Boolean);
+  return whose.length
+    ? ` Gold curves are ${whose.join(" and ")} cuspidal edges.`
+    : "";
+}
 
 // Locating an offset's cuspidal edges (`surface.edges`). Absent means off,
 // as in links made before it.
@@ -9,15 +25,24 @@ export const edgesHelp = tiered(
   "Each point is found between samples on the patch itself, where a grid edge crosses the curve; a loop within one cell is missed. An edge stops beside a chart singularity, and crosses a seam where the patch closes on itself.",
 );
 
-// The checkbox and its help. Unchecking drops the field, so the link is the
+// Locating the patch's ridges and the focal sheets' cuspidal edges over
+// them (`surface.ridges`). Absent means off, as in links made before it.
+export const ridgesHelp = tiered(
+  "Draws ridges, where κᵢ is extremal along its line of curvature, and the focal sheets' cuspidal edges above them.",
+  "Each point is found between samples on the patch itself, where a grid edge crosses a ridge; a loop within one cell is missed. A ridge stops beside a chart singularity, near an umbilic, and where its center lies beyond 100 surface radii. A sheet that collapses to a curve or a point has none.",
+);
+
+type CheckProps = { checked: boolean; onChange: (on: boolean) => void };
+
+// A checkbox and its help. Unchecking drops the field, so the link is the
 // one made before the setting existed.
-export function CuspidalEdgesCheck({
+function LocateCheck({
+  label,
+  topic,
+  text,
   checked,
   onChange,
-}: {
-  checked: boolean;
-  onChange: (on: boolean) => void;
-}) {
+}: CheckProps & { label: string; topic: string; text: Help }) {
   const help = useHelp();
   return (
     <>
@@ -28,14 +53,32 @@ export function CuspidalEdgesCheck({
             checked={checked}
             onChange={(e) => onChange(e.target.checked)}
           />
-          Locate cuspidal edges
+          {label}
         </label>
-        <HelpToggle topic="locating cuspidal edges" help={help} />
+        <HelpToggle topic={topic} help={help} />
       </div>
-      <HelpText help={help}>{edgesHelp}</HelpText>
+      <HelpText help={help}>{text}</HelpText>
     </>
   );
 }
+
+export const CuspidalEdgesCheck = (props: CheckProps) => (
+  <LocateCheck
+    label="Locate cuspidal edges"
+    topic="locating cuspidal edges"
+    text={edgesHelp}
+    {...props}
+  />
+);
+
+export const RidgesCheck = (props: CheckProps) => (
+  <LocateCheck
+    label="Locate ridges"
+    topic="locating ridges"
+    text={ridgesHelp}
+    {...props}
+  />
+);
 
 const count = (n: number, one: string, many: string) =>
   `${n.toLocaleString()} ${n === 1 ? one : many}`;
@@ -62,5 +105,24 @@ export function edgesNote(s: SurfaceResult): string[] {
           ? `, ${count(closed, "closed", "closed")}`
           : ""
     }, where it touches the focal sheet.`,
+  ];
+}
+
+// How many ridges the patch has, on which branches, and how many close.
+export function ridgesNote(s: SurfaceResult): string[] {
+  if (!s.ridges) return [];
+  if (s.ridges.length === 0)
+    return [
+      "No ridge was found: neither focal sheet folds along a cuspidal edge.",
+    ];
+  const on = ([1, 2] as const)
+    .map((b) => [b, s.ridges!.filter((e) => e.branch === b).length] as const)
+    .filter(([, n]) => n > 0)
+    .map(([b, n]) => `${n.toLocaleString()} of κ${b === 1 ? "₁" : "₂"}`);
+  const closed = s.ridges.filter((e) => e.closed).length;
+  return [
+    `The patch has ${count(s.ridges.length, "ridge", "ridges")} (${on.join(", ")})${
+      closed > 0 ? `, ${count(closed, "closed", "closed")}` : ""
+    }, over which its focal sheets fold in cuspidal edges.`,
   ];
 }

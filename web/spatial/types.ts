@@ -138,8 +138,9 @@ export const maxSpatialPursuers = 16;
 // opposite when `reverse` is set; the shape operator is −dn, so κ > 0 where
 // the surface bends toward n. The offset is X + offset·n (none at 0), and
 // each normal line runs from X to X + reach·n. With `edges` the offset's
-// cuspidal edges are located and drawn; absent means off, as in links made
-// before it. Mirrors engine3.SurfaceRequest.
+// cuspidal edges are located and drawn, and with `ridges` the patch's
+// ridges and the focal sheets' cuspidal edges over them; absent means off,
+// as in links made before them. Mirrors engine3.SurfaceRequest.
 export type SurfaceKind =
   "ellipsoid" | "torus" | "cylinder" | "paraboloid" | "monkey";
 export type SurfaceConfig = {
@@ -158,6 +159,7 @@ export type SurfaceConfig = {
   offset: number;
   reach: number;
   edges?: boolean;
+  ridges?: boolean;
 };
 export const maxSurfaceCells = 14400;
 export const maxSurfaceCurves = 48;
@@ -883,17 +885,21 @@ export type SurfaceResult = {
   umbilics: number;
   folded: number;
   edges?: CuspidalEdge[];
+  ridges?: CuspidalEdge[];
 };
 // Mirrors engine3.CuspidalEdge: a curve on the offset where 1 − dκᵢ = 0,
-// along which it folds and meets focal sheet `branch`, each point at its
-// place (i, j) on the parameter grid in sample steps; a closed edge
-// returns to its first point.
+// along which it folds and meets focal sheet `branch`, or a curve along
+// which focal sheet `branch` folds, over a ridge of the patch, where κᵢ is
+// stationary along its own line of curvature: the ridge's points are then
+// its `feet`. Each point is at its place (i, j) on the parameter grid in
+// sample steps; a closed edge returns to its first point.
 export type CuspidalEdge = {
   branch: 1 | 2;
   closed: boolean;
   points: Vec3[];
   i: number[];
   j: number[];
+  feet?: Vec3[];
 };
 // Mirrors engine3.CausticSheet: the real (μ > 0, ahead of the surface) or
 // virtual (μ < 0, behind it) part of caustic branch 1 or 2, the points X +

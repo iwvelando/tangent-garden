@@ -306,6 +306,7 @@ const config: SchemaOf<SpatialConfig> = {
         offset: "number",
         reach: "number",
         edges: { optional: "boolean" },
+        ridges: { optional: "boolean" },
       },
     },
     rays: {

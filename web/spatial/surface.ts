@@ -1,4 +1,4 @@
-import { edgesNote } from "./cuspidal";
+import { edgesNote, ridgesNote } from "./cuspidal";
 import type {
   FocalShape,
   SurfaceConfig,
@@ -128,5 +128,6 @@ export function surfaceNote(s: SurfaceResult): string[] {
         ]
       : []),
     ...edgesNote(s),
+    ...ridgesNote(s),
   ];
 }

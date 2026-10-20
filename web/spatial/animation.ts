@@ -881,8 +881,8 @@ function revealImplicit(
     sections,
   };
 }
-// An offset's cuspidal edges through row `last`: each is split where it
-// runs past the row, and an edge that is split is no longer closed.
+// Cuspidal edges or ridges through row `last`: each is split where it runs
+// past the row, and an edge that is split is no longer closed.
 function revealEdges(edges: CuspidalEdge[], last: number): CuspidalEdge[] {
   return edges.flatMap((e) => {
     if (e.i.every((i) => i <= last)) return [e];
@@ -898,6 +898,7 @@ function revealEdges(edges: CuspidalEdge[], last: number): CuspidalEdge[] {
           points: run.map((k) => e.points[k]),
           i: run.map((k) => e.i[k]),
           j: run.map((k) => e.j[k]),
+          ...(e.feet && { feet: run.map((k) => e.feet![k]) }),
         });
       run = [];
     };
@@ -933,6 +934,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       surface: revealSheet(s.surface, last),
       offset: s.offset && revealSheet(s.offset, last),
       ...(s.edges && { edges: revealEdges(s.edges, last) }),
+      ...(s.ridges && { ridges: revealEdges(s.ridges, last) }),
       focal: s.focal.map((f) => revealSheet(f, last)),
       lines: s.lines.filter((l) => l.i <= last),
     };

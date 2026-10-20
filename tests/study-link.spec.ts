@@ -612,6 +612,7 @@ test("3D and 4D fields are refused by name", async () => {
     ["config.implicit.refine", (s) => (s.config.implicit.refine = "2")],
     ["config.rays.stop", (s) => (s.config.rays.stop = 1)],
     ["config.surface.edges", (s) => (s.config.surface.edges = "on")],
+    ["config.surface.ridges", (s) => (s.config.surface.ridges = 1)],
     ["view.pitch", (s) => (s.view.pitch = 2)],
     ["view.zoom", (s) => (s.view.zoom = 1001)],
     ["probe.position", (s) => (s.probe.position = 1.5)],
@@ -711,6 +712,13 @@ test("fields a link predates take the notebook's defaults", async () => {
   assert.equal(spatialStudy(folding).config.surface.edges, true);
   delete folding.config.surface.edges;
   assert.equal("edges" in spatialStudy(folding).config.surface, false);
+  // A surface drawn before its ridges were located has none.
+  const ridged = spatial(
+    spatialPresets.findIndex((p) => p.config.surface.ridges),
+  ) as any;
+  assert.equal(spatialStudy(ridged).config.surface.ridges, true);
+  delete ridged.config.surface.ridges;
+  assert.equal("ridges" in spatialStudy(ridged).config.surface, false);
 
   // A 4D object's own parameters come from that object's defaults.
   const lift = tesseractPresets.findIndex((p) => p.config.object === "lift");

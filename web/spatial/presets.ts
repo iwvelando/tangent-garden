@@ -5075,4 +5075,61 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // The ellipsoid (1.5, b, 0.7), whole, with its ridges located: where a
+  // principal curvature is extremal along its own line of curvature. They
+  // are its three principal sections, in its planes of symmetry: the
+  // equator and the ellipse x = 0 (split by the poles) whole, and the
+  // ellipse y = 0 broken at the four umbilics it holds, where its ridge
+  // passes from κ₂ (toward the poles) to κ₁ (round the ends of the long
+  // axis). Over each ridge its focal sheet folds back in a gold cuspidal
+  // edge, which lies in the same plane. Both sheets and the shell are seen
+  // through. As b sweeps from 1.25 to 0.85 the umbilics slide down from
+  // near the poles toward the ends of the long axis, the κ₂ arcs of y = 0
+  // lengthen as the κ₁ arcs shorten, and the first sheet stretches into a
+  // tall spindle whose rim is the fold over the ridge x = 0.
+  {
+    name: "The ridges of an ellipsoid",
+    detail:
+      "Where a curvature is extremal along its own line, the sheet of centers above folds back in a cuspidal edge",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1.25,
+        c: 0.7,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 96,
+        vSamples: 96,
+        curves: 12,
+        offset: 0,
+        reach: 0,
+        ridges: true,
+      },
+    },
+    layers: { curves: false },
+    view: { ...initialView, zoom: 1.2, panX: 0, panY: 0 },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "1.25", to: "0.85" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];
