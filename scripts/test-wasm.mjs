@@ -1676,6 +1676,40 @@ for (const construction of ["tangent-foot", "orthotomic"]) {
   for (const axis of ["x", "y", "z"])
     assert.ok(Math.abs(q.projection.points[240][axis] - want[axis]) < 1e-9);
 }
+// Inverted in the sphere of center (0, 1, 1) and radius 2, the tangent-foot
+// curve runs on through the cusp too: the image is joined there, its source
+// is the limit foot p = (0.5, 0, 0), and the image is that foot's,
+// J = O + R²(p − O)/|p − O|² = (0, 1, 1) + (16/9)(0.5, −1, −1).
+{
+  const q = spatialResult(
+    tangentGardenSpatial(
+      JSON.stringify({
+        format: "parametric",
+        construction: "inversion",
+        pole: { x: 0.5, y: 0.5, z: 0.3 },
+        inversion: {
+          center: { x: 0, y: 1, z: 1 },
+          radius: 2,
+          input: "tangent-foot",
+        },
+        curve: { x: "t^2", y: "t^3", z: "0", min: -1, max: 1, a: 1 },
+        samples: 480,
+        lines: 24,
+      }),
+    ),
+  );
+  assert.equal(q.base[240], null);
+  assert.ok(q.breaks[240] && q.breaks[241]);
+  assert.equal(q.inversion.crossed, 1);
+  assert.equal(q.inversion.crossings, 0);
+  assert.ok(q.inversion.breaks.every((b) => !b));
+  const source = { x: 0.5, y: 0, z: 0 };
+  const image = { x: 8 / 9, y: 1 - 16 / 9, z: 1 - 16 / 9 };
+  for (const axis of ["x", "y", "z"]) {
+    assert.ok(Math.abs(q.inversion.source[240][axis] - source[axis]) < 1e-9);
+    assert.ok(Math.abs(q.inversion.points[240][axis] - image[axis]) < 1e-9);
+  }
+}
 console.log("WASM spatial projections across a base cusp passed");
 // Sphere inversion: a circle through the center becomes the line x = R²/2,
 // broken once where the source passes through the center between samples.

@@ -484,9 +484,9 @@ func compute(c Request) (Result, error) {
 		disconnected = disconnected || composed && baseBreaks[i+1] && !crosses
 		out.Breaks[i+1] = disconnected
 	}
-	// A projection joins across the cusps of the base that its tangent
-	// line continues through.
-	if projection {
+	// A projection, and the inversion of one, joins across the cusps of the
+	// base that its tangent line continues through.
+	if projection || inversion && c.Inversion.Input != "base" {
 		crossing = c.units.crossings(evaluate, out.Breaks, lo, hi, closed)
 	}
 	// Refinement breaks the intervals where it finds the curve stopping or
@@ -772,7 +772,7 @@ func compute(c Request) (Result, error) {
 		return out, nil
 	}
 	if inversion {
-		q := inversions(c, evaluate, lo, hi, out.Base, tangents, out.Breaks)
+		q := inversions(c, evaluate, lo, hi, out.Base, tangents, out.Breaks, crossing)
 		out.probing.highlight(func(_ float64, r, tangent Vec3, at *ProbePoint) {
 			if source := pointAt(c.Inversion.source(c.Pole, r, tangent)); source != nil {
 				at.Source, at.Image = source, pointAt(invert(q.Center, q.Radius, *source))
@@ -781,19 +781,19 @@ func compute(c Request) (Result, error) {
 		if out.Adaptive != nil {
 			// Refinement decides each passage through the center in place of
 			// the uniform midpoint test.
-			q.Breaks, q.Crossings = append([]bool(nil), out.Breaks...), 0
+			q.Breaks, q.Crossings = q.join(crossing, out.Breaks), 0
 			var broken []int
 			out.Adaptive.Image, broken = c.refine(q.Points, q.Breaks, func(t float64) Vec3 {
-				r, v, _, ok := evaluate(t)
-				if !ok || !r.valid() || !v.valid() || c.units.still(v) {
+				s, ok := c.Inversion.along(c, evaluate, t)
+				if !ok {
 					return Vec3{math.NaN(), 0, 0}
 				}
-				return invert(q.Center, q.Radius, c.Inversion.source(c.Pole, r, v.unit()))
+				return invert(q.Center, q.Radius, s)
 			}, lo, hi)
 			for _, i := range broken {
 				q.Breaks[i+1] = true
 			}
-			q.Crossings = len(broken)
+			q.Crossings, q.Crossed = len(broken), crossed(crossing, q.Breaks)
 		}
 		out.Inversion = q
 		out.Minus, out.Plus = []*Vec3{}, []*Vec3{}

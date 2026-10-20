@@ -208,6 +208,15 @@ function SamplingNote({
     </div>
   );
 }
+// A tangent projection, and its inversion, run on through the base's cusps.
+function CrossedNote({ cusps }: { cusps: number }) {
+  return (
+    <p className="bottom-note crossed-note">
+      The image runs on through {cusps === 1 ? "a cusp" : `${cusps} cusps`} of
+      the curve, where the tangent line continues along r″.
+    </p>
+  );
+}
 export default function SpatialApp({
   active = true,
   shared,
@@ -2430,19 +2439,24 @@ export default function SpatialApp({
       }
       note="Each segment joins a point to its image; both lie on one ray from the center O. Three great circles mark the sphere."
       diagnostics={
-        shown &&
-        (shown.result.invalid > 0 ||
-          (inverted?.invalid ?? 0) > 0 ||
-          (inverted?.crossings ?? 0) > 0 ||
-          inverted?.collapsed) && (
-          <p className="bottom-note">
-            {shown.result.invalid} invalid base samples ·{" "}
-            {inverted?.invalid ?? 0} points without a finite image ·{" "}
-            {inverted?.crossings ?? 0} passages through the center. The image
-            leaves through infinity there, so it is never joined across.
-            {inverted?.collapsed &&
-              " The image collapses to a point, shown as a cross."}
-          </p>
+        shown && (
+          <>
+            {(shown.result.invalid > 0 ||
+              (inverted?.invalid ?? 0) > 0 ||
+              (inverted?.crossings ?? 0) > 0 ||
+              inverted?.collapsed) && (
+              <p className="bottom-note">
+                {shown.result.invalid} invalid base samples ·{" "}
+                {inverted?.invalid ?? 0} points without a finite image ·{" "}
+                {inverted?.crossings ?? 0} passages through the center. The
+                image leaves through infinity there, so it is never joined
+                across.
+                {inverted?.collapsed &&
+                  " The image collapses to a point, shown as a cross."}
+              </p>
+            )}
+            {!!inverted?.crossed && <CrossedNote cusps={inverted.crossed} />}
+          </>
         )
       }
     >
@@ -2491,13 +2505,7 @@ export default function SpatialApp({
               </p>
             )}
             {!!shown.result.projection?.crossed && (
-              <p className="bottom-note crossed-note">
-                The image runs on through{" "}
-                {shown.result.projection.crossed === 1
-                  ? "a cusp"
-                  : `${shown.result.projection.crossed} cusps`}{" "}
-                of the curve, where the tangent line continues along r″.
-              </p>
+              <CrossedNote cusps={shown.result.projection.crossed} />
             )}
           </>
         )

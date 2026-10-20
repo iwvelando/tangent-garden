@@ -233,3 +233,161 @@ func TestTubeOnOrthotomicCrossesCusps(t *testing.T) {
 		}
 	}
 }
+
+// invertedDeltoid inverts a projection of the lifted deltoid in a sphere
+// whose center the projection misses.
+func invertedDeltoid(kind string) Request {
+	c := liftedDeltoid()
+	c.Construction, c.Pole = "inversion", Vec3{0.4, -0.3, 1.1}
+	c.Inversion = InversionRequest{Center: Vec3{0.3, 0.2, -0.8}, Radius: 1.5, Input: kind}
+	return c
+}
+
+// Inversion is continuous wherever its center is not, so the inverted
+// projection runs on through the base's cusps as the projection does,
+// through the image of the foot on the limiting line along r″(t₀), while
+// the base stays broken.
+func TestInvertedProjectionCrossesBaseCusps(t *testing.T) {
+	for _, kind := range []string{"tangent-foot", "orthotomic"} {
+		c := invertedDeltoid(kind)
+		r := inverted(t, c)
+		q := r.Inversion
+		if q.Crossed != 3 || q.Crossings != 0 || q.Invalid != 0 {
+			t.Fatalf("%s: crossed %d cusps, %d passages, %d invalid", kind, q.Crossed, q.Crossings, q.Invalid)
+		}
+		step := 2 * math.Pi / float64(c.Samples)
+		for k := 0; k < 3; k++ {
+			t0 := 2 * math.Pi * float64(k) / 3
+			i := int((t0 + 1) / step)
+			if !r.Breaks[i+1] {
+				t.Fatalf("%s: the base is joined across its cusp at %g", kind, t0)
+			}
+			if q.Breaks[i+1] || q.Points[i] == nil || q.Points[i+1] == nil {
+				t.Fatalf("%s: the image is broken at the cusp %g", kind, t0)
+			}
+			at, line := deltoidCusp(t0)
+			limit := invert(c.Inversion.Center, c.Inversion.Radius, project(kind, c.Pole, at, line))
+			// The image's chord between the samples beside t₀ passes within
+			// its sag of the limit, as the projection's does, enlarged by
+			// R²/|p − O|², under 2 at these cusps.
+			if d := segmentDistance(limit, *q.Points[i], *q.Points[i+1]); d > 4e-3 {
+				t.Fatalf("%s: the joined chord misses the limit at %g by %g", kind, t0, d)
+			}
+		}
+		for i, b := range q.Breaks {
+			if b {
+				t.Fatalf("%s: the image is broken at %d", kind, i)
+			}
+		}
+	}
+}
+
+// The inverted base has no tangent line to continue: it stays broken at
+// every cusp, with nothing crossed. Joined there, its image would turn
+// back as the base does, and pass for a passage through the center.
+func TestInvertedBaseKeepsItsCuspsBroken(t *testing.T) {
+	c := invertedDeltoid("base")
+	q := inverted(t, c).Inversion
+	if q.Crossed != 0 || q.Crossings != 0 || len(breaks(q.Breaks)) != 3 {
+		t.Fatalf("crossed %d, %d passages, breaks %v", q.Crossed, q.Crossings, breaks(q.Breaks))
+	}
+}
+
+// A cusp on a sample: the source there is the foot on the limiting line,
+// (0.5, 0, 0) for the semicubical parabola (t², t³, 0), and its image is
+// that foot's.
+func TestInvertedProjectionAtACuspSample(t *testing.T) {
+	c := custom("t^2", "t^3", "0", -1, 1)
+	c.Construction, c.Pole = "inversion", Vec3{0.5, 0.5, 0.3}
+	c.Inversion = InversionRequest{Center: Vec3{0, 1, 1}, Radius: 2, Input: "tangent-foot"}
+	r := inverted(t, c)
+	q := r.Inversion
+	if r.Base[240] != nil || q.Crossed != 1 || q.Breaks[240] || q.Breaks[241] {
+		t.Fatalf("base %v, crossed %d, breaks %v", r.Base[240], q.Crossed, breaks(q.Breaks))
+	}
+	near(t, q.Source[240], Vec3{0.5, 0, 0}, 1e-9)
+	near(t, q.Points[240], invert(c.Inversion.Center, 2, Vec3{0.5, 0, 0}), 1e-9)
+	// With the center on that foot, the cusp's image is undefined: counted
+	// as invalid, and nothing is crossed.
+	c.Inversion.Center = Vec3{0.5, 0, 0}
+	q = inverted(t, c).Inversion
+	if q.Points[240] != nil || q.Source[240] == nil || q.Invalid != 1 || q.Crossed != 0 || !q.Breaks[240] || !q.Breaks[241] {
+		t.Fatalf("center on the limit foot: invalid %d, crossed %d, breaks %v", q.Invalid, q.Crossed, breaks(q.Breaks))
+	}
+}
+
+// A center on the projection at a cusp sends the image through infinity
+// there: the passage test breaks the crossed interval, counted as a
+// passage, and the other two cusps are still crossed.
+func TestAPassageAtACrossedCuspBreaks(t *testing.T) {
+	c := invertedDeltoid("tangent-foot")
+	at, line := deltoidCusp(0)
+	c.Inversion.Center = project("tangent-foot", c.Pole, at, line)
+	r := inverted(t, c)
+	q := r.Inversion
+	i := int(1 / (2 * math.Pi / float64(c.Samples)))
+	if q.Crossed != 2 || q.Crossings != 1 || !q.Breaks[i+1] || len(breaks(q.Breaks)) != 1 {
+		t.Fatalf("crossed %d, %d passages, breaks %v", q.Crossed, q.Crossings, breaks(q.Breaks))
+	}
+}
+
+// Refined between samples, the inverted projection runs on through the
+// cusps unbroken and passes each limit image.
+func TestRefinedInvertedProjectionCrossesBaseCusps(t *testing.T) {
+	c := invertedDeltoid("orthotomic")
+	c.Adaptive = true
+	r := inverted(t, c)
+	q, path := r.Inversion, r.Adaptive.Image
+	if q.Crossed != 3 || q.Crossings != 0 || path.Breaks != 0 {
+		t.Fatalf("crossed %d, %d passages, %d refined breaks", q.Crossed, q.Crossings, path.Breaks)
+	}
+	for k := 0; k < 3; k++ {
+		at, line := deltoidCusp(2 * math.Pi * float64(k) / 3)
+		limit := invert(c.Inversion.Center, c.Inversion.Radius, project("orthotomic", c.Pole, at, line))
+		best := math.Inf(1)
+		for j := 1; j < len(path.Points); j++ {
+			best = math.Min(best, segmentDistance(limit, *path.Points[j-1], *path.Points[j]))
+		}
+		if best > path.Tolerance {
+			t.Fatalf("the refined image misses the limit by %g, tolerance %g", best, path.Tolerance)
+		}
+	}
+}
+
+// A center 0.0055 from the foot at one cusp: the image swings out in a
+// loop about R²/d ≈ 400 across there, which the even samples' midpoint
+// test passes over, joining the cusp. Refined, it is decided between
+// samples instead, as a passage, and the cusp is no longer counted.
+func TestRefinementDecidesANearPassageAtACrossedCusp(t *testing.T) {
+	c := invertedDeltoid("tangent-foot")
+	at, line := deltoidCusp(0)
+	c.Inversion.Center = project("tangent-foot", c.Pole, at, line).add(Vec3{0, 0, 0.0055})
+	if q := inverted(t, c).Inversion; q.Crossed != 3 || q.Crossings != 0 {
+		t.Fatalf("crossed %d, %d passages", q.Crossed, q.Crossings)
+	}
+	c.Adaptive = true
+	r := inverted(t, c)
+	if q := r.Inversion; q.Crossed != 2 || q.Crossings != 1 || r.Adaptive.Image.Breaks != 1 {
+		t.Fatalf("refined: crossed %d, %d passages, %d refined breaks", q.Crossed, q.Crossings, r.Adaptive.Image.Breaks)
+	}
+}
+
+// With 479 intervals on [−π, π], the lifted deltoid's cusp at t = 0 is
+// the middle of an interval, where the passage test looks and where
+// refinement first divides it. As a harmonic curve its velocity there is
+// exactly zero, so both take the source on the line along r″, and the
+// image stays whole through all three cusps.
+func TestInversionAtACuspMidInterval(t *testing.T) {
+	for _, adaptive := range []bool{false, true} {
+		c := harmonicStudy(-math.Pi, math.Pi, Vec3{},
+			HarmonicTerm{1, Vec3{2, 0, 0}, Vec3{0, 2, 0}},
+			HarmonicTerm{2, Vec3{1, 0, 0}, Vec3{0, -1, 0}},
+			HarmonicTerm{3, Vec3{0, 0, 0.5}, Vec3{}})
+		c.Construction, c.Pole, c.Samples, c.Adaptive = "inversion", Vec3{0.4, -0.3, 1.1}, 479, adaptive
+		c.Inversion = InversionRequest{Center: Vec3{0.3, 0.2, -0.8}, Radius: 1.5, Input: "tangent-foot"}
+		r := inverted(t, c)
+		if q := r.Inversion; q.Crossed != 3 || q.Crossings != 0 || adaptive && r.Adaptive.Image.Breaks != 0 {
+			t.Fatalf("adaptive %v: crossed %d, %d passages", adaptive, q.Crossed, q.Crossings)
+		}
+	}
+}

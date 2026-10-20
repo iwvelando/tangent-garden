@@ -23,6 +23,8 @@ type InversionCorrespondence struct {
 // InversionResult shares the base's parameter indices. Breaks adds the
 // intervals whose source passes through the center (Crossings) to the base's
 // breaks: the image leaves through infinity there and must not be joined.
+// A projected source runs on through the base's cusps, as the projection
+// does (see crossing), and Crossed counts the cusps it joins.
 // Invalid counts finite source points without a finite image.
 type InversionResult struct {
 	Center          Vec3                      `json:"center"`
@@ -36,6 +38,7 @@ type InversionResult struct {
 	Collapsed       bool                      `json:"collapsed"`
 	Invalid         int                       `json:"invalid"`
 	Crossings       int                       `json:"crossings"`
+	Crossed         int                       `json:"crossed,omitempty"`
 }
 
 func invert(center Vec3, radius float64, p Vec3) Vec3 {
@@ -73,15 +76,46 @@ func (q InversionRequest) validate(pole Vec3) error {
 	return nil
 }
 
+// along is the source's point at t, with the base's tangent line in place
+// of its unit tangent for a projected source, so that it is defined at a
+// cusp of the base too (see units.line).
+func (q InversionRequest) along(c Request, evaluate evaluation, t float64) (Vec3, bool) {
+	r, v, a, ok := evaluate(t)
+	if !ok || !r.valid() {
+		return Vec3{}, false
+	}
+	if q.Input == "base" {
+		return r, v.valid() && !c.units.still(v)
+	}
+	line, defined := c.units.line(v, a)
+	return q.source(c.Pole, r, line), defined
+}
+
+// join is the base's breaks with the cusps of the base that a projected
+// source crosses joined (see crossings), where both images beside them
+// are defined.
+func (q *InversionResult) join(crossing map[int]float64, breaks []bool) []bool {
+	out := append([]bool(nil), breaks...)
+	for i := range crossing {
+		out[i+1] = q.Points[i] == nil || q.Points[i+1] == nil
+	}
+	return out
+}
+
 // inversions evaluates the source pointwise at every sample and interval
 // midpoint. Inversion reverses direction along a ray through the center, so
 // an image that turns back between a sample and the midpoint marks a passage
 // through the center; a near passage the samples cannot resolve is broken the
-// same way rather than joined with a chord.
-func inversions(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, tangents []Vec3, breaks []bool) *InversionResult {
+// same way rather than joined with a chord. A projected source is joined
+// across the base's cusps that crossing lists, and the passage test then
+// checks those intervals as well. A sample on such a cusp, where the base
+// has no tangent and keeps its gap, takes its source on the line along the
+// acceleration there.
+func inversions(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, tangents []Vec3, breaks []bool, crossing map[int]float64) *InversionResult {
 	q := c.Inversion
 	n := len(base) - 1
 	source := func(r, tangent Vec3) Vec3 { return q.source(c.Pole, r, tangent) }
+	at := func(i int) float64 { return lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n) }
 	out := &InversionResult{Center: q.Center, Radius: q.Radius, Input: q.Input, Source: make([]*Vec3, n+1), Points: make([]*Vec3, n+1), Breaks: append([]bool(nil), breaks...), Correspondences: make([]InversionCorrespondence, 0, c.Lines)}
 	if q.Input != "base" {
 		out.Pole = &c.Pole
@@ -112,13 +146,33 @@ func inversions(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, ta
 		collapsed = collapsed && j.sub(*first).norm() <= 1e-9*(q.Radius+j.sub(q.Center).norm())
 	}
 	out.Collapsed = collapsed && first != nil
+	for i := range crossing {
+		for _, j := range []int{i, i + 1} {
+			if base[j] != nil || out.Source[j] != nil {
+				continue
+			}
+			s, ok := q.along(c, evaluate, at(j))
+			if !ok || !s.valid() {
+				continue
+			}
+			out.Source[j] = &s
+			if image := invert(q.Center, q.Radius, s); image.valid() {
+				out.Points[j] = &image
+			} else {
+				out.Invalid++
+			}
+		}
+	}
+	if len(crossing) > 0 {
+		out.Breaks = out.join(crossing, breaks)
+	}
 	for i := 0; i < n; i++ {
 		a, b := out.Points[i], out.Points[i+1]
 		if a == nil || b == nil || out.Breaks[i+1] {
 			continue
 		}
-		r, v, _, ok := evaluate(lo + (hi-lo)*(float64(i)+0.5)/float64(n))
-		m := invert(q.Center, q.Radius, source(r, v.unit()))
+		s, ok := q.along(c, evaluate, lo+(hi-lo)*(float64(i)+0.5)/float64(n))
+		m := invert(q.Center, q.Radius, s)
 		crossed := !ok || !m.valid()
 		if !crossed {
 			before, after := m.sub(*a), b.sub(m)
@@ -131,6 +185,7 @@ func inversions(c Request, evaluate evaluation, lo, hi float64, base []*Vec3, ta
 			out.Crossings++
 		}
 	}
+	out.Crossed = crossed(crossing, out.Breaks)
 	for j := 0; j < c.Lines; j++ {
 		i := j * n / (c.Lines - 1)
 		if out.Points[i] != nil {

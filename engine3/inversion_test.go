@@ -25,13 +25,19 @@ func inverted(t *testing.T, c Request) Result {
 	if len(q.Points) != c.Samples+1 || len(q.Source) != c.Samples+1 || len(q.Breaks) != c.Samples+1 {
 		t.Fatal("inversion shape")
 	}
+	// Only a crossed cusp of the base joins a base break, one interval or,
+	// for a cusp on a sample, both beside it.
+	joined := 0
 	for i, p := range q.Points {
 		if p != nil && q.Source[i] == nil {
 			t.Fatal("image without a source point")
 		}
 		if r.Breaks[i] && !q.Breaks[i] {
-			t.Fatal("base break lost in the image")
+			joined++
 		}
+	}
+	if joined > 2*q.Crossed || q.Crossed > 0 && joined == 0 {
+		t.Fatalf("%d base breaks joined across %d crossed cusps", joined, q.Crossed)
 	}
 	return r
 }

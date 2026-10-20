@@ -588,7 +588,9 @@ export type ProjectionResult = {
 
 // Mirrors engine3.InversionResult. Points share base indices, but `breaks`
 // replaces the base's: it adds intervals whose source passes through the
-// center, where the image leaves through infinity.
+// center, where the image leaves through infinity, and joins a projected
+// source across the base's cusps, which `crossed`, present only then,
+// counts.
 export type InversionResult = {
   center: Vec3;
   radius: number;
@@ -602,6 +604,7 @@ export type InversionResult = {
   collapsed: boolean;
   invalid: number;
   crossings: number;
+  crossed?: number;
 };
 // Mirrors engine3.HarmonicPosition: joints[k] is where term k's vector
 // starts at base sample sampleIndex, and the last vector ends at point.

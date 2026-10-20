@@ -4769,4 +4769,54 @@ export const spatialPresets: {
       lines: 72,
     },
   },
+  // The lifted deltoid's tangent feet from its center, inverted in the
+  // sphere of radius 1.4 about (0, 0, −1.12), on the axis level with the
+  // feet at the three cusps, (0.84, 0, −1.12) and its turns by 2π/3. They
+  // lie within 2% of the feet's closest approach to the center, so their
+  // images lie out near the tips of three petals. Inversion is continuous
+  // away from its center, and the feet run on through the cusps, so each
+  // petal is whole through its cusp's image.
+  {
+    name: "Three petals from a deltoid's feet",
+    detail:
+      "A lifted deltoid's tangent feet inverted in a sphere: three petals, each running smoothly through a cusp's image",
+    layers: { vectors: false, ellipses: false },
+    view: { ...initialView, yaw: 0, pitch: 0.45 },
+    flight: revealInPlace,
+    config: {
+      ...base,
+      format: "harmonic",
+      construction: "inversion",
+      pole: { x: 0, y: 0, z: 0 },
+      inversion: {
+        center: { x: 0, y: 0, z: -1.12 },
+        radius: 1.4,
+        input: "tangent-foot",
+      },
+      harmonic: {
+        center: { x: 0, y: 0, z: 0 },
+        terms: [
+          {
+            frequency: 1,
+            cosine: { x: 2, y: 0, z: 0 },
+            sine: { x: 0, y: 2, z: 0 },
+          },
+          {
+            frequency: 2,
+            cosine: { x: 1, y: 0, z: 0 },
+            sine: { x: 0, y: -1, z: 0 },
+          },
+          {
+            frequency: 3,
+            cosine: { x: 0, y: 0, z: 0.5 },
+            sine: { x: 0, y: 0, z: 0 },
+          },
+        ],
+        min: -1,
+        max: 2 * Math.PI - 1,
+      },
+      samples: 1200,
+      lines: 48,
+    },
+  },
 ];
