@@ -313,6 +313,12 @@ const cases: Case[] = [
     "Index n₂",
   ],
   [
+    "shadow.at",
+    "A trefoil's feet and their shadow",
+    (c) => (c.shadow!.at = 2e5),
+    "Plane at c",
+  ],
+  [
     "rays.receiver.at",
     "A glass dome's ring of light",
     (c) => (c.rays.receiver.at = 2e5),

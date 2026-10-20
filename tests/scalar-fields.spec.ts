@@ -755,6 +755,26 @@ test("spatial coil input radius, angle and turns share the bounded scalar parser
   }
 });
 
+test("the shadow's plane shares the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await page.getByLabel("Shadow on", { exact: true }).selectOption("z");
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async () => (await spatialConfig(stage))?.shadow?.at;
+  await field(page, "Plane at c").fill("-pi");
+  await expect.poll(at).toBe(-Math.PI);
+  await expect(field(page, "Plane at c")).toHaveValue("-pi");
+  for (const variable of ["t", "x", "a"]) {
+    await field(page, "Plane at c").fill(variable);
+    await expect(page.getByRole("alert")).toBeVisible();
+  }
+  await field(page, "Plane at c").fill("-2*e");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect.poll(at).toBe(-2 * Math.E);
+});
+
 test("spatial inversion center, radius and derived pole share the bounded scalar parser", async ({
   page,
 }) => {

@@ -130,6 +130,8 @@ import {
   surfaceShape,
 } from "./surface";
 import { raysNote, receiverAxes } from "./rays";
+import { ShadowPanel } from "./ShadowPanel";
+import { casts, shadowNote, withShadowPlane } from "./shadow";
 import { defaultLayers, initialView, type Layers, type View } from "./renderer";
 import { lensAngles, projections, viewBasis, type Projection } from "./scene";
 import {
@@ -3364,6 +3366,36 @@ export default function SpatialApp({
                 </label>
               ))}
             </fieldset>
+          )}
+          {casts(config) && (
+            <ScalarStatus.Provider value={scalarStatus}>
+              <FieldErrorContext.Provider value={fieldError}>
+                <ShadowPanel
+                  config={config}
+                  onPlane={(plane) =>
+                    update((c) =>
+                      withShadowPlane(c, plane, frame?.result.bounds),
+                    )
+                  }
+                  onAt={(at) =>
+                    update((c) =>
+                      c.shadow ? { ...c, shadow: { ...c.shadow, at } } : c,
+                    )
+                  }
+                  layers={layers}
+                  onLayer={(key, on) => setLayers((s) => ({ ...s, [key]: on }))}
+                  note={
+                    shown?.config.shadow && shown.result.shadow
+                      ? shadowNote(
+                          shown.config,
+                          shown.result.shadow,
+                          theme.scheme,
+                        )
+                      : undefined
+                  }
+                />
+              </FieldErrorContext.Provider>
+            </ScalarStatus.Provider>
           )}
           <ScalarStatus.Provider value={scalarStatus}>
             <FieldErrorContext.Provider value={panelError}>

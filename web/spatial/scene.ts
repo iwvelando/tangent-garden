@@ -97,7 +97,10 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // as their own layers. An implicit surface draws its level set as the
 // surface; its section curves, the planes they lie on, and the box with the
 // edges where the box cuts the surface open and where it stops beside cells
-// left out (with crosses at poles and jumps) as their own layers. The base
+// left out (with crosses at poles and jumps) as their own layers. A curve
+// study's shadow on a plane draws the curve's shadow with the plane's
+// window, the 2D construction of that shadow, and the shadow of the study's
+// own construction, each as its own layer. The base
 // curve is always drawn. When a construction is built on a derived input
 // curve, that curve is drawn as the base, and the base curve itself is the
 // parent, with the projection's connectors and pole, or an involute's
@@ -139,6 +142,9 @@ export type Layers = {
   sections: boolean;
   planes: boolean;
   box: boolean;
+  shadow: boolean;
+  planar: boolean;
+  cast: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -177,6 +183,9 @@ export const defaultLayers: Layers = {
   sections: true,
   planes: true,
   box: true,
+  shadow: true,
+  planar: true,
+  cast: true,
 };
 
 // Each receiver bin as two flat triangles whose phase is its shade: the
@@ -1059,6 +1068,45 @@ export function buildScene(result: SpatialResult) {
     "lines",
     5,
   );
+  // The shadow on its plane, each path drawn from its refinement when the
+  // study has one: the curve's, in gray, inside the window's frame; the 2D construction of the shadow broad, in rust, and the
+  // shadow of the study's own construction thin, in slate, drawn after it,
+  // so where the two coincide a slate line runs down a rust one.
+  const shade = result.shadow;
+  const shadowCurve = path(
+    shade?.curve.points ?? [],
+    shade?.curve.breaks ?? [],
+    4,
+    shade?.adaptive?.curve,
+    1.3,
+  );
+  const shadowFrame = batch(
+    vertices(
+      shade ? shade.corners.flatMap((p, k, all) => [p, all[(k + 1) % 4]]) : [],
+    ),
+    "lines",
+    4,
+  );
+  const planar = batch(
+    vertices(
+      (shade?.planar ?? []).flatMap((p, k) =>
+        curve(p.points, p.breaks, shade!.adaptive?.planar?.[k]),
+      ),
+    ),
+    "lines",
+    5,
+    2.6,
+  );
+  const cast = batch(
+    vertices(
+      (shade?.cast ?? []).flatMap((p, k) =>
+        curve(p.points, p.breaks, shade!.adaptive?.cast?.[k]),
+      ),
+    ),
+    "lines",
+    6,
+    1,
+  );
   // Each connecting polygon closes, the last pursuer back to the first.
   const polygons = batch(
     vertices(
@@ -1121,6 +1169,10 @@ export function buildScene(result: SpatialResult) {
     cutLines,
     openLines,
     polygons,
+    shadowCurve,
+    shadowFrame,
+    planar,
+    cast,
   };
 }
 export type Scene = ReturnType<typeof buildScene>;
@@ -1168,6 +1220,13 @@ export function scenePasses(
   add("sections", layers.sections, false, s.sectionLines);
   add("planes", layers.planes, false, s.planeLines);
   add("box", layers.box, false, s.boxLines, s.cutLines, s.openLines);
+  // Only a study with a shadow has its passes: the widest stroke of all
+  // passes sets how far sheets are pushed back (sheetOffset), and the 2D
+  // construction's broad stroke must not move another study's sheets.
+  const shadowed = s.shadowFrame.data.length > 0;
+  add("shadow", shadowed && layers.shadow, false, s.shadowFrame, s.shadowCurve);
+  add("planar", shadowed && layers.planar, false, s.planar);
+  add("cast", shadowed && layers.cast, false, s.cast);
   add("virtual", layers.virtual, false, s.virtualRays, ...s.virtualCaustics);
   add("rulings", layers.rulings, false, s.rulings);
   add("edges", layers.edges, false, s.minus, s.plus);

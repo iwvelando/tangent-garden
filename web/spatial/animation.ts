@@ -17,7 +17,7 @@ import type {
   SpatialHarmonicResult,
   SurfaceSheet,
 } from "./types";
-import type { CurveMesh } from "./types";
+import type { CurveMesh, ShadowPath } from "./types";
 import type { View } from "./renderer";
 import { fitFrame, pathView, type CameraPath } from "./path";
 import { rideView, type RidePath } from "./ride";
@@ -1025,6 +1025,26 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     polygons: result.pursuit.polygons.filter((g) => g.sampleIndex <= last),
     final: reached(result.pursuit.paths[0]) ? result.pursuit.final : [],
   };
+  // The shadow is revealed with the curve casting it; its window stays
+  // whole and frames the drawing throughout, so the plane does not grow.
+  const cut = (p: ShadowPath) => ({
+    points: p.points.slice(0, last + 1),
+    breaks: p.breaks.slice(0, last + 1),
+  });
+  const refinedShadow = result.shadow?.adaptive;
+  const shadow = result.shadow && {
+    ...result.shadow,
+    curve: cut(result.shadow.curve),
+    planar: result.shadow.planar.map(cut),
+    cast: result.shadow.cast.map(cut),
+    ...(refinedShadow && {
+      adaptive: {
+        curve: shown(refinedShadow.curve),
+        planar: refinedShadow.planar?.map((path) => shown(path)!),
+        cast: refinedShadow.cast?.map((path) => shown(path)!),
+      },
+    }),
+  };
   // Each family frames the drawing with the reach of the refined curve
   // drawn on it, as far as it is revealed, when the study frames its reach.
   const framing = (points: (Vec3 | null)[], path?: RefinedPath): Framing => ({
@@ -1043,6 +1063,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
           { points: [composition.pole] },
         ]
       : []),
+    ...(shadow ? [{ points: shadow.corners }] : []),
   ];
   return {
     ...result,
@@ -1063,6 +1084,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     ruled,
     canal,
     adaptive,
+    shadow,
     bounds: fitFamilies(
       inversion
         ? [

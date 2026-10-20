@@ -206,6 +206,12 @@ func similar(q Request, m similarity) (Request, Request, bool) {
 	c.Surface.Reach *= s
 	c.Rays.Source = m.point(q.Rays.Source)
 	c.Rays.Length *= s
+	if q.Shadow != nil {
+		// The shadow's plane moves with the study, along its own axis.
+		shadow := *q.Shadow
+		shadow.At = s*q.Shadow.At + shadowShift(shadow.Plane, m.shift)
+		c.Shadow = &shadow
+	}
 	c.Rays.Receiver.At *= s
 	c.Rays.Receiver.C1 *= s
 	c.Rays.Receiver.C2 *= s
@@ -222,6 +228,17 @@ func similar(q Request, m similarity) (Request, Request, bool) {
 		c.Implicit.Sections.To = s*q.Implicit.Sections.To + along
 	}
 	return q, c, true
+}
+
+// shadowShift is the shift's component along the shadow plane's axis.
+func shadowShift(plane string, shift Vec3) float64 {
+	switch plane {
+	case "x":
+		return shift.X
+	case "y":
+		return shift.Y
+	}
+	return shift.Z
 }
 
 // How a number of a result moves under p ↦ s p + T.
@@ -282,6 +299,9 @@ var kinds = map[string]kind{
 	"rays.lines.start": asPosition, "rays.source": asPosition, "rays.receiver.corners": asPosition,
 	"rays.receiver.size": asLength, "rays.surface.normals": asUnchanged, "rays.surface.points": asPosition,
 	"ruled.gap": asLength, "ruled.deviation": asUnchanged,
+	"shadow.at": asOffset, "shadow.corners": asPosition, "shadow.curve.points": asPosition,
+	"shadow.planar.points": asPosition, "shadow.cast.points": asPosition,
+	"shadow.deviation": asUnchanged, "shadow.size": asLength,
 	"surface.focal.normals": asUnchanged, "surface.focal.points": asPosition, "surface.lines.end": asPosition,
 	"surface.lines.point": asPosition, "surface.offset.normals": asUnchanged, "surface.offset.points": asPosition,
 	"surface.surface.normals": asUnchanged, "surface.surface.points": asPosition,
@@ -312,7 +332,7 @@ var strides = map[string][]struct {
 // lookup finds a path's kind, reading adaptive.<path>.points as
 // adaptive.*.points. A surface's parameters that are lengths scale.
 func lookup(path string, q Request) (kind, bool) {
-	if strings.HasPrefix(path, "adaptive.") {
+	if strings.HasPrefix(path, "adaptive.") || strings.HasPrefix(path, "shadow.adaptive.") {
 		if i := strings.LastIndexByte(path, '.'); i > 0 {
 			path = "adaptive.*" + path[i:]
 		}
@@ -673,7 +693,9 @@ func (c comparison) walk(path string, want, got reflect.Value) {
 			}
 		}
 		shift := 0.0
-		if k == asOffset {
+		if path == "shadow.at" {
+			shift = shadowShift(c.q.Shadow.Plane, c.m.shift)
+		} else if k == asOffset {
 			if n := c.q.Implicit.Sections.Normal; n.norm() > 0 {
 				shift = c.m.shift.dot(n.mul(1 / n.norm()))
 			}
@@ -977,8 +999,10 @@ func TestSimilarPresets(t *testing.T) {
 }
 
 // Studies no preset is, moved likewise: the tangent feet of a helix wound
-// by a faster coil, refined between samples, and a line inverted in a sphere about a point it
-// passes through, whose image runs off to infinity there and returns.
+// by a faster coil, refined between samples, a line inverted in a sphere about a point it
+// passes through, whose image runs off to infinity there and returns, and
+// a nearly flat helix's involutes refined on a plane seen edge on, whose
+// 2D involutes swing round semicircles between samples.
 func TestSimilarStudies(t *testing.T) {
 	feet := custom("2*cos(t)+0.2*cos(29*t)", "2*sin(t)+0.2*sin(29*t)", "t/3", -3, 3)
 	feet.Construction, feet.Pole, feet.Adaptive, feet.Samples = "tangent-foot", Vec3{0.5, 0, 0}, true, 240
@@ -991,7 +1015,17 @@ func TestSimilarStudies(t *testing.T) {
 	if r, err := Compute(through); err != nil || r.Inversion.Crossings != 1 {
 		t.Fatalf("the line's image does not pass through infinity once: %v", err)
 	}
-	for name, q := range map[string]Request{"feet": feet, "through": through} {
+	edge := custom("2*cos(t)", "a*t", "2*sin(t)", -math.Pi, math.Pi)
+	edge.Curve.A, edge.Samples, edge.Adaptive = 0.0012, 1200, true
+	edge.Construction = "involute"
+	edge.Involute = InvoluteRequest{Family: InvoluteFamily{Enabled: true, From: -1, To: 1, Count: 5}}
+	// Through the middle, and with short strings, so the larger copy's
+	// plane and strings are within their limits.
+	edge.Shadow = &ShadowRequest{Plane: "x", At: 0}
+	if r, err := Compute(edge); err != nil || r.Shadow.Adaptive == nil || r.Shadow.Adaptive.Planar[0].Inserted == 0 {
+		t.Fatalf("the edge-on involutes are not refined: %v", err)
+	}
+	for name, q := range map[string]Request{"feet": feet, "through": through, "edge on": edge} {
 		for _, m := range append(append([]similarity{}, similarities...), extremes...) {
 			t.Run(m.name+"/"+name, func(t *testing.T) { similarlyMoved(t, q, m) })
 		}

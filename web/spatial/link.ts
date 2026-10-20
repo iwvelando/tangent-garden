@@ -378,6 +378,14 @@ const config: SchemaOf<SpatialConfig> = {
     adaptiveSurface: { optional: "boolean" },
     adaptiveView: { optional: "boolean" },
     adaptiveFrame: { optional: "boolean" },
+    shadow: {
+      optional: {
+        fields: {
+          plane: { options: { x: true, y: true, z: true } },
+          at: "number",
+        },
+      },
+    },
   },
 };
 

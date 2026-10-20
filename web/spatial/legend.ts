@@ -5,6 +5,7 @@
 // scene.ts); the cut's edge joins them while it is drawn.
 import { composes, type SpatialConfig } from "./types";
 import { curveInputs } from "./inputs";
+import { shadowLegend } from "./shadow";
 import type { Pass } from "./scene";
 
 export type SpatialLegendEntry = {
@@ -106,5 +107,6 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
           } as const,
         ]
       : []),
+    ...shadowLegend(c),
   ];
 }

@@ -177,6 +177,17 @@
 .dark .parent-dot {
   background: var(--parent-ink);
 }
+/* A shadow on a plane: the curve's in palette.recede, its 2D construction
+   in palette.rust and the 3D construction's shadow in palette.slate. */
+.shadow-dot {
+  background: var(--parent-ink);
+}
+.planar-dot {
+  background: var(--focal-ink);
+}
+.cast-dot {
+  background: var(--second-focal-ink);
+}
 /* The cut's edge: palette.cut. */
 .cut-dot {
   background: #212426;

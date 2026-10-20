@@ -18,11 +18,21 @@ func Involute(p, d Vec, s, offset float64) *Vec {
 //
 //go:noinline
 func (q Request) unwound(g curveFunc, start, arc, t float64, p, d Vec) *Vec {
+	return Involute(p, d, q.arcTo(g, start, arc, t, d), q.Offset)
+}
+
+// arcTo is the arc length at t, where g has velocity d, continued from arc
+// at an earlier sample start by one Simpson step. It is unwound's, and
+// shared by a family's members (see AnchoredInvolutes), as one compiled
+// function.
+//
+//go:noinline
+func (q Request) arcTo(g curveFunc, start, arc, t float64, d Vec) float64 {
 	if h := t - start; h > 0 {
 		lo, hi := q.Curve.Min, q.Curve.Max
 		a, _ := derivatives(g, start, lo, hi)
 		b, _ := derivatives(g, t-h/2, lo, hi)
 		arc += h / 6 * (a.Norm() + 4*b.Norm() + d.Norm())
 	}
-	return Involute(p, d, arc, q.Offset)
+	return arc
 }

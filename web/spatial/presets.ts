@@ -4819,4 +4819,120 @@ export const spatialPresets: {
       lines: 48,
     },
   },
+  // The helix r = (2 cos t, at, 2 sin t) climbs at a constant slope, so
+  // its shadow on the floor y = −3 is the circle of radius 2, and the
+  // strings unwound from it cast the circle's involutes with every length
+  // shortened by 2/√(4 + a²). The circle's own involutes, with the same
+  // lengths, lie beside them. Played, the helix flattens to the circle
+  // (a = 0) and back, and the two families close onto one.
+  {
+    name: "A staircase's shadow, unwinding",
+    detail:
+      "Strings unwound from a helix cast spirals on the floor beside the circle's own involutes, meeting them as the helix flattens",
+    view: { ...initialView, yaw: 0.3, pitch: 0.6, zoom: 1.25 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "1.2", to: "0" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "involute",
+      involute: {
+        anchor: 0,
+        offset: 0,
+        family: { enabled: true, from: -3, to: 3, count: 7 },
+      },
+      lines: 24,
+      samples: 1200,
+      curve: {
+        x: "2*cos(t)",
+        y: "a*t",
+        z: "2*sin(t)",
+        a: 1.2,
+        min: -Math.PI,
+        max: Math.PI,
+      },
+      shadow: { plane: "y", at: -3 },
+    },
+  },
+  // The trefoil's tangent feet from a pole on its axis, cast on the wall
+  // z = −2.5 behind it beside the pedal of the trefoil's shadow from the
+  // pole's shadow, the origin. The pedal does not see the pole's height; the
+  // feet do. Played, the pole falls through the knot and the cast feet
+  // swing round the fixed pedal.
+  {
+    name: "A trefoil's feet and their shadow",
+    detail:
+      "The feet of perpendiculars on a trefoil's tangents, cast on the wall behind it beside the pedal of the knot's shadow",
+    view: { ...initialView, yaw: 0.3, pitch: 0.7, zoom: 1.15 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "poleZ", from: "2", to: "-2" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+    config: {
+      ...base,
+      construction: "tangent-foot",
+      pole: { x: 0, y: 0, z: 2 },
+      lines: 36,
+      shadow: { plane: "z", at: -2.5 },
+    },
+  },
+  // A ring of radius 2 rippling five times up and down by a, inverted in
+  // the sphere of radius 1.5 about (0.6, 0, 0). Its shadow on the floor
+  // y = −2.5 is the circle, whose inversion in the circle about (0.6, 0) is another
+  // circle; the image's shadow ripples about it wherever the ring leaves
+  // the center's height. Played, the ripples die away and the two meet.
+  {
+    name: "A rippling ring, inverted, and its shadow",
+    detail:
+      "A ring's image in a sphere casts a rippling loop around the circle inversion of its shadow, settling onto it as the ring flattens",
+    view: { ...initialView, yaw: 0.3, pitch: 0.6, zoom: 1.2 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "a", from: "0.8", to: "0" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+    config: {
+      ...base,
+      format: "parametric",
+      construction: "inversion",
+      inversion: {
+        center: { x: 0.6, y: 0, z: 0 },
+        radius: 1.5,
+        input: "base",
+      },
+      lines: 36,
+      samples: 1200,
+      curve: {
+        x: "2*cos(t)",
+        y: "a*sin(5*t)",
+        z: "2*sin(t)",
+        a: 0.8,
+        min: 0,
+        max: 2 * Math.PI,
+      },
+      shadow: { plane: "y", at: -2.5 },
+    },
+  },
 ];

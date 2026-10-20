@@ -1792,6 +1792,27 @@ test("a 3D link carries framing by the points between samples; older links frame
   await refused(() => spatialStudy(bad), "config.adaptiveFrame");
 });
 
+test("a 3D link carries the shadow's plane; older links cast none", async () => {
+  const study = spatial();
+  study.config = { ...study.config, shadow: { plane: "y", at: -2.5 } };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A link made before the shadow leaves it out, which casts none.
+  const older = structuredClone(study) as any;
+  delete older.config.shadow;
+  assert.equal(spatialStudy(older).config.shadow, undefined);
+  for (const [shadow, path] of [
+    [{ plane: "w", at: 0 }, "config.shadow.plane"],
+    [{ plane: "none", at: 0 }, "config.shadow.plane"],
+    [{ plane: "z", at: "low" }, "config.shadow.at"],
+    [{ plane: "z" }, "config.shadow.at"],
+  ] as const) {
+    const bad = structuredClone(study) as any;
+    bad.config.shadow = shadow;
+    await refused(() => spatialStudy(bad), path);
+  }
+});
+
 test("a 3D link carries refinement to the view with its deep zoom; older links refine to the study alone", async () => {
   const study = spatial();
   study.config = { ...study.config, adaptive: true, adaptiveView: true };
