@@ -1,5 +1,6 @@
 import {
   applyTracks,
+  fitBounds,
   availableTargets,
   reveal,
   targetLabel,
@@ -118,7 +119,7 @@ test("notes report ends, escapes, equilibria, timed fields and the carried const
     await field(page, `Seed ${axis}₂`).fill("0");
   await settled(page);
   await expect(note(page)).toContainText(
-    "Seed 2 sits at an equilibrium, where the field's speed is below 10⁻⁹",
+    "Seed 2 starts near an equilibrium, with negligible initial motion at this study's scale.",
   );
   await field(page, "Escape radius R").fill("30");
   await settled(page);
@@ -419,4 +420,63 @@ test("any curve can stand alone, with no construction, layers or reach", async (
     .selectOption("harmonic");
   await settled(page);
   await expect(layer(page, "Vector sums")).toBeVisible();
+});
+
+test("tiny sink distinguishes spiraling paths from its equilibrium through playback and edits", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "Spirals into a tiny sink" });
+  await settled(page);
+  const base = await config(page);
+  expect(base.field.seeds).toHaveLength(5);
+  expect(base.field.escape).toBe(4 * 2 ** -40);
+  await expect(note(page)).toContainText("Seed 5 starts near an equilibrium");
+  await expect(note(page)).not.toContainText("Seeds 1");
+  const full = await pixels(page);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  await slider.fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+  expect(await pixels(page)).not.toBe(full);
+  await slider.fill("1");
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
+  expect(await pixels(page)).toBe(full);
+  await page
+    .getByRole("button", { name: "Back to study", exact: true })
+    .click();
+  expect(await config(page)).toEqual(base);
+  // Scalar edits use the same units as a preset: moving the fifth seed
+  // off the equilibrium must clear its resting note, then restore it.
+  await field(page, "Seed x₅").fill("2^-41");
+  await expect(note(page)).not.toContainText("equilibrium");
+  await field(page, "Seed x₅").fill("0");
+  await expect(note(page)).toContainText("Seed 5 starts near an equilibrium");
+});
+
+// A reveal's framing uses the same relative scale as the Go result. Its
+// field direction markers must not inherit a fixed world-space radius.
+test("field reveal framing scales with a tiny family and retains robust outlier fences", () => {
+  const family = Array.from({ length: 100 }, (_, i) => ({
+    x: Math.cos((i * 2 * Math.PI) / 100),
+    y: Math.sin((i * 2 * Math.PI) / 100),
+    z: 0,
+  }));
+  family.push({ x: 100, y: 0, z: 0 });
+  const unit = fitBounds(family);
+  expect(unit.center).toEqual({ x: 0, y: 0, z: 0 });
+  expect(unit.radius).toBeCloseTo(1, 14);
+  for (const scale of [2 ** -40, 2 ** -60]) {
+    const tiny = fitBounds(
+      family.map((p) => ({ x: scale * p.x, y: scale * p.y, z: scale * p.z })),
+    );
+    expect(tiny.center).toEqual(unit.center);
+    expect(tiny.radius / scale).toBe(unit.radius);
+  }
+  // A lone point keeps a usable frame, as Go does.
+  expect(fitBounds([{ x: 0, y: 0, z: 0 }]).radius).toBe(1e-4);
 });

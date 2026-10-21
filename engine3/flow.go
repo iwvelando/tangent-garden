@@ -50,8 +50,8 @@ type FieldArrow struct {
 // same index is the same time on every path; the first is the base curve.
 // Samples after a trajectory's end are gaps. Arrows sit at the
 // representative samples. Resting marks seeds where an autonomous field's
-// speed is below 10⁻⁹, whose trajectories stay put. Timed is whether the
-// field's expressions read t.
+// initial speed is negligible beside the integration's length reference
+// over the time interval. Timed is whether the expressions read t.
 type FieldResult struct {
 	Paths   [][]*Vec3       `json:"paths"`
 	Arrows  []FieldArrow    `json:"arrows"`
@@ -226,7 +226,7 @@ func (r *trajectory) evaluation(f spatialField, span float64) evaluation {
 		}
 		v := f(p, t)
 		a, a2 := along(p, v, t, span*1e-4), along(p, v, t, span*5e-5)
-		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(1, v.norm()/span) {
+		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*v.norm()/span {
 			a = Vec3{math.NaN(), 0, 0}
 		}
 		return p, v, a, p.valid() && v.valid()
@@ -280,7 +280,11 @@ func fieldGeometry(c Request, f spatialField, timed bool, flows []*trajectory) (
 			end.Point = &p
 		}
 		out.Ends[k] = end
-		out.Resting[k] = !timed && f(c.Field.Seeds[k], lo).norm() < 1e-9
+		// Use the integration's spatial reference at the seed, per time
+		// span, so changing length or time units preserves this label.
+		seed := c.Field.Seeds[k]
+		reference := seed.norm() + 1e-6*c.Field.Escape
+		out.Resting[k] = !timed && f(seed, lo).norm() < 1e-9*reference/(hi-lo)
 	}
 	for line := 0; line < c.Lines; line++ {
 		i := line * n / (c.Lines - 1)

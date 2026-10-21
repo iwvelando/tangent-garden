@@ -698,8 +698,16 @@ export function fitFamilies(families: Framing[]): Bounds3 {
   for (const family of families) {
     const points = family.points.filter((p): p is Vec3 => p !== null);
     if (!points.length) continue;
-    const fences = axes.map((key, i) => {
-      const vs = points.map((p) => p[key]).sort((a, b) => a - b);
+    const values = axes.map((key) =>
+      points.map((p) => p[key]).sort((a, b) => a - b),
+    );
+    const core = Math.max(
+      ...values.flatMap((vs) => [
+        Math.abs(vs[Math.floor(vs.length / 4)]),
+        Math.abs(vs[Math.floor((3 * vs.length) / 4)]),
+      ]),
+    );
+    const fences = values.map((vs, i) => {
       let a = vs[0],
         b = vs.at(-1)!,
         fence = [-Infinity, Infinity];
@@ -707,7 +715,7 @@ export function fitFamilies(families: Framing[]): Bounds3 {
         const q1 = vs[Math.floor(vs.length / 4)],
           q3 = vs[Math.floor((3 * vs.length) / 4)],
           spread = q3 - q1;
-        if (spread > 1e-12) {
+        if (spread > 1e-12 * core) {
           fence = [q1 - 3 * spread, q3 + 3 * spread];
           a = vs.find((v) => v >= fence[0])!;
           b = [...vs].reverse().find((v) => v <= fence[1])!;
@@ -738,7 +746,7 @@ export function fitFamilies(families: Framing[]): Bounds3 {
     y: (lo[1] + hi[1]) / 2,
     z: (lo[2] + hi[2]) / 2,
   };
-  let radius = 1e-4;
+  let radius = 0;
   for (const family of families)
     for (const p of family.points)
       if (
@@ -759,6 +767,8 @@ export function fitFamilies(families: Framing[]): Bounds3 {
       radius,
       Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z),
     );
+  if (radius <= 1e-12 * Math.hypot(center.x, center.y, center.z))
+    radius = Math.max(radius, 1e-4);
   return { center, radius };
 }
 // A surface frames as Go frames it: its points with the normal lines' ends,
