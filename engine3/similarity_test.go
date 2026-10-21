@@ -454,13 +454,6 @@ func budgetFor(q Request, m similarity) budget {
 		if m.scale < 0x1p-20 && q.Format == "field" {
 			tolerated = append(tolerated, "field.resting")
 		}
-		// A framed ribbon's probe tests its tangent plane against the
-		// larger of S_t, a length per parameter, and S_u, the unit offset
-		// direction (shape, as ruledProbe calls it): in a tinier copy S_t is
-		// far below 1 and no normal is found.
-		if m.scale < 0x1p-20 && q.Construction == "framed" {
-			tolerated = append(tolerated, "surfaceDiagnostics.")
-		}
 		b.tolerated = prefixed(tolerated...)
 		return b
 	}

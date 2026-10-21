@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import { choosePreset } from "./helpers";
 import { engines, watchEngines } from "./engines";
 import { spatialPresets } from "../web/spatial/presets";
-import { defaultAnimation, type SpatialStudy } from "../web/spatial/link";
+import {
+  defaultAnimation,
+  presetStudy,
+  type SpatialStudy,
+} from "../web/spatial/link";
 import { defaultLayers, initialView } from "../web/spatial/renderer";
 import { defaultCut } from "../web/spatial/cut";
 import { defaultSight } from "../web/spatial/sight";
@@ -128,6 +132,70 @@ async function seek(page: Page, p: string) {
   await settled(page);
 }
 const placedAt = (u: number, v: number) => `${u},${v}`;
+
+test("a tiny framed ribbon keeps its probe normal and curvature on and between samples", async ({
+  page,
+}) => {
+  const radius = 2 ** -40;
+  const study = presetStudy(0);
+  study.config = {
+    ...structuredClone(config),
+    construction: "framed",
+    harmonic: {
+      ...config.harmonic,
+      terms: [
+        {
+          frequency: 1,
+          cosine: { x: radius, y: 0, z: 0 },
+          sine: { x: 0, y: radius, z: 0 },
+        },
+      ],
+    },
+    frame: {
+      ...config.frame,
+      width: radius / 4,
+      offset: 0,
+      strands: 0,
+      twist: 1,
+    },
+  };
+  study.probe = {
+    enabled: true,
+    target: "surface",
+    position: 0.125,
+    across: 0.5,
+  };
+  const token = await writeStudyLink("3d", study);
+  await page.goto(`/?study=3d#s=${token}`);
+  await expect(page).not.toHaveURL(/#s=/);
+  await settled(page);
+  const check = async () => {
+    await expect(page.getByTestId("probe-status")).not.toHaveText(
+      /Singular|unknown|No point/,
+    );
+    await expect(readout(page)).toHaveCount(4);
+    await expect(readout(page).first()).not.toHaveText(/—|unknown/);
+    const K = Number(
+      (await readout(page).nth(3).textContent())!.split(", ")[0],
+    );
+    expect(Math.abs(K * radius * radius + 1)).toBeLessThan(5e-4);
+  };
+  await check();
+  await alongT(page).fill("120");
+  await check();
+  await ruledSwitch(page).check();
+  await alongT(page).fill("0.123456");
+  await expect(stage(page)).toHaveAttribute(
+    "data-probe-uv",
+    placedAt(at(0.123456), 0),
+  );
+  await settled(page);
+  await check();
+  // Returning to the grid retains the same regular surface.
+  await ruledSwitch(page).uncheck();
+  await settled(page);
+  await check();
+});
 
 test("between samples, a canal's probe reads the tube at its own t and turn", async ({
   page,

@@ -1,9 +1,104 @@
 package engine3
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
+
+// A twisted circular ribbon has K = -(2π Twist/L)² at its spine.
+// Its unit ruling direction must not set an absolute floor on S_t.
+func TestFramedRibbonProbeAtEveryScale(t *testing.T) {
+	for _, radius := range []float64{1, 0x1p-40, 0x1p10} {
+		t.Run(fmt.Sprint(radius), func(t *testing.T) {
+			c := ribbon(study(), "rotation-minimizing", Vec3{0, 0, 1}, 0, 1, radius/4)
+			c.Format = "harmonic"
+			c.Harmonic = HarmonicCurve{Min: 0, Max: 2 * math.Pi, Terms: []HarmonicTerm{{Frequency: 1, Cosine: Vec3{radius, 0, 0}, Sine: Vec3{0, radius, 0}}}}
+			c.SurfaceDiagnostics = true
+			r, d := probed(t, c)
+			if d.Singular != 0 || d.Unknown != 0 {
+				t.Fatalf("regular ribbon: singular %d unknown %d", d.Singular, d.Unknown)
+			}
+			check := func(d *SurfaceDiagnostics, row, col int) {
+				t.Helper()
+				n, k1, k2 := d.Normals[row][col], d.Curvature[0][row][col], d.Curvature[1][row][col]
+				if n == nil || k1 == nil || k2 == nil {
+					t.Fatal("regular ribbon lost its normal or curvature")
+				}
+				gauss := *k1 * *k2
+				relative(t, "spine K", &gauss, -1/(radius*radius), 1e-10)
+				if math.Abs(n.norm()-1) > 1e-12 {
+					t.Fatalf("normal length %g", n.norm())
+				}
+				// D = cos(t) z + sin(t) radial, so the drawn D × T is
+				// -cos(t) radial + sin(t) z at the spine.
+				s := d.U[row]
+				near(t, n, Vec3{-math.Cos(s) * math.Cos(s), -math.Cos(s) * math.Sin(s), math.Sin(s)}, 1e-10)
+			}
+			for row := range d.U {
+				check(d, row, probeColumn(d, 0))
+			}
+			_, point := pointProbed(t, c, 0.731, 0)
+			check(point, 0, 0)
+			c.SurfaceProbe = &SurfaceQuery{U: 0.731, V: 0}
+			only, err := SurfaceProbeOnly(c)
+			if err != nil || cell(t, only, 0, 0) != cell(t, point, 0, 0) {
+				t.Fatalf("moving probe differs: %v", err)
+			}
+			if math.Abs(r.Frame.Length/(2*math.Pi*radius)-1) > 1e-12 {
+				t.Fatalf("circle length %g", r.Frame.Length)
+			}
+		})
+	}
+}
+
+// The angular guard is reached only where shape finds no normal. Every
+// ribbon preset's probe has a normal at each regular point with a known
+// tangent plane, so none of them reaches it and each keeps its result.
+func TestFramedRibbonPresetsNeedNoAngularGuard(t *testing.T) {
+	probes := 0
+	for name, c := range spatialPresets(t) {
+		if c.Construction != "framed" {
+			continue
+		}
+		c.SurfaceDiagnostics = true
+		r, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := r.Probe
+		if d == nil {
+			// Strands alone draw no surface to probe.
+			continue
+		}
+		probes++
+		if d.Singular != 0 {
+			t.Errorf("%s: singular %d", name, d.Singular)
+		}
+		for r := range d.Points {
+			for k := range d.Points[r] {
+				if d.Points[r][k] != nil && d.Normals[r][k] == nil && (d.UnknownPlane == nil || !d.UnknownPlane[r][k]) {
+					t.Errorf("%s: no normal at (%d, %d)", name, r, k)
+				}
+			}
+		}
+	}
+	if probes < 5 {
+		t.Fatalf("%d framed ribbon presets with a surface probe", probes)
+	}
+}
+
+func TestFramedRibbonProbeKeepsSingularRulings(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p10} {
+		for _, tangent := range []Vec3{{}, {scale, 0, 0}, {scale, scale * 1e-10, 0}} {
+			d := newSurfaceDiagnostics("framed", 1, 1)
+			d.ruledAt(0, 0, ruledSample{Point: true, Regular: true, Known: true, St: tangent, Su: Vec3{1, 0, 0}}, true, false, scale)
+			if d.Singular != 1 || d.Normals[0][0] != nil || d.Curvature[0][0][0] != nil {
+				t.Fatalf("scale %g tangent %v: singular %d normal %v", scale, tangent, d.Singular, d.Normals[0][0])
+			}
+		}
+	}
+}
 
 // probeColumn is the column of a ruled probe's grid nearest to u.
 func probeColumn(d *SurfaceDiagnostics, u float64) int {

@@ -116,6 +116,20 @@ func (d *SurfaceDiagnostics) ruledAt(r, k int, s ruledSample, flip, named bool, 
 		return
 	}
 	p := shape(s.X, s.St, s.Su, s.Stt, s.Stu, Vec3{}, flip, size)
+	if !p.Normal && d.Kind == "framed" {
+		// S_t has units of length per parameter, whereas S_u = D is a
+		// unit direction. Compare their angle, independent of study size.
+		// Keep shape's arithmetic for points it already describes, so an
+		// existing study retains its result bit for bit on every platform.
+		cross := s.St.cross(s.Su)
+		if area := cross.norm(); area > 1e-9*s.St.norm()*s.Su.norm() {
+			n := cross.mul(1 / area)
+			if flip {
+				n = n.mul(-1)
+			}
+			p = principal(s.X, s.St, s.Su, n, s.Stt.dot(n), s.Stu.dot(n), 0, area, size)
+		}
+	}
 	if !p.Normal {
 		count(&d.Singular)
 		return
