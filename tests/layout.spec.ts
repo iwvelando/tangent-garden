@@ -741,3 +741,26 @@ for (const label of [
     if (label === "A sphere collapsing to one focus")
       expect(rows.filter((r) => r.below)).toHaveLength(2);
   });
+
+// An open help toggle keeps its filled look while the pointer rests on it,
+// as it does after a tap on iOS, in every theme: the buttons' own hover
+// fill must not cover it and leave its glyph dark on dark.
+test("an open help toggle stays filled under the pointer in every theme", async ({
+  page,
+}) => {
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("/");
+    await expect(page.locator("#artwork")).toBeVisible();
+    const toggle = page.locator("aside .help-toggle").first();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await toggle.hover();
+    const style = await toggle.evaluate((t) => {
+      const s = getComputedStyle(t);
+      return { fill: s.backgroundColor, ring: s.borderColor, glyph: s.color };
+    });
+    expect(style.fill, scheme).toBe(style.ring);
+    expect(style.glyph, scheme).not.toBe(style.fill);
+  }
+});

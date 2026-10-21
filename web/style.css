@@ -453,7 +453,9 @@ aside section {
   position: absolute;
   inset: -7px;
 }
-.help-toggle[aria-expanded="true"] {
+/* Outranks the dark theme's button hover, which iOS holds after a tap. */
+.help-toggle[aria-expanded="true"],
+.help-toggle[aria-expanded="true"]:hover {
   background: var(--text);
   border-color: var(--text);
   color: var(--panel);
