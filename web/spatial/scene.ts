@@ -93,7 +93,8 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // located, and each focal sheet (its faces, its parameter curves, and a
 // cross when it is a point) as their own layers. A ray study draws its mirror or interface as
 // the surface, with its parameter curves; each caustic branch's real part
-// as a focal sheet; its incident rays (with the source), outgoing rays
+// as a focal sheet, and the caustics' cuspidal edges when they are
+// located, the virtual ones only with the virtual layer; its incident rays (with the source), outgoing rays
 // (reflected, transmitted, or totally reflected), and virtual rays with the
 // caustics' virtual parts, as lines; and its receiver's irradiance, each
 // as their own layers. An implicit surface draws its level set as the
@@ -970,12 +971,29 @@ export function buildScene(result: SpatialResult) {
             : [],
       ),
     );
-  // The offset's cuspidal edges, and the focal sheets' over the ridges,
-  // broad in the curves' ink.
+  // The offset's cuspidal edges, the focal sheets' over the ridges, and
+  // the real caustics', broad in the curves' ink; the virtual caustics'
+  // likewise, drawn only with the virtual caustics.
+  const causticEdges = rays?.edges ?? [];
   const offsetEdges = batch(
     vertices(
       segments(
-        [...(surface?.edges ?? []), ...(surface?.ridges ?? [])],
+        [
+          ...(surface?.edges ?? []),
+          ...(surface?.ridges ?? []),
+          ...causticEdges.filter((e) => !e.virtual),
+        ],
+        (e) => e.points,
+      ),
+    ),
+    "lines",
+    2,
+    1.8,
+  );
+  const virtualEdges = batch(
+    vertices(
+      segments(
+        causticEdges.filter((e) => e.virtual),
         (e) => e.points,
       ),
     ),
@@ -1198,6 +1216,7 @@ export function buildScene(result: SpatialResult) {
     normalLines,
     offsetSheet,
     offsetEdges,
+    virtualEdges,
     ridgeLines,
     focalSheets,
     focalCurves,
@@ -1289,6 +1308,12 @@ export function scenePasses(
   add("planar", shadowed && layers.planar, false, s.planar);
   add("cast", shadowed && layers.cast, false, s.cast);
   add("virtual", layers.virtual, false, s.virtualRays, ...s.virtualCaustics);
+  add(
+    "cusps",
+    layers.cusps && layers.virtual && s.virtualEdges.data.length > 0,
+    false,
+    s.virtualEdges,
+  );
   add("rulings", layers.rulings, false, s.rulings);
   add("edges", layers.edges, false, s.minus, s.plus);
   add("strands", layers.strands, false, s.strands);

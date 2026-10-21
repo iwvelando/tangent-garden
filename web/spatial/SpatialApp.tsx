@@ -9,7 +9,9 @@ import { RefineBetweenSamples } from "../RefineBetweenSamples";
 import { frameHelp, spatialViewHelp } from "../refinement";
 import { StopAtCaustic } from "../StopAtCaustic";
 import {
+  CausticEdgesCheck,
   CuspidalEdgesCheck,
+  goldCausticEdges,
   goldEdges,
   locatesEdges,
   RidgesCheck,
@@ -1259,6 +1261,12 @@ export default function SpatialApp({
           `Its virtual extension stops at the first virtual caustic point behind the ${face}; a ray with no real caustic point runs as far ahead, and one with no virtual point has no extension. A totally reflected ray, or one whose caustics lie at infinity, runs ℓ.`,
         )}
       />
+      <CausticEdgesCheck
+        checked={!!config.rays.edges}
+        onChange={(on) =>
+          setRays(({ edges: _, ...r }) => (on ? { ...r, edges: true } : r))
+        }
+      />
       {receiverControls}
       <p className="note" data-testid="rays-note">
         {mirror && frame
@@ -2195,7 +2203,7 @@ export default function SpatialApp({
         )
       }
       note={describeColors(
-        `Gold lines are ${refracting ? "transmitted" : "reflected"} rays where the parameter curves cross, gray their incident rays and, where a caustic point lies behind the ${face}, their virtual extensions${refracting ? "; beyond the critical angle, gray rays are totally reflected" : ""}. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross.${receiving ? " The receiver's shade is irradiance, darker (lighter in the dark theme) where more light lands." : ""}`,
+        `Gold lines are ${refracting ? "transmitted" : "reflected"} rays where the parameter curves cross, gray their incident rays and, where a caustic point lies behind the ${face}, their virtual extensions${refracting ? "; beyond the critical angle, gray rays are totally reflected" : ""}. Rust marks the first caustic (μ₁), slate the second; a virtual caustic is drawn only by its lines, and a caustic that collapses by its parameter curves, or as a cross.${goldCausticEdges(config.rays)}${receiving ? " The receiver's shade is irradiance, darker (lighter in the dark theme) where more light lands." : ""}`,
         theme.scheme,
       )}
       diagnostics={
@@ -3297,6 +3305,9 @@ export default function SpatialApp({
                       ],
                       ["focal1", "Caustic 1 · μ₁"],
                       ["focal2", "Caustic 2 · μ₂"],
+                      ...(config.rays.edges
+                        ? ([["cusps", "Cuspidal edges"]] as const)
+                        : []),
                       ["virtual", "Virtual rays & caustics"],
                       ...(receiving
                         ? ([["receiver", "Receiver irradiance"]] as const)

@@ -883,13 +883,23 @@ function revealImplicit(
 }
 // Cuspidal edges or ridges through row `last`: each is split where it runs
 // past the row, and an edge that is split is no longer closed.
-function revealEdges(edges: CuspidalEdge[], last: number): CuspidalEdge[] {
-  return edges.flatMap((e) => {
-    if (e.i.every((i) => i <= last)) return [e];
+const revealEdges = (edges: CuspidalEdge[], last: number) =>
+  keepEdges(edges, (m, k) => edges[m].i[k] <= last);
+
+// The runs of the points of each edge m for which keep(m, k) holds of its
+// point k: an edge is split where it fails, and an edge that is split is
+// no longer closed.
+export function keepEdges(
+  edges: CuspidalEdge[],
+  keep: (m: number, k: number) => boolean,
+): CuspidalEdge[] {
+  return edges.flatMap((e, m) => {
+    const kept = e.points.map((_, k) => keep(m, k));
+    if (kept.every(Boolean)) return [e];
     const runs: CuspidalEdge[] = [];
     let run: number[] = [];
     const n = e.points.length;
-    const start = e.closed ? e.i.findIndex((i) => i > last) : 0;
+    const start = e.closed ? kept.findIndex((k) => !k) : 0;
     const flush = () => {
       if (run.length > 1)
         runs.push({
@@ -904,7 +914,7 @@ function revealEdges(edges: CuspidalEdge[], last: number): CuspidalEdge[] {
     };
     for (let k = 0; k < n; k++) {
       const at = (start + k) % n;
-      if (e.i[at] <= last) run.push(at);
+      if (kept[at]) run.push(at);
       else flush();
     }
     flush();
@@ -948,6 +958,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       ...r,
       surface: revealSheet(r.surface, last),
       caustics: r.caustics.map((c) => revealSheet(c, last)),
+      ...(r.edges && { edges: revealEdges(r.edges, last) }),
       lines: r.lines.filter((l) => l.i <= last),
       receiver: last === r.surface.points.length - 1 ? r.receiver : null,
     };

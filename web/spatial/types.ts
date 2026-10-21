@@ -205,6 +205,9 @@ export type RaysConfig = {
   length: number;
   stop?: boolean;
   receiver: ReceiverConfig;
+  // Locate the caustics' cuspidal edges. Absent means off, as in links
+  // made before it.
+  edges?: boolean;
 };
 // The level set F(x, y, z) = level of an expression in x, y, z and a (not
 // t), within the box, on a grid of `cells` cells along the box's longest
@@ -891,8 +894,10 @@ export type SurfaceResult = {
 // along which it folds and meets focal sheet `branch`, or a curve along
 // which focal sheet `branch` folds, over a ridge of the patch, where κᵢ is
 // stationary along its own line of curvature: the ridge's points are then
-// its `feet`. Each point is at its place (i, j) on the parameter grid in
-// sample steps; a closed edge returns to its first point.
+// its `feet`; or a curve along which caustic branch `branch` folds, on its
+// part behind the surface when `virtual`, each point's foot the surface
+// point whose ray it lies on. Each point is at its place (i, j) on the
+// parameter grid in sample steps; a closed edge returns to its first point.
 export type CuspidalEdge = {
   branch: 1 | 2;
   closed: boolean;
@@ -900,6 +905,7 @@ export type CuspidalEdge = {
   i: number[];
   j: number[];
   feet?: Vec3[];
+  virtual?: boolean;
 };
 // Mirrors engine3.CausticSheet: the real (μ > 0, ahead of the surface) or
 // virtual (μ < 0, behind it) part of caustic branch 1 or 2, the points X +
@@ -939,7 +945,8 @@ export type ReceiverResult = {
 // `total` that the light is beyond the critical angle, its end along the
 // totally reflected ray. clipped[k] counts traced samples whose branch
 // k + 1 point is beyond 100 surface radii, treated as at infinity; total
-// counts samples beyond the critical angle.
+// counts samples beyond the critical angle. edges are the caustics'
+// cuspidal edges, present only when asked for.
 export type RaysResult = {
   surface: SurfaceSheet;
   caustics: CausticSheet[];
@@ -963,6 +970,7 @@ export type RaysResult = {
   total: number;
   clipped: number[];
   receiver: ReceiverResult | null;
+  edges?: CuspidalEdge[];
 };
 // Mirrors engine3.ImplicitResult: an indexed mesh with three coordinates per
 // vertex in positions and normals (a normal is ∇F/|∇F|, toward larger F, its

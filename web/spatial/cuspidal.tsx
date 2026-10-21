@@ -1,6 +1,11 @@
 import { HelpText, HelpToggle, useHelp } from "../Field";
 import { tiered, type Help } from "../help";
-import type { SurfaceConfig, SurfaceResult } from "./types";
+import type {
+  RaysConfig,
+  RaysResult,
+  SurfaceConfig,
+  SurfaceResult,
+} from "./types";
 
 // Whether a surface study locates cuspidal edges, on its offset or over its
 // ridges.
@@ -31,6 +36,19 @@ export const ridgesHelp = tiered(
   "Draws ridges, where κᵢ is extremal along its line of curvature, and the focal sheets' cuspidal edges above them.",
   "Each point is found between samples on the patch itself, where a grid edge crosses a ridge; a loop within one cell is missed. A ridge stops beside a chart singularity, near an umbilic, and where its center lies beyond 100 surface radii. A sheet that collapses to a curve or a point has none.",
 );
+
+// Locating the caustics' cuspidal edges (`rays.edges`). Absent means off,
+// as in links made before it.
+export const causticEdgesHelp = tiered(
+  "Draws the caustics' cuspidal edges, where each caustic sheet folds back sharply.",
+  "Each point is found between samples, where a grid edge crosses it; a loop within one cell is missed. An edge stops where no light leaves, beside a stigmatic sample, and where its caustic lies beyond 100 surface radii. A caustic collapsing to a curve or point has none. Virtual edges show with the virtual caustics.",
+);
+
+// The sentence naming the caustics' cuspidal edges drawn in gold, if any.
+export const goldCausticEdges = (r: RaysConfig) =>
+  r.edges
+    ? " Broad gold curves are the caustics' cuspidal edges, where they fold back."
+    : "";
 
 type CheckProps = { checked: boolean; onChange: (on: boolean) => void };
 
@@ -67,6 +85,15 @@ export const CuspidalEdgesCheck = (props: CheckProps) => (
     label="Locate cuspidal edges"
     topic="locating cuspidal edges"
     text={edgesHelp}
+    {...props}
+  />
+);
+
+export const CausticEdgesCheck = (props: CheckProps) => (
+  <LocateCheck
+    label="Locate cuspidal edges"
+    topic="locating the caustics' cuspidal edges"
+    text={causticEdgesHelp}
     {...props}
   />
 );
@@ -124,5 +151,28 @@ export function ridgesNote(s: SurfaceResult): string[] {
     `The patch has ${count(s.ridges.length, "ridge", "ridges")} (${on.join(", ")})${
       closed > 0 ? `, ${count(closed, "closed", "closed")}` : ""
     }, over which its focal sheets fold in cuspidal edges.`,
+  ];
+}
+
+// How many cuspidal edges the caustics fold along, on which branches, and
+// how many are virtual.
+export function causticEdgesNote(r: RaysResult): string[] {
+  if (!r.edges) return [];
+  if (r.edges.length === 0) return ["No caustic folds along a cuspidal edge."];
+  const on = ([1, 2] as const)
+    .map((b) => [b, r.edges!.filter((e) => e.branch === b).length] as const)
+    .filter(([, n]) => n > 0)
+    .map(([b, n]) => `${n.toLocaleString()} on caustic ${b}`);
+  const virtual = r.edges.filter((e) => e.virtual).length;
+  return [
+    `The caustics fold along ${count(r.edges.length, "cuspidal edge", "cuspidal edges")} (${on.join(", ")})${
+      virtual === r.edges.length
+        ? r.edges.length === 1
+          ? ", virtual"
+          : ", all virtual"
+        : virtual > 0
+          ? `, ${count(virtual, "virtual", "virtual")}`
+          : ""
+    }.`,
   ];
 }

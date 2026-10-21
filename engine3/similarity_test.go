@@ -295,6 +295,7 @@ var kinds = map[string]kind{
 	"pursuit.capture.time": asUnchanged, "pursuit.end": asUnchanged, "pursuit.final": asPosition,
 	"pursuit.paths": asPosition, "pursuit.polygons.points": asPosition,
 	"rays.caustics.normals": asAxis, "rays.caustics.points": asPosition,
+	"rays.edges.points": asPosition, "rays.edges.feet": asPosition, "rays.edges.i": asUnchanged, "rays.edges.j": asUnchanged,
 	"rays.lines.back": asPosition, "rays.lines.end": asPosition, "rays.lines.point": asPosition,
 	"rays.lines.start": asPosition, "rays.source": asPosition, "rays.receiver.corners": asPosition,
 	"rays.receiver.size": asLength, "rays.surface.normals": asUnchanged, "rays.surface.points": asPosition,

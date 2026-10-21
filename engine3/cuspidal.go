@@ -7,17 +7,20 @@ import "math"
 // dA) dX loses rank along eᵢ there and the offset meets focal sheet Branch.
 // It is also a curve along which focal sheet Branch folds, the image of a
 // ridge of the patch, whose points are then its Feet (see ridges); an
-// offset's edge has none. Points are on the offset or the sheet, each at its place (I, J) on the parameter grid
+// offset's edge has none. It is also a curve along which a caustic part of
+// Branch folds, Virtual when it is the part behind the surface (see
+// causticEdges). Points are on the offset or the sheet, each at its place (I, J) on the parameter grid
 // in sample steps, u = UMin + I·(UMax − UMin)/USamples and v likewise, one
 // of them a whole number: the grid edge it crosses. A Closed edge returns
 // to its first point after its last, which it does not repeat.
 type CuspidalEdge struct {
-	Branch int       `json:"branch"`
-	Closed bool      `json:"closed"`
-	Points []Vec3    `json:"points"`
-	I      []float64 `json:"i"`
-	J      []float64 `json:"j"`
-	Feet   []Vec3    `json:"feet,omitempty"`
+	Branch  int       `json:"branch"`
+	Closed  bool      `json:"closed"`
+	Points  []Vec3    `json:"points"`
+	I       []float64 `json:"i"`
+	J       []float64 `json:"j"`
+	Feet    []Vec3    `json:"feet,omitempty"`
+	Virtual bool      `json:"virtual,omitempty"`
 }
 
 // cuspidalEdges traces each branch's level set 1 − dκᵢ = 0 over the
@@ -27,7 +30,7 @@ func (q SurfaceRequest) cuspidalEdges(samples [][]surfacePoint, scale float64) [
 	d := q.Offset
 	out := []CuspidalEdge{}
 	for branch := range 2 {
-		out = append(out, q.contours(samples, scale, branch, level{
+		out = append(out, q.patchContours(samples, scale, branch, level[surfacePoint]{
 			value: func(s surfacePoint, _, _ float64) (float64, Vec3) {
 				if !s.Normal {
 					return math.NaN(), Vec3{}
@@ -58,7 +61,7 @@ func (q SurfaceRequest) ridges(samples [][]surfacePoint, focal []FocalSheet, sca
 		if focal[branch].Shape != "surface" {
 			continue
 		}
-		out = append(out, q.contours(samples, scale, branch, level{
+		out = append(out, q.patchContours(samples, scale, branch, level[surfacePoint]{
 			oriented: true,
 			value: func(s surfacePoint, u, v float64) (float64, Vec3) {
 				if !s.Normal || s.Umbilic {
@@ -79,19 +82,29 @@ func (q SurfaceRequest) ridges(samples [][]surfacePoint, focal []FocalSheet, sca
 }
 
 // level is a level set contours traces: value is its function at the
-// patch point s at (u, v), or NaN where it has none, and, when oriented,
-// the direction of the line field it depends on there, in which it is odd;
+// point s at (u, v), or NaN where it has none, and, when oriented, the
+// direction of the line field it depends on there, in which it is odd;
 // place is where a crossing at s lands, and feet asks for s's own point
-// too.
-type level struct {
+// too. When virtual is given, crossings on its two sides are never joined,
+// and each curve is marked with its side.
+type level[P any] struct {
 	oriented bool
-	value    func(s surfacePoint, u, v float64) (float64, Vec3)
-	place    func(s surfacePoint) (Vec3, bool)
+	value    func(s P, u, v float64) (float64, Vec3)
+	place    func(s P) (Vec3, bool)
 	feet     bool
+	virtual  func(s P) bool
+}
+
+// patchContours traces a level set over the patch's own samples (see
+// contours).
+func (q SurfaceRequest) patchContours(samples [][]surfacePoint, scale float64, branch int, f level[surfacePoint]) []CuspidalEdge {
+	return contours(q, samples, func(u, v float64) surfacePoint { return q.point(u, v, scale) },
+		func(s surfacePoint) Vec3 { return s.X }, scale, branch, f)
 }
 
 // contours traces a level set of branch over the parameter grid, whose
-// samples it is given, by marching squares. Each grid edge whose two ends
+// samples it is given, as point evaluates them anywhere, with foot their
+// place on the patch, by marching squares. Each grid edge whose two ends
 // lie on opposite sides holds one crossing, found on the patch itself,
 // between its samples, by the Illinois method; a cell with all four edges
 // crossed (a saddle) is split by the side its center lies on. Crossings
@@ -102,8 +115,9 @@ type level struct {
 // seam. An oriented level orients each grid edge's far end, and the points
 // between, as its near end, and each cell's corners in turn from its
 // first, leaving the cell out when its last corner turns against its
-// first.
-func (q SurfaceRequest) contours(samples [][]surfacePoint, scale float64, branch int, f level) []CuspidalEdge {
+// first; a grid edge whose sides differ only because its direction turns
+// along it has no crossing, so the curve stops there.
+func contours[P any](q SurfaceRequest, samples [][]P, point func(u, v float64) P, foot func(P) Vec3, scale float64, branch int, f level[P]) []CuspidalEdge {
 	nu, nv := q.USamples, q.VSamples
 	seam := func(n, m int, at func(k, l int) Vec3) bool {
 		for l := 0; l <= m; l++ {
@@ -113,8 +127,8 @@ func (q SurfaceRequest) contours(samples [][]surfacePoint, scale float64, branch
 		}
 		return true
 	}
-	seamU := seam(nu, nv, func(k, l int) Vec3 { return samples[k][l].X })
-	seamV := seam(nv, nu, func(k, l int) Vec3 { return samples[l][k].X })
+	seamU := seam(nu, nv, func(k, l int) Vec3 { return foot(samples[k][l]) })
+	seamV := seam(nv, nu, func(k, l int) Vec3 { return foot(samples[l][k]) })
 	wrap := func(k, n int, closed bool) int {
 		if closed && k == n {
 			return 0
@@ -150,8 +164,8 @@ func (q SurfaceRequest) contours(samples [][]surfacePoint, scale float64, branch
 		}
 		return orient(c.value, c.e, toward)
 	}
-	at := func(u, v float64, toward Vec3) (float64, Vec3, surfacePoint) {
-		s := q.point(u, v, scale)
+	at := func(u, v float64, toward Vec3) (float64, Vec3, P) {
+		s := point(u, v)
 		value, e := f.value(s, u, v)
 		value, e = orient(value, e, toward)
 		return value, e, s
@@ -169,9 +183,9 @@ func (q SurfaceRequest) contours(samples [][]surfacePoint, scale float64, branch
 		return edge{false, i, wrap(j, nv, seamV)}
 	}
 	type crossing struct {
-		ok      bool
-		i, j    float64
-		x, foot Vec3
+		ok, virtual bool
+		i, j        float64
+		x, foot     Vec3
 	}
 	crossings := map[edge]crossing{}
 	order := []edge{}
@@ -191,9 +205,16 @@ func (q SurfaceRequest) contours(samples [][]surfacePoint, scale float64, branch
 			return value
 		}, f0, f1)
 		c := crossing{i: float64(i) + t*float64(di), j: float64(j) + t*float64(dj)}
-		_, _, s := at(u0+t*(u1-u0), v0+t*(v1-v0), toward)
+		value, _, s := at(u0+t*(u1-u0), v0+t*(v1-v0), toward)
+		// An oriented level also changes sides, without vanishing, where
+		// its direction turns across the grid edge by more than a right
+		// angle, as beside an umbilic: that is no crossing.
+		if f.oriented && !(math.Abs(value) <= 1e-6*math.Max(math.Abs(f0), math.Abs(f1))) {
+			ok = false
+		}
 		if x, placed := f.place(s); ok && placed {
-			c.ok, c.x, c.foot = true, x, s.X
+			c.ok, c.x, c.foot = true, x, foot(s)
+			c.virtual = f.virtual != nil && f.virtual(s)
 		}
 		crossings[e] = c
 		order = append(order, e)
@@ -201,7 +222,7 @@ func (q SurfaceRequest) contours(samples [][]surfacePoint, scale float64, branch
 	}
 	next := map[edge][]edge{}
 	join := func(a, b edge) {
-		if crossings[a].ok && crossings[b].ok {
+		if crossings[a].ok && crossings[b].ok && crossings[a].virtual == crossings[b].virtual {
 			next[a], next[b] = append(next[a], b), append(next[b], a)
 		}
 	}
@@ -244,7 +265,7 @@ func (q SurfaceRequest) contours(samples [][]surfacePoint, scale float64, branch
 	}
 	visited := map[edge]bool{}
 	walk := func(start edge) CuspidalEdge {
-		c := CuspidalEdge{Branch: branch + 1, Points: []Vec3{}, I: []float64{}, J: []float64{}}
+		c := CuspidalEdge{Branch: branch + 1, Virtual: crossings[start].virtual, Points: []Vec3{}, I: []float64{}, J: []float64{}}
 		if f.feet {
 			c.Feet = []Vec3{}
 		}

@@ -351,6 +351,77 @@ test("tracing starts bare, masks unreached caustic cells, and ends at the study"
   });
 });
 
+// A caustic's cuspidal edge one unit above the dish's middle row, open,
+// and a closed one a unit below its middle column: each point is reached
+// one unit after the light reaches its foot, along its ray or behind the
+// mirror, so the edges are drawn only between points reached, split where
+// they are not yet, and whole at the end.
+test("tracing reveals a caustic's cuspidal edges as light reaches them", () => {
+  const row = [0, 2, 4, 6, 8].map((j) => dish.points[4][j]!);
+  const column = [0, 2, 4, 6, 8].map((i) => dish.points[i][4]!);
+  const edges = [
+    {
+      branch: 1 as const,
+      closed: false,
+      points: row.map((p) => add(p, { x: 0, y: 0, z: 1 })),
+      i: row.map(() => 4),
+      j: [0, 2, 4, 6, 8],
+      feet: row,
+    },
+    {
+      branch: 2 as const,
+      closed: true,
+      virtual: true,
+      points: column.map((p) => add(p, { x: 0, y: 0, z: -1 })),
+      i: [0, 2, 4, 6, 8],
+      j: column.map(() => 4),
+      feet: column,
+    },
+  ];
+  const caustics = [
+    part(none, 1, false),
+    part(none, 1, true),
+    part(none, 2, false),
+    part(none, 2, true),
+  ];
+  const bounds = { center: focus, radius: 3 };
+  const result = mirror(dish, caustics, rays(dish, focus, 2), bounds);
+  result.rays!.edges = edges;
+  const timeline = traceTimeline(result, lit({}), bounds);
+  // Each foot is lit as the sample there is; its point a unit later.
+  edges[0].j.forEach((j, k) =>
+    expect(timeline.edges[0][k]).toBeCloseTo(timeline.hit[4][j] + 1, 12),
+  );
+  edges[1].i.forEach((i, k) =>
+    expect(timeline.edges[1][k]).toBeCloseTo(timeline.hit[i][4] + 1, 12),
+  );
+  expect(trace(result, timeline, 0).rays!.edges).toEqual([]);
+  let shown = 0;
+  let split = false;
+  for (let k = 1; k < 100; k++) {
+    const tau = (k / 100) * timeline.total;
+    const view = trace(result, timeline, k / 100).rays!;
+    let now = 0;
+    for (const e of view.edges!) {
+      const m = e.branch - 1;
+      expect(e.points.length).toBeGreaterThan(1);
+      e.points.forEach((p, q) => {
+        const at = edges[m].points.indexOf(p);
+        expect(at).toBeGreaterThanOrEqual(0);
+        expect(timeline.edges[m][at]).toBeLessThanOrEqual(tau);
+        expect(e.feet![q]).toBe(edges[m].feet[at]);
+      });
+      if (e.closed) expect(e.points.length).toBe(5);
+      else if (m === 1) split = true;
+      now += e.points.length;
+    }
+    expect(now).toBeGreaterThanOrEqual(shown);
+    shown = now;
+  }
+  expect(split).toBe(true);
+  expect(trace(result, timeline, 1).rays!.edges).toEqual(edges);
+});
+
 const stage = (page: Page) => page.locator(".spatial-stage");
 const pixels = (page: Page) =>
   page

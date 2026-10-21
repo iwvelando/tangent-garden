@@ -21,7 +21,8 @@ import (
 // within Length, and its extension at the first virtual one behind the
 // surface; a ray with no virtual caustic point has no extension, and one
 // with no real one runs as far ahead as its extension runs behind.
-// Receiver optionally collects the outgoing rays on a plane.
+// Receiver optionally collects the outgoing rays on a plane, and Edges asks
+// for the caustics' cuspidal edges (see causticEdges).
 type RaysRequest struct {
 	Interaction string          `json:"interaction"`
 	N1          float64         `json:"n1"`
@@ -33,6 +34,7 @@ type RaysRequest struct {
 	Length      float64         `json:"length"`
 	Stop        bool            `json:"stop"`
 	Receiver    ReceiverRequest `json:"receiver"`
+	Edges       bool            `json:"edges,omitempty"`
 }
 
 // Ray is a representative ray at sample (I, J): incident from Start to
@@ -72,21 +74,24 @@ type CausticSheet struct {
 // the critical angle, and Stigmatic samples where μ₁ = μ₂ and the two
 // branches meet. Clipped[k] counts traced samples whose branch k+1 caustic
 // point is beyond focalReach surface radii, at infinity. Receiver is the
-// receiver plane's study, or nil.
+// receiver plane's study, or nil. Edges are the caustics' cuspidal edges
+// when the request asks for them (an empty list when there are none), and
+// nil, with no key, otherwise.
 type RaysResult struct {
-	Surface   SurfaceSheet   `json:"surface"`
-	Caustics  []CausticSheet `json:"caustics"`
-	Lines     []Ray          `json:"lines"`
-	UCurves   []int          `json:"uCurves"`
-	VCurves   []int          `json:"vCurves"`
-	Source    *Vec3          `json:"source"`
-	Singular  int            `json:"singular"`
-	Unlit     int            `json:"unlit"`
-	AtSource  int            `json:"atSource"`
-	Stigmatic int            `json:"stigmatic"`
-	Total     int            `json:"total"`
-	Clipped   []int          `json:"clipped"`
-	Receiver  *Receiver      `json:"receiver"`
+	Surface   SurfaceSheet    `json:"surface"`
+	Caustics  []CausticSheet  `json:"caustics"`
+	Lines     []Ray           `json:"lines"`
+	UCurves   []int           `json:"uCurves"`
+	VCurves   []int           `json:"vCurves"`
+	Source    *Vec3           `json:"source"`
+	Singular  int             `json:"singular"`
+	Unlit     int             `json:"unlit"`
+	AtSource  int             `json:"atSource"`
+	Stigmatic int             `json:"stigmatic"`
+	Total     int             `json:"total"`
+	Clipped   []int           `json:"clipped"`
+	Receiver  *Receiver       `json:"receiver"`
+	Edges     *[]CuspidalEdge `json:"edges,omitempty"`
 }
 
 func (r RaysRequest) validate() error {
@@ -370,6 +375,10 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool) (Result, er
 			out.Caustics = append(out.Caustics, CausticSheet{SurfaceSheet: s, Branch: k + 1, Virtual: part == 1, Shape: spans(s, scale)})
 			families = append(families, flatten(pts))
 		}
+	}
+	if r.Edges {
+		edges := q.causticEdges(r, samples, out.Caustics, scale)
+		out.Edges = &edges
 	}
 	if r.Length > 0 {
 		for _, i := range out.VCurves {

@@ -1,4 +1,5 @@
 import { describeColors, type ColorScheme } from "../color-schemes";
+import { causticEdgesNote } from "./cuspidal";
 import type {
   CausticSheet,
   FocalShape,
@@ -86,6 +87,7 @@ export function raysNote(
           `${count(r.stigmatic, "sample is", "samples are")} stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.`,
         ]
       : []),
+    ...causticEdgesNote(r),
     ...(r.receiver ? receiverNote(r.receiver, light) : []),
   ];
 }

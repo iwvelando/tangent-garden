@@ -320,6 +320,7 @@ const config: SchemaOf<SpatialConfig> = {
         source: vec3,
         length: "number",
         stop: { optional: "boolean" },
+        edges: { optional: "boolean" },
         receiver: {
           fields: {
             plane: { options: { none: true, x: true, y: true, z: true } },
