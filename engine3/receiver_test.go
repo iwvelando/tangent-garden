@@ -273,9 +273,11 @@ func TestReceiverValidation(t *testing.T) {
 		{func(c *Request) { c.Rays.Receiver.Size = 0 }, "receiver's size"},
 		{func(c *Request) { c.Rays.Receiver.Size = math.Inf(1) }, "receiver's size"},
 		{func(c *Request) { c.Rays.Receiver.Bins = 7 }, "bins"},
-		{func(c *Request) { c.Rays.Receiver.Bins = 241 }, "bins"},
+		{func(c *Request) { c.Rays.Receiver.Bins = 961 }, "bins"},
 		{func(c *Request) { c.Rays.Receiver.Tilt = math.NaN() }, "receiver's tilt"},
 		{func(c *Request) { c.Rays.Receiver.Tilt = -2e5 }, "receiver's tilt"},
+		{func(c *Request) { c.Rays.Receiver.Refine = -1 }, "0–3 refinement levels"},
+		{func(c *Request) { c.Rays.Receiver.Refine = 4 }, "0–3 refinement levels"},
 	} {
 		c := ok()
 		tc.change(&c)
@@ -290,7 +292,8 @@ func TestReceiverValidation(t *testing.T) {
 		t.Fatal("a receiver without a plane")
 	}
 	c = ok()
-	c.Rays.Receiver.Bins = 240
+	c.Rays.Receiver.Bins = 960
+	c.Rays.Receiver.Refine = 3
 	c.Surface.USamples, c.Surface.VSamples = 240, 60
 	g := received(t, c)
 	accounted(t, g)
@@ -557,5 +560,207 @@ func TestReceiverTiltedLight(t *testing.T) {
 		if counts[0] < 20 || counts[1] < 20 {
 			t.Fatalf("turned %v°: %d bins lit and %d dark", tilt, counts[0], counts[1])
 		}
+	}
+}
+
+// refined asks receiver c to refine its cells up to levels levels.
+func refined(c Request, levels int) Request {
+	c.Rays.Receiver.Refine = levels
+	return c
+}
+
+// binsWithin says whether two receivers' bins agree within tol of their
+// peak.
+func binsWithin(g, h *Receiver, tol float64) (float64, bool) {
+	worst := 0.0
+	for a, column := range g.Irradiance {
+		for b, e := range column {
+			worst = math.Max(worst, math.Abs(e-h.Irradiance[a][b]))
+		}
+	}
+	return worst, worst <= tol*math.Max(g.Peak, h.Peak)
+}
+
+// A lamp over a flat mirror magnifies each cell's image threefold onto the
+// receiver, so on an 8 × 8 grid every cell lands over several bins, and
+// so does every cell of each refinement until the third. Refining every
+// cell L times evaluates exactly the rays of the grid 2^L times finer, so
+// the bins match that grid's to rounding, which converge at second order
+// (TestReceiverPointSource).
+func TestReceiverRefineMatchesFinerGrid(t *testing.T) {
+	lit := func(n, levels int) *Receiver {
+		c := refined(receive(flat(1, lamp(Vec3{0, 0, 1})), "z", 2, .31, -.23, 1.2, 8), levels)
+		c.Surface.USamples, c.Surface.VSamples = n, n
+		g := received(t, c)
+		accounted(t, g)
+		return g
+	}
+	coarse := lit(12, 0)
+	if coarse.Split != 0 || coarse.Exhausted {
+		t.Fatalf("an unrefined receiver splits %d cells", coarse.Split)
+	}
+	for levels := 1; levels <= 3; levels++ {
+		g, want := lit(12, levels), lit(12<<levels, 0)
+		if worst, ok := binsWithin(g, want, 1e-12); !ok {
+			t.Fatalf("%d levels: bins differ from the %d grid's by %v", levels, 12<<levels, worst)
+		}
+		if math.Abs(g.Received-want.Received) > 1e-12 || g.Split == 0 || g.Exhausted {
+			t.Fatalf("%d levels: received %v, want %v; %d split", levels, g.Received, want.Received, g.Split)
+		}
+	}
+}
+
+// Where every cell already lands within a bin, refinement splits nothing
+// and changes nothing: a paraboloid's focus takes each cell's image to a
+// point, and a window far from the light receives none of it.
+func TestReceiverRefineOnlyWhereNeeded(t *testing.T) {
+	for _, c := range []Request{
+		receive(mirror("paraboloid", .5, .5, 0, -1, 1, -1, 1, 24, 24, parallel(0, -90)), "z", 1, 0, 0, 1, 9),
+		receive(flat(1, lamp(Vec3{0, 0, 1})), "z", 2, 40, 40, 1.2, 8),
+	} {
+		plain := received(t, c)
+		g := received(t, refined(c, 3))
+		accounted(t, g)
+		if g.Split != 0 || !reflect.DeepEqual(g, plain) {
+			t.Fatalf("%d split; %+v, want %+v", g.Split, g, plain)
+		}
+	}
+}
+
+// A uniform beam behind a flat interface lands uniformly however its cells
+// are split, so every bin still receives (cos θ₁/cos θ₂)|T·m| = cos θ₁ on
+// a parallel window, even with cells many bins wide.
+func TestReceiverRefineUniform(t *testing.T) {
+	cos := math.Sqrt(3) / 2
+	c := receive(glass(flat(1.5, parallel(0, -60)), 1, 1.5), "z", -1, .1, 0, 1, 64)
+	c.Surface.USamples, c.Surface.VSamples = 12, 12
+	g := received(t, refined(c, 2))
+	accounted(t, g)
+	if g.Split == 0 {
+		t.Fatal("no cell split")
+	}
+	for a, column := range g.Irradiance {
+		for b, e := range column {
+			if math.Abs(e-cos) > 1e-9 {
+				t.Fatalf("bin (%d, %d): %v", a, b, e)
+			}
+		}
+	}
+}
+
+// A glass dome refracts its light into a ring that folds across the
+// receiver, where a coarse grid's triangles span several bins each; the
+// window takes in part of the ring. Split where they land on it, its bins
+// come several times nearer the uniformly finer grid's than the coarse
+// grid's are, for under half that grid's cells.
+func TestReceiverRefineFolds(t *testing.T) {
+	dome := func(nu, nv, levels int) *Receiver {
+		c := glass(mirror("ellipsoid", 1.5, 1.5, 1.5, 0, 2*math.Pi, .6, math.Pi/2, nu, nv, parallel(0, -90)), 1, 1.5)
+		g := received(t, refined(receive(c, "z", -1.9, .12, 0, .2, 40), levels))
+		accounted(t, g)
+		return g
+	}
+	l1 := func(g, h *Receiver) float64 {
+		s := 0.0
+		for a, column := range g.Irradiance {
+			for b, e := range column {
+				s += math.Abs(e - h.Irradiance[a][b])
+			}
+		}
+		return s
+	}
+	fine := dome(160, 80, 0)
+	coarse, adapted := dome(40, 20, 0), dome(40, 20, 2)
+	if !(l1(adapted, fine) < l1(coarse, fine)/3) {
+		t.Fatalf("refined error %v, coarse %v", l1(adapted, fine), l1(coarse, fine))
+	}
+	if cells := 40*20 + 3*adapted.Split; !(adapted.Split > 0 && cells < 160*80/2) {
+		t.Fatalf("%d split, %d cells", adapted.Split, cells)
+	}
+}
+
+// Cells at the light's edge are split too where their light lands on the
+// window, so the flux of cells only partly traced shrinks with each level,
+// as it does with the grid (TestReceiverAccounting): here a sphere's
+// terminator, whose grazing rays reach a wide window beside it.
+func TestReceiverRefineEdge(t *testing.T) {
+	R := 1.2
+	edges := []float64{}
+	for levels := 0; levels <= 2; levels++ {
+		c := receive(mirror("ellipsoid", R, R, R, 0, 2*math.Pi, -math.Pi/2, math.Pi/2, 40, 20, parallel(30, -50)), "x", 3, 0, 0, 20, 32)
+		g := received(t, refined(c, levels))
+		accounted(t, g)
+		edges = append(edges, g.Edge)
+	}
+	if !(edges[0] > 0 && edges[1] < edges[0]*.5 && edges[2] < edges[1]*.5) {
+		t.Fatalf("the edge's flux shrinks with each level: %v", edges)
+	}
+}
+
+// Refinement proceeds a level at a time, so a budget that runs out during
+// the second level leaves every cell refined once, and the result says the
+// budget ran out. The light is still all accounted for. The budget holds
+// exactly the first level's cells.
+func TestReceiverRefineBudget(t *testing.T) {
+	c := receive(flat(1, lamp(Vec3{0, 0, 1})), "z", 2, .31, -.23, 1.2, 8)
+	c.Surface.USamples, c.Surface.VSamples = 12, 12
+	once := received(t, refined(c, 1))
+	defer func(cells int) { receiverCells = cells }(receiverCells)
+	receiverCells = 12*12 + 3*once.Split
+	g := received(t, refined(c, 3))
+	accounted(t, g)
+	if !g.Exhausted || g.Split != once.Split {
+		t.Fatalf("%d split, exhausted %v; once %d", g.Split, g.Exhausted, once.Split)
+	}
+	if worst, ok := binsWithin(g, once, 1e-12); !ok {
+		t.Fatalf("bins differ from one level's by %v", worst)
+	}
+}
+
+// A refined receiver traces its points by outgoing, which follows the
+// light exactly as ray does without the wavefront's curvatures: across
+// mirrors and interfaces, lamps and beams, unlit and grazed points, the
+// source itself, and light beyond the critical angle.
+func TestOutgoingMatchesRay(t *testing.T) {
+	R := 1.2
+	for _, c := range []Request{
+		glass(mirror("ellipsoid", 1.5, 1.5, 1.5, 0, 2*math.Pi, .1, math.Pi/2, 24, 12, parallel(20, -70)), 1, 1.5),
+		glass(inside(mirror("ellipsoid", R, R, R, 0, 2*math.Pi, -math.Pi/2, math.Pi/2, 24, 12, lamp(Vec3{.3, .4, .8}))), 1.5, 1),
+		mirror("paraboloid", .5, .5, 0, -1, 1, -1, 1, 24, 24, lamp(Vec3{0, 0, 0})),
+		mirror("torus", 2, .8, 0, 0, 2*math.Pi, 0, 2*math.Pi, 24, 24, parallel(10, -45)),
+		// Light exactly grazing a flat mirror lights none of it.
+		flat(1, parallel(0, 0)),
+	} {
+		q, r := c.Surface, c.Rays
+		kinds := map[string]int{}
+		for i := 0; i <= 40; i++ {
+			for j := 0; j <= 40; j++ {
+				u, v := lerp(q.UMin, q.UMax, i, 40), lerp(q.VMin, q.VMax, j, 40)
+				if i == 20 && j == 20 && q.Kind == "paraboloid" {
+					u, v = 0, 0
+				}
+				want := q.ray(r, u, v, 1)
+				got, area := q.outgoing(r, u, v, 1)
+				if _, xu, xv, _, _, _ := q.patch(u, v); area != xu.cross(xv).norm() {
+					t.Fatalf("%s at (%v, %v): area %v, want %v", q.Kind, u, v, area, xu.cross(xv).norm())
+				}
+				near := func(a, b Vec3) bool { return a.sub(b).norm() <= 1e-13*(1+b.norm()) }
+				if got.Normal != want.Normal || got.AtSource != want.AtSource || got.Lit != want.Lit || got.Total != want.Total ||
+					!near(got.X, want.X) || !near(got.N, want.N) || !near(got.I, want.I) || !near(got.R, want.R) {
+					t.Fatalf("%s at (%v, %v): %+v, want %+v", q.Kind, u, v, got, want)
+				}
+				switch {
+				case want.AtSource:
+					kinds["source"]++
+				case want.Total:
+					kinds["total"]++
+				case want.traced():
+					kinds["traced"]++
+				default:
+					kinds["unlit"]++
+				}
+			}
+		}
+		t.Logf("%s: %v", q.Kind, kinds)
 	}
 }

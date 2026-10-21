@@ -265,6 +265,56 @@ func (q SurfaceRequest) ray(r RaysRequest, u, v, scale float64) mirrorPoint {
 	return p
 }
 
+// outgoing is ray without the wavefront's shape: X, N, I and R, and
+// whether the point is lit, at the source or totally reflected, by ray's
+// own arithmetic, with |X_u × X_v|, which a receiver's refined cells weigh
+// their flux by.
+func (q SurfaceRequest) outgoing(r RaysRequest, u, v, scale float64) (mirrorPoint, float64) {
+	x, xu, xv, _, _, _ := q.patch(u, v)
+	p := mirrorPoint{X: x}
+	c := xu.cross(xv)
+	area := c.norm()
+	big := math.Max(xu.norm(), xv.norm())
+	if !(area > 1e-9*big*big) {
+		return p, area
+	}
+	sign := 1.0
+	if q.Reverse {
+		sign = -1
+	}
+	n := c.mul(sign / area)
+	p.N, p.Normal = n, true
+	in := r.direction()
+	if r.Light == "point" {
+		w := x.sub(r.Source)
+		d := w.norm()
+		if !(d > 1e-9*scale) {
+			p.AtSource = true
+			return p, area
+		}
+		in = w.mul(1 / d)
+	}
+	p.I = in
+	cos := in.dot(n)
+	if !(cos < -1e-9) {
+		return p, area
+	}
+	p.Lit = true
+	c0 := -cos
+	a, b := 1.0, 2*c0
+	if r.Interaction == "refract" {
+		eta := r.N1 / r.N2
+		root := math.Sqrt(math.Max(0, 1-eta*eta*(1-c0*c0)))
+		if !(root > 1e-9) {
+			p.Total = true
+			return p, area
+		}
+		a, b = eta, eta*c0-root
+	}
+	p.R = in.mul(a).add(n.mul(b))
+	return p, area
+}
+
 // caustic returns branch k's caustic point, which is at infinity unless
 // |μ_k| exceeds 1/reach (see finite).
 func (p mirrorPoint) caustic(k int) Vec3 { return p.X.add(p.R.mul(1 / p.Mu[k])) }

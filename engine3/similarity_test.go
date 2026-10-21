@@ -441,20 +441,11 @@ func budgetFor(q Request, m similarity) budget {
 	if m.shift == (Vec3{}) {
 		// Scaled by a power of two, a study's arithmetic is exact, so every
 		// number agrees to rounding and every decision is the same. The one
-		// exception is a numerically differenced r‴, whose stability test
-		// has an absolute floor (jerk, in diagnostics.go): a tiny copy finds
-		// torsions the original cannot, and so normals of a framed ribbon's
-		// surface probe, which needs the torsion's slope.
+		// exception is a Frenet ribbon's numerically differenced torsion
+		// slope, whose stability test still has an absolute floor.
 		b := budget{worst: map[string]float64{"length": 1e-13, "number": 1e-13, "curvature": 1e-13}, skipped: never, tolerated: never}
 		tolerated := []string{}
 		if m.scale < 1 && q.analytic() == "" {
-			tolerated = append(tolerated, "diagnostics.torsion", "diagnostics.unknown", "surfaceDiagnostics.", "probe.torsion")
-		}
-		// A framed ribbon's probe tests its tangent plane against the
-		// larger of S_t, a length per parameter, and S_u, the unit offset
-		// direction (shape, as ruledProbe calls it): in a tinier copy S_t is
-		// far below 1 and no normal is found.
-		if m.scale < 0x1p-20 && q.Construction == "framed" {
 			tolerated = append(tolerated, "surfaceDiagnostics.")
 		}
 		b.tolerated = prefixed(tolerated...)

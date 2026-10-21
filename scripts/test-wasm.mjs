@@ -3105,6 +3105,33 @@ const spatialRays = (surface, rays, flags = {}) =>
   );
   const [corner] = floor.corners;
   assert.ok(Math.hypot(corner.x + 0.4, corner.y + 0.5, corner.z + 1) < 1e-15);
+  // Refined over finer bins, the beam still lands uniformly, and the cells
+  // split reach the page; an unrefined receiver sends no count.
+  assert.equal("split" in floor, false);
+  const refined = spatialRays(
+    { a: 0, b: 0 },
+    {
+      interaction: "refract",
+      elevation: -60,
+      receiver: {
+        plane: "z",
+        at: -1,
+        c1: 0.1,
+        c2: 0,
+        size: 1,
+        bins: 960,
+        refine: 2,
+      },
+    },
+  ).rays.receiver;
+  assert.equal(refined.irradiance.length, 960);
+  assert.ok(refined.split > 0 && !refined.exhausted);
+  refined.irradiance.flat().forEach((e) => assert.ok(Math.abs(e - cos) < 1e-9));
+  assert.match(
+    spatialRays({}, { receiver: { plane: "z", size: 1, bins: 16, refine: 4 } })
+      .error,
+    /0–3 refinement levels/,
+  );
   assert.match(
     spatialRays({}, { interaction: "absorb" }).error,
     /reflect or refract/,
@@ -3170,7 +3197,7 @@ const spatialRays = (surface, rays, flags = {}) =>
   );
 }
 console.log(
-  "WASM rays: paraboloid focus, plane mirror, Snell's window, receiver, light and mirror probes, and validation passed",
+  "WASM rays: paraboloid focus, plane mirror, Snell's window, receiver and its refinement, light and mirror probes, and validation passed",
 );
 // An implicit result arrives as its JSON beside its mesh arrays (see
 // spatialResult); an error is JSON alone.

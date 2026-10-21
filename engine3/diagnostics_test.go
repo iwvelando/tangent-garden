@@ -2,8 +2,11 @@ package engine3
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"math"
+	"runtime"
 	"testing"
 )
 
@@ -459,5 +462,172 @@ func TestClosedCurveCountsItsSeamOnce(t *testing.T) {
 	}
 	if flat < 2 || d.Flat != flat {
 		t.Fatalf("flat %d, counted %d", flat, d.Flat)
+	}
+}
+
+// A third-derivative jump must stay unknown when changing length units.
+// Away from it, the same cubic has a smooth, nonzero torsion.
+func TestThirdDerivativeStabilityScales(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p10} {
+		t.Run(fmt.Sprint(scale), func(t *testing.T) {
+			c := custom(affine("t", scale, 0), affine("t^2", scale, 0), affine("abs(t+0.0015)^3", scale, 0), -1, 1)
+			c.Construction = "none"
+			r, d := diagnosed(t, c)
+			mid := (len(r.Base) - 1) / 2
+			if d.Torsion[mid] != nil || d.Normal[mid] == nil || d.Curvature[mid] == nil {
+				t.Fatalf("jump: torsion %v normal %v curvature %v", d.Torsion[mid], d.Normal[mid], d.Curvature[mid])
+			}
+			for _, at := range []float64{0, 0.0001, -1, 1, 0.3} {
+				c.Diagnostics = true
+				c.Probe = &ProbeQuery{T: &at}
+				r, err := Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				p := r.CurveProbe
+				if p.Normal == nil || p.Curvature == nil {
+					t.Fatalf("t=%g: lost regular frame", at)
+				}
+				if at < 0.001 && at >= 0 {
+					if p.Torsion != nil {
+						t.Fatalf("t=%g: jump has torsion %g", at, *p.Torsion)
+					}
+					continue
+				}
+				// For r=(t,t²,±(t+c)³), τ=±12/|r′×r″|².
+				z := at + 0.0015
+				sign := 1.0
+				if z < 0 {
+					sign = -1
+				}
+				bx, by := 6*sign*z*(2*at-z), -6*sign*z
+				want := 12 * sign / (bx*bx + by*by + 4)
+				if p.Torsion == nil || math.Abs(*p.Torsion*scale-want) > 2e-4 {
+					t.Fatalf("t=%g: torsion %v, want %g / scale", at, p.Torsion, want)
+				}
+			}
+		})
+	}
+}
+
+// Record complete results before changing the shared numerical r‴ check.
+func TestNumericalJerkPresetResults(t *testing.T) {
+	for _, name := range []string{"A helix pressed through its circle", "A twisted cubic losing its bend", "A knot reparameterized in place"} {
+		c := spatialPresets(t)[name]
+		if c.Format == "" {
+			t.Fatal("missing preset", name)
+		}
+		c.Diagnostics = true
+		r, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		baselines := map[string]map[string]string{
+			"arm64": {
+				"A helix pressed through its circle": "b9df81cc664e2442ab74081c599710e8c1ec99742c63f5c468f393ca50930368",
+				"A twisted cubic losing its bend":    "823e1d19169b68c14361f51a413c313a6132bb8def647f442ef191df90f87836",
+				"A knot reparameterized in place":    "70bb5ea103880de8e8d8e41c7ff5dbbf11f8d5b78662e15e7881cd3a61fa03b3",
+			},
+			"amd64": {
+				"A helix pressed through its circle": "8341f218d30bd53555b2ea1c365ced685fb99a07278059a3f32667ce694dcee4",
+				"A twisted cubic losing its bend":    "21c829f80a5dc1dfd4106960d1a75aef9a27a6800a013460a0bed6ec6ce974ec",
+				"A knot reparameterized in place":    "c114f14e1fafc5aad1a79a6ff8fde73fac5531acff7263701f4365493fcf23b9",
+			},
+		}
+		want := baselines[runtime.GOARCH][name]
+		if want == "" {
+			t.Skip("baselines recorded on arm64 and amd64")
+		}
+		if got := fmt.Sprintf("%x", sha256.Sum256(b)); got != want {
+			t.Fatalf("%s changed: %s, want %s", name, got, want)
+		}
+	}
+}
+
+// A smooth fifth-degree curve has τ=0 at its middle. The two numerical
+// r‴ estimates differ there by truncation, below the curve-relative floor.
+// That floor must retain a known, nearly zero torsion in any length or
+// parameter units; the relative agreement term alone rejects it.
+func TestSmallThirdDerivativeStaysKnownAcrossScales(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p10} {
+		for _, span := range []float64{1, 4} {
+			t.Run(fmt.Sprintf("%g/%g", scale, span), func(t *testing.T) {
+				u := "(t/" + number(span) + ")"
+				c := custom(affine(u, scale, 0), affine(u+"^2", scale, 0), affine("0.1*"+u+"^5", scale, 0), -span, span)
+				c.Construction = "none"
+				r, d := diagnosed(t, c)
+				mid := (len(r.Base) - 1) / 2
+				if d.Torsion[mid] == nil || math.Abs(*d.Torsion[mid]*scale) > 1e-5 {
+					t.Fatalf("smooth zero torsion at sample: %v", d.Torsion[mid])
+				}
+				for _, at := range []float64{0, span * 0.0001} {
+					p := probeAt(t, c, at)
+					if p.Torsion == nil || math.Abs(*p.Torsion*scale) > 1e-5 {
+						t.Fatalf("smooth zero torsion at %g: %v", at, p.Torsion)
+					}
+				}
+			})
+		}
+	}
+}
+
+// A curve with no size of its own keeps the absolute r‴ floor, 10⁻⁴, at
+// any parameter span. Here r″ = 5t³ on [-2, 2], so at t = 0 the two
+// central differences of r″ are 5h² and disagree by 6·10⁻⁵: within the
+// absolute floor, though beyond 10⁻⁴/Δ.
+func TestSizelessCurveKeepsAbsoluteJerkFloor(t *testing.T) {
+	evaluate := evaluation(func(s float64) (Vec3, Vec3, Vec3, bool) {
+		return Vec3{}, Vec3{}, Vec3{X: 5 * s * s * s}, true
+	})
+	c := Request{Format: "parametric", units: absolute}
+	j, ok := jerk(c, evaluate, -2, 2)(0, Vec3{})
+	if !ok || math.Abs(j.X-5*2e-3*2e-3) > 1e-15 {
+		t.Fatalf("jerk %v, %v", j, ok)
+	}
+}
+
+// Reparameterizing t → kt scales r‴ and its floor alike by k⁻³, so a
+// third-derivative jump stays unknown over any parameter span.
+func TestThirdDerivativeStabilityReparameterizes(t *testing.T) {
+	for _, k := range []float64{1, 1024, 0x1p-10} {
+		t.Run(fmt.Sprint(k), func(t *testing.T) {
+			u := "(t/" + number(k) + ")"
+			c := custom(u, u+"^2", "abs("+u+"+0.0015)^3", -k, k)
+			c.Construction = "none"
+			r, d := diagnosed(t, c)
+			mid := (len(r.Base) - 1) / 2
+			if d.Torsion[mid] != nil || d.Normal[mid] == nil {
+				t.Fatalf("jump: torsion %v normal %v", d.Torsion[mid], d.Normal[mid])
+			}
+		})
+	}
+}
+
+// A still point's r‴ is stable within 10⁻⁴ L/Δ³ for a curve of size L over
+// a span Δ. With r″ = c t³ on [-Δ/2, Δ/2], the two central differences at
+// t = 0 are c h² for h = 10⁻³Δ and 5·10⁻⁴Δ, so they disagree by 0.75 c h²
+// against a relative allowance of 0.01 c h²: they are kept for half the
+// c that meets the floor, and discarded for twice it.
+func TestThirdDerivativeFloorIsLengthPerParameterCubed(t *testing.T) {
+	for _, s := range [][2]float64{{1, 2}, {0x1p-40, 2048}, {1024, 0x1p-10}} {
+		size, span := s[0], s[1]
+		t.Run(fmt.Sprint(size, "/", span), func(t *testing.T) {
+			h := 1e-3 * span
+			edge := 1e-4 * size / (span * span * span) / (0.74 * h * h)
+			for _, f := range []float64{0.5, 2} {
+				evaluate := evaluation(func(s float64) (Vec3, Vec3, Vec3, bool) {
+					return Vec3{}, Vec3{}, Vec3{X: f * edge * s * s * s}, true
+				})
+				c := Request{Format: "parametric", units: sized(size, span, absolute)}
+				_, ok := jerk(c, evaluate, -span/2, span/2)(0, Vec3{})
+				if ok != (f < 1) {
+					t.Fatalf("%g of the floor: kept %v", f, ok)
+				}
+			}
+		})
 	}
 }

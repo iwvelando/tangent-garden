@@ -154,7 +154,7 @@ test("a receiver has its own controls, layer and validation", async ({
     await expect(page.getByRole("alert")).toHaveCount(0);
   }
   await page.getByLabel("Bins", { exact: true }).fill("7");
-  await expect(page.getByRole("alert")).toContainText("8–240 bins");
+  await expect(page.getByRole("alert")).toContainText("8–960 bins");
   await page.getByLabel("Bins", { exact: true }).fill("24");
   await settled(page);
   await expect(page.getByRole("alert")).toHaveCount(0);

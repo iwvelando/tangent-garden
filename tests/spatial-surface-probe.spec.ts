@@ -2183,3 +2183,55 @@ test("a reveal draws a canal's surface probe once it reaches the probe's row", a
     beadReadout(-2 * Math.PI + (250 * Math.PI) / 120),
   );
 });
+
+// A Frenet ribbon of (2 cos t,2 sin t,t/3) is a helicoid with
+// κ₁ = −κ₂ = (1/3)/((2−u)²+1/9). Its units do not decide stability.
+test("a small Frenet helicoid keeps its known principal curvatures", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, staircase);
+  await settled(page);
+  await page.getByLabel("Construction", { exact: true }).selectOption("framed");
+  await page.getByLabel("Frame", { exact: true }).selectOption("frenet");
+  await page.getByLabel("Half-width w", { exact: true }).fill("0.8");
+  await describe(page).selectOption("surface");
+  await surfaceSwitch(page).check();
+  await page.getByRole("textbox", { name: "t from", exact: true }).fill("0");
+  await page.getByRole("textbox", { name: "to", exact: true }).fill("8");
+  await settled(page);
+  await along(page, "Along t").fill("22");
+  await along(page, "Across the ribbon").fill("0");
+  let referenceNotes: string | undefined;
+  for (const scale of [1, 2 ** -16, 1]) {
+    for (const [name, expression] of [
+      ["x(t)", `${2 * scale}*cos(t)`],
+      ["y(t)", `${2 * scale}*sin(t)`],
+      ["z(t)", `${scale}*t/3`],
+      ["Half-width w", `${0.8 * scale}`],
+    ])
+      await page.getByRole("textbox", { name, exact: true }).fill(expression);
+    await settled(page);
+    await expect
+      .poll(
+        async () =>
+          JSON.parse((await stage(page).getAttribute("data-config"))!).frame
+            .width,
+      )
+      .toBe(0.8 * scale);
+    const notes = page.locator(".probe-notes");
+    if (referenceNotes === undefined)
+      referenceNotes = (await notes.textContent()) ?? "";
+    await expect(notes).toHaveText(referenceNotes);
+    const want = 1 / 3 / (2.8 ** 2 + 1 / 9) / scale;
+    await expect
+      .poll(async () => Math.abs((await numbers(page)).k0 / want - 1))
+      .toBeLessThan(0.001);
+    const got = await numbers(page);
+    expect(Math.abs((got.k0 - want) / want)).toBeLessThan(0.001);
+    expect(Math.abs((got.k1 + want) / want)).toBeLessThan(0.001);
+    await expect(page.getByTestId("probe-status")).not.toHaveText(
+      /unknown|Singular/i,
+    );
+  }
+});

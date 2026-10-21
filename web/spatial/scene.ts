@@ -195,41 +195,45 @@ export const defaultLayers: Layers = {
   cast: true,
 };
 
-// Each receiver bin as two flat triangles whose phase is its shade: the
-// irradiance's log over three decades below the peak, from 0 to 1, or −1
-// where no light lands.
+// A receiver bin's shade: the irradiance's log over three decades below
+// the peak, from 0 to 1, or −1 where no light lands.
 export function receiverShade(e: number, peak: number) {
   return e > 0 && peak > 0
     ? Math.max(0, Math.min(1, 1 + Math.log10(e / peak) / 3))
     : -1;
 }
-function receiverVertices(g: ReceiverResult | null | undefined) {
-  if (!g) return [];
+// A receiver as one quad over its window, whose texture coordinates (in
+// place of its normal, which an unshaded receiver does not use) look up
+// each bin's shade in a texture of its bins, row b holding bin (a, b) at
+// column a. A texel holds a shade's 16 bits in red (high) and green (low),
+// and in blue 255 where light lands or 0 where none does.
+function receiverSheet(g: ReceiverResult | null | undefined) {
+  if (!g) return { data: [], shades: undefined };
   const n = g.irradiance.length,
-    [o, a, , b] = g.corners;
-  const at = (s: number, t: number) => ({
-    x: o.x + (s * (a.x - o.x) + t * (b.x - o.x)) / n,
-    y: o.y + (s * (a.y - o.y) + t * (b.y - o.y)) / n,
-    z: o.z + (s * (a.z - o.z) + t * (b.z - o.z)) / n,
-  });
-  const out: number[] = [];
+    [o, a, c, b] = g.corners;
+  const data: number[] = [];
+  for (const [p, s, t] of [
+    [o, 0, 0],
+    [a, 1, 0],
+    [c, 1, 1],
+    [o, 0, 0],
+    [c, 1, 1],
+    [b, 0, 1],
+  ] as const)
+    data.push(p.x, p.y, p.z, s, t, 0, 0);
+  const texels = new Uint8Array(4 * n * n);
   g.irradiance.forEach((column, i) =>
     column.forEach((e, j) => {
-      const shade = receiverShade(e, g.peak);
-      for (const [s, t] of [
-        [i, j],
-        [i + 1, j],
-        [i + 1, j + 1],
-        [i, j],
-        [i + 1, j + 1],
-        [i, j + 1],
-      ]) {
-        const p = at(s, t);
-        out.push(p.x, p.y, p.z, 0, 0, 1, shade);
-      }
+      const shade = receiverShade(e, g.peak),
+        q = Math.round(Math.max(shade, 0) * 65535),
+        k = 4 * (j * n + i);
+      texels[k] = q >> 8;
+      texels[k + 1] = q & 255;
+      texels[k + 2] = shade < 0 ? 0 : 255;
+      texels[k + 3] = 255;
     }),
   );
-  return out;
+  return { data, shades: { size: n, data: texels } };
 }
 
 // An implicit surface as the engine's shared vertices, each with its normal
@@ -341,6 +345,8 @@ export type Batch = {
   indices?: Uint32Array;
   weight?: number;
   origin?: Vec3;
+  // A receiver's bins as a size × size texture (see receiverSheet).
+  shades?: { size: number; data: Uint8Array };
 };
 
 // Where a result's positions are measured from before they become single
@@ -1059,7 +1065,11 @@ export function buildScene(result: SpatialResult) {
     "lines",
     4,
   );
-  const receiverSheet = batch(receiverVertices(rays?.receiver), "triangles", 7);
+  const receiving = receiverSheet(rays?.receiver);
+  const receiverBatch: Batch = {
+    ...batch(receiving.data, "triangles", 7),
+    ...(receiving.shades && { shades: receiving.shades }),
+  };
   const receiverFrame = batch(
     vertices(
       rays?.receiver
@@ -1224,7 +1234,7 @@ export function buildScene(result: SpatialResult) {
     incidentRays,
     reflectedRays,
     totalRays,
-    receiverSheet,
+    receiverSheet: receiverBatch,
     receiverFrame,
     virtualRays,
     lamp,

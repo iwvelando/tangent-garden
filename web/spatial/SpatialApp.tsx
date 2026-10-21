@@ -98,6 +98,8 @@ import {
   type ReceiverConfig,
   minReceiverBins,
   maxReceiverBins,
+  maxReceiverRefine,
+  maxReceiverCells,
   maxSurfaceCells,
   maxSurfaceCurves,
   maxMeridians,
@@ -1200,6 +1202,33 @@ export default function SpatialApp({
               />
             </Field>
           </div>
+          <Field
+            label="Refinement levels"
+            help={tiered(
+              `0–${maxReceiverRefine} levels, splitting cells whose light lands more than a bin wide on the window.`,
+              `0 spreads each cell whole. Each level splits such a cell into four, tracing more rays where the light folds or spreads, so each costs more time. At most ${maxReceiverCells.toLocaleString()} cells in all.`,
+            )}
+          >
+            <input
+              type="number"
+              min={0}
+              max={maxReceiverRefine}
+              step="1"
+              value={
+                Number.isNaN(config.rays.receiver.refine)
+                  ? ""
+                  : (config.rays.receiver.refine ?? 0)
+              }
+              // An unrefined receiver leaves the field out, as links made
+              // before it do.
+              onChange={(e) => {
+                const refine = e.target.valueAsNumber;
+                setReceiver(({ refine: _, ...r }) =>
+                  refine === 0 ? r : { ...r, refine },
+                );
+              }}
+            />
+          </Field>
         </>
       )}
     </>
@@ -2271,7 +2300,9 @@ export default function SpatialApp({
           / d² for a lamp of unit intensity, spread evenly over where its rays
           cross the plane. Each bin shows the mean irradiance over its square,
           with nothing absorbed, no Fresnel losses and no shadows, and the note
-          accounts for every part of the light.
+          accounts for every part of the light. Refinement splits cells whose
+          light lands more than a bin wide, so the bins show the light’s own
+          detail rather than the grid’s.
         </p>
       )}
     </StudyExplanation>

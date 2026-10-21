@@ -184,7 +184,9 @@ export type RaysInteraction = "reflect" | "refract";
 // other fields are read only when the plane is not "none". `tilt` turns the
 // window, and the plane with it, by that many degrees about its first axis
 // through its center, leaning its second axis toward the plane's normal
-// axis; absent means none, as in links made before it. Mirrors
+// axis; absent means none, as in links made before it. `refine` splits the
+// surface's cells up to that many levels where their light lands on the
+// window more than a bin wide; absent means none. Mirrors
 // engine3.ReceiverRequest.
 export type ReceiverPlane = "none" | "x" | "y" | "z";
 export type ReceiverConfig = {
@@ -195,9 +197,13 @@ export type ReceiverConfig = {
   size: number;
   bins: number;
   tilt?: number;
+  refine?: number;
 };
 export const minReceiverBins = 8;
-export const maxReceiverBins = 240;
+export const maxReceiverBins = 960;
+export const maxReceiverRefine = 3;
+// The most cells a refined receiver spreads, its surface's own included.
+export const maxReceiverCells = 524288;
 export type RaysConfig = {
   interaction: RaysInteraction;
   n1: number;
@@ -940,6 +946,10 @@ export type ReceiverResult = {
   away: number;
   total: number;
   edge: number;
+  // The cells refinement split, and whether a cell needing it was left
+  // whole once maxReceiverCells were spread; absent when none were split.
+  split?: number;
+  exhausted?: boolean;
 };
 // Mirrors engine3.RaysResult: the surface, the caustic parts (branch 1 real
 // and virtual, then branch 2), and representative rays where the parameter

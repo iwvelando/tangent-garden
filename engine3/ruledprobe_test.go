@@ -1,9 +1,104 @@
 package engine3
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
+
+// A twisted circular ribbon has K = -(2π Twist/L)² at its spine.
+// Its unit ruling direction must not set an absolute floor on S_t.
+func TestFramedRibbonProbeAtEveryScale(t *testing.T) {
+	for _, radius := range []float64{1, 0x1p-40, 0x1p10} {
+		t.Run(fmt.Sprint(radius), func(t *testing.T) {
+			c := ribbon(study(), "rotation-minimizing", Vec3{0, 0, 1}, 0, 1, radius/4)
+			c.Format = "harmonic"
+			c.Harmonic = HarmonicCurve{Min: 0, Max: 2 * math.Pi, Terms: []HarmonicTerm{{Frequency: 1, Cosine: Vec3{radius, 0, 0}, Sine: Vec3{0, radius, 0}}}}
+			c.SurfaceDiagnostics = true
+			r, d := probed(t, c)
+			if d.Singular != 0 || d.Unknown != 0 {
+				t.Fatalf("regular ribbon: singular %d unknown %d", d.Singular, d.Unknown)
+			}
+			check := func(d *SurfaceDiagnostics, row, col int) {
+				t.Helper()
+				n, k1, k2 := d.Normals[row][col], d.Curvature[0][row][col], d.Curvature[1][row][col]
+				if n == nil || k1 == nil || k2 == nil {
+					t.Fatal("regular ribbon lost its normal or curvature")
+				}
+				gauss := *k1 * *k2
+				relative(t, "spine K", &gauss, -1/(radius*radius), 1e-10)
+				if math.Abs(n.norm()-1) > 1e-12 {
+					t.Fatalf("normal length %g", n.norm())
+				}
+				// D = cos(t) z + sin(t) radial, so the drawn D × T is
+				// -cos(t) radial + sin(t) z at the spine.
+				s := d.U[row]
+				near(t, n, Vec3{-math.Cos(s) * math.Cos(s), -math.Cos(s) * math.Sin(s), math.Sin(s)}, 1e-10)
+			}
+			for row := range d.U {
+				check(d, row, probeColumn(d, 0))
+			}
+			_, point := pointProbed(t, c, 0.731, 0)
+			check(point, 0, 0)
+			c.SurfaceProbe = &SurfaceQuery{U: 0.731, V: 0}
+			only, err := SurfaceProbeOnly(c)
+			if err != nil || cell(t, only, 0, 0) != cell(t, point, 0, 0) {
+				t.Fatalf("moving probe differs: %v", err)
+			}
+			if math.Abs(r.Frame.Length/(2*math.Pi*radius)-1) > 1e-12 {
+				t.Fatalf("circle length %g", r.Frame.Length)
+			}
+		})
+	}
+}
+
+// The angular guard is reached only where shape finds no normal. Every
+// ribbon preset's probe has a normal at each regular point with a known
+// tangent plane, so none of them reaches it and each keeps its result.
+func TestFramedRibbonPresetsNeedNoAngularGuard(t *testing.T) {
+	probes := 0
+	for name, c := range spatialPresets(t) {
+		if c.Construction != "framed" {
+			continue
+		}
+		c.SurfaceDiagnostics = true
+		r, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := r.Probe
+		if d == nil {
+			// Strands alone draw no surface to probe.
+			continue
+		}
+		probes++
+		if d.Singular != 0 {
+			t.Errorf("%s: singular %d", name, d.Singular)
+		}
+		for r := range d.Points {
+			for k := range d.Points[r] {
+				if d.Points[r][k] != nil && d.Normals[r][k] == nil && (d.UnknownPlane == nil || !d.UnknownPlane[r][k]) {
+					t.Errorf("%s: no normal at (%d, %d)", name, r, k)
+				}
+			}
+		}
+	}
+	if probes < 5 {
+		t.Fatalf("%d framed ribbon presets with a surface probe", probes)
+	}
+}
+
+func TestFramedRibbonProbeKeepsSingularRulings(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p10} {
+		for _, tangent := range []Vec3{{}, {scale, 0, 0}, {scale, scale * 1e-10, 0}} {
+			d := newSurfaceDiagnostics("framed", 1, 1)
+			d.ruledAt(0, 0, ruledSample{Point: true, Regular: true, Known: true, St: tangent, Su: Vec3{1, 0, 0}}, true, false, scale)
+			if d.Singular != 1 || d.Normals[0][0] != nil || d.Curvature[0][0][0] != nil {
+				t.Fatalf("scale %g tangent %v: singular %d normal %v", scale, tangent, d.Singular, d.Normals[0][0])
+			}
+		}
+	}
+}
 
 // probeColumn is the column of a ruled probe's grid nearest to u.
 func probeColumn(d *SurfaceDiagnostics, u float64) int {
@@ -682,5 +777,77 @@ func TestFrenetRibbonProbeOnExpressionKnot(t *testing.T) {
 	}
 	if unknown == 0 || unknown > len(want.U)*len(want.V)/10 || got.Unknown != unknown {
 		t.Fatalf("%d unknown points, %d counted", unknown, got.Unknown)
+	}
+}
+
+// A Frenet ribbon along a circular helix is a helicoid. Changing its
+// length unit or the rate of its parameter must preserve its known curvature.
+func TestFrenetHelicoidProbeScale(t *testing.T) {
+	var reference *SurfaceDiagnostics
+	for _, scale := range []float64{1, 0x1p-16, 0x1p10} {
+		for _, rate := range []float64{1, 8} {
+			t.Run(fmt.Sprintf("scale=%g/rate=%g", scale, rate), func(t *testing.T) {
+				c := custom(fmt.Sprintf("%.17g*cos(%.17g*t)", 2*scale, rate), fmt.Sprintf("%.17g*sin(%.17g*t)", 2*scale, rate), fmt.Sprintf("%.17g*t/3", scale*rate), 0, 8/rate)
+				c = ribbon(c, "frenet", Vec3{}, 0, 0, 0.8*scale)
+				_, d := probed(t, c)
+				if reference == nil {
+					reference = d
+				}
+				_, between := pointProbed(t, c, 1.2345/rate, 0.37*scale)
+				wantBetween := (1.0 / 3) / (1.0/9 + 1.63*1.63) / scale
+				relative(t, "between κ₁", between.Curvature[0][0][0], wantBetween, differenced)
+				relative(t, "between κ₂", between.Curvature[1][0][0], -wantBetween, differenced)
+				for row := range d.U {
+					for col, u := range d.V {
+						if (d.Curvature[0][row][col] == nil) != (reference.Curvature[0][row][col] == nil) {
+							t.Fatalf("row %d column %d: curvature availability changed (unknown %d versus %d)", row, col, d.Unknown, reference.Unknown)
+						}
+						if d.Normals[row][col] == nil {
+							t.Fatalf("row %d column %d: missing normal", row, col)
+						}
+						if d.Curvature[0][row][col] != nil {
+							rho := 2 - u/scale
+							want := (1.0 / 3) / (1.0/9 + rho*rho) / scale
+							relative(t, "helicoid κ₁", d.Curvature[0][row][col], want, differenced)
+							relative(t, "helicoid κ₂", d.Curvature[1][row][col], -want, differenced)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// At the origin of (t,t²,10t⁶), τ vanishes and τ′'s two stencils
+// disagree. Enlargement must not turn that instability into known curvature.
+func TestFrenetRibbonUnstableTorsionSlopeScale(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-16, 0x1p10} {
+		t.Run(fmt.Sprint(scale), func(t *testing.T) {
+			c := custom(fmt.Sprintf("%.17g*t", scale), fmt.Sprintf("%.17g*t^2", scale), fmt.Sprintf("%.17g*t^6", 10*scale), -1, 1)
+			c = ribbon(c, "frenet", Vec3{}, 0, 0, 0.2*scale)
+			_, point := pointProbed(t, c, 0, 0.1*scale)
+			if point.Points[0][0] == nil || point.Normals[0][0] == nil || point.Curvature[0][0][0] != nil || point.Unknown != 1 {
+				t.Fatalf("unstable τ′: point %v normal %v curvature %v unknown %d", point.Points[0][0], point.Normals[0][0], point.Curvature[0][0][0], point.Unknown)
+			}
+		})
+	}
+}
+
+// At t = 0 this ribbon is flat to second order: τ = τ′ = 0. The
+// differenced value has a small O(h²) remainder, accepted in inverse-length
+// units even though the local torsion cannot supply a relative floor.
+func TestFrenetRibbonFlatTorsionSlopeScale(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-16, 0x1p10} {
+		t.Run(fmt.Sprint(scale), func(t *testing.T) {
+			c := custom(fmt.Sprintf("%.17g*t", scale), fmt.Sprintf("%.17g*t^2", scale), fmt.Sprintf("%.17g*t^6", 0.1*scale), -1, 1)
+			c = ribbon(c, "frenet", Vec3{}, 0, 0, 0.2*scale)
+			_, point := pointProbed(t, c, 0, 0.1*scale)
+			if point.Unknown != 0 || point.Normals[0][0] == nil {
+				t.Fatalf("flat ribbon: unknown %d normal %v", point.Unknown, point.Normals[0][0])
+			}
+			for b := 0; b < 2; b++ {
+				closeTo(t, "flat κ", point.Curvature[b][0][0], 0, 1e-4/scale)
+			}
+		})
 	}
 }

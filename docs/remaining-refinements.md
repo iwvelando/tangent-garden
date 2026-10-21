@@ -43,7 +43,7 @@ These come from the handoffs. Each was paid for at least once.
 
 ## Recommended order
 
-Item 1 needs a profile before any code. Item 2 lists limits to fix only when a study runs into them.
+Item 1 needs a profile before any code. Item 2 lists limits to fix only when a study runs into them. Item 3 is designed and ready to start. Item 4 needs a decision before any code.
 
 ---
 
@@ -63,8 +63,44 @@ Item 1 needs a profile before any code. Item 2 lists limits to fix only when a s
 
 Each is known and documented; none is worth a branch until a study needs it.
 
-- **3D engine scale floors** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): the absolute stability floors for differenced r‴ (`jerk`, in `engine3/diagnostics.go`) and τ′ (`ruledprobe.go`), and the framed ribbon probe's comparison of differently dimensioned tangents (`ruledprobe.go`). Far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic. Near a cusp of an expression curve thousands of its sizes from the origin, the rounded velocity leaves the tangent's direction noisy, so a construction built on its tangent projection breaks there again; a harmonic or knot base, with exact derivatives, keeps the crossing (the cusp presets are harmonic or plain projections for this reason).
+- **3D engine scale limits** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic. Near a cusp of an expression curve thousands of its sizes from the origin, the rounded velocity leaves the tangent's direction noisy, so a construction built on its tangent projection breaks there again; a harmonic or knot base, with exact derivatives, keeps the crossing (the cusp presets are harmonic or plain projections for this reason).
 - **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute past about five diameters, curvature on a study millions of its diameters out (beyond the second-derivative budget), and the absolute constants below 2⁻²⁰.
+
+### 3. A receiver refined to its view
+
+**Applies to:** 3D (mirror and interface studies with a receiver).
+
+**Why:** a receiver's bins are fixed across its window (8–960 each way), and its refinement (`rays.receiver.refine`, 0–3 levels, see [the receiver's definition](mathematics.md#spatial-receiver-planes-and-irradiance)) splits cells only as finely as those bins. Zoomed in far enough, a bin covers many pixels and the drawing is blocky again; raising the bins across the whole window to match costs time and transfer for parts the view does not show. The receiver should be as fine as the screen where it is seen, at any zoom, and no finer elsewhere.
+
+**Decided:** a receiver option of its own (for example **Refine the receiver to the view**), off by default, beside **Refinement levels**, not the curves' **Refine to the view as you zoom**, which ray studies do not show. Each such option is one more lever a reader can pull, or leave off on a slow device.
+
+**Design:**
+
+- When the camera rests (the 200 ms settle and `RefinementView` that refined curves use in `SpatialApp.tsx`), the request carries the view. Go rasterizes, beside the window's own bins, an inset over the part of the window the page shows (its corners projected through the view, clipped to the page, as a rectangle in window coordinates), with bins about the size of a device pixel, capped (about 1024² bins). Cells landing on the inset are split by the same criterion against the inset's bins, within the receiver's cell budget.
+- Rasterize the same cells into both: the box filter is additive, so the inset's bins inside each window bin then sum to it to rounding, which is the regression test. An inset covering the whole window at the window's bins must equal the window's bins exactly.
+- The note's shares and the peak come from the window's bins, so readouts never change with zoom. The inset is shaded against the window's peak, clamped at 1 (a fold's narrower inset bins are brighter, and are said to be at or above the peak).
+- Draw it as a second texture on the same quad: the fragment shader takes the inset's texel inside its rectangle (a uniform) and the window's elsewhere, so nothing is coplanar and no depth offset is needed. The inset's irradiance is a `[][]float64`, which `cmd/wasm/lift` already moves out of the JSON.
+- Playback, flights and animation exports drop the inset, so their cost is unchanged; a still export uses it when the shown result has one. The option is a study field (link schema, default off, test); the view it was refined to is transient and never in a link.
+
+**Tests:** additivity and whole-window equality above; a view off the window gives no inset; tilted windows and perspective views; a moving camera invalidates an inset in flight (as refined curves do); the budget running out says so; layer, cut and see-through drawing with an inset; and an exported still at its target resolution. Add a `make bench` study and time it against the deployed site, and keep every preset bit for bit identical with the option off.
+
+### 4. Faster refined receivers in playback, possibly on the GPU
+
+**Applies to:** 3D (a refined or finely binned receiver in motion).
+
+**Why:** a refined receiver is smooth when still but slow to play: **Conic sections cut from a cone of light** at 480 bins refined twice takes about 227 ms a frame through the WASM bridge (2026-10-21), about 4 frames a second. On an iPhone 16 Pro Max, 960 bins refined three times played at 0.4–0.5 s between frames, while 480 bins refined twice looked smooth enough at a phone's size but would be more comfortable faster. An exported animation plays smoothly, since export does not run in real time. Profiled natively at 960 bins refined twice, about a third of a frame is the rasterizer, a quarter is tracing rays, and an eighth is garbage collection.
+
+**Possible:** spreading flux over bins is what a GPU does best. Each cell's two triangles, at density flux/area, can be drawn with additive blending into a float render target the size of the bins (WebGL 1 with `OES_texture_float` and `WEBGL_color_buffer_float`, or WebGPU), and the receiver's texture (item 3's too) read straight from that target with no transfer. Go would still trace the rays and send each cell's crossings and flux as a typed array.
+
+**What it costs, and what needs deciding:**
+
+- **The boundary.** `AGENTS.md` puts numerical algorithms in Go and computation in the worker. A GPU rasterizer would move part of the receiver's mathematics into a shader (an `OffscreenCanvas` keeps it in the worker). That needs explicit direction.
+- **Exactness.** The Go rasterizer gives each bin the exact area of every triangle inside it. A GPU samples coverage at points, so matching it needs supersampling or analytic coverage in the fragment shader (clipping each triangle to the pixel's square, with conservatively enlarged triangles), and half floats are too coarse to accumulate in. Results would differ by device and driver, so they cannot be bit for bit identical.
+- **Accounting.** The note's received and outside shares come from the bins. Reading a float target back each frame stalls the GPU, so either Go keeps the accounting (clipping each triangle to the window without binning it) or the note is drawn only from still results.
+- **Cheaper first.** Before the GPU, try the engine: when only the plane moves (tilt, position or size tracks) the surface's rays are unchanged and need not be traced again each frame; a coarser receiver while playing (fewer levels, restored at rest) is another option, though it changes what plays. Profile allocations in WASM too (the refined points' columns and the raster's grids are remade each frame).
+- **Scope.** A reasonable first form is a playback-only preview: frames during playback drawn on the GPU, while stills, exports, readouts and tests keep the exact Go bins. Measure first whether the GPU half alone (a third of a frame) is worth it, since ray tracing and transfer remain.
+
+**Tests, if adopted:** the GPU bins against the Go bins within a stated tolerance on the existing receiver studies (uniform beam, point source, focus, dome); additivity and total received flux; fallback to the Go bins where float targets are missing; and frame timing on a phone.
 
 ## Pending on-device checks
 
@@ -86,10 +122,11 @@ No device check was possible for these. Ask the user to look on a phone:
 - The **Shadow on a plane** panel at phone width (its select, **Plane at c** beside it, its layer checkboxes and note), and **A staircase's shadow, unwinding** in motion on a phone.
 - The face-on views beside the drawing (**Face-on views beside the drawing**) on a phone: the stacked cells, dragging and pinching a face-on view with **Adjust view** on, the grid fitting the screen held sideways during playback, and **A tilting circle's cardioid, face on** and **A rippling rose's mirror images, face on** in motion; also the checkbox's help toggle at phone width, and a captioned video saved on the phone.
 - The receiver's **Tilt (°)** beside **Bins** at phone width, and **Conic sections cut from a cone of light** in motion on a phone.
+- The receiver's **Refinement levels** at phone width.
 - The mirror's **Locate cuspidal edges** checkbox and its help toggle at phone width, and **An astigmatic dish's folded caustics** in motion on a phone.
 - Playback at 60 frames a second (`web/playback.ts`) on a 120 Hz display and on a slower phone, watching for an even fall to 30 where frames come late. The thresholds (a request 1.4 intervals after the last is late, two late in ten fall back, a 2 s hold doubling to 16 s) are first choices, to tune from what is seen.
 
-Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13. Zooming toward a detail through a lens (**A corridor of loops**, wheel and pinch) was checked locally and on a phone on 2026-10-14. **Fit each frame to the views** and **A seashell growing on its spiral** were checked on a phone on 2026-10-19.
+Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13. Zooming toward a detail through a lens (**A corridor of loops**, wheel and pinch) was checked locally and on a phone on 2026-10-14. **Fit each frame to the views** and **A seashell growing on its spiral** were checked on a phone on 2026-10-19. A refined receiver (**Conic sections cut from a cone of light**, zoomed in) was checked on an iPhone 16 Pro Max on 2026-10-21: smooth light at 480 bins refined twice, and 0.4–0.5 s between frames in playback at 960 bins refined three times (see item 4).
 
 ## Conditional and declined
 
@@ -104,5 +141,5 @@ Revisit these only if a study needs them:
 - In 2D only parameter tracks loop. In 4D a drift, support, route or latitude sweep cannot loop.
 - The SVG loop check falls back to a raster threshold of 10⁻⁴ of pixels, not a proof of identity.
 - A 3D closed curve run on by less than a period is refused for a loop even when its shape returns.
-- 3D surface, mirror and implicit studies use uniform grids. An offset's cuspidal edges, a focal sheet's over the patch's ridges, and a caustic's can be located. The mirror and refraction studies have one interaction and no occlusion, and a receiver turns about one of its own axes only.
+- 3D surface, mirror and implicit studies use uniform grids, though a receiver can split its cells where their light lands coarsely. An offset's cuspidal edges, a focal sheet's over the patch's ridges, and a caustic's can be located. The mirror and refraction studies have one interaction and no occlusion, and a receiver turns about one of its own axes only.
 - The 2D hairline is one CSS pixel (two device pixels on dense screens).
