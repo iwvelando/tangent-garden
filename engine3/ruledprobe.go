@@ -342,6 +342,14 @@ func torsionSlope(c Request, evaluate evaluation, lo, hi float64, third func(flo
 		return tau, ok && finite(tau)
 	}
 	span := hi - lo
+	// Torsion has units of inverse length. Its stability floor must follow
+	// the curve's length unit, including where torsion itself vanishes.
+	// Allow 1e-3 inverse study sizes across the span for the rounding
+	// amplified by differencing an already differenced third derivative.
+	unit := 1.0
+	if c.units.size > 0 {
+		unit /= c.units.size
+	}
 	f := func(t float64) (Vec3, bool) {
 		v, ok := tau(t)
 		return Vec3{X: v}, ok
@@ -350,7 +358,7 @@ func torsionSlope(c Request, evaluate evaluation, lo, hi float64, third func(flo
 		d, ok := slope(f, t, lo, hi, span*1e-3)
 		d2, ok2 := slope(f, t, lo, hi, span*5e-4)
 		here, fine := tau(t)
-		if !ok || !ok2 || !fine || !finite(d.X) || !finite(d2.X) || math.Abs(d.X-d2.X) > 1e-2*math.Max(math.Abs(d.X), math.Abs(d2.X))+1e-4*math.Max(1, math.Abs(here))/span {
+		if !ok || !ok2 || !fine || !finite(d.X) || !finite(d2.X) || math.Abs(d.X-d2.X) > 1e-2*math.Max(math.Abs(d.X), math.Abs(d2.X))+math.Max(1e-3*unit, 1e-4*math.Abs(here))/span {
 			return 0, false
 		}
 		return d2.X, true
