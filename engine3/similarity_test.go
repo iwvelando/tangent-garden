@@ -440,16 +440,8 @@ func numeric(q Request) bool {
 func budgetFor(q Request, m similarity) budget {
 	if m.shift == (Vec3{}) {
 		// Scaled by a power of two, a study's arithmetic is exact, so every
-		// number agrees to rounding and every decision is the same. The one
-		// exception is a Frenet ribbon's numerically differenced torsion
-		// slope, whose stability test still has an absolute floor.
-		b := budget{worst: map[string]float64{"length": 1e-13, "number": 1e-13, "curvature": 1e-13}, skipped: never, tolerated: never}
-		tolerated := []string{}
-		if m.scale < 1 && q.analytic() == "" {
-			tolerated = append(tolerated, "surfaceDiagnostics.")
-		}
-		b.tolerated = prefixed(tolerated...)
-		return b
+		// number agrees to rounding and every decision is the same.
+		return budget{worst: map[string]float64{"length": 1e-13, "number": 1e-13, "curvature": 1e-13}, skipped: never, tolerated: never}
 	}
 	// Far from the origin every position is rounded to the shift's ulp,
 	// about 10⁻¹² of a study a few units across; evaluated points keep
@@ -1008,7 +1000,9 @@ func TestSimilarPresets(t *testing.T) {
 // by a faster coil, refined between samples, a line inverted in a sphere about a point it
 // passes through, whose image runs off to infinity there and returns, and
 // a nearly flat helix's involutes refined on a plane seen edge on, whose
-// 2D involutes swing round semicircles between samples.
+// 2D involutes swing round semicircles between samples, and a Frenet
+// ribbon along a helix written as expressions, whose torsion slope is
+// differenced, probed for its curvature.
 func TestSimilarStudies(t *testing.T) {
 	feet := custom("2*cos(t)+0.2*cos(29*t)", "2*sin(t)+0.2*sin(29*t)", "t/3", -3, 3)
 	feet.Construction, feet.Pole, feet.Adaptive, feet.Samples = "tangent-foot", Vec3{0.5, 0, 0}, true, 240
@@ -1031,10 +1025,22 @@ func TestSimilarStudies(t *testing.T) {
 	if r, err := Compute(edge); err != nil || r.Shadow.Adaptive == nil || r.Shadow.Adaptive.Planar[0].Inserted == 0 {
 		t.Fatalf("the edge-on involutes are not refined: %v", err)
 	}
+	frenet := custom("2*cos(t)", "2*sin(t)", "t/3", 0, 8)
+	frenet.Construction, frenet.SurfaceDiagnostics = "framed", true
+	frenet.Frame = FrameRequest{Kind: "frenet", Width: 0.8, Closure: "seam"}
+	if r, err := Compute(frenet); err != nil || r.Probe == nil || r.Probe.Unknown == 0 || r.Probe.Unknown > 100 {
+		t.Fatalf("the ribbon's curvature is not known inside its domain and unknown at its ends: %v", err)
+	}
 	for name, q := range map[string]Request{"feet": feet, "through": through, "edge on": edge} {
 		for _, m := range append(append([]similarity{}, similarities...), extremes...) {
 			t.Run(m.name+"/"+name, func(t *testing.T) { similarlyMoved(t, q, m) })
 		}
+	}
+	// The ribbon is moved as a preset is. Its Frenet frame is differenced
+	// from positions rounded at the shift, so at the farther one its
+	// bounds stray just beyond a numeric curve's budget.
+	for _, m := range similarities {
+		t.Run(m.name+"/frenet", func(t *testing.T) { similarlyMoved(t, frenet, m) })
 	}
 }
 
