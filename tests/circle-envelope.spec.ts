@@ -370,3 +370,73 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+// Edit the production controls: the focus/directrix identity survives a
+// simultaneous change of length units, in the drawing and its saved SVG.
+test("tiny circle families retain their focus and directrix through controls and refinement", async ({
+  page,
+}, testInfo) => {
+  await ready(page);
+  for (const [label, expression] of [
+    ["x(t)", "2^-40*t"],
+    ["y(t)", "2^-40*t^2/4"],
+    ["Circle radius R(t)", "2^-40*(t^2/4+1)"],
+  ])
+    await field(page, label).fill(expression);
+  await expect
+    .poll(async () => (await definition(page)).envelope.radius)
+    .toBe("2^-40*(t^2/4+1)");
+  for (const refine of [false, true]) {
+    await page
+      .getByRole("checkbox", { name: "Refine between samples", exact: true })
+      .setChecked(refine);
+    await settled(page);
+    for (const theme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect(branches(page)).toHaveCount(2);
+      await expect(page.getByText(/center is stationary/)).toHaveCount(0);
+      const focus = await toScreen(page, { x: 0, y: 2 ** -40 });
+      const dot = page.getByTestId("focus-point");
+      await expect(dot).toHaveCount(1);
+      expect(Number(await dot.getAttribute("cx"))).toBeCloseTo(focus.x, 3);
+      expect(Number(await dot.getAttribute("cy"))).toBeCloseTo(focus.y, 3);
+      const directrix = (await toScreen(page, { x: 0, y: -(2 ** -40) })).y;
+      const points = runs(
+        (await branches(page).nth(1).getAttribute("d"))!,
+      ).flat();
+      expect(points.length).toBeGreaterThan(10);
+      for (const [, y] of points) expect(y).toBeCloseTo(directrix, 3);
+      await page.locator("#artwork").screenshot({
+        path: testInfo.outputPath(`tiny-focus-${theme}-${refine}.png`),
+      });
+    }
+  }
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const saved = await page.evaluate((s) => {
+    const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+    return {
+      paths: [
+        ...doc.querySelectorAll('[data-testid="envelope-branches"] path'),
+      ].map((p) => p.getAttribute("d")),
+      focus: [...doc.querySelectorAll('[data-testid="focus-point"]')].map(
+        (p) => [p.getAttribute("cx"), p.getAttribute("cy")],
+      ),
+      config: JSON.parse(doc.querySelector("desc")!.textContent!),
+    };
+  }, svg);
+  expect(saved.config.envelope.radius).toBe("2^-40*(t^2/4+1)");
+  expect(saved.paths).toEqual(
+    await branches(page).evaluateAll((ps) =>
+      ps.map((p) => p.getAttribute("d")),
+    ),
+  );
+  expect(saved.focus).toEqual(
+    await page
+      .getByTestId("focus-point")
+      .evaluateAll((ps) =>
+        ps.map((p) => [p.getAttribute("cx"), p.getAttribute("cy")]),
+      ),
+  );
+});

@@ -498,7 +498,7 @@ func Compute(q Request) (Result, error) {
 			}
 		case "envelope":
 			if circles != nil {
-				circle = circles.at(t, p, dp)
+				circle = circles.at(t, p, dp, ddp)
 				out.Family[0].Points[j], out.Family[1].Points[j] = circle.left, circle.right
 				target = circle.left
 				switch {
