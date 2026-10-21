@@ -1,9 +1,96 @@
 package engine3
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"math"
+	"runtime"
 	"testing"
 )
+
+// A twisted circular ribbon has K = -(2π Twist/L)² at its spine.
+// Its unit ruling direction must not set an absolute floor on S_t.
+func TestFramedRibbonProbeAtEveryScale(t *testing.T) {
+	for _, radius := range []float64{1, 0x1p-40, 0x1p10} {
+		t.Run(fmt.Sprint(radius), func(t *testing.T) {
+			c := ribbon(study(), "rotation-minimizing", Vec3{0, 0, 1}, 0, 1, radius/4)
+			c.Format = "harmonic"
+			c.Harmonic = HarmonicCurve{Min: 0, Max: 2 * math.Pi, Terms: []HarmonicTerm{{Frequency: 1, Cosine: Vec3{radius, 0, 0}, Sine: Vec3{0, radius, 0}}}}
+			c.SurfaceDiagnostics = true
+			r, d := probed(t, c)
+			if d.Singular != 0 || d.Unknown != 0 {
+				t.Fatalf("regular ribbon: singular %d unknown %d", d.Singular, d.Unknown)
+			}
+			check := func(d *SurfaceDiagnostics, row, col int) {
+				t.Helper()
+				n, k1, k2 := d.Normals[row][col], d.Curvature[0][row][col], d.Curvature[1][row][col]
+				if n == nil || k1 == nil || k2 == nil {
+					t.Fatal("regular ribbon lost its normal or curvature")
+				}
+				gauss := *k1 * *k2
+				relative(t, "spine K", &gauss, -1/(radius*radius), 1e-10)
+				if math.Abs(n.norm()-1) > 1e-12 {
+					t.Fatalf("normal length %g", n.norm())
+				}
+				// D = cos(t) z + sin(t) radial, so the drawn D × T is
+				// -cos(t) radial + sin(t) z at the spine.
+				s := d.U[row]
+				near(t, n, Vec3{-math.Cos(s) * math.Cos(s), -math.Cos(s) * math.Sin(s), math.Sin(s)}, 1e-10)
+			}
+			for row := range d.U {
+				check(d, row, probeColumn(d, 0))
+			}
+			_, point := pointProbed(t, c, 0.731, 0)
+			check(point, 0, 0)
+			c.SurfaceProbe = &SurfaceQuery{U: 0.731, V: 0}
+			only, err := SurfaceProbeOnly(c)
+			if err != nil || cell(t, only, 0, 0) != cell(t, point, 0, 0) {
+				t.Fatalf("moving probe differs: %v", err)
+			}
+			if math.Abs(r.Frame.Length/(2*math.Pi*radius)-1) > 1e-12 {
+				t.Fatalf("circle length %g", r.Frame.Length)
+			}
+		})
+	}
+}
+
+// Guard the complete engine result of an existing ribbon preset before
+// changing the surface-probe regularity check.
+func TestFramedRibbonProbePresetUnchanged(t *testing.T) {
+	c := spatialPresets(t)["A band around the trefoil"]
+	c.SurfaceDiagnostics = true
+	r, err := Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"arm64": "a24ceb6d12c5711a535e4eaae4627eafdfda1fb2b7c7e21b60708e9d93ace59c",
+		"amd64": "6b07c4e03b9205c11483937630014be778b3c5743f0dd85bb4e78990e3e8ae65",
+	}[runtime.GOARCH]
+	if want == "" {
+		t.Skip("result baseline recorded on arm64 and amd64")
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256(b)); got != want {
+		t.Fatalf("existing ribbon preset changed: %s, want %s", got, want)
+	}
+}
+
+func TestFramedRibbonProbeKeepsSingularRulings(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p10} {
+		for _, tangent := range []Vec3{{}, {scale, 0, 0}, {scale, scale * 1e-10, 0}} {
+			d := newSurfaceDiagnostics("framed", 1, 1)
+			d.ruledAt(0, 0, ruledSample{Point: true, Regular: true, Known: true, St: tangent, Su: Vec3{1, 0, 0}}, true, false, scale)
+			if d.Singular != 1 || d.Normals[0][0] != nil || d.Curvature[0][0][0] != nil {
+				t.Fatalf("scale %g tangent %v: singular %d normal %v", scale, tangent, d.Singular, d.Normals[0][0])
+			}
+		}
+	}
+}
 
 // probeColumn is the column of a ruled probe's grid nearest to u.
 func probeColumn(d *SurfaceDiagnostics, u float64) int {
