@@ -131,9 +131,10 @@ func slope(f func(float64) (Vec3, bool), t, lo, hi, h float64) (Vec3, bool) {
 
 // jerk returns r‴ for the base curve: analytic for a knot or a harmonic
 // curve, otherwise differenced from r″ at two steps scaled to the span and
-// discarded when they disagree. The rounding floor has units of length per
-// parameter cubed, taken from the curve, so changing length units cannot
-// turn an unstable derivative into a known torsion.
+// discarded when they disagree. The rounding floor is in the curve's units
+// of length per parameter cubed, so changing length units cannot turn an
+// unstable derivative into a known torsion; a curve with no size of its own
+// keeps an absolute floor.
 func jerk(c Request, evaluate evaluation, lo, hi float64) func(float64, Vec3) (Vec3, bool) {
 	switch c.analytic() {
 	case "torus":
@@ -145,7 +146,7 @@ func jerk(c Request, evaluate evaluation, lo, hi float64) func(float64, Vec3) (V
 	return func(t float64, v Vec3) (Vec3, bool) {
 		j, ok := jerkStep(evaluate, t, lo, hi, span*1e-3)
 		j2, ok2 := jerkStep(evaluate, t, lo, hi, span*5e-4)
-		if !ok || !ok2 || !j.valid() || !j2.valid() || j.sub(j2).norm() > 1e-2*math.Max(j.norm(), j2.norm())+1e-4*math.Max(c.units.acceleration/span, v.norm()/(span*span)) {
+		if !ok || !ok2 || !j.valid() || !j2.valid() || j.sub(j2).norm() > 1e-2*math.Max(j.norm(), j2.norm())+1e-4*math.Max(c.units.jerk, v.norm()/(span*span)) {
 			return Vec3{}, false
 		}
 		return j2, true

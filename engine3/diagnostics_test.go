@@ -574,3 +574,60 @@ func TestSmallThirdDerivativeStaysKnownAcrossScales(t *testing.T) {
 		}
 	}
 }
+
+// A curve with no size of its own keeps the absolute r‴ floor, 10⁻⁴, at
+// any parameter span. Here r″ = 5t³ on [-2, 2], so at t = 0 the two
+// central differences of r″ are 5h² and disagree by 6·10⁻⁵: within the
+// absolute floor, though beyond 10⁻⁴/Δ.
+func TestSizelessCurveKeepsAbsoluteJerkFloor(t *testing.T) {
+	evaluate := evaluation(func(s float64) (Vec3, Vec3, Vec3, bool) {
+		return Vec3{}, Vec3{}, Vec3{X: 5 * s * s * s}, true
+	})
+	c := Request{Format: "parametric", units: absolute}
+	j, ok := jerk(c, evaluate, -2, 2)(0, Vec3{})
+	if !ok || math.Abs(j.X-5*2e-3*2e-3) > 1e-15 {
+		t.Fatalf("jerk %v, %v", j, ok)
+	}
+}
+
+// Reparameterizing t → kt scales r‴ and its floor alike by k⁻³, so a
+// third-derivative jump stays unknown over any parameter span.
+func TestThirdDerivativeStabilityReparameterizes(t *testing.T) {
+	for _, k := range []float64{1, 1024, 0x1p-10} {
+		t.Run(fmt.Sprint(k), func(t *testing.T) {
+			u := "(t/" + number(k) + ")"
+			c := custom(u, u+"^2", "abs("+u+"+0.0015)^3", -k, k)
+			c.Construction = "none"
+			r, d := diagnosed(t, c)
+			mid := (len(r.Base) - 1) / 2
+			if d.Torsion[mid] != nil || d.Normal[mid] == nil {
+				t.Fatalf("jump: torsion %v normal %v", d.Torsion[mid], d.Normal[mid])
+			}
+		})
+	}
+}
+
+// A still point's r‴ is stable within 10⁻⁴ L/Δ³ for a curve of size L over
+// a span Δ. With r″ = c t³ on [-Δ/2, Δ/2], the two central differences at
+// t = 0 are c h² for h = 10⁻³Δ and 5·10⁻⁴Δ, so they disagree by 0.75 c h²
+// against a relative allowance of 0.01 c h²: they are kept for half the
+// c that meets the floor, and discarded for twice it.
+func TestThirdDerivativeFloorIsLengthPerParameterCubed(t *testing.T) {
+	for _, s := range [][2]float64{{1, 2}, {0x1p-40, 2048}, {1024, 0x1p-10}} {
+		size, span := s[0], s[1]
+		t.Run(fmt.Sprint(size, "/", span), func(t *testing.T) {
+			h := 1e-3 * span
+			edge := 1e-4 * size / (span * span * span) / (0.74 * h * h)
+			for _, f := range []float64{0.5, 2} {
+				evaluate := evaluation(func(s float64) (Vec3, Vec3, Vec3, bool) {
+					return Vec3{}, Vec3{}, Vec3{X: f * edge * s * s * s}, true
+				})
+				c := Request{Format: "parametric", units: sized(size, span, absolute)}
+				_, ok := jerk(c, evaluate, -span/2, span/2)(0, Vec3{})
+				if ok != (f < 1) {
+					t.Fatalf("%g of the floor: kept %v", f, ok)
+				}
+			}
+		})
+	}
+}
