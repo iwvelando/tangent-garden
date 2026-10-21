@@ -503,9 +503,8 @@ test("maximum weave sampling has bounded worker cost and matching counts", async
   await settle(page);
   await choosePreset(page, { label: "Tori between two circles" });
   await settle(page);
-  await page
-    .getByRole("textbox", { name: "Latitude spread", exact: true })
-    .fill("1.2");
+  // Endpoints before the spread: the preset's start of 0.5 cannot take a
+  // spread of 1.2, and the error would open the section this click opens.
   await page.getByText("Latitude motion endpoints", { exact: true }).click();
   await page
     .getByRole("textbox", { name: "Latitude start", exact: true })
@@ -513,6 +512,9 @@ test("maximum weave sampling has bounded worker cost and matching counts", async
   await page
     .getByRole("textbox", { name: "Latitude end", exact: true })
     .fill("pi/4");
+  await page
+    .getByRole("textbox", { name: "Latitude spread", exact: true })
+    .fill("1.2");
   await page
     .getByRole("textbox", { name: "Projection window radius" })
     .fill("12");

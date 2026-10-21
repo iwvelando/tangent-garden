@@ -98,22 +98,22 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 	return sampled(f, q.Min, q.Max, span, sized(extent(f, q.Min, q.Max), span, absolute)), q.Min, q.Max, false, nil
 }
 
-// units are a curve's own size, and the speed and acceleration it gives
-// it over a parameter span, in which the floors below which a derivative
-// is lost in rounding, a chord is rounding, or a curve stands still, are
-// measured. They move with the curve's size and not with its position, so
+// units are a curve's own size, and the speed, acceleration and third
+// derivative it gives it over a parameter span, in which the floors below
+// which a derivative is lost in rounding, a chord is rounding, or a curve
+// stands still, are measured. They move with the curve's size and not with its position, so
 // a scaled or moved copy of a study keeps its decisions.
-type units struct{ size, speed, acceleration float64 }
+type units struct{ size, speed, acceleration, jerk float64 }
 
 // absolute are the units of a curve with no size of its own, or of a pure
 // number, in which the floors are absolute.
-var absolute = units{1, 1, 1}
+var absolute = units{1, 1, 1, 1}
 
 // sized returns the units of a curve of the given size over span, or
 // fallback when it has no size.
 func sized(size, span float64, fallback units) units {
 	if size > 0 {
-		return units{size, size / span, size / (span * span)}
+		return units{size, size / span, size / (span * span), size / (span * span * span)}
 	}
 	return fallback
 }

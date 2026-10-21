@@ -563,3 +563,54 @@ test("a probe at a sample carries the study's own points there", () => {
   });
   expect(sampleProbe({ ...result, diagnostics: undefined }, 0)).toBeNull();
 });
+
+test("torsion stays unknown at a third-derivative jump when the curve shrinks", async ({
+  page,
+}) => {
+  await open(page, false, {
+    config: {
+      ...config,
+      curve: {
+        x: "a*t",
+        y: "a*t^2",
+        z: "a*abs(t+0.0015)^3",
+        a: 1,
+        min: -1,
+        max: 1,
+      },
+    },
+    probe: { enabled: true, position: 0.5, target: "curve", across: 0.5 },
+  });
+  await expect(page).not.toHaveURL(/#s=/);
+  const torsion = readout(page).nth(2);
+  await expect(torsion).toHaveText("unknown here");
+  const a = page.getByRole("textbox", { name: "Shape parameter a" });
+  for (const expression of ["2^-40", "1024", "1"]) {
+    await a.fill(expression);
+    await a.blur();
+    await settled(page);
+    await expect(torsion).toHaveText("unknown here");
+    // The regular frame and osculating circle still exist.
+    await expect(readout(page).first()).not.toHaveText(
+      /unknown|undefined|flat/,
+    );
+    await betweenSwitch(page).check();
+    await point(page).fill("0.50005"); // t = 0.0001, between samples.
+    await settled(page);
+    await expect(torsion).toHaveText("unknown here");
+    // A smooth part of the same cubic retains its signed torsion.
+    await point(page).fill("0.65"); // t = 0.3.
+    await settled(page);
+    const scale = expression === "2^-40" ? 2 ** -40 : Number(expression);
+    const bx = 6 * 0.3015 * (0.6 - 0.3015),
+      by = -6 * 0.3015;
+    const expected = 12 / (bx * bx + by * by + 4);
+    await expect
+      .poll(async () => Number(await torsion.textContent()) * scale)
+      .toBeCloseTo(expected, 3);
+    await point(page).fill("0.5");
+    await betweenSwitch(page).uncheck();
+    await settled(page);
+    await expect(torsion).toHaveText("unknown here");
+  }
+});
