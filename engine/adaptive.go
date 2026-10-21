@@ -372,9 +372,9 @@ func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
 func (q Request) involuteAt(f, g curveFunc, arcs []float64) func(float64) *Vec {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	step := (hi - lo) / float64(q.Samples-1)
-	return q.along(f, g, func(t float64, p, d, _ Vec) *Vec {
+	return q.along(f, g, func(t float64, p, d, dd Vec) *Vec {
 		j := q.sampleBefore(t)
-		return q.unwound(g, lo+float64(j)*step, arcs[j], t, p, d)
+		return q.unwound(g, lo+float64(j)*step, arcs[j], t, p, d, dd)
 	})
 }
 

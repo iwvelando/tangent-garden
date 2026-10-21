@@ -1,8 +1,11 @@
 package engine
 
 // Involute returns r(t) - (s(t) + offset) T(t). s starts at the domain minimum.
-func Involute(p, d Vec, s, offset float64) *Vec {
-	if d.Norm() < 1e-9 {
+// The derivatives d and dd supply the same relative tangent guard as the
+// evolute: acceleration bounds the residual speed at a cusp at the origin.
+// Only the first derivative needs to be stable.
+func Involute(p, d, dd Vec, s, offset float64) *Vec {
+	if stationary(p, d, dd) {
 		return nil
 	}
 	return point(p.Sub(d.Unit().Mul(s + offset)))
@@ -17,8 +20,8 @@ func Involute(p, d Vec, s, offset float64) *Vec {
 // different places can round differently.
 //
 //go:noinline
-func (q Request) unwound(g curveFunc, start, arc, t float64, p, d Vec) *Vec {
-	return Involute(p, d, q.arcTo(g, start, arc, t, d), q.Offset)
+func (q Request) unwound(g curveFunc, start, arc, t float64, p, d, dd Vec) *Vec {
+	return Involute(p, d, dd, q.arcTo(g, start, arc, t, d), q.Offset)
 }
 
 // arcTo is the arc length at t, where g has velocity d, continued from arc

@@ -124,7 +124,7 @@ type Result struct {
 	// arcs is the involute's arc length at each sample where it is drawn,
 	// NaN elsewhere, from which refinement continues between samples.
 	arcs []float64
-	// contacts are the involute's input point and velocity at each sample
+	// contacts are the involute's input point and first two derivatives at each sample
 	// where it is drawn, from which another string is unwound at once.
 	contacts []contact
 	// rolled is a rolling study's progress at each sample where its trace
@@ -529,9 +529,9 @@ func Compute(q Request) (Result, error) {
 			target = Evolute(p, dp, ddp)
 		case "involute":
 			if arcOK {
-				if target = q.unwound(g, t, arc, t, p, dp); target != nil {
+				if target = q.unwound(g, t, arc, t, p, dp, ddp); target != nil {
 					out.arcs[j] = arc
-					out.contacts[j] = contact{p, dp}
+					out.contacts[j] = contact{p, dp, ddp}
 				}
 			}
 		default:
@@ -554,8 +554,9 @@ func Compute(q Request) (Result, error) {
 		if target == nil {
 			out.Invalid++
 		}
-		if line && inv != nil {
-			// Each correspondence segment joins a point to its image.
+		if line && (inv != nil || q.Kind == "involute") {
+			// A correspondence or unwinding string needs only the target
+			// that already passed its construction's regularity check.
 			if target != nil {
 				out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: origin, Target: target})
 			}
