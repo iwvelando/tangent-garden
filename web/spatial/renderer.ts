@@ -70,6 +70,8 @@ varying float U;
 varying vec3 C;
 varying vec3 E;
 varying highp float D;
+// A receiver's texture coordinates, which it carries as its normal.
+varying highp vec2 R;
 // The phase on the page times w, and w: interpolated perspective-correctly,
 // their ratio is linear on the page.
 varying highp vec2 Q;
@@ -88,6 +90,7 @@ void main() {
   D = arc * dashes;
   P = rotation * (position - center);
   N = rotation * normal;
+  R = normal.xy;
   U = phase;
   C = lowSides(position);
   E = highSides(position);
@@ -310,9 +313,14 @@ varying vec3 N;
 varying vec3 P;
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 varying highp vec2 Q;
+varying highp vec2 R;
 #else
 varying mediump vec2 Q;
+varying mediump vec2 R;
 #endif
+// A receiver's bins (see scene.ts's receiverSheet), when shaded is 1.
+uniform sampler2D receiverShades;
+uniform float shaded;
 #else
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 varying highp vec3 S;
@@ -425,7 +433,16 @@ void main() {
     vec3 empty = ${glsl(palette.empty)};
     vec3 faint = ${glsl(palette.faint)};
     vec3 full = ${glsl(palette.full)};
-    color = U < 0.0 ? empty : mix(faint,full,U);
+    float shade = U;
+#ifndef STROKE
+    // A bin's shade from its texel: its high and low bytes, each term
+    // under 1 to keep the sum's precision in a half float.
+    if (shaded > 0.5) {
+      vec4 bin = texture2D(receiverShades, R);
+      shade = bin.b < 0.5 ? -1.0 : bin.r * ${((255 * 256) / 65535).toFixed(8)} + bin.g * ${(255 / 65535).toFixed(8)};
+    }
+#endif
+    color = shade < 0.0 ? empty : mix(faint,full,shade);
   } else if (ink > 5.5) {
     color = slate;
   } else if (ink > 4.5) {
@@ -598,12 +615,16 @@ export function createRenderer(
       "fadeStep",
       "fadeCount",
       "fadeSize",
+      "receiverShades",
+      "shaded",
     ].map((n) => [n, gl.getUniformLocation(program, n)]),
   );
   // The layer count is read from texture unit 1 (unit 0 holds the
-  // see-through target, which the programs draw into).
+  // see-through target, which the programs draw into), and a receiver's
+  // bins from unit 2.
   gl.useProgram(program);
   gl.uniform1i(uniforms.fadeCount, 1);
+  gl.uniform1i(uniforms.receiverShades, 2);
   // Strokes need instancing (ANGLE_instanced_arrays, near universal in
   // WebGL 1); without it every weight is drawn as hairlines. They read each
   // line batch's own buffer, two vertices an instance.
@@ -834,6 +855,8 @@ export function createRenderer(
     phases?: WebGLBuffer;
     // A line batch's joints, made when first stroked.
     joins?: WebGLBuffer;
+    // A receiver's bins.
+    shades?: WebGLTexture;
   };
   let scene: Scene | undefined;
   // The parameter probe's few batches have their own buffers, so moving it
@@ -846,6 +869,8 @@ export function createRenderer(
   let edge: { key: unknown[]; batch: Batch | null } | undefined;
   const edgeBuffers: WebGLBuffer[] = [];
   const uploaded = new Map<Batch, Uploaded>();
+  // The scene's textures, remade with every upload as its buffers are.
+  const textures: WebGLTexture[] = [];
   function put(batch: Batch, into = buffers) {
     // Indices past 65,535 need 32-bit elements, universal in practice;
     // without them a mesh is drawn corner by corner.
@@ -864,6 +889,31 @@ export function createRenderer(
     gl!.bindBuffer(gl!.ARRAY_BUFFER, buffer);
     gl!.bufferData(gl!.ARRAY_BUFFER, data, gl!.STATIC_DRAW);
     const drawn: Uploaded = { batch, buffer, count: data.length / 7 };
+    if (batch.shades) {
+      // Each bin a texel, drawn as it is: no filtering between bins.
+      const { size, data: texels } = batch.shades;
+      const texture = gl!.createTexture()!;
+      textures.push(texture);
+      gl!.activeTexture(gl!.TEXTURE2);
+      gl!.bindTexture(gl!.TEXTURE_2D, texture);
+      for (const p of [gl!.TEXTURE_MIN_FILTER, gl!.TEXTURE_MAG_FILTER])
+        gl!.texParameteri(gl!.TEXTURE_2D, p, gl!.NEAREST);
+      for (const p of [gl!.TEXTURE_WRAP_S, gl!.TEXTURE_WRAP_T])
+        gl!.texParameteri(gl!.TEXTURE_2D, p, gl!.CLAMP_TO_EDGE);
+      gl!.texImage2D(
+        gl!.TEXTURE_2D,
+        0,
+        gl!.RGBA,
+        size,
+        size,
+        0,
+        gl!.RGBA,
+        gl!.UNSIGNED_BYTE,
+        texels,
+      );
+      gl!.activeTexture(gl!.TEXTURE0);
+      drawn.shades = texture;
+    }
     if (indices) {
       const elements = gl!.createBuffer()!;
       into.push(elements);
@@ -908,6 +958,7 @@ export function createRenderer(
   function upload(result: SpatialResult) {
     setProbe([]);
     buffers.splice(0).forEach((b) => gl!.deleteBuffer(b));
+    textures.splice(0).forEach((t) => gl!.deleteTexture(t));
     uploaded.clear();
     scene = buildScene(result);
     for (const value of Object.values(scene))
@@ -1207,6 +1258,12 @@ export function createRenderer(
         );
       });
       gl!.uniform1f(uniforms.ink, v.batch.ink);
+      gl!.uniform1f(uniforms.shaded, v.shades ? 1 : 0);
+      if (v.shades) {
+        gl!.activeTexture(gl!.TEXTURE2);
+        gl!.bindTexture(gl!.TEXTURE_2D, v.shades);
+        gl!.activeTexture(gl!.TEXTURE0);
+      }
       center(uniforms, v.batch);
       gl!.uniform1f(uniforms.cutting, v.cut ? 1 : 0);
       gl!.uniform1f(uniforms.gather, how.gather ? 1 : 0);
@@ -1501,6 +1558,7 @@ export function createRenderer(
     },
     dispose: () => {
       buffers.forEach((b) => gl.deleteBuffer(b));
+      textures.forEach((t) => gl.deleteTexture(t));
       probeBuffers.forEach((b) => gl.deleteBuffer(b));
       edgeBuffers.forEach((b) => gl.deleteBuffer(b));
       if (see) {

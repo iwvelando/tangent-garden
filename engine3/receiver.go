@@ -1,9 +1,6 @@
 package engine3
 
-import (
-	"math"
-	"sort"
-)
+import "math"
 
 // ReceiverRequest declares a receiver: the plane Plane = At, for Plane "x",
 // "y" or "z" (or "none", with no receiver), and on it a square window of
@@ -14,14 +11,17 @@ import (
 // second axis rises toward the plane's normal axis, so z = At turned about
 // x leans y toward z, x = At about y leans z toward x, and y = At about z
 // leans x toward y. The window keeps its own coordinates as it turns.
+// Refine splits the surface's cells, up to Refine levels (0–3), where
+// their light lands on the window too coarsely (see Receiver).
 type ReceiverRequest struct {
-	Plane string  `json:"plane"`
-	At    float64 `json:"at"`
-	C1    float64 `json:"c1"`
-	C2    float64 `json:"c2"`
-	Size  float64 `json:"size"`
-	Bins  int     `json:"bins"`
-	Tilt  float64 `json:"tilt,omitempty"`
+	Plane  string  `json:"plane"`
+	At     float64 `json:"at"`
+	C1     float64 `json:"c1"`
+	C2     float64 `json:"c2"`
+	Size   float64 `json:"size"`
+	Bins   int     `json:"bins"`
+	Tilt   float64 `json:"tilt,omitempty"`
+	Refine int     `json:"refine,omitempty"`
 }
 
 // Receiver is the irradiance the outgoing rays deliver to the receiver's
@@ -46,6 +46,15 @@ type ReceiverRequest struct {
 // over its area, a counting along the plane's first coordinate, and Peak
 // the largest.
 //
+// Refined, a cell is split into four, a level at a time, where its
+// corners' crossings lie within a bin of the window and more than a bin
+// apart (along a side or the diagonal its triangles share), or where some
+// of its corners cross the plane ahead and others do not; each part is
+// traced at the points of the grid 2^Refine times finer and emits as a
+// cell does, so a cell split every time is that grid's cells, to rounding.
+// Split counts the cells split, and at most receiverCells cells are
+// spread: Exhausted says a cell that needed splitting was left whole.
+//
 // Emitted is the flux of every cell whose midpoint is lit. It is received
 // in the window (Received), lands on the plane outside it (Outside), or
 // belongs to a cell whose midpoint is beyond the critical angle (Total),
@@ -64,14 +73,21 @@ type Receiver struct {
 	Away       float64     `json:"away"`
 	Total      float64     `json:"total"`
 	Edge       float64     `json:"edge"`
+	Split      int         `json:"split,omitempty"`
+	Exhausted  bool        `json:"exhausted,omitempty"`
 }
 
 const (
-	minReceiverBins = 8
-	maxReceiverBins = 240
+	minReceiverBins   = 8
+	maxReceiverBins   = 960
+	maxReceiverRefine = 3
 	// A crossing farther than this many bins from the window is away.
 	receiverReach = 1e6
 )
+
+// receiverCells bounds the cells a refined receiver spreads, base cells
+// included; a variable so tests can run it out.
+var receiverCells = 1 << 19
 
 func (r ReceiverRequest) validate() error {
 	switch r.Plane {
@@ -98,6 +114,9 @@ func (r ReceiverRequest) validate() error {
 	}
 	if !bounded(r.Tilt) {
 		return fieldErr("rays.receiver.tilt", "the receiver's tilt must be finite and within ±100000 degrees")
+	}
+	if r.Refine < 0 || r.Refine > maxReceiverRefine {
+		return fieldErr("rays.receiver.refine", "use 0–%d refinement levels", maxReceiverRefine)
 	}
 	return nil
 }
@@ -182,49 +201,153 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 		reach := receiverReach + float64(n)
 		return p, math.Abs(p[0]) < reach && math.Abs(p[1]) < reach
 	}
-	g := newRaster(n, n)
-	du := (q.UMax - q.UMin) / float64(q.USamples)
-	dv := (q.VMax - q.VMin) / float64(q.VSamples)
-	landed := 0.0
-	for i := 0; i < q.USamples; i++ {
-		for j := 0; j < q.VSamples; j++ {
-			u, v := q.at(i, j)
-			m := q.ray(r, u+du/2, v+dv/2, scale)
-			if !m.Lit {
-				continue
-			}
-			_, xu, xv, _, _, _ := q.patch(u+du/2, v+dv/2)
-			flux := math.Abs(m.I.dot(m.N)) * xu.cross(xv).norm() * math.Abs(du*dv)
-			if r.Light == "point" {
-				d := m.X.sub(r.Source)
-				flux /= d.dot(d)
-			}
-			out.Emitted += flux
-			if m.Total {
-				out.Total += flux
-				continue
-			}
-			corners := [4]mirrorPoint{samples[i][j], samples[i+1][j], samples[i+1][j+1], samples[i][j+1]}
-			var at [4][2]float64
-			edge, away := false, false
-			for c, s := range corners {
-				if !s.traced() {
-					edge = true
-					break
+	// A ray's landing: whether it is traced, and where it crosses the
+	// plane, in bins, if it crosses ahead and within reach.
+	type landing struct {
+		p                [2]float64
+		traced, ok, done bool
+	}
+	land := func(s mirrorPoint) landing {
+		if !s.traced() {
+			return landing{done: true}
+		}
+		p, ok := cross(s)
+		return landing{p, true, ok, true}
+	}
+	nu, nv, levels := q.USamples, q.VSamples, rc.Refine
+	base := grid2[landing](nu+1, nv+1)
+	for i := range base {
+		for j := range base[i] {
+			base[i][j] = land(samples[i][j])
+		}
+	}
+	// Refined cells live on the grid 2^levels times finer: a cell is its
+	// lowest corner (i, j) there and its side. Points between the samples
+	// are traced by outgoing, where that grid puts them.
+	fu, fv, step := nu<<levels, nv<<levels, 1<<levels
+	type cell struct{ i, j, side int }
+	// Each column of the finer grid is held once a point on it is traced.
+	points := make([][]landing, fu+1)
+	point := func(i, j int) landing {
+		if i%step == 0 && j%step == 0 {
+			return base[i/step][j/step]
+		}
+		if points[i] == nil {
+			points[i] = make([]landing, fv+1)
+		}
+		if l := points[i][j]; l.done {
+			return l
+		}
+		s, _ := q.outgoing(r, lerp(q.UMin, q.UMax, i, fu), lerp(q.VMin, q.VMax, j, fv), scale)
+		l := land(s)
+		points[i][j] = l
+		return l
+	}
+	corners := func(c cell) [4]landing {
+		return [4]landing{point(c.i, c.j), point(c.i+c.side, c.j), point(c.i+c.side, c.j+c.side), point(c.i, c.j+c.side)}
+	}
+	// A cell splits where its light lands near the window and its corners'
+	// crossings are more than a bin apart, or some of its corners land and
+	// others do not: at the edge of the light, of total internal reflection
+	// or of the rays that reach the plane.
+	window := float64(n)
+	splits := func(c cell) bool {
+		at := corners(c)
+		lands := 0
+		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
+		for _, l := range at {
+			if l.traced && l.ok {
+				lands++
+				for k := range lo {
+					lo[k], hi[k] = math.Min(lo[k], l.p[k]), math.Max(hi[k], l.p[k])
 				}
-				p, ok := cross(s)
-				at[c], away = p, away || !ok
 			}
-			switch {
-			case edge:
-				out.Edge += flux
-			case away:
-				out.Away += flux
-			default:
-				g.triangle([3][2]float64{at[0], at[1], at[2]}, flux/2)
-				g.triangle([3][2]float64{at[0], at[2], at[3]}, flux/2)
-				landed += flux
+		}
+		if lands == 0 || hi[0] < -1 || hi[1] < -1 || lo[0] > window+1 || lo[1] > window+1 {
+			return false
+		}
+		if lands < 4 {
+			return true
+		}
+		for _, e := range [5][2]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {0, 2}} {
+			if math.Hypot(at[e[0]].p[0]-at[e[1]].p[0], at[e[0]].p[1]-at[e[1]].p[1]) > 1 {
+				return true
 			}
+		}
+		return false
+	}
+	// Each level splits every cell that needs it before the next begins, so
+	// a budget that runs out leaves the cells evenly refined.
+	cells := make([]cell, 0, nu*nv)
+	for i := 0; i < nu; i++ {
+		for j := 0; j < nv; j++ {
+			cells = append(cells, cell{i * step, j * step, step})
+		}
+	}
+	count := nu * nv
+	leaves := make([]cell, 0, len(cells))
+	for level := 0; level < levels; level++ {
+		next := make([]cell, 0, len(cells))
+		for _, c := range cells {
+			if !out.Exhausted && splits(c) {
+				if count+3 <= receiverCells {
+					count += 3
+					out.Split++
+					h := c.side / 2
+					next = append(next, cell{c.i, c.j, h}, cell{c.i + h, c.j, h}, cell{c.i + h, c.j + h, h}, cell{c.i, c.j + h, h})
+					continue
+				}
+				out.Exhausted = true
+			}
+			leaves = append(leaves, c)
+		}
+		cells = next
+	}
+	leaves = append(leaves, cells...)
+	g := newRaster(n, n)
+	landed := 0.0
+	for _, c := range leaves {
+		u, v := lerp(q.UMin, q.UMax, c.i, fu), lerp(q.VMin, q.VMax, c.j, fv)
+		du := (q.UMax - q.UMin) / float64(fu) * float64(c.side)
+		dv := (q.VMax - q.VMin) / float64(fv) * float64(c.side)
+		// A cell of the grid emits as it always has; a refined one by
+		// outgoing, which traces the same light.
+		var m mirrorPoint
+		var area float64
+		if c.side == step {
+			m = q.ray(r, u+du/2, v+dv/2, scale)
+			_, xu, xv, _, _, _ := q.patch(u+du/2, v+dv/2)
+			area = xu.cross(xv).norm()
+		} else {
+			m, area = q.outgoing(r, u+du/2, v+dv/2, scale)
+		}
+		if !m.Lit {
+			continue
+		}
+		flux := math.Abs(m.I.dot(m.N)) * area * math.Abs(du*dv)
+		if r.Light == "point" {
+			d := m.X.sub(r.Source)
+			flux /= d.dot(d)
+		}
+		out.Emitted += flux
+		if m.Total {
+			out.Total += flux
+			continue
+		}
+		at := corners(c)
+		edge, away := false, false
+		for _, l := range at {
+			edge, away = edge || !l.traced, away || !l.ok
+		}
+		switch {
+		case edge:
+			out.Edge += flux
+		case away:
+			out.Away += flux
+		default:
+			g.triangle([3][2]float64{at[0].p, at[1].p, at[2].p}, flux/2)
+			g.triangle([3][2]float64{at[0].p, at[2].p, at[3].p}, flux/2)
+			landed += flux
 		}
 	}
 	out.Irradiance = g.bins()
@@ -281,19 +404,25 @@ func (g *raster) triangle(p [3][2]float64, flux float64) {
 // how much of it lies to the right of the line, which clamping keeps.
 func (g *raster) edge(a, b [2]float64, weight float64) {
 	w := float64(g.w)
-	cuts := []float64{0, 1}
-	for _, x := range []float64{0, w} {
+	// The line's ends and where it crosses each side, in order along it.
+	var cuts [4]float64
+	m := 1
+	for _, x := range [2]float64{0, w} {
 		if s := (x - a[0]) / (b[0] - a[0]); s > 0 && s < 1 {
-			cuts = append(cuts, s)
+			cuts[m] = s
+			m++
 		}
 	}
-	sort.Float64s(cuts)
+	if m == 3 && cuts[2] < cuts[1] {
+		cuts[1], cuts[2] = cuts[2], cuts[1]
+	}
+	cuts[m] = 1
 	at := func(s float64) [2]float64 {
 		p := [2]float64{a[0] + s*(b[0]-a[0]), a[1] + s*(b[1]-a[1])}
-		p[0] = math.Min(math.Max(p[0], 0), w)
+		p[0] = min(max(p[0], 0), w)
 		return p
 	}
-	for k := 1; k < len(cuts); k++ {
+	for k := 1; k <= m; k++ {
 		g.line(at(cuts[k-1]), at(cuts[k]), weight)
 	}
 }
@@ -307,9 +436,9 @@ func (g *raster) line(p, q [2]float64, weight float64) {
 		p, q, weight = q, p, -weight
 	}
 	dxdy := (q[0] - p[0]) / (q[1] - p[1])
-	y0, y1 := math.Max(p[1], 0), math.Min(q[1], float64(g.h))
-	for row := int(math.Max(math.Floor(y0), 0)); row < g.h && float64(row) < y1; row++ {
-		top, bottom := math.Max(float64(row), y0), math.Min(float64(row+1), y1)
+	y0, y1 := max(p[1], 0), min(q[1], float64(g.h))
+	for row := int(max(math.Floor(y0), 0)); row < g.h && float64(row) < y1; row++ {
+		top, bottom := max(float64(row), y0), min(float64(row+1), y1)
 		if bottom <= top {
 			continue
 		}
@@ -326,10 +455,10 @@ func (g *raster) span(r int, a, b, d float64) {
 	row := g.rows[r]
 	// Interpolating a clamped edge can stray past [0, w] by rounding.
 	w := float64(g.w)
-	a, b = math.Min(math.Max(a, 0), w), math.Min(math.Max(b, 0), w)
-	lo, hi := math.Min(a, b), math.Max(a, b)
+	a, b = min(max(a, 0), w), min(max(b, 0), w)
+	lo, hi := min(a, b), max(a, b)
 	share := func(c float64) float64 {
-		clamp := func(t float64) float64 { return math.Min(math.Max(t, 0), 1) }
+		clamp := func(t float64) float64 { return min(max(t, 0), 1) }
 		if hi-lo < 1e-12 {
 			return d * clamp(c+1-(a+b)/2)
 		}

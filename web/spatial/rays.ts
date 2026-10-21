@@ -1,11 +1,12 @@
 import { describeColors, type ColorScheme } from "../color-schemes";
 import { causticEdgesNote } from "./cuspidal";
-import type {
-  CausticSheet,
-  FocalShape,
-  RaysConfig,
-  RaysResult,
-  ReceiverResult,
+import {
+  maxReceiverCells,
+  type CausticSheet,
+  type FocalShape,
+  type RaysConfig,
+  type RaysResult,
+  type ReceiverResult,
 } from "./types";
 
 const shapes: Record<Exclude<FocalShape, "none">, string> = {
@@ -131,5 +132,14 @@ export function receiverNote(g: ReceiverResult, light: RaysConfig): string[] {
           parallel ? "times the beam's own" : "per unit area at unit intensity"
         }, averaged over each bin, with no Fresnel losses or shadows.`
       : "No light lands in its window.",
+    ...(g.split
+      ? [
+          `${count(g.split, "cell was", "cells were")} split where ${g.split === 1 ? "its" : "their"} light lands coarsely on the window${
+            g.exhausted
+              ? `, until the budget of ${maxReceiverCells.toLocaleString()} cells ran out`
+              : ""
+          }.`,
+        ]
+      : []),
   ];
 }
