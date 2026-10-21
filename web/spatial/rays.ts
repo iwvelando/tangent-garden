@@ -94,7 +94,12 @@ export function raysNote(
 
 // Where the light went, and what the receiver's shade means.
 export function receiverNote(g: ReceiverResult, light: RaysConfig): string[] {
-  const plane = `${g.plane} = ${light.receiver.at.toLocaleString()}`;
+  const tilt = light.receiver.tilt ?? 0;
+  const plane = `${g.plane} = ${light.receiver.at.toLocaleString()}${
+    tilt
+      ? ` turned ${tilt.toLocaleString()}° about ${receiverAxes[g.plane][0]}`
+      : ""
+  }`;
   if (!(g.emitted > 0))
     return [
       `No light reaches the surface, so the receiver on ${plane} is dark.`,

@@ -105,6 +105,7 @@ type NamedTarget =
   | "n2"
   | "receiverAt"
   | "receiverSize"
+  | "receiverTilt"
   | "level"
   | "implicitA"
   | "sectionFrom"
@@ -223,6 +224,7 @@ export const targetLabels: Record<NamedTarget, string> = {
   n2: "Index n₂",
   receiverAt: "Plane at c",
   receiverSize: "Window size s",
+  receiverTilt: "Tilt (°)",
   level: "Level c",
   implicitA: "Shape parameter a",
   sectionFrom: "First offset d₀",
@@ -288,7 +290,11 @@ const raysFields = {
 } as const;
 const isRays = (t: Target): t is keyof typeof raysFields => t in raysFields;
 // Receiver targets and the ReceiverConfig field each one moves.
-const receiverFields = { receiverAt: "at", receiverSize: "size" } as const;
+const receiverFields = {
+  receiverAt: "at",
+  receiverSize: "size",
+  receiverTilt: "tilt",
+} as const;
 const isReceiver = (t: Target): t is keyof typeof receiverFields =>
   t in receiverFields;
 // Implicit-surface targets and the ImplicitConfig field each one moves.
@@ -423,7 +429,7 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
               : ["azimuth", "elevation"]),
             "rayLength",
             ...(c.rays.receiver.plane !== "none"
-              ? ["receiverAt", "receiverSize"]
+              ? ["receiverAt", "receiverSize", "receiverTilt"]
               : []),
           ] as Target[])),
       "uMin",
@@ -535,7 +541,7 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (isSection(t)) return c.implicit.sections[sectionFields[t]];
   if (isSurface(t)) return c.surface[surfaceFields[t]];
   if (isRays(t)) return c.rays[raysFields[t]];
-  if (isReceiver(t)) return c.rays.receiver[receiverFields[t]];
+  if (isReceiver(t)) return c.rays.receiver[receiverFields[t]] ?? 0;
   if (isSource(t)) return c.rays.source[sourceAxis(t)];
   if (t === "poleX") return c.pole.x;
   if (t === "poleY") return c.pole.y;

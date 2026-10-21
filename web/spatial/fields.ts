@@ -61,6 +61,7 @@ const tracked: Record<string, Target> = {
   "rays.n2": "n2",
   "rays.receiver.at": "receiverAt",
   "rays.receiver.size": "receiverSize",
+  "rays.receiver.tilt": "receiverTilt",
   "implicit.level": "level",
   "implicit.a": "implicitA",
   "implicit.cells": "cells",

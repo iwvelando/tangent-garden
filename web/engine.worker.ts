@@ -453,6 +453,7 @@ self.onmessage = async ({
                         rays!.receiver.c2,
                         rays!.receiver.size,
                         rays!.receiver.bins,
+                        rays!.receiver.tilt ?? 0,
                       ]
                     : []),
                 ]

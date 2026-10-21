@@ -329,6 +329,7 @@ const config: SchemaOf<SpatialConfig> = {
             c2: "number",
             size: "number",
             bins: "number",
+            tilt: { optional: "number" },
           },
         },
       },

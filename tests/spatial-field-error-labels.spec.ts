@@ -343,6 +343,12 @@ const cases: Case[] = [
     "Bins",
   ],
   [
+    "rays.receiver.tilt",
+    "A glass dome's ring of light",
+    (c) => (c.rays.receiver.tilt = 2e5),
+    "Tilt (°)",
+  ],
+  [
     "implicit.box.yMax",
     "A sphere and its latitudes",
     (c) => (c.implicit.box.yMax = 2e5),
