@@ -306,7 +306,8 @@ test("each 3D example names itself above a shared construction title", async ({
                     : canals.includes(label)
                       ? "A surface enveloping spheres"
                       : label === "Lorenz's two wings" ||
-                          label === "A row of seeds wound up by a vortex"
+                          label === "A row of seeds wound up by a vortex" ||
+                          label === "Spirals into a tiny sink"
                         ? "Paths that follow a field"
                         : label === "Four pursuers on a tetrahedron" ||
                             label === "A chase untangling a trefoil"
