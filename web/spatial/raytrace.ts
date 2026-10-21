@@ -1,3 +1,4 @@
+import { keepEdges } from "./animation";
 import type {
   Bounds3,
   RaysResult,
@@ -21,6 +22,10 @@ export type Timeline = {
   // For each caustic part, in the study's order, τ at which each of its
   // points is reached; Infinity where it has none.
   arrival: number[][][];
+  // For each of the caustics' cuspidal edges, τ at which each of its
+  // points is reached, along the ray from its foot; empty when none are
+  // located.
+  edges: number[][];
   // Where each sample's incident light is at τ = 0, and its unit direction.
   start: (Vec3 | null)[][];
   incident: (Vec3 | null)[][];
@@ -107,6 +112,18 @@ export function traceTimeline(
       }),
     ),
   );
+  // An edge point lies between samples, on the ray from its foot, which
+  // is lit as a sample there would be.
+  const lit = (p: Vec3) =>
+    parallel ? nIncident * (dot(p) - front) : nIncident * gap(p, source);
+  const edges = (rays.edges ?? []).map((e) =>
+    e.points.map((q, k) => {
+      const foot = e.feet?.[k];
+      return foot && finite(q)
+        ? lit(foot) + nTransmitted * gap(q, foot)
+        : Infinity;
+    }),
+  );
   // The drawing is complete once every ray has its full length and every
   // caustic point inside the framing sphere is reached; points beyond it,
   // such as those near infinity, arrive with the final frame.
@@ -134,6 +151,15 @@ export function traceTimeline(
       }),
     ),
   );
+  edges.forEach((times, m) =>
+    times.forEach((t, k) => {
+      if (
+        Number.isFinite(t) &&
+        gap(rays.edges![m].points[k], bounds.center) <= bounds.radius
+      )
+        total = Math.max(total, t);
+    }),
+  );
   if (!(total > 0))
     total = hit
       .flat()
@@ -142,6 +168,7 @@ export function traceTimeline(
     total,
     hit,
     arrival,
+    edges,
     start,
     incident,
     nIncident,
@@ -200,6 +227,10 @@ export function trace(
     caustics: rays.caustics.map((c, k) =>
       reachedSheet(c, timeline.arrival[k], tau),
     ),
+    // An edge is drawn between points both reached.
+    ...(rays.edges && {
+      edges: keepEdges(rays.edges, (m, k) => timeline.edges[m]?.[k] <= tau),
+    }),
     lines: rays.lines.map((line) => {
       const from = timeline.start[line.i]?.[line.j],
         beam = timeline.incident[line.i]?.[line.j],

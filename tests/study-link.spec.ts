@@ -611,6 +611,7 @@ test("3D and 4D fields are refused by name", async () => {
     ["config.surface.kind", (s) => (s.config.surface.kind = "klein")],
     ["config.implicit.refine", (s) => (s.config.implicit.refine = "2")],
     ["config.rays.stop", (s) => (s.config.rays.stop = 1)],
+    ["config.rays.edges", (s) => (s.config.rays.edges = "on")],
     ["config.surface.edges", (s) => (s.config.surface.edges = "on")],
     ["config.surface.ridges", (s) => (s.config.surface.ridges = 1)],
     ["view.pitch", (s) => (s.view.pitch = 2)],
@@ -712,6 +713,13 @@ test("fields a link predates take the notebook's defaults", async () => {
   assert.equal(spatialStudy(folding).config.surface.edges, true);
   delete folding.config.surface.edges;
   assert.equal("edges" in spatialStudy(folding).config.surface, false);
+  // Caustics drawn before their cuspidal edges were located have none.
+  const folded = spatial(
+    spatialPresets.findIndex((p) => p.config.rays.edges),
+  ) as any;
+  assert.equal(spatialStudy(folded).config.rays.edges, true);
+  delete folded.config.rays.edges;
+  assert.equal("edges" in spatialStudy(folded).config.rays, false);
   // A surface drawn before its ridges were located has none.
   const ridged = spatial(
     spatialPresets.findIndex((p) => p.config.surface.ridges),

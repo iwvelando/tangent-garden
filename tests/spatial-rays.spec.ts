@@ -5,14 +5,16 @@ import {
   targetLabel,
 } from "../web/spatial/animation";
 import { spatialPresets } from "../web/spatial/presets";
+import { buildScene, defaultLayers, scenePasses } from "../web/spatial/scene";
 import type {
   CausticSheet,
+  CuspidalEdge,
   SpatialResult,
   SurfaceSheet,
   Vec3,
 } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
-import { choosePreset } from "./helpers";
+import { chooseColorScheme, choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
 import { curveMesh } from "./curve-mesh";
@@ -409,6 +411,27 @@ test("mirror reveal grows the mirror, caustics and rays along u", () => {
   expect(early.lines.map((l) => l.i)).toEqual([0, 1]);
   expect(early.source).toEqual(input.rays!.source);
   expect(reveal(input, 0).rays!.surface.faces).toEqual([]);
+  expect("edges" in early).toBe(false);
+  // A caustic's cuspidal edge grows with the rows its points cross.
+  const edge: CuspidalEdge = {
+    branch: 1,
+    closed: false,
+    points: [at(0, 3), at(0.5, 3), at(1.5, 3)],
+    i: [0, 0.5, 1.5],
+    j: [0.5, 0, 0],
+    feet: [at(0), at(0.5), at(1.5)],
+  };
+  const edged = { ...input, rays: { ...input.rays!, edges: [edge] } };
+  expect(reveal(edged, 0.5).rays!.edges).toEqual([
+    {
+      ...edge,
+      points: edge.points.slice(0, 2),
+      i: [0, 0.5],
+      j: [0.5, 0],
+      feet: edge.feet!.slice(0, 2),
+    },
+  ]);
+  expect(reveal(edged, 1).rays!.edges).toEqual([edge]);
   // The whole reveal frames the mirror, rays and source, then each caustic
   // part, as Go does.
   const whole = reveal(input, 1);
@@ -490,4 +513,185 @@ test("rays stop at the caustic where the study asks", async ({ page }) => {
   await settled(page);
   await expect(stop).not.toBeChecked();
   expect("stop" in (await config(page)).rays).toBe(false);
+});
+
+// A caustic's cuspidal edges join the gold edges' pass, broad, the real
+// ones always and the virtual ones only with the virtual caustics; a
+// study without edges has no such pass.
+test("a caustic's real edges draw in gold, its virtual ones with the virtual caustics", () => {
+  const at = (x: number, z: number): Vec3 => ({ x, y: 0, z });
+  const empty: SurfaceSheet = {
+    points: [],
+    normals: [],
+    alongU: [],
+    alongV: [],
+    faces: [],
+  };
+  const result = (edges?: CuspidalEdge[]): SpatialResult => ({
+    base: [],
+    minus: [],
+    plus: [],
+    mesh: curveMesh(),
+    rulings: [],
+    breaks: [],
+    bounds: { center: at(0, 0), radius: 1 },
+    radius: 1,
+    invalid: 0,
+    omitted: 0,
+    rays: {
+      surface: empty,
+      caustics: ([1, 2] as const).flatMap((branch) =>
+        [false, true].map((virtual) => ({
+          ...empty,
+          branch,
+          virtual,
+          shape: "none" as const,
+        })),
+      ),
+      lines: [],
+      uCurves: [],
+      vCurves: [],
+      source: null,
+      singular: 0,
+      unlit: 0,
+      atSource: 0,
+      stigmatic: 0,
+      total: 0,
+      clipped: [0, 0],
+      receiver: null,
+      ...(edges && { edges }),
+    },
+  });
+  const edge = (z: number, closed: boolean, virtual: boolean) => ({
+    branch: 1 as const,
+    closed,
+    points: [at(0, z), at(1, z), at(1, z + 1)],
+    i: [0, 1, 1],
+    j: [0, 0, 1],
+    feet: [at(0, 0), at(1, 0), at(1, 0)],
+    ...(virtual && { virtual }),
+  });
+  const passes = (r: SpatialResult, layers = defaultLayers) =>
+    scenePasses(buildScene(r), layers).filter((p) => p.layer === "cusps");
+  for (const r of [result(), result([])]) expect(passes(r)).toEqual([]);
+  // Seven floats a vertex: z is the third, rebased on the bounds' center.
+  const zs = (data: ArrayLike<number>) =>
+    new Set(Array.from(data).filter((_, k) => k % 7 === 2));
+  const r = result([edge(2, false, false), edge(-3, true, true)]);
+  const [real, virtual] = passes(r);
+  expect([real.batch.ink, real.batch.mode, real.sheet]).toEqual([
+    2,
+    "lines",
+    false,
+  ]);
+  expect(real.batch.data.length).toBe(2 * 2 * 7);
+  expect(zs(real.batch.data)).toEqual(new Set([2, 3]));
+  expect(virtual.batch.ink).toBe(2);
+  expect(virtual.batch.data.length).toBe(3 * 2 * 7);
+  expect(zs(virtual.batch.data)).toEqual(new Set([-3, -2]));
+  const without = passes(r, { ...defaultLayers, virtual: false });
+  expect(without).toHaveLength(1);
+  expect(without[0].batch.data).toEqual(real.batch.data);
+  expect(passes(r, { ...defaultLayers, cusps: false })).toEqual([]);
+});
+
+// The tilted dish's coma: each caustic sheet folds back once, near the
+// focus. Locating its edges draws them in gold, names them in the note,
+// the legend and the explanation, and in the scheme drawn; hiding their
+// layer leaves exactly the drawing they were added to, and unchecking
+// drops the field, as in links made before it.
+test("a mirror's caustic edges are located on request, drawn and named", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, coma);
+  await settled(page);
+  const check = page.getByRole("checkbox", {
+    name: "Locate cuspidal edges",
+    exact: true,
+  });
+  const named = page.locator('.legend [data-legend="cusps"]:not(.legend-off)');
+  const explanation = page.locator(".bottom-note", {
+    hasText: "where the parameter curves cross",
+  });
+  await expect(check).not.toBeChecked();
+  await expect(note(page)).not.toContainText("cuspidal");
+  await expect(named).toHaveCount(0);
+  await expect(layer(page, "Cuspidal edges")).toHaveCount(0);
+  await expect(explanation).not.toContainText("cuspidal");
+  const before = await pixels(page);
+  await check.check();
+  await settled(page);
+  expect((await config(page)).rays.edges).toBe(true);
+  await expect(note(page)).toContainText(
+    "The caustics fold along 2 cuspidal edges (1 on caustic 1, 1 on caustic 2).",
+  );
+  await expect(named).toHaveText("Cuspidal edges");
+  await expect(explanation).toContainText(
+    "Broad gold curves are the caustics' cuspidal edges, where they fold back.",
+  );
+  await chooseColorScheme(page, "forest");
+  await expect(explanation).toContainText(
+    "Broad berry curves are the caustics' cuspidal edges, where they fold back.",
+  );
+  await chooseColorScheme(page, "default");
+  const located = await pixels(page);
+  expect(located).not.toBe(before);
+  await layer(page, "Cuspidal edges").uncheck();
+  expect(await pixels(page)).toBe(before);
+  await expect(named).toHaveCount(0);
+  await layer(page, "Cuspidal edges").check();
+  expect(await pixels(page)).toBe(located);
+  await check.uncheck();
+  await settled(page);
+  expect("edges" in (await config(page)).rays).toBe(false);
+  await expect(note(page)).not.toContainText("cuspidal");
+  await expect(layer(page, "Cuspidal edges")).toHaveCount(0);
+  expect(await pixels(page)).toBe(before);
+});
+
+// The astigmatic dish plays its own sweep of b with its caustics' edges
+// located: each frame is the study at its own b, with its own edges, which
+// the frame draws and hiding their layer takes away.
+test("the astigmatic dish plays its sweep with its caustics' edges located", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "An astigmatic dish's folded caustics" });
+  await settled(page);
+  expect((await config(page)).rays.edges).toBe(true);
+  await expect(note(page)).toContainText(
+    "The caustics fold along 4 cuspidal edges (2 on caustic 1, 2 on caustic 2).",
+  );
+  const opening = await pixels(page);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "parameters");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const frames: string[] = [];
+  // Out to b = 1.4 as the sweep turns back half way, then home.
+  for (const [time, b] of [
+    ["0.5", 1.4],
+    ["0", 1],
+  ] as const) {
+    await slider.fill(time);
+    await expect(stage(page)).toHaveAttribute("data-time", time);
+    await settled(page);
+    expect((await config(page)).surface.b).toBe(b);
+    expect((await config(page)).rays.edges).toBe(true);
+    const drawn = await pixels(page);
+    await layer(page, "Cuspidal edges").uncheck();
+    expect(await pixels(page)).not.toBe(drawn);
+    await layer(page, "Cuspidal edges").check();
+    expect(await pixels(page)).toBe(drawn);
+    frames.push(drawn);
+  }
+  expect(frames[0]).not.toBe(frames[1]);
+  expect(frames[1]).toBe(opening);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect((await config(page)).surface.b).toBe(1);
 });

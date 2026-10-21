@@ -39,6 +39,15 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
         label: refracting ? "Transmitted rays" : "Reflected rays",
       },
       ...caustics,
+      ...(c.rays.edges
+        ? [
+            {
+              layer: "cusps",
+              swatch: "thread-dot",
+              label: "Cuspidal edges",
+            } as const,
+          ]
+        : []),
     ];
   }
   if (c.format === "surface")

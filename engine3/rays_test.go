@@ -671,7 +671,7 @@ func TestRaysJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"format":"rays","surface":{"kind":"paraboloid","a":0.5,"b":0.5,"uMin":-1,"uMax":1,"vMin":-1,"vMax":1,"uSamples":12,"vSamples":12,"curves":3},"rays":{"interaction":"reflect","n1":1,"n2":1.5,"light":"point","azimuth":10,"elevation":-20,"source":{"x":0,"y":0,"z":2},"length":1.5,"stop":true,"receiver":{"plane":"none"}}}`), &c); err != nil {
 		t.Fatal(err)
 	}
-	if want := (RaysRequest{"reflect", 1, 1.5, "point", 10, -20, Vec3{0, 0, 2}, 1.5, true, ReceiverRequest{Plane: "none"}}); c.Rays != want {
+	if want := (RaysRequest{"reflect", 1, 1.5, "point", 10, -20, Vec3{0, 0, 2}, 1.5, true, ReceiverRequest{Plane: "none"}, false}); c.Rays != want {
 		t.Fatalf("%+v", c.Rays)
 	}
 	out, err := Compute(c)

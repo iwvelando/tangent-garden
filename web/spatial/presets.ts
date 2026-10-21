@@ -5132,4 +5132,60 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // Light falling straight down into a dish cut from the ellipsoid
+  // (1.5, b, 1), within 47° of its lowest point, mirrored on its inside.
+  // Its radii of curvature there differ, so the light gathers on two
+  // caustic sheets rather than at a focus, and each sheet folds back along
+  // cuspidal edges over the dish's planes of symmetry: caustic 1 over
+  // y = 0 and caustic 2 over x = 0, each split by the pole, where the
+  // chart has no normal. The sheets are seen through, the incident rays
+  // hidden, and each reflected ray stops at the first caustic it reaches.
+  // As b sweeps from 1 to 1.4 and back, two stigmatic points, where the
+  // sheets touch, enter the dish at its rim (b ≈ 1.03) and slide toward
+  // its center along y = 0, and the fold over y = 0 passes from caustic 1
+  // to caustic 2 at each, while both sheets shrink toward the axis.
+  {
+    name: "An astigmatic dish's folded caustics",
+    detail:
+      "Light falling into a dish with unequal curvatures gathers on two caustic sheets, each folding back sharply along its cuspidal edges",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1,
+        c: 1,
+        reverse: true,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: -0.75,
+        uSamples: 120,
+        vSamples: 60,
+        curves: 9,
+      },
+      rays: { ...base.rays, length: 1.2, stop: true, edges: true },
+    },
+    layers: { incident: false },
+    view: { ...initialView, yaw: 0.5, pitch: 0.3, zoom: 1.1 },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    flight: {
+      duration: 16,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "1", to: "1.4" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];
