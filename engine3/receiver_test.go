@@ -3,6 +3,7 @@ package engine3
 import (
 	"encoding/json"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -273,6 +274,8 @@ func TestReceiverValidation(t *testing.T) {
 		{func(c *Request) { c.Rays.Receiver.Size = math.Inf(1) }, "receiver's size"},
 		{func(c *Request) { c.Rays.Receiver.Bins = 7 }, "bins"},
 		{func(c *Request) { c.Rays.Receiver.Bins = 241 }, "bins"},
+		{func(c *Request) { c.Rays.Receiver.Tilt = math.NaN() }, "receiver's tilt"},
+		{func(c *Request) { c.Rays.Receiver.Tilt = -2e5 }, "receiver's tilt"},
 	} {
 		c := ok()
 		tc.change(&c)
@@ -326,7 +329,7 @@ func TestReceiverJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"format":"rays","surface":{"kind":"paraboloid","a":0.5,"b":0.5,"uMin":-1,"uMax":1,"vMin":-1,"vMax":1,"uSamples":12,"vSamples":12,"curves":3},"rays":{"interaction":"refract","n1":1,"n2":1.5,"light":"parallel","azimuth":0,"elevation":-90,"length":1,"receiver":{"plane":"z","at":-2,"c1":0.5,"c2":-0.5,"size":3,"bins":10}}}`), &c); err != nil {
 		t.Fatal(err)
 	}
-	if want := (ReceiverRequest{"z", -2, .5, -.5, 3, 10}); c.Rays.Receiver != want {
+	if want := (ReceiverRequest{Plane: "z", At: -2, C1: .5, C2: -.5, Size: 3, Bins: 10}); c.Rays.Receiver != want {
 		t.Fatalf("%+v", c.Rays.Receiver)
 	}
 	out, err := Compute(c)
@@ -338,6 +341,14 @@ func TestReceiverJSON(t *testing.T) {
 		if !strings.Contains(string(b), key) {
 			t.Fatalf("missing %s in %s", key, string(b)[:200])
 		}
+	}
+	// A tilt is read in degrees, and absent is none.
+	var r ReceiverRequest
+	if err := json.Unmarshal([]byte(`{"plane":"x","at":1,"c1":0,"c2":0,"size":1,"bins":8,"tilt":-35}`), &r); err != nil || r.Tilt != -35 {
+		t.Fatalf("%+v, %v", r, err)
+	}
+	if b, _ := json.Marshal(ReceiverRequest{Plane: "z", Size: 1, Bins: 8}); strings.Contains(string(b), "tilt") {
+		t.Fatalf("an untilted receiver marshals %s", b)
 	}
 }
 
@@ -364,5 +375,187 @@ func TestReceiverClean(t *testing.T) {
 	}
 	if !(rim > 5*center && center > 0) {
 		t.Fatalf("rim %v, center %v", rim, center)
+	}
+}
+
+// tilted turns receiver c's window by tilt degrees about its first axis.
+func tilted(c Request, tilt float64) Request {
+	c.Rays.Receiver.Tilt = tilt
+	return c
+}
+
+// A tilted window turns about its first axis through its center, right
+// handed: on z = 5 about x, its second axis y rises toward z. Its corners
+// still run (lo, lo), (hi, lo), (hi, hi), (lo, hi) in its own coordinates.
+func TestReceiverTiltedWindow(t *testing.T) {
+	near := func(p, q Vec3) bool { return p.sub(q).norm() < 1e-12 }
+	for _, tc := range []struct {
+		axis string
+		tilt float64
+		want [4]Vec3
+	}{
+		// Turned a right angle, the window stands upright exactly.
+		{"z", 90, [4]Vec3{{.5, 3, 4.5}, {1.5, 3, 4.5}, {1.5, 3, 5.5}, {.5, 3, 5.5}}},
+		{"x", -90, [4]Vec3{{5.5, .5, 3}, {5.5, 1.5, 3}, {4.5, 1.5, 3}, {4.5, .5, 3}}},
+		{"y", 180, [4]Vec3{{3.5, 5, .5}, {3.5, 5, 1.5}, {2.5, 5, 1.5}, {2.5, 5, .5}}},
+		{"z", 30, [4]Vec3{{.5, 3 - math.Sqrt(3)/4, 4.75}, {1.5, 3 - math.Sqrt(3)/4, 4.75}, {1.5, 3 + math.Sqrt(3)/4, 5.25}, {.5, 3 + math.Sqrt(3)/4, 5.25}}},
+	} {
+		c := tilted(receive(flat(1, parallel(0, -60)), tc.axis, 5, 1, 3, 1, 8), tc.tilt)
+		out, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := out.Rays.Receiver
+		for k, p := range g.Corners {
+			if !near(p, tc.want[k]) {
+				t.Fatalf("%s turned %v°: corners %+v", tc.axis, tc.tilt, g.Corners)
+			}
+			if p.sub(out.Bounds.Center).norm() > out.Bounds.Radius*(1+1e-12) {
+				t.Fatalf("%s: %+v lies outside %+v", tc.axis, p, out.Bounds)
+			}
+		}
+	}
+	// Turned whole turns, the window is exactly the untilted one, bit for bit.
+	for _, tilt := range []float64{360, -720} {
+		c := receive(glass(flat(1.5, parallel(20, -60)), 1, 1.5), "z", -1, .1, 0, 1, 16)
+		if want, got := received(t, c), received(t, tilted(c, tilt)); !reflect.DeepEqual(got, want) {
+			t.Fatalf("a receiver turned whole turns differs:\n%+v\n%+v", got, want)
+		}
+	}
+}
+
+// Parallel light crossing a flat interface carries a uniform beam: across
+// it the transmitted irradiance is cos θ₁/cos θ₂, so a plane with unit
+// normal m receives cos θ₁ |T·m|/cos θ₂ wherever the beam covers it, at any
+// tilt.
+func TestReceiverTiltedUniform(t *testing.T) {
+	in := Vec3{.5 * math.Cos(math.Pi/9), .5 * math.Sin(math.Pi/9), -math.Sqrt(3) / 2}
+	out, _ := snell(in, Vec3{0, 0, 1}, 1/1.5)
+	cos1, cos2 := math.Sqrt(3)/2, -out.Z
+	for _, tc := range []struct {
+		axis   string
+		at     float64
+		tilt   float64
+		normal Vec3
+	}{
+		// z = −1 turned about x: its normal leans from +z toward −y.
+		{"z", -1, 25, Vec3{0, -math.Sin(25 * math.Pi / 180), math.Cos(25 * math.Pi / 180)}},
+		{"z", -1, -60, Vec3{0, math.Sin(60 * math.Pi / 180), math.Cos(60 * math.Pi / 180)}},
+		// x = .3 turned about y: its normal leans from +x toward −z.
+		{"x", .3, 40, Vec3{math.Cos(40 * math.Pi / 180), 0, -math.Sin(40 * math.Pi / 180)}},
+		// y = .2 turned about z: its normal leans from +y toward −x.
+		{"y", .2, -30, Vec3{math.Sin(30 * math.Pi / 180), math.Cos(30 * math.Pi / 180), 0}},
+	} {
+		// The window, 0.4 across, lies within the beam leaving [−1.5, 1.5]².
+		c := receive(glass(flat(1.5, parallel(20, -60)), 1, 1.5), tc.axis, tc.at, -.5, .1, .4, 12)
+		switch tc.axis {
+		case "x":
+			c.Rays.Receiver.C1, c.Rays.Receiver.C2 = .1, -.5
+		case "y":
+			// Far enough below the flat that no ray reaching it starts in a
+			// cell the plane cuts.
+			c.Rays.Receiver.C1, c.Rays.Receiver.C2 = -1.2, .4
+		}
+		g := received(t, tilted(c, tc.tilt))
+		accounted(t, g)
+		want := cos1 * math.Abs(out.dot(tc.normal)) / cos2
+		for a, column := range g.Irradiance {
+			for b, e := range column {
+				if math.Abs(e-want) > 1e-9 {
+					t.Fatalf("%s turned %v°: bin (%d, %d) holds %v, want %v", tc.axis, tc.tilt, a, b, e, want)
+				}
+			}
+		}
+		if math.Abs(g.Received-want*.16) > 1e-9 {
+			t.Fatalf("%s turned %v°: received %v, want %v", tc.axis, tc.tilt, g.Received, want*.16)
+		}
+	}
+}
+
+// A paraboloid's axial light all passes through its focus, so a window
+// through the focus collects all of it in the focus's bin however it is
+// turned.
+func TestReceiverTiltedFocus(t *testing.T) {
+	for _, tilt := range []float64{30, -50, 75} {
+		c := receive(mirror("paraboloid", .5, .5, 0, -1, 1, -1, 1, 24, 24, parallel(0, -90)), "z", 1, 0, 0, 1, 9)
+		g := received(t, tilted(c, tilt))
+		accounted(t, g)
+		bin := 1.0 / 9
+		for a, column := range g.Irradiance {
+			for b, e := range column {
+				if (a != 4 || b != 4) && e != 0 {
+					t.Fatalf("turned %v°: bin (%d, %d) holds %v", tilt, a, b, e)
+				}
+			}
+		}
+		if math.Abs(g.Received-4) > 1e-9 || math.Abs(g.Irradiance[4][4]*bin*bin-4) > 1e-9 {
+			t.Fatalf("turned %v°: received %v", tilt, g.Received)
+		}
+	}
+}
+
+// A paraboloid's axial light all passes through its focus F, so a point q
+// of a turned plane is lit exactly where the line through q and F meets
+// the mirror at some X with q ahead of X: before F or past it. Every bin
+// whose samples are all lit holds light, and every bin whose samples are
+// all dark holds none, at tilts that keep the plane above F, that cut
+// through F, and that stand nearly upright.
+func TestReceiverTiltedLight(t *testing.T) {
+	// z = (x² + y²)/2 over [−0.3, 0.3]², below F = (0, 0, 1/2): its light
+	// leaves F in a cone about 45° wide.
+	f, h := .5, .3
+	c := mirror("paraboloid", 1, 1, 0, -h, h, -h, h, 96, 96, parallel(0, -90))
+	lit := func(q Vec3) bool {
+		// L(s) = F + s(q − F) meets z = (x² + y²)/2 where
+		// (d_x² + d_y²)s²/2 − d_z s − f = 0, with d = q − F.
+		d := q.sub(Vec3{0, 0, f})
+		a, b := (d.X*d.X+d.Y*d.Y)/2, -d.Z
+		roots := []float64{}
+		if a == 0 {
+			roots = append(roots, -f/b)
+		} else if disc := b*b + 4*a*f; disc >= 0 {
+			roots = append(roots, (-b-math.Sqrt(disc))/(2*a), (-b+math.Sqrt(disc))/(2*a))
+		}
+		for _, s := range roots {
+			x := Vec3{0, 0, f}.add(d.mul(s))
+			// The ray runs from X toward F, so q (s = 1) is ahead of X
+			// when X lies on the far side of F, or past q beyond it.
+			if math.Abs(x.X) <= h && math.Abs(x.Y) <= h && (s < 0 || s > 1) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, tilt := range []float64{0, 35, 70, -80} {
+		g := received(t, tilted(receive(c, "z", 1.2, 0, 0, 3, 30), tilt))
+		accounted(t, g)
+		tau := tilt * math.Pi / 180
+		e1, e2 := Vec3{1, 0, 0}, Vec3{0, math.Cos(tau), math.Sin(tau)}
+		bin := 3.0 / 30
+		counts := [2]int{}
+		for a, column := range g.Irradiance {
+			for b, e := range column {
+				in := 0
+				for k := 0; k <= 2; k++ {
+					for l := 0; l <= 2; l++ {
+						x, y := -1.5+(float64(a)+float64(k)/2)*bin, -1.5+(float64(b)+float64(l)/2)*bin
+						if lit(Vec3{0, 0, 1.2}.add(e1.mul(x)).add(e2.mul(y))) {
+							in++
+						}
+					}
+				}
+				switch {
+				case in == 9 && !(e > 0), in == 0 && e != 0:
+					t.Fatalf("turned %v°: bin (%d, %d) has %d of 9 samples lit and holds %v", tilt, a, b, in, e)
+				case in == 9:
+					counts[0]++
+				case in == 0:
+					counts[1]++
+				}
+			}
+		}
+		if counts[0] < 20 || counts[1] < 20 {
+			t.Fatalf("turned %v°: %d bins lit and %d dark", tilt, counts[0], counts[1])
+		}
 	}
 }

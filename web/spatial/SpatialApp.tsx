@@ -1112,10 +1112,9 @@ export default function SpatialApp({
       )}
     </>
   );
-  const [first, second] =
-    receiverAxes[
-      config.rays.receiver.plane === "none" ? "z" : config.rays.receiver.plane
-    ];
+  const receiverPlane =
+    config.rays.receiver.plane === "none" ? "z" : config.rays.receiver.plane;
+  const [first, second] = receiverAxes[receiverPlane];
   const receiverControls = (
     <>
       <Field
@@ -1165,26 +1164,42 @@ export default function SpatialApp({
               setReceiver((r) => ({ ...r, c2 })),
             )}
           </div>
-          <Field
-            label="Bins"
-            help={`${minReceiverBins}–${maxReceiverBins} bins each way; each shows the mean irradiance over its square.`}
-          >
-            <input
-              type="number"
-              min={minReceiverBins}
-              max={maxReceiverBins}
-              step="1"
-              value={
-                Number.isNaN(config.rays.receiver.bins)
-                  ? ""
-                  : config.rays.receiver.bins
-              }
-              onChange={(e) => {
-                const bins = e.target.valueAsNumber;
-                setReceiver((r) => ({ ...r, bins }));
-              }}
-            />
-          </Field>
+          <div className="pair">
+            {vector(
+              "Tilt (°)",
+              config.rays.receiver.tilt ?? 0,
+              // An untilted window leaves the field out, as links made
+              // before it do.
+              (tilt) =>
+                setReceiver(({ tilt: _, ...r }) =>
+                  tilt === 0 ? r : { ...r, tilt },
+                ),
+              tiered(
+                `Turns the window about its ${first}-axis through its center, in degrees.`,
+                `Positive angles lean ${second} toward ${receiverPlane}, and the window keeps its own coordinates as it turns. Any angle within ±100000°.`,
+              ),
+            )}
+            <Field
+              label="Bins"
+              help={`${minReceiverBins}–${maxReceiverBins} bins each way; each shows the mean irradiance over its square.`}
+            >
+              <input
+                type="number"
+                min={minReceiverBins}
+                max={maxReceiverBins}
+                step="1"
+                value={
+                  Number.isNaN(config.rays.receiver.bins)
+                    ? ""
+                    : config.rays.receiver.bins
+                }
+                onChange={(e) => {
+                  const bins = e.target.valueAsNumber;
+                  setReceiver((r) => ({ ...r, bins }));
+                }}
+              />
+            </Field>
+          </div>
         </>
       )}
     </>

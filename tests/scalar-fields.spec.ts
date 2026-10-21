@@ -1115,6 +1115,7 @@ test("spatial mirror light, source and ray length share the bounded scalar parse
     ["Window size s", "2*e", 2 * Math.E, ["rays", "receiver", "size"]],
     ["Center z", "1/phi", 1 / phi, ["rays", "receiver", "c1"]],
     ["Center x", "-e/2", -Math.E / 2, ["rays", "receiver", "c2"]],
+    ["Tilt (°)", "180/pi", 180 / Math.PI, ["rays", "receiver", "tilt"]],
   ] as const)
     await check(name, text, value, path);
 });

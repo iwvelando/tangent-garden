@@ -85,6 +85,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - A 3D flight refined in pieces on a phone: **Wheels within wheels** playing in time, without stalls where a piece is still being refined (each refines the whole study, so a slow phone may wait at a piece's start).
 - The **Shadow on a plane** panel at phone width (its select, **Plane at c** beside it, its layer checkboxes and note), and **A staircase's shadow, unwinding** in motion on a phone.
 - The face-on views beside the drawing (**Face-on views beside the drawing**) on a phone: the stacked cells, dragging and pinching a face-on view with **Adjust view** on, the grid fitting the screen held sideways during playback, and **A tilting circle's cardioid, face on** and **A rippling rose's mirror images, face on** in motion; also the checkbox's help toggle at phone width, and a captioned video saved on the phone.
+- The receiver's **Tilt (°)** beside **Bins** at phone width, and **Conic sections cut from a cone of light** in motion on a phone.
 - The mirror's **Locate cuspidal edges** checkbox and its help toggle at phone width, and **An astigmatic dish's folded caustics** in motion on a phone.
 - Playback at 60 frames a second (`web/playback.ts`) on a 120 Hz display and on a slower phone, watching for an even fall to 30 where frames come late. The thresholds (a request 1.4 intervals after the last is late, two late in ten fall back, a 2 s hold doubling to 16 s) are first choices, to tune from what is seen.
 
@@ -103,5 +104,5 @@ Revisit these only if a study needs them:
 - In 2D only parameter tracks loop. In 4D a drift, support, route or latitude sweep cannot loop.
 - The SVG loop check falls back to a raster threshold of 10⁻⁴ of pixels, not a proof of identity.
 - A 3D closed curve run on by less than a period is refused for a loop even when its shape returns.
-- 3D surface, mirror and implicit studies use uniform grids. An offset's cuspidal edges, a focal sheet's over the patch's ridges, and a caustic's can be located. The mirror and refraction studies have one interaction, no occlusion, and axis-aligned receiver planes only.
+- 3D surface, mirror and implicit studies use uniform grids. An offset's cuspidal edges, a focal sheet's over the patch's ridges, and a caustic's can be located. The mirror and refraction studies have one interaction and no occlusion, and a receiver turns about one of its own axes only.
 - The 2D hairline is one CSS pixel (two device pixels on dense screens).

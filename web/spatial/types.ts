@@ -181,7 +181,10 @@ export type RaysInteraction = "reflect" | "refract";
 // A receiver on the plane `plane` = at, with a square window of side `size`
 // centered on (c1, c2) in the plane's cyclic coordinates ((y, z) on x = at,
 // (z, x) on y = at, (x, y) on z = at), divided into bins × bins bins; the
-// other fields are read only when the plane is not "none". Mirrors
+// other fields are read only when the plane is not "none". `tilt` turns the
+// window, and the plane with it, by that many degrees about its first axis
+// through its center, leaning its second axis toward the plane's normal
+// axis; absent means none, as in links made before it. Mirrors
 // engine3.ReceiverRequest.
 export type ReceiverPlane = "none" | "x" | "y" | "z";
 export type ReceiverConfig = {
@@ -191,6 +194,7 @@ export type ReceiverConfig = {
   c2: number;
   size: number;
   bins: number;
+  tilt?: number;
 };
 export const minReceiverBins = 8;
 export const maxReceiverBins = 240;

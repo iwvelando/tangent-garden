@@ -156,6 +156,7 @@ func TestValidationNamesItsField(t *testing.T) {
 		{"receiver center", "rays.receiver.c2", func() Request { return receive(rays(parallel(0, 90)), "z", 0, 0, 2e5, 1, 24) }},
 		{"receiver size", "rays.receiver.size", func() Request { return receive(rays(parallel(0, 90)), "z", 0, 0, 0, 0, 24) }},
 		{"receiver bins", "rays.receiver.bins", func() Request { return receive(rays(parallel(0, 90)), "z", 0, 0, 0, 1, 1) }},
+		{"receiver tilt", "rays.receiver.tilt", func() Request { return tilted(receive(rays(parallel(0, 90)), "z", 0, 0, 0, 1, 24), math.Inf(1)) }},
 		{"implicit a", "implicit.a", func() Request { c := level(); c.Implicit.A = nan; return c }},
 		{"implicit level", "implicit.level", func() Request { c := level(); c.Implicit.Level = nan; return c }},
 		{"box", "implicit.box.yMax", func() Request { c := level(); c.Implicit.Box.YMax = 2e5; return c }},

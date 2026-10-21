@@ -39,7 +39,12 @@ async function openAnimation(page: Page) {
 const lens = "39",
   dome = "40",
   water = "41",
-  floor = "42";
+  floor = "42",
+  cone = String(
+    spatialPresets.findIndex(
+      (p) => p.name === "Conic sections cut from a cone of light",
+    ),
+  );
 const note = (page: Page) => page.getByTestId("rays-note");
 const layer = (page: Page, name: string) =>
   page.getByRole("checkbox", { name, exact: true });
@@ -167,6 +172,82 @@ test("a receiver has its own controls, layer and validation", async ({
   await expect(field(page, "Plane at c")).toHaveCount(0);
   await expect(layer(page, "Receiver irradiance")).toHaveCount(0);
   await expect(note(page)).not.toContainText("receiver");
+});
+
+test("a receiver turns about its window's first axis", async ({ page }) => {
+  await ready(page);
+  await choosePreset(page, floor);
+  await settled(page);
+  await expect(field(page, "Tilt (°)")).toHaveValue("0");
+  expect((await config(page)).rays.receiver).not.toHaveProperty("tilt");
+  const square = await pixels(page);
+  const before = await note(page).textContent();
+  await field(page, "Tilt (°)").fill("30");
+  await settled(page);
+  expect((await config(page)).rays.receiver.tilt).toBe(30);
+  expect(await pixels(page)).not.toBe(square);
+  await expect(note(page)).toContainText(
+    "The receiver on z = -0.5 turned 30° about x collects",
+  );
+  for (const [text, message] of [
+    ["2e5", "receiver's tilt"],
+    ["t", "t is not allowed"],
+  ] as const) {
+    await field(page, "Tilt (°)").fill(text);
+    await expect(page.getByRole("alert")).toContainText(message);
+  }
+  // Turned back to 0, the window leaves the field out and draws as before.
+  await field(page, "Tilt (°)").fill("0");
+  await settled(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect((await config(page)).rays.receiver).not.toHaveProperty("tilt");
+  expect(await pixels(page)).toBe(square);
+  await expect(note(page)).toHaveText(before!);
+  // On x = c the window turns about y, leaning z toward x.
+  await field(page, "Tilt (°)").fill("-45");
+  await page.getByLabel("Receiver", { exact: true }).selectOption("x");
+  await settled(page);
+  expect((await config(page)).rays.receiver.tilt).toBe(-45);
+  await expect(note(page)).toContainText("turned -45° about y");
+});
+
+// The cone of light plays its own turn of the screen, out to 75° as the
+// sweep turns back half way, and home to the ellipse it opens with.
+test("conic sections play their own turn of the screen", async ({ page }) => {
+  await ready(page);
+  await choosePreset(page, cone);
+  await settled(page);
+  const base = await config(page);
+  expect(base.rays.receiver.tilt).toBe(20);
+  await expect(field(page, "Tilt (°)")).toHaveValue("20");
+  await expect(note(page)).toContainText(
+    "The receiver on z = -1.8 turned 20° about x collects",
+  );
+  const opening = await pixels(page);
+  await openAnimation(page);
+  await expect(page.getByLabel("Parameter 1", { exact: true })).toHaveValue(
+    "receiverTilt",
+  );
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(stage(page)).toHaveAttribute("data-mode", "parameters");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  await slider.fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-time", "0.5");
+  await settled(page);
+  expect((await config(page)).rays.receiver.tilt).toBe(75);
+  const hyperbola = await pixels(page);
+  expect(hyperbola).not.toBe(opening);
+  await slider.fill("0");
+  await expect(stage(page)).toHaveAttribute("data-time", "0");
+  await settled(page);
+  expect((await config(page)).rays.receiver.tilt).toBe(20);
+  expect(await pixels(page)).toBe(opening);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect(await config(page)).toEqual(base);
 });
 
 test("notes report total internal reflection and where the receiver's light went", async ({
@@ -436,15 +517,22 @@ test("refraction and receiver tracks move the indices and the plane", () => {
   expect(targetLabel(glass, "n2")).toBe("Index n₂");
   const lit = structuredClone(spatialPresets[+floor].config);
   expect(availableTargets(lit)).not.toContain("n1");
-  expect(availableTargets(lit).slice(2, 7)).toEqual([
+  expect(availableTargets(lit).slice(2, 8)).toEqual([
     "azimuth",
     "elevation",
     "rayLength",
     "receiverAt",
     "receiverSize",
+    "receiverTilt",
   ]);
   expect(targetLabel(lit, "receiverAt")).toBe("Plane at c");
   expect(targetLabel(lit, "receiverSize")).toBe("Window size s");
+  expect(targetLabel(lit, "receiverTilt")).toBe("Tilt (°)");
+  // An untilted window turns from 0, and lands where the track ends.
+  const turn = [{ target: "receiverTilt", from: 0, to: 60 }] as const;
+  expect(applyTracks(lit, [...turn], 0.5).config.rays.receiver.tilt).toBe(30);
+  expect(applyTracks(lit, [...turn], 1).config.rays.receiver.tilt).toBe(60);
+  expect(lit.rays.receiver).not.toHaveProperty("tilt");
   const tracks = [
     { target: "n1", from: 1, to: 1.2 },
     { target: "n2", from: 1.5, to: 2 },

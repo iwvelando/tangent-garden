@@ -9,7 +9,11 @@ import (
 // "y" or "z" (or "none", with no receiver), and on it a square window of
 // side Size centered on (C1, C2), divided into Bins × Bins bins. The plane's
 // coordinates run cyclically: (y, z) on x = At, (z, x) on y = At, and
-// (x, y) on z = At.
+// (x, y) on z = At. Tilt turns the window, and the plane with it, by Tilt
+// degrees about its first axis through its center, right handed: the
+// second axis rises toward the plane's normal axis, so z = At turned about
+// x leans y toward z, x = At about y leans z toward x, and y = At about z
+// leans x toward y. The window keeps its own coordinates as it turns.
 type ReceiverRequest struct {
 	Plane string  `json:"plane"`
 	At    float64 `json:"at"`
@@ -17,6 +21,7 @@ type ReceiverRequest struct {
 	C2    float64 `json:"c2"`
 	Size  float64 `json:"size"`
 	Bins  int     `json:"bins"`
+	Tilt  float64 `json:"tilt,omitempty"`
 }
 
 // Receiver is the irradiance the outgoing rays deliver to the receiver's
@@ -91,6 +96,9 @@ func (r ReceiverRequest) validate() error {
 	if r.Bins < minReceiverBins || r.Bins > maxReceiverBins {
 		return fieldErr("rays.receiver.bins", "the receiver needs %d–%d bins each way", minReceiverBins, maxReceiverBins)
 	}
+	if !bounded(r.Tilt) {
+		return fieldErr("rays.receiver.tilt", "the receiver's tilt must be finite and within ±100000 degrees")
+	}
 	return nil
 }
 
@@ -118,6 +126,33 @@ func (r ReceiverRequest) point(a, b float64) Vec3 {
 	return Vec3{p[0], p[1], p[2]}
 }
 
+// turn rotates v by the tilt about the window's first axis, or back again
+// when back is set, and says whether the window is turned at all: a whole
+// number of turns leaves it, and every result, exactly as untilted.
+func (r ReceiverRequest) turn(v Vec3, back bool) (Vec3, bool) {
+	sin, cos := sincosDegrees(r.Tilt)
+	if sin == 0 && cos == 1 {
+		return v, false
+	}
+	if back {
+		sin = -sin
+	}
+	k, _, j := r.axes()
+	var p [3]float64
+	p[0], p[1], p[2] = v.X, v.Y, v.Z
+	p[j], p[k] = cos*p[j]-sin*p[k], sin*p[j]+cos*p[k]
+	return Vec3{p[0], p[1], p[2]}, true
+}
+
+// window is the turned window's point with coordinates (a, b).
+func (r ReceiverRequest) window(a, b float64) Vec3 {
+	center := r.point(r.C1, r.C2)
+	if d, ok := r.turn(r.point(a, b).sub(center), false); ok {
+		return center.add(d)
+	}
+	return r.point(a, b)
+}
+
 // receive collects the outgoing rays of the sampled surface on the
 // receiver; samples holds the grid's rays, and scale the surface's size.
 func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale float64) *Receiver {
@@ -125,11 +160,18 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 	half, n := rc.Size/2, rc.Bins
 	lo1, lo2, bin := rc.C1-half, rc.C2-half, rc.Size/float64(n)
 	out := &Receiver{Plane: rc.Plane, Size: rc.Size, Corners: [4]Vec3{
-		rc.point(lo1, lo2), rc.point(lo1+rc.Size, lo2), rc.point(lo1+rc.Size, lo2+rc.Size), rc.point(lo1, lo2+rc.Size),
+		rc.window(lo1, lo2), rc.window(lo1+rc.Size, lo2), rc.window(lo1+rc.Size, lo2+rc.Size), rc.window(lo1, lo2+rc.Size),
 	}}
 	k, i1, i2 := rc.axes()
-	// cross returns where sample s's ray crosses the plane, in bins.
+	center := rc.point(rc.C1, rc.C2)
+	// cross returns where sample s's ray crosses the plane, in bins. A
+	// turned window turns the ray back instead, about the same axis, onto
+	// the untilted plane.
 	cross := func(s mirrorPoint) ([2]float64, bool) {
+		if d, ok := rc.turn(s.X.sub(center), true); ok {
+			s.X = center.add(d)
+			s.R, _ = rc.turn(s.R, true)
+		}
 		d := component(s.R, k)
 		lambda := (rc.At - component(s.X, k)) / d
 		if !(math.Abs(d) > 1e-12 && lambda > 0) {

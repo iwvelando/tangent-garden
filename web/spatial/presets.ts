@@ -5188,4 +5188,74 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  {
+    name: "Conic sections cut from a cone of light",
+    detail:
+      "A glass ellipsoid gathers a beam through its far focus into a cone of light; a screen turning beneath it catches an ellipse, a parabola, then a hyperbola",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        // Descartes' lens, as in A glass ellipsoid focusing a beam, over its
+        // whole upper cap: the light leaves the far focus, 1 below the
+        // center, in a round cone about 44° wide.
+        a: 1.5 * Math.sqrt(5 / 9),
+        b: 1.5 * Math.sqrt(5 / 9),
+        c: 1.5,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: 0.1,
+        vMax: Math.PI / 2,
+        uSamples: 216,
+        vSamples: 60,
+        curves: 9,
+      },
+      rays: {
+        ...base.rays,
+        interaction: "refract",
+        length: 2.9,
+        // A screen 0.8 past the focus, turned about x: the cone meets it
+        // in an ellipse up to 46°, a parabola there, a hyperbola beyond.
+        receiver: {
+          plane: "z",
+          at: -1.8,
+          c1: 0,
+          c2: 0,
+          size: 4,
+          bins: 200,
+          tilt: 20,
+        },
+      },
+    },
+    layers: { incident: false },
+    // From in front and above, with z upright enough that the screen is
+    // seen leaning away beneath the lens.
+    view: {
+      ...initialView,
+      yaw: -0.45,
+      pitch: -1,
+      zoom: 1.3,
+      panX: -1,
+      panY: 1.4,
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "receiverTilt", from: "20", to: "75" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];
