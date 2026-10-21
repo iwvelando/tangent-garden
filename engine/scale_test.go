@@ -743,3 +743,29 @@ func TestTinyCurvatureKeepsFlatGuard(t *testing.T) {
 		}
 	}
 }
+
+// A tilted line's stencil r″ is rounding, not exactly zero. Its curvature
+// readouts and probe still find no center at any scale or offset; only the
+// evolute itself keeps the rounding's far points, as it does at unit scale.
+func TestTinyTiltedLineHasNoCurvatureCenter(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100} {
+		for _, off := range []float64{0, 5} {
+			q := request("evolute", num(scale)+"*(t+"+num(off)+")", num(scale)+"*(0.3141592653589793*t-"+num(off)+")", -1, 1)
+			q.Diagnostics = true
+			at := 0.377
+			q.Probe = &ProbeQuery{T: &at}
+			r := compute(t, q)
+			if d := r.Diagnostics; d.Flat != q.Samples {
+				t.Fatalf("scale %g, offset %g: %d of %d samples flat, %d clipped", scale, off, d.Flat, q.Samples, d.Clipped)
+			}
+			for i, c := range r.Diagnostics.Center {
+				if c != nil {
+					t.Fatalf("scale %g, offset %g, sample %d: center on a line", scale, off, i)
+				}
+			}
+			if r.Probe == nil || r.Probe.Center != nil {
+				t.Fatalf("scale %g, offset %g: probe center on a line: %+v", scale, off, r.Probe)
+			}
+		}
+	}
+}
