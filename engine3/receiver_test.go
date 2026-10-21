@@ -1,9 +1,13 @@
 package engine3
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"math"
+	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -762,5 +766,89 @@ func TestOutgoingMatchesRay(t *testing.T) {
 			}
 		}
 		t.Logf("%s: %v", q.Kind, kinds)
+	}
+}
+
+// BenchmarkReceiverRefined follows the cone preset at a fine receiver size.
+func BenchmarkReceiverRefined(b *testing.B) {
+	data, err := os.ReadFile("testdata/presets.json")
+	if err != nil {
+		b.Fatal(err)
+	}
+	var presets map[string]Request
+	if err := json.Unmarshal(data, &presets); err != nil {
+		b.Fatal(err)
+	}
+	c := presets["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := Compute(c); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// Keep the full request (including its result) below 55 MB: the baseline
+// uses 79 MB, dominated by repeatedly grown cell queues and three bin grids.
+// This leaves room above the bounded queues and two grids without encoding
+// allocator-specific object counts in the test.
+func TestReceiverRefinedAllocationBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	result, err := Compute(c)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.KeepAlive(result)
+	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 55_000_000 {
+		t.Fatalf("refined cone allocated %d bytes, want at most 55 MB", bytes)
+	}
+}
+
+// Record the existing cone, including every bin and accounting field, before
+// changing storage. Separate hashes retain the native platforms' FMA
+// differences; WASM comparisons also check the entire result bit for bit.
+func TestReceiverConeStorageGuard(t *testing.T) {
+	want := map[string][]string{
+		"arm64": {
+			"29542600b1acbce9a7c10cf56562d8f11e60c95549d244185af146cbb08eb6cd",
+			"33a856739ff9db70f352559131dd88a9b55c6c604c3f580ae208c3610adb284f",
+			"e0c71ba2d14a9a99768f48ae6a90d0b8f9b02d1eb823f02fd50abfd56b7d46e5",
+			"12328f356316fccbbc96295df2fb318050521c8e122c26a520a2fc55f74c928f",
+		},
+		"amd64": {
+			"9c19b17c23b811c4cb25ebfbe5b778c8ab92782ef5ba661c69a21e2212b6f942",
+			"7c6d690701ab4839d0333a7f5bc0a639a16800fde94c89393f72b1c8b9b96076",
+			"303d07f8d4e2eef68afab91f6d8dfd963b16c1ed31a7a1f7d1ac6f3c1e06bf40",
+			"05b6d2e19b8fe9363fc478cbd84a1a11124a500e8444a0adb7250ec23346bd5c",
+		},
+	}[runtime.GOARCH]
+	if want == nil {
+		t.Skip("storage guard recorded on arm64 and amd64")
+	}
+	for _, levels := range []int{0, 1, 2, 3} {
+		c := spatialPresets(t)["Conic sections cut from a cone of light"]
+		c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 80, levels
+		g := received(t, c)
+		accounted(t, g)
+		hash := sha256.New()
+		fmt.Fprintf(hash, "%s %.10g %d %t", g.Plane, g.Size, g.Split, g.Exhausted)
+		for _, f := range []float64{g.Peak, g.Emitted, g.Received, g.Outside, g.Away, g.Total, g.Edge} {
+			fmt.Fprintf(hash, " %.10g", f)
+		}
+		for _, col := range g.Irradiance {
+			for _, f := range col {
+				fmt.Fprintf(hash, " %.10g", f)
+			}
+		}
+		if got := fmt.Sprintf("%x", hash.Sum(nil)); got != want[levels] {
+			t.Fatalf("level %d receiver changed: %s", levels, got)
+		}
 	}
 }
