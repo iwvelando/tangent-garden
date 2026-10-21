@@ -613,6 +613,10 @@ test("3D and 4D fields are refused by name", async () => {
     ["config.rays.stop", (s) => (s.config.rays.stop = 1)],
     ["config.rays.edges", (s) => (s.config.rays.edges = "on")],
     ["config.rays.receiver.tilt", (s) => (s.config.rays.receiver.tilt = "20")],
+    [
+      "config.rays.receiver.refine",
+      (s) => (s.config.rays.receiver.refine = "2"),
+    ],
     ["config.surface.edges", (s) => (s.config.surface.edges = "on")],
     ["config.surface.ridges", (s) => (s.config.surface.ridges = 1)],
     ["view.pitch", (s) => (s.view.pitch = 2)],
@@ -735,6 +739,11 @@ test("fields a link predates take the notebook's defaults", async () => {
   assert.equal(spatialStudy(turned).config.rays.receiver.tilt, 20);
   delete turned.config.rays.receiver.tilt;
   assert.equal("tilt" in spatialStudy(turned).config.rays.receiver, false);
+  // A receiver linked before it could be refined spreads its cells whole,
+  // and a refined one keeps its levels.
+  assert.equal("refine" in spatialStudy(turned).config.rays.receiver, false);
+  turned.config.rays.receiver.refine = 2;
+  assert.equal(spatialStudy(turned).config.rays.receiver.refine, 2);
 
   // A 4D object's own parameters come from that object's defaults.
   const lift = tesseractPresets.findIndex((p) => p.config.object === "lift");

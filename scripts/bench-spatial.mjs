@@ -104,7 +104,8 @@ const studies = [
 ];
 
 // Curve studies, each a preset (its study drawn at rest, as the first frame
-// of its animation), with any changes to it.
+// of its animation), with any changes to it, or a function of its
+// configuration returning them.
 const curves = [
   ["cord", "A coiled cord round a trefoil", "960 samples, 480 rings"],
   [
@@ -121,6 +122,19 @@ const curves = [
   ["ellipsoid", "The whole focal surface of an ellipsoid", "a surface"],
   ["coma", "A tilted beam folding into coma", "rays"],
   ["vortex", "A row of seeds wound up by a vortex", "a vector field"],
+  // A receiver, as the preset has it and at its finest, refined.
+  ["cone", "Conic sections cut from a cone of light", "a receiver, 200 bins"],
+  [
+    "cone-refined",
+    "Conic sections cut from a cone of light",
+    "960 bins, 2 refinement levels",
+    (c) => ({
+      rays: {
+        ...c.rays,
+        receiver: { ...c.rays.receiver, bins: 960, refine: 2 },
+      },
+    }),
+  ],
 ];
 
 const options = { runs: 5, engine: "public/", compare: "", study: "" };
@@ -278,7 +292,10 @@ async function allStudies() {
         name,
         note,
         kind: "curve",
-        request: { ...p.config, ...changes },
+        request: {
+          ...p.config,
+          ...(typeof changes === "function" ? changes(p.config) : changes),
+        },
       };
     });
     return [...studies, ...curveStudies].filter(

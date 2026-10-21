@@ -349,6 +349,12 @@ const cases: Case[] = [
     "Tilt (°)",
   ],
   [
+    "rays.receiver.refine",
+    "A glass dome's ring of light",
+    (c) => (c.rays.receiver.refine = 4),
+    "Refinement levels",
+  ],
+  [
     "implicit.box.yMax",
     "A sphere and its latitudes",
     (c) => (c.implicit.box.yMax = 2e5),
