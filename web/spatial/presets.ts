@@ -5258,4 +5258,36 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // Four logarithmic spirals shrink toward a fixed seed at the origin.
+  // Lengths are in units of 2^-40; the reveal keeps this opening view.
+  {
+    name: "Spirals into a tiny sink",
+    detail:
+      "Four paths wind toward a fixed fifth seed, at a scale of 2⁻⁴⁰ units",
+    flight: revealInPlace,
+    config: {
+      ...base,
+      format: "field",
+      construction: "none",
+      samples: 720,
+      lines: 24,
+      length: 0.5 * 2 ** -40,
+      field: {
+        x: "-a*x-y",
+        y: "x-a*y",
+        z: "-a*z",
+        seeds: [
+          { x: 2 ** -40, y: 0, z: 2 ** -41 },
+          { x: 0, y: 2 ** -40, z: -(2 ** -41) },
+          { x: -(2 ** -40), y: 0, z: 2 ** -41 },
+          { x: 0, y: -(2 ** -40), z: -(2 ** -41) },
+          { x: 0, y: 0, z: 0 },
+        ],
+        escape: 4 * 2 ** -40,
+        min: 0,
+        max: 6 * Math.PI,
+        a: 0.12,
+      },
+    },
+  },
 ];

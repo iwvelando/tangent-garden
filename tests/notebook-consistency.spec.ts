@@ -153,7 +153,7 @@ test("each 3D example names itself above a shared construction title", async ({
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
-  expect(titles).toHaveLength(136);
+  expect(titles).toHaveLength(137);
   // The construction, not the example, titles the drawing.
   const involutes = [
     "A staircase's shadow, unwinding",
@@ -306,7 +306,8 @@ test("each 3D example names itself above a shared construction title", async ({
                     : canals.includes(label)
                       ? "A surface enveloping spheres"
                       : label === "Lorenz's two wings" ||
-                          label === "A row of seeds wound up by a vortex"
+                          label === "A row of seeds wound up by a vortex" ||
+                          label === "Spirals into a tiny sink"
                         ? "Paths that follow a field"
                         : label === "Four pursuers on a tetrahedron" ||
                             label === "A chase untangling a trefoil"
@@ -323,7 +324,7 @@ test("each 3D example names itself above a shared construction title", async ({
     );
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
-  expect(eyebrows.size).toBe(136);
+  expect(eyebrows.size).toBe(137);
   expect(eyebrows).toContain("THREE HARMONICS; THE THREAD PAUSES TWICE");
   await choosePreset(page, { label: titles[4] });
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");

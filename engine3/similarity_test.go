@@ -448,12 +448,6 @@ func budgetFor(q Request, m similarity) budget {
 		if m.scale < 1 && q.analytic() == "" {
 			tolerated = append(tolerated, "surfaceDiagnostics.")
 		}
-		// A seed rests where the field's speed is below an absolute 10⁻⁹
-		// (fieldGeometry, in flow.go, as the field's note in the notebook
-		// states), which a tinier copy's seeds fall below.
-		if m.scale < 0x1p-20 && q.Format == "field" {
-			tolerated = append(tolerated, "field.resting")
-		}
 		b.tolerated = prefixed(tolerated...)
 		return b
 	}
@@ -997,7 +991,14 @@ func TestSimilarPresets(t *testing.T) {
 				if chaotic[name] && m.shift != (Vec3{}) {
 					t.Skip("chaotic: a far copy's trajectories separate from the original's")
 				}
-				similarlyMoved(t, all[name], m)
+				moved := m
+				if name == "Spirals into a tiny sink" {
+					// Keep the translation thousands of the drawing's own
+					// units away; adding 5000 to 2^-40 loses the flow to
+					// coordinate rounding and the integrator's error floor.
+					moved.shift = moved.shift.mul(0x1p-40)
+				}
+				similarlyMoved(t, all[name], moved)
 			})
 		}
 	}

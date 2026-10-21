@@ -40,8 +40,8 @@ export function fieldNote(
   if (resting.length)
     notes.push(
       resting.length === 1
-        ? `Seed ${resting[0]} sits at an equilibrium, where the field's speed is below 10⁻⁹, so its trajectory stays put.`
-        : `Seeds ${resting.join(", ")} sit at equilibria, where the field's speed is below 10⁻⁹, so their trajectories stay put.`,
+        ? `Seed ${resting[0]} starts near an equilibrium, with negligible initial motion at this study's scale.`
+        : `Seeds ${resting.join(", ")} start near equilibria, with negligible initial motion at this study's scale.`,
     );
   if (field.timed)
     notes.push(

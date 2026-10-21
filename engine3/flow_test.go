@@ -1,6 +1,7 @@
 package engine3
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -449,5 +450,95 @@ func TestFieldValidation(t *testing.T) {
 	out, err := Compute(c)
 	if err != nil || out.Field != nil || len(corners(out.Mesh)) != 0 || len(out.Rulings) != 0 {
 		t.Fatalf("torus alone: %v %+v", err, out.Field)
+	}
+}
+
+// Changing length units or time units must not turn a moving seed into an
+// equilibrium. The equilibrium's tiny residual is below the integration's
+// spatial reference at every scale; exact and time-dependent zeros differ.
+func TestFieldRestingUnits(t *testing.T) {
+	for _, scale := range []float64{0x1p-40, 1, 0x1p10} {
+		for _, duration := range []float64{.01, 1, 1000} {
+			t.Run(fmt.Sprintf("%g/%g", scale, duration), func(t *testing.T) {
+				rate := 1 / duration
+				c := fieldRequest(fmt.Sprintf("%g*(-y+%g)", rate, scale*1e-16), fmt.Sprintf("%g*x", rate), "0", []Vec3{{scale, 0, 0}, {}}, 0, duration)
+				c.Field.Escape = 10 * scale
+				q := flowed(t, c).Field
+				if q.Resting[0] || !q.Resting[1] {
+					t.Fatalf("resting = %v, want [false true]", q.Resting)
+				}
+				p := q.Paths[0][c.Samples]
+				want := Vec3{scale * math.Cos(1), scale * math.Sin(1), 0}
+				if p == nil || p.sub(want).norm() > 1e-8*scale {
+					t.Fatalf("moving trajectory ends at %v, want %v", p, want)
+				}
+			})
+		}
+	}
+}
+
+// Along x = a*t, y′ = x sqrt(|x/a|) has an acceleration whose central
+// differences disagree at t = 0. Curvature there must stay unknown, even
+// when the entire flow is small enough to fall under an absolute floor.
+func TestFieldUnstableAccelerationUnits(t *testing.T) {
+	for _, scale := range []float64{0x1p-40, 1, 0x1p10} {
+		for _, duration := range []float64{1, 1000} {
+			t.Run(fmt.Sprintf("%g/%g", scale, duration), func(t *testing.T) {
+				c := fieldRequest(fmt.Sprintf("a/%g", duration), fmt.Sprintf("x*sqrt(abs(x/a))/%g", duration), "0", []Vec3{{-scale, 0, 0}}, -duration, duration)
+				c.Field.A, c.Field.Escape = scale, 10*scale
+				c.Samples, c.Diagnostics = 240, true
+				out := flowed(t, c)
+				if out.Base[120] == nil || out.Diagnostics.Tangent[120] == nil {
+					t.Fatal("the regular velocity must retain its position and tangent")
+				}
+				if out.Diagnostics.Curvature[120] != nil || out.Diagnostics.Binormal[120] != nil {
+					t.Fatalf("unstable acceleration accepted: curvature %v, binormal %v", out.Diagnostics.Curvature[120], out.Diagnostics.Binormal[120])
+				}
+				if out.Diagnostics.Curvature[60] == nil || out.Diagnostics.Curvature[180] == nil {
+					t.Fatal("stable acceleration away from zero was discarded")
+				}
+			})
+		}
+	}
+}
+
+func TestTinySinkGeometry(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40} {
+		c := fieldRequest("-a*x-y", "x-a*y", "-a*z", []Vec3{{scale, 0, .5 * scale}, {}}, 0, 6*math.Pi)
+		c.Field.A, c.Field.Escape, c.Diagnostics = .12, 4*scale, true
+		out := flowed(t, c)
+		if out.Field.Resting[0] || !out.Field.Resting[1] || out.Invalid != 0 {
+			t.Fatalf("scale %g: resting %v, invalid %d", scale, out.Field.Resting, out.Invalid)
+		}
+		for i, p := range out.Field.Paths[0] {
+			u := sampleTime(c, i)
+			decay := scale * math.Exp(-.12*u)
+			want := Vec3{decay * math.Cos(u), decay * math.Sin(u), .5 * decay}
+			if p == nil || p.sub(want).norm() > 1e-8*scale {
+				t.Fatalf("scale %g at %g: %v, want %v", scale, u, p, want)
+			}
+			if k := out.Diagnostics.Curvature[i]; k == nil || !finite(*k) || *k <= 0 {
+				t.Fatalf("scale %g at %g: lost smooth curvature", scale, u)
+			}
+			if q := out.Field.Paths[1][i]; q == nil || *q != (Vec3{}) {
+				t.Fatalf("equilibrium moved: %v", q)
+			}
+		}
+	}
+}
+
+func TestFieldRestingThresholdUsesDuration(t *testing.T) {
+	for _, scale := range []float64{0x1p-40, 1, 0x1p10} {
+		for _, duration := range []float64{1, 1000} {
+			for _, relativeSpeed := range []float64{.5e-9, 2e-9} {
+				c := fieldRequest(fmt.Sprintf("-y/%g", duration), fmt.Sprintf("x/%g", duration), fmt.Sprint(relativeSpeed*scale/duration), []Vec3{{scale, 0, 0}, {0, 0, scale}}, 0, duration)
+				c.Field.Escape = 10 * scale
+				out := flowed(t, c)
+				want := relativeSpeed < 1e-9
+				if out.Field.Resting[0] || out.Field.Resting[1] != want {
+					t.Fatalf("scale %g, duration %g, relative speed %g: resting %v, want [false %v]", scale, duration, relativeSpeed, out.Field.Resting, want)
+				}
+			}
+		}
 	}
 }

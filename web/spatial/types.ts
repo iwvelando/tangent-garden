@@ -843,7 +843,7 @@ export type TrajectoryReason = "end" | "escape" | "singular" | "exhausted";
 // Mirrors engine3.FieldResult. Paths are indexed like base, so one index is
 // one time on every path; the first is the base. Arrows are the field at the
 // representative samples; resting marks seeds where an autonomous field's
-// speed is below 10⁻⁹.
+// initial speed is negligible at the integration's length and time scales.
 export type SpatialFieldResult = {
   paths: (Vec3 | null)[][];
   arrows: { sampleIndex: number; seed: number; point: Vec3; velocity: Vec3 }[];
