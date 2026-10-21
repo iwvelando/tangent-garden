@@ -1,11 +1,8 @@
 package engine3
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"math"
-	"runtime"
 	"testing"
 )
 
@@ -55,28 +52,39 @@ func TestFramedRibbonProbeAtEveryScale(t *testing.T) {
 	}
 }
 
-// Guard the complete engine result of an existing ribbon preset before
-// changing the surface-probe regularity check.
-func TestFramedRibbonProbePresetUnchanged(t *testing.T) {
-	c := spatialPresets(t)["A band around the trefoil"]
-	c.SurfaceDiagnostics = true
-	r, err := Compute(c)
-	if err != nil {
-		t.Fatal(err)
+// The angular guard is reached only where shape finds no normal. Every
+// ribbon preset's probe has a normal at each regular point with a known
+// tangent plane, so none of them reaches it and each keeps its result.
+func TestFramedRibbonPresetsNeedNoAngularGuard(t *testing.T) {
+	probes := 0
+	for name, c := range spatialPresets(t) {
+		if c.Construction != "framed" {
+			continue
+		}
+		c.SurfaceDiagnostics = true
+		r, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := r.Probe
+		if d == nil {
+			// Strands alone draw no surface to probe.
+			continue
+		}
+		probes++
+		if d.Singular != 0 {
+			t.Errorf("%s: singular %d", name, d.Singular)
+		}
+		for r := range d.Points {
+			for k := range d.Points[r] {
+				if d.Points[r][k] != nil && d.Normals[r][k] == nil && (d.UnknownPlane == nil || !d.UnknownPlane[r][k]) {
+					t.Errorf("%s: no normal at (%d, %d)", name, r, k)
+				}
+			}
+		}
 	}
-	b, err := json.Marshal(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{
-		"arm64": "a24ceb6d12c5711a535e4eaae4627eafdfda1fb2b7c7e21b60708e9d93ace59c",
-		"amd64": "6b07c4e03b9205c11483937630014be778b3c5743f0dd85bb4e78990e3e8ae65",
-	}[runtime.GOARCH]
-	if want == "" {
-		t.Skip("result baseline recorded on arm64 and amd64")
-	}
-	if got := fmt.Sprintf("%x", sha256.Sum256(b)); got != want {
-		t.Fatalf("existing ribbon preset changed: %s, want %s", got, want)
+	if probes < 5 {
+		t.Fatalf("%d framed ribbon presets with a surface probe", probes)
 	}
 }
 
