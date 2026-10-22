@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -771,15 +770,7 @@ func TestOutgoingMatchesRay(t *testing.T) {
 
 // BenchmarkReceiverRefined follows the cone preset at a fine receiver size.
 func BenchmarkReceiverRefined(b *testing.B) {
-	data, err := os.ReadFile("testdata/presets.json")
-	if err != nil {
-		b.Fatal(err)
-	}
-	var presets map[string]Request
-	if err := json.Unmarshal(data, &presets); err != nil {
-		b.Fatal(err)
-	}
-	c := presets["Conic sections cut from a cone of light"]
+	c := spatialPresets(b)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
 	b.ReportAllocs()
 	b.ResetTimer()
