@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -252,6 +253,90 @@ func TestCircleEnvelopeInvalid(t *testing.T) {
 		_, err := Compute(circlesRequest("cos(t)", "sin(t)", 0, 1, radius))
 		if err == nil || !strings.Contains(err.Error(), "circle radius:") {
 			t.Fatalf("R=%q: got %v", radius, err)
+		}
+	}
+}
+
+// Similarity must preserve both branches even below the former speed floor.
+// The analytic focus/directrix and merging family also check that a tiny
+// result is correct, rather than merely present.
+func TestCircleEnvelopeTinyFamilies(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-80} {
+		for _, refined := range []bool{false, true} {
+			for _, tc := range []struct {
+				name, x, y, radius string
+				lo, hi             float64
+			}{
+				{"focus", "t", "t^2/4", "t^2/4+1", -3, 3},
+				{"merge", "t", "0", "t^2/2+1/2", -2, 2},
+				{"stationary", "1", "2", "1+t", 0, 1},
+				{"origin", "0", "0", "1", 0, 1},
+				{"cusp", "t^2", "0", "0.2", -1, 1},
+				{"endpoint cusp", "t^2+t^3", "0", "0.2", 0, 1},
+				{"near cusp", "t^2+1e-12*t", "0", "0.2", 0, 1},
+				{"varying", "2*cos(t)", "sin(t)", "0.5+0.3*sin(3*t)", 0, 2 * math.Pi},
+			} {
+				t.Run(fmt.Sprintf("%s/%g/refined=%v", tc.name, scale, refined), func(t *testing.T) {
+					q := circlesRequest(tc.x, tc.y, tc.lo, tc.hi, tc.radius)
+					if refined {
+						q = adaptive(q)
+					}
+					baseline := compute(t, q)
+					m := similarity{s: scale}
+					small, _ := m.copyOf(q)
+					got := compute(t, small)
+					if got.Invalid != baseline.Invalid || fmt.Sprint(got.Warnings) != fmt.Sprint(baseline.Warnings) {
+						t.Fatalf("classification changed: %d %v; want %d %v", got.Invalid, got.Warnings, baseline.Invalid, baseline.Warnings)
+					}
+					if tc.name == "origin" || tc.name == "stationary" {
+						if got.Invalid != q.Samples || !warned(got, "center is stationary") || len(got.Rays) != 0 {
+							t.Fatal("stationary circles lost their diagnostic or acquired radii")
+						}
+					}
+					if len(got.Rays) != len(baseline.Rays) || len(got.Circles) != len(baseline.Circles) {
+						t.Fatal("construction counts changed")
+					}
+					for k, path := range got.Family {
+						for j, p := range path.Points {
+							want := baseline.Family[k].Points[j]
+							if (p == nil) != (want == nil) {
+								t.Fatalf("branch %d sample %d gap changed", k, j)
+							}
+							if p != nil {
+								closeVec(t, p, m.at(*want), 0)
+							}
+							if p != nil && tc.name == "focus" {
+								expected := Vec{0, scale}
+								if k == 1 {
+									expected = Vec{sampleT(q, j) * scale, -scale}
+								}
+								closeVec(t, p, expected, 1e-7*scale)
+							}
+						}
+						if refined {
+							a, b := got.Adaptive.Family[k], baseline.Adaptive.Family[k]
+							if a == nil || b == nil || len(a.Points) != len(b.Points) || a.Breaks != b.Breaks {
+								t.Fatal("refined topology changed")
+							}
+							for j, p := range a.Points {
+								want := b.Points[j]
+								if (p == nil) != (want == nil) {
+									t.Fatalf("refined branch %d point %d gap changed", k, j)
+								}
+								if p != nil {
+									closeVec(t, p, m.at(*want), 0)
+								}
+							}
+						}
+					}
+					if (tc.name == "endpoint cusp" || tc.name == "near cusp") && (got.Family[0].Points[0] != nil || got.Family[1].Points[0] != nil) {
+						t.Fatal("stationary endpoint acquired touching points")
+					}
+					if tc.name == "cusp" && (got.Family[0].Points[250] != nil || got.Family[1].Points[250] != nil) {
+						t.Fatal("stationary cusp acquired touching points")
+					}
+				})
+			}
 		}
 	}
 }

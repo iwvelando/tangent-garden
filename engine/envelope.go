@@ -164,14 +164,17 @@ const merge = 1e-9
 // sample loop and refinement share this one compiled function.
 //
 //go:noinline
-func (g *rings) at(t float64, c, dc Vec) ring {
+func (g *rings) at(t float64, c, dc, ddc Vec) ring {
 	R := g.radius(t).X
 	if !finite(R) || R <= 0 {
 		return ring{}
 	}
 	out := ring{ok: true, radius: R}
 	v := dc.Norm()
-	if v < 1e-9 {
+	// Compare lengths per unit of t, so changing length units preserves
+	// regular centers. The second derivative retains a stationary cusp at
+	// the origin; <= also rejects an exactly zero constant center.
+	if v <= 1e-9*(c.Norm()+ddc.Norm()) {
 		out.stationary = true
 		return out
 	}

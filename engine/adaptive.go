@@ -449,8 +449,8 @@ func (q Request) memberAlong(at func(float64) station, out *Result, member Path)
 			return nil
 		})
 	case q.Kind == "envelope" && out != nil && out.circleFamily != nil:
-		return q.alongStations(at, func(t float64, p, d, _ Vec) *Vec {
-			circle := out.circleFamily.at(t, p, d)
+		return q.alongStations(at, func(t float64, p, d, dd Vec) *Vec {
+			circle := out.circleFamily.at(t, p, d, dd)
 			if member.Branch == "left" {
 				return circle.left
 			}
