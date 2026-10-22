@@ -95,7 +95,35 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 		expressions[i] = e
 	}
 	f := func(t float64) Vec3 { return Vec3{expressions[0](t), expressions[1](t), expressions[2](t)} }
-	return sampled(f, q.Min, q.Max, span, sized(extent(f, q.Min, q.Max), span, absolute)), q.Min, q.Max, false, nil
+	size := extent(f, q.Min, q.Max)
+	u := sized(size, span, absolute)
+	evaluate := sampled(f, q.Min, q.Max, span, u)
+	// A large constant translation rounds away the tiny displacements that
+	// determine a tangent near a cusp. Differentiate the moving expression
+	// before that translation is added, keeping positions exactly as entered.
+	// Ordinary studies keep their original numerical path bit for bit.
+	if size > 0 && f((q.Min+q.Max)/2).norm() > 8*size {
+		var local [3]expr.Expr
+		var shifts [3]float64
+		parsed := true
+		for i, s := range []string{q.X, q.Y, q.Z} {
+			// The same expressions and parameter were validated above; an
+			// error here keeps the entered expressions' stencil.
+			var err error
+			local[i], shifts[i], err = expr.ParseLocalWithParameter(s, q.A)
+			parsed = parsed && err == nil
+		}
+		origin := Vec3{shifts[0], shifts[1], shifts[2]}
+		if parsed && origin.valid() && origin.norm() > 8*size {
+			moving := sampled(func(t float64) Vec3 { return Vec3{local[0](t), local[1](t), local[2](t)} }, q.Min, q.Max, span, u)
+			evaluate = func(t float64) (Vec3, Vec3, Vec3, bool) {
+				r := f(t)
+				_, v, a, ok := moving(t)
+				return r, v, a, ok && r.valid()
+			}
+		}
+	}
+	return evaluate, q.Min, q.Max, false, nil
 }
 
 // units are a curve's own size, and the speed, acceleration and third

@@ -2,8 +2,43 @@ package engine3
 
 import (
 	"math"
+	"tangentgarden/engine/expr"
 	"testing"
 )
+
+func TestExpressionTranslationKeepsPositionsAndOrdinaryStencil(t *testing.T) {
+	for _, shift := range []float64{0, 3, 5000} {
+		c := custom(affine("t^2", 1, shift), affine("t^3", 1, -0.6*shift), number(0.8*shift), -1, 1)
+		evaluate, lo, hi, _, err := compile(c, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entered [3]expr.Expr
+		for i, s := range []string{c.Curve.X, c.Curve.Y, c.Curve.Z} {
+			entered[i], err = expr.ParseWithParameter(s, c.Curve.A)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		position := func(t float64) Vec3 { return Vec3{entered[0](t), entered[1](t), entered[2](t)} }
+		original := sampled(position, lo, hi, hi-lo, sized(extent(position, lo, hi), hi-lo, absolute))
+		for _, at := range []float64{-1, -0.1234, 0, 1e-8, 0.1357, 1} {
+			r, v, a, ok := evaluate(at)
+			if r != position(at) || !ok || !v.valid() || !a.valid() {
+				t.Fatalf("shift %g at %g: position %v, stable %v", shift, at, r, ok)
+			}
+			if shift < 5000 {
+				_, oldV, oldA, oldOK := original(at)
+				if v != oldV || a != oldA || ok != oldOK {
+					t.Fatalf("ordinary stencil changed at shift %g, t %g", shift, at)
+				}
+			} else {
+				near(t, &v, Vec3{2 * at, 3 * at * at, 0}, 1e-11)
+				near(t, &a, Vec3{2, 6 * at, 0}, 1e-7)
+			}
+		}
+	}
+}
 
 // The deltoid r = (2cos t + cos 2t, 2sin t − sin 2t) lifted by
 // z = cos(3t)/2 keeps its three cusps: at t = 0, 2π/3 and 4π/3 its
@@ -230,6 +265,97 @@ func TestTubeOnOrthotomicCrossesCusps(t *testing.T) {
 	for i, b := range r.Breaks {
 		if b {
 			t.Fatalf("the tube is broken at %d", i)
+		}
+	}
+}
+
+// Moving an expression curve and its pole thousands of diameters must not
+// break a regular construction on its tangent projection at a base cusp.
+func TestTranslatedExpressionProjectionCrossesCusps(t *testing.T) {
+	for _, input := range []string{"tangent-foot", "orthotomic"} {
+		for _, hi := range []float64{1, 1.0005} {
+			c := custom("t^2", "t^3", "0", -1, hi)
+			c.Construction, c.Input, c.Pole, c.Length = "developable", input, Vec3{0.5, 0.5, 0.3}, 0.2
+			want := composed(t, c)
+			// This existing, untranslated construction already has one
+			// continuous crossing, including when the cusp is on a sample.
+			if want.Composition.Crossed != 1 {
+				t.Fatal("untranslated cusp was not crossed")
+			}
+			_, moved, _ := similar(c, similarities[3])
+			got := composed(t, moved)
+			if hi == 1 {
+				if got.Base[240] == nil {
+					t.Fatalf("%s: gap at the translated cusp", input)
+				}
+				// r(0) is the cusp, with tangent line along x. Its foot is
+				// (.5, 0, 0), or its half-turn image (.5, -.5, -.3).
+				limit := Vec3{0.5, 0, 0}
+				if input == "orthotomic" {
+					limit = Vec3{0.5, -0.5, -0.3}
+				}
+				near(t, got.Base[240], similarities[3].point(limit), 2e-7)
+			}
+			if got.Composition.Crossed != 1 {
+				t.Errorf("%s, end %g: crossed %d cusps, want 1", input, hi, got.Composition.Crossed)
+			}
+			for i := range want.Base {
+				if got.Breaks[i] != want.Breaks[i] || (got.Base[i] == nil) != (want.Base[i] == nil) {
+					t.Errorf("%s, end %g: sample %d changed gap or break", input, hi, i)
+				}
+				if got.Base[i] != nil && want.Base[i] != nil {
+					near(t, got.Base[i], similarities[3].point(*want.Base[i]), 2e-7)
+				}
+			}
+			faces := map[int]bool{}
+			for _, v := range corners(got.Mesh) {
+				faces[v.SampleIndex] = true
+			}
+			if !faces[240] || !faces[241] {
+				t.Errorf("%s, end %g: missing faces across the base cusp", input, hi)
+			}
+		}
+	}
+}
+
+func TestTranslatedExpressionTubeCrossesCusps(t *testing.T) {
+	c := canaled(liftedDeltoid(), 0.15, "1", 12)
+	c.Input, c.Pole, c.Adaptive = "orthotomic", Vec3{0.4, -0.3, 1.1}, true
+	want := composed(t, c)
+	_, moved, _ := similar(c, similarities[3])
+	got := composed(t, moved)
+	if got.Composition.Crossed != 3 || got.Composition.Cusps != want.Composition.Cusps {
+		t.Fatalf("crossed %d, own cusps %d; want 3, %d", got.Composition.Crossed, got.Composition.Cusps, want.Composition.Cusps)
+	}
+	for i := range want.Base {
+		if got.Breaks[i] != want.Breaks[i] || got.Base[i] == nil {
+			t.Errorf("sample %d changed gap or break", i)
+		}
+		near(t, got.Base[i], similarities[3].point(*want.Base[i]), 2e-7)
+	}
+	if got.Adaptive.Base.Breaks != 0 || got.Adaptive.Base.Exhausted {
+		t.Fatalf("refined input: %d breaks, exhausted %v", got.Adaptive.Base.Breaks, got.Adaptive.Base.Exhausted)
+	}
+	for _, p := range got.Adaptive.Base.Points {
+		if p == nil {
+			t.Fatal("gap in the refined input")
+		}
+	}
+}
+
+func TestTranslatedExpressionKeepsNonCuspsBroken(t *testing.T) {
+	for _, xyz := range [][3]string{
+		{"t^2", "t^3", "1e-6*t"},
+		{"abs(t)", "0.3*t", "0"},
+		{"t^2+0.01*(t+0.003)/abs(t+0.003)", "t^3", "0"},
+		{"1/t", "t^3", "0"},
+	} {
+		c := custom(xyz[0], xyz[1], xyz[2], -1, 1.0005)
+		c.Construction, c.Pole = "tangent-foot", Vec3{0.5, 0.5, 0.3}
+		_, moved, _ := similar(c, similarities[3])
+		r := projected(t, moved)
+		if r.Projection.Crossed != 0 || r.Projection.Breaks != nil || !r.Breaks[240] {
+			t.Errorf("%v: crossed %d, break %v", xyz, r.Projection.Crossed, r.Breaks[240])
 		}
 	}
 }

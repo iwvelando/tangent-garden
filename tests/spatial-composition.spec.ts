@@ -64,6 +64,51 @@ const composedLayers = [
   "Pole marker",
 ];
 
+test("a translated expression keeps the tangent ribbon whole across its base cusp", async ({
+  page,
+}) => {
+  await ready(page);
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("parametric");
+  for (const [name, value] of [
+    ["x(t)", "5000+t^2"],
+    ["y(t)", "-3000+t^3"],
+    ["z(t)", "4000"],
+    ["t from", "-1"],
+    ["to", "1"],
+  ])
+    await field(page, name).fill(value);
+  await builtOn(page).selectOption("tangent-foot");
+  for (const [name, value] of [
+    ["Pole x", "5000.5"],
+    ["Pole y", "-2999.5"],
+    ["Pole z", "4000.3"],
+  ]) {
+    await field(page, name).fill(value);
+  }
+  await settled(page);
+  await expect
+    .poll(async () => (await config(page)).pole)
+    .toEqual({ x: 5000.5, y: -2999.5, z: 4000.3 });
+  await expect(page.locator(".composition-note")).toContainText(
+    "runs on through the base's cusp",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  // Check the actual exported drawing, including the intervals on both
+  // sides of the cusp, rather than relying on a changed diagnostic alone.
+  await page.getByRole("button", { name: "Export image", exact: true }).click();
+  const downloading = page.waitForEvent("download");
+  await page
+    .getByRole("menuitem", { name: "Lines (SVG) · every line", exact: true })
+    .click();
+  const svg = await readFile((await (await downloading).path())!, "utf8");
+  expect(svg).toContain("5000+t^2");
+  const base = svg.match(/<g id="base"[^>]*>(.*?)<\/g>/s)?.[1];
+  expect(base).toBeTruthy();
+  expect(base!.match(/L/g)).toHaveLength((await config(page)).samples);
+});
+
 test("every construction built on a curve can be built on a derived curve, with its own layers and a validated pole", async ({
   page,
 }) => {

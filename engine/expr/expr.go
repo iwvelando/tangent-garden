@@ -102,6 +102,14 @@ func Scalar(s string) (float64, error) {
 }
 
 func parse(s string, variables map[string]int, parameter *float64) (*parser, *program, error) {
+	p, e, err := parseTree(s, variables, parameter)
+	if err != nil {
+		return p, nil, err
+	}
+	return p, compile(e), nil
+}
+
+func parseTree(s string, variables map[string]int, parameter *float64) (*parser, *tree, error) {
 	if len(s) > 1024 {
 		return nil, nil, fmt.Errorf("expression exceeds 1024 characters")
 	}
@@ -114,7 +122,7 @@ func parse(s string, variables map[string]int, parameter *float64) (*parser, *pr
 	if err != nil {
 		return p, nil, err
 	}
-	return p, compile(e), nil
+	return p, e, nil
 }
 func (p *parser) space() {
 	for p.pos < len(p.s) && unicode.IsSpace(rune(p.s[p.pos])) {
