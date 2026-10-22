@@ -423,7 +423,7 @@ func (q Request) rollingAt(f, g curveFunc, run *rollingRun) func(float64) *Vec {
 		v := *run.at[j]
 		start := lo + float64(j)*step
 		if h := t - start; h > 0 {
-			if !v.step(t, h, d, dd) {
+			if !v.step(t, h, p, d, dd) {
 				return nil
 			}
 		}

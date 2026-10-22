@@ -119,16 +119,24 @@ func (v *travel) note(t float64, p, d, dd Vec) float64 {
 	return cusp
 }
 
-// step advances from t−h to t, where g has derivatives d and dd. Simpson
-// arc length is split at each cusp between them, and its sign turned there.
-// It reports whether the arc length stays finite.
-func (v *travel) step(t, h float64, d, dd Vec) bool {
-	a, aa := derivatives(v.g, t-h, v.lo, v.hi)
-	b, bb := derivatives(v.g, t-h/2, v.lo, v.hi)
+// local is g's point and derivatives at t, the point taken from the
+// stencil wherever it evaluated t itself: a derived input is costly.
+func (v *travel) local(t float64) (p, d, dd Vec) {
+	m := nodes{f: v.g}
+	d, dd = derivativesAtStep(m.record, t, v.lo, v.hi, baseStencil(v.lo, v.hi).h)
+	return m.reuse(t), d, dd
+}
+
+// step advances from t−h to t, where g is p with derivatives d and dd.
+// Simpson arc length is split at each cusp between them, and its sign
+// turned there. It reports whether the arc length stays finite.
+func (v *travel) step(t, h float64, p, d, dd Vec) bool {
+	pa, a, aa := v.local(t - h)
+	pb, b, bb := v.local(t - h/2)
 	ts := [3]float64{t - h, t - h/2, t}
 	var cuts []float64
-	for k, w := range [3][2]Vec{{a, aa}, {b, bb}, {d, dd}} {
-		if c := v.note(ts[k], v.g(ts[k]), w[0], w[1]); !math.IsNaN(c) {
+	for k, w := range [3][3]Vec{{pa, a, aa}, {pb, b, bb}, {p, d, dd}} {
+		if c := v.note(ts[k], w[0], w[1], w[2]); !math.IsNaN(c) {
 			cuts = append(cuts, c)
 		}
 	}

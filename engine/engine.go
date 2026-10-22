@@ -434,7 +434,7 @@ func Compute(q Request) (Result, error) {
 		}
 		if j > 0 && arcLength && arcOK {
 			if rolls != nil {
-				arcOK = rolls.step(t, step, dp, ddp)
+				arcOK = rolls.step(t, step, p, dp, ddp)
 			} else {
 				a, _ := derivatives(g, t-step, lo, hi)
 				b, _ := derivatives(g, t-step/2, lo, hi)
