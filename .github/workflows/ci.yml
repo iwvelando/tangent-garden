@@ -150,7 +150,7 @@ jobs:
       # --shard does. The JSON report records each test's duration, which the
       # dot reporter does not, so a slow or slowing shard can be compared
       # test by test with another run's, and the recorded durations refreshed
-      # from it (`make test-durations RUN=<run id>`).
+      # from several runs (`make test-durations RUN="<run id>..."`).
       - run: npx playwright test --reporter=dot,json
         env:
           TEST_SHARD: ${{ matrix.shard }}/${{ matrix.total }}

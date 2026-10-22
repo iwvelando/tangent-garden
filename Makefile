@@ -39,12 +39,13 @@ test-browser: build
 	npx playwright test
 test-webkit: build
 	WEBKIT=1 npx playwright test --project=webkit
-# Records each spec file's duration from a CI run's timing reports, which
+# Records each spec file's mean duration over CI runs' timing reports, which
 # CI's Chromium shards are packed by (tests/shards.ts).
 test-durations:
-	@test -n "$(RUN)" || { echo "usage: make test-durations RUN=<CI run id>"; exit 2; }
-	@dir=$$(mktemp -d) && gh run download $(RUN) -p 'chromium-test-timings-*' -D "$$dir" && \
-		node scripts/test-durations.mjs "$$dir"/*/test-timings.json; status=$$?; rm -rf "$$dir"; exit $$status
+	@test -n "$(RUN)" || { echo 'usage: make test-durations RUN="<CI run id>..."'; exit 2; }
+	@dir=$$(mktemp -d) && for run in $(RUN); do \
+		gh run download $$run -p 'chromium-test-timings-*' -D "$$dir/$$run" || { rm -rf "$$dir"; exit 1; }; \
+	done && node scripts/test-durations.mjs $(addprefix "$$dir"/,$(RUN)); status=$$?; rm -rf "$$dir"; exit $$status
 build:
 	npm run build
 share-card: build
