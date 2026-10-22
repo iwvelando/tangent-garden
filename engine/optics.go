@@ -37,8 +37,9 @@ func (q Request) incident(g curveFunc) curveFunc {
 			a := q.Source.Angle * math.Pi / 180
 			return Vec{math.Cos(a), math.Sin(a)}
 		}
-		delta := g(t).Sub(q.Source.Position)
-		if delta.Norm() < 1e-9 {
+		p := g(t)
+		delta := p.Sub(q.Source.Position)
+		if delta.Norm() == 0 || delta.Norm() < 1e-9*(p.Norm()+q.Source.Position.Norm()) {
 			return Vec{math.NaN(), math.NaN()}
 		}
 		return delta.Unit()
@@ -52,8 +53,8 @@ func (q Request) direction(g curveFunc) curveFunc {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	incident := q.incident(g)
 	return func(t float64) Vec {
-		dp, _ := derivatives(g, t, lo, hi)
-		if dp.Norm() < 1e-9 {
+		dp, ddp := derivatives(g, t, lo, hi)
+		if !opticalTangent(g(t), dp, ddp) {
 			return Vec{math.NaN(), math.NaN()}
 		}
 		i := incident(t)
@@ -67,4 +68,11 @@ func (q Request) direction(g curveFunc) curveFunc {
 		}
 		return v
 	}
+}
+
+// opticalTangent uses the curve's own length units for the stationary-point
+// guard, as the evolute does. An exactly constant point at the origin has
+// no tangent either, even though its relative speed threshold is zero.
+func opticalTangent(p, d, dd Vec) bool {
+	return p.Valid() && d.Valid() && d.Norm() > 0 && !stationary(p, d, dd)
 }

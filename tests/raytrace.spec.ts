@@ -664,3 +664,77 @@ test("rays stop at the caustic in the drawing, a preset and its export", async (
   // full rays ink about a fifth more of the frame than the stopped ones.
   expect(exportedFull).toBeGreaterThan(exportedStopped * 1.1);
 });
+
+// Scale the actual expressions through the controls, then compare the
+// fitted page geometry and saved SVG with the existing study's drawing.
+for (const label of [
+  "Parallel light & a circle",
+  "Sunlight bending into glass",
+])
+  test(`${label} keeps its rays and caustic with tiny length units`, async ({
+    page,
+  }) => {
+    await ready(page, label);
+    const geometry = () =>
+      page
+        .locator("#artwork path, #artwork line")
+        .evaluateAll((nodes) =>
+          nodes.map((n) => [
+            n.tagName,
+            ...["d", "x1", "y1", "x2", "y2", "stroke-dasharray", "opacity"].map(
+              (a) => n.getAttribute(a),
+            ),
+          ]),
+        );
+    const original = await geometry();
+    const caustic = await derived(page);
+    expect(caustic.length).toBeGreaterThan(100);
+    expect(original.filter((n) => n[0] === "line").length).toBeGreaterThan(20);
+    for (const [axis, expression] of [
+      ["x", "2^-35*cos(t)"],
+      ["y", "2^-35*sin(t)"],
+    ]) {
+      await page
+        .getByRole("textbox", { name: `${axis}(t)`, exact: true })
+        .fill(expression);
+      await expect
+        .poll(
+          async () =>
+            JSON.parse((await page.locator("#artwork desc").textContent())!)
+              .curve[axis],
+        )
+        .toBe(expression);
+      await expect(page.locator(".plot-wrap")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+    }
+    await expect.poll(() => derived(page)).toBe(caustic);
+    expect(await geometry()).toEqual(original);
+    const downloading = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export image" }).click();
+    await page.getByRole("menuitem", { name: /SVG/ }).click();
+    const saved = await downloading;
+    const svg = await readFile((await saved.path())!, "utf8");
+    const exported = await page.evaluate((svg) => {
+      const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+      return Array.from(doc.querySelectorAll("path, line"), (n) => [
+        n.tagName,
+        ...["d", "x1", "y1", "x2", "y2", "stroke-dasharray", "opacity"].map(
+          (a) => n.getAttribute(a),
+        ),
+      ]);
+    }, svg);
+    expect(exported).toEqual(original);
+    // Restoring the preset replaces the edited expressions and keeps the
+    // original picture, rather than carrying the tiny scale into it.
+    await choosePreset(page, { label });
+    await expect(
+      page.getByRole("textbox", { name: "x(t)", exact: true }),
+    ).toHaveValue("cos(t)");
+    await expect(
+      page.getByRole("textbox", { name: "y(t)", exact: true }),
+    ).toHaveValue("sin(t)");
+    await expect.poll(() => derived(page)).toBe(caustic);
+    expect(await geometry()).toEqual(original);
+  });
