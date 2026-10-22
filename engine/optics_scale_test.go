@@ -46,6 +46,16 @@ func TestPlanarLightAtTinyScales(t *testing.T) {
 			if len(want.Rays) != q.Lines {
 				t.Fatalf("%s: no unit-scale rays", name)
 			}
+			// The copies compare TIR flags; make sure there are some.
+			tirRays := 0
+			for _, ray := range want.Rays {
+				if ray.TIR {
+					tirRays++
+				}
+			}
+			if (tirRays > 0) != (name == "total internal reflection") {
+				t.Fatalf("%s: %d unit-scale TIR rays", name, tirRays)
+			}
 			for _, scale := range []float64{0x1p-35, 0x1p-40, 0x1p-100} {
 				t.Run(name+num(scale)+map[bool]string{false: " sampled", true: " refined"}[refined], func(t *testing.T) {
 					m := similarity{"tiny", scale, Vec{}}
