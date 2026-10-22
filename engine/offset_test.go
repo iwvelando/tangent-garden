@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -186,5 +187,100 @@ func TestOffsetInvalidAndDegenerateSamples(t *testing.T) {
 	var decoded Request
 	if err := json.Unmarshal([]byte(`{"kind":"offset","distance":0.25}`), &decoded); err != nil || decoded.Distance != .25 {
 		t.Fatalf("distance JSON field: %v %v", decoded, err)
+	}
+}
+
+// Offsets depend on the direction of travel, not its magnitude in the
+// chosen length units. Check the actual engine paths, normals, circles,
+// refinement and a between-sample probe against a circle's analytic offsets.
+func TestTinyOffsetsKeepTheirGeometry(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100} {
+		for _, adaptive := range []bool{false, true} {
+			for _, stacked := range []bool{false, true} {
+				t.Run(num(scale)+fmt.Sprint(adaptive, stacked), func(t *testing.T) {
+					q := offsetRequest(num(2*scale)+"*cos(t)", num(2*scale)+"*sin(t)", 0, 2*math.Pi, .5*scale)
+					q.Samples, q.Lines, q.Circles, q.Adaptive = 65, 8, true, adaptive
+					if stacked {
+						q.Stack = Stack{Enabled: true, From: -.5 * scale, To: .5 * scale, Count: 3}
+					}
+					at := .731
+					q.Probe = &ProbeQuery{T: &at}
+					r := compute(t, q)
+					if r.Invalid != 0 || len(r.Rays) != q.Lines || len(r.Circles) != q.Lines {
+						t.Fatalf("invalid %d, normals %d, circles %d", r.Invalid, len(r.Rays), len(r.Circles))
+					}
+					check := func(points []*Vec, radius float64) {
+						t.Helper()
+						for _, p := range points {
+							if p == nil || math.Abs(p.Norm()/scale-radius) > 2e-7 {
+								t.Fatalf("point %v off radius %g at scale %g", p, radius, scale)
+							}
+						}
+					}
+					if stacked {
+						for _, member := range r.Family {
+							check(member.Points, 2-member.Distance/scale)
+						}
+					} else {
+						check(r.Derived, 1.5)
+						check([]*Vec{r.Probe.Derived}, 1.5)
+					}
+					for _, ray := range r.Rays {
+						want := .5
+						if stacked {
+							want = 1
+						}
+						if ray.Target == nil || math.Abs(ray.Target.Sub(ray.Origin).Norm()/scale-want) > 2e-7 {
+							t.Fatal("incorrect normal segment", ray)
+						}
+					}
+					if adaptive {
+						paths := []*RefinedPath{r.Adaptive.Derived}
+						if stacked {
+							paths = nil
+							for i := range r.Adaptive.Family {
+								paths = append(paths, r.Adaptive.Family[i])
+							}
+						}
+						for i, path := range paths {
+							if path == nil || path.Inserted == 0 || path.Breaks != 0 {
+								t.Fatalf("missing refined offset: %+v", path)
+							}
+							radius := 1.5
+							if stacked {
+								radius = 2 - r.Family[i].Distance/scale
+							}
+							check(path.Points, radius)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestTinyOffsetInputAndStationaryGaps(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100} {
+		q := offsetRequest(num(2*scale)+"*cos(t)", num(2*scale)+"*sin(t)", 0, 2*math.Pi, .5*scale)
+		q.Input = "offset"
+		q.Adaptive = true
+		r := compute(t, q)
+		if r.Invalid != 0 {
+			t.Fatalf("scale %g: missing offset input: %d", scale, r.Invalid)
+		}
+		for i, p := range r.Derived {
+			if p == nil || r.Input[i] == nil || math.Abs(p.Norm()/scale-1) > 2e-6 || math.Abs(r.Input[i].Norm()/scale-1.5) > 2e-7 {
+				t.Fatalf("scale %g: incorrect nested offset at %d", scale, i)
+			}
+		}
+		for _, xy := range [][2]string{{"1", "1"}, {"t^2", "t^3"}, {"1-cos(20*t)", "20*t-sin(20*t)"}, {"t", "1/(t-1e-17)"}} {
+			q = offsetRequest(num(scale)+"*("+xy[0]+")", num(scale)+"*("+xy[1]+")", -1, 1, .5*scale)
+			at := 0.0
+			q.Probe = &ProbeQuery{T: &at}
+			r = compute(t, q)
+			if r.Derived[q.Samples/2] != nil || r.Probe.Derived != nil {
+				t.Fatalf("scale %g, %v: offset crosses a stationary point or pole", scale, xy)
+			}
+		}
 	}
 }

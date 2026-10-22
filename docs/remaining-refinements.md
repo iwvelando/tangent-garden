@@ -64,7 +64,7 @@ Item 1 needs a profile before any code. Item 2 lists limits to fix only when a s
 Each is known and documented; none is worth a branch until a study needs it.
 
 - **3D engine scale limits** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic. Near a cusp of an expression curve thousands of its sizes from the origin, the rounded velocity leaves the tangent's direction noisy, so a construction built on its tangent projection breaks there again; a harmonic or knot base, with exact derivatives, keeps the crossing (the cusp presets are harmonic or plain projections for this reason).
-- **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute past about five diameters, curvature on a study millions of its diameters out (beyond the second-derivative budget), and the absolute speed cutoffs for pedal curves, offsets, rolling and light, along with envelope and stability cutoffs below 2⁻²⁰.
+- **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute past about five diameters, curvature on a study millions of its diameters out (beyond the second-derivative budget), and the absolute speed cutoffs for pedal curves, rolling and light, along with envelope and stability cutoffs below 2⁻²⁰.
 
 ### 3. A receiver refined to its view
 

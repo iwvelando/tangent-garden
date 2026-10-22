@@ -9,7 +9,17 @@ import (
 // required: where 1-dκ = 0 the offset has a cusp on the evolute, which is a
 // valid point even though the offset's own speed vanishes there.
 func Offset(p, derivative Vec, d float64) *Vec {
-	if o, ok := offsetAt(p, derivative, d); ok {
+	if o, ok := offsetAt(p, derivative, Vec{}, d); ok {
+		return &o
+	}
+	return nil
+}
+
+// offsetPoint also uses the local acceleration to distinguish a cusp's
+// rounded velocity from a tangent, including when the cusp is at the origin.
+// It does not require the second derivative to pass a stability check.
+func offsetPoint(p, derivative, acceleration Vec, d float64) *Vec {
+	if o, ok := offsetAt(p, derivative, acceleration, d); ok {
 		return &o
 	}
 	return nil
@@ -20,8 +30,8 @@ func Offset(p, derivative Vec, d float64) *Vec {
 // the sample loop and refinement run the same compiled arithmetic.
 //
 //go:noinline
-func offsetAt(p, derivative Vec, d float64) (Vec, bool) {
-	if !p.Valid() || !derivative.Valid() || !finite(d) || derivative.Norm() < 1e-9 {
+func offsetAt(p, derivative, acceleration Vec, d float64) (Vec, bool) {
+	if !p.Valid() || !derivative.Valid() || !finite(d) || derivative.Norm() == 0 || stationary(p, derivative, acceleration) {
 		return Vec{}, false
 	}
 	o := p.Add(derivative.Perp().Unit().Mul(d))

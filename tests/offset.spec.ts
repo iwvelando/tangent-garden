@@ -205,3 +205,65 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+test("tiny offsets retain normals, circles and exported geometry after editing", async ({
+  page,
+}, testInfo) => {
+  await ready(page, "Ellipse & its evolute");
+  await page
+    .getByRole("group", { name: "Construction" })
+    .getByRole("button", { name: "offset", exact: true })
+    .click();
+  await distance(page).fill("0.5");
+  await settled(page);
+  const paths = page.getByTestId("derived-curve");
+  await expect(paths).toBeVisible();
+  const original = await paths.getAttribute("d");
+  await page.getByLabel("x(t)", { exact: true }).fill("2*2^(-40)*cos(t)");
+  await page.getByLabel("y(t)", { exact: true }).fill("3*2^(-40)*sin(t)");
+  await distance(page).fill("0.5*2^(-40)");
+  await settled(page);
+  await expect
+    .poll(async () => (await definition(page)).distance)
+    .toBe(0.5 * 2 ** -40);
+  await expect(paths).toHaveAttribute("d", original!);
+  expect((await segments(page)).length).toBe(48);
+  await page
+    .getByRole("checkbox", { name: "Generating circles", exact: true })
+    .check();
+  await settled(page);
+  await expect(
+    page.getByTestId("generating-circles").locator("circle"),
+  ).toHaveCount(48);
+  await page
+    .getByRole("checkbox", { name: "Refine between samples", exact: true })
+    .check();
+  await settled(page);
+  await expect(paths).toBeVisible();
+  await expect(page.getByText(/omitted samples/)).toHaveCount(0);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain('data-testid="derived-curve"');
+  expect(svg).toContain('data-testid="generating-circles"');
+  expect(svg).not.toContain("NaN");
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: testInfo.outputPath(`tiny-offset-${theme}.png`),
+      fullPage: true,
+    });
+  }
+  await page
+    .getByRole("checkbox", { name: "Generating circles", exact: true })
+    .uncheck();
+  await page
+    .getByRole("checkbox", { name: "Refine between samples", exact: true })
+    .uncheck();
+  await page.getByLabel("x(t)", { exact: true }).fill("2*cos(t)");
+  await page.getByLabel("y(t)", { exact: true }).fill("3*sin(t)");
+  await distance(page).fill("0.5");
+  await settled(page);
+  await expect(paths).toHaveAttribute("d", original!);
+});
