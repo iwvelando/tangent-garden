@@ -124,6 +124,52 @@ func parseTree(s string, variables map[string]int, parameter *float64) (*parser,
 	}
 	return p, e, nil
 }
+
+// ParseTranslated separates explicit additive constants from a curve expression.
+// The returned expression is evaluated before adding offset, so differentiation
+// can retain detail smaller than the rounding of that translation. Only sums,
+// differences and negations are separated; nonlinear operations remain intact.
+// Parsing has exactly the same bounds and variable rules as ParseWithParameter.
+func ParseTranslated(s string, a float64) (local Expr, offset float64, err error) {
+	if math.IsNaN(a) || math.IsInf(a, 0) {
+		return nil, 0, fmt.Errorf("shape parameter a must be finite")
+	}
+	_, e, err := parseTree(s, curveVariables, &a)
+	if err != nil {
+		return nil, 0, err
+	}
+	e, offset = translation(e)
+	if math.IsNaN(offset) || math.IsInf(offset, 0) {
+		return nil, 0, fmt.Errorf("translation must be finite")
+	}
+	program := compile(e)
+	return func(t float64) float64 { return program.eval(t, 0, 0, 0) }, offset, nil
+}
+
+func translation(e *tree) (*tree, float64) {
+	switch e.op {
+	case opConst:
+		return constant(0), e.value
+	case opAdd, opSub:
+		l, a := translation(e.left)
+		r, b := translation(e.right)
+		if e.op == opSub {
+			b = -b
+		}
+		// Keep an unchanged subtree's arithmetic when no constant was found.
+		if a == 0 && b == 0 {
+			return e, 0
+		}
+		return binary(e.op, l, r), a + b
+	case opNeg:
+		l, a := translation(e.left)
+		if a != 0 {
+			return unary(opNeg, l, 0, 0), -a
+		}
+	}
+	return e, 0
+}
+
 func (p *parser) space() {
 	for p.pos < len(p.s) && unicode.IsSpace(rune(p.s[p.pos])) {
 		p.pos++

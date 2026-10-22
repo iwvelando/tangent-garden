@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math"
+	"tangentgarden/engine/expr"
 )
 
 // A construction acts on its input: the base curve itself ("curve", or
@@ -84,4 +85,43 @@ func derive(input string, p, dp, ddp, pole Vec, distance float64) *Vec {
 		return polePoint(input, p, dp, ddp, pole)
 	}
 	return offsetPoint(p, dp, ddp, distance)
+}
+
+// derivedInput keeps the original evaluation for ordinary studies. On an
+// explicitly translated expression curve, remove its additive constants before
+// the evolute's inner stencil and restore them after it. Subtracting f(t) after
+// evaluating it would already have lost those low bits.
+func (q Request) derivedInput(f curveFunc) curveFunc {
+	lo, hi := q.Curve.Min, q.Curve.Max
+	ordinary := func() curveFunc { return inputCurve(q.Input, f, lo, hi, q.Pole, q.Distance) }
+	c := q.Curve
+	if q.Input != "evolute" || q.given != nil || (c.Format != "parametric" && c.Format != "cartesian") {
+		return ordinary()
+	}
+	x := c.X
+	if c.Format == "cartesian" {
+		x = "t"
+	}
+	lx, cx, ex := expr.ParseTranslated(x, c.A)
+	ly, cy, ey := expr.ParseTranslated(c.Y, c.A)
+	offset := Vec{cx, cy}
+	if ex != nil || ey != nil || offset == (Vec{}) {
+		return ordinary()
+	}
+	local := func(t float64) Vec { return Vec{lx(t), ly(t)} }
+	largest := 0.0
+	for i := 0; i <= 32; i++ {
+		p := local(lo + (hi-lo)*float64(i)/32)
+		if !p.Valid() {
+			return ordinary()
+		}
+		largest = math.Max(largest, p.Norm())
+	}
+	// A bounded, conservative gate leaves nearby studies' arithmetic unchanged.
+	// It selects by a ratio, so changing length units makes the same choice.
+	if !(offset.Norm() > 4*largest) {
+		return ordinary()
+	}
+	g := inputCurve(q.Input, local, lo, hi, q.Pole, q.Distance)
+	return func(t float64) Vec { return g(t).Add(offset) }
 }
