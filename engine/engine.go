@@ -458,12 +458,8 @@ func Compute(q Request) (Result, error) {
 		var dir Vec
 		virtual, tir := false, false
 		switch q.Kind {
-		case "pedal":
-			target = Pedal(p, dp, q.Pole)
-		case "contrapedal":
-			target = Contrapedal(p, dp, q.Pole)
-		case "orthotomic":
-			target = Orthotomic(p, dp, q.Pole)
+		case "pedal", "contrapedal", "orthotomic":
+			target = polePoint(q.Kind, p, dp, ddp, q.Pole)
 		case "offset":
 			if !stacked {
 				target = offsetPoint(p, dp, ddp, q.Distance)
@@ -573,9 +569,10 @@ func Compute(q Request) (Result, error) {
 			// Every defined line is drawn, touching its envelope or not.
 			out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: member.direction, Target: target, Virtual: virtual, End: member.end})
 		} else if line {
-			// A finite evolute or offset has already passed the relative
-			// tangent guard; its normal survives a change of length units.
-			hasTangent := dp.Norm() > 1e-9 || (q.Kind == "evolute" || q.Kind == "offset") && target != nil
+			// A finite evolute, offset or pole projection has already passed
+			// a relative tangent guard; its normal survives a change of length
+			// units.
+			hasTangent := dp.Norm() > 1e-9 || (q.Kind == "evolute" || q.Kind == "offset" || usesPole(q.Kind)) && target != nil
 			if p.Valid() && dp.Valid() && hasTangent {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})

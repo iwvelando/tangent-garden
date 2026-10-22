@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
@@ -150,5 +151,132 @@ func TestPedalFamilyInvalidAndDegenerateSamples(t *testing.T) {
 		q = request(kind, "cos(t)", "sin(t)", 0, 2*math.Pi)
 		q.Pole = Vec{1, 0}
 		closeVec(t, compute(t, q).Derived[0], Vec{1, 0}, 1e-7)
+	}
+}
+
+// A circle with its pole on the rim has a cardioid pedal. The normal
+// projection and reflection follow from the same rectangle, independently
+// of the curve's length units. Exercise every returned drawing path.
+func TestTinyPedalFamily(t *testing.T) {
+	for _, kind := range []string{"pedal", "contrapedal", "orthotomic"} {
+		for _, scale := range []float64{1, 0x1p-35, 0x1p-40, 0x1p-100} {
+			for _, off := range []float64{0, 5} {
+				for _, adaptive := range []bool{false, true} {
+					t.Run(kind+num(scale)+num(off)+fmt.Sprint(adaptive), func(t *testing.T) {
+						q := request(kind, num(scale)+"*(cos(t)+"+num(off)+")", num(scale)+"*sin(t)", 0, 2*math.Pi)
+						q.Samples, q.Lines, q.Adaptive = 65, 8, adaptive
+						q.Pole = Vec{scale * (1 + off), 0}
+						at := .731
+						q.Probe = &ProbeQuery{T: &at}
+						r := compute(t, q)
+						if r.Invalid != 0 || len(r.Rays) != q.Lines {
+							t.Fatalf("regular circle: invalid %d, lines %d, want 0 and %d", r.Invalid, len(r.Rays), q.Lines)
+						}
+						check := func(u float64, p *Vec) {
+							t.Helper()
+							c, s := math.Cos(u), math.Sin(u)
+							want := Vec{1 + c - c*c, s * (1 - c)}
+							if kind == "contrapedal" {
+								want = Vec{c * c, s * c}
+							}
+							if kind == "orthotomic" {
+								want = want.Mul(2).Sub(Vec{1, 0})
+							}
+							want.X += off
+							if p == nil {
+								t.Fatalf("missing projection at t=%g", u)
+							}
+							closeVec(t, point(p.Mul(1/scale)), want, 2e-7)
+						}
+						for i, p := range r.Derived {
+							check(sampleT(q, i), p)
+						}
+						for _, ray := range r.Rays {
+							check(sampleT(q, ray.SampleIndex), ray.Target)
+						}
+						check(at, r.Probe.Derived)
+						probe, err := ProbeOnly(q)
+						if err != nil {
+							t.Fatal(err)
+						}
+						check(at, probe.Derived)
+						if adaptive {
+							path := r.Adaptive.Derived
+							if path == nil || path.Inserted == 0 || path.Breaks != 0 {
+								t.Fatalf("missing continuous refinement: %+v", path)
+							}
+							for i, p := range path.Points {
+								u := q.Curve.Min + path.At[i]*(q.Curve.Max-q.Curve.Min)/float64(q.Samples-1)
+								check(u, p)
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+// A pedal used as another construction's input must obey the same guard.
+func TestTinyPedalFamilyAsInput(t *testing.T) {
+	for _, kind := range []string{"pedal", "contrapedal", "orthotomic"} {
+		for _, scale := range []float64{1, 0x1p-40, 0x1p-100} {
+			q := request("inversion", num(scale)+"*cos(t)", num(scale)+"*sin(t)", .2, 2.8)
+			q.Input, q.Pole, q.Adaptive = kind, Vec{scale, 0}, true
+			q.Samples, q.Lines = 65, 8
+			q.Inversion.Radius = scale
+			at := .731
+			q.Probe = &ProbeQuery{T: &at}
+			r := compute(t, q)
+			if r.Invalid != 0 {
+				t.Fatalf("%s at scale %g: %d invalid", kind, scale, r.Invalid)
+			}
+			for i, p := range r.Input {
+				u := sampleT(q, i)
+				c, s := math.Cos(u), math.Sin(u)
+				want := Vec{1 + c - c*c, s * (1 - c)}
+				if kind == "contrapedal" {
+					want = Vec{c * c, s * c}
+				}
+				if kind == "orthotomic" {
+					want = want.Mul(2).Sub(Vec{1, 0})
+				}
+				if p == nil {
+					t.Fatalf("%s at scale %g: missing input %d", kind, scale, i)
+				}
+				closeVec(t, point(p.Mul(1/scale)), want, 2e-7)
+			}
+			// Inversion's own singularity at the origin is outside this assertion.
+			if r.Probe.Input == nil {
+				t.Fatalf("%s: missing probe input", kind)
+			}
+		}
+	}
+}
+
+func TestTinyPedalFamilyKeepsGaps(t *testing.T) {
+	for _, kind := range []string{"pedal", "contrapedal", "orthotomic"} {
+		for _, scale := range []float64{1, 0x1p-40, 0x1p-100} {
+			for _, off := range []float64{0, 5} {
+				for _, xy := range [][2]string{{"0", "0"}, {"t^2", "t^3"}, {"t", "1/t"}} {
+					q := request(kind, num(scale)+"*("+xy[0]+"+"+num(off)+")", num(scale)+"*("+xy[1]+")", -1, 1)
+					q.Samples, q.Lines, q.Adaptive = 65, 8, true
+					q.Pole = Vec{scale * (off + 1), scale}
+					at := 0.0
+					q.Probe = &ProbeQuery{T: &at}
+					r := compute(t, q)
+					if r.Invalid == 0 || r.Derived[q.Samples/2] != nil || r.Probe.Derived != nil {
+						t.Fatalf("%s %v at scale %g off %g: no stationary/pole gap", kind, xy, scale, off)
+					}
+					if xy[0] == "0" {
+						for _, p := range r.Derived {
+							if p != nil {
+								t.Fatal("constant curve acquired a projection")
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 }

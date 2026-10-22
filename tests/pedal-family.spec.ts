@@ -222,3 +222,59 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+test("a tiny circle retains full-size pedal-family projections and exported linework", async ({
+  page,
+}) => {
+  await ready(page, "Ellipse & its pedal");
+  await page
+    .getByRole("textbox", { name: "x(t)", exact: true })
+    .fill("1e-12*cos(t)");
+  await page
+    .getByRole("textbox", { name: "y(t)", exact: true })
+    .fill("1e-12*sin(t)");
+  await page.getByRole("textbox", { name: "Pole x", exact: true }).fill("1");
+  await page.getByRole("textbox", { name: "Pole y", exact: true }).fill("0");
+  await page
+    .getByRole("checkbox", { name: "Refine between samples", exact: true })
+    .check();
+  for (const kind of ["pedal", "contrapedal", "orthotomic"]) {
+    await family(page).selectOption(kind);
+    await expect.poll(async () => (await definition(page)).kind).toBe(kind);
+    await settled(page);
+    const gs = await groups(page);
+    expect(gs).toHaveLength(64);
+    // The tiny base's tangents still sweep a circle of diameter |P|:
+    // every pedal H lies on |H-P/2|=|P|/2; Q=2H-P has radius |P|.
+    const pole = await page
+      .getByTestId("pole-point")
+      .locator("circle")
+      .first()
+      .evaluate((c) => ({
+        x: Number(c.getAttribute("cx")),
+        y: Number(c.getAttribute("cy")),
+      }));
+    const origin = { x: gs[0][0].x1, y: gs[0][0].y1 };
+    const radius =
+      Math.hypot(pole.x - origin.x, pole.y - origin.y) /
+      (kind === "orthotomic" ? 1 : 2);
+    expect(radius).toBeGreaterThan(50);
+    const center =
+      kind === "orthotomic"
+        ? origin
+        : { x: (origin.x + pole.x) / 2, y: (origin.y + pole.y) / 2 };
+    for (const lines of gs) {
+      const last = lines.at(-1)!;
+      expect(
+        Math.abs(Math.hypot(last.x2 - center.x, last.y2 - center.y) - radius) /
+          radius,
+      ).toBeLessThan(1e-6);
+    }
+  }
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const file = await download;
+  const svg = await readFile((await file.path())!, "utf8");
+  expect((svg.match(/<line /g) ?? []).length).toBe(192);
+  expect(svg).toContain("1e-12*cos(t)");
+});
