@@ -16,12 +16,12 @@ func ParseLocalWithParameter(s string, a float64) (local Expr, origin float64, e
 	if math.IsNaN(a) || math.IsInf(a, 0) {
 		return nil, 0, fmt.Errorf("shape parameter a must be finite")
 	}
-	_, t, err := parseTree(s, curveVariables, &a)
+	_, tree, err := parseTree(s, curveVariables, &a)
 	if err != nil {
 		return nil, 0, err
 	}
-	t, origin = localTree(t)
-	e := compile(t)
+	tree, origin = localTree(tree)
+	e := compile(tree)
 	return func(t float64) float64 { return e.eval(t, 0, 0, 0) }, origin, nil
 }
 

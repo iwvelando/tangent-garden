@@ -105,12 +105,16 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 	if size > 0 && f((q.Min+q.Max)/2).norm() > 8*size {
 		var local [3]expr.Expr
 		var shifts [3]float64
+		parsed := true
 		for i, s := range []string{q.X, q.Y, q.Z} {
-			// The same expressions and parameter were validated above.
-			local[i], shifts[i], _ = expr.ParseLocalWithParameter(s, q.A)
+			// The same expressions and parameter were validated above; an
+			// error here keeps the entered expressions' stencil.
+			var err error
+			local[i], shifts[i], err = expr.ParseLocalWithParameter(s, q.A)
+			parsed = parsed && err == nil
 		}
 		origin := Vec3{shifts[0], shifts[1], shifts[2]}
-		if origin.valid() && origin.norm() > 8*size {
+		if parsed && origin.valid() && origin.norm() > 8*size {
 			moving := sampled(func(t float64) Vec3 { return Vec3{local[0](t), local[1](t), local[2](t)} }, q.Min, q.Max, span, u)
 			evaluate = func(t float64) (Vec3, Vec3, Vec3, bool) {
 				r := f(t)
