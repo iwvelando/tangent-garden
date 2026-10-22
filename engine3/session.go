@@ -13,6 +13,7 @@ type rayCache struct {
 	light    RaysRequest
 	samples  [][]mirrorPoint
 	receiver *receiverTrace
+	raster   rasterScratch
 }
 
 func (c *rayCache) samplesFor(nu, nv int) [][]mirrorPoint {
