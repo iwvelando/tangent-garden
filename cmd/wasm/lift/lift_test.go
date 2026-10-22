@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -195,14 +196,14 @@ func size(p Place) int {
 	return n
 }
 
-func preset(t *testing.T, name string) engine3.Request {
+func preset(t testing.TB, name string) engine3.Request {
 	t.Helper()
 	return presetIn(t, "testdata/presets.json", name)
 }
 
 // presetIn is a preset from a fixture: this package's own, or the 3D
 // engine's copy of every preset.
-func presetIn(t *testing.T, file, name string) engine3.Request {
+func presetIn(t testing.TB, file, name string) engine3.Request {
 	t.Helper()
 	b, err := os.ReadFile(file)
 	if err != nil {
@@ -457,5 +458,47 @@ func TestPlaneStudyRoundTrip(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Lifting already owns every input array. Its temporary allocation should
+// stay close to the output, rather than repeatedly copying growing prefixes
+// of a multi-sheet surface. The allowance covers paths, row lengths and Go
+// allocator rounding without permitting a second full-size staging copy.
+func TestLiftSurfaceAllocationBudget(t *testing.T) {
+	q := presetIn(t, "../../../engine3/testdata/presets.json", "The whole focal surface of an ellipsoid")
+	q.Surface.USamples, q.Surface.VSamples = 240, 60
+	r, err := engine3.Compute(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Mesh = engine3.CurveMesh{}
+	// Warm reflection plans, independently of the measured result.
+	warm := r
+	if _, _, err := Lift(&warm); err != nil {
+		t.Fatal(err)
+	}
+	// Lifting changes nested fields too, so compute an independent result.
+	r, err = engine3.Compute(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Mesh = engine3.CurveMesh{}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	floats, places, err := Lift(&r)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(places) < 4 || len(floats) < 100000 {
+		t.Fatal("surface transport workload disappeared")
+	}
+	allocated := after.TotalAlloc - before.TotalAlloc
+	budget := uint64(8*len(floats)*2 + 256*1024)
+	t.Logf("lifted %d bytes in %d places; allocated %d bytes (budget %d)", 8*len(floats), len(places), allocated, budget)
+	if allocated > budget {
+		t.Fatalf("lifting allocated %d bytes for %d output bytes; budget %d", allocated, 8*len(floats), budget)
 	}
 }
