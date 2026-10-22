@@ -12,18 +12,21 @@ func Evolute(p, d, dd Vec) *Vec {
 	return point(p.Add(d.Perp().Mul(d.Dot(d) / cross)))
 }
 
-// evolute applies the stencil's curvature-resolution check before inverting
-// curvature. It keeps rounding on a straight stretch from becoming a distant
-// center, using the same flat classification as the probe.
-func (s stencil) evolute(f curveFunc, t float64, p, d, dd Vec) *Vec {
-	if s.flat(f, t, d, dd) {
+// evolute is Evolute where the stencil resolves the curvature, given the
+// second derivative half at half the spacing. It keeps rounding on a
+// straight stretch from becoming a distant center, using the same flat
+// classification as the probe.
+func evolute(p, d, dd, half Vec) *Vec {
+	if unresolved(d, dd, half) {
 		return nil
 	}
 	return Evolute(p, d, dd)
 }
 
-func (s stencil) flat(f curveFunc, t float64, d, dd Vec) bool {
-	_, half := derivativesAtStep(f, t, s.lo, s.hi, s.h/2)
+// unresolved reports bending within ten times the disagreement of the
+// second derivatives dd and half, at the stencil's spacing and half of it,
+// or below the evolute's flat guard.
+func unresolved(d, dd, half Vec) bool {
 	return math.Abs(d.Cross(dd))/d.Norm() <= 10*half.Sub(dd).Norm() || flatCurvature(d, dd)
 }
 

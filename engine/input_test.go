@@ -315,3 +315,21 @@ func TestInputCuspsBetweenSamples(t *testing.T) {
 		t.Fatalf("pedal: %d invalid, %v", r.Invalid, r.Warnings)
 	}
 }
+
+// An evolute input shares the full and half stencils' common points, which
+// must leave every value exactly as separate evaluations give it, at the
+// domain's ends as well as inside it.
+func TestEvoluteInputStencilsShareOnlyIdenticalPoints(t *testing.T) {
+	f := func(u float64) Vec { return Vec{math.Exp(0.15*u) * math.Cos(17*u), math.Exp(0.15*u) * math.Sin(17*u)} }
+	lo, hi := 0.0, 4*math.Pi
+	s := stencil{lo, hi, (hi - lo) * inputSpacing, 1e-8}
+	for i := 0; i <= 2000; i++ {
+		u := lo + (hi-lo)*float64(i)/2000
+		p, d, dd, half := s.withHalf(f, u)
+		wantD, wantDD := s.derivatives(f, u)
+		_, wantHalf := derivativesAtStep(f, u, lo, hi, s.h/2)
+		if p != f(u) || d != wantD || dd != wantDD || half != wantHalf {
+			t.Fatalf("t=%v: shared %v %v %v %v, separate %v %v %v %v", u, p, d, dd, half, f(u), wantD, wantDD, wantHalf)
+		}
+	}
+}

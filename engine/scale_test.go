@@ -797,6 +797,29 @@ func TestTiltedLineEvoluteInputIsUndefined(t *testing.T) {
 	}
 }
 
+// The evolute of a line's offset, itself a parallel line, is just as
+// undefined: the check reads the offset's own second derivatives.
+func TestTiltedLineOffsetHasNoEvolute(t *testing.T) {
+	for _, adaptive := range []bool{false, true} {
+		q := request("evolute", "t", "0.7*t+0.3", -1, 1)
+		q.Input, q.Distance, q.Adaptive = "offset", 0.4, adaptive
+		q.Samples, q.Lines = 65, 8
+		r := compute(t, q)
+		for i, p := range r.Input {
+			if p == nil || r.Derived[i] != nil {
+				t.Fatalf("refine=%v sample %d: offset %v, evolute %v", adaptive, i, p, r.Derived[i])
+			}
+		}
+		if adaptive {
+			for _, p := range r.Adaptive.Derived.Points {
+				if p != nil {
+					t.Fatalf("finite refined evolute of a line's offset: %v", p)
+				}
+			}
+		}
+	}
+}
+
 // A barely bending parabola still has no resolved finite center. This
 // guards the speed reference when its acceleration is much smaller.
 func TestTinyCurvatureKeepsFlatGuard(t *testing.T) {

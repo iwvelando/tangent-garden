@@ -152,6 +152,44 @@ func derivativesAtStep(f curveFunc, t, lo, hi, h float64) (Vec, Vec) {
 	return stencilAt(f, t, lo, hi, h, nil)
 }
 
+// nodes are the points of f a stencil evaluated, which a second stencil at
+// the same t reuses wherever its parameter is bit for bit the same.
+type nodes struct {
+	f  curveFunc
+	at [5]float64
+	v  [5]Vec
+	n  int
+}
+
+func (m *nodes) record(t float64) Vec {
+	v := m.f(t)
+	if m.n < len(m.at) {
+		m.at[m.n], m.v[m.n] = t, v
+		m.n++
+	}
+	return v
+}
+
+func (m *nodes) reuse(t float64) Vec {
+	for i := 0; i < m.n; i++ {
+		if math.Float64bits(m.at[i]) == math.Float64bits(t) {
+			return m.v[i]
+		}
+	}
+	return m.f(t)
+}
+
+// withHalf is the point of f at t, its derivatives, and its second
+// derivative at half the spacing. The half step shares three of its five
+// points with the full one, here evaluated once: a derived input evaluates
+// all of them wherever it is itself evaluated.
+func (s stencil) withHalf(f curveFunc, t float64) (p, d, dd, half Vec) {
+	m := nodes{f: f}
+	d, dd = derivativesAtStep(m.record, t, s.lo, s.hi, s.h)
+	_, half = derivativesAtStep(m.reuse, t, s.lo, s.hi, s.h/2)
+	return m.reuse(t), d, dd, half
+}
+
 // stencilAt is derivativesAtStep, which also records in least, when it is
 // not nil, the least magnitude of f on the stencil, each point measured by
 // its larger coordinate. Where that is far below the largest, the curve
@@ -200,37 +238,35 @@ func stableTangent(f curveFunc, t, lo, hi float64, d, dd Vec) bool {
 	return baseStencil(lo, hi).stableTangent(f, t, d, dd)
 }
 
-func stable(f curveFunc, t, lo, hi float64, d, dd Vec) bool {
-	return baseStencil(lo, hi).stable(f, t, d, dd)
-}
-
 // conditioned reports whether the derivatives d and dd of f at t that a
 // construction of the given order needs agree with the half step's: none
 // for order 0, the first for order 1, both for order 2.
 func (s stencil) conditioned(f curveFunc, t float64, d, dd Vec, order int) bool {
-	switch order {
-	case 1:
-		return s.stableTangent(f, t, d, dd)
-	case 2:
-		return s.stable(f, t, d, dd)
+	ok, _ := s.checked(f, t, d, dd, order)
+	return ok
+}
+
+// checked is conditioned, which also returns the second derivative at half
+// the spacing that it compared (zero for order 0), so the evolute can judge
+// its curvature's resolution without differentiating again.
+func (s stencil) checked(f curveFunc, t float64, d, dd Vec, order int) (bool, Vec) {
+	if order != 1 && order != 2 {
+		return true, Vec{}
 	}
-	return true
-}
-
-// stableTangent checks the first derivative d alone; dd is the second at
-// the same spacing, which sets the floor only where it agrees with the half
-// step's.
-func (s stencil) stableTangent(f curveFunc, t float64, d, dd Vec) bool {
 	a, b, least := s.half(f, t)
-	return a.Valid() && d.Valid() &&
+	// The first derivative alone; dd is the second at the same spacing,
+	// which sets the floor only where it agrees with the half step's.
+	tangent := a.Valid() && d.Valid() &&
 		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.tangentFloor(b, dd, least)
+	if order == 1 {
+		return tangent, b
+	}
+	return tangent && b.Valid() && dd.Valid() &&
+		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(s.hi-s.lo))+rounding*least/(s.h*s.h), b
 }
 
-func (s stencil) stable(f curveFunc, t float64, d, dd Vec) bool {
-	a, b, least := s.half(f, t)
-	return a.Valid() && b.Valid() && d.Valid() && dd.Valid() &&
-		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.tangentFloor(b, dd, least) &&
-		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(s.hi-s.lo))+rounding*least/(s.h*s.h)
+func (s stencil) stableTangent(f curveFunc, t float64, d, dd Vec) bool {
+	return s.conditioned(f, t, d, dd, 1)
 }
 
 // tangentFloor is the first derivative's floor (see stencil), from the
