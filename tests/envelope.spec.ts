@@ -371,3 +371,55 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+// An outward normal from the ellipse reaches its evolute behind the chord.
+// Changing length units must keep that entire branch dashed, with or without
+// refinement; extending the chords makes the same branch solid.
+test("tiny chord envelopes keep virtual branches in the drawing and SVG", async ({
+  page,
+}) => {
+  await ready(page);
+  await field(page, "x(t)").fill("2*cos(t)*2^(-32)");
+  await field(page, "y(t)").fill("sin(t)*2^(-32)");
+  await field(page, "Second point x(t)").fill("3*cos(t)*2^(-32)");
+  await field(page, "Second point y(t)").fill("3*sin(t)*2^(-32)");
+  await settled(page);
+  const dashed = page.locator('#artwork > path[stroke-dasharray="6 4"]');
+  await expect
+    .poll(async () => (await definition(page)).envelope.y)
+    .toBe("3*sin(t)*2^(-32)");
+  await expect
+    .poll(async () => (await dashed.getAttribute("d"))!.length)
+    .toBeGreaterThan(100);
+  for (const refined of [false, true]) {
+    await page
+      .getByRole("checkbox", { name: "Refine between samples", exact: true })
+      .setChecked(refined);
+    await settled(page);
+    await expect
+      .poll(async () => (await dashed.getAttribute("d"))!.length)
+      .toBeGreaterThan(100);
+    await page.getByRole("checkbox", { name: "Virtual extensions" }).uncheck();
+    await expect(dashed).toHaveCount(0);
+    await page.getByRole("checkbox", { name: "Virtual extensions" }).check();
+  }
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const exported = await page.evaluate((s) => {
+    const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+    return {
+      config: JSON.parse(doc.querySelector("desc")!.textContent!),
+      path: doc
+        .querySelector('svg > path[stroke-dasharray="6 4"]')
+        ?.getAttribute("d"),
+    };
+  }, svg);
+  expect(exported.config.curve.x).toBe("2*cos(t)*2^(-32)");
+  expect(exported.path!.length).toBeGreaterThan(100);
+  await page
+    .getByRole("checkbox", { name: "Extend chords to full lines" })
+    .check();
+  await settled(page);
+  await expect(dashed).toHaveCount(0);
+});
