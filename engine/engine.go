@@ -572,7 +572,10 @@ func Compute(q Request) (Result, error) {
 			// Every defined line is drawn, touching its envelope or not.
 			out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: member.direction, Target: target, Virtual: virtual, End: member.end})
 		} else if line {
-			if p.Valid() && dp.Valid() && dp.Norm() > 1e-9 {
+			// A finite evolute center has already passed the relative
+			// tangent guard; its normal survives a change of length units.
+			hasTangent := dp.Norm() > 1e-9 || q.Kind == "evolute" && target != nil
+			if p.Valid() && dp.Valid() && hasTangent {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})
 				} else if !optical && target != nil {

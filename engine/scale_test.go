@@ -641,3 +641,131 @@ func TestPoleBesideASampleAtAnyScaleAndPlace(t *testing.T) {
 		}
 	}
 }
+
+// An ellipse's curvature and evolute do not depend on its choice of length
+// units, even below the fixed speed limits of other constructions. The
+// closed forms check the returned geometry rather than another stencil.
+func TestTinyEllipseRetainsCurvatureAndEvolute(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-20, 0x1p-35, 0x1p-40, 0x1p-100} {
+		t.Run(num(scale), func(t *testing.T) {
+			for _, adaptive := range []bool{false, true} {
+				q := request("evolute", num(2*scale)+"*cos(t)", num(scale)+"*sin(t)", 0, 2*math.Pi)
+				q.Samples, q.Lines = 65, 8
+				q.Diagnostics, q.Adaptive = true, adaptive
+				at := 0.731
+				q.Probe = &ProbeQuery{T: &at}
+				r := compute(t, q)
+				d := r.Diagnostics
+				if d.Flat != 0 || d.Unknown != 0 || d.Clipped != 0 || r.Invalid != 0 {
+					t.Fatalf("adaptive %v: flat %d, unknown %d, clipped %d, invalid %d", adaptive, d.Flat, d.Unknown, d.Clipped, r.Invalid)
+				}
+				center := func(u float64) Vec { return Vec{1.5 * math.Pow(math.Cos(u), 3), -3 * math.Pow(math.Sin(u), 3)} }
+				check := func(u float64, p *Vec, curvature *float64) {
+					t.Helper()
+					if p == nil || curvature == nil {
+						t.Fatalf("t=%g: missing center or curvature", u)
+					}
+					closeVec(t, point(p.Mul(1/scale)), center(u), 2e-6)
+					want := 2 / math.Pow(4*math.Pow(math.Sin(u), 2)+math.Pow(math.Cos(u), 2), 1.5)
+					if math.Abs(*curvature*scale-want) > 2e-7*want {
+						t.Fatalf("t=%g: scaled curvature %g, want %g", u, *curvature*scale, want)
+					}
+				}
+				if len(r.Rays) != q.Lines {
+					t.Fatalf("%d representative normals, want %d", len(r.Rays), q.Lines)
+				}
+				for _, ray := range r.Rays {
+					if ray.Target == nil {
+						t.Fatal("normal without its center")
+					}
+					closeVec(t, point(ray.Target.Mul(1/scale)), center(sampleT(q, ray.SampleIndex)), 2e-6)
+				}
+				for i, p := range r.Derived {
+					check(sampleT(q, i), p, d.Curvature[i])
+					check(sampleT(q, i), d.Center[i], d.Curvature[i])
+				}
+				check(at, r.Probe.Center, r.Probe.Curvature)
+				if adaptive {
+					path := r.Adaptive.Derived
+					if path == nil || path.Inserted == 0 || path.Breaks != 0 {
+						t.Fatalf("missing continuous refined evolute: %+v", path)
+					}
+					// The ellipse's evolute is the astroid with semiaxes
+					// 3/2 and 3: |x/(3/2)|^(2/3)+|y/3|^(2/3)=1.
+					for _, p := range path.Points {
+						if p == nil {
+							t.Fatal("gap in refined ellipse evolute")
+						}
+						x, y := p.X/scale/1.5, p.Y/scale/3
+						if e := math.Abs(math.Pow(math.Abs(x), 2.0/3) + math.Pow(math.Abs(y), 2.0/3) - 1); e > 2e-5 {
+							t.Fatalf("refined point off astroid by %g", e)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// Removing a unit floor must not invent centers for a straight line, a
+// constant point, or the stationary point of a cusp.
+func TestTinyCurvatureKeepsDegenerateGaps(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100} {
+		for _, xy := range [][2]string{{"t", "0"}, {"0", "0"}, {"t^2", "t^3"}} {
+			q := request("evolute", num(scale)+"*("+xy[0]+")", num(scale)+"*("+xy[1]+")", -1, 1)
+			q.Diagnostics = true
+			r := compute(t, q)
+			if r.Derived[q.Samples/2] != nil || r.Diagnostics.Center[q.Samples/2] != nil {
+				t.Fatalf("scale %g, %v: center at a degeneracy", scale, xy)
+			}
+			if xy[1] == "0" {
+				for _, p := range r.Derived {
+					if p != nil {
+						t.Fatalf("scale %g, %v: finite evolute on a line or point", scale, xy)
+					}
+				}
+			}
+		}
+	}
+}
+
+// A barely bending parabola still has no resolved finite center. This
+// guards the speed reference when its acceleration is much smaller.
+func TestTinyCurvatureKeepsFlatGuard(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100} {
+		q := request("evolute", num(scale)+"*t", num(scale)+"*1e-12*t^2", -1, 1)
+		q.Diagnostics = true
+		r := compute(t, q)
+		for i, p := range r.Derived {
+			if p != nil || r.Diagnostics.Center[i] != nil || r.Diagnostics.Curvature[i] == nil || *r.Diagnostics.Curvature[i] != 0 {
+				t.Fatalf("scale %g, sample %d: unresolved curvature acquired a center", scale, i)
+			}
+		}
+	}
+}
+
+// A tilted line's stencil r″ is rounding, not exactly zero. Its curvature
+// readouts and probe still find no center at any scale or offset; only the
+// evolute itself keeps the rounding's far points, as it does at unit scale.
+func TestTinyTiltedLineHasNoCurvatureCenter(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100} {
+		for _, off := range []float64{0, 5} {
+			q := request("evolute", num(scale)+"*(t+"+num(off)+")", num(scale)+"*(0.3141592653589793*t-"+num(off)+")", -1, 1)
+			q.Diagnostics = true
+			at := 0.377
+			q.Probe = &ProbeQuery{T: &at}
+			r := compute(t, q)
+			if d := r.Diagnostics; d.Flat != q.Samples {
+				t.Fatalf("scale %g, offset %g: %d of %d samples flat, %d clipped", scale, off, d.Flat, q.Samples, d.Clipped)
+			}
+			for i, c := range r.Diagnostics.Center {
+				if c != nil {
+					t.Fatalf("scale %g, offset %g, sample %d: center on a line", scale, off, i)
+				}
+			}
+			if r.Probe == nil || r.Probe.Center != nil {
+				t.Fatalf("scale %g, offset %g: probe center on a line: %+v", scale, off, r.Probe)
+			}
+		}
+	}
+}

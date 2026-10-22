@@ -1,7 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { deflateRawSync } from "node:zlib";
 import { readFile } from "node:fs/promises";
-import { choosePreset, openAnimation, openExportSettings } from "./helpers";
+import {
+  choosePreset,
+  exportImage,
+  openAnimation,
+  openExportSettings,
+} from "./helpers";
 import { decodeVideo } from "./video";
 import { engines, watchEngines } from "./engines";
 import { presets } from "../web/presets";
@@ -526,4 +531,64 @@ test("the oval mirror example's caustic lies a quarter along the probe's chord",
   // Tens of pixels long, so not degenerate; a quarter to 1 part in 1000.
   expect(reach).toBeGreaterThan(30);
   expect(Math.abs(reach / chord - 0.25)).toBeLessThan(2.5e-4);
+});
+
+test("a tiny ellipse keeps its evolute and probe in the drawing and SVG export", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await ready(page);
+  await probeSwitch(page).check();
+  await point(page).fill("300");
+  await ready(page);
+  const originalLines = await art(page).locator("line").count();
+  expect(originalLines).toBeGreaterThanOrEqual(presets[0].config.lines);
+  const originalCurve = await drawn(page, "derived-curve").getAttribute("d");
+  expect(originalCurve!.length).toBeGreaterThan(100);
+  const originalCircle = await drawn(page, "probe-circle").getAttribute("r");
+  const originalCenter = {
+    x: await attr(page, "probe-circle", "cx"),
+    y: await attr(page, "probe-circle", "cy"),
+  };
+  // Edit the actual controls: the same ellipse measured in tiny units.
+  const scale = 2 ** -35;
+  await page.getByLabel("x(t)", { exact: true }).fill("2*2^(-35)*cos(t)");
+  await page.getByLabel("y(t)", { exact: true }).fill("3*2^(-35)*sin(t)");
+  const e = ellipse(300);
+  await expect(value(page, "Curvature κ")).toHaveText(
+    `${short(e.kappa / scale)} (turning left)`,
+  );
+  await ready(page);
+  await expect(drawn(page, "probe-circle")).toBeVisible();
+  await expect(drawn(page, "derived-curve")).toHaveAttribute(
+    "d",
+    originalCurve!,
+  );
+  expect(await attr(page, "probe-circle", "r")).toBeCloseTo(
+    Number(originalCircle),
+    2,
+  );
+  expect(await attr(page, "probe-circle", "cx")).toBeCloseTo(
+    originalCenter.x,
+    2,
+  );
+  expect(await attr(page, "probe-circle", "cy")).toBeCloseTo(
+    originalCenter.y,
+    2,
+  );
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain('data-testid="probe-circle"');
+  expect(svg).toContain('data-testid="derived-curve"');
+  expect(svg).toContain(`d="${originalCurve}"`);
+  const radius = svg.match(/data-testid="probe-circle"[^>]*r="([^"]+)"/);
+  expect(radius).not.toBeNull();
+  expect(Number(radius![1])).toBeCloseTo(Number(originalCircle), 2);
+  // Restore ordinary units through the controls as well.
+  await page.getByLabel("x(t)", { exact: true }).fill("2*cos(t)");
+  await page.getByLabel("y(t)", { exact: true }).fill("3*sin(t)");
+  await expect(value(page, "Curvature κ")).toHaveText(
+    `${short(e.kappa)} (turning left)`,
+  );
 });

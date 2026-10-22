@@ -6,7 +6,7 @@ import "math"
 // and neither has a stationary point.
 func Evolute(p, d, dd Vec) *Vec {
 	cross := d.Cross(dd)
-	if stationary(p, d, dd) || math.Abs(cross) < 1e-10*d.Norm()*math.Max(dd.Norm(), 1) {
+	if stationary(p, d, dd) || flatCurvature(d, dd) {
 		return nil
 	}
 	return point(p.Add(d.Perp().Mul(d.Dot(d) / cross)))
@@ -19,4 +19,12 @@ func Evolute(p, d, dd Vec) *Vec {
 // changes with the curve's units.
 func stationary(p, d, dd Vec) bool {
 	return !(d.Norm() >= 1e-9*(p.Norm()+dd.Norm()))
+}
+
+// flatCurvature compares the normal acceleration with the derivative scale.
+// Both derivatives scale with the curve's length units; a fixed unit floor
+// would classify every sufficiently small circle as flat. Keeping the
+// speed in the reference also rejects rounding in a straight line's r″.
+func flatCurvature(d, dd Vec) bool {
+	return math.Abs(d.Cross(dd)) < 1e-10*d.Norm()*math.Max(dd.Norm(), d.Norm())
 }
