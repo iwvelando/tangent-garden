@@ -281,11 +281,8 @@ func TestChordEnvelopeVirtualScale(t *testing.T) {
 				unit := compute(t, q)
 				for _, exponent := range []int{0, -20, -32, -80, 13} {
 					t.Run(fmt.Sprintf("m=%g/swap=%v/extend=%v/2^%d", m, swap, extend, exponent), func(t *testing.T) {
-						copy := q
-						scale := func(s string) string { return fmt.Sprintf("(%s)*2^(%d)", s, exponent) }
-						copy.Curve.X, copy.Curve.Y = scale(q.Curve.X), scale(q.Curve.Y)
-						copy.Envelope.X, copy.Envelope.Y = scale(q.Envelope.X), scale(q.Envelope.Y)
-						r := compute(t, copy)
+						scaled, _ := similarity{s: math.Ldexp(1, exponent)}.copyOf(q)
+						r := compute(t, scaled)
 						if r.Invalid != 0 || !reflect.DeepEqual(r.Warnings, unit.Warnings) {
 							t.Fatalf("invalid=%d warnings=%v", r.Invalid, r.Warnings)
 						}

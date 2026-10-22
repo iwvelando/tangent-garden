@@ -76,10 +76,7 @@ func normalChordVirtual(s float64) (bool, float64) {
 func TestRefinementMarksVirtualChordPoints(t *testing.T) {
 	for _, exponent := range []int{0, -32, -80} {
 		t.Run(fmt.Sprintf("2^%d", exponent), func(t *testing.T) {
-			q := ellipseNormalChords()
-			scale := func(s string) string { return fmt.Sprintf("(%s)*2^(%d)", s, exponent) }
-			q.Curve.X, q.Curve.Y = scale(q.Curve.X), scale(q.Curve.Y)
-			q.Envelope.X, q.Envelope.Y = scale(q.Envelope.X), scale(q.Envelope.Y)
+			q, _ := similarity{s: math.Ldexp(1, exponent)}.copyOf(ellipseNormalChords())
 			r := compute(t, adaptive(q))
 			path := r.Adaptive.Derived
 			checkRefined(t, q, path, r.Derived, func(u float64) Vec {
