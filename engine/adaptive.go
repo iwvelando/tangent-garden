@@ -343,7 +343,9 @@ func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
 			return project(p, d, q.Pole)
 		}
 	case q.Kind == "evolute":
-		return q.along(f, g, func(_ float64, p, d, dd Vec) *Vec { return Evolute(p, d, dd) })
+		return q.along(f, g, func(t float64, p, d, dd Vec) *Vec {
+			return baseStencil(lo, hi).evolute(g, t, p, d, dd)
+		})
 	case q.Kind == "offset" && !q.Stack.Enabled:
 		return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, q.Distance) })
 	case q.Kind == "catacaustic" || q.Kind == "diacaustic" || (q.Kind == "envelope" && out != nil && out.lineFamily != nil):

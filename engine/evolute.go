@@ -12,6 +12,21 @@ func Evolute(p, d, dd Vec) *Vec {
 	return point(p.Add(d.Perp().Mul(d.Dot(d) / cross)))
 }
 
+// evolute applies the stencil's curvature-resolution check before inverting
+// curvature. It keeps rounding on a straight stretch from becoming a distant
+// center, using the same flat classification as the probe.
+func (s stencil) evolute(f curveFunc, t float64, p, d, dd Vec) *Vec {
+	if s.flat(f, t, d, dd) {
+		return nil
+	}
+	return Evolute(p, d, dd)
+}
+
+func (s stencil) flat(f curveFunc, t float64, d, dd Vec) bool {
+	_, half := derivativesAtStep(f, t, s.lo, s.hi, s.h/2)
+	return math.Abs(d.Cross(dd))/d.Norm() <= 10*half.Sub(dd).Norm() || flatCurvature(d, dd)
+}
+
 // stationary reports a point p of a curve with stencil derivatives d and dd
 // that has no tangent: its speed is below 10⁻⁹ of its distance from the
 // origin, which bounds the speed's rounding, plus its acceleration, which a

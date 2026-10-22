@@ -729,6 +729,74 @@ func TestTinyCurvatureKeepsDegenerateGaps(t *testing.T) {
 	}
 }
 
+// A line's second derivative consists only of rounding. In particular a
+// tilted line must not acquire an evolute where its probe reads zero curvature.
+func TestTiltedLineHasNoEvolute(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100, 0x1p13} {
+		for _, offset := range []float64{0, 860, 36000} {
+			for _, adaptive := range []bool{false, true} {
+				t.Run(fmt.Sprintf("scale=%g/offset=%g/refine=%v", scale, offset, adaptive), func(t *testing.T) {
+					m := similarity{s: scale, c: Vec{offset * scale, -offset * scale}}
+					q := request("evolute", m.coordinate("t", m.c.X), m.coordinate("0.7*t+0.3", m.c.Y), -1, 1)
+					q.Samples, q.Lines = 65, 8
+					q.Diagnostics, q.Adaptive = true, adaptive
+					at := 0.731
+					q.Probe = &ProbeQuery{T: &at}
+					r := compute(t, q)
+					for i, p := range r.Derived {
+						if r.Base[i] == nil {
+							t.Fatalf("missing straight base at sample %d", i)
+						}
+						if p != nil || r.Diagnostics.Center[i] != nil {
+							t.Fatalf("finite curvature center at sample %d: evolute %v, probe %v", i, p, r.Diagnostics.Center[i])
+						}
+						if k := r.Diagnostics.Curvature[i]; k == nil || *k != 0 {
+							t.Fatalf("line's curvature at sample %d: %v", i, k)
+						}
+					}
+					if len(r.Rays) != 0 || r.Invalid != q.Samples {
+						t.Fatalf("line has %d normals and %d/%d omitted evolute samples", len(r.Rays), r.Invalid, q.Samples)
+					}
+					if r.Probe.Point == nil || r.Probe.Derived != nil || r.Probe.Center != nil || r.Probe.Curvature == nil || *r.Probe.Curvature != 0 {
+						t.Fatalf("between-sample probe disagrees with straight line: %+v", r.Probe)
+					}
+					if adaptive {
+						for _, p := range r.Adaptive.Derived.Points {
+							if p != nil {
+								t.Fatalf("finite refined evolute on a line: %v", p)
+							}
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestTiltedLineEvoluteInputIsUndefined(t *testing.T) {
+	for _, adaptive := range []bool{false, true} {
+		q := request("inversion", "t", "0.7*t+0.3", -1, 1)
+		q.Input, q.Adaptive = "evolute", adaptive
+		q.Inversion.Radius = 1
+		q.Samples, q.Lines = 65, 8
+		r := compute(t, q)
+		for i, p := range r.Input {
+			if r.Base[i] == nil || p != nil || r.Derived[i] != nil {
+				t.Fatalf("refine=%v sample %d: base %v, input %v, image %v", adaptive, i, r.Base[i], p, r.Derived[i])
+			}
+		}
+		if adaptive {
+			for _, path := range []*RefinedPath{r.Adaptive.Input, r.Adaptive.Derived} {
+				for _, p := range path.Points {
+					if p != nil {
+						t.Fatalf("finite refined image of a line's evolute: %v", p)
+					}
+				}
+			}
+		}
+	}
+}
+
 // A barely bending parabola still has no resolved finite center. This
 // guards the speed reference when its acceleration is much smaller.
 func TestTinyCurvatureKeepsFlatGuard(t *testing.T) {

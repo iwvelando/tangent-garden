@@ -62,6 +62,9 @@ func inputCurve(input string, f curveFunc, lo, hi float64, pole Vec, distance fl
 	s := stencil{lo, hi, (hi - lo) * inputSpacing, 1e-8}
 	return func(t float64) Vec {
 		dp, ddp := s.derivatives(f, t)
+		if input == "evolute" && s.flat(f, t, dp, ddp) {
+			return Vec{math.NaN(), math.NaN()}
+		}
 		q := derive(input, f(t), dp, ddp, pole, distance)
 		if q == nil {
 			return Vec{math.NaN(), math.NaN()}

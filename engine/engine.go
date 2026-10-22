@@ -526,7 +526,7 @@ func Compute(q Request) (Result, error) {
 			}
 			last, lastT, lastSrc = j, t, p
 		case "evolute":
-			target = Evolute(p, dp, ddp)
+			target = baseStencil(lo, hi).evolute(g, t, p, dp, ddp)
 		case "involute":
 			if arcOK {
 				if target = q.unwound(g, t, arc, t, p, dp, ddp); target != nil {
