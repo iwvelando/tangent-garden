@@ -916,6 +916,38 @@ func TestCurvatureStabilityRetainsTranslatedLines(t *testing.T) {
 	}
 }
 
+// The floor of the second-derivative check is |r′|/span, which scales as
+// r″ does when the parameter runs c times faster or slower. So drawing the
+// same curves over c times the domain keeps the inflection of (t, t³)
+// resolved and leaves the corner of |t|^1.5 unresolved. A shallow corner,
+// 2⁻¹⁶|t|^1.5, has a disagreement in r″ only a few times the floor, so it
+// also bounds the floor's size.
+func TestCurvatureStabilityAtAnyParameterRate(t *testing.T) {
+	for _, c := range []float64{1, 0x1p-10, 0x1p10} {
+		u := num(1/c) + "*t"
+		q := request("pedal", u, "("+u+")^3", -c, c)
+		q.Samples = 4001
+		d := diagnosed(t, q)
+		if d.Flat != 1 || d.Unknown != 0 {
+			t.Errorf("c=%g: inflection has %d flat and %d unknown", c, d.Flat, d.Unknown)
+		}
+		for i, k := range d.Curvature {
+			s := sampleT(q, i) / c
+			want := 6 * s / math.Pow(1+9*s*s*s*s, 1.5)
+			if k == nil || math.Abs(*k-want) > 1e-6*math.Max(1, math.Abs(want)) {
+				t.Fatalf("c=%g: κ at t = %g is %v, want %g", c, sampleT(q, i), k, want)
+			}
+		}
+		for _, depth := range []string{"", num(0x1p-16) + "*"} {
+			q = request("evolute", u, depth+"abs("+u+")^1.5", -c, c)
+			q.Samples = 65
+			if r := compute(t, q); r.Base[32] != nil || r.Derived[32] != nil {
+				t.Errorf("c=%g: kept the corner of %s: base %v, evolute %v", c, q.Curve.Y, r.Base[32], r.Derived[32])
+			}
+		}
+	}
+}
+
 // A barely bending parabola still has no resolved finite center. This
 // guards the speed reference when its acceleration is much smaller.
 func TestTinyCurvatureKeepsFlatGuard(t *testing.T) {
