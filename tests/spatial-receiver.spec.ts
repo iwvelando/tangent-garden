@@ -553,6 +553,7 @@ test("receiver frame reuse survives lifted WASM replies", async ({ page }) => {
       rays: { ...base.rays, receiver: { ...base.rays.receiver, tilt } },
     };
     const warm = await reply(request);
+    expect(await reply(request)).toEqual(warm);
     expect(warm).toEqual(await cold(request));
   }
   expect(await reply(base)).toEqual(opening);

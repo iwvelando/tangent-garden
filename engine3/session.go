@@ -36,9 +36,12 @@ func (e *Engine) Compute(c Request) (Result, error) {
 		light := c.Rays
 		light.Receiver = ReceiverRequest{}
 		if e.rays == nil || e.rays.surface != c.Surface || e.rays.light != light {
+			// A family used just once cannot benefit. Remember its key,
+			// but defer all tracing storage until the family repeats.
 			e.rays = &rayCache{surface: c.Surface, light: light}
+		} else {
+			c.rayCache = e.rays
 		}
-		c.rayCache = e.rays
 	}
 	out, err := Compute(c)
 	if err != nil {

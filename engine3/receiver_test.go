@@ -868,6 +868,7 @@ func TestReceiverEngineReuse(t *testing.T) {
 		accounted(t, got.Rays.Receiver)
 	}
 	check(c)
+	check(c)
 	original := worker.rays
 	if original == nil || original.receiver == nil {
 		t.Fatal("no cached rays")
@@ -932,6 +933,9 @@ func TestReceiverEngineReuse(t *testing.T) {
 func TestReceiverEngineOwnershipAndRelease(t *testing.T) {
 	c := receive(flat(1.5, parallel(0, -60)), "z", 1, 0, .2, 1, 16)
 	var worker Engine
+	if _, err := worker.Compute(c); err != nil {
+		t.Fatal(err)
+	}
 	first, err := worker.Compute(c)
 	if err != nil {
 		t.Fatal(err)
@@ -978,6 +982,9 @@ func TestReceiverEngineRefinedTraceReuse(t *testing.T) {
 	c.Surface.USamples, c.Surface.VSamples = 24, 12
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 80, 2
 	var worker Engine
+	if _, err := worker.Compute(c); err != nil {
+		t.Fatal(err)
+	}
 	for _, tilt := range []float64{20, 75, 20} {
 		c.Rays.Receiver.Tilt = tilt
 		got, err := worker.Compute(c)
@@ -1034,8 +1041,10 @@ func TestReceiverWarmAllocationBudget(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
 	var worker Engine
-	if _, err := worker.Compute(c); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 2; i++ {
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
 	}
 	runtime.GC()
 	var before, after runtime.MemStats
@@ -1112,5 +1121,30 @@ func TestReceiverScratchBudget(t *testing.T) {
 	}
 	if traces.landings[len(traces.landings)-1] != nil {
 		t.Fatal("oversized scratch grid was retained")
+	}
+}
+
+// A light or surface animated on every frame cannot reuse its traces.
+// Do not populate a fresh cache for these one-shot families: it adds
+// allocation and memory pressure without saving any work.
+func TestReceiverChangingFamilyDoesNotPopulateCache(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 48, 2
+	var worker Engine
+	for _, axis := range []float64{1, 1.1, 1.2} {
+		c.Surface.A = axis
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+		if worker.rays == nil || worker.rays.receiver != nil || worker.rays.samples != nil {
+			t.Fatal("one-shot family populated a trace cache")
+		}
+	}
+	if _, err := worker.Compute(c); err != nil {
+		t.Fatal(err)
+	}
+	if worker.rays.receiver == nil || worker.rays.samples == nil {
+		t.Fatal("repeated family did not enable reuse")
 	}
 }
