@@ -285,69 +285,84 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 		}
 	}
 	count := nu * nv
-	leaves := make([]cell, 0, len(cells))
+	// First mark the splits, then allocate exactly their children. Growing
+	// the next queue while appending repeatedly copies its largest levels.
+	// Compact unsplit cells in their old queue and retain each level apart:
+	// this also avoids copying the final (largest) queue into the leaves.
+	var leaves [maxReceiverRefine + 1][]cell
 	for level := 0; level < levels; level++ {
-		next := make([]cell, 0, len(cells))
-		for _, c := range cells {
+		split := 0
+		for i, c := range cells {
 			if !out.Exhausted && splits(c) {
 				if count+3 <= receiverCells {
 					count += 3
 					out.Split++
-					h := c.side / 2
-					next = append(next, cell{c.i, c.j, h}, cell{c.i + h, c.j, h}, cell{c.i + h, c.j + h, h}, cell{c.i, c.j + h, h})
+					split++
+					cells[i].side = -c.side
 					continue
 				}
 				out.Exhausted = true
 			}
-			leaves = append(leaves, c)
 		}
-		cells = next
+		next := make([]cell, 0, 4*split)
+		whole := cells[:0]
+		for _, c := range cells {
+			if c.side < 0 {
+				h := -c.side / 2
+				next = append(next, cell{c.i, c.j, h}, cell{c.i + h, c.j, h}, cell{c.i + h, c.j + h, h}, cell{c.i, c.j + h, h})
+			} else {
+				whole = append(whole, c)
+			}
+		}
+		leaves[level], cells = whole, next
 	}
-	leaves = append(leaves, cells...)
+	leaves[levels] = cells
 	g := newRaster(n, n)
 	landed := 0.0
-	for _, c := range leaves {
-		u, v := lerp(q.UMin, q.UMax, c.i, fu), lerp(q.VMin, q.VMax, c.j, fv)
-		du := (q.UMax - q.UMin) / float64(fu) * float64(c.side)
-		dv := (q.VMax - q.VMin) / float64(fv) * float64(c.side)
-		// A cell of the grid emits as it always has; a refined one by
-		// outgoing, which traces the same light.
-		var m mirrorPoint
-		var area float64
-		if c.side == step {
-			m = q.ray(r, u+du/2, v+dv/2, scale)
-			_, xu, xv, _, _, _ := q.patch(u+du/2, v+dv/2)
-			area = xu.cross(xv).norm()
-		} else {
-			m, area = q.outgoing(r, u+du/2, v+dv/2, scale)
-		}
-		if !m.Lit {
-			continue
-		}
-		flux := math.Abs(m.I.dot(m.N)) * area * math.Abs(du*dv)
-		if r.Light == "point" {
-			d := m.X.sub(r.Source)
-			flux /= d.dot(d)
-		}
-		out.Emitted += flux
-		if m.Total {
-			out.Total += flux
-			continue
-		}
-		at := corners(c)
-		edge, away := false, false
-		for _, l := range at {
-			edge, away = edge || !l.traced, away || !l.ok
-		}
-		switch {
-		case edge:
-			out.Edge += flux
-		case away:
-			out.Away += flux
-		default:
-			g.triangle([3][2]float64{at[0].p, at[1].p, at[2].p}, flux/2)
-			g.triangle([3][2]float64{at[0].p, at[2].p, at[3].p}, flux/2)
-			landed += flux
+	for _, level := range leaves {
+		for _, c := range level {
+			u, v := lerp(q.UMin, q.UMax, c.i, fu), lerp(q.VMin, q.VMax, c.j, fv)
+			du := (q.UMax - q.UMin) / float64(fu) * float64(c.side)
+			dv := (q.VMax - q.VMin) / float64(fv) * float64(c.side)
+			// A cell of the grid emits as it always has; a refined one by
+			// outgoing, which traces the same light.
+			var m mirrorPoint
+			var area float64
+			if c.side == step {
+				m = q.ray(r, u+du/2, v+dv/2, scale)
+				_, xu, xv, _, _, _ := q.patch(u+du/2, v+dv/2)
+				area = xu.cross(xv).norm()
+			} else {
+				m, area = q.outgoing(r, u+du/2, v+dv/2, scale)
+			}
+			if !m.Lit {
+				continue
+			}
+			flux := math.Abs(m.I.dot(m.N)) * area * math.Abs(du*dv)
+			if r.Light == "point" {
+				d := m.X.sub(r.Source)
+				flux /= d.dot(d)
+			}
+			out.Emitted += flux
+			if m.Total {
+				out.Total += flux
+				continue
+			}
+			at := corners(c)
+			edge, away := false, false
+			for _, l := range at {
+				edge, away = edge || !l.traced, away || !l.ok
+			}
+			switch {
+			case edge:
+				out.Edge += flux
+			case away:
+				out.Away += flux
+			default:
+				g.triangle([3][2]float64{at[0].p, at[1].p, at[2].p}, flux/2)
+				g.triangle([3][2]float64{at[0].p, at[2].p, at[3].p}, flux/2)
+				landed += flux
+			}
 		}
 	}
 	out.Irradiance = g.bins()
@@ -484,9 +499,10 @@ func (g *raster) span(r int, a, b, d float64) {
 }
 
 // bins returns each bin's flux, [a][b] with a along x. A running sum
-// within 10⁻¹² of its row's scale is rounding, and is zero.
+// within 10⁻¹² of its row's scale is rounding, and is zero. It consumes
+// the raster, finishing into its point-flux grid instead of a third grid.
 func (g *raster) bins() [][]float64 {
-	out := grid2[float64](g.w, g.h)
+	out := g.points
 	for b, row := range g.rows {
 		sum := 0.0
 		for a := 0; a < g.w; a++ {
