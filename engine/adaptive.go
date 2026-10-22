@@ -333,14 +333,13 @@ func reachOf(path *RefinedPath) ([]Vec, []float64) {
 // shapes' progress, and an envelope's lines. It is nil when that curve is
 // not defined pointwise, or is a family of paths.
 func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
-	lo, hi := q.Curve.Min, q.Curve.Max
 	switch {
 	case usesPole(q.Kind):
-		project := map[string]func(p, d, pole Vec) *Vec{"pedal": Pedal, "contrapedal": Contrapedal, "orthotomic": Orthotomic}[q.Kind]
+		lo, hi := q.Curve.Min, q.Curve.Max
 		return func(t float64) *Vec {
 			p := g(t)
-			d, _ := derivatives(g, t, lo, hi)
-			return project(p, d, q.Pole)
+			d, dd := derivatives(g, t, lo, hi)
+			return polePoint(q.Kind, p, d, dd, q.Pole)
 		}
 	case q.Kind == "evolute":
 		at := q.stations(f, g)

@@ -80,12 +80,8 @@ func inputCurve(input string, f curveFunc, lo, hi float64, pole Vec, distance fl
 // derive is an input other than the evolute, which needs the half step too.
 func derive(input string, p, dp, ddp, pole Vec, distance float64) *Vec {
 	switch input {
-	case "pedal":
-		return Pedal(p, dp, pole)
-	case "contrapedal":
-		return Contrapedal(p, dp, pole)
-	case "orthotomic":
-		return Orthotomic(p, dp, pole)
+	case "pedal", "contrapedal", "orthotomic":
+		return polePoint(input, p, dp, ddp, pole)
 	}
 	return offsetPoint(p, dp, ddp, distance)
 }
