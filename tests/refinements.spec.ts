@@ -191,8 +191,19 @@ test("tiny involutes retain their string, refinement, and SVG through control ed
   const derived = art.getByTestId("derived-curve");
   const settled = async () =>
     expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false");
+  // Each unwinding string is a line from the circle to the involute.
+  const strings = () =>
+    art
+      .locator("line")
+      .evaluateAll((lines) =>
+        lines.map((l) =>
+          ["x1", "y1", "x2", "y2"].map((a) => l.getAttribute(a)).join(" "),
+        ),
+      );
   const original = await derived.getAttribute("d");
   expect(original!.length).toBeGreaterThan(100);
+  const unwound = await strings();
+  expect(unwound.length).toBeGreaterThanOrEqual(32);
   const edit = async (x: string, y: string) => {
     await page.getByRole("textbox", { name: "x(t)", exact: true }).fill(x);
     await page.getByRole("textbox", { name: "y(t)", exact: true }).fill(y);
@@ -202,6 +213,7 @@ test("tiny involutes retain their string, refinement, and SVG through control ed
   };
   await edit("2^-35*cos(t)", "2^-35*sin(t)");
   await expect(derived).toHaveAttribute("d", original!);
+  expect(await strings()).toEqual(unwound);
   await page
     .getByRole("checkbox", { name: "Refine between samples", exact: true })
     .check();

@@ -323,3 +323,23 @@ func TestInvoluteStationaryAtEveryScale(t *testing.T) {
 		}
 	}
 }
+
+// The guard's 10⁻⁹ is a rounding bound, not a speed requirement. A unit
+// circle 1000 units from the origin, traced so slowly that its speed is
+// 10⁻⁷ of its distance per unit of t, still unwinds everywhere, a
+// hundredfold inside the guard.
+func TestSlowlyTracedInvoluteKeepsItsStrings(t *testing.T) {
+	const rate, center = 1e-4, 1000.
+	q := request("involute", num(center)+"+cos("+num(rate)+"*t)", "sin("+num(rate)+"*t)", 0, 2*math.Pi/rate)
+	q.Samples, q.Lines, q.Offset = 65, 9, .5
+	r := compute(t, q)
+	if r.Invalid != 0 || len(r.Rays) != q.Lines {
+		t.Fatalf("invalid=%d, strings=%d, want 0 and %d", r.Invalid, len(r.Rays), q.Lines)
+	}
+	for j, p := range r.Derived {
+		want := circleInvolute(.5)(rate * sampleT(q, j)).Add(Vec{center, 0})
+		if p == nil || p.Sub(want).Norm() > 1e-7 {
+			t.Fatalf("sample %d: got %v, want %v", j, p, want)
+		}
+	}
+}
