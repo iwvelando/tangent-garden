@@ -20,8 +20,13 @@ func Refract(incident, normal Vec, eta float64) (Vec, bool) {
 
 // Envelope of p(t)+lambda*d(t), where det(p'+lambda*d',d)=0.
 func Envelope(p, dp, d, dd Vec) (*Vec, float64) {
+	return envelope(p, dp, d, dd, 1e-9)
+}
+
+// envelope also accepts a bound on unresolved direction turning.
+func envelope(p, dp, d, dd Vec, floor float64) (*Vec, float64) {
 	den := d.Cross(dd)
-	if math.Abs(den) < 1e-9 {
+	if math.Abs(den) < floor {
 		return nil, 0
 	}
 	s := -d.Cross(dp) / den

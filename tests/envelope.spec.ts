@@ -423,3 +423,34 @@ test("tiny chord envelopes keep virtual branches in the drawing and SVG", async 
   await settled(page);
   await expect(dashed).toHaveCount(0);
 });
+
+test("resolved slow turns keep the envelope in controls, refinement and SVG", async ({
+  page,
+}) => {
+  await ready(page, "Folding a parabola");
+  await field(page, "Direction angle θ(t)").fill("atan(2^-32*x)");
+  await settled(page);
+  expect((await definition(page)).envelope.angle).toBe("atan(2^-32*x)");
+  const drawn = page.getByTestId("derived-curve");
+  await expect(drawn).not.toHaveAttribute("d", "");
+  await expect(page.getByText(/omitted samples/)).toHaveCount(0);
+  const path = await drawn.getAttribute("d");
+  await page
+    .getByRole("checkbox", { name: "Refine between samples", exact: true })
+    .check();
+  await settled(page);
+  await expect(drawn).not.toHaveAttribute("d", "");
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain(
+    `data-testid="derived-curve" d="${await drawn.getAttribute("d")}"`,
+  );
+  await field(page, "Direction angle θ(t)").fill("0.7");
+  await settled(page);
+  await expect(drawn).toHaveAttribute("d", "");
+  await field(page, "Direction angle θ(t)").fill("atan(2^-32*x)");
+  await settled(page);
+  await expect(drawn).not.toHaveAttribute("d", "");
+  expect(path!.length).toBeGreaterThan(100);
+});
