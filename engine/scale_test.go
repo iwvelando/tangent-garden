@@ -836,6 +836,118 @@ func TestTiltedLineOffsetHasNoEvolute(t *testing.T) {
 	}
 }
 
+// The C¹ graph |t|^1.5 has a tangent at zero but no second derivative.
+// Changing length units must not make its unresolved curvature pass the
+// half-step check. Inversion retains the base without asking for r″, so
+// its diagnostics and continuous probe must report unknown curvature.
+func TestCurvatureStabilityAtAnyLengthScale(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-20, 0x1p-40, 0x1p-100, 0x1p13} {
+		for _, adaptive := range []bool{false, true} {
+			t.Run(fmt.Sprintf("scale=%g/refine=%v", scale, adaptive), func(t *testing.T) {
+				q := request("evolute", num(scale)+"*t", num(scale)+"*abs(t)^1.5", -1, 1)
+				q.Samples, q.Lines, q.Adaptive = 65, 8, adaptive
+				middle := q.Samples / 2
+				r := compute(t, q)
+				if r.Base[middle] != nil || r.Derived[middle] != nil {
+					t.Errorf("kept sample with no second derivative: base %v, evolute %v", r.Base[middle], r.Derived[middle])
+				}
+				// Regular neighboring samples still have their analytic
+				// curvature centers on both sides of the singular point.
+				for _, j := range []int{middle - 1, middle + 1} {
+					u := sampleT(q, j)
+					d := 1.5 * math.Copysign(math.Sqrt(math.Abs(u)), u)
+					dd := 0.75 / math.Sqrt(math.Abs(u))
+					want := Vec{u - d*(1+d*d)/dd, math.Pow(math.Abs(u), 1.5) + (1+d*d)/dd}
+					p := r.Derived[j]
+					if p == nil {
+						t.Fatalf("missing regular neighbor at t=%g", u)
+					}
+					closeVec(t, point(p.Mul(1/scale)), want, 1e-6)
+				}
+				if adaptive {
+					found := false
+					for i, at := range r.Adaptive.Derived.At {
+						if at == float64(middle) {
+							found = true
+							if r.Adaptive.Derived.Points[i] != nil {
+								t.Error("refined evolute keeps unresolved curvature")
+							}
+						}
+					}
+					if !found {
+						t.Error("refined evolute lost the uniform sample")
+					}
+				}
+				q.Kind, q.Diagnostics = "inversion", true
+				q.Inversion.Center, q.Inversion.Radius = Vec{2 * scale, 0}, scale
+				for _, at := range []float64{0, 0.00001} {
+					q.Probe = &ProbeQuery{T: &at}
+					r = compute(t, q)
+					d := r.Diagnostics
+					if r.Base[middle] == nil || d.Tangent[middle] == nil || d.Curvature[middle] != nil || d.Center[middle] != nil || d.Unknown == 0 {
+						t.Errorf("sample: base %v, tangent %v, curvature %v, center %v, unknown %d", r.Base[middle], d.Tangent[middle], d.Curvature[middle], d.Center[middle], d.Unknown)
+					}
+					if p := r.Probe; p.Point == nil || p.Tangent == nil || p.Curvature != nil || p.Center != nil {
+						t.Errorf("t=%g: probe must keep tangent without curvature: %+v", at, p)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestCurvatureStabilityRetainsTranslatedLines(t *testing.T) {
+	// The second derivative of a translated line consists of rounding.
+	// Its allowance must follow coordinate size even when the speed floor
+	// is small, so a regular tangent remains flat rather than unknown.
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100, 0x1p13} {
+		q := request("inversion", num(scale)+"*(t+36000)", num(scale)+"*(0.3141592653589793*t-36000)", -1, 1)
+		q.Samples, q.Diagnostics = 65, true
+		q.Inversion.Radius = scale
+		at := 0.377
+		q.Probe = &ProbeQuery{T: &at}
+		r := compute(t, q)
+		if d := r.Diagnostics; d.Flat != q.Samples || d.Unknown != 0 {
+			t.Fatalf("scale %g: %d flat and %d unknown of %d", scale, d.Flat, d.Unknown, q.Samples)
+		}
+		if p := r.Probe; p.Point == nil || p.Tangent == nil || p.Curvature == nil || *p.Curvature != 0 || p.Center != nil {
+			t.Fatalf("scale %g: translated line probe %+v", scale, p)
+		}
+	}
+}
+
+// The floor of the second-derivative check is |r′|/span, which scales as
+// r″ does when the parameter runs c times faster or slower. So drawing the
+// same curves over c times the domain keeps the inflection of (t, t³)
+// resolved and leaves the corner of |t|^1.5 unresolved. A shallow corner,
+// 2⁻¹⁶|t|^1.5, has a disagreement in r″ only a few times the floor, so it
+// also bounds the floor's size.
+func TestCurvatureStabilityAtAnyParameterRate(t *testing.T) {
+	for _, c := range []float64{1, 0x1p-10, 0x1p10} {
+		u := num(1/c) + "*t"
+		q := request("pedal", u, "("+u+")^3", -c, c)
+		q.Samples = 4001
+		d := diagnosed(t, q)
+		if d.Flat != 1 || d.Unknown != 0 {
+			t.Errorf("c=%g: inflection has %d flat and %d unknown", c, d.Flat, d.Unknown)
+		}
+		for i, k := range d.Curvature {
+			s := sampleT(q, i) / c
+			want := 6 * s / math.Pow(1+9*s*s*s*s, 1.5)
+			if k == nil || math.Abs(*k-want) > 1e-6*math.Max(1, math.Abs(want)) {
+				t.Fatalf("c=%g: κ at t = %g is %v, want %g", c, sampleT(q, i), k, want)
+			}
+		}
+		for _, depth := range []string{"", num(0x1p-16) + "*"} {
+			q = request("evolute", u, depth+"abs("+u+")^1.5", -c, c)
+			q.Samples = 65
+			if r := compute(t, q); r.Base[32] != nil || r.Derived[32] != nil {
+				t.Errorf("c=%g: kept the corner of %s: base %v, evolute %v", c, q.Curve.Y, r.Base[32], r.Derived[32])
+			}
+		}
+	}
+}
+
 // A barely bending parabola still has no resolved finite center. This
 // guards the speed reference when its acceleration is much smaller.
 func TestTinyCurvatureKeepsFlatGuard(t *testing.T) {

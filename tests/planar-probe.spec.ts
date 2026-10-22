@@ -150,6 +150,54 @@ test("the probe reads and draws an ellipse's curvature, circle and frame at a sa
   await expect(drawn(page, "probe")).toHaveCount(0);
 });
 
+test("curvature stays unknown at a nonsmooth second derivative when length units shrink", async ({
+  page,
+}) => {
+  await open(
+    page,
+    {
+      kind: "inversion",
+      samples: 65,
+      curve: { ...presets[0].config.curve, x: "t", y: "abs(t)^1.5" },
+    },
+    { bounds: { min: "-1", max: "1" } },
+  );
+  await expect(value(page, "Curvature κ")).toHaveText("unknown here");
+  // Edit both expressions through the controls; do not let a pending
+  // update of one replace the other. The probe keeps the regular tangent.
+  await page.getByLabel("x(t)", { exact: true }).fill("2^-20*t");
+  await page.getByLabel("y(t)", { exact: true }).fill("2^-20*abs(t)^1.5");
+  await expect(art(page).locator("desc")).toContainText(
+    '"y":"2^-20*abs(t)^1.5"',
+  );
+  await ready(page);
+  await expect(value(page, "Curvature κ")).toHaveText("unknown here");
+  await expect(drawn(page, "probe-tangent")).toHaveCount(1);
+  await expect(drawn(page, "probe-circle")).toHaveCount(0);
+  await page
+    .getByRole("checkbox", { name: "At any t, between samples", exact: true })
+    .check();
+  await point(page).fill("0.500005");
+  await expect(drawn(page, "probe")).toHaveAttribute(
+    "data-t",
+    /0\.00001|0\.000009999/,
+  );
+  await expect(value(page, "Curvature κ")).toHaveText("unknown here");
+  // At the same point a quadratic has a resolved curvature, not a gap.
+  await page.getByLabel("y(t)", { exact: true }).fill("2^-20*t^2");
+  await expect(value(page, "Curvature κ")).toHaveText(
+    `${short(2 * 2 ** 20)} (turning left)`,
+  );
+  await expect(drawn(page, "probe-circle")).toHaveCount(1);
+  const saved = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await saved).path())!, "utf8");
+  expect(svg).toContain('data-testid="probe-circle"');
+  await page.getByLabel("y(t)", { exact: true }).fill("2^-20*abs(t)^1.5");
+  await expect(value(page, "Curvature κ")).toHaveText("unknown here");
+  await expect(drawn(page, "probe-circle")).toHaveCount(0);
+});
+
 test("moving the probe never recomputes the study", async ({ page }) => {
   await watchEngines(page, 2);
   await page.goto("/");

@@ -280,7 +280,7 @@ func (s stencil) checked(f curveFunc, t float64, d, dd Vec, order int) (bool, fl
 		return tangent, s.resolution(dd, b, least)
 	}
 	return tangent && b.Valid() && dd.Valid() &&
-		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(s.hi-s.lo))+rounding*least/(s.h*s.h), s.resolution(dd, b, least)
+		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*d.Norm()/(s.hi-s.lo)+rounding*least/(s.h*s.h), s.resolution(dd, b, least)
 }
 
 func (s stencil) stableTangent(f curveFunc, t float64, d, dd Vec) bool {
@@ -304,7 +304,8 @@ func (s stencil) tangentFloor(b, dd Vec, least float64) float64 {
 // over h²: the stencil's coefficients, at most 320/12 in sum at an end of
 // the domain, and four times that at half the spacing, times a few units of
 // rounding in each value of the curve. Far from the origin it outgrows the
-// fixed floor beside it, which a straight line's r″ would otherwise fail.
+// speed-relative floor beside it, which a straight line's r″ would
+// otherwise fail.
 const rounding = 1024 * 0x1p-53
 
 // half is the derivatives of f at t at half the spacing, and the least
