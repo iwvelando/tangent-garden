@@ -187,3 +187,109 @@ func TestRefinementBreaksARollingCircleWhereItsBaseBreaks(t *testing.T) {
 		t.Fatalf("base broken in interval %d, its trace in %d", g, gap(r.Adaptive.Derived))
 	}
 }
+
+// A regular base has a tangent at every length scale. On a circle the
+// trace is an analytic trochoid, whether the rolling body is a circle or
+// the same circle entered as a curve. This checks both placement paths,
+// representative bodies, and the points inserted between samples.
+func TestRollingSmallScaleTrochoids(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100, 0x1p10} {
+		for _, side := range []string{"left", "right"} {
+			for _, shape := range []string{"circle", "curve"} {
+				t.Run(fmt.Sprintf("%g/%s/%s", scale, side, shape), func(t *testing.T) {
+					q := rollingRequest(num(3*scale)+"*cos(t)", num(3*scale)+"*sin(t)", 0, 2*math.Pi, Roller{Side: side, Radius: scale / 2, Arm: scale * .8, Phase: .3})
+					if shape == "curve" {
+						q.Rolling.Shape = "curve"
+						q.Rolling.Curve = MovingCurve{X: num(scale/2) + "*cos(t)", Y: num(scale/2) + "*sin(t)", Max: 2 * math.Pi}
+						q.Rolling.Point = Vec{scale * .8 * math.Cos(.3), scale * .8 * math.Sin(.3)}
+					}
+					q.Samples, q.Adaptive = 129, true
+					r := compute(t, q)
+					if r.Invalid != 0 || len(r.Warnings) != 0 {
+						t.Fatalf("%d invalid, %v", r.Invalid, r.Warnings)
+					}
+					exact := trochoid(3*scale, scale/2, scale*.8, .3, side == "right")
+					for j, p := range r.Derived {
+						closeVec(t, p, exact(sampleT(q, j)), 2e-8*scale)
+					}
+					if shape == "circle" && len(r.Rolling) != q.Lines || shape == "curve" && len(r.Moving.Positions) != q.Lines {
+						t.Fatal("missing representative placements")
+					}
+					checkRefined(t, q, r.Adaptive.Derived, r.Derived, exact)
+				})
+			}
+		}
+	}
+}
+
+// Reversing the heading and signed arc length must survive scaling too.
+// An exact stationary sample has no placement; a cusp between samples
+// still rolls back continuously, with only one cusp counted.
+func TestRollingSmallScaleCusps(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p-100, 0x1p10} {
+		for _, end := range []float64{1, 1.15} {
+			for _, shape := range []string{"circle", "curve"} {
+				t.Run(fmt.Sprintf("%g/end=%g/%s", scale, end, shape), func(t *testing.T) {
+					q := rollingRequest(num(scale)+"*t^2", "0", -1, end, Roller{Side: "left", Radius: scale * .05, Arm: scale * .08, Phase: .3})
+					if shape == "curve" {
+						q.Rolling.Shape = "curve"
+						q.Rolling.Curve = MovingCurve{X: num(scale*.05) + "*cos(t)", Y: num(scale*.05) + "*sin(t)", Max: 2 * math.Pi}
+						q.Rolling.Point = Vec{scale * .08 * math.Cos(.3), scale * .08 * math.Sin(.3)}
+					}
+					q.Samples, q.Adaptive = 129, true
+					r := compute(t, q)
+					if !warned(r, "rolls back out of 1 cusp") {
+						t.Fatalf("warnings: %v", r.Warnings)
+					}
+					wantInvalid := 0
+					if end == 1 {
+						wantInvalid = 1
+						if r.Derived[64] != nil {
+							t.Fatal("stationary point placed")
+						}
+					}
+					if r.Invalid != wantInvalid {
+						t.Fatalf("invalid %d, want %d", r.Invalid, wantInvalid)
+					}
+					exact := func(u float64) Vec {
+						x := u * u
+						a := .3 - (1-x)/.05
+						return Vec{scale * (x - .08*math.Sin(a)), scale * (-.05 + .08*math.Cos(a))}
+					}
+					for j, p := range r.Derived {
+						if p != nil {
+							closeVec(t, p, exact(sampleT(q, j)), 2e-8*scale)
+						}
+					}
+					path := r.Adaptive.Derived
+					if path == nil || path.Inserted == 0 {
+						t.Fatal("missing refinement")
+					}
+					for j, p := range path.Points {
+						if p != nil {
+							closeVec(t, p, exact(param(q, path.At[j])), 2e-8*scale)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestRollingConstantBaseHasNoHeading(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-100} {
+		for _, xy := range [][2]string{{"0", "0"}, {num(scale), num(-scale)}} {
+			q := rollingRequest(xy[0], xy[1], 0, 1, Roller{Side: "left", Radius: scale, Arm: scale})
+			q.Samples, q.Adaptive = 65, true
+			r := compute(t, q)
+			if r.Invalid != q.Samples || len(r.Rolling) != 0 {
+				t.Fatalf("constant %v: %d invalid, %d circles", xy, r.Invalid, len(r.Rolling))
+			}
+			for _, p := range r.Derived {
+				if p != nil {
+					t.Fatal("constant base placed a body")
+				}
+			}
+		}
+	}
+}
