@@ -340,3 +340,78 @@ func TestRollingCurveInvalid(t *testing.T) {
 		}
 	}
 }
+
+// Closure depends on the moving curve's own extent, even when a tiny body
+// rolls along a much larger base. A small gap with matching end tangents
+// must remain open; a genuine circle must still wrap.
+func TestRollingCurveClosureScale(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p10} {
+		for _, tc := range []struct {
+			name   string
+			x, y   string
+			closed bool
+		}{
+			{"circle", "cos(t)", "sin(t)", true},
+			{"nearly closed", "cos(t)+1e-8*t/(2*pi)", "sin(t)", false},
+			{"segment", "t", "0", false},
+		} {
+			t.Run(fmt.Sprintf("%s/%g", tc.name, scale), func(t *testing.T) {
+				m := MovingCurve{X: num(scale) + "*(" + tc.x + ")", Y: num(scale) + "*(" + tc.y + ")", Max: 2 * math.Pi}
+				q := curveRequest("t", "0", 0, 8, "left", m, Vec{0, scale / 2})
+				q.Samples = 101
+				r := compute(t, q)
+				if r.Moving.Closed != tc.closed {
+					t.Fatalf("closed = %v, want %v", r.Moving.Closed, tc.closed)
+				}
+				if tc.closed {
+					if r.Invalid != 0 || len(r.Warnings) != 0 || r.Derived[q.Samples-1] == nil {
+						t.Fatalf("closed curve did not wrap: %d invalid, %v", r.Invalid, r.Warnings)
+					}
+				} else if scale <= 1 {
+					if r.Derived[q.Samples-1] != nil || !warned(r, "end of the rolling curve's domain") {
+						t.Fatalf("open curve rolled past its end: last = %v, warnings %v", r.Derived[q.Samples-1], r.Warnings)
+					}
+				}
+			})
+		}
+	}
+}
+
+// A straight segment's arc length is its length. The base travels twice
+// that length, so the contact must stop halfway, on either side, with the
+// same geometry and omissions at each scale. The short base domain keeps
+// its speed above the separate absolute resting-speed limit.
+func TestRollingCurveEndpointScale(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-40, 0x1p10} {
+		for _, side := range []string{"left", "right"} {
+			for _, adaptive := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%g/%s/refine=%v", scale, side, adaptive), func(t *testing.T) {
+					m := MovingCurve{X: num(scale) + "*t", Y: "0", Max: 1}
+					want := Vec{scale / 4, scale / 8}
+					if side == "right" {
+						m.Start = 1
+						want = Vec{3 * scale / 4, -scale / 8}
+					}
+					q := curveRequest(num(2e6*scale)+"*t", "0", 0, 1e-6, side, m, Vec{scale / 4, scale / 8})
+					q.Samples, q.Adaptive = 101, adaptive
+					r := compute(t, q)
+					if r.Moving.Closed || r.Invalid != 50 || !warned(r, "end of the rolling curve's domain") {
+						t.Errorf("closed %v, %d invalid, warnings %v; want open with 50 omitted samples", r.Moving.Closed, r.Invalid, r.Warnings)
+					}
+					for j, p := range r.Derived {
+						if j <= 50 {
+							closeVec(t, p, want, 1e-11*scale)
+						} else if p != nil {
+							t.Fatalf("sample %d after the domain end has a point %v", j, p)
+						}
+					}
+					for _, p := range r.Moving.Positions {
+						if p.SampleIndex > 50 {
+							t.Fatalf("placement past the domain end at %d", p.SampleIndex)
+						}
+					}
+				})
+			}
+		}
+	}
+}

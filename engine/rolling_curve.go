@@ -118,7 +118,9 @@ func newMover(c Roller, a float64, samples int) (*mover, *MovingResult, error) {
 		for _, p := range out.Path {
 			size = math.Max(size, p.Sub(*out.Path[0]).Norm())
 		}
-		v.closed = gap <= 1e-9*(1+size) && d[n].Unit().Sub(d[0].Unit()).Norm() <= 1e-6
+		// Measure closure in the curve's own units; a small open body
+		// must not wrap just because its entire extent fits an absolute slack.
+		v.closed = gap <= 1e-9*(binade(size)+size) && d[n].Unit().Sub(d[0].Unit()).Norm() <= 1e-6
 	}
 	out.Closed = v.closed
 	v.sign = 1
@@ -169,7 +171,7 @@ func (v *mover) contact(s float64) (float64, stop) {
 			target += length
 		}
 		first, last = 0, len(v.ok)-1
-	} else if slack := 1e-12 * (1 + length); !v.ok[first] {
+	} else if slack := 1e-12 * (binade(length) + length); !v.ok[first] {
 		return 0, irregular
 	} else if past, before := target > v.arc[last+1]+slack, target < v.arc[first]-slack; past || before {
 		// Rolling back out of a base cusp, the contact can run off either
