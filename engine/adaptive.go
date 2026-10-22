@@ -351,7 +351,7 @@ func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
 			return nil
 		}
 	case q.Kind == "offset" && !q.Stack.Enabled:
-		return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, q.Distance) })
+		return q.along(f, g, func(_ float64, p, d, dd Vec) *Vec { return offsetPoint(p, d, dd, q.Distance) })
 	case q.Kind == "catacaustic" || q.Kind == "diacaustic" || (q.Kind == "envelope" && out != nil && out.lineFamily != nil):
 		at := q.virtualAt(f, g, out)
 		return func(t float64) *Vec {
@@ -448,8 +448,8 @@ func (q Request) memberAlong(at func(float64) station, out *Result, member Path)
 	switch {
 	case q.Kind == "offset" && q.Stack.Enabled:
 		var slab vecSlab
-		return q.alongStations(at, func(_ float64, p, d, _ Vec) *Vec {
-			if o, ok := offsetAt(p, d, member.Distance); ok {
+		return q.alongStations(at, func(_ float64, p, d, dd Vec) *Vec {
+			if o, ok := offsetAt(p, d, dd, member.Distance); ok {
 				return slab.keep(o)
 			}
 			return nil

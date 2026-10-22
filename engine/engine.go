@@ -466,16 +466,16 @@ func Compute(q Request) (Result, error) {
 			target = Orthotomic(p, dp, q.Pole)
 		case "offset":
 			if !stacked {
-				target = Offset(p, dp, q.Distance)
+				target = offsetPoint(p, dp, ddp, q.Distance)
 				break
 			}
 			for k := range out.Family {
-				out.Family[k].Points[j] = Offset(p, dp, out.Family[k].Distance)
+				out.Family[k].Points[j] = offsetPoint(p, dp, ddp, out.Family[k].Distance)
 			}
 			// The segment crosses every member and reaches back to the curve.
 			lo, hi := q.Stack.span()
-			if start := Offset(p, dp, lo); start != nil {
-				origin, target = *start, Offset(p, dp, hi)
+			if start := offsetPoint(p, dp, ddp, lo); start != nil {
+				origin, target = *start, offsetPoint(p, dp, ddp, hi)
 			}
 		case "rolling":
 			if !arcOK {
@@ -573,9 +573,9 @@ func Compute(q Request) (Result, error) {
 			// Every defined line is drawn, touching its envelope or not.
 			out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: member.direction, Target: target, Virtual: virtual, End: member.end})
 		} else if line {
-			// A finite evolute center has already passed the relative
+			// A finite evolute or offset has already passed the relative
 			// tangent guard; its normal survives a change of length units.
-			hasTangent := dp.Norm() > 1e-9 || q.Kind == "evolute" && target != nil
+			hasTangent := dp.Norm() > 1e-9 || (q.Kind == "evolute" || q.Kind == "offset") && target != nil
 			if p.Valid() && dp.Valid() && hasTangent {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})

@@ -54,3 +54,44 @@ test("timings belong to the spec that runs a shared helper, including nested des
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("several runs average each file over the runs that recorded it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tangent-test-durations-"));
+  try {
+    mkdirSync(join(dir, "tests"));
+    const shard = (run, n, suites) => {
+      mkdirSync(join(dir, run, `chromium-test-timings-${n}`), {
+        recursive: true,
+      });
+      writeFileSync(
+        join(dir, run, `chromium-test-timings-${n}`, "test-timings.json"),
+        JSON.stringify({ suites }),
+      );
+    };
+    const suite = (file, ...durations) => ({
+      file,
+      specs: [spec(file, ...durations)],
+    });
+    // Run one has both shards; run two lost the shard that ran "late".
+    shard("1", 1, [suite("both.spec.ts", 2000, 2000)]);
+    shard("1", 2, [suite("late.spec.ts", 7000)]);
+    shard("2", 1, [suite("both.spec.ts", 8000), suite("late.spec.ts", 1000)]);
+    shard("2", 2, [suite("late.spec.ts", 2000)]);
+    shard("3", 1, [suite("both.spec.ts", 3000)]);
+    const result = spawnSync(
+      process.execPath,
+      [script, join(dir, "1"), join(dir, "2"), join(dir, "3")],
+      { cwd: dir, encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(dir, "tests/test-durations.json"), "utf8")),
+      // both: (4 + 8 + 3) / 3; late: (7 + 3) / 2, its two shards in run
+      // two summed as one run.
+      { "both.spec.ts": 5, "late.spec.ts": 5 },
+    );
+    assert.match(result.stdout, /3 runs/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -87,5 +87,5 @@ func derive(input string, p, dp, ddp, pole Vec, distance float64) *Vec {
 	case "orthotomic":
 		return Orthotomic(p, dp, pole)
 	}
-	return Offset(p, dp, distance)
+	return offsetPoint(p, dp, ddp, distance)
 }
