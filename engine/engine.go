@@ -534,7 +534,7 @@ func Compute(q Request) (Result, error) {
 			}
 		default:
 			dir = direction(t)
-			if !dir.Valid() && p.Valid() && dp.Norm() > 1e-9 && incident(t).Valid() {
+			if !dir.Valid() && opticalTangent(p, dp, ddp) && incident(t).Valid() {
 				tir = q.Kind == "diacaustic"
 				if tir {
 					tirCount++
@@ -573,8 +573,9 @@ func Compute(q Request) (Result, error) {
 		} else if line {
 			// A finite evolute, offset, pole projection or rolling body has
 			// already passed a relative tangent guard; its normal survives a
-			// change of length units.
-			hasTangent := dp.Norm() > 1e-9 || (q.Kind == "evolute" || q.Kind == "offset" || q.Kind == "rolling" || usesPole(q.Kind)) && target != nil
+			// change of length units. An optical direction has already passed
+			// its own tangent guard.
+			hasTangent := dp.Norm() > 1e-9 || (q.Kind == "evolute" || q.Kind == "offset" || q.Kind == "rolling" || usesPole(q.Kind)) && target != nil || optical && dir.Valid()
 			if p.Valid() && dp.Valid() && hasTangent {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})
