@@ -122,6 +122,21 @@ const curves = [
   ["ellipsoid", "The whole focal surface of an ellipsoid", "a surface"],
   ["coma", "A tilted beam folding into coma", "rays"],
   ["vortex", "A row of seeds wound up by a vortex", "a vector field"],
+  [
+    "receiver-view",
+    "A glass dome's luminous ring, close up",
+    "64 window bins, 2 levels, a 1000 × 760 view inset",
+    {
+      view: {
+        center: { x: 0, y: 0, z: -1.9 },
+        right: { x: 1, y: 0, z: 0 },
+        up: { x: 0, y: 1, z: 0 },
+        width: 0.17,
+        height: 0.13,
+        pixels: [1000, 760],
+      },
+    },
+  ],
   // A receiver, as the preset has it and at its finest, refined.
   ["cone", "Conic sections cut from a cone of light", "a receiver, 200 bins"],
   [

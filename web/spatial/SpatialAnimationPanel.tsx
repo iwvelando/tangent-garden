@@ -1,3 +1,4 @@
+import { withoutReceiverInset } from "./receiver-view";
 import type { ColorScheme } from "../color-schemes";
 import { AnimationValues } from "../AnimationValues";
 import {
@@ -1073,7 +1074,7 @@ export function SpatialAnimationPanel({
       // stays at what it describes there, and while the study is fixed, at
       // the user's point.
       const drawsProbe = probing;
-      let original = frame;
+      let original = withoutReceiverInset(frame);
       if (drawsProbe && probeSteps(frame.result, target) === null) {
         original = await client.current.computeSpatial(
           frame.config,

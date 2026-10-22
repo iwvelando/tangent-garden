@@ -19,6 +19,8 @@ import (
 // distance ahead of the eye over Distance (1 throughout for an
 // orthographic view).
 type View struct {
+	// Pixels is the device-pixel size of the receiver view; curves ignore it.
+	Pixels   [2]int  `json:"pixels,omitempty"`
 	Center   Vec3    `json:"center"`
 	Right    Vec3    `json:"right"`
 	Up       Vec3    `json:"up"`
@@ -36,6 +38,8 @@ func (v View) validate() error {
 	positive := func(x float64) bool { return x > 0 && !math.IsInf(x, 1) }
 	unit := func(u Vec3) bool { return u.valid() && math.Abs(u.norm()-1) < 1e-9 }
 	switch {
+	case v.Pixels[0] < 0 || v.Pixels[1] < 0 || v.Pixels[0] > 32768 || v.Pixels[1] > 32768:
+		return fmt.Errorf("the view has at most 32768 pixels each way")
 	case !v.Center.valid():
 		return fmt.Errorf("the view's center must be finite")
 	case !unit(v.Right) || !unit(v.Up) || math.Abs(v.Right.dot(v.Up)) > 1e-9:

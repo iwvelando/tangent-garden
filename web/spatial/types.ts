@@ -186,7 +186,8 @@ export type RaysInteraction = "reflect" | "refract";
 // through its center, leaning its second axis toward the plane's normal
 // axis; absent means none, as in links made before it. `refine` splits the
 // surface's cells up to that many levels where their light lands on the
-// window more than a bin wide; absent means none. Mirrors
+// window more than a bin wide; absent means none. refineView adds a
+// transient inset of the resting view, off unless chosen. Mirrors
 // engine3.ReceiverRequest.
 export type ReceiverPlane = "none" | "x" | "y" | "z";
 export type ReceiverConfig = {
@@ -198,6 +199,7 @@ export type ReceiverConfig = {
   bins: number;
   tilt?: number;
   refine?: number;
+  refineView?: boolean;
 };
 export const minReceiverBins = 8;
 export const maxReceiverBins = 960;
@@ -346,6 +348,7 @@ export const maxShadowAt = 100000;
 // center; a perspective's eye is distance behind center and draws nothing
 // nearer than near.
 export type RefinementView = {
+  pixels?: [number, number];
   center: Vec3;
   right: Vec3;
   up: Vec3;
@@ -939,6 +942,12 @@ export type ReceiverResult = {
   corners: [Vec3, Vec3, Vec3, Vec3];
   size: number;
   irradiance: number[][];
+  inset?: {
+    rect: [number, number, number, number];
+    irradiance: number[][];
+    split?: number;
+    exhausted?: boolean;
+  };
   peak: number;
   emitted: number;
   received: number;

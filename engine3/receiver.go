@@ -15,16 +15,19 @@ import (
 // x leans y toward z, x = At about y leans z toward x, and y = At about z
 // leans x toward y. The window keeps its own coordinates as it turns.
 // Refine splits the surface's cells, up to Refine levels (0–3), where
-// their light lands on the window too coarsely (see Receiver).
+// their light lands on the window too coarsely (see Receiver). RefineView
+// adds an inset for a supplied resting view, with independent accounting.
 type ReceiverRequest struct {
-	Plane  string  `json:"plane"`
-	At     float64 `json:"at"`
-	C1     float64 `json:"c1"`
-	C2     float64 `json:"c2"`
-	Size   float64 `json:"size"`
-	Bins   int     `json:"bins"`
-	Tilt   float64 `json:"tilt,omitempty"`
-	Refine int     `json:"refine,omitempty"`
+	RefineView bool `json:"refineView,omitempty"`
+	view       *View
+	Plane      string  `json:"plane"`
+	At         float64 `json:"at"`
+	C1         float64 `json:"c1"`
+	C2         float64 `json:"c2"`
+	Size       float64 `json:"size"`
+	Bins       int     `json:"bins"`
+	Tilt       float64 `json:"tilt,omitempty"`
+	Refine     int     `json:"refine,omitempty"`
 }
 
 // Receiver is the irradiance the outgoing rays deliver to the receiver's
@@ -65,19 +68,20 @@ type ReceiverRequest struct {
 // chart singularity (Edge), or whose corners' rays do not all cross the
 // plane ahead, or cross it more than 10⁶ bins from the window (Away).
 type Receiver struct {
-	Plane      string      `json:"plane"`
-	Corners    [4]Vec3     `json:"corners"`
-	Size       float64     `json:"size"`
-	Irradiance [][]float64 `json:"irradiance"`
-	Peak       float64     `json:"peak"`
-	Emitted    float64     `json:"emitted"`
-	Received   float64     `json:"received"`
-	Outside    float64     `json:"outside"`
-	Away       float64     `json:"away"`
-	Total      float64     `json:"total"`
-	Edge       float64     `json:"edge"`
-	Split      int         `json:"split,omitempty"`
-	Exhausted  bool        `json:"exhausted,omitempty"`
+	Inset      *ReceiverInset `json:"inset,omitempty"`
+	Plane      string         `json:"plane"`
+	Corners    [4]Vec3        `json:"corners"`
+	Size       float64        `json:"size"`
+	Irradiance [][]float64    `json:"irradiance"`
+	Peak       float64        `json:"peak"`
+	Emitted    float64        `json:"emitted"`
+	Received   float64        `json:"received"`
+	Outside    float64        `json:"outside"`
+	Away       float64        `json:"away"`
+	Total      float64        `json:"total"`
+	Edge       float64        `json:"edge"`
+	Split      int            `json:"split,omitempty"`
+	Exhausted  bool           `json:"exhausted,omitempty"`
 }
 
 const (
@@ -175,12 +179,20 @@ func (r ReceiverRequest) window(a, b float64) Vec3 {
 	return r.point(a, b)
 }
 
-// receive collects the outgoing rays of the sampled surface on the
-// receiver; samples holds the grid's rays, and scale the surface's size.
-func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale float64, cache *rayCache) *Receiver {
+// receiveRaster collects the outgoing rays on the window, or on a
+// rectangular inset. Samples holds the surface grid's rays.
+func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, scale float64, cache *rayCache, target *receiverRegion) *Receiver {
 	rc := r.Receiver
 	half, n := rc.Size/2, rc.Bins
 	lo1, lo2, bin := rc.C1-half, rc.C2-half, rc.Size/float64(n)
+	ny, bin2 := n, bin
+	if target != nil {
+		lo1 += target.rect[0] * rc.Size
+		lo2 += target.rect[1] * rc.Size
+		n, ny = target.width, target.height
+		bin = (target.rect[2] - target.rect[0]) * rc.Size / float64(n)
+		bin2 = (target.rect[3] - target.rect[1]) * rc.Size / float64(ny)
+	}
 	out := &Receiver{Plane: rc.Plane, Size: rc.Size, Corners: [4]Vec3{
 		rc.window(lo1, lo2), rc.window(lo1+rc.Size, lo2), rc.window(lo1+rc.Size, lo2+rc.Size), rc.window(lo1, lo2+rc.Size),
 	}}
@@ -200,7 +212,7 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 			return [2]float64{}, false
 		}
 		y := s.X.add(s.R.mul(lambda))
-		p := [2]float64{(component(y, i1) - lo1) / bin, (component(y, i2) - lo2) / bin}
+		p := [2]float64{(component(y, i1) - lo1) / bin, (component(y, i2) - lo2) / bin2}
 		reach := receiverReach + float64(n)
 		return p, math.Abs(p[0]) < reach && math.Abs(p[1]) < reach
 	}
@@ -253,7 +265,7 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 	// crossings are more than a bin apart, or some of its corners land and
 	// others do not: at the edge of the light, of total internal reflection
 	// or of the rays that reach the plane.
-	window := float64(n)
+	window, window2 := float64(n), float64(ny)
 	splits := func(c cell) bool {
 		at := corners(c)
 		lands := 0
@@ -266,7 +278,7 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 				}
 			}
 		}
-		if lands == 0 || hi[0] < -1 || hi[1] < -1 || lo[0] > window+1 || lo[1] > window+1 {
+		if lands == 0 || hi[0] < -1 || hi[1] < -1 || lo[0] > window+1 || lo[1] > window2+1 {
 			return false
 		}
 		if lands < 4 {
@@ -320,7 +332,7 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 		leaves[level], cells = whole, next
 	}
 	leaves[levels] = cells
-	g := newRaster(n, n)
+	g := newRaster(n, ny)
 	landed := 0.0
 	for _, level := range leaves {
 		for _, c := range level {
@@ -380,7 +392,7 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 	for _, column := range out.Irradiance {
 		for b := range column {
 			out.Received += column[b]
-			column[b] /= bin * bin
+			column[b] /= bin * bin2
 			out.Peak = math.Max(out.Peak, column[b])
 		}
 	}

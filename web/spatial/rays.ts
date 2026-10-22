@@ -132,6 +132,11 @@ export function receiverNote(g: ReceiverResult, light: RaysConfig): string[] {
           parallel ? "times the beam's own" : "per unit area at unit intensity"
         }, averaged over each bin, with no Fresnel losses or shadows.`
       : "No light lands in its window.",
+    ...(g.inset
+      ? [
+          `The visible inset has ${g.inset.irradiance.length.toLocaleString()} × ${g.inset.irradiance[0].length.toLocaleString()} bins, shaded against the window's peak; the brightest shade is at or above the window's peak.${g.inset.exhausted ? ` Its refinement budget of ${maxReceiverCells.toLocaleString()} cells ran out.` : ""}`,
+        ]
+      : []),
     ...(g.split
       ? [
           `${count(g.split, "cell was", "cells were")} split where ${g.split === 1 ? "its" : "their"} light lands coarsely on the window${

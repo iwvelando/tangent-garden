@@ -106,7 +106,7 @@ type Request struct {
 	// changes nothing.
 	AdaptiveFrame bool `json:"adaptiveFrame,omitempty"`
 	// View is what the drawing shows, when it is zoomed in and refined to
-	// it (see View); it changes nothing but the refined curves.
+	// it (see View), or for an opted-in receiver inset.
 	View *View `json:"view,omitempty"`
 	// Views are the frames of a piece of a camera flight, in place of
 	// View: each refined curve is refined, where it meets any of them, as
@@ -303,6 +303,12 @@ func compute(c Request) (Result, error) {
 		return surfaces(c.Surface, c.SurfaceDiagnostics, c.OffsetDiagnostics, c.FocalDiagnostics)
 	}
 	if c.Format == "rays" {
+		if c.Rays.Receiver.RefineView && c.View != nil {
+			if err := c.View.validate(); err != nil {
+				return Result{}, err
+			}
+			c.Rays.Receiver.view = c.View
+		}
 		return rays(c.Surface, c.Rays, c.SurfaceDiagnostics, c.LightDiagnostics, c.rayCache)
 	}
 	if c.Format == "implicit" {

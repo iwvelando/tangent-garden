@@ -1148,3 +1148,159 @@ func TestReceiverChangingFamilyDoesNotPopulateCache(t *testing.T) {
 		t.Fatal("repeated family did not enable reuse")
 	}
 }
+
+// Decode through the public JSON request, including its optional receiver
+// flag and transient view, before observing the engine's returned inset.
+func receiverViewed(t *testing.T, c Request, view View, width, height int) (*Receiver, *ReceiverInset) {
+	t.Helper()
+	c.Rays.Receiver.RefineView = true
+	view.Pixels = [2]int{width, height}
+	c.View = &view
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Request
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	g := received(t, decoded)
+	return g, g.Inset
+}
+
+func TestReceiverViewInset(t *testing.T) {
+	c := receive(flat(1.5, parallel(0, -90)), "z", 1, 0, 0, 2, 8)
+	v := View{Center: Vec3{0, 0, 1}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: .5, Height: .25}
+	baseline := received(t, c)
+	g, inset := receiverViewed(t, c, v, 64, 32)
+	if inset == nil {
+		t.Fatal("visible receiver has no inset")
+	}
+	if inset.Rect != [4]float64{.25, .375, .75, .625} {
+		t.Fatalf("rect %v", inset.Rect)
+	}
+	if len(inset.Irradiance) != 64 || len(inset.Irradiance[0]) != 32 {
+		t.Fatalf("inset is not one bin per pixel: %d by %d", len(inset.Irradiance), len(inset.Irradiance[0]))
+	}
+	for _, column := range inset.Irradiance {
+		for _, e := range column {
+			if math.Abs(e-1) > 1e-10 {
+				t.Fatalf("uniform beam: %v", e)
+			}
+		}
+	}
+	data, _ := json.Marshal(g)
+	var record map[string]json.RawMessage
+	json.Unmarshal(data, &record)
+	delete(record, "inset")
+	data, _ = json.Marshal(record)
+	var without Receiver
+	json.Unmarshal(data, &without)
+	if !reflect.DeepEqual(baseline, &without) {
+		t.Fatal("the view changed full-window bins or accounting")
+	}
+	// An inset at the original bins is exactly the original raster.
+	v.Width, v.Height = 1, 1
+	_, inset = receiverViewed(t, c, v, 8, 8)
+	if inset == nil || !reflect.DeepEqual(inset.Irradiance, baseline.Irradiance) {
+		t.Fatal("whole-window inset differs")
+	}
+	// Group four fine bins along each axis: their flux is the coarse bin's.
+	_, inset = receiverViewed(t, c, v, 32, 32)
+	for i, col := range baseline.Irradiance {
+		for j, want := range col {
+			sum := 0.0
+			for a := 0; a < 4; a++ {
+				for b := 0; b < 4; b++ {
+					sum += inset.Irradiance[4*i+a][4*j+b] / 16
+				}
+			}
+			if math.Abs(sum-want) > 1e-10 {
+				t.Fatalf("bin %d,%d: fine %v coarse %v", i, j, sum, want)
+			}
+		}
+	}
+	v.Center.X = 10
+	if _, inset = receiverViewed(t, c, v, 32, 32); inset != nil {
+		t.Fatal("offscreen receiver has an inset")
+	}
+}
+
+func TestReceiverViewTiltAndPerspective(t *testing.T) {
+	c := receive(flat(2, parallel(0, -90)), "z", 1, 0, 0, 2, 8)
+	c.Rays.Receiver.Tilt = 30
+	c.Rays.Receiver.Refine = 1
+	v := View{Center: Vec3{0, 0, 1}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: .4, Height: .3, Distance: 3, Near: .1}
+	_, inset := receiverViewed(t, c, v, 80, 60)
+	if inset == nil {
+		t.Fatal("tilted perspective receiver has no inset")
+	}
+	for _, column := range inset.Irradiance {
+		for _, e := range column {
+			if math.Abs(e-math.Cos(math.Pi/6)) > 1e-8 {
+				t.Fatalf("tilted beam irradiance %v", e)
+			}
+		}
+	}
+	if inset.Split == 0 {
+		t.Fatal("inset did not refine the ray map")
+	}
+	saved := receiverCells
+	receiverCells = c.Surface.USamples * c.Surface.VSamples
+	defer func() { receiverCells = saved }()
+	_, inset = receiverViewed(t, c, v, 80, 60)
+	if inset == nil || !inset.Exhausted {
+		t.Fatal("inset does not report its exhausted budget")
+	}
+}
+
+func TestReceiverViewNonuniformFlux(t *testing.T) {
+	c := receive(flat(1, lamp(Vec3{0, 0, 1})), "z", 2, 0, 0, 2, 8)
+	v := View{Center: Vec3{0, 0, 2}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: 1, Height: 1}
+	coarse := received(t, c)
+	_, fine := receiverViewed(t, c, v, 32, 32)
+	if fine == nil {
+		t.Fatal("no inset")
+	}
+	for i, column := range coarse.Irradiance {
+		for j, want := range column {
+			sum := 0.0
+			for a := 0; a < 4; a++ {
+				for b := 0; b < 4; b++ {
+					sum += fine.Irradiance[4*i+a][4*j+b] / 16
+				}
+			}
+			if math.Abs(sum-want) > 1e-10 {
+				t.Fatalf("nonuniform flux in %d,%d: %v != %v", i, j, sum, want)
+			}
+		}
+	}
+}
+
+func TestReceiverViewRegionLimits(t *testing.T) {
+	r := ReceiverRequest{Plane: "z", At: 1, Size: 2, Bins: 8}
+	v := View{Center: Vec3{0, 0, 1}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: 1, Height: 1, Pixels: [2]int{32768, 32768}}
+	region := r.region(v)
+	if region == nil || region.width != 1024 || region.height != 1024 {
+		t.Fatalf("uncapped region: %+v", region)
+	}
+	// A tilted window crossing the near plane must clip to the visible
+	// polygon before dividing by depth, keeping finite in-window coordinates.
+	r.Tilt = 80
+	v.Distance = .2
+	v.Near = .1
+	region = r.region(v)
+	if region == nil {
+		t.Fatal("near-plane crossing lost its visible part")
+	}
+	for _, x := range region.rect {
+		if !finite(x) || x < 0 || x > 1 {
+			t.Fatalf("invalid clipped coordinate %v", x)
+		}
+	}
+	v.Center.Z = -10
+	v.Distance = 1
+	if r.region(v) != nil {
+		t.Fatal("window behind the eye is visible")
+	}
+}

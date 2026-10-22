@@ -314,12 +314,15 @@ varying vec3 P;
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 varying highp vec2 Q;
 varying highp vec2 R;
+uniform highp vec4 insetRect;
 #else
 varying mediump vec2 Q;
 varying mediump vec2 R;
+uniform mediump vec4 insetRect;
 #endif
 // A receiver's bins (see scene.ts's receiverSheet), when shaded is 1.
 uniform sampler2D receiverShades;
+uniform sampler2D receiverInset;
 uniform float shaded;
 #else
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -439,6 +442,8 @@ void main() {
     // under 1 to keep the sum's precision in a half float.
     if (shaded > 0.5) {
       vec4 bin = texture2D(receiverShades, R);
+      if (insetRect.z > insetRect.x && R.x >= insetRect.x && R.y >= insetRect.y && R.x <= insetRect.z && R.y <= insetRect.w)
+        bin = texture2D(receiverInset, (R - insetRect.xy) / (insetRect.zw - insetRect.xy));
       shade = bin.b < 0.5 ? -1.0 : bin.r * ${((255 * 256) / 65535).toFixed(8)} + bin.g * ${(255 / 65535).toFixed(8)};
     }
 #endif
@@ -616,6 +621,8 @@ export function createRenderer(
       "fadeCount",
       "fadeSize",
       "receiverShades",
+      "receiverInset",
+      "insetRect",
       "shaded",
     ].map((n) => [n, gl.getUniformLocation(program, n)]),
   );
@@ -625,6 +632,7 @@ export function createRenderer(
   gl.useProgram(program);
   gl.uniform1i(uniforms.fadeCount, 1);
   gl.uniform1i(uniforms.receiverShades, 2);
+  gl.uniform1i(uniforms.receiverInset, 3);
   // Strokes need instancing (ANGLE_instanced_arrays, near universal in
   // WebGL 1); without it every weight is drawn as hairlines. They read each
   // line batch's own buffer, two vertices an instance.
@@ -857,6 +865,7 @@ export function createRenderer(
     joins?: WebGLBuffer;
     // A receiver's bins.
     shades?: WebGLTexture;
+    inset?: WebGLTexture;
   };
   let scene: Scene | undefined;
   // The parameter probe's few batches have their own buffers, so moving it
@@ -889,13 +898,16 @@ export function createRenderer(
     gl!.bindBuffer(gl!.ARRAY_BUFFER, buffer);
     gl!.bufferData(gl!.ARRAY_BUFFER, data, gl!.STATIC_DRAW);
     const drawn: Uploaded = { batch, buffer, count: data.length / 7 };
-    if (batch.shades) {
-      // Each bin a texel, drawn as it is: no filtering between bins.
-      const { size, data: texels } = batch.shades;
-      const texture = gl!.createTexture()!;
-      textures.push(texture);
-      gl!.activeTexture(gl!.TEXTURE2);
-      gl!.bindTexture(gl!.TEXTURE_2D, texture);
+    const texture = (
+      width: number,
+      height: number,
+      texels: Uint8Array,
+      unit: number,
+    ) => {
+      const value = gl!.createTexture()!;
+      textures.push(value);
+      gl!.activeTexture(unit);
+      gl!.bindTexture(gl!.TEXTURE_2D, value);
       for (const p of [gl!.TEXTURE_MIN_FILTER, gl!.TEXTURE_MAG_FILTER])
         gl!.texParameteri(gl!.TEXTURE_2D, p, gl!.NEAREST);
       for (const p of [gl!.TEXTURE_WRAP_S, gl!.TEXTURE_WRAP_T])
@@ -904,16 +916,30 @@ export function createRenderer(
         gl!.TEXTURE_2D,
         0,
         gl!.RGBA,
-        size,
-        size,
+        width,
+        height,
         0,
         gl!.RGBA,
         gl!.UNSIGNED_BYTE,
         texels,
       );
       gl!.activeTexture(gl!.TEXTURE0);
-      drawn.shades = texture;
-    }
+      return value;
+    };
+    if (batch.shades)
+      drawn.shades = texture(
+        batch.shades.size,
+        batch.shades.size,
+        batch.shades.data,
+        gl!.TEXTURE2,
+      );
+    if (batch.inset)
+      drawn.inset = texture(
+        batch.inset.width,
+        batch.inset.height,
+        batch.inset.data,
+        gl!.TEXTURE3,
+      );
     if (indices) {
       const elements = gl!.createBuffer()!;
       into.push(elements);
@@ -1262,6 +1288,15 @@ export function createRenderer(
       if (v.shades) {
         gl!.activeTexture(gl!.TEXTURE2);
         gl!.bindTexture(gl!.TEXTURE_2D, v.shades);
+        gl!.activeTexture(gl!.TEXTURE0);
+      }
+      gl!.uniform4fv(
+        uniforms.insetRect,
+        v.inset ? v.batch.inset!.rect : [0, 0, 0, 0],
+      );
+      if (v.inset) {
+        gl!.activeTexture(gl!.TEXTURE3);
+        gl!.bindTexture(gl!.TEXTURE_2D, v.inset);
         gl!.activeTexture(gl!.TEXTURE0);
       }
       center(uniforms, v.batch);
