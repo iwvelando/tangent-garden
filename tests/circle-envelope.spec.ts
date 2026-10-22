@@ -375,7 +375,7 @@ for (const theme of ["light", "dark"] as const) {
 // simultaneous change of length units, in the drawing and its saved SVG.
 test("tiny circle families retain their focus and directrix through controls and refinement", async ({
   page,
-}, testInfo) => {
+}) => {
   await ready(page);
   for (const [label, expression] of [
     ["x(t)", "2^-40*t"],
@@ -406,9 +406,6 @@ test("tiny circle families retain their focus and directrix through controls and
       ).flat();
       expect(points.length).toBeGreaterThan(10);
       for (const [, y] of points) expect(y).toBeCloseTo(directrix, 3);
-      await page.locator("#artwork").screenshot({
-        path: testInfo.outputPath(`tiny-focus-${theme}-${refine}.png`),
-      });
     }
   }
   const download = page.waitForEvent("download");
