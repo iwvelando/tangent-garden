@@ -1,5 +1,7 @@
 package engine3
 
+import "slices"
+
 // Engine computes a sequence of studies in one worker. Unlike Compute,
 // it retains a bounded set of ray evaluations for the current receiver
 // study. Call it serially; returned results belong to the caller.
@@ -12,6 +14,7 @@ type rayCache struct {
 	surface  SurfaceRequest
 	light    RaysRequest
 	samples  [][]mirrorPoint
+	geometry *rayGeometry
 	receiver *receiverTrace
 	raster   rasterScratch
 }
@@ -28,7 +31,7 @@ func (c *rayCache) samplesFor(nu, nv int) [][]mirrorPoint {
 
 // Compute preserves the stateless engine's results while reusing traced
 // rays if only the receiver or its diagnostics change. Neither output
-// arrays nor receiver crossings are cached: transport may consume output,
+// arrays nor receiver crossings are shared: transport may consume output,
 // and the moving plane changes every crossing.
 func (e *Engine) Compute(c Request) (Result, error) {
 	if c.Format != "rays" || c.Rays.Receiver.Plane == "none" {
@@ -162,4 +165,99 @@ func (t *receiverTrace) landingColumn(i, rows int) []receiverLanding {
 		t.landingBytes += rows*32 + 24
 	}
 	return column
+}
+
+// A single validated patch has at most 14,400 cells. Retain only its current
+// geometry, alongside the existing bounded traces; a new family drops both.
+// Diagnostics are deliberately outside this cache so changing probe targets
+// always observes the current request.
+type rayGeometry struct {
+	rays     *RaysResult
+	samples  [][]mirrorPoint
+	families [][]*Vec3
+	scale    float64
+}
+
+func (c *rayCache) geometryFor(q SurfaceRequest, r RaysRequest) (*rayGeometry, error) {
+	if c != nil && c.geometry != nil {
+		return c.geometry, nil
+	}
+	g, err := buildRayGeometry(q, r, c)
+	if err == nil && c != nil {
+		c.geometry = g
+	}
+	return g, err
+}
+
+// Clone all public storage. In particular, copying only the slice headers
+// would let the WASM lifter clear cached rows or a caller edit cached points.
+// Pack vertices together so fresh ownership does not mean one allocation per
+// vertex. Nil rows, gaps and empty slices retain their JSON representation.
+func clonePointGrid(source [][]*Vec3) [][]*Vec3 {
+	if source == nil {
+		return nil
+	}
+	out := make([][]*Vec3, len(source))
+	count := 0
+	for _, row := range source {
+		count += len(row)
+	}
+	points := make([]Vec3, count)
+	pointers := make([]*Vec3, count)
+	at := 0
+	for i, row := range source {
+		if row == nil {
+			continue
+		}
+		out[i] = pointers[at : at+len(row) : at+len(row)]
+		for j, p := range row {
+			if p != nil {
+				points[at+j] = *p
+				out[i][j] = &points[at+j]
+			}
+		}
+		at += len(row)
+	}
+	return out
+}
+
+func cloneSheet(s SurfaceSheet) SurfaceSheet {
+	s.Points, s.Normals = clonePointGrid(s.Points), clonePointGrid(s.Normals)
+	cloneBools := func(grid [][]bool) [][]bool {
+		if grid == nil {
+			return nil
+		}
+		out := make([][]bool, len(grid))
+		for i, row := range grid {
+			out[i] = slices.Clone(row)
+		}
+		return out
+	}
+	s.AlongU, s.AlongV, s.Faces = cloneBools(s.AlongU), cloneBools(s.AlongV), cloneBools(s.Faces)
+	return s
+}
+
+func cloneRayGeometry(source *RaysResult) *RaysResult {
+	out := *source
+	out.Surface = cloneSheet(source.Surface)
+	out.Caustics = slices.Clone(source.Caustics)
+	for i := range out.Caustics {
+		out.Caustics[i].SurfaceSheet = cloneSheet(source.Caustics[i].SurfaceSheet)
+	}
+	out.Lines = slices.Clone(source.Lines)
+	out.UCurves, out.VCurves, out.Clipped = slices.Clone(source.UCurves), slices.Clone(source.VCurves), slices.Clone(source.Clipped)
+	if source.Source != nil {
+		p := *source.Source
+		out.Source = &p
+	}
+	if source.Edges != nil {
+		edges := slices.Clone(*source.Edges)
+		for i := range edges {
+			e := &edges[i]
+			e.Points, e.Feet = slices.Clone(e.Points), slices.Clone(e.Feet)
+			e.I, e.J = slices.Clone(e.I), slices.Clone(e.J)
+		}
+		out.Edges = &edges
+	}
+	return &out
 }
