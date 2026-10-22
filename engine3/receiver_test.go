@@ -1502,39 +1502,7 @@ func TestReceiverGeometryOwnership(t *testing.T) {
 			if tc.name == "point source" && got.Rays.Source == nil {
 				t.Fatal("fixture has no point source")
 			}
-			var corrupt func(reflect.Value)
-			corrupt = func(v reflect.Value) {
-				switch v.Kind() {
-				case reflect.Pointer:
-					if !v.IsNil() {
-						corrupt(v.Elem())
-					}
-				case reflect.Struct:
-					for i := 0; i < v.NumField(); i++ {
-						corrupt(v.Field(i))
-					}
-				case reflect.Slice:
-					for i := 0; i < v.Len(); i++ {
-						corrupt(v.Index(i))
-					}
-					if v.CanSet() {
-						v.SetZero()
-					}
-				case reflect.Float64:
-					if v.CanSet() {
-						v.SetFloat(12345)
-					}
-				case reflect.Int:
-					if v.CanSet() {
-						v.SetInt(12345)
-					}
-				case reflect.Bool:
-					if v.CanSet() {
-						v.SetBool(!v.Bool())
-					}
-				}
-			}
-			corrupt(reflect.ValueOf(got.Rays))
+			corruptResult(reflect.ValueOf(got.Rays))
 			for _, change := range []func(){func() {}, func() { c.Rays.Receiver.Tilt += 20 }, func() { c.LightDiagnostics, c.SurfaceDiagnostics = false, true }} {
 				change()
 				want, err := Compute(c)
@@ -1550,5 +1518,180 @@ func TestReceiverGeometryOwnership(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// corruptResult overwrites every settable number and flag reachable from v
+// and then empties its slices, as a caller or the WASM lifter consuming a
+// result may. Strings are kept: a cache keyed by a diagnostics kind must
+// still hit, so that sharing its storage with a result is observed.
+func corruptResult(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if !v.IsNil() {
+			corruptResult(v.Elem())
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			corruptResult(v.Field(i))
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			corruptResult(v.Index(i))
+		}
+		if v.CanSet() {
+			v.SetZero()
+		}
+	case reflect.Float64:
+		if v.CanSet() {
+			v.SetFloat(12345)
+		}
+	case reflect.Int:
+		if v.CanSet() {
+			v.SetInt(12345)
+		}
+	case reflect.Bool:
+		if v.CanSet() {
+			v.SetBool(!v.Bool())
+		}
+	}
+}
+
+// A receiver moving beneath an unchanged probe should copy its diagnostics,
+// rather than allocate every point, curvature and direction again. The bound
+// allows grid copies but excludes the per-sample allocation of rebuilding.
+func TestReceiverDiagnosticsAllocation(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 8, 0
+	for _, light := range []bool{false, true} {
+		c.SurfaceDiagnostics, c.LightDiagnostics = !light, light
+		var worker Engine
+		for i := 0; i < 3; i++ {
+			if _, err := worker.Compute(c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		with := testing.AllocsPerRun(3, func() {
+			c.Rays.Receiver.Tilt++
+			if _, err := worker.Compute(c); err != nil {
+				panic(err)
+			}
+		})
+		c.SurfaceDiagnostics, c.LightDiagnostics = false, false
+		without := testing.AllocsPerRun(3, func() {
+			c.Rays.Receiver.Tilt++
+			if _, err := worker.Compute(c); err != nil {
+				panic(err)
+			}
+		})
+		t.Logf("light=%v diagnostics add %.0f allocations", light, with-without)
+		if with-without > 2000 {
+			t.Errorf("light=%v: diagnostics added %.0f allocations, want at most 2000", light, with-without)
+		}
+	}
+}
+
+func BenchmarkReceiverMovingDiagnostics(b *testing.B) {
+	for _, light := range []bool{false, true} {
+		name := "mirror"
+		if light {
+			name = "light"
+		}
+		b.Run(name, func(b *testing.B) {
+			c := spatialPresets(b)["Conic sections cut from a cone of light"]
+			c.SurfaceDiagnostics, c.LightDiagnostics = !light, light
+			c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 480, 2
+			var worker Engine
+			frame := 0
+			b.ReportAllocs()
+			for b.Loop() {
+				c.Rays.Receiver.Tilt = 20 + float64(frame%55)
+				frame++
+				if _, err := worker.Compute(c); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// Cached diagnostics remain identical to the stateless engine, even after
+// transport or a caller consumes every nested array of a delivered result.
+func TestReceiverDiagnosticsOwnership(t *testing.T) {
+	for _, name := range []string{"Conic sections cut from a cone of light", "A glass dome's ring of light", "A lamp in water over air"} {
+		c := spatialPresets(t)[name]
+		c.Surface.USamples, c.Surface.VSamples = 24, 12
+		c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 16, 1
+		var worker Engine
+		for _, mode := range []int{0, 1, 1, 2, 2, 0, 1} {
+			c.SurfaceDiagnostics, c.LightDiagnostics = mode == 1, mode == 2
+			for _, tilt := range []float64{20, 75, 35} {
+				c.Rays.Receiver.Tilt = tilt
+				want, err := Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := worker.Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+					t.Fatalf("%s mode %d tilt %v differs", name, mode, tilt)
+				}
+				if got.Probe != nil {
+					corruptResult(reflect.ValueOf(got.Probe))
+				}
+			}
+		}
+	}
+}
+
+func TestReceiverDiagnosticsLifecycle(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 16, 0
+	c.LightDiagnostics = true
+	var worker Engine
+	run := func() {
+		t.Helper()
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run()
+	if worker.rays.probe != nil {
+		t.Fatal("one-shot family retained diagnostics")
+	}
+	run()
+	first := worker.rays.probe
+	if first == nil || first.Kind != "wavefront" {
+		t.Fatal("missing cached light diagnostics")
+	}
+	c.Rays.Receiver.At += .1
+	run()
+	if worker.rays.probe != first {
+		t.Fatal("receiver movement rebuilt diagnostics")
+	}
+	c.LightDiagnostics, c.SurfaceDiagnostics = false, true
+	run()
+	if worker.rays.probe == first || worker.rays.probe.Kind != "patch" {
+		t.Fatal("target change reused light diagnostics")
+	}
+	c.SurfaceDiagnostics = false
+	run()
+	if worker.rays.probe != nil {
+		t.Fatal("disabled probe retained diagnostics")
+	}
+	c.LightDiagnostics = true
+	run()
+	c.Rays.N2 = 1.3
+	run()
+	if worker.rays.probe != nil {
+		t.Fatal("changed family retained diagnostics")
+	}
+	run()
+	c.SurfaceDiagnostics = true
+	if _, err := worker.Compute(c); err == nil || worker.rays != nil {
+		t.Fatal("invalid dual target retained cache")
 	}
 }
