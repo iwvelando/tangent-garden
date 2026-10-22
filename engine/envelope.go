@@ -117,20 +117,10 @@ func (l *lines) at(t float64, p, dp Vec) familyLine {
 	}
 	stencil := baseStencil(l.lo, l.hi)
 	du, ddu := stencil.derivatives(aligned, t)
-	// A unit direction's stencil rounds by at most about 27u/h at an
-	// endpoint. Allow 64u/h, so constant directions stay parallel while
-	// resolved slow turns survive a change of parameter units.
-	floor := 64 * 0x1p-53 / stencil.h
-	// The full and half stencils can differ by rounding alone on a short
-	// domain. Keep the usual jump check, allowing only that rounding there:
-	// one floor for the full stencil and two for the half.
-	if !stencil.stableTangent(aligned, t, du, ddu) {
-		half, _ := derivativesAtStep(aligned, t, l.lo, l.hi, stencil.h/2)
-		if !half.Valid() || !du.Valid() || half.Sub(du).Norm() > 3*floor {
-			return out
-		}
+	if !stencil.stableTurning(aligned, t, du, ddu) {
+		return out
 	}
-	target, s := envelope(p, dp, u, du, floor)
+	target, s := envelope(p, dp, u, du, stencil.turningFloor())
 	out.target = target
 	if target != nil && out.end != nil && !l.extend {
 		length := out.end.Sub(p).Norm()

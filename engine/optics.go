@@ -18,12 +18,9 @@ func Refract(incident, normal Vec, eta float64) (Vec, bool) {
 	return incident.Mul(eta).Add(normal.Mul(eta*c - math.Sqrt(k))).Unit(), true
 }
 
-// Envelope of p(t)+lambda*d(t), where det(p'+lambda*d',d)=0.
-func Envelope(p, dp, d, dd Vec) (*Vec, float64) {
-	return envelope(p, dp, d, dd, 1e-9)
-}
-
-// envelope also accepts a bound on unresolved direction turning.
+// envelope of p(t)+lambda*d(t), where det(p'+lambda*d',d)=0. Where
+// |det(d,d')| is below floor, the turning is unresolved and there is no
+// finite point.
 func envelope(p, dp, d, dd Vec, floor float64) (*Vec, float64) {
 	den := d.Cross(dd)
 	if math.Abs(den) < floor {
@@ -31,6 +28,29 @@ func envelope(p, dp, d, dd Vec, floor float64) (*Vec, float64) {
 	}
 	s := -d.Cross(dp) / den
 	return point(p.Add(d.Mul(s))), s
+}
+
+// directionRounding over h bounds the rounding of a unit direction's
+// five-point derivative: about 27u at an endpoint's one-sided stencil,
+// allowed 64u. As an envelope's floor it follows the parameter's units, so
+// constant directions stay parallel while resolved slow turns survive.
+const directionRounding = 64 * 0x1p-53
+
+// turningFloor is the envelope floor for a unit direction differentiated
+// by s.
+func (s stencil) turningFloor() float64 { return directionRounding / s.h }
+
+// stableTurning is stableTangent for a unit direction d, whose derivative
+// is du: the full and half stencils can differ by rounding alone on a
+// short domain, so the usual jump check may fail by that much, one floor
+// for the full stencil and two for the half. A jump, such as a refracted
+// ray's at grazing incidence, is far above it.
+func (s stencil) stableTurning(d curveFunc, t float64, du, ddu Vec) bool {
+	if s.stableTangent(d, t, du, ddu) {
+		return true
+	}
+	half, _, _ := s.half(d, t)
+	return half.Valid() && du.Valid() && half.Sub(du).Norm() <= 3*s.turningFloor()
 }
 
 // incident is the direction of the light arriving at g(t): the source's
