@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"tangentgarden/engine/refine"
 	"testing"
@@ -73,34 +74,43 @@ func normalChordVirtual(s float64) (bool, float64) {
 // each change between the solid and dashed parts is localized to the finest
 // step.
 func TestRefinementMarksVirtualChordPoints(t *testing.T) {
-	q := ellipseNormalChords()
-	r := compute(t, adaptive(q))
-	path := r.Adaptive.Derived
-	checkRefined(t, q, path, r.Derived, ellipseEvolute)
-	if len(path.Virtual) != len(path.Points) {
-		t.Fatalf("%d virtual flags for %d points", len(path.Virtual), len(path.Points))
-	}
-	ts := positions(q, path)
-	changes := 0
-	for k := range path.Points {
-		if want, margin := normalChordVirtual(ts[k]); math.Abs(margin) > 1e-6 && path.Virtual[k] != want {
-			t.Fatalf("point %d at t = %g: virtual %v", k, ts[k], path.Virtual[k])
-		}
-		if u := path.At[k]; u == math.Trunc(u) && path.Virtual[k] != r.Virtual[int(u)] {
-			t.Fatalf("sample %d: virtual %v, the samples say %v", int(u), path.Virtual[k], r.Virtual[int(u)])
-		}
-		if k > 0 && path.Virtual[k] != path.Virtual[k-1] {
-			changes++
-			if w := path.At[k] - path.At[k-1]; w > math.Ldexp(1, -refine.Depth) {
-				t.Fatalf("virtual from t = %g to %g: not localized (%g steps)", ts[k-1], ts[k], w)
+	for _, exponent := range []int{0, -32, -80} {
+		t.Run(fmt.Sprintf("2^%d", exponent), func(t *testing.T) {
+			q := ellipseNormalChords()
+			scale := func(s string) string { return fmt.Sprintf("(%s)*2^(%d)", s, exponent) }
+			q.Curve.X, q.Curve.Y = scale(q.Curve.X), scale(q.Curve.Y)
+			q.Envelope.X, q.Envelope.Y = scale(q.Envelope.X), scale(q.Envelope.Y)
+			r := compute(t, adaptive(q))
+			path := r.Adaptive.Derived
+			checkRefined(t, q, path, r.Derived, func(u float64) Vec {
+				return ellipseEvolute(u).Mul(math.Ldexp(1, exponent))
+			})
+			if len(path.Virtual) != len(path.Points) {
+				t.Fatalf("%d virtual flags for %d points", len(path.Virtual), len(path.Points))
 			}
-			if _, margin := normalChordVirtual((ts[k] + ts[k-1]) / 2); math.Abs(margin) > 1e-3 {
-				t.Fatalf("virtual changes at t = %g, where ρ − 2 = %g", (ts[k]+ts[k-1])/2, margin)
+			ts := positions(q, path)
+			changes := 0
+			for k := range path.Points {
+				if want, margin := normalChordVirtual(ts[k]); math.Abs(margin) > 1e-6 && path.Virtual[k] != want {
+					t.Fatalf("point %d at t = %g: virtual %v", k, ts[k], path.Virtual[k])
+				}
+				if u := path.At[k]; u == math.Trunc(u) && path.Virtual[k] != r.Virtual[int(u)] {
+					t.Fatalf("sample %d: virtual %v, the samples say %v", int(u), path.Virtual[k], r.Virtual[int(u)])
+				}
+				if k > 0 && path.Virtual[k] != path.Virtual[k-1] {
+					changes++
+					if w := path.At[k] - path.At[k-1]; w > math.Ldexp(1, -refine.Depth) {
+						t.Fatalf("virtual from t = %g to %g: not localized (%g steps)", ts[k-1], ts[k], w)
+					}
+					if _, margin := normalChordVirtual((ts[k] + ts[k-1]) / 2); math.Abs(margin) > 1e-3 {
+						t.Fatalf("virtual changes at t = %g, where ρ − 2 = %g", (ts[k]+ts[k-1])/2, margin)
+					}
+				}
 			}
-		}
-	}
-	if changes != 4 {
-		t.Fatalf("virtual changes %d times, want 4", changes)
+			if changes != 4 {
+				t.Fatalf("virtual changes %d times, want 4", changes)
+			}
+		})
 	}
 }
 

@@ -123,7 +123,9 @@ func (l *lines) at(t float64, p, dp Vec) familyLine {
 	out.target = target
 	if target != nil && out.end != nil && !l.extend {
 		length := out.end.Sub(p).Norm()
-		slack := 1e-9 * (1 + length)
+		// Endpoint rounding is relative to the chord, not to world units:
+		// a tiny chord still has virtual points beyond either end.
+		slack := 1e-9 * length
 		out.virtual = s < -slack || s > length+slack
 	}
 	return out

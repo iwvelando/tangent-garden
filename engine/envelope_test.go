@@ -2,7 +2,9 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -258,6 +260,52 @@ func TestLineEnvelopeInvalid(t *testing.T) {
 		_, err := Compute(linesRequest("cos(t)", "sin(t)", 0, 1, tc.l))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%v: got %v, want %q", tc.l, err, tc.want)
+		}
+	}
+}
+
+// The epicycloid point divides a t → mt chord in the ratio 1:m.
+// For m = -1.5 it is behind the first endpoint, or beyond the second
+// when the chord is reversed. These classifications cannot depend on units.
+func TestChordEnvelopeVirtualScale(t *testing.T) {
+	for _, m := range []float64{2, -1.5} {
+		for _, swap := range []bool{false, true} {
+			q := linesRequest("cos(t)", "sin(t)", 0.1, 3, chords("cos(a*t)", "sin(a*t)"))
+			q.Curve.A = m
+			if swap {
+				q.Curve.X, q.Envelope.X = q.Envelope.X, q.Curve.X
+				q.Curve.Y, q.Envelope.Y = q.Envelope.Y, q.Curve.Y
+			}
+			for _, extend := range []bool{false, true} {
+				q.Envelope.Extend = extend
+				unit := compute(t, q)
+				for _, exponent := range []int{0, -20, -32, -80, 13} {
+					t.Run(fmt.Sprintf("m=%g/swap=%v/extend=%v/2^%d", m, swap, extend, exponent), func(t *testing.T) {
+						copy := q
+						scale := func(s string) string { return fmt.Sprintf("(%s)*2^(%d)", s, exponent) }
+						copy.Curve.X, copy.Curve.Y = scale(q.Curve.X), scale(q.Curve.Y)
+						copy.Envelope.X, copy.Envelope.Y = scale(q.Envelope.X), scale(q.Envelope.Y)
+						r := compute(t, copy)
+						if r.Invalid != 0 || !reflect.DeepEqual(r.Warnings, unit.Warnings) {
+							t.Fatalf("invalid=%d warnings=%v", r.Invalid, r.Warnings)
+						}
+						for j, p := range r.Derived {
+							u := sampleT(q, j)
+							want := Vec{(m*math.Cos(u) + math.Cos(m*u)) / (m + 1), (m*math.Sin(u) + math.Sin(m*u)) / (m + 1)}
+							closeVec(t, p, want.Mul(math.Ldexp(1, exponent)), math.Ldexp(1e-7, exponent))
+							closeVec(t, p, unit.Derived[j].Mul(math.Ldexp(1, exponent)), 0)
+							if r.Virtual[j] != (m < 0 && !extend) {
+								t.Fatalf("sample %d: virtual=%v, want %v", j, r.Virtual[j], m < 0 && !extend)
+							}
+						}
+						for _, ray := range r.Rays {
+							if ray.Target == nil || ray.Virtual != (m < 0 && !extend) {
+								t.Fatalf("ray %d: target=%v virtual=%v", ray.SampleIndex, ray.Target, ray.Virtual)
+							}
+						}
+					})
+				}
+			}
 		}
 	}
 }
