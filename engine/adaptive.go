@@ -343,7 +343,13 @@ func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
 			return project(p, d, q.Pole)
 		}
 	case q.Kind == "evolute":
-		return q.along(f, g, func(_ float64, p, d, dd Vec) *Vec { return Evolute(p, d, dd) })
+		at := q.stations(f, g)
+		return func(t float64) *Vec {
+			if s := at(t); s.ok {
+				return evolute(s.p, s.d, s.dd, s.resolution)
+			}
+			return nil
+		}
 	case q.Kind == "offset" && !q.Stack.Enabled:
 		return q.along(f, g, func(_ float64, p, d, _ Vec) *Vec { return Offset(p, d, q.Distance) })
 	case q.Kind == "catacaustic" || q.Kind == "diacaustic" || (q.Kind == "envelope" && out != nil && out.lineFamily != nil):
@@ -518,7 +524,9 @@ func (s *vecSlab) keep(v Vec) *Vec {
 // position and stencil derivatives, and whether they passed its checks.
 type station struct {
 	p, d, dd Vec
-	ok       bool
+	// resolution is dd's (see stencil.resolution).
+	resolution float64
+	ok         bool
 }
 
 // stations evaluates along's input at any t.
@@ -528,17 +536,18 @@ func (q Request) stations(f, g curveFunc) func(float64) station {
 	return func(t float64) station {
 		p := f(t)
 		d, dd := base.derivatives(f, t)
-		if !p.Valid() || !base.conditioned(f, t, d, dd, derivativeOrder(q)) {
+		ok, resolution := base.checked(f, t, d, dd, derivativeOrder(q))
+		if !p.Valid() || !ok {
 			return station{}
 		}
 		if composed(q.Input) {
 			p = g(t)
 			d, dd = base.derivatives(g, t)
-			if !p.Valid() || !inputStencil(lo, hi).conditioned(g, t, d, dd, constructionOrder(q.Kind)) {
+			if ok, resolution = inputStencil(lo, hi).checked(g, t, d, dd, constructionOrder(q.Kind)); !p.Valid() || !ok {
 				return station{}
 			}
 		}
-		return station{p, d, dd, true}
+		return station{p, d, dd, resolution, true}
 	}
 }
 

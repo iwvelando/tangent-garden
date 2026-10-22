@@ -405,7 +405,7 @@ func Compute(q Request) (Result, error) {
 				out.Harmonic.Positions = append(out.Harmonic.Positions, s)
 			}
 		}
-		stableSample := baseStencil(lo, hi).conditioned(f, t, dp, ddp, derivativeOrder(q))
+		stableSample, resolution := baseStencil(lo, hi).checked(f, t, dp, ddp, derivativeOrder(q))
 		if !p.Valid() || !stableSample {
 			out.Base[j] = nil
 			out.Invalid++
@@ -420,7 +420,7 @@ func Compute(q Request) (Result, error) {
 			p = g(t)
 			out.Input[j] = point(p)
 			dp, ddp = derivatives(g, t, lo, hi)
-			stableSample = inputStencil(lo, hi).conditioned(g, t, dp, ddp, constructionOrder(q.Kind))
+			stableSample, resolution = inputStencil(lo, hi).checked(g, t, dp, ddp, constructionOrder(q.Kind))
 			if !p.Valid() || !stableSample {
 				out.Invalid++
 				if arcLength {
@@ -526,7 +526,7 @@ func Compute(q Request) (Result, error) {
 			}
 			last, lastT, lastSrc = j, t, p
 		case "evolute":
-			target = Evolute(p, dp, ddp)
+			target = evolute(p, dp, ddp, resolution)
 		case "involute":
 			if arcOK {
 				if target = q.unwound(g, t, arc, t, p, dp, ddp); target != nil {

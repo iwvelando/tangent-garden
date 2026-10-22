@@ -592,3 +592,43 @@ test("a tiny ellipse keeps its evolute and probe in the drawing and SVG export",
     `${short(e.kappa)} (turning left)`,
   );
 });
+
+// On [−1, 1] at the examples' 2000 samples, one sample's rounding agreed
+// between the stencil's two spacings, and its far center shrank the fitted
+// line to a dot.
+test("editing an ellipse into a tilted line leaves no evolute in the drawing or SVG", async ({
+  page,
+}) => {
+  await open(page, { kind: "evolute", adaptive: true });
+  const original = await drawn(page, "derived-curve").getAttribute("d");
+  expect(original).toMatch(/^M/);
+  await page.getByLabel("x(t)", { exact: true }).fill("t");
+  await page.getByLabel("y(t)", { exact: true }).fill("0.7*t+0.3");
+  await page.getByLabel("t from", { exact: true }).fill("-1");
+  await page.getByLabel("to", { exact: true }).fill("1");
+  await expect(value(page, "Curvature κ")).toHaveText("0 (flat: no circle)");
+  await expect(drawn(page, "base-curve")).toHaveAttribute("d", /^M/);
+  await expect(drawn(page, "derived-curve")).toHaveAttribute("d", "");
+  // The view fits the line itself.
+  const line = (await drawn(page, "base-curve").boundingBox())!;
+  expect(Math.hypot(line.width, line.height)).toBeGreaterThan(200);
+  await expect(drawn(page, "probe-circle")).toHaveCount(0);
+  await expect(drawn(page, "probe-construction")).toHaveCount(0);
+  await page
+    .getByRole("checkbox", { name: "At any t, between samples", exact: true })
+    .check();
+  await expect(drawn(page, "probe")).toHaveAttribute("data-t");
+  await expect(value(page, "Curvature κ")).toHaveText("0 (flat: no circle)");
+  await expect(drawn(page, "probe-construction")).toHaveCount(0);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toMatch(/data-testid="derived-curve" d=""/);
+  expect(svg).not.toContain('data-testid="probe-construction"');
+  await page.getByLabel("x(t)", { exact: true }).fill("2*cos(t)");
+  await page.getByLabel("y(t)", { exact: true }).fill("3*sin(t)");
+  await page.getByLabel("t from", { exact: true }).fill("0");
+  await page.getByLabel("to", { exact: true }).fill("2*pi");
+  await expect(drawn(page, "derived-curve")).toHaveAttribute("d", original!);
+  await expect(drawn(page, "probe-circle")).toHaveCount(1);
+});
