@@ -72,9 +72,6 @@ func (c Roller) at(p, d Vec, s float64) Rolling {
 	return Rolling{Center: center, Radius: c.Radius, Contact: p, Point: center.Add(arm.Mul(c.Arm))}
 }
 
-// stationary is the speed below which a curve has no tangent to roll along.
-const stillSpeed = 1e-9
-
 // travel is a rolling shape's progress along g. At a cusp the direction of
 // travel reverses; the shape stays on its side of the curve and rolls back
 // out, turning the other way. So it is placed with the heading, the tangent
@@ -98,8 +95,8 @@ func newTravel(g curveFunc, lo, hi float64) *travel {
 
 // note records a tangent d at t, locating a cusp by bisection when it
 // points against the heading. It returns the cusp, or NaN.
-func (v *travel) note(t float64, d Vec) float64 {
-	if !(d.Norm() > stillSpeed) {
+func (v *travel) note(t float64, p, d, dd Vec) float64 {
+	if d.Norm() == 0 || stationary(p, d, dd) {
 		return math.NaN()
 	}
 	cusp := math.NaN()
@@ -122,14 +119,24 @@ func (v *travel) note(t float64, d Vec) float64 {
 	return cusp
 }
 
-// step advances from t−h to t, where g′ is a, b (at t − h/2), and d. Simpson
-// arc length is split at each cusp between them, and its sign turned there.
-// It reports whether the arc length stays finite.
-func (v *travel) step(t, h float64, a, b, d Vec) bool {
+// local is g's point and derivatives at t, the point taken from the
+// stencil wherever it evaluated t itself: a derived input is costly.
+func (v *travel) local(t float64) (p, d, dd Vec) {
+	m := nodes{f: v.g}
+	d, dd = derivativesAtStep(m.record, t, v.lo, v.hi, baseStencil(v.lo, v.hi).h)
+	return m.reuse(t), d, dd
+}
+
+// step advances from t−h to t, where g is p with derivatives d and dd.
+// Simpson arc length is split at each cusp between them, and its sign
+// turned there. It reports whether the arc length stays finite.
+func (v *travel) step(t, h float64, p, d, dd Vec) bool {
+	pa, a, aa := v.local(t - h)
+	pb, b, bb := v.local(t - h/2)
 	ts := [3]float64{t - h, t - h/2, t}
 	var cuts []float64
-	for k, w := range [3]Vec{a, b, d} {
-		if c := v.note(ts[k], w); !math.IsNaN(c) {
+	for k, w := range [3][3]Vec{{pa, a, aa}, {pb, b, bb}, {p, d, dd}} {
+		if c := v.note(ts[k], w[0], w[1], w[2]); !math.IsNaN(c) {
 			cuts = append(cuts, c)
 		}
 	}
@@ -161,14 +168,15 @@ func (v *travel) step(t, h float64, a, b, d Vec) bool {
 
 // roll places the rolling circle, or the rolling curve mv, at p, where the
 // input's tangent is d, after the travel v, along the heading, which undoes
-// reversals at cusps. It is undefined below the still speed, and reports why
+// reversals at cusps. It uses the involute's relative stationary-point guard,
+// with no heading at exactly zero speed, and reports why
 // a rolling curve could not be placed. The sample loop and refinement share
 // this one compiled function, so a refined trace passes exactly through the
 // samples: copies inlined in different places can round differently.
 //
 //go:noinline
-func (q Request) roll(mv *mover, p, d Vec, v *travel) (*Vec, *Rolling, *Placement, stop) {
-	if !(d.Norm() > stillSpeed) {
+func (q Request) roll(mv *mover, p, d, dd Vec, v *travel) (*Vec, *Rolling, *Placement, stop) {
+	if d.Norm() == 0 || stationary(p, d, dd) {
 		return nil, nil, nil, placedOK
 	}
 	heading := d.Mul(v.orient)

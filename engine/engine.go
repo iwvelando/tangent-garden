@@ -430,18 +430,20 @@ func Compute(q Request) (Result, error) {
 			}
 		}
 		if j == 0 && rolls != nil {
-			rolls.note(t, dp)
+			rolls.note(t, p, dp, ddp)
 		}
 		if j > 0 && arcLength && arcOK {
-			a, _ := derivatives(g, t-step, lo, hi)
-			b, _ := derivatives(g, t-step/2, lo, hi)
-			inc := step / 6 * (a.Norm() + 4*b.Norm() + dp.Norm())
 			if rolls != nil {
-				arcOK = rolls.step(t, step, a, b, dp)
-			} else if !finite(inc) {
-				arcOK = false
+				arcOK = rolls.step(t, step, p, dp, ddp)
 			} else {
-				arc += inc
+				a, _ := derivatives(g, t-step, lo, hi)
+				b, _ := derivatives(g, t-step/2, lo, hi)
+				inc := step / 6 * (a.Norm() + 4*b.Norm() + dp.Norm())
+				if !finite(inc) {
+					arcOK = false
+				} else {
+					arc += inc
+				}
 			}
 		}
 		if oriented && j > 0 && reverses(t, dp) {
@@ -478,7 +480,7 @@ func Compute(q Request) (Result, error) {
 				break
 			}
 			var why stop
-			if target, rolled, placed, why = q.roll(mv, p, dp, rolls); why != placedOK {
+			if target, rolled, placed, why = q.roll(mv, p, dp, ddp, rolls); why != placedOK {
 				arcOK, movingStop = false, why
 				break
 			}
@@ -569,10 +571,10 @@ func Compute(q Request) (Result, error) {
 			// Every defined line is drawn, touching its envelope or not.
 			out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: member.direction, Target: target, Virtual: virtual, End: member.end})
 		} else if line {
-			// A finite evolute, offset or pole projection has already passed
-			// a relative tangent guard; its normal survives a change of length
-			// units.
-			hasTangent := dp.Norm() > 1e-9 || (q.Kind == "evolute" || q.Kind == "offset" || usesPole(q.Kind)) && target != nil
+			// A finite evolute, offset, pole projection or rolling body has
+			// already passed a relative tangent guard; its normal survives a
+			// change of length units.
+			hasTangent := dp.Norm() > 1e-9 || (q.Kind == "evolute" || q.Kind == "offset" || q.Kind == "rolling" || usesPole(q.Kind)) && target != nil
 			if p.Valid() && dp.Valid() && hasTangent {
 				if optical && dir.Valid() {
 					out.Rays = append(out.Rays, Ray{SampleIndex: j, Origin: p, Direction: dir, Incident: incident(t), Target: target, Virtual: virtual, TIR: tir})

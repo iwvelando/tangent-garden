@@ -415,7 +415,7 @@ type rollingRun struct {
 func (q Request) rollingAt(f, g curveFunc, run *rollingRun) func(float64) *Vec {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	step := (hi - lo) / float64(q.Samples-1)
-	return q.along(f, g, func(t float64, p, d, _ Vec) *Vec {
+	return q.along(f, g, func(t float64, p, d, dd Vec) *Vec {
 		j := q.sampleBefore(t)
 		if run.at[j] == nil {
 			return nil
@@ -423,14 +423,12 @@ func (q Request) rollingAt(f, g curveFunc, run *rollingRun) func(float64) *Vec {
 		v := *run.at[j]
 		start := lo + float64(j)*step
 		if h := t - start; h > 0 {
-			a, _ := derivatives(g, start, lo, hi)
-			b, _ := derivatives(g, t-h/2, lo, hi)
-			if !v.step(t, h, a, b, d) {
+			if !v.step(t, h, p, d, dd) {
 				return nil
 			}
 		}
 		// Where a rolling curve cannot be placed, roll has no point.
-		target, _, _, _ := q.roll(run.mv, p, d, &v)
+		target, _, _, _ := q.roll(run.mv, p, d, dd, &v)
 		return target
 	})
 }

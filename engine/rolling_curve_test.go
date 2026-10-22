@@ -379,8 +379,7 @@ func TestRollingCurveClosureScale(t *testing.T) {
 
 // A straight segment's arc length is its length. The base travels twice
 // that length, so the contact must stop halfway, on either side, with the
-// same geometry and omissions at each scale. The short base domain keeps
-// its speed above the separate absolute resting-speed limit.
+// same geometry and omissions at each scale, including a slow tiny base.
 func TestRollingCurveEndpointScale(t *testing.T) {
 	for _, scale := range []float64{1, 0x1p-40, 0x1p10} {
 		for _, side := range []string{"left", "right"} {
@@ -392,7 +391,7 @@ func TestRollingCurveEndpointScale(t *testing.T) {
 						m.Start = 1
 						want = Vec{3 * scale / 4, -scale / 8}
 					}
-					q := curveRequest(num(2e6*scale)+"*t", "0", 0, 1e-6, side, m, Vec{scale / 4, scale / 8})
+					q := curveRequest(num(2*scale)+"*t", "0", 0, 1, side, m, Vec{scale / 4, scale / 8})
 					q.Samples, q.Adaptive = 101, adaptive
 					r := compute(t, q)
 					if r.Moving.Closed || r.Invalid != 50 || !warned(r, "end of the rolling curve's domain") {

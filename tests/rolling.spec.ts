@@ -412,3 +412,47 @@ test("a circle rolling on the flower's pedal rolls back out of all ten cusps, wi
     last - (config.samples - 1) / (config.lines - 1) - 1,
   );
 });
+
+// Editing through the actual scalar controls must preserve the drawing,
+// its representative circle, and the exported SVG at a subnanounit scale.
+test("tiny rolling studies retain their drawing and exported circle", async ({
+  page,
+}) => {
+  await ready(page);
+  const selector = '[data-testid="rolling-construction"] > circle:first-child';
+  const original = await circleAttributes(page, selector);
+  await field(page, "r(t)").fill("2^-32*(1+0.18*cos(5*t))");
+  await field(page, "Circle radius ρ").fill("0.118*2^-32");
+  await field(page, "Tracing distance ℓ").fill("0.118*2^-32");
+  await expect
+    .poll(async () => (await definition(page)).rolling.radius)
+    .toBe(0.118 * 2 ** -32);
+  await settled(page);
+  await expect(construction(page)).toHaveAttribute("data-sample", "1999");
+  await expect(page.getByText(/omitted samples/)).toHaveCount(0);
+  const tiny = await circleAttributes(page, selector);
+  tiny.forEach((value, i) => expect(value).toBeCloseTo(original[i], 3));
+  const trace = page.getByTestId("derived-curve");
+  expect((await trace.getAttribute("d"))!.match(/M/g)).toHaveLength(1);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const exported = await page.evaluate(
+    ({ svg, selector }) => {
+      const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+      return {
+        config: JSON.parse(doc.querySelector("desc")!.textContent!),
+        circle: Array.from(doc.querySelectorAll(selector)).map((c) =>
+          ["cx", "cy", "r"].map((k) => Number(c.getAttribute(k))),
+        ),
+        trace: doc
+          .querySelector('[data-testid="derived-curve"]')
+          ?.getAttribute("d"),
+      };
+    },
+    { svg, selector },
+  );
+  expect(exported.config.rolling.radius).toBe(0.118 * 2 ** -32);
+  expect(exported.circle).toEqual([tiny]);
+  expect(exported.trace).toBe(await trace.getAttribute("d"));
+});
