@@ -135,6 +135,18 @@ const curves = [
       },
     }),
   ],
+  [
+    "cone-moving",
+    "Conic sections cut from a cone of light",
+    "480 bins, 2 refinement levels, moving receiver",
+    (c) => ({
+      rays: {
+        ...c.rays,
+        receiver: { ...c.rays.receiver, bins: 480, refine: 2 },
+      },
+    }),
+    [20, 35, 50, 65, 75, 65, 50, 35],
+  ],
 ];
 
 const options = { runs: 5, engine: "public/", compare: "", study: "" };
@@ -237,7 +249,8 @@ async function measure(source, studies) {
     const rows = [];
     for (let run = 0; run <= options.runs; run++) {
       const t0 = performance.now();
-      const reply = globalThis.tangentGardenSpatial(JSON.stringify(s.request));
+      const request = s.frames ? s.frames[run % s.frames.length] : s.request;
+      const reply = globalThis.tangentGardenSpatial(JSON.stringify(request));
       const t1 = performance.now();
       const { result, lifted, bytes, transfer } = decode(reply);
       const t2 = performance.now();
@@ -285,19 +298,31 @@ async function allStudies() {
     const { spatialPresets } = await server.ssrLoadModule(
       "/web/spatial/presets.ts",
     );
-    const curveStudies = curves.map(([name, preset, note, changes = {}]) => {
-      const p = spatialPresets.find((p) => p.name === preset);
-      if (!p) throw new Error(`No preset named ${preset}`);
-      return {
-        name,
-        note,
-        kind: "curve",
-        request: {
+    const curveStudies = curves.map(
+      ([name, preset, note, changes = {}, tilts]) => {
+        const p = spatialPresets.find((p) => p.name === preset);
+        if (!p) throw new Error(`No preset named ${preset}`);
+        const request = {
           ...p.config,
           ...(typeof changes === "function" ? changes(p.config) : changes),
-        },
-      };
-    });
+        };
+        return {
+          name,
+          note,
+          kind: "curve",
+          request,
+          ...(tilts && {
+            frames: tilts.map((tilt) => ({
+              ...request,
+              rays: {
+                ...request.rays,
+                receiver: { ...request.rays.receiver, tilt },
+              },
+            })),
+          }),
+        };
+      },
+    );
     return [...studies, ...curveStudies].filter(
       (s) => !options.study || s.name === options.study,
     );

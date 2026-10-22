@@ -1,6 +1,9 @@
 package engine3
 
-import "math"
+import (
+	"math"
+	"math/bits"
+)
 
 // ReceiverRequest declares a receiver: the plane Plane = At, for Plane "x",
 // "y" or "z" (or "none", with no receiver), and on it a square window of
@@ -174,7 +177,7 @@ func (r ReceiverRequest) window(a, b float64) Vec3 {
 
 // receive collects the outgoing rays of the sampled surface on the
 // receiver; samples holds the grid's rays, and scale the surface's size.
-func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale float64) *Receiver {
+func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale float64, cache *rayCache) *Receiver {
 	rc := r.Receiver
 	half, n := rc.Size/2, rc.Bins
 	lo1, lo2, bin := rc.C1-half, rc.C2-half, rc.Size/float64(n)
@@ -203,19 +206,15 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 	}
 	// A ray's landing: whether it is traced, and where it crosses the
 	// plane, in bins, if it crosses ahead and within reach.
-	type landing struct {
-		p                [2]float64
-		traced, ok, done bool
-	}
-	land := func(s mirrorPoint) landing {
+	land := func(s mirrorPoint) receiverLanding {
 		if !s.traced() {
-			return landing{done: true}
+			return receiverLanding{done: true}
 		}
 		p, ok := cross(s)
-		return landing{p, true, ok, true}
+		return receiverLanding{p, true, ok, true}
 	}
 	nu, nv, levels := q.USamples, q.VSamples, rc.Refine
-	base := grid2[landing](nu+1, nv+1)
+	base := grid2[receiverLanding](nu+1, nv+1)
 	for i := range base {
 		for j := range base[i] {
 			base[i][j] = land(samples[i][j])
@@ -225,26 +224,30 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 	// lowest corner (i, j) there and its side. Points between the samples
 	// are traced by outgoing, where that grid puts them.
 	fu, fv, step := nu<<levels, nv<<levels, 1<<levels
+	traces := cache.receiverGrid(nu, nv, levels)
 	type cell struct{ i, j, side int }
 	// Each column of the finer grid is held once a point on it is traced.
-	points := make([][]landing, fu+1)
-	point := func(i, j int) landing {
+	points := traces.landingGrid(fu + 1)
+	point := func(i, j int) receiverLanding {
 		if i%step == 0 && j%step == 0 {
 			return base[i/step][j/step]
 		}
 		if points[i] == nil {
-			points[i] = make([]landing, fv+1)
+			points[i] = traces.landingColumn(i, fv+1)
 		}
 		if l := points[i][j]; l.done {
 			return l
 		}
-		s, _ := q.outgoing(r, lerp(q.UMin, q.UMax, i, fu), lerp(q.VMin, q.VMax, j, fv), scale)
+		s := traces.corner(i, j, fv+1, func() mirrorPoint {
+			p, _ := q.outgoing(r, lerp(q.UMin, q.UMax, i, fu), lerp(q.VMin, q.VMax, j, fv), scale)
+			return p
+		})
 		l := land(s)
 		points[i][j] = l
 		return l
 	}
-	corners := func(c cell) [4]landing {
-		return [4]landing{point(c.i, c.j), point(c.i+c.side, c.j), point(c.i+c.side, c.j+c.side), point(c.i, c.j+c.side)}
+	corners := func(c cell) [4]receiverLanding {
+		return [4]receiverLanding{point(c.i, c.j), point(c.i+c.side, c.j), point(c.i+c.side, c.j+c.side), point(c.i, c.j+c.side)}
 	}
 	// A cell splits where its light lands near the window and its corners'
 	// crossings are more than a bin apart, or some of its corners land and
@@ -326,25 +329,33 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 			dv := (q.VMax - q.VMin) / float64(fv) * float64(c.side)
 			// A cell of the grid emits as it always has; a refined one by
 			// outgoing, which traces the same light.
-			var m mirrorPoint
-			var area float64
-			if c.side == step {
-				m = q.ray(r, u+du/2, v+dv/2, scale)
-				_, xu, xv, _, _, _ := q.patch(u+du/2, v+dv/2)
-				area = xu.cross(xv).norm()
-			} else {
-				m, area = q.outgoing(r, u+du/2, v+dv/2, scale)
-			}
-			if !m.Lit {
+			depth := levels - bits.TrailingZeros(uint(c.side))
+			emission := traces.emission(depth, c.i/c.side, c.j/c.side, nv<<depth, func() receiverFlux {
+				var m mirrorPoint
+				var area float64
+				if c.side == step {
+					m = q.ray(r, u+du/2, v+dv/2, scale)
+					_, xu, xv, _, _, _ := q.patch(u+du/2, v+dv/2)
+					area = xu.cross(xv).norm()
+				} else {
+					m, area = q.outgoing(r, u+du/2, v+dv/2, scale)
+				}
+				if !m.Lit {
+					return receiverFlux{}
+				}
+				flux := math.Abs(m.I.dot(m.N)) * area * math.Abs(du*dv)
+				if r.Light == "point" {
+					d := m.X.sub(r.Source)
+					flux /= d.dot(d)
+				}
+				return receiverFlux{flux: flux, lit: true, total: m.Total}
+			})
+			if !emission.lit {
 				continue
 			}
-			flux := math.Abs(m.I.dot(m.N)) * area * math.Abs(du*dv)
-			if r.Light == "point" {
-				d := m.X.sub(r.Source)
-				flux /= d.dot(d)
-			}
+			flux := emission.flux
 			out.Emitted += flux
-			if m.Total {
+			if emission.total {
 				out.Total += flux
 				continue
 			}
