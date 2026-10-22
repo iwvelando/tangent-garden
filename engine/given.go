@@ -29,8 +29,8 @@ func (q Request) compiled() (curveFunc, error) {
 var errUnanchored = errors.New("the involute's arc length cannot reach the anchor from the start of the domain")
 
 // contact is where an involute's string leaves its input curve: the
-// point and the velocity there.
-type contact struct{ p, d Vec }
+// point and its first two stencil derivatives there.
+type contact struct{ p, d, dd Vec }
 
 // AnchoredInvolutes are the involutes of f, or of the derived input q.Input
 // built on it, with arc length s measured from the anchor t₀ rather than
@@ -64,7 +64,7 @@ func AnchoredInvolutes(q Request, f func(float64) Vec, anchor float64, strings [
 		out.Members[k] = make([]*Vec, q.Samples)
 		for i, s := range first.arcs {
 			if !math.IsNaN(s) {
-				out.Members[k][i] = Involute(first.contacts[i].p, first.contacts[i].d, s, -c-arc)
+				out.Members[k][i] = Involute(first.contacts[i].p, first.contacts[i].d, first.contacts[i].dd, s, -c-arc)
 			}
 		}
 	}
@@ -83,14 +83,14 @@ func AnchoredInvolutes(q Request, f func(float64) Vec, anchor float64, strings [
 		stations, arcs := q.sharedStations(f, g), map[float64]float64{}
 		for k, c := range strings {
 			offset := -c - arc
-			at := q.alongStations(stations, func(t float64, p, d, _ Vec) *Vec {
+			at := q.alongStations(stations, func(t float64, p, d, dd Vec) *Vec {
 				s, ok := arcs[t]
 				if !ok {
 					j := q.sampleBefore(t)
 					s = q.arcTo(g, lo+float64(j)*step, first.arcs[j], t, d)
 					arcs[t] = s
 				}
-				return Involute(p, d, s, offset)
+				return Involute(p, d, dd, s, offset)
 			})
 			path, _ := refinePath(out.Members[k], broken, at, lo, hi, q.View)
 			out.Refined = append(out.Refined, path)

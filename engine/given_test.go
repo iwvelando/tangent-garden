@@ -173,3 +173,39 @@ func TestAnchoredInvolutesRefineEachMember(t *testing.T) {
 		}
 	}
 }
+
+// A tiny circle's anchored family is still the circle involute family,
+// including its refined points before and after an off-sample anchor.
+func TestTinyAnchoredInvolutes(t *testing.T) {
+	const scale, anchor = 0x1p-35, .731
+	q := request("involute", "", "", 0, 2*math.Pi)
+	q.Samples = 65
+	q.Adaptive = true
+	lengths := []float64{-.5 * scale, 0, .75 * scale}
+	family, err := AnchoredInvolutes(q, func(u float64) Vec { return Vec{scale * math.Cos(u), scale * math.Sin(u)} }, anchor, lengths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, member := range family.Members {
+		check := func(p *Vec, u float64) {
+			t.Helper()
+			if p == nil {
+				t.Fatal("missing string end")
+			}
+			want := circleInvolute(-anchor - lengths[k]/scale)(u).Mul(scale)
+			if e := p.Sub(want).Norm() / scale; e > 1e-7 {
+				t.Fatalf("member %d at %g: error %g radii", k, u, e)
+			}
+		}
+		for j, p := range member {
+			check(p, sampleT(q, j))
+		}
+		path := family.Refined[k]
+		if path.Inserted == 0 {
+			t.Fatal("family not refined")
+		}
+		for j, p := range path.Points {
+			check(p, path.At[j]*(q.Curve.Max-q.Curve.Min)/float64(q.Samples-1))
+		}
+	}
+}

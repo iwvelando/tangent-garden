@@ -265,3 +265,81 @@ func TestRefinementFindsANarrowGapBeneathTheInvolute(t *testing.T) {
 		t.Fatalf("the gap drawn from %g to %g, want %g to %g", a, b, gap-0.1*h, gap+0.1*h)
 	}
 }
+
+// Length units must not decide whether a regular circle can unwind. Check
+// actual sampled and refined geometry against the circle's closed form.
+func TestInvoluteAtSmallScales(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-35, 0x1p-45} {
+		t.Run(num(scale), func(t *testing.T) {
+			q := request("involute", num(scale)+"*cos(t)", num(scale)+"*sin(t)", 0, 4*math.Pi)
+			q.Samples, q.Lines, q.Offset = 65, 9, .5*scale
+			r := compute(t, adaptive(q))
+			if r.Invalid != 0 || len(r.Rays) != q.Lines {
+				t.Fatalf("invalid=%d, strings=%d, want 0 and %d", r.Invalid, len(r.Rays), q.Lines)
+			}
+			for j, p := range r.Derived {
+				if p == nil {
+					t.Fatalf("sample %d has no involute at scale %g", j, scale)
+				}
+				want := circleInvolute(.5)(sampleT(q, j)).Mul(scale)
+				if e := p.Sub(want).Norm() / scale; e > 1e-7 {
+					t.Fatalf("sample %d error=%g radii", j, e)
+				}
+			}
+			path := r.Adaptive.Derived
+			if path == nil || path.Inserted == 0 {
+				t.Fatal("involute not refined")
+			}
+			for j, p := range path.Points {
+				if p == nil {
+					t.Fatalf("refined point %d is a gap", j)
+				}
+				u := q.Curve.Min + path.At[j]*(q.Curve.Max-q.Curve.Min)/float64(q.Samples-1)
+				if e := p.Sub(circleInvolute(.5)(u).Mul(scale)).Norm() / scale; e > 1e-7 {
+					t.Fatalf("refined point %d error=%g radii", j, e)
+				}
+			}
+			at := .731
+			q.Probe = &ProbeQuery{T: &at}
+			probed := compute(t, q)
+			if probed.Probe == nil || probed.Probe.Derived == nil {
+				t.Fatal("between-sample probe has no string end")
+			}
+		})
+	}
+}
+
+// A rounded derivative at a cusp must not become an unwinding direction,
+// even at the origin, where the point alone supplies no length reference.
+func TestInvoluteStationaryAtEveryScale(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-35, 0x1p-45} {
+		for _, xy := range [][2]string{{"1-cos(20*t)", "20*t-sin(20*t)"}, {"1", "1"}, {"0", "0"}} {
+			q := request("involute", num(scale)+"*("+xy[0]+")", num(scale)+"*("+xy[1]+")", -1, 1)
+			q.Samples = 65
+			r := compute(t, q)
+			if r.Derived[32] != nil {
+				t.Fatalf("scale %g, %v: string at stationary point: %v", scale, xy, r.Derived[32])
+			}
+		}
+	}
+}
+
+// The guard's 10⁻⁹ is a rounding bound, not a speed requirement. A unit
+// circle 1000 units from the origin, traced so slowly that its speed is
+// 10⁻⁷ of its distance per unit of t, still unwinds everywhere, a
+// hundredfold inside the guard.
+func TestSlowlyTracedInvoluteKeepsItsStrings(t *testing.T) {
+	const rate, center = 1e-4, 1000.
+	q := request("involute", num(center)+"+cos("+num(rate)+"*t)", "sin("+num(rate)+"*t)", 0, 2*math.Pi/rate)
+	q.Samples, q.Lines, q.Offset = 65, 9, .5
+	r := compute(t, q)
+	if r.Invalid != 0 || len(r.Rays) != q.Lines {
+		t.Fatalf("invalid=%d, strings=%d, want 0 and %d", r.Invalid, len(r.Rays), q.Lines)
+	}
+	for j, p := range r.Derived {
+		want := circleInvolute(.5)(rate * sampleT(q, j)).Add(Vec{center, 0})
+		if p == nil || p.Sub(want).Norm() > 1e-7 {
+			t.Fatalf("sample %d: got %v, want %v", j, p, want)
+		}
+	}
+}

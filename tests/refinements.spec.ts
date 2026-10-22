@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { test, expect, type Page } from "@playwright/test";
 import {
   openAnimation,
@@ -180,4 +181,56 @@ test("polar light source follows a circular orbit, accepts scalar angle endpoint
     .selectOption("polar");
   await page.getByRole("textbox", { name: "Source radius r" }).fill("-1");
   await expect(page.getByRole("alert")).toContainText("nonnegative");
+});
+
+test("tiny involutes retain their string, refinement, and SVG through control edits", async ({
+  page,
+}) => {
+  await ready(page, "1");
+  const art = page.locator("#artwork");
+  const derived = art.getByTestId("derived-curve");
+  const settled = async () =>
+    expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false");
+  // Each unwinding string is a line from the circle to the involute.
+  const strings = () =>
+    art
+      .locator("line")
+      .evaluateAll((lines) =>
+        lines.map((l) =>
+          ["x1", "y1", "x2", "y2"].map((a) => l.getAttribute(a)).join(" "),
+        ),
+      );
+  const original = await derived.getAttribute("d");
+  expect(original!.length).toBeGreaterThan(100);
+  const unwound = await strings();
+  expect(unwound.length).toBeGreaterThanOrEqual(32);
+  const edit = async (x: string, y: string) => {
+    await page.getByRole("textbox", { name: "x(t)", exact: true }).fill(x);
+    await page.getByRole("textbox", { name: "y(t)", exact: true }).fill(y);
+    await page.getByRole("textbox", { name: "y(t)", exact: true }).press("Tab");
+    await expect.poll(async () => (await definition(page)).curve.y).toBe(y);
+    await settled();
+  };
+  await edit("2^-35*cos(t)", "2^-35*sin(t)");
+  await expect(derived).toHaveAttribute("d", original!);
+  expect(await strings()).toEqual(unwound);
+  await page
+    .getByRole("checkbox", { name: "Refine between samples", exact: true })
+    .check();
+  await settled();
+  const refined = await derived.getAttribute("d");
+  expect(refined!.length).toBeGreaterThan(100);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const file = await download;
+  const svg = await readFile((await file.path())!, "utf8");
+  expect(svg).toContain(`d="${refined}"`);
+  expect(svg).toContain("2^-35*cos(t)");
+  await edit("cos(t)", "sin(t)");
+  await expect(derived).toHaveAttribute("d", refined!);
+  await page
+    .getByRole("checkbox", { name: "Refine between samples", exact: true })
+    .uncheck();
+  await settled();
+  await expect(derived).toHaveAttribute("d", original!);
 });
