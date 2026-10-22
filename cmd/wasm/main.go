@@ -30,6 +30,7 @@ func main() {
 	})
 	js.Global().Set("tangentGardenTesseract", hyper)
 
+	var spatialEngine engine3.Engine
 	spatial := js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) != 1 {
 			return `{"error":"expected one spatial JSON request"}`
@@ -38,7 +39,7 @@ func main() {
 		err := json.Unmarshal([]byte(args[0].String()), &q)
 		var result engine3.Result
 		if err == nil {
-			result, err = engine3.Compute(q)
+			result, err = spatialEngine.Compute(q)
 		}
 		if err != nil {
 			return refusal(err)

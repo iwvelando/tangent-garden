@@ -498,3 +498,66 @@ test("a receiver shades each bin by its own irradiance", async ({ page }) => {
   // The bins span a good part of the ramp, not just its ends.
   expect(spread).toBeGreaterThan(0.1);
 });
+
+// The bridge consumes lifted output arrays. Exercise several frames in
+// one real browser worker, comparing each reply with a cold computation
+// after releasing the cache, including every bin and the fitted bounds.
+test("receiver frame reuse survives lifted WASM replies", async ({ page }) => {
+  await page.goto("/?study=3d");
+  await settled(page);
+  const preset = spatialPresets.find(
+    (p) => p.name === "Conic sections cut from a cone of light",
+  )!;
+  const base = structuredClone(preset.config);
+  base.surface.uSamples = 24;
+  base.surface.vSamples = 12;
+  base.rays.receiver = { ...base.rays.receiver, bins: 48, refine: 2 };
+  const worker = page
+    .workers()
+    .find((worker) => worker.url().includes("engine.worker"))!;
+  expect(worker).toBeTruthy();
+  const reply = (request: typeof base) =>
+    worker.evaluate((request) => {
+      const bridge = (
+        globalThis as unknown as {
+          tangentGardenSpatial: (json: string) =>
+            | string
+            | {
+                json: string;
+                lifted: { places: string; floats: Float64Array };
+              };
+        }
+      ).tangentGardenSpatial;
+      const result = bridge(JSON.stringify(request));
+      if (typeof result === "string") throw new Error(result);
+      return {
+        json: result.json,
+        places: result.lifted.places,
+        values: Array.from(result.lifted.floats),
+      };
+    }, request);
+  const cold = async (request: typeof base) => {
+    await reply({
+      ...request,
+      rays: {
+        ...request.rays,
+        receiver: { ...request.rays.receiver, plane: "none" },
+      },
+    });
+    return reply(request);
+  };
+  const opening = await cold(base);
+  for (const tilt of [75, 45, 20]) {
+    const request = {
+      ...base,
+      rays: { ...base.rays, receiver: { ...base.rays.receiver, tilt } },
+    };
+    const warm = await reply(request);
+    expect(warm).toEqual(await cold(request));
+  }
+  expect(await reply(base)).toEqual(opening);
+  const changed = { ...base, rays: { ...base.rays, n2: 1.3 } };
+  const edited = await reply(changed);
+  expect(edited).not.toEqual(opening);
+  expect(edited).toEqual(await cold(changed));
+});

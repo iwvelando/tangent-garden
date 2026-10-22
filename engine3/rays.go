@@ -331,7 +331,7 @@ func (p mirrorPoint) traced() bool { return p.Lit && !p.Total }
 // With surfaceProbe it also returns the mirror's own surface probe, as a
 // surface study of the patch would; with lightProbe, the outgoing
 // wavefront's (see lightProbe).
-func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool) (Result, error) {
+func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool, cache *rayCache) (Result, error) {
 	if err := q.validatePatch(); err != nil {
 		return Result{}, err
 	}
@@ -352,7 +352,7 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool) (Result, er
 		s := r.Source
 		out.Source = &s
 	}
-	samples := grid2[mirrorPoint](nu+1, nv+1)
+	samples := cache.samplesFor(nu, nv)
 	points, normals := grid2[*Vec3](nu+1, nv+1), grid2[*Vec3](nu+1, nv+1)
 	// parts[k][virtual] holds branch k's points and normals.
 	parts := [2][2][2][][]*Vec3{}
@@ -483,7 +483,7 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool) (Result, er
 		families[0] = append(families[0], out.Source)
 	}
 	if r.Receiver.Plane != "none" {
-		out.Receiver = q.receive(r, samples, scale)
+		out.Receiver = q.receive(r, samples, scale, cache)
 		corners := []*Vec3{}
 		for k := range out.Receiver.Corners {
 			corners = append(corners, &out.Receiver.Corners[k])

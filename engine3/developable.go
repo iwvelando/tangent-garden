@@ -45,6 +45,8 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // offset and normal reach are ignored too. Format "implicit" is the level
 // set described by Implicit, and every other field is ignored.
 type Request struct {
+	rayCache *rayCache
+
 	Format       string           `json:"format"`
 	Construction string           `json:"construction"`
 	Input        string           `json:"input"`
@@ -301,7 +303,7 @@ func compute(c Request) (Result, error) {
 		return surfaces(c.Surface, c.SurfaceDiagnostics, c.OffsetDiagnostics, c.FocalDiagnostics)
 	}
 	if c.Format == "rays" {
-		return rays(c.Surface, c.Rays, c.SurfaceDiagnostics, c.LightDiagnostics)
+		return rays(c.Surface, c.Rays, c.SurfaceDiagnostics, c.LightDiagnostics, c.rayCache)
 	}
 	if c.Format == "implicit" {
 		return implicit(c.Implicit)

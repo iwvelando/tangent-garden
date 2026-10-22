@@ -843,3 +843,274 @@ func TestReceiverConeStorageGuard(t *testing.T) {
 		}
 	}
 }
+
+// A worker keeps one ray family while its receiver moves. Every result,
+// including caustics, diagnostics, bins and fitted bounds, must be the
+// stateless engine's result, and returning to the opening must be exact.
+func TestReceiverEngineReuse(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 48, 1
+	var worker Engine
+	check := func(c Request) {
+		t.Helper()
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatal("cached result differs from stateless engine")
+		}
+		accounted(t, got.Rays.Receiver)
+	}
+	check(c)
+	original := worker.rays
+	if original == nil || original.receiver == nil {
+		t.Fatal("no cached rays")
+	}
+	for _, tilt := range []float64{75, 45, 20} {
+		c.Rays.Receiver.Tilt = tilt
+		check(c)
+		if worker.rays != original {
+			t.Fatal("receiver movement discarded the ray family")
+		}
+	}
+	for _, change := range []func(*Request){
+		func(c *Request) { c.Rays.Receiver.At = -2.1 },
+		func(c *Request) { c.Rays.Receiver.Size = 5 },
+		func(c *Request) { c.Rays.Receiver.C1, c.Rays.Receiver.C2 = .3, -.2 },
+		func(c *Request) { c.Rays.Receiver.Bins = 32 },
+		func(c *Request) { c.Rays.Receiver.Refine = 2 },
+		func(c *Request) { c.Rays.Receiver.Plane = "x" },
+		func(c *Request) { c.LightDiagnostics = true },
+		func(c *Request) { c.LightDiagnostics, c.SurfaceDiagnostics = false, true },
+		func(c *Request) { c.SurfaceProbe = &SurfaceQuery{U: 1, V: .4} },
+	} {
+		change(&c)
+		check(c)
+		if worker.rays != original {
+			t.Fatal("receiver or probe change discarded the ray family")
+		}
+	}
+	// Editing either the surface or the light replaces the entire cache.
+	for _, change := range []func(*Request){
+		func(c *Request) { c.Surface.A *= .9 },
+		func(c *Request) { c.Surface.Reverse = !c.Surface.Reverse },
+		func(c *Request) { c.Surface.UMax -= .2 },
+		func(c *Request) { c.Surface.USamples++ },
+		func(c *Request) { c.Rays.N2 = 1.3 },
+		func(c *Request) { c.Rays.Light, c.Rays.Source = "point", Vec3{0, 0, 4} },
+		func(c *Request) { c.Rays.Source.X = .3 },
+		func(c *Request) { c.Rays.Interaction = "reflect" },
+	} {
+		change(&c)
+		check(c)
+		if worker.rays == original {
+			t.Fatal("edited rays reused the previous family")
+		}
+		original = worker.rays
+	}
+	// Invalid receiver edits must still validate, even on a cache hit.
+	c.Rays.Receiver.Bins = 1
+	if _, err := worker.Compute(c); err == nil {
+		t.Fatal("invalid receiver accepted")
+	}
+	if _, err := worker.Compute(Request{Format: "surface", Surface: c.Surface}); err != nil {
+		t.Fatal(err)
+	}
+	if worker.rays != nil {
+		t.Fatal("leaving the study retained its ray family")
+	}
+}
+
+// Reusing private traces does not make returned arrays shared:
+// the WASM bridge consumes arrays when lifting them out of the JSON.
+func TestReceiverEngineOwnershipAndRelease(t *testing.T) {
+	c := receive(flat(1.5, parallel(0, -60)), "z", 1, 0, .2, 1, 16)
+	var worker Engine
+	first, err := worker.Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Rays.Surface.Points = nil
+	first.Rays.Caustics[0].Points = nil
+	first.Rays.Receiver.Irradiance = nil
+	second, err := worker.Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Rays.Surface.Points) == 0 || len(second.Rays.Receiver.Irradiance) != 16 {
+		t.Fatal("result consumed cached output")
+	}
+	c.Rays.Receiver.Plane = "none"
+	if _, err := worker.Compute(c); err != nil {
+		t.Fatal(err)
+	}
+	if worker.rays != nil {
+		t.Fatal("disabled receiver retained its ray family")
+	}
+}
+
+func BenchmarkReceiverMoving(b *testing.B) {
+	c := spatialPresets(b)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
+	var worker Engine
+	frame := 0
+	b.ReportAllocs()
+	for b.Loop() {
+		c.Rays.Receiver.Tilt = 20 + float64(frame%55)
+		frame++
+		if _, err := worker.Compute(c); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// Refined corner rays and midpoint flux do not depend on the receiver.
+// A moved window must reuse them while recrossing and rasterizing from
+// scratch; otherwise this optimization misses most of a refined frame.
+func TestReceiverEngineRefinedTraceReuse(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 80, 2
+	var worker Engine
+	for _, tilt := range []float64{20, 75, 20} {
+		c.Rays.Receiver.Tilt = tilt
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatal("cached refinement changed the result")
+		}
+		traces := worker.rays.receiver
+		if traces == nil || traces.bytes == 0 {
+			t.Fatal("refined rays and flux were not retained")
+		}
+		if traces.bytes > maxReceiverTraceBytes {
+			t.Fatal("refined traces exceeded their memory bound")
+		}
+		// Repeat exactly this view: no newly traced points or midpoints.
+		count := traces.count
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+		if traces.count != count {
+			t.Fatal("repeated frame retraced receiver samples")
+		}
+	}
+	// A full cache must fall back to evaluation, without dropping light.
+	worker.rays.receiver = nil
+	fallback := worker.rays.receiverGrid(c.Surface.USamples, c.Surface.VSamples, c.Rays.Receiver.Refine)
+	fallback.bytes = maxReceiverTraceBytes
+	c.Rays.Receiver.Tilt = 63
+	got, err := worker.Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+		t.Fatal("bounded trace fallback changed the result")
+	}
+	if fallback.count != 0 {
+		t.Fatal("full cache retained new traces")
+	}
+}
+
+// Retain the private tracing grids across frames instead of remaking
+// their columns. Output arrays still belong to each returned result.
+func TestReceiverWarmAllocationBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
+	var worker Engine
+	if _, err := worker.Compute(c); err != nil {
+		t.Fatal(err)
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	c.Rays.Receiver.Tilt = 21
+	result, err := worker.Compute(c)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.KeepAlive(result)
+	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 38_000_000 {
+		t.Fatalf("warm receiver allocated %d bytes, want at most 38 MB", bytes)
+	}
+}
+
+// Cached traces retain darkness, chart gaps and total internal reflection
+// as well as lit rays, for both lamps and beams.
+func TestReceiverEngineOpticalStates(t *testing.T) {
+	for _, c := range []Request{
+		flat(1, parallel(0, 0)),
+		mirror("paraboloid", .5, .5, 0, -1, 1, -1, 1, 24, 24, lamp(Vec3{0, 0, 0})),
+		glass(inside(mirror("ellipsoid", 1.2, 1.2, 1.2, 0, 2*math.Pi, -math.Pi/2, math.Pi/2, 24, 12, lamp(Vec3{.3, .4, .8}))), 1.5, 1),
+	} {
+		c = refined(receive(c, "z", 3, 0, 0, 4, 32), 2)
+		var worker Engine
+		for _, tilt := range []float64{0, 37, 90, 0} {
+			c.Rays.Receiver.Tilt = tilt
+			got, err := worker.Compute(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := Compute(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+				t.Fatal("cached optical state changed")
+			}
+			accounted(t, got.Rays.Receiver)
+		}
+	}
+}
+
+func receiverResultJSON(t *testing.T, r Result) string {
+	t.Helper()
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// Charge the entire sparse column table, including unused entries, and
+// stop retaining columns at the scratch budget. A skipped column remains
+// usable for the current frame.
+func TestReceiverScratchBudget(t *testing.T) {
+	cache := &rayCache{}
+	traces := cache.receiverGrid(240, 60, 3)
+	rows := (60 << 3) + 1
+	first := traces.landingColumn(0, rows)
+	if len(first) != rows {
+		t.Fatal("no scratch column")
+	}
+	retained := 24*len(traces.landings) + 24*rows
+	if traces.landingBytes < retained {
+		t.Fatalf("charged %d bytes for at least %d retained", traces.landingBytes, retained)
+	}
+	for i := 1; i < len(traces.landings); i++ {
+		traces.landingColumn(i, rows)
+	}
+	if traces.landingBytes > maxReceiverLandingBytes {
+		t.Fatal("scratch retention exceeded its budget")
+	}
+	if traces.landings[len(traces.landings)-1] != nil {
+		t.Fatal("oversized scratch grid was retained")
+	}
+}
