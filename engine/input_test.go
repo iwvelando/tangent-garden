@@ -325,11 +325,12 @@ func TestEvoluteInputStencilsShareOnlyIdenticalPoints(t *testing.T) {
 	s := stencil{lo, hi, (hi - lo) * inputSpacing, 1e-8}
 	for i := 0; i <= 2000; i++ {
 		u := lo + (hi-lo)*float64(i)/2000
-		p, d, dd, half := s.withHalf(f, u)
+		p, d, dd, resolution := s.withHalf(f, u)
 		wantD, wantDD := s.derivatives(f, u)
-		_, wantHalf := derivativesAtStep(f, u, lo, hi, s.h/2)
-		if p != f(u) || d != wantD || dd != wantDD || half != wantHalf {
-			t.Fatalf("t=%v: shared %v %v %v %v, separate %v %v %v %v", u, p, d, dd, half, f(u), wantD, wantDD, wantHalf)
+		_, half, least := s.half(f, u)
+		want := s.resolution(wantDD, half, least)
+		if p != f(u) || d != wantD || dd != wantDD || resolution != want {
+			t.Fatalf("t=%v: shared %v %v %v %v, separate %v %v %v %v", u, p, d, dd, resolution, f(u), wantD, wantDD, want)
 		}
 	}
 }

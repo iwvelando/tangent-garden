@@ -13,21 +13,20 @@ func Evolute(p, d, dd Vec) *Vec {
 }
 
 // evolute is Evolute where the stencil resolves the curvature, given the
-// second derivative half at half the spacing. It keeps rounding on a
+// resolution of dd (see stencil.resolution). It keeps rounding on a
 // straight stretch from becoming a distant center, using the same flat
 // classification as the probe.
-func evolute(p, d, dd, half Vec) *Vec {
-	if unresolved(d, dd, half) {
+func evolute(p, d, dd Vec, resolution float64) *Vec {
+	if unresolved(d, dd, resolution) {
 		return nil
 	}
 	return Evolute(p, d, dd)
 }
 
-// unresolved reports bending within ten times the disagreement of the
-// second derivatives dd and half, at the stencil's spacing and half of it,
-// or below the evolute's flat guard.
-func unresolved(d, dd, half Vec) bool {
-	return math.Abs(d.Cross(dd))/d.Norm() <= 10*half.Sub(dd).Norm() || flatCurvature(d, dd)
+// unresolved reports bending within the resolution of the second
+// derivative dd, or below the evolute's flat guard.
+func unresolved(d, dd Vec, resolution float64) bool {
+	return math.Abs(d.Cross(dd))/d.Norm() <= resolution || flatCurvature(d, dd)
 }
 
 // stationary reports a point p of a curve with stencil derivatives d and dd

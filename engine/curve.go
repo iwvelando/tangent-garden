@@ -179,16 +179,34 @@ func (m *nodes) reuse(t float64) Vec {
 	return m.f(t)
 }
 
-// withHalf is the point of f at t, its derivatives, and its second
-// derivative at half the spacing. The half step shares three of its five
-// points with the full one, here evaluated once: a derived input evaluates
-// all of them wherever it is itself evaluated.
-func (s stencil) withHalf(f curveFunc, t float64) (p, d, dd, half Vec) {
+// withHalf is the point of f at t, its derivatives, and the resolution of
+// its second derivative (see checked). The half step shares three of its
+// five points with the full one, here evaluated once: a derived input
+// evaluates all of them wherever it is itself evaluated.
+func (s stencil) withHalf(f curveFunc, t float64) (p, d, dd Vec, resolution float64) {
 	m := nodes{f: f}
 	d, dd = derivativesAtStep(m.record, t, s.lo, s.hi, s.h)
-	_, half = derivativesAtStep(m.reuse, t, s.lo, s.hi, s.h/2)
-	return m.reuse(t), d, dd, half
+	least := math.Inf(1)
+	_, half := stencilAt(m.reuse, t, s.lo, s.hi, s.h/2, &least)
+	return m.reuse(t), d, dd, s.resolution(dd, half, least)
 }
+
+// resolution is how far a second derivative dd resolves bending: ten times
+// its disagreement with half, the half step's, plus the rounding expected
+// of the half step (see curvatureRounding). The two stencils share points,
+// so their rounding can agree by chance, and a straight line's r″ would
+// otherwise pass for bending.
+func (s stencil) resolution(dd, half Vec, least float64) float64 {
+	return 10*half.Sub(dd).Norm() + curvatureRounding*least/(s.h*s.h)
+}
+
+// curvatureRounding is the rounding typically expected of the half step's
+// second derivative, as a multiple of the stencil's least magnitude over h²:
+// its coefficients, about 21 in sum inside the domain, times a unit or two
+// of rounding in each value. Rounding on a tilted line reaches 4u, and real
+// bending beside a cusp far from the origin falls below 512u; rounding's
+// worst case, which stable allows, would reject that bending.
+const curvatureRounding = 32 * 0x1p-53
 
 // stencilAt is derivativesAtStep, which also records in least, when it is
 // not nil, the least magnitude of f on the stencil, each point measured by
@@ -246,12 +264,12 @@ func (s stencil) conditioned(f curveFunc, t float64, d, dd Vec, order int) bool 
 	return ok
 }
 
-// checked is conditioned, which also returns the second derivative at half
-// the spacing that it compared (zero for order 0), so the evolute can judge
-// its curvature's resolution without differentiating again.
-func (s stencil) checked(f curveFunc, t float64, d, dd Vec, order int) (bool, Vec) {
+// checked is conditioned, which also returns the resolution of dd (zero
+// for order 0), so the evolute can judge its curvature without
+// differentiating again.
+func (s stencil) checked(f curveFunc, t float64, d, dd Vec, order int) (bool, float64) {
 	if order != 1 && order != 2 {
-		return true, Vec{}
+		return true, 0
 	}
 	a, b, least := s.half(f, t)
 	// The first derivative alone; dd is the second at the same spacing,
@@ -259,10 +277,10 @@ func (s stencil) checked(f curveFunc, t float64, d, dd Vec, order int) (bool, Ve
 	tangent := a.Valid() && d.Valid() &&
 		a.Sub(d).Norm() <= 1e-3*math.Max(a.Norm(), d.Norm())+s.tangentFloor(b, dd, least)
 	if order == 1 {
-		return tangent, b
+		return tangent, s.resolution(dd, b, least)
 	}
 	return tangent && b.Valid() && dd.Valid() &&
-		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(s.hi-s.lo))+rounding*least/(s.h*s.h), b
+		b.Sub(dd).Norm() <= 1e-2*math.Max(b.Norm(), dd.Norm())+1e-4*math.Max(1, d.Norm()/(s.hi-s.lo))+rounding*least/(s.h*s.h), s.resolution(dd, b, least)
 }
 
 func (s stencil) stableTangent(f curveFunc, t float64, d, dd Vec) bool {

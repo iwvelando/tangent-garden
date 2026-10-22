@@ -346,7 +346,7 @@ func (q Request) derivedAt(f, g curveFunc, out *Result) func(float64) *Vec {
 		at := q.stations(f, g)
 		return func(t float64) *Vec {
 			if s := at(t); s.ok {
-				return evolute(s.p, s.d, s.dd, s.half)
+				return evolute(s.p, s.d, s.dd, s.resolution)
 			}
 			return nil
 		}
@@ -523,10 +523,10 @@ func (s *vecSlab) keep(v Vec) *Vec {
 // station is what along builds a construction from at one t: its input's
 // position and stencil derivatives, and whether they passed its checks.
 type station struct {
-	// half is the second derivative at half the spacing that conditioning
-	// compared with dd.
-	p, d, dd, half Vec
-	ok             bool
+	p, d, dd Vec
+	// resolution is dd's (see stencil.resolution).
+	resolution float64
+	ok         bool
 }
 
 // stations evaluates along's input at any t.
@@ -536,18 +536,18 @@ func (q Request) stations(f, g curveFunc) func(float64) station {
 	return func(t float64) station {
 		p := f(t)
 		d, dd := base.derivatives(f, t)
-		ok, half := base.checked(f, t, d, dd, derivativeOrder(q))
+		ok, resolution := base.checked(f, t, d, dd, derivativeOrder(q))
 		if !p.Valid() || !ok {
 			return station{}
 		}
 		if composed(q.Input) {
 			p = g(t)
 			d, dd = base.derivatives(g, t)
-			if ok, half = inputStencil(lo, hi).checked(g, t, d, dd, constructionOrder(q.Kind)); !p.Valid() || !ok {
+			if ok, resolution = inputStencil(lo, hi).checked(g, t, d, dd, constructionOrder(q.Kind)); !p.Valid() || !ok {
 				return station{}
 			}
 		}
-		return station{p, d, dd, half, true}
+		return station{p, d, dd, resolution, true}
 	}
 }
 

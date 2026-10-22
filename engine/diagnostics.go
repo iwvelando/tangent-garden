@@ -107,16 +107,17 @@ func describe(f curveFunc, t float64, p, v, a Vec, lo, hi, radius float64) descr
 	tangent := v.Unit()
 	normal := tangent.Perp()
 	e.tangent, e.normal = &tangent, &normal
-	ok, half := baseStencil(lo, hi).checked(f, t, v, a, 2)
+	ok, resolution := baseStencil(lo, hi).checked(f, t, v, a, 2)
 	if !ok {
 		e.unknown = true
 		return e
 	}
 	// Flat where the acceleration across the tangent is within the
 	// stencil's own resolution of r″, measured by the disagreement of two
-	// spacings, or below the evolute's guard.
+	// spacings and bounded below by its rounding, or below the evolute's
+	// guard.
 	cross := v.Cross(a)
-	if unresolved(v, a, half) {
+	if unresolved(v, a, resolution) {
 		zero := 0.0
 		e.curvature, e.flat = &zero, true
 		return e
