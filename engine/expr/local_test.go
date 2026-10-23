@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -57,5 +58,66 @@ func TestLocalExpressionRemainsBounded(t *testing.T) {
 	}
 	if _, _, err := ParseLocalWithParameter("t+a", math.Inf(1)); err == nil {
 		t.Error("accepted nonfinite parameter")
+	}
+}
+
+// Rationalizing a radical's displacement keeps variations smaller than an
+// ulp of its origin, including at a cusp where the displacement is quadratic.
+func TestLocalRadical(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-20, 0x1p20} {
+		for _, sign := range []string{"", "-"} {
+			s := fmt.Sprintf("%s%.17g*sqrt(640000+3200*cos(t)+4*cos(t)^2)", sign, scale)
+			f, origin, err := ParseLocalWithParameter(s, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			factor := scale
+			if sign == "-" {
+				factor = -factor
+			}
+			if origin != factor*800 {
+				t.Fatalf("origin %g", origin)
+			}
+			for _, u := range []float64{0, 0.1, 0.731, math.Pi / 2, math.Pi, 2 * math.Pi} {
+				want := factor * 2 * math.Cos(u)
+				if math.Abs(f(u)-want) > math.Abs(factor)*2e-15 {
+					t.Fatalf("%s at %g: %g, want %g", s, u, f(u), want)
+				}
+			}
+		}
+	}
+	f, origin, err := ParseLocalWithParameter("sqrt(640000+t^2)", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if origin != 800 || math.Abs(f(1e-8)-6.25e-20) > 1e-34 {
+		t.Fatalf("tiny displacement %g + %g", origin, f(1e-8))
+	}
+	// Preserve the entered radical's domain and overflow, even when the
+	// rationalized numerator is finite or the origin cannot be separated.
+	for _, s := range []string{"sqrt(1+t)", "sqrt(t)", "sqrt(-1+t)", "sqrt(1e308+1e308*t)"} {
+		local, o, err := ParseLocalWithParameter(s, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ordinary, _ := Parse(s)
+		for _, u := range []float64{-2, -1, 0, 1, 2} {
+			got, want := local(u)+o, ordinary(u)
+			if math.IsNaN(want) {
+				if !math.IsNaN(got) {
+					t.Fatalf("%s at %g: %g, want NaN", s, u, got)
+				}
+				continue
+			}
+			if math.IsInf(want, 0) {
+				if got != want {
+					t.Fatalf("%s at %g: %g, want %g", s, u, got, want)
+				}
+				continue
+			}
+			if math.Abs(got-want) > 2e-15*math.Max(1, math.Abs(want)) {
+				t.Fatalf("%s at %g: %g, want %g", s, u, got, want)
+			}
+		}
 	}
 }
