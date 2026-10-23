@@ -88,8 +88,9 @@ func derive(input string, p, dp, ddp, pole Vec, distance float64) *Vec {
 }
 
 // derivedInput keeps the original evaluation for ordinary studies. On an
-// explicitly translated expression curve, remove its additive constants before
-// the evolute's inner stencil and restore them after it. Subtracting f(t) after
+// explicitly translated expression curve, remove its separable constant
+// translation (expr.ParseLocalWithParameter) before the evolute's inner stencil
+// and restore it after. Subtracting f(t) after
 // evaluating it would already have lost those low bits.
 func (q Request) derivedInput(f curveFunc) curveFunc {
 	lo, hi := q.Curve.Min, q.Curve.Max
@@ -102,10 +103,10 @@ func (q Request) derivedInput(f curveFunc) curveFunc {
 	if c.Format == "cartesian" {
 		x = "t"
 	}
-	lx, cx, ex := expr.ParseTranslated(x, c.A)
-	ly, cy, ey := expr.ParseTranslated(c.Y, c.A)
+	lx, cx, ex := expr.ParseLocalWithParameter(x, c.A)
+	ly, cy, ey := expr.ParseLocalWithParameter(c.Y, c.A)
 	offset := Vec{cx, cy}
-	if ex != nil || ey != nil || offset == (Vec{}) {
+	if ex != nil || ey != nil || !offset.Valid() || offset == (Vec{}) {
 		return ordinary()
 	}
 	local := func(t float64) Vec { return Vec{lx(t), ly(t)} }

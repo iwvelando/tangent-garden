@@ -385,6 +385,24 @@ func TestTranslatedEvoluteConstructions(t *testing.T) {
 	}
 }
 
+// A translation written inside a constant factor, as the 3D engine's
+// translated expressions also accept, is separated the same way.
+func TestEvoluteTranslationThroughConstantFactors(t *testing.T) {
+	for _, adaptive := range []bool{false, true} {
+		q := inputRequest("involute", "evolute", "2*(400+cos(t))", "(2*sin(t)-640)/2", 0.1, 1.4)
+		q.Offset = math.Pow(4*math.Pow(math.Sin(0.1), 2)+math.Pow(math.Cos(0.1), 2), 1.5) / 2
+		q.Samples, q.Adaptive = 257, adaptive
+		r := compute(t, q)
+		if r.Invalid != 0 {
+			t.Fatalf("refine=%v: %d omitted samples: %v", adaptive, r.Invalid, r.Warnings)
+		}
+		for j, p := range r.Derived {
+			u := sampleT(q, j)
+			closeVec(t, p, Vec{800 + 2*math.Cos(u), -320 + math.Sin(u)}, 2e-4)
+		}
+	}
+}
+
 func TestDistantEvoluteKeepsCuspsAndGaps(t *testing.T) {
 	for _, adaptive := range []bool{false, true} {
 		q := inputRequest("offset", "evolute", "800+2*cos(t)", "-320+sin(t)", 0, 2*math.Pi)
