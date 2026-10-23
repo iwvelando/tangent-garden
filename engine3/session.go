@@ -71,6 +71,7 @@ type receiverTrace struct {
 	landings             [][]receiverLanding
 	corners              [][]receiverRay
 	midpoints            [maxReceiverRefine + 1][][]receiverFlux
+	queues               receiverQueues
 }
 
 func (c *rayCache) receiverGrid(nu, nv, levels int) *receiverTrace {

@@ -1442,3 +1442,112 @@ func TestReceiverViewKeepsWindowRaster(t *testing.T) {
 		rows = &scratch[0][0]
 	}
 }
+
+// Moving a warmed receiver must not allocate its breadth-first cell queues
+// again. Allow 22 MB per frame for owned output, fitting and other scratch;
+// without reuse, the queues bring that to about 25.2 MB per frame.
+func TestReceiverCellQueueAllocationBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
+	tilts := []float64{20, 35, 50, 65, 75, 65, 50, 35}
+	var worker Engine
+	for range 2 {
+		for _, tilt := range tilts {
+			c.Rays.Receiver.Tilt = tilt
+			if _, err := worker.Compute(c); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for _, tilt := range tilts {
+		c.Rays.Receiver.Tilt = tilt
+		result, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runtime.KeepAlive(result)
+	}
+	runtime.ReadMemStats(&after)
+	bytes := (after.TotalAlloc - before.TotalAlloc) / uint64(len(tilts))
+	t.Logf("moving receiver allocated %d bytes/frame", bytes)
+	if bytes > 22_000_000 {
+		t.Fatalf("moving receiver allocated %d bytes/frame, want at most 22 MB", bytes)
+	}
+}
+
+// Queue retention is bounded independently of the tracing and landing
+// budgets. An unretained level must still compute normally; later smaller
+// requests can reuse the retained storage without growing it.
+func TestReceiverCellQueueRetention(t *testing.T) {
+	var trace receiverTrace
+	first := trace.cells(0, 200_000)
+	first[0] = receiverCell{17, 23, 4}
+	second := trace.cells(1, 200_000)
+	second[0] = receiverCell{99, 101, 2}
+	if trace.queues.levels[1] != nil {
+		t.Fatal("over-budget queue retained")
+	}
+	if first[0] != (receiverCell{17, 23, 4}) {
+		t.Fatal("levels share storage")
+	}
+	smaller := trace.cells(0, 100)
+	if &smaller[0] != &first[0] {
+		t.Fatal("smaller request discarded retained queue")
+	}
+	trace.cells(1, 100_000)
+	if trace.queues.levels[1] == nil {
+		t.Fatal("fitting queue was not retained")
+	}
+	bytes := 0
+	for _, cells := range trace.queues.levels {
+		if cells != nil {
+			bytes += 24 + 24*cap(cells)
+		}
+	}
+	if trace.queues.bytes != bytes || bytes > maxReceiverQueueBytes {
+		t.Fatalf("retained %d bytes, accounted %d", bytes, trace.queues.bytes)
+	}
+	trace.cells(0, 300_000)
+	if trace.queues.bytes != bytes {
+		t.Fatal("over-budget replacement grew retained storage")
+	}
+}
+
+// Alternate splitting patterns, levels and view insets on a single worker.
+// Compare all geometry and accounting, not just raster pictures, and keep
+// an older result alive to detect scratch escaping into returned arrays.
+func TestReceiverCellQueuesAcrossRefinementAndInsets(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	c.Rays.Receiver.Bins = 48
+	var worker Engine
+	var first Result
+	var saved string
+	for i, levels := range []int{2, 2, 2, 3, 1, 0, 2, 2} {
+		c.Rays.Receiver.Refine = levels
+		c.Rays.Receiver.Tilt = []float64{20, 75, 45, 90, 0, 180, 20, 75}[i]
+		c.Rays.Receiver.RefineView = true
+		c.Rays.Receiver.view = &View{Center: Vec3{Z: -1.8}, Right: Vec3{X: 1}, Up: Vec3{Y: 1}, Width: 1.3, Height: .9, Pixels: [2]int{80 + i*3, 60 + i*2}}
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatalf("frame %d differs from stateless engine", i)
+		}
+		accounted(t, got.Rays.Receiver)
+		if i == 0 {
+			first, saved = got, receiverResultJSON(t, got)
+		}
+		if receiverResultJSON(t, first) != saved {
+			t.Fatal("later queues overwrote an earlier result")
+		}
+	}
+}
