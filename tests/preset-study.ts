@@ -228,12 +228,15 @@ async function linked(page: Page) {
   return study;
 }
 // Opens a link and waits until the whole study is applied, every edit
-// surviving it.
+// surviving it. A heavy 3D example can take longer than the default wait
+// to load and read its link when tests run side by side.
 async function openLink<S>(page: Page, n: Notebook<S>, link: string, study: S) {
   await page.goto(`${n.url}#s=${link}`);
-  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  await expect
+    .poll(() => page.evaluate(() => location.hash), { timeout: 30_000 })
+    .toBe("");
   await settled(page, n.stage);
-  await expect.poll(() => linked(page)).toEqual(study);
+  await expect.poll(() => linked(page), { timeout: 30_000 }).toEqual(study);
 }
 
 // Examples first to last, in tests of a few each, so each test stays
