@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -76,19 +77,62 @@ func TestResolvedSlowRefractedTurning(t *testing.T) {
 	}
 }
 
+// A straight mirror or interface under parallel light sends parallel rays,
+// whatever its tilt, position or parameter units. Its reflected and
+// refracted directions come from the tangent's stencil, so they carry far
+// more rounding than a unit vector's own; turning made of that rounding has
+// no finite caustic.
 func TestUnresolvedOpticalTurningHasNoFiniteCaustic(t *testing.T) {
+	lines := [][2]string{
+		{"@", "0"},
+		{"@", "2^-60*@^2"},
+		{"@", "0.37*@"},
+		{"0.6*@+0.2", "-0.8*@+0.1"},
+		{"cos(0.3)*@", "sin(0.3)*@"},
+		{"1e3*@", "-0.001*@"},
+		{"@+1000", "0.37*@-700"},
+	}
 	for _, kind := range []string{"catacaustic", "diacaustic"} {
 		for _, angle := range []float64{-90, -37, 0, 21} {
-			for _, y := range []string{"0", "2^-60*t^2"} {
-				q := request(kind, "t", y, -1, 1)
-				q.Source = Source{Kind: "parallel", Angle: angle}
-				q.Samples = 65
-				r := compute(t, q)
-				if r.Invalid != q.Samples {
-					t.Fatalf("%s/%g/%s: %d omitted, want %d", kind, angle, y, r.Invalid, q.Samples)
+			for _, line := range lines {
+				for _, span := range []float64{2e-5, 2, 1e5} {
+					s := fmt.Sprintf("(2*t/%.17g)", span)
+					q := request(kind, strings.ReplaceAll(line[0], "@", s), strings.ReplaceAll(line[1], "@", s), -span/2, span/2)
+					q.Source = Source{Kind: "parallel", Angle: angle}
+					q.Samples = 65
+					q.Adaptive = true
+					r := compute(t, q)
+					if r.Invalid != q.Samples {
+						t.Errorf("%s/%g/%v/%g: %d omitted, want %d", kind, angle, line, span, r.Invalid, q.Samples)
+					}
+					for _, p := range r.Adaptive.Derived.Points {
+						if p != nil {
+							t.Errorf("%s/%g/%v/%g: refined point %v, want none", kind, angle, line, span, *p)
+							break
+						}
+					}
 				}
 			}
 		}
+	}
+}
+
+// Raised by 4, the same kind of mirror's rays turn by about five times the
+// rounding of its coordinates, as the tangent's stencil sees them: still a
+// resolved caustic, though only to a few hundredths. Ten times that
+// rounding would leave it out.
+func TestRaisedSlowOpticalTurningKeepsItsCaustic(t *testing.T) {
+	const a, c = 0x1p-20, 4.0
+	q := request("catacaustic", "t", "4+2^-20*t^2", -1, 1)
+	q.Source = Source{Kind: "parallel", Angle: 0}
+	q.Samples = 65
+	r := compute(t, q)
+	if r.Invalid != 0 {
+		t.Fatalf("%d omitted caustic points", r.Invalid)
+	}
+	for j, p := range r.Derived {
+		x := sampleT(q, j)
+		closeVec(t, p, Vec{1.5*x - 2*a*a*x*x*x, c + 3*a*x*x}, 0.06)
 	}
 }
 

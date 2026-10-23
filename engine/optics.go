@@ -41,16 +41,30 @@ const directionRounding = 64 * 0x1p-53
 func (s stencil) turningFloor() float64 { return directionRounding / s.h }
 
 // stableTurning is stableTangent for a unit direction d, whose derivative
-// is du: the full and half stencils can differ by rounding alone on a
-// short domain, so the usual jump check may fail by that much, one floor
-// for the full stencil and two for the half. A jump, such as a refracted
-// ray's at grazing incidence, is far above it.
-func (s stencil) stableTurning(d curveFunc, t float64, du, ddu Vec) bool {
+// is du and envelope floor is floor: the full and half stencils can differ
+// by rounding alone on a short domain, so the usual jump check may fail by
+// that much, one floor for the full stencil and two for the half. A jump,
+// such as a refracted ray's at grazing incidence, is far above it.
+func (s stencil) stableTurning(d curveFunc, t float64, du, ddu Vec, floor float64) bool {
 	if s.stableTangent(d, t, du, ddu) {
 		return true
 	}
 	half, _, _ := s.half(d, t)
-	return half.Valid() && du.Valid() && half.Sub(du).Norm() <= 3*s.turningFloor()
+	return half.Valid() && du.Valid() && half.Sub(du).Norm() <= 3*floor
+}
+
+// rayFloor is the envelope floor for rays leaving a curve at p, where its
+// tangent is dp. A ray's direction comes from the tangent's stencil, which
+// rounds coordinates at their own magnitude, so the rays turn by rounding
+// in proportion to the coordinates' reach normal to the curve over the two
+// nested stencils (four steps), per unit of tangent across a step. A
+// straight mirror's rays stay parallel at any tilt, position or parameter
+// units, while a nearly flat mirror, whose normal coordinate is small,
+// keeps its slow turn.
+func (s stencil) rayFloor(p, dp Vec) float64 {
+	n := dp.Perp().Unit()
+	reach := math.Abs(n.X)*(math.Abs(p.X)+4*s.h*math.Abs(dp.X)) + math.Abs(n.Y)*(math.Abs(p.Y)+4*s.h*math.Abs(dp.Y))
+	return s.turningFloor() * (1 + reach/(s.h*dp.Norm()))
 }
 
 // incident is the direction of the light arriving at g(t): the source's

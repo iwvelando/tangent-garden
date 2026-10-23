@@ -117,7 +117,7 @@ func (l *lines) at(t float64, p, dp Vec) familyLine {
 	}
 	stencil := baseStencil(l.lo, l.hi)
 	du, ddu := stencil.derivatives(aligned, t)
-	if !stencil.stableTurning(aligned, t, du, ddu) {
+	if !stencil.stableTurning(aligned, t, du, ddu, stencil.turningFloor()) {
 		return out
 	}
 	target, s := envelope(p, dp, u, du, stencil.turningFloor())

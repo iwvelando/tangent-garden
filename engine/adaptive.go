@@ -606,10 +606,11 @@ func (c *caustic) point(t float64, p, d Vec) (*Vec, bool) {
 	}
 	rays := baseStencil(c.q.Curve.Min, c.q.Curve.Max)
 	turn, bend := rays.derivatives(c.direction, t)
-	if c.q.Kind == "diacaustic" && !rays.stableTurning(c.direction, t, turn, bend) {
+	floor := rays.rayFloor(p, d)
+	if c.q.Kind == "diacaustic" && !rays.stableTurning(c.direction, t, turn, bend, floor) {
 		return nil, false
 	}
-	target, s := envelope(p, d, dir, turn, rays.turningFloor())
+	target, s := envelope(p, d, dir, turn, floor)
 	return target, s < 0
 }
 

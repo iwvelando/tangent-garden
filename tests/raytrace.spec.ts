@@ -535,9 +535,24 @@ test("slowly turning reflected rays keep their finite caustic in the drawing and
   }, svg);
   expect(saved.paths).toBe(drawing);
   expect(saved.metadata).toContain("2^-33*t^2");
-  await page.getByLabel("y(t)", { exact: true }).fill("0");
-  await expect(real).toHaveAttribute("d", "");
-  await expect(virtual).toHaveAttribute("d", "");
+  // A straight mirror's rays are parallel, flat or tilted: its tangent's
+  // rounding must not invent a caustic.
+  for (const y of ["0", "0.37*t"]) {
+    await page.getByLabel("y(t)", { exact: true }).fill(y);
+    await expect
+      .poll(
+        async () =>
+          JSON.parse((await page.locator("#artwork desc").textContent())!).curve
+            .y,
+      )
+      .toBe(y);
+    await expect(page.locator(".plot-wrap")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(real).toHaveAttribute("d", "");
+    await expect(virtual).toHaveAttribute("d", "");
+  }
   await choosePreset(page, { label: "Parallel light & a circle" });
   await expect.poll(() => derived(page)).toBe(original);
 });
