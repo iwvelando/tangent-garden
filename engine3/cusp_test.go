@@ -40,6 +40,87 @@ func TestExpressionTranslationKeepsPositionsAndOrdinaryStencil(t *testing.T) {
 	}
 }
 
+// The tangent projection of (t²,t³,0) from (.5,.5,.3) is regular at
+// the base cusp. Its first two derivatives there are (.75,.75,0) and
+// (-2.25,2.25,0), so its curvature is sqrt(8).
+func TestTranslatedProjectionCurvatureAtBaseCusp(t *testing.T) {
+	for _, input := range []string{"tangent-foot", "orthotomic"} {
+		c := custom("t^2", "t^3", "0", -1, 1)
+		c.Construction, c.Input, c.Pole, c.Length = "developable", input, Vec3{0.5, 0.5, 0.3}, 0.2
+		c.Diagnostics = true
+		want := math.Sqrt(8)
+		if input == "orthotomic" {
+			want /= 2
+		}
+		for _, shift := range []Vec3{{}, {5000, -3000, 4000}, {90000, -70000, 80000}} {
+			_, moved, _ := similar(c, similarity{"moved", 1, shift})
+			r := composed(t, moved)
+			if r.Composition.Crossed != 1 || r.Breaks[240] || r.Breaks[241] {
+				t.Fatalf("%s at %v: projection does not cross the base cusp", input, shift)
+			}
+			k := r.Diagnostics.Curvature[240]
+			if k == nil {
+				t.Errorf("%s at %v: missing curvature", input, shift)
+			} else if math.Abs(*k-want) > 2e-6 {
+				t.Errorf("%s at %v: curvature %.12g, want %.12g", input, shift, *k, want)
+			}
+		}
+	}
+}
+
+// Ordinary studies, including a translation inside a nonlinear operation,
+// retain the original projection stencil, with exactly the same positions,
+// derivatives and stability decisions.
+func TestOrdinaryProjectionStencilUnchanged(t *testing.T) {
+	for _, xyz := range [][3]string{
+		{"t^2", "t^3", "0"},
+		{"3+t^2", "-2+t^3", "1"},
+		{"sin(t+5000)", "cos(t+5000)", "t"},
+	} {
+		c := custom(xyz[0], xyz[1], xyz[2], -1, 1)
+		c.Input, c.Pole = "tangent-foot", Vec3{0.5, 0.5, 0.3}
+		base, lo, hi, _, err := compile(c, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u := base.units(lo, hi, absolute)
+		want := composedEvaluation(c.Input, c.Pole, base, lo, hi, u)
+		got := c.projectedEvaluation(base, lo, hi, u)
+		for _, at := range []float64{-1, -0.1234, 0, 1e-8, 0.1357, 1} {
+			p, v, a, ok := got(at)
+			q, w, b, valid := want(at)
+			// NaN accelerations stand for an unknown second derivative.
+			if p != q || v != w || a.valid() != b.valid() || a.valid() && a != b || ok != valid {
+				t.Fatalf("%v at %g: ordinary projection stencil changed", xyz, at)
+			}
+		}
+	}
+}
+
+// A circle projected from a point on it is a cardioid with curvature
+// 3/(4|cos(t/2)|). Translation must preserve its regular bending and its
+// own cusp, where a construction must still stop.
+func TestTranslatedProjectedCircleKeepsCurvatureAndCusp(t *testing.T) {
+	c := unitCircle(480)
+	c.Construction, c.Input, c.Pole, c.Length = "developable", "tangent-foot", Vec3{-1, 0, 0}, 0.2
+	c.Diagnostics = true
+	_, moved, _ := similar(c, similarity{"far", 1, Vec3{90000, -70000, 80000}})
+	r := composed(t, moved)
+	if r.Base[240] != nil || !r.Breaks[240] || !r.Breaks[241] || r.Composition.Cusps != 1 {
+		t.Fatal("the input's own cusp is no longer broken")
+	}
+	for _, i := range []int{0, 60, 120, 180, 300, 360, 420, 480} {
+		parameter := 2 * math.Pi * float64(i) / 480
+		want := 3 / (4 * math.Abs(math.Cos(parameter/2)))
+		k := r.Diagnostics.Curvature[i]
+		if k == nil {
+			t.Errorf("sample %d has no curvature", i)
+		} else if math.Abs(*k-want) > 2e-6 {
+			t.Errorf("sample %d: curvature %.12g, want %.12g", i, *k, want)
+		}
+	}
+}
+
 // The deltoid r = (2cos t + cos 2t, 2sin t − sin 2t) lifted by
 // z = cos(3t)/2 keeps its three cusps: at t = 0, 2π/3 and 4π/3 its
 // velocity (−2sin t − 2sin 2t, 2cos t − 2cos 2t, −1.5 sin 3t) vanishes
