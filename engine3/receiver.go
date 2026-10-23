@@ -431,7 +431,19 @@ type rasterScratch struct {
 }
 
 func newRaster(w, h int) *raster {
-	return &raster{w: w, h: h, rasterScratch: newRasterScratch(w, h), points: grid2[float64](w, h)}
+	return &raster{w: w, h: h, rasterScratch: newRasterScratch(w, h), points: irradianceGrid(w, h)}
+}
+
+// The point-flux grid becomes the result's irradiance, so it is always fresh.
+// Pack its columns into one buffer to avoid an allocation per column. Limit
+// each column's capacity so appending cannot overwrite its neighbor.
+func irradianceGrid(w, h int) [][]float64 {
+	columns, values := make([][]float64, w), make([]float64, w*h)
+	for x := range columns {
+		start, end := x*h, (x+1)*h
+		columns[x] = values[start:end:end]
+	}
+	return columns
 }
 
 func newRasterScratch(w, h int) rasterScratch {
@@ -450,7 +462,7 @@ func (c *rayCache) receiverRaster(n int) *raster {
 		}
 		clear(c.raster.scale)
 	}
-	return &raster{w: n, h: n, rasterScratch: c.raster, points: grid2[float64](n, n)}
+	return &raster{w: n, h: n, rasterScratch: c.raster, points: irradianceGrid(n, n)}
 }
 
 // triangle spreads flux over the triangle p, in bin coordinates.
