@@ -1442,3 +1442,113 @@ func TestReceiverViewKeepsWindowRaster(t *testing.T) {
 		rows = &scratch[0][0]
 	}
 }
+
+// Moving only the receiver must not rebuild tens of thousands of surface
+// and caustic vertices. The 10,000-allocation bound leaves room for fresh
+// output rows, bins and exact raster work, but rejects the old 71,000+
+// per-frame vertex allocations on this production preset.
+func TestReceiverGeometryAllocationBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 80, 0
+	var worker Engine
+	for range 3 {
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	allocations := testing.AllocsPerRun(3, func() {
+		c.Rays.Receiver.Tilt += 1
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocations > 10000 {
+		t.Fatalf("moving receiver allocated %.0f objects, want at most 10000", allocations)
+	}
+}
+
+// Callers own every nested output, including topology and pointed-to
+// vertices. Corrupting a delivered result must not poison the next frame.
+func TestReceiverGeometryOwnership(t *testing.T) {
+	presets := spatialPresets(t)
+	cases := []struct {
+		name    string
+		request Request
+	}{
+		{"Conic sections cut from a cone of light", presets["Conic sections cut from a cone of light"]},
+		{"A glass dome's ring of light", presets["A glass dome's ring of light"]},
+		{"cuspidal edges", receive(presets["An astigmatic dish's folded caustics"], "z", 1, 0, 0, 4, 32)},
+		{"point source", receive(flat(1.5, lamp(Vec3{0, 0, 2})), "z", 1, 0, 0, 4, 32)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := tc.request
+			c.Surface.USamples, c.Surface.VSamples = 24, 12
+			c.Rays.Receiver.Bins = 32
+			c.Rays.Edges, c.LightDiagnostics = true, true
+			var worker Engine
+			for range 2 {
+				if _, err := worker.Compute(c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := worker.Compute(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.name == "cuspidal edges" && (got.Rays.Edges == nil || len(*got.Rays.Edges) == 0) {
+				t.Fatal("fixture has no cuspidal edges")
+			}
+			if tc.name == "point source" && got.Rays.Source == nil {
+				t.Fatal("fixture has no point source")
+			}
+			var corrupt func(reflect.Value)
+			corrupt = func(v reflect.Value) {
+				switch v.Kind() {
+				case reflect.Pointer:
+					if !v.IsNil() {
+						corrupt(v.Elem())
+					}
+				case reflect.Struct:
+					for i := 0; i < v.NumField(); i++ {
+						corrupt(v.Field(i))
+					}
+				case reflect.Slice:
+					for i := 0; i < v.Len(); i++ {
+						corrupt(v.Index(i))
+					}
+					if v.CanSet() {
+						v.SetZero()
+					}
+				case reflect.Float64:
+					if v.CanSet() {
+						v.SetFloat(12345)
+					}
+				case reflect.Int:
+					if v.CanSet() {
+						v.SetInt(12345)
+					}
+				case reflect.Bool:
+					if v.CanSet() {
+						v.SetBool(!v.Bool())
+					}
+				}
+			}
+			corrupt(reflect.ValueOf(got.Rays))
+			for _, change := range []func(){func() {}, func() { c.Rays.Receiver.Tilt += 20 }, func() { c.LightDiagnostics, c.SurfaceDiagnostics = false, true }} {
+				change()
+				want, err := Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := worker.Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+					t.Fatal("caller mutation poisoned cached geometry")
+				}
+			}
+		})
+	}
+}
