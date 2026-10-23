@@ -260,8 +260,26 @@ func fitReach(families [][]*Vec3, reach [][]Vec3) Bounds {
 	high := low.mul(-1)
 	found := false
 	var reached []Vec3
+	// Only the current family's coordinates are sorted. Reserve one
+	// contiguous scratch for the largest live family, not its grid size:
+	// caustic sheets can be mostly gaps. Reuse it across shorter families
+	// without retaining coordinates or changing any supplied point.
+	largest := 0
+	for _, family := range families {
+		n := 0
+		for _, p := range family {
+			if p != nil {
+				n++
+			}
+		}
+		largest = max(largest, n)
+	}
+	coordinates := make([]float64, 3*largest)
 	for k, family := range families {
-		values := [3][]float64{}
+		var values [3][]float64
+		for axis := range values {
+			values[axis] = coordinates[axis*largest : axis*largest : (axis+1)*largest]
+		}
 		for _, p := range family {
 			if p != nil {
 				values[0] = append(values[0], p.X)
