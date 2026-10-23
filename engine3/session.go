@@ -11,12 +11,13 @@ type Engine struct {
 }
 
 type rayCache struct {
-	surface  SurfaceRequest
-	light    RaysRequest
-	samples  [][]mirrorPoint
-	geometry *rayGeometry
-	receiver *receiverTrace
-	raster   rasterScratch
+	surface      SurfaceRequest
+	light        RaysRequest
+	samples      [][]mirrorPoint
+	baseLandings [][]receiverLanding
+	geometry     *rayGeometry
+	receiver     *receiverTrace
+	raster       rasterScratch
 }
 
 func (c *rayCache) samplesFor(nu, nv int) [][]mirrorPoint {
@@ -29,10 +30,23 @@ func (c *rayCache) samplesFor(nu, nv int) [][]mirrorPoint {
 	return c.samples
 }
 
+// The coarse landing grid is bounded by the surface's 14,400-cell limit.
+// Every entry is overwritten by receiveRaster before use, including when a
+// view inset follows the window pass. Nothing here belongs to a result.
+func (c *rayCache) receiverBase(nu, nv int) [][]receiverLanding {
+	if c == nil {
+		return grid2[receiverLanding](nu+1, nv+1)
+	}
+	if len(c.baseLandings) != nu+1 || len(c.baseLandings[0]) != nv+1 {
+		c.baseLandings = grid2[receiverLanding](nu+1, nv+1)
+	}
+	return c.baseLandings
+}
+
 // Compute preserves the stateless engine's results while reusing traced
-// rays if only the receiver or its diagnostics change. Neither output
-// arrays nor receiver crossings are shared: transport may consume output,
-// and the moving plane changes every crossing.
+// rays if only the receiver or its diagnostics change. Output arrays belong
+// to each result: transport may consume them. Receiver crossings use private
+// scratch and are recomputed for every pass as the plane moves.
 func (e *Engine) Compute(c Request) (Result, error) {
 	if c.Format != "rays" || c.Rays.Receiver.Plane == "none" {
 		e.rays = nil
