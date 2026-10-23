@@ -722,6 +722,39 @@ test("the helix's probe reads its analytic curvature and torsion", async ({
   expect(await pixels(page)).toBe(original);
 });
 
+test("a miniature translated helix keeps its visible curvature and torsion", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, helix);
+  await probeSwitch(page).check();
+  for (const [axis, expression] of [
+    ["x", "5000+cos(t)/1024"],
+    ["y", "-3000+sin(t)/1024"],
+    ["z", "4000+t/2048"],
+  ]) {
+    await page
+      .getByRole("textbox", { name: `${axis}(t)`, exact: true })
+      .fill(expression);
+  }
+  await settled(page);
+  // Radius 1/1024, rise per radian 1/2048: κ = 819.2, τ = 409.6.
+  await expect(readout(page)).toHaveText(["819.2", "0.001221", "409.6"]);
+  await point(page).focus();
+  await page.keyboard.press("End");
+  await expect(readout(page)).toHaveText(["819.2", "0.001221", "409.6"]);
+  // Exercise the between-sample probe as well as the sampled endpoint.
+  await page
+    .getByRole("checkbox", { name: "At any t, between samples" })
+    .check();
+  await point(page).fill("0.371");
+  await settled(page);
+  await expect(readout(page)).toHaveText(["819.2", "0.001221", "409.6"]);
+  expect(await colored(page, await pixels(page), probeColor())).toBeGreaterThan(
+    50,
+  );
+});
+
 test("edits reach the probe through pending scalar evaluation", async ({
   page,
 }) => {
