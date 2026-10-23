@@ -102,14 +102,13 @@ func composedEvaluation(kind string, pole Vec3, base evaluation, lo, hi float64,
 // its moving part before a far explicit translation is added. Subtracting the
 // origin from an already rounded projection would not recover that precision.
 func (c Request) projectedEvaluation(base evaluation, lo, hi float64, u units) evaluation {
-	ordinary := composedEvaluation(c.Input, c.Pole, base, lo, hi, u)
 	r, _, _, _ := base((lo + hi) / 2)
 	if c.Format != "parametric" || u.size <= 0 || r.norm() <= 8*u.size {
-		return ordinary
+		return composedEvaluation(c.Input, c.Pole, base, lo, hi, u)
 	}
 	local, origin, ok := c.Curve.local(u.size)
 	if !ok {
-		return ordinary
+		return composedEvaluation(c.Input, c.Pole, base, lo, hi, u)
 	}
 	movingBase := func(t float64) (Vec3, Vec3, Vec3, bool) {
 		r, v, a, ok := base(t)
