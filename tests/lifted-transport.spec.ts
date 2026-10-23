@@ -171,11 +171,12 @@ test("every preset's lifted arrays come back, leaving the JSON small", () => {
       floats += reply.lifted.floats.length;
       text += reply.json.length;
       // An ellipsoid's surface, its focal sheets and their probe were 7 MB
-      // of JSON; what is left is mostly their grids of flags.
+      // of JSON; geometry and topology now both travel typed.
       if (p.name === "The whole focal surface of an ellipsoid")
         expect(reply.json.length, p.name).toBeLessThan(1_000_000);
     }
   expect([...kinds].sort()).toEqual([
+    "flags",
     "maybe",
     "number",
     "point",
@@ -185,4 +186,69 @@ test("every preset's lifted arrays come back, leaving the JSON small", () => {
   // Most of what the presets send is now lifted: a float is about 18
   // characters of JSON.
   expect(18 * floats).toBeGreaterThan(4 * text);
+});
+
+test("packed topology preserves high bits, row tails and neighboring numbers", () => {
+  const result = restore(
+    { grids: [{ faces: null }], before: null, after: null },
+    lifted(
+      [0.5, -0, 2147483649, 1, 2147483647, 4294967295, 1, 0, 2147483648, 3.25],
+      [
+        { path: ["before"], kind: "number", offset: 0, count: 2 },
+        {
+          path: ["grids", 0, "faces"],
+          kind: "flags",
+          offset: 2,
+          rows: [33, -1, 0, 31, 32, 1, 64],
+        },
+        { path: ["after"], kind: "number", offset: 9, count: 1 },
+        { path: ["optional"], kind: "flags", offset: 2, count: 33 },
+      ],
+    ),
+  );
+  const ends = Array.from(
+    { length: 33 },
+    (_, k) => k === 0 || k === 31 || k === 32,
+  );
+  expect(result.grids[0].faces).toEqual([
+    ends,
+    null,
+    [],
+    Array(31).fill(true),
+    Array(32).fill(true),
+    [true],
+    Array.from({ length: 64 }, (_, k) => k === 63),
+  ]);
+  expect((result as any).optional).toEqual(ends);
+  expect(result.before).toEqual([0.5, -0]);
+  expect(Object.is(result.before![1], -0)).toBe(true);
+  expect(result.after).toEqual([3.25]);
+});
+
+test("a real surface reply packs topology and reconstructs its analytic grid", () => {
+  const preset = spatialPresets.find(
+    (p) => p.name === "The whole focal surface of an ellipsoid",
+  )!;
+  const reply = spatial(JSON.stringify(preset.config));
+  expect(typeof reply).toBe("object");
+  const places: Place[] = JSON.parse(reply.lifted.places);
+  const flags = places.filter((p) => p.kind === "flags");
+  expect(flags.some((p) => p.path.join(".") === "surface.surface.faces")).toBe(
+    true,
+  );
+  expect(reply.json.length).toBeLessThan(50_000);
+  const result = restore(JSON.parse(reply.json), reply.lifted);
+  const sheet = result.surface.surface;
+  const { uSamples: nu, vSamples: nv } = preset.config.surface;
+  expect(sheet.faces).toHaveLength(nu);
+  // This ellipsoid excludes the poles; every patch cell is regular and
+  // its four boundary edges stay joined after the real WASM reply.
+  for (const grid of [sheet.faces, sheet.alongU, sheet.alongV])
+    for (const row of grid) {
+      expect(row.every((value: unknown) => typeof value === "boolean")).toBe(
+        true,
+      );
+      expect(row.every(Boolean)).toBe(true);
+    }
+  expect(sheet.faces[0]).toHaveLength(nv);
 });
