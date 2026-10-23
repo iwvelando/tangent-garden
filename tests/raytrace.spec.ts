@@ -1,6 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset, openAnimation, openExportSettings } from "./helpers";
+import {
+  choosePreset,
+  exportImage,
+  openAnimation,
+  openExportSettings,
+} from "./helpers";
 import { decodeVideo, probe } from "./video";
 import { exportTiming } from "../web/export-quality";
 import { reach, trace, traceTimeline, type Rect } from "../web/raytrace";
@@ -461,6 +466,96 @@ const derived = async (page: Page) =>
   ).join("");
 const animate = (page: Page) =>
   page.getByRole("combobox", { name: "Animate", exact: true });
+
+test("slowly turning reflected rays keep their finite caustic in the drawing and SVG", async ({
+  page,
+}) => {
+  await ready(page, "Parallel light & a circle");
+  const original = await derived(page);
+  for (const [label, value] of [
+    ["x(t)", "t"],
+    ["y(t)", "2^-33*t^2"],
+    ["t from", "-1"],
+    ["to", "1"],
+    ["Travel direction (degrees)", "0"],
+    ["Numerical samples", "65"],
+  ])
+    await page.getByLabel(label, { exact: true }).fill(value);
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await page.locator("#artwork desc").textContent())!).curve
+          .max,
+    )
+    .toBe(1);
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const real = page.getByTestId("derived-curve");
+  const virtual = page.getByTestId("virtual-derived-curve");
+  for (const refined of [false, true]) {
+    await page
+      .getByRole("checkbox", { name: "Refine between samples", exact: true })
+      .setChecked(refined);
+    await expect(page.locator(".plot-wrap")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(real).not.toHaveAttribute("d", "");
+    await expect(virtual).not.toHaveAttribute("d", "");
+    const art = page.locator("#artwork");
+    const scale = Number(await art.getAttribute("data-camera-scale"));
+    const cx = Number(
+      (await art.getAttribute("data-camera-center"))!.split(",")[0],
+    );
+    const xs = (await derived(page)).match(/[ML][^ML]*/g)!.flatMap((run) => {
+      const n = run.slice(1).trim().split(/[ ,]+/).map(Number);
+      return n.filter((_, i) => i % 2 === 0).map((x) => cx + (x - 500) / scale);
+    });
+    expect(Math.min(...xs)).toBeCloseTo(-1.5, 4);
+    expect(Math.max(...xs)).toBeCloseTo(1.5, 4);
+  }
+  const drawing = await derived(page);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const saved = await page.evaluate((s) => {
+    const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+    return {
+      paths: [
+        ...doc.querySelectorAll(
+          '[data-testid="derived-curve"], [data-testid="virtual-derived-curve"]',
+        ),
+      ]
+        .map((p) => p.getAttribute("d"))
+        .join(""),
+      metadata: doc.querySelector("desc")!.textContent!,
+    };
+  }, svg);
+  expect(saved.paths).toBe(drawing);
+  expect(saved.metadata).toContain("2^-33*t^2");
+  // A straight mirror's rays are parallel, flat or tilted: its tangent's
+  // rounding must not invent a caustic.
+  for (const y of ["0", "0.37*t"]) {
+    await page.getByLabel("y(t)", { exact: true }).fill(y);
+    await expect
+      .poll(
+        async () =>
+          JSON.parse((await page.locator("#artwork desc").textContent())!).curve
+            .y,
+      )
+      .toBe(y);
+    await expect(page.locator(".plot-wrap")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(real).toHaveAttribute("d", "");
+    await expect(virtual).toHaveAttribute("d", "");
+  }
+  await choosePreset(page, { label: "Parallel light & a circle" });
+  await expect.poll(() => derived(page)).toBe(original);
+});
 
 test("tracing is offered only for optical studies, with fixed cameras", async ({
   page,
