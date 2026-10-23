@@ -11,6 +11,7 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"unsafe"
@@ -29,7 +30,10 @@ import (
 // Vec3, [x, y, z]; "quad" a [4]float64, such as an engine4 Vec4;
 // "number" a float64; "maybe" a *float64, a number or null (NaN);
 // "point2" an engine *Vec, {x, y} or null (two NaN), as a shadow's 2D
-// study holds; "vector2" an engine Vec.
+// study holds; "vector2" an engine Vec. "ray" is an engine3 Ray:
+// i, j, start xyz, point xyz, end xyz, back xyz, virtual, total (16 floats),
+// with the two flags encoded as 0 or 1. Indices use the same float64
+// conversion as JSON numbers on the page.
 type Place struct {
 	Path   []any  `json:"path"`
 	Kind   string `json:"kind"`
@@ -47,6 +51,7 @@ var errNonFinite = errors.New("non-finite number")
 
 var (
 	vec3   = reflect.TypeOf(engine3.Vec3{})
+	ray    = reflect.TypeOf(engine3.Ray{})
 	vec    = reflect.TypeOf(engine.Vec{})
 	number = reflect.TypeOf(0.0)
 )
@@ -54,6 +59,8 @@ var (
 // kind is the kind of a slice element type that lifts, or "".
 func kind(t reflect.Type) string {
 	switch t {
+	case ray:
+		return "ray"
 	case vec3:
 		// Three float64 fields, laid out as three consecutive float64.
 		return "vector"
@@ -301,6 +308,22 @@ func (l *lifter) lift(v reflect.Value) error {
 func (l *lifter) items(v reflect.Value, k string) error {
 	nan, start := math.NaN(), len(l.floats)
 	switch k {
+	case "ray":
+		// Pack fields explicitly: Go's int size and struct padding differ
+		// between native and WASM builds. Reserve this whole ray slice once.
+		l.floats = slices.Grow(l.floats, 16*v.Len())
+		for _, r := range v.Interface().([]engine3.Ray) {
+			virtual, total := 0.0, 0.0
+			if r.Virtual {
+				virtual = 1
+			}
+			if r.Total {
+				total = 1
+			}
+			l.floats = append(l.floats, float64(r.I), float64(r.J),
+				r.Start.X, r.Start.Y, r.Start.Z, r.Point.X, r.Point.Y, r.Point.Z,
+				r.End.X, r.End.Y, r.End.Z, r.Back.X, r.Back.Y, r.Back.Z, virtual, total)
+		}
 	case "vector", "vector2", "triple", "quad", "number":
 		// Each of these lies in memory as consecutive float64 values.
 		l.floats = append(l.floats, unsafe.Slice((*float64)(v.UnsafePointer()), width(k)*v.Len())...)
@@ -353,6 +376,8 @@ func (l *lifter) items(v reflect.Value, k string) error {
 // width is the number of floats in one item of kind k.
 func width(k string) int {
 	switch k {
+	case "ray":
+		return 16
 	case "number", "maybe":
 		return 1
 	case "quad":

@@ -9,7 +9,9 @@
 // [x, y, z], a "quad" [x, y, z, w], a "number" a number, and a "maybe" a
 // number or null (NaN); a "point2" is {x, y} or null (two NaN), and a
 // "vector2" {x, y}, as a shadow's 2D study holds. An array of arrays has rows, each row's length,
-// -1 for null; any other array has count.
+// -1 for null; any other array has count. A "ray" is a representative
+// spatial ray: i, j, start xyz, point xyz, end xyz, back xyz, virtual, total,
+// with its flags encoded as 0 or 1 (16 floats).
 export type Place = {
   path: (string | number)[];
   kind:
@@ -20,7 +22,8 @@ export type Place = {
     | "triple"
     | "quad"
     | "number"
-    | "maybe";
+    | "maybe"
+    | "ray";
   offset: number;
   count?: number;
   rows?: number[];
@@ -31,6 +34,7 @@ export type Place = {
 export type Lifted = { floats: Float64Array; places: string };
 
 const width = {
+  ray: 16,
   point: 3,
   vector: 3,
   point2: 2,
@@ -50,6 +54,19 @@ function items(
 ) {
   const out: unknown[] = new Array(n);
   switch (kind) {
+    case "ray":
+      for (let k = 0; k < n; k++, at += 16)
+        out[k] = {
+          i: floats[at],
+          j: floats[at + 1],
+          start: { x: floats[at + 2], y: floats[at + 3], z: floats[at + 4] },
+          point: { x: floats[at + 5], y: floats[at + 6], z: floats[at + 7] },
+          end: { x: floats[at + 8], y: floats[at + 9], z: floats[at + 10] },
+          back: { x: floats[at + 11], y: floats[at + 12], z: floats[at + 13] },
+          virtual: floats[at + 14] === 1,
+          total: floats[at + 15] === 1,
+        };
+      break;
     case "point":
     case "vector":
       for (let k = 0; k < n; k++, at += 3) {
