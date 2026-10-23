@@ -306,3 +306,65 @@ func TestChordEnvelopeVirtualScale(t *testing.T) {
 		}
 	}
 }
+
+// Lines through (u, 0) at angle atan(e*u) touch (2u, e*u²).
+// Changing the rate t = span*u changes neither this parabola nor its gaps.
+func TestLineEnvelopeResolvedSlowTurning(t *testing.T) {
+	for _, mode := range []string{"angle", "chord"} {
+		for _, span := range []float64{0.00001, 1, 50000} {
+			t.Run(fmt.Sprintf("%s/span=%g", mode, span), func(t *testing.T) {
+				u := fmt.Sprintf("(t/%.17g)", span)
+				l := EnvelopeFamily{Mode: "angle", Angle: "atan(2^-32*" + u + ")"}
+				if mode == "chord" {
+					l = chords(u+"+1", "2^-32*"+u)
+				}
+				q := linesRequest(u, "0", -span, span, l)
+				q.Samples = 65
+				q.Adaptive = true
+				r := compute(t, q)
+				if r.Invalid != 0 {
+					t.Fatalf("%d omitted samples for resolved turning", r.Invalid)
+				}
+				check := func(p *Vec, at float64) {
+					t.Helper()
+					if p == nil {
+						t.Fatal("missing finite envelope point")
+					}
+					want := Vec{2 * at, math.Ldexp(at*at, -32)}
+					if math.Abs(p.X-want.X) > 1e-8 || math.Abs(math.Ldexp(p.Y, 32)-at*at) > 1e-8 {
+						t.Fatalf("at u=%g: got %v, want %v", at, *p, want)
+					}
+				}
+				for j, p := range r.Derived {
+					check(p, sampleT(q, j)/span)
+				}
+				for _, ray := range r.Rays {
+					check(ray.Target, sampleT(q, ray.SampleIndex)/span)
+				}
+				if r.Adaptive == nil || r.Adaptive.Derived == nil {
+					t.Fatal("missing refined envelope")
+				}
+				for j, p := range r.Adaptive.Derived.Points {
+					at := q.Curve.Min + r.Adaptive.Derived.At[j]*(q.Curve.Max-q.Curve.Min)/float64(q.Samples-1)
+					check(p, at/span)
+				}
+				check(probeAtT(t, q, span*0.371).Derived, 0.371)
+			})
+		}
+	}
+}
+
+// A turn of 2^-36 per unit of u is about 0.4 of the rounding bound on these
+// domains, so it pins the bound from below as the resolved test does above.
+func TestLineEnvelopeUnresolvedTurning(t *testing.T) {
+	for _, span := range []float64{0.00001, 1, 50000} {
+		for _, angle := range []string{"0", "0.7", "pi/2", "pi", "0.7+2^-50*t", "2^-50*t", "2^-36*t"} {
+			q := linesRequest(fmt.Sprintf("t/%.17g", span), "0", -span, span,
+				EnvelopeFamily{Mode: "angle", Angle: fmt.Sprintf("(%s/%.17g)", angle, span)})
+			r := compute(t, q)
+			if r.Invalid != q.Samples || len(r.Rays) != q.Lines {
+				t.Fatalf("span %g angle %s: %d invalid, %d lines", span, angle, r.Invalid, len(r.Rays))
+			}
+		}
+	}
+}
