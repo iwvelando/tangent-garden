@@ -1,5 +1,6 @@
 import { HelpText, HelpToggle, useHelp } from "../Field";
 import { tiered } from "../help";
+import { spatialPlainZoom, viewZoom } from "../refinement";
 import type { Frame, SpatialConfig } from "./types";
 
 export const receiverViewEnabled = (c: SpatialConfig) =>
@@ -15,6 +16,11 @@ export function withoutReceiverInset(frame: Frame): Frame {
   const { inset: _, ...receiver } = rays.receiver;
   return { ...frame, result: { ...frame.result, rays: { ...rays, receiver } } };
 }
+
+export const receiverViewHelp = tiered(
+  `Sharpens the visible light after the camera rests, about one bin per device pixel, and zooms to ${viewZoom.toLocaleString("en-US")}×.`,
+  `At most 1024 bins each way. Refinement levels also apply to this inset, with a separate 524,288-cell budget. Window shares and peak stay fixed; the brightest shade means at or above that peak. Playback omits the inset; still images refine it to their output size. Without it, zoom stops at ${spatialPlainZoom}×.`,
+);
 
 export function ReceiverViewCheck({
   checked,
@@ -37,12 +43,7 @@ export function ReceiverViewCheck({
         </label>
         <HelpToggle topic="refining the receiver to the view" help={help} />
       </div>
-      <HelpText help={help}>
-        {tiered(
-          "Sharpens the visible light after the camera rests, with about one bin per device pixel.",
-          "At most 1024 bins each way. Refinement levels also apply to this inset, with a separate 524,288-cell budget. Window shares and peak stay fixed; the brightest shade means at or above that peak. Playback omits the inset; still images refine it to their output size.",
-        )}
-      </HelpText>
+      <HelpText help={help}>{receiverViewHelp}</HelpText>
     </>
   );
 }

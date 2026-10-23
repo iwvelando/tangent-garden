@@ -12,6 +12,9 @@ import type { SpatialResult, Vec3 } from "../web/spatial/types";
 import { receiverNote } from "../web/spatial/rays";
 import { curveMesh } from "./curve-mesh";
 import { choosePreset } from "./helpers";
+import { helpText } from "../web/help";
+import { spatialPlainZoom, viewZoom } from "../web/refinement";
+import { receiverViewHelp } from "../web/spatial/receiver-view";
 
 const stage = (page: Page) => page.locator(".spatial-stage");
 async function settled(page: Page) {
@@ -685,6 +688,30 @@ test("a glass dome's close-up preset opens refined and plays its own receiver mo
   await settled(page);
   expect(await config(page)).toEqual(original);
   await expect(note(page)).toContainText("inset");
+  // The option lifts the zoom limit, as refining curves to the view does:
+  // without it, the preset's opening zoom of 12 stops at the plain limit.
+  await page
+    .getByRole("checkbox", {
+      name: "Refine the receiver to the view",
+      exact: true,
+    })
+    .uncheck();
+  await settled(page);
+  await expect
+    .poll(
+      async () =>
+        JSON.parse(
+          (await page.locator("#spatial-artwork").getAttribute("data-view"))!,
+        ).zoom,
+    )
+    .toBe(spatialPlainZoom);
+  await expect(note(page)).not.toContainText("inset");
+});
+
+test("the receiver view's help states the zoom it allows", () => {
+  const help = helpText(receiverViewHelp);
+  expect(help).toContain(`${viewZoom.toLocaleString("en-US")}×`);
+  expect(help).toContain(`zoom stops at ${spatialPlainZoom}×`);
 });
 
 test("the receiver inset follows layers, cuts and see-through sheets", async ({
