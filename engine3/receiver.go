@@ -152,22 +152,40 @@ func (r ReceiverRequest) point(a, b float64) Vec3 {
 	return Vec3{p[0], p[1], p[2]}
 }
 
-// turn rotates v by the tilt about the window's first axis, or back again
-// when back is set, and says whether the window is turned at all: a whole
-// number of turns leaves it, and every result, exactly as untilted.
-func (r ReceiverRequest) turn(v Vec3, back bool) (Vec3, bool) {
+// receiverRotation prepares the tilt once for all rays in a raster pass.
+// Keep the original two-coordinate arithmetic and exact identity path.
+type receiverRotation struct {
+	k, j     int
+	sin, cos float64
+}
+
+func (r ReceiverRequest) rotation(back bool) receiverRotation {
 	sin, cos := sincosDegrees(r.Tilt)
-	if sin == 0 && cos == 1 {
-		return v, false
-	}
 	if back {
 		sin = -sin
 	}
 	k, _, j := r.axes()
-	var p [3]float64
-	p[0], p[1], p[2] = v.X, v.Y, v.Z
-	p[j], p[k] = cos*p[j]-sin*p[k], sin*p[j]+cos*p[k]
+	return receiverRotation{k, j, sin, cos}
+}
+
+// Keep this boundary as in the original per-ray turn: inlining permits
+// arm64 to fuse arithmetic with the caller and changes receiver bins.
+//
+//go:noinline
+func (r receiverRotation) apply(v Vec3) (Vec3, bool) {
+	if r.sin == 0 && r.cos == 1 {
+		return v, false
+	}
+	p := [3]float64{v.X, v.Y, v.Z}
+	p[r.j], p[r.k] = r.cos*p[r.j]-r.sin*p[r.k], r.sin*p[r.j]+r.cos*p[r.k]
 	return Vec3{p[0], p[1], p[2]}, true
+}
+
+// turn rotates v by the tilt about the window's first axis, or back again
+// when back is set, and says whether the window is turned at all: a whole
+// number of turns leaves it, and every result, exactly as untilted.
+func (r ReceiverRequest) turn(v Vec3, back bool) (Vec3, bool) {
+	return r.rotation(back).apply(v)
 }
 
 // window is the turned window's point with coordinates (a, b).
@@ -198,13 +216,14 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	}}
 	k, i1, i2 := rc.axes()
 	center := rc.point(rc.C1, rc.C2)
+	rotation := rc.rotation(true)
 	// cross returns where sample s's ray crosses the plane, in bins. A
 	// turned window turns the ray back instead, about the same axis, onto
 	// the untilted plane.
 	cross := func(s mirrorPoint) ([2]float64, bool) {
-		if d, ok := rc.turn(s.X.sub(center), true); ok {
+		if d, ok := rotation.apply(s.X.sub(center)); ok {
 			s.X = center.add(d)
-			s.R, _ = rc.turn(s.R, true)
+			s.R, _ = rotation.apply(s.R)
 		}
 		d := component(s.R, k)
 		lambda := (rc.At - component(s.X, k)) / d

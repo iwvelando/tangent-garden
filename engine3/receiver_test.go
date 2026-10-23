@@ -1552,3 +1552,73 @@ func TestReceiverGeometryOwnership(t *testing.T) {
 		})
 	}
 }
+
+// A prepared rotation must retain the old per-ray arithmetic exactly,
+// including the identity path (which preserves signed zero).
+func TestReceiverPreparedRotation(t *testing.T) {
+	legacy := func(r ReceiverRequest, v Vec3, back bool) (Vec3, bool) {
+		sin, cos := sincosDegrees(r.Tilt)
+		if sin == 0 && cos == 1 {
+			return v, false
+		}
+		if back {
+			sin = -sin
+		}
+		k := int(r.Plane[0] - 'x')
+		j := (k + 2) % 3
+		p := [3]float64{v.X, v.Y, v.Z}
+		p[j], p[k] = cos*p[j]-sin*p[k], sin*p[j]+cos*p[k]
+		return Vec3{p[0], p[1], p[2]}, true
+	}
+	bits := func(v Vec3) [3]uint64 {
+		return [3]uint64{math.Float64bits(v.X), math.Float64bits(v.Y), math.Float64bits(v.Z)}
+	}
+	for _, plane := range []string{"x", "y", "z"} {
+		for _, tilt := range []float64{0, math.Copysign(0, -1), 360, -720, 90, -90, 180, 270, 20, 75, -37.125, 1e-10, 90 + 1e-10, 100000, -100000} {
+			r := ReceiverRequest{Plane: plane, Tilt: tilt}
+			for _, back := range []bool{false, true} {
+				rotation := r.rotation(back)
+				for _, v := range []Vec3{{}, {math.Copysign(0, -1), 0, math.Copysign(0, -1)}, {1, 2, 3}, {1e5, -1e-10, 3.25}, {1e-100, -2e-100, 3e-100}} {
+					got, turned := rotation.apply(v)
+					want, wantTurned := legacy(r, v, back)
+					if bits(got) != bits(want) || turned != wantTurned {
+						t.Fatalf("%s, %g degrees, back %t, %+v: %+v (%t), want %+v (%t)", plane, tilt, back, v, got, turned, want, wantTurned)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Rotation is right handed about the window's first cyclic axis, and its
+// inverse carries a world-space direction back into window coordinates.
+func TestReceiverPreparedRotationAxes(t *testing.T) {
+	for _, tc := range []struct {
+		plane string
+		want  Vec3
+	}{
+		{"x", Vec3{3, 2, -1}},
+		{"y", Vec3{-2, 1, 3}},
+		{"z", Vec3{1, -3, 2}},
+	} {
+		r := ReceiverRequest{Plane: tc.plane, Tilt: 90}
+		forward, backward := r.rotation(false), r.rotation(true)
+		v := Vec3{1, 2, 3}
+		got, turned := forward.apply(v)
+		if got != tc.want || !turned {
+			t.Fatalf("%s: %+v, want %+v", tc.plane, got, tc.want)
+		}
+		if restored, _ := backward.apply(got); restored != v {
+			t.Fatalf("%s: inverse returned %+v", tc.plane, restored)
+		}
+		// A subsequent frame's edited request cannot change the prepared
+		// rotation of the previous frame, or reuse it for the new tilt.
+		r.Tilt = 0
+		if same, _ := forward.apply(v); same != tc.want {
+			t.Fatal("editing a request changed a prepared rotation")
+		}
+		if same, turned := r.rotation(false).apply(v); same != v || turned {
+			t.Fatal("new request retained the previous tilt")
+		}
+	}
+}
