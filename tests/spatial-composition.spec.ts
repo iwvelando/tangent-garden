@@ -64,7 +64,7 @@ const composedLayers = [
   "Pole marker",
 ];
 
-test("a translated expression keeps the tangent ribbon whole across its base cusp", async ({
+test("a translated expression keeps its tangent ribbon and probe curvature across its base cusp", async ({
   page,
 }) => {
   await ready(page);
@@ -72,29 +72,36 @@ test("a translated expression keeps the tangent ribbon whole across its base cus
     .getByLabel("Spatial definition", { exact: true })
     .selectOption("parametric");
   for (const [name, value] of [
-    ["x(t)", "5000+t^2"],
-    ["y(t)", "-3000+t^3"],
-    ["z(t)", "4000"],
+    ["x(t)", "90000+t^2"],
+    ["y(t)", "-70000+t^3"],
+    ["z(t)", "80000"],
     ["t from", "-1"],
     ["to", "1"],
   ])
     await field(page, name).fill(value);
   await builtOn(page).selectOption("tangent-foot");
   for (const [name, value] of [
-    ["Pole x", "5000.5"],
-    ["Pole y", "-2999.5"],
-    ["Pole z", "4000.3"],
+    ["Pole x", "90000.5"],
+    ["Pole y", "-69999.5"],
+    ["Pole z", "80000.3"],
   ]) {
     await field(page, name).fill(value);
   }
   await settled(page);
   await expect
     .poll(async () => (await config(page)).pole)
-    .toEqual({ x: 5000.5, y: -2999.5, z: 4000.3 });
+    .toEqual({ x: 90000.5, y: -69999.5, z: 80000.3 });
   await expect(page.locator(".composition-note")).toContainText(
     "runs on through the base's cusp",
   );
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await page
+    .getByRole("checkbox", { name: "Frame, curvature & torsion at a point" })
+    .check();
+  await settled(page);
+  // The foot curve is regular at the base cusp: κ = √8, radius 1/√8.
+  await expect(page.locator(".probe-readout dd").nth(0)).toHaveText("2.828");
+  await expect(page.locator(".probe-readout dd").nth(1)).toHaveText("0.3536");
   // Check the actual exported drawing, including the intervals on both
   // sides of the cusp, rather than relying on a changed diagnostic alone.
   await page.getByRole("button", { name: "Export image", exact: true }).click();
@@ -103,7 +110,7 @@ test("a translated expression keeps the tangent ribbon whole across its base cus
     .getByRole("menuitem", { name: "Lines (SVG) · every line", exact: true })
     .click();
   const svg = await readFile((await (await downloading).path())!, "utf8");
-  expect(svg).toContain("5000+t^2");
+  expect(svg).toContain("90000+t^2");
   const base = svg.match(/<g id="base"[^>]*>(.*?)<\/g>/s)?.[1];
   expect(base).toBeTruthy();
   expect(base!.match(/L/g)).toHaveLength((await config(page)).samples);
