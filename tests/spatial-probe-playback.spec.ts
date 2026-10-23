@@ -106,7 +106,13 @@ test("probe playback visits every sample from the first to the last, then restor
   await page.getByLabel("Duration (seconds)").fill("5");
   await button(page, "Play animation").click();
   await expect(stage(page)).toHaveAttribute("data-mode", "probe");
-  await button(page, "Pause").click();
+  // On a loaded runner a click on Pause has left playback running, so wait
+  // for Resume, clicking again only while Pause is still offered.
+  await expect(async () => {
+    if (await button(page, "Pause").isVisible())
+      await button(page, "Pause").click({ timeout: 1000 });
+    await expect(button(page, "Resume")).toBeVisible({ timeout: 1000 });
+  }).toPass();
   // A frame shown just before the pause can still be reaching the page on a
   // loaded runner; once it lands, progress must hold.
   const progress = () => stage(page).getAttribute("data-progress");
