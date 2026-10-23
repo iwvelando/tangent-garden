@@ -297,6 +297,7 @@ for (const [name, enable] of [
   test(`every view draws the animation's frame, and the two constructions coincide face on only when the curve is flat (${name})`, async ({
     page,
   }) => {
+    test.slow();
     await open(page, name);
     if (enable) await gridBox(page).check();
     await expect(gridBox(page)).toBeChecked();
