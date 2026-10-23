@@ -179,3 +179,36 @@ func diagnosticJSON(t *testing.T, r Result) []byte {
 	}
 	return data
 }
+
+// The same tiny ellipse written with radicals and no outer translation:
+// x = sqrt((5000 + 2s cos t)²), y = −sqrt((3000 − s sin t)²). Its readouts
+// must match the analytic ellipse, at samples and at a probe between them.
+func TestTranslatedDiagnosticRadicalEllipse(t *testing.T) {
+	for _, scale := range []float64{1.0 / 8, 1.0 / 1024} {
+		x := "sqrt(25000000+" + num(20000*scale) + "*cos(t)+" + num(4*scale*scale) + "*cos(t)^2)"
+		y := "-sqrt(9000000-" + num(6000*scale) + "*sin(t)+" + num(scale*scale) + "*sin(t)^2)"
+		q := request("inversion", x, y, 0, 2*math.Pi)
+		q.Inversion = Inversion{Center: Vec{5000, -3000}, Radius: scale}
+		q.Samples, q.Lines, q.Diagnostics = 65, 8, true
+		at := 0.731
+		q.Probe = &ProbeQuery{T: &at}
+		r := compute(t, q)
+		check := func(u float64, k *float64, center, tangent *Vec) {
+			t.Helper()
+			if k == nil || center == nil || tangent == nil {
+				t.Fatalf("scale %g, t=%g: missing curvature, center or tangent: %v %v %v", scale, u, k, center, tangent)
+			}
+			s, c := math.Sincos(u)
+			want := 2 / math.Pow(4*s*s+c*c, 1.5)
+			if math.Abs(*k*scale-want) > 2e-6*want {
+				t.Fatalf("scale %g, t=%g: curvature*scale=%g, want %g", scale, u, *k*scale, want)
+			}
+			closeVec(t, center, Vec{5000 + 1.5*scale*c*c*c, -3000 - 3*scale*s*s*s}, 2e-8)
+			closeVec(t, tangent, Vec{-2 * s, c}.Unit(), 2e-8)
+		}
+		for i := range r.Base {
+			check(sampleT(q, i), r.Diagnostics.Curvature[i], r.Diagnostics.Center[i], r.Diagnostics.Tangent[i])
+		}
+		check(at, r.Probe.Curvature, r.Probe.Center, r.Probe.Tangent)
+	}
+}

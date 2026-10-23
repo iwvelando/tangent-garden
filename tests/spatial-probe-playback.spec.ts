@@ -103,15 +103,17 @@ test("probe playback visits every sample from the first to the last, then restor
   await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
   const study = await pixels(page);
   await mode(page).selectOption("probe");
-  await page.getByLabel("Duration (seconds)").fill("5");
+  // Long enough that playback cannot finish while a loaded runner pauses it.
+  await page.getByLabel("Duration (seconds)").fill("600");
   await button(page, "Play animation").click();
   await expect(stage(page)).toHaveAttribute("data-mode", "probe");
-  // On a loaded runner a click on Pause has left playback running, so wait
-  // for Resume, clicking again only while Pause is still offered.
+  // Resume takes Pause's place, so a click abandoned by a short timeout can
+  // still land on it and play again. Wait for each click to be delivered,
+  // and click again only if Pause remains well after that.
   await expect(async () => {
     if (await button(page, "Pause").isVisible())
-      await button(page, "Pause").click({ timeout: 1000 });
-    await expect(button(page, "Resume")).toBeVisible({ timeout: 1000 });
+      await button(page, "Pause").click();
+    await expect(button(page, "Resume")).toBeVisible({ timeout: 5000 });
   }).toPass();
   // A frame shown just before the pause can still be reaching the page on a
   // loaded runner; once it lands, progress must hold.

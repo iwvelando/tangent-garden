@@ -64,7 +64,7 @@ Item 1 needs a profile before any code. Item 2 lists limits to fix only when a s
 Each is known and documented; none is worth a branch until a study needs it.
 
 - **3D engine scale limits** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): far differenced curves (expression curves without a separable constant translation, derived inputs other than the tangent-foot curve and orthotomic of a separable one, and curve-built surfaces) omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic.
-- **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute whose translation cannot be separated into explicit constants (see the definition's limits), and constructions that read curvature (evolutes and caustics) on a study millions of its diameters out (beyond the second-derivative budget); the base curve's probe readouts and an evolute input remove a separable translation first.
+- **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute whose translation cannot be separated by outer arithmetic or a rationalized square root (see the definition's limits), and constructions that read curvature (evolutes and caustics) on a study millions of its diameters out (beyond the second-derivative budget); the base curve's probe readouts and an evolute input remove a separable translation first.
 
 ### 3. Faster refined receivers in playback, possibly on the GPU
 
