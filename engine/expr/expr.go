@@ -124,6 +124,7 @@ func parseTree(s string, variables map[string]int, parameter *float64) (*parser,
 	}
 	return p, e, nil
 }
+
 func (p *parser) space() {
 	for p.pos < len(p.s) && unicode.IsSpace(rune(p.s[p.pos])) {
 		p.pos++

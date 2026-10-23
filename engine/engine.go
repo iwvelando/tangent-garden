@@ -250,7 +250,7 @@ func Compute(q Request) (Result, error) {
 		return out, err
 	}
 	// The construction acts on g, the base or a curve derived from it.
-	g := inputCurve(q.Input, f, q.Curve.Min, q.Curve.Max, q.Pole, q.Distance)
+	g := q.derivedInput(f)
 	if composed(q.Input) {
 		out.Input = make([]*Vec, q.Samples)
 	}

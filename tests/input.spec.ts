@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { test, expect, type Page } from "@playwright/test";
 import { availableTargets, reveal } from "../web/animation";
 import { presets } from "../web/presets";
@@ -8,7 +9,7 @@ import {
   type Result,
   type Vec,
 } from "../web/types";
-import { openAnimation, choosePreset } from "./helpers";
+import { openAnimation, choosePreset, exportImage } from "./helpers";
 
 const preset = (name: string) => presets.find((p) => p.title === name)!.config;
 async function ready(page: Page, name: string) {
@@ -310,4 +311,52 @@ test("reveal unwinds the evolute's string in order, pauses, resumes, and an edit
     "data-animation-progress",
   );
   expect((await definition(page)).offset).toBe(1);
+});
+
+test("a translated evolute unwinds to the spiral in the controls, drawing and still export", async ({
+  page,
+}) => {
+  await ready(page, "Unwinding an evolute");
+  await page
+    .getByRole("textbox", { name: "x(t)", exact: true })
+    .fill("800+exp(0.15*t)*cos(t)");
+  await page
+    .getByRole("textbox", { name: "y(t)", exact: true })
+    .fill("-320+exp(0.15*t)*sin(t)");
+  await expect
+    .poll(async () => (await definition(page)).curve.y)
+    .toBe("-320+exp(0.15*t)*sin(t)");
+  await settled(page);
+  const assertSpiral = async () => {
+    const toWorld = await world(page);
+    const points = runs(
+      (await page.getByTestId("derived-curve").getAttribute("d"))!,
+    );
+    expect(points).toHaveLength(1);
+    expect(points[0]).toHaveLength(preset("Unwinding an evolute").samples);
+    for (const [i, xy] of points[0].entries()) {
+      const u = (4 * Math.PI * i) / (points[0].length - 1);
+      const p = toWorld(xy);
+      expect(
+        Math.hypot(
+          p.x - 800 - Math.exp(0.15 * u) * Math.cos(u),
+          p.y + 320 - Math.exp(0.15 * u) * Math.sin(u),
+        ),
+      ).toBeLessThan(0.003);
+    }
+  };
+  await assertSpiral();
+  const shown = await page.getByTestId("derived-curve").getAttribute("d");
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const saved = await download;
+  const svg = await readFile((await saved.path())!, "utf8");
+  expect(svg).toContain(shown);
+  expect(svg).toContain("800+exp(0.15*t)*cos(t)");
+  // Replacing the translated study must restore the original preset completely.
+  await choosePreset(page, { label: "Unwinding an evolute" });
+  await settled(page);
+  expect((await definition(page)).curve).toEqual(
+    preset("Unwinding an evolute").curve,
+  );
 });

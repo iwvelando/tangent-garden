@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -331,6 +332,152 @@ func TestEvoluteInputStencilsShareOnlyIdenticalPoints(t *testing.T) {
 		want := s.resolution(wantDD, half, least)
 		if p != f(u) || d != wantD || dd != wantDD || resolution != want {
 			t.Fatalf("t=%v: shared %v %v %v %v, separate %v %v %v %v", u, p, d, dd, resolution, f(u), wantD, wantDD, want)
+		}
+	}
+}
+
+// Moving the ellipse changes neither the pedal of its evolute (the ellipse's
+// contrapedal) nor the involute that unwinds that evolute back to the ellipse.
+// These identities test the returned construction, including endpoint stencils.
+func TestTranslatedEvoluteConstructions(t *testing.T) {
+	for _, shift := range []Vec{{20, -8}, {800, -320}, {32000, -16000}} {
+		for _, scale := range []float64{1, 0x1p-20} {
+			for _, adaptive := range []bool{false, true} {
+				for _, kind := range []string{"pedal", "involute"} {
+					t.Run(fmt.Sprintf("%s/%v/%g/refine=%v", kind, shift, scale, adaptive), func(t *testing.T) {
+						m := similarity{s: scale, c: shift.Mul(scale)}
+						q := inputRequest(kind, "evolute", m.coordinate("2*cos(t)", m.c.X), m.coordinate("sin(t)", m.c.Y), 0.1, 1.4)
+						q.Pole = m.at(Vec{0.4, 0.3})
+						q.Offset = scale * math.Pow(4*math.Pow(math.Sin(0.1), 2)+math.Pow(math.Cos(0.1), 2), 1.5) / 2
+						q.Samples, q.Adaptive = 257, adaptive
+						at := 0.731
+						q.Probe = &ProbeQuery{T: &at}
+						r := compute(t, q)
+						if r.Invalid != 0 {
+							t.Fatalf("%d omitted samples: %v", r.Invalid, r.Warnings)
+						}
+						expected := func(u float64) Vec {
+							p, v := Vec{2 * math.Cos(u), math.Sin(u)}, Vec{-2 * math.Sin(u), math.Cos(u)}
+							if kind == "pedal" {
+								p = p.Add(v.Perp().Mul(q.Pole.Sub(m.at(p)).Dot(v.Perp()) / scale / v.Dot(v)))
+							}
+							return m.at(p)
+						}
+						for j, p := range r.Derived {
+							closeVec(t, p, expected(sampleT(q, j)), scale*2e-4)
+						}
+						closeVec(t, r.Probe.Derived, expected(at), scale*2e-4)
+						if adaptive {
+							if r.Adaptive == nil || r.Adaptive.Derived == nil {
+								t.Fatal("no refined construction")
+							}
+							for j, p := range r.Adaptive.Derived.Points {
+								if p == nil {
+									t.Fatal("gap in regular refined arc")
+								}
+								closeVec(t, p, expected(q.Curve.Min+r.Adaptive.Derived.At[j]*(q.Curve.Max-q.Curve.Min)/float64(q.Samples-1)), scale*2e-4)
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+// A translation written inside a constant factor, as the 3D engine's
+// translated expressions also accept, is separated the same way.
+func TestEvoluteTranslationThroughConstantFactors(t *testing.T) {
+	for _, adaptive := range []bool{false, true} {
+		q := inputRequest("involute", "evolute", "2*(400+cos(t))", "(2*sin(t)-640)/2", 0.1, 1.4)
+		q.Offset = math.Pow(4*math.Pow(math.Sin(0.1), 2)+math.Pow(math.Cos(0.1), 2), 1.5) / 2
+		q.Samples, q.Adaptive = 257, adaptive
+		r := compute(t, q)
+		if r.Invalid != 0 {
+			t.Fatalf("refine=%v: %d omitted samples: %v", adaptive, r.Invalid, r.Warnings)
+		}
+		for j, p := range r.Derived {
+			u := sampleT(q, j)
+			closeVec(t, p, Vec{800 + 2*math.Cos(u), -320 + math.Sin(u)}, 2e-4)
+		}
+	}
+}
+
+func TestDistantEvoluteKeepsCuspsAndGaps(t *testing.T) {
+	for _, adaptive := range []bool{false, true} {
+		q := inputRequest("offset", "evolute", "800+2*cos(t)", "-320+sin(t)", 0, 2*math.Pi)
+		q.Samples, q.Distance, q.Adaptive = 257, 0.2, adaptive
+		r := compute(t, q)
+		for _, j := range []int{0, 64, 128, 192, 256} {
+			if r.Input[j] == nil || r.Derived[j] != nil {
+				t.Fatalf("refine=%v cusp %d: input %v construction %v", adaptive, j, r.Input[j], r.Derived[j])
+			}
+		}
+		for _, j := range []int{32, 96, 160, 224} {
+			if r.Derived[j] == nil {
+				t.Fatalf("regular sample %d omitted", j)
+			}
+		}
+		q.Curve.Min, q.Curve.Max = 0.3, 0.3+2*math.Pi
+		r = compute(t, q)
+		if !warned(r, "In 4 places the tangent reverses between samples") {
+			t.Fatalf("refine=%v: %v", adaptive, r.Warnings)
+		}
+		if adaptive {
+			gaps := 0
+			for _, p := range r.Adaptive.Derived.Points {
+				if p == nil {
+					gaps++
+				}
+			}
+			if gaps < 4 {
+				t.Fatalf("cusps between samples were joined: %d gaps", gaps)
+			}
+		}
+		q = inputRequest("pedal", "evolute", "800+t", "-320+sin(t)", -1, 1)
+		q.Adaptive = adaptive
+		r = compute(t, q)
+		if r.Base[250] == nil || r.Input[250] != nil || r.Derived[250] != nil || r.Derived[100] == nil {
+			t.Fatalf("inflection: base %v input %v construction %v, regular %v", r.Base[250], r.Input[250], r.Derived[250], r.Derived[100])
+		}
+		q.Curve.Y = "-320+0.7*t"
+		r = compute(t, q)
+		for j, p := range r.Input {
+			if p != nil || r.Derived[j] != nil {
+				t.Fatalf("line gained a finite evolute at %d", j)
+			}
+		}
+	}
+}
+
+// ComputeOn with the original compiled curve bypasses translation extraction.
+// Existing evolute-input presets must remain bit-identical to that path, both
+// with and without refinement and with the diagnostics and probe requested.
+func TestNearbyEvolutePresetsUnchanged(t *testing.T) {
+	cases := append(loadPresets(t), preset{Title: "nearby translated ellipse", Config: inputRequest("pedal", "evolute", "2+2*cos(t)", "3+sin(t)", 0, 2*math.Pi)})
+	for _, p := range cases {
+		if p.Config.Input != "evolute" {
+			continue
+		}
+		for _, adaptive := range []bool{false, true} {
+			q := p.Config
+			q.Adaptive, q.Diagnostics = adaptive, true
+			at := q.Curve.Min + 0.37*(q.Curve.Max-q.Curve.Min)
+			q.Probe = &ProbeQuery{T: &at}
+			f, err := compile(q.Curve)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := ComputeOn(q, f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := compute(t, q)
+			a, _ := json.Marshal(want)
+			b, _ := json.Marshal(got)
+			if string(a) != string(b) {
+				t.Fatalf("%s refine=%v changed", p.Title, adaptive)
+			}
 		}
 	}
 }
