@@ -1,4 +1,4 @@
-// Package lift moves an engine result's large numeric arrays out of its
+// Package lift moves an engine result's large numeric and boolean arrays out of its
 // JSON, for the WebAssembly bridge (cmd/wasm): encoding numbers as text in
 // Go and parsing them back in the browser costs far more than copying their
 // float64 bytes. The page puts each array back where it was
@@ -29,7 +29,9 @@ import (
 // Vec3, [x, y, z]; "quad" a [4]float64, such as an engine4 Vec4;
 // "number" a float64; "maybe" a *float64, a number or null (NaN);
 // "point2" an engine *Vec, {x, y} or null (two NaN), as a shadow's 2D
-// study holds; "vector2" an engine Vec.
+// study holds; "vector2" an engine Vec; "flags" a bool, packed 32 per
+// float64 as an exact unsigned integer, least-significant bit first. Each
+// row starts a fresh word; unused high bits of its last word are zero.
 type Place struct {
 	Path   []any  `json:"path"`
 	Kind   string `json:"kind"`
@@ -38,7 +40,7 @@ type Place struct {
 	Rows   []int  `json:"rows,omitempty"`
 }
 
-// minimum is the fewest floats worth lifting: shorter arrays stay in the
+// minimum is the fewest floats (or flags) worth lifting: shorter arrays stay in the
 // JSON, where they cost less than their place would.
 const minimum = 32
 
@@ -64,6 +66,8 @@ func kind(t reflect.Type) string {
 		return "vector2"
 	case reflect.PointerTo(vec):
 		return "point2"
+	case reflect.TypeOf(false):
+		return "flags"
 	case number:
 		return "number"
 	case reflect.PointerTo(number):
@@ -80,13 +84,13 @@ func kind(t reflect.Type) string {
 	return ""
 }
 
-// Lift moves every large numeric array in the value result points to into
+// Lift moves every large numeric or boolean array in the value result points to into
 // one float64 slice, setting each to nil, so that it encodes as null, and
 // says where each goes back. It looks through structs (including embedded
 // ones, whose fields JSON lifts to the parent), pointers, slices and arrays,
 // not interfaces, which engine results do not use. It lifts slices, and
 // slices of slices, of the kinds Place lists, holding at least minimum
-// floats. A field marked omitempty loses its key when it is lifted, and the
+// floats (or flags). A field marked omitempty loses its key when it is lifted, and the
 // page adds it back. A NaN or an infinity in a lifted array refuses the
 // result, as encoding it would.
 func Lift(result any) ([]float64, []Place, error) {
@@ -151,7 +155,7 @@ func (l *lifter) walk(v reflect.Value) error {
 		}
 		fallthrough
 	case reflect.Array:
-		// Grids of flags or indices hold nothing to lift.
+		// Grids of indices hold nothing to lift.
 		if !holds(v.Type().Elem()) {
 			return nil
 		}
@@ -304,21 +308,34 @@ func (l *lifter) lift(v reflect.Value) error {
 				continue
 			}
 			p.Rows[r] = row.Len()
+			l.total += stored(k, row.Len())
 		}
 	} else {
 		p.Count = count
+		l.total += stored(k, count)
 	}
 	l.places = append(l.places, p)
 	l.arrays = append(l.arrays, reflect.ValueOf(v.Interface()))
-	l.total += per * count
 	v.Set(reflect.Zero(v.Type()))
 	return nil
 }
 
-// items appends the floats of a slice of kind k.
+// items appends the floats of a slice of kind k, packing flags into words.
 func (l *lifter) items(v reflect.Value, k string) error {
 	nan, start := math.NaN(), len(l.floats)
 	switch k {
+	case "flags":
+		flags := v.Interface().([]bool)
+		for at := 0; at < len(flags); at += 32 {
+			var word uint32
+			for bit, set := range flags[at:min(at+32, len(flags))] {
+				if set {
+					word |= 1 << uint(bit)
+				}
+			}
+			l.floats = append(l.floats, float64(word))
+		}
+		return nil
 	case "vector", "vector2", "triple", "quad", "number":
 		// Each of these lies in memory as consecutive float64 values.
 		l.floats = append(l.floats, unsafe.Slice((*float64)(v.UnsafePointer()), width(k)*v.Len())...)
@@ -368,10 +385,20 @@ func (l *lifter) items(v reflect.Value, k string) error {
 	return nil
 }
 
-// width is the number of floats in one item of kind k.
+// stored is the number of floats n items of kind k take: flags pack 32 to
+// a float, each row starting a fresh one.
+func stored(k string, n int) int {
+	if k == "flags" {
+		return (n + 31) / 32
+	}
+	return width(k) * n
+}
+
+// width is the number of floats in one numeric item, or one flag, which
+// counts as a float toward minimum.
 func width(k string) int {
 	switch k {
-	case "number", "maybe":
+	case "number", "maybe", "flags":
 		return 1
 	case "quad":
 		return 4
