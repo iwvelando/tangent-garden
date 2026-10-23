@@ -1304,3 +1304,49 @@ func TestReceiverViewRegionLimits(t *testing.T) {
 		t.Fatal("window behind the eye is visible")
 	}
 }
+
+// A worker's inset pass shares the window pass's cached traces and landing
+// scratch. Each view must still give the stateless result, and moving the
+// camera must keep the ray family.
+func TestReceiverViewEngineReuse(t *testing.T) {
+	c := spatialPresets(t)["A glass dome's luminous ring, close up"]
+	c.Surface.USamples, c.Surface.VSamples = 48, 20
+	view := View{Center: Vec3{0, 0, -1.9}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: .17, Height: .13, Pixels: [2]int{120, 90}}
+	c.View = &view
+	var worker Engine
+	check := func(c Request) {
+		t.Helper()
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Rays.Receiver.Inset == nil {
+			t.Fatal("no inset")
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatal("cached result differs from stateless engine")
+		}
+	}
+	check(c)
+	check(c)
+	original := worker.rays
+	if original == nil || original.receiver == nil {
+		t.Fatal("no cached rays")
+	}
+	for _, move := range []func(*View){
+		func(v *View) { v.Center.X = .1 },
+		func(v *View) { v.Width, v.Height = .4, .3 },
+		func(v *View) { v.Pixels = [2]int{200, 150} },
+		func(v *View) { v.Distance, v.Near = 3, .1 },
+	} {
+		move(&view)
+		check(c)
+		if worker.rays != original {
+			t.Fatal("moving the camera discarded the ray family")
+		}
+	}
+}

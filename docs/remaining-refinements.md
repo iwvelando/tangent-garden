@@ -43,7 +43,7 @@ These come from the handoffs. Each was paid for at least once.
 
 ## Recommended order
 
-Item 1 needs a profile before any code. Item 2 lists limits to fix only when a study runs into them. Item 3 is implemented. Item 4 needs a decision before any code.
+Item 1 needs a profile before any code. Item 2 lists limits to fix only when a study runs into them. Item 3 needs a decision before any code.
 
 ---
 
@@ -66,19 +66,13 @@ Each is known and documented; none is worth a branch until a study needs it.
 - **3D engine scale limits** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic.
 - **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute whose translation cannot be separated into explicit constants (see the definition's limits) and curvature on a study millions of its diameters out (beyond the second-derivative budget), along with the optical ray-turning cutoff below 2⁻²⁰.
 
-### 3. A receiver refined to its view — implemented
-
-**Applies to:** 3D mirror and interface studies with a receiver.
-
-**Refine the receiver to the view** is an opt-in receiver setting, beside **Refinement levels**. After the camera rests, the visible part of its window gets an inset at about one device pixel per bin, capped at 1024 bins each way. Its own refinement pass uses the chosen levels and a separate 524,288-cell budget, leaving the window's bins, peak and shares unchanged. Both passes use the exact-area box filter; their sums agree for the same cell partition. The inset uses the window's peak for shading and is a second texture of the same quad. Playback and animation exports omit it; shown insets are recomputed for still exports at their output size. The option travels in links, with older studies opening without it; the transient view does not. **A glass dome's luminous ring, close up** opens on its bright fold and moves the screen through the light.
-
-### 4. Faster refined receivers in playback, possibly on the GPU
+### 3. Faster refined receivers in playback, possibly on the GPU
 
 **Applies to:** 3D (a refined or finely binned receiver in motion).
 
 **Why:** a refined receiver is smooth when still but slow to play: **Conic sections cut from a cone of light** at 480 bins refined twice takes about 227 ms a frame through the WASM bridge (2026-10-21), about 4 frames a second. On an iPhone 16 Pro Max, 960 bins refined three times played at 0.4–0.5 s between frames, while 480 bins refined twice looked smooth enough at a phone's size but would be more comfortable faster. An exported animation plays smoothly, since export does not run in real time. Profiled natively at 960 bins refined twice, about a third of a frame is the rasterizer, a quarter is tracing rays, and an eighth is garbage collection.
 
-**Possible:** spreading flux over bins is what a GPU does best. Each cell's two triangles, at density flux/area, can be drawn with additive blending into a float render target the size of the bins (WebGL 1 with `OES_texture_float` and `WEBGL_color_buffer_float`, or WebGPU), and the receiver's texture (item 3's too) read straight from that target with no transfer. Go would still trace the rays and send each cell's crossings and flux as a typed array.
+**Possible:** spreading flux over bins is what a GPU does best. Each cell's two triangles, at density flux/area, can be drawn with additive blending into a float render target the size of the bins (WebGL 1 with `OES_texture_float` and `WEBGL_color_buffer_float`, or WebGPU), and the receiver's texture (its view inset's too) read straight from that target with no transfer. Go would still trace the rays and send each cell's crossings and flux as a typed array.
 
 **What it costs, and what needs deciding:**
 
@@ -115,7 +109,7 @@ No device check was possible for these. Ask the user to look on a phone:
 - The mirror's **Locate cuspidal edges** checkbox and its help toggle at phone width, and **An astigmatic dish's folded caustics** in motion on a phone.
 - Playback at 60 frames a second (`web/playback.ts`) on a 120 Hz display and on a slower phone, watching for an even fall to 30 where frames come late. The thresholds (a request 1.4 intervals after the last is late, two late in ten fall back, a 2 s hold doubling to 16 s) are first choices, to tune from what is seen.
 
-Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13. Zooming toward a detail through a lens (**A corridor of loops**, wheel and pinch) was checked locally and on a phone on 2026-10-14. **Fit each frame to the views** and **A seashell growing on its spiral** were checked on a phone on 2026-10-19. A refined receiver (**Conic sections cut from a cone of light**, zoomed in) was checked on an iPhone 16 Pro Max on 2026-10-21: smooth light at 480 bins refined twice, and 0.4–0.5 s between frames in playback at 960 bins refined three times (see item 4).
+Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13. Zooming toward a detail through a lens (**A corridor of loops**, wheel and pinch) was checked locally and on a phone on 2026-10-14. **Fit each frame to the views** and **A seashell growing on its spiral** were checked on a phone on 2026-10-19. A refined receiver (**Conic sections cut from a cone of light**, zoomed in) was checked on an iPhone 16 Pro Max on 2026-10-21: smooth light at 480 bins refined twice, and 0.4–0.5 s between frames in playback at 960 bins refined three times (see item 3).
 
 ## Conditional and declined
 
