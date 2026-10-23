@@ -30,7 +30,7 @@ These come from the handoffs. Each was paid for at least once.
 - **Links:** add every new field to the notebook's schema (`planar-link.ts`, `spatial/link.ts`, `tesseract/link.ts`) with a default that reproduces older links, plus cases in `tests/study-link.spec.ts`. A preset's own value joins its gallery fingerprint only when present.
 - **Presets** are appended so indices hold. Update the counts in `gallery.spec.ts` and `notebook-consistency.spec.ts`, and run `make thumbnails`.
 - **One descriptor per setting** (`cut.ts`, `sight.ts`, `path.ts`, `line-weight.ts`, `tesseract/objects.ts`). Panels read the descriptor and do not branch on names.
-- **Share, don't copy.** A refinement for several notebooks belongs in one shared module, as `timing.ts`, `playback.ts`, `line-weight.ts`, `probe.ts`, `gestures.ts`, `engine/refine` and `ExportImageMenu` are.
+- **Shared behavior.** Follow [Shared paths and state](contributing.md#shared-paths-and-state) for helper reuse and integration checks; that durable procedure also covers parsers and test helpers.
 - **Test traps already found:**
   - React shows a `<select>`'s first option for a value it lacks, which hid two mutation survivors. Assert the state, not the visible option.
   - Chromium ends a slider drag when a child is inserted into its fieldset. Put changing content in a wrapper.
