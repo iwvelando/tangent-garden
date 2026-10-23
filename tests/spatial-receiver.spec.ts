@@ -863,14 +863,18 @@ test("receiver frame reuse survives lifted WASM replies", async ({ page }) => {
     return reply(request);
   };
   const opening = await cold(base);
-  for (const tilt of [75, 45, 20]) {
-    const request = {
-      ...base,
-      rays: { ...base.rays, receiver: { ...base.rays.receiver, tilt } },
-    };
-    const warm = await reply(request);
-    expect(await reply(request)).toEqual(warm);
-    expect(warm).toEqual(await cold(request));
+  for (const target of ["none", "light", "mirror", "light", "none"]) {
+    for (const tilt of [75, 45, 20]) {
+      const request = {
+        ...base,
+        lightDiagnostics: target === "light",
+        surfaceDiagnostics: target === "mirror",
+        rays: { ...base.rays, receiver: { ...base.rays.receiver, tilt } },
+      };
+      const warm = await reply(request);
+      expect(await reply(request)).toEqual(warm);
+      expect(warm).toEqual(await cold(request));
+    }
   }
   expect(await reply(base)).toEqual(opening);
   const changed = { ...base, rays: { ...base.rays, n2: 1.3 } };
