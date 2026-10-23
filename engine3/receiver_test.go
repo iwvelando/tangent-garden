@@ -1035,8 +1035,10 @@ func TestReceiverEngineRefinedTraceReuse(t *testing.T) {
 	}
 }
 
-// Retain the private tracing grids across frames instead of remaking
-// their columns. Output arrays still belong to each returned result.
+// Reuse private tracing and raster scratch across moving frames. At 960
+// bins the raster differences save about 7.4 MB: allow 31 MB for output,
+// cell queues, fitting and tracing, above their observed 27 MB without
+// depending on allocator-specific object counts.
 func TestReceiverWarmAllocationBudget(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
@@ -1056,8 +1058,8 @@ func TestReceiverWarmAllocationBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime.KeepAlive(result)
-	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 38_000_000 {
-		t.Fatalf("warm receiver allocated %d bytes, want at most 38 MB", bytes)
+	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 31_000_000 {
+		t.Fatalf("warm receiver allocated %d bytes, want at most 31 MB", bytes)
 	}
 }
 
@@ -1348,5 +1350,95 @@ func TestReceiverViewEngineReuse(t *testing.T) {
 		if worker.rays != original {
 			t.Fatal("moving the camera discarded the ray family")
 		}
+	}
+}
+
+// Retaining raster scratch must neither overwrite an earlier result nor
+// carry old flux across changes in bin count, refinement or plane.
+func TestReceiverRasterOutputOwnership(t *testing.T) {
+	c := refined(receive(flat(1, lamp(Vec3{.2, -.3, 1})), "z", 2, 0, 0, 3, 32), 1)
+	var worker Engine
+	if _, err := worker.Compute(c); err != nil {
+		t.Fatal(err)
+	}
+	first, err := worker.Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := receiverResultJSON(t, first)
+	for _, change := range []func(*Request){
+		func(c *Request) { c.Rays.Receiver.Tilt = 37 },
+		func(c *Request) { c.Rays.Receiver.Bins = 48 },
+		func(c *Request) { c.Rays.Receiver.Refine = 2 },
+		func(c *Request) { c.Rays.Receiver.Plane = "x" },
+		func(c *Request) { c.Rays.Receiver.Plane, c.Rays.Receiver.Tilt, c.Rays.Receiver.Bins = "z", 0, 32 },
+	} {
+		change(&c)
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatal("reused raster changed the result")
+		}
+		accounted(t, got.Rays.Receiver)
+		if receiverResultJSON(t, first) != saved {
+			t.Fatal("a later frame overwrote an earlier result")
+		}
+	}
+}
+
+// A bright frame's rounding threshold must not erase a faint frame after
+// it: the second triangle still distributes its entire unit of flux.
+func TestReceiverRasterResetsRoundingScale(t *testing.T) {
+	var cache rayCache
+	triangle := [3][2]float64{{0, 0}, {8, 0}, {0, 8}}
+	bright := cache.receiverRaster(8)
+	bright.triangle(triangle, 1e12)
+	bright.bins()
+	faint := cache.receiverRaster(8)
+	faint.triangle(triangle, 1)
+	flux := 0.0
+	for _, column := range faint.bins() {
+		for _, value := range column {
+			flux += value
+		}
+	}
+	if math.Abs(flux-1) > 1e-12 {
+		t.Fatalf("faint frame received %g flux, want 1", flux)
+	}
+}
+
+// An inset's size follows the view, so it must not displace the window's
+// retained raster: every frame would otherwise allocate both.
+func TestReceiverViewKeepsWindowRaster(t *testing.T) {
+	c := refined(receive(flat(1, lamp(Vec3{.2, -.3, 1})), "z", 2, 0, 0, 3, 32), 1)
+	c.Rays.Receiver.RefineView = true
+	c.View = &View{Center: Vec3{0, 0, 2}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: .5, Height: .4, Pixels: [2]int{60, 40}}
+	var worker Engine
+	var rows *float64
+	for frame := 0; frame < 3; frame++ {
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Rays.Receiver.Inset == nil {
+			t.Fatal("no inset")
+		}
+		if frame == 0 {
+			continue
+		}
+		scratch := worker.rays.raster.rows
+		if len(scratch) != 32 || len(scratch[0]) != 34 {
+			t.Fatalf("frame %d retained a %d-row raster, want the window's 32", frame, len(scratch))
+		}
+		if frame == 2 && &scratch[0][0] != rows {
+			t.Fatal("the window's raster was reallocated")
+		}
+		rows = &scratch[0][0]
 	}
 }
