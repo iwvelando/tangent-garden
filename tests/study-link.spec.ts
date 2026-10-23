@@ -612,6 +612,10 @@ test("3D and 4D fields are refused by name", async () => {
     ["config.implicit.refine", (s) => (s.config.implicit.refine = "2")],
     ["config.rays.stop", (s) => (s.config.rays.stop = 1)],
     ["config.rays.edges", (s) => (s.config.rays.edges = "on")],
+    [
+      "config.rays.receiver.refineView",
+      (s) => (s.config.rays.receiver.refineView = "on"),
+    ],
     ["config.rays.receiver.tilt", (s) => (s.config.rays.receiver.tilt = "20")],
     [
       "config.rays.receiver.refine",
@@ -742,6 +746,12 @@ test("fields a link predates take the notebook's defaults", async () => {
   // A receiver linked before it could be refined spreads its cells whole,
   // and a refined one keeps its levels.
   assert.equal("refine" in spatialStudy(turned).config.rays.receiver, false);
+  assert.equal(
+    "refineView" in spatialStudy(turned).config.rays.receiver,
+    false,
+  );
+  turned.config.rays.receiver.refineView = true;
+  assert.equal(spatialStudy(turned).config.rays.receiver.refineView, true);
   turned.config.rays.receiver.refine = 2;
   assert.equal(spatialStudy(turned).config.rays.receiver.refine, 2);
 

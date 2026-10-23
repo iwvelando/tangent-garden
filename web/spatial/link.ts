@@ -331,6 +331,7 @@ const config: SchemaOf<SpatialConfig> = {
             bins: "number",
             tilt: { optional: "number" },
             refine: { optional: "number" },
+            refineView: { optional: "boolean" },
           },
         },
       },

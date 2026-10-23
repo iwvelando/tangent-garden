@@ -208,7 +208,7 @@ export function receiverShade(e: number, peak: number) {
 // column a. A texel holds a shade's 16 bits in red (high) and green (low),
 // and in blue 255 where light lands or 0 where none does.
 function receiverSheet(g: ReceiverResult | null | undefined) {
-  if (!g) return { data: [], shades: undefined };
+  if (!g) return { data: [], shades: undefined, inset: undefined };
   const n = g.irradiance.length,
     [o, a, c, b] = g.corners;
   const data: number[] = [];
@@ -221,19 +221,30 @@ function receiverSheet(g: ReceiverResult | null | undefined) {
     [b, 0, 1],
   ] as const)
     data.push(p.x, p.y, p.z, s, t, 0, 0);
-  const texels = new Uint8Array(4 * n * n);
-  g.irradiance.forEach((column, i) =>
-    column.forEach((e, j) => {
-      const shade = receiverShade(e, g.peak),
-        q = Math.round(Math.max(shade, 0) * 65535),
-        k = 4 * (j * n + i);
-      texels[k] = q >> 8;
-      texels[k + 1] = q & 255;
-      texels[k + 2] = shade < 0 ? 0 : 255;
-      texels[k + 3] = 255;
+  const texture = (irradiance: number[][]) => {
+    const width = irradiance.length,
+      height = irradiance[0].length;
+    const texels = new Uint8Array(4 * width * height);
+    irradiance.forEach((column, i) =>
+      column.forEach((e, j) => {
+        const shade = receiverShade(e, g.peak),
+          q = Math.round(Math.max(shade, 0) * 65535),
+          k = 4 * (j * width + i);
+        texels[k] = q >> 8;
+        texels[k + 1] = q & 255;
+        texels[k + 2] = shade < 0 ? 0 : 255;
+        texels[k + 3] = 255;
+      }),
+    );
+    return { width, height, data: texels };
+  };
+  return {
+    data,
+    shades: { size: n, data: texture(g.irradiance).data },
+    ...(g.inset && {
+      inset: { ...texture(g.inset.irradiance), rect: g.inset.rect },
     }),
-  );
-  return { data, shades: { size: n, data: texels } };
+  };
 }
 
 // An implicit surface as the engine's shared vertices, each with its normal
@@ -347,6 +358,12 @@ export type Batch = {
   origin?: Vec3;
   // A receiver's bins as a size × size texture (see receiverSheet).
   shades?: { size: number; data: Uint8Array };
+  inset?: {
+    width: number;
+    height: number;
+    data: Uint8Array;
+    rect: [number, number, number, number];
+  };
 };
 
 // Where a result's positions are measured from before they become single
@@ -1069,6 +1086,7 @@ export function buildScene(result: SpatialResult) {
   const receiverBatch: Batch = {
     ...batch(receiving.data, "triangles", 7),
     ...(receiving.shades && { shades: receiving.shades }),
+    ...(receiving.inset && { inset: receiving.inset }),
   };
   const receiverFrame = batch(
     vertices(

@@ -5290,4 +5290,66 @@ export const spatialPresets: {
       },
     },
   },
+  // Face-on to a glass cap's receiver, looking into its bright circular
+  // fold. The screen starts at z = -1.9 and moves down to -2.05 while
+  // the camera holds this opening view; the still refines to the page.
+  {
+    name: "A glass dome's luminous ring, close up",
+    detail:
+      "A bright circular fold of refracted light, watched closely as the screen passes through it",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.5,
+        b: 1.5,
+        c: 1.5,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: 0.6,
+        vMax: Math.PI / 2,
+        uSamples: 150,
+        vSamples: 60,
+        curves: 9,
+      },
+      rays: {
+        ...base.rays,
+        interaction: "refract",
+        length: 3.2,
+        receiver: {
+          plane: "z",
+          at: -1.9,
+          c1: 0,
+          c2: 0,
+          size: 0.5,
+          bins: 64,
+          refine: 2,
+          refineView: true,
+        },
+      },
+    },
+    view: { yaw: 0, pitch: 0, zoom: 12, panX: 0, panY: 0 },
+    layers: {
+      surface: false,
+      curves: false,
+      focal1: false,
+      focal2: false,
+      incident: false,
+      reflected: false,
+      virtual: false,
+    },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "receiverAt", from: "-1.9", to: "-2.05" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

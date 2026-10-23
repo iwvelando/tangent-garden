@@ -43,7 +43,7 @@ These come from the handoffs. Each was paid for at least once.
 
 ## Recommended order
 
-Item 1 needs a profile before any code. Item 2 lists limits to fix only when a study runs into them. Item 3 is designed and ready to start. Item 4 needs a decision before any code.
+Item 1 needs a profile before any code. Item 2 lists limits to fix only when a study runs into them. Item 3 needs a decision before any code.
 
 ---
 
@@ -66,31 +66,13 @@ Each is known and documented; none is worth a branch until a study needs it.
 - **3D engine scale limits** (see [spatial scale and translation](mathematics.md#spatial-scale-and-translation) for the tested coverage): far differenced curves omit curvature and mesh-topology comparisons; translated Lorenz paths are excluded as chaotic.
 - **2D engine scale limits** (see [scale and translation](mathematics.md#scale-and-translation)): constructions on an evolute whose translation cannot be separated into explicit constants (see the definition's limits) and curvature on a study millions of its diameters out (beyond the second-derivative budget), along with the optical ray-turning cutoff below 2⁻²⁰.
 
-### 3. A receiver refined to its view
-
-**Applies to:** 3D (mirror and interface studies with a receiver).
-
-**Why:** a receiver's bins are fixed across its window (8–960 each way), and its refinement (`rays.receiver.refine`, 0–3 levels, see [the receiver's definition](mathematics.md#spatial-receiver-planes-and-irradiance)) splits cells only as finely as those bins. Zoomed in far enough, a bin covers many pixels and the drawing is blocky again; raising the bins across the whole window to match costs time and transfer for parts the view does not show. The receiver should be as fine as the screen where it is seen, at any zoom, and no finer elsewhere.
-
-**Decided:** a receiver option of its own (for example **Refine the receiver to the view**), off by default, beside **Refinement levels**, not the curves' **Refine to the view as you zoom**, which ray studies do not show. Each such option is one more lever a reader can pull, or leave off on a slow device.
-
-**Design:**
-
-- When the camera rests (the 200 ms settle and `RefinementView` that refined curves use in `SpatialApp.tsx`), the request carries the view. Go rasterizes, beside the window's own bins, an inset over the part of the window the page shows (its corners projected through the view, clipped to the page, as a rectangle in window coordinates), with bins about the size of a device pixel, capped (about 1024² bins). Cells landing on the inset are split by the same criterion against the inset's bins, within the receiver's cell budget.
-- Rasterize the same cells into both: the box filter is additive, so the inset's bins inside each window bin then sum to it to rounding, which is the regression test. An inset covering the whole window at the window's bins must equal the window's bins exactly.
-- The note's shares and the peak come from the window's bins, so readouts never change with zoom. The inset is shaded against the window's peak, clamped at 1 (a fold's narrower inset bins are brighter, and are said to be at or above the peak).
-- Draw it as a second texture on the same quad: the fragment shader takes the inset's texel inside its rectangle (a uniform) and the window's elsewhere, so nothing is coplanar and no depth offset is needed. The inset's irradiance is a `[][]float64`, which `cmd/wasm/lift` already moves out of the JSON.
-- Playback, flights and animation exports drop the inset, so their cost is unchanged; a still export uses it when the shown result has one. The option is a study field (link schema, default off, test); the view it was refined to is transient and never in a link.
-
-**Tests:** additivity and whole-window equality above; a view off the window gives no inset; tilted windows and perspective views; a moving camera invalidates an inset in flight (as refined curves do); the budget running out says so; layer, cut and see-through drawing with an inset; and an exported still at its target resolution. Add a `make bench` study and time it against the deployed site, and keep every preset bit for bit identical with the option off.
-
-### 4. Faster refined receivers in playback, possibly on the GPU
+### 3. Faster refined receivers in playback, possibly on the GPU
 
 **Applies to:** 3D (a refined or finely binned receiver in motion).
 
 **Why:** a refined receiver is smooth when still but slow to play: **Conic sections cut from a cone of light** at 480 bins refined twice takes about 227 ms a frame through the WASM bridge (2026-10-21), about 4 frames a second. On an iPhone 16 Pro Max, 960 bins refined three times played at 0.4–0.5 s between frames, while 480 bins refined twice looked smooth enough at a phone's size but would be more comfortable faster. An exported animation plays smoothly, since export does not run in real time. Profiled natively at 960 bins refined twice, about a third of a frame is the rasterizer, a quarter is tracing rays, and an eighth is garbage collection.
 
-**Possible:** spreading flux over bins is what a GPU does best. Each cell's two triangles, at density flux/area, can be drawn with additive blending into a float render target the size of the bins (WebGL 1 with `OES_texture_float` and `WEBGL_color_buffer_float`, or WebGPU), and the receiver's texture (item 3's too) read straight from that target with no transfer. Go would still trace the rays and send each cell's crossings and flux as a typed array.
+**Possible:** spreading flux over bins is what a GPU does best. Each cell's two triangles, at density flux/area, can be drawn with additive blending into a float render target the size of the bins (WebGL 1 with `OES_texture_float` and `WEBGL_color_buffer_float`, or WebGPU), and the receiver's texture (its view inset's too) read straight from that target with no transfer. Go would still trace the rays and send each cell's crossings and flux as a typed array.
 
 **What it costs, and what needs deciding:**
 
@@ -123,10 +105,11 @@ No device check was possible for these. Ask the user to look on a phone:
 - The face-on views beside the drawing (**Face-on views beside the drawing**) on a phone: the stacked cells, dragging and pinching a face-on view with **Adjust view** on, the grid fitting the screen held sideways during playback, and **A tilting circle's cardioid, face on** and **A rippling rose's mirror images, face on** in motion; also the checkbox's help toggle at phone width, and a captioned video saved on the phone.
 - The receiver's **Tilt (°)** beside **Bins** at phone width, and **Conic sections cut from a cone of light** in motion on a phone.
 - The receiver's **Refinement levels** at phone width.
+- **Refine the receiver to the view** and its help at phone width, pinching into **A glass dome’s luminous ring, close up**, and that preset in motion over HTTPS.
 - The mirror's **Locate cuspidal edges** checkbox and its help toggle at phone width, and **An astigmatic dish's folded caustics** in motion on a phone.
 - Playback at 60 frames a second (`web/playback.ts`) on a 120 Hz display and on a slower phone, watching for an even fall to 30 where frames come late. The thresholds (a request 1.4 intervals after the last is late, two late in ten fall back, a 2 s hold doubling to 16 s) are first choices, to tune from what is seen.
 
-Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13. Zooming toward a detail through a lens (**A corridor of loops**, wheel and pinch) was checked locally and on a phone on 2026-10-14. **Fit each frame to the views** and **A seashell growing on its spiral** were checked on a phone on 2026-10-19. A refined receiver (**Conic sections cut from a cone of light**, zoomed in) was checked on an iPhone 16 Pro Max on 2026-10-21: smooth light at 480 bins refined twice, and 0.4–0.5 s between frames in playback at 960 bins refined three times (see item 4).
+Line weights in 3D were checked locally and on a phone on 2026-10-04, the 3D probe between samples (its checkbox and continuous slider) on 2026-10-06, and the surface probe's **Describe → The offset** with **An ellipsoid's parallel surface** in motion on 2026-10-06, and **Describe → Focal sheet 1** and **Focal sheet 2** with **A spheroid's evolute, spun about its axis** and **The curvature of an ellipsoid's focal sheet** on 2026-10-07. Playback at 60 frames a second was checked on an iPhone on 2026-10-13. Zooming toward a detail through a lens (**A corridor of loops**, wheel and pinch) was checked locally and on a phone on 2026-10-14. **Fit each frame to the views** and **A seashell growing on its spiral** were checked on a phone on 2026-10-19. A refined receiver (**Conic sections cut from a cone of light**, zoomed in) was checked on an iPhone 16 Pro Max on 2026-10-21: smooth light at 480 bins refined twice, and 0.4–0.5 s between frames in playback at 960 bins refined three times (see item 3).
 
 ## Conditional and declined
 

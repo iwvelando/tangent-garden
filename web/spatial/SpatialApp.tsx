@@ -1,3 +1,8 @@
+import {
+  ReceiverViewCheck,
+  receiverViewEnabled,
+  withoutReceiverInset,
+} from "./receiver-view";
 import { describeColors } from "../color-schemes";
 import { StudyExplanation } from "../StudyExplanation";
 import {
@@ -46,7 +51,7 @@ import { AnimationButton } from "../AnimationButton";
 import { NotebookMode } from "../NotebookMode";
 import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
-import { saveFile, type Still } from "../export-image";
+import { saveFile, stillSize, type Still } from "../export-image";
 import { SpatialPlot } from "./SpatialPlot";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { CutPanel } from "./CutPanel";
@@ -314,8 +319,10 @@ export default function SpatialApp({
   // A study refined to its view is refined to what the drawing shows while
   // it is zoomed in, once the camera has rested for a moment; until then
   // the drawing is busy, so nothing exports the coarser curve.
-  const refineView =
+  const receiverView = receiverViewEnabled(config);
+  const curveView =
     refinesFormat(config.format) && config.adaptive && !!config.adaptiveView;
+  const refineView = curveView || receiverView;
   const [focus, setFocus] = useState<RefinementView | null>(null);
   const [focusPending, setFocusPending] = useState(false);
   const focusTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -348,6 +355,7 @@ export default function SpatialApp({
       ...(view ? [`view:${JSON.stringify(view)}`] : []),
     ].join("\u0000"),
     busy = settled !== request || pending || (refineView && focusPending);
+  const receiverPending = receiverView && busy;
   const revision = JSON.stringify([key, states, active]);
   useEffect(() => {
     client.current = new EngineClient();
@@ -1229,6 +1237,14 @@ export default function SpatialApp({
               }}
             />
           </Field>
+          <ReceiverViewCheck
+            checked={!!config.rays.receiver.refineView}
+            onChange={(on) =>
+              setReceiver(({ refineView: _, ...r }) =>
+                on ? { ...r, refineView: true } : r,
+              )
+            }
+          />
         </>
       )}
     </>
@@ -1314,7 +1330,13 @@ export default function SpatialApp({
       {receiverControls}
       <p className="note" data-testid="rays-note">
         {mirror && frame
-          ? raysNote(mirror, frame.config.rays, theme.scheme).join(" ")
+          ? raysNote(
+              animation || receiverPending || !receiverView
+                ? withoutReceiverInset(frame).result.rays!
+                : mirror,
+              frame.config.rays,
+              theme.scheme,
+            ).join(" ")
           : "Following the light…"}
       </p>
     </>
@@ -1609,8 +1631,15 @@ export default function SpatialApp({
     [fieldError],
   );
   const claimedHere = !!failure && claimed !== null;
-  const shown = animation?.frame ?? frame,
-    camera = animation ? animationCamera(animation) : undefined,
+  const shownFrame = animation?.frame ?? frame;
+  const shown = useMemo(
+    () =>
+      shownFrame && (!receiverView || receiverPending)
+        ? withoutReceiverInset(shownFrame)
+        : shownFrame,
+    [shownFrame, receiverView, receiverPending],
+  );
+  const camera = animation ? animationCamera(animation) : undefined,
     // A finished animation hands its camera over to be explored.
     override = animation?.complete ? undefined : camera,
     released = animation?.complete ? camera : undefined;
@@ -1784,6 +1813,24 @@ export default function SpatialApp({
     });
     try {
       const { imageFile } = await import("./export");
+      if (
+        snapshot.frame.result.rays?.receiver?.inset &&
+        format !== "svg-lines" &&
+        format !== "svg-visible"
+      ) {
+        const { refinementView } = await import("./scene");
+        const page = stillSize(still);
+        snapshot.frame = await client.current!.computeSpatial(
+          snapshot.frame.config,
+          {
+            ...(probing ? probeOptions(target) : {}),
+            view: {
+              ...refinementView(snapshot.view, page),
+              pixels: [page.width, page.height],
+            },
+          },
+        );
+      }
       controller.signal.throwIfAborted();
       const blob = await imageFile(
         snapshot.frame,
@@ -3841,8 +3888,8 @@ export default function SpatialApp({
             getCurrentView={() =>
               viewport.current ? structuredClone(viewport.current) : undefined
             }
-            getFocus={() => viewRef.current}
-            refineView={refineView}
+            getFocus={() => (curveView ? viewRef.current : null)}
+            refineView={curveView}
             getPage={() =>
               canvasWrap.current?.clientWidth
                 ? {
@@ -4051,6 +4098,7 @@ export default function SpatialApp({
                       lensAngle={lensAngle}
                       turn={turn}
                       refineView={refineView}
+                      receiverView={receiverView}
                       onFocus={onFocus}
                     />
                   ) : (

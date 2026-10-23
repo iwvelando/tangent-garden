@@ -58,6 +58,7 @@ export function SpatialPlot({
   lensAngle,
   turn = null,
   refineView = false,
+  receiverView = false,
   onFocus,
 }: {
   result: SpatialResult;
@@ -103,6 +104,7 @@ export function SpatialPlot({
   // Whether the study is refined to its view: the drawing then zooms to
   // viewZoom, and reports what it shows once zoomed in.
   refineView?: boolean;
+  receiverView?: boolean;
   // What the shown camera shows while it is zoomed in and the study is
   // refined to its view, or null, whenever that changes; an animation's
   // camera reports nothing.
@@ -136,6 +138,7 @@ export function SpatialPlot({
     projection,
     lensAngle,
     refineView,
+    receiverView,
     onFocus,
   });
   state.current = {
@@ -154,6 +157,7 @@ export function SpatialPlot({
     projection,
     lensAngle,
     refineView,
+    receiverView,
     onFocus,
   };
   const [error, setError] = useState("");
@@ -262,11 +266,19 @@ export function SpatialPlot({
     // An animation keeps the study's refinement as it was.
     if (!state.current.override && state.current.onFocus) {
       const focus =
-        state.current.refineView && v.zoom > 1
-          ? refinementView(v, {
-              width: canvas.current.clientWidth,
-              height: canvas.current.clientHeight,
-            })
+        state.current.refineView && (v.zoom > 1 || state.current.receiverView)
+          ? {
+              ...refinementView(v, {
+                width: canvas.current.clientWidth,
+                height: canvas.current.clientHeight,
+              }),
+              ...(state.current.receiverView && {
+                pixels: [canvas.current.width, canvas.current.height] as [
+                  number,
+                  number,
+                ],
+              }),
+            }
           : null;
       const text = JSON.stringify(focus);
       if (text !== focused.current) {
@@ -376,6 +388,7 @@ export function SpatialPlot({
     projection,
     lensAngle,
     refineView,
+    receiverView,
   ]);
   useEffect(() => {
     manual.current =

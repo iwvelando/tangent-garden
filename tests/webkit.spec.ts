@@ -876,3 +876,27 @@ test("the palette button closes its open menu in WebKit", async ({ page }) => {
   await button.click();
   await expect(menu).toBeVisible();
 });
+
+test("a receiver view inset draws and exports through WebKit", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "A glass dome's luminous ring, close up" });
+  const stage = page.locator(".spatial-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByTestId("rays-note")).toContainText("inset");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "PNG");
+  const bytes = await readFile((await (await download).path())!);
+  expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
+    2000, 1520,
+  ]);
+  const option = page.getByRole("checkbox", {
+    name: "Refine the receiver to the view",
+    exact: true,
+  });
+  await option.uncheck();
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByTestId("rays-note")).not.toContainText("inset");
+});
