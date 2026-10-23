@@ -2,6 +2,7 @@ package engine3
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -130,5 +131,132 @@ func TestIndependentBoundsKeepTangentEdges(t *testing.T) {
 	}
 	if r.Bounds.Radius < 19 {
 		t.Fatal("short base hid long tangents")
+	}
+}
+
+// The full and half-step stencils share exact floating-point parameters.
+// Each distinct parameter needs one expression evaluation, even at a
+// one-sided endpoint. The budget is work, not wall-clock time.
+func TestSampledReusesExactStencilPoints(t *testing.T) {
+	for _, at := range []float64{0, 0.25, 3, 9.75, 10} {
+		t.Run(fmt.Sprint(at), func(t *testing.T) {
+			calls := map[uint64]int{}
+			position := func(s float64) Vec3 {
+				calls[math.Float64bits(s)]++
+				return Vec3{s * s, 3 * s, 2}
+			}
+			evaluate := sampled(position, 0, 10, 10000, absolute)
+			r, v, a, ok := evaluate(at)
+			if !ok {
+				t.Fatal("regular polynomial rejected")
+			}
+			near(t, &r, Vec3{at * at, 3 * at, 2}, 1e-12)
+			near(t, &v, Vec3{2 * at, 3, 0}, 1e-10)
+			near(t, &a, Vec3{2, 0, 0}, 1e-10)
+			for bits, n := range calls {
+				if n != 1 {
+					t.Errorf("parameter %.17g evaluated %d times", math.Float64frombits(bits), n)
+				}
+			}
+			// A later evaluation owns fresh scratch, even at the same parameter.
+			clear(calls)
+			evaluate(at)
+			if len(calls) == 0 {
+				t.Fatal("stencil values retained between evaluations")
+			}
+			for bits, n := range calls {
+				if n != 1 {
+					t.Errorf("second evaluation: parameter %.17g evaluated %d times", math.Float64frombits(bits), n)
+				}
+			}
+		})
+	}
+}
+
+// Guard the existing numerical decisions before sharing stencil values.
+// referenceDerivatives retains the original arithmetic; analytic identities are
+// covered above and by the curve, canal, frame and singularity tests.
+func TestSampledKeepsStencilResults(t *testing.T) {
+	same := func(a, b Vec3) bool {
+		for _, p := range [][2]float64{{a.X, b.X}, {a.Y, b.Y}, {a.Z, b.Z}} {
+			if math.Float64bits(p[0]) != math.Float64bits(p[1]) && !(math.IsNaN(p[0]) && math.IsNaN(p[1])) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, span := range []float64{0.00023, 1, 2 * math.Pi, 10000} {
+		for _, bounds := range [][2]float64{{0, span}, {-span, span}, {math.Inf(-1), math.Inf(1)}} {
+			for _, position := range []func(float64) Vec3{
+				func(s float64) Vec3 { return Vec3{math.Cos(s), math.Sin(3 * s), s / 3} },
+				func(s float64) Vec3 { return Vec3{1 / s, math.Sqrt(s), math.Abs(s)} },
+				func(s float64) Vec3 { return Vec3{s, math.Copysign(1, s), math.NaN()} },
+			} {
+				evaluate := sampled(position, bounds[0], bounds[1], span, absolute)
+				for _, fraction := range []float64{math.Copysign(0, -1), 0.00001, 0.13, 0.5, 0.99999, 1} {
+					at := span * fraction
+					if !math.IsInf(bounds[0], 0) {
+						at = bounds[0] + (bounds[1]-bounds[0])*fraction
+					}
+					if fraction == 0 && bounds[0] == 0 {
+						at = fraction
+					}
+					r := position(at)
+					v, a := referenceDerivatives(position, r, at, bounds[0], bounds[1], span*1e-4)
+					v2, a2 := referenceDerivatives(position, r, at, bounds[0], bounds[1], span*5e-5)
+					stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*math.Max(v.norm(), v2.norm())+1e-8*absolute.speed
+					if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(absolute.acceleration, v.norm()/span) {
+						a = Vec3{math.NaN(), 0, 0}
+					}
+					gotR, gotV, gotA, gotStable := evaluate(at)
+					if !same(gotR, r) || !same(gotV, v) || !same(gotA, a) || gotStable != stable {
+						t.Fatalf("stencil changed at span %g, bounds %v, t %g", span, bounds, at)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Original stencil arithmetic retained as a bit-for-bit compatibility guard.
+func referenceDerivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64) (Vec3, Vec3) {
+	start := math.Max(lo, math.Min(t-2*h, hi-4*h))
+	a := (t - start) / h
+	var d, dd Vec3
+	for j := 0; j < 5; j++ {
+		// The basis polynomial's coefficients, lowest first, built in place
+		// without allocating: m of them are in use.
+		coeff := [5]float64{1}
+		m := 1
+		den := 1.0
+		for k := 0; k < 5; k++ {
+			if k == j {
+				continue
+			}
+			b := a - float64(k)
+			var next [5]float64
+			for n, c := range coeff[:m] {
+				next[n] += c * b
+				next[n+1] += c
+			}
+			coeff = next
+			m++
+			den *= float64(j - k)
+		}
+		v := f(start + float64(j)*h).sub(origin)
+		d = d.add(v.mul(coeff[1] / den / h))
+		dd = dd.add(v.mul(2 * coeff[2] / den / h / h))
+	}
+	return d, dd
+}
+
+func BenchmarkSpringStencils(b *testing.B) {
+	c := spatialPresets(b)["A cord twisted round a spring"]
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := Compute(c); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
