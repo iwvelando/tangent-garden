@@ -354,9 +354,11 @@ func TestLineEnvelopeResolvedSlowTurning(t *testing.T) {
 	}
 }
 
+// A turn of 2^-36 per unit of u is about 0.4 of the rounding bound on these
+// domains, so it pins the bound from below as the resolved test does above.
 func TestLineEnvelopeUnresolvedTurning(t *testing.T) {
 	for _, span := range []float64{0.00001, 1, 50000} {
-		for _, angle := range []string{"0", "0.7", "pi/2", "pi", "0.7+2^-50*t", "2^-50*t"} {
+		for _, angle := range []string{"0", "0.7", "pi/2", "pi", "0.7+2^-50*t", "2^-50*t", "2^-36*t"} {
 			q := linesRequest(fmt.Sprintf("t/%.17g", span), "0", -span, span,
 				EnvelopeFamily{Mode: "angle", Angle: fmt.Sprintf("(%s/%.17g)", angle, span)})
 			r := compute(t, q)
