@@ -59,6 +59,25 @@ func TestLocalExpressionRemainsBounded(t *testing.T) {
 	if _, _, err := ParseLocalWithParameter("t+a", math.Inf(1)); err == nil {
 		t.Error("accepted nonfinite parameter")
 	}
+	// Each rationalized root keeps the entered radical beside its local
+	// radicand, so nesting grows the evaluation quadratically, never
+	// exponentially. The deepest nesting the parser accepts stays bounded.
+	deepest := 0
+	for d := 1; ; d++ {
+		s := strings.Repeat("sqrt(1+", d) + "t" + strings.Repeat(")", d)
+		_, tree, err := parseTree(s, curveVariables, new(float64))
+		if err != nil {
+			break
+		}
+		local, _ := localTree(tree)
+		if calls := compile(local).calls; calls > 2*d*d+2*d {
+			t.Fatalf("depth %d: %d calls", d, calls)
+		}
+		deepest = d
+	}
+	if deepest < 8 {
+		t.Fatalf("parser accepted only %d nested roots", deepest)
+	}
 }
 
 // Rationalizing a radical's displacement keeps variations smaller than an
