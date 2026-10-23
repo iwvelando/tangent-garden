@@ -94,12 +94,34 @@ func Lift(result any) ([]float64, []Place, error) {
 	if err := l.walk(reflect.ValueOf(result)); err != nil {
 		return nil, nil, err
 	}
+	// The walk counts and takes ownership of the slices first. Allocate the
+	// packed storage once, instead of copying its growing prefix for every
+	// row of a surface or receiver.
+	if l.total > 0 {
+		l.floats = make([]float64, 0, l.total)
+	}
+	for i, v := range l.arrays {
+		k := l.places[i].Kind
+		if l.places[i].Rows != nil {
+			for r := 0; r < v.Len(); r++ {
+				if err := l.items(v.Index(r), k); err != nil {
+					return nil, nil, err
+				}
+			}
+		} else if err := l.items(v, k); err != nil {
+			return nil, nil, err
+		}
+	}
 	return l.floats, l.places, nil
 }
 
 type lifter struct {
 	floats []float64
 	places []Place
+	// arrays hold each slice header after its result field is cleared,
+	// preserving traversal behavior even when result pointers are shared.
+	arrays []reflect.Value
+	total  int
 	// path is the JSON path to the value being looked through.
 	path []key
 }
@@ -267,7 +289,7 @@ func (l *lifter) lift(v reflect.Value) error {
 	if per*count < minimum {
 		return nil
 	}
-	p := Place{Path: make([]any, len(l.path)), Kind: k, Offset: len(l.floats)}
+	p := Place{Path: make([]any, len(l.path)), Kind: k, Offset: l.total}
 	for j, key := range l.path {
 		if p.Path[j] = key.index; key.name != "" {
 			p.Path[j] = key.name
@@ -282,17 +304,13 @@ func (l *lifter) lift(v reflect.Value) error {
 				continue
 			}
 			p.Rows[r] = row.Len()
-			if err := l.items(row, k); err != nil {
-				return err
-			}
 		}
 	} else {
 		p.Count = count
-		if err := l.items(v, k); err != nil {
-			return err
-		}
 	}
 	l.places = append(l.places, p)
+	l.arrays = append(l.arrays, reflect.ValueOf(v.Interface()))
+	l.total += per * count
 	v.Set(reflect.Zero(v.Type()))
 	return nil
 }
