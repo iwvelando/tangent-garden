@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -24,6 +25,14 @@ func restore(t *testing.T, text []byte, floats []float64, places []Place) any {
 	}
 	item := func(kind string, at int) (any, int) {
 		switch kind {
+		case "ray":
+			out := map[string]any{"i": floats[at], "j": floats[at+1]}
+			for k, name := range []string{"start", "point", "end", "back"} {
+				i := at + 2 + 3*k
+				out[name] = map[string]any{"x": floats[i], "y": floats[i+1], "z": floats[i+2]}
+			}
+			out["virtual"], out["total"] = floats[at+14] == 1, floats[at+15] == 1
+			return out, at + 16
 		case "point", "vector":
 			x, y, z := floats[at], floats[at+1], floats[at+2]
 			if kind == "point" && math.IsNaN(x) {
@@ -53,6 +62,12 @@ func restore(t *testing.T, text []byte, floats []float64, places []Place) any {
 	}
 	row := func(kind string, at, n int) ([]any, int) {
 		out := make([]any, n)
+		if kind == "flags" {
+			for k := range out {
+				out[k] = uint32(floats[at+k/32])&(1<<uint(k%32)) != 0
+			}
+			return out, at + (n+31)/32
+		}
 		for k := range out {
 			out[k], at = item(kind, at)
 		}
@@ -184,25 +199,24 @@ func roundTrip(t *testing.T, result any) ([]Place, int, int) {
 
 // size is the number of floats a place holds.
 func size(p Place) int {
-	per := width(p.Kind)
 	if p.Rows == nil {
-		return per * p.Count
+		return stored(p.Kind, p.Count)
 	}
 	n := 0
 	for _, r := range p.Rows {
-		n += per * max(r, 0)
+		n += stored(p.Kind, max(r, 0))
 	}
 	return n
 }
 
-func preset(t *testing.T, name string) engine3.Request {
+func preset(t testing.TB, name string) engine3.Request {
 	t.Helper()
 	return presetIn(t, "testdata/presets.json", name)
 }
 
 // presetIn is a preset from a fixture: this package's own, or the 3D
 // engine's copy of every preset.
-func presetIn(t *testing.T, file, name string) engine3.Request {
+func presetIn(t testing.TB, file, name string) engine3.Request {
 	t.Helper()
 	b, err := os.ReadFile(file)
 	if err != nil {
@@ -244,7 +258,7 @@ func TestSpatialPresetsRoundTrip(t *testing.T) {
 		{"A cord twisted round a spring", []string{"base", "adaptive.base.points", "adaptive.base.at", "adaptive.meridians.0.points", "canal.circles.0.points", "canal.meridians"}, 0.2},
 		{"A coiled cord round a trefoil", []string{"base", "composition.curve", "canal.circles.0.points"}, 0.2},
 		{"A band around the trefoil", []string{"base", "minus", "plus"}, 0.6},
-		{"The whole focal surface of an ellipsoid", []string{"surface.surface.points", "surface.surface.normals", "surface.focal.0.points"}, 0.2},
+		{"The whole focal surface of an ellipsoid", []string{"surface.surface.points", "surface.surface.normals", "surface.surface.alongU", "surface.surface.alongV", "surface.surface.faces", "surface.focal.0.points", "surface.focal.0.faces"}, 0.2},
 		{"Riding a ray through coma", nil, 0.3},
 		{"A row of seeds wound up by a vortex", []string{"field.paths"}, 0.3},
 		{"Four pursuers on a tetrahedron", []string{"pursuit.paths"}, 0.3},
@@ -306,7 +320,7 @@ func TestNullsComeBack(t *testing.T) {
 	}
 }
 
-// Integer arrays, booleans, fixed-size arrays and short arrays stay in the
+// Integer arrays, fixed-size arrays and short arrays stay in the
 // JSON. An array a field leaves out when empty (omitempty) is lifted, and
 // its key comes back with it.
 func TestWhatStays(t *testing.T) {
@@ -348,7 +362,7 @@ func TestWhatStays(t *testing.T) {
 	}
 	places, _, _ := roundTrip(t, &s)
 	got := paths(places)
-	want := []string{"long", "optional", "nested.0.points", "pointer.points", "values", "grid"}
+	want := []string{"long", "optional", "flags", "nested.0.points", "pointer.points", "values", "grid"}
 	if len(got) != len(want) {
 		t.Errorf("lifted %v, want %v", keys(got), want)
 	}
@@ -457,5 +471,175 @@ func TestPlaneStudyRoundTrip(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Lifting already owns every input array. Its temporary allocation should
+// stay close to the output, rather than repeatedly copying growing prefixes
+// of a multi-sheet surface. The allowance covers paths, row lengths and Go
+// allocator rounding without permitting a second full-size staging copy.
+func TestLiftSurfaceAllocationBudget(t *testing.T) {
+	q := presetIn(t, "../../../engine3/testdata/presets.json", "The whole focal surface of an ellipsoid")
+	q.Surface.USamples, q.Surface.VSamples = 240, 60
+	r, err := engine3.Compute(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Mesh = engine3.CurveMesh{}
+	// Warm reflection plans, independently of the measured result.
+	warm := r
+	if _, _, err := Lift(&warm); err != nil {
+		t.Fatal(err)
+	}
+	// Lifting changes nested fields too, so compute an independent result.
+	r, err = engine3.Compute(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Mesh = engine3.CurveMesh{}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	floats, places, err := Lift(&r)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(places) < 4 || len(floats) < 100000 {
+		t.Fatal("surface transport workload disappeared")
+	}
+	allocated := after.TotalAlloc - before.TotalAlloc
+	budget := uint64(8*len(floats)*2 + 256*1024)
+	t.Logf("lifted %d bytes in %d places; allocated %d bytes (budget %d)", 8*len(floats), len(places), allocated, budget)
+	if allocated > budget {
+		t.Fatalf("lifting allocated %d bytes for %d output bytes; budget %d", allocated, 8*len(floats), budget)
+	}
+}
+
+// Profile just the topology emitted by a real maximum-cell surface. The
+// engine runs outside the timed loop; each reply owns its slice headers.
+func BenchmarkTopologyTransport(b *testing.B) {
+	data, err := os.ReadFile("testdata/presets.json")
+	if err != nil {
+		b.Fatal(err)
+	}
+	var presets map[string]engine3.Request
+	if err := json.Unmarshal(data, &presets); err != nil {
+		b.Fatal(err)
+	}
+	q := presets["The whole focal surface of an ellipsoid"]
+	result, err := engine3.Compute(q)
+	if err != nil {
+		b.Fatal(err)
+	}
+	type topology struct{ AlongU, AlongV, Faces [][]bool }
+	sheet := result.Surface.Surface
+	original := topology{sheet.AlongU, sheet.AlongV, sheet.Faces}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		value := original
+		floats, places, err := Lift(&value)
+		if err != nil {
+			b.Fatal(err)
+		}
+		text, err := json.Marshal(value)
+		if err != nil {
+			b.Fatal(err)
+		}
+		metadata, err := json.Marshal(places)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.ReportMetric(float64(len(text)+len(metadata)+8*len(floats)), "bytes/reply")
+	}
+}
+
+// The topology flags are transport data, including high bits, partial
+// words and ragged rows. None may be rounded, conflated with null, or
+// displaced when numeric arrays share the same reply.
+func TestPackedFlagsRoundTrip(t *testing.T) {
+	for _, n := range []int{32, 33, 63, 64, 65, 99} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			flags := make([]bool, n)
+			for i := range flags {
+				flags[i] = i == 0 || i == 31 || i == 32 || i == n-1
+			}
+			value := struct {
+				Before []float64 `json:"before"`
+				Flat   []bool    `json:"flat,omitempty"`
+				Grid   [][]bool  `json:"grid"`
+				After  []float64 `json:"after"`
+				Short  []bool    `json:"short"`
+			}{make([]float64, 32), flags, [][]bool{flags, nil, {}, {true}, make([]bool, 31), flags[:32]}, make([]float64, 33), flags[:31]}
+			places, _, _ := roundTrip(t, &value)
+			got := paths(places)
+			if got["flat"].Kind != "flags" || got["grid"].Kind != "flags" {
+				t.Fatalf("flags stayed in JSON: %v", keys(got))
+			}
+			if got["flat"].Count != n || !reflect.DeepEqual(got["grid"].Rows, []int{n, -1, 0, 1, 31, 32}) {
+				t.Fatalf("flag shapes: %+v", got)
+			}
+			if _, ok := got["short"]; ok {
+				t.Fatal("short flags were lifted")
+			}
+			if !flags[0] || !flags[31] {
+				t.Fatal("lifting consumed the source flags")
+			}
+		})
+	}
+}
+
+func TestPackedFlagsWords(t *testing.T) {
+	all := make([]bool, 65)
+	for i := range all {
+		all[i] = true
+	}
+	value := struct {
+		Flags []bool `json:"flags"`
+	}{all}
+	floats, places, err := Lift(&value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(places) != 1 || places[0].Kind != "flags" || !reflect.DeepEqual(floats, []float64{4294967295, 4294967295, 1}) {
+		t.Fatalf("65 true flags: %v, %+v", floats, places)
+	}
+	floats[0] = 0
+	if !all[0] {
+		t.Fatal("packed storage aliases the source flags")
+	}
+}
+
+func TestSurfaceTopologyLeavesJSON(t *testing.T) {
+	result, err := engine3.Compute(preset(t, "The whole focal surface of an ellipsoid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	surface := result.Surface.Surface
+	sheet := struct{ AlongU, AlongV, Faces [][]bool }{surface.AlongU, surface.AlongV, surface.Faces}
+	whole, err := json.Marshal(sheet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	floats, places, err := Lift(&sheet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := json.Marshal(sheet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := json.Marshal(places)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The geometry is already typed; topology must no longer dominate the
+	// remaining text. This also catches packing every bool as a float64.
+	if len(text) > 256 {
+		t.Fatalf("surface topology left %d JSON bytes", len(text))
+	}
+	if len(metadata)+len(text)+8*len(floats) > len(whole)/3 {
+		t.Fatal("packed reply did not shrink")
 	}
 }

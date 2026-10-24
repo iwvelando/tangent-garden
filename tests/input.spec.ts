@@ -360,3 +360,55 @@ test("a translated evolute unwinds to the spiral in the controls, drawing and st
     preset("Unwinding an evolute").curve,
   );
 });
+
+test("a radical-defined ellipse unwinds from its evolute in the drawing and export", async ({
+  page,
+}) => {
+  await ready(page, "Unwinding an evolute");
+  await page.getByLabel("Numerical samples", { exact: true }).fill("257");
+  await page.getByLabel("t from", { exact: true }).fill("0.1");
+  await page.getByLabel("to", { exact: true }).fill("1.4");
+  const offset = (4 * Math.sin(0.1) ** 2 + Math.cos(0.1) ** 2) ** 1.5 / 2;
+  await page
+    .getByLabel("Initial string offset c", { exact: true })
+    .fill(String(offset));
+  const x = "sqrt(640000+3200*cos(t)+4*cos(t)^2)";
+  const y = "-sqrt(102400-640*sin(t)+sin(t)^2)";
+  await page.getByLabel("x(t)", { exact: true }).fill(x);
+  await page.getByLabel("y(t)", { exact: true }).fill(y);
+  await expect.poll(async () => (await definition(page)).curve.y).toBe(y);
+  await expect.poll(async () => (await definition(page)).offset).toBe(offset);
+  await settled(page);
+  const assertEllipse = async (refined: boolean) => {
+    const toWorld = await world(page);
+    const pieces = runs(
+      (await page.getByTestId("derived-curve").getAttribute("d"))!,
+    );
+    expect(pieces).toHaveLength(1);
+    if (refined) expect(pieces[0].length).toBeGreaterThanOrEqual(257);
+    else expect(pieces[0]).toHaveLength(257);
+    for (const xy of pieces[0]) {
+      const p = toWorld(xy);
+      expect(
+        Math.abs(((p.x - 800) / 2) ** 2 + (p.y + 320) ** 2 - 1),
+      ).toBeLessThan(0.002);
+    }
+    const end = toWorld(pieces[0].at(-1)!);
+    expect(
+      Math.hypot(end.x - 800 - 2 * Math.cos(1.4), end.y + 320 - Math.sin(1.4)),
+    ).toBeLessThan(0.002);
+  };
+  await assertEllipse(false);
+  await page
+    .getByRole("checkbox", { name: "Refine between samples", exact: true })
+    .check();
+  await settled(page);
+  await assertEllipse(true);
+  const shown = await page.getByTestId("derived-curve").getAttribute("d");
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain(shown);
+  expect(svg).toContain(x);
+  expect(svg).toContain(y);
+});

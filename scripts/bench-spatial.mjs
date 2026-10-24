@@ -162,6 +162,20 @@ const curves = [
     }),
     [20, 35, 50, 65, 75, 65, 50, 35],
   ],
+  ...["mirror", "light"].map((target) => [
+    `cone-moving-${target}`,
+    "Conic sections cut from a cone of light",
+    `480 bins, 2 refinement levels, moving receiver with ${target} diagnostics`,
+    (c) => ({
+      surfaceDiagnostics: target === "mirror",
+      lightDiagnostics: target === "light",
+      rays: {
+        ...c.rays,
+        receiver: { ...c.rays.receiver, bins: 480, refine: 2 },
+      },
+    }),
+    [20, 35, 50, 65, 75, 65, 50, 35],
+  ]),
 ];
 
 const options = { runs: 5, engine: "public/", compare: "", study: "" };

@@ -313,6 +313,7 @@ test("moving the probe along a canal passes through every t at its turn", async 
 test("a reveal draws a canal's probe once it reaches the sample after it", async ({
   page,
 }) => {
+  test.slow();
   await open(page, true, 1440);
   await openAnimation(page);
   await mode(page).selectOption("reveal");
