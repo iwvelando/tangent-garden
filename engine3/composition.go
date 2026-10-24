@@ -98,6 +98,35 @@ func composedEvaluation(kind string, pole Vec3, base evaluation, lo, hi float64,
 	return sampled(f, lo, hi, hi-lo, sized(extent(f, lo, hi), hi-lo, u))
 }
 
+// projectedEvaluation keeps the projection's entered positions, but differences
+// its moving part before a far explicit translation is added. Subtracting the
+// origin from an already rounded projection would not recover that precision.
+func (c Request) projectedEvaluation(base evaluation, lo, hi float64, u units) evaluation {
+	r, _, _, _ := base((lo + hi) / 2)
+	if c.Format != "parametric" || u.size <= 0 || r.norm() <= 8*u.size {
+		return composedEvaluation(c.Input, c.Pole, base, lo, hi, u)
+	}
+	local, origin, ok := c.Curve.local(u.size)
+	if !ok {
+		return composedEvaluation(c.Input, c.Pole, base, lo, hi, u)
+	}
+	movingBase := func(t float64) (Vec3, Vec3, Vec3, bool) {
+		r, v, a, ok := base(t)
+		return local(t), v, a, ok && r.valid()
+	}
+	moving := composedEvaluation(c.Input, c.Pole.sub(origin), movingBase, lo, hi, u)
+	return func(t float64) (Vec3, Vec3, Vec3, bool) {
+		r, v, a, ok := base(t)
+		line, defined := u.line(v, a)
+		if !ok || !r.valid() || !defined {
+			return Vec3{math.NaN(), 0, 0}, Vec3{}, Vec3{}, false
+		}
+		position := project(c.Input, c.Pole, r, line)
+		_, v, a, ok = moving(t)
+		return position, v, a, ok && position.valid()
+	}
+}
+
 // baseSamples samples the base by the same rules as Compute's sampling
 // loop: its points, unit tangents, and breaks. Every base break also breaks
 // the input curve, as the projections and inversion break there: across a

@@ -1,8 +1,10 @@
 package engine3
 
 import (
+	"fmt"
 	"math"
 	"tangentgarden/engine/cyclic"
+	"tangentgarden/engine/expr"
 	"testing"
 )
 
@@ -112,4 +114,153 @@ func scaleCurveResult(t *testing.T, c Request) Result {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// A translated helix has the same Frenet frame, curvature and torsion,
+// including when its radius is small beside its coordinates. Its returned
+// mesh must retain every regular tangent strip.
+func TestFarExpressionHelixRetainsCurvature(t *testing.T) {
+	for _, radius := range []float64{1, 1.0 / 1024} {
+		for _, rate := range []float64{1, 0.1} {
+			t.Run(fmt.Sprintf("radius=%g/rate=%g", radius, rate), func(t *testing.T) {
+				c := custom(fmt.Sprintf("5000+%.17g*cos(%.17g*t)", radius, rate), fmt.Sprintf("-3000+%.17g*sin(%.17g*t)", radius, rate), fmt.Sprintf("4000+%.17g*t/2", radius*rate), 0, 2*math.Pi)
+				c.Samples = 240
+				c.Length = radius
+				c.Diagnostics = true
+				r := scaleCurveResult(t, c)
+				if r.Invalid != 0 || r.Omitted != 0 {
+					t.Fatalf("regular helix loses samples or strips: invalid=%d omitted=%d", r.Invalid, r.Omitted)
+				}
+				if len(r.Mesh.Triangles) != 12*c.Samples {
+					t.Fatalf("tangent strip triangle indices: %d, want %d", len(r.Mesh.Triangles), 12*c.Samples)
+				}
+				check := func(at float64, k, tau *float64, normal, center *Vec3) {
+					t.Helper()
+					closeNumber(t, "curvature", k, 0.8/radius, 2e-4/radius)
+					closeNumber(t, "torsion", tau, 0.4/radius, 0.01/radius)
+					closeVec3(t, "normal", normal, Vec3{-math.Cos(rate * at), -math.Sin(rate * at), 0}, 2e-4)
+					want := Vec3{5000 - 0.25*radius*math.Cos(rate*at), -3000 - 0.25*radius*math.Sin(rate*at), 4000 + radius*rate*at/2}
+					closeVec3(t, "center", center, want, 5e-4*radius)
+				}
+				for i := range r.Base {
+					check(2*math.Pi*float64(i)/float64(c.Samples), r.Diagnostics.Curvature[i], r.Diagnostics.Torsion[i], r.Diagnostics.Normal[i], r.Diagnostics.Center[i])
+				}
+				for _, at := range []float64{0.0317, 1.2345, 6.25} {
+					p := probeOnlyAt(t, c, at)
+					check(at, p.Curvature, p.Torsion, p.Normal, p.Center)
+				}
+			})
+		}
+	}
+}
+
+// A corner the stencil straddles makes the half-step velocity disagree, so
+// the tangent surface breaks on both sides of it. A far copy whose
+// derivatives are taken before its translation must break in the same
+// intervals: the moving expression's stability decides, as the original's
+// does near the origin.
+func TestFarExpressionCornerBreaksAsNearOrigin(t *testing.T) {
+	result := func(shift string) Result {
+		c := custom(shift+"(cos(t)+abs(t-0.0001))/1024", "sin(t)/1024", "t/2048", -1, 1)
+		c.Length = 1.0 / 1024
+		return scaleCurveResult(t, c)
+	}
+	near, far := result(""), result("5000+")
+	count := 0
+	for i := range near.Breaks {
+		if near.Breaks[i] != far.Breaks[i] {
+			t.Fatalf("break %d: near %v, far %v", i, near.Breaks[i], far.Breaks[i])
+		}
+		if near.Breaks[i] {
+			count++
+		}
+	}
+	if count != 2 || far.Omitted != near.Omitted {
+		t.Fatalf("corner breaks %d intervals, omitted near %d, far %d", count, near.Omitted, far.Omitted)
+	}
+}
+
+func TestFarLocalSamplerKeepsSingularitiesAndPositions(t *testing.T) {
+	for name, c := range map[string]Request{
+		"rounded sums": custom("8192+(cos(t)-3192)", "-3000+sin(t)", "4000+t/2", -1, 1),
+		"line":         custom("5000+t/1024", "-3000+2*t/1024", "4000-3*t/1024", -1, 1),
+		"cusp":         custom("5000+t^2/1024", "-3000+t^3/1024", "4000", -1, 1),
+		"pole":         custom("5000+1/(1024*t)", "-3000+t/1024", "4000", -1, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			c.Diagnostics = true
+			r := scaleCurveResult(t, c)
+			for i, p := range r.Base {
+				if p == nil {
+					continue
+				}
+				at := c.Curve.Min + (c.Curve.Max-c.Curve.Min)*float64(i)/float64(c.Samples)
+				var want Vec3
+				for j, s := range []string{c.Curve.X, c.Curve.Y, c.Curve.Z} {
+					f, _ := expr.ParseWithParameter(s, c.Curve.A)
+					switch j {
+					case 0:
+						want.X = f(at)
+					case 1:
+						want.Y = f(at)
+					case 2:
+						want.Z = f(at)
+					}
+				}
+				if *p != want {
+					t.Fatalf("world position %d changed: %+v != %+v", i, *p, want)
+				}
+				if name == "line" && (r.Diagnostics.Curvature[i] == nil || *r.Diagnostics.Curvature[i] != 0 || r.Diagnostics.Center[i] != nil) {
+					t.Fatalf("line has invented bending at %d", i)
+				}
+			}
+			if (name == "cusp" || name == "pole") && r.Base[c.Samples/2] != nil {
+				t.Fatal("singularity acquired a tangent")
+			}
+			if name == "line" && len(r.Mesh.Triangles) != 0 {
+				t.Fatal("line acquired a surface")
+			}
+		})
+	}
+}
+
+// A curve whose motion is entirely lost in its entered arithmetic has no
+// measurable extent. Separating constants must not invent tangents for it.
+func TestFarUnresolvedExpressionStaysStationary(t *testing.T) {
+	c := custom("5000+(1e20+cos(t)-1e20)", "-3000", "4000", 0, 2*math.Pi)
+	if r, err := Compute(c); err == nil {
+		t.Fatalf("unresolved curve acquired %d samples", len(r.Base)-r.Invalid)
+	}
+}
+
+// The same far helix with its x and y written as square roots of perfect
+// squares, so no outer constant separates: the rationalized radicals must
+// keep its curvature, torsion and frame as the outer translation does.
+func TestFarRadicalHelixRetainsCurvature(t *testing.T) {
+	radius := 1.0 / 1024
+	x := fmt.Sprintf("sqrt(25000000+%.17g*cos(t)+%.17g*cos(t)^2)", 10000*radius, radius*radius)
+	y := fmt.Sprintf("-sqrt(9000000-%.17g*sin(t)+%.17g*sin(t)^2)", 6000*radius, radius*radius)
+	c := custom(x, y, fmt.Sprintf("4000+%.17g*t/2", radius), 0, 2*math.Pi)
+	c.Samples = 240
+	c.Length = radius
+	c.Diagnostics = true
+	r := scaleCurveResult(t, c)
+	if r.Invalid != 0 || r.Omitted != 0 {
+		t.Fatalf("regular helix loses samples or strips: invalid=%d omitted=%d", r.Invalid, r.Omitted)
+	}
+	check := func(at float64, k, tau *float64, normal, center *Vec3) {
+		t.Helper()
+		closeNumber(t, "curvature", k, 0.8/radius, 2e-4/radius)
+		closeNumber(t, "torsion", tau, 0.4/radius, 0.01/radius)
+		closeVec3(t, "normal", normal, Vec3{-math.Cos(at), -math.Sin(at), 0}, 2e-4)
+		want := Vec3{5000 - 0.25*radius*math.Cos(at), -3000 - 0.25*radius*math.Sin(at), 4000 + radius*at/2}
+		closeVec3(t, "center", center, want, 5e-4*radius)
+	}
+	for i := range r.Base {
+		check(2*math.Pi*float64(i)/float64(c.Samples), r.Diagnostics.Curvature[i], r.Diagnostics.Torsion[i], r.Diagnostics.Normal[i], r.Diagnostics.Center[i])
+	}
+	for _, at := range []float64{0.0317, 1.2345, 6.25} {
+		p := probeOnlyAt(t, c, at)
+		check(at, p.Curvature, p.Torsion, p.Normal, p.Center)
+	}
 }

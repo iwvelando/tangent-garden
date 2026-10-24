@@ -49,6 +49,9 @@ const (
 	opMul
 	opDiv
 	opPow
+	// Internal only: a radical's displacement from a positive finite origin.
+	// The parser never emits this operation (localTree does).
+	opSqrtDelta
 )
 
 // A parse tree: a constant, a variable, or an operation on one operand
@@ -236,6 +239,18 @@ func (p *program) unaryNode(t *tree) node {
 // operands. Two constants are folded already.
 func (p *program) binaryNode(t *tree) node {
 	l, r := t.left, t.right
+	if t.op == opSqrtDelta {
+		a, b, origin := p.node(l), p.node(r), t.value
+		return func(v0, v1, v2, v3 float64) float64 {
+			root := b(v0, v1, v2, v3)
+			// A finite numerator divided by an infinite root would hide
+			// overflow in the entered radicand. Keep that nonfinite value.
+			if math.IsNaN(root) || math.IsInf(root, 0) {
+				return root
+			}
+			return a(v0, v1, v2, v3) / (root + origin)
+		}
+	}
 	switch {
 	case l.op == opConst && r.op == opVar:
 		c, k := l.value, r.index
