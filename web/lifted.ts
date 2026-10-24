@@ -1,4 +1,4 @@
-// The large numeric arrays of a spatial or 4D result cross from Go as one
+// The large numeric and boolean arrays of a spatial or 4D result cross from Go as one
 // Float64Array rather than as JSON (cmd/wasm/lift): copying their float64
 // bytes costs far less than writing them as text in Go and parsing them
 // here. restore puts each back where JSON would have put it, as the same
@@ -8,10 +8,12 @@
 // is {x, y, z} or null (three NaN), a "vector" {x, y, z}, a "triple"
 // [x, y, z], a "quad" [x, y, z, w], a "number" a number, and a "maybe" a
 // number or null (NaN); a "point2" is {x, y} or null (two NaN), and a
-// "vector2" {x, y}, as a shadow's 2D study holds. An array of arrays has rows, each row's length,
-// -1 for null; any other array has count. A "ray" is a representative
-// spatial ray: i, j, start xyz, point xyz, end xyz, back xyz, virtual, total,
-// with its flags encoded as 0 or 1 (16 floats).
+// "vector2" {x, y}, as a shadow's 2D study holds. "flags" packs 32 booleans
+// per float64 as an exact unsigned integer, low bit first, each row starting
+// a fresh word. An array of arrays has rows, each row's length,
+// -1 for null; any other array has count.
+// A "ray" is a representative spatial ray: i, j, start xyz, point xyz,
+// end xyz, back xyz, virtual, total, with flags encoded as 0 or 1 (16 floats).
 export type Place = {
   path: (string | number)[];
   kind:
@@ -23,7 +25,8 @@ export type Place = {
     | "quad"
     | "number"
     | "maybe"
-    | "ray";
+    | "ray"
+    | "flags";
   offset: number;
   count?: number;
   rows?: number[];
@@ -66,6 +69,10 @@ function items(
           virtual: floats[at + 14] === 1,
           total: floats[at + 15] === 1,
         };
+      break;
+    case "flags":
+      for (let k = 0; k < n; k++)
+        out[k] = ((floats[at + (k >>> 5)] >>> (k & 31)) & 1) !== 0;
       break;
     case "point":
     case "vector":
@@ -121,7 +128,7 @@ export function restore<T>(result: T, lifted: Lifted | undefined): T {
       value = p.rows.map((n) => {
         if (n < 0) return null;
         const row = items(floats, p.kind, at, n);
-        at += width[p.kind] * n;
+        at += p.kind === "flags" ? Math.ceil(n / 32) : width[p.kind] * n;
         return row;
       });
     } else value = items(floats, p.kind, p.offset, p.count ?? 0);

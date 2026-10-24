@@ -403,6 +403,47 @@ func TestEvoluteTranslationThroughConstantFactors(t *testing.T) {
 	}
 }
 
+// These radicals describe the same translated ellipse without an outer
+// constant translation. Unwinding its evolute with the initial curvature
+// radius must still retrace it, at samples and between them.
+func TestEvoluteTranslationInsideRadicals(t *testing.T) {
+	for _, scale := range []float64{1, 0x1p-20} {
+		for _, adaptive := range []bool{false, true} {
+			q := inputRequest("involute", "evolute", fmt.Sprintf("%.17g*sqrt(640000+3200*cos(t)+4*cos(t)^2)", scale), fmt.Sprintf("-%.17g*sqrt(102400-640*sin(t)+sin(t)^2)", scale), 0.1, 1.4)
+			q.Offset = scale * math.Pow(4*math.Pow(math.Sin(0.1), 2)+math.Pow(math.Cos(0.1), 2), 1.5) / 2
+			q.Samples, q.Adaptive = 257, adaptive
+			at := 0.731
+			q.Probe = &ProbeQuery{T: &at}
+			r := compute(t, q)
+			if r.Invalid != 0 {
+				for j, p := range r.Derived {
+					if p == nil {
+						t.Logf("omitted sample %d at t=%g", j, sampleT(q, j))
+					}
+				}
+				t.Fatalf("scale=%g refine=%v: %d omissions: %v", scale, adaptive, r.Invalid, r.Warnings)
+			}
+			want := func(u float64) Vec { return Vec{scale * (800 + 2*math.Cos(u)), scale * (-320 + math.Sin(u))} }
+			for j, p := range r.Derived {
+				closeVec(t, p, want(sampleT(q, j)), scale*2e-4)
+			}
+			if r.Probe == nil {
+				t.Fatal("missing probe")
+			}
+			closeVec(t, r.Probe.Derived, want(at), scale*2e-4)
+			if adaptive {
+				if r.Adaptive == nil || r.Adaptive.Derived == nil {
+					t.Fatal("no refined construction")
+				}
+				for j, p := range r.Adaptive.Derived.Points {
+					u := q.Curve.Min + r.Adaptive.Derived.At[j]*(q.Curve.Max-q.Curve.Min)/float64(q.Samples-1)
+					closeVec(t, p, want(u), scale*2e-4)
+				}
+			}
+		}
+	}
+}
+
 func TestDistantEvoluteKeepsCuspsAndGaps(t *testing.T) {
 	for _, adaptive := range []bool{false, true} {
 		q := inputRequest("offset", "evolute", "800+2*cos(t)", "-320+sin(t)", 0, 2*math.Pi)
@@ -441,6 +482,53 @@ func TestDistantEvoluteKeepsCuspsAndGaps(t *testing.T) {
 			t.Fatalf("inflection: base %v input %v construction %v, regular %v", r.Base[250], r.Input[250], r.Derived[250], r.Derived[100])
 		}
 		q.Curve.Y = "-320+0.7*t"
+		r = compute(t, q)
+		for j, p := range r.Input {
+			if p != nil || r.Derived[j] != nil {
+				t.Fatalf("line gained a finite evolute at %d", j)
+			}
+		}
+	}
+}
+
+func TestRadicalEvoluteKeepsCuspsAndGaps(t *testing.T) {
+	for _, adaptive := range []bool{false, true} {
+		q := inputRequest("offset", "evolute", "sqrt(640000+3200*cos(t)+4*cos(t)^2)", "-sqrt(102400-640*sin(t)+sin(t)^2)", 0, 2*math.Pi)
+		q.Samples, q.Distance, q.Adaptive = 257, 0.2, adaptive
+		r := compute(t, q)
+		for _, j := range []int{0, 64, 128, 192, 256} {
+			if r.Input[j] == nil || r.Derived[j] != nil {
+				t.Fatalf("refine=%v cusp %d: input %v construction %v", adaptive, j, r.Input[j], r.Derived[j])
+			}
+		}
+		for _, j := range []int{32, 96, 160, 224} {
+			if r.Derived[j] == nil {
+				t.Fatalf("regular sample %d omitted", j)
+			}
+		}
+		q.Curve.Min, q.Curve.Max = 0.3, 0.3+2*math.Pi
+		r = compute(t, q)
+		if !warned(r, "In 4 places the tangent reverses between samples") {
+			t.Fatalf("refine=%v: %v", adaptive, r.Warnings)
+		}
+		if adaptive {
+			gaps := 0
+			for _, p := range r.Adaptive.Derived.Points {
+				if p == nil {
+					gaps++
+				}
+			}
+			if gaps < 4 {
+				t.Fatalf("cusps between samples were joined: %d gaps", gaps)
+			}
+		}
+		q = inputRequest("pedal", "evolute", "sqrt(640000+1600*t+t^2)", "-sqrt(102400-640*sin(t)+sin(t)^2)", -1, 1)
+		q.Adaptive = adaptive
+		r = compute(t, q)
+		if r.Base[250] == nil || r.Input[250] != nil || r.Derived[250] != nil || r.Derived[100] == nil {
+			t.Fatalf("inflection: base %v input %v construction %v, regular %v", r.Base[250], r.Input[250], r.Derived[250], r.Derived[100])
+		}
+		q.Curve.Y = "-sqrt(102400-448*t+0.49*t^2)"
 		r = compute(t, q)
 		for j, p := range r.Input {
 			if p != nil || r.Derived[j] != nil {

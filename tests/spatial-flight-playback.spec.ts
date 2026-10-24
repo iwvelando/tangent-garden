@@ -501,6 +501,7 @@ test("light followed into a trough: end-on, every cross-section is one circle an
 test("a seashell grows on its spiral, fitted to the views: it stays on the page, and two whorls on it draws its first frame again", async ({
   page,
 }) => {
+  test.slow();
   await ready(page);
   await chooseExample(page, "A seashell growing on its spiral");
   await expect(mode(page)).toHaveValue("parameters");

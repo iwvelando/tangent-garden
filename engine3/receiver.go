@@ -332,7 +332,14 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 		leaves[level], cells = whole, next
 	}
 	leaves[levels] = cells
-	g := newRaster(n, ny)
+	// Only the window keeps its raster scratch: an inset's size follows
+	// the view, and alternating sizes would reallocate both every frame.
+	var g *raster
+	if target == nil {
+		g = cache.receiverRaster(n)
+	} else {
+		g = newRaster(n, ny)
+	}
 	landed := 0.0
 	for _, level := range leaves {
 		for _, c := range level {
@@ -408,15 +415,42 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 // covers.
 type raster struct {
 	w, h   int
-	rows   [][]float64
 	points [][]float64
+	rasterScratch
+}
+
+// rasterScratch is private accumulation storage; the finished bins always
+// belong to the result. Only the window's current bin count is retained,
+// bounded by 960² bins (under 8 MiB), and changing the ray family releases
+// it with the cache.
+type rasterScratch struct {
+	rows [][]float64
 	// scale[row] sums the magnitudes added to the row, which bounds the
 	// rounding its running sum can leave.
 	scale []float64
 }
 
 func newRaster(w, h int) *raster {
-	return &raster{w: w, h: h, rows: grid2[float64](h, w+2), points: grid2[float64](w, h), scale: make([]float64, h)}
+	return &raster{w: w, h: h, rasterScratch: newRasterScratch(w, h), points: grid2[float64](w, h)}
+}
+
+func newRasterScratch(w, h int) rasterScratch {
+	return rasterScratch{rows: grid2[float64](h, w+2), scale: make([]float64, h)}
+}
+
+func (c *rayCache) receiverRaster(n int) *raster {
+	if c == nil {
+		return newRaster(n, n)
+	}
+	if len(c.raster.rows) != n {
+		c.raster = newRasterScratch(n, n)
+	} else {
+		for _, row := range c.raster.rows {
+			clear(row)
+		}
+		clear(c.raster.scale)
+	}
+	return &raster{w: n, h: n, rasterScratch: c.raster, points: grid2[float64](n, n)}
 }
 
 // triangle spreads flux over the triangle p, in bin coordinates.
