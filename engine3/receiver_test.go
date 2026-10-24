@@ -1443,9 +1443,263 @@ func TestReceiverViewKeepsWindowRaster(t *testing.T) {
 	}
 }
 
+// Moving only the receiver must not rebuild tens of thousands of surface
+// and caustic vertices. The 10,000-allocation bound leaves room for fresh
+// output rows, bins and exact raster work, but rejects the old 71,000+
+// per-frame vertex allocations on this production preset.
+func TestReceiverGeometryAllocationBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 80, 0
+	var worker Engine
+	for range 3 {
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	allocations := testing.AllocsPerRun(3, func() {
+		c.Rays.Receiver.Tilt += 1
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocations > 10000 {
+		t.Fatalf("moving receiver allocated %.0f objects, want at most 10000", allocations)
+	}
+}
+
+// Callers own every nested output, including topology and pointed-to
+// vertices. Corrupting a delivered result must not poison the next frame.
+func TestReceiverGeometryOwnership(t *testing.T) {
+	presets := spatialPresets(t)
+	cases := []struct {
+		name    string
+		request Request
+	}{
+		{"Conic sections cut from a cone of light", presets["Conic sections cut from a cone of light"]},
+		{"A glass dome's ring of light", presets["A glass dome's ring of light"]},
+		{"cuspidal edges", receive(presets["An astigmatic dish's folded caustics"], "z", 1, 0, 0, 4, 32)},
+		{"point source", receive(flat(1.5, lamp(Vec3{0, 0, 2})), "z", 1, 0, 0, 4, 32)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := tc.request
+			c.Surface.USamples, c.Surface.VSamples = 24, 12
+			c.Rays.Receiver.Bins = 32
+			c.Rays.Edges, c.LightDiagnostics = true, true
+			var worker Engine
+			for range 2 {
+				if _, err := worker.Compute(c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := worker.Compute(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.name == "cuspidal edges" && (got.Rays.Edges == nil || len(*got.Rays.Edges) == 0) {
+				t.Fatal("fixture has no cuspidal edges")
+			}
+			if tc.name == "point source" && got.Rays.Source == nil {
+				t.Fatal("fixture has no point source")
+			}
+			corruptResult(reflect.ValueOf(got.Rays))
+			for _, change := range []func(){func() {}, func() { c.Rays.Receiver.Tilt += 20 }, func() { c.LightDiagnostics, c.SurfaceDiagnostics = false, true }} {
+				change()
+				want, err := Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := worker.Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+					t.Fatal("caller mutation poisoned cached geometry")
+				}
+			}
+		})
+	}
+}
+
+// corruptResult overwrites every settable number and flag reachable from v
+// and then empties its slices, as a caller or the WASM lifter consuming a
+// result may. Strings are kept: a cache keyed by a diagnostics kind must
+// still hit, so that sharing its storage with a result is observed.
+func corruptResult(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if !v.IsNil() {
+			corruptResult(v.Elem())
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			corruptResult(v.Field(i))
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			corruptResult(v.Index(i))
+		}
+		if v.CanSet() {
+			v.SetZero()
+		}
+	case reflect.Float64:
+		if v.CanSet() {
+			v.SetFloat(12345)
+		}
+	case reflect.Int:
+		if v.CanSet() {
+			v.SetInt(12345)
+		}
+	case reflect.Bool:
+		if v.CanSet() {
+			v.SetBool(!v.Bool())
+		}
+	}
+}
+
+// A receiver moving beneath an unchanged probe should copy its diagnostics,
+// rather than allocate every point, curvature and direction again. The bound
+// allows grid copies but excludes the per-sample allocation of rebuilding.
+func TestReceiverDiagnosticsAllocation(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 8, 0
+	for _, light := range []bool{false, true} {
+		c.SurfaceDiagnostics, c.LightDiagnostics = !light, light
+		var worker Engine
+		for i := 0; i < 3; i++ {
+			if _, err := worker.Compute(c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		with := testing.AllocsPerRun(3, func() {
+			c.Rays.Receiver.Tilt++
+			if _, err := worker.Compute(c); err != nil {
+				panic(err)
+			}
+		})
+		c.SurfaceDiagnostics, c.LightDiagnostics = false, false
+		without := testing.AllocsPerRun(3, func() {
+			c.Rays.Receiver.Tilt++
+			if _, err := worker.Compute(c); err != nil {
+				panic(err)
+			}
+		})
+		t.Logf("light=%v diagnostics add %.0f allocations", light, with-without)
+		if with-without > 2000 {
+			t.Errorf("light=%v: diagnostics added %.0f allocations, want at most 2000", light, with-without)
+		}
+	}
+}
+
+func BenchmarkReceiverMovingDiagnostics(b *testing.B) {
+	for _, light := range []bool{false, true} {
+		name := "mirror"
+		if light {
+			name = "light"
+		}
+		b.Run(name, func(b *testing.B) {
+			c := spatialPresets(b)["Conic sections cut from a cone of light"]
+			c.SurfaceDiagnostics, c.LightDiagnostics = !light, light
+			c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 480, 2
+			var worker Engine
+			frame := 0
+			b.ReportAllocs()
+			for b.Loop() {
+				c.Rays.Receiver.Tilt = 20 + float64(frame%55)
+				frame++
+				if _, err := worker.Compute(c); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// Cached diagnostics remain identical to the stateless engine, even after
+// transport or a caller consumes every nested array of a delivered result.
+func TestReceiverDiagnosticsOwnership(t *testing.T) {
+	for _, name := range []string{"Conic sections cut from a cone of light", "A glass dome's ring of light", "A lamp in water over air"} {
+		c := spatialPresets(t)[name]
+		c.Surface.USamples, c.Surface.VSamples = 24, 12
+		c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 16, 1
+		var worker Engine
+		for _, mode := range []int{0, 1, 1, 2, 2, 0, 1} {
+			c.SurfaceDiagnostics, c.LightDiagnostics = mode == 1, mode == 2
+			for _, tilt := range []float64{20, 75, 35} {
+				c.Rays.Receiver.Tilt = tilt
+				want, err := Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := worker.Compute(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+					t.Fatalf("%s mode %d tilt %v differs", name, mode, tilt)
+				}
+				if got.Probe != nil {
+					corruptResult(reflect.ValueOf(got.Probe))
+				}
+			}
+		}
+	}
+}
+
+func TestReceiverDiagnosticsLifecycle(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 16, 0
+	c.LightDiagnostics = true
+	var worker Engine
+	run := func() {
+		t.Helper()
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run()
+	if worker.rays.probe != nil {
+		t.Fatal("one-shot family retained diagnostics")
+	}
+	run()
+	first := worker.rays.probe
+	if first == nil || first.Kind != "wavefront" {
+		t.Fatal("missing cached light diagnostics")
+	}
+	c.Rays.Receiver.At += .1
+	run()
+	if worker.rays.probe != first {
+		t.Fatal("receiver movement rebuilt diagnostics")
+	}
+	c.LightDiagnostics, c.SurfaceDiagnostics = false, true
+	run()
+	if worker.rays.probe == first || worker.rays.probe.Kind != "patch" {
+		t.Fatal("target change reused light diagnostics")
+	}
+	c.SurfaceDiagnostics = false
+	run()
+	if worker.rays.probe != nil {
+		t.Fatal("disabled probe retained diagnostics")
+	}
+	c.LightDiagnostics = true
+	run()
+	c.Rays.N2 = 1.3
+	run()
+	if worker.rays.probe != nil {
+		t.Fatal("changed family retained diagnostics")
+	}
+	run()
+	c.SurfaceDiagnostics = true
+	if _, err := worker.Compute(c); err == nil || worker.rays != nil {
+		t.Fatal("invalid dual target retained cache")
+	}
+}
+
 // Moving a warmed receiver must not allocate its breadth-first cell queues
-// again. Allow 22 MB per frame for owned output, fitting and other scratch;
-// without reuse, the queues bring that to about 25.2 MB per frame.
+// again. Allow 16 MB per frame for owned output, fitting and other scratch,
+// above the observed 13.2 MB after geometry caching. Without queue reuse,
+// the same warmed cycle allocates about 19.2 MB per frame.
 func TestReceiverCellQueueAllocationBudget(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
@@ -1473,8 +1727,8 @@ func TestReceiverCellQueueAllocationBudget(t *testing.T) {
 	runtime.ReadMemStats(&after)
 	bytes := (after.TotalAlloc - before.TotalAlloc) / uint64(len(tilts))
 	t.Logf("moving receiver allocated %d bytes/frame", bytes)
-	if bytes > 22_000_000 {
-		t.Fatalf("moving receiver allocated %d bytes/frame, want at most 22 MB", bytes)
+	if bytes > 16_000_000 {
+		t.Fatalf("moving receiver allocated %d bytes/frame, want at most 16 MB", bytes)
 	}
 }
 
@@ -1526,11 +1780,13 @@ func TestReceiverCellQueuesAcrossRefinementAndInsets(t *testing.T) {
 	var worker Engine
 	var first Result
 	var saved string
+	var previous *receiverTrace
+	var baseQueue *receiverCell
 	for i, levels := range []int{2, 2, 2, 3, 1, 0, 2, 2} {
 		c.Rays.Receiver.Refine = levels
 		c.Rays.Receiver.Tilt = []float64{20, 75, 45, 90, 0, 180, 20, 75}[i]
 		c.Rays.Receiver.RefineView = true
-		c.Rays.Receiver.view = &View{Center: Vec3{Z: -1.8}, Right: Vec3{X: 1}, Up: Vec3{Y: 1}, Width: 1.3, Height: .9, Pixels: [2]int{80 + i*3, 60 + i*2}}
+		c.View = &View{Center: Vec3{Z: -1.8}, Right: Vec3{X: 1}, Up: Vec3{Y: 1}, Width: 1.3, Height: .9, Pixels: [2]int{80 + i*3, 60 + i*2}}
 		got, err := worker.Compute(c)
 		if err != nil {
 			t.Fatal(err)
@@ -1543,6 +1799,25 @@ func TestReceiverCellQueuesAcrossRefinementAndInsets(t *testing.T) {
 			t.Fatalf("frame %d differs from stateless engine", i)
 		}
 		accounted(t, got.Rays.Receiver)
+		if i == 0 && (got.Rays.Receiver.Inset == nil || got.Rays.Receiver.Split == 0) {
+			t.Fatal("fixture must exercise both refinement and a view inset")
+		}
+		if i > 0 {
+			trace := worker.rays.receiver
+			if trace == nil || len(trace.queues.levels[0]) == 0 {
+				t.Fatal("worker did not retain the base cell queue")
+			}
+			if previous != nil {
+				if previous.levels != levels {
+					if trace == previous || &trace.queues.levels[0][0] == baseQueue {
+						t.Fatal("refinement change retained the previous queues")
+					}
+				} else if trace != previous || &trace.queues.levels[0][0] != baseQueue {
+					t.Fatal("moving receiver or inset discarded the retained queues")
+				}
+			}
+			previous, baseQueue = trace, &trace.queues.levels[0][0]
+		}
 		if i == 0 {
 			first, saved = got, receiverResultJSON(t, got)
 		}

@@ -123,6 +123,32 @@ func (q Request) derivedInput(f curveFunc) curveFunc {
 	if !(offset.Norm() > 4*largest) {
 		return ordinary()
 	}
-	g := inputCurve(q.Input, local, lo, hi, q.Pole, q.Distance)
-	return func(t float64) Vec { return g(t).Add(offset) }
+	s := stencil{lo, hi, (hi - lo) * inputSpacing, 1e-8}
+	return func(t float64) Vec {
+		p := evolute(s.centeredWithHalf(local, t))
+		if p == nil {
+			return Vec{math.NaN(), math.NaN()}
+		}
+		return p.Add(offset)
+	}
+}
+
+// centeredWithHalf differentiates displacements from the evaluation point.
+// This avoids cancellation in the weighted sum, especially at a domain end,
+// after a nonlinear local expression has rounded each displacement. The
+// curvature resolution still reads the unshifted values: their rounding was
+// already incurred before subtracting the anchor.
+func (s stencil) centeredWithHalf(f curveFunc, t float64) (p, d, dd Vec, resolution float64) {
+	p = f(t)
+	m := nodes{f: f}
+	record := func(u float64) Vec { return m.record(u).Sub(p) }
+	d, dd = s.derivatives(record, t)
+	least := math.Inf(1)
+	reuse := func(u float64) Vec {
+		v := m.reuse(u)
+		least = math.Min(least, math.Max(math.Abs(v.X), math.Abs(v.Y)))
+		return v.Sub(p)
+	}
+	_, half := derivativesAtStep(reuse, t, s.lo, s.hi, s.h/2)
+	return p, d, dd, s.resolution(dd, half, least)
 }
