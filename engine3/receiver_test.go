@@ -1443,6 +1443,69 @@ func TestReceiverViewKeepsWindowRaster(t *testing.T) {
 	}
 }
 
+// Result bins need fresh ownership, but not one heap allocation per column.
+// Measure the warm production raster path at both small and maximum sizes;
+// the bound allows fixed overhead while excluding work proportional to width.
+func TestReceiverIrradianceAllocationBudget(t *testing.T) {
+	for _, n := range []int{32, 960} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			var cache rayCache
+			cache.receiverRaster(n)
+			allocations := testing.AllocsPerRun(3, func() {
+				g := cache.receiverRaster(n)
+				g.triangle([3][2]float64{{0, 0}, {1, 0}, {0, 1}}, 1)
+				runtime.KeepAlive(g.bins())
+			})
+			if allocations > 8 {
+				t.Fatalf("%d-bin irradiance allocated %.0f objects, want at most 8", n, allocations)
+			}
+		})
+	}
+}
+
+// Rectangular view insets and square windows use the same raster. Every
+// column must retain its dimensions and independent append/mutation behavior,
+// even when the storage is packed, and a later frame must start dark.
+func TestReceiverIrradianceOwnership(t *testing.T) {
+	for _, size := range [][2]int{{8, 8}, {11, 7}, {7, 11}} {
+		w, h := size[0], size[1]
+		g := newRaster(w, h)
+		g.triangle([3][2]float64{{1.1, 2.1}, {1.8, 2.1}, {1.1, 2.8}}, 3)
+		first := g.bins()
+		if len(first) != w {
+			t.Fatalf("width = %d, want %d", len(first), w)
+		}
+		for x, column := range first {
+			if len(column) != h {
+				t.Fatalf("column %d height = %d, want %d", x, len(column), h)
+			}
+			for y, value := range column {
+				want := 0.0
+				if x == 1 && y == 2 {
+					want = 3
+				}
+				if math.Abs(value-want) > 1e-12 {
+					t.Fatalf("bin (%d, %d) = %g, want %g", x, y, value, want)
+				}
+			}
+		}
+		first[0] = append(first[0], 42)
+		if first[1][0] != 0 {
+			t.Fatal("appending to a column overwrote its neighbor")
+		}
+		original := first[1][2]
+		second := newRaster(w, h).bins()
+		second[1][2] = 9
+		if first[1][2] != original {
+			t.Fatal("later result overwrote an earlier frame")
+		}
+		first[1][2] = 12
+		if second[1][2] != 9 || second[0][0] != 0 {
+			t.Fatal("earlier result overwrote a later frame or left stale light")
+		}
+	}
+}
+
 // Moving only the receiver must not rebuild tens of thousands of surface
 // and caustic vertices. The 10,000-allocation bound leaves room for fresh
 // output rows, bins and exact raster work, but rejects the old 71,000+
