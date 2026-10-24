@@ -1758,3 +1758,276 @@ func TestReceiverDiagnosticsLifecycle(t *testing.T) {
 		t.Fatal("invalid dual target retained cache")
 	}
 }
+
+// Moving a warmed receiver must not allocate its breadth-first cell queues
+// again. Allow 16 MB per frame for owned output, fitting and other scratch,
+// above the observed 13.2 MB after geometry caching. Without queue reuse,
+// the same warmed cycle allocates about 19.2 MB per frame.
+func TestReceiverCellQueueAllocationBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
+	tilts := []float64{20, 35, 50, 65, 75, 65, 50, 35}
+	var worker Engine
+	for range 2 {
+		for _, tilt := range tilts {
+			c.Rays.Receiver.Tilt = tilt
+			if _, err := worker.Compute(c); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for _, tilt := range tilts {
+		c.Rays.Receiver.Tilt = tilt
+		result, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runtime.KeepAlive(result)
+	}
+	runtime.ReadMemStats(&after)
+	bytes := (after.TotalAlloc - before.TotalAlloc) / uint64(len(tilts))
+	t.Logf("moving receiver allocated %d bytes/frame", bytes)
+	if bytes > 16_000_000 {
+		t.Fatalf("moving receiver allocated %d bytes/frame, want at most 16 MB", bytes)
+	}
+}
+
+// Queue retention is bounded independently of the tracing and landing
+// budgets. An unretained level must still compute normally; later smaller
+// requests can reuse the retained storage without growing it.
+func TestReceiverCellQueueRetention(t *testing.T) {
+	var trace receiverTrace
+	first := trace.cells(0, 200_000)
+	first[0] = receiverCell{17, 23, 4}
+	second := trace.cells(1, 200_000)
+	second[0] = receiverCell{99, 101, 2}
+	if trace.queues.levels[1] != nil {
+		t.Fatal("over-budget queue retained")
+	}
+	if first[0] != (receiverCell{17, 23, 4}) {
+		t.Fatal("levels share storage")
+	}
+	smaller := trace.cells(0, 100)
+	if &smaller[0] != &first[0] {
+		t.Fatal("smaller request discarded retained queue")
+	}
+	trace.cells(1, 100_000)
+	if trace.queues.levels[1] == nil {
+		t.Fatal("fitting queue was not retained")
+	}
+	bytes := 0
+	for _, cells := range trace.queues.levels {
+		if cells != nil {
+			bytes += 24 + 24*cap(cells)
+		}
+	}
+	if trace.queues.bytes != bytes || bytes > maxReceiverQueueBytes {
+		t.Fatalf("retained %d bytes, accounted %d", bytes, trace.queues.bytes)
+	}
+	trace.cells(0, 300_000)
+	if trace.queues.bytes != bytes {
+		t.Fatal("over-budget replacement grew retained storage")
+	}
+}
+
+// Alternate splitting patterns, levels and view insets on a single worker.
+// Compare all geometry and accounting, not just raster pictures, and keep
+// an older result alive to detect scratch escaping into returned arrays.
+func TestReceiverCellQueuesAcrossRefinementAndInsets(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	c.Rays.Receiver.Bins = 48
+	var worker Engine
+	var first Result
+	var saved string
+	var previous *receiverTrace
+	var baseQueue *receiverCell
+	for i, levels := range []int{2, 2, 2, 3, 1, 0, 2, 2} {
+		c.Rays.Receiver.Refine = levels
+		c.Rays.Receiver.Tilt = []float64{20, 75, 45, 90, 0, 180, 20, 75}[i]
+		c.Rays.Receiver.RefineView = true
+		c.View = &View{Center: Vec3{Z: -1.8}, Right: Vec3{X: 1}, Up: Vec3{Y: 1}, Width: 1.3, Height: .9, Pixels: [2]int{80 + i*3, 60 + i*2}}
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatalf("frame %d differs from stateless engine", i)
+		}
+		accounted(t, got.Rays.Receiver)
+		if i == 0 && (got.Rays.Receiver.Inset == nil || got.Rays.Receiver.Split == 0) {
+			t.Fatal("fixture must exercise both refinement and a view inset")
+		}
+		if i > 0 {
+			trace := worker.rays.receiver
+			if trace == nil || len(trace.queues.levels[0]) == 0 {
+				t.Fatal("worker did not retain the base cell queue")
+			}
+			if previous != nil {
+				if previous.levels != levels {
+					if trace == previous || &trace.queues.levels[0][0] == baseQueue {
+						t.Fatal("refinement change retained the previous queues")
+					}
+				} else if trace != previous || &trace.queues.levels[0][0] != baseQueue {
+					t.Fatal("moving receiver or inset discarded the retained queues")
+				}
+			}
+			previous, baseQueue = trace, &trace.queues.levels[0][0]
+		}
+		if i == 0 {
+			first, saved = got, receiverResultJSON(t, got)
+		}
+		if receiverResultJSON(t, first) != saved {
+			t.Fatal("later queues overwrote an earlier result")
+		}
+	}
+}
+
+// A prepared rotation must retain the old per-ray arithmetic exactly,
+// including the identity path (which preserves signed zero).
+func TestReceiverPreparedRotation(t *testing.T) {
+	legacy := func(r ReceiverRequest, v Vec3, back bool) (Vec3, bool) {
+		sin, cos := sincosDegrees(r.Tilt)
+		if sin == 0 && cos == 1 {
+			return v, false
+		}
+		if back {
+			sin = -sin
+		}
+		k := int(r.Plane[0] - 'x')
+		j := (k + 2) % 3
+		p := [3]float64{v.X, v.Y, v.Z}
+		p[j], p[k] = cos*p[j]-sin*p[k], sin*p[j]+cos*p[k]
+		return Vec3{p[0], p[1], p[2]}, true
+	}
+	bits := func(v Vec3) [3]uint64 {
+		return [3]uint64{math.Float64bits(v.X), math.Float64bits(v.Y), math.Float64bits(v.Z)}
+	}
+	for _, plane := range []string{"x", "y", "z"} {
+		for _, tilt := range []float64{0, math.Copysign(0, -1), 360, -720, 90, -90, 180, 270, 20, 75, -37.125, 1e-10, 90 + 1e-10, 100000, -100000} {
+			r := ReceiverRequest{Plane: plane, Tilt: tilt}
+			for _, back := range []bool{false, true} {
+				rotation := r.rotation(back)
+				for _, v := range []Vec3{{}, {math.Copysign(0, -1), 0, math.Copysign(0, -1)}, {1, 2, 3}, {1e5, -1e-10, 3.25}, {1e-100, -2e-100, 3e-100}} {
+					got, turned := rotation.apply(v)
+					want, wantTurned := legacy(r, v, back)
+					if bits(got) != bits(want) || turned != wantTurned {
+						t.Fatalf("%s, %g degrees, back %t, %+v: %+v (%t), want %+v (%t)", plane, tilt, back, v, got, turned, want, wantTurned)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Rotation is right handed about the window's first cyclic axis, and its
+// inverse carries a world-space direction back into window coordinates.
+func TestReceiverPreparedRotationAxes(t *testing.T) {
+	for _, tc := range []struct {
+		plane string
+		want  Vec3
+	}{
+		{"x", Vec3{3, 2, -1}},
+		{"y", Vec3{-2, 1, 3}},
+		{"z", Vec3{1, -3, 2}},
+	} {
+		r := ReceiverRequest{Plane: tc.plane, Tilt: 90}
+		forward, backward := r.rotation(false), r.rotation(true)
+		v := Vec3{1, 2, 3}
+		got, turned := forward.apply(v)
+		if got != tc.want || !turned {
+			t.Fatalf("%s: %+v, want %+v", tc.plane, got, tc.want)
+		}
+		if restored, _ := backward.apply(got); restored != v {
+			t.Fatalf("%s: inverse returned %+v", tc.plane, restored)
+		}
+		// A subsequent frame's edited request cannot change the prepared
+		// rotation of the previous frame, or reuse it for the new tilt.
+		r.Tilt = 0
+		if same, _ := forward.apply(v); same != tc.want {
+			t.Fatal("editing a request changed a prepared rotation")
+		}
+		if same, turned := r.rotation(false).apply(v); same != v || turned {
+			t.Fatal("new request retained the previous tilt")
+		}
+	}
+}
+
+// The moving receiver's coarse landing grid is private scratch, just like
+// its finer landing columns. At 216 × 60 cells a fresh grid costs over
+// 0.3 MB. With the cell queue also reused, allow 64 KB for the independent
+// 8 × 8 output and small per-pass scratch, excluding a fresh landing grid.
+func TestReceiverBaseLandingAllocationBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 8, 0
+	cache := &rayCache{}
+	geometry, err := cache.geometryFor(c.Surface, c.Rays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compute := func() *Receiver {
+		return c.Surface.receiveRaster(c.Rays, geometry.samples, geometry.scale, cache, nil)
+	}
+	compute()
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	out := compute()
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(out)
+	bytes := after.TotalAlloc - before.TotalAlloc
+	t.Logf("warm receiver raster allocated %d bytes", bytes)
+	if bytes > 64_000 {
+		t.Fatalf("warm receiver raster allocated %d bytes, want at most 64 KB", bytes)
+	}
+}
+
+// Crossings must be recomputed even when their storage survives a frame,
+// including a move behind the light and a view inset with different bins.
+func TestReceiverBaseLandingsStayCurrent(t *testing.T) {
+	c := receive(flat(1.5, parallel(0, -60)), "z", 1, 0, .2, 1, 16)
+	var worker Engine
+	check := func() {
+		t.Helper()
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatal("landing scratch retained previous crossings")
+		}
+		if c.View != nil && got.Rays.Receiver.Inset == nil {
+			t.Fatal("view inset was not exercised")
+		}
+		accounted(t, got.Rays.Receiver)
+	}
+	check()
+	check()
+	for _, refine := range []int{0, 2, 0} {
+		c.Rays.Receiver.Refine = refine
+		for _, at := range []float64{-1, 2, 1} {
+			c.Rays.Receiver.At = at
+			check()
+		}
+	}
+	c.Rays.Receiver.RefineView = true
+	c.View = &View{Center: Vec3{Z: 1}, Right: Vec3{X: 1}, Up: Vec3{Y: 1}, Width: .4, Height: .3, Pixels: [2]int{80, 60}}
+	check()
+	c.View.Center.X = .2
+	check()
+	// A changed surface grid replaces the family and its scratch dimensions.
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	check()
+	check()
+}

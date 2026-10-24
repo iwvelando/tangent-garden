@@ -232,3 +232,35 @@ func TestFarUnresolvedExpressionStaysStationary(t *testing.T) {
 		t.Fatalf("unresolved curve acquired %d samples", len(r.Base)-r.Invalid)
 	}
 }
+
+// The same far helix with its x and y written as square roots of perfect
+// squares, so no outer constant separates: the rationalized radicals must
+// keep its curvature, torsion and frame as the outer translation does.
+func TestFarRadicalHelixRetainsCurvature(t *testing.T) {
+	radius := 1.0 / 1024
+	x := fmt.Sprintf("sqrt(25000000+%.17g*cos(t)+%.17g*cos(t)^2)", 10000*radius, radius*radius)
+	y := fmt.Sprintf("-sqrt(9000000-%.17g*sin(t)+%.17g*sin(t)^2)", 6000*radius, radius*radius)
+	c := custom(x, y, fmt.Sprintf("4000+%.17g*t/2", radius), 0, 2*math.Pi)
+	c.Samples = 240
+	c.Length = radius
+	c.Diagnostics = true
+	r := scaleCurveResult(t, c)
+	if r.Invalid != 0 || r.Omitted != 0 {
+		t.Fatalf("regular helix loses samples or strips: invalid=%d omitted=%d", r.Invalid, r.Omitted)
+	}
+	check := func(at float64, k, tau *float64, normal, center *Vec3) {
+		t.Helper()
+		closeNumber(t, "curvature", k, 0.8/radius, 2e-4/radius)
+		closeNumber(t, "torsion", tau, 0.4/radius, 0.01/radius)
+		closeVec3(t, "normal", normal, Vec3{-math.Cos(at), -math.Sin(at), 0}, 2e-4)
+		want := Vec3{5000 - 0.25*radius*math.Cos(at), -3000 - 0.25*radius*math.Sin(at), 4000 + radius*at/2}
+		closeVec3(t, "center", center, want, 5e-4*radius)
+	}
+	for i := range r.Base {
+		check(2*math.Pi*float64(i)/float64(c.Samples), r.Diagnostics.Curvature[i], r.Diagnostics.Torsion[i], r.Diagnostics.Normal[i], r.Diagnostics.Center[i])
+	}
+	for _, at := range []float64{0.0317, 1.2345, 6.25} {
+		p := probeOnlyAt(t, c, at)
+		check(at, p.Curvature, p.Torsion, p.Normal, p.Center)
+	}
+}

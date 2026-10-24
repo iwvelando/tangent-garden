@@ -1,4 +1,4 @@
-// Package lift moves an engine result's large numeric arrays out of its
+// Package lift moves an engine result's large numeric and boolean arrays out of its
 // JSON, for the WebAssembly bridge (cmd/wasm): encoding numbers as text in
 // Go and parsing them back in the browser costs far more than copying their
 // float64 bytes. The page puts each array back where it was
@@ -29,7 +29,12 @@ import (
 // Vec3, [x, y, z]; "quad" a [4]float64, such as an engine4 Vec4;
 // "number" a float64; "maybe" a *float64, a number or null (NaN);
 // "point2" an engine *Vec, {x, y} or null (two NaN), as a shadow's 2D
-// study holds; "vector2" an engine Vec.
+// study holds; "vector2" an engine Vec; "flags" a bool, packed 32 per
+// float64 as an exact unsigned integer, least-significant bit first. Each
+// row starts a fresh word; unused high bits of its last word are zero.
+// "ray" is an engine3 Ray: i, j, start xyz, point xyz, end xyz, back xyz,
+// virtual, total (16 floats), with flags encoded as 0 or 1. Indices use
+// the same float64 conversion as JSON numbers on the page.
 type Place struct {
 	Path   []any  `json:"path"`
 	Kind   string `json:"kind"`
@@ -38,7 +43,7 @@ type Place struct {
 	Rows   []int  `json:"rows,omitempty"`
 }
 
-// minimum is the fewest floats worth lifting: shorter arrays stay in the
+// minimum is the fewest floats (or flags) worth lifting: shorter arrays stay in the
 // JSON, where they cost less than their place would.
 const minimum = 32
 
@@ -47,6 +52,7 @@ var errNonFinite = errors.New("non-finite number")
 
 var (
 	vec3   = reflect.TypeOf(engine3.Vec3{})
+	ray    = reflect.TypeOf(engine3.Ray{})
 	vec    = reflect.TypeOf(engine.Vec{})
 	number = reflect.TypeOf(0.0)
 )
@@ -54,6 +60,8 @@ var (
 // kind is the kind of a slice element type that lifts, or "".
 func kind(t reflect.Type) string {
 	switch t {
+	case ray:
+		return "ray"
 	case vec3:
 		// Three float64 fields, laid out as three consecutive float64.
 		return "vector"
@@ -64,6 +72,8 @@ func kind(t reflect.Type) string {
 		return "vector2"
 	case reflect.PointerTo(vec):
 		return "point2"
+	case reflect.TypeOf(false):
+		return "flags"
 	case number:
 		return "number"
 	case reflect.PointerTo(number):
@@ -80,13 +90,13 @@ func kind(t reflect.Type) string {
 	return ""
 }
 
-// Lift moves every large numeric array in the value result points to into
+// Lift moves every large numeric or boolean array in the value result points to into
 // one float64 slice, setting each to nil, so that it encodes as null, and
 // says where each goes back. It looks through structs (including embedded
 // ones, whose fields JSON lifts to the parent), pointers, slices and arrays,
 // not interfaces, which engine results do not use. It lifts slices, and
 // slices of slices, of the kinds Place lists, holding at least minimum
-// floats. A field marked omitempty loses its key when it is lifted, and the
+// floats (or flags). A field marked omitempty loses its key when it is lifted, and the
 // page adds it back. A NaN or an infinity in a lifted array refuses the
 // result, as encoding it would.
 func Lift(result any) ([]float64, []Place, error) {
@@ -94,12 +104,34 @@ func Lift(result any) ([]float64, []Place, error) {
 	if err := l.walk(reflect.ValueOf(result)); err != nil {
 		return nil, nil, err
 	}
+	// The walk counts and takes ownership of the slices first. Allocate the
+	// packed storage once, instead of copying its growing prefix for every
+	// row of a surface or receiver.
+	if l.total > 0 {
+		l.floats = make([]float64, 0, l.total)
+	}
+	for i, v := range l.arrays {
+		k := l.places[i].Kind
+		if l.places[i].Rows != nil {
+			for r := 0; r < v.Len(); r++ {
+				if err := l.items(v.Index(r), k); err != nil {
+					return nil, nil, err
+				}
+			}
+		} else if err := l.items(v, k); err != nil {
+			return nil, nil, err
+		}
+	}
 	return l.floats, l.places, nil
 }
 
 type lifter struct {
 	floats []float64
 	places []Place
+	// arrays hold each slice header after its result field is cleared,
+	// preserving traversal behavior even when result pointers are shared.
+	arrays []reflect.Value
+	total  int
 	// path is the JSON path to the value being looked through.
 	path []key
 }
@@ -129,7 +161,7 @@ func (l *lifter) walk(v reflect.Value) error {
 		}
 		fallthrough
 	case reflect.Array:
-		// Grids of flags or indices hold nothing to lift.
+		// Grids of indices hold nothing to lift.
 		if !holds(v.Type().Elem()) {
 			return nil
 		}
@@ -267,7 +299,7 @@ func (l *lifter) lift(v reflect.Value) error {
 	if per*count < minimum {
 		return nil
 	}
-	p := Place{Path: make([]any, len(l.path)), Kind: k, Offset: len(l.floats)}
+	p := Place{Path: make([]any, len(l.path)), Kind: k, Offset: l.total}
 	for j, key := range l.path {
 		if p.Path[j] = key.index; key.name != "" {
 			p.Path[j] = key.name
@@ -282,25 +314,49 @@ func (l *lifter) lift(v reflect.Value) error {
 				continue
 			}
 			p.Rows[r] = row.Len()
-			if err := l.items(row, k); err != nil {
-				return err
-			}
+			l.total += stored(k, row.Len())
 		}
 	} else {
 		p.Count = count
-		if err := l.items(v, k); err != nil {
-			return err
-		}
+		l.total += stored(k, count)
 	}
 	l.places = append(l.places, p)
+	l.arrays = append(l.arrays, reflect.ValueOf(v.Interface()))
 	v.Set(reflect.Zero(v.Type()))
 	return nil
 }
 
-// items appends the floats of a slice of kind k.
+// items appends the floats of a slice of kind k, packing flags into words.
 func (l *lifter) items(v reflect.Value, k string) error {
 	nan, start := math.NaN(), len(l.floats)
 	switch k {
+	case "ray":
+		// Pack fields explicitly: Go's int size and struct padding differ
+		// between native and WASM builds. Lift has reserved the whole reply.
+		for _, r := range v.Interface().([]engine3.Ray) {
+			virtual, total := 0.0, 0.0
+			if r.Virtual {
+				virtual = 1
+			}
+			if r.Total {
+				total = 1
+			}
+			l.floats = append(l.floats, float64(r.I), float64(r.J),
+				r.Start.X, r.Start.Y, r.Start.Z, r.Point.X, r.Point.Y, r.Point.Z,
+				r.End.X, r.End.Y, r.End.Z, r.Back.X, r.Back.Y, r.Back.Z, virtual, total)
+		}
+	case "flags":
+		flags := v.Interface().([]bool)
+		for at := 0; at < len(flags); at += 32 {
+			var word uint32
+			for bit, set := range flags[at:min(at+32, len(flags))] {
+				if set {
+					word |= 1 << uint(bit)
+				}
+			}
+			l.floats = append(l.floats, float64(word))
+		}
+		return nil
 	case "vector", "vector2", "triple", "quad", "number":
 		// Each of these lies in memory as consecutive float64 values.
 		l.floats = append(l.floats, unsafe.Slice((*float64)(v.UnsafePointer()), width(k)*v.Len())...)
@@ -350,10 +406,22 @@ func (l *lifter) items(v reflect.Value, k string) error {
 	return nil
 }
 
-// width is the number of floats in one item of kind k.
+// stored is the number of floats n items of kind k take: flags pack 32 to
+// a float, each row starting a fresh one.
+func stored(k string, n int) int {
+	if k == "flags" {
+		return (n + 31) / 32
+	}
+	return width(k) * n
+}
+
+// width is the number of floats in one numeric item, or one flag, which
+// counts as a float toward minimum.
 func width(k string) int {
 	switch k {
-	case "number", "maybe":
+	case "ray":
+		return 16
+	case "number", "maybe", "flags":
 		return 1
 	case "quad":
 		return 4

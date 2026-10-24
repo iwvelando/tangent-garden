@@ -533,3 +533,37 @@ func TestRefinementSkipsIntegratedAndSurfaceStudies(t *testing.T) {
 		t.Fatal("an integrated trajectory is refined")
 	}
 }
+
+// A densely winding path needs thousands of probes; their storage should
+// grow in batches rather than making the collector visit each point alone.
+func TestRefinementBatchesPointAllocations(t *testing.T) {
+	const n = 240
+	curve := func(t float64) Vec3 { return Vec3{math.Cos(30 * t), math.Sin(30 * t), t} }
+	points := make([]*Vec3, n+1)
+	for i := range points {
+		p := curve(2 * math.Pi * float64(i) / n)
+		points[i] = &p
+	}
+	breaks := make([]bool, n+1)
+	var path *RefinedPath
+	allocations := testing.AllocsPerRun(3, func() {
+		path, _ = refinePath(points, breaks, curve, 0, 2*math.Pi, 1e-3, refineBudget)
+	})
+	if allocations > 500 {
+		t.Errorf("%.0f allocations for %d inserted points; want at most 500", allocations, path.Inserted)
+	}
+	if path.Inserted < 1000 || path.Breaks != 0 || path.Unresolved != 0 {
+		t.Fatalf("unexpected refinement: inserted=%d breaks=%d unresolved=%d", path.Inserted, path.Breaks, path.Unresolved)
+	}
+	checkPath(t, path, points, breaks)
+	for j, p := range path.Points {
+		near(t, *p, curve(2*math.Pi*path.At[j]/n), 1e-12)
+	}
+	// A later refinement must not overwrite points retained by this path.
+	before, _ := json.Marshal(path)
+	refinePath(points, breaks, func(t float64) Vec3 { return curve(t).mul(2) }, 0, 2*math.Pi, 1e-3, refineBudget)
+	after, _ := json.Marshal(path)
+	if string(before) != string(after) {
+		t.Fatal("later refinement overwrote retained points")
+	}
+}

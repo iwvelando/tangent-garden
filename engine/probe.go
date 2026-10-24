@@ -70,13 +70,17 @@ func (q Request) probe(f, g curveFunc, out *Result) *ProbePoint {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	d := out.Diagnostics
 	if d == nil {
-		d = diagnose(f, out.Base, lo, hi)
+		d = out.diagnose(f, lo, hi)
+	}
+	df := f
+	if out.diagnostic != nil {
+		df = out.diagnostic.at
 	}
 	var t float64
 	if q.Probe.T != nil {
 		t = *q.Probe.T
 	} else {
-		t = q.lengthShare(f, d, *q.Probe.Share)
+		t = q.lengthShare(df, d, *q.Probe.Share)
 	}
 	at := &ProbePoint{T: t}
 	p := f(t)
@@ -85,9 +89,17 @@ func (q Request) probe(f, g curveFunc, out *Result) *ProbePoint {
 		return at
 	}
 	at.Point = point(p)
-	e := describe(f, t, p, v, a, lo, hi, d.radius)
+	dp := p
+	if out.diagnostic != nil {
+		dp = df(t)
+		v, a = derivatives(df, t, lo, hi)
+	}
+	e := describe(df, t, dp, v, a, lo, hi, d.radius)
+	if e.center != nil && out.diagnostic != nil {
+		e.center = point(e.center.Add(out.diagnostic.shift))
+	}
 	at.Tangent, at.Normal, at.Curvature, at.Center = e.tangent, e.normal, e.curvature, e.center
-	at.Length = q.lengthTo(f, d, t)
+	at.Length = q.lengthTo(df, d, t)
 	if composed(q.Input) {
 		at.Input = point(g(t))
 	}
