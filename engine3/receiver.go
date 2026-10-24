@@ -152,22 +152,40 @@ func (r ReceiverRequest) point(a, b float64) Vec3 {
 	return Vec3{p[0], p[1], p[2]}
 }
 
-// turn rotates v by the tilt about the window's first axis, or back again
-// when back is set, and says whether the window is turned at all: a whole
-// number of turns leaves it, and every result, exactly as untilted.
-func (r ReceiverRequest) turn(v Vec3, back bool) (Vec3, bool) {
+// receiverRotation prepares the tilt once for all rays in a raster pass.
+// Keep the original two-coordinate arithmetic and exact identity path.
+type receiverRotation struct {
+	k, j     int
+	sin, cos float64
+}
+
+func (r ReceiverRequest) rotation(back bool) receiverRotation {
 	sin, cos := sincosDegrees(r.Tilt)
-	if sin == 0 && cos == 1 {
-		return v, false
-	}
 	if back {
 		sin = -sin
 	}
 	k, _, j := r.axes()
-	var p [3]float64
-	p[0], p[1], p[2] = v.X, v.Y, v.Z
-	p[j], p[k] = cos*p[j]-sin*p[k], sin*p[j]+cos*p[k]
+	return receiverRotation{k, j, sin, cos}
+}
+
+// Keep this boundary as in the original per-ray turn: inlining permits
+// arm64 to fuse arithmetic with the caller and changes receiver bins.
+//
+//go:noinline
+func (r receiverRotation) apply(v Vec3) (Vec3, bool) {
+	if r.sin == 0 && r.cos == 1 {
+		return v, false
+	}
+	p := [3]float64{v.X, v.Y, v.Z}
+	p[r.j], p[r.k] = r.cos*p[r.j]-r.sin*p[r.k], r.sin*p[r.j]+r.cos*p[r.k]
 	return Vec3{p[0], p[1], p[2]}, true
+}
+
+// turn rotates v by the tilt about the window's first axis, or back again
+// when back is set, and says whether the window is turned at all: a whole
+// number of turns leaves it, and every result, exactly as untilted.
+func (r ReceiverRequest) turn(v Vec3, back bool) (Vec3, bool) {
+	return r.rotation(back).apply(v)
 }
 
 // window is the turned window's point with coordinates (a, b).
@@ -198,13 +216,14 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	}}
 	k, i1, i2 := rc.axes()
 	center := rc.point(rc.C1, rc.C2)
+	rotation := rc.rotation(true)
 	// cross returns where sample s's ray crosses the plane, in bins. A
 	// turned window turns the ray back instead, about the same axis, onto
 	// the untilted plane.
 	cross := func(s mirrorPoint) ([2]float64, bool) {
-		if d, ok := rc.turn(s.X.sub(center), true); ok {
+		if d, ok := rotation.apply(s.X.sub(center)); ok {
 			s.X = center.add(d)
-			s.R, _ = rc.turn(s.R, true)
+			s.R, _ = rotation.apply(s.R)
 		}
 		d := component(s.R, k)
 		lambda := (rc.At - component(s.X, k)) / d
@@ -237,7 +256,6 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	// are traced by outgoing, where that grid puts them.
 	fu, fv, step := nu<<levels, nv<<levels, 1<<levels
 	traces := cache.receiverGrid(nu, nv, levels)
-	type cell struct{ i, j, side int }
 	// Each column of the finer grid is held once a point on it is traced.
 	points := traces.landingGrid(fu + 1)
 	point := func(i, j int) receiverLanding {
@@ -258,7 +276,7 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 		points[i][j] = l
 		return l
 	}
-	corners := func(c cell) [4]receiverLanding {
+	corners := func(c receiverCell) [4]receiverLanding {
 		return [4]receiverLanding{point(c.i, c.j), point(c.i+c.side, c.j), point(c.i+c.side, c.j+c.side), point(c.i, c.j+c.side)}
 	}
 	// A cell splits where its light lands near the window and its corners'
@@ -266,7 +284,7 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	// others do not: at the edge of the light, of total internal reflection
 	// or of the rays that reach the plane.
 	window, window2 := float64(n), float64(ny)
-	splits := func(c cell) bool {
+	splits := func(c receiverCell) bool {
 		at := corners(c)
 		lands := 0
 		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
@@ -293,10 +311,10 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	}
 	// Each level splits every cell that needs it before the next begins, so
 	// a budget that runs out leaves the cells evenly refined.
-	cells := make([]cell, 0, nu*nv)
+	cells := traces.cells(0, nu*nv)[:0]
 	for i := 0; i < nu; i++ {
 		for j := 0; j < nv; j++ {
-			cells = append(cells, cell{i * step, j * step, step})
+			cells = append(cells, receiverCell{i * step, j * step, step})
 		}
 	}
 	count := nu * nv
@@ -304,7 +322,7 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	// the next queue while appending repeatedly copies its largest levels.
 	// Compact unsplit cells in their old queue and retain each level apart:
 	// this also avoids copying the final (largest) queue into the leaves.
-	var leaves [maxReceiverRefine + 1][]cell
+	var leaves [maxReceiverRefine + 1][]receiverCell
 	for level := 0; level < levels; level++ {
 		split := 0
 		for i, c := range cells {
@@ -319,12 +337,12 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 				out.Exhausted = true
 			}
 		}
-		next := make([]cell, 0, 4*split)
+		next := traces.cells(level+1, 4*split)[:0]
 		whole := cells[:0]
 		for _, c := range cells {
 			if c.side < 0 {
 				h := -c.side / 2
-				next = append(next, cell{c.i, c.j, h}, cell{c.i + h, c.j, h}, cell{c.i + h, c.j + h, h}, cell{c.i, c.j + h, h})
+				next = append(next, receiverCell{c.i, c.j, h}, receiverCell{c.i + h, c.j, h}, receiverCell{c.i + h, c.j + h, h}, receiverCell{c.i, c.j + h, h})
 			} else {
 				whole = append(whole, c)
 			}

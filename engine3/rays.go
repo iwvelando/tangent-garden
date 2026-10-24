@@ -349,8 +349,6 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool, cache *rayC
 	if cache != nil {
 		out = cloneRayGeometry(out)
 	}
-	nu, nv := q.USamples, q.VSamples
-	reach := focalReach * scale
 	// Fitting reads the private families. Only the outer list is extended.
 	families := append([][]*Vec3(nil), g.families...)
 	if r.Receiver.Plane != "none" {
@@ -363,19 +361,7 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool, cache *rayC
 	}
 	bounds := fit(families...)
 	result := Result{Bounds: bounds, Radius: bounds.Radius, Breaks: []bool{}, Base: []*Vec3{}, Minus: []*Vec3{}, Plus: []*Vec3{}, Mesh: emptyMesh(), Rulings: []Ruling{}, Rays: out, surfaceScale: scale}
-	switch {
-	case light:
-		result.Probe = lightProbe(q, r, samples, reach)
-	case surfaceProbe:
-		patch := grid2[surfacePoint](nu+1, nv+1)
-		for i := range patch {
-			for j := range patch[i] {
-				u, v := q.at(i, j)
-				patch[i][j] = q.point(u, v, scale)
-			}
-		}
-		result.Probe = patchProbe(q, patch, scale)
-	}
+	result.Probe = cache.diagnostics(q, r, samples, scale, surfaceProbe, light)
 	return result, nil
 }
 

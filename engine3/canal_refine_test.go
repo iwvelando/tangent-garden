@@ -1,6 +1,8 @@
 package engine3
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
 	"reflect"
 	"testing"
@@ -269,5 +271,59 @@ func TestMeridiansRefinedOnlyWhenAsked(t *testing.T) {
 	c.Canal.Meridians = 0
 	if r := refinedStudy(t, c); r.Adaptive.Meridians != nil {
 		t.Fatal("no meridians, yet refined ones")
+	}
+}
+
+// Guard the existing spring before changing storage shared by all refined
+// spatial curves. Its meridians and mesh keep their original subdivisions.
+func TestSpringRefinementBatchesAllocations(t *testing.T) {
+	c := spatialPresets(t)["A cord twisted round a spring"]
+	var r Result
+	allocations := testing.AllocsPerRun(3, func() {
+		var err error
+		r, err = Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	// Roughly 76,000 individual allocations preceded batching. Leave headroom
+	// for compiler and map changes while rejecting a return to per-probe work.
+	if allocations > 8000 {
+		t.Errorf("%.0f allocations for the refined spring; want at most 8000", allocations)
+	}
+	if len(r.Mesh.Triangles)/3 != 92688 {
+		t.Fatalf("%d mesh triangles, want 92688", len(r.Mesh.Triangles)/3)
+	}
+	for k, want := range []int{1588, 1585, 1578, 1580, 1585, 1585} {
+		p := r.Adaptive.Meridians[k]
+		if p.Inserted != want || p.Breaks != 0 || p.Unresolved != 0 || p.Exhausted {
+			t.Fatalf("meridian %d: inserted=%d breaks=%d unresolved=%d exhausted=%v", k, p.Inserted, p.Breaks, p.Unresolved, p.Exhausted)
+		}
+		checkPath(t, p, r.Canal.Meridians[k], r.Canal.Breaks)
+	}
+	before, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Frame.Twist = 9
+	if _, err := Compute(c); err != nil {
+		t.Fatal(err)
+	}
+	after, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("another study overwrote retained geometry")
+	}
+}
+
+func BenchmarkSpringRefinement(b *testing.B) {
+	c := spatialPresets(b)["A cord twisted round a spring"]
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := Compute(c); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

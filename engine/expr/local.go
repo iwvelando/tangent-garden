@@ -9,7 +9,9 @@ import (
 // from its moving part for numerical differentiation. The returned expression
 // plus origin equals the entered expression in real arithmetic. Only outer
 // additions, subtractions, negations and multiplication or division by a
-// constant are separated; constants inside other operations stay in place.
+// constant are separated. A square root with a positive finite constant
+// radicand part uses its rationalized displacement; constants inside other
+// nonlinear operations stay in place.
 // Positions should still use ParseWithParameter, preserving their rounding
 // and all domain checks in the entered expression.
 func ParseLocalWithParameter(s string, a float64) (local Expr, origin float64, err error) {
@@ -52,6 +54,17 @@ func localTree(t *tree) (*tree, float64) {
 		if t.right.op == opConst && t.right.value != 0 {
 			l, o := localTree(t.left)
 			return binary(opDiv, l, t.right), o / t.right.value
+		}
+	case opSqrt:
+		l, o := localTree(t.left)
+		if o > 0 && !math.IsInf(o, 0) {
+			origin := math.Sqrt(o)
+			// sqrt(o+l) - sqrt(o) = l / (sqrt(o+l) + sqrt(o)).
+			// Evaluate the entered radical as well, so a negative or
+			// overflowing radicand keeps its original domain behavior.
+			// Its tree is unmodified: nested roots grow at most
+			// quadratically within the parser's existing size bounds.
+			return &tree{op: opSqrtDelta, left: l, right: t, value: origin}, origin
 		}
 	}
 	return t, 0

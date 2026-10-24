@@ -103,19 +103,8 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 	// before that translation is added, keeping positions exactly as entered.
 	// Ordinary studies keep their original numerical path bit for bit.
 	if size > 0 && f((q.Min+q.Max)/2).norm() > 8*size {
-		var local [3]expr.Expr
-		var shifts [3]float64
-		parsed := true
-		for i, s := range []string{q.X, q.Y, q.Z} {
-			// The same expressions and parameter were validated above; an
-			// error here keeps the entered expressions' stencil.
-			var err error
-			local[i], shifts[i], err = expr.ParseLocalWithParameter(s, q.A)
-			parsed = parsed && err == nil
-		}
-		origin := Vec3{shifts[0], shifts[1], shifts[2]}
-		if parsed && origin.valid() && origin.norm() > 8*size {
-			moving := sampled(func(t float64) Vec3 { return Vec3{local[0](t), local[1](t), local[2](t)} }, q.Min, q.Max, span, u)
+		if local, _, ok := q.local(size); ok {
+			moving := sampled(local, q.Min, q.Max, span, u)
 			evaluate = func(t float64) (Vec3, Vec3, Vec3, bool) {
 				r := f(t)
 				_, v, a, ok := moving(t)
@@ -124,6 +113,25 @@ func compile(c Request, integrated evaluation) (evaluation, float64, float64, bo
 		}
 	}
 	return evaluate, q.Min, q.Max, false, nil
+}
+
+// local separates a far expression curve's explicit translation. The caller
+// still evaluates entered positions and domain checks with the original curve.
+func (q Curve) local(size float64) (func(float64) Vec3, Vec3, bool) {
+	if size <= 0 {
+		return nil, Vec3{}, false
+	}
+	var local [3]expr.Expr
+	var shifts [3]float64
+	for i, s := range []string{q.X, q.Y, q.Z} {
+		var err error
+		local[i], shifts[i], err = expr.ParseLocalWithParameter(s, q.A)
+		if err != nil {
+			return nil, Vec3{}, false
+		}
+	}
+	origin := Vec3{shifts[0], shifts[1], shifts[2]}
+	return func(t float64) Vec3 { return Vec3{local[0](t), local[1](t), local[2](t)} }, origin, origin.valid() && origin.norm() > 8*size
 }
 
 // units are a curve's own size, and the speed, acceleration and third
@@ -201,9 +209,28 @@ func extent(f func(float64) Vec3, lo, hi float64) float64 {
 // rounding.
 func sampled(f func(float64) Vec3, lo, hi, span float64, u units) evaluation {
 	return func(t float64) (Vec3, Vec3, Vec3, bool) {
-		r := f(t)
-		v, a := derivatives(f, r, t, lo, hi, span*1e-4)
-		v2, a2 := derivatives(f, r, t, lo, hi, span*5e-5)
+		// At most eleven positions: the center and two five-point stencils.
+		// Reuse only identical parameter bits, including the sign of zero;
+		// a nearby rounded parameter still evaluates the expression itself.
+		// Scratch belongs to this call, never the evaluator or another frame.
+		var parameters [11]uint64
+		var positions [11]Vec3
+		count := 0
+		at := func(s float64) Vec3 {
+			bits := math.Float64bits(s)
+			for i := 0; i < count; i++ {
+				if parameters[i] == bits {
+					return positions[i]
+				}
+			}
+			p := f(s)
+			parameters[count], positions[count] = bits, p
+			count++
+			return p
+		}
+		r := at(t)
+		v, a := derivatives(at, r, t, lo, hi, span*1e-4)
+		v2, a2 := derivatives(at, r, t, lo, hi, span*5e-5)
 		stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*math.Max(v.norm(), v2.norm())+1e-8*u.speed
 		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(u.acceleration, v.norm()/span) {
 			a = Vec3{math.NaN(), 0, 0}
@@ -218,11 +245,31 @@ func sampled(f func(float64) Vec3, lo, hi, span float64, u units) evaluation {
 func derivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64) (Vec3, Vec3) {
 	start := math.Max(lo, math.Min(t-2*h, hi-4*h))
 	a := (t - start) / h
+	weights := centeredWeights
+	if a != 2 {
+		weights = stencilWeights(a)
+	}
 	var d, dd Vec3
 	for j := 0; j < 5; j++ {
-		// The basis polynomial's coefficients, lowest first, built in place
-		// without allocating: m of them are in use.
-		coeff := [5]float64{1}
+		v := f(start + float64(j)*h).sub(origin)
+		d = d.add(v.mul(weights[j][0] / h))
+		dd = dd.add(v.mul(weights[j][1] / h / h))
+	}
+	return d, dd
+}
+
+// A stencil centered exactly on its middle node has the same weights
+// at every parameter and step. Build them once by the original arithmetic;
+// even a one-bit departure from a = 2 uses its own weights. This table is
+// immutable, so concurrent evaluators share no scratch.
+var centeredWeights = stencilWeights(2)
+
+func stencilWeights(a float64) (weights [5][2]float64) {
+	for j := 0; j < 5; j++ {
+		// Only degrees 0–2 contribute to the first two derivatives.
+		// Higher terms never feed a lower coefficient, so omit their
+		// construction while retaining each used operation's order.
+		coeff := [3]float64{1}
 		m := 1
 		den := 1.0
 		for k := 0; k < 5; k++ {
@@ -230,20 +277,20 @@ func derivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64) (Vec3,
 				continue
 			}
 			b := a - float64(k)
-			var next [5]float64
+			var next [3]float64
 			for n, c := range coeff[:m] {
 				next[n] += c * b
-				next[n+1] += c
+				if n+1 < len(next) {
+					next[n+1] += c
+				}
 			}
 			coeff = next
-			m++
+			m = min(m+1, len(coeff))
 			den *= float64(j - k)
 		}
-		v := f(start + float64(j)*h).sub(origin)
-		d = d.add(v.mul(coeff[1] / den / h))
-		dd = dd.add(v.mul(2 * coeff[2] / den / h / h))
+		weights[j] = [2]float64{coeff[1] / den, 2 * coeff[2] / den}
 	}
-	return d, dd
+	return weights
 }
 
 // Robust bounds are fitted independently per point family before unioning.
@@ -260,8 +307,26 @@ func fitReach(families [][]*Vec3, reach [][]Vec3) Bounds {
 	high := low.mul(-1)
 	found := false
 	var reached []Vec3
+	// Only the current family's coordinates are sorted. Reserve one
+	// contiguous scratch for the largest live family, not its grid size:
+	// caustic sheets can be mostly gaps. Reuse it across shorter families
+	// without retaining coordinates or changing any supplied point.
+	largest := 0
+	for _, family := range families {
+		n := 0
+		for _, p := range family {
+			if p != nil {
+				n++
+			}
+		}
+		largest = max(largest, n)
+	}
+	coordinates := make([]float64, 3*largest)
 	for k, family := range families {
-		values := [3][]float64{}
+		var values [3][]float64
+		for axis := range values {
+			values[axis] = coordinates[axis*largest : axis*largest : (axis+1)*largest]
+		}
 		for _, p := range family {
 			if p != nil {
 				values[0] = append(values[0], p.X)
