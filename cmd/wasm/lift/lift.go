@@ -32,6 +32,9 @@ import (
 // study holds; "vector2" an engine Vec; "flags" a bool, packed 32 per
 // float64 as an exact unsigned integer, least-significant bit first. Each
 // row starts a fresh word; unused high bits of its last word are zero.
+// "ray" is an engine3 Ray: i, j, start xyz, point xyz, end xyz, back xyz,
+// virtual, total (16 floats), with flags encoded as 0 or 1. Indices use
+// the same float64 conversion as JSON numbers on the page.
 type Place struct {
 	Path   []any  `json:"path"`
 	Kind   string `json:"kind"`
@@ -49,6 +52,7 @@ var errNonFinite = errors.New("non-finite number")
 
 var (
 	vec3   = reflect.TypeOf(engine3.Vec3{})
+	ray    = reflect.TypeOf(engine3.Ray{})
 	vec    = reflect.TypeOf(engine.Vec{})
 	number = reflect.TypeOf(0.0)
 )
@@ -56,6 +60,8 @@ var (
 // kind is the kind of a slice element type that lifts, or "".
 func kind(t reflect.Type) string {
 	switch t {
+	case ray:
+		return "ray"
 	case vec3:
 		// Three float64 fields, laid out as three consecutive float64.
 		return "vector"
@@ -324,6 +330,21 @@ func (l *lifter) lift(v reflect.Value) error {
 func (l *lifter) items(v reflect.Value, k string) error {
 	nan, start := math.NaN(), len(l.floats)
 	switch k {
+	case "ray":
+		// Pack fields explicitly: Go's int size and struct padding differ
+		// between native and WASM builds. Lift has reserved the whole reply.
+		for _, r := range v.Interface().([]engine3.Ray) {
+			virtual, total := 0.0, 0.0
+			if r.Virtual {
+				virtual = 1
+			}
+			if r.Total {
+				total = 1
+			}
+			l.floats = append(l.floats, float64(r.I), float64(r.J),
+				r.Start.X, r.Start.Y, r.Start.Z, r.Point.X, r.Point.Y, r.Point.Z,
+				r.End.X, r.End.Y, r.End.Z, r.Back.X, r.Back.Y, r.Back.Z, virtual, total)
+		}
 	case "flags":
 		flags := v.Interface().([]bool)
 		for at := 0; at < len(flags); at += 32 {
@@ -398,6 +419,8 @@ func stored(k string, n int) int {
 // counts as a float toward minimum.
 func width(k string) int {
 	switch k {
+	case "ray":
+		return 16
 	case "number", "maybe", "flags":
 		return 1
 	case "quad":

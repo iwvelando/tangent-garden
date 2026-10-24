@@ -25,6 +25,14 @@ func restore(t *testing.T, text []byte, floats []float64, places []Place) any {
 	}
 	item := func(kind string, at int) (any, int) {
 		switch kind {
+		case "ray":
+			out := map[string]any{"i": floats[at], "j": floats[at+1]}
+			for k, name := range []string{"start", "point", "end", "back"} {
+				i := at + 2 + 3*k
+				out[name] = map[string]any{"x": floats[i], "y": floats[i+1], "z": floats[i+2]}
+			}
+			out["virtual"], out["total"] = floats[at+14] == 1, floats[at+15] == 1
+			return out, at + 16
 		case "point", "vector":
 			x, y, z := floats[at], floats[at+1], floats[at+2]
 			if kind == "point" && math.IsNaN(x) {

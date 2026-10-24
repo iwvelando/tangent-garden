@@ -107,6 +107,7 @@ A new or renamed configuration, layer or animation field needs:
 [Architecture](architecture.md) describes the typed mesh reply (`cmd/wasm/mesh.go`) and the lifted arrays (`cmd/wasm/lift`).
 
 - Bulk geometry other than a mesh should be a slice, or a slice of slices, of a kind `cmd/wasm/lift` moves out of the JSON: `engine3.Vec3`, `*engine3.Vec3` (nil for a gap), `[3]float64` or `[4]float64` (the 4D vectors), `float64`, `*float64`, or `bool` (packed flags). Then it reaches the page in the float64 buffer and is restored in place with no change on either side. A slice of structs of numbers, or a new bridge function that returns plain JSON, puts the cost back.
+- Representative optical rays (`engine3.Ray`) lift too, packed as 16 floats per ray with explicit indices, coordinates and flags; see [architecture](architecture.md). Other structs still travel as JSON unless a transport kind is added.
 - A new kind needs a case in both `lift.go` and `web/lifted.ts`, and in their tests.
 - A 2D result still travels as plain JSON, because it is small (under 3 MB, a few percent of most presets' time). A 2D array that grows large needs `engine.Vec` added as a kind before the planar bridge can lift it.
 - Time a transport or engine change against the deployed site with `make bench ARGS="--compare <site>"` (3D only) or `make preset-hashes ARGS="--compare <site> --only <name>"` (any notebook), never by headless frame rate. In WASM, allocation costs more than arithmetic, so profile allocations first ([architecture](architecture.md), **Measuring**).

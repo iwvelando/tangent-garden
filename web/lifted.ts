@@ -12,6 +12,8 @@
 // per float64 as an exact unsigned integer, low bit first, each row starting
 // a fresh word. An array of arrays has rows, each row's length,
 // -1 for null; any other array has count.
+// A "ray" is a representative spatial ray: i, j, start xyz, point xyz,
+// end xyz, back xyz, virtual, total, with flags encoded as 0 or 1 (16 floats).
 export type Place = {
   path: (string | number)[];
   kind:
@@ -23,6 +25,7 @@ export type Place = {
     | "quad"
     | "number"
     | "maybe"
+    | "ray"
     | "flags";
   offset: number;
   count?: number;
@@ -34,6 +37,7 @@ export type Place = {
 export type Lifted = { floats: Float64Array; places: string };
 
 const width = {
+  ray: 16,
   point: 3,
   vector: 3,
   point2: 2,
@@ -53,6 +57,19 @@ function items(
 ) {
   const out: unknown[] = new Array(n);
   switch (kind) {
+    case "ray":
+      for (let k = 0; k < n; k++, at += 16)
+        out[k] = {
+          i: floats[at],
+          j: floats[at + 1],
+          start: { x: floats[at + 2], y: floats[at + 3], z: floats[at + 4] },
+          point: { x: floats[at + 5], y: floats[at + 6], z: floats[at + 7] },
+          end: { x: floats[at + 8], y: floats[at + 9], z: floats[at + 10] },
+          back: { x: floats[at + 11], y: floats[at + 12], z: floats[at + 13] },
+          virtual: floats[at + 14] === 1,
+          total: floats[at + 15] === 1,
+        };
+      break;
     case "flags":
       for (let k = 0; k < n; k++)
         out[k] = ((floats[at + (k >>> 5)] >>> (k & 31)) & 1) !== 0;
