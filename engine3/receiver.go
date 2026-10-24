@@ -237,7 +237,6 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	// are traced by outgoing, where that grid puts them.
 	fu, fv, step := nu<<levels, nv<<levels, 1<<levels
 	traces := cache.receiverGrid(nu, nv, levels)
-	type cell struct{ i, j, side int }
 	// Each column of the finer grid is held once a point on it is traced.
 	points := traces.landingGrid(fu + 1)
 	point := func(i, j int) receiverLanding {
@@ -258,7 +257,7 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 		points[i][j] = l
 		return l
 	}
-	corners := func(c cell) [4]receiverLanding {
+	corners := func(c receiverCell) [4]receiverLanding {
 		return [4]receiverLanding{point(c.i, c.j), point(c.i+c.side, c.j), point(c.i+c.side, c.j+c.side), point(c.i, c.j+c.side)}
 	}
 	// A cell splits where its light lands near the window and its corners'
@@ -266,7 +265,7 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	// others do not: at the edge of the light, of total internal reflection
 	// or of the rays that reach the plane.
 	window, window2 := float64(n), float64(ny)
-	splits := func(c cell) bool {
+	splits := func(c receiverCell) bool {
 		at := corners(c)
 		lands := 0
 		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
@@ -293,10 +292,10 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	}
 	// Each level splits every cell that needs it before the next begins, so
 	// a budget that runs out leaves the cells evenly refined.
-	cells := make([]cell, 0, nu*nv)
+	cells := traces.cells(0, nu*nv)[:0]
 	for i := 0; i < nu; i++ {
 		for j := 0; j < nv; j++ {
-			cells = append(cells, cell{i * step, j * step, step})
+			cells = append(cells, receiverCell{i * step, j * step, step})
 		}
 	}
 	count := nu * nv
@@ -304,7 +303,7 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 	// the next queue while appending repeatedly copies its largest levels.
 	// Compact unsplit cells in their old queue and retain each level apart:
 	// this also avoids copying the final (largest) queue into the leaves.
-	var leaves [maxReceiverRefine + 1][]cell
+	var leaves [maxReceiverRefine + 1][]receiverCell
 	for level := 0; level < levels; level++ {
 		split := 0
 		for i, c := range cells {
@@ -319,12 +318,12 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 				out.Exhausted = true
 			}
 		}
-		next := make([]cell, 0, 4*split)
+		next := traces.cells(level+1, 4*split)[:0]
 		whole := cells[:0]
 		for _, c := range cells {
 			if c.side < 0 {
 				h := -c.side / 2
-				next = append(next, cell{c.i, c.j, h}, cell{c.i + h, c.j, h}, cell{c.i + h, c.j + h, h}, cell{c.i, c.j + h, h})
+				next = append(next, receiverCell{c.i, c.j, h}, receiverCell{c.i + h, c.j, h}, receiverCell{c.i + h, c.j + h, h}, receiverCell{c.i, c.j + h, h})
 			} else {
 				whole = append(whole, c)
 			}
