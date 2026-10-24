@@ -48,7 +48,9 @@ Apply [AGENTS.md's final verification requirements and exceptions](../AGENTS.md#
 
 ## Communication and completion
 
-Keep the working record of hypotheses, commands and evidence in internal notes or a concise artifact, outside the tracked source unless requested. Progress messages emphasize a finding, decision, failure or meaningful stage change. Avoid repeatedly narrating green test counts or remaining CI shards. If a higher-priority instruction requires an update during an unchanged wait, keep it to a brief status; do not start extra checks just to produce news. A repository skill cannot override that external update cadence.
+Do not commit PR-specific review reports, validation guides, handoff notes, mutation logs, or other review artifacts. Keep working records and human validation instructions outside the repository or in an ignored local directory such as `.codex/`, and link them in the chat handoff when useful. Do not add files such as `docs/prNNN-validation.md`. Durable mathematical, usage, architecture and contributor documentation still belongs in the repository when the change requires an update; PR-specific evidence belongs in the PR description.
+
+Progress messages emphasize a finding, decision, failure or meaningful stage change. Avoid repeatedly narrating green test counts or remaining CI shards. If a higher-priority instruction requires an update during an unchanged wait, keep it to a brief status; do not start extra checks just to produce news. A repository skill cannot override that external update cadence.
 
 Lead the final response with the verdict, material changes, verification status and any remaining user action. Link detailed evidence and requested validation instructions instead of repeating the command log. Include material uncertainty and deferred work even when keeping the response short.
 
