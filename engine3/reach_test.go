@@ -3,6 +3,8 @@ package engine3
 import (
 	"encoding/json"
 	"math"
+	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -345,5 +347,75 @@ func TestReachNeedsRefinement(t *testing.T) {
 	y, _ := json.Marshal(framed)
 	if string(x) != string(y) {
 		t.Fatal("framing the reach without refinement changes the result")
+	}
+}
+
+// Large caustic sheets are fitted one family at a time. Sorting needs only
+// three coordinates per live point in the largest family, regardless of
+// how many sheets there are or how many missing points their grids hold.
+func TestFitScratchAllocationBudget(t *testing.T) {
+	families := make([][]*Vec3, 7)
+	for k, n := range []int{2048, 8192, 4096, 512, 0, 32768, 1024} {
+		families[k] = make([]*Vec3, n)
+		if k == 5 { // An entirely missing sheet needs no coordinate storage.
+			continue
+		}
+		for i := range families[k] {
+			families[k][i] = &Vec3{float64(i), 0, float64(k)}
+		}
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	got := fitReach(families, nil)
+	runtime.ReadMemStats(&after)
+	// The union is [0,8191] × {0} × [0,6]. The origin is its
+	// furthest supplied point from the center.
+	center := Vec3{8191.0 / 2, 0, 3}
+	want := Bounds{center, center.norm()}
+	if got != want {
+		t.Fatalf("framing changed: %+v, want %+v", got, want)
+	}
+	// 192 KiB holds three 8192-point coordinates. Allow 64 KiB for
+	// allocator rounding and incidental work, well below grown arrays
+	// per sheet or storage sized from the all-missing 32768-point grid.
+	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 256<<10 {
+		t.Fatalf("framing allocated %d bytes, want at most 256 KiB", bytes)
+	}
+}
+
+// A long first family leaves sorted coordinates in the scratch. Shorter,
+// empty and gapped families must keep their own fences and reach; none
+// may inherit the preceding family's coordinates or reorder input points.
+func TestFitScratchPreservesFamilies(t *testing.T) {
+	families := [][]*Vec3{
+		{{0, 0, 0}, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {4, 0, 0}, {5, 0, 0}, {6, 0, 0}, {7, 0, 0}, {1e6, 0, 0}},
+		nil,
+		{nil, {100, 0, 0}, nil, {102, 0, 0}},
+		{nil, nil},
+	}
+	reach := [][]Vec3{
+		{{8, 0, 0}, {2e6, 0, 0}, {4, 1, 0}},
+		{{-1e6, 0, 0}},
+		{{110, 0, 0}},
+		{{3e6, 0, 0}},
+	}
+	before, err := json.Marshal(families)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first family's x outlier is trimmed, its off-axis reach is
+	// valid on the zero-spread y axis, and the distant short family
+	// keeps its reach. The sample at 1e6 is outside the final union.
+	want := Bounds{Vec3{55, .5, 0}, math.Sqrt(55*55 + .25)}
+	if got := fitReach(families, reach); got != want {
+		t.Fatalf("framing changed: %+v, want %+v", got, want)
+	}
+	after, _ := json.Marshal(families)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("framing changed the supplied points or gaps")
+	}
+	if got := fitReach([][]*Vec3{nil, {nil}}, reach); got != (Bounds{Vec3{}, 1}) {
+		t.Fatalf("empty families acquired bounds: %+v", got)
 	}
 }
