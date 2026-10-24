@@ -1898,9 +1898,9 @@ func TestReceiverPreparedRotationAxes(t *testing.T) {
 }
 
 // The moving receiver's coarse landing grid is private scratch, just like
-// its finer landing columns. At 216 × 60 cells it costs about 0.37 MB each
-// time it is allocated. Keep a warm unrefined raster under 0.4 MB: that
-// leaves room for its 0.31 MB cell queue and independent 8 × 8 output.
+// its finer landing columns. At 216 × 60 cells a fresh grid costs over
+// 0.3 MB. With the cell queue also reused, allow 64 KB for the independent
+// 8 × 8 output and small per-pass scratch, excluding a fresh landing grid.
 func TestReceiverBaseLandingAllocationBudget(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 8, 0
@@ -1919,8 +1919,10 @@ func TestReceiverBaseLandingAllocationBudget(t *testing.T) {
 	out := compute()
 	runtime.ReadMemStats(&after)
 	runtime.KeepAlive(out)
-	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 400_000 {
-		t.Fatalf("warm receiver raster allocated %d bytes, want at most 0.4 MB", bytes)
+	bytes := after.TotalAlloc - before.TotalAlloc
+	t.Logf("warm receiver raster allocated %d bytes", bytes)
+	if bytes > 64_000 {
+		t.Fatalf("warm receiver raster allocated %d bytes, want at most 64 KB", bytes)
 	}
 }
 
