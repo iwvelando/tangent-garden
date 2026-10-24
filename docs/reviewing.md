@@ -44,7 +44,17 @@ The review report records:
 - Checks personally run, the failing cases reproduced, mutation survivors when tested, and author-reported checks clearly identified as such.
 - Unresolved questions, deferred checks and the stage owning final verification; state when that stage is unassigned.
 
-Apply [AGENTS.md's final verification requirements and exceptions](../AGENTS.md#verification). Resource scheduling and test quality are separate: honor an authorized targeted-only phase, then have the designated integration or review stage run final checks on the final revision in a quiet slot. A review verdict and completion of final verification are separate statements.
+Apply [AGENTS.md's final verification requirements and exceptions](../AGENTS.md#verification), including [Verification-only follow-ups](contributing.md#verification-only-follow-ups) after a successful full run. Resource scheduling and test quality are separate: honor an authorized targeted-only phase, then have the designated integration or review stage complete final verification in a quiet slot. A review verdict and completion of final verification are separate statements.
+
+## Communication and completion
+
+Keep the working record of hypotheses, commands and evidence in internal notes or a concise artifact, outside the tracked source unless requested. Progress messages emphasize a finding, decision, failure or meaningful stage change. Avoid repeatedly narrating green test counts or remaining CI shards. If a higher-priority instruction requires an update during an unchanged wait, keep it to a brief status; do not start extra checks just to produce news. A repository skill cannot override that external update cadence.
+
+Lead the final response with the verdict, material changes, verification status and any remaining user action. Link detailed evidence and requested validation instructions instead of repeating the command log. Include material uncertainty and deferred work even when keeping the response short.
+
+For an authorized takeover, update the PR description before handing it back: replace stale instructions to run deferred checks with their actual status, identify the reviewed and tested revisions, and distinguish author-reported evidence, personally performed checks and CI results. A green CI run does not establish that a local command ran. Keep unfinished checks and their owner explicit. If updating the PR is outside the task's authorization, supply the corrected handoff text to the user. A human validation guide complements this status; it does not replace it.
+
+Stop when material review hypotheses are resolved or clearly qualified, required verification is complete or explicitly deferred under the user's authorization, and the handoff is accurate. Additional experiments need a concrete unresolved risk or new evidence. Pending required CI remains pending verification; use bounded waits and avoid repeating unaffected local checks while it runs. A sound implementation needs no edits merely to demonstrate review effort.
 
 ## Evaluating the review procedure
 
