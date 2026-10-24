@@ -245,7 +245,7 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 		return receiverLanding{p, true, ok, true}
 	}
 	nu, nv, levels := q.USamples, q.VSamples, rc.Refine
-	base := grid2[receiverLanding](nu+1, nv+1)
+	base := cache.receiverBase(nu, nv)
 	for i := range base {
 		for j := range base[i] {
 			base[i][j] = land(samples[i][j])

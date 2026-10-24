@@ -1896,3 +1896,75 @@ func TestReceiverPreparedRotationAxes(t *testing.T) {
 		}
 	}
 }
+
+// The moving receiver's coarse landing grid is private scratch, just like
+// its finer landing columns. At 216 × 60 cells a fresh grid costs over
+// 0.3 MB. With the cell queue also reused, allow 64 KB for the independent
+// 8 × 8 output and small per-pass scratch, excluding a fresh landing grid.
+func TestReceiverBaseLandingAllocationBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 8, 0
+	cache := &rayCache{}
+	geometry, err := cache.geometryFor(c.Surface, c.Rays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compute := func() *Receiver {
+		return c.Surface.receiveRaster(c.Rays, geometry.samples, geometry.scale, cache, nil)
+	}
+	compute()
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	out := compute()
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(out)
+	bytes := after.TotalAlloc - before.TotalAlloc
+	t.Logf("warm receiver raster allocated %d bytes", bytes)
+	if bytes > 64_000 {
+		t.Fatalf("warm receiver raster allocated %d bytes, want at most 64 KB", bytes)
+	}
+}
+
+// Crossings must be recomputed even when their storage survives a frame,
+// including a move behind the light and a view inset with different bins.
+func TestReceiverBaseLandingsStayCurrent(t *testing.T) {
+	c := receive(flat(1.5, parallel(0, -60)), "z", 1, 0, .2, 1, 16)
+	var worker Engine
+	check := func() {
+		t.Helper()
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatal("landing scratch retained previous crossings")
+		}
+		if c.View != nil && got.Rays.Receiver.Inset == nil {
+			t.Fatal("view inset was not exercised")
+		}
+		accounted(t, got.Rays.Receiver)
+	}
+	check()
+	check()
+	for _, refine := range []int{0, 2, 0} {
+		c.Rays.Receiver.Refine = refine
+		for _, at := range []float64{-1, 2, 1} {
+			c.Rays.Receiver.At = at
+			check()
+		}
+	}
+	c.Rays.Receiver.RefineView = true
+	c.View = &View{Center: Vec3{Z: 1}, Right: Vec3{X: 1}, Up: Vec3{Y: 1}, Width: .4, Height: .3, Pixels: [2]int{80, 60}}
+	check()
+	c.View.Center.X = .2
+	check()
+	// A changed surface grid replaces the family and its scratch dimensions.
+	c.Surface.USamples, c.Surface.VSamples = 24, 12
+	check()
+	check()
+}
