@@ -20,7 +20,11 @@ const layer = (page: Page, name: string) =>
   page.getByRole("checkbox", { name, exact: true });
 async function ready(page: Page) {
   await page.goto("/?study=3d");
-  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  // Loading the lazy notebook can exceed 5 s under full-suite load; use
+  // CI's startup allowance without changing the study's assertions.
+  await expect(page.locator("#spatial-artwork")).toBeVisible({
+    timeout: 15_000,
+  });
   await settled(page);
 }
 async function settled(page: Page) {

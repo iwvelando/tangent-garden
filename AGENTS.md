@@ -25,6 +25,8 @@ Before making one of these changes, read its section of `docs/contributing.md`. 
 
 When reviewing a PR, follow [Reviewing changes](docs/reviewing.md). The repository's [tangent-garden-review skill](.agents/skills/tangent-garden-review/SKILL.md) provides a focused entry point for a fresh-context review; the same procedure applies without skill support. Independently assess the approach and affected callers, and distinguish demonstrated failures from coverage gaps and optional cleanup.
 
+Do not commit PR-specific review reports, validation guides, handoff notes, or experiment logs. Keep them outside the repository or in an ignored local directory such as `.codex/`; put final review and verification status in the PR description. Update durable project documentation when the change requires it, without adding a PR review document.
+
 ## Language
 
 Use American English spelling in user-facing text, documentation, comments, and new identifiers. Preserve external API names, proper names, and verbatim quotations.
