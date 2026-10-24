@@ -122,11 +122,19 @@ func reachOf(path *RefinedPath) []Vec3 {
 
 // refineViewed is refinePath refined to a view as well, when there is one.
 func refineViewed(points []*Vec3, breaks []bool, at func(float64) Vec3, lo, hi, tolerance float64, budget int, focus *refine.Focus[Vec3]) (*RefinedPath, []int) {
+	// Points escape into probe lists and the returned path. Allocate them in
+	// blocks owned by this call, so later refinements cannot overwrite them.
+	var block []Vec3
 	evaluate := func(t float64) *Vec3 {
-		if p := at(t); p.valid() {
-			return &p
+		p := at(t)
+		if !p.valid() {
+			return nil
 		}
-		return nil
+		if len(block) == cap(block) {
+			block = make([]Vec3, 0, 256)
+		}
+		block = append(block, p)
+		return &block[len(block)-1]
 	}
 	var path *refine.Path[Vec3]
 	var broken []int
