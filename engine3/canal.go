@@ -537,7 +537,10 @@ func contacts(c Request, frame carried, evaluate evaluation, radius func(float64
 		circle contactCircle
 		ok     bool
 	}
-	seen := map[float64]known{}
+	// A circle is larger than Go's inline map value limit. Keep pointers in
+	// the map and circles in blocks, avoiding an allocation for every entry.
+	seen := map[float64]*known{}
+	var block []known
 	return func(t float64) (contactCircle, bool) {
 		if k, ok := seen[t]; ok {
 			return k.circle, k.ok
@@ -553,7 +556,11 @@ func contacts(c Request, frame carried, evaluate evaluation, radius func(float64
 				circle.frameAt, circle.center, circle.sphere = g, g.r.add(g.v.unit().mul(axial)), R
 			}
 		}
-		seen[t] = known{circle, ok}
+		if len(block) == cap(block) {
+			block = make([]known, 0, 128)
+		}
+		block = append(block, known{circle, ok})
+		seen[t] = &block[len(block)-1]
 		return circle, ok
 	}
 }

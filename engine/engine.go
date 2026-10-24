@@ -138,6 +138,7 @@ type Result struct {
 	// curve and input are the base and the construction's input as
 	// compiled, from which a probe is evaluated over a computed study.
 	curve, input curveFunc
+	diagnostic   *diagnosticCurve
 }
 
 func Compute(q Request) (Result, error) {
@@ -600,8 +601,11 @@ func Compute(q Request) (Result, error) {
 			q.reach(&out, f, g)
 		}
 	}
+	if q.Diagnostics || q.Probe != nil {
+		out.diagnostic = q.localDiagnostics(out.Base)
+	}
 	if q.Diagnostics {
-		out.Diagnostics = diagnose(f, out.Base, lo, hi)
+		out.Diagnostics = out.diagnose(f, lo, hi)
 	}
 	if q.Probe != nil {
 		out.Probe = q.probe(f, g, &out)

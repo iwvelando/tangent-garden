@@ -417,7 +417,7 @@ func compute(c Request) (Result, error) {
 		}
 		switch {
 		case c.projected():
-			evaluate = composedEvaluation(c.Input, c.Pole, evaluate, lo, hi, baseUnits)
+			evaluate = c.projectedEvaluation(evaluate, lo, hi, baseUnits)
 		case c.Input == "coil":
 			if evaluate, unwoundAt, closed, err = c.Coil.evaluation(evaluate, lo, hi, baseCurve, baseTangents, baseBreaks, closed, baseUnits); err != nil {
 				return Result{}, err

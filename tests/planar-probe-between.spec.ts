@@ -472,3 +472,38 @@ test("dragging the probe between samples asks only for the latest place", async 
   );
   expect((await engines(page))[0].sent.compute - before).toBeLessThanOrEqual(4);
 });
+
+test("a tiny translated ellipse keeps sampled and continuous curvature readouts", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await ready(page);
+  // Edit the production controls rather than supplying only a preset/link.
+  await page.getByLabel("x(t)", { exact: true }).fill("5000+2*cos(t)/1024");
+  await page.getByLabel("x(t)", { exact: true }).press("Tab");
+  await page.getByLabel("y(t)", { exact: true }).fill("-3000+sin(t)/1024");
+  await page.getByLabel("y(t)", { exact: true }).press("Tab");
+  await probeSwitch(page).check();
+  await ready(page);
+  await point(page).fill("0");
+  await expect(value(page, "Curvature κ")).toHaveText("2048 (turning left)");
+  await expect(drawn(page, "probe-circle")).toBeVisible();
+  await betweenSwitch(page).check();
+  for (const position of [0, 0.123456, 0.25]) {
+    await point(page).fill(String(position));
+    const u = position * 2 * Math.PI;
+    const k = 2048 / (4 * Math.sin(u) ** 2 + Math.cos(u) ** 2) ** 1.5;
+    await expect(value(page, "Curvature κ")).toHaveText(
+      `${short(k)} (turning left)`,
+    );
+    await expect(drawn(page, "probe-circle")).toBeVisible();
+  }
+  await choosePreset(page, 0);
+  await ready(page);
+  await expect(probeSwitch(page)).not.toBeChecked();
+  await probeSwitch(page).check();
+  await point(page).fill("0");
+  await expect(value(page, "Curvature κ")).toHaveText(
+    `${short(a / (b * b))} (turning left)`,
+  );
+});
