@@ -1,21 +1,33 @@
+import { wireEnvelope, wireStudy } from "./study-link-wire";
 import { test } from "@playwright/test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import {
   LinkError,
   linkToken,
   maxLinkLength,
+  maxStudyBytes,
   readStudyLink,
   studyHref,
   writeStudyLink,
 } from "../web/study-link";
-import { planarStudy, type PlanarStudy } from "../web/planar-link";
 import {
+  presetStudy as planarPreset,
+  planarStudy,
+  type PlanarStudy,
+} from "../web/planar-link";
+import {
+  presetStudy as spatialPreset,
   defaultAnimation,
   spatialStudy,
   type SpatialStudy,
 } from "../web/spatial/link";
-import { tesseractStudy, type TesseractStudy } from "../web/tesseract/link";
+import {
+  presetStudy as tesseractPreset,
+  tesseractStudy,
+  type TesseractStudy,
+} from "../web/tesseract/link";
 import { presets } from "../web/presets";
 import { spatialPresets } from "../web/spatial/presets";
 import { tesseractPresets } from "../web/tesseract/presets";
@@ -32,6 +44,16 @@ const token = (value: unknown) =>
   deflateRawSync(Buffer.from(JSON.stringify(value))).toString("base64url");
 const envelope = (notebook: string, study: unknown, v: unknown = 1) =>
   token({ v, notebook, study });
+// The app's own compressor, for lengths that must match a written link's.
+// Node builds bundle different zlib versions, so Node's zlib can differ.
+const nativeToken = async (value: unknown) => {
+  const stream = new Blob([JSON.stringify(value)])
+    .stream()
+    .pipeThrough(new CompressionStream("deflate-raw"));
+  return Buffer.from(await new Response(stream).arrayBuffer()).toString(
+    "base64url",
+  );
+};
 const unpack = (t: string) =>
   JSON.parse(inflateRawSync(Buffer.from(t, "base64url")).toString());
 
@@ -492,14 +514,19 @@ test("links are compact, url-safe, and readable by an independent decoder", asyn
   for (const [i] of spatialPresets.entries()) {
     const t = await writeStudyLink("3d", spatial(i));
     assert.match(t, /^[A-Za-z0-9_-]+$/);
-    assert.deepEqual(unpack(t), { v: 1, notebook: "3d", study: spatial(i) });
+    assert.equal(unpack(t).notebook, "3d");
+    assert.deepEqual(wireStudy(t), JSON.parse(JSON.stringify(spatial(i))));
+    // The bound applies to the full v1 encoding, which any study can still
+    // fall back to, not only to the shorter selected link.
     // The tiny sink carries scale-matched inactive construction settings;
     // their scientific-notation values add a little to its shared link.
+    const full = await nativeToken({ v: 1, notebook: "3d", study: spatial(i) });
+    assert.ok(t.length <= full.length);
     const limit =
       spatialPresets[i].name === "Spirals into a tiny sink" ? 2150 : 2100;
     assert.ok(
-      t.length < limit,
-      `${spatialPresets[i].name} link is ${t.length} characters (limit ${limit})`,
+      full.length < limit,
+      `${spatialPresets[i].name} v1 link is ${full.length} characters (limit ${limit})`,
     );
   }
 });
@@ -539,7 +566,7 @@ test("damaged, oversized, and future links are refused without a study", async (
   assert.ok(bomb.length < maxLinkLength);
   await refused(() => readStudyLink(bomb), "link", /too large/);
   await refused(
-    () => readStudyLink(envelope("2d", planar(), 2)),
+    () => readStudyLink(envelope("2d", planar(), 3)),
     "link",
     /newer version/,
   );
@@ -2097,5 +2124,525 @@ test("a 2D link carries the probe and how it moves; older links open without it;
     const [group, key] = field.split(".");
     bad[group][key] = value;
     await refused(() => planarStudy(bad), field);
+  }
+});
+
+// Fixed independent fixtures: do not regenerate when defaults or presets change.
+const compactFixtures = [
+  [
+    "2d",
+    "q1YqU7Iy0lHKyy9JTcrPz1ayUjJKUdJRSknNKUlUsqqurQUA",
+    "ffcc59367a1a31a60b2b40c3c82cb366ebb88fb12399fa79be487b3e752422f6",
+  ],
+  [
+    "3d",
+    "q1YqU7Iy0lHKyy9JTcrPz1ayUjJOUdJRSknNKUlUsqqurQUA",
+    "27bf5f973d7449c03a225197ae7f47587e696a66263feccc13bacd9711a67c1c",
+  ],
+  [
+    "4d",
+    "q1YqU7Iy0lHKyy9JTcrPz1ayUjJJUdJRSknNKUlUsqqurQUA",
+    "b62b2a13ceddd0b1b96cac81908e5d11faa89fef610c5eed488634f83ba8b093",
+  ],
+] as const;
+const compact = (delta: unknown, notebook = "2d") =>
+  token({ v: 2, notebook, delta });
+
+test("a fixed v1 fixture retains historical defaults and probe presence", async () => {
+  const read = await readStudyLink(
+    "FYpLCoAwDAXv8tZF_OAmt2ltlKI2EqMg0rtrd8PMvLhBnUMW4yCygjBEOJx2xQf0YpI8p6XSLLp7-4fDq9_ZNE0oDodK4No5-7BxBJle_Hs5kyXJoLbpx1LKBw",
+  );
+  assert.deepEqual(read, {
+    notebook: "3d",
+    study: {
+      config: { format: "parametric" },
+      probe: { enabled: true, position: 0.25 },
+    },
+  });
+  const study = spatialStudy(read.study);
+  assert.equal(study.sight.weight, "hairline");
+  assert.equal(study.probe.enabled, true);
+  assert.equal(study.config.adaptive, false);
+});
+
+test("v2 empty deltas use frozen historical snapshots with fresh ownership", async () => {
+  for (const [notebook, fixture, hash] of compactFixtures) {
+    const read = await readStudyLink(fixture);
+    assert.equal(read.notebook, notebook);
+    assert.equal(
+      createHash("sha256").update(JSON.stringify(read.study)).digest("hex"),
+      hash,
+    );
+    (read.study as any).config = {};
+    const again = await readStudyLink(fixture);
+    assert.equal(
+      createHash("sha256").update(JSON.stringify(again.study)).digest("hex"),
+      hash,
+    );
+  }
+});
+
+test("v2 patches preserve falsy data, whole arrays, added groups and explicit absence", async () => {
+  const baseline = (await readStudyLink(compactFixtures[0][1])).study as any;
+  const delta = {
+    camera: { x: 0, zoom: 2 },
+    layers: { lines: false },
+    bounds: { min: "" },
+    animation: { tracks: [{ target: "a", from: "0", to: "pi" }] },
+    probe: null,
+    absent: null,
+    newGroup: { nested: { zero: 0, removed: null }, empty: {} },
+  };
+  const read = (await readStudyLink(compact(delta))).study as any;
+  assert.deepEqual(read, {
+    ...Object.fromEntries(
+      Object.entries(baseline).filter(([k]) => k !== "probe"),
+    ),
+    camera: { ...baseline.camera, x: 0, zoom: 2 },
+    layers: { ...baseline.layers, lines: false },
+    bounds: { ...baseline.bounds, min: "" },
+    animation: {
+      ...baseline.animation,
+      tracks: [{ target: "a", from: "0", to: "pi" }],
+    },
+    newGroup: { nested: { zero: 0 }, empty: {} },
+  });
+  assert.deepEqual(
+    (await readStudyLink(compact({ animation: { tracks: [] } }))).study,
+    baseline,
+  );
+  assert.deepEqual(
+    (await readStudyLink(compact({ camera: {} }))).study,
+    baseline,
+  );
+  assert.deepEqual(
+    (await readStudyLink(compact({ camera: { x: null, y: null, zoom: null } })))
+      .study,
+    { ...baseline, camera: {} },
+  );
+  const array = [{ nested: [0, false, ""] }];
+  assert.deepEqual(
+    ((await readStudyLink(compact({ added: array }))).study as any).added,
+    array,
+  );
+  // A patch object replaces a scalar/array with an object, even if empty.
+  assert.deepEqual(
+    (
+      (await readStudyLink(compact({ length: {}, animation: { tracks: {} } })))
+        .study as any
+    ).length,
+    {},
+  );
+});
+
+test("restored v2 fields still reach notebook validation by field name", async () => {
+  const read = await readStudyLink(compact({ camera: { zoom: "far" } }));
+  await refused(() => planarStudy(read.study), "camera.zoom");
+  const spatial = await readStudyLink(
+    compact({ sight: { weight: null }, probe: null }, "3d"),
+  );
+  const study = spatialStudy(spatial.study);
+  assert.equal(study.sight.weight, "hairline");
+  assert.equal(study.probe.enabled, false);
+});
+
+test("v2 refuses malformed envelopes and invalid literal subtrees", async () => {
+  for (const delta of [undefined, null, [], 0, false, "bad"])
+    await refused(() => readStudyLink(compact(delta)), "link", /damaged/);
+  for (const delta of [{ a: [null] }, { a: [{ b: null }] }, { a: [[null]] }])
+    await refused(() => readStudyLink(compact(delta)), "link", /damaged/);
+  await refused(
+    () => readStudyLink(token({ v: "2", notebook: "2d", delta: {} })),
+    "link",
+  );
+  await refused(() => readStudyLink(compact({}, "unknown")), "notebook");
+  const rawToken = (raw: Buffer | string) =>
+    deflateRawSync(raw).toString("base64url");
+  for (const raw of [
+    Buffer.from([0xff]),
+    "{",
+    '{"v":2,"notebook":"2d","delta":{"a":1e400}}',
+  ])
+    await refused(() => readStudyLink(rawToken(raw)), "link", /damaged/);
+  const whole = compact({ camera: { x: 3 } });
+  await refused(() => readStudyLink(whole.slice(0, -5)), "link", /damaged/);
+});
+
+test("v2 rejects prototype keys at every patch and array depth", async () => {
+  for (const key of ["__proto__", "constructor", "prototype"]) {
+    const member = JSON.parse(`{"${key}":{"polluted":true}}`);
+    for (const delta of [
+      member,
+      { added: member },
+      { camera: member },
+      { a: [member] },
+      { a: [{ nested: member }] },
+    ])
+      await refused(() => readStudyLink(compact(delta)), "link", /damaged/);
+  }
+  assert.equal(({} as any).polluted, undefined);
+  assert.equal(Object.getPrototypeOf({}), Object.prototype);
+});
+
+test("v2 bounds depth, traversal work, envelope bytes and reconstruction separately", async () => {
+  const nested = (depth: number) => {
+    let value: any = 0;
+    for (let i = 0; i < depth; i++) value = { a: value };
+    return value;
+  };
+  await readStudyLink(compact(nested(32)));
+  await refused(() => readStudyLink(compact(nested(33))), "link", /too large/);
+  // Root + array + elements. A baseline has fewer than 1024 nodes.
+  await readStudyLink(compact({ added: Array(15000).fill(0) }));
+  await refused(
+    () => readStudyLink(compact({ added: Array(16384).fill(0) })),
+    "link",
+    /too large/,
+  );
+  await refused(
+    () => readStudyLink(compact({ added: "x".repeat(maxStudyBytes) })),
+    "link",
+    /too large/,
+  );
+  const base = (await readStudyLink(compactFixtures[0][1])).study as any;
+  const room =
+    maxStudyBytes - Buffer.byteLength(JSON.stringify({ ...base, extra: "" }));
+  const accepted = compact({
+    extra: "é".repeat(Math.floor(room / 2)) + "x".repeat(room % 2),
+  });
+  const restored = await readStudyLink(accepted);
+  assert.equal(
+    Buffer.byteLength(JSON.stringify(restored.study)),
+    maxStudyBytes,
+  );
+  // The envelope fits, but retaining the baseline would exceed the output cap.
+  const overflow = compact({ extra: "x".repeat(room + 1) });
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(unpack(overflow))) < maxStudyBytes,
+  );
+  await refused(() => readStudyLink(overflow), "link", /too large/);
+});
+
+test("compact writing emits exact independent deltas and preserves the click-time snapshot", async () => {
+  const study = planarPreset(0);
+  const expected = JSON.parse(JSON.stringify(study));
+  const pending = writeStudyLink("2d", study);
+  study.camera.x = 99;
+  assert.deepEqual(unpack(await pending), { v: 2, notebook: "2d", delta: {} });
+  assert.deepEqual((await readStudyLink(await pending)).study, expected);
+  expected.camera.x = 0;
+  expected.layers.lines = false;
+  expected.bounds.min = "";
+  delete expected.probe;
+  expected.animation.tracks = [{ target: "a", from: "0", to: "pi" }];
+  const encoded = await writeStudyLink("2d", expected);
+  assert.deepEqual(unpack(encoded), {
+    v: 2,
+    notebook: "2d",
+    delta: {
+      layers: { lines: false },
+      bounds: { min: "" },
+      probe: null,
+      animation: { tracks: [{ target: "a", from: "0", to: "pi" }] },
+    },
+  });
+  assert.deepEqual((await readStudyLink(encoded)).study, expected);
+});
+
+test("the writer falls back exactly for full winners and ineligible delta data", async () => {
+  for (const study of [
+    {},
+    { nullable: null },
+    { array: [null] },
+    false,
+    [1, 2],
+    JSON.parse('{"__proto__":{"x":1}}'),
+  ]) {
+    const encoded = await writeStudyLink("2d", study);
+    assert.deepEqual(unpack(encoded), { v: 1, notebook: "2d", study });
+    assert.deepEqual((await readStudyLink(encoded)).study, study);
+  }
+  const study = planarPreset(0);
+  (study as any).nullable = null;
+  const encoded = await writeStudyLink("2d", study);
+  assert.equal(unpack(encoded).v, 1);
+  assert.deepEqual(
+    (await readStudyLink(encoded)).study,
+    JSON.parse(JSON.stringify(study)),
+  );
+});
+
+test("writer candidates enforce independent inflated and reconstructed limits", async () => {
+  // Previously compressible oversized input produced a link its reader refused.
+  await refused(
+    () => writeStudyLink("2d", { data: "x".repeat(maxStudyBytes) }),
+    "link",
+    /too large/,
+  );
+  const study = JSON.parse(JSON.stringify(planarPreset(0)));
+  const room =
+    maxStudyBytes - Buffer.byteLength(JSON.stringify({ ...study, extra: "" }));
+  study.extra = "x".repeat(room);
+  // v1 envelope exceeds its inflated cap; v2 still restores exactly at the cap.
+  const encoded = await writeStudyLink("2d", study);
+  assert.equal(unpack(encoded).v, 2);
+  assert.deepEqual((await readStudyLink(encoded)).study, study);
+  study.extra += "x";
+  await refused(() => writeStudyLink("2d", study), "link", /too large/);
+});
+
+test("every production preset and edited study restores exactly with measured savings", async () => {
+  for (const [notebook, entries, make, conform] of [
+    ["2d", presets, planarPreset, planarStudy],
+    ["3d", spatialPresets, spatialPreset, spatialStudy],
+    ["4d", tesseractPresets, tesseractPreset, tesseractStudy],
+  ] as const) {
+    const lengths: { full: number; selected: number }[] = [];
+    for (const [i] of entries.entries()) {
+      const study = JSON.parse(JSON.stringify(make(i)));
+      const encoded = await writeStudyLink(notebook, study);
+      const read = await readStudyLink(encoded);
+      assert.deepEqual(read.study, study);
+      assert.deepEqual(wireStudy(encoded), study);
+      assert.deepEqual(conform(read.study), conform(study));
+      const full = (await nativeToken({ v: 1, notebook, study })).length;
+      assert.ok(
+        encoded.length <= full,
+        `${notebook} preset ${i}: ${encoded.length} > ${full}`,
+      );
+      lengths.push({ full, selected: encoded.length });
+    }
+    // A broad corpus bound leaves room for compressor changes. Every preset
+    // shares most inactive settings with its notebook's frozen first study.
+    const total = (key: "full" | "selected") =>
+      lengths.reduce((n, x) => n + x[key], 0);
+    assert.ok(total("selected") < 0.55 * total("full"));
+    const summary = (key: "full" | "selected") => {
+      const xs = lengths.map((x) => x[key]).sort((a, b) => a - b);
+      return [
+        xs[0],
+        (xs[Math.floor((xs.length - 1) / 2)] +
+          xs[Math.ceil((xs.length - 1) / 2)]) /
+          2,
+        xs.at(-1),
+      ];
+    };
+    console.log(
+      JSON.stringify({
+        notebook,
+        count: entries.length,
+        full: summary("full"),
+        selected: summary("selected"),
+      }),
+    );
+  }
+  // Deliberately edited states: inactive settings and unique expressions,
+  // whole/empty lists, tracks and detailed camera paths, optional absence,
+  // and object-specific 4D parameters across all current objects.
+  for (const [notebook, study, conform] of [
+    ["2d", planar(), planarStudy],
+    ["3d", spatial(), spatialStudy],
+    ...tesseractPresets.map(
+      (_, i) => ["4d", tesseract(i), tesseractStudy] as const,
+    ),
+  ] as const) {
+    const original = JSON.parse(JSON.stringify(study));
+    const encoded = await writeStudyLink(notebook as any, study);
+    assert.deepEqual((await readStudyLink(encoded)).study, original);
+    assert.deepEqual(
+      conform((await readStudyLink(encoded)).study),
+      conform(original),
+    );
+    const full = (await nativeToken({ v: 1, notebook, study })).length;
+    assert.ok(encoded.length <= full);
+    console.log(
+      JSON.stringify({
+        edited: notebook,
+        full,
+        selected: encoded.length,
+      }),
+    );
+  }
+});
+
+test("a delta ignores member order, so reordered unchanged data adds nothing", async () => {
+  const reversed = (value: any): any =>
+    Array.isArray(value)
+      ? value.map(reversed)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .reverse()
+              .map(([k, v]) => [k, reversed(v)]),
+          )
+        : value;
+  for (const [notebook, make] of [
+    ["2d", planarPreset],
+    ["3d", spatialPreset],
+    ["4d", tesseractPreset],
+  ] as const) {
+    const study = JSON.parse(JSON.stringify(make(0)));
+    // Reorder every object, including those inside arrays, which a
+    // changed array would have to carry in full.
+    const t = await writeStudyLink(notebook, reversed(study));
+    assert.deepEqual(wireEnvelope(t), { v: 2, notebook, delta: {} });
+    assert.deepEqual((await readStudyLink(t)).study, study);
+  }
+});
+
+test("selection prefers v1 on a real compressed tie and accepts compact beyond the full token limit", async () => {
+  const study = {
+    diagramView: { yaw: 0.32, zoom: 1, panY: 0 },
+    motion: "double",
+    repeat: "once",
+  };
+  const delta = {
+    config: null,
+    layers: null,
+    view: null,
+    diagramView: { pitch: null, panX: null },
+    duration: null,
+    pace: null,
+  };
+  // Node builds can bundle different zlib versions even at the same Node
+  // version. Find a real tie with this runtime's production compressor;
+  // never assume that one fixture compresses to fixed byte lengths.
+  let tied: { study: unknown; full: string; sparse: string } | undefined;
+  for (let i = -1; i < 256; i++) {
+    const extra =
+      i < 0
+        ? {}
+        : {
+            extra: createHash("sha256").update(String(i)).digest("base64url"),
+          };
+    const candidate = { ...study, ...extra };
+    const [full, sparse] = await Promise.all([
+      nativeToken({ v: 1, notebook: "4d", study: candidate }),
+      nativeToken({ v: 2, notebook: "4d", delta: { ...delta, ...extra } }),
+    ]);
+    if (full.length === sparse.length) {
+      tied = { study: candidate, full, sparse };
+      break;
+    }
+  }
+  assert.ok(tied, "the bounded fixture search must exercise a compressed tie");
+  assert.equal(tied.full.length, tied.sparse.length);
+  const selected = await writeStudyLink("4d", tied.study);
+  assert.equal(selected.length, tied.full.length);
+  assert.deepEqual(unpack(selected), {
+    v: 1,
+    notebook: "4d",
+    study: tied.study,
+  });
+  const random = Array.from({ length: 1500 }, (_, i) =>
+    createHash("sha256").update(String(i)).digest("base64url"),
+  ).join("");
+  const large = { ...planarPreset(0), extra: random.slice(0, 31000) };
+  assert.ok(envelope("2d", large).length > maxLinkLength);
+  const encoded = await writeStudyLink("2d", large);
+  assert.ok(encoded.length <= maxLinkLength);
+  assert.equal(unpack(encoded).v, 2);
+  assert.deepEqual(
+    (await readStudyLink(encoded)).study,
+    JSON.parse(JSON.stringify(large)),
+  );
+});
+
+test("hrefs preserve alternate hosts, subpaths and unrelated query values", () => {
+  assert.equal(
+    studyHref(
+      "https://selfhost.test/art/garden/?q=two+words&study=3d&mode=x#old",
+      "4d",
+      "abc",
+    ),
+    "https://selfhost.test/art/garden/?q=two+words&study=4d&mode=x#s=abc",
+  );
+});
+
+test("large supported expressions, lists, tracks and camera paths retain every stored value", async () => {
+  const flat = planar();
+  flat.config.curve.x = Array.from(
+    { length: 270 },
+    (_, i) => `${i}/997*cos(t)`,
+  ).join("+");
+  assert.ok(flat.config.curve.x.length <= 4000);
+  flat.config.curve.terms = [];
+  flat.config.curve.field.seeds = Array.from({ length: 16 }, (_, i) => ({
+    x: i / 8,
+    y: -i / 8,
+  }));
+  flat.animation = {
+    ...flat.animation,
+    mode: "parameters",
+    tracks: [
+      { target: "a", from: "0", to: "pi" },
+      { target: "samples", from: "100", to: "200" },
+    ],
+    path: {
+      style: "smooth",
+      keys: Array.from({ length: 12 }, (_, i) => ({
+        name: `Key ${i}`,
+        x: i,
+        y: -i,
+        zoom: 1 + i / 10,
+        ...(i ? { leg: 1.25 } : {}),
+      })),
+    },
+  };
+  const space = spatial();
+  space.animation = {
+    ...space.animation,
+    mode: "parameters",
+    tracks: [
+      { target: "radius", from: "1", to: "2*pi" },
+      { target: "tube", from: "0.2", to: "phi" },
+    ],
+    path: {
+      style: "smooth",
+      keys: Array.from({ length: 12 }, (_, i) => ({
+        name: `Key ${i}`,
+        yaw: i / 10,
+        pitch: -0.3,
+        zoom: 1 + i / 10,
+        panX: i / 20,
+        panY: -i / 20,
+        turns: i % 2,
+        ...(i ? { leg: 1.25 } : {}),
+      })),
+    },
+  };
+  for (const [notebook, study, conform] of [
+    ["2d", flat, planarStudy],
+    ["3d", space, spatialStudy],
+  ] as const) {
+    const original = JSON.parse(JSON.stringify(study));
+    const encoded = await writeStudyLink(notebook, study);
+    assert.equal(unpack(encoded).v, 2);
+    assert.deepEqual(wireStudy(encoded), original);
+    const decoded = await readStudyLink(encoded);
+    assert.deepEqual(decoded.study, original);
+    assert.deepEqual(conform(decoded.study), conform(original));
+    console.log(
+      JSON.stringify({
+        large: notebook,
+        full: (await nativeToken({ v: 1, notebook, study })).length,
+        selected: encoded.length,
+      }),
+    );
+  }
+});
+
+test("published omissions stay historical even when live preset definitions change", async () => {
+  const original = presets[0].config.curve.x;
+  try {
+    presets[0].config.curve.x = "99*cos(t)";
+    const read = await readStudyLink(compactFixtures[0][1]);
+    assert.equal((read.study as any).config.curve.x, "2*cos(t)");
+    assert.equal(
+      createHash("sha256").update(JSON.stringify(read.study)).digest("hex"),
+      compactFixtures[0][2],
+    );
+  } finally {
+    presets[0].config.curve.x = original;
   }
 });

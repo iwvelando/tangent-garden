@@ -1,6 +1,7 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { choosePreset, chooseNotebook, open, openAnimation } from "./helpers";
 import { deflateRawSync } from "node:zlib";
+import { wireEnvelope, wireStudy } from "./study-link-wire";
 import { presets } from "../web/presets";
 
 // A study link is copied from an edited study and opened by someone else: a
@@ -18,6 +19,19 @@ async function copyLink(page: Page) {
   await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
   const href = await page.evaluate(() => navigator.clipboard.readText());
   expect(href).toMatch(/#s=[A-Za-z0-9_-]+$/);
+  const encoded = new URL(href).hash.slice(3);
+  const envelope = wireEnvelope(encoded);
+  expect(envelope.v).toBe(2);
+  const full = deflateRawSync(
+    Buffer.from(
+      JSON.stringify({
+        v: 1,
+        notebook: envelope.notebook,
+        study: wireStudy(encoded),
+      }),
+    ),
+  ).toString("base64url");
+  expect(encoded.length).toBeLessThan(full.length);
   return href;
 }
 async function recipient(browser: Browser, href: string) {
@@ -53,6 +67,15 @@ test("a 2D link reopens the edited study, bounds text, layers, framing, and anim
   await page.goto("/");
   await choosePreset(page, { label: "Hypotrochoid & its evolute" });
   await planarReady(page);
+  // Store an expression, then leave it inactive while sharing the generator.
+  await page
+    .getByRole("combobox", { name: "Definition", exact: true })
+    .selectOption("parametric");
+  await field(page, "x(t)").fill("3*cos(t)+a*sin(2*t)");
+  await planarReady(page);
+  await page
+    .getByRole("combobox", { name: "Definition", exact: true })
+    .selectOption("roulette");
   await field(page, "Fixed radius R").fill("2*e");
   await field(page, "to").fill("4*pi");
   await page.getByRole("checkbox", { name: "Construction lines" }).uncheck();
@@ -123,6 +146,12 @@ test("a 2D link reopens the edited study, bounds text, layers, framing, and anim
   // Fit view still returns to the fitted framing, not the linked one.
   await other.getByRole("button", { name: "↔ Fit view" }).click();
   expect((await planarDrawing(other)).scale).not.toBe(drawing.scale);
+  await other
+    .getByRole("combobox", { name: "Definition", exact: true })
+    .selectOption("parametric");
+  await planarReady(other);
+  await expect(field(other, "x(t)")).toHaveValue("3*cos(t)+a*sin(2*t)");
+  expect((await planarDefinition(other)).curve.x).toBe("3*cos(t)+a*sin(2*t)");
   // A preset replaces a linked study as usual.
   await choosePreset(other, 0);
   await planarReady(other);
@@ -143,7 +172,7 @@ test("damaged, newer, and invalid links leave the default study with a notice", 
   expect(await planarDefinition(page)).toEqual(original);
   expect(new URL(page.url()).hash).toBe("");
 
-  await page.goto(linkTo("2d", {}, 2));
+  await page.goto(linkTo("2d", {}, 3));
   await expect(page.getByRole("alert")).toContainText("newer version");
 
   await page.goto(
@@ -195,6 +224,7 @@ test("a link pasted into an open page replaces the study and drops pending edits
   expect((await planarDrawing(page)).scale).not.toBe(framing.scale);
   // An entry is still being evaluated by Go when the link arrives.
   await field(page, "Fixed radius R").fill("pi*1.5");
+  await expect(copyButton(page)).toBeDisabled();
   await page.evaluate((h) => {
     location.hash = new URL(h).hash;
   }, href);
@@ -255,7 +285,9 @@ test("copy is refused while the study has an error, and falls back when the clip
   await copyButton(page).click();
   const manual = page.getByRole("textbox", { name: "Copy this link" });
   await expect(manual).toBeVisible();
-  expect(await manual.inputValue()).toMatch(/#s=[A-Za-z0-9_-]+$/);
+  const href = await manual.inputValue();
+  expect(href).toMatch(/#s=[A-Za-z0-9_-]+$/);
+  expect(wireEnvelope(new URL(href).hash.slice(3)).v).toBe(2);
   await page.keyboard.press("Escape");
   await expect(manual).toHaveCount(0);
 });
@@ -450,4 +482,114 @@ test("a 2D link's camera is held once through playback at the current view, not 
   const playing = await planarDrawing(other);
   expect(playing.scale).toBe(linked.scale);
   expect(playing.center).toBe(linked.center);
+});
+
+test("successive compact links discard a delayed decode and preserve work on malformed patches", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const Native = window.DecompressionStream;
+    let first = true;
+    (window as any).DecompressionStream = class {
+      readable: ReadableStream;
+      writable: WritableStream;
+      constructor(format: CompressionFormat) {
+        const stream = new Native(format);
+        this.writable = stream.writable;
+        if (first) {
+          first = false;
+          let release!: () => void;
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          (window as any).releaseDecode = release;
+          this.readable = stream.readable.pipeThrough(
+            new TransformStream({
+              async transform(chunk, controller) {
+                await gate;
+                controller.enqueue(chunk);
+              },
+            }),
+          );
+        } else this.readable = stream.readable;
+      }
+    };
+  });
+  await page.goto("/");
+  await planarReady(page);
+  const compactHref = (delta: unknown) =>
+    `/#s=${deflateRawSync(Buffer.from(JSON.stringify({ v: 2, notebook: "2d", delta }))).toString("base64url")}`;
+  await page.goto(compactHref({ bounds: { max: "pi" }, camera: { zoom: 2 } }));
+  await page.waitForFunction(
+    () => typeof (window as any).releaseDecode === "function",
+  );
+  await page.goto(
+    compactHref({ bounds: { max: "3*pi" }, camera: { zoom: 1.25 } }),
+  );
+  await expect.poll(() => new URL(page.url()).hash).toBe("");
+  await planarReady(page);
+  await expect(field(page, "to")).toHaveValue("3*pi");
+  const drawing = await planarDrawing(page);
+  await page.evaluate(() => (window as any).releaseDecode());
+  // Copy waits for compression and independently observes the actual saved study.
+  await expect
+    .poll(
+      async () =>
+        wireStudy(new URL(await copyLink(page)).hash.slice(3)).bounds.max,
+    )
+    .toBe("3*pi");
+  expect(await planarDrawing(page)).toEqual(drawing);
+  await page.goto(compactHref({ animation: { tracks: [null] } }));
+  await expect(page.getByRole("alert")).toContainText("damaged");
+  await expect.poll(() => new URL(page.url()).hash).toBe("");
+  await expect(field(page, "to")).toHaveValue("3*pi");
+  expect(await planarDrawing(page)).toEqual(drawing);
+});
+
+test("copy snapshots before delayed compression while later edits remain editable", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const Native = window.CompressionStream;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    (window as any).releaseCompression = release;
+    (window as any).CompressionStream = class {
+      readable: ReadableStream;
+      writable: WritableStream;
+      constructor(format: CompressionFormat) {
+        const stream = new Native(format);
+        this.writable = stream.writable;
+        this.readable = stream.readable.pipeThrough(
+          new TransformStream({
+            async transform(chunk, controller) {
+              await gate;
+              controller.enqueue(chunk);
+            },
+          }),
+        );
+      }
+    };
+    navigator.clipboard.writeText = async (text) => {
+      (window as any).copiedStudy = text;
+    };
+  });
+  await page.goto("/");
+  await planarReady(page);
+  await field(page, "to").fill("2*pi");
+  await planarReady(page);
+  const requests: string[] = [];
+  page.on("request", (request) => requests.push(request.url()));
+  await copyButton(page).click();
+  await field(page, "to").fill("3*pi");
+  await planarReady(page);
+  await page.evaluate(() => (window as any).releaseCompression());
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const href = await page.evaluate(() => (window as any).copiedStudy);
+  expect(wireEnvelope(new URL(href).hash.slice(3)).v).toBe(2);
+  expect(wireStudy(new URL(href).hash.slice(3)).bounds.max).toBe("2*pi");
+  await expect(field(page, "to")).toHaveValue("3*pi");
+  expect(requests).toEqual([]);
 });

@@ -3,18 +3,21 @@
 //
 //   ?study=3d#s=<base64url(deflate-raw(JSON))>
 //
-// The JSON is { v, notebook, study }. This module owns the envelope and the
-// validation vocabulary; each notebook's link module (planar-link.ts,
-// spatial/link.ts, tesseract/link.ts) conforms its own study, so a notebook's
+// The JSON is a v1 full study or a v2 delta against frozen baseline data.
+// This module owns the envelope and validation vocabulary. Each notebook's
+// link module (planar-link.ts, spatial/link.ts, tesseract/link.ts) conforms
+// its own study, so a notebook's
 // definitions load only with that notebook. A link is untrusted input: every
 // field is checked against a schema before it reaches the study, and Go
 // still validates numerical limits as for typed input.
 
+import { baselineV2 } from "./study-link-baselines-v2";
 import type { Pace, Repeat } from "./timing";
 
-export const studyLinkVersion = 1;
+export const legacyStudyLinkVersion = 1;
+export const studyLinkVersion = 2;
 export type Notebook = "2d" | "3d" | "4d";
-// Encoded fragment and inflated JSON bounds. Presets need about 1.2 KB.
+// Encoded fragment, inflated envelope and reconstructed study bounds.
 export const maxLinkLength = 32 * 1024;
 export const maxStudyBytes = 256 * 1024;
 export const maxText = 4000;
@@ -231,23 +234,192 @@ const pipe = (
   transform: CompressionStream | DecompressionStream,
 ) => new Blob([bytes as BlobPart]).stream().pipeThrough(transform);
 
-// The fragment token for a study. Refused when the link would be too long.
+// Equality in the JSON domain: arrays in order, object members in any
+// order, so reordered unchanged data needs no patch.
+function same(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a))
+    return (
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, i) => same(item, b[i]))
+    );
+  if (plain(a)) {
+    if (!plain(b)) return false;
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((key) => Object.hasOwn(b, key) && same(a[key], b[key]))
+    );
+  }
+  return a === b;
+}
+
+// The input has already been JSON-materialized and checked for v2's domain.
+// Undefined here means no change; arrays are compared/replaced as literals.
+function makeDelta(value: unknown, baseline: unknown): unknown {
+  if (same(value, baseline)) return undefined;
+  if (!plain(value)) return value;
+  const base = plain(baseline) ? baseline : {};
+  const out: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(base), ...Object.keys(value)])) {
+    if (!Object.hasOwn(value, key)) out[key] = null;
+    else {
+      const change = makeDelta(value[key], base[key]);
+      if (change !== undefined) out[key] = change;
+    }
+  }
+  return out;
+}
+
+// An absent candidate is ineligible, independently of the other candidate.
+async function packCandidate(json: string): Promise<string | undefined> {
+  const bytes = new TextEncoder().encode(json);
+  if (bytes.length > maxStudyBytes) return undefined;
+  const packed = await collect(
+    pipe(bytes, new CompressionStream("deflate-raw")),
+    Infinity,
+  );
+  const token = encode(packed);
+  return token.length <= maxLinkLength ? token : undefined;
+}
+
+// Snapshot before the first await: both compressed candidates must carry
+// the same click-time data, even if the caller edits it during compression.
 export async function writeStudyLink(
   notebook: Notebook,
   study: unknown,
 ): Promise<string> {
-  const json = JSON.stringify({ v: studyLinkVersion, notebook, study });
-  const packed = await collect(
-    pipe(new TextEncoder().encode(json), new CompressionStream("deflate-raw")),
-    Infinity,
+  const fullJSON = JSON.stringify({
+    v: legacyStudyLinkVersion,
+    notebook,
+    study,
+  });
+  const snapshot: unknown = JSON.parse(fullJSON).study;
+  let compactJSON: string | undefined;
+  if (plain(snapshot)) {
+    try {
+      // Null data, hostile keys or excessive structure are ineligible for
+      // v2, but remain serializable through the legacy writer's contract.
+      checkDelta(snapshot, false);
+      const baseline = baselineV2(notebook);
+      const delta = (makeDelta(snapshot, baseline) ?? {}) as Record<
+        string,
+        unknown
+      >;
+      checkDelta(delta);
+      restoreDelta(delta, baseline); // enforce the reader's reconstruction budget
+      compactJSON = JSON.stringify({ v: studyLinkVersion, notebook, delta });
+    } catch (error) {
+      // Only documented domain/budget refusals permit a legacy fallback.
+      // Unexpected compressor or programming errors must remain failures.
+      if (!(error instanceof LinkError)) throw error;
+    }
+  }
+  const [full, compact] = await Promise.all([
+    packCandidate(fullJSON),
+    compactJSON === undefined ? undefined : packCandidate(compactJSON),
+  ]);
+  if (
+    compact !== undefined &&
+    (full === undefined || compact.length < full.length)
+  )
+    return compact;
+  if (full !== undefined) return full; // Prefer legacy on ties.
+  throw new LinkError(
+    "link",
+    "This study is too large to share as a link. Shorten its expressions or remove list items.",
   );
-  const token = encode(packed);
-  if (token.length > maxLinkLength)
-    throw new LinkError(
-      "link",
-      "This study is too large to share as a link. Shorten its expressions or remove list items.",
-    );
-  return token;
+}
+
+// These comfortably exceed supported study nesting (under 12) and list
+// sizes while bounding work before recursive restoration or allocation.
+export const maxDeltaDepth = 32;
+export const maxDeltaNodes = 16 * 1024;
+const tooLarge = () =>
+  new LinkError("link", "This link's study is too large to open.");
+const forbiddenKey = (key: string) =>
+  key === "__proto__" || key === "constructor" || key === "prototype";
+
+// Arrays contain literal data, so null is forbidden throughout an array's
+// subtree. Elsewhere null is an object-member deletion, never a value.
+function checkDelta(value: unknown, deletions = true): void {
+  let nodes = 0;
+  function visit(value: unknown, depth: number, patch: boolean): void {
+    if (depth > maxDeltaDepth || ++nodes > maxDeltaNodes) throw tooLarge();
+    if (value === null) {
+      if (!patch) throw damaged();
+    } else if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1, false);
+    } else if (plain(value)) {
+      for (const [key, item] of Object.entries(value)) {
+        if (forbiddenKey(key)) throw damaged();
+        visit(item, depth + 1, patch);
+      }
+    } else if (
+      typeof value !== "string" &&
+      typeof value !== "boolean" &&
+      !(typeof value === "number" && Number.isFinite(value))
+    )
+      throw damaged();
+  }
+  visit(value, 0, deletions);
+}
+
+// Object members patch recursively; arrays replace in full. Charge output
+// bytes and nodes as they are visited, before storing each restored value.
+// Neither an oversized retained baseline nor a literal array bypasses this.
+function restoreDelta(
+  delta: Record<string, unknown>,
+  baseline: Record<string, unknown>,
+): Record<string, unknown> {
+  let bytes = 0,
+    nodes = 0;
+  const encoder = new TextEncoder();
+  const charge = (size: number) => {
+    bytes += size;
+    if (bytes > maxStudyBytes) throw tooLarge();
+  };
+  const textBytes = (value: unknown) =>
+    encoder.encode(JSON.stringify(value)).length;
+  function visit(
+    value: unknown,
+    base: unknown,
+    patch: boolean,
+    depth: number,
+  ): unknown {
+    if (depth > maxDeltaDepth || ++nodes > maxDeltaNodes) throw tooLarge();
+    if (Array.isArray(value)) {
+      charge(2);
+      const out: unknown[] = [];
+      for (const item of value) {
+        if (out.length) charge(1);
+        out.push(visit(item, undefined, false, depth + 1));
+      }
+      return out;
+    }
+    if (plain(value)) {
+      charge(2);
+      const defaults = patch && plain(base) ? base : {};
+      const keys = new Set([...Object.keys(defaults), ...Object.keys(value)]);
+      const out: Record<string, unknown> = {};
+      let count = 0;
+      for (const key of keys) {
+        const changed = Object.hasOwn(value, key);
+        if (patch && changed && value[key] === null) continue;
+        charge(textBytes(key) + 1 + (count++ ? 1 : 0));
+        out[key] = visit(
+          changed ? value[key] : defaults[key],
+          defaults[key],
+          patch && changed,
+          depth + 1,
+        );
+      }
+      return out;
+    }
+    charge(textBytes(value));
+    return value;
+  }
+  return visit(delta, baseline, true, 0) as Record<string, unknown>;
 }
 
 // The notebook and its still-unchecked study, from a fragment token.
@@ -278,6 +450,11 @@ export async function readStudyLink(
     );
   if (notebook !== "2d" && notebook !== "3d" && notebook !== "4d")
     throw new LinkError("notebook", "This link names an unknown notebook.");
+  if (v === 2) {
+    if (!plain(json.delta)) throw damaged();
+    checkDelta(json.delta);
+    return { notebook, study: restoreDelta(json.delta, baselineV2(notebook)) };
+  }
   if (study === undefined)
     throw new LinkError("study", "This link has no study.");
   return { notebook, study };

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { deflateRawSync, inflateRawSync } from "node:zlib";
+import { deflateRawSync } from "node:zlib";
+import { wireStudy } from "./study-link-wire";
 import { choosePreset } from "./helpers";
 import { helpText } from "../web/help";
 import {
@@ -1023,9 +1024,11 @@ test("a link carries the probe; links without it open with it off", async ({
   await expect(point(other)).toHaveAttribute("aria-valuetext", where!);
   await expect(readout(other)).toHaveText(["0.4865", "2.056", "0.08108"]);
   // The same study without a probe field, as links made before it were.
-  const study = JSON.parse(
-    inflateRawSync(Buffer.from(href.split("#s=")[1], "base64url")).toString(),
-  );
+  const study = {
+    v: 1,
+    notebook: "3d",
+    study: wireStudy(new URL(href).hash.slice(3)),
+  };
   delete study.study.probe;
   await other.goto(
     `/?study=3d#s=${deflateRawSync(Buffer.from(JSON.stringify(study))).toString("base64url")}`,

@@ -30,7 +30,7 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - Optional refinement between samples, inserting points where a chord strays from the curve, the curve built on, and a pedal-type, evolute, offset (every member of a stack), caustic or inverted curve, involute, rolling trace, or envelope of lines, chords or circles (each circle branch on its own), with gaps and poles found between samples left open and the real and virtual parts of a caustic or chord envelope meeting where they change. Refined to the view as well, a zoomed-in drawing is refined to its own scale wherever it looks, and zooms to 1,000×: Inside a star's point and Loops upon loops show what that reveals.
 - Line weights in every notebook: fine, regular, bold, or one-pixel hairlines, live and in every export; 3D strokes can taper with distance through a perspective lens.
 - Curve-reveal and multi-parameter animations with four camera modes, and flights through key views of your own, zooming into the study and back; Inside a star's point flies into one of its points.
-- **Copy link** in every notebook: a link that reopens your study, layers, view, and animation setup for anyone, carried in the URL fragment with no server.
+- **Copy link** in every notebook: a link that reopens your study, layers, view, and animation setup for anyone, carried in the URL fragment with no server. It automatically chooses the shorter full or compact encoding; [old links keep opening](docs/permalinks.md).
 - PNG and vector SVG image exports, and for 3D studies a vector line drawing of every line or of the lines not hidden by a surface, with hidden ones faint or dashed if chosen; animation exports as MP4 video (the default) or animated WebP, whichever the browser can encode, with resolution, quality, and up to 60 fps; every notebook can repeat an animation once, as a checked seamless loop, or back and forth, at a steady or eased pace.
 - Exact sample and construction-line counts, and an engine designed for independent mathematical testing.
 
@@ -38,7 +38,7 @@ See the **[usage guide](docs/usage.md)** for controls, examples, animations, cam
 
 ## Run locally
 
-Requires **Go 1.26+**, **Node 22.12+**, npm, and Make. CI uses the latest stable Go and Node 22 on Linux. A modern browser with WebAssembly is required; WebP export additionally needs canvas WebP encoding. Browser integration tests currently target Chromium.
+Requires **Go 1.26+**, **Node 22.12+**, npm, and Make. Use the Node version in [`.nvmrc`](.nvmrc) for local development and CI; with nvm, run `nvm install` and `nvm use` before the commands below. CI uses the latest stable Go and that shared Node version on Linux and macOS. A modern browser with WebAssembly is required; WebP export additionally needs canvas WebP encoding. Browser integration tests currently target Chromium.
 
 ```sh
 make install
