@@ -40,6 +40,67 @@ func familyMembers(t *testing.T, r Result) []Result {
 	return wire.Members
 }
 
+func TestFamilyShowcasePresets(t *testing.T) {
+	presets := spatialPresets(t)
+	for _, name := range []string{"Six currents braided into a tower", "A crown chasing six shadows"} {
+		t.Run(name, func(t *testing.T) {
+			c, ok := presets[name]
+			if !ok {
+				t.Fatal("missing family showcase preset")
+			}
+			if !c.AllPaths {
+				t.Fatal("showcase does not construct on every path")
+			}
+			r, err := Compute(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(r.Members) != 5 {
+				t.Fatalf("got %d additional constructions, want 5", len(r.Members))
+			}
+			for k, m := range append([]Result{r}, r.Members...) {
+				if m.Unavailable != "" || m.Invalid != 0 {
+					t.Fatalf("path %d is not regular: %s (%d invalid)", k+1, m.Unavailable, m.Invalid)
+				}
+			}
+			one := c
+			one.AllPaths = false
+			one.Shadow = nil
+			single, err := Compute(one)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(single.Mesh.Triangles) == 0 || len(r.Mesh.Triangles) != 6*len(single.Mesh.Triangles) {
+				t.Fatal("all six construction surfaces must contribute to the typed mesh")
+			}
+			if c.Format == "field" {
+				// V=(-z,a,x): a rotation in xz with a constant climb in y.
+				for k, path := range r.Field.Paths {
+					for _, j := range []int{0, c.Samples / 2, c.Samples} {
+						time := c.Field.Min + (c.Field.Max-c.Field.Min)*float64(j)/float64(c.Samples)
+						seed := c.Field.Seeds[k]
+						want := Vec3{seed.X*math.Cos(time) - seed.Z*math.Sin(time), seed.Y + c.Field.A*time, seed.X*math.Sin(time) + seed.Z*math.Cos(time)}
+						if path[j] == nil || path[j].sub(want).norm() > 1e-7 {
+							t.Fatalf("seed %d sample %d misses its analytic helix", k+1, j)
+						}
+					}
+				}
+			} else {
+				if c.Shadow == nil || !c.Shadow.AllPaths || r.Shadow == nil || len(r.Shadow.Family) != 5 {
+					t.Fatal("the crown must cast six independent shadows")
+				}
+				for k, shadow := range append([]*ShadowResult{r.Shadow}, r.Shadow.Family...) {
+					for j, p := range shadow.Curve.Points {
+						if p == nil || math.Abs(p.Y-c.Shadow.At) > 1e-12 || math.Abs(p.X-r.Pursuit.Paths[k][j].X) > 1e-12 || math.Abs(p.Z-r.Pursuit.Paths[k][j].Z) > 1e-12 {
+							t.Fatalf("path %d sample %d is not projected onto its floor", k+1, j)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestAllPathConstructions(t *testing.T) {
 	presets := spatialPresets(t)
 	for _, name := range []string{"A rising vortex", "A chase untangling a trefoil"} {

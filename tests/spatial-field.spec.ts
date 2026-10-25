@@ -44,6 +44,55 @@ const note = (page: Page) => page.getByTestId("field-note");
 const layer = (page: Page, name: string) =>
   page.getByRole("checkbox", { name, exact: true });
 
+for (const name of [
+  "Six currents braided into a tower",
+  "A crown chasing six shadows",
+])
+  test(`family showcase: ${name} plays its own reveal with every path`, async ({
+    page,
+  }) => {
+    const preset = spatialPresets.find((p) => p.name === name);
+    expect(preset, "the family showcase preset exists").toBeDefined();
+    expect(preset!.config.allPaths).toBe(true);
+    expect(preset!.flight?.animate?.mode).toBe("reveal");
+    await ready(page);
+    await choosePreset(page, { label: name });
+    await settled(page);
+    await expect(layer(page, "Construct on all paths")).toBeChecked();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const full = await pixels(page);
+    const opening = await config(page);
+    await openAnimation(page);
+    await expect(page.getByLabel("Animate", { exact: true })).toHaveValue(
+      "reveal",
+    );
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect
+      .poll(async () => +(await stage(page).getAttribute("data-progress"))!)
+      .toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const slider = page.getByRole("slider", { name: "Animation progress" });
+    await slider.fill("0.5");
+    await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+    expect(await pixels(page)).not.toBe(full);
+    await slider.fill("1");
+    await expect(stage(page)).toHaveAttribute("data-progress", "1");
+    expect(await pixels(page)).toBe(full);
+    expect(await config(page)).toEqual(opening);
+    await slider.fill("0.5");
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    if (preset!.config.shadow) {
+      await expect(layer(page, "Shadow all paths")).toBeChecked();
+      await layer(page, "Face-on views beside the drawing").check();
+      await settled(page);
+      await expect(
+        page.locator('[data-plane-view="shadow"] [data-testid="plane-shadow"]'),
+      ).toHaveCount(6);
+    }
+  });
+
 test("family scene and reveal keep every construction and shadow synchronized", () => {
   const points = (x: number) => [0, 1, 2].map((y) => ({ x, y, z: 0 }));
   const member = (x: number): SpatialResult =>
