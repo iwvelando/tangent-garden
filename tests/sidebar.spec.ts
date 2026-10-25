@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openAnimation, openExportSettings } from "./helpers";
+import {
+  choosePreset,
+  open,
+  openAnimation,
+  openExportSettings,
+} from "./helpers";
 
 test("explanations are available on demand instead of always visible", async ({
   page,
@@ -137,6 +142,66 @@ test("playing on a narrow screen brings the drawing into view", async ({
   await expect(plot).toBeInViewport({ ratio: 1 });
 });
 
+// A refused start leaves the page where it is, so its error shows beside
+// Play rather than off screen behind the drawing; a valid start still
+// brings the drawing into view.
+for (const [notebook, url, section] of [
+  ["2D", "/", "#animation-section"],
+  ["3D", "/?study=3d", "#spatial-animation-section"],
+] as const) {
+  test(`a refused ${notebook} start on a narrow screen keeps its error in view`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(url);
+    const plot = page.locator(".plot-wrap");
+    await expect(plot).toBeVisible();
+    await open(page, section);
+    const duration = page.getByRole("spinbutton", {
+      name: "Duration (seconds)",
+    });
+    await duration.fill("0");
+    const play = page.getByRole("button", { name: "Play animation" });
+    await play.scrollIntoViewIfNeeded();
+    await expect(plot).not.toBeInViewport();
+    await play.click();
+    const refusal = page
+      .getByRole("alert")
+      .filter({ hasText: "Duration must be between 0.1 and 3600 seconds." });
+    await expect(refusal).toBeInViewport();
+    await expect(play).toBeInViewport();
+    await expect(plot).not.toBeInViewport();
+    await duration.fill("5");
+    await play.click();
+    await expect(plot).toBeInViewport({ ratio: 1 });
+  });
+}
+
+test("a start refused after preparing, by the easing factor, keeps its error in view", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "Inside a star's point" });
+  const plot = page.locator(".plot-wrap");
+  await expect(plot).toBeVisible();
+  await openAnimation(page);
+  await page
+    .getByRole("checkbox", { name: "Ease key-view transitions", exact: true })
+    .check();
+  await page
+    .getByRole("spinbutton", { name: "Easing factor", exact: true })
+    .fill("1.5");
+  const play = page.getByRole("button", { name: "Play animation" });
+  await play.scrollIntoViewIfNeeded();
+  await expect(plot).not.toBeInViewport();
+  await play.click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Easing factor" }),
+  ).toBeInViewport();
+  await expect(plot).not.toBeInViewport();
+});
+
 test("playing on a wide screen leaves both panes where they are", async ({
   page,
 }) => {
@@ -227,4 +292,38 @@ test("the animation panel starts open in every notebook, export settings closed"
     await expect(page.locator(panel)).toHaveAttribute("open");
     await expect(page.locator(exports)).not.toHaveAttribute("open");
   }
+});
+
+// Desktop browsers give a disabled field the page's own colors, which the
+// notebook sets; iOS dims it regardless. Both themes show it dimmed, and a
+// field in a disabled fieldset is dimmed once, by the fieldset.
+test("a disabled field is visibly dimmed in both themes", async ({ page }) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Inside a star's point" });
+  await openAnimation(page);
+  const toggle = page.getByRole("checkbox", {
+    name: "Ease key-view transitions",
+    exact: true,
+  });
+  const factor = page.getByRole("spinbutton", {
+    name: "Easing factor",
+    exact: true,
+  });
+  const opacity = (field: typeof factor) =>
+    field.evaluate((e) => Number(getComputedStyle(e).opacity));
+  for (const theme of ["light", "dark"]) {
+    if (theme === "dark")
+      await page.getByRole("button", { name: "Use dark background" }).click();
+    await expect(factor).toBeDisabled();
+    expect(await opacity(factor), theme).toBeLessThanOrEqual(0.5);
+    await toggle.check();
+    expect(await opacity(factor), theme).toBe(1);
+    await toggle.uncheck();
+  }
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("5");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const duration = page.getByRole("spinbutton", { name: "Duration (seconds)" });
+  await expect(duration).toBeDisabled();
+  expect(await opacity(duration)).toBe(1);
 });

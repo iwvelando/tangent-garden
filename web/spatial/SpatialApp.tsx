@@ -1880,13 +1880,11 @@ export default function SpatialApp({
       }
     }
   }
-  const showPlot = () => {
-    setSpinning(false);
+  const showPlot = () =>
     revealDrawing(
       plotWrap.current,
       document.getElementById("spatial-playback"),
     );
-  };
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
   const unreached = shown?.result.involute?.unreached ?? 0;
@@ -3900,7 +3898,8 @@ export default function SpatialApp({
             }
             onView={setAnimation}
             onRunning={setRunning}
-            onPlay={showPlot}
+            onPlay={() => setSpinning(false)}
+            onReveal={showPlot}
             settings={animationSettings}
             restore={busy ? null : restoredAnimation}
             onShowView={(view) => {

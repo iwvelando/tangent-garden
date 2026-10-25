@@ -389,8 +389,24 @@ test("playing on a phone snaps the drawing into view in both notebooks", async (
     const play = app.getByRole("button", { name: "Play animation" });
     await play.scrollIntoViewIfNeeded();
     await expect(app.locator(".plot-wrap")).not.toBeInViewport();
-    // Measured in the same task as the click: an instant jump has already
-    // happened, while a smooth scroll would still be under way.
+    // Play jumps once its first frame is shown, so a refused start stays
+    // beside its error. An instant jump fires every scroll event at its
+    // final place; a smooth scroll passes through others on the way.
+    await page.evaluate(() => {
+      const w = window as unknown as { scrolls: number[] };
+      w.scrolls = [];
+      addEventListener("scroll", () => w.scrolls.push(scrollY));
+    });
+    await play.click();
+    await expect(app.locator(".plot-wrap")).toBeInViewport({ ratio: 1 });
+    const scrolls = await page.evaluate(
+      () => (window as unknown as { scrolls: number[] }).scrolls,
+    );
+    expect(scrolls.length).toBeGreaterThan(0);
+    expect(new Set(scrolls).size).toBe(1);
+    // Resume has nothing to refuse: measured in the same task as the click,
+    // an instant jump has already happened, while a smooth scroll would
+    // still be under way.
     const place = () =>
       page.evaluate(() => {
         const visible = (e: HTMLElement) => e.offsetParent !== null;
@@ -398,14 +414,11 @@ test("playing on a phone snaps the drawing into view in both notebooks", async (
           ...document.querySelectorAll<HTMLElement>(".plot-wrap"),
         ].find(visible)!;
         [...document.querySelectorAll<HTMLButtonElement>("button")]
-          .find(
-            (b) => visible(b) && /^(Play animation|Resume)$/.test(b.innerText),
-          )!
+          .find((b) => visible(b) && b.innerText === "Resume")!
           .click();
         const box = wrap.getBoundingClientRect();
         return box.top >= 0 && box.bottom <= innerHeight;
       });
-    expect(await place()).toBe(true);
     await app.getByRole("button", { name: "Pause", exact: true }).click();
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(app.locator(".plot-wrap")).not.toBeInViewport();
