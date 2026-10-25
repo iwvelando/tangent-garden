@@ -2313,3 +2313,52 @@ func TestReceiverFreshGeometryPointAllocations(t *testing.T) {
 		t.Fatal("a later family overwrote earlier vertices")
 	}
 }
+
+// A beam falling straight down through z = k(u³ − 3uv²), from n₁ = 1 into
+// n₂ = 1.5, turns by about (1 − n₁/n₂)∇h = ∇h/3 where the slope is small,
+// so a ray from w = u + iv lands L below at w + kL·conj(w)². Its fold is
+// |w| = 1/(2kL), a deltoid with its cusp on the axis at x = 3/(4kL) and
+// the midpoint of its opposite side at x = −1/(4kL). The preset's screen
+// finds both as L doubles, mirrored in y as the saddle is, which only a
+// fine refined screen resolves.
+func TestReceiverMonkeySaddleDeltoid(t *testing.T) {
+	c := spatialPresets(t)["A deltoid of light beneath a monkey saddle"]
+	k := c.Surface.A
+	for _, at := range []float64{-1.6, -3} {
+		c.Rays.Receiver.At = at
+		g := received(t, c)
+		accounted(t, g)
+		if g.Split == 0 || g.Exhausted {
+			t.Fatalf("screen at %v: %d cells split, exhausted %v", at, g.Split, g.Exhausted)
+		}
+		n, L := len(g.Irradiance), -at
+		bin := c.Rays.Receiver.Size / float64(n)
+		mirrored, total := 0.0, 0.0
+		for a := range n {
+			for b := range n {
+				mirrored += math.Abs(g.Irradiance[a][b] - g.Irradiance[a][n-1-b])
+				total += g.Irradiance[a][b]
+			}
+		}
+		if mirrored > 5e-3*total {
+			t.Errorf("screen at %v: mirrored bins differ by %.3g of the light", at, mirrored/total)
+		}
+		// The brightest bin of the two rows along the axis, on each side.
+		brightest := func(from, to int) float64 {
+			best, x := 0.0, 0.0
+			for a := from; a < to; a++ {
+				if v := g.Irradiance[a][n/2-1] + g.Irradiance[a][n/2]; v > best {
+					best, x = v, -c.Rays.Receiver.Size/2+(float64(a)+0.5)*bin
+				}
+			}
+			return x
+		}
+		// The cusp's light peaks just inside its tip.
+		if cusp, want := brightest(n/2, n), 3/(4*k*L); cusp < 0.9*want || cusp > want+bin {
+			t.Errorf("screen at %v: cusp at x = %.4f, want just inside %.4f", at, cusp, want)
+		}
+		if side, want := brightest(0, n/2), -1/(4*k*L); math.Abs(side-want) > 0.03*math.Abs(want) {
+			t.Errorf("screen at %v: opposite fold at x = %.4f, want %.4f", at, side, want)
+		}
+	}
+}

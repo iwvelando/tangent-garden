@@ -558,7 +558,7 @@ func (g *raster) edge(a, b [2]float64, weight float64) {
 	cuts[m] = 1
 	at := func(s float64) [2]float64 {
 		p := [2]float64{a[0] + s*(b[0]-a[0]), a[1] + s*(b[1]-a[1])}
-		p[0] = min(max(p[0], 0), w)
+		p[0] = fmin(fmax(p[0], 0), w)
 		return p
 	}
 	for k := 1; k <= m; k++ {
@@ -575,9 +575,9 @@ func (g *raster) line(p, q [2]float64, weight float64) {
 		p, q, weight = q, p, -weight
 	}
 	dxdy := (q[0] - p[0]) / (q[1] - p[1])
-	y0, y1 := max(p[1], 0), min(q[1], float64(g.h))
-	for row := int(max(math.Floor(y0), 0)); row < g.h && float64(row) < y1; row++ {
-		top, bottom := max(float64(row), y0), min(float64(row+1), y1)
+	y0, y1 := fmax(p[1], 0), fmin(q[1], float64(g.h))
+	for row := int(fmax(math.Floor(y0), 0)); row < g.h && float64(row) < y1; row++ {
+		top, bottom := fmax(float64(row), y0), fmin(float64(row+1), y1)
 		if bottom <= top {
 			continue
 		}
@@ -594,10 +594,10 @@ func (g *raster) span(r int, a, b, d float64) {
 	row := g.rows[r]
 	// Interpolating a clamped edge can stray past [0, w] by rounding.
 	w := float64(g.w)
-	a, b = min(max(a, 0), w), min(max(b, 0), w)
-	lo, hi := min(a, b), max(a, b)
+	a, b = fmin(fmax(a, 0), w), fmin(fmax(b, 0), w)
+	lo, hi := fmin(a, b), fmax(a, b)
 	share := func(c float64) float64 {
-		clamp := func(t float64) float64 { return min(max(t, 0), 1) }
+		clamp := func(t float64) float64 { return fmin(fmax(t, 0), 1) }
 		if hi-lo < 1e-12 {
 			return d * clamp(c+1-(a+b)/2)
 		}

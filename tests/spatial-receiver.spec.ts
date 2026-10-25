@@ -708,6 +708,63 @@ test("a glass dome's close-up preset opens refined and plays its own receiver mo
   await expect(note(page)).not.toContainText("inset");
 });
 
+// The monkey saddle's preset opens face on to a 960-bin screen refined
+// twice, and plays its own sinking screen with every frame refined: the
+// deltoid closes in, and the screen comes back to its opening drawing.
+test("a monkey saddle's deltoid plays on a fine refined screen", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await settled(page);
+  await choosePreset(page, {
+    label: "A deltoid of light beneath a monkey saddle",
+  });
+  await settled(page);
+  const base = await config(page);
+  expect(base.rays.receiver).toMatchObject({ bins: 960, refine: 2, at: -1.6 });
+  expect(base.rays.receiver).not.toHaveProperty("refineView");
+  expect(
+    JSON.parse(
+      (await page.locator("#spatial-artwork").getAttribute("data-view"))!,
+    ),
+  ).toMatchObject({ yaw: 0, pitch: 0, zoom: 5.5 });
+  await expect(note(page)).toContainText(
+    /[\d,]+ cells were split where their light lands coarsely on the window\./,
+  );
+  await expect(note(page)).not.toContainText("budget");
+  const opening = await pixels(page);
+  const section = page.locator("#spatial-animation-section");
+  if ((await section.getAttribute("open")) === null)
+    await section.locator(":scope > summary").click();
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const progress = page.getByRole("slider", { name: "Animation progress" });
+  await progress.fill("0.25");
+  await expect(stage(page)).toHaveAttribute("data-time", "0.25");
+  await settled(page);
+  expect((await config(page)).rays.receiver.at).toBeCloseTo(-2.3, 12);
+  await progress.fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-time", "0.5");
+  await settled(page);
+  expect((await config(page)).rays.receiver).toMatchObject({
+    at: -3,
+    bins: 960,
+    refine: 2,
+  });
+  await expect(note(page)).toContainText("cells were split");
+  expect(await pixels(page)).not.toBe(opening);
+  await progress.fill("1");
+  await expect(stage(page)).toHaveAttribute("data-time", "1");
+  await settled(page);
+  expect((await config(page)).rays.receiver.at).toBe(-1.6);
+  expect(await pixels(page)).toBe(opening);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect(await config(page)).toEqual(base);
+});
+
 test("the receiver view's help states the zoom it allows", () => {
   const help = helpText(receiverViewHelp);
   expect(help).toContain(`${viewZoom.toLocaleString("en-US")}×`);
