@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
-import { deflateRawSync, inflateRawSync } from "node:zlib";
+import { wireStudy } from "./study-link-wire";
+import { deflateRawSync } from "node:zlib";
 import { choosePreset } from "./helpers";
 import { presets } from "../web/presets";
 import { spatialPresets } from "../web/spatial/presets";
@@ -20,12 +21,7 @@ const token = (notebook: string, study: unknown) =>
   deflateRawSync(
     Buffer.from(JSON.stringify({ v: 1, notebook, study })),
   ).toString("base64url");
-const unpack = (href: string) =>
-  JSON.parse(
-    inflateRawSync(
-      Buffer.from(/#s=(.*)$/.exec(href)![1], "base64url"),
-    ).toString(),
-  ).study;
+const unpack = (href: string) => wireStudy(/#s=(.*)$/.exec(href)![1]);
 
 export type Notebook<Study> = {
   name: "2d" | "3d" | "4d";
