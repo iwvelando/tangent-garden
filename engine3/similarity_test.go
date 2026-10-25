@@ -544,7 +544,7 @@ func (c comparison) expect(k kind, v, shift float64) float64 {
 }
 
 func (c comparison) number(path string, k kind, want, got, shift float64) {
-	if c.b.skipped(path) {
+	if c.b.skipped(familyPath(path)) {
 		return
 	}
 	if k == asExact {
@@ -574,7 +574,8 @@ func (c comparison) number(path string, k kind, want, got, shift float64) {
 }
 
 func (c comparison) discrete(path, what string) {
-	if c.b.skipped(path) || c.b.tolerated(path) {
+	local := familyPath(path)
+	if c.b.skipped(local) || c.b.tolerated(local) {
 		return
 	}
 	if len(c.d.discrete) < 12 {
@@ -593,20 +594,36 @@ func join(path, name string) string {
 	return path + "." + name
 }
 
+// Family members obey the same classifications and budgets as the primary
+// construction or shadow. Keep the full path in failure diagnostics.
+func familyPath(path string) string {
+	for strings.HasPrefix(path, "members.") {
+		path = strings.TrimPrefix(path, "members.")
+	}
+	for strings.HasPrefix(path, "shadow.family.") {
+		path = "shadow." + strings.TrimPrefix(path, "shadow.family.")
+	}
+	return path
+}
+
 // walk compares want and got, values of the same type at path.
 func (c comparison) walk(path string, want, got reflect.Value) {
+	local := familyPath(path)
 	switch want.Kind() {
 	case reflect.Pointer, reflect.Interface:
 		if want.IsNil() != got.IsNil() {
 			c.discrete(path, fmt.Sprintf("nil %v, want nil %v", got.IsNil(), want.IsNil()))
 			return
 		}
-		if !want.IsNil() {
+		// The grid's 2D study uses power-of-two units and is checked bit
+		// for bit in TestShadowGridStudy. Compare its presence here; its
+		// projected paths below stand for its geometry, for every shadow.
+		if !want.IsNil() && local != "shadow.study" {
 			c.walk(path, want.Elem(), got.Elem())
 		}
 	case reflect.Struct:
 		if want.Type() == vecType {
-			k, ok := lookup(path, c.q)
+			k, ok := lookup(local, c.q)
 			if !ok {
 				c.d.unknown[path] = true
 				return
@@ -645,7 +662,7 @@ func (c comparison) walk(path string, want, got reflect.Value) {
 			c.discrete(path, fmt.Sprintf("length %d, want %d", got.Len(), want.Len()))
 			return
 		}
-		if stride, ok := strides[path]; ok {
+		if stride, ok := strides[local]; ok {
 			shifts := [3]float64{c.m.shift.X, c.m.shift.Y, c.m.shift.Z}
 			for i := 0; i < want.Len(); i++ {
 				place := stride[i%len(stride)]
@@ -664,7 +681,7 @@ func (c comparison) walk(path string, want, got reflect.Value) {
 			c.walk(path+"."+fmt.Sprint(key), want.MapIndex(key), got.MapIndex(key))
 		}
 	case reflect.Float32, reflect.Float64:
-		k, ok := lookup(path, c.q)
+		k, ok := lookup(local, c.q)
 		if !ok {
 			k = asExact
 			if want.Float() != math.Trunc(want.Float()) {
@@ -673,7 +690,7 @@ func (c comparison) walk(path string, want, got reflect.Value) {
 			}
 		}
 		shift := 0.0
-		if path == "shadow.at" {
+		if local == "shadow.at" {
 			shift = shadowShift(c.q.Shadow.Plane, c.m.shift)
 		} else if k == asOffset {
 			if n := c.q.Implicit.Sections.Normal; n.norm() > 0 {
@@ -858,17 +875,6 @@ func compare(t *testing.T, q Request, m similarity) (*deviation, budget, bool) {
 		}
 	}
 	d := &deviation{worst: map[string]float64{}, where: map[string]string{}, unknown: map[string]bool{}}
-	// The grid's 2D study of the shadow is the plane's 2D construction in
-	// units of a power of two, bit for bit (TestShadowGridStudy), so the
-	// plane's paths, compared below, stand for it.
-	if want.Shadow != nil && got.Shadow != nil {
-		if (want.Shadow.Study == nil) != (got.Shadow.Study == nil) {
-			d.discrete = append(d.discrete, "shadow.study: present in one copy alone")
-		}
-		ws, gs := *want.Shadow, *got.Shadow
-		ws.Study, gs.Study = nil, nil
-		want.Shadow, got.Shadow = &ws, &gs
-	}
 	comparison{m: m, q: ref, b: b, radius: want.Bounds.Radius, d: d}.walk("", reflect.ValueOf(want), reflect.ValueOf(got))
 	if want.Implicit != nil && b.skipped("implicit.positions") {
 		// The moved mesh and sections have every point of the original's
@@ -994,6 +1000,74 @@ func TestSimilarPresets(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestSimilarityFamilyWalkerDetectsFaults(t *testing.T) {
+	q := spatialPresets(t)["Six currents braided into a tower"]
+	q.Samples, q.Lines = 240, 12
+	q.Shadow = &ShadowRequest{Plane: "y", At: -2, AllPaths: true}
+	want := scaleCurveResult(t, q)
+	m := similarity{name: "identity", scale: 1}
+	b := budgetFor(q, m)
+	for _, fault := range []struct {
+		name   string
+		change func(*Result)
+	}{
+		{"unchanged", nil},
+		{"member position", func(r *Result) { r.Members[0].Base[0].X += 0.1 }},
+		{"member length", func(r *Result) { r.Members[0].Frame.Length *= 2 }},
+		{"member count", func(r *Result) { r.Members = r.Members[1:] }},
+		{"shadow position", func(r *Result) { r.Shadow.Family[0].Curve.Points[0].X += 0.1 }},
+		{"shadow offset", func(r *Result) { r.Shadow.Family[0].At += 0.1 }},
+		{"shadow count", func(r *Result) { r.Shadow.Family = r.Shadow.Family[1:] }},
+	} {
+		t.Run(fault.name, func(t *testing.T) {
+			got := scaleCurveResult(t, q)
+			if fault.change != nil {
+				fault.change(&got)
+			}
+			d := &deviation{worst: map[string]float64{}, where: map[string]string{}, unknown: map[string]bool{}}
+			comparison{m: m, q: q, b: b, radius: want.Bounds.Radius, d: d}.walk("", reflect.ValueOf(want), reflect.ValueOf(got))
+			if len(d.unknown) != 0 {
+				t.Fatalf("unclassified family geometry: %v", d.unknown)
+			}
+			failed := len(d.discrete) != 0
+			for class, worst := range d.worst {
+				failed = failed || worst > b.worst[class]
+			}
+			if failed != (fault.change != nil) {
+				t.Fatalf("fault detection = %v: %v, %v", failed, d.discrete, d.where)
+			}
+		})
+	}
+}
+
+func TestSimilarFamilyShadowGrid(t *testing.T) {
+	q := spatialPresets(t)["A rising vortex"]
+	q.AllPaths, q.Construction, q.Samples, q.Lines = true, "tangent-foot", 240, 12
+	q.Shadow = &ShadowRequest{Plane: "y", At: -2, AllPaths: true, Grid: true}
+	want := scaleCurveResult(t, q)
+	if want.Shadow == nil || want.Shadow.Study == nil || len(want.Shadow.Family) != 3 {
+		t.Fatal("the grid must contain a planar study for all four paths")
+	}
+	for _, shadow := range want.Shadow.Family {
+		if shadow.Study == nil {
+			t.Fatal("a family member has no planar study")
+		}
+	}
+	for _, m := range similarities {
+		t.Run(m.name, func(t *testing.T) { similarlyMoved(t, q, m) })
+	}
+	t.Run("missing member study", func(t *testing.T) {
+		got := scaleCurveResult(t, q)
+		got.Shadow.Family[0].Study = nil
+		m := similarity{name: "identity", scale: 1}
+		d := &deviation{worst: map[string]float64{}, where: map[string]string{}, unknown: map[string]bool{}}
+		comparison{m: m, q: q, b: budgetFor(q, m), radius: want.Bounds.Radius, d: d}.walk("", reflect.ValueOf(want), reflect.ValueOf(got))
+		if len(d.unknown) != 0 || len(d.discrete) != 1 || !strings.HasPrefix(d.discrete[0], "shadow.family.study:") {
+			t.Fatalf("missing planar study was not identified: %v, %v", d.discrete, d.unknown)
+		}
+	})
 }
 
 // Studies no preset is, moved likewise: the tangent feet of a helix wound
