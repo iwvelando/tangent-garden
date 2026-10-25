@@ -2253,3 +2253,63 @@ func TestReceiverRasterScratchDropsOldRows(t *testing.T) {
 		}
 	}
 }
+
+// Fresh optical families must batch their vertices, as refined curves do.
+// Count objects rather than bytes: even one allocation per surface point
+// alone exceeds this bound at the production cone's 13,237 samples. The
+// bound leaves headroom over the batched count (about 5,900) for toolchain
+// and unrelated allocation changes.
+func TestReceiverFreshGeometryPointAllocations(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	var geometry *rayGeometry
+	allocations := testing.AllocsPerRun(3, func() {
+		var err error
+		geometry, err = buildRayGeometry(c.Surface, c.Rays, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocations > 8000 {
+		t.Fatalf("fresh optical geometry allocated %.0f objects, want at most 8000", allocations)
+	}
+	points, caustics := 0, 0
+	seen := map[*Vec3]bool{}
+	check := func(grid [][]*Vec3, count *int) {
+		for _, row := range grid {
+			for _, p := range row {
+				if p == nil {
+					continue
+				}
+				if seen[p] {
+					t.Fatal("distinct vertices share storage")
+				}
+				seen[p] = true
+				*count++
+			}
+		}
+	}
+	check(geometry.rays.Surface.Points, &points)
+	check(geometry.rays.Surface.Normals, &points)
+	for _, caustic := range geometry.rays.Caustics {
+		check(caustic.Points, &caustics)
+		check(caustic.Normals, &caustics)
+	}
+	if points < 26000 || caustics < 10000 {
+		t.Fatalf("too few vertices: %d surface, %d caustic", points, caustics)
+	}
+	before, err := json.Marshal(geometry.rays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Surface.A *= .9
+	if _, err := buildRayGeometry(c.Surface, c.Rays, nil); err != nil {
+		t.Fatal(err)
+	}
+	after, err := json.Marshal(geometry.rays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("a later family overwrote earlier vertices")
+	}
+}

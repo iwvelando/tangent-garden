@@ -388,13 +388,23 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 			parts[k][part] = [2][][]*Vec3{grid2[*Vec3](nu+1, nv+1), grid2[*Vec3](nu+1, nv+1)}
 		}
 	}
+	// Own vertices in small blocks, allocating only for present values.
+	// A new block never moves earlier vertices or shares another family's
+	// storage; at most one partially used block remains in the result.
+	var vertices []Vec3
+	vertex := func(p Vec3) *Vec3 {
+		if len(vertices) == cap(vertices) {
+			vertices = make([]Vec3, 0, 256)
+		}
+		vertices = append(vertices, p)
+		return &vertices[len(vertices)-1]
+	}
 	for i := 0; i <= nu; i++ {
 		for j := 0; j <= nv; j++ {
 			u, v := q.at(i, j)
 			s := q.ray(r, u, v, scale)
 			samples[i][j] = s
-			x, n := s.X, s.N
-			points[i][j] = &x
+			points[i][j] = vertex(s.X)
 			switch {
 			case !s.Normal:
 				out.Singular++
@@ -404,7 +414,7 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 			case !s.Lit:
 				out.Unlit++
 			}
-			normals[i][j] = &n
+			normals[i][j] = vertex(s.N)
 			if s.Total {
 				out.Total++
 			}
@@ -424,10 +434,9 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 					part = 1
 				}
 				c := s.caustic(k)
-				parts[k][part][0][i][j] = &c
+				parts[k][part][0][i][j] = vertex(c)
 				if !s.Stigmatic {
-					e := s.Dir[k]
-					parts[k][part][1][i][j] = &e
+					parts[k][part][1][i][j] = vertex(s.Dir[k])
 				}
 			}
 		}
