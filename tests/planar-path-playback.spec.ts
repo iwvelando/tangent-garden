@@ -136,6 +136,12 @@ test("planar easing factor edits affect playback, validate, survive toggling, an
   );
   await button(page, "Play animation").click();
   await expect(button(page, "Pause")).toHaveCount(0);
+  // One announcement: the playback refusal. The field's own message is tied
+  // to it through aria-errormessage, not a second alert.
+  await expect(page.getByRole("alert")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toContainText(
+    "Animation stopped: Easing factor must be from 0 to 1.",
+  );
   for (const [value, fraction] of [
     ["0", 0.25],
     ["0.25", (0.25 + 53 / 512) / 2],
@@ -159,6 +165,19 @@ test("planar easing factor edits affect playback, validate, survive toggling, an
   await expect(factor).toBeDisabled();
   await toggle.check();
   await expect(factor).toHaveValue("1");
+  // An invalid factor is not kept behind the disabled field: turning easing
+  // off restores the default, so playback ignores the factor as its help says.
+  await factor.fill("1.1");
+  await toggle.uncheck();
+  await expect(factor).toHaveValue("0.5");
+  await expect(factor).not.toHaveAttribute("aria-invalid", "true");
+  await button(page, "Play animation").click();
+  await expect(
+    page.getByRole("button", { name: /^(Pause|Replay)$/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await button(page, "Stop").click();
+  await toggle.check();
   await choosePreset(page, { label: star });
   await ready(page);
   await toggle.check();

@@ -96,7 +96,13 @@ import {
 import { saveFile } from "./export-image";
 import { Field } from "./Field";
 import { KeyViews, KeyViewEasing } from "./KeyViews";
-import { easedPath, pathLeg, pathStyles, type PathStyle } from "./key-views";
+import {
+  easedPath,
+  pathLeg,
+  pathStyles,
+  withEase,
+  type PathStyle,
+} from "./key-views";
 import {
   asFirst,
   defaultPlanarPath,
@@ -1137,7 +1143,7 @@ export function AnimationPanel({
               </Field>
               <KeyViewEasing
                 checked={path.ease ?? false}
-                onChange={(ease) => setPath((p) => ({ ...p, ease }))}
+                onChange={(ease) => setPath((p) => withEase(p, ease))}
                 factor={path.easingFactor}
                 onFactorChange={(easingFactor) =>
                   setPath((p) => ({ ...p, easingFactor }))

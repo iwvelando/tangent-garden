@@ -91,8 +91,9 @@ export function KeyViewEasing({
           onChange={(e) => onFactorChange(e.target.valueAsNumber)}
         />
       </Field>
+      {/* Not an alert: Play announces the same refusal. */}
       {problem && (
-        <p className="field-error" role="alert" id={errorId}>
+        <p className="field-error" id={errorId}>
           {problem.field} {problem.message}
         </p>
       )}

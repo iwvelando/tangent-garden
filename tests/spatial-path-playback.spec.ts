@@ -165,6 +165,12 @@ test("spatial easing factor edits affect playback, validate, retain the held cam
   );
   await button(page, "Play animation").click();
   await expect(button(page, "Pause")).toHaveCount(0);
+  // One announcement: the playback refusal. The field's own message is tied
+  // to it through aria-errormessage, not a second alert.
+  await expect(page.getByRole("alert")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toContainText(
+    "Animation stopped: Easing factor must be from 0 to 1.",
+  );
   for (const [value, fraction] of [
     ["0", 0.25],
     ["0.25", (0.25 + 53 / 512) / 2],
@@ -185,6 +191,16 @@ test("spatial easing factor edits affect playback, validate, retain the held cam
   await expect(factor).toBeDisabled();
   await toggle.check();
   await expect(factor).toHaveValue("1");
+  // An invalid factor is not kept behind the disabled field: turning easing
+  // off restores the default, so playback ignores the factor as its help says.
+  await factor.fill("");
+  await toggle.uncheck();
+  await expect(factor).toHaveValue("0.5");
+  await expect(factor).not.toHaveAttribute("aria-invalid", "true");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  await button(page, "Stop").click();
+  expect(await shownView(page)).toEqual(idle);
   await open(page, study({ ...two, ease: true, easingFactor: 0.75 }, 30));
   await expect(factor).toHaveValue("0.75");
   await choosePreset(page, { label: "Viviani's curve, from every side" });

@@ -26,6 +26,14 @@ export function easingError(path: KeyPath): PathError | null {
     ? null
     : { field: "Easing factor", message: "must be from 0 to 1." };
 }
+// Turns easing on or off. A valid factor is kept for when easing returns; an
+// invalid one is dropped rather than left behind the disabled field, where
+// it would refuse playback and links while its help says it is ignored.
+export function withEase<P extends KeyPath>(path: P, ease: boolean): P {
+  if (ease || !easingError(path)) return { ...path, ease };
+  const { easingFactor: _, ...rest } = path;
+  return { ...rest, ease } as P;
+}
 export const easedPathHelp =
   "Keeps the selected path's route, easing to rest at every view.";
 // The Path help with easing on: easing replaces the style's own account of

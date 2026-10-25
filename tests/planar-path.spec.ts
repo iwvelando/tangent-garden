@@ -11,7 +11,13 @@ import {
   type PlanarKeyView,
   type PlanarPath,
 } from "../web/planar-path";
-import { keyTimes, moveKeys, pathLeg, removeKeys } from "../web/key-views";
+import {
+  keyTimes,
+  moveKeys,
+  pathLeg,
+  removeKeys,
+  withEase,
+} from "../web/key-views";
 
 // The 2D camera path (planar-path.ts): the camera at each progress, observed
 // as the page position Plot draws a point at, W/2 + (p − c)·scale across.
@@ -157,6 +163,27 @@ test("planar easing factor validation names the field, including nonfinite and r
         planarPathError({ ...original, ease, easingFactor }, 20),
       ).toBeNull();
   }
+});
+
+test("turning easing off keeps a valid factor and drops an invalid one", () => {
+  const original = path([key(0, 0, 1), key(2, 1, 8)]);
+  for (const easingFactor of [undefined, 0, 0.75, 1]) {
+    const on = { ...original, ease: true, easingFactor };
+    expect(withEase(on, false)).toEqual({ ...on, ease: false });
+    expect(withEase(withEase(on, false), true)).toEqual(on);
+  }
+  for (const easingFactor of [-0.01, 1.01, NaN, Infinity]) {
+    const off = withEase({ ...original, ease: true, easingFactor }, false);
+    expect(off).toEqual({ ...original, ease: false });
+    expect("easingFactor" in off).toBe(false);
+    expect(planarPathError(off, 20)).toBeNull();
+  }
+  // Turning easing on keeps whatever factor is there, so the field shows it.
+  expect(withEase({ ...original, easingFactor: 2 }, true)).toEqual({
+    ...original,
+    ease: true,
+    easingFactor: 2,
+  });
 });
 
 test("a path stands exactly at each view at its time, in both styles", () => {

@@ -115,7 +115,7 @@ import {
 } from "../export-formats";
 import { saveFile } from "../export-image";
 import { KeyViews, KeyViewEasing, KeyViewSwitch } from "../KeyViews";
-import { easedPath } from "../key-views";
+import { easedPath, withEase } from "../key-views";
 import { Field } from "../Field";
 import { tiered, withMore } from "../help";
 import { useDisclosure } from "../useDisclosure";
@@ -1400,7 +1400,7 @@ export function SpatialAnimationPanel({
       </Field>
       <KeyViewEasing
         checked={path.ease ?? false}
-        onChange={(ease) => setPath((p) => ({ ...p, ease }))}
+        onChange={(ease) => setPath((p) => withEase(p, ease))}
         factor={path.easingFactor}
         onFactorChange={(easingFactor) =>
           setPath((p) => ({ ...p, easingFactor }))
