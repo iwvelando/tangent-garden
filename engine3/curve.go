@@ -303,9 +303,11 @@ func stencilWeights(a float64) (weights [5][2]float64) {
 // tables, never curve values or request-dependent geometry. Identical bits
 // share the original arithmetic; a full cache evaluates new positions normally.
 // The mutex also permits concurrent use of an evaluator outside the worker.
+// A nil build uses stencilWeights; tests substitute a counting builder.
 type stencilCache struct {
 	mu     sync.Mutex
 	values map[uint64][5][2]float64
+	build  func(float64) [5][2]float64
 }
 
 func (c *stencilCache) at(a float64) [5][2]float64 {
@@ -315,7 +317,11 @@ func (c *stencilCache) at(a float64) [5][2]float64 {
 	if w, ok := c.values[bits]; ok {
 		return w
 	}
-	w := stencilWeights(a)
+	build := c.build
+	if build == nil {
+		build = stencilWeights
+	}
+	w := build(a)
 	if len(c.values) < 256 {
 		if c.values == nil {
 			c.values = make(map[uint64][5][2]float64)

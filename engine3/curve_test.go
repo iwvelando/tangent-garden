@@ -281,8 +281,22 @@ func TestStencilWeightCache(t *testing.T) {
 			got[0][0] = 123 // Editing a delivered table cannot corrupt the next lookup.
 		}
 	}
-	if len(cache.values) == 0 {
-		t.Fatal("no coefficient reuse")
+	// Each distinct position is built once; repeats are served from storage.
+	builds := map[uint64]int{}
+	counted := stencilCache{build: func(a float64) [5][2]float64 {
+		builds[math.Float64bits(a)]++
+		return stencilWeights(a)
+	}}
+	positions := []float64{0, math.Copysign(0, -1), math.Nextafter(2, 0), math.Nextafter(2, 3)}
+	for range 3 {
+		for _, a := range positions {
+			counted.at(a)
+		}
+	}
+	for _, a := range positions {
+		if n := builds[math.Float64bits(a)]; n != 1 {
+			t.Fatalf("a=%g built %d times, want once", a, n)
+		}
 	}
 	for j := range 2048 {
 		a := 0.1 + float64(j)/1024
