@@ -271,23 +271,28 @@ func copyReceiverDiagnostics(d *SurfaceDiagnostics) *SurfaceDiagnostics {
 // Clone all public storage. In particular, copying only the slice headers
 // would let the WASM lifter clear cached rows or a caller edit cached points.
 // Pack values together so fresh ownership does not mean one allocation per
-// point. Nil rows, gaps and empty slices retain their JSON representation.
+// present point. Gaps need pointer slots but no value storage. Nil rows,
+// gaps and empty slices retain their JSON representation.
 func clonePointGrid[T any](source [][]*T) [][]*T {
 	out := cloneGrid(source)
 	count := 0
 	for _, row := range source {
-		count += len(row)
+		for _, p := range row {
+			if p != nil {
+				count++
+			}
+		}
 	}
 	points := make([]T, count)
 	at := 0
 	for i, row := range source {
 		for j, p := range row {
 			if p != nil {
-				points[at+j] = *p
-				out[i][j] = &points[at+j]
+				points[at] = *p
+				out[i][j] = &points[at]
+				at++
 			}
 		}
-		at += len(row)
 	}
 	return out
 }

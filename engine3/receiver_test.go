@@ -1036,9 +1036,9 @@ func TestReceiverEngineRefinedTraceReuse(t *testing.T) {
 }
 
 // Reuse private tracing and raster scratch across moving frames. A warm
-// 960-bin frame allocates about 12.4 MB, its own irradiance included.
+// 960-bin frame allocates about 10.9 MB, its own irradiance included.
 // Fresh raster differences, or a third bin grid, each add about 7.4 MB, to
-// 20.2 MB: allow 16 MB without depending on allocator-specific object counts.
+// 18.3 MB: allow 16 MB without depending on allocator-specific object counts.
 func TestReceiverWarmAllocationBudget(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
@@ -1761,8 +1761,8 @@ func TestReceiverDiagnosticsLifecycle(t *testing.T) {
 
 // Moving a warmed receiver must not allocate its breadth-first cell queues
 // again. Allow 16 MB per frame for owned output, fitting and other scratch,
-// above the observed 13.2 MB after geometry caching. Without queue reuse,
-// the same warmed cycle allocates about 19.2 MB per frame.
+// above the observed 10.4 MB with compact gap storage. Without queue reuse,
+// the same warmed cycle allocates about 16.5 MB per frame.
 func TestReceiverCellQueueAllocationBudget(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
@@ -2030,4 +2030,92 @@ func TestReceiverBaseLandingsStayCurrent(t *testing.T) {
 	c.Surface.USamples, c.Surface.VSamples = 24, 12
 	check()
 	check()
+}
+
+// A cone's collapsed/absent caustic sheets have gap grids. Copies must
+// preserve those gaps without reserving Vec3 storage for every empty slot.
+// The complete warm result, including independent geometry and bins, fits
+// in 4 MB; allocating vertex storage for gaps takes over 4.9 MB.
+func TestReceiverSparseGeometryStorageBudget(t *testing.T) {
+	c := spatialPresets(t)["Conic sections cut from a cone of light"]
+	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 8, 0
+	var worker Engine
+	for range 3 {
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	c.Rays.Receiver.Tilt++
+	result, err := worker.Compute(c)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.KeepAlive(result)
+	bytes := after.TotalAlloc - before.TotalAlloc
+	t.Logf("warm sparse geometry allocated %d bytes", bytes)
+	if bytes > 4_000_000 {
+		t.Fatalf("warm sparse geometry allocated %d bytes, want at most 4 MB", bytes)
+	}
+}
+
+// A density difference isolates the cost of vertices from the unavoidable
+// pointer slots. This bound stays useful if unrelated frame costs shrink.
+func TestReceiverPointGridGapAllocation(t *testing.T) {
+	const slots = 1 << 16
+	gaps := [][]*Vec3{make([]*Vec3, slots)}
+	dense := [][]*Vec3{make([]*Vec3, slots)}
+	p := Vec3{1, 2, 3}
+	for i := range dense[0] {
+		dense[0][i] = &p
+	}
+	allocated := func(source [][]*Vec3) uint64 {
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		out := clonePointGrid(source)
+		runtime.ReadMemStats(&after)
+		runtime.KeepAlive(out)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	sparseBytes, denseBytes := allocated(gaps), allocated(dense)
+	t.Logf("gap grid %d bytes; dense grid %d bytes", sparseBytes, denseBytes)
+	if denseBytes < sparseBytes+slots*24*9/10 {
+		t.Fatal("gap slots still allocate vertex storage")
+	}
+}
+
+func TestReceiverPointGridShapeAndOwnership(t *testing.T) {
+	p, q := Vec3{1, 2, 3}, Vec3{4, 5, 6}
+	source := [][]*Vec3{nil, {}, {nil, &p, nil, &q, &p}, {&q}, {nil, nil}}
+	out := clonePointGrid(source)
+	if !reflect.DeepEqual(source, out) {
+		t.Fatal("copy changed grid values, gaps or nil/empty rows")
+	}
+	if clonePointGrid[Vec3](nil) != nil {
+		t.Fatal("nil grid became nonnil")
+	}
+	if empty := clonePointGrid([][]*Vec3{}); empty == nil || len(empty) != 0 {
+		t.Fatal("empty grid changed shape")
+	}
+	for i, row := range out {
+		if row != nil && cap(row) != len(row) {
+			t.Fatalf("row %d can overwrite a neighbor by appending", i)
+		}
+	}
+	*out[2][1] = Vec3{7, 8, 9}
+	if p != (Vec3{1, 2, 3}) || *out[2][4] != p {
+		t.Fatal("copied vertices alias the source or each other")
+	}
+	out[2][3] = nil
+	if source[2][3] == nil || out[3][0] == nil {
+		t.Fatal("copied pointer slots alias another row or the source")
+	}
+	source[3][0].X = 100
+	if out[3][0].X != 4 {
+		t.Fatal("source mutation changed a delivered copy")
+	}
 }
