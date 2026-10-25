@@ -161,6 +161,7 @@ const family = {
 } as const;
 const config: SchemaOf<SpatialConfig> = {
   fields: {
+    allPaths: { optional: "boolean" },
     format: {
       options: {
         torus: true,
@@ -390,6 +391,7 @@ const config: SchemaOf<SpatialConfig> = {
           plane: { options: { x: true, y: true, z: true } },
           at: "number",
           grid: { optional: "boolean" },
+          allPaths: { optional: "boolean" },
         },
       },
     },

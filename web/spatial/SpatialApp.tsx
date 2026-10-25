@@ -568,7 +568,14 @@ export default function SpatialApp({
         format === "rays" ||
         format === "implicit"
       )
-        return { ...c, format };
+        return {
+          ...c,
+          format,
+          ...((format === "field" || format === "pursuit") &&
+          c.allPaths === undefined
+            ? { allPaths: true }
+            : {}),
+        };
       // Preserve an edited custom definition. A generated knot can also be opened
       // as expressions, with every pending scalar resolved before conversion.
       if (c.format === "parametric" || customOpened) return { ...c, format };
@@ -834,10 +841,10 @@ export default function SpatialApp({
   const fieldControls = (
     <>
       <p className="note">
-        Each trajectory starts at its seed (within ±100,000) and moves with
-        velocity (dx/dt, dy/dt, dz/dt) at (x, y, z) and time t. Use <var>x</var>
-        , <var>y</var>, <var>z</var>, <var>t</var>, and <var>a</var>. The first
-        seed&rsquo;s trajectory is the curve a construction uses.
+        Each seed (within ±100,000) follows velocity (dx/dt, dy/dt, dz/dt) at
+        (x, y, z, t). Expressions accept <var>x</var>, <var>y</var>,{" "}
+        <var>z</var>, <var>t</var>, and <var>a</var>. Choose whether a
+        construction uses path 1 or every path.
       </p>
       {(["x", "y", "z"] as const).map((axis) => (
         <Field label={`d${axis}/dt`} className="equation" key={axis}>
@@ -933,6 +940,7 @@ export default function SpatialApp({
               flows,
               frame!.config.field.min,
               frame!.config.construction !== "none",
+              !!frame!.config.allPaths,
             )
           : "Integrating…"}
       </p>
@@ -963,9 +971,9 @@ export default function SpatialApp({
   const pursuitControls = (
     <>
       <p className="note">
-        Each pursuer starts at (x, y, z) (within ±100,000) and runs straight at
-        the next, the last at the first, at its own speed v (0–100,000). The
-        first pursuer&rsquo;s path is the curve a construction uses.
+        Each pursuer starts within ±100,000 and runs straight at the next, the
+        last at the first, at speed v (0–100,000). Choose whether a construction
+        uses path 1 or every path.
       </p>
       {config.pursuit.pursuers.map((pursuer, i, all) => (
         <div
@@ -1048,6 +1056,7 @@ export default function SpatialApp({
               chase,
               frame!.config.pursuit.min,
               frame!.config.construction !== "none",
+              !!frame!.config.allPaths,
             )
           : "Chasing…"}
       </p>
@@ -2144,7 +2153,7 @@ export default function SpatialApp({
               ...canalNote(canalShown),
               ...frameNote(canalShown.frame, "meridians"),
             ].join(" ")
-          : "Rolling the spheres along the curve…"}
+          : (canalShown?.unavailable ?? "Rolling the spheres along the curve…")}
       </p>
     </>
   );
@@ -2966,6 +2975,49 @@ export default function SpatialApp({
                         <option value="none">None · the curve alone</option>
                       </select>
                     </Field>
+                    {(config.format === "field" ||
+                      config.format === "pursuit") &&
+                      !none && (
+                        <>
+                          <label className="check">
+                            <input
+                              type="checkbox"
+                              checked={!!config.allPaths}
+                              onChange={(e) => {
+                                const allPaths = e.target.checked;
+                                update((c) => ({ ...c, allPaths }));
+                              }}
+                            />
+                            Construct on all paths
+                          </label>
+                          <p className="note">
+                            {config.allPaths
+                              ? "Each moving path gets its own construction. Readouts and probes describe path 1."
+                              : "The construction and its readouts describe path 1."}
+                          </p>
+                          {shown?.result.unavailable && (
+                            <p className="note">
+                              Path 1: {shown.result.unavailable}
+                            </p>
+                          )}
+                          {shown?.result.members?.length ? (
+                            <details className="spatial-details">
+                              <summary>
+                                Other paths’ construction details
+                              </summary>
+                              {shown.result.members.map((m, k) => (
+                                <p key={k} className="note">
+                                  Path {k + 2}:{" "}
+                                  {m.unavailable ??
+                                    (m.canal
+                                      ? canalNote(m).join(" ")
+                                      : `${m.invalid} invalid samples; ${m.omitted} omitted intervals.`)}
+                                </p>
+                              ))}
+                            </details>
+                          ) : null}
+                        </>
+                      )}
                     {takesInput(config) && (
                       <>
                         <Field
@@ -3534,6 +3586,13 @@ export default function SpatialApp({
               <FieldErrorContext.Provider value={fieldError}>
                 <ShadowPanel
                   config={config}
+                  onAllPaths={(allPaths) =>
+                    update((c) =>
+                      c.shadow
+                        ? { ...c, shadow: { ...c.shadow, allPaths } }
+                        : c,
+                    )
+                  }
                   onPlane={(plane) =>
                     update((c) =>
                       withShadowPlane(c, plane, frame?.result.bounds),

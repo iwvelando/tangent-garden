@@ -39,39 +39,46 @@ func (a Vec3) unit() Vec3    { return a.mul(1 / a.norm()) }
 // developable. Format "field" makes
 // the base the first trajectory of the vector field described by Field, and
 // "pursuit" the first pursuer's path in the chase described by Pursuit.
+// AllPaths repeats the construction independently on the other paths too.
 // Format "surface" is not a curve: it studies the patch described by
 // Surface, and every other field is ignored. Format "rays" lights that
 // patch, as a mirror, with the light described by Rays; the surface study's
 // offset and normal reach are ignored too. Format "implicit" is the level
 // set described by Implicit, and every other field is ignored.
 type Request struct {
-	rayCache *rayCache
+	rayCache   *rayCache
+	integrated *integratedFamily
+	member     int
+	allowEmpty bool
 
-	Format       string           `json:"format"`
-	Construction string           `json:"construction"`
-	Input        string           `json:"input"`
-	Involute     InvoluteRequest  `json:"involute"`
-	Unwinding    UnwindingRequest `json:"unwinding"`
-	Coil         CoilRequest      `json:"coil"`
-	Pole         Vec3             `json:"pole"`
-	Harmonic     HarmonicCurve    `json:"harmonic"`
-	Inversion    InversionRequest `json:"inversion"`
-	Frame        FrameRequest     `json:"frame"`
-	Ruled        RuledRequest     `json:"ruled"`
-	Canal        CanalRequest     `json:"canal"`
-	Field        FieldRequest     `json:"field"`
-	Pursuit      PursuitRequest   `json:"pursuit"`
-	Surface      SurfaceRequest   `json:"surface"`
-	Rays         RaysRequest      `json:"rays"`
-	Implicit     ImplicitRequest  `json:"implicit"`
-	Curve        Curve            `json:"curve"`
-	Radius       float64          `json:"radius"`
-	Tube         float64          `json:"tube"`
-	Length       float64          `json:"length"`
-	P            int              `json:"p"`
-	Q            int              `json:"q"`
-	Samples      int              `json:"samples"`
-	Lines        int              `json:"lines"`
+	Format       string `json:"format"`
+	Construction string `json:"construction"`
+	// AllPaths applies the construction independently to every field or
+	// pursuit path. Absent preserves the original first-path study.
+	AllPaths  bool             `json:"allPaths,omitempty"`
+	Input     string           `json:"input"`
+	Involute  InvoluteRequest  `json:"involute"`
+	Unwinding UnwindingRequest `json:"unwinding"`
+	Coil      CoilRequest      `json:"coil"`
+	Pole      Vec3             `json:"pole"`
+	Harmonic  HarmonicCurve    `json:"harmonic"`
+	Inversion InversionRequest `json:"inversion"`
+	Frame     FrameRequest     `json:"frame"`
+	Ruled     RuledRequest     `json:"ruled"`
+	Canal     CanalRequest     `json:"canal"`
+	Field     FieldRequest     `json:"field"`
+	Pursuit   PursuitRequest   `json:"pursuit"`
+	Surface   SurfaceRequest   `json:"surface"`
+	Rays      RaysRequest      `json:"rays"`
+	Implicit  ImplicitRequest  `json:"implicit"`
+	Curve     Curve            `json:"curve"`
+	Radius    float64          `json:"radius"`
+	Tube      float64          `json:"tube"`
+	Length    float64          `json:"length"`
+	P         int              `json:"p"`
+	Q         int              `json:"q"`
+	Samples   int              `json:"samples"`
+	Lines     int              `json:"lines"`
 	// Diagnostics asks for the base curve's curvature, torsion, and Frenet
 	// frame at every sample. Surface, ray, and implicit studies ignore it.
 	Diagnostics bool `json:"diagnostics"`
@@ -135,16 +142,23 @@ type Ruling struct {
 	To          Vec3 `json:"to"`
 }
 type Result struct {
-	Bounds  Bounds    `json:"bounds"`
-	Invalid int       `json:"invalid"`
-	Breaks  []bool    `json:"breaks"`
-	Base    []*Vec3   `json:"base"`
-	Minus   []*Vec3   `json:"minus"`
-	Plus    []*Vec3   `json:"plus"`
-	Mesh    CurveMesh `json:"mesh"`
-	Rulings []Ruling  `json:"rulings"`
-	Radius  float64   `json:"radius"`
-	Omitted int       `json:"omitted"`
+	// Members are the remaining paths' constructions, in source order.
+	// Their meshes are combined into Mesh, with independent sample indices.
+	Members []Result `json:"members,omitempty"`
+	// Unavailable explains a family member with no regular input samples.
+	Unavailable string `json:"unavailable,omitempty"`
+	families    [][]*Vec3
+	reach       [][]Vec3
+	Bounds      Bounds    `json:"bounds"`
+	Invalid     int       `json:"invalid"`
+	Breaks      []bool    `json:"breaks"`
+	Base        []*Vec3   `json:"base"`
+	Minus       []*Vec3   `json:"minus"`
+	Plus        []*Vec3   `json:"plus"`
+	Mesh        CurveMesh `json:"mesh"`
+	Rulings     []Ruling  `json:"rulings"`
+	Radius      float64   `json:"radius"`
+	Omitted     int       `json:"omitted"`
 	// Involute is present only for the involute construction, which leaves
 	// the developable's Minus, Plus, Mesh, and Rulings empty.
 	Involute   *InvoluteResult   `json:"involute,omitempty"`
@@ -232,6 +246,13 @@ func jumps(a, b, middle Vec3, step, size float64) bool {
 }
 
 func Compute(c Request) (Result, error) {
+	if (c.Format == "field" || c.Format == "pursuit") && (c.AllPaths && c.Construction != "none" || c.shadowed() && c.Shadow.AllPaths) {
+		return computeFamily(c)
+	}
+	return computeSingle(c)
+}
+
+func computeSingle(c Request) (Result, error) {
 	if c.Probe != nil {
 		if !c.probedAnywhere() {
 			return Result{}, errProbe
@@ -369,14 +390,17 @@ func compute(c Request) (Result, error) {
 	var flow *flowCurve
 	var chase *spatialChase
 	var integrated evaluation
-	if c.Format == "field" {
+	if c.integrated != nil {
+		flow, chase = c.integrated.flow, c.integrated.chase
+		integrated = c.integrated.evaluation(c, c.member)
+	} else if c.Format == "field" {
 		var err error
 		if flow, err = c.Field.compile(); err != nil {
 			return Result{}, err
 		}
 		integrated = flow.flows[0].evaluation(flow.f, c.Field.Max-c.Field.Min)
 	}
-	if c.Format == "pursuit" {
+	if c.integrated == nil && c.Format == "pursuit" {
 		var err error
 		if chase, err = c.Pursuit.compile(); err != nil {
 			return Result{}, err
@@ -424,7 +448,16 @@ func compute(c Request) (Result, error) {
 			}
 		default:
 			if evaluate, unwoundAt, reached, restarts, err = c.Unwinding.evaluation(evaluate, lo, hi, baseCurve, baseBreaks, baseUnits); err != nil {
-				return Result{}, err
+				if _, unavailable := err.(*unavailableInput); !c.allowEmpty || !unavailable {
+					return Result{}, err
+				}
+				// Other paths can have a regular anchor even when this one
+				// rests or ends before it. Retain its source shadow only.
+				evaluate = func(float64) (Vec3, Vec3, Vec3, bool) {
+					nan := Vec3{math.NaN(), 0, 0}
+					return nan, nan, nan, false
+				}
+				composed = false
 			}
 			// A closed curve's involute ends a whole length of string from
 			// where it began.
@@ -641,13 +674,21 @@ func compute(c Request) (Result, error) {
 	if c.Format == "harmonic" {
 		out.Harmonic, generating = harmonicGeometry(c, lo, hi)
 	}
-	if c.Format == "field" {
+	if c.Format == "field" && c.member == 0 {
 		out.Field, generating = fieldGeometry(c, flow.f, flow.timed, flow.flows)
 	}
-	if c.Format == "pursuit" {
+	if c.Format == "pursuit" && c.member == 0 {
 		out.Pursuit, generating = pursuitGeometry(c, chase)
 	}
 	if out.Invalid == n+1 {
+		if c.allowEmpty {
+			out.Unavailable = "This path has no regular input samples; its construction is omitted."
+			out.Minus, out.Plus = []*Vec3{}, []*Vec3{}
+			out.families = append([][]*Vec3{out.Base}, generating...)
+			out.Bounds = fit(out.families...)
+			out.Radius = out.Bounds.Radius
+			return out, nil
+		}
 		switch {
 		case composed && c.Input == "coil":
 			return Result{}, fmt.Errorf("the input curve has no regular sample: the coil stands still or is undefined; change its radius, angle or turns, or choose another input curve")
@@ -702,6 +743,7 @@ func compute(c Request) (Result, error) {
 		}
 		out.Bounds = fitReach(all, reach)
 		out.Radius = out.Bounds.Radius
+		out.families, out.reach = all, reach
 		if out.shadowing != nil {
 			out.shadowing.families, out.shadowing.reach = all, reach
 		}

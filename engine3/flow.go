@@ -12,8 +12,8 @@ import (
 // shape parameter A. A trajectory ends early the first time it leaves the
 // sphere of radius Escape about the origin, or where the field stops being
 // finite along it. Trajectories are independent: one ending never stops
-// another. The first seed's trajectory is the base curve that every
-// construction uses.
+// another. The first seed's trajectory is the primary base curve;
+// Request.AllPaths builds the construction independently on the others too.
 type FieldRequest struct {
 	X      string  `json:"x"`
 	Y      string  `json:"y"`

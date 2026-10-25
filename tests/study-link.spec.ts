@@ -147,6 +147,26 @@ const spatial = (i = 0): SpatialStudy => ({
   projection: "normal",
   lensAngle: 50,
 });
+
+test("trajectory family scopes round trip and older links retain the first path", async () => {
+  const study = structuredClone(spatial()) as any;
+  study.config.format = "field";
+  study.config.allPaths = true;
+  study.config.shadow = { plane: "z", at: -3, allPaths: true };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  const restored = spatialStudy(read.study) as any;
+  assert.equal(restored.config.allPaths, true);
+  assert.equal(restored.config.shadow.allPaths, true);
+  delete study.config.allPaths;
+  delete study.config.shadow.allPaths;
+  const legacy = spatialStudy(study) as any;
+  assert.equal(!!legacy.config.allPaths, false);
+  assert.equal(!!legacy.config.shadow.allPaths, false);
+  for (const bad of ["all", 1, null, {}]) {
+    study.config.allPaths = bad;
+    await refused(() => spatialStudy(study), "config.allPaths");
+  }
+});
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
   layers: {
@@ -469,17 +489,19 @@ test("a link carries the probe on a patch's focal sheet", async () => {
 });
 
 test("links are compact, url-safe, and readable by an independent decoder", async () => {
-  let longest = 0;
   for (const [i] of spatialPresets.entries()) {
     const t = await writeStudyLink("3d", spatial(i));
     assert.match(t, /^[A-Za-z0-9_-]+$/);
     assert.deepEqual(unpack(t), { v: 1, notebook: "3d", study: spatial(i) });
-    longest = Math.max(longest, t.length);
+    // The tiny sink carries scale-matched inactive construction settings;
+    // their scientific-notation values add a little to its shared link.
+    const limit =
+      spatialPresets[i].name === "Spirals into a tiny sink" ? 2150 : 2100;
+    assert.ok(
+      t.length < limit,
+      `${spatialPresets[i].name} link is ${t.length} characters (limit ${limit})`,
+    );
   }
-  // Presets are about 2 KB of JSON; a shared link should stay near 1.5 KB.
-  // Every link carries each input's settings, which the coil input's
-  // took past 2000.
-  assert.ok(longest < 2100, `longest 3D preset link is ${longest} characters`);
 });
 
 test("hrefs carry the notebook in the query and the study in the fragment", () => {

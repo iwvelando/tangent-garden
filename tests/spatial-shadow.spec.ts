@@ -3,7 +3,7 @@ import { reveal } from "../web/spatial/animation";
 import { buildScene, defaultLayers, scenePasses } from "../web/spatial/scene";
 import { sheetOffset } from "../web/spatial/sight";
 import { spatialPresets } from "../web/spatial/presets";
-import { shadowAt } from "../web/spatial/shadow";
+import { shadowAt, shadowNote } from "../web/spatial/shadow";
 import type { SpatialResult, ShadowPath } from "../web/spatial/types";
 import { chooseColorScheme, choosePreset } from "./helpers";
 
@@ -42,6 +42,62 @@ async function openAnimation(page: Page) {
 const staircase = "A staircase's shadow, unwinding",
   trefoil = "A trefoil's feet and their shadow",
   ring = "A rippling ring, inverted, and its shadow";
+
+test("family shadow notes compare every constructed path and reveal each planar study", () => {
+  const c = structuredClone(spatialPresets[0].config);
+  c.construction = "tangent-foot";
+  c.allPaths = true;
+  const points = [0, 1, 2].map((x) => ({ x, y: 0, z: -3 }));
+  const one = {
+    plane: "z",
+    at: -3,
+    corners: [points[0], points[2], points[2], points[0]],
+    curve: { points, breaks: [false, false, false] },
+    kind: "pedal",
+    planar: [],
+    cast: [],
+    compared: 3,
+    size: 1,
+    notes: [],
+    deviation: 0,
+    study: {
+      unit: 1,
+      kind: "pedal",
+      input: "curve",
+      pole: { x: 0, y: 0 },
+      inversion: { center: { x: 0, y: 0 }, radius: 1 },
+      result: {
+        base: points,
+        derived: points,
+        virtual: [],
+        family: [],
+        rays: [],
+        circles: [],
+        rolling: [],
+      },
+    },
+  };
+  const shadow = { ...one, family: [{ ...one, deviation: 0.2 }] };
+  expect(shadowNote(c, shadow as any, "default")).toContain("20%");
+  const result = {
+    base: points,
+    minus: [],
+    plus: [],
+    breaks: [],
+    rulings: [],
+    mesh: {
+      vertices: new Float64Array(),
+      triangles: new Int32Array(),
+      sampleIndex: new Int32Array(),
+    },
+    bounds: { center: { x: 1, y: 0, z: 0 }, radius: 1 },
+    shadow,
+  } as any;
+  const half = reveal(result, 0.5);
+  expect(half.shadow.study.result.base).toHaveLength(2);
+  expect(half.shadow.family[0].study.result.derived).toHaveLength(2);
+  expect(shadow.family[0].study.result.derived).toHaveLength(3);
+});
 
 test("a plane casts the study's shadow beside its 2D construction, and taking it away restores the drawing", async ({
   page,

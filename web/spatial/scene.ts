@@ -450,7 +450,7 @@ export const harmonicEllipses = (terms: HarmonicTerm[], s: HarmonicPosition) =>
 
 // Everything the drawing shows of a result, built once per result. The
 // WebGL renderer uploads it, and vector linework projects its lines.
-export function buildScene(result: SpatialResult) {
+function buildSingleScene(result: SpatialResult) {
   const origin = drawingOrigin(result.bounds);
   const from = origin && { origin };
   function batch(
@@ -1164,11 +1164,15 @@ export function buildScene(result: SpatialResult) {
   // shadow of the study's own construction thin, in slate, drawn after it,
   // so where the two coincide a slate line runs down a rust one.
   const shade = result.shadow;
-  const shadowCurve = path(
-    shade?.curve.points ?? [],
-    shade?.curve.breaks ?? [],
+  const shadows = shade ? [shade, ...(shade.family ?? [])] : [];
+  const shadowCurve = batch(
+    vertices(
+      shadows.flatMap((s) =>
+        curve(s.curve.points, s.curve.breaks, s.adaptive?.curve),
+      ),
+    ),
+    "lines",
     4,
-    shade?.adaptive?.curve,
     1.3,
   );
   const shadowFrame = batch(
@@ -1180,8 +1184,10 @@ export function buildScene(result: SpatialResult) {
   );
   const planar = batch(
     vertices(
-      (shade?.planar ?? []).flatMap((p, k) =>
-        curve(p.points, p.breaks, shade!.adaptive?.planar?.[k]),
+      shadows.flatMap((s) =>
+        s.planar.flatMap((p, k) =>
+          curve(p.points, p.breaks, s.adaptive?.planar?.[k]),
+        ),
       ),
     ),
     "lines",
@@ -1190,8 +1196,10 @@ export function buildScene(result: SpatialResult) {
   );
   const cast = batch(
     vertices(
-      (shade?.cast ?? []).flatMap((p, k) =>
-        curve(p.points, p.breaks, shade!.adaptive?.cast?.[k]),
+      shadows.flatMap((s) =>
+        s.cast.flatMap((p, k) =>
+          curve(p.points, p.breaks, s.adaptive?.cast?.[k]),
+        ),
       ),
     ),
     "lines",
@@ -1269,7 +1277,19 @@ export function buildScene(result: SpatialResult) {
     cast,
   };
 }
-export type Scene = ReturnType<typeof buildScene>;
+export type Scene = ReturnType<typeof buildSingleScene> & { members?: Scene[] };
+
+export function buildScene(result: SpatialResult): Scene {
+  const scene: Scene = buildSingleScene(result);
+  if (result.members?.length) {
+    // Every batch uses the same origin and marker scale as the whole study.
+    // The root mesh already contains every member's indexed triangles.
+    scene.members = result.members.map((m) =>
+      buildScene({ ...m, bounds: result.bounds }),
+    );
+  }
+  return scene;
+}
 
 // One step of the drawing: a batch, the layer that shows it (the base is
 // always shown), and whether it is a shaded sheet, drawn pushed back so that
@@ -1367,6 +1387,12 @@ export function scenePasses(
   add("seam", layers.seam, false, s.seam);
   add("pole", layers.pole, false, s.pole);
   add("sphere", layers.sphere, false, s.center);
+  for (const member of s.members ?? [])
+    // Source paths are already drawn by the root's trajectories layer.
+    // Derived inputs replace them locally, so draw those bases as well.
+    for (const pass of scenePasses(member, layers))
+      if (pass.layer !== "base" || member.parent.data.length > 0)
+        out.push(pass);
   if (edge) add("cut", true, false, edge);
   add("probe", true, false, ...probe);
   return out;

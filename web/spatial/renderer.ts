@@ -2,6 +2,7 @@ import type { ColorScheme } from "../color-schemes";
 import type { SpatialResult } from "./types";
 import {
   buildScene,
+  defaultLayers,
   camera,
   cameraFrom,
   sceneLayers,
@@ -987,8 +988,8 @@ export function createRenderer(
     textures.splice(0).forEach((t) => gl!.deleteTexture(t));
     uploaded.clear();
     scene = buildScene(result);
-    for (const value of Object.values(scene))
-      (Array.isArray(value) ? value : [value]).forEach((b) => put(b));
+    for (const { batch } of scenePasses(scene, defaultLayers))
+      if (!uploaded.has(batch)) put(batch);
   }
   // An export can draw on another background than the theme's: a
   // transparent still is drawn over black and over white (see matte in

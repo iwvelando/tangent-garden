@@ -61,6 +61,8 @@ type Props = {
   // the 3D notebook's grid (spatial/grid.ts): the drawing shows it, and has
   // no camera of its own.
   framing?: { cx: number; cy: number; scale: number; span: number };
+  // Several synchronized planar studies may overlay on the same page.
+  transparent?: boolean;
   id?: string;
 };
 const W = 1000,
@@ -179,6 +181,7 @@ export function Plot({
   refineView = false,
   onFocus,
   framing,
+  transparent = false,
   id = "artwork",
 }: Props) {
   // Every stroke's regular width, at the chosen line weight.
@@ -602,7 +605,7 @@ export function Plot({
       tabIndex={framing ? undefined : 0}
       aria-hidden={framing ? true : undefined}
       style={{
-        background: palette.bg,
+        background: transparent ? "transparent" : palette.bg,
         touchAction: touchEnabled ? "none" : "pan-y pinch-zoom",
       }}
       onKeyDown={(e) => {

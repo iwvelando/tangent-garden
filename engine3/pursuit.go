@@ -20,8 +20,8 @@ type SpatialPursuer struct {
 // capture policy: the chase stops, for every pursuer, the first time any
 // pursuer comes within Capture of its own target. Nothing merges, nobody
 // changes target, and pursuers that are not chasing one another may pass
-// through each other. The first pursuer's path is the base curve that every
-// construction uses.
+// through each other. The first pursuer's path is the primary base curve;
+// Request.AllPaths builds the construction independently on the others too.
 type PursuitRequest struct {
 	Pursuers []SpatialPursuer `json:"pursuers"`
 	Capture  float64          `json:"capture"`
@@ -113,6 +113,12 @@ func (c *spatialChase) positions(t float64) []Vec3 {
 // its acceleration the exact derivative of that law, (v₁/d)(w − (u·w)u) for
 // the closing velocity w = p₂′ − p₁′. Nothing is differentiated numerically.
 func (c *spatialChase) evaluation() evaluation {
+	return c.evaluationAt(0)
+}
+
+// evaluationAt uses the same integrated chase and the chosen pursuer's
+// own target and speed. It never reorders or reintegrates the chase.
+func (c *spatialChase) evaluationAt(index int) evaluation {
 	return func(t float64) (Vec3, Vec3, Vec3, bool) {
 		ps := c.positions(t)
 		if ps == nil {
@@ -121,12 +127,13 @@ func (c *spatialChase) evaluation() evaluation {
 		}
 		n := len(ps)
 		heading := func(i int) Vec3 { return ps[(i+1)%n].sub(ps[i]).unit().mul(c.Speeds[i]) }
-		gap := ps[1].sub(ps[0])
+		next := (index + 1) % n
+		gap := ps[next].sub(ps[index])
 		d := gap.norm()
-		u, v := gap.mul(1/d), heading(0)
-		w := heading(1).sub(v)
-		a := w.sub(u.mul(u.dot(w))).mul(c.Speeds[0] / d)
-		return ps[0], v, a, ps[0].valid() && v.valid()
+		u, v := gap.mul(1/d), heading(index)
+		w := heading(next).sub(v)
+		a := w.sub(u.mul(u.dot(w))).mul(c.Speeds[index] / d)
+		return ps[index], v, a, ps[index].valid() && v.valid()
 	}
 }
 
