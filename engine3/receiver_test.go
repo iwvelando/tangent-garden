@@ -2119,3 +2119,137 @@ func TestReceiverPointGridShapeAndOwnership(t *testing.T) {
 		t.Fatal("source mutation changed a delivered copy")
 	}
 }
+
+// The inset needs its own result bins, but a repeated view must not allocate
+// another equally large private differences grid on every frame.
+func TestReceiverViewScratchAllocationBudget(t *testing.T) {
+	c := receive(flat(1, lamp(Vec3{.2, -.3, 1})), "z", 2, 0, 0, 3, 32)
+	c.Rays.Receiver.RefineView = true
+	c.View = &View{Center: Vec3{0, 0, 2}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: .5, Height: .4, Pixels: [2]int{960, 640}}
+	var worker Engine
+	for i := 0; i < 3; i++ {
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.View.Pixels = [2]int{959, 640}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	result, err := worker.Compute(c)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inset := result.Rays.Receiver.Inset
+	if inset == nil {
+		t.Fatal("no view inset")
+	}
+	w, h := len(inset.Irradiance), len(inset.Irradiance[0])
+	if w < 900 || h < 600 {
+		t.Fatalf("inset too small to exercise storage: %d × %d", w, h)
+	}
+	// Fresh result bins plus 1 MB for the small surface, full window and
+	// fixed overhead. A second inset grid adds about 5 MB and fails this.
+	limit := uint64(8*w*h + 1_000_000)
+	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > limit {
+		t.Fatalf("warm inset allocated %d bytes, want at most %d", bytes, limit)
+	}
+	runtime.KeepAlive(result)
+}
+
+func BenchmarkReceiverMovingInset(b *testing.B) {
+	c := spatialPresets(b)["A glass dome's luminous ring, close up"]
+	c.View = &View{Center: Vec3{0, 0, -1.9}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: .15, Height: .1, Pixels: [2]int{960, 640}}
+	var worker Engine
+	b.ReportAllocs()
+	for b.Loop() {
+		c.View.Center.X += .0001
+		result, err := worker.Compute(c)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if result.Rays.Receiver.Inset == nil {
+			b.Fatal("no view inset")
+		}
+	}
+}
+
+// Insets can change shape independently of the window. Reuse must preserve
+// exact stateless results, earlier replies and fresh result ownership, and
+// release the inset storage whenever the view no longer requests one.
+func TestReceiverViewScratchSequence(t *testing.T) {
+	c := refined(receive(flat(1, lamp(Vec3{.2, -.3, 1})), "z", 2, 0, 0, 3, 32), 1)
+	c.Rays.Receiver.RefineView = true
+	c.View = &View{Center: Vec3{0, 0, 2}, Right: Vec3{1, 0, 0}, Up: Vec3{0, 1, 0}, Width: .5, Height: .4, Pixels: [2]int{60, 40}}
+	var worker Engine
+	for i := 0; i < 2; i++ {
+		if _, err := worker.Compute(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := worker.Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := receiverResultJSON(t, first)
+	for _, change := range []func(){
+		func() { c.View.Center.X = .1 },
+		func() { c.View.Pixels = [2]int{71, 40} }, // same height, different width
+		func() { c.View.Pixels = [2]int{40, 71} },
+		func() { c.Rays.Receiver.Tilt = 17 },
+		func() { c.View.Center.X = 100 }, // window is outside the view
+		func() { c.View.Center.X = 0; c.View.Pixels = [2]int{60, 40} },
+		func() { c.Rays.Receiver.RefineView = false },
+		func() { c.Rays.Receiver.RefineView = true },
+		func() { c.View = nil },
+	} {
+		change()
+		got, err := worker.Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := Compute(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receiverResultJSON(t, got) != receiverResultJSON(t, want) {
+			t.Fatal("inset reuse changed the result")
+		}
+		if receiverResultJSON(t, first) != saved {
+			t.Fatal("inset reuse overwrote an earlier reply")
+		}
+		if inset := got.Rays.Receiver.Inset; inset != nil {
+			rows := worker.rays.insetRaster.rows
+			if cap(worker.rays.insetRaster.values) > 1024*(1024+2) {
+				t.Fatal("inset scratch exceeded its maximum bin budget")
+			}
+			if len(rows) != len(inset.Irradiance[0]) || len(rows[0]) != len(inset.Irradiance)+2 {
+				t.Fatal("retained more than the current inset dimensions")
+			}
+			inset.Irradiance[0][0] = 1e20
+			inset.Irradiance[0] = nil // emulate transport consuming a delivered row
+			again, err := worker.Compute(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if receiverResultJSON(t, again) != receiverResultJSON(t, want) {
+				t.Fatal("delivered inset corrupted later results")
+			}
+		} else if worker.rays.insetRaster.rows != nil || worker.rays.insetRaster.scale != nil || worker.rays.insetRaster.values != nil {
+			t.Fatal("absent inset retained raster storage")
+		}
+	}
+}
+
+// A shorter but wider view may grow the value buffer while shrinking the
+// row table. Spare row headers must not keep the superseded buffer alive.
+func TestReceiverRasterScratchDropsOldRows(t *testing.T) {
+	s := newRasterScratch(4, 8)
+	s.prepare(100, 2)
+	for _, row := range s.rows[len(s.rows):cap(s.rows)] {
+		if row != nil {
+			t.Fatal("spare row retained an old scratch buffer")
+		}
+	}
+}

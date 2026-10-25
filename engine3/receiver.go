@@ -350,13 +350,13 @@ func (q SurfaceRequest) receiveRaster(r RaysRequest, samples [][]mirrorPoint, sc
 		leaves[level], cells = whole, next
 	}
 	leaves[levels] = cells
-	// Only the window keeps its raster scratch: an inset's size follows
-	// the view, and alternating sizes would reallocate both every frame.
+	// Keep the window and inset scratch separate: their different dimensions
+	// must not displace each other on every pass.
 	var g *raster
 	if target == nil {
 		g = cache.receiverRaster(n)
 	} else {
-		g = newRaster(n, ny)
+		g = cache.receiverInsetRaster(n, ny)
 	}
 	landed := 0.0
 	for _, level := range leaves {
@@ -438,11 +438,12 @@ type raster struct {
 }
 
 // rasterScratch is private accumulation storage; the finished bins always
-// belong to the result. Only the window's current bin count is retained,
-// bounded by 960² bins (under 8 MiB), and changing the ray family releases
-// it with the cache.
+// belong to the result. Each pass retains at most its largest requested
+// grid: 960² bins for the window and 1024² for the inset. Changing the ray
+// family releases both; an absent inset releases its scratch immediately.
 type rasterScratch struct {
-	rows [][]float64
+	rows   [][]float64
+	values []float64
 	// scale[row] sums the magnitudes added to the row, which bounds the
 	// rounding its running sum can leave.
 	scale []float64
@@ -465,22 +466,58 @@ func irradianceGrid(w, h int) [][]float64 {
 }
 
 func newRasterScratch(w, h int) rasterScratch {
-	return rasterScratch{rows: grid2[float64](h, w+2), scale: make([]float64, h)}
+	var s rasterScratch
+	s.resize(w, h)
+	return s
 }
 
 func (c *rayCache) receiverRaster(n int) *raster {
 	if c == nil {
 		return newRaster(n, n)
 	}
-	if len(c.raster.rows) != n {
-		c.raster = newRasterScratch(n, n)
-	} else {
-		for _, row := range c.raster.rows {
-			clear(row)
-		}
-		clear(c.raster.scale)
+	return c.raster.prepare(n, n)
+}
+
+func (c *rayCache) receiverInsetRaster(w, h int) *raster {
+	if c == nil {
+		return newRaster(w, h)
 	}
-	return &raster{w: n, h: n, rasterScratch: c.raster, points: irradianceGrid(n, n)}
+	return c.insetRaster.prepare(w, h)
+}
+
+// Reshape private storage within its capacity so a one-bin change in a
+// projected view does not allocate another large grid. Keep row capacities
+// bounded to their widths, and reset both differences and rounding scales.
+func (s *rasterScratch) resize(w, h int) {
+	count := h * (w + 2)
+	if cap(s.values) < count {
+		s.values = make([]float64, count)
+	} else {
+		s.values = s.values[:count]
+		clear(s.values)
+	}
+	if cap(s.rows) < h {
+		s.rows = make([][]float64, h)
+	} else {
+		s.rows = s.rows[:h]
+	}
+	if cap(s.scale) < h {
+		s.scale = make([]float64, h)
+	} else {
+		s.scale = s.scale[:h]
+		clear(s.scale)
+	}
+	// Spare headers must not retain a previous value buffer after a resize.
+	clear(s.rows[:cap(s.rows)])
+	for i := range s.rows {
+		start, end := i*(w+2), (i+1)*(w+2)
+		s.rows[i] = s.values[start:end:end]
+	}
+}
+
+func (s *rasterScratch) prepare(w, h int) *raster {
+	s.resize(w, h)
+	return &raster{w: w, h: h, rasterScratch: *s, points: irradianceGrid(w, h)}
 }
 
 // triangle spreads flux over the triangle p, in bin coordinates.
