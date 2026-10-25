@@ -900,3 +900,39 @@ test("a receiver view inset draws and exports through WebKit", async ({
   await expect(stage).toHaveAttribute("aria-busy", "false");
   await expect(page.getByTestId("rays-note")).not.toContainText("inset");
 });
+
+test("easing factor accepts edits and preserves them across checkbox click and blur in both notebooks", async ({
+  page,
+}) => {
+  for (const [url, label] of [
+    ["/", "Inside a star's point"],
+    ["/?study=3d", "Viviani's curve, from every side"],
+  ]) {
+    await page.goto(url);
+    await choosePreset(page, { label });
+    const section = page.locator(
+      url === "/" ? "#animation-section" : "#spatial-animation-section",
+    );
+    if ((await section.getAttribute("open")) === null)
+      await section.locator(":scope > summary").click();
+    const toggle = page.getByRole("checkbox", {
+      name: "Ease key-view transitions",
+      exact: true,
+    });
+    await toggle.check();
+    const factor = page.getByRole("spinbutton", {
+      name: "Easing factor",
+      exact: true,
+    });
+    await factor.fill("0.75");
+    await toggle.click();
+    await expect(factor).toBeDisabled();
+    await toggle.click();
+    await expect(factor).toBeEnabled();
+    await expect(factor).toHaveValue("0.75");
+    await factor.focus();
+    await factor.press("ArrowUp");
+    await factor.press("Tab");
+    await expect(factor).toHaveValue("0.8");
+  }
+});

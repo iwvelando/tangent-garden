@@ -181,6 +181,75 @@ test("key-view easing keeps the existing route and is opt-in, including a two-vi
     expect(pathView(eased, bounds, f)).toEqual(pathView(p, bounds, f));
 });
 
+test("spatial easing factor keeps legacy paths, key times and pivots, and strengthens settling without a hold", () => {
+  for (const style of ["steady", "smooth"] as const) {
+    const original = {
+      ...path(tour, style),
+      keys: tour.map((k, i) => ({ ...k, leg: i ? [0, 0.5, 3, 1][i] : 1 })),
+    };
+    for (const cyclic of [false, true])
+      for (const depths of [undefined, tour.map(() => 0.05)])
+        for (const lens of [{}, { projection: "normal" as const }]) {
+          const at = (p: CameraPath, t: number) =>
+            pathView(p, bounds, t, cyclic, depths, lens);
+          for (const easingFactor of [0, 0.25, 0.5, 0.75, 1]) {
+            const eased = { ...original, ease: true, easingFactor };
+            keyTimes(eased).forEach((t) =>
+              expect(at(eased, t)).toEqual(at(original, t)),
+            );
+            for (let k = 0; k <= 40; k++) {
+              const t = k / 40;
+              if (easingFactor === 0)
+                expect(at(eased, t)).toEqual(at(original, t));
+              if (easingFactor === 0.5)
+                expect(at(eased, t)).toEqual(
+                  at({ ...original, ease: true }, t),
+                );
+              expect(at({ ...eased, ease: false }, t)).toEqual(at(original, t));
+            }
+          }
+        }
+    const two = path([key({}), key({ turns: 1 })], style);
+    const q5 = 53 / 512,
+      q9 = 6413 / 131072;
+    for (const [easingFactor, fraction] of [
+      [0, 0.25],
+      [0.25, (0.25 + q5) / 2],
+      [0.5, q5],
+      [0.6, 0.8 * q5 + 0.2 * q9],
+      [0.75, (q5 + q9) / 2],
+      [1, q9],
+    ])
+      expect(
+        pathView({ ...two, ease: true, easingFactor }, bounds, 0.25).yaw,
+      ).toBeCloseTo(2 * Math.PI * fraction, 12);
+    let previous = 0;
+    for (let k = 1; k < 100; k++) {
+      const yaw = pathView(
+        { ...two, ease: true, easingFactor: 1 },
+        bounds,
+        k / 100,
+      ).yaw;
+      expect(yaw).toBeGreaterThan(previous);
+      expect(yaw).toBeLessThan(2 * Math.PI);
+      previous = yaw;
+    }
+  }
+});
+
+test("spatial easing factor validation names the field", () => {
+  const p = path(tour);
+  for (const ease of [true, false]) {
+    for (const easingFactor of [-0.01, 1.01, NaN, Infinity])
+      expect(pathError({ ...p, ease, easingFactor })).toEqual({
+        field: "Easing factor",
+        message: "must be from 0 to 1.",
+      });
+    for (const easingFactor of [undefined, 0, 0.5, 1])
+      expect(pathError({ ...p, ease, easingFactor })).toBeNull();
+  }
+});
+
 test("the camera stands exactly at each key view at its share of the duration, in either style", () => {
   for (const style of ["steady", "smooth"] as const) {
     const p = path(tour, style);

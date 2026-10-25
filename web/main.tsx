@@ -2300,7 +2300,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               disabled={busy || !!error}
               onView={setAnimation}
               onRunning={setAnimationRunning}
-              onPlay={revealPlot}
+              onReveal={revealPlot}
               settings={animationSettings}
               restore={busy ? null : restoredAnimation}
             />

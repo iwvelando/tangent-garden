@@ -96,7 +96,13 @@ import {
 import { saveFile } from "./export-image";
 import { Field } from "./Field";
 import { KeyViews, KeyViewEasing } from "./KeyViews";
-import { easedPath, pathLeg, pathStyles, type PathStyle } from "./key-views";
+import {
+  easedPath,
+  pathLeg,
+  pathStyles,
+  withEase,
+  type PathStyle,
+} from "./key-views";
 import {
   asFirst,
   defaultPlanarPath,
@@ -202,8 +208,9 @@ type Props = {
   onShowCamera: (camera: PlotCamera) => void;
   onView: (view: AnimationView | null) => void;
   onRunning: (running: boolean) => void;
-  // Called when playback starts or resumes, so the drawing can be shown.
-  onPlay: () => void;
+  // Called once playback shows its first frame, or resumes, so the drawing
+  // can be shown; never for a start that is refused.
+  onReveal: () => void;
   // The animation setup, kept current for a study link.
   settings?: { current: PlanarAnimation | null };
   // A setup from a study link, applied once per id. The notebook passes it
@@ -230,7 +237,7 @@ export function AnimationPanel({
   onShowCamera,
   onView,
   onRunning,
-  onPlay,
+  onReveal,
   settings,
   restore,
 }: Props) {
@@ -749,7 +756,6 @@ export function AnimationPanel({
   }
   async function start(save = false) {
     if (!frame || !client.current) return;
-    if (!save) onPlay();
     cancel();
     const token = epoch.current;
     setError("");
@@ -993,6 +999,7 @@ export function AnimationPanel({
       const firstView = await sample(s, 0);
       if (epoch.current !== token) return;
       display(s, firstView);
+      onReveal();
       schedule(s, 0);
     } catch (error) {
       if (epoch.current === token) fail(error, save ? "Export" : "Animation");
@@ -1114,6 +1121,7 @@ export function AnimationPanel({
                         path.style === "smooth"
                           ? planarPathHelp.smooth
                           : planarPathHelp.steady,
+                        path.easingFactor,
                       )
                     : path.style === "smooth"
                       ? planarPathHelp.smooth
@@ -1136,7 +1144,11 @@ export function AnimationPanel({
               </Field>
               <KeyViewEasing
                 checked={path.ease ?? false}
-                onChange={(ease) => setPath((p) => ({ ...p, ease }))}
+                onChange={(ease) => setPath((p) => withEase(p, ease))}
+                factor={path.easingFactor}
+                onFactorChange={(easingFactor) =>
+                  setPath((p) => ({ ...p, easingFactor }))
+                }
               />
               <KeyViews
                 keys={path.keys}
@@ -1444,7 +1456,7 @@ export function AnimationPanel({
               <button
                 onClick={() => {
                   if (!session.current) return;
-                  onPlay();
+                  onReveal();
                   schedule(session.current, progress);
                 }}
               >

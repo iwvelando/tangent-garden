@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
-import { isTiered, withMore, type Help } from "../web/help";
+import { helpText, isTiered, withMore, type Help } from "../web/help";
 import { svgWeightHelp } from "../web/line-weight";
 import { spatialViewHelp, viewHelp } from "../web/refinement";
 import { planarPathHelp } from "../web/planar-path";
@@ -19,7 +19,7 @@ import {
   smoothLoopHelp,
 } from "../web/spatial/loop";
 import { pathHelp } from "../web/spatial/path";
-import { easedPath, transitionHelp } from "../web/key-views";
+import { easedPath, easingFactorHelp, transitionHelp } from "../web/key-views";
 import { spatialPresets } from "../web/spatial/presets";
 import {
   betweenHelp as spatialBetweenHelp,
@@ -204,6 +204,9 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("3D eased steady path", easedPath(pathHelp.steady));
   add("3D eased smooth path", easedPath(pathHelp.smooth));
   add("key-view easing", transitionHelp);
+  add("key-view easing factor", easingFactorHelp);
+  add("partial 2D easing", easedPath(planarPathHelp.smooth, 0.25));
+  add("partial 3D easing", easedPath(pathHelp.smooth, 0.25));
   add("2D probe motion", curveProbeMotionHelp);
   add("2D probe motion between samples", betweenMotionHelp);
   add("3D between samples", spatialBetweenHelp);
@@ -292,4 +295,21 @@ test("every help a setting reveals keeps to the same limits", () => {
         .toBeLessThanOrEqual(moreWords);
   }
   expect(helps.length).toBeGreaterThan(200);
+});
+
+test("path help distinguishes zero, partial and fully settling easing factors", () => {
+  for (const style of [
+    planarPathHelp.steady,
+    planarPathHelp.smooth,
+    pathHelp.steady,
+    pathHelp.smooth,
+  ]) {
+    expect(easedPath(style, 0)).toEqual(style);
+    expect(helpText(easedPath(style, 0.25))).toContain(
+      "softening speed changes",
+    );
+    expect(helpText(easedPath(style, 0.25))).not.toContain("easing to rest");
+    expect(helpText(easedPath(style, 0.5))).toContain("easing to rest");
+    expect(helpText(easedPath(style, 1))).toContain("easing to rest");
+  }
 });

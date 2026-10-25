@@ -10,6 +10,7 @@
 // take without a singularity, and they are interpolated directly.
 import { tiered } from "../help";
 import {
+  easingError,
   hermite,
   keysError,
   legHelp,
@@ -74,6 +75,7 @@ export type KeyView = {
 export type CameraPath = {
   style: PathStyle;
   ease?: boolean;
+  easingFactor?: number;
   pivot?: PathPivot;
   fit?: boolean;
   keys: KeyView[];
@@ -154,6 +156,8 @@ export function pathError(
   path: CameraPath,
   zoomLimit = spatialPlainZoom,
 ): PathError | null {
+  const easing = easingError(path);
+  if (easing) return easing;
   return keysError(path.keys, (key, name, k) => {
     if (
       ![key.yaw, key.pitch, key.zoom, key.panX, key.panY].every(
