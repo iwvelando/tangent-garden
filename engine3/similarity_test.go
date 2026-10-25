@@ -989,6 +989,10 @@ func TestSimilarPresets(t *testing.T) {
 				if chaotic[name] && m.shift != (Vec3{}) {
 					t.Skip("chaotic: a far copy's trajectories separate from the original's")
 				}
+				if q := all[name]; q.Surface.Kind == "monkey" && (q.Format == "surface" || q.Format == "rays") &&
+					math.Abs(q.Surface.A)/(m.scale*m.scale) > 1e5 {
+					t.Skip("a monkey saddle's height k scales as 1/s², so this copy's lies beyond the field's limit of 100000")
+				}
 				moved := m
 				if name == "Spirals into a tiny sink" {
 					// Keep the translation thousands of the drawing's own

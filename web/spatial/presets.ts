@@ -5468,4 +5468,74 @@ export const spatialPresets: {
       shadow: { plane: "y", at: -1.1, allPaths: true },
     },
   },
+  // A beam falls straight down through a glass monkey saddle,
+  // z = 1.2(u³ − 3uv²). Its flat point turns the light least, so focal
+  // distances grow toward the center and a level screen catches three
+  // cusped folds, a deltoid that shrinks as the screen sinks from 1.6 to 3
+  // below. 960 bins, each cell split up to twice where its light lands
+  // coarsely.
+  {
+    name: "A deltoid of light beneath a monkey saddle",
+    detail:
+      "A glass monkey saddle bends a beam into three cusped folds of light, which close in as the screen beneath it sinks",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "monkey",
+        a: 1.2,
+        b: 0,
+        c: 0,
+        uMin: -0.5,
+        uMax: 0.5,
+        vMin: -0.5,
+        vMax: 0.5,
+        uSamples: 120,
+        vSamples: 120,
+        curves: 9,
+      },
+      rays: {
+        ...base.rays,
+        interaction: "refract",
+        length: 1.6,
+        receiver: {
+          plane: "z",
+          at: -1.6,
+          c1: 0,
+          c2: 0,
+          size: 1.2,
+          bins: 960,
+          refine: 2,
+        },
+      },
+    },
+    view: { yaw: 0, pitch: 0, zoom: 5.5, panX: 0, panY: 0 },
+    layers: {
+      surface: false,
+      curves: false,
+      focal1: false,
+      focal2: false,
+      incident: false,
+      reflected: false,
+      virtual: false,
+    },
+    sight: {
+      sheets: "opaque",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "receiverAt", from: "-1.6", to: "-3" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];
