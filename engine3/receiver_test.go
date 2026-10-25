@@ -2256,7 +2256,9 @@ func TestReceiverRasterScratchDropsOldRows(t *testing.T) {
 
 // Fresh optical families must batch their vertices, as refined curves do.
 // Count objects rather than bytes: even one allocation per surface point
-// alone exceeds this bound at the production cone's 13,237 samples.
+// alone exceeds this bound at the production cone's 13,237 samples. The
+// bound leaves headroom over the batched count (about 5,900) for toolchain
+// and unrelated allocation changes.
 func TestReceiverFreshGeometryPointAllocations(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	var geometry *rayGeometry
@@ -2267,8 +2269,8 @@ func TestReceiverFreshGeometryPointAllocations(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if allocations > 6000 {
-		t.Fatalf("fresh optical geometry allocated %.0f objects, want at most 6000", allocations)
+	if allocations > 8000 {
+		t.Fatalf("fresh optical geometry allocated %.0f objects, want at most 8000", allocations)
 	}
 	points, caustics := 0, 0
 	seen := map[*Vec3]bool{}
