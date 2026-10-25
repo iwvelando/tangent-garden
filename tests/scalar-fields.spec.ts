@@ -591,11 +591,7 @@ test("spatial radii and tangent reach accept constants and reject variables", as
 }) => {
   await page.goto("/?study=3d");
   const stage = page.locator(".spatial-stage");
-  // Loading the lazy notebook can exceed 5 s under full-suite load; use
-  // CI's startup allowance without changing the field assertions.
-  await expect(page.locator("#spatial-artwork")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
   for (const [name, text, key, value] of [
     ["Major radius R", "2*pi", "radius", 2 * Math.PI],
     ["Minor radius r", "phi", "tube", phi],
