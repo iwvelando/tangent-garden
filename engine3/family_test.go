@@ -328,6 +328,35 @@ func TestAllPathMeshesAndComposedInputsMatchIndependentSeeds(t *testing.T) {
 	}
 }
 
+// Construction scope must not change path 1's shadow: a composed input's
+// breaks (the involute's cusp at its anchor) belong to that input, not to
+// the trajectory the shadow projects.
+func TestAllPathConstructionKeepsPathOneShadow(t *testing.T) {
+	for _, input := range []string{"base", "tangent-foot", "orthotomic", "involute", "coil"} {
+		t.Run(input, func(t *testing.T) {
+			c := spatialPresets(t)["A rising vortex"]
+			c.Samples, c.Lines, c.Construction, c.Input = 240, 12, "developable", input
+			c = familyConfig(t, c, false, true)
+			c.Shadow.AllPaths = false
+			want, err := Compute(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.AllPaths = true
+			got, err := Compute(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got.Shadow.Curve.Points, want.Shadow.Curve.Points) {
+				t.Fatal("construction scope moved path 1's shadow")
+			}
+			if !reflect.DeepEqual(got.Shadow.Curve.Breaks, want.Shadow.Curve.Breaks) {
+				t.Fatal("construction scope broke path 1's shadow")
+			}
+		})
+	}
+}
+
 func TestAllPathShadowsIncludeAStationaryFirstSeed(t *testing.T) {
 	c := spatialPresets(t)["A rising vortex"]
 	c.Samples, c.Lines, c.Construction = 240, 12, "canal"

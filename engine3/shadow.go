@@ -312,7 +312,8 @@ func (out *Result) cast(c Request) {
 	s.Curve = q.path(base, breaks)
 	if c.integrated != nil {
 		// A stationary seed has no tangent, but still has a shadow. Use
-		// its positions rather than the regular samples of a construction.
+		// its positions rather than the regular samples of a construction,
+		// with the trajectory's breaks rather than a composed input's.
 		points := make([]*Vec3, c.Samples+1)
 		for i := range points {
 			t := sh.lo*(1-float64(i)/float64(c.Samples)) + sh.hi*float64(i)/float64(c.Samples)
@@ -321,7 +322,7 @@ func (out *Result) cast(c Request) {
 				points[i] = &p
 			}
 		}
-		s.Curve = q.path(points, out.Breaks)
+		s.Curve = q.path(points, breaks)
 	}
 	if s.Kind != "" {
 		switch {
