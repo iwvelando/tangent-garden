@@ -25,7 +25,7 @@ import { decodePng } from "./png";
 // of the page, as the 2D notebook's strokes are, or hairlines one device
 // pixel wide, as every 3D drawing was before weights.
 const stage = (page: Page) => page.locator(".spatial-stage");
-// Inherit the configured wait, including CI's longer allowance.
+// Inherit the configured wait rather than a shorter hard-coded one.
 const settled = (page: Page, timeout?: number) =>
   expect(stage(page)).toHaveAttribute("aria-busy", "false", { timeout });
 const weightBox = (page: Page) => page.getByRole("group", { name: "Lines" });
