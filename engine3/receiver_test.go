@@ -781,10 +781,10 @@ func BenchmarkReceiverRefined(b *testing.B) {
 	}
 }
 
-// Keep the full request (including its result) below 55 MB: the baseline
-// uses 79 MB, dominated by repeatedly grown cell queues and three bin grids.
-// This leaves room above the bounded queues and two grids without encoding
-// allocator-specific object counts in the test.
+// Keep the full request (including its result) below 40 MB. It allocates
+// about 35.9 MB; queues grown by appending take 66 MB, and finishing the
+// bins into a third 960² grid adds 7.4 MB, to 43.7 MB. This rejects both
+// without encoding allocator-specific object counts in the test.
 func TestReceiverRefinedAllocationBudget(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
@@ -797,8 +797,8 @@ func TestReceiverRefinedAllocationBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime.KeepAlive(result)
-	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 55_000_000 {
-		t.Fatalf("refined cone allocated %d bytes, want at most 55 MB", bytes)
+	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 40_000_000 {
+		t.Fatalf("refined cone allocated %d bytes, want at most 40 MB", bytes)
 	}
 }
 
@@ -1035,10 +1035,10 @@ func TestReceiverEngineRefinedTraceReuse(t *testing.T) {
 	}
 }
 
-// Reuse private tracing and raster scratch across moving frames. At 960
-// bins the raster differences save about 7.4 MB: allow 31 MB for output,
-// cell queues, fitting and tracing, above their observed 27 MB without
-// depending on allocator-specific object counts.
+// Reuse private tracing and raster scratch across moving frames. A warm
+// 960-bin frame allocates about 12.4 MB, its own irradiance included.
+// Fresh raster differences, or a third bin grid, each add about 7.4 MB, to
+// 20.2 MB: allow 16 MB without depending on allocator-specific object counts.
 func TestReceiverWarmAllocationBudget(t *testing.T) {
 	c := spatialPresets(t)["Conic sections cut from a cone of light"]
 	c.Rays.Receiver.Bins, c.Rays.Receiver.Refine = 960, 2
@@ -1058,8 +1058,8 @@ func TestReceiverWarmAllocationBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime.KeepAlive(result)
-	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 31_000_000 {
-		t.Fatalf("warm receiver allocated %d bytes, want at most 31 MB", bytes)
+	if bytes := after.TotalAlloc - before.TotalAlloc; bytes > 16_000_000 {
+		t.Fatalf("warm receiver allocated %d bytes, want at most 16 MB", bytes)
 	}
 }
 
