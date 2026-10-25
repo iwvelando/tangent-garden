@@ -18,6 +18,7 @@ type rayCache struct {
 	geometry     *rayGeometry
 	receiver     *receiverTrace
 	raster       rasterScratch
+	insetRaster  rasterScratch
 	probe        *SurfaceDiagnostics
 }
 

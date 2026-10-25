@@ -28,7 +28,11 @@ func (q SurfaceRequest) receive(r RaysRequest, samples [][]mirrorPoint, scale fl
 		if region := rc.region(*rc.view); region != nil {
 			fine := q.receiveRaster(r, samples, scale, cache, region)
 			out.Inset = &ReceiverInset{region.rect, fine.Irradiance, fine.Split, fine.Exhausted}
+			return out
 		}
+	}
+	if cache != nil {
+		cache.insetRaster = rasterScratch{}
 	}
 	return out
 }
