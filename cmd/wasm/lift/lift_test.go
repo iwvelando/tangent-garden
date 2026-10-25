@@ -287,6 +287,31 @@ func TestSpatialPresetsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTrajectoryFamilyRoundTrip(t *testing.T) {
+	c := presetIn(t, "../../../engine3/testdata/presets.json", "A rising vortex")
+	c.AllPaths = true
+	c.Construction = "canal"
+	c.Shadow = &engine3.ShadowRequest{Plane: "z", At: -3, AllPaths: true, Grid: true}
+	r, err := engine3.Compute(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Members) != 3 || len(r.Shadow.Family) != 3 {
+		t.Fatal("no family to transport")
+	}
+	r.Mesh = engine3.CurveMesh{}
+	places, whole, rest := roundTrip(t, &r)
+	got := paths(places)
+	for _, path := range []string{"members.0.base", "members.1.canal.meridians", "members.2.breaks", "shadow.family.0.curve.points", "shadow.family.2.curve.breaks"} {
+		if _, ok := got[path]; !ok {
+			t.Errorf("%s stayed in JSON", path)
+		}
+	}
+	if float64(rest)/float64(whole) > .2 {
+		t.Fatalf("too much family geometry stayed in JSON: %d/%d bytes", rest, whole)
+	}
+}
+
 func keys(m map[string]Place) []string {
 	out := []string{}
 	for k := range m {

@@ -92,6 +92,8 @@ export type PlaneDrawingProps = {
   probe?: Vec3 | null;
   // The animation's progress at the frame drawn, as the stage records it.
   progress?: number;
+  background?: boolean;
+  member?: number;
 };
 
 // One face-on view of the plane, as an SVG drawing of the page.
@@ -105,6 +107,8 @@ export function PlaneDrawing({
   weight = "regular",
   probe,
   progress,
+  background = true,
+  member = 0,
 }: PlaneDrawingProps) {
   const s = result.shadow!;
   const ink = (k: number) => hex(lineColor(k, 0, dark, scheme));
@@ -157,7 +161,8 @@ export function PlaneDrawing({
     const u = study.unit;
     planarDrawing = (
       <Plot
-        id={`plane-${view}-plot`}
+        id={`plane-${view}-plot${member ? `-${member}` : ""}`}
+        transparent={!background}
         result={study.result}
         config={planarConfig(study)}
         layers={planeLayers}
@@ -188,15 +193,32 @@ export function PlaneDrawing({
       data-camera-scale={framing.scale}
       data-camera-center={`${framing.cx},${framing.cy}`}
     >
-      <rect
-        width={page.width}
-        height={page.height}
-        fill={hex(spatialPalette(scheme).background[dark ? 1 : 0])}
-      />
+      {background && (
+        <rect
+          width={page.width}
+          height={page.height}
+          fill={hex(spatialPalette(scheme).background[dark ? 1 : 0])}
+        />
+      )}
       {planarDrawing}
       {shadow}
       {planar}
       {cast}
+      {s.family?.map((shadow, k) => (
+        <PlaneDrawing
+          key={k}
+          view={view}
+          result={{ ...result, shadow }}
+          framing={framing}
+          layers={layers}
+          dark={dark}
+          scheme={scheme}
+          weight={weight}
+          progress={progress}
+          background={false}
+          member={k + 1}
+        />
+      ))}
       {mark && Number.isFinite(mark.x) && Number.isFinite(mark.y) && (
         <circle
           data-testid="plane-probe"

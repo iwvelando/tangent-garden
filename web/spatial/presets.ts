@@ -688,6 +688,7 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "developable",
+      allPaths: false,
       length: 0.7,
       lines: 72,
     },
@@ -700,6 +701,7 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "none",
+      allPaths: true,
       samples: 2400,
       lines: 60,
       field: {
@@ -725,6 +727,7 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "framed",
+      allPaths: false,
       samples: 2400,
       lines: 120,
       frame: {
@@ -755,6 +758,7 @@ export const spatialPresets: {
       ...base,
       format: "pursuit",
       construction: "none",
+      allPaths: true,
       samples: 1200,
       lines: 16,
     },
@@ -770,6 +774,7 @@ export const spatialPresets: {
       ...base,
       format: "pursuit",
       construction: "none",
+      allPaths: true,
       samples: 1600,
       lines: 16,
       pursuit: {
@@ -799,6 +804,7 @@ export const spatialPresets: {
       ...base,
       format: "pursuit",
       construction: "developable",
+      allPaths: false,
       length: 0.25,
       samples: 1200,
       lines: 24,
@@ -3302,6 +3308,7 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "none",
+      allPaths: true,
       samples: 2400,
       lines: 12,
       field: {
@@ -5269,9 +5276,25 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "none",
+      allPaths: true,
       samples: 720,
       lines: 24,
       length: 0.5 * 2 ** -40,
+      // Inactive construction lengths use the same units as the seeds.
+      canal: { ...base.canal, radius: 2 ** -44 },
+      frame: { ...base.frame, width: 2 ** -44, offset: 2 ** -44 },
+      coil: { ...base.coil, radius: 2 ** -44 },
+      unwinding: { ...base.unwinding, offset: 2 ** -40 },
+      involute: {
+        ...base.involute,
+        family: { ...base.involute.family, from: -(2 ** -40), to: 2 ** -40 },
+      },
+      inversion: { ...base.inversion, radius: 2 ** -40 },
+      pole: { x: 2 ** -40, y: 0, z: 2 ** -40 },
+      ruled: {
+        ...base.ruled,
+        thread: { x: "2^-40*cos(t)", y: "2^-40*sin(t)", z: "2^-40" },
+      },
       field: {
         x: "-a*x-y",
         y: "x-a*y",

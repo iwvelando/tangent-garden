@@ -2,6 +2,12 @@ package engine3
 
 import "math"
 
+// A geometrically unavailable input can be omitted from an all-path
+// construction. Its wrapped FieldError still labels single-path failures.
+type unavailableInput struct{ error }
+
+func (e *unavailableInput) Unwrap() error { return e.error }
+
 // UnwindingRequest is the involute a construction is built on when its
 // input is "involute": I(t) = r(t) + (c − s(t)) T(t), with arc length s
 // measured from the anchor t₀ and signed string length c (Offset), as for
@@ -85,7 +91,7 @@ func (q UnwindingRequest) evaluation(base evaluation, lo, hi float64, curve []*V
 		return true
 	}
 	if !measure(t0, k) {
-		return nil, nil, nil, nil, fieldErr("unwinding.anchor", "the input's anchor t₀ must lie on a regular, continuous stretch of the base curve")
+		return nil, nil, nil, nil, &unavailableInput{fieldErr("unwinding.anchor", "the input's anchor t₀ must lie on a regular, continuous stretch of the base curve")}
 	}
 	var restarts []float64
 	if q.Restart {

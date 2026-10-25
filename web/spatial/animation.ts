@@ -5,6 +5,7 @@ import {
   usesSpatialPole,
 } from "./types";
 import { harmonicLabels } from "./harmonic";
+import { reveal as revealPlanar } from "../animation";
 import { revealRefined } from "../refinement";
 import { surfaceShape } from "./surface";
 import type {
@@ -17,7 +18,12 @@ import type {
   SpatialHarmonicResult,
   SurfaceSheet,
 } from "./types";
-import type { CurveMesh, CuspidalEdge, ShadowPath } from "./types";
+import type {
+  CurveMesh,
+  CuspidalEdge,
+  ShadowPath,
+  ShadowResult,
+} from "./types";
 import type { View } from "./renderer";
 import { fitFrame, pathView, type CameraPath } from "./path";
 import { rideView, type RidePath } from "./ride";
@@ -949,7 +955,64 @@ export function revealedThrough(result: SpatialResult, p: number) {
   return Math.floor(Math.max(0, Math.min(1, p)) * (count - 1));
 }
 
+// Extra construction members have the same sampled time grid. Keep their
+// independent fitted families, rather than fitting all points as one cloud.
+function memberFraming(r: SpatialResult): Framing[] {
+  const families = [
+    r.base,
+    r.minus,
+    r.plus,
+    ...(r.involute?.members.map((m) => m.points) ?? []),
+    ...(r.frame?.strands ?? []),
+    ...(r.canal?.meridians ?? []),
+    (r.canal?.circles ?? []).flatMap((g) => g.points),
+    ...(r.projection
+      ? [r.projection.points, r.projection.feet, [r.projection.pole]]
+      : []),
+    ...(r.inversion
+      ? [r.inversion.source, r.inversion.points, [r.inversion.center]]
+      : []),
+    ...(r.composition ? [r.composition.curve, [r.composition.pole]] : []),
+  ];
+  return families.map((points) => ({ points }));
+}
+
+function revealShadow(
+  s: ShadowResult,
+  last: number,
+  p: number,
+  family = !!s.family?.length,
+): ShadowResult {
+  const cut = (path: ShadowPath) => ({
+    points: path.points.slice(0, last + 1),
+    breaks: path.breaks.slice(0, last + 1),
+  });
+  const shown = (path: RefinedPath | undefined) => revealRefined(path, last);
+  return {
+    ...s,
+    curve: cut(s.curve),
+    planar: s.planar.map(cut),
+    cast: s.cast.map(cut),
+    ...(family &&
+      s.study && {
+        study: { ...s.study, result: revealPlanar(s.study.result, p) },
+      }),
+    ...(s.family && {
+      family: s.family.map((child) => revealShadow(child, last, p, true)),
+    }),
+    ...(s.adaptive && {
+      adaptive: {
+        curve: shown(s.adaptive.curve),
+        planar: s.adaptive.planar?.map((path) => shown(path)!),
+        cast: s.adaptive.cast?.map((path) => shown(path)!),
+      },
+    }),
+  };
+}
+
 export function reveal(result: SpatialResult, p: number): SpatialResult {
+  if (p >= 1 && (result.members?.length || result.shadow?.family?.length))
+    return result;
   if (result.implicit)
     return { ...result, implicit: revealImplicit(result.implicit, p) };
   const last = revealedThrough(result, p);
@@ -1086,24 +1149,8 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
   };
   // The shadow is revealed with the curve casting it; its window stays
   // whole and frames the drawing throughout, so the plane does not grow.
-  const cut = (p: ShadowPath) => ({
-    points: p.points.slice(0, last + 1),
-    breaks: p.breaks.slice(0, last + 1),
-  });
-  const refinedShadow = result.shadow?.adaptive;
-  const shadow = result.shadow && {
-    ...result.shadow,
-    curve: cut(result.shadow.curve),
-    planar: result.shadow.planar.map(cut),
-    cast: result.shadow.cast.map(cut),
-    ...(refinedShadow && {
-      adaptive: {
-        curve: shown(refinedShadow.curve),
-        planar: refinedShadow.planar?.map((path) => shown(path)!),
-        cast: refinedShadow.cast?.map((path) => shown(path)!),
-      },
-    }),
-  };
+  const shadow = result.shadow && revealShadow(result.shadow, last, p);
+  const members = result.members?.map((m) => reveal(m, p));
   // Each family frames the drawing with the reach of the refined curve
   // drawn on it, as far as it is revealed, when the study frames its reach.
   const framing = (points: (Vec3 | null)[], path?: RefinedPath): Framing => ({
@@ -1111,6 +1158,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     reach: path?.reach,
   });
   const generating: Framing[] = [
+    ...(members ?? []).flatMap(memberFraming),
     ...[
       ...harmonicFamilies(harmonic),
       ...(field?.paths ?? []),
@@ -1126,6 +1174,7 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
   ];
   return {
     ...result,
+    ...(members && { members }),
     base,
     minus,
     plus,

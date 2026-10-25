@@ -12,6 +12,7 @@ import { choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
 import { curveMesh } from "./curve-mesh";
+import { buildScene, scenePasses, defaultLayers } from "../web/spatial/scene";
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
@@ -42,6 +43,172 @@ const vortex = "24",
 const note = (page: Page) => page.getByTestId("field-note");
 const layer = (page: Page, name: string) =>
   page.getByRole("checkbox", { name, exact: true });
+
+test("family scene and reveal keep every construction and shadow synchronized", () => {
+  const points = (x: number) => [0, 1, 2].map((y) => ({ x, y, z: 0 }));
+  const member = (x: number): SpatialResult =>
+    ({
+      base: points(x),
+      minus: [],
+      plus: [],
+      breaks: [false, false, false],
+      mesh: curveMesh(),
+      rulings: [],
+      bounds: { center: { x, y: 1, z: 0 }, radius: 1 },
+      radius: 1,
+      omitted: 0,
+      invalid: 0,
+      projection: {
+        points: points(x + 1),
+        feet: points(x + 1),
+        pole: { x: 0, y: 0, z: 0 },
+        constructions: [],
+      },
+    }) as SpatialResult;
+  const result = member(0);
+  result.members = [member(20)];
+  const shadow = (x: number) => ({
+    plane: "z" as const,
+    at: -3,
+    corners: points(x).concat(points(x)[0]).slice(0, 4),
+    curve: { points: points(x), breaks: [false, false, false] },
+    kind: "" as const,
+    planar: [],
+    cast: [],
+    compared: 0,
+    size: 1,
+    notes: [],
+  });
+  result.shadow = {
+    ...shadow(0),
+    family: [shadow(20)],
+  } as SpatialResult["shadow"];
+  const scene = buildScene(result);
+  expect(
+    scenePasses(scene, defaultLayers).filter((p) => p.layer === "projection")
+      .length,
+  ).toBe(2);
+  expect(scene.shadowCurve.data.length).toBe(2 * 2 * 2 * 7);
+  const half = reveal(result, 0.5);
+  expect(half.members![0].base).toHaveLength(2);
+  expect(half.shadow!.family![0].curve.points).toHaveLength(2);
+  expect(half.bounds.radius).toBeGreaterThan(10);
+  expect(result.members[0].base).toHaveLength(3);
+  expect(reveal(result, 1).bounds).toEqual(result.bounds);
+});
+
+test("family toggle preserves presets and enables all paths for new constructions", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A rising vortex" });
+  await settled(page);
+  const all = page.getByRole("checkbox", {
+    name: "Construct on all paths",
+    exact: true,
+  });
+  await expect(all).not.toBeChecked();
+  const single = await pixels(page);
+  await all.check();
+  await settled(page);
+  expect((await config(page)).allPaths).toBe(true);
+  expect(await pixels(page)).not.toBe(single);
+  await all.uncheck();
+  await settled(page);
+  expect(await pixels(page)).toBe(single);
+  await choosePreset(page, { label: "A chase untangling a trefoil" });
+  await settled(page);
+  await page.getByLabel("Construction", { exact: true }).selectOption("canal");
+  await settled(page);
+  await expect(all).toBeChecked();
+  await expect(page.getByTestId("pursuit-note")).toContainText(
+    "every moving path",
+  );
+  await page.getByLabel("Shadow on", { exact: true }).selectOption("z");
+  await settled(page);
+  await expect(
+    page.getByRole("checkbox", { name: "Shadow all paths", exact: true }),
+  ).toBeChecked();
+  await page
+    .getByRole("checkbox", {
+      name: "Face-on views beside the drawing",
+      exact: true,
+    })
+    .check();
+  await settled(page);
+  expect((await config(page)).shadow.grid).toBe(true);
+  await expect(
+    page.locator('[data-plane-view="shadow"] [data-testid="plane-shadow"]'),
+  ).toHaveCount(9);
+});
+
+test("tiny sink opens a tube at its own scale and radius edits change its geometry", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "Spirals into a tiny sink" });
+  await settled(page);
+  await page.getByLabel("Construction", { exact: true }).selectOption("canal");
+  await settled(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect((await config(page)).canal.radius).toBeLessThan(1e-12);
+  await expect(page.getByTestId("canal-note")).not.toContainText("folds back");
+  const thin = await pixels(page);
+  await field(page, "Tube radius R").fill("0.1*2^-40");
+  await settled(page);
+  expect((await config(page)).canal.radius).toBe(0.1 * 2 ** -40);
+  expect(await pixels(page)).not.toBe(thin);
+  await choosePreset(page, { label: "A rising vortex" });
+  await settled(page);
+  expect((await config(page)).canal.radius).toBe(0.35);
+});
+
+test("family scope survives pending scalar edits and presets discard those edits", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, ...rest) {
+      if (
+        message?.action === "scalars" &&
+        message.expressions?.some((s: string) => s === "pi/10" || s === "pi/11")
+      ) {
+        this.addEventListener("message", function done(event) {
+          if (event.data.id !== message.id) return;
+          (window as any).familyScalarReplies =
+            ((window as any).familyScalarReplies ?? 0) + 1;
+          this.removeEventListener("message", done);
+        });
+        setTimeout(() => send.call(this, message, ...rest), 400);
+      } else send.call(this, message, ...rest);
+    };
+  });
+  await ready(page);
+  await choosePreset(page, { label: "A rising vortex" });
+  await settled(page);
+  await page.getByLabel("Construction", { exact: true }).selectOption("canal");
+  await settled(page);
+  const all = page.getByRole("checkbox", {
+    name: "Construct on all paths",
+    exact: true,
+  });
+  await all.check();
+  await settled(page);
+  await field(page, "Tube radius R").fill("pi/10");
+  await all.uncheck();
+  await expect
+    .poll(async () => (await config(page))?.canal.radius)
+    .toBe(Math.PI / 10);
+  expect((await config(page)).allPaths).toBe(false);
+  await field(page, "Tube radius R").fill("pi/11");
+  await choosePreset(page, { label: "A chase untangling a trefoil" });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).familyScalarReplies))
+    .toBe(2);
+  await settled(page);
+  expect((await config(page)).canal.radius).toBe(0.35);
+  expect((await config(page)).allPaths).toBe(true);
+});
 
 test("trajectories stand alone with their own layers and validated fields", async ({
   page,
@@ -219,6 +386,10 @@ for (const camera of ["hold", "current", "follow", "fit"])
     await ready(page);
     await choosePreset(page, vortex);
     await settled(page);
+    await page
+      .getByRole("checkbox", { name: "Construct on all paths", exact: true })
+      .check();
+    await settled(page);
     const base = await config(page);
     await openAnimation(page);
     await page
@@ -264,6 +435,10 @@ test("a field MP4 decodes with exact duration and moving seeds", async ({
   test.slow();
   await ready(page);
   await choosePreset(page, vortex);
+  await settled(page);
+  await page
+    .getByRole("checkbox", { name: "Construct on all paths", exact: true })
+    .check();
   await settled(page);
   await openAnimation(page);
   await page.getByLabel("Animate", { exact: true }).selectOption("parameters");

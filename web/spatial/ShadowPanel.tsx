@@ -16,12 +16,14 @@ export function ShadowPanel({
   layers,
   onLayer,
   onGrid,
+  onAllPaths,
   note,
 }: {
   config: SpatialConfig;
   onPlane: (plane: ShadowPlane | "none") => void;
   onAt: (at: number) => void;
   onGrid: (on: boolean) => void;
+  onAllPaths: (on: boolean) => void;
   layers: Layers;
   onLayer: (layer: "shadow" | "planar" | "cast", on: boolean) => void;
   note?: string;
@@ -60,6 +62,16 @@ export function ShadowPanel({
         </div>
         {shadow && (
           <>
+            {(config.format === "field" || config.format === "pursuit") && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={!!shadow.allPaths}
+                  onChange={(e) => onAllPaths(e.target.checked)}
+                />
+                Shadow all paths
+              </label>
+            )}
             <div className="probe-switch view-switch">
               <label className="check">
                 <input

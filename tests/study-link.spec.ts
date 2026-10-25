@@ -147,6 +147,26 @@ const spatial = (i = 0): SpatialStudy => ({
   projection: "normal",
   lensAngle: 50,
 });
+
+test("trajectory family scopes round trip and older links retain the first path", async () => {
+  const study = structuredClone(spatial()) as any;
+  study.config.format = "field";
+  study.config.allPaths = true;
+  study.config.shadow = { plane: "z", at: -3, allPaths: true };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  const restored = spatialStudy(read.study) as any;
+  assert.equal(restored.config.allPaths, true);
+  assert.equal(restored.config.shadow.allPaths, true);
+  delete study.config.allPaths;
+  delete study.config.shadow.allPaths;
+  const legacy = spatialStudy(study) as any;
+  assert.equal(!!legacy.config.allPaths, false);
+  assert.equal(!!legacy.config.shadow.allPaths, false);
+  for (const bad of ["all", 1, null, {}]) {
+    study.config.allPaths = bad;
+    await refused(() => spatialStudy(study), "config.allPaths");
+  }
+});
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
   layers: {

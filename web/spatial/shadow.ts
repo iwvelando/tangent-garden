@@ -125,6 +125,27 @@ export function shadowNote(
   scheme: ColorScheme,
 ): string {
   const r = shadowReduction(c);
+  if (s.family?.length) {
+    const family = [s, ...s.family];
+    const compared = family.filter((p) => p.deviation !== undefined);
+    const notes = [...new Set(family.flatMap((p) => p.notes))].join(" ");
+    if (!r)
+      return `All ${family.length} paths cast shadows. This construction has no 2D counterpart. ${notes}`.trim();
+    const worst = Math.max(...compared.map((p) => p.deviation!));
+    return [
+      `All ${family.length} paths cast shadows.`,
+      compared.length
+        ? `Across ${compared.length} constructed ${compared.length === 1 ? "path" : "paths"}, the largest difference from the 2D ${r.planar} is ${share(worst)} of that path's shadow size.`
+        : "The constructions share no sample to compare.",
+      describeColors(
+        "Rust is the 2D construction, slate the 3D one's shadow.",
+        scheme,
+      ),
+      notes,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
   const notes = s.notes.join(" ");
   if (!r)
     return [
@@ -168,6 +189,9 @@ export function withShadowPlane(
     plane,
     at: shadowAt(plane, bounds),
     ...(c.shadow?.grid ? { grid: true } : {}),
+    ...((c.format === "field" || c.format === "pursuit") && {
+      allPaths: c.shadow ? !!c.shadow.allPaths : true,
+    }),
   };
   return { ...c, shadow };
 }
