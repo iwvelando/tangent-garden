@@ -1372,9 +1372,10 @@ export function SpatialAnimationPanel({
       <Field
         label="Path"
         help={
-          path.ease
+          path.ease && path.easingFactor !== 0
             ? easedPath(
                 path.style === "smooth" ? pathHelp.smooth : pathHelp.steady,
+                path.easingFactor,
               )
             : path.style === "smooth"
               ? repeat === "loop"
@@ -1400,6 +1401,10 @@ export function SpatialAnimationPanel({
       <KeyViewEasing
         checked={path.ease ?? false}
         onChange={(ease) => setPath((p) => ({ ...p, ease }))}
+        factor={path.easingFactor}
+        onFactorChange={(easingFactor) =>
+          setPath((p) => ({ ...p, easingFactor }))
+        }
       />
       {mode === "parameters" && (
         <KeyViewSwitch

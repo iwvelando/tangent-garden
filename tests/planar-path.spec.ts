@@ -68,6 +68,97 @@ test("eased planar flights settle a pan before zooming, keeping key times and th
   }
 });
 
+test("planar easing factor spans the original flight, legacy quintic, and stronger settling without a hold", () => {
+  for (const style of ["steady", "smooth"] as const) {
+    const original = path(
+      [key(0, 0, 1), key(2, 1, 8, 0.5), key(2, 1, 2, 3)],
+      style,
+    );
+    const times = keyTimes(original);
+    for (const factor of [0, 0.25, 0.5, 0.75, 1]) {
+      const eased = { ...original, ease: true, easingFactor: factor };
+      times.forEach((t, k) =>
+        expect(planarPathView(eased, fit, t)).toEqual(
+          planarPathView(original, fit, t),
+        ),
+      );
+      for (let k = 0; k <= 100; k++) {
+        const t = k / 100;
+        if (factor === 0)
+          expect(planarPathView(eased, fit, t)).toEqual(
+            planarPathView(original, fit, t),
+          );
+        if (factor === 0.5)
+          expect(planarPathView(eased, fit, t)).toEqual(
+            planarPathView({ ...original, ease: true }, fit, t),
+          );
+        expect(planarPathView({ ...eased, ease: false }, fit, t)).toEqual(
+          planarPathView(original, fit, t),
+        );
+      }
+    }
+    // Two views make either style linear in log zoom: closed-form values
+    // of the integrated velocity at a quarter leg, independent of the evaluator.
+    const two = path([key(0, 0, 1), key(2, 1, 8)], style);
+    const q5 = 53 / 512,
+      q9 = 6413 / 131072;
+    for (const [factor, fraction] of [
+      [0, 0.25],
+      [0.25, (0.25 + q5) / 2],
+      [0.5, q5],
+      [0.6, 0.8 * q5 + 0.2 * q9],
+      [0.75, (q5 + q9) / 2],
+      [1, q9],
+    ]) {
+      const v = planarPathView(
+        { ...two, ease: true, easingFactor: factor },
+        fit,
+        0.25,
+      );
+      expect(Math.log(v.scale / fit.scale) / Math.log(8)).toBeCloseTo(
+        fraction,
+        12,
+      );
+      expect(v.cy / v.cx).toBeCloseTo(0.5, 12);
+    }
+    const strong = { ...two, ease: true, easingFactor: 1 };
+    let previous = 0;
+    for (let k = 1; k <= 100; k++) {
+      const progress =
+        Math.log(planarPathView(strong, fit, k / 100).scale / fit.scale) /
+        Math.log(8);
+      expect(progress).toBeGreaterThan(previous);
+      expect(progress).toBeLessThanOrEqual(1);
+      previous = progress;
+    }
+    const rate = (factor: number, t: number) => {
+      const at = (p: number) =>
+        Math.log(
+          planarPathView({ ...two, ease: true, easingFactor: factor }, fit, p)
+            .scale,
+        );
+      return (at(t + 1e-5) - at(t - 1e-5)) / 2e-5;
+    };
+    expect(rate(1, 0.9)).toBeLessThan(rate(0.5, 0.9) / 4);
+    expect(rate(1, 0.99)).toBeGreaterThan(0);
+  }
+});
+
+test("planar easing factor validation names the field, including nonfinite and retained values", () => {
+  const original = path([key(0, 0, 1), key(2, 1, 8)]);
+  for (const ease of [false, true]) {
+    for (const easingFactor of [-0.01, 1.01, NaN, Infinity])
+      expect(planarPathError({ ...original, ease, easingFactor }, 20)).toEqual({
+        field: "Easing factor",
+        message: "must be from 0 to 1.",
+      });
+    for (const easingFactor of [undefined, 0, 0.5, 1])
+      expect(
+        planarPathError({ ...original, ease, easingFactor }, 20),
+      ).toBeNull();
+  }
+});
+
 test("a path stands exactly at each view at its time, in both styles", () => {
   const keys = [key(0.25, -0.5, 1), key(3.9, 0, 800, 3), key(-1, 2, 4, 0.5)];
   for (const style of ["steady", "smooth"] as const) {
@@ -245,7 +336,7 @@ test("a flight's pieces cover every zoomed frame with its area, as finely as it 
   });
   const half = (r: ReturnType<typeof rect>) =>
     Math.hypot(r.x1 - r.x0, r.y1 - r.y0) / 2;
-  for (const [name, p, most] of [
+  for (const [name, original, most] of [
     ["into a point", path([key(0, 0, 1), key(3.9585, 0, 800)]), 16],
     [
       "smooth there and back",
@@ -254,45 +345,64 @@ test("a flight's pieces cover every zoomed frame with its area, as finely as it 
     ],
     ["a long pan at one zoom", path([key(-3, 0, 50), key(3, 1, 50)]), 400],
   ] as const) {
-    const pieces = flightPieces(p, fit, false, rect);
-    expect(pieces.length, name).toBeGreaterThan(1);
-    expect(pieces.length, name).toBeLessThanOrEqual(most);
-    for (let k = 1; k < pieces.length; k++)
-      expect(pieces[k].from, name).toBeGreaterThanOrEqual(pieces[k - 1].to);
-    // The worst of every frame, sampled more finely than the pieces were
-    // cut: how far its rectangle reaches past its piece's area grown by
-    // half (as Go grows it), as a share of that growth; how much finer than
-    // it needs its piece is refined, and how much coarser (above 1 is too
-    // coarse); and each piece's span of zoom.
-    let reach = 0,
-      finer = 1,
-      coarser = 0;
-    const zooms = new Map<number, [number, number]>();
-    for (let k = 0; k <= 5000; k++) {
-      const s = k / 5000,
-        v = planarPathView(p, fit, s);
-      if (v.scale <= fit.scale) continue;
-      const i = pieceAt(pieces, s),
-        area = pieces[i].view,
-        own = rect(v);
-      const mx = (area.x1 - area.x0) / 2,
-        my = (area.y1 - area.y0) / 2;
-      reach = Math.max(
-        reach,
-        (area.x0 - own.x0) / mx - 1,
-        (own.x1 - area.x1) / mx - 1,
-        (area.y0 - own.y0) / my - 1,
-        (own.y1 - area.y1) / my - 1,
-      );
-      finer = Math.min(finer, area.radius / half(own));
-      coarser = Math.max(coarser, area.radius / half(own));
-      const seen = zooms.get(i) ?? [Infinity, 0];
-      zooms.set(i, [Math.min(seen[0], v.scale), Math.max(seen[1], v.scale)]);
+    for (const easingFactor of [undefined, 1]) {
+      const p =
+        easingFactor === undefined
+          ? original
+          : { ...original, ease: true, easingFactor };
+      const pieces = flightPieces(p, fit, false, rect);
+      expect(pieces.length, name).toBeGreaterThan(1);
+      expect(pieces.length, name).toBeLessThanOrEqual(most);
+      for (let k = 1; k < pieces.length; k++)
+        expect(pieces[k].from, name).toBeGreaterThanOrEqual(pieces[k - 1].to);
+      // The worst of every frame, sampled more finely than the pieces were
+      // cut: how far its rectangle reaches past its piece's area grown by
+      // half (as Go grows it), as a share of that growth; how much finer than
+      // it needs its piece is refined, and how much coarser (above 1 is too
+      // coarse); and each piece's span of zoom.
+      let reach = 0,
+        finer = 1,
+        coarser = 0;
+      const zooms = new Map<number, [number, number]>();
+      for (let k = 0; k <= 5000; k++) {
+        const s = k / 5000,
+          v = planarPathView(p, fit, s);
+        if (v.scale <= fit.scale) continue;
+        const i = pieceAt(pieces, s),
+          area = pieces[i].view,
+          own = rect(v);
+        const mx = (area.x1 - area.x0) / 2,
+          my = (area.y1 - area.y0) / 2;
+        reach = Math.max(
+          reach,
+          (area.x0 - own.x0) / mx - 1,
+          (own.x1 - area.x1) / mx - 1,
+          (area.y0 - own.y0) / my - 1,
+          (own.y1 - area.y1) / my - 1,
+        );
+        finer = Math.min(finer, area.radius / half(own));
+        coarser = Math.max(coarser, area.radius / half(own));
+        const seen = zooms.get(i) ?? [Infinity, 0];
+        zooms.set(i, [Math.min(seen[0], v.scale), Math.max(seen[1], v.scale)]);
+      }
+      expect(reach, name).toBeLessThanOrEqual(0);
+      expect(coarser, name).toBeLessThanOrEqual(1 + 1e-12);
+      expect(finer, name).toBeGreaterThanOrEqual(1 / 2.05);
+      for (const [low, high] of zooms.values())
+        expect(high / low, name).toBeLessThanOrEqual(2.05);
     }
-    expect(reach, name).toBeLessThanOrEqual(0);
-    expect(coarser, name).toBeLessThanOrEqual(1 + 1e-12);
-    expect(finer, name).toBeGreaterThanOrEqual(1 / 2.05);
-    for (const [low, high] of zooms.values())
-      expect(high / low, name).toBeLessThanOrEqual(2.05);
   }
+});
+
+test("maximum easing keeps a positive departure without cancellation", () => {
+  const p = {
+    ...path([key(0, 0, 1), key(2, 1, 1)]),
+    ease: true,
+    easingFactor: 1,
+  };
+  // A pure pan exposes arbitrarily small movement without subtracting
+  // zooms or coordinates around a nonzero camera center.
+  const at = planarPathView(p, fit, 1e-9);
+  expect(at.cx).toBeGreaterThan(0);
+  expect(at.cy / at.cx).toBeCloseTo(0.5, 12);
 });

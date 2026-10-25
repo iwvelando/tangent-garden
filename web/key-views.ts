@@ -12,16 +12,42 @@ export type PathStyle = "steady" | "smooth";
 // times fly their views equally spaced. The first view has no leg before
 // it.
 export type KeyBase = { name: string; leg?: number };
-export type KeyPath = { keys: KeyBase[]; ease?: boolean };
+export type KeyPath = {
+  keys: KeyBase[];
+  ease?: boolean;
+  // Absent keeps the original quintic easing; 0 leaves the leg unchanged.
+  easingFactor?: number;
+};
+export const defaultEasingFactor = 0.5;
+export const easingFactorRange: [number, number] = [0, 1];
+export function easingError(path: KeyPath): PathError | null {
+  const factor = path.easingFactor ?? defaultEasingFactor;
+  return factor >= 0 && factor <= 1
+    ? null
+    : { field: "Easing factor", message: "must be from 0 to 1." };
+}
 export const easedPathHelp =
   "Keeps the selected path's route, easing to rest at every view.";
 // The Path help with easing on: easing replaces the style's own account of
 // the camera's speed, but the limits on its route still hold.
-export const easedPath = (style: Help<string>) =>
-  isTiered(style) ? withMore(easedPathHelp, style.more) : easedPathHelp;
+export const easedPath = (
+  style: Help<string>,
+  factor = defaultEasingFactor,
+) => {
+  if (factor === 0) return style;
+  const brief =
+    factor < defaultEasingFactor
+      ? "Keeps the selected path's route, softening speed changes at every view."
+      : easedPathHelp;
+  return isTiered(style) ? withMore(brief, style.more) : brief;
+};
 export const transitionHelp = tiered(
-  "Gently slows to rest at each view, then starts the next leg.",
-  "Pan, rotation and zoom come to rest together at every view, including a loop's seam. Key views and leg times are unchanged, and Pace still sets the overall timing.",
+  "Softens speed changes at each view by the easing factor.",
+  "Pan, rotation and zoom ease together, including at a loop's seam. At factors of 0.5 or more they come to rest at each view. Key views and leg times are unchanged, and Pace still sets the overall timing.",
+);
+export const easingFactorHelp = tiered(
+  "From 0 to 1: no easing, through the default 0.5, to stronger slowing.",
+  "Below 0.5, some arrival speed remains. At 0.5 or more, motion rests only at the view; higher factors slow it earlier without adding a hold. The route and arrival times stay fixed. Ignored when Ease key-view transitions is off.",
 );
 export const maxKeys = 12;
 export const maxKeyName = 60;
@@ -195,12 +221,23 @@ export function locate(path: KeyPath, p: number) {
     return { h, i: i + 1, f: 0, end: false };
   if (Math.abs(x - t[i + 1]) <= near) return { h, i, f: 1, end: true };
   let f = x - t[i] <= near ? 0 : (x - t[i]) / h[i];
-  if (path.ease) {
-    // Quintic time easing: zero first and second derivatives at both
-    // ends. Reparameterizing the entire leg preserves its route while
-    // settling pan, angles, zoom and geometry pivots together. Evaluate
-    // symmetrically to avoid cancellation close to arrival.
-    const ease = (u: number) => u * u * u * (10 + u * (-15 + 6 * u));
+  const factor = path.easingFactor ?? defaultEasingFactor;
+  if (path.ease && factor > 0) {
+    // Blend integrated nonnegative velocity curves: identity → quintic
+    // (the legacy default) → nonic. The latter's rate 630u⁴(1−u)⁴
+    // falls faster near arrival than the quintic's 30u²(1−u)², but is
+    // positive throughout the open leg: no dwell or overshoot. Below the
+    // default some endpoint velocity remains. Reparameterize the entire
+    // leg, including framed points and geometry pivots, symmetrically.
+    const ease = (u: number) => {
+      const quintic = u * u * u * (10 + u * (-15 + 6 * u));
+      if (factor === defaultEasingFactor) return quintic;
+      if (factor < defaultEasingFactor)
+        return (1 - 2 * factor) * u + 2 * factor * quintic;
+      const nonic =
+        u ** 5 * (126 + u * (-420 + u * (540 + u * (-315 + 70 * u))));
+      return (2 - 2 * factor) * quintic + (2 * factor - 1) * nonic;
+    };
     f = f <= 0.5 ? ease(f) : 1 - ease(1 - f);
   }
   return { h, i, f, end: false };
@@ -221,9 +258,21 @@ export function pathLeg(path: KeyPath, p: number): string {
 // zoomed-in frames are all drawn from one refinement (planar-path.ts,
 // spatial/path.ts). Refining a piece once, rather than every frame, keeps
 // playback in time; playback and export cut the same pieces, so they draw
-// the same curves. Progress is sampled pieceSteps times per leg to cut
-// them, and a piece spans a zoom of at most pieceZoom.
+// the same curves. Progress is sampled at least pieceSteps times per leg
+// to cut them, and a piece spans a zoom of at most pieceZoom.
 export const pieceSteps = 512;
+// A planar piece uses its narrowest frame's radius. Stronger easing moves
+// faster mid-leg, so increase only those flights' sampling density, up to
+// twice the original work, to keep its closing sample within the existing
+// refinement bounds. Spatial pieces keep multiple views with their own
+// tolerances, and retain the original density.
+export const pieceStepsFor = (path: KeyPath) =>
+  Math.ceil(
+    pieceSteps *
+      (path.ease
+        ? Math.max(1, 2 * (path.easingFactor ?? defaultEasingFactor))
+        : 1),
+  );
 export const pieceZoom = 2;
 export type PieceSpan = { from: number; to: number };
 

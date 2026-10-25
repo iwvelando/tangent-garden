@@ -1114,6 +1114,7 @@ export function AnimationPanel({
                         path.style === "smooth"
                           ? planarPathHelp.smooth
                           : planarPathHelp.steady,
+                        path.easingFactor,
                       )
                     : path.style === "smooth"
                       ? planarPathHelp.smooth
@@ -1137,6 +1138,10 @@ export function AnimationPanel({
               <KeyViewEasing
                 checked={path.ease ?? false}
                 onChange={(ease) => setPath((p) => ({ ...p, ease }))}
+                factor={path.easingFactor}
+                onFactorChange={(easingFactor) =>
+                  setPath((p) => ({ ...p, easingFactor }))
+                }
               />
               <KeyViews
                 keys={path.keys}

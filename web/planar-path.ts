@@ -9,11 +9,12 @@
 import type { Viewport } from "./animation";
 import { tiered } from "./help";
 import {
+  easingError,
   hermite,
   keysError,
   locate,
   maxKeys,
-  pieceSteps,
+  pieceStepsFor,
   pieceZoom,
   slopes,
   type KeyBase,
@@ -30,6 +31,7 @@ export type PlanarPath = {
   style: PathStyle;
   keys: PlanarKeyView[];
   ease?: boolean;
+  easingFactor?: number;
 };
 export const defaultPlanarPath: PlanarPath = { style: "steady", keys: [] };
 // The drawing's fitted framing: its center, scale (page units per unit of
@@ -62,6 +64,8 @@ export function planarPathError(
   path: PlanarPath,
   zoomLimit: number,
 ): PathError | null {
+  const easing = easingError(path);
+  if (easing) return easing;
   return keysError(path.keys, (key, name) =>
     [key.x, key.y, key.zoom].every(Number.isFinite) &&
     key.zoom >= 0.1 &&
@@ -161,7 +165,7 @@ export function flightPieces(
   cyclic: boolean,
   rect: (view: Viewport) => ViewRect,
 ): Piece[] {
-  const n = Math.max(1, path.keys.length - 1) * pieceSteps;
+  const n = Math.max(1, path.keys.length - 1) * pieceStepsFor(path);
   const pieces: Piece[] = [];
   type Open = {
     from: number;

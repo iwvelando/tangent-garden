@@ -115,6 +115,56 @@ test("the planar easing toggle changes the scrubbed camera and resets with a new
   await expect(toggle).not.toBeChecked();
 });
 
+test("planar easing factor edits affect playback, validate, survive toggling, and reset with the preset", async ({
+  page,
+}) => {
+  const fit = await openStar(page, "0.4");
+  const toggle = page.getByRole("checkbox", {
+    name: "Ease key-view transitions",
+    exact: true,
+  });
+  const factor = page.getByRole("spinbutton", {
+    name: "Easing factor",
+    exact: true,
+  });
+  await toggle.check();
+  await expect(factor).toHaveValue("0.5");
+  await factor.fill("1.1");
+  await expect(factor).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator(".field-error")).toContainText(
+    "Easing factor must be from 0 to 1.",
+  );
+  await button(page, "Play animation").click();
+  await expect(button(page, "Pause")).toHaveCount(0);
+  for (const [value, fraction] of [
+    ["0", 0.25],
+    ["0.25", (0.25 + 53 / 512) / 2],
+    ["0.5", 53 / 512],
+    ["1", 6413 / 131072],
+  ] as const) {
+    await factor.fill(value);
+    await expect(factor).not.toHaveAttribute("aria-invalid", "true");
+    await button(page, "Play animation").click();
+    await expect(button(page, "Replay")).toBeVisible({ timeout: 30_000 });
+    await page
+      .getByRole("slider", { name: "Animation progress", exact: true })
+      .fill("0.25");
+    await ready(page);
+    await expect
+      .poll(async () => (await camera(page)).scale / fit.scale)
+      .toBeCloseTo(800 ** fraction, 8);
+    await button(page, "Stop").click();
+  }
+  await toggle.uncheck();
+  await expect(factor).toBeDisabled();
+  await toggle.check();
+  await expect(factor).toHaveValue("1");
+  await choosePreset(page, { label: star });
+  await ready(page);
+  await toggle.check();
+  await expect(factor).toHaveValue("0.5");
+});
+
 test("the flight stands at each view exactly as the manual camera shows it, refined as finely", async ({
   page,
 }) => {
@@ -266,6 +316,10 @@ for (const ease of [false, true]) {
           exact: true,
         })
         .check();
+    if (ease)
+      await page
+        .getByRole("spinbutton", { name: "Easing factor", exact: true })
+        .fill("1");
     const stills: Buffer[] = [];
     for (const k of [1, 2]) {
       if (k === 1) {

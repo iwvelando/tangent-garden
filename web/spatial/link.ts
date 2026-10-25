@@ -469,6 +469,7 @@ const path: SchemaOf<CameraPath> = {
   fields: {
     style: { options: { steady: true, smooth: true } },
     ease: { optional: "boolean" },
+    easingFactor: { optional: { range: [0, 1] } },
     // Links made before the pivot have none: the plane.
     pivot: { optional: { options: { plane: true, geometry: true } } },
     // Links made before fitting have none: every frame is drawn about the

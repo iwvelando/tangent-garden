@@ -1458,6 +1458,28 @@ test("links preserve optional key-view easing and reject nonboolean values", asy
   }
 });
 
+test("links round-trip easing factors in both notebooks and retain legacy defaults", async () => {
+  for (const notebook of ["2d", "3d"] as const) {
+    const study = (notebook === "3d" ? spatial() : planar()) as any;
+    const conform = notebook === "3d" ? spatialStudy : planarStudy;
+    study.animation.path ??= { style: "steady", keys: [] };
+    study.animation.path.ease = true;
+    assert.equal("easingFactor" in conform(study).animation.path!, false);
+    for (const easingFactor of [0, 0.25, 0.5, 1]) {
+      study.animation.path.easingFactor = easingFactor;
+      const back = await readStudyLink(await writeStudyLink(notebook, study));
+      assert.equal(
+        (conform(back.study).animation.path as any).easingFactor,
+        easingFactor,
+      );
+    }
+    for (const easingFactor of [-0.01, 1.01, "0.5", null, NaN, Infinity]) {
+      study.animation.path.easingFactor = easingFactor;
+      await refused(() => conform(study), "animation.path.easingFactor");
+    }
+  }
+});
+
 test("a link carries what a camera path turns about; older links turn about the plane", async () => {
   const study: SpatialStudy = {
     ...spatial(),

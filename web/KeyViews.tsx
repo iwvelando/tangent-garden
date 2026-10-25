@@ -1,7 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import type { Help } from "./help";
 import {
+  defaultEasingFactor,
+  easingError,
+  easingFactorHelp,
+  easingFactorRange,
   keyTimes,
   legHelp,
   legRange,
@@ -46,17 +56,49 @@ export function KeyViewSwitch({
   );
 }
 
-export const KeyViewEasing = (props: {
+export function KeyViewEasing({
+  checked,
+  onChange,
+  factor = defaultEasingFactor,
+  onFactorChange,
+}: {
   checked: boolean;
   onChange: (checked: boolean) => void;
-}) => (
-  <KeyViewSwitch
-    {...props}
-    label="Ease key-view transitions"
-    topic="easing key-view transitions"
-    help={transitionHelp}
-  />
-);
+  factor?: number;
+  onFactorChange: (factor: number) => void;
+}) {
+  const errorId = useId();
+  const problem = easingError({ keys: [], easingFactor: factor });
+  return (
+    <>
+      <KeyViewSwitch
+        checked={checked}
+        onChange={onChange}
+        label="Ease key-view transitions"
+        topic="easing key-view transitions"
+        help={transitionHelp}
+      />
+      <Field label="Easing factor" help={easingFactorHelp}>
+        <input
+          type="number"
+          min={easingFactorRange[0]}
+          max={easingFactorRange[1]}
+          step="0.05"
+          disabled={!checked}
+          value={Number.isNaN(factor) ? "" : factor}
+          aria-invalid={problem ? true : undefined}
+          aria-errormessage={problem ? errorId : undefined}
+          onChange={(e) => onFactorChange(e.target.valueAsNumber)}
+        />
+      </Field>
+      {problem && (
+        <p className="field-error" role="alert" id={errorId}>
+          {problem.field} {problem.message}
+        </p>
+      )}
+    </>
+  );
+}
 
 // The key views of a camera path, in the 2D and 3D notebooks: each view's
 // name, the fields a notebook adds (3D: turns), its leg time, where it is
