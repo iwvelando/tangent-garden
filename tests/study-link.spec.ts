@@ -2420,10 +2420,44 @@ test("selection prefers v1 on a real compressed tie and accepts compact beyond t
     duration: null,
     pace: null,
   };
-  const full = envelope("4d", study);
-  const sparse = compact(delta, "4d");
-  assert.equal(full.length, sparse.length); // independent zlib candidates really tie
-  assert.equal(unpack(await writeStudyLink("4d", study)).v, 1);
+  // Node builds can bundle different zlib versions even at the same Node
+  // version. Find a real tie with this runtime's production compressor;
+  // never assume that one fixture compresses to fixed byte lengths.
+  const pack = async (value: unknown) => {
+    const stream = new Blob([JSON.stringify(value)])
+      .stream()
+      .pipeThrough(new CompressionStream("deflate-raw"));
+    return Buffer.from(await new Response(stream).arrayBuffer()).toString(
+      "base64url",
+    );
+  };
+  let tied: { study: unknown; full: string; sparse: string } | undefined;
+  for (let i = -1; i < 256; i++) {
+    const extra =
+      i < 0
+        ? {}
+        : {
+            extra: createHash("sha256").update(String(i)).digest("base64url"),
+          };
+    const candidate = { ...study, ...extra };
+    const [full, sparse] = await Promise.all([
+      pack({ v: 1, notebook: "4d", study: candidate }),
+      pack({ v: 2, notebook: "4d", delta: { ...delta, ...extra } }),
+    ]);
+    if (full.length === sparse.length) {
+      tied = { study: candidate, full, sparse };
+      break;
+    }
+  }
+  assert.ok(tied, "the bounded fixture search must exercise a compressed tie");
+  assert.equal(tied.full.length, tied.sparse.length);
+  const selected = await writeStudyLink("4d", tied.study);
+  assert.equal(selected.length, tied.full.length);
+  assert.deepEqual(unpack(selected), {
+    v: 1,
+    notebook: "4d",
+    study: tied.study,
+  });
   const random = Array.from({ length: 1500 }, (_, i) =>
     createHash("sha256").update(String(i)).digest("base64url"),
   ).join("");

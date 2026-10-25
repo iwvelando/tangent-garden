@@ -38,7 +38,7 @@ See the **[usage guide](docs/usage.md)** for controls, examples, animations, cam
 
 ## Run locally
 
-Requires **Go 1.26+**, **Node 22.12+**, npm, and Make. CI uses the latest stable Go and Node 22 on Linux. A modern browser with WebAssembly is required; WebP export additionally needs canvas WebP encoding. Browser integration tests currently target Chromium.
+Requires **Go 1.26+**, **Node 22.12+**, npm, and Make. Use the Node version in [`.nvmrc`](.nvmrc) for local development and CI; with nvm, run `nvm install` and `nvm use` before the commands below. CI uses the latest stable Go and that shared Node version on Linux and macOS. A modern browser with WebAssembly is required; WebP export additionally needs canvas WebP encoding. Browser integration tests currently target Chromium.
 
 ```sh
 make install
