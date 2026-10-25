@@ -373,14 +373,16 @@ func (q SurfaceRequest) at(i, j int) (float64, float64) {
 // positions samples the patch's points and returns them with the surface's
 // size, which sets the tolerances.
 func (q SurfaceRequest) positions() ([]*Vec3, float64, error) {
-	positions := make([]*Vec3, 0, (q.USamples+1)*(q.VSamples+1))
+	count := (q.USamples + 1) * (q.VSamples + 1)
+	positions, values := make([]*Vec3, 0, count), make([]Vec3, count)
 	for i := 0; i <= q.USamples; i++ {
 		for j := 0; j <= q.VSamples; j++ {
 			x, _, _, _, _, _ := q.patch(q.at(i, j))
 			if !x.valid() {
 				return nil, 0, fmt.Errorf("the surface has no finite point at sample (%d, %d)", i, j)
 			}
-			positions = append(positions, &x)
+			values[len(positions)] = x
+			positions = append(positions, &values[len(positions)])
 		}
 	}
 	return positions, fit(positions).Radius, nil
