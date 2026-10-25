@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"sync"
 	"tangentgarden/engine/expr"
 )
 
@@ -208,6 +209,7 @@ func extent(f func(float64) Vec3, lo, hi float64) float64 {
 // test has a floor in the curve's units u, below which a difference is
 // rounding.
 func sampled(f func(float64) Vec3, lo, hi, span float64, u units) evaluation {
+	var weights stencilCache
 	return func(t float64) (Vec3, Vec3, Vec3, bool) {
 		// At most eleven positions: the center and two five-point stencils.
 		// Reuse only identical parameter bits, including the sign of zero;
@@ -229,8 +231,8 @@ func sampled(f func(float64) Vec3, lo, hi, span float64, u units) evaluation {
 			return p
 		}
 		r := at(t)
-		v, a := derivatives(at, r, t, lo, hi, span*1e-4)
-		v2, a2 := derivatives(at, r, t, lo, hi, span*5e-5)
+		v, a := weightedDerivatives(at, r, t, lo, hi, span*1e-4, weights.at)
+		v2, a2 := weightedDerivatives(at, r, t, lo, hi, span*5e-5, weights.at)
 		stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*math.Max(v.norm(), v2.norm())+1e-8*u.speed
 		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(u.acceleration, v.norm()/span) {
 			a = Vec3{math.NaN(), 0, 0}
@@ -243,11 +245,15 @@ func sampled(f func(float64) Vec3, lo, hi, span float64, u units) evaluation {
 // the central position, origin = f(t), which the caller has already
 // evaluated, before differentiating to reduce translation roundoff.
 func derivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64) (Vec3, Vec3) {
+	return weightedDerivatives(f, origin, t, lo, hi, h, stencilWeights)
+}
+
+func weightedDerivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64, table func(float64) [5][2]float64) (Vec3, Vec3) {
 	start := math.Max(lo, math.Min(t-2*h, hi-4*h))
 	a := (t - start) / h
 	weights := centeredWeights
 	if a != 2 {
-		weights = stencilWeights(a)
+		weights = table(a)
 	}
 	var d, dd Vec3
 	for j := 0; j < 5; j++ {
@@ -291,6 +297,38 @@ func stencilWeights(a float64) (weights [5][2]float64) {
 		weights[j] = [2]float64{coeff[1] / den, 2 * coeff[2] / den}
 	}
 	return weights
+}
+
+// stencilCache belongs to one sampled evaluator. It retains only coefficient
+// tables, never curve values or request-dependent geometry. Identical bits
+// share the original arithmetic; a full cache evaluates new positions normally.
+// The mutex also permits concurrent use of an evaluator outside the worker.
+// A nil build uses stencilWeights; tests substitute a counting builder.
+type stencilCache struct {
+	mu     sync.Mutex
+	values map[uint64][5][2]float64
+	build  func(float64) [5][2]float64
+}
+
+func (c *stencilCache) at(a float64) [5][2]float64 {
+	bits := math.Float64bits(a)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if w, ok := c.values[bits]; ok {
+		return w
+	}
+	build := c.build
+	if build == nil {
+		build = stencilWeights
+	}
+	w := build(a)
+	if len(c.values) < 256 {
+		if c.values == nil {
+			c.values = make(map[uint64][5][2]float64)
+		}
+		c.values[bits] = w
+	}
+	return w
 }
 
 // Robust bounds are fitted independently per point family before unioning.

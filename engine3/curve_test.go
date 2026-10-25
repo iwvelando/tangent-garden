@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -258,5 +259,71 @@ func BenchmarkSpringStencils(b *testing.B) {
 		if _, err := Compute(c); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// Coefficients depend only on the exact normalized position within a
+// stencil. Reuse them without rounding nearby positions together, while
+// bounding storage and returning arrays callers cannot mutate in place.
+func TestStencilWeightCache(t *testing.T) {
+	var cache stencilCache
+	for _, a := range []float64{0, math.Copysign(0, -1), 1, 2, math.Nextafter(2, 0), math.Nextafter(2, 3), 4} {
+		want := stencilWeights(a)
+		for range 3 {
+			got := cache.at(a)
+			for j := range got {
+				for k := range got[j] {
+					if math.Float64bits(got[j][k]) != math.Float64bits(want[j][k]) {
+						t.Fatalf("weights changed at a=%g, [%d][%d]", a, j, k)
+					}
+				}
+			}
+			got[0][0] = 123 // Editing a delivered table cannot corrupt the next lookup.
+		}
+	}
+	// Each distinct position is built once; repeats are served from storage.
+	builds := map[uint64]int{}
+	counted := stencilCache{build: func(a float64) [5][2]float64 {
+		builds[math.Float64bits(a)]++
+		return stencilWeights(a)
+	}}
+	positions := []float64{0, math.Copysign(0, -1), math.Nextafter(2, 0), math.Nextafter(2, 3)}
+	for range 3 {
+		for _, a := range positions {
+			counted.at(a)
+		}
+	}
+	for _, a := range positions {
+		if n := builds[math.Float64bits(a)]; n != 1 {
+			t.Fatalf("a=%g built %d times, want once", a, n)
+		}
+	}
+	for j := range 2048 {
+		a := 0.1 + float64(j)/1024
+		if got, want := cache.at(a), stencilWeights(a); got != want {
+			t.Fatalf("weights changed after filling the cache at %g", a)
+		}
+	}
+	if len(cache.values) > 256 {
+		t.Fatalf("%d tables retained, want at most 256", len(cache.values))
+	}
+}
+
+func TestStencilWeightCacheConcurrent(t *testing.T) {
+	var cache stencilCache
+	var workers sync.WaitGroup
+	for worker := range 8 {
+		workers.Go(func() {
+			for j := range 512 {
+				a := float64(j+worker) / 256
+				if got, want := cache.at(a), stencilWeights(a); got != want {
+					t.Errorf("concurrent lookup changed weights at %g", a)
+				}
+			}
+		})
+	}
+	workers.Wait()
+	if len(cache.values) > 256 {
+		t.Fatalf("%d concurrent tables retained, want at most 256", len(cache.values))
 	}
 }
