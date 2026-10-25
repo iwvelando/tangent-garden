@@ -11,8 +11,11 @@ import (
 // projection of its curve. Plane "" or "none" casts none. A surface, mirror
 // or level set ignores it.
 type ShadowRequest struct {
-	Plane string  `json:"plane"`
-	At    float64 `json:"at"`
+	// AllPaths projects every field or pursuit path; absent preserves the
+	// original single shadow, independently of construction scope.
+	AllPaths bool    `json:"allPaths,omitempty"`
+	Plane    string  `json:"plane"`
+	At       float64 `json:"at"`
 	// Grid, for the grid of views beside the drawing, asks for the 2D
 	// engine's whole study of the shadow too (see PlaneStudy); it changes
 	// nothing else.
@@ -40,17 +43,18 @@ type ShadowPath struct {
 // square window on the plane, in order around it, holding the shadow and
 // what is cast with it.
 type ShadowResult struct {
-	Plane     string       `json:"plane"`
-	At        float64      `json:"at"`
-	Corners   [4]Vec3      `json:"corners"`
-	Curve     ShadowPath   `json:"curve"`
-	Kind      string       `json:"kind"`
-	Planar    []ShadowPath `json:"planar"`
-	Cast      []ShadowPath `json:"cast"`
-	Deviation *float64     `json:"deviation,omitempty"`
-	Compared  int          `json:"compared"`
-	Size      float64      `json:"size"`
-	Notes     []string     `json:"notes"`
+	Family    []*ShadowResult `json:"family,omitempty"`
+	Plane     string          `json:"plane"`
+	At        float64         `json:"at"`
+	Corners   [4]Vec3         `json:"corners"`
+	Curve     ShadowPath      `json:"curve"`
+	Kind      string          `json:"kind"`
+	Planar    []ShadowPath    `json:"planar"`
+	Cast      []ShadowPath    `json:"cast"`
+	Deviation *float64        `json:"deviation,omitempty"`
+	Compared  int             `json:"compared"`
+	Size      float64         `json:"size"`
+	Notes     []string        `json:"notes"`
 	// Adaptive holds the shadows refined between samples, present only
 	// when the study refines its curves (see ShadowAdaptive).
 	Adaptive *ShadowAdaptive `json:"adaptive,omitempty"`
@@ -306,6 +310,20 @@ func (out *Result) cast(c Request) {
 		base, breaks = out.Composition.Curve, out.Composition.Breaks
 	}
 	s.Curve = q.path(base, breaks)
+	if c.integrated != nil {
+		// A stationary seed has no tangent, but still has a shadow. Use
+		// its positions rather than the regular samples of a construction,
+		// with the trajectory's breaks rather than a composed input's.
+		points := make([]*Vec3, c.Samples+1)
+		for i := range points {
+			t := sh.lo*(1-float64(i)/float64(c.Samples)) + sh.hi*float64(i)/float64(c.Samples)
+			p := c.integrated.position(c, c.member, t)
+			if p.valid() {
+				points[i] = &p
+			}
+		}
+		s.Curve = q.path(points, breaks)
+	}
 	if s.Kind != "" {
 		switch {
 		case out.Involute != nil:

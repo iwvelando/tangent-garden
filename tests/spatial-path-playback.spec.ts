@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { probe, decodeVideo, frameDifference } from "./video";
-import { open as openDetails } from "./helpers";
+import { choosePreset, open as openDetails } from "./helpers";
 import { spatialPresets } from "../web/spatial/presets";
 import { defaultLayers } from "../web/spatial/renderer";
 import { pathView, type CameraPath } from "../web/spatial/path";
@@ -126,6 +126,85 @@ test("key-view easing is edited directly, scrubs the eased camera, and switching
   await seek(page, "0.125");
   expect(await animationCamera(page)).toEqual(pathView(flight, bounds, 0.125));
   await button(page, "Stop").click();
+});
+
+test("spatial easing factor edits affect playback, validate, retain the held camera, and reopen from a link", async ({
+  page,
+}) => {
+  const two: CameraPath = {
+    style: "steady",
+    keys: [
+      { ...flight.keys[0], yaw: 0, pitch: 0, zoom: 1, panX: 0, panY: 0 },
+      {
+        ...flight.keys[0],
+        yaw: 0,
+        pitch: 0,
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        turns: 1,
+      },
+    ],
+  };
+  await open(page, study(two, 30));
+  const idle = await shownView(page);
+  const toggle = page.getByRole("checkbox", {
+    name: "Ease key-view transitions",
+    exact: true,
+  });
+  const factor = page.getByRole("spinbutton", {
+    name: "Easing factor",
+    exact: true,
+  });
+  await toggle.check();
+  await expect(factor).toHaveValue("0.5");
+  await factor.fill("");
+  await expect(factor).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator(".field-error")).toContainText(
+    "Easing factor must be from 0 to 1.",
+  );
+  await button(page, "Play animation").click();
+  await expect(button(page, "Pause")).toHaveCount(0);
+  // One announcement: the playback refusal. The field's own message is tied
+  // to it through aria-errormessage, not a second alert.
+  await expect(page.getByRole("alert")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toContainText(
+    "Animation stopped: Easing factor must be from 0 to 1.",
+  );
+  for (const [value, fraction] of [
+    ["0", 0.25],
+    ["0.25", (0.25 + 53 / 512) / 2],
+    ["0.5", 53 / 512],
+    ["1", 6413 / 131072],
+  ] as const) {
+    await factor.fill(value);
+    await button(page, "Play animation").click();
+    await button(page, "Pause").click();
+    await seek(page, "0.25");
+    await expect
+      .poll(async () => (await animationCamera(page)).yaw)
+      .toBeCloseTo(2 * Math.PI * fraction, 12);
+    await button(page, "Stop").click();
+    expect(await shownView(page)).toEqual(idle);
+  }
+  await toggle.uncheck();
+  await expect(factor).toBeDisabled();
+  await toggle.check();
+  await expect(factor).toHaveValue("1");
+  // An invalid factor is not kept behind the disabled field: turning easing
+  // off restores the default, so playback ignores the factor as its help says.
+  await factor.fill("");
+  await toggle.uncheck();
+  await expect(factor).toHaveValue("0.5");
+  await expect(factor).not.toHaveAttribute("aria-invalid", "true");
+  await button(page, "Play animation").click();
+  await button(page, "Pause").click();
+  await button(page, "Stop").click();
+  expect(await shownView(page)).toEqual(idle);
+  await open(page, study({ ...two, ease: true, easingFactor: 0.75 }, 30));
+  await expect(factor).toHaveValue("0.75");
+  await choosePreset(page, { label: "Viviani's curve, from every side" });
+  await expect(factor).toHaveValue("0.5");
 });
 
 test("key views are taken from the drawing, shown, set again and removed", async ({
@@ -333,6 +412,10 @@ for (const ease of [false, true]) {
           exact: true,
         })
         .check();
+    if (ease)
+      await page
+        .getByRole("spinbutton", { name: "Easing factor", exact: true })
+        .fill("1");
     // Stills at the two ends, from the manual camera.
     const stills: Buffer[] = [];
     for (const k of [1, 3]) {

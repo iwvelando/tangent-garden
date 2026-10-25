@@ -22,8 +22,8 @@ Keep a short working record in internal notes or a concise artifact, rather than
 - For numerical decisions, challenge units, fallback scales and propagated rounding; test acceptance as well as rejection. Vary independent quantities independently and include relevant production sampling.
 - For regression coverage, inspect assertions and prove that fixtures reach the named condition. Identify which promised output or caller a passing test could leave unchecked.
 - For shared or retained state, follow the real worker entry point, repeated requests, cache keys, validation and ownership. Recheck helpers and consumers after a rebase.
-- For performance, account for work inside nested evaluators and construction of unused fallback paths. Separate necessary numerical work from duplicate work.
-- For controls and documentation, trace indirect effects and reverse transitions from edited values. Distinguish product failures from test races using the actual failing sequence.
+- For performance, account for work inside nested evaluators and construction of unused fallback paths. Separate necessary numerical work from duplicate work. After an allocation saving, rerun the regressions that the path's older allocation bounds name; savings elsewhere can leave them passing with those regressions restored.
+- For controls and documentation, trace indirect effects and reverse transitions from edited values. Distinguish product failures from test races using the actual failing sequence, and check whether the same wait has recurred before accepting another per-test timing amendment.
 
 These are prompts for selecting evidence, not a mandatory test matrix for every PR. Apply the detailed procedures to the relevant risks. Choose the smallest test, mutation or inspection that can disprove a doubtful assumption. A full suite cannot supply a missing assertion; a test failure is not evidence of a product defect until its cause is understood.
 

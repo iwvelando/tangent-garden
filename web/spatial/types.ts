@@ -105,7 +105,7 @@ export const maxMeridians = 12;
 // dy/dt and dz/dt in x, y, z, t and a. Each seed starts a trajectory at t =
 // min that runs to max, unless it first leaves the sphere of radius `escape`
 // about the origin or meets a nonfinite field. The first seed's trajectory
-// is the base curve for every construction. Mirrors engine3.FieldRequest.
+// is the primary base curve; allPaths also constructs on the others. Mirrors engine3.FieldRequest.
 export type FieldConfig = {
   x: string;
   y: string;
@@ -122,7 +122,7 @@ export const maxSpatialSeeds = 12;
 export type SpatialPursuer = Vec3 & { speed: number };
 // A spatial cyclic pursuit from t = min to max. The chase stops for everyone
 // the first time any pursuer comes within `capture` of its own target. The
-// first pursuer's path is the base curve. Mirrors engine3.PursuitRequest.
+// first pursuer's path is the primary base curve; allPaths also constructs on the others. Mirrors engine3.PursuitRequest.
 export type SpatialPursuitConfig = {
   pursuers: SpatialPursuer[];
   capture: number;
@@ -258,6 +258,8 @@ export const maxSections = 24;
 export const refinesFormat = (format: SpatialConfig["format"]) =>
   format === "torus" || format === "parametric" || format === "harmonic";
 export type SpatialConfig = {
+  // Absent retains a legacy study's construction on path 1.
+  allPaths?: boolean;
   format:
     | "torus"
     | "parametric"
@@ -340,7 +342,12 @@ export type SpatialConfig = {
 export type ShadowPlane = "x" | "y" | "z";
 // grid draws the plane face on in views beside the drawing (shadow.ts);
 // absent draws the one drawing.
-export type ShadowConfig = { plane: ShadowPlane; at: number; grid?: boolean };
+export type ShadowConfig = {
+  plane: ShadowPlane;
+  at: number;
+  grid?: boolean;
+  allPaths?: boolean;
+};
 export const maxShadowAt = 100000;
 // Mirrors engine3.View: what the drawing shows, which refinement refines to
 // when it is zoomed in. center is the middle of the page, right and up its
@@ -396,6 +403,9 @@ export type CurveMesh = {
 };
 export const meshStride = 7;
 export type SpatialResult = {
+  // Additional constructions in source order; all surfaces share mesh.
+  members?: SpatialResult[];
+  unavailable?: string;
   base: (Vec3 | null)[];
   minus: (Vec3 | null)[];
   plus: (Vec3 | null)[];
@@ -464,6 +474,7 @@ export type ShadowPath = { points: (Vec3 | null)[]; breaks: boolean[] };
 // any sample has both (counting `compared`). notes are the 2D engine's
 // warnings; corners a square window on the plane.
 export type ShadowResult = {
+  family?: ShadowResult[];
   plane: ShadowPlane;
   at: number;
   corners: [Vec3, Vec3, Vec3, Vec3];

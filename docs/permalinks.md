@@ -25,7 +25,7 @@ Baselines freeze saved input data, not engine algorithms. They do not promise id
 
 1. The root delta is an object. `{}` retains the complete baseline study.
 2. An omitted object member retains its baseline value. Scalars, including `0`, `false` and `""`, replace it exactly.
-3. Object patches recurse into a baseline object, or into an empty object if the baseline at that key is absent, scalar or array. An empty patch retains an existing object; clearing its members requires explicit deletions.
+3. Object members compare in any order; arrays compare in order. Unchanged data needs no patch, however its members are ordered. Object patches recurse into a baseline object, or into an empty object if the baseline at that key is absent, scalar or array. An empty patch retains an existing object; clearing its members requires explicit deletions.
 4. `null` at a patch object's member deletes that member. Deleting an absent member is an idempotent no-op. Nested deletions and optional-field absence are preserved.
 5. Arrays replace in full, including empty arrays, preserving order, length and literal contents. Array indices are never merged. An array's entire subtree is literal data: null anywhere inside it is invalid. Current study schemas do not accept null data, so null is reserved for deletion elsewhere in v2.
 6. Restored studies own fresh storage. Changing a decoded study cannot change another decode or the frozen snapshots.
@@ -55,17 +55,15 @@ Supported studies have nesting below 12; list limits include 12 camera keys, up 
 
 ## Measurements
 
-Final measurements use production candidate compression and `presetStudy(index)` at implementation base `6e7c35d`, including all 216 presets. Lengths count token characters, excluding the URL prefix. Every selected token is no longer than its eligible full equivalent; all preset studies restore exactly both before and after notebook conformance.
+Measurements use the production compressor for both candidates and `presetStudy(index)` for all 218 presets as of `4249e17`, after the frozen baseline was captured. Lengths count token characters, excluding the URL prefix. Every selected token is no longer than its eligible full equivalent; all preset studies restore exactly both before and after notebook conformance.
 
 | Notebook | Presets | v1 full, min / median / max | Selected, min / median / max |
 | --- | ---: | ---: | ---: |
 | 2D | 65 | 1,264 / 1,420 / 1,539 | 48 / 190 / 383 |
-| 3D | 138 | 1,803 / 1,856.5 / 2,078 | 48 / 303.5 / 610 |
+| 3D | 140 | 1,803 / 1,858 / 2,078 | 48 / 304 / 610 |
 | 4D | 13 | 344 / 378 / 450 | 48 / 136 / 258 |
 
 Edited study examples measured 1,428 → 223 (2D), 1,962 → 560 (3D), and 376–478 → 144–326 (4D across all presets' objects). Larger examples with multiple tracks and 12 camera keys measured 2,698 → 1,534 in 2D (including a long unique expression and 16 seeds), and 2,174 → 788 in 3D. These are examples, not a promise that arbitrary studies shrink. Unique expressions, detailed paths and changed lists still need to travel in the URL. A delta can exceed a full encoding; automatic selection then retains v1.
-
-The earlier investigation on revision `be64390a8c6748eae2475a809ad81390e91c9640` measured a hypothetical patch inside a v1-shaped envelope, not valid v2 links. Its estimated median sparse lengths were 191, 303 and 136 for 2D, 3D and 4D. The table above supersedes those estimates with the implemented envelopes.
 
 The browser-free codec tests import production TypeScript directly and independently inflate emitted links with Node zlib. To reproduce the corpus measurements without a server or build:
 

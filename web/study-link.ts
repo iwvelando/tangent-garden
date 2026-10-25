@@ -234,10 +234,30 @@ const pipe = (
   transform: CompressionStream | DecompressionStream,
 ) => new Blob([bytes as BlobPart]).stream().pipeThrough(transform);
 
+// Equality in the JSON domain: arrays in order, object members in any
+// order, so reordered unchanged data needs no patch.
+function same(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a))
+    return (
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, i) => same(item, b[i]))
+    );
+  if (plain(a)) {
+    if (!plain(b)) return false;
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((key) => Object.hasOwn(b, key) && same(a[key], b[key]))
+    );
+  }
+  return a === b;
+}
+
 // The input has already been JSON-materialized and checked for v2's domain.
 // Undefined here means no change; arrays are compared/replaced as literals.
 function makeDelta(value: unknown, baseline: unknown): unknown {
-  if (JSON.stringify(value) === JSON.stringify(baseline)) return undefined;
+  if (same(value, baseline)) return undefined;
   if (!plain(value)) return value;
   const base = plain(baseline) ? baseline : {};
   const out: Record<string, unknown> = {};

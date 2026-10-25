@@ -1188,6 +1188,63 @@ function spatialResult(reply) {
     }
   return result;
 }
+
+// A trajectory family sends one indexed mesh on the typed buffer, with
+// each additional construction and shadow restored from lifted arrays.
+{
+  const reply = tangentGardenSpatial(
+    JSON.stringify({
+      format: "field",
+      construction: "canal",
+      allPaths: true,
+      field: {
+        x: "-y",
+        y: "x",
+        z: "0.25",
+        a: 0,
+        min: 0,
+        max: 2 * Math.PI,
+        escape: 20,
+        seeds: [
+          { x: 1, y: 0, z: 0 },
+          { x: 0, y: 1, z: 0 },
+        ],
+      },
+      canal: { radius: 0.2, profile: "1", meridians: 2 },
+      frame: {
+        kind: "rotation-minimizing",
+        reference: { x: 0, y: 0, z: 1 },
+        angle: 0,
+        twist: 0,
+        width: 0,
+        offset: 0,
+        strands: 0,
+        closure: "seam",
+      },
+      shadow: { plane: "z", at: -2, allPaths: true },
+      samples: 240,
+      lines: 12,
+    }),
+  );
+  assert.equal(typeof reply, "object");
+  const wire = JSON.parse(reply.json);
+  assert.equal(wire.members[0].base, null);
+  assert.equal(wire.shadow.family[0].curve.points, null);
+  const result = spatialResult(reply);
+  assert.equal(result.members.length, 1);
+  assert.equal(result.shadow.family.length, 1);
+  assert.equal(result.members[0].mesh.vertices.length, 0);
+  assert.ok(result.mesh.triangles.length > 0);
+  for (const circle of result.members[0].canal.circles) {
+    assert.deepEqual(circle.center, result.field.paths[1][circle.sampleIndex]);
+    assert.equal(circle.radius, 0.2);
+  }
+  for (const [i, p] of result.shadow.family[0].curve.points.entries())
+    assert.deepEqual(p, { ...result.field.paths[1][i], z: -2 });
+  console.log(
+    "WASM trajectory family: shared typed mesh, lifted members and shadows passed",
+  );
+}
 // A curve mesh's triangles corner by corner, each with its triangle's
 // sample.
 function* meshVertices({ vertices, triangles, sampleIndex }) {

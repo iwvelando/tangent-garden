@@ -161,6 +161,7 @@ const family = {
 } as const;
 const config: SchemaOf<SpatialConfig> = {
   fields: {
+    allPaths: { optional: "boolean" },
     format: {
       options: {
         torus: true,
@@ -390,6 +391,7 @@ const config: SchemaOf<SpatialConfig> = {
           plane: { options: { x: true, y: true, z: true } },
           at: "number",
           grid: { optional: "boolean" },
+          allPaths: { optional: "boolean" },
         },
       },
     },
@@ -469,6 +471,7 @@ const path: SchemaOf<CameraPath> = {
   fields: {
     style: { options: { steady: true, smooth: true } },
     ease: { optional: "boolean" },
+    easingFactor: { optional: { range: [0, 1] } },
     // Links made before the pivot have none: the plane.
     pivot: { optional: { options: { plane: true, geometry: true } } },
     // Links made before fitting have none: every frame is drawn about the

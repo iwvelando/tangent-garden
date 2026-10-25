@@ -597,6 +597,17 @@ textarea[aria-invalid="true"] {
 .dark textarea[aria-invalid="true"] {
   border-color: #f3bc83;
 }
+/* The colors above replace a desktop browser's disabled look, which iOS
+   keeps; dim a disabled field everywhere, as a disabled button is. A
+   disabled fieldset already dims its fields. */
+:is(
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea
+  ):disabled:not(fieldset:disabled *) {
+  opacity: 0.45;
+  cursor: default;
+}
 section {
   border-top: 1px solid var(--border);
   padding-top: 21px;

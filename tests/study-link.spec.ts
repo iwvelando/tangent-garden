@@ -1,4 +1,4 @@
-import { wireStudy } from "./study-link-wire";
+import { wireEnvelope, wireStudy } from "./study-link-wire";
 import { test } from "@playwright/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -44,6 +44,16 @@ const token = (value: unknown) =>
   deflateRawSync(Buffer.from(JSON.stringify(value))).toString("base64url");
 const envelope = (notebook: string, study: unknown, v: unknown = 1) =>
   token({ v, notebook, study });
+// The app's own compressor, for lengths that must match a written link's.
+// Node builds bundle different zlib versions, so Node's zlib can differ.
+const nativeToken = async (value: unknown) => {
+  const stream = new Blob([JSON.stringify(value)])
+    .stream()
+    .pipeThrough(new CompressionStream("deflate-raw"));
+  return Buffer.from(await new Response(stream).arrayBuffer()).toString(
+    "base64url",
+  );
+};
 const unpack = (t: string) =>
   JSON.parse(inflateRawSync(Buffer.from(t, "base64url")).toString());
 
@@ -158,6 +168,26 @@ const spatial = (i = 0): SpatialStudy => ({
   sight: { sheets: "through", opacity: 0.5, hidden: "dashed", weight: "bold" },
   projection: "normal",
   lensAngle: 50,
+});
+
+test("trajectory family scopes round trip and older links retain the first path", async () => {
+  const study = structuredClone(spatial()) as any;
+  study.config.format = "field";
+  study.config.allPaths = true;
+  study.config.shadow = { plane: "z", at: -3, allPaths: true };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  const restored = spatialStudy(read.study) as any;
+  assert.equal(restored.config.allPaths, true);
+  assert.equal(restored.config.shadow.allPaths, true);
+  delete study.config.allPaths;
+  delete study.config.shadow.allPaths;
+  const legacy = spatialStudy(study) as any;
+  assert.equal(!!legacy.config.allPaths, false);
+  assert.equal(!!legacy.config.shadow.allPaths, false);
+  for (const bad of ["all", 1, null, {}]) {
+    study.config.allPaths = bad;
+    await refused(() => spatialStudy(study), "config.allPaths");
+  }
 });
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
@@ -481,18 +511,24 @@ test("a link carries the probe on a patch's focal sheet", async () => {
 });
 
 test("links are compact, url-safe, and readable by an independent decoder", async () => {
-  let longest = 0;
   for (const [i] of spatialPresets.entries()) {
     const t = await writeStudyLink("3d", spatial(i));
     assert.match(t, /^[A-Za-z0-9_-]+$/);
     assert.equal(unpack(t).notebook, "3d");
     assert.deepEqual(wireStudy(t), JSON.parse(JSON.stringify(spatial(i))));
-    longest = Math.max(longest, t.length);
+    // The bound applies to the full v1 encoding, which any study can still
+    // fall back to, not only to the shorter selected link.
+    // The tiny sink carries scale-matched inactive construction settings;
+    // their scientific-notation values add a little to its shared link.
+    const full = await nativeToken({ v: 1, notebook: "3d", study: spatial(i) });
+    assert.ok(t.length <= full.length);
+    const limit =
+      spatialPresets[i].name === "Spirals into a tiny sink" ? 2150 : 2100;
+    assert.ok(
+      full.length < limit,
+      `${spatialPresets[i].name} v1 link is ${full.length} characters (limit ${limit})`,
+    );
   }
-  // Presets are about 2 KB of JSON; a shared link should stay near 1.5 KB.
-  // Every link carries each input's settings, which the coil input's
-  // took past 2000.
-  assert.ok(longest < 2100, `longest 3D preset link is ${longest} characters`);
 });
 
 test("hrefs carry the notebook in the query and the study in the fragment", () => {
@@ -1471,6 +1507,28 @@ test("links preserve optional key-view easing and reject nonboolean values", asy
   }
 });
 
+test("links round-trip easing factors in both notebooks and retain legacy defaults", async () => {
+  for (const notebook of ["2d", "3d"] as const) {
+    const study = (notebook === "3d" ? spatial() : planar()) as any;
+    const conform = notebook === "3d" ? spatialStudy : planarStudy;
+    study.animation.path ??= { style: "steady", keys: [] };
+    study.animation.path.ease = true;
+    assert.equal("easingFactor" in conform(study).animation.path!, false);
+    for (const easingFactor of [0, 0.25, 0.5, 1]) {
+      study.animation.path.easingFactor = easingFactor;
+      const back = await readStudyLink(await writeStudyLink(notebook, study));
+      assert.equal(
+        (conform(back.study).animation.path as any).easingFactor,
+        easingFactor,
+      );
+    }
+    for (const easingFactor of [-0.01, 1.01, "0.5", null, NaN, Infinity]) {
+      study.animation.path.easingFactor = easingFactor;
+      await refused(() => conform(study), "animation.path.easingFactor");
+    }
+  }
+});
+
 test("a link carries what a camera path turns about; older links turn about the plane", async () => {
   const study: SpatialStudy = {
     ...spatial(),
@@ -2347,7 +2405,7 @@ test("every production preset and edited study restores exactly with measured sa
       assert.deepEqual(read.study, study);
       assert.deepEqual(wireStudy(encoded), study);
       assert.deepEqual(conform(read.study), conform(study));
-      const full = envelope(notebook, study).length;
+      const full = (await nativeToken({ v: 1, notebook, study })).length;
       assert.ok(
         encoded.length <= full,
         `${notebook} preset ${i}: ${encoded.length} > ${full}`,
@@ -2395,14 +2453,40 @@ test("every production preset and edited study restores exactly with measured sa
       conform((await readStudyLink(encoded)).study),
       conform(original),
     );
-    assert.ok(encoded.length <= envelope(notebook, study).length);
+    const full = (await nativeToken({ v: 1, notebook, study })).length;
+    assert.ok(encoded.length <= full);
     console.log(
       JSON.stringify({
         edited: notebook,
-        full: envelope(notebook, study).length,
+        full,
         selected: encoded.length,
       }),
     );
+  }
+});
+
+test("a delta ignores member order, so reordered unchanged data adds nothing", async () => {
+  const reversed = (value: any): any =>
+    Array.isArray(value)
+      ? value.map(reversed)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .reverse()
+              .map(([k, v]) => [k, reversed(v)]),
+          )
+        : value;
+  for (const [notebook, make] of [
+    ["2d", planarPreset],
+    ["3d", spatialPreset],
+    ["4d", tesseractPreset],
+  ] as const) {
+    const study = JSON.parse(JSON.stringify(make(0)));
+    // Reorder every object, including those inside arrays, which a
+    // changed array would have to carry in full.
+    const t = await writeStudyLink(notebook, reversed(study));
+    assert.deepEqual(wireEnvelope(t), { v: 2, notebook, delta: {} });
+    assert.deepEqual((await readStudyLink(t)).study, study);
   }
 });
 
@@ -2423,14 +2507,6 @@ test("selection prefers v1 on a real compressed tie and accepts compact beyond t
   // Node builds can bundle different zlib versions even at the same Node
   // version. Find a real tie with this runtime's production compressor;
   // never assume that one fixture compresses to fixed byte lengths.
-  const pack = async (value: unknown) => {
-    const stream = new Blob([JSON.stringify(value)])
-      .stream()
-      .pipeThrough(new CompressionStream("deflate-raw"));
-    return Buffer.from(await new Response(stream).arrayBuffer()).toString(
-      "base64url",
-    );
-  };
   let tied: { study: unknown; full: string; sparse: string } | undefined;
   for (let i = -1; i < 256; i++) {
     const extra =
@@ -2441,8 +2517,8 @@ test("selection prefers v1 on a real compressed tie and accepts compact beyond t
           };
     const candidate = { ...study, ...extra };
     const [full, sparse] = await Promise.all([
-      pack({ v: 1, notebook: "4d", study: candidate }),
-      pack({ v: 2, notebook: "4d", delta: { ...delta, ...extra } }),
+      nativeToken({ v: 1, notebook: "4d", study: candidate }),
+      nativeToken({ v: 2, notebook: "4d", delta: { ...delta, ...extra } }),
     ]);
     if (full.length === sparse.length) {
       tied = { study: candidate, full, sparse };
@@ -2549,7 +2625,7 @@ test("large supported expressions, lists, tracks and camera paths retain every s
     console.log(
       JSON.stringify({
         large: notebook,
-        full: envelope(notebook, study).length,
+        full: (await nativeToken({ v: 1, notebook, study })).length,
         selected: encoded.length,
       }),
     );

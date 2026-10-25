@@ -8,6 +8,7 @@ export function pursuitNote(
   pursuit: SpatialPursuitResult,
   min: number,
   carried: boolean,
+  allPaths = false,
 ) {
   const c = pursuit.capture;
   const notes = [
@@ -19,7 +20,12 @@ export function pursuitNote(
           ? `The chase ran out of integration steps at t = ${time(pursuit.end)}: later samples are left empty. A shorter interval or a larger capture distance needs fewer steps.`
           : "No pursuer comes within the capture distance of its target by the end of the interval.",
   ];
-  if (carried) notes.push("The construction is built on pursuer 1’s path.");
+  if (carried)
+    notes.push(
+      allPaths
+        ? "The construction is built independently on every moving path."
+        : "The construction is built on pursuer 1’s path.",
+    );
   return notes.join(" ");
 }
 

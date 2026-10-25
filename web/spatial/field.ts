@@ -9,6 +9,7 @@ export function fieldNote(
   field: SpatialFieldResult,
   min: number,
   carried: boolean,
+  allPaths = false,
 ) {
   const notes = field.ends.flatMap(({ time: t, reason }, i) => {
     const n = i + 1;
@@ -47,7 +48,12 @@ export function fieldNote(
     notes.push(
       "The field changes with t, so arrows show it at their own time.",
     );
-  if (carried) notes.push("The construction is built on trajectory 1.");
+  if (carried)
+    notes.push(
+      allPaths
+        ? "The construction is built independently on every moving path."
+        : "The construction is built on trajectory 1.",
+    );
   return notes.join(" ");
 }
 

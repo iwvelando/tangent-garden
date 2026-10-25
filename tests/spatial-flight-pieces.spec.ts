@@ -106,7 +106,7 @@ function drawn(v: RefinementView): Vec3[] {
   return out;
 }
 
-for (const [name, p, lens, most, depths] of [
+for (const [name, original, lens, most, depths] of [
   [
     "orthographic, into a detail",
     path([key({}), key({ zoom: 800, panX: 1.2, panY: -0.7 })]),
@@ -146,73 +146,79 @@ for (const [name, p, lens, most, depths] of [
     [0, 0.02],
   ],
 ] as const) {
-  test(`${name}: every zoomed frame is refined at least as finely as it shows`, () => {
-    const pieces = flightPieces(
-      p,
-      bounds,
-      false,
-      size,
-      depths as number[] | undefined,
-      lens,
-    );
-    expect(pieces.length).toBeGreaterThan(1);
-    expect(pieces.length).toBeLessThanOrEqual(most);
-    for (let k = 1; k < pieces.length; k++)
-      expect(pieces[k].from).toBeGreaterThanOrEqual(pieces[k - 1].to);
-    for (const piece of pieces) {
-      expect(piece.views.length).toBeGreaterThan(0);
-      expect(piece.views.length).toBeLessThanOrEqual(pieceViews);
-    }
-    // Every frame, sampled more finely than the pieces were cut: each point
-    // it draws is in the margin of a view of its piece whose tolerance
-    // there is at most a little coarser than the frame's own.
-    let worst = 0,
-      zoomed = 0;
-    for (let k = 0; k <= 4000; k++) {
-      const s = k / 4000,
-        view = pathView(
-          p,
-          bounds,
-          s,
-          false,
-          depths as number[] | undefined,
-          lens,
-        );
-      if (!(view.zoom > 1)) continue;
-      zoomed++;
-      const own = refinementView(view, size),
-        piece = pieces[pieceAt(pieces, s)];
-      for (const point of drawn(own)) {
-        const best = Math.min(
-          ...piece.views
-            .filter((g) => inMargin(g, point))
-            .map((g) => tolerance(g, point)),
-        );
-        worst = Math.max(worst, best / tolerance(own, point));
+  for (const easingFactor of [undefined, 1]) {
+    const p =
+      easingFactor === undefined
+        ? original
+        : { ...original, ease: true, easingFactor };
+    test(`${name}${easingFactor === 1 ? " with maximum easing" : ""}: every zoomed frame is refined at least as finely as it shows`, () => {
+      const pieces = flightPieces(
+        p,
+        bounds,
+        false,
+        size,
+        depths as number[] | undefined,
+        lens,
+      );
+      expect(pieces.length).toBeGreaterThan(1);
+      expect(pieces.length).toBeLessThanOrEqual(most);
+      for (let k = 1; k < pieces.length; k++)
+        expect(pieces[k].from).toBeGreaterThanOrEqual(pieces[k - 1].to);
+      for (const piece of pieces) {
+        expect(piece.views.length).toBeGreaterThan(0);
+        expect(piece.views.length).toBeLessThanOrEqual(pieceViews);
       }
-    }
-    expect(zoomed).toBeGreaterThan(100);
-    expect(worst).toBeLessThanOrEqual(1.1);
-    // Each piece spans a zoom of at most 2×.
-    const zooms = new Map<number, number[]>();
-    for (let k = 0; k <= 4000; k++) {
-      const s = k / 4000,
-        view = pathView(
-          p,
-          bounds,
-          s,
-          false,
-          depths as number[] | undefined,
-          lens,
-        );
-      if (!(view.zoom > 1)) continue;
-      const i = pieceAt(pieces, s);
-      if (pieces[i].to === s && i + 1 < pieces.length) continue;
-      zooms.set(i, [...(zooms.get(i) ?? []), view.zoom]);
-    }
-    for (const z of zooms.values())
-      expect(Math.max(...z) / Math.min(...z)).toBeLessThanOrEqual(2.05);
-  });
+      // Every frame, sampled more finely than the pieces were cut: each point
+      // it draws is in the margin of a view of its piece whose tolerance
+      // there is at most a little coarser than the frame's own.
+      let worst = 0,
+        zoomed = 0;
+      for (let k = 0; k <= 4000; k++) {
+        const s = k / 4000,
+          view = pathView(
+            p,
+            bounds,
+            s,
+            false,
+            depths as number[] | undefined,
+            lens,
+          );
+        if (!(view.zoom > 1)) continue;
+        zoomed++;
+        const own = refinementView(view, size),
+          piece = pieces[pieceAt(pieces, s)];
+        for (const point of drawn(own)) {
+          const best = Math.min(
+            ...piece.views
+              .filter((g) => inMargin(g, point))
+              .map((g) => tolerance(g, point)),
+          );
+          worst = Math.max(worst, best / tolerance(own, point));
+        }
+      }
+      expect(zoomed).toBeGreaterThan(100);
+      expect(worst).toBeLessThanOrEqual(1.1);
+      // Each piece spans a zoom of at most 2×.
+      const zooms = new Map<number, number[]>();
+      for (let k = 0; k <= 4000; k++) {
+        const s = k / 4000,
+          view = pathView(
+            p,
+            bounds,
+            s,
+            false,
+            depths as number[] | undefined,
+            lens,
+          );
+        if (!(view.zoom > 1)) continue;
+        const i = pieceAt(pieces, s);
+        if (pieces[i].to === s && i + 1 < pieces.length) continue;
+        zooms.set(i, [...(zooms.get(i) ?? []), view.zoom]);
+      }
+      for (const z of zooms.values())
+        expect(Math.max(...z) / Math.min(...z)).toBeLessThanOrEqual(2.05);
+    });
+  }
 }
 
 // Frames at the fitted zoom or wider need no piece.

@@ -688,6 +688,7 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "developable",
+      allPaths: false,
       length: 0.7,
       lines: 72,
     },
@@ -700,6 +701,7 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "none",
+      allPaths: true,
       samples: 2400,
       lines: 60,
       field: {
@@ -725,6 +727,7 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "framed",
+      allPaths: false,
       samples: 2400,
       lines: 120,
       frame: {
@@ -755,6 +758,7 @@ export const spatialPresets: {
       ...base,
       format: "pursuit",
       construction: "none",
+      allPaths: true,
       samples: 1200,
       lines: 16,
     },
@@ -770,6 +774,7 @@ export const spatialPresets: {
       ...base,
       format: "pursuit",
       construction: "none",
+      allPaths: true,
       samples: 1600,
       lines: 16,
       pursuit: {
@@ -799,6 +804,7 @@ export const spatialPresets: {
       ...base,
       format: "pursuit",
       construction: "developable",
+      allPaths: false,
       length: 0.25,
       samples: 1200,
       lines: 24,
@@ -3302,6 +3308,7 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "none",
+      allPaths: true,
       samples: 2400,
       lines: 12,
       field: {
@@ -5269,9 +5276,25 @@ export const spatialPresets: {
       ...base,
       format: "field",
       construction: "none",
+      allPaths: true,
       samples: 720,
       lines: 24,
       length: 0.5 * 2 ** -40,
+      // Inactive construction lengths use the same units as the seeds.
+      canal: { ...base.canal, radius: 2 ** -44 },
+      frame: { ...base.frame, width: 2 ** -44, offset: 2 ** -44 },
+      coil: { ...base.coil, radius: 2 ** -44 },
+      unwinding: { ...base.unwinding, offset: 2 ** -40 },
+      involute: {
+        ...base.involute,
+        family: { ...base.involute.family, from: -(2 ** -40), to: 2 ** -40 },
+      },
+      inversion: { ...base.inversion, radius: 2 ** -40 },
+      pole: { x: 2 ** -40, y: 0, z: 2 ** -40 },
+      ruled: {
+        ...base.ruled,
+        thread: { x: "2^-40*cos(t)", y: "2^-40*sin(t)", z: "2^-40" },
+      },
       field: {
         x: "-a*x-y",
         y: "x-a*y",
@@ -5350,6 +5373,99 @@ export const spatialPresets: {
         tracks: [{ target: "receiverAt", from: "-1.9", to: "-2.05" }],
       },
       path: { style: "steady", keys: [] },
+    },
+  },
+  // Six equally spaced seeds climb two turns about y. Each helix has its
+  // own narrow tube; Play reveals all six together in this opening view.
+  {
+    name: "Six currents braided into a tower",
+    detail:
+      "Six seeds climb a vortex, each wrapped in its own tube, weaving a hollow tower",
+    // Look from (3, 2, 5), with y upright and both sides of the braid visible.
+    view: {
+      yaw: -Math.atan2(3, 5),
+      pitch: Math.atan2(2, Math.hypot(3, 5)),
+      zoom: 1.15,
+      panX: 0,
+      panY: 0,
+    },
+    layers: { arrows: false, circles: false, frames: false, seam: false },
+    flight: revealInPlace,
+    config: {
+      ...base,
+      format: "field",
+      construction: "canal",
+      allPaths: true,
+      samples: 960,
+      lines: 48,
+      canal: { radius: 0.07, profile: "1", meridians: 2 },
+      field: {
+        x: "-z",
+        y: "a",
+        z: "x",
+        seeds: [
+          [1.2, 0],
+          [0.6, 0.6 * Math.sqrt(3)],
+          [-0.6, 0.6 * Math.sqrt(3)],
+          [-1.2, 0],
+          [-0.6, -0.6 * Math.sqrt(3)],
+          [0.6, -0.6 * Math.sqrt(3)],
+        ].map(([x, z]) => ({
+          x,
+          y: -Math.PI / 2,
+          z,
+        })),
+        escape: 10,
+        min: 0,
+        max: 4 * Math.PI,
+        a: 0.25,
+      },
+    },
+  },
+  // Six equal pursuers start on an alternating high/low crown. Every path
+  // carries a tangent ribbon and casts its own shadow onto y = -1.1.
+  // Play reveals the six ribbons and their shadows in the opening view.
+  {
+    name: "A crown chasing six shadows",
+    detail:
+      "Six pursuers curl inward with six tangent ribbons, their spirals traced again on the floor",
+    // Look from (3, 4, 5), down onto the crown and its horizontal shadow plane.
+    view: {
+      yaw: -Math.atan2(3, 5),
+      pitch: Math.atan2(4, Math.hypot(3, 5)),
+      zoom: 1.15,
+      panX: 0,
+      panY: 0,
+    },
+    layers: { polygons: false },
+    flight: revealInPlace,
+    config: {
+      ...base,
+      format: "pursuit",
+      construction: "developable",
+      allPaths: true,
+      length: 0.3,
+      samples: 960,
+      lines: 24,
+      pursuit: {
+        pursuers: [
+          [1.4, 0],
+          [0.7, 0.7 * Math.sqrt(3)],
+          [-0.7, 0.7 * Math.sqrt(3)],
+          [-1.4, 0],
+          [-0.7, -0.7 * Math.sqrt(3)],
+          [0.7, -0.7 * Math.sqrt(3)],
+        ].map(([x, z], k) => ({
+          x,
+          y: k % 2 === 0 ? 0.55 : -0.55,
+          z,
+          speed: 1,
+        })),
+        capture: 0.005,
+        min: 0,
+        max: 2.5,
+      },
+      shadow: { plane: "y", at: -1.1, allPaths: true },
     },
   },
 ];

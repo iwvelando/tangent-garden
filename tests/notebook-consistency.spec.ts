@@ -153,7 +153,7 @@ test("each 3D example names itself above a shared construction title", async ({
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
-  expect(titles).toHaveLength(138);
+  expect(titles).toHaveLength(140);
   // The construction, not the example, titles the drawing.
   const involutes = [
     "A staircase's shadow, unwinding",
@@ -194,6 +194,7 @@ test("each 3D example names itself above a shared construction title", async ({
     "Round a hyperboloid's throat",
   ];
   const canals = [
+    "Six currents braided into a tower",
     "A coiled cord round a trefoil",
     "A tube around the trefoil",
     "A frame riding inside a tube",
@@ -325,7 +326,7 @@ test("each 3D example names itself above a shared construction title", async ({
     );
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
-  expect(eyebrows.size).toBe(138);
+  expect(eyebrows.size).toBe(140);
   expect(eyebrows).toContain("THREE HARMONICS; THE THREAD PAUSES TWICE");
   await choosePreset(page, { label: titles[4] });
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");
@@ -389,8 +390,24 @@ test("playing on a phone snaps the drawing into view in both notebooks", async (
     const play = app.getByRole("button", { name: "Play animation" });
     await play.scrollIntoViewIfNeeded();
     await expect(app.locator(".plot-wrap")).not.toBeInViewport();
-    // Measured in the same task as the click: an instant jump has already
-    // happened, while a smooth scroll would still be under way.
+    // Play jumps once its first frame is shown, so a refused start stays
+    // beside its error. An instant jump fires every scroll event at its
+    // final place; a smooth scroll passes through others on the way.
+    await page.evaluate(() => {
+      const w = window as unknown as { scrolls: number[] };
+      w.scrolls = [];
+      addEventListener("scroll", () => w.scrolls.push(scrollY));
+    });
+    await play.click();
+    await expect(app.locator(".plot-wrap")).toBeInViewport({ ratio: 1 });
+    const scrolls = await page.evaluate(
+      () => (window as unknown as { scrolls: number[] }).scrolls,
+    );
+    expect(scrolls.length).toBeGreaterThan(0);
+    expect(new Set(scrolls).size).toBe(1);
+    // Resume has nothing to refuse: measured in the same task as the click,
+    // an instant jump has already happened, while a smooth scroll would
+    // still be under way.
     const place = () =>
       page.evaluate(() => {
         const visible = (e: HTMLElement) => e.offsetParent !== null;
@@ -398,14 +415,11 @@ test("playing on a phone snaps the drawing into view in both notebooks", async (
           ...document.querySelectorAll<HTMLElement>(".plot-wrap"),
         ].find(visible)!;
         [...document.querySelectorAll<HTMLButtonElement>("button")]
-          .find(
-            (b) => visible(b) && /^(Play animation|Resume)$/.test(b.innerText),
-          )!
+          .find((b) => visible(b) && b.innerText === "Resume")!
           .click();
         const box = wrap.getBoundingClientRect();
         return box.top >= 0 && box.bottom <= innerHeight;
       });
-    expect(await place()).toBe(true);
     await app.getByRole("button", { name: "Pause", exact: true }).click();
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(app.locator(".plot-wrap")).not.toBeInViewport();

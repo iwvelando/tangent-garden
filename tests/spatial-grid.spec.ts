@@ -370,6 +370,57 @@ async function save(page: Page, item: RegExp | string) {
     .click();
   return readFile((await (await download).path())!);
 }
+
+test("family shadows export every comparison and keep independent construction scope", async ({
+  page,
+}) => {
+  await open(page, "A rising vortex");
+  await page
+    .getByLabel("Construction", { exact: true })
+    .selectOption("tangent-foot");
+  await page
+    .getByRole("checkbox", { name: "Construct on all paths", exact: true })
+    .check();
+  await page.getByLabel("Shadow on", { exact: true }).selectOption("z");
+  await settled(page);
+  await gridBox(page).check();
+  await expect(
+    page.locator('[data-plane-view="overlay"] [data-testid="plane-cast"]'),
+  ).toHaveCount(4);
+  await expect(page.locator('svg[id^="plane-planar-plot"]')).toHaveCount(4);
+  const svg = (await save(page, "Lines (SVG) · every line")).toString();
+  const inspected = await page.evaluate((text) => {
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    return {
+      casts: doc.querySelectorAll('[data-testid="plane-cast"]').length,
+      planar: doc.querySelectorAll('svg[id^="plane-planar-plot"]').length,
+      metadata: JSON.parse(doc.querySelector("desc")!.textContent!),
+    };
+  }, svg);
+  expect(inspected.casts).toBe(8);
+  expect(inspected.planar).toBe(4);
+  expect(inspected.metadata.config).toMatchObject({
+    allPaths: true,
+    shadow: { allPaths: true },
+  });
+  await page
+    .getByRole("checkbox", { name: "Construct on all paths", exact: true })
+    .uncheck();
+  await settled(page);
+  await expect(
+    page.locator('[data-plane-view="overlay"] [data-testid="plane-shadow"]'),
+  ).toHaveCount(4);
+  await expect(
+    page.locator('[data-plane-view="overlay"] [data-testid="plane-cast"]'),
+  ).toHaveCount(1);
+  await page
+    .getByRole("checkbox", { name: "Shadow all paths", exact: true })
+    .uncheck();
+  await settled(page);
+  await expect(
+    page.locator('[data-plane-view="overlay"] [data-testid="plane-shadow"]'),
+  ).toHaveCount(1);
+});
 const rgb = (color: string) =>
   [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
 // The pixels of an image's cell (column, row) near a color.

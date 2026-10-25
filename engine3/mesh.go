@@ -31,3 +31,14 @@ func (m *CurveMesh) triangle(sample int, a, b, c int32) {
 func emptyMesh() CurveMesh {
 	return CurveMesh{Vertices: []float64{}, Triangles: []int32{}, SampleIndex: []int32{}}
 }
+
+// append combines independent surfaces without joining them. SampleIndex
+// stays in the shared time grid, so reveal keeps every member in sync.
+func (m *CurveMesh) append(other CurveMesh) {
+	offset := int32(len(m.Vertices) / 7)
+	m.Vertices = append(m.Vertices, other.Vertices...)
+	for _, v := range other.Triangles {
+		m.Triangles = append(m.Triangles, v+offset)
+	}
+	m.SampleIndex = append(m.SampleIndex, other.SampleIndex...)
+}
