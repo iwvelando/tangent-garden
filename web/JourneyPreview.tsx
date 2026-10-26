@@ -9,13 +9,25 @@ import {
 } from "react";
 import { AnimationPanel } from "./AnimationPanel";
 import { getIn } from "./config-path";
-import { EngineClient } from "./engine-client";
+import { EngineClient, EngineError } from "./engine-client";
 import { Field, FieldErrorContext } from "./Field";
-import { journeyStudy, lightJourney, type PlanarJourneyStep } from "./journeys";
+import {
+  journeyStudy,
+  journeyTitle,
+  type Journey,
+  type JourneyStep,
+  type JourneyAdoption,
+} from "./journeys";
+import type { SpatialStudy } from "./spatial/link";
+import type { TesseractStudy } from "./tesseract/link";
+import type { Frame as SpatialFrame } from "./spatial/types";
+import type {
+  Result as ShapeResult,
+  Config as ShapeConfig,
+} from "./tesseract/types";
 import { Plot } from "./Plot";
 import type { PlanarStudy } from "./planar-link";
 import { probeSample, sampleProbe } from "./planar-probe";
-import { presets } from "./presets";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { useQuietFocus } from "./quiet-focus";
 import { useTheme } from "./useTheme";
@@ -26,18 +38,17 @@ import "./journey.css";
 // A wait shorter than this changes nothing visible, so a quick step never
 // flashes disabled buttons or a busy message.
 const graceMs = 300;
-type Outcome = { frame?: Frame; error?: string };
-// What a step adopts: its whole study, and whether an edit has made it the
-// reader's own rather than the example (as editing a field in the notebook
-// does; moving the probe does not).
-export type JourneyAdoption = {
-  preset: number;
-  study: PlanarStudy;
-  custom: boolean;
+export type ShapeFrame = { config: ShapeConfig; result: ShapeResult };
+type Outcome = {
+  frame?: Frame;
+  spatial?: SpatialFrame;
+  shape?: ShapeFrame;
+  error?: string;
+  field?: string;
 };
 // A step's calculation, by its example and the value of an edited field. A
 // probe edit needs none: the probe is read from the example's result.
-const calculation = (i: number, step: PlanarJourneyStep, edit?: number) =>
+const calculation = (i: number, step: JourneyStep, edit?: number) =>
   step.control.kind === "scalar" && edit !== undefined
     ? `${i}:${edit}`
     : `${i}`;
@@ -49,10 +60,12 @@ const short = (v: number) => String(Number(v.toPrecision(4)));
 // dismissal and returning to a step is immediate; only each step's latest
 // edit is kept beside its example.
 export function JourneyPreview({
+  journey,
   onReturn,
   onOpen,
   via,
 }: {
+  journey: Journey;
   onReturn: (via: "keyboard" | "pointer") => void;
   onOpen: (adoption: JourneyAdoption, via: "keyboard" | "pointer") => void;
   via: "keyboard" | "pointer";
@@ -63,7 +76,7 @@ export function JourneyPreview({
   const quiet = useQuietFocus(dialog);
   const title = useId();
   const interaction = useRef(via);
-  const steps = lightJourney.steps;
+  const steps = journey.steps;
   const [index, setIndex] = useState(0);
   // Each step's edited control, as a resolved value; absent while unedited.
   // The field's own value follows an invalid entry (NaN), as the notebook's
@@ -72,6 +85,15 @@ export function JourneyPreview({
   const [entered, setEntered] = useState<Record<number, number>>({});
   const [edits, setEdits] = useState<Record<number, number>>({});
   const outcomes = useRef(new Map<string, Outcome>());
+  // Load the renderer alongside its first calculation, before presenting
+  // that step. A Suspense fallback would hide the completed drawing during
+  // a cross-notebook transition, separating it from its retained prose.
+  const drawings = useRef<{
+    spatial?: typeof import("./spatial/JourneyDrawing").default;
+    shape?: typeof import("./tesseract/JourneyDrawing").default;
+  }>({});
+  const SpatialJourneyDrawing = drawings.current.spatial;
+  const ShapeJourneyDrawing = drawings.current.shape;
   const [, redraw] = useReducer((n: number) => n + 1, 0);
   const client = useRef<EngineClient | null>(null);
   const key = calculation(index, steps[index], edits[index]);
@@ -99,10 +121,8 @@ export function JourneyPreview({
             })[0];
       if (!want) return;
       working = true;
-      const study = journeyStudy(
-        steps[want.index],
-        want.key === from.key ? from.edit : undefined,
-      );
+      const step = steps[want.index];
+      const edit = want.key === from.key ? from.edit : undefined;
       const record = (outcome: Outcome) => {
         if (!live) return;
         // A step keeps its example and its latest edit.
@@ -111,13 +131,38 @@ export function JourneyPreview({
         known.set(want.key, outcome);
         redraw();
       };
-      void engine
-        .compute(study.config, study.bounds, {
-          diagnostics: study.probe.enabled,
-        })
-        .then(
-          (frame) => record({ frame }),
-          (error: Error) => record({ error: error.message }),
+      const compute = async (): Promise<Outcome> => {
+        if (step.notebook === "2d") {
+          const study = journeyStudy(step, edit);
+          return {
+            frame: await engine.compute(study.config, study.bounds, {
+              diagnostics: study.probe.enabled,
+            }),
+          };
+        }
+        if (step.notebook === "3d") {
+          const study = journeyStudy(step, edit) as SpatialStudy;
+          const [drawing, spatial] = await Promise.all([
+            import("./spatial/JourneyDrawing"),
+            engine.computeSpatial(study.config),
+          ]);
+          drawings.current.spatial = drawing.default;
+          return { spatial };
+        }
+        const study = journeyStudy(step, edit) as TesseractStudy;
+        const [drawing, result] = await Promise.all([
+          import("./tesseract/JourneyDrawing"),
+          engine.tesseract(study.config),
+        ]);
+        drawings.current.shape = drawing.default;
+        return { shape: { config: study.config, result } };
+      };
+      void compute()
+        .then(record, (error: Error) =>
+          record({
+            error: error.message,
+            field: error instanceof EngineError ? error.field : undefined,
+          }),
         )
         .finally(() => {
           working = false;
@@ -274,9 +319,22 @@ export function JourneyPreview({
   const shown = presented?.step ?? index;
   const study = journeyStudy(steps[shown], edits[shown]);
   const frame = presented?.outcome.frame ?? null;
-  const error = outcome?.error;
+  const [renderError, setRenderError] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
+  const error =
+    outcome?.error ||
+    (renderError?.key === key ? renderError.message : undefined);
   // An edit, like a step change, stops playback.
-  const revision = `${index}:${key}:${edits[index]}`;
+  const revision = JSON.stringify([
+    index,
+    key,
+    edits[index],
+    entered[index],
+    resolving,
+    !!invalid,
+  ]);
   return (
     <dialog
       ref={dialog}
@@ -303,7 +361,7 @@ export function JourneyPreview({
         <div className="journey-heading">
           <div>
             <div className="example-kicker">A path through the garden</div>
-            <h2 id={title}>{lightJourney.title}</h2>
+            <h2 id={title}>{journey.title}</h2>
           </div>
           <button ref={back} onClick={() => finish()}>
             Return to my study
@@ -311,36 +369,85 @@ export function JourneyPreview({
         </div>
         <div className="journey-content">
           <p className="example-kicker journey-step" role="status">
-            Step {shown + 1} of {lightJourney.steps.length}
+            Step {shown + 1} of {steps.length}
           </p>
           <div className="journey-intro">
-            {lightJourney.steps.map((step, i) => (
+            {steps.map((step, i) => (
               <div
                 key={step.preset}
                 className="journey-copy"
                 data-current={i === shown}
                 aria-hidden={i !== shown || undefined}
               >
-                <h3>{presets[step.preset].title}</h3>
+                <h3>{journeyTitle(step)}</h3>
                 <p>{step.note}</p>
               </div>
             ))}
           </div>
-          <JourneyDrawing
-            step={shown}
-            requested={index}
-            study={study}
-            frame={frame}
-            pending={pending}
-            slow={slow}
-            updating={presented?.step === index}
-            revision={revision}
-            invalid={!!invalid}
-            error={error}
-            client={client}
-            dark={theme.dark}
-            scheme={theme.scheme}
-          />
+          {steps[shown].notebook === "2d" ? (
+            <JourneyDrawing
+              step={shown}
+              requested={index}
+              study={study as PlanarStudy}
+              frame={frame}
+              pending={pending}
+              slow={slow}
+              updating={presented?.step === index}
+              revision={revision}
+              invalid={!!invalid}
+              error={error}
+              client={client}
+              dark={theme.dark}
+              scheme={theme.scheme}
+            />
+          ) : steps[shown].notebook === "3d" && SpatialJourneyDrawing ? (
+            <SpatialJourneyDrawing
+              key={`3d:${shown}`}
+              study={study as SpatialStudy}
+              frame={presented?.outcome.spatial ?? null}
+              pending={pending}
+              slow={slow}
+              requested={index}
+              revision={revision}
+              invalid={!!invalid}
+              error={error}
+              onError={(message) =>
+                setRenderError({ key: presented?.key ?? key, message })
+              }
+              client={client}
+              dark={theme.dark}
+              scheme={theme.scheme}
+            />
+          ) : ShapeJourneyDrawing ? (
+            <ShapeJourneyDrawing
+              key={`4d:${shown}`}
+              study={study as TesseractStudy}
+              frame={presented?.outcome.shape ?? null}
+              pending={pending}
+              slow={slow}
+              requested={index}
+              revision={revision}
+              invalid={!!invalid}
+              error={error}
+              client={client}
+              dark={theme.dark}
+              scheme={theme.scheme}
+            />
+          ) : (
+            <div className="journey-drawing">
+              <div className="journey-art" aria-busy={pending} />
+              <p
+                className="journey-feedback note"
+                role={error ? "alert" : pending && slow ? "status" : undefined}
+              >
+                {error
+                  ? `${error} Return to your study or try another step.`
+                  : pending && slow
+                    ? `Preparing step ${index + 1}…`
+                    : ""}
+              </p>
+            </div>
+          )}
           <div
             className="journey-navigation"
             role="group"
@@ -393,7 +500,14 @@ export function JourneyPreview({
                       entered={entered[i] ?? edits[i]}
                       error={
                         Object.values(scalars[i] ?? {}).find((s) => s.error)
-                          ?.error ?? ""
+                          ?.error ??
+                        (step.control.kind === "scalar" &&
+                        outcomes.current.get(calculation(i, step, edits[i]))
+                          ?.field === step.control.path.join(".")
+                          ? outcomes.current.get(calculation(i, step, edits[i]))
+                              ?.error
+                          : "") ??
+                        ""
                       }
                       frame={outcomes.current.get(calculation(i, step))?.frame}
                       onEdit={(value) => {
@@ -412,18 +526,19 @@ export function JourneyPreview({
             <button
               className="export"
               inert={pending || undefined}
-              disabled={(pending && slow) || !frame || !!invalid}
+              disabled={(pending && slow) || !presented || !!invalid || !!error}
               onClick={() => {
                 const step = steps[index];
                 finish(() =>
                   onOpen(
                     {
+                      notebook: step.notebook,
                       preset: step.preset,
                       study: journeyStudy(step, edits[index]),
                       custom:
                         step.control.kind === "scalar" &&
                         edits[index] !== undefined,
-                    },
+                    } as JourneyAdoption,
                     interaction.current,
                   ),
                 );
@@ -448,7 +563,7 @@ function StepControl({
   frame,
   onEdit,
 }: {
-  step: PlanarJourneyStep;
+  step: JourneyStep;
   entered?: number;
   error: string;
   frame?: Frame;
@@ -479,7 +594,9 @@ function StepControl({
     );
   const d = frame?.result.diagnostics;
   const n = d ? d.curvature.length - 1 : 1;
-  const sample = frame ? (probeSample(frame.result, study.probe) ?? 0) : 0;
+  const sample = frame
+    ? (probeSample(frame.result, (study as PlanarStudy).probe) ?? 0)
+    : 0;
   const at = frame ? sampleProbe(frame.result, sample) : null;
   return (
     <Field

@@ -2,6 +2,7 @@ import {
   cloneElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,8 @@ import { NotebookMain } from "../MobileNotebookNav";
 import { Orientation } from "../Orientation";
 import { turnTo, turntableBasis } from "../named-views";
 import { AnimationButton } from "../AnimationButton";
+import { useJourneyEntry } from "../JourneyContext";
+import type { AdoptedJourney } from "../journeys";
 import { NotebookMode } from "../NotebookMode";
 import { useTheme } from "../useTheme";
 import { useMediaQuery } from "../useMediaQuery";
@@ -72,9 +75,11 @@ const angleHelp = tiered(
 export default function TesseractApp({
   active = true,
   shared,
+  adoption,
 }: {
   active?: boolean;
   shared?: SharedStudy;
+  adoption?: AdoptedJourney;
 }) {
   const theme = useTheme(),
     narrow = useMediaQuery("(max-width: 700px)"),
@@ -361,6 +366,27 @@ export default function TesseractApp({
       );
     }
   }, [shared?.id]);
+  const journey = useJourneyEntry(active, busy, scalarError ?? error);
+  // Still images use the custom export callback below, independently of
+  // motion export. Native PNG encoding cannot be aborted, but entry must
+  // discard its eventual file and any error before returning to the study.
+  const imageGeneration = useRef(0);
+  useLayoutEffect(() => {
+    imageGeneration.current++;
+    return () => {
+      imageGeneration.current++;
+    };
+  }, [journey.requested]);
+  useEffect(() => {
+    if (adoption?.notebook === "4d")
+      openStudy(adoption.study, adoption.custom ? null : adoption.preset);
+  }, [adoption?.id]);
+  useEffect(() => {
+    if (journey.requested) {
+      resetMotion();
+      setSpinning(false);
+    }
+  }, [journey.requested]);
   const snapshot = (): TesseractStudy => ({
     config,
     layers,
@@ -651,7 +677,7 @@ export default function TesseractApp({
       style={theme.style}
       className={`app tesseract-app ${dark ? "dark" : ""}`}
     >
-      <AppHeader theme={theme}>
+      <AppHeader theme={theme} inert={journey.active}>
         <ShareLink
           notebook="4d"
           study={snapshot}
@@ -659,29 +685,36 @@ export default function TesseractApp({
         />
         <AnimationButton section="shape-animation-section" />
         <ExportImageMenu
+          revision={journey.requested}
           menuId="tesseract-export-image"
           kind="tesseract"
           disabled={busy || !!error || !!scalarError || playing || !!exporting}
           base={exportBaseSize(liveLayout)}
           onSave={async (format, still) => {
-            const svg = document.getElementById(
-              "tesseract-artwork",
-            ) as unknown as SVGSVGElement;
-            const size = stillSize(still, exportBaseSize(liveLayout));
-            const blob =
-              format === "svg"
-                ? svgFile(svg, still.transparent)
-                : await pngFile(
-                    svg,
-                    size.width,
-                    size.height,
-                    still.transparent,
-                  );
-            saveFile(blob, `tangent-garden-tesseract.${format}`);
+            const ticket = imageGeneration.current;
+            try {
+              const svg = document.getElementById(
+                "tesseract-artwork",
+              ) as unknown as SVGSVGElement;
+              const size = stillSize(still, exportBaseSize(liveLayout));
+              const blob =
+                format === "svg"
+                  ? svgFile(svg, still.transparent)
+                  : await pngFile(
+                      svg,
+                      size.width,
+                      size.height,
+                      still.transparent,
+                    );
+              if (ticket === imageGeneration.current)
+                saveFile(blob, `tangent-garden-tesseract.${format}`);
+            } catch (error) {
+              if (ticket === imageGeneration.current) throw error;
+            }
           }}
         />
       </AppHeader>
-      <NotebookMain>
+      <NotebookMain inert={journey.active}>
         <ScalarStatus.Provider
           value={{
             client,
@@ -715,12 +748,19 @@ export default function TesseractApp({
                 </div>
                 <NotebookMode />
                 <ExampleGallery
+                  onJourney={journey.onJourney}
+                  onBrowse={journey.onBrowse}
                   examples={tesseractExamples}
                   current={preset}
                   onChoose={choose}
                   thumbnail={tesseractThumbnail}
                   dark={dark}
                 />
+                {journey.notice && (
+                  <p className="note" role="status">
+                    {journey.notice}
+                  </p>
+                )}
                 <Field label={labels.object}>
                   <select
                     value={config.object}

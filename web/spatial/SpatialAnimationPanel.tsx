@@ -234,6 +234,7 @@ type Session = {
 export const redraws = (s: Pick<Session, "mode" | "between">) =>
   !(s.mode === "parameters" || (s.mode === "probe" && !!s.between));
 type Props = {
+  preview?: boolean;
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
   length: number;
@@ -276,6 +277,7 @@ type Props = {
 };
 
 export function SpatialAnimationPanel({
+  preview = false,
   frame,
   client,
   length,
@@ -1574,8 +1576,12 @@ export function SpatialAnimationPanel({
   );
   return (
     <section className="animation-section">
-      <details id="spatial-animation-section" {...section}>
+      <details
+        id={preview ? undefined : "spatial-animation-section"}
+        {...(preview ? { open: true } : section)}
+      >
         <summary
+          hidden={preview}
           className="section-label"
           onClick={(e) => {
             // Keep playback controls reachable until the animation is stopped.
@@ -1585,6 +1591,7 @@ export function SpatialAnimationPanel({
           ANIMATION
         </summary>
         <fieldset
+          hidden={preview}
           disabled={running || status === "paused" || disabled}
           onChangeCapture={() => {
             if (status === "complete") stop();
@@ -1863,7 +1870,7 @@ export function SpatialAnimationPanel({
           {mode !== "path" && flies && pathEditor}
           {rides && rideEditor}
           <details
-            id="spatial-export-settings"
+            id={preview ? undefined : "spatial-export-settings"}
             className="subsection"
             {...exportSection}
           >
@@ -1973,7 +1980,7 @@ export function SpatialAnimationPanel({
         </fieldset>
         {/* On narrow screens this docks below the drawing while active. */}
         <div
-          id="spatial-playback"
+          id={preview ? undefined : "spatial-playback"}
           className={active ? "playback active" : "playback"}
           role="group"
           aria-label="Playback"
@@ -2013,7 +2020,7 @@ export function SpatialAnimationPanel({
                   : "Stop"}
             </button>
           </div>
-          {active && (
+          {(active || preview) && (
             <div className="timeline">
               <Field
                 label="Animation progress"
@@ -2021,23 +2028,25 @@ export function SpatialAnimationPanel({
               >
                 <ProgressSlider
                   progress={progress}
-                  disabled={running}
+                  disabled={running || !active || (preview && disabled)}
                   onSeek={(p) => void seek(p)}
                 />
               </Field>
               <div className="note" role="status" aria-live="off">
-                {status === "exporting"
-                  ? `Exporting ${text.short}…`
-                  : status === "complete"
-                    ? "Complete"
-                    : status === "paused"
-                      ? "Paused"
-                      : status === "preparing"
-                        ? "Preparing"
-                        : `${(progress * duration).toFixed(1)} / ${duration} s`}
+                {preview && status === "idle"
+                  ? "Ready to play"
+                  : status === "exporting"
+                    ? `Exporting ${text.short}…`
+                    : status === "complete"
+                      ? "Complete"
+                      : status === "paused"
+                        ? "Paused"
+                        : status === "preparing"
+                          ? "Preparing"
+                          : `${(progress * duration).toFixed(1)} / ${duration} s`}
               </div>
-              <AnimationValues text={live} />
-              <p className="note playback-tip">
+              {!preview && <AnimationValues text={live} />}
+              <p className="note playback-tip" hidden={preview}>
                 {status === "exporting"
                   ? "Cancel export discards the file; your study stays as it was."
                   : status === "complete"
@@ -2050,14 +2059,15 @@ export function SpatialAnimationPanel({
           )}
         </div>
         <button
+          hidden={preview}
           className="animation-export"
           disabled={disabled || running || !frame || !exportReady}
           onClick={() => void start(true)}
         >
           Export {text.name} ↗
         </button>
-        {exportHint && <p className="hint">{exportHint}</p>}
-        {exportNotice && (
+        {!preview && exportHint && <p className="hint">{exportHint}</p>}
+        {!preview && exportNotice && (
           <p className="note" role="status">
             {exportNotice}
           </p>

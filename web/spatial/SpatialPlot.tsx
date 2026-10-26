@@ -34,6 +34,8 @@ const cameraKeys = [
   "Home",
 ];
 export function SpatialPlot({
+  id = "spatial-artwork",
+  showError = true,
   result,
   dark,
   scheme = "default",
@@ -61,6 +63,8 @@ export function SpatialPlot({
   receiverView = false,
   onFocus,
 }: {
+  id?: string;
+  showError?: boolean;
   result: SpatialResult;
   dark: boolean;
   scheme?: ColorScheme;
@@ -434,7 +438,7 @@ export function SpatialPlot({
     <>
       <canvas
         ref={canvas}
-        id="spatial-artwork"
+        id={id}
         role="img"
         aria-label="Interactive 3D curve construction. Drag to orbit, shift-drag or two fingers to pan, scroll or pinch to zoom. Arrow keys orbit; shift-arrows pan; plus and minus zoom."
         tabIndex={0}
@@ -522,7 +526,7 @@ export function SpatialPlot({
           draw();
         }}
       />
-      {error && (
+      {showError && error && (
         <p role="alert" className="spatial-render-error">
           {error}
         </p>

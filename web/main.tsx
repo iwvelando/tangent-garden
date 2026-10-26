@@ -19,6 +19,12 @@ import {
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { JourneyPreview } from "./JourneyPreview";
+import {
+  JourneyContext,
+  useJourneyEntry,
+  type JourneyRequest,
+} from "./JourneyContext";
+import type { AdoptedJourney, JourneyAdoption } from "./journeys";
 import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
 import { planarExamples, planarThumbnail } from "./examples";
@@ -253,12 +259,15 @@ const poleOptions: Record<PoleKind, { label: string; note: string }> = {
 // optional value, such as a polar source radius before first use, reads as 0.
 // The notebook opens on its first example.
 const opening = presetStudy(0);
-function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
-  const [journey, setJourney] = useState<"waiting" | "preview" | null>(null);
-  const [journeyNotice, setJourneyNotice] = useState("");
-  const journeyFocus = useRef<(via: "keyboard" | "pointer") => void>(() => {});
-  const restoreJourneyFocus = useRef(false);
-  const journeyVia = useRef<"keyboard" | "pointer">("keyboard");
+function App({
+  active,
+  shared,
+  adoption,
+}: {
+  active: boolean;
+  shared?: SharedStudy;
+  adoption?: AdoptedJourney;
+}) {
   const [config, setConfig] = useState<Config>(opening.config);
   const [preset, setPreset] = useState("0");
   // Remembers the pole construction while another tab is selected.
@@ -1253,8 +1262,6 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     settings: PlanarAnimation;
   } | null>(null);
   const openStudy = (id: number, study: PlanarStudy, preset = "custom") => {
-    setJourney(null);
-    setJourneyNotice("");
     touched.current = null;
     setPreset(preset);
     scalarGeneration.current++;
@@ -1272,8 +1279,6 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   };
   useEffect(() => {
     if (!shared) return;
-    setJourney(null);
-    setJourneyNotice("");
     setLinkNotice(shared.error ?? "");
     if (shared.error !== undefined) return;
     try {
@@ -1284,36 +1289,15 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       );
     }
   }, [shared?.id]);
-  // Entry waits for the exact resolved study, including pending scalar work.
-  // Keeping its controls and Plot mounted preserves raw drafts and camera.
+  const journey = useJourneyEntry(active, busy, error);
   useEffect(() => {
-    if (!active) {
-      setJourney(null);
-      setJourneyNotice("");
-      return;
-    }
-    if (journey !== "waiting" || busy) return;
-    if (error) {
-      setJourney(null);
-      setJourneyNotice(
-        "Correct the highlighted input before starting the journey.",
+    if (adoption?.notebook === "2d")
+      openStudy(
+        -++presetAnimations.current,
+        adoption.study,
+        adoption.custom ? "custom" : String(adoption.preset),
       );
-    } else {
-      setJourneyNotice("");
-      setJourney("preview");
-    }
-  }, [journey, busy, error, active]);
-  const leaveJourney = (via: "keyboard" | "pointer") => {
-    journeyVia.current = via;
-    setJourney(null);
-    restoreJourneyFocus.current = true;
-  };
-  useLayoutEffect(() => {
-    if (journey === null && restoreJourneyFocus.current) {
-      restoreJourneyFocus.current = false;
-      if (active) journeyFocus.current(journeyVia.current);
-    }
-  }, [journey, active]);
+  }, [adoption?.id]);
   const snapshot = (): PlanarStudy => ({
     config,
     bounds,
@@ -1351,24 +1335,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       style={theme.style}
       data-theme-preference={preference}
     >
-      {journey === "preview" && active && (
-        <JourneyPreview
-          via={journeyVia.current}
-          onReturn={leaveJourney}
-          // Adopting a step replaces the whole study as its example does,
-          // with the step's one edit if the reader made it.
-          onOpen={({ preset, study, custom }, via) => {
-            journeyVia.current = via;
-            openStudy(
-              -++presetAnimations.current,
-              study,
-              custom ? "custom" : String(preset),
-            );
-            restoreJourneyFocus.current = true;
-          }}
-        />
-      )}
-      <AppHeader theme={theme} inert={journey === "preview"}>
+      <AppHeader theme={theme} inert={journey.active}>
         <ShareLink
           notebook="2d"
           study={snapshot}
@@ -1376,12 +1343,12 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
         />
         <AnimationButton section="animation-section" />
         <ExportImageMenu
-          revision={journey !== null}
+          revision={journey.requested}
           disabled={!result || busy || !!error || animationRunning}
           kind={studyName(config)}
         />
       </AppHeader>
-      <NotebookMain inert={journey === "preview"}>
+      <NotebookMain inert={journey.active}>
         <ScalarStatus.Provider value={scalarStatus}>
           <aside aria-label="Study parameters">
             {linkNotice && (
@@ -1394,25 +1361,17 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               <div className="section-label">01 / THE STUDY</div>
               <NotebookMode />
               <ExampleGallery
-                onJourney={(restoreFocus, via) => {
-                  journeyFocus.current = restoreFocus;
-                  journeyVia.current = via;
-                  setJourney("waiting");
-                  setJourneyNotice("Waiting for your study’s inputs…");
-                }}
-                onBrowse={() => {
-                  setJourney(null);
-                  setJourneyNotice("");
-                }}
+                onJourney={journey.onJourney}
+                onBrowse={journey.onBrowse}
                 examples={planarExamples}
                 current={preset === "custom" ? null : +preset}
                 onChoose={choosePreset}
                 thumbnail={planarThumbnail}
                 dark={dark}
               />
-              {journeyNotice && (
+              {journey.notice && (
                 <p className="note" role="status">
-                  {journeyNotice}
+                  {journey.notice}
                 </p>
               )}
               <div className="tabs" role="group" aria-label="Construction">
@@ -2361,7 +2320,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 length,
                 stopAtCaustic,
                 active,
-                journey !== null,
+                journey.requested,
                 probing,
               ])}
               disabled={busy || !!error}
@@ -2500,6 +2459,20 @@ const notebookKind = (): NotebookKind => {
 };
 function Notebook() {
   const focusRequest = useRef<FocusRequest>(false);
+  const theme = useTheme();
+  const [excursion, setExcursion] = useState<JourneyRequest | null>(null);
+  const [adoptions, setAdoptions] = useState<
+    Partial<Record<NotebookKind, AdoptedJourney>>
+  >({});
+  const adoptionId = useRef(0);
+  const restoreFocus = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => {
+    if (!excursion && restoreFocus.current) {
+      const focus = restoreFocus.current;
+      restoreFocus.current = null;
+      focus();
+    }
+  }, [excursion]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -2532,7 +2505,10 @@ function Notebook() {
       ?.setAttribute("content", url.href);
   }, [mode]);
   useEffect(() => {
-    const pop = () => show(notebookKind());
+    const pop = () => {
+      setExcursion(null);
+      show(notebookKind());
+    };
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
   }, []);
@@ -2546,6 +2522,7 @@ function Notebook() {
     const receive = async () => {
       const token = linkToken(location.hash);
       if (token === null) return;
+      setExcursion(null);
       const id = ++links.current;
       let next: { notebook: NotebookKind; link: SharedStudy };
       try {
@@ -2564,6 +2541,11 @@ function Notebook() {
       else url.searchParams.set("study", next.notebook);
       history.replaceState(null, "", url);
       show(next.notebook);
+      // A lazy notebook must consume only the latest whole-study request.
+      // Otherwise an adoption queued before this link could overwrite it
+      // when the target module eventually mounts.
+      if (next.link.error === undefined)
+        setAdoptions((a) => ({ ...a, [next.notebook]: undefined }));
       setShared((s) => ({ ...s, [next.notebook]: next.link }));
     };
     void receive();
@@ -2572,33 +2554,82 @@ function Notebook() {
   }, []);
   return (
     <NotebookContext.Provider value={{ mode, choose, focusRequest }}>
-      {seen["2d"] && (
-        <div hidden={mode !== "2d"}>
-          <App active={mode === "2d"} shared={shared["2d"]} />
-        </div>
-      )}
-      {seen["3d"] && (
-        <div hidden={mode !== "3d"}>
-          <Suspense
-            fallback={
-              <div className="loading">Opening the spatial notebook…</div>
-            }
+      <JourneyContext.Provider
+        value={{
+          active: !!excursion,
+          begin: setExcursion,
+        }}
+      >
+        {excursion && (
+          <div
+            className={theme.dark ? "app dark" : "app"}
+            style={{ ...theme.style, display: "contents" }}
           >
-            <SpatialApp active={mode === "3d"} shared={shared["3d"]} />
-          </Suspense>
-        </div>
-      )}
-      {seen["4d"] && (
-        <div hidden={mode !== "4d"}>
-          <Suspense
-            fallback={
-              <div className="loading">Opening the fourth dimension…</div>
-            }
-          >
-            <TesseractApp active={mode === "4d"} shared={shared["4d"]} />
-          </Suspense>
-        </div>
-      )}
+            <JourneyPreview
+              journey={excursion.journey}
+              via={excursion.via}
+              onReturn={(via) => {
+                restoreFocus.current = () => excursion.restoreFocus(via);
+                setExcursion(null);
+              }}
+              onOpen={(adoption: JourneyAdoption, via) => {
+                links.current++;
+                setShared((s) => ({ ...s, [adoption.notebook]: undefined }));
+                setAdoptions((a) => ({
+                  ...a,
+                  [adoption.notebook]: {
+                    ...adoption,
+                    id: ++adoptionId.current,
+                  },
+                }));
+                if (adoption.notebook === mode)
+                  restoreFocus.current = () => excursion.restoreFocus(via);
+                else choose(adoption.notebook, via);
+                setExcursion(null);
+              }}
+            />
+          </div>
+        )}
+        {seen["2d"] && (
+          <div inert={!!excursion} hidden={mode !== "2d"}>
+            <App
+              active={mode === "2d"}
+              shared={shared["2d"]}
+              adoption={adoptions["2d"]}
+            />
+          </div>
+        )}
+        {seen["3d"] && (
+          <div inert={!!excursion} hidden={mode !== "3d"}>
+            <Suspense
+              fallback={
+                <div className="loading">Opening the spatial notebook…</div>
+              }
+            >
+              <SpatialApp
+                active={mode === "3d"}
+                shared={shared["3d"]}
+                adoption={adoptions["3d"]}
+              />
+            </Suspense>
+          </div>
+        )}
+        {seen["4d"] && (
+          <div inert={!!excursion} hidden={mode !== "4d"}>
+            <Suspense
+              fallback={
+                <div className="loading">Opening the fourth dimension…</div>
+              }
+            >
+              <TesseractApp
+                active={mode === "4d"}
+                shared={shared["4d"]}
+                adoption={adoptions["4d"]}
+              />
+            </Suspense>
+          </div>
+        )}
+      </JourneyContext.Provider>
     </NotebookContext.Provider>
   );
 }
