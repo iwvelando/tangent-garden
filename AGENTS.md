@@ -6,6 +6,14 @@ Tangent Garden is a mathematical art explorer. The curve, derived curve, and rep
 
 Read `README.md` and `docs/mathematics.md` before changing numerical behavior.
 
+## Project assignments
+
+For work assigned through a GitHub issue or a project brief, follow [Project delivery](docs/contributing.md#project-delivery) before implementation and through handoff. Read the issue, its parent, dependency outcomes and referenced current documentation; recheck them against current `main`. Record a short plan and active branch/PR before starting. A ready assignment still requires the repository's planning, TDD, review and verification procedures.
+
+Stable project intent belongs in `docs/projects/`; current assignments, blockers, completion and deferrals belong in GitHub issues. Issue bodies hold the current agreed scope; comments preserve discussion. Put shipped mathematical definitions and interface contracts in the permanent guides in the implementation PR, never only in an issue comment. Do not turn project briefs into status logs.
+
+Finish an assignment by linking its merged result, durable documentation, verification record and follow-up issues, and refresh affected downstream issues with the capabilities actually delivered. Until merge, report a PR handoff rather than completion. Do not drop required scope or close a parent feature merely because its existing children are closed; follow the acceptance and scope-change rules in Project delivery. Creating a PR does not authorize merging it or deploying it.
+
 ## Procedures for particular changes
 
 Before making one of these changes, read its section of `docs/contributing.md`. Each section lists the files the change touches and the tests it needs:

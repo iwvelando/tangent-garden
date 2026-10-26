@@ -2,6 +2,82 @@
 
 [AGENTS.md](../AGENTS.md) states the rules every change follows. This page holds the step-by-step procedures for particular kinds of change: which files each one touches and which tests it needs. Read the section for a change before making it.
 
+## Project delivery
+
+Use this procedure for assignments tracked in GitHub issues or a design brief under `docs/projects/`. It is shared by all implementers and reviewers, regardless of agent or session. It supplements the numerical, state, TDD and verification procedures below; a ready issue does not waive them.
+
+### Information ownership
+
+| Information | Authoritative home |
+| --- | --- |
+| Accepted motivation, visual goals, scope boundaries and wave rationale | A stable design brief under `docs/projects/` |
+| A feature's current agreed outcome and acceptance criteria | Its parent GitHub issue |
+| A specific implementation assignment | A child GitHub issue |
+| Readiness, active work and prerequisites | Issue labels, native parent/sub-issue and blocking relationships |
+| Shipped mathematics, interfaces, limits and usage | Code, tests and the permanent repository guides |
+| Change explanation and verification evidence | The implementation PR |
+| Discussion, experiments and superseded decisions | Issue or PR comments |
+
+Do not append progress, deferred tasks or completed-work narratives to a brief. Amend it only for an intentional change in direction; link the owner's decision. Keep the issue body coherent as the current assignment, and explain material edits in a comment. Settled mathematical definitions and interface contracts must move into permanent documentation in the implementation PR. A downstream implementer should not need to reconstruct the contract from an old comment thread. If shipped behavior disagrees with the accepted requirement, report the discrepancy; do not silently redefine either one.
+
+### Hierarchy and tracking
+
+Use one parent issue per feature, retaining its brief identifier in the title, such as `[R02] Parameter atlas`. Group work into wave milestones without inventing dates. Use native sub-issues for implementation slices, and native blocked-by relationships only for real prerequisites. Milestone order is scheduling guidance, not a dependency. A parent is an acceptance record; ordinarily assign its implementation children rather than the whole feature. Keep the hierarchy to feature and implementation levels unless a deeper level has a concrete benefit.
+
+For the expansion, use these labels:
+
+- `expansion`: the project filter, on parents and children.
+- Exactly one of `kind:feature`, `kind:implementation`, or `kind:research`.
+- On open issues, exactly one of `stage:needs-design`, `stage:ready`, `stage:active`, or `stage:review`. A feature parent can remain active while its children proceed. `needs-design` means the current brief is insufficient for an implementation assignment, not that its subject was rejected.
+
+Use native issue state for completion and native relationships for blockers, not parallel prose status lists. `stage:ready` describes specification readiness; it is executable only when its prerequisites are merged and usable. An optional GitHub Project is a view of these issues, not another source of requirements or independently maintained status. Search closed issues too before creating replacements or follow-ups. Milestone and sub-issue percentages count issues, not effort or fulfillment of the visual goals.
+
+### Preparing an assignment
+
+Use the [feature template](../.github/ISSUE_TEMPLATE/expansion-feature.md) for a parent and the [implementation template](../.github/ISSUE_TEMPLATE/expansion-implementation.md) for a slice or research task. A ready implementation issue must state:
+
+1. The user outcome, parent criteria it advances, and signature still or motion when visual behavior is involved.
+2. Included and excluded work, identifying settled constraints separately from suggested implementation choices.
+3. Focused current documentation, code entry points and regression tests, plus the revision last used to check this context. Prefer paths and symbols over line numbers that will drift.
+4. Each prerequisite and the exact capability consumed from it. A bare issue link is insufficient. State what the assignment must expose for known downstream consumers without prematurely prescribing a general framework.
+5. Observable acceptance criteria: mathematical invariants, invalid and singular cases, preservation of existing behavior, and relevant transitions, cancellation, links and exports.
+6. Feature-specific verification and documentation obligations. Reference common requirements instead of copying them. Record any explicit user-authorized deferral and the stage responsible for final verification.
+
+Usually make a slice one independently mergeable, deployable PR including its necessary tests, documentation and tracked artwork. Do not routinely separate engine, UI, tests and documentation into different assignments. A shared primitive can be separate when it has an independently testable contract and an identified consumer. Every merge to `main` deploys, so a later slice must not be needed to repair a knowingly incomplete public interaction.
+
+Fully specify near-term work against the current code. Keep later feature parents concise and `stage:needs-design` until their dependencies and design questions are settled. For research, specify a bounded experiment, independent checks and a go/no-go decision. Completing an experiment does not complete its parent feature or authorize silently abandoning its intended outcome.
+
+### Starting and coordinating work
+
+1. Read `AGENTS.md`, the assigned issue and relevant comments, its parent, the brief's principles and relevant proposal, and the prerequisite outcomes and current documentation. With `gh`, read the body/comments and native relationships, for example `gh issue view <number> --comments` and `gh issue view <number> --json parent,subIssues,blockedBy,blocking`. Use the repository explicitly when outside its checkout. Check `gh help` or use `gh api` if the installed CLI lacks a field or relationship command.
+2. Recheck the assignment against current `main`. A closed prerequisite may have been rejected rather than implemented, and a PR may be merged without delivering the capability assumed by this issue. Confirm the actual merged code, contract and required verification. Refresh stale context; discuss material contradictions before dependent implementation.
+3. Record a concise plan, the working branch and active implementer/session identifier in an issue comment; set `stage:active`. Check existing claims first. A shared GitHub account or assignee cannot distinguish concurrent agent sessions. Link the PR when opened. Ordinary implementation decisions remain with the implementer; seek direction for changes to accepted scope, incompatible contracts or genuinely unresolved product choices.
+4. Coordinate edits to shared evaluators, animation, links and transport with other active work. Use isolated checkouts and preview ports where needed. Schedule full verification in a quiet slot; apply [Validation scope and handoff](#validation-scope-and-handoff) only when the user has authorized limited verification. Do not infer a testing waiver from concurrent work or from a different documentation-only PR.
+5. Follow red-green-refactor and the applicable procedures below. Keep the issue's acceptance criteria intact through refactoring and integration. After rebasing, reassess consumers and dependencies before relying on earlier checks.
+
+### Review, completion and downstream handoff
+
+The PR describes the final behavior, important design choices and verification on identified revisions. Link the implementation issue with a closing keyword only when that PR fulfills it; link the parent without a closing keyword unless the entire feature is accepted. Follow [Reviewing changes](reviewing.md), including an independent assessment of the approach. Feature review must evaluate the signature artwork and motion as well as correctness; merged children alone do not prove that the promised experience exists.
+
+When handing an unmerged PR to review, set `stage:review` and leave the implementation issue open. Report outstanding checks explicitly. A PR request is not permission to merge. The authorized merger/integration stage owns the post-merge handoff; an implementer without merge authority leaves these steps clearly pending for that stage.
+
+An implementation issue is complete when the agreed change is merged, required verification is satisfied (or its explicitly authorized disposition is recorded), durable documentation is updated, and downstream context reflects the result. If auto-closing on merge precedes a remaining required check, track that obligation explicitly and do not declare dependent work ready or the feature fully verified until its requirements are met.
+
+At completion, remove the open-stage label and leave one concise outcome comment:
+
+```markdown
+Delivered: the capability now available.
+Integration: merged PR and commit; current interface, documentation and test links.
+Verification: link to the PR's revision-specific evidence and any authorized limits.
+Differences: agreed changes from the original assignment, or none.
+Follow-ups: issue links and whether they are required or optional.
+Downstream: which issue bodies were refreshed and which are now executable.
+```
+
+Update dependent issue bodies with the actual interface, documentation and tests they should use. Preserve dependency relationships as traceability unless the dependency itself was mistaken; verify their completion rather than deleting the history. If the result changes an expected contract, reconcile consumers before marking them ready. A downstream readiness update is not authorization to start an unassigned task.
+
+Close a parent only after its feature-level acceptance criteria are satisfied, including artwork, supported controls, links, exports and required verification. An optional improvement can be a separate issue; deferring a required criterion keeps the parent open unless the project owner explicitly agrees to revise scope. Record the disposition of rejected or superseded work and its replacement, if any; do not count it as delivered. Substantial scope changes update the parent and, when direction changes, the brief. Keep pending on-device checks and verification obligations in issues/PRs rather than permanent documentation.
+
 ## Running the tests
 
 - `make check` runs formatting checks, Go vet, native tests with race and coverage, a real WASM bridge test, TypeScript checks, and the production build.
@@ -65,7 +141,7 @@ For parser transformations, preserve domain errors and nonfinite behavior, inclu
 
 ## Documentation and indirect behavior
 
-When behavior changes, search for the old description and limit as well as the changed identifier. Check the mathematical definition, numerical-policy summary, limitations, usage text, control help, visible notes and code comments. After integration, repeat the search for descriptions added on main. Keep durable definitions in the mathematical and architecture guides and verification evidence in the PR. Do not keep backlogs, handoff logs or lists of pending checks in `docs/`: open work belongs in GitHub issues, and checks for a change belong in its PR.
+When behavior changes, search for the old description and limit as well as the changed identifier. Check the mathematical definition, numerical-policy summary, limitations, usage text, control help, visible notes and code comments. After integration, repeat the search for descriptions added on main. Keep durable definitions in the mathematical and architecture guides and verification evidence in the PR. Stable project design briefs may live in `docs/projects/`; they describe intent and acceptance, not delivery status. Do not keep backlogs, handoff logs or lists of pending checks in `docs/`, including those briefs: open work belongs in GitHub issues, and checks for a change belong in its PR. See [Project delivery](#project-delivery).
 
 Trace all uses of a newly enabled flag. Help and tests must cover indirect behavior such as a larger zoom limit, clamping when the option is disabled, playback and export differences. Test reverse transitions from edited values and the preset's opening state; testing only enablement can miss a visible consequence of disabling it. Use the help tiers and limits in [AGENTS.md](../AGENTS.md#help-text).
 
