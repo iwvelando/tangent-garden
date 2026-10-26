@@ -14,7 +14,10 @@ import { curveMesh } from "./curve-mesh";
 import { choosePreset } from "./helpers";
 import { helpText } from "../web/help";
 import { spatialPlainZoom, viewZoom } from "../web/refinement";
-import { receiverViewHelp } from "../web/spatial/receiver-view";
+import {
+  playbackRefinement,
+  receiverViewHelp,
+} from "../web/spatial/receiver-view";
 
 const stage = (page: Page) => page.locator(".spatial-stage");
 async function settled(page: Page) {
@@ -763,6 +766,168 @@ test("a monkey saddle's deltoid plays on a fine refined screen", async ({
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await settled(page);
   expect(await config(page)).toEqual(base);
+});
+
+// Each level costs two to two and a half times the one below it, so
+// playback spreads a receiver refined twice or more one level coarser.
+// Fewer levels, no receiver, and other formats are left as they are.
+test("playback lowers a receiver refined twice or more by one level", () => {
+  const study = presetStudy(
+    spatialPresets.findIndex(
+      (p) => p.name === "A deltoid of light beneath a monkey saddle",
+    ),
+  ).config;
+  for (const [refine, played] of [
+    [undefined, undefined],
+    [0, 0],
+    [1, 1],
+    [2, 1],
+    [3, 2],
+  ] as const) {
+    const { refine: _, ...receiver } = study.rays.receiver;
+    const c = {
+      ...study,
+      rays: {
+        ...study.rays,
+        receiver: refine === undefined ? receiver : { ...receiver, refine },
+      },
+    };
+    const before = structuredClone(c);
+    const lowered = playbackRefinement(c);
+    expect(lowered.rays.receiver.refine).toBe(played);
+    expect(c).toEqual(before);
+    if (played === refine) expect(lowered).toBe(c);
+    else
+      expect({
+        ...lowered,
+        rays: {
+          ...lowered.rays,
+          receiver: { ...lowered.rays.receiver, refine },
+        },
+      }).toEqual(c);
+  }
+  const refined = structuredClone(study);
+  refined.rays.receiver.refine = 3;
+  const hidden = structuredClone(refined);
+  hidden.rays.receiver.plane = "none";
+  expect(playbackRefinement(hidden)).toBe(hidden);
+  const surface = { ...structuredClone(refined), format: "surface" as const };
+  expect(playbackRefinement(surface)).toBe(surface);
+});
+
+// Frames calculated while playing are one level coarser; the opening, a
+// pause, the end of a single pass and every scrubbed frame keep the
+// study's own levels, and the checkbox, which a link carries, keeps them
+// throughout.
+test("a refined receiver plays one level coarser unless asked not to", async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto("/?study=3d");
+  await settled(page);
+  await choosePreset(page, {
+    label: "A deltoid of light beneath a monkey saddle",
+  });
+  await settled(page);
+  const base = await config(page);
+  const section = page.locator("#spatial-animation-section");
+  if ((await section.getAttribute("open")) === null)
+    await section.locator(":scope > summary").click();
+  const full = page.getByRole("checkbox", {
+    name: "Play the receiver at full refinement",
+  });
+  await expect(full).not.toBeChecked();
+  // It stands as far below + Add parameter as a field would.
+  const added = await section
+    .getByRole("button", { name: "+ Add parameter", exact: true })
+    .boundingBox();
+  const row = await section
+    .locator(".probe-switch", { has: full })
+    .boundingBox();
+  expect(row!.y - (added!.y + added!.height)).toBeGreaterThanOrEqual(13);
+  const refine = async () => (await config(page))?.rays.receiver.refine;
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect.poll(refine).toBe(1);
+  await expect(page.locator(".playback-tip")).toContainText(
+    "one refinement level coarser",
+  );
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await settled(page);
+  await expect.poll(refine).toBe(2);
+  expect((await config(page)).rays.receiver.at).not.toBe(-1.6);
+  await expect(page.locator(".playback-tip")).not.toContainText("coarser");
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect.poll(refine).toBe(1);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect(await config(page)).toEqual(base);
+
+  // A single pass ends on the study's own levels.
+  await page.getByRole("combobox", { name: "Repeat" }).selectOption("once");
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("2");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Back to study", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await settled(page);
+  expect((await config(page)).rays.receiver).toMatchObject({
+    at: -3,
+    refine: 2,
+  });
+  await page
+    .getByRole("button", { name: "Back to study", exact: true })
+    .click();
+  await settled(page);
+
+  // With the checkbox, every frame keeps both levels.
+  await full.check();
+  await page
+    .getByRole("combobox", { name: "Repeat" })
+    .selectOption("back-and-forth");
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("12");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  const seen = new Set<number>();
+  const levels = new Set<number>();
+  await expect
+    .poll(async () => {
+      const c = await config(page);
+      seen.add(c.rays.receiver.at);
+      levels.add(c.rays.receiver.refine);
+      return seen.size;
+    })
+    .toBeGreaterThan(3);
+  expect([...levels]).toEqual([2]);
+  await expect(page.locator(".playback-tip")).not.toContainText("coarser");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+
+  // A copied link opens with the checkbox on; fewer levels hide it.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const href = await page.evaluate(() => navigator.clipboard.readText());
+  const context = await browser.newContext();
+  const other = await context.newPage();
+  await other.goto(href);
+  await settled(other);
+  const linked = other.locator("#spatial-animation-section");
+  if ((await linked.getAttribute("open")) === null)
+    await linked.locator(":scope > summary").click();
+  const shared = other.getByRole("checkbox", {
+    name: "Play the receiver at full refinement",
+  });
+  await expect(shared).toBeChecked();
+  await other.getByRole("spinbutton", { name: "Refinement levels" }).fill("1");
+  await settled(other);
+  await expect(shared).toBeHidden();
+  await context.close();
 });
 
 test("the receiver view's help states the zoom it allows", () => {

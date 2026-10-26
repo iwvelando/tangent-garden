@@ -361,3 +361,8 @@
 .restart-switch .check {
   margin-bottom: 0;
 }
+/* Playing the receiver at full refinement stands below + Add parameter as
+   far as a field would. */
+.full-refinement {
+  margin-top: 14px;
+}

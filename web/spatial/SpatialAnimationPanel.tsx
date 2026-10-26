@@ -1,4 +1,9 @@
-import { withoutReceiverInset } from "./receiver-view";
+import {
+  fullRefinementHelp,
+  lowersRefinement,
+  playbackRefinement,
+  withoutReceiverInset,
+} from "./receiver-view";
 import type { ColorScheme } from "../color-schemes";
 import { AnimationValues } from "../AnimationValues";
 import {
@@ -211,6 +216,9 @@ type Session = {
   // Present only while parameters vary under the current view in a study
   // refined to it: what that view shows, which every frame is refined to.
   focus?: RefinementView;
+  // Whether frames calculated while playing spread the receiver one
+  // refinement level coarser (see playbackRefinement).
+  coarse: boolean;
   duration: number;
   // How the duration is spent (see timing.ts): the progress is the time
   // the timeline stands at.
@@ -324,6 +332,7 @@ export function SpatialAnimationPanel({
   // How the probe moves while parameters vary; a grid has no length, so
   // keeping its share falls back to staying.
   const [probeMotion, setProbeMotion] = useState<ProbeMotion>("stays");
+  const [fullRefinement, setFullRefinement] = useState(false);
   const motions =
     frame && probing
       ? probeMotions(
@@ -457,6 +466,7 @@ export function SpatialAnimationPanel({
       duration,
       tracks,
       probeMotion,
+      ...(fullRefinement && { fullRefinement }),
       path,
       ride,
       repeat,
@@ -473,6 +483,7 @@ export function SpatialAnimationPanel({
     setDuration(restore.settings.duration);
     setTracks(restore.settings.tracks);
     setProbeMotion(restore.settings.probeMotion);
+    setFullRefinement(!!restore.settings.fullRefinement);
     setPath(restore.settings.path);
     setRide(restore.settings.ride);
     setRepeat(restore.settings.repeat);
@@ -566,12 +577,20 @@ export function SpatialAnimationPanel({
       setTracks([defaultTrack(targets[0])]);
   }
   // The frame at a time on the timeline: the motion at its progress then.
+  // Playback's own frames may be coarser, but a single pass ends on the
+  // study's levels.
   async function sample(
     s: Session,
     time: number,
     engine = client.current!,
+    playing = false,
   ): Promise<AnimationView> {
-    const view = await frameAt(s, progressAt(time, s.repeat, s.pace), engine);
+    const view = await frameAt(
+      s,
+      progressAt(time, s.repeat, s.pace),
+      engine,
+      playing && s.coarse && !(s.repeat === "once" && time === 1),
+    );
     return {
       ...view,
       time,
@@ -583,8 +602,10 @@ export function SpatialAnimationPanel({
     s: Session,
     p: number,
     engine = client.current!,
+    coarse = false,
   ): Promise<AnimationView> {
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
+    if (coarse) values.config = playbackRefinement(values.config);
     let current: Frame;
     let held: ProbePlace | GridPlace | string | null | undefined;
     if (s.mode === "parameters" && s.between && isGridPoint(s.point)) {
@@ -636,8 +657,8 @@ export function SpatialAnimationPanel({
         config: s.original.config,
         result: trace((await fixedStudy(s, p, engine)).result, s.timeline!, p),
       };
-    else if (p === 0) current = s.first;
-    else if (p === 1) current = s.final;
+    else if (p === 0 && !coarse) current = s.first;
+    else if (p === 1 && !coarse) current = s.final;
     else
       current = await refinedFrame(s, p, (view) =>
         engine.computeSpatial(values.config, {
@@ -997,7 +1018,7 @@ export function SpatialAnimationPanel({
       duration: s.duration * 1000,
       repeat: cycles(s.repeat),
       redraw: redraws(s),
-      lanes: engines.map((engine) => (p: number) => sample(s, p, engine)),
+      lanes: engines.map((engine) => (p: number) => sample(s, p, engine, true)),
       show: (view) => {
         if (epoch.current === token) display(s, view);
       },
@@ -1253,6 +1274,10 @@ export function SpatialAnimationPanel({
         camera,
         heldView,
         ...(focus && { focus }),
+        coarse:
+          mode === "parameters" &&
+          !fullRefinement &&
+          lowersRefinement(frame.config),
         duration,
         repeat,
         pace,
@@ -1323,10 +1348,12 @@ export function SpatialAnimationPanel({
   }
   // A click can reach Pause after playback ended, before Replay is drawn
   // in its place; the animation stays complete.
+  // A coarser frame is calculated again at the study's levels.
   function pause() {
     if (!playing.current) return;
     cancel();
     changeStatus("paused");
+    if (session.current?.coarse) seek(session.current.progress);
   }
   // Scrubbing keeps the slider enabled and its thumb under the pointer; a
   // disabled or lagging range input would drop the drag. At most one frame is
@@ -1717,6 +1744,17 @@ export function SpatialAnimationPanel({
               >
                 + Add parameter
               </button>
+              {frame && lowersRefinement(frame.config) && (
+                <div className="full-refinement">
+                  <KeyViewSwitch
+                    checked={fullRefinement}
+                    onChange={setFullRefinement}
+                    label="Play the receiver at full refinement"
+                    topic="playing the receiver at full refinement"
+                    help={fullRefinementHelp}
+                  />
+                </div>
+              )}
               {motions.length > 0 && frame && (
                 <Field
                   label="Probe"
@@ -2004,7 +2042,9 @@ export function SpatialAnimationPanel({
                   ? "Cancel export discards the file; your study stays as it was."
                   : status === "complete"
                     ? "Orbit the finished drawing, scrub the timeline, or save this frame as an image. Back to study restores your study and manual view."
-                    : "Pause to scrub or save this frame as an image. Stop restores your study and manual view."}
+                    : status === "playing" && session.current?.coarse
+                      ? "Playing the receiver one refinement level coarser; pausing restores every level. Stop restores your study and manual view."
+                      : "Pause to scrub or save this frame as an image. Stop restores your study and manual view."}
               </p>
             </div>
           )}

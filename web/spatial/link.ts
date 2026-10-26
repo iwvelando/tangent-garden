@@ -82,6 +82,10 @@ export type SpatialAnimation = Omit<
   // it at its t, or its row and column. Holding a grid probe at its own
   // parameters (point) is left out of links made before it.
   probeMotion: ProbeMotion;
+  // Whether frames calculated while playing keep a receiver's refinement
+  // levels, rather than one level coarser (see playbackRefinement); off,
+  // and left out, unless chosen, as in links made before it.
+  fullRefinement?: true;
 };
 export type SpatialStudy = {
   config: SpatialConfig;
@@ -629,6 +633,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
     repeat,
     pace,
     probeMotion,
+    fullRefinement,
     ...shared
   } = grouped ? (raw.animation as Record<string, unknown>) : {};
   const flying = shared.camera === "path",
@@ -661,6 +666,12 @@ export function spatialStudy(value: unknown): SpatialStudy {
       defaultAnimation.probeMotion,
       "animation.probeMotion",
     ),
+    ...(conform<boolean>(
+      fullRefinement,
+      "boolean",
+      false,
+      "animation.fullRefinement",
+    ) && { fullRefinement: true as const }),
   };
   if (animation.repeat === "loop" && !loops(animation.mode))
     throw new LinkError(

@@ -32,6 +32,7 @@ import {
   pointProbed,
   betweenGridHelp,
 } from "../web/spatial/probe";
+import { fullRefinementHelp } from "../web/spatial/receiver-view";
 import { restartHelp } from "../web/spatial/restart";
 import { rideHelp } from "../web/spatial/ride";
 import { sightHelp } from "../web/spatial/sight";
@@ -212,6 +213,7 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("3D between samples", spatialBetweenHelp);
   add("3D refinement to the view", spatialViewHelp);
   add("involute restart", restartHelp);
+  add("3D full refinement while playing", fullRefinementHelp);
   const { add: _title, ...cutHelps } = cutHelp;
   table("cut", cutHelps, ["offset", "cuts", "beyond"]);
   const { framing: _framing, ...pathHelps } = pathHelp;
