@@ -22,8 +22,11 @@ type Bounds struct {
 }
 
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+// Once every coordinate is finite, the largest magnitude is below 1e12
+// exactly when each one is; comparing each avoids math.Max, a call on WASM.
 func (v Vec3) valid() bool {
-	return finite(v.X) && finite(v.Y) && finite(v.Z) && math.Max(math.Abs(v.X), math.Max(math.Abs(v.Y), math.Abs(v.Z))) < 1e12
+	return finite(v.X) && finite(v.Y) && finite(v.Z) && math.Abs(v.X) < 1e12 && math.Abs(v.Y) < 1e12 && math.Abs(v.Z) < 1e12
 }
 
 type evaluation func(float64) (Vec3, Vec3, Vec3, bool)
@@ -233,8 +236,8 @@ func sampled(f func(float64) Vec3, lo, hi, span float64, u units) evaluation {
 		r := at(t)
 		v, a := weightedDerivatives(at, r, t, lo, hi, span*1e-4, weights.at)
 		v2, a2 := weightedDerivatives(at, r, t, lo, hi, span*5e-5, weights.at)
-		stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*math.Max(v.norm(), v2.norm())+1e-8*u.speed
-		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*math.Max(a.norm(), a2.norm())+1e-4*math.Max(u.acceleration, v.norm()/span) {
+		stable := r.valid() && v.valid() && v2.valid() && v.sub(v2).norm() <= 1e-3*fmax(v.norm(), v2.norm())+1e-8*u.speed
+		if !a.valid() || !a2.valid() || a.sub(a2).norm() > 1e-2*fmax(a.norm(), a2.norm())+1e-4*fmax(u.acceleration, v.norm()/span) {
 			a = Vec3{math.NaN(), 0, 0}
 		}
 		return r, v, a, stable
@@ -249,7 +252,7 @@ func derivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64) (Vec3,
 }
 
 func weightedDerivatives(f func(float64) Vec3, origin Vec3, t, lo, hi, h float64, table func(float64) [5][2]float64) (Vec3, Vec3) {
-	start := math.Max(lo, math.Min(t-2*h, hi-4*h))
+	start := fmax(lo, fmin(t-2*h, hi-4*h))
 	a := (t - start) / h
 	weights := centeredWeights
 	if a != 2 {

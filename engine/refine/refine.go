@@ -7,9 +7,11 @@
 package refine
 
 import (
+	"cmp"
 	"container/heap"
 	"math"
 	"math/bits"
+	"slices"
 	"sort"
 )
 
@@ -362,7 +364,10 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 			break
 		}
 		scan -= cost
-		sort.Slice(within, func(i, j int) bool { return within[i].a < within[j].a })
+		// Segments start at distinct positions, as inserted points lie at
+		// distinct ones, so any sort orders them alike. A generic sort
+		// avoids sort.Slice's reflected swaps, which are slow on WASM.
+		slices.SortFunc(within, func(x, y *segment[P]) int { return cmp.Compare(x.a, y.a) })
 		kept := within[:0]
 		for _, s := range within {
 			if s.depth+s.level >= level {
@@ -387,7 +392,7 @@ func refine[P any](points []*P, breaks []bool, at func(float64) *P, m Metric[P],
 		within = kept
 		refineQueue()
 	}
-	sort.Slice(inserted, func(i, j int) bool { return inserted[i].u < inserted[j].u })
+	slices.SortFunc(inserted, func(x, y vertex) int { return cmp.Compare(x.u, y.u) })
 	k := 0
 	for i := 0; i <= n; i++ {
 		path.Points = append(path.Points, points[i])

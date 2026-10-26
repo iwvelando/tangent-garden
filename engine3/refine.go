@@ -160,7 +160,7 @@ func segmentDistance(p, a, b Vec3) float64 {
 	d := b.sub(a)
 	s := 0.0
 	if l := d.dot(d); l > 0 {
-		s = math.Max(0, math.Min(1, p.sub(a).dot(d)/l))
+		s = fmax(0, fmin(1, p.sub(a).dot(d)/l))
 	}
 	return p.sub(a.add(d.mul(s))).norm()
 }

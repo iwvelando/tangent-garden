@@ -425,6 +425,29 @@ func TestContactCirclesAreMeshEdges(t *testing.T) {
 	}
 }
 
+// A strip lists its first ring before its second, so the mesh lists rings
+// in parameter order, refined rings between samples and rings beyond gaps
+// included: no vertex's phase precedes the one listed before it.
+func TestCanalMeshListsRingsInOrder(t *testing.T) {
+	spring := spatialPresets(t)["A cord twisted round a spring"]
+	for name, c := range map[string]Request{
+		"refined spring": spring,
+		"gaps":           canaled(custom("0", "0", "t", -1, 1), 0.5, "t", 2),
+		"mixed rings":    canaled(custom("0", "0", "t", -2, 2), 0.7, "1", 4),
+	} {
+		r := canal(t, c)
+		v := r.Mesh.Vertices
+		if len(v) == 0 {
+			t.Fatalf("%s: no mesh", name)
+		}
+		for k := 13; k < len(v); k += 7 {
+			if v[k] < v[k-7] {
+				t.Fatalf("%s: vertex %d has phase %v after %v", name, k/7, v[k], v[k-7])
+			}
+		}
+	}
+}
+
 func TestCanalRefinedMeshVertexBudget(t *testing.T) {
 	c := spatialPresets(t)["A spring of tubing closed into a ring"]
 	c.Samples = 480

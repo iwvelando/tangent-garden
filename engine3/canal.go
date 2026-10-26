@@ -411,7 +411,9 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 	out.Mesh.Vertices = slices.Grow(out.Mesh.Vertices, 7*vertices)
 	out.Mesh.Triangles = slices.Grow(out.Mesh.Triangles, 3*triangles)
 	out.Mesh.SampleIndex = slices.Grow(out.Mesh.SampleIndex, triangles)
-	vertex := func(at float64, k int) int32 {
+	// ring is the index of a ring's first vertex, listing the ring when a
+	// strip first uses it.
+	ring := func(at float64) int32 {
 		var first int32
 		var ok bool
 		whole := at == math.Trunc(at)
@@ -434,7 +436,7 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 				out.Mesh.vertex(p, g.normal(p), at/float64(n))
 			}
 		}
-		return first + int32(k/stepAt(at))
+		return first
 	}
 	for j := 1; j < len(stops); j++ {
 		a, b := stops[j-1], stops[j]
@@ -447,14 +449,18 @@ func canalSurface(c Request, out *Result, evaluate evaluation, radius func(float
 			continue
 		}
 		// Zip the two rings in angular order. A finer ring contributes
-		// its midpoint to the strip without a crack or a hanging edge.
+		// its midpoint to the strip without a crack or a hanging edge. Each
+		// ring is looked up once a strip, a before b, as its first triangle
+		// lists them.
+		firstA, stepA := ring(a), stepAt(a)
+		firstB, stepB := ring(b), stepAt(b)
 		for ka, kb := 0, 0; ka < canalMeshSegments || kb < canalMeshSegments; {
-			nextA, nextB := ka+stepAt(a), kb+stepAt(b)
+			nextA, nextB := ka+stepA, kb+stepB
 			if nextA <= nextB {
-				out.Mesh.triangle(sample, vertex(a, ka), vertex(b, kb), vertex(a, nextA))
+				out.Mesh.triangle(sample, firstA+int32(ka/stepA), firstB+int32(kb/stepB), firstA+int32(nextA/stepA))
 				ka = nextA
 			} else {
-				out.Mesh.triangle(sample, vertex(a, ka), vertex(b, kb), vertex(b, nextB))
+				out.Mesh.triangle(sample, firstA+int32(ka/stepA), firstB+int32(kb/stepB), firstB+int32(nextB/stepB))
 				kb = nextB
 			}
 		}
