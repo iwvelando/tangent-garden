@@ -1223,7 +1223,7 @@ export default function SpatialApp({
             label="Refinement levels"
             help={tiered(
               `0–${maxReceiverRefine} levels, splitting cells whose light lands more than a bin wide on the window.`,
-              `0 spreads each cell whole. Each level splits such a cell into four, tracing more rays where the light folds or spreads, so each costs more time. At most ${maxReceiverCells.toLocaleString()} cells in all.`,
+              `0 spreads each cell whole. Each level splits such a cell into four, tracing more rays where the light folds or spreads, so each costs more time. At most ${maxReceiverCells.toLocaleString()} cells in all. Parameter animations play 2 or 3 levels one level coarser unless set to keep them in Animation.`,
             )}
           >
             <input

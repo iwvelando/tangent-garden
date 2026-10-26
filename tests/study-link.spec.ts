@@ -1390,6 +1390,29 @@ test("a link carries how the probe moves while parameters vary; a grid's probe s
   assert.equal(spatialStudy(curve).animation.probeMotion, "stays");
 });
 
+test("a link carries whether a refined receiver plays at full refinement", async () => {
+  const study: SpatialStudy = {
+    ...spatial(),
+    animation: {
+      ...spatial().animation,
+      mode: "parameters",
+      fullRefinement: true,
+    },
+  };
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // Off is the default, which links leave out, as they did before it.
+  assert.equal("fullRefinement" in spatial().animation, false);
+  const off = structuredClone(study) as any;
+  off.animation.fullRefinement = false;
+  assert.equal("fullRefinement" in spatialStudy(off).animation, false);
+  for (const value of ["yes", 1, null]) {
+    const s = structuredClone(study) as any;
+    s.animation.fullRefinement = value;
+    await refused(() => spatialStudy(s), "animation.fullRefinement");
+  }
+});
+
 test("a link carries a camera path, its leg times and its flight; refuses turns, times, views and names outside their limits", async () => {
   const study: SpatialStudy = {
     ...spatial(),
