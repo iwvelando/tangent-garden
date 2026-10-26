@@ -54,10 +54,13 @@ check: format-check vet test build
 # Everything a pull request needs locally (AGENTS.md, Verification). The
 # browser suite rebuilds, since thumbnails rewrites web/examples after its
 # build, and regenerated thumbnails must be committed.
+# WebKit runs where CI runs it, on macOS: Safari's encoder and VideoFrame
+# behavior exist only there, so elsewhere it is left to CI's webkit job.
 pre-pr: check thumbnails
 	$(MAKE) test-browser
+	@if [ "$$(uname -s)" = Darwin ]; then $(MAKE) test-webkit; else echo "pre-pr: WebKit not run on $$(uname -s); CI's webkit job runs it on macOS"; fi
 	@dirty=$$(git status --porcelain web/examples); if [ -n "$$dirty" ]; then printf 'Commit the regenerated gallery files:\n%s\n' "$$dirty"; exit 1; fi
-	@echo "pre-pr: check, thumbnails and the full browser suite passed"
+	@echo "pre-pr: check, thumbnails and the full Chromium and WebKit browser suites passed"
 dev:
 	npm run dev
 # Reachable from other devices on the local network, such as a phone.

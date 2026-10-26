@@ -936,3 +936,141 @@ test("easing factor accepts edits and preserves them across checkbox click and b
     await expect(factor).toHaveValue("0.8");
   }
 });
+
+test("journey pointer and keyboard navigation restore focus without Safari rings", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const browse = page.getByRole("button", { name: "Browse notebook examples" });
+  await browse.click();
+  const gallery = page.getByRole("dialog", { name: "Notebook examples" });
+  await gallery
+    .getByRole("button", { name: "Light finding a cusp", exact: true })
+    .click();
+  const journey = page.getByRole("dialog", {
+    name: "Light finding a cusp",
+    exact: true,
+  });
+  await expect(journey).toBeVisible();
+  await expect(
+    journey.getByRole("button", { name: "Return to my study" }),
+  ).toBeFocused();
+  await expect(journey).toHaveAttribute("data-quiet", "");
+  await page.keyboard.press("Tab");
+  await expect(journey).not.toHaveAttribute("data-quiet", "");
+  await journey.getByRole("button", { name: "Next step", exact: true }).click();
+  await expect(
+    journey.getByRole("heading", {
+      name: "Parallel light & a circle",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(browse).toBeFocused();
+  await expect(page.locator(".example-picker")).not.toHaveAttribute(
+    "data-quiet",
+    "",
+  );
+  await browse.press("Enter");
+  const entry = gallery.getByRole("button", {
+    name: "Light finding a cusp",
+    exact: true,
+  });
+  await entry.focus();
+  await entry.press("Enter");
+  await expect(journey).toBeVisible();
+  await expect(journey).not.toHaveAttribute("data-quiet", "");
+  await journey.getByRole("button", { name: "Return to my study" }).click();
+  await expect(browse).toBeFocused();
+  await expect(page.locator(".example-picker")).toHaveAttribute(
+    "data-quiet",
+    "",
+  );
+  await page.getByRole("button", { name: "Color scheme", exact: true }).focus();
+  await expect(page.locator(".example-picker")).not.toHaveAttribute(
+    "data-quiet",
+    "",
+  );
+});
+
+test("journey navigation and playback keep the viewport and buttons steady in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page
+    .getByRole("dialog", { name: "Notebook examples" })
+    .getByRole("button", { name: "Light finding a cusp", exact: true })
+    .click();
+  const journey = page.getByRole("dialog", {
+    name: "Light finding a cusp",
+    exact: true,
+  });
+  const ready = () =>
+    expect(journey.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+  await ready();
+  const positions = () =>
+    journey.evaluate((d) =>
+      [".journey-art", ".journey-navigation"].map((selector) => {
+        const r = d.querySelector(selector)!.getBoundingClientRect();
+        return [r.x + d.scrollLeft, r.y + d.scrollTop, r.width, r.height];
+      }),
+    );
+  const original = await positions();
+  for (let i = 0; i < 2; i++) {
+    await journey
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+    await ready();
+    expect(await positions()).toEqual(original);
+  }
+  await journey
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    journey.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  expect(await positions()).toEqual(original);
+  await journey.getByRole("button", { name: "Pause", exact: true }).click();
+  expect(await positions()).toEqual(original);
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Browse notebook examples" }),
+  ).toBeFocused();
+});
+
+test("journey control keeps focus and its text while its drawing updates", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page
+    .getByRole("dialog", { name: "Notebook examples" })
+    .getByRole("button", { name: "Light finding a cusp", exact: true })
+    .click();
+  const journey = page.getByRole("dialog", {
+    name: "Light finding a cusp",
+    exact: true,
+  });
+  await expect(journey.locator(".journey-art")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const field = journey.getByRole("textbox", { name: "Source x", exact: true });
+  await field.click();
+  await field.press("Meta+a");
+  await page.keyboard.type("1/2");
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await journey.locator("svg desc").textContent())!).source
+          .position.x,
+    )
+    .toBe(0.5);
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("1/2");
+});

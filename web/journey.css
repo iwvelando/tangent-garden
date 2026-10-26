@@ -1,0 +1,212 @@
+.gallery-journeys {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 24px 14px;
+}
+.journey {
+  width: min(1160px, calc(100% - 48px));
+  max-height: calc(100% - 48px);
+  margin: 24px auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+}
+.journey {
+  overscroll-behavior: contain;
+}
+.journey::backdrop {
+  background: rgb(8 18 20 / 0.45);
+  backdrop-filter: blur(3px);
+}
+.journey-body {
+  padding: 24px;
+}
+.journey-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.journey h2 {
+  margin: 6px 0 20px;
+  font:
+    normal 28px Georgia,
+    serif;
+}
+.journey h3 {
+  margin: 0 0 10px;
+  font:
+    normal 24px Georgia,
+    serif;
+}
+.journey-content {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-rows: auto auto auto 1fr;
+  gap: 16px 24px;
+  align-content: start;
+}
+.journey-step,
+.journey-intro,
+.journey-navigation,
+.journey-adopt {
+  grid-column: 1;
+}
+.journey-step {
+  grid-row: 1;
+  margin: 0;
+}
+.journey-intro {
+  grid-row: 2;
+}
+/* All authored copy, and each step's control, shares a responsive grid cell:
+   the largest step sizes it at this width and font size, without fixed line
+   counts or clipped text. */
+.journey-intro,
+.journey-experiments,
+.journey-controls {
+  display: grid;
+}
+.journey-copy,
+.journey-experiments > p,
+.journey-control {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.journey-copy[data-current="true"],
+.journey-experiments > p[data-current="true"],
+.journey-control[data-current="true"] {
+  visibility: visible;
+}
+.journey-controls {
+  margin: 4px 0 12px;
+}
+/* A part-typed value, such as "-" or ".", is an error for a moment: a line
+   is kept under each control for its error (12.5px text at 1.5 line height,
+   after a 6px margin), so Open study never moves while the reader types. */
+.journey-control .field {
+  display: grid;
+  grid-template-rows: auto auto minmax(25px, auto);
+  margin-bottom: 0;
+}
+.journey-copy p {
+  margin: 0;
+  line-height: 1.5;
+}
+.journey-navigation {
+  grid-row: 3;
+  display: flex;
+  gap: 8px;
+  align-self: start;
+}
+.journey-adopt {
+  grid-row: 4;
+  align-self: start;
+}
+.journey-experiments {
+  margin-top: 10px;
+}
+.journey-experiments > p {
+  margin: 0;
+  line-height: 1.5;
+}
+.journey-drawing {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  min-width: 0;
+}
+.journey-art {
+  height: min(56vh, 600px);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.journey-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.journey .journey-feedback {
+  min-height: 1.5em;
+  margin: 6px 0;
+  line-height: 1.5;
+}
+.journey .animation-section {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+/* Playback occupies the same rows before, during and after motion, including
+   on phones where the notebook's ordinary player docks to the screen. */
+.journey .playback,
+.journey .playback.active {
+  position: static;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.journey .playback .animation-buttons {
+  margin-top: 0;
+}
+.journey .playback .timeline .field {
+  margin: 10px 0 4px;
+}
+.example-picker[data-quiet] :focus-visible,
+.journey[data-quiet] :focus-visible {
+  outline: none;
+}
+@media (max-width: 700px) {
+  html.journey-open,
+  html.journey-open body {
+    overflow: hidden;
+  }
+  .journey {
+    width: 100%;
+    max-width: none;
+    max-height: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .journey-body {
+    padding: 16px;
+  }
+  .journey-heading {
+    align-items: start;
+    gap: 12px;
+  }
+  .journey h2 {
+    font-size: 23px;
+  }
+  .journey-heading button {
+    flex: 0 0 100px;
+  }
+  .journey-content {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+  .journey-art {
+    height: auto;
+    aspect-ratio: 1000 / 760;
+  }
+  .journey-drawing {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .journey-navigation {
+    grid-row: 4;
+  }
+  .journey-adopt {
+    grid-row: 5;
+  }
+  .gallery-journeys {
+    padding-inline: 16px;
+  }
+}

@@ -197,6 +197,17 @@ export const presets: {
       curve: { ...base.curve, x: "cos(t)", y: "sin(t)" },
       source: { ...base.source, kind: "parallel", angle: 0 },
     },
+    // Plays by tracing the light: the wavefront sweeps in from the left and
+    // the nephroid grows from its cusp as the reflected light reaches it.
+    animation: {
+      mode: "trace",
+      camera: "hold",
+      duration: 10,
+      tracks: [],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
   },
   {
     title: "Ellipse & its pedal",

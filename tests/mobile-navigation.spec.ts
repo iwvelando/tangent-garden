@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { choosePreset } from "./helpers";
+import { choosePreset, scriptedKeyboard } from "./helpers";
 
 test.use({ hasTouch: true });
 
@@ -162,46 +162,6 @@ test("the drawing shortcut fits a short phone screen in every notebook", async (
     ).toBeLessThanOrEqual(320);
   }
 });
-
-// iOS opens its keyboard over the page without shrinking the layout viewport:
-// it shortens the visual viewport and may pan it down inside the layout one,
-// and sometimes leaves it panned after the keyboard closes. Desktop engines
-// never do this, so stand in a scripted visual viewport the page reads.
-async function scriptedKeyboard(page: Page) {
-  await page.addInitScript(() => {
-    const viewport = Object.assign(new EventTarget(), {
-      offsetLeft: 0,
-      offsetTop: 0,
-      pageLeft: 0,
-      pageTop: 0,
-      scale: 1,
-      width: innerWidth,
-      height: innerHeight,
-    });
-    Object.defineProperty(window, "visualViewport", {
-      configurable: true,
-      get: () => viewport,
-    });
-    (window as unknown as { keyboard: unknown }).keyboard = (
-      offsetTop: number,
-      height: number,
-    ) => {
-      viewport.offsetTop = offsetTop;
-      viewport.pageTop = scrollY + offsetTop;
-      viewport.height = height;
-      viewport.dispatchEvent(new Event("resize"));
-      viewport.dispatchEvent(new Event("scroll"));
-    };
-  });
-  return (offsetTop: number, height: number) =>
-    page.evaluate(
-      ([top, h]) =>
-        (
-          window as unknown as { keyboard: (a: number, b: number) => void }
-        ).keyboard(top, h),
-      [offsetTop, height],
-    );
-}
 
 test("mobile navigation stays at the top of a visual viewport the keyboard panned", async ({
   page,

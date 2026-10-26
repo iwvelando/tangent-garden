@@ -70,10 +70,14 @@ function difference(a: Image, b: Image) {
 }
 // 3D: the live WebGL canvas, read back (it preserves its drawing buffer).
 const spatialStage = (page: Page) => page.locator(".spatial-stage");
-const spatialSettled = (page: Page, timeout = 5000) =>
-  expect(spatialStage(page)).toHaveAttribute("aria-busy", "false", {
-    timeout,
-  });
+// The configured allowance by default: a fresh 3D notebook starts lazily,
+// and a loaded CI runner took more than five seconds to settle it.
+const spatialSettled = (page: Page, timeout?: number) =>
+  expect(spatialStage(page)).toHaveAttribute(
+    "aria-busy",
+    "false",
+    timeout === undefined ? {} : { timeout },
+  );
 async function spatial(page: Page, label: string) {
   await page.goto("/?study=3d");
   await spatialSettled(page);
