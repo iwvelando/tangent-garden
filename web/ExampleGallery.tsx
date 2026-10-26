@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { plotPalette } from "./palette";
+import { useQuietFocus } from "./quiet-focus";
 import "./gallery.css";
 
 // A notebook example as the gallery shows it. The fingerprint identifies the
@@ -59,6 +60,8 @@ export function ExampleGallery({
   onChoose,
   thumbnail,
   dark,
+  onJourney,
+  onBrowse,
 }: {
   examples: Example[];
   // null while the study is the reader's own.
@@ -66,8 +69,16 @@ export function ExampleGallery({
   onChoose: (index: number) => void;
   thumbnail: ThumbnailSource;
   dark: boolean;
+  onJourney?: (
+    restoreFocus: (via: "keyboard" | "pointer") => void,
+    via: "keyboard" | "pointer",
+  ) => void;
+  onBrowse?: () => void;
 }) {
   const { scheme } = useTheme();
+  const wrap = useRef<HTMLDivElement>(null);
+  const quiet = useQuietFocus(wrap);
+  const via = useRef<"keyboard" | "pointer">("keyboard");
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -102,6 +113,8 @@ export function ExampleGallery({
     .filter((g) => g.items.length > 0);
 
   const show = () => {
+    onBrowse?.();
+    quiet.quiet();
     setQuery("");
     setFamily(null);
     setOpen(true);
@@ -157,7 +170,21 @@ export function ExampleGallery({
 
   const currentExample = current === null ? undefined : examples[current];
   return (
-    <div className="example-picker">
+    <div
+      className="example-picker"
+      ref={wrap}
+      onPointerDown={() => {
+        via.current = "pointer";
+        quiet.onPointerDown();
+      }}
+      onKeyDownCapture={() => {
+        via.current = "keyboard";
+        quiet.onKeyDownCapture();
+      }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) quiet.ring();
+      }}
+    >
       <button
         ref={trigger}
         type="button"
@@ -202,6 +229,7 @@ export function ExampleGallery({
         aria-labelledby={`${currentId}-title`}
         onClose={() => {
           setOpen(false);
+          quiet.quiet();
           trigger.current?.focus();
         }}
         // A click on the backdrop lands on the dialog itself.
@@ -237,6 +265,28 @@ export function ExampleGallery({
                 ×
               </button>
             </div>
+            {onJourney && (
+              <div className="gallery-journeys">
+                <span className="example-kicker">Try a guided journey</span>
+                <button
+                  onClick={() => {
+                    close();
+                    onJourney((returnVia) => {
+                      via.current = returnVia;
+                      if (returnVia === "pointer") quiet.onPointerDown();
+                      else quiet.onKeyDownCapture();
+                      quiet.quiet();
+                      trigger.current?.focus();
+                    }, via.current);
+                  }}
+                >
+                  Light finding a cusp
+                </button>
+                <span className="note">
+                  Three studies · preview without losing your work
+                </span>
+              </div>
+            )}
             <div
               className="gallery-families"
               role="group"

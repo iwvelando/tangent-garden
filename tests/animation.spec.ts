@@ -229,6 +229,8 @@ test("parallel-light direction, scalar endpoints, and invalid track recovery", a
   await expect(
     page.getByRole("combobox", { name: "Parameter 1", exact: true }),
   ).toHaveValue("angle");
+  // The preset repeats back and forth; once, it reaches Replay.
+  await page.getByRole("combobox", { name: "Repeat" }).selectOption("once");
   await page.getByRole("textbox", { name: "Track 1 to" }).fill("t");
   await page.getByRole("button", { name: "Play animation" }).click();
   await expect(page.getByRole("alert")).toContainText("not allowed");

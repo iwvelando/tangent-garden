@@ -8,12 +8,14 @@ import type { useTheme } from "./useTheme";
 export function AppHeader({
   theme: { dark, preference, toggle, followSystem, scheme, chooseScheme },
   children,
+  inert,
 }: {
   theme: ReturnType<typeof useTheme>;
   children: ReactNode;
+  inert?: boolean;
 }) {
   return (
-    <header>
+    <header inert={inert} aria-hidden={inert || undefined}>
       <a className="brand" href="./">
         <img
           className="brand-symbol"

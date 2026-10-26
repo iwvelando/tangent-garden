@@ -185,6 +185,8 @@ export const redraws = (
   s: Pick<Session, "mode" | "tracks" | "original" | "between" | "refine">,
 ) => !calculates(s) || s.mode === "path";
 type Props = {
+  // A journey offers only deliberate playback of its preset setup.
+  preview?: boolean;
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
   length: number;
@@ -220,6 +222,7 @@ type Props = {
 };
 
 export function AnimationPanel({
+  preview = false,
   frame,
   client,
   length,
@@ -1042,8 +1045,12 @@ export function AnimationPanel({
   }
   return (
     <section className="animation-section">
-      <details id="animation-section" {...section}>
+      <details
+        id={preview ? undefined : "animation-section"}
+        {...(preview ? { open: true } : section)}
+      >
         <summary
+          hidden={preview}
           className="section-label"
           onClick={(e) => {
             // Keep playback controls reachable until the animation is stopped.
@@ -1053,6 +1060,7 @@ export function AnimationPanel({
           ANIMATION
         </summary>
         <fieldset
+          hidden={preview}
           disabled={running || status === "paused" || disabled}
           onChangeCapture={() => {
             if (status === "complete") stop();
@@ -1344,7 +1352,7 @@ export function AnimationPanel({
             </Field>
           )}
           <details
-            id="export-settings"
+            id={preview ? undefined : "export-settings"}
             className="subsection"
             {...exportSection}
           >
@@ -1444,7 +1452,7 @@ export function AnimationPanel({
         </fieldset>
         {/* On narrow screens this docks below the drawing while active. */}
         <div
-          id="playback"
+          id={preview ? undefined : "playback"}
           className={active ? "playback active" : "playback"}
           role="group"
           aria-label="Playback"
@@ -1483,7 +1491,7 @@ export function AnimationPanel({
                   : "Stop"}
             </button>
           </div>
-          {active && (
+          {(active || preview) && (
             <div className="timeline">
               <Field
                 label="Animation progress"
@@ -1491,23 +1499,25 @@ export function AnimationPanel({
               >
                 <ProgressSlider
                   progress={progress}
-                  disabled={running}
+                  disabled={running || !active || (preview && disabled)}
                   onSeek={(p) => void seek(p)}
                 />
               </Field>
               <div className="note" role="status" aria-live="off">
-                {status === "exporting"
-                  ? `Exporting ${text.short}…`
-                  : status === "complete"
-                    ? "Complete"
-                    : status === "paused"
-                      ? "Paused"
-                      : status === "preparing"
-                        ? "Preparing"
-                        : `${(progress * duration).toFixed(1)} / ${duration} s`}
+                {preview && status === "idle"
+                  ? "Ready to play"
+                  : status === "exporting"
+                    ? `Exporting ${text.short}…`
+                    : status === "complete"
+                      ? "Complete"
+                      : status === "paused"
+                        ? "Paused"
+                        : status === "preparing"
+                          ? "Preparing"
+                          : `${(progress * duration).toFixed(1)} / ${duration} s`}
               </div>
-              <AnimationValues text={live} />
-              <p className="note playback-tip">
+              {!preview && <AnimationValues text={live} />}
+              <p className="note playback-tip" hidden={preview}>
                 {status === "exporting"
                   ? "Cancel export discards the file; your study stays as it was."
                   : status === "complete"
@@ -1518,14 +1528,15 @@ export function AnimationPanel({
           )}
         </div>
         <button
+          hidden={preview}
           className="animation-export"
           disabled={disabled || running || !frame || !exportReady}
           onClick={() => void start(true)}
         >
           Export {text.name} ↗
         </button>
-        {exportHint && <p className="hint">{exportHint}</p>}
-        {exportNotice && (
+        {!preview && exportHint && <p className="hint">{exportHint}</p>}
+        {!preview && exportNotice && (
           <p className="note" role="status">
             {exportNotice}
           </p>

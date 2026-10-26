@@ -27,6 +27,8 @@ const rasterFits: Fits = (size) => canvasFits(size);
 
 type Props = {
   disabled: boolean;
+  // A change discards pending built-in image encodings and their errors.
+  revision?: unknown;
   kind: string;
   onSave?: (format: string, still: Still) => Promise<void>;
   // The drawing's own page, which every size is a multiple of.
@@ -45,6 +47,7 @@ type Props = {
 
 export function ExportImageMenu({
   disabled,
+  revision,
   kind,
   onSave,
   svgLabel = kind === "attractor"
@@ -57,6 +60,13 @@ export function ExportImageMenu({
   fits = rasterFits,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const generation = useRef(0);
+  useLayoutEffect(() => {
+    generation.current++;
+    return () => {
+      generation.current++;
+    };
+  }, [revision]);
   // Settings, kept between exports. The menu stays open while they change.
   const [chosen, setStill] = useState<Still>(defaultStill);
   // Only sizes this device can draw are offered. A chosen size that does
@@ -132,6 +142,7 @@ export function ExportImageMenu({
     } else if (e.key === "Tab") setOpen(false);
   }
   async function save(format: string) {
+    const token = generation.current;
     close();
     setError("");
     if (onSave) {
@@ -151,8 +162,10 @@ export function ExportImageMenu({
         format === "svg"
           ? svgFile(svg, still.transparent)
           : await pngFile(svg, png.width, png.height, still.transparent);
+      if (token !== generation.current) return;
       saveFile(blob, `tangent-garden-${kind}.${format}`);
     } catch (error) {
+      if (token !== generation.current) return;
       setError(
         error instanceof StillLimit
           ? error.message

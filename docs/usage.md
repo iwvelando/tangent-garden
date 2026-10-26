@@ -2,6 +2,14 @@
 
 [Back to the project overview](../README.md)
 
+## A guided journey
+
+Open **Browse notebook examples** in the 2D notebook and choose **Light finding a cusp**. Three steps compare **Light inside a circle**, **Parallel light & a circle**, and **Sunlight gathering in an oval mirror**. Each begins with a still drawing, a short explanation, and one control to experiment with: **Source x** for the point of light, **Travel direction (degrees)** for parallel light, and the probe's **Point** on the oval mirror. Editing it redraws the step; numeric fields accept the same expressions as the notebook, such as `pi/4`. Each step keeps your edit while you move between steps. **Previous step** and **Next step** move through the sequence, keeping the current picture and explanation visible until the next is ready; **Play animation** deliberately starts that step's own animation, including when reduced motion is preferred.
+
+Your editable study stays intact while you preview: entered expressions, drawing layers, probe, animation setup and manual pan/zoom. Entry waits for pending numeric expressions; an invalid input keeps its text and error available for correction. **Return to my study**, Escape or dismissing the preview restores your study. A playback or export that was running before entry is canceled and stays stopped. Return before using the notebook picker to choose another dimension. Ordinary browser navigation still leaves the preview and preserves your study.
+
+**Open study** replaces the current planar study with the step's complete example, exactly as choosing its gallery card does, including your edit to its control if you made one: the result is the same as choosing the example and making that edit in the notebook. An invalid entry must be corrected first. You can then edit anything, copy a link, or export an image or animation normally. Edits in the journey are forgotten when you return to your study. Preview steps and journey progress are temporary and are not saved in study links.
+
 ## Explore
 
 - On phones, **Drawing** and **Controls** stay at the top of the screen. After editing, tap **Drawing** to inspect the result, then **Controls** to return to the same place. Swipes over the drawing scroll the page by default. Tap **Adjust view** to pan or orbit with one finger and pan/zoom with two; **Done** or **Controls** returns to page scrolling. Mouse and keyboard controls remain available.
@@ -84,7 +92,7 @@ Examples:
 - **Unwinding a circle** → Draw along the curve → 10 seconds → Hold final view.
 - **Light inside a circle** → Vary parameters → Source x from `1` to `.75` → 30 seconds. Add Source y for a moving source in both coordinates.
 - For an orbit: set a polar curve `r(t)=1`, domain `0` to `2*pi`, and a polar point source with radius `1` and theta `0`. Animate **Source theta θ (radians)** from `0` to `pi/2`. The source follows a quarter circle; radius may have a simultaneous track. Polar sources also work with Cartesian and parametric curves.
-- **Parallel light & a circle** → Trace rays: the rays sweep in from the left edge, and the nephroid grows from its cusp as the reflected light crosses it.
+- **Parallel light & a circle** opens with Trace rays: the rays sweep in from the left edge, and the nephroid grows from its cusp as the reflected light crosses it, then retreats, back and forth.
 - **Parallel light & a circle** → Vary parameters → Travel direction from `0` to `360` → 30 seconds. Angles here are degrees, and interpolation follows the entered values without shortest-path wrapping.
 - Write `a*cos(t)` and `a*sin(t)` and animate `a` from `1` to `phi`. More generally, expressions such as `(1-a)*cos(t)+a*cos(2*t)` allow shape transitions; categorical choices such as construction type and curve format are held fixed during a run.
 

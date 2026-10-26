@@ -34,7 +34,13 @@ function screenBottom() {
 
 // The mobile notebook is one long page. Keep its drawing a tap away without
 // losing the reader's place in the controls or mounting a second renderer.
-export function NotebookMain({ children }: { children: ReactNode }) {
+export function NotebookMain({
+  children,
+  inert,
+}: {
+  children: ReactNode;
+  inert?: boolean;
+}) {
   const nav = useRef<HTMLElement>(null);
   const controlOffset = useRef(0);
   // Whether the screen's offset comes from the keyboard: from focusing a
@@ -185,7 +191,7 @@ export function NotebookMain({ children }: { children: ReactNode }) {
 
   return (
     <DrawingTouch.Provider value={!narrow || adjusting}>
-      <main>
+      <main inert={inert} aria-hidden={inert || undefined}>
         <nav
           ref={nav}
           className="mobile-notebook-nav"

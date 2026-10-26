@@ -578,6 +578,44 @@ test("tracing is offered only for optical studies, with fixed cameras", async ({
   await expect(animate(page)).toHaveValue("reveal");
 });
 
+test("Parallel light & a circle opens tracing its rays and plays the trace", async ({
+  page,
+}) => {
+  await ready(page, "Cycloid & its evolute");
+  await choosePreset(page, { label: "Parallel light & a circle" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const original = await derived(page);
+  await expect(animate(page)).toHaveValue("trace");
+  await expect(
+    page.getByRole("combobox", { name: "Animation camera" }),
+  ).toHaveValue("hold");
+  await expect(page.getByRole("combobox", { name: "Repeat" })).toHaveValue(
+    "back-and-forth",
+  );
+  await expect(page.getByRole("combobox", { name: "Pace" })).toHaveValue(
+    "ease",
+  );
+  // Played once, the end of the timeline is the whole caustic.
+  await page.getByRole("combobox", { name: "Repeat" }).selectOption("once");
+  await page.getByRole("button", { name: "Play animation" }).click();
+  await expect.poll(() => progress(page)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", {
+    name: "Animation progress",
+    exact: true,
+  });
+  // The light starts at the left edge; no reflected light has gathered yet.
+  await slider.press("Home");
+  await expect.poll(() => progress(page)).toBe(0);
+  expect(await derived(page)).toBe("");
+  await slider.press("End");
+  await expect.poll(() => progress(page)).toBe(1);
+  expect(await derived(page)).toBe(original);
+});
+
 for (const [label, camera] of [
   ["Parallel light & a circle", "hold"],
   ["Through a parabola", "current"],
@@ -592,6 +630,9 @@ for (const [label, camera] of [
     const original = await derived(page);
     const study = await page.locator("#artwork desc").textContent();
     await animate(page).selectOption("trace");
+    // A preset's own repeat and pace would remap the progress checked below.
+    await page.getByRole("combobox", { name: "Repeat" }).selectOption("once");
+    await page.getByRole("combobox", { name: "Pace" }).selectOption("steady");
     await page
       .getByRole("combobox", { name: "Animation camera" })
       .selectOption(camera);

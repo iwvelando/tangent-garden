@@ -82,6 +82,7 @@ Close a parent only after its feature-level acceptance criteria are satisfied, i
 
 - `make check` runs formatting checks, Go vet, native tests with race and coverage, a real WASM bridge test, TypeScript checks, and the production build.
 - `make test-browser` runs the production integration checks. It needs a Chromium installation (`npx playwright install chromium`).
+- `make test-webkit` runs `tests/webkit.spec.ts` and `tests/mobile-inputs.spec.ts` in WebKit (`npx playwright install webkit`). `make pre-pr` runs it on macOS, where CI's `webkit` job runs too; on another platform it skips it with a notice and leaves it to CI.
 - Playwright tests the production build in `dist/`. `make test-browser`, `make test-webkit` and `make thumbnails` rebuild it first. A targeted `npx playwright test` does not, and locally it reuses a preview already serving port 4173.
 - `make thumbnails` rewrites `web/examples/thumbnails.json` after it builds, so run `npm run build` again before a targeted run.
 - Prettier formats `web/`, `scripts/` and `tests/` only (`npm run format`). Never run it over `docs/` or `README.md`: it rewraps the Markdown.

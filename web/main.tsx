@@ -10,6 +10,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,6 +18,8 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
+import { JourneyPreview } from "./JourneyPreview";
+import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
 import { planarExamples, planarThumbnail } from "./examples";
 import { Plot, legendGeometry, type Layers } from "./Plot";
@@ -248,18 +251,14 @@ const poleOptions: Record<PoleKind, { label: string; note: string }> = {
 };
 // Numeric parameters addressed by their path in the configuration. An unset
 // optional value, such as a polar source radius before first use, reads as 0.
-function getIn(config: Config, path: string[]): number {
-  return path.reduce<any>((o, k) => o?.[k], config) ?? 0;
-}
-function setIn(config: Config, path: string[], value: number): Config {
-  const next = structuredClone(config);
-  const parent = path.slice(0, -1).reduce<any>((o, k) => o[k], next);
-  parent[path.at(-1)!] = value;
-  return next;
-}
 // The notebook opens on its first example.
 const opening = presetStudy(0);
 function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
+  const [journey, setJourney] = useState<"waiting" | "preview" | null>(null);
+  const [journeyNotice, setJourneyNotice] = useState("");
+  const journeyFocus = useRef<(via: "keyboard" | "pointer") => void>(() => {});
+  const restoreJourneyFocus = useRef(false);
+  const journeyVia = useRef<"keyboard" | "pointer">("keyboard");
   const [config, setConfig] = useState<Config>(opening.config);
   const [preset, setPreset] = useState("0");
   // Remembers the pole construction while another tab is selected.
@@ -1254,6 +1253,8 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
     settings: PlanarAnimation;
   } | null>(null);
   const openStudy = (id: number, study: PlanarStudy, preset = "custom") => {
+    setJourney(null);
+    setJourneyNotice("");
     touched.current = null;
     setPreset(preset);
     scalarGeneration.current++;
@@ -1271,6 +1272,8 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
   };
   useEffect(() => {
     if (!shared) return;
+    setJourney(null);
+    setJourneyNotice("");
     setLinkNotice(shared.error ?? "");
     if (shared.error !== undefined) return;
     try {
@@ -1281,6 +1284,36 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       );
     }
   }, [shared?.id]);
+  // Entry waits for the exact resolved study, including pending scalar work.
+  // Keeping its controls and Plot mounted preserves raw drafts and camera.
+  useEffect(() => {
+    if (!active) {
+      setJourney(null);
+      setJourneyNotice("");
+      return;
+    }
+    if (journey !== "waiting" || busy) return;
+    if (error) {
+      setJourney(null);
+      setJourneyNotice(
+        "Correct the highlighted input before starting the journey.",
+      );
+    } else {
+      setJourneyNotice("");
+      setJourney("preview");
+    }
+  }, [journey, busy, error, active]);
+  const leaveJourney = (via: "keyboard" | "pointer") => {
+    journeyVia.current = via;
+    setJourney(null);
+    restoreJourneyFocus.current = true;
+  };
+  useLayoutEffect(() => {
+    if (journey === null && restoreJourneyFocus.current) {
+      restoreJourneyFocus.current = false;
+      if (active) journeyFocus.current(journeyVia.current);
+    }
+  }, [journey, active]);
   const snapshot = (): PlanarStudy => ({
     config,
     bounds,
@@ -1318,7 +1351,24 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
       style={theme.style}
       data-theme-preference={preference}
     >
-      <AppHeader theme={theme}>
+      {journey === "preview" && active && (
+        <JourneyPreview
+          via={journeyVia.current}
+          onReturn={leaveJourney}
+          // Adopting a step replaces the whole study as its example does,
+          // with the step's one edit if the reader made it.
+          onOpen={({ preset, study, custom }, via) => {
+            journeyVia.current = via;
+            openStudy(
+              -++presetAnimations.current,
+              study,
+              custom ? "custom" : String(preset),
+            );
+            restoreJourneyFocus.current = true;
+          }}
+        />
+      )}
+      <AppHeader theme={theme} inert={journey === "preview"}>
         <ShareLink
           notebook="2d"
           study={snapshot}
@@ -1326,11 +1376,12 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
         />
         <AnimationButton section="animation-section" />
         <ExportImageMenu
+          revision={journey !== null}
           disabled={!result || busy || !!error || animationRunning}
           kind={studyName(config)}
         />
       </AppHeader>
-      <NotebookMain>
+      <NotebookMain inert={journey === "preview"}>
         <ScalarStatus.Provider value={scalarStatus}>
           <aside aria-label="Study parameters">
             {linkNotice && (
@@ -1343,12 +1394,27 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
               <div className="section-label">01 / THE STUDY</div>
               <NotebookMode />
               <ExampleGallery
+                onJourney={(restoreFocus, via) => {
+                  journeyFocus.current = restoreFocus;
+                  journeyVia.current = via;
+                  setJourney("waiting");
+                  setJourneyNotice("Waiting for your study’s inputs…");
+                }}
+                onBrowse={() => {
+                  setJourney(null);
+                  setJourneyNotice("");
+                }}
                 examples={planarExamples}
                 current={preset === "custom" ? null : +preset}
                 onChoose={choosePreset}
                 thumbnail={planarThumbnail}
                 dark={dark}
               />
+              {journeyNotice && (
+                <p className="note" role="status">
+                  {journeyNotice}
+                </p>
+              )}
               <div className="tabs" role="group" aria-label="Construction">
                 {tabs.map((k) => {
                   const active =
@@ -2295,6 +2361,7 @@ function App({ active, shared }: { active: boolean; shared?: SharedStudy }) {
                 length,
                 stopAtCaustic,
                 active,
+                journey !== null,
                 probing,
               ])}
               disabled={busy || !!error}
