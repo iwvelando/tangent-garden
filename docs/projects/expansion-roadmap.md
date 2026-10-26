@@ -147,7 +147,7 @@ Evaluate R12 and R13, and prototype R14 and R15. Do not make all later features 
 
 **Signature film.** _A lattice changing its mind_: a symmetric grid opens into curved compartments and returns.
 
-**Release proof.** Known zeros, reflection symmetries and boundary zeros appear in the engine's contours. Degenerate crossings are deliberately handled. Compare resolutions at reconnection values rather than accepting a plausible thumbnail.
+**Release proof.** Known interior zeros and reflection symmetries are recovered in the engine's contours. Verify the boundary conditions independently; distinguish a drawn domain boundary from zero contours extracted by sign changes, which need not emit a whole zero-valued boundary edge. Degenerate crossings are deliberately handled. Compare resolutions at reconnection values rather than accepting a plausible thumbnail.
 
 ### R06 — Complex transformation loom
 
