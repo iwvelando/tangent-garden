@@ -48,6 +48,8 @@ import { fieldLabel } from "./fields";
 import { AppHeader } from "../AppHeader";
 import { NotebookMain } from "../MobileNotebookNav";
 import { AnimationButton } from "../AnimationButton";
+import { useJourneyEntry } from "../JourneyContext";
+import type { AdoptedJourney } from "../journeys";
 import { NotebookMode } from "../NotebookMode";
 import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
@@ -240,9 +242,11 @@ function CrossedNote({ cusps }: { cusps: number }) {
 export default function SpatialApp({
   active = true,
   shared,
+  adoption,
 }: {
   active?: boolean;
   shared?: SharedStudy;
+  adoption?: AdoptedJourney;
 }) {
   const theme = useTheme(),
     narrow = useMediaQuery("(max-width: 700px)"),
@@ -355,8 +359,13 @@ export default function SpatialApp({
       ...(view ? [`view:${JSON.stringify(view)}`] : []),
     ].join("\u0000"),
     busy = settled !== request || pending || (refineView && focusPending);
+  const journey = useJourneyEntry(
+    active,
+    busy,
+    scalarError?.error ?? error.message,
+  );
   const receiverPending = receiverView && busy;
-  const revision = JSON.stringify([key, states, active]);
+  const revision = JSON.stringify([key, states, active, journey.requested]);
   useEffect(() => {
     client.current = new EngineClient();
     return () => {
@@ -484,6 +493,16 @@ export default function SpatialApp({
       );
     }
   }, [shared?.id]);
+  useEffect(() => {
+    if (adoption?.notebook !== "3d") return;
+    openStudy(
+      -++presetAnimations.current,
+      adoption.study,
+      adoption.custom ? "" : String(adoption.preset),
+    );
+    const view = spatialPresets[adoption.preset].view;
+    setHome(view ? { ...view } : null);
+  }, [adoption?.id]);
   const snapshot = (): SpatialStudy => ({
     config,
     layers,
@@ -2752,10 +2771,11 @@ export default function SpatialApp({
       className={`app spatial-app${theme.dark ? " dark" : ""}`}
       data-theme-preference={theme.preference}
     >
-      <AppHeader theme={theme}>
+      <AppHeader theme={theme} inert={journey.active}>
         <ShareLink notebook="3d" study={snapshot} disabled={!ready} />
         <AnimationButton section="spatial-animation-section" />
         <ExportImageMenu
+          revision={journey.requested}
           disabled={!ready || running || imageBusy}
           kind="spatial"
           menuId="spatial-export-image-menu"
@@ -2773,7 +2793,7 @@ export default function SpatialApp({
           onSave={save}
         />
       </AppHeader>
-      <NotebookMain>
+      <NotebookMain inert={journey.active}>
         <aside
           className="spatial-controls"
           aria-label="Spatial study parameters"
@@ -2784,12 +2804,19 @@ export default function SpatialApp({
           <div className="section-label">01 / THE STUDY</div>
           <NotebookMode />
           <ExampleGallery
+            onJourney={journey.onJourney}
+            onBrowse={journey.onBrowse}
             examples={spatialExamples}
             current={preset === "" ? null : +preset}
             onChoose={(i) => choose(String(i))}
             thumbnail={spatialThumbnail}
             dark={theme.dark}
           />
+          {journey.notice && (
+            <p className="note" role="status">
+              {journey.notice}
+            </p>
+          )}
           <ScalarStatus.Provider value={scalarStatus}>
             <FieldErrorContext.Provider value={fieldError}>
               <div key={generation.current}>

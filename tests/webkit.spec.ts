@@ -937,6 +937,65 @@ test("easing factor accepts edits and preserves them across checkbox click and b
   }
 });
 
+// Safari's own masking and snapping of the gallery's journey row: only an
+// end with more to scroll to fades, a scroll settles at a journey's start
+// clear of the fade, and focus brings a journey fully past the fades.
+for (const [width, height] of [
+  [390, 844],
+  [844, 390],
+])
+  test(`journey row fades, snaps and reveals focus in WebKit at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Browse notebook examples" })
+      .click();
+    const track = page
+      .getByRole("dialog", { name: "Notebook examples" })
+      .locator(".gallery-journey-list");
+    const state = () =>
+      track.evaluate((t) => ({
+        start: t.hasAttribute("data-more-start"),
+        end: t.hasAttribute("data-more-end"),
+        mask:
+          getComputedStyle(t).maskImage ||
+          getComputedStyle(t).getPropertyValue("-webkit-mask-image"),
+      }));
+    expect(await state()).toMatchObject({ start: false, end: true });
+    expect((await state()).mask).toContain("gradient");
+    await track.evaluate((t) => {
+      const b = t.children[1] as HTMLElement;
+      t.scrollTo({ left: b.offsetLeft - t.offsetLeft + b.offsetWidth / 3 });
+    });
+    await expect
+      .poll(() =>
+        track.evaluate((t) => {
+          const left = t.getBoundingClientRect().left;
+          const max = t.scrollWidth - t.clientWidth;
+          return (
+            Math.abs(t.scrollLeft - max) < 1 ||
+            [...t.children].some(
+              (b) => Math.abs(b.getBoundingClientRect().left - left - 32) < 1.5,
+            )
+          );
+        }),
+      )
+      .toBe(true);
+    await expect.poll(async () => (await state()).start).toBe(true);
+    await track.evaluate((t) => t.scrollTo({ left: 0 }));
+    await expect.poll(async () => (await state()).start).toBe(false);
+    const last = track.getByRole("button").last();
+    await last.focus();
+    await expect(last).toBeInViewport({ ratio: 1 });
+    await expect.poll(async () => (await state()).end).toBe(false);
+    const box = (await track.boundingBox())!;
+    const ring = (await last.boundingBox())!;
+    expect(ring.x - 5).toBeGreaterThanOrEqual(box.x + 32);
+    expect(ring.x + ring.width + 5).toBeLessThanOrEqual(box.x + box.width);
+  });
+
 test("journey pointer and keyboard navigation restore focus without Safari rings", async ({
   page,
 }) => {
@@ -1074,3 +1133,82 @@ test("journey control keeps focus and its text while its drawing updates", async
   await expect(field).toBeFocused();
   await expect(field).toHaveValue("1/2");
 });
+
+for (const source of ["3d", "4d"] as const)
+  test(`journey cross-notebook controls and adoption preserve Safari focus from ${source}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/?study=${source}`);
+    const browse = page.getByRole("button", {
+      name: "Browse notebook examples",
+    });
+    await browse.click();
+    const gallery = page.getByRole("dialog", { name: "Notebook examples" });
+    await gallery
+      .getByRole("button", { name: "Order inside apparent chaos", exact: true })
+      .click();
+    const mixed = page.getByRole("dialog", {
+      name: "Order inside apparent chaos",
+      exact: true,
+    });
+    for (let n = 0; n < 2; n++)
+      await mixed
+        .getByRole("button", { name: "Next step", exact: true })
+        .click();
+    await expect(mixed.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(
+      mixed.getByRole("heading", { name: "Lorenz's two wings", exact: true }),
+    ).toBeVisible();
+    await mixed
+      .getByRole("button", { name: "Return to my study", exact: true })
+      .click();
+    await expect(browse).toBeFocused();
+    await expect(page.locator(".app:visible .example-picker")).toHaveAttribute(
+      "data-quiet",
+      "",
+    );
+    await browse.press("Enter");
+    const entry = gallery.getByRole("button", {
+      name: "A glimpse of four dimensions",
+      exact: true,
+    });
+    await entry.focus();
+    await entry.press("Enter");
+    const dialog = page.getByRole("dialog", {
+      name: "A glimpse of four dimensions",
+      exact: true,
+    });
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(dialog).not.toHaveAttribute("data-quiet", "");
+    const control = dialog.getByLabel("4D eye distance", { exact: true });
+    await control.fill("2*pi");
+    await expect(control).toBeFocused();
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await dialog
+      .getByRole("button", { name: "Open study", exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+    const target = page.locator(".app:visible");
+    await expect(
+      target.getByLabel("4D eye distance", { exact: true }),
+    ).toHaveValue("2*pi");
+    if (source === "3d") {
+      await expect(
+        target.getByRole("radio", { name: "4D studies", exact: true }),
+      ).toBeFocused();
+      await expect(target.locator(".notebook-mode")).toHaveAttribute(
+        "data-quiet",
+        "",
+      );
+    } else await expect(browse).toBeFocused();
+  });

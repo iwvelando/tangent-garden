@@ -3,6 +3,7 @@ import { useTheme } from "./useTheme";
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,7 +12,9 @@ import {
 } from "react";
 import { plotPalette } from "./palette";
 import { useQuietFocus } from "./quiet-focus";
+import { journeys, type Journey } from "./journeys";
 import "./gallery.css";
+import "./journey.css";
 
 // A notebook example as the gallery shows it. The fingerprint identifies the
 // definition a thumbnail was drawn from, so an edited preset never shows an
@@ -70,6 +73,7 @@ export function ExampleGallery({
   thumbnail: ThumbnailSource;
   dark: boolean;
   onJourney?: (
+    journey: Journey,
     restoreFocus: (via: "keyboard" | "pointer") => void,
     via: "keyboard" | "pointer",
   ) => void;
@@ -128,6 +132,27 @@ export function ExampleGallery({
     dialog.current
       ?.querySelector('[aria-current="true"]')
       ?.scrollIntoView({ block: "center" });
+  }, [open]);
+  // Marks each end of the journey row that has more to scroll to, so only
+  // that end fades.
+  const journeyRow = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const row = journeyRow.current;
+    if (!row) return;
+    const edges = () => {
+      const end = row.scrollWidth - row.clientWidth;
+      row.toggleAttribute("data-more-start", row.scrollLeft > 1);
+      row.toggleAttribute("data-more-end", row.scrollLeft < end - 1);
+    };
+    edges();
+    row.addEventListener("scroll", edges, { passive: true });
+    const resize = new ResizeObserver(edges);
+    resize.observe(row);
+    for (const button of row.children) resize.observe(button);
+    return () => {
+      row.removeEventListener("scroll", edges);
+      resize.disconnect();
+    };
   }, [open]);
   const close = () => dialog.current?.close();
   const choose = (index: number) => {
@@ -266,25 +291,54 @@ export function ExampleGallery({
               </button>
             </div>
             {onJourney && (
-              <div className="gallery-journeys">
-                <span className="example-kicker">Try a guided journey</span>
-                <button
-                  onClick={() => {
-                    close();
-                    onJourney((returnVia) => {
-                      via.current = returnVia;
-                      if (returnVia === "pointer") quiet.onPointerDown();
-                      else quiet.onKeyDownCapture();
-                      quiet.quiet();
-                      trigger.current?.focus();
-                    }, via.current);
-                  }}
-                >
-                  Light finding a cusp
-                </button>
-                <span className="note">
-                  Three studies · preview without losing your work
+              <div
+                className="gallery-journeys"
+                role="group"
+                aria-labelledby={`${currentId}-journeys`}
+                aria-describedby={`${currentId}-journeys-note`}
+              >
+                <span id={`${currentId}-journeys`} className="example-kicker">
+                  Try a guided journey
                 </span>
+                {/* Outside the scrolling row, so it is never scrolled away. */}
+                <span id={`${currentId}-journeys-note`} className="note">
+                  Previewing keeps your work
+                </span>
+                {/* One scrolling row, however many journeys there are.
+                    Browsers scroll a focused button only when it is wholly
+                    hidden, so a partly visible one is brought fully in. */}
+                <div
+                  ref={journeyRow}
+                  className="gallery-journey-list"
+                  onFocus={(e) =>
+                    e.target.scrollIntoView({
+                      block: "nearest",
+                      inline: "nearest",
+                    })
+                  }
+                >
+                  {journeys.map((journey) => (
+                    <button
+                      key={journey.title}
+                      onClick={() => {
+                        close();
+                        onJourney(
+                          journey,
+                          (returnVia) => {
+                            via.current = returnVia;
+                            if (returnVia === "pointer") quiet.onPointerDown();
+                            else quiet.onKeyDownCapture();
+                            quiet.quiet();
+                            trigger.current?.focus();
+                          },
+                          via.current,
+                        );
+                      }}
+                    >
+                      {journey.title}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <div

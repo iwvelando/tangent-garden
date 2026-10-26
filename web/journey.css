@@ -1,9 +1,67 @@
+/* The kicker over its note, beside a single scrolling row that runs on to
+   the panel's edge, so more journeys never wrap or push the note away. */
 .gallery-journeys {
+  --journey-fade: 32px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 11px;
+  padding: 0 0 9px 24px;
+}
+.gallery-journeys .example-kicker {
+  align-self: end;
+}
+.gallery-journeys .note {
+  grid-row: 2;
+  align-self: start;
+  white-space: nowrap;
+}
+/* Its padding leaves room for focus rings, which the scroll container would
+   otherwise clip. An end with more to scroll to fades, and a scroll settles
+   at a journey's start, just clear of the fade; focus also keeps a journey
+   and its ring clear of it. */
+.gallery-journey-list {
+  grid-column: 2;
+  grid-row: 1 / span 2;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 10px;
-  padding: 0 24px 14px;
+  padding: 5px 24px 5px 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--journey-fade);
+  --fade-start: 0px;
+  --fade-end: 0px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--fade-start),
+    #000 calc(100% - var(--fade-end)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--fade-start),
+    #000 calc(100% - var(--fade-end)),
+    transparent
+  );
+}
+.gallery-journey-list:not([data-more-start], [data-more-end]) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.gallery-journey-list[data-more-start] {
+  --fade-start: var(--journey-fade);
+}
+.gallery-journey-list[data-more-end] {
+  --fade-end: var(--journey-fade);
+}
+.gallery-journey-list > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+  scroll-snap-align: start;
 }
 .journey {
   width: min(1160px, calc(100% - 48px));
@@ -126,7 +184,8 @@
   border-radius: 8px;
   overflow: hidden;
 }
-.journey-art svg {
+.journey-art svg,
+.journey-art canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -206,7 +265,23 @@
   .journey-adopt {
     grid-row: 5;
   }
+  /* The label and note on one line, wrapping only on the narrowest phones,
+     and the row scrolling the full width beneath them. */
   .gallery-journeys {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 3px 12px;
+    padding: 0 16px 7px;
+  }
+  /* Side by side, rather than stacked as on a wide screen. */
+  .gallery-journeys .example-kicker,
+  .gallery-journeys .note {
+    align-self: baseline;
+  }
+  .gallery-journey-list {
+    flex-basis: calc(100% + 32px);
+    margin-inline: -16px;
     padding-inline: 16px;
   }
 }

@@ -5,22 +5,239 @@ import {
   chooseNotebook,
   exportImage,
   openExportSettings,
+  open,
   scriptedKeyboard,
 } from "./helpers";
 
 import { readFile } from "node:fs/promises";
 import { presets } from "../web/presets";
 import { wireStudy } from "./study-link-wire";
+import { decodePng } from "./png";
+import { decodeVideo, probe as videoProbe } from "./video";
+import { deflateRawSync } from "node:zlib";
 
 const gallery = (page: Page) =>
   page.getByRole("dialog", { name: "Notebook examples" });
 const heading = (page: Page) => page.locator(".app:visible .plot-heading");
 
+const journeyTitles = [
+  "Light finding a cusp",
+  "Threads becoming surfaces",
+  "Order inside apparent chaos",
+  "A glimpse of four dimensions",
+];
+
+for (const dimension of ["2d", "3d", "4d"] as const)
+  test(`all four journeys are available from the ${dimension} gallery`, async ({
+    page,
+  }) => {
+    await page.goto(dimension === "2d" ? "/" : `/?study=${dimension}`);
+    await settled(page);
+    await examplesButton(page).click();
+    for (const title of journeyTitles)
+      await expect(
+        gallery(page).getByRole("button", { name: title, exact: true }),
+      ).toBeVisible();
+    await gallery(page)
+      .getByRole("button", { name: journeyTitles[2], exact: true })
+      .click();
+    const preview = page.getByRole("dialog", {
+      name: journeyTitles[2],
+      exact: true,
+    });
+    for (const title of [
+      "Clifford attractor",
+      "De Jong attractor",
+      "Lorenz's two wings",
+    ]) {
+      await expect(preview.locator(".journey-art")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      await expect(
+        preview.getByRole("heading", { name: title, exact: true }),
+      ).toBeVisible();
+      await expect(
+        preview.getByRole("button", { name: "Pause", exact: true }),
+      ).toHaveCount(0);
+      await expect(preview.locator("svg text")).toHaveCount(0);
+      expect(
+        await page.evaluate(() => {
+          const ids = [...document.querySelectorAll("[id]")].map((e) => e.id);
+          return ids.filter((id, i) => ids.indexOf(id) !== i);
+        }),
+      ).toEqual([]);
+      if (title !== "Lorenz's two wings")
+        await preview
+          .getByRole("button", { name: "Next step", exact: true })
+          .click();
+    }
+    // Transient preview steps do not navigate away from the original notebook.
+    expect(new URL(page.url()).searchParams.get("study")).toBe(
+      dimension === "2d" ? null : dimension,
+    );
+    await page.keyboard.press("Escape");
+    await expect(preview).toBeHidden();
+    await expect(examplesButton(page)).toBeFocused();
+    await settled(page);
+  });
+
+// However many journeys there are, they share one scrolling row beside the
+// family filters, so the section never grows a misaligned wrap.
+const fade = 32;
+for (const [width, height] of [
+  [360, 844],
+  [390, 844],
+  [844, 390],
+  [1440, 844],
+])
+  test(`journeys share one scrolling row at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    await settled(page);
+    await examplesButton(page).click();
+    const row = gallery(page).getByRole("group", {
+      name: "Try a guided journey",
+    });
+    const track = row.locator(".gallery-journey-list");
+    const buttons = row.getByRole("button");
+    await expect(buttons).toHaveText(journeyTitles);
+    const boxes = await buttons.evaluateAll((all) =>
+      all.map((b) => b.getBoundingClientRect().toJSON()),
+    );
+    for (const box of boxes) expect(box.top).toBe(boxes[0].top);
+    // The reassurance stays in view, outside the scrolling row, however
+    // many journeys there are, and describes the group to assistive
+    // technology. A phone held upright sets it beside the kicker; a wider
+    // screen stacks the two, so the row runs on to the panel's edge.
+    const note = row.getByText("Previewing keeps your work", {
+      exact: true,
+    });
+    await expect(note).toBeInViewport({ ratio: 1 });
+    await expect(row).toHaveAccessibleDescription("Previewing keeps your work");
+    const kicker = (await row
+      .getByText("Try a guided journey", { exact: true })
+      .boundingBox())!;
+    const said = (await note.boundingBox())!;
+    const list = (await track.boundingBox())!;
+    if (width > 700) {
+      expect(said.y).toBeGreaterThanOrEqual(kicker.y + kicker.height);
+      expect(Math.abs(said.x - kicker.x)).toBeLessThan(1);
+      expect(said.y + said.height).toBeLessThanOrEqual(
+        boxes[0].y + boxes[0].height + 1,
+      );
+      expect(list.x).toBeGreaterThan(
+        Math.max(kicker.x + kicker.width, said.x + said.width),
+      );
+      const panel = await gallery(page)
+        .locator(".gallery-body")
+        .evaluate((b) => {
+          const r = b.getBoundingClientRect();
+          return r.left + b.clientLeft + b.clientWidth;
+        });
+      expect(Math.abs(list.x + list.width - panel)).toBeLessThan(1);
+    } else if (width >= 390) {
+      // Beside each other, the two texts share a baseline: an empty inline
+      // block's bottom edge sits on its line's baseline.
+      const baseline = (text: string) =>
+        row.getByText(text, { exact: true }).evaluate((e) => {
+          const mark = document.createElement("span");
+          mark.style.display = "inline-block";
+          e.append(mark);
+          const y = mark.getBoundingClientRect().bottom;
+          mark.remove();
+          return y;
+        });
+      expect(
+        Math.abs(
+          (await baseline("Try a guided journey")) -
+            (await baseline("Previewing keeps your work")),
+        ),
+      ).toBeLessThan(0.5);
+    }
+    // At most the kicker line, a wrapped note on the narrowest phones, and
+    // a single row of buttons.
+    const section = (await row.boundingBox())!;
+    expect(section.height).toBeLessThan(
+      boxes[0].height + (width < 390 ? 70 : 50),
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    // Only an end with more to scroll to fades, and a scroll settles at a
+    // journey's start rather than partway through one.
+    const edges = () =>
+      track.evaluate((t) => ({
+        start: t.hasAttribute("data-more-start"),
+        end: t.hasAttribute("data-more-end"),
+        mask: getComputedStyle(t).maskImage,
+        overflow: t.scrollWidth > t.clientWidth,
+      }));
+    const rest = await edges();
+    expect(rest.start).toBe(false);
+    expect(rest.end).toBe(rest.overflow);
+    expect(rest.mask === "none").toBe(!rest.overflow);
+    if (rest.overflow) {
+      await track.evaluate((t) => {
+        const b = t.children[1] as HTMLElement;
+        t.scrollTo({ left: b.offsetLeft - t.offsetLeft + b.offsetWidth / 3 });
+      });
+      await expect
+        .poll(() =>
+          track.evaluate((t, fade) => {
+            const left = t.getBoundingClientRect().left;
+            const max = t.scrollWidth - t.clientWidth;
+            return (
+              Math.abs(t.scrollLeft - max) < 1 ||
+              [...t.children].some(
+                (b) =>
+                  Math.abs(b.getBoundingClientRect().left - left - fade) < 1.5,
+              )
+            );
+          }, fade),
+        )
+        .toBe(true);
+      // Scroll events, which mark the ends, arrive on the next frame.
+      await expect.poll(async () => (await edges()).start).toBe(true);
+    }
+    // Keyboard focus brings an offscreen journey fully into the row's view,
+    // clear of the fades, with room for its focus ring.
+    const last = buttons.last();
+    await buttons.first().focus();
+    for (let i = 1; i < journeyTitles.length; i++)
+      await page.keyboard.press("Tab");
+    await expect(last).toBeFocused();
+    await expect(last).toBeInViewport({ ratio: 1 });
+    await expect(note).toBeInViewport({ ratio: 1 });
+    await expect.poll(async () => (await edges()).end).toBe(false);
+    const clear = await last.evaluate((b, fade) => {
+      const t = b.parentElement!;
+      const ring = b.getBoundingClientRect();
+      const box = t.getBoundingClientRect();
+      const start = t.hasAttribute("data-more-start") ? fade : 0;
+      const end = t.hasAttribute("data-more-end") ? fade : 0;
+      return (
+        ring.left - 5 >= box.left + start &&
+        ring.right + 5 <= box.right - end &&
+        ring.top - 5 >= box.top &&
+        ring.bottom + 5 <= box.bottom
+      );
+    }, fade);
+    expect(clear).toBe(true);
+    await last.click();
+    await expect(
+      page.getByRole("dialog", { name: journeyTitles[3], exact: true }),
+    ).toBeVisible();
+  });
+
 async function settled(page: Page) {
-  await expect(page.locator(".app:visible .plot-wrap")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expect(
+    page.locator(
+      ".app:visible .plot-wrap[aria-busy], .app:visible .spatial-stage",
+    ),
+  ).toHaveAttribute("aria-busy", "false");
 }
 
 for (const [path, count] of [
@@ -233,6 +450,352 @@ async function copiedStudy(page: Page) {
   await page.mouse.click(1, 1);
   return { url, study: wireStudy(url.split("#s=")[1]) };
 }
+
+async function excursion(page: Page, title: string, step = 0) {
+  await examplesButton(page).click();
+  await gallery(page).getByRole("button", { name: title, exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: title, exact: true });
+  for (let i = 0; i < step; i++)
+    await dialog
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+  await expect(dialog.locator(".journey-art")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  return dialog;
+}
+
+for (const [title, names, controls] of [
+  [
+    journeyTitles[1],
+    [
+      "Trefoil · (2, 3)",
+      "A knot shedding filaments",
+      "A tube around the trefoil",
+    ],
+    ["Tangent reach L", "c from", "Tube radius R"],
+  ],
+  [
+    journeyTitles[3],
+    [
+      "A cube beyond a cube",
+      "An octahedron within",
+      "Hopf circles, flowing forever",
+    ],
+    ["4D eye distance", "Slice offset h", "Central latitude α"],
+  ],
+] as const)
+  test(`journey ${title} presents every authored step, one experiment and opt-in motion`, async ({
+    page,
+  }, info) => {
+    await page.goto("/");
+    const dialog = await excursion(page, title);
+    for (const [i, name] of names.entries()) {
+      await expect(dialog.locator(".journey-art")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      await expect(
+        dialog.getByRole("heading", { name, exact: true }),
+      ).toBeVisible();
+      await expect(dialog.getByRole("textbox")).toHaveCount(1);
+      await expect(
+        dialog.getByLabel(controls[i], { exact: true }),
+      ).toBeVisible();
+      await expect(
+        dialog.getByRole("button", { name: "Play animation", exact: true }),
+      ).toBeEnabled();
+      const duplicateIds = await page.evaluate(() => {
+        const ids = [...document.querySelectorAll("[id]")].map((e) => e.id);
+        return ids.filter((id, n) => ids.indexOf(id) !== n);
+      });
+      expect(duplicateIds).toEqual([]);
+      if (i < 2)
+        await dialog
+          .getByRole("button", { name: "Next step", exact: true })
+          .click();
+    }
+    await dialog.screenshot({ path: info.outputPath("still.png") });
+    await dialog
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect(
+      dialog.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
+    const progress = dialog.getByLabel("Animation progress", { exact: true });
+    await expect
+      .poll(async () => Number(await progress.inputValue()))
+      .toBeGreaterThan(0.03);
+    await dialog.getByRole("button", { name: "Pause", exact: true }).click();
+    await expect(
+      dialog.getByRole("button", { name: "Resume", exact: true }),
+    ).toBeVisible();
+    await progress.fill("0.6");
+    await expect(progress).toHaveValue("0.6");
+    await dialog.screenshot({ path: info.outputPath("motion.png") });
+    await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+    await expect(progress).toHaveValue("0");
+    await dialog
+      .getByRole("button", { name: "Previous step", exact: true })
+      .click();
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(
+      dialog.getByRole("button", { name: "Pause", exact: true }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  });
+
+for (const item of [
+  {
+    notebook: "2d",
+    source: "4d",
+    journey: journeyTitles[2],
+    step: 0,
+    preset: "Clifford attractor",
+    control: "Coefficient a",
+    value: "-1.3",
+  },
+  {
+    notebook: "3d",
+    source: "2d",
+    journey: journeyTitles[1],
+    step: 1,
+    preset: "A knot shedding filaments",
+    control: "c from",
+    value: "pi/4",
+  },
+  {
+    notebook: "4d",
+    source: "2d",
+    journey: journeyTitles[3],
+    step: 2,
+    preset: "Hopf circles, flowing forever",
+    control: "Central latitude α",
+    value: "pi/4",
+  },
+] as const)
+  test(`journey adoption in ${item.notebook} equals a normal edited preset, preserves the source, and exports`, async ({
+    page,
+    context,
+  }, info) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto(item.notebook === "2d" ? "/" : `/?study=${item.notebook}`);
+    await choosePreset(page, { label: item.preset });
+    await settled(page);
+    await page.getByLabel(item.control, { exact: true }).fill(item.value);
+    await settled(page);
+    const expected = await copiedStudy(page);
+    const plainDownload = page.waitForEvent("download");
+    await exportImage(page, "PNG");
+    const plainPNG = decodePng(
+      await readFile((await (await plainDownload).path())!),
+    );
+    await chooseNotebook(page, item.source);
+    await settled(page);
+    const source = await copiedStudy(page);
+    const historyLength = await page.evaluate(() => history.length);
+    const dialog = await excursion(page, item.journey, item.step);
+    await dialog.getByLabel(item.control, { exact: true }).fill(item.value);
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await dialog
+      .getByRole("button", { name: "Open study", exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+    await settled(page);
+    expect(new URL(page.url()).searchParams.get("study")).toBe(
+      item.notebook === "2d" ? null : item.notebook,
+    );
+    expect(await page.evaluate(() => history.length)).toBe(historyLength + 1);
+    await expect(page.locator(".app:visible .example-current")).toHaveText(
+      "Custom study",
+    );
+    expect((await copiedStudy(page)).study).toEqual(expected.study);
+    const download = page.waitForEvent("download");
+    await exportImage(page, "PNG");
+    const png = decodePng(await readFile((await (await download).path())!));
+    expect(png.width).toBeGreaterThan(100);
+    expect(png.height).toBeGreaterThan(100);
+    expect(png.width).toBe(plainPNG.width);
+    expect(png.height).toBe(plainPNG.height);
+    expect(Buffer.from(png.rgba).equals(Buffer.from(plainPNG.rgba))).toBe(true);
+    await page.screenshot({ path: info.outputPath("adopted.png") });
+    // Exercise the preset's original motion through the normal target player.
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await page
+      .locator(".app:visible")
+      .getByLabel("Duration (seconds)", { exact: true })
+      .fill("0.4");
+    await open(
+      page,
+      item.notebook === "2d"
+        ? "#animation-section"
+        : item.notebook === "3d"
+          ? "#spatial-animation-section"
+          : "#shape-animation-section",
+    );
+    await open(
+      page,
+      item.notebook === "2d"
+        ? "#export-settings"
+        : item.notebook === "3d"
+          ? "#spatial-export-settings"
+          : "#shape-export-settings",
+    );
+    await page
+      .locator(".app:visible")
+      .getByLabel("Export resolution", { exact: true })
+      .fill("1");
+    await page
+      .locator(".app:visible")
+      .getByLabel("Export frame rate", { exact: true })
+      .selectOption("15");
+    await page
+      .locator(".app:visible")
+      .getByLabel("Export format", { exact: true })
+      .selectOption("mp4");
+    const motionDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: /^Export MP4 video/ }).click();
+    const motionFile = await motionDownload;
+    await motionFile.saveAs(info.outputPath("motion.mp4"));
+    const motionPath = (await motionFile.path())!;
+    const decoded = await decodeVideo(page, await readFile(motionPath));
+    expect(decoded.duration).toBeCloseTo(0.4, 3);
+    expect(decoded.width).toBe(1000);
+    expect(decoded.last.ink).toBeGreaterThan(100);
+    const demuxed = videoProbe(motionPath);
+    if (demuxed) {
+      expect(demuxed.frames).toBe(6);
+      expect(demuxed.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    }
+    const exported = await copiedStudy(page);
+    await page.goBack();
+    await settled(page);
+    expect((await copiedStudy(page)).study).toEqual(source.study);
+    await page.goForward();
+    await settled(page);
+    expect((await copiedStudy(page)).study).toEqual(exported.study);
+  });
+
+test("journey retains edited studies, raw drafts, layers, animations, probes and manual cameras in all notebooks", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await choosePreset(page, { label: "Sunlight gathering in an oval mirror" });
+  await page
+    .locator(".app:visible")
+    .getByLabel("Shape parameter a", { exact: true })
+    .fill("2*pi");
+  await page
+    .locator(".app:visible")
+    .getByLabel("Duration (seconds)", { exact: true })
+    .fill("23");
+  await page
+    .locator(".app:visible")
+    .getByLabel("Line weight", { exact: true })
+    .selectOption("bold");
+  await settled(page);
+  await page.locator("#artwork").focus();
+  await page.keyboard.press("+");
+  await page.keyboard.press("ArrowRight");
+  const planar = await copiedStudy(page);
+  await chooseNotebook(page, "3d");
+  await choosePreset(page, {
+    label: "A trefoil breathing under a moving probe",
+  });
+  await settled(page);
+  await page
+    .locator(".app:visible")
+    .getByLabel("Major radius R", { exact: true })
+    .fill("1+1/4");
+  await page
+    .locator(".app:visible")
+    .getByLabel("Duration (seconds)", { exact: true })
+    .fill("23");
+  await settled(page);
+  await page.locator("#spatial-artwork").focus();
+  await page.keyboard.press("+");
+  await page.keyboard.press("ArrowRight");
+  const spatial = await copiedStudy(page);
+  await chooseNotebook(page, "4d");
+  await choosePreset(page, { label: "An octahedron within" });
+  await page
+    .locator(".app:visible")
+    .getByLabel("Slice offset h", { exact: true })
+    .fill("pi/12");
+  await page
+    .locator(".app:visible")
+    .getByLabel("Duration (seconds)", { exact: true })
+    .fill("23");
+  await page
+    .locator(".app:visible")
+    .getByLabel("Line weight", { exact: true })
+    .selectOption("bold");
+  await settled(page);
+  await page.locator("#tesseract-artwork").focus();
+  await page.keyboard.press("+");
+  await page.keyboard.press("ArrowRight");
+  const shape = await copiedStudy(page);
+  // An invalid raw draft in a dormant target is never captured or replaced.
+  await page
+    .locator(".app:visible")
+    .getByLabel("Slice offset h", { exact: true })
+    .fill("sqrt(-1)");
+  await expect(
+    page.locator(".app:visible").getByLabel("Slice offset h", { exact: true }),
+  ).toHaveAttribute("aria-invalid", "true");
+  await chooseNotebook(page, "2d");
+  const dialog = await excursion(page, journeyTitles[2]);
+  for (let n = 0; n < 2; n++)
+    await dialog
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+  await expect(dialog.locator(".journey-art")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await page.keyboard.press("Escape");
+  await settled(page);
+  await expect(
+    page
+      .locator(".app:visible")
+      .getByLabel("Shape parameter a", { exact: true }),
+  ).toHaveValue("2*pi");
+  expect((await copiedStudy(page)).study).toEqual(planar.study);
+  await chooseNotebook(page, "3d");
+  await settled(page);
+  await expect(
+    page.locator(".app:visible").getByLabel("Major radius R", { exact: true }),
+  ).toHaveValue("1+1/4");
+  expect((await copiedStudy(page)).study).toEqual(spatial.study);
+  await chooseNotebook(page, "4d");
+  await expect(
+    page.locator(".app:visible").getByLabel("Slice offset h", { exact: true }),
+  ).toHaveValue("sqrt(-1)");
+  await expect(
+    page.locator(".app:visible").getByLabel("Slice offset h", { exact: true }),
+  ).toHaveAttribute("aria-invalid", "true");
+  await page
+    .locator(".app:visible")
+    .getByLabel("Slice offset h", { exact: true })
+    .fill("pi/12");
+  await settled(page);
+  expect((await copiedStudy(page)).study).toEqual(shape.study);
+});
 
 test("journey previews all three presets statically and restores the edited study and camera", async ({
   page,
@@ -1417,3 +1980,516 @@ test("journey on a phone keeps swipes off the study behind it and restores its s
   await expect(journey(page)).toBeHidden();
   expect(await page.evaluate(() => scrollY)).toBe(before);
 });
+
+test("journey adoption waits for a lazy target and a newer link supersedes it", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  let requested = false;
+  await page.route(/\/assets\/App-[^/]+\.js$/, async (route) => {
+    requested = true;
+    await gate;
+    await route.continue();
+  });
+  await page.goto("/");
+  await settled(page);
+  const original = await page.locator("#artwork").innerHTML();
+  const dialog = await excursion(page, journeyTitles[3]);
+  await dialog.getByRole("button", { name: "Open study", exact: true }).click();
+  await expect.poll(() => requested).toBe(true);
+  await expect(
+    page.getByText("Opening the fourth dimension…", { exact: true }),
+  ).toBeVisible();
+  const token = deflateRawSync(
+    Buffer.from(
+      JSON.stringify({
+        v: 1,
+        notebook: "4d",
+        study: { config: { distance: 7 }, motion: "xw" },
+      }),
+    ),
+  ).toString("base64url");
+  await page.evaluate((token) => {
+    location.hash = `s=${token}`;
+  }, token);
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  release();
+  await settled(page);
+  await expect(page.getByLabel("4D eye distance", { exact: true })).toHaveValue(
+    "7",
+  );
+  await expect(
+    page.locator(".app:visible").getByLabel("Animate", { exact: true }),
+  ).toHaveValue("xw");
+  await page.goBack();
+  await settled(page);
+  expect(await page.locator("#artwork").innerHTML()).toBe(original);
+});
+
+for (const notebook of ["3d", "4d"] as const)
+  test(`journey entry from ${notebook} settles pending scalars and preserves invalid drafts`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const send = Worker.prototype.postMessage;
+      const w = window as any;
+      w.releaseScalar = () => {};
+      Worker.prototype.postMessage = function (message: any, ...rest: any[]) {
+        if (message.action === "scalars")
+          w.releaseScalar = () => send.call(this, message, ...rest);
+        else send.call(this, message, ...rest);
+      };
+    });
+    await page.goto(`/?study=${notebook}`);
+    await settled(page);
+    const label = notebook === "3d" ? "Major radius R" : "4D eye distance";
+    const input = page.getByLabel(label, { exact: true });
+    await input.fill("2*pi");
+    const trigger = examplesButton(page);
+    const before = await trigger.boundingBox();
+    const mode = await page
+      .getByRole("radiogroup", { name: "Study dimension" })
+      .boundingBox();
+    await trigger.click();
+    await gallery(page)
+      .getByRole("button", { name: journeyTitles[3], exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: journeyTitles[3],
+      exact: true,
+    });
+    await expect(dialog).toBeHidden();
+    // The waiting notice appears below the gallery, never moving the
+    // notebook switch or the gallery's trigger above it.
+    await expect(
+      page.getByText("Waiting for your study’s inputs…", { exact: true }),
+    ).toBeVisible();
+    expect(await trigger.boundingBox()).toEqual(before);
+    expect(
+      await page
+        .getByRole("radiogroup", { name: "Study dimension" })
+        .boundingBox(),
+    ).toEqual(mode);
+    await page.evaluate(() => (window as any).releaseScalar());
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await page.keyboard.press("Escape");
+    await expect(input).toHaveValue("2*pi");
+    await input.fill("sqrt(-1)");
+    await examplesButton(page).click();
+    await gallery(page)
+      .getByRole("button", { name: journeyTitles[3], exact: true })
+      .click();
+    await page.evaluate(() => (window as any).releaseScalar());
+    await expect(
+      page.getByText(
+        "Correct the highlighted input before starting the journey.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(dialog).toBeHidden();
+    await expect(input).toHaveValue("sqrt(-1)");
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+  });
+
+test("journey WebGL failure is explicit and reversible while planar steps still work", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const get = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (
+      kind: any,
+      ...args: any[]
+    ) {
+      if (String(kind).startsWith("webgl")) return null;
+      return (get as any).call(this, kind, ...args);
+    } as any;
+  });
+  await page.goto("/");
+  const original = await page.locator("#artwork").innerHTML();
+  const dialog = await excursion(page, journeyTitles[2], 2);
+  await expect(dialog.getByRole("alert")).toContainText(/WebGL|3D/);
+  await expect(
+    dialog.getByRole("button", { name: "Open study", exact: true }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Previous step", exact: true })
+    .click();
+  await expect(dialog.locator(".journey-art")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(
+    dialog.getByRole("heading", { name: "De Jong attractor", exact: true }),
+  ).toBeVisible();
+  await expect(dialog.locator(".journey-art svg")).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Open study", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("Escape");
+  expect(await page.locator("#artwork").innerHTML()).toBe(original);
+});
+
+for (const colorScheme of ["light", "dark"] as const)
+  test(`all journeys stay bounded and static on a narrow screen in ${colorScheme} with an alternate palette`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+    await page.addInitScript(() =>
+      localStorage.setItem("tangent-garden.color-scheme", "cobalt"),
+    );
+    await page.goto("/");
+    for (const title of journeyTitles) {
+      const dialog = await excursion(page, title, 2);
+      expect(await dialog.evaluate((d) => d.scrollWidth - d.clientWidth)).toBe(
+        0,
+      );
+      await expect(
+        dialog.getByRole("button", { name: "Pause", exact: true }),
+      ).toHaveCount(0);
+      await expect(dialog.locator("svg text")).toHaveCount(0);
+      const play = dialog.getByRole("button", {
+        name: "Play animation",
+        exact: true,
+      });
+      await play.scrollIntoViewIfNeeded();
+      const box = (await play.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(390);
+      await dialog.screenshot({ path: info.outputPath(`${title}.png`) });
+      await page.keyboard.press("Escape");
+    }
+  });
+
+test("journey scalar range errors belong to the experiment field", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const dialog = await excursion(page, journeyTitles[1], 2);
+  const radius = dialog.getByLabel("Tube radius R", { exact: true });
+  await radius.fill("-1");
+  await expect(dialog.locator(".journey-art")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(radius).toHaveAttribute("aria-invalid", "true");
+  await expect(radius.locator("..").getByRole("alert")).toContainText(
+    /radius/i,
+  );
+  await expect(
+    dialog.getByRole("button", { name: "Open study", exact: true }),
+  ).toBeDisabled();
+  await radius.fill("1/4");
+  await expect(
+    dialog.getByRole("button", { name: "Open study", exact: true }),
+  ).toBeEnabled();
+  await expect(radius).toHaveValue("1/4");
+});
+
+for (const [title, control] of [
+  [journeyTitles[0], "Source x"],
+  [journeyTitles[1], "Tangent reach L"],
+  [journeyTitles[3], "4D eye distance"],
+])
+  test(`journey ${title} stops motion immediately on an invalid experiment`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const dialog = await excursion(page, title);
+    await dialog
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect(
+      dialog.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
+    await dialog.getByLabel(control, { exact: true }).fill("sqrt(-1)");
+    await expect(dialog.getByLabel(control, { exact: true })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    await expect(
+      dialog.getByRole("button", { name: "Pause", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      dialog.getByRole("button", { name: "Play animation", exact: true }),
+    ).toBeDisabled();
+  });
+
+test("journey 4D loop preparation is bounded and Stop rejects its delayed completion", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const dialog = await excursion(page, journeyTitles[3], 2);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.shapeJobs = [];
+    w.loopRequests = 0;
+    w.loopReplies = 0;
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message: any, ...rest: any[]) {
+      if (message.action === "tesseract") {
+        const replied = (event: MessageEvent) => {
+          if (event.data.id !== message.id) return;
+          w.loopReplies++;
+          this.removeEventListener("message", replied);
+        };
+        this.addEventListener("message", replied);
+        // Hold the endpoint, after the first frame has actually completed:
+        // releasing this reply finishes the loop check rather than merely
+        // allowing it to start another still-held calculation.
+        if (++w.loopRequests === 2) {
+          w.shapeJobs.push(() => send.call(this, message, ...rest));
+          return;
+        }
+      }
+      send.call(this, message, ...rest);
+    };
+  });
+  await dialog
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).shapeJobs.length))
+    .toBe(1);
+  await expect(
+    dialog.getByRole("button", { name: "Preparing…", exact: true }),
+  ).toBeDisabled();
+  await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.evaluate(() =>
+    (window as any).shapeJobs.splice(0).forEach((run: () => void) => run()),
+  );
+  await expect
+    .poll(() => page.evaluate(() => (window as any).loopReplies))
+    .toBe(2);
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await expect(
+    dialog.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    dialog.getByRole("button", { name: "Pause", exact: true }),
+  ).toHaveCount(0);
+});
+
+for (const notebook of ["3d", "4d"] as const)
+  test(`journey ${notebook} worker is bounded and disposed before delayed completion`, async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.addInitScript(() => {
+      const w = window as any;
+      w.workers = 0;
+      w.disposedWorkers = 0;
+      w.holdJourney = false;
+      w.journeyJobs = [];
+      const Native = Worker;
+      window.Worker = class extends Native {
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super(url, options);
+          w.workers++;
+        }
+        terminate() {
+          w.disposedWorkers++;
+          super.terminate();
+        }
+        postMessage(message: any, ...rest: any[]) {
+          const send = () =>
+            (Native.prototype.postMessage as any).call(this, message, ...rest);
+          if (
+            w.holdJourney &&
+            ["spatial", "tesseract"].includes(message.action)
+          )
+            w.journeyJobs.push(send);
+          else send();
+        }
+      };
+    });
+    await page.goto(`/?study=${notebook}`);
+    await settled(page);
+    const retained = await copiedStudy(page);
+    await chooseNotebook(page, "2d");
+    await settled(page);
+    const planar = await copiedStudy(page);
+    const before = await page.evaluate(() => ({
+      workers: (window as any).workers,
+      disposed: (window as any).disposedWorkers,
+    }));
+    await page.evaluate(() => {
+      (window as any).holdJourney = true;
+    });
+    await examplesButton(page).click();
+    const title = notebook === "3d" ? journeyTitles[1] : journeyTitles[3];
+    await gallery(page)
+      .getByRole("button", { name: title, exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: title, exact: true });
+    await expect
+      .poll(() => page.evaluate(() => (window as any).journeyJobs.length))
+      .toBe(1);
+    await dialog
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+    await dialog
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+    expect(await page.evaluate(() => (window as any).journeyJobs.length)).toBe(
+      1,
+    );
+    expect(await page.evaluate(() => (window as any).workers)).toBe(
+      before.workers + 1,
+    );
+    await page.keyboard.press("Escape");
+    await expect
+      .poll(() => page.evaluate(() => (window as any).disposedWorkers))
+      .toBe(before.disposed + 1);
+    await page.evaluate(() => {
+      (window as any).holdJourney = false;
+      (window as any).journeyJobs.splice(0).forEach((run: () => void) => run());
+    });
+    expect((await copiedStudy(page)).study).toEqual(planar.study);
+    await chooseNotebook(page, notebook);
+    await settled(page);
+    expect((await copiedStudy(page)).study).toEqual(retained.study);
+  });
+
+for (const notebook of ["3d", "4d"] as const)
+  test(`journey entry cancels retained ${notebook} motion and never resumes it`, async ({
+    page,
+  }) => {
+    await page.goto(`/?study=${notebook}`);
+    await settled(page);
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
+    const dialog = await excursion(page, journeyTitles[0]);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(
+      page.getByRole("button", { name: "Play animation", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Resume", exact: true }),
+    ).toHaveCount(0);
+  });
+
+test("journey 4D playback uses the shared grace period while an experiment computes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const dialog = await excursion(page, journeyTitles[3]);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.grace = [];
+    w.heldShapes = [];
+    const timeout = window.setTimeout;
+    window.setTimeout = ((
+      callback: () => void,
+      delay?: number,
+      ...args: any[]
+    ) => {
+      if (delay === 300) {
+        w.grace.push(callback);
+        return 900000 + w.grace.length;
+      }
+      return timeout(callback, delay, ...args);
+    }) as typeof window.setTimeout;
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message: any, ...rest: any[]) {
+      if (message.action === "tesseract")
+        w.heldShapes.push(() => send.call(this, message, ...rest));
+      else send.call(this, message, ...rest);
+    };
+  });
+  await dialog.getByLabel("4D eye distance", { exact: true }).fill("6");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).heldShapes.length))
+    .toBe(1);
+  const play = dialog.getByRole("button", {
+    name: "Play animation",
+    exact: true,
+    includeHidden: true,
+  });
+  // The player cannot be activated, but looks unchanged until the common
+  // grace timer fires. Hold that timer to make this independent of CPU load.
+  await expect(play).toBeEnabled();
+  await expect(dialog.locator(".playback")).toHaveAttribute("inert", "");
+  await page.evaluate(() =>
+    (window as any).grace.splice(0).forEach((run: () => void) => run()),
+  );
+  await expect(play).toBeDisabled();
+  await page.evaluate(() =>
+    (window as any).heldShapes.splice(0).forEach((run: () => void) => run()),
+  );
+  await expect(dialog.locator(".journey-art")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(play).toBeEnabled();
+  await expect(dialog.locator(".playback")).not.toHaveAttribute("inert", "");
+});
+
+for (const dimension of ["3d", "4d"] as const)
+  for (const fails of [false, true])
+    test(`journey entry discards a late ${dimension} PNG ${fails ? "error" : "download"}`, async ({
+      page,
+    }) => {
+      await page.addInitScript(() => {
+        const w = window as any;
+        w.pngEncodings = [];
+        w.pngDownloads = [];
+        const encode = HTMLCanvasElement.prototype.toBlob;
+        HTMLCanvasElement.prototype.toBlob = function (callback, ...options) {
+          w.pngEncodings.push(
+            (fails: boolean) =>
+              new Promise<void>((done) => {
+                if (fails) {
+                  callback(null);
+                  done();
+                  return;
+                }
+                encode.call(
+                  this,
+                  (blob) => {
+                    callback(blob);
+                    done();
+                  },
+                  ...options,
+                );
+              }),
+          );
+        };
+        const click = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () {
+          if (this.download && this.href.startsWith("blob:"))
+            w.pngDownloads.push(this.download);
+          click.call(this);
+        };
+      });
+      await page.goto(`/?study=${dimension}`);
+      await settled(page);
+      await exportImage(page, "PNG");
+      await expect
+        .poll(() => page.evaluate(() => (window as any).pngEncodings.length))
+        .toBe(1);
+      const dialog = await excursion(page, journeyTitles[0]);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await page.evaluate(async (fails) => {
+        await (window as any).pngEncodings.shift()(fails);
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+      }, fails);
+      expect(await page.evaluate(() => (window as any).pngDownloads)).toEqual(
+        [],
+      );
+      await expect(page.getByRole("alert")).toHaveCount(0);
+    });
