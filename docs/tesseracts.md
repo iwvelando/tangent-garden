@@ -42,9 +42,21 @@ A grid adds 0–12 parallel lines per direction per face, or 48g source lines be
 
 Native tests check rotation isometry, edge counts, perspective formulas and bounds, cube and octahedron sections, tangent and empty sections, Euler identities, inverse-rotated cube membership, stereographic inverse identities, poles between samples, chord convergence, limits and invalid input. The real WASM bridge checks the independent request/result contract. Browser tests cover examples, scalar expressions and superseded edits, playback and endpoints, notebook and camera preservation, image exports, independently decoded MP4/WebP timing, cancellation, paired-field layout, desktop and phone widths, and both themes.
 
+## What the notebook does not model
+
+The curved studies below (the ring solid, the thread missing from a slice, the route beside the wall, the ring weaves) answer geometric questions prompted by scenes in Liu Cixin's _Death's End_. They are not a claim about physical four-dimensional space. These ideas were considered and left out, because the available geometry does not support them:
+
+- **A bubble as a conventional lens.** A 3D refractive sphere models optical distortion, not invisibility in three dimensions. There is no 4D optical interface or observer model to extend the spatial Snell-law engine with.
+- **An unoccluded drawing as literal four-dimensional vision.** A flat display of finite curves cannot show every interior point distinctly. Sparse or dense layers explain chosen structure; they do not simulate a 4D retina.
+- **Abrupt size jumps from a hidden coordinate.** A smooth path under a regular perspective projection changes continuously. Poles, occlusion or deliberately discontinuous observations would need their own definitions.
+- **Four-dimensional volume flattening into a luminous line.** A volume-preserving linear map stays full rank while its determinant is nonzero, and a zero-width limit at fixed volume has unbounded extent. Nor does a shrinking compact circle (`R³ × S¹`) derive a decay mechanism.
+- **Signal falloff and inferred physics.** Flux spreading over `(n−1)`-spheres says nothing about coupling between dimensions; physical rates and distances are not simulation parameters.
+
+More regular polytopes would fit the notebook, but only as their own geometric study, not to lengthen the shape menu.
+
 ## Further reading
 
-The implementation is independently derived from the formulas above. For other approaches to communicating four-dimensional geometry, see [Fourmilab's tesseract viewer](https://github.com/Fourmilab/tesseract) and [Aravind, The hypercube dance](https://users.wpi.edu/~paravind/Publications/PKAHypercubeDance.pdf). No source code or artwork from these projects is included.
+The implementation is independently derived from the formulas above. For other approaches to communicating four-dimensional geometry, see [Fourmilab's tesseract viewer](https://github.com/Fourmilab/tesseract), [Aravind, The hypercube dance](https://users.wpi.edu/~paravind/Publications/PKAHypercubeDance.pdf), and [Hollasch's four-space visualization thesis](https://hollasch.github.io/ray4/Four-Space_Visualization_of_4D_Objects.html), which separates 4D projection from its 2D display. [An elementary introduction to the Hopf fibration](https://arxiv.org/abs/2212.01642) is background for the ring weaves. No source code or artwork from these projects is included.
 
 ## Exact curved sections
 
@@ -174,3 +186,29 @@ Validation names the field: weave family, rotation angles, **Latitudes**, **Curv
 On the development macOS arm64 desktop (Apple M5 Max), the largest accepted study is nine uncollapsed latitudes of tori, 13 curves per direction and 256 arc samples, unrotated with C = 12. All 234 source circles are complete. It emits 237 paths, 60,909 points and 60,909 evaluations. Three native benchmark runs measured 1.00–1.04 ms and about 5.0 MB allocated per result (1,505 allocations). A fresh WASM runtime measured about 86 ms, including JSON encoding and parsing. The result occupied 9,622,875 JSON bytes, most of it parameters and four-dimensional coordinates, and linear memory reached 88,604,672 bytes. That figure is shared with the earlier requests in the same contract run.
 
 Chromium measured 214–311 ms control-to-drawing and about 10.5 MB of additional retained main-page JS heap after GC for the same study. Regression tests assert its exact counts and generous 10-second and 32 MiB ceilings. The presets are far smaller: 40 and 72 source circles at 96 samples. Worker/runtime/encoder memory and total browser-process memory are excluded, and physical-phone performance is unmeasured. A maximum study animates at the rate this cost allows; the sampler never queues more than one pending frame.
+
+## Scale and translation
+
+Every tolerance in `engine4` is absolute plus relative to the study's own scale. What a study can move:
+
+- **Tesseract and spherical weave:** neither. They are the unit tesseract and the unit 3-sphere, centered at the origin, and the request carries no size or center for them; the shared size fields leave every mode unchanged. The weave's window radius sets the window, not the sphere.
+- **Ball and tube:** scale only, since they have no center. Radii, slice and spread scale together.
+- **Shell bypass:** scale only, since the obstacle is centered at the origin. Radii, ε, the outside point, H and both comparison levels scale together.
+- **Lift:** the sources are fixed curves, so the lift moves past them rather than scaling with them. Moving the center along the threads moves every interior cut and lifted point by the same amount. The missing radius scales with the support L at a fixed height, and lifted fourth coordinates scale with the height A. The slab half-thickness ε = 0.02 is a fixed modeling length, not a tolerance, so the lift is deliberately not scale-covariant in A.
+
+**Budget.** A power-of-two scale reproduces every returned number exactly: points, parameters, section levels and radii, hits, clearance, distances and framing. Other scales agree within 10⁻¹² of the framing radius, and parameters within 10⁻¹². A study more than 10⁻⁸ from a threshold, relative to its own scale, keeps its outcome at every supported scale; one within 10⁻¹³ is coalesced at every supported scale.
+
+| Tolerance | Value | Scale | Relative band |
+| --- | --- | --- | --- |
+| Curved tangent slice, on h | 10⁻¹² + 10⁻¹⁰ s | support s, 0.001–100 | 1.0 × 10⁻¹⁰ to 1.1 × 10⁻⁹ |
+| Bypass sphere tangency, on r² − d² | 10⁻¹² (1 + r²) | radius r, 0.05–20 | δ ≤ 5 × 10⁻¹³ (1 + r⁻²): below 2 × 10⁻¹⁰ |
+| Bypass contact at a cut, on radius and \|w\| | 10⁻¹² + 10⁻¹⁰ b | outer radius b | 1.0 × 10⁻¹⁰ of b |
+| Lift present set, on d² | 10⁻¹² r (r + √10) | missing radius r | δ ≤ 5 × 10⁻¹³ (1 + √10/r): below 4 × 10⁻¹¹ for r ≥ 0.05 |
+| Lift line event | 10⁻¹² + 10⁻¹⁰ max(1, r²) | — | none: below zero residual it only repeats the closest-point event |
+| Lift circle event, on a cosine; event coalescing, on a parameter | 10⁻¹²; 10⁻¹³ | dimensionless | — |
+| Weave window and latitude snap, on q_w and radians | 10⁻¹² | unit sphere | — |
+| Tesseract stereographic coefficients, cut spacing; section level, coincidence and planarity | 10⁻¹⁴; 10⁻¹⁰, 10⁻⁹ (10⁻¹⁸ squared), 10⁻⁹ | unit tesseract, coordinates within 2 | fixed object |
+
+δ is the relative distance from the threshold that is coalesced. The absolute floor 10⁻¹² dominates the curved and bypass bands at small radii, so their bands widen from about 10⁻¹² to 10⁻⁹ across the supported range; both stay inside the budget. The shell's b − a ≥ 0.001 is a validation limit, not a tolerance, and is also absolute, so a thin shell can become invalid when scaled down.
+
+**Checks.** `engine4/scale_test.go` covers the ball and tube tangent slices at supports 0.001–100, the radial shell touching H = b and the embedded route on the slab boundary H = ε at scales 1/16–8, and a thread tangent to the missing ball at missing radii 0.06–7.5. Making the curved, bypass or lift-membership tolerances purely absolute fails these tests, as does offsetting the missing radius by 10⁻⁹. The lift line-event tolerance is inert: replacing it with 10³ passes the whole suite.

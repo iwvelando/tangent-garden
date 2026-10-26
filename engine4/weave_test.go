@@ -20,8 +20,8 @@ func weaveCompute(t *testing.T, q Request) Result {
 	return r
 }
 
-// Independent observations: these helpers use the definitions in the
-// roadmap and elementary geometry, never the engine's circle vectors.
+// Independent observations: these helpers use the definitions in
+// docs/tesseracts.md and elementary geometry, never the engine's circle vectors.
 func norm4(q Vec4) float64 { return math.Sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]) }
 func inverseStereo(p Vec3) Vec4 {
 	s := p[0]*p[0] + p[1]*p[1] + p[2]*p[2]
