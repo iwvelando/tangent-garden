@@ -10,6 +10,10 @@
 - `make thumbnails` rewrites `web/examples/thumbnails.json` after it builds, so run `npm run build` again before a targeted run.
 - Prettier formats `web/`, `scripts/` and `tests/` only (`npm run format`). Never run it over `docs/` or `README.md`: it rewraps the Markdown.
 - A test that opens a study by changing only the fragment of the current path (`page.goto("/?study=4d#s=…")`) does not reload the page, so the previous study can still be settled on screen. Wait for the app to remove `#s=`, which it does once it has read the link, and poll reads rather than reading once, as `tests/tesseract-loop.spec.ts` does. To reproduce such a race, defer the app's `hashchange` listener in an init script.
+- React shows a `<select>`'s first option when its value is not among the options, so asserting the visible option can pass while the state is wrong. Assert the state.
+- Chromium ends a slider's drag when a child is inserted directly into its fieldset. Put content that appears or disappears beside a slider in a wrapper.
+- A sweep across presets (layout, help text) must wait for each preset to settle, or it tests nothing.
+- The smoke test's compression check fails against a local `BASE_URL`; it is meant for the deployed site.
 - TypeScript checks (`make typecheck`, and `tsc` in the build) cover `web/` only, not `tests/` or `scripts/`. A test fixture that builds a result type by hand is not checked against it, so when a result gains a field, search the tests for its other fields (`rg crossingsExhausted tests`) and add it there too.
 - Keep intermediate form values valid unless testing validation. Validation may open a section before a test clicks its toggle; wait for the intended state and open it only if needed. Editing endpoints before widening their range can avoid that race.
 - Await completion of an action before retrying it. A click abandoned by a short timeout may still land after **Pause** has become **Resume**. A pause test's animation must last long enough that natural completion cannot race the pause; test completion separately at an appropriate duration.
@@ -61,7 +65,7 @@ For parser transformations, preserve domain errors and nonfinite behavior, inclu
 
 ## Documentation and indirect behavior
 
-When behavior changes, search for the old description and limit as well as the changed identifier. Check the mathematical definition, numerical-policy summary, limitations, usage text, control help, visible notes and code comments. After integration, repeat the search for descriptions added on main. Keep durable definitions in the mathematical and architecture guides, verification evidence in the PR, and completed work out of [Remaining refinements](remaining-refinements.md), as that file directs.
+When behavior changes, search for the old description and limit as well as the changed identifier. Check the mathematical definition, numerical-policy summary, limitations, usage text, control help, visible notes and code comments. After integration, repeat the search for descriptions added on main. Keep durable definitions in the mathematical and architecture guides and verification evidence in the PR. Do not keep backlogs, handoff logs or lists of pending checks in `docs/`: open work belongs in GitHub issues, and checks for a change belong in its PR.
 
 Trace all uses of a newly enabled flag. Help and tests must cover indirect behavior such as a larger zoom limit, clamping when the option is disabled, playback and export differences. Test reverse transitions from edited values and the preset's opening state; testing only enablement can miss a visible consequence of disabling it. Use the help tiers and limits in [AGENTS.md](../AGENTS.md#help-text).
 
@@ -166,3 +170,4 @@ Safari and every iOS browser use WebKit. Playwright's WebKit uses the macOS user
 - **Radio and checkbox size.** iOS Safari gives `input[type=radio|checkbox]` a small fixed size, so `appearance: none` with `inset: 0` does not stretch the input over its label. Set `width: 100%; height: 100%` explicitly. To reproduce it in a test, add a weak author rule (`input { width: 16px; height: 16px }`) through a constructed stylesheet (`new CSSStyleSheet()` with `document.adoptedStyleSheets`), which the CSP allows.
 - **Button clicks and blur.** Safari does not focus a button when it is clicked, so a blur's `relatedTarget` is null when the reader clicks a menu's own button. Cover click, focus and blur behavior in `tests/webkit.spec.ts` (`make test-webkit`).
 - **On-device checks.** Check on a phone over HTTPS with `make preview-lan`: WebKit is several times slower on plain HTTP.
+- **Asking for them.** When a change touches controls, touch or gestures, layout at phone width, or the cost of drawing and playback, list what to check on a phone in the PR's verification items: the controls at phone width, and the affected presets in motion. Report them as pending, never as passing. They are not recorded in `docs/`.

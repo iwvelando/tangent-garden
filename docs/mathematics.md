@@ -1424,6 +1424,7 @@ Conventions here were checked against these sources rather than copied from thei
 - [Cassini ovals — MathCurve](https://mathcurve.com/courbes2d.gb/cassini/cassini.shtml)
 - [Wang, Jüttler, Zheng and Liu, Computation of rotation minimizing frames (ACM Transactions on Graphics, 2008)](https://doi.org/10.1145/1330511.1330513)
 - [Hanson and Ma, Parallel transport approach to curve framing (Indiana University technical report)](https://scholarworks.iu.edu/dspace/items/39fbe931-c2c8-43a1-9c9d-a207b92d551e)
+- [Schmidt, Analytical caustic surfaces (NASA technical report, 1987)](https://ntrs.nasa.gov/api/citations/19880001678/downloads/19880001678.pdf): ray, wavefront and differential-geometric approaches to caustics
 - [Strange Attractors: Creating Patterns in Chaos — J. C. Sprott](https://sprott.physics.wisc.edu/SA.HTM)
 - [Clifford attractors and density rendering — Paul Bourke](https://paulbourke.net/fractals/clifford/index.html)
 

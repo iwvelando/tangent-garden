@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Scale and translation budget (docs/four-dimensional-expansion-roadmap.md, "Scale and translation check").
+// Scale and translation budget (docs/tesseracts.md, "Scale and translation").
 //
 // A power-of-two scale multiplies every length exactly, so any difference from
 // the original comes only from a tolerance that did not scale with it; such
