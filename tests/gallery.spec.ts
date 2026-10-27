@@ -4928,3 +4928,209 @@ test("atlas reopening the adopted x 1.15 y -0.2 pedal has clean subtraction boun
   ])
     await expect(atlas.getByLabel(name, { exact: true })).toHaveValue(value);
 });
+
+test("atlas admission and inspection ignore refinement where the definition cannot refine", async ({
+  page,
+}) => {
+  const { atlasBudget } = await import("../web/atlas");
+  // Go never refines a chase or a trajectory, and the refinement control is
+  // hidden for them, so a flag left on from another definition is dormant.
+  for (const title of [
+    "Four chasers at unequal speeds",
+    "Ellipse & its pedal",
+  ]) {
+    const config = structuredClone(
+      presets.find((p) => p.title === title)!.config,
+    );
+    config.kind = "pedal";
+    if (title === "Ellipse & its pedal") {
+      config.curve.format = "field";
+      config.samples = 1000;
+    }
+    for (const size of [3, 5] as const) {
+      const plain = atlasBudget({ ...config, adaptive: false }, size);
+      expect(plain.error).toBeUndefined();
+      expect(
+        atlasBudget(
+          {
+            ...config,
+            adaptive: true,
+            adaptiveView: true,
+            adaptiveFrame: true,
+          },
+          size,
+        ),
+      ).toEqual(plain);
+    }
+  }
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await observeAtlasWorkers(page);
+  await page.goto("/");
+  await choosePreset(page, { label: "Ellipse & its pedal" });
+  await settled(page);
+  const refine = page.getByRole("checkbox", {
+    name: "Refine between samples",
+  });
+  await refine.check();
+  await settled(page);
+  await page.getByLabel("Definition", { exact: true }).selectOption("pursuit");
+  await settled(page);
+  await expect(refine).toHaveCount(0);
+  const study = (await copiedStudy(page)).study;
+  expect(study.config.adaptive).toBe(true);
+  study.config.adaptiveView = true;
+  study.camera = { x: 20, y: -10, zoom: 3 };
+  await page.goto(
+    `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study })).toString("base64url")}`,
+  );
+  await settled(page);
+  const atlas = await openAtlas(page);
+  await expect(atlas.getByText(/^Original quality:/)).toContainText(
+    "refinement off",
+  );
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas
+    .getByRole("button", { name: "Inspect row 2, column 2", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  const requests = await page.evaluate(() =>
+    (window as any).atlasWorkers[1].requests.map((r: any) => r.data.view),
+  );
+  // Nine previews and one inspection, none refined to a view.
+  expect(requests).toHaveLength(10);
+  expect(requests.every((view: unknown) => view === undefined)).toBe(true);
+});
+
+test("atlas names a 5 × 5 limit when the same study fits 3 × 3", async ({
+  page,
+}) => {
+  const { atlasBudget } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Rolling on an ellipse's pedal"),
+  );
+  study.config.samples = 2000;
+  expect(atlasBudget(study.config, 3).error).toBeUndefined();
+  expect(atlasBudget(study.config, 5).error).toMatch(/5 × 5/);
+  expect(atlasBudget(study.config, 5).error).toMatch(/3 × 3/);
+  // A study over both limits keeps the general advice.
+  study.config.samples = 8000;
+  expect(atlasBudget(study.config, 5).error).not.toMatch(/3 × 3/);
+  study.config.samples = 2000;
+  await page.addInitScript(() =>
+    localStorage.setItem("tangent-garden.atlas-size", "5"),
+  );
+  await page.goto(
+    `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study })).toString("base64url")}`,
+  );
+  await settled(page);
+  const atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Grid size", { exact: true })).toHaveValue("5");
+  await expect(atlas.getByRole("alert")).toContainText("3 × 3");
+  await atlas.getByLabel("Grid size", { exact: true }).selectOption("3");
+  await expect(atlas.getByRole("alert")).toHaveCount(0);
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+});
+
+test("atlas previews request the documented capped quality", async () => {
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  for (const [pair, title] of [
+    ["roulette", "Hypotrochoid & its evolute"],
+    ["pole", "Ellipse & its pedal"],
+    ["clifford", "Clifford attractor"],
+  ] as const)
+    for (const size of [3, 5] as const) {
+      const study = presetStudy(presets.findIndex((p) => p.title === title));
+      Object.assign(study.config, {
+        samples: 4000,
+        lines: 144,
+        adaptive: pair !== "clifford",
+        adaptiveView: pair !== "clifford",
+        adaptiveFrame: pair !== "clifford",
+      });
+      Object.assign(study.config.curve.attractor, {
+        iterates: 400000,
+        discard: 5000,
+        cells: 512,
+      });
+      const calls: any[] = [];
+      const atlas = new ParameterAtlas(
+        {
+          compute: async (config) => {
+            calls.push(structuredClone(config));
+            return { config, result: { base: [] } } as any;
+          },
+        },
+        () => {},
+      );
+      atlas.generate(study, atlasDefaults(study.config, pair), { pair, size });
+      await expect.poll(() => calls.length).toBe(size * size);
+      expect(atlas.state.error).toBeUndefined();
+      for (const config of calls)
+        if (pair === "clifford")
+          expect({
+            lines: config.lines,
+            ...config.curve.attractor,
+          }).toMatchObject({
+            lines: size === 3 ? 128 : 64,
+            iterates: 50000,
+            discard: 1000,
+            cells: 128,
+          });
+        else
+          expect(config).toMatchObject({
+            samples: size === 3 ? 2000 : 1000,
+            lines: size === 3 ? 128 : 64,
+            adaptive: false,
+            adaptiveView: false,
+            adaptiveFrame: false,
+          });
+      atlas.cancel();
+    }
+});
+
+test("atlas entry refuses an unsupported study that settles after the request", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await settled(page);
+  // The request and a change to an unsupported definition arrive together.
+  await page.evaluate(() => {
+    const button = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === "Explore parameter atlas",
+    )!;
+    const label = [...document.querySelectorAll("label")].find((l) =>
+      l.textContent?.startsWith("Definition"),
+    )!;
+    const select = (label.querySelector("select") ??
+      document.getElementById(label.htmlFor)) as HTMLSelectElement;
+    button.click();
+    Object.getOwnPropertyDescriptor(
+      HTMLSelectElement.prototype,
+      "value",
+    )!.set!.call(select, "implicit");
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settled(page);
+  await expect(
+    page.locator(".atlas-entry [role=status]", {
+      hasText: "no curated parameter pair",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "A field of possible flowers" }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Definition", { exact: true })).toHaveValue(
+    "implicit",
+  );
+  expect(errors).toEqual([]);
+});

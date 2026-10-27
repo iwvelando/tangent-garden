@@ -1337,10 +1337,13 @@ function App({
       setAtlasNotice("");
     } else if (atlasWaiting && !busy) {
       setAtlasWaiting(null);
+      // The study may have changed since the request; admit what settled.
+      const refusal = atlasBudget(config).error;
       if (error)
         setAtlasNotice(
           "Correct the highlighted input before starting the atlas.",
         );
+      else if (refusal) setAtlasNotice(refusal);
       else {
         setAtlasNotice("");
         atlasOwner.begin({

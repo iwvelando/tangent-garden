@@ -1,7 +1,13 @@
 import { EngineError, type EngineClient } from "./engine-client";
 import type { PlanarStudy } from "./planar-link";
 import { refineBudget } from "./refinement";
-import { usesPole, type Config, type Frame, type ViewRect } from "./types";
+import {
+  refinesBetweenSamples,
+  usesPole,
+  type Config,
+  type Frame,
+  type ViewRect,
+} from "./types";
 import { parameterAt } from "./planar-probe";
 import { tiered } from "./help";
 
@@ -43,12 +49,11 @@ export type AtlasPair = {
   id: AtlasPairId;
   label: string;
   axes: readonly [Axis, Axis];
-  quality: "curve" | "density";
   supports: (config: Config) => boolean;
   ranges: (config: Config) => AtlasRanges;
 };
 
-// The catalog owns applicability, request paths, labels, defaults and quality.
+// The catalog owns applicability, request paths, labels and defaults.
 // No descriptor switches a study's definition or construction to make it fit.
 const positiveRange = (v: number, radius: number): [number, number] => {
   if (v === 0) return [0, radius];
@@ -66,7 +71,6 @@ const around = (v: number, least: number): [number, number] => {
 const catalog: readonly AtlasPair[] = [
   {
     id: "roulette",
-    quality: "curve",
     label: "Roulette radius / tracing distance",
     axes: [
       {
@@ -90,7 +94,6 @@ const catalog: readonly AtlasPair[] = [
   },
   {
     id: "pole",
-    quality: "curve",
     label: "Pedal pole x / y",
     axes: [
       { key: "x", label: "Pole x", symbol: "x", path: ["pole", "x"] },
@@ -103,7 +106,6 @@ const catalog: readonly AtlasPair[] = [
   },
   {
     id: "clifford",
-    quality: "density",
     label: "Clifford coefficients a / b",
     axes: [
       {
@@ -191,9 +193,7 @@ export function atlasDefaults(
 export function atlasPreviewConfig(config: Config, size: AtlasSize): Config {
   const preview = structuredClone(config);
   preview.lines = Math.min(config.lines, size === 3 ? 128 : 64);
-  if (
-    atlasPair(atlasPairs(config)[0]?.id ?? "roulette").quality === "density"
-  ) {
+  if (config.curve.format === "attractor") {
     const a = preview.curve.attractor;
     a.iterates = Math.min(a.iterates, 50000);
     a.discard = Math.min(a.discard, 1000);
@@ -214,9 +214,21 @@ export function atlasPreviewConfig(config: Config, size: AtlasSize): Config {
   return preview;
 }
 
+// Whether a study is refined between samples; Go ignores the flag elsewhere.
+const refines = (c: Config) =>
+  !!c.adaptive && refinesBetweenSamples(c.curve.format);
 // Reserve N capped previews and one original-quality inspection. Bounds are
 // operation/storage counts, not timings; fitted densities traverse iterates twice.
-export function atlasBudget(config: Config, size: AtlasSize = 3) {
+export function atlasBudget(
+  config: Config,
+  size: AtlasSize = 3,
+): {
+  points: number;
+  work: number;
+  iterations: number;
+  density: number;
+  error?: string;
+} {
   const preview = atlasPreviewConfig(config, size);
   const n = size * size;
   const density = config.curve.format === "attractor";
@@ -244,8 +256,9 @@ export function atlasBudget(config: Config, size: AtlasSize = 3) {
           ? c.curve.pursuit.pursuers.length
           : 1;
     const paths = 2 + (c.input === "curve" ? 0 : 1) + family + generated - 1;
+    const refined = refines(c);
     const points =
-      paths * (c.samples + (c.adaptive ? refineBudget : 0)) +
+      paths * (c.samples + (refined ? refineBudget : 0)) +
       (generated > 1 ? generated * c.lines : 0) +
       (format === "field" ? 21 * 21 : 0);
     // Seven RK stages per attempted step; fields also evaluate the initial
@@ -264,34 +277,38 @@ export function atlasBudget(config: Config, size: AtlasSize = 3) {
       points *
         sampling *
         (c.input === "curve" ? 9 : 81) *
-        (c.adaptive ? 8 : 1) *
+        (refined ? 8 : 1) *
         (integrated ? 16 : 1) *
-        (c.adaptive && c.adaptiveFrame ? 2 : 1);
+        (refined && c.adaptiveFrame ? 2 : 1);
     return { points, work, iterations: 0, density: 0 };
   };
   const full = reserve(config),
     small = reserve(preview);
-  const passes = !density && config.adaptive && config.adaptiveView ? 2 : 1;
+  const passes = !density && refines(config) && config.adaptiveView ? 2 : 1;
   const totals = {
     points: n * small.points + full.points,
     work: n * small.work + passes * full.work,
     iterations: n * small.iterations + full.iterations,
     density: n * small.density + full.density,
   };
+  const over =
+    (size !== 3 && size !== 5) ||
+    (!density &&
+      (config.samples > 8000 ||
+        n * preview.samples + passes * config.samples > 80000)) ||
+    config.lines > 256 ||
+    n * preview.lines + passes * config.lines > 2560 ||
+    totals.points > 500000 ||
+    totals.work > 80000000 ||
+    totals.iterations > 20000000 ||
+    totals.density > 2000000;
   const error = !atlasPairs(config).length
     ? "This study has no curated parameter pair. Your study is kept."
-    : (size !== 3 && size !== 5) ||
-        (!density &&
-          (config.samples > 8000 ||
-            n * preview.samples + passes * config.samples > 80000)) ||
-        config.lines > 256 ||
-        n * preview.lines + passes * config.lines > 2560 ||
-        totals.points > 500000 ||
-        totals.work > 80000000 ||
-        totals.iterations > 20000000 ||
-        totals.density > 2000000
-      ? "This study exceeds the atlas work limit. Reduce samples, lines, family members, trajectories, pursuers, or refinement in your study, then try again."
-      : undefined;
+    : !over
+      ? undefined
+      : size === 5 && !atlasBudget(config, 3).error
+        ? "This study exceeds the 5 × 5 atlas work limit. Choose 3 × 3, or reduce samples, lines, family members, trajectories, pursuers, or refinement in your study."
+        : "This study exceeds the atlas work limit. Reduce samples, lines, family members, trajectories, pursuers, or refinement in your study, then try again.";
   return { ...totals, error };
 }
 export function atlasRangeError(

@@ -33,7 +33,7 @@ import { probeSample, sampleProbe } from "./planar-probe";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { useQuietFocus } from "./quiet-focus";
 import { useTheme } from "./useTheme";
-import type { Frame } from "./types";
+import { refinesBetweenSamples, type Frame } from "./types";
 import type { JourneyVia } from "./JourneyContext";
 import "./atlas.css";
 import { atlasSharedFrame } from "./atlas-framing";
@@ -77,7 +77,11 @@ export function AtlasPreview({
   const via = useRef(request.via);
   const title = useId();
   const pairs = useMemo(() => atlasPairs(study.config), [study]);
-  const [pair, setPair] = useState<AtlasPairId>(() => pairs[0].id);
+  // Entry admits only supported studies; without a pair, the scheduler
+  // refuses and the dialog shows why rather than failing to render.
+  const [pair, setPair] = useState<AtlasPairId>(
+    () => pairs[0]?.id ?? "roulette",
+  );
   const descriptor = atlasPair(pair);
   const [size, setSize] = useState<AtlasSize>(atlasGridSize);
   const [framing, setFraming] = useState("independent");
@@ -88,7 +92,7 @@ export function AtlasPreview({
   const quality = (config: typeof study.config) =>
     config.curve.format === "attractor"
       ? `${config.curve.attractor.iterates.toLocaleString("en-US")} accumulated iterates, ${config.curve.attractor.discard.toLocaleString("en-US")} discarded, grid up to ${config.curve.attractor.cells} × ${config.curve.attractor.cells} bins, ${config.lines} orbit segments`
-      : `${config.samples.toLocaleString("en-US")} samples, ${config.lines} construction lines, refinement ${config.adaptive ? "on" : "off"}`;
+      : `${config.samples.toLocaleString("en-US")} samples, ${config.lines} construction lines, refinement ${config.adaptive && refinesBetweenSamples(config.curve.format) ? "on" : "off"}`;
   const [ranges, setRanges] = useState<AtlasRanges>(() =>
     atlasDefaults(study.config),
   );
@@ -222,6 +226,7 @@ export function AtlasPreview({
     // camera. A capped thumbnail can have different extrema or refined reach.
     focusStage.current =
       study.config.adaptive &&
+      refinesBetweenSamples(study.config.curve.format) &&
       study.config.adaptiveView &&
       study.camera.zoom > 1
         ? index
