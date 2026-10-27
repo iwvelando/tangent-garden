@@ -7,7 +7,7 @@ import { planarPathHelp } from "../web/planar-path";
 import { backAndForthHelp, onceHelp, paceHelp } from "../web/timing";
 import { repeatHelp as planarRepeatHelp } from "../web/animation";
 import { presets } from "../web/presets";
-import { atlasRangeHelp, atlasEntryHelp } from "../web/atlas";
+import { atlasRangeHelp, atlasEntryHelp, atlasControlHelp } from "../web/atlas";
 import {
   betweenHelp as planarBetweenHelp,
   betweenMotionHelp,
@@ -194,6 +194,7 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("line weight", svgWeightHelp);
   add("atlas ranges", atlasRangeHelp, true);
   add("atlas entry", atlasEntryHelp);
+  table("atlas controls", atlasControlHelp, ["size", "framing"]);
   add("once", onceHelp);
   add("back and forth", backAndForthHelp);
   table("pace", paceHelp);

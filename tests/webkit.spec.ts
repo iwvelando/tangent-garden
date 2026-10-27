@@ -1318,3 +1318,144 @@ test("atlas portrait Generate clearance survives first open and landscape rotati
   await expect(adopt).toBeEnabled();
   await expect(adopt).toBeInViewport({ ratio: 1 });
 });
+
+for (const width of [390, 1440])
+  test(`atlas curated pair, size, framing and range controls preserve focus at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+    await page.goto("/");
+    await choosePreset(page, { label: "Ellipse & its pedal" });
+    await expect(page.locator(".plot-wrap")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const entry = page.getByRole("button", {
+      name: "Explore parameter atlas",
+      exact: true,
+    });
+    await entry.click();
+    const atlas = page.getByRole("dialog", {
+      name: "A field of possible flowers",
+      exact: true,
+    });
+    await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
+    await atlas.getByLabel("Pole x from", { exact: true }).fill("-pi");
+    await atlas.getByLabel("Pole x to", { exact: true }).fill("pi");
+    await atlas.getByLabel("Pole y to", { exact: true }).fill("-2");
+    await expect(
+      atlas.getByLabel("Pole y to", { exact: true }),
+    ).toHaveAttribute("aria-invalid", "true");
+    await expect(
+      atlas.getByRole("button", { name: "Generate atlas", exact: true }),
+    ).toBeDisabled();
+    await atlas.getByLabel("Pole y to", { exact: true }).fill("phi");
+    await atlas
+      .getByRole("button", { name: "Generate atlas", exact: true })
+      .click();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      25,
+    );
+    await atlas.getByLabel("Framing", { exact: true }).selectOption("shared");
+    await expect(
+      atlas.getByText("Shared framing", { exact: true }),
+    ).toBeVisible();
+    const first = atlas.getByRole("button", {
+      name: "Inspect row 1, column 1",
+      exact: true,
+    });
+    await first.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(
+      atlas.getByRole("button", {
+        name: "Inspect row 1, column 2",
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(
+      atlas.getByRole("button", {
+        name: "Inspect row 2, column 2",
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    await expect(
+      atlas.getByRole("tab", { name: "Selected variant", exact: true }),
+    ).toBeFocused();
+    await expect(atlas).not.toHaveAttribute("data-quiet", "");
+    await atlas
+      .getByRole("button", { name: "Cancel atlas", exact: true })
+      .click();
+    await expect(entry).toBeFocused();
+    await expect(page.locator(".atlas-entry")).toHaveAttribute(
+      "data-quiet",
+      "",
+    );
+  });
+
+for (const suppressMargins of [false, true])
+  test(`atlas first range has independent portrait clearance before native UI relayout (margin suppression ${suppressMargins})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    if (suppressMargins)
+      await page.addInitScript(() => {
+        // Model the on-device first-paint loss of subgrid child margins.
+        // Desktop WebKit alone cannot reproduce the native iPhone invalidation.
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(
+          ".atlas-controls > .pair > .field { margin-bottom: 0 }",
+        );
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      });
+    await page.goto("/");
+    await choosePreset(page, { label: "Clifford attractor" });
+    await page
+      .getByRole("button", { name: "Explore parameter atlas", exact: true })
+      .click();
+    const atlas = page.getByRole("dialog", {
+      name: "A field of possible flowers",
+      exact: true,
+    });
+    const spacing = () =>
+      atlas.evaluate((root) => {
+        const options = [
+          ...root.querySelectorAll<HTMLSelectElement>(
+            ".atlas-controls > .pair select",
+          ),
+        ];
+        const first = [
+          ...root.querySelectorAll(
+            ".atlas-ranges > .pair:first-child .field-label",
+          ),
+        ];
+        return (
+          Math.min(...first.map((e) => e.getBoundingClientRect().top)) -
+          Math.max(...options.map((e) => e.getBoundingClientRect().bottom))
+        );
+      });
+    expect(
+      await atlas.evaluate((root) => {
+        const control = root
+          .querySelector(".atlas-controls > .field:first-child select")!
+          .getBoundingClientRect();
+        const labels = [
+          ...root.querySelectorAll(".atlas-controls > .pair .field-label"),
+        ].map((e) => e.getBoundingClientRect().top);
+        return Math.min(...labels) - control.bottom;
+      }),
+    ).toBe(16);
+    await expect.poll(spacing).toBeGreaterThanOrEqual(12);
+    const first = await spacing();
+    await atlas.getByLabel("Grid size", { exact: true }).focus();
+    await page.keyboard.press("Tab");
+    expect(await spacing()).toBe(first);
+    await page.setViewportSize({ width: 844, height: 390 });
+    await expect.poll(spacing).toBeGreaterThanOrEqual(12);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(spacing).toBe(first);
+  });

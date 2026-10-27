@@ -2534,7 +2534,7 @@ test("atlas opens nine roulette variants and cancel preserves the original study
 });
 
 test("atlas scheduler bounds work, supersedes stale generations and isolates snapshots", async () => {
-  const { RouletteAtlas, atlasDefaults, atlasBudget } =
+  const { ParameterAtlas, atlasDefaults, atlasBudget } =
     await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
@@ -2544,7 +2544,7 @@ test("atlas scheduler bounds work, supersedes stale generations and isolates sna
   const calls: { config: any; resolve: (frame: any) => void }[] = [];
   let active = 0,
     maximum = 0;
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     {
       compute: (config: any) => {
         active++;
@@ -2575,7 +2575,7 @@ test("atlas scheduler bounds work, supersedes stale generations and isolates sna
   expect(calls).toHaveLength(1);
   expect(atlas.state.cells).toHaveLength(9);
   expect(atlas.state.queued).toBeLessThanOrEqual(9);
-  expect(atlas.state.cells.map((c) => [c.radius, c.arm])).toEqual([
+  expect(atlas.state.cells.map((c) => c.values)).toEqual([
     [1.5, 2.25],
     [2, 2.25],
     [2.5, 2.25],
@@ -3078,10 +3078,10 @@ test("atlas entry uses tiered compatibility help and disables unsupported or exc
     page.getByLabel("Numerical samples", { exact: true }),
   ).toHaveValue("32768");
   // Admission remains defensive even when a caller bypasses the entry button.
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   let calls = 0;
-  const scheduler = new RouletteAtlas(
+  const scheduler = new ParameterAtlas(
     {
       compute: async () => {
         calls++;
@@ -3092,7 +3092,7 @@ test("atlas entry uses tiered compatibility help and disables unsupported or exc
   );
   const unsupported = presetStudy(0);
   scheduler.generate(unsupported, atlasDefaults(unsupported.config));
-  expect(scheduler.state.error).toMatch(/available for roulette/);
+  expect(scheduler.state.error).toMatch(/no curated parameter pair/i);
   expect(calls).toBe(0);
 });
 
@@ -3191,13 +3191,13 @@ test("atlas preserves edited layers, probe, animation, raw bounds and refined ma
 });
 
 test("atlas engine timeout stops unsent numerical work instead of queuing behind a timed-out computation", async () => {
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
     presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
   );
   let calls = 0;
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     {
       compute: async () => {
         calls++;
@@ -3216,7 +3216,7 @@ test("atlas engine timeout stops unsent numerical work instead of queuing behind
 });
 
 test("atlas center cell keeps the frozen values exactly when rounding moves the midpoint", async () => {
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
     presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
@@ -3230,7 +3230,7 @@ test("atlas center cell keeps the frozen values exactly when rounding moves the 
     { radius: [0.9, 1.3], arm: [0.63, 1.03] } as const,
   ]) {
     const requested: any[] = [];
-    const atlas = new RouletteAtlas(
+    const atlas = new ParameterAtlas(
       {
         compute: (config) => {
           requested.push(structuredClone(config));
@@ -3240,29 +3240,27 @@ test("atlas center cell keeps the frozen values exactly when rounding moves the 
       () => {},
     );
     atlas.generate(study, structuredClone(ranges) as any);
-    expect(atlas.state.cells[4]).toMatchObject({ radius: 1.1, arm: 0.83 });
+    expect(atlas.state.cells[4]).toMatchObject({ values: [1.1, 0.83] });
     // Only the center is snapped; the other cells keep their axis values.
     expect(atlas.state.cells[0]).toMatchObject({
-      radius: ranges.radius[0],
-      arm: ranges.arm[0],
+      values: [ranges.radius[0], ranges.arm[0]],
     });
     expect(atlas.state.cells[8]).toMatchObject({
-      radius: ranges.radius[1],
-      arm: ranges.arm[1],
+      values: [ranges.radius[1], ranges.arm[1]],
     });
     atlas.cancel();
   }
   // A range centered elsewhere keeps its own midpoint.
-  const offCenter = new RouletteAtlas(
+  const offCenter = new ParameterAtlas(
     { compute: () => new Promise(() => {}) },
     () => {},
   );
   offCenter.generate(study, { radius: [1.5, 2], arm: [1, 2] });
-  expect(offCenter.state.cells[4]).toMatchObject({ radius: 1.75, arm: 1.5 });
+  expect(offCenter.state.cells[4]).toMatchObject({ values: [1.75, 1.5] });
   offCenter.cancel();
   // The center's request is the frozen study's configuration, unchanged.
   const requested: any[] = [];
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     {
       compute: async (config) => {
         requested.push(structuredClone(config));
@@ -3277,7 +3275,7 @@ test("atlas center cell keeps the frozen values exactly when rounding moves the 
 });
 
 test("atlas treats any engine refusal as an unavailable cell, whatever its wording", async () => {
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { EngineError } = await import("../web/engine-client");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
@@ -3285,7 +3283,7 @@ test("atlas treats any engine refusal as an unavailable cell, whatever its wordi
   );
   let calls = 0;
   let disposed = 0;
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     {
       compute: async (config) => {
         // Wording a transport failure also uses must not end the atlas.
@@ -3401,14 +3399,14 @@ for (const width of [390, 1440])
   });
 
 test("atlas reports a worker failure that arrives after an edit and keeps it through later edits", async () => {
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
     presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
   );
   let reject!: (error: Error) => void;
   const seen: (string | undefined)[] = [];
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     {
       compute: () =>
         new Promise((_, fail) => {
@@ -3433,14 +3431,14 @@ test("atlas reports a worker failure that arrives after an edit and keeps it thr
 });
 
 test("atlas stale worker timeout also invalidates a replacement generation", async () => {
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
     presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
   );
   let calls = 0;
   let reject!: (error: Error) => void;
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     {
       compute: () => {
         calls++;
@@ -3467,14 +3465,14 @@ test("atlas stale worker timeout also invalidates a replacement generation", asy
 });
 
 test("atlas owns delivered geometry independently across cells and inspection", async () => {
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
     presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
   );
   const shared: any = { config: null, result: { base: [{ x: 0, y: 1 }] } };
   let calls = 0;
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     {
       compute: async (config) => {
         shared.config = config;
@@ -3499,14 +3497,14 @@ test("atlas owns delivered geometry independently across cells and inspection", 
 });
 
 test("atlas freezes the whole study before later queued cells or adoption read it", async () => {
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
     presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
   );
   const original = structuredClone(study);
   const configs: any[] = [];
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     {
       compute: async (config) => {
         configs.push(structuredClone(config));
@@ -3635,7 +3633,7 @@ test("atlas entry invalidates a pending still export and never emits its late fi
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("atlas admission accounts for hidden families, refinement and composed work without reducing quality", async () => {
+test("atlas admission reserves capped previews and original-quality hidden families, refinement and composed work", async () => {
   const { atlasBudget } = await import("../web/atlas");
   const config = structuredClone(
     presets.find((p) => p.title === "Hypotrochoid & its evolute")!.config,
@@ -3643,6 +3641,8 @@ test("atlas admission accounts for hidden families, refinement and composed work
   expect(atlasBudget(config)).toEqual({
     points: 40000,
     work: 360000,
+    iterations: 0,
+    density: 0,
     error: undefined,
   });
   expect(
@@ -3652,17 +3652,28 @@ test("atlas admission accounts for hidden families, refinement and composed work
   expect(atlasBudget({ ...config, lines: 257 }).error).toMatch(/limit/);
   expect(atlasBudget({ ...config, adaptive: true }).error).toBeUndefined();
   expect(
-    atlasBudget({ ...config, adaptive: true, input: "pedal" }).error,
+    atlasBudget({
+      ...config,
+      samples: 8000,
+      adaptive: true,
+      adaptiveFrame: true,
+      input: "pedal",
+    }).error,
   ).toMatch(/limit/);
   expect(
-    atlasBudget({ ...config, adaptive: true, kind: "rolling" }).error,
+    atlasBudget({
+      ...config,
+      adaptive: true,
+      adaptiveFrame: true,
+      kind: "rolling",
+    }).error,
   ).toMatch(/limit/);
   expect(
     atlasBudget({
       ...config,
       adaptive: true,
       kind: "offset",
-      stack: { ...config.stack, enabled: true },
+      stack: { ...config.stack, enabled: true, count: 16 },
     }).error,
   ).toMatch(/limit/);
   expect(config.samples).toBe(2000);
@@ -3670,14 +3681,14 @@ test("atlas admission accounts for hidden families, refinement and composed work
 });
 
 test("atlas refuses delivered geometry beyond its aggregate numeric storage cap", async () => {
-  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
   const { presetStudy } = await import("../web/planar-link");
   const study = presetStudy(
     presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
   );
   // A single unexpected large reply must be rejected before copying or retaining it.
   const large = { base: Array(4000001).fill(0) };
-  const atlas = new RouletteAtlas(
+  const atlas = new ParameterAtlas(
     { compute: async (config) => ({ config, result: large }) as any },
     () => {},
   );
@@ -3738,7 +3749,7 @@ test("atlas typing keeps the Generate button and feedback stable between scalar 
   expect(observed.disabled).toEqual([false, true, false]);
   expect(observed.messages).toEqual([
     "9 of 9 variants ready.",
-    "Set ranges, then generate nine variants.",
+    "Set ranges, then generate 9 variants.",
   ]);
   await expect(input).toHaveValue("0.125");
 });
@@ -3903,4 +3914,1223 @@ test("atlas keeps focus in a range when editing after inspecting a variant", asy
   await expect(
     atlas.getByRole("tab", { name: "Selected variant", exact: true }),
   ).toBeDisabled();
+});
+
+test("atlas catalog supports only active roulette, consumed poles and Clifford coefficients", async () => {
+  const { atlasPairs, atlasDefaults, atlasRangeError } =
+    await import("../web/atlas");
+  const config = structuredClone(presets[0].config);
+  expect(atlasPairs(config).map((p) => p.id)).toEqual([]);
+  config.kind = "pedal";
+  expect(atlasPairs(config).map((p) => p.id)).toEqual(["pole"]);
+  config.kind = "inversion";
+  config.input = "orthotomic";
+  expect(atlasPairs(config).map((p) => p.id)).toEqual(["pole"]);
+  config.curve.format = "roulette";
+  expect(atlasPairs(config).map((p) => p.id)).toEqual(["roulette", "pole"]);
+  config.curve.format = "implicit";
+  expect(atlasPairs(config)).toEqual([]);
+  config.curve.format = "attractor";
+  expect(atlasPairs(config).map((p) => p.id)).toEqual(["clifford"]);
+  config.curve.attractor.map = "dejong";
+  expect(atlasPairs(config)).toEqual([]);
+  config.curve.format = "parametric";
+  config.pole = { x: -3, y: 0 };
+  const pair = atlasPairs(config)[0];
+  const ranges = atlasDefaults(config, pair.id);
+  expect(ranges.x[0]).toBeLessThan(-3);
+  expect(ranges.x[1]).toBeGreaterThan(-3);
+  expect(ranges.y[0]).toBeLessThan(0);
+  expect(ranges.y[1]).toBeGreaterThan(0);
+  expect(atlasRangeError({ ...ranges, y: [1, -1] }, pair.id)?.label).toBe(
+    "Pole y to",
+  );
+});
+
+for (const pair of ["roulette", "pole", "clifford"] as const)
+  for (const size of [3, 5] as const)
+    test(`atlas catalog ${pair} ${size} samples inclusive values and isolates preview quality from adoption`, async () => {
+      const { ParameterAtlas, atlasDefaults, atlasPreviewConfig, atlasBudget } =
+        await import("../web/atlas");
+      const { presetStudy } = await import("../web/planar-link");
+      const title =
+        pair === "roulette"
+          ? "Hypotrochoid & its evolute"
+          : pair === "pole"
+            ? "Ellipse & its pedal"
+            : "Clifford attractor";
+      const study = presetStudy(presets.findIndex((p) => p.title === title));
+      study.config.curve.a = 7.25; // distinct from the map's coefficient a
+      study.config.samples = 4000;
+      study.config.lines = 144;
+      study.config.curve.attractor.c = 0.93;
+      const frozen = structuredClone(study);
+      const calls: any[] = [];
+      const atlas = new ParameterAtlas(
+        {
+          compute: async (config) => {
+            calls.push(structuredClone(config));
+            return { config, result: { base: [{ x: 1, y: 2 }] } } as any;
+          },
+        },
+        () => {},
+      );
+      const ranges = atlasDefaults(study.config, pair);
+      atlas.generate(study, ranges, { pair, size });
+      await expect
+        .poll(() => atlas.state.cells.filter((c) => c.frame).length)
+        .toBe(size * size);
+      expect(calls).toHaveLength(size * size);
+      const keys =
+        pair === "roulette"
+          ? ["radius", "arm"]
+          : pair === "pole"
+            ? ["x", "y"]
+            : ["a", "b"];
+      for (let i = 0; i < size * size; i++) {
+        const values = atlas.state.cells[i].values;
+        const expected = structuredClone(frozen.config);
+        const target =
+          pair === "roulette"
+            ? expected.curve.roulette
+            : pair === "pole"
+              ? expected.pole
+              : expected.curve.attractor;
+        target[keys[0]] = values[0];
+        target[keys[1]] = values[1];
+        expect(calls[i]).toEqual(atlasPreviewConfig(expected, size));
+      }
+      expect(atlas.state.cells[0].values).toEqual(
+        keys.map((k) => ranges[k][0]),
+      );
+      expect(atlas.state.cells.at(-1)!.values).toEqual(
+        keys.map((k) => ranges[k][1]),
+      );
+      const center = (size * size - 1) / 2;
+      const current =
+        pair === "roulette"
+          ? frozen.config.curve.roulette
+          : pair === "pole"
+            ? frozen.config.pole
+            : frozen.config.curve.attractor;
+      expect(atlas.state.cells[center].values).toEqual(
+        keys.map((k) => current[k]),
+      );
+      atlas.inspect(center);
+      await expect.poll(() => !!atlas.state.selection?.frame).toBe(true);
+      expect(calls.at(-1)).toEqual(frozen.config);
+      expect(atlas.candidate()).toEqual(frozen);
+      expect(study).toEqual(frozen);
+      const reservation = atlasBudget(study.config, size);
+      expect(reservation.error).toBeUndefined();
+      expect(reservation.points).toBeLessThanOrEqual(500000);
+      expect(reservation.iterations).toBeLessThanOrEqual(20000000);
+      expect(reservation.density).toBeLessThanOrEqual(2000000);
+      atlas.cancel();
+    });
+
+test("atlas twenty-five cell queue discards obsolete storage, coalesces inspection and enforces delivered numeric cap", async () => {
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Clifford attractor"),
+  );
+  const calls: { config: any; resolve: (f: any) => void }[] = [];
+  const atlas = new ParameterAtlas(
+    {
+      compute: (config) =>
+        new Promise<any>((resolve) => calls.push({ config, resolve })),
+    },
+    () => {},
+  );
+  const finish = async (
+    i: number,
+    result: any = { base: [{ x: i, y: i }] },
+  ) => {
+    calls[i].resolve({ config: calls[i].config, result });
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  atlas.generate(study, atlasDefaults(study.config), {
+    pair: "clifford",
+    size: 5,
+  });
+  expect(calls).toHaveLength(1);
+  expect(atlas.state.queued).toBe(24);
+  await finish(0);
+  atlas.inspect(0);
+  atlas.inspect(0);
+  expect(atlas.state.queued).toBeLessThanOrEqual(25);
+  await finish(1);
+  expect(calls).toHaveLength(3);
+  await finish(2);
+  expect(atlas.candidate()).not.toBeNull();
+  const previous = atlas.state.cells[0].frame;
+  atlas.generate(
+    study,
+    { a: [-2, -1], b: [1, 2] },
+    { pair: "clifford", size: 5 },
+  );
+  expect(atlas.state.cells.every((c) => !c.frame)).toBe(true);
+  expect(atlas.state.selection).toBeNull();
+  expect(atlas.candidate()).toBeNull();
+  const active = calls.length - 1;
+  await finish(active);
+  expect(atlas.state.cells.every((c) => !c.frame)).toBe(true);
+  expect(previous?.result.base[0]).toEqual({ x: 0, y: 0 });
+  await finish(active + 1, { counts: new Array(4000001).fill(0) });
+  expect(atlas.state.cells[0].error).toMatch(/geometry limit/);
+  expect(atlas.state.cells[0].frame).toBeUndefined();
+  atlas.cancel();
+  await finish(calls.length - 1);
+  expect(atlas.state.cells).toEqual([]);
+  expect(atlas.state.queued).toBe(0);
+});
+
+test("atlas shared framing combines robust member fits without discarding distant families", async () => {
+  const { atlasSharedFrame } = await import("../web/atlas-framing");
+  const { fitFrame, viewRect } = await import("../web/Plot");
+  const config = structuredClone(presets[0].config);
+  const path = (x: number, r: number) =>
+    Array.from({ length: 40 }, (_, i) => ({
+      x: x + r * Math.cos((i * Math.PI) / 20),
+      y: r * Math.sin((i * Math.PI) / 20),
+    }));
+  const make = (base: any[], derived: any[]) => ({
+    config,
+    result: {
+      base,
+      derived,
+      virtual: [],
+      rays: [],
+      family: [],
+      circles: [],
+      rolling: [],
+      warnings: [],
+      invalid: 0,
+    },
+  });
+  const near = make(path(0, 1), [...path(500, 0.5), { x: 1e9, y: 1e9 }]);
+  const far = make(path(-4000, 2), path(-3990, 1));
+  const frames = [near, far];
+  const shared = atlasSharedFrame(
+    frames.map((frame) => ({ values: [0, 0], frame })),
+  );
+  expect(shared).toBeDefined();
+  const window = viewRect(shared!);
+  for (const frame of frames) {
+    const w = viewRect(fitFrame(frame.result, frame.config));
+    expect(window.x0).toBeLessThanOrEqual(w.x0 + 1e-9);
+    expect(window.x1).toBeGreaterThanOrEqual(w.x1 - 1e-9);
+    expect(window.y0).toBeLessThanOrEqual(w.y0 + 1e-9);
+    expect(window.y1).toBeGreaterThanOrEqual(w.y1 - 1e-9);
+  }
+  expect(window.x1).toBeLessThan(10000); // asymptote did not swallow the grid
+  expect((window.x1 - window.x0) / (window.y1 - window.y0)).toBeCloseTo(
+    1000 / 760,
+    12,
+  );
+  expect(
+    atlasSharedFrame([{ values: [0, 0], error: "invalid" }]),
+  ).toBeUndefined();
+  const large = make(path(0, 100000), []);
+  const largeShared = atlasSharedFrame([{ values: [0, 0], frame: large }])!;
+  expect(largeShared.scale).toBeCloseTo(
+    fitFrame(large.result, config).scale,
+    10,
+  );
+});
+
+for (const [pair, title] of [
+  ["roulette", "Hypotrochoid & its evolute"],
+  ["pole", "Ellipse & its pedal"],
+  ["clifford", "Clifford attractor"],
+] as const)
+  for (const size of [3, 5] as const)
+    test(`atlas direct ${pair} ${size} grid matches ordinary WASM at disclosed preview quality`, async ({
+      page,
+    }) => {
+      await observeAtlasWorkers(page);
+      await page.goto("/");
+      await choosePreset(page, { label: title });
+      await settled(page);
+      const atlas = await openAtlas(page);
+      await atlas
+        .getByLabel("Grid size", { exact: true })
+        .selectOption(String(size));
+      if (size === 5) {
+        await expect(atlas.locator(".atlas-cell")).toHaveCount(0);
+        await atlas
+          .getByRole("button", { name: "Generate atlas", exact: true })
+          .click();
+      }
+      await expect(
+        atlas.locator('.atlas-cell[data-state="valid"]'),
+      ).toHaveCount(size * size);
+      await expect(atlas.locator(".atlas-quality")).toContainText(
+        "Preview quality",
+      );
+      if (pair === "clifford")
+        await expect(atlas.locator(".atlas-quality")).toContainText("50,000");
+      const check = await page.evaluate(
+        async ({ pair, size }) => {
+          const grid = (window as any).atlasWorkers[1];
+          const requests = grid.requests.slice(-size * size);
+          const ordinary = new Worker(grid.url);
+          let same = true,
+            nonempty = true;
+          for (const request of requests) {
+            const expected: any = await new Promise((resolve) => {
+              ordinary.onmessage = (e) => resolve(e.data);
+              ordinary.postMessage({
+                ...request.data,
+                id: 10000 + request.data.id,
+              });
+            });
+            const actual = grid.replies.find(
+              (r: any) => r.data.id === request.data.id,
+            )?.data;
+            same &&=
+              JSON.stringify(expected.result) ===
+                JSON.stringify(actual?.result) &&
+              JSON.stringify(expected.config) ===
+                JSON.stringify(actual?.config);
+            nonempty &&=
+              pair === "clifford"
+                ? actual.result.attractor.accumulated === 50000 &&
+                  actual.result.attractor.counts.some((v: number) => v > 0)
+                : actual.result.base.filter(Boolean).length >= 1000 &&
+                  actual.result.derived.filter(Boolean).length > 900;
+          }
+          ordinary.terminate();
+          return { same, nonempty, maximum: grid.maximum };
+        },
+        { pair, size },
+      );
+      expect(check).toEqual({ same: true, nonempty: true, maximum: 1 });
+      const independent = await atlas
+        .locator("#atlas-cell-0 path")
+        .evaluateAll((ps) => ps.map((p) => p.getAttribute("d")));
+      await atlas.getByLabel("Framing", { exact: true }).selectOption("shared");
+      await expect(
+        atlas.getByText("Shared framing", { exact: true }),
+      ).toBeVisible();
+      if (pair !== "clifford") {
+        await expect
+          .poll(() =>
+            atlas
+              .locator("#atlas-cell-0 path")
+              .evaluateAll((ps) => ps.map((p) => p.getAttribute("d"))),
+          )
+          .not.toEqual(independent);
+      }
+      await atlas
+        .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+        .click();
+      await expect(
+        atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+      ).toBeEnabled();
+      const inspected = await page.evaluate(
+        () => (window as any).atlasWorkers[1].replies.at(-1).data,
+      );
+      const original = await page.evaluate(
+        () => (window as any).atlasWorkers[0].replies.at(-1).data,
+      );
+      expect(inspected.config.samples).toBe(original.config.samples);
+      expect(inspected.config.lines).toBe(original.config.lines);
+      if (pair === "clifford") {
+        expect(inspected.result.attractor.accumulated).toBe(800000);
+        expect(
+          inspected.result.attractor.counts.filter((v: number) => v > 0).length,
+        ).toBeGreaterThan(0);
+      }
+    });
+
+test("atlas pair switching preserves frozen geometry and cannot apply dormant parameter fields", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  study.config.kind = "orthotomic";
+  study.config.pole = { x: -3, y: 0.2 };
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(
+    `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study })).toString("base64url")}`,
+  );
+  await settled(page);
+  const before = (await copiedStudy(page)).study;
+  const atlas = await openAtlas(page);
+  await atlas
+    .getByLabel("Parameter pair", { exact: true })
+    .selectOption("pole");
+  await expect(atlas.locator(".atlas-cell")).toHaveCount(0);
+  await atlas.getByLabel("Pole x from", { exact: true }).fill("-pi");
+  await atlas.getByLabel("Pole x to", { exact: true }).fill("pi");
+  await atlas.getByLabel("Pole y from", { exact: true }).fill("-phi");
+  await atlas.getByLabel("Pole y to", { exact: true }).fill("phi");
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas
+    .getByRole("button", { name: "Inspect row 2, column 1", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  await atlas
+    .getByRole("button", { name: "Adopt variant", exact: true })
+    .click();
+  await settled(page);
+  const expected = structuredClone(before);
+  expected.config.pole = { x: -Math.PI, y: 0 };
+  expect((await copiedStudy(page)).study).toEqual(expected);
+});
+
+test("atlas Clifford full-density adoption survives links and PNG/SVG exports without preview overrides", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await choosePreset(page, { label: "Clifford attractor" });
+  await settled(page);
+  const before = (await copiedStudy(page)).study;
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas
+    .getByRole("button", { name: "Inspect row 2, column 2", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  const fullImage = await atlas
+    .locator("#atlas-inspected image")
+    .getAttribute("href");
+  const previewImage = await atlas
+    .locator("#atlas-cell-4 image")
+    .getAttribute("href");
+  expect(fullImage).not.toBe(previewImage);
+  await atlas
+    .getByRole("button", { name: "Adopt variant", exact: true })
+    .click();
+  await settled(page);
+  const after = await copiedStudy(page);
+  expect(after.study).toEqual(before);
+  expect(await page.locator("#artwork image").getAttribute("href")).toBe(
+    fullImage,
+  );
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain(fullImage!);
+  expect(svg).not.toMatch(/<text\b/);
+  expect(
+    JSON.parse(svg.match(/<desc>(.*?)<\/desc>/s)![1]).curve.attractor.iterates,
+  ).toBe(800000);
+  const pngDownload = page.waitForEvent("download");
+  await exportImage(page, "PNG");
+  const png = decodePng(await readFile((await (await pngDownload).path())!));
+  expect(png.width).toBeGreaterThanOrEqual(1000);
+  // A real density image, rather than an empty-background fixture.
+  const colors = new Set<string>();
+  for (let i = 0; i < png.rgba.length; i += 4)
+    colors.add(`${png.rgba[i]},${png.rgba[i + 1]},${png.rgba[i + 2]}`);
+  expect(colors.size).toBeGreaterThan(100);
+  await page.goto(after.url);
+  await settled(page);
+  expect((await copiedStudy(page)).study).toEqual(before);
+  expect(await page.locator("#artwork image").getAttribute("href")).toBe(
+    fullImage,
+  );
+});
+
+for (const [family, title] of [
+  ["roulette", "Hypotrochoid & its evolute"],
+  ["pole", "Ellipse & its pedal"],
+  ["clifford", "Clifford attractor"],
+] as const)
+  for (const mode of ["light", "dark"] as const)
+    for (const width of [390, 1440])
+      test(`atlas signature ${family} ${mode} ${width}px uses five columns and current palette`, async ({
+        page,
+      }, info) => {
+        await page.setViewportSize({
+          width,
+          height: width === 390 ? 844 : 1000,
+        });
+        await page.emulateMedia({ colorScheme: mode });
+        await page.addInitScript(() =>
+          localStorage.setItem("tangent-garden.color-scheme", "forest"),
+        );
+        await page.goto("/");
+        await choosePreset(page, { label: title });
+        await settled(page);
+        const atlas = await openAtlas(page);
+        await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
+        await atlas
+          .getByRole("button", { name: "Generate atlas", exact: true })
+          .click();
+        await expect(
+          atlas.locator('.atlas-cell[data-state="valid"]'),
+        ).toHaveCount(25);
+        expect(
+          await atlas.evaluate((e) => e.scrollWidth <= e.clientWidth),
+        ).toBe(true);
+        const layout = await atlas.locator(".atlas-grid").evaluate((e) => ({
+          columns: getComputedStyle(e).gridTemplateColumns.split(" ").length,
+          width: e.getBoundingClientRect().width,
+        }));
+        expect(layout.columns).toBe(5);
+        expect(layout.width).toBeGreaterThanOrEqual(640);
+        await expect(atlas.locator("svg text")).toHaveCount(0);
+        await atlas.screenshot({
+          path: info.outputPath(`${family}-${mode}-${width}-atlas.png`),
+        });
+        const first = atlas.getByRole("button", {
+          name: "Inspect row 1, column 1",
+          exact: true,
+        });
+        await first.focus();
+        await page.keyboard.press("ArrowRight");
+        await expect(
+          atlas.getByRole("button", {
+            name: "Inspect row 1, column 2",
+            exact: true,
+          }),
+        ).toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect(
+          atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+        ).toBeEnabled();
+        await atlas.screenshot({
+          path: info.outputPath(`${family}-${mode}-${width}-inspection.png`),
+        });
+        await page.keyboard.press("Escape");
+        await expect(
+          page.getByRole("button", {
+            name: "Explore parameter atlas",
+            exact: true,
+          }),
+        ).toBeFocused();
+      });
+
+test("atlas inspection refines to the full-quality fitted camera before enabling adoption", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const source = presetStudy(
+    presets.findIndex((p) => p.title === "Ellipse & its pedal"),
+  );
+  source.config.samples = 3000;
+  source.config.adaptive = true;
+  source.config.adaptiveFrame = true;
+  source.config.adaptiveView = true;
+  source.config.curve.x = "2*cos(t)+0.15*cos(31*t)";
+  source.config.curve.y = "1.1*sin(t)+0.15*sin(31*t)";
+  source.camera = { x: 31, y: -19, zoom: 4 };
+  await observeAtlasWorkers(page);
+  await page.goto(
+    `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study: source })).toString("base64url")}`,
+  );
+  await settled(page);
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas
+    .getByRole("button", { name: "Inspect row 2, column 2", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  const inspection = await atlas
+    .locator("#atlas-inspected path")
+    .evaluateAll((ps) => ps.map((p) => p.getAttribute("d")));
+  await atlas
+    .getByRole("button", { name: "Adopt variant", exact: true })
+    .click();
+  await settled(page);
+  expect(
+    await page
+      .locator("#artwork path")
+      .evaluateAll((ps) => ps.map((p) => p.getAttribute("d"))),
+  ).toEqual(inspection);
+  const views = await page.evaluate(() => ({
+    atlas: (window as any).atlasWorkers[1].requests.at(-1).data.view,
+    ordinary: (window as any).atlasWorkers[0].requests.at(-1).data.view,
+  }));
+  expect(views.atlas).toBeDefined();
+  expect(views.atlas).toEqual(views.ordinary);
+});
+
+test("atlas pole budgets reserve every integrated trajectory, pursuer and attempted step", async () => {
+  const { atlasBudget } = await import("../web/atlas");
+  const config = structuredClone(
+    presets.find((p) => p.title === "Ellipse & its pedal")!.config,
+  );
+  config.samples = 8000;
+  config.curve.format = "field";
+  config.curve.field.seeds = Array.from({ length: 16 }, (_, x) => ({
+    x,
+    y: 0,
+  }));
+  expect(atlasBudget(config, 5).points).toBeGreaterThan(500000);
+  expect(atlasBudget(config, 5).error).toMatch(/limit/);
+  config.samples = 1000;
+  expect(atlasBudget(config, 5).work).toBeGreaterThan(80000000);
+  config.curve.field.seeds = config.curve.field.seeds.slice(0, 2);
+  // Each attempted field step checks its speed, then uses seven RK stages;
+  // both coordinates evaluate the field. Sampling between steps is extra.
+  expect(atlasBudget(config, 5).work).toBeGreaterThan(26 * 2 * 50000 * 8 * 2);
+  expect(atlasBudget(config, 5).error).toBeUndefined();
+  config.curve.format = "pursuit";
+  config.curve.pursuit.pursuers = Array.from({ length: 16 }, (_, x) => ({
+    x,
+    y: 0,
+    speed: 1,
+  }));
+  expect(atlasBudget(config, 5).work).toBeGreaterThan(80000000);
+  expect(atlasBudget(config, 5).error).toMatch(/limit/);
+});
+
+test("atlas generated defaults remove endpoint arithmetic tails without rounding the source or entered ranges", async () => {
+  const { atlasDefaults, ParameterAtlas } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const roulette = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  roulette.config.curve.roulette.radius = 1.2345678901234567;
+  roulette.config.curve.roulette.arm = 0;
+  // A copied source value has no arithmetic tail to remove.
+  expect(atlasDefaults(roulette.config, "roulette").arm).toEqual([
+    0,
+    roulette.config.curve.roulette.radius,
+  ]);
+  const pedal = presetStudy(
+    presets.findIndex((p) => p.title === "Ellipse & its pedal"),
+  );
+  expect(atlasDefaults(pedal.config, "pole")).toEqual({
+    x: [0.65, 2.65],
+    y: [-0.7, 1.3],
+  });
+  const clifford = presetStudy(
+    presets.findIndex((p) => p.title === "Clifford attractor"),
+  );
+  expect(atlasDefaults(clifford.config, "clifford")).toEqual({
+    a: [-1.75, -1.05],
+    b: [1.2, 2],
+  });
+  for (const [x, y] of [
+    [-0.19999999999999996, 0.30000000000000004],
+    [1.234567890123456, -0.2],
+    [1.15, -0.2],
+    [1e-17, -1e-17],
+    [1e-300, -1e-300],
+  ]) {
+    pedal.config.pole = { x, y };
+    const frozen = structuredClone(pedal);
+    const ranges = atlasDefaults(pedal.config, "pole");
+    const dx = Math.max(Math.abs(x) / 4, 1),
+      dy = Math.max(Math.abs(y) / 4, 1);
+    const raw = { x: [x - dx, x + dx], y: [y - dy, y + dy] };
+    for (const key of ["x", "y"])
+      for (const i of [0, 1])
+        expect(Math.abs(ranges[key][i] - raw[key][i])).toBeLessThanOrEqual(
+          Number.EPSILON *
+            Math.max(
+              Math.abs(raw[key][i]),
+              Math.abs(pedal.config.pole[key]),
+              key === "x" ? dx : dy,
+            ),
+        );
+    if (x === -0.19999999999999996)
+      expect(ranges).toEqual({ x: [-1.2, 0.8], y: [-0.7, 1.3] });
+    for (const size of [3, 5] as const) {
+      const calls: any[] = [];
+      const atlas = new ParameterAtlas(
+        {
+          compute: async (config) => {
+            calls.push(structuredClone(config));
+            return { config, result: { base: [] } } as any;
+          },
+        },
+        () => {},
+      );
+      atlas.generate(pedal, ranges, { pair: "pole", size });
+      await expect.poll(() => calls.length).toBe(size * size);
+      expect(atlas.state.cells[(size * size - 1) / 2].values).toEqual([x, y]);
+      atlas.inspect((size * size - 1) / 2);
+      await expect.poll(() => !!atlas.state.selection?.frame).toBe(true);
+      expect(calls.at(-1)).toEqual(frozen.config);
+      expect(atlas.candidate()).toEqual(frozen);
+      atlas.cancel();
+    }
+    expect(pedal).toEqual(frozen);
+  }
+  // A deliberately off-center range is never replaced by the source value.
+  const atlas = new ParameterAtlas(
+    { compute: () => new Promise(() => {}) },
+    () => {},
+  );
+  pedal.config.pole = { x: 1, y: -0.2 };
+  const entered = {
+    x: [0.6499999999999999, 2.6500000000000004],
+    y: [-1.2, 0.8],
+  } as any;
+  atlas.generate(pedal, entered, { pair: "pole", size: 5 });
+  expect(atlas.state.cells[0].values).toEqual([entered.x[0], entered.y[0]]);
+  expect(atlas.state.cells[24].values).toEqual([entered.x[1], entered.y[1]]);
+  expect(atlas.state.cells[12].values[0]).not.toBe(1);
+  atlas.cancel();
+});
+
+test("atlas grid size stays chosen across cancel, adoption, another study and reload", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Ellipse & its pedal" });
+  let atlas = await openAtlas(page);
+  await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
+  await atlas
+    .getByRole("button", { name: "Cancel atlas", exact: true })
+    .click();
+  await page.reload();
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Grid size", { exact: true })).toHaveValue("5");
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+    25,
+  );
+  await atlas
+    .getByRole("button", { name: "Inspect row 3, column 3", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  await atlas
+    .getByRole("button", { name: "Adopt variant", exact: true })
+    .click();
+  await settled(page);
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Grid size", { exact: true })).toHaveValue("5");
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+    25,
+  );
+  await atlas.getByLabel("Grid size", { exact: true }).selectOption("3");
+  await atlas
+    .getByRole("button", { name: "Cancel atlas", exact: true })
+    .click();
+  await choosePreset(page, { label: "Clifford attractor" });
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Grid size", { exact: true })).toHaveValue("3");
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas
+    .getByRole("button", { name: "Cancel atlas", exact: true })
+    .click();
+  await page.reload();
+  await choosePreset(page, { label: "Clifford attractor" });
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Grid size", { exact: true })).toHaveValue("3");
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+});
+
+test("atlas grid size survives denied browser storage in memory", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const get = Storage.prototype.getItem,
+      set = Storage.prototype.setItem;
+    Storage.prototype.getItem = function (key) {
+      if (key === "tangent-garden.atlas-size")
+        throw new DOMException("denied", "SecurityError");
+      return get.call(this, key);
+    };
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "tangent-garden.atlas-size")
+        throw new DOMException("denied", "SecurityError");
+      return set.call(this, key, value);
+    };
+  });
+  await page.goto("/");
+  await choosePreset(page, { label: "Ellipse & its pedal" });
+  let atlas = await openAtlas(page);
+  await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
+  await atlas
+    .getByRole("button", { name: "Cancel atlas", exact: true })
+    .click();
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Grid size", { exact: true })).toHaveValue("5");
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+    25,
+  );
+});
+
+test("atlas numeric range text stays clean after adoption and center inspection keeps ordinary WASM geometry", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page);
+  await page.goto("/");
+  for (const [title, fromName, fromValue, toName, toValue] of [
+    ["Ellipse & its pedal", "Pole x from", "0.65", "Pole x to", "2.65"],
+    [
+      "Clifford attractor",
+      "Coefficient a to",
+      "-1.05",
+      "Coefficient b from",
+      "1.2",
+    ],
+  ]) {
+    await choosePreset(page, { label: title });
+    await settled(page);
+    let atlas = await openAtlas(page);
+    await expect(atlas.getByLabel(fromName, { exact: true })).toHaveValue(
+      fromValue,
+    );
+    await expect(atlas.getByLabel(toName, { exact: true })).toHaveValue(
+      toValue,
+    );
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    await atlas
+      .getByRole("button", { name: "Inspect row 2, column 2", exact: true })
+      .click();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    expect(
+      await page.evaluate(() => {
+        const logs = (window as any).atlasWorkers;
+        return (
+          JSON.stringify(logs.at(-1).replies.at(-1).data.result) ===
+          JSON.stringify(logs[0].replies.at(-1).data.result)
+        );
+      }),
+    ).toBe(true);
+    await atlas
+      .getByRole("button", { name: "Adopt variant", exact: true })
+      .click();
+    await settled(page);
+    atlas = await openAtlas(page);
+    await expect(atlas.getByLabel(fromName, { exact: true })).toHaveValue(
+      fromValue,
+    );
+    await expect(atlas.getByLabel(toName, { exact: true })).toHaveValue(
+      toValue,
+    );
+    if (title === "Ellipse & its pedal") {
+      await atlas
+        .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+        .click();
+      await expect(
+        atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+      ).toBeEnabled();
+      await atlas
+        .getByRole("button", { name: "Adopt variant", exact: true })
+        .click();
+      await settled(page);
+      atlas = await openAtlas(page);
+      await expect(
+        atlas.getByLabel("Pole y from", { exact: true }),
+      ).toHaveValue("-1.7");
+      await expect(atlas.getByLabel("Pole y to", { exact: true })).toHaveValue(
+        "0.3",
+      );
+    }
+    await atlas
+      .getByRole("button", { name: "Cancel atlas", exact: true })
+      .click();
+  }
+});
+
+test("atlas cancellation-aware values match exact decimal arithmetic through two adoption generations", async () => {
+  const { atlasDefaults, atlasPair, ParameterAtlas } =
+    await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  // Exact rational expectations keep binary subtraction/interpolation errors
+  // out of the oracle. These finite decimal fixtures stay within safe integers.
+  type Q = { n: bigint; d: bigint };
+  const q = (n: bigint, d = 1n): Q => {
+    let a = n < 0n ? -n : n,
+      b = d;
+    while (b) [a, b] = [b, a % b];
+    return { n: n / a, d: d / a };
+  };
+  const decimal = (text: string): Q => {
+    const sign = text.startsWith("-") ? -1n : 1n;
+    const [whole, fraction = ""] = text.replace("-", "").split(".");
+    return q(sign * BigInt(whole + fraction), 10n ** BigInt(fraction.length));
+  };
+  const add = (a: Q, b: Q) => q(a.n * b.d + b.n * a.d, a.d * b.d);
+  const mul = (a: Q, b: Q) => q(a.n * b.n, a.d * b.d);
+  const neg = (a: Q) => q(-a.n, a.d);
+  const abs = (a: Q) => q(a.n < 0n ? -a.n : a.n, a.d);
+  const greater = (a: Q, b: Q) => a.n * b.d > b.n * a.d;
+  const number = (a: Q) => {
+    if (
+      (a.n < 0n ? -a.n : a.n) > BigInt(Number.MAX_SAFE_INTEGER) ||
+      a.d > BigInt(Number.MAX_SAFE_INTEGER)
+    )
+      throw new Error("Exact-decimal fixture exceeds safe integer conversion");
+    return Number(a.n) / Number(a.d);
+  };
+  const mismatches: unknown[] = [];
+  let studies = 0,
+    cells = 0,
+    expectedStudies = 0,
+    expectedCells = 0;
+  // Batch identical exact comparisons so stack capture does not dominate a
+  // sweep with thousands of observations. Keep bounded, actionable failures.
+  const check = (
+    actual: number[] | undefined,
+    expected: number[],
+    context: string,
+  ) => {
+    if (
+      (!actual ||
+        actual.length !== expected.length ||
+        actual.some((v, i) => !Object.is(v, expected[i]))) &&
+      mismatches.length < 10
+    )
+      mismatches.push({ context, actual, expected });
+  };
+  for (const [pair, title, starts] of [
+    ["roulette", "Hypotrochoid & its evolute", [["2", "3"]]],
+    [
+      "pole",
+      "Ellipse & its pedal",
+      [
+        ["1.65", "0.3"],
+        ["1.15", "-0.2"],
+        ["-0.85", "1.25"],
+      ],
+    ],
+    [
+      "clifford",
+      "Clifford attractor",
+      [
+        ["-1.4", "1.6"],
+        ["0.35", "-0.3"],
+      ],
+    ],
+  ] as const)
+    for (const size of [3, 5] as const)
+      for (const start of starts) {
+        const descriptor = atlasPair(pair);
+        const base = presetStudy(presets.findIndex((p) => p.title === title));
+        const visit = (source: Q[], depth: number) => {
+          const study = structuredClone(base);
+          const values = source.map(number);
+          const owner =
+            pair === "roulette"
+              ? study.config.curve.roulette
+              : pair === "pole"
+                ? study.config.pole
+                : study.config.curve.attractor;
+          descriptor.axes.forEach((a, i) => (owner[a.key] = values[i]));
+          const expected = source.map((v) => {
+            if (pair === "roulette")
+              return [mul(v, q(3n, 4n)), mul(v, q(5n, 4n))];
+            const minimum = pair === "pole" ? q(1n) : q(1n, 4n);
+            const quarter = mul(abs(v), q(1n, 4n));
+            const d = greater(quarter, minimum) ? quarter : minimum;
+            return [add(v, neg(d)), add(v, d)];
+          });
+          const ranges = atlasDefaults(study.config, pair);
+          studies++;
+          descriptor.axes.forEach((a, i) =>
+            check(
+              ranges[a.key],
+              expected[i].map(number),
+              `${pair} ${values} ${a.key} defaults`,
+            ),
+          );
+          if (depth === 0) return;
+          const atlas = new ParameterAtlas(
+            { compute: () => new Promise(() => {}) },
+            () => {},
+          );
+          atlas.generate(study, ranges, { pair, size });
+          if (atlas.state.cells.length !== size * size)
+            mismatches.push({
+              context: "grid size",
+              actual: atlas.state.cells.length,
+              expected: size * size,
+            });
+          const children: Q[][] = [];
+          for (let row = 0; row < size; row++)
+            for (let col = 0; col < size; col++) {
+              const selected = expected.map(([a, b], i) => {
+                const step = i === 0 ? col : row;
+                return add(
+                  mul(a, q(BigInt(size - 1 - step), BigInt(size - 1))),
+                  mul(b, q(BigInt(step), BigInt(size - 1))),
+                );
+              });
+              cells++;
+              check(
+                atlas.state.cells[row * size + col]?.values,
+                selected.map(number),
+                `${pair} ${size} source ${values} cell ${row},${col}`,
+              );
+              children.push(selected);
+            }
+          atlas.cancel();
+          for (const child of children) visit(child, depth - 1);
+        };
+        expectedStudies += 1 + size ** 2 + size ** 4;
+        expectedCells += size ** 2 + size ** 4;
+        visit(start.map(decimal), 2);
+      }
+  expect({ studies, cells }).toEqual({
+    studies: expectedStudies,
+    cells: expectedCells,
+  });
+  expect(studies).toBe(4452);
+  expect(mismatches).toEqual([]);
+});
+
+test("atlas reopening the adopted x 1.15 y -0.2 pedal has clean subtraction bounds", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page);
+  await page.goto("/");
+  await choosePreset(page, { label: "Ellipse & its pedal" });
+  let atlas = await openAtlas(page);
+  await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+    25,
+  );
+  await atlas
+    .getByRole("button", { name: "Inspect row 2, column 2", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  expect(
+    await page.evaluate(
+      () => (window as any).atlasWorkers.at(-1).replies.at(-1).data.config.pole,
+    ),
+  ).toEqual({ x: 1.15, y: -0.2 });
+  await atlas
+    .getByRole("button", { name: "Adopt variant", exact: true })
+    .click();
+  await settled(page);
+  atlas = await openAtlas(page);
+  for (const [name, value] of [
+    ["Pole x from", "0.15"],
+    ["Pole x to", "2.15"],
+    ["Pole y from", "-1.2"],
+    ["Pole y to", "0.8"],
+  ])
+    await expect(atlas.getByLabel(name, { exact: true })).toHaveValue(value);
+});
+
+test("atlas admission and inspection ignore refinement where the definition cannot refine", async ({
+  page,
+}) => {
+  const { atlasBudget } = await import("../web/atlas");
+  // Go never refines a chase or a trajectory, and the refinement control is
+  // hidden for them, so a flag left on from another definition is dormant.
+  for (const title of [
+    "Four chasers at unequal speeds",
+    "Ellipse & its pedal",
+  ]) {
+    const config = structuredClone(
+      presets.find((p) => p.title === title)!.config,
+    );
+    config.kind = "pedal";
+    if (title === "Ellipse & its pedal") {
+      config.curve.format = "field";
+      config.samples = 1000;
+    }
+    for (const size of [3, 5] as const) {
+      const plain = atlasBudget({ ...config, adaptive: false }, size);
+      expect(plain.error).toBeUndefined();
+      expect(
+        atlasBudget(
+          {
+            ...config,
+            adaptive: true,
+            adaptiveView: true,
+            adaptiveFrame: true,
+          },
+          size,
+        ),
+      ).toEqual(plain);
+    }
+  }
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await observeAtlasWorkers(page);
+  await page.goto("/");
+  await choosePreset(page, { label: "Ellipse & its pedal" });
+  await settled(page);
+  const refine = page.getByRole("checkbox", {
+    name: "Refine between samples",
+  });
+  await refine.check();
+  await settled(page);
+  await page.getByLabel("Definition", { exact: true }).selectOption("pursuit");
+  await settled(page);
+  await expect(refine).toHaveCount(0);
+  const study = (await copiedStudy(page)).study;
+  expect(study.config.adaptive).toBe(true);
+  study.config.adaptiveView = true;
+  study.camera = { x: 20, y: -10, zoom: 3 };
+  await page.goto(
+    `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study })).toString("base64url")}`,
+  );
+  await settled(page);
+  const atlas = await openAtlas(page);
+  await expect(atlas.getByText(/^Original quality:/)).toContainText(
+    "refinement off",
+  );
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas
+    .getByRole("button", { name: "Inspect row 2, column 2", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  const requests = await page.evaluate(() =>
+    (window as any).atlasWorkers[1].requests.map((r: any) => r.data.view),
+  );
+  // Nine previews and one inspection, none refined to a view.
+  expect(requests).toHaveLength(10);
+  expect(requests.every((view: unknown) => view === undefined)).toBe(true);
+});
+
+test("atlas names a 5 × 5 limit when the same study fits 3 × 3", async ({
+  page,
+}) => {
+  const { atlasBudget } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Rolling on an ellipse's pedal"),
+  );
+  study.config.samples = 2000;
+  expect(atlasBudget(study.config, 3).error).toBeUndefined();
+  expect(atlasBudget(study.config, 5).error).toMatch(/5 × 5/);
+  expect(atlasBudget(study.config, 5).error).toMatch(/3 × 3/);
+  // A study over both limits keeps the general advice.
+  study.config.samples = 8000;
+  expect(atlasBudget(study.config, 5).error).not.toMatch(/3 × 3/);
+  study.config.samples = 2000;
+  await page.addInitScript(() =>
+    localStorage.setItem("tangent-garden.atlas-size", "5"),
+  );
+  await page.goto(
+    `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study })).toString("base64url")}`,
+  );
+  await settled(page);
+  const atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Grid size", { exact: true })).toHaveValue("5");
+  await expect(atlas.getByRole("alert")).toContainText("3 × 3");
+  await atlas.getByLabel("Grid size", { exact: true }).selectOption("3");
+  await expect(atlas.getByRole("alert")).toHaveCount(0);
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+});
+
+test("atlas previews request the documented capped quality", async () => {
+  const { ParameterAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  for (const [pair, title] of [
+    ["roulette", "Hypotrochoid & its evolute"],
+    ["pole", "Ellipse & its pedal"],
+    ["clifford", "Clifford attractor"],
+  ] as const)
+    for (const size of [3, 5] as const) {
+      const study = presetStudy(presets.findIndex((p) => p.title === title));
+      Object.assign(study.config, {
+        samples: 4000,
+        lines: 144,
+        adaptive: pair !== "clifford",
+        adaptiveView: pair !== "clifford",
+        adaptiveFrame: pair !== "clifford",
+      });
+      Object.assign(study.config.curve.attractor, {
+        iterates: 400000,
+        discard: 5000,
+        cells: 512,
+      });
+      const calls: any[] = [];
+      const atlas = new ParameterAtlas(
+        {
+          compute: async (config) => {
+            calls.push(structuredClone(config));
+            return { config, result: { base: [] } } as any;
+          },
+        },
+        () => {},
+      );
+      atlas.generate(study, atlasDefaults(study.config, pair), { pair, size });
+      await expect.poll(() => calls.length).toBe(size * size);
+      expect(atlas.state.error).toBeUndefined();
+      for (const config of calls)
+        if (pair === "clifford")
+          expect({
+            lines: config.lines,
+            ...config.curve.attractor,
+          }).toMatchObject({
+            lines: size === 3 ? 128 : 64,
+            iterates: 50000,
+            discard: 1000,
+            cells: 128,
+          });
+        else
+          expect(config).toMatchObject({
+            samples: size === 3 ? 2000 : 1000,
+            lines: size === 3 ? 128 : 64,
+            adaptive: false,
+            adaptiveView: false,
+            adaptiveFrame: false,
+          });
+      atlas.cancel();
+    }
+});
+
+test("atlas entry refuses an unsupported study that settles after the request", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await settled(page);
+  // The request and a change to an unsupported definition arrive together.
+  await page.evaluate(() => {
+    const button = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === "Explore parameter atlas",
+    )!;
+    const label = [...document.querySelectorAll("label")].find((l) =>
+      l.textContent?.startsWith("Definition"),
+    )!;
+    const select = (label.querySelector("select") ??
+      document.getElementById(label.htmlFor)) as HTMLSelectElement;
+    button.click();
+    Object.getOwnPropertyDescriptor(
+      HTMLSelectElement.prototype,
+      "value",
+    )!.set!.call(select, "implicit");
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settled(page);
+  await expect(
+    page.locator(".atlas-entry [role=status]", {
+      hasText: "no curated parameter pair",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "A field of possible flowers" }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Definition", { exact: true })).toHaveValue(
+    "implicit",
+  );
+  expect(errors).toEqual([]);
 });
