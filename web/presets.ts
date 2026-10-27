@@ -1425,4 +1425,99 @@ export const presets: {
       probeMotion: "stays",
     },
   },
+  {
+    title: "Two modes trading places",
+    note: "The (1, 2) and (2, 1) sine modes bend one nodal strand as their strengths trade places",
+    config: {
+      ...base,
+      // A sparse interior view at a = pi/6; the window trims the square's
+      // zero boundary, which sign-change extraction need not draw whole.
+      curve: {
+        ...base.curve,
+        format: "implicit",
+        a: Math.PI / 6,
+        implicit: {
+          f: "cos(a)*sin(1*pi*x)*sin(2*pi*y)+sin(a)*sin(2*pi*x)*sin(1*pi*y)",
+          level: 0,
+          family: { enabled: false, from: -0.24, to: 0.24, count: 6 },
+          window: { xMin: 0.02, xMax: 0.98, yMin: 0.02, yMax: 0.98 },
+          cells: 160,
+        },
+      },
+      lines: 12,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 16,
+      tracks: [{ target: "a", from: "pi/6", to: "13*pi/6" }],
+      repeat: "loop",
+      pace: "steady",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "A lattice changing its mind",
+    note: "The (2, 3) sine grid reconnects as its exchanged mode gains strength; play to follow a full period",
+    config: {
+      ...base,
+      // The pure (2,3) mode opens with x = 1/2 and y = 1/3, 2/3;
+      // mixed modes reconnect these lines inside the same fixed window.
+      curve: {
+        ...base.curve,
+        format: "implicit",
+        a: 0,
+        implicit: {
+          f: "cos(a)*sin(2*pi*x)*sin(3*pi*y)+sin(a)*sin(3*pi*x)*sin(2*pi*y)",
+          level: 0,
+          family: { enabled: false, from: -0.24, to: 0.24, count: 6 },
+          window: { xMin: 0.02, xMax: 0.98, yMin: 0.02, yMax: 0.98 },
+          cells: 159,
+        },
+      },
+      lines: 20,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 16,
+      tracks: [{ target: "a", from: "0", to: "2*pi" }],
+      repeat: "loop",
+      pace: "steady",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "An engraving of standing waves",
+    note: "The (3, 5) and (5, 3) sine modes weave a nodal pattern among six nearby levels",
+    config: {
+      ...base,
+      // A mixed mode at pi/8, with six nonzero nearby levels around the
+      // nodal curve; these extra contours are level sets, not nodal lines.
+      curve: {
+        ...base.curve,
+        format: "implicit",
+        a: Math.PI / 8,
+        implicit: {
+          f: "cos(a)*sin(3*pi*x)*sin(5*pi*y)+sin(a)*sin(5*pi*x)*sin(3*pi*y)",
+          level: 0,
+          family: { enabled: true, from: -0.24, to: 0.24, count: 6 },
+          window: { xMin: 0.02, xMax: 0.98, yMin: 0.02, yMax: 0.98 },
+          cells: 128,
+          fine: false,
+          stableNormals: true,
+        },
+      },
+      lines: 24,
+    },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 16,
+      tracks: [{ target: "a", from: "pi/8", to: "17*pi/8" }],
+      repeat: "loop",
+      pace: "steady",
+      probeMotion: "stays",
+    },
+  },
 ];

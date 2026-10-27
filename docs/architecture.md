@@ -149,7 +149,9 @@ Implicit curves (`engine/contour.go`) are defined by `curve.format: "implicit"` 
 - `level`: the level c;
 - `family`: `enabled`, `from`, `to`, and `count`, for evenly spaced extra levels;
 - `window`: `xMin`, `xMax`, `yMin`, `yMax`;
-- `cells`: the grid's cells along the window's longer side.
+- `cells`: the grid's cells along the window's longer side;
+- `fine` (optional): false uses a chord-refinement tolerance of 0.03 of a cell; true or absent retains 0.001;
+- `stableNormals` (optional): anchors each closed contour's normal traversal to its lower centroid-centerline crossing instead of its first grid edge; false or absent retains the original placement.
 
 A level set has no parameter, so `Compute` returns before any construction: `base`, `derived`, and `virtual` are empty, the request's `kind` is ignored, and the domain bounds are not checked. `Result.contours` carries:
 

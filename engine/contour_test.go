@@ -645,3 +645,354 @@ func TestTraceLevel(t *testing.T) {
 		t.Fatalf("ok %v, %d contours, budget %+v", ok, len(set.Contours), b)
 	}
 }
+
+// Read the authored expressions from the same fixture as the other preset
+// tests: an independently correct formula alone would not test the studies.
+func nodalPresets(t *testing.T) []preset {
+	t.Helper()
+	var out []preset
+	for _, title := range []string{"Two modes trading places", "A lattice changing its mind", "An engraving of standing waves"} {
+		found := false
+		for _, p := range loadPresets(t) {
+			if p.Title == title {
+				out = append(out, p)
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing nodal study %q", title)
+		}
+	}
+	return out
+}
+
+func nodalField(m, n int, a float64, p Vec) (float64, Vec) {
+	u, v := float64(m)*math.Pi, float64(n)*math.Pi
+	c, s := math.Cos(a), math.Sin(a)
+	return c*math.Sin(u*p.X)*math.Sin(v*p.Y) + s*math.Sin(v*p.X)*math.Sin(u*p.Y), Vec{
+		X: c*u*math.Cos(u*p.X)*math.Sin(v*p.Y) + s*v*math.Cos(v*p.X)*math.Sin(u*p.Y),
+		Y: c*v*math.Sin(u*p.X)*math.Cos(v*p.Y) + s*u*math.Sin(v*p.X)*math.Cos(u*p.Y),
+	}
+}
+
+func TestNodalPresetsGridsAndBoundary(t *testing.T) {
+	for i, p := range nodalPresets(t) {
+		m, n := [3]int{1, 2, 3}[i], [3]int{2, 3, 5}[i]
+		t.Run(p.Title, func(t *testing.T) {
+			q := p.Config
+			q.Curve.Implicit.Family.Enabled = false
+			// Pure modes have vertical x=k/m and horizontal y=l/n
+			// interior lines; at pi/2 the two grids exchange roles.
+			for _, a := range []float64{0, math.Pi / 2} {
+				q.Curve.A = a
+				xf, yf := m, n
+				if a != 0 {
+					xf, yf = n, m
+				}
+				res := contours(t, q)
+				if len(res.Curve.Contours) == 0 {
+					t.Fatal("empty nodal grid")
+				}
+				for _, c := range res.Curve.Contours {
+					for _, v := range c.Points {
+						d := math.Min(math.Abs(v.X*float64(xf)-math.Round(v.X*float64(xf))), math.Abs(v.Y*float64(yf)-math.Round(v.Y*float64(yf))))
+						if d > 2e-10 {
+							t.Fatalf("a=%g: point %v is off the interior grid by %g", a, v, d)
+						}
+					}
+				}
+				// Require output along every expected branch, away from the
+				// other grid's crossings. No empty set can satisfy this.
+				for axis, frequency := range []int{xf, yf} {
+					for k := 1; k < frequency; k++ {
+						target := Vec{float64(k) / float64(frequency), .231}
+						if axis == 1 {
+							target.X, target.Y = target.Y, target.X
+						}
+						if d := nodalDistance(res.Curve, target); d > .002 {
+							t.Fatalf("a=%g: missing branch at %v, distance %g", a, target, d)
+						}
+					}
+				}
+			}
+			// The boundary condition is analytical, independent of whether
+			// sign-change extraction emits any part of the square's edges.
+			for _, a := range []float64{0, .31, math.Pi / 4, math.Pi / 2, 2 * math.Pi} {
+				f, _, err := expr.ParseField(q.Curve.Implicit.F, a)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for j := 0; j <= 32; j++ {
+					v := float64(j) / 32
+					for _, b := range []Vec{{0, v}, {1, v}, {v, 0}, {v, 1}} {
+						if math.Abs(f(b.X, b.Y, 0)) > 4e-15 {
+							t.Fatalf("nonzero boundary at %v", b)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func nodalDistance(set LevelSet, p Vec) float64 {
+	best := math.Inf(1)
+	for _, c := range set.Contours {
+		for j := 1; j < len(c.Points); j++ {
+			a, b := c.Points[j-1], c.Points[j]
+			d := b.Sub(a)
+			u := 0.0
+			if d.Dot(d) > 0 {
+				u = math.Max(0, math.Min(1, p.Sub(a).Dot(d)/d.Dot(d)))
+			}
+			best = math.Min(best, p.Sub(a.Add(d.Mul(u))).Norm())
+		}
+	}
+	return best
+}
+
+func TestNodalMixedGeometry(t *testing.T) {
+	defer func(depth int) { maxRefineDepth = depth }(maxRefineDepth)
+	maxRefineDepth = 0 // Measure the production chords, without refinement.
+	for i, p := range nodalPresets(t) {
+		m, n := [3]int{1, 2, 3}[i], [3]int{2, 3, 5}[i]
+		q := p.Config
+		q.Curve.Implicit.Family.Enabled = false
+		q.Curve.A = .31 // A regular mixture, away from nodal reconnections.
+		previous := math.Inf(1)
+		for _, cells := range []int{96, 192, 384} {
+			q.Curve.Implicit.Cells = cells
+			res := contours(t, q)
+			worst, measured := 0.0, 0
+			for _, c := range res.Curve.Contours {
+				for j, v := range c.Points {
+					f, _ := nodalField(m, n, q.Curve.A, v)
+					if math.Abs(f) > 2e-12 {
+						t.Fatalf("%s: vertex residual %g", p.Title, f)
+					}
+					// Central reflection preserves the zero set even when
+					// opposite mode parities reverse the sign of the field.
+					if d := nodalDistance(res.Curve, Vec{1 - v.X, 1 - v.Y}); d > 2e-6 {
+						t.Fatalf("%s: reflection distance %g", p.Title, d)
+					}
+					if j == 0 {
+						continue
+					}
+					mid := v.Add(c.Points[j-1]).Mul(.5)
+					f, g := nodalField(m, n, q.Curve.A, mid)
+					if mid.X < .08 || mid.X > .92 || mid.Y < .08 || mid.Y > .92 || g.Norm() < 1 {
+						continue
+					}
+					worst = math.Max(worst, math.Abs(f)/g.Norm())
+					measured++
+				}
+			}
+			if measured < 20 || worst <= 1e-10 || worst > previous*.4 {
+				t.Fatalf("%s: %d cells, %d chords, error %g after %g", p.Title, cells, measured, worst, previous)
+			}
+			previous = worst
+		}
+		if previous > 8e-5 {
+			t.Fatalf("%s: final geometric error %g", p.Title, previous)
+		}
+		// At equal strength, exchanging x and y preserves the contours.
+		q.Curve.A = math.Pi / 4
+		res := contours(t, q)
+		points := 0
+		for _, c := range res.Curve.Contours {
+			for _, v := range c.Points {
+				points++
+				if d := nodalDistance(res.Curve, Vec{v.Y, v.X}); d > 2e-6 {
+					t.Fatalf("%s: diagonal reflection distance %g", p.Title, d)
+				}
+			}
+		}
+		if points < 20 {
+			t.Fatal("empty equal-strength contours")
+		}
+	}
+}
+
+func TestNodalReconnection(t *testing.T) {
+	q := nodalPresets(t)[1].Config // (2,3), crossing at (1/2,1/3) when a=0.
+	q.Curve.Implicit.Family.Enabled = false
+	center := Vec{.5, 1.0 / 3}
+	// Even/odd grids place the crossing on an edge / inside an ambiguous
+	// cell. Classify the local branches, never claim certified topology.
+	for _, cells := range []int{80, 81, 160, 161} {
+		q.Curve.Implicit.Cells = cells
+		for _, a := range []float64{-.002, 0, .002} {
+			q.Curve.A = a
+			res := contours(t, q)
+			count := 0
+			for _, c := range res.Curve.Contours {
+				for j, v := range c.Points {
+					if v.Sub(center).Norm() > .055 {
+						continue
+					}
+					count++
+					if f, _ := nodalField(2, 3, a, v); math.Abs(f) > 2e-12 {
+						t.Fatalf("reconnection residual %g", f)
+					}
+					if a != 0 {
+						if (v.X-center.X)*(v.Y-center.Y)*a <= 0 {
+							t.Fatalf("a=%g: branch on wrong side at %v", a, v)
+						}
+						if j > 0 && c.Points[j-1].Sub(center).Norm() < .055 {
+							mid := v.Add(c.Points[j-1]).Mul(.5)
+							if (mid.X-center.X)*(mid.Y-center.Y)*a <= 0 {
+								t.Fatal("chord joins across the finite gap")
+							}
+						}
+					}
+				}
+			}
+			if count < 6 || len(res.Discontinuities) != 0 || res.Nonfinite != 0 {
+				t.Fatalf("%d cells, a=%g: %d local points, invalid geometry", cells, a, count)
+			}
+			d := nodalDistance(res.Curve, center)
+			if a == 0 && d > .96/float64(cells) {
+				t.Fatalf("missing critical crossing: %g", d)
+			}
+			if a != 0 && d < .004 {
+				t.Fatalf("lost finite gap: %g", d)
+			}
+		}
+	}
+}
+
+func anchoredRequest(t *testing.T, q Request) Request {
+	t.Helper()
+	data, err := json.Marshal(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	fields["curve"].(map[string]any)["implicit"].(map[string]any)["stableNormals"] = true
+	data, err = json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &q); err != nil {
+		t.Fatal(err)
+	}
+	return q
+}
+
+func TestAnchoredNodalNormalMotion(t *testing.T) {
+	q := anchoredRequest(t, nodalPresets(t)[2].Config)
+	// Retain the exact grid/detail of the reported reproduction even if
+	// the curated preset is later tuned to a different workload.
+	q.Curve.Implicit.Cells = 200
+	fine := true
+	q.Curve.Implicit.Fine = &fine
+	var previous []Normal
+	for _, a := range []float64{.419, .4195, .42} {
+		q.Curve.A = a
+		r := contours(t, q)
+		if len(r.Normals) != q.Lines {
+			t.Fatalf("a=%g: %d normals", a, len(r.Normals))
+		}
+		for _, n := range r.Normals {
+			f, g := nodalField(3, 5, a, n.Point)
+			if math.Abs(f) > 2e-12 || math.Abs(n.Gradient.Cross(g))/(g.Norm()*n.Gradient.Norm()) > 1e-7 {
+				t.Fatalf("invalid anchored normal %+v", n)
+			}
+			if len(previous) == 0 {
+				continue
+			}
+			d := math.Inf(1)
+			for _, p := range previous {
+				d = math.Min(d, n.Point.Sub(p.Point).Norm())
+			}
+			// da=.0005 is a regular deformation here. A grid-start change
+			// used to move an entire loop's arrows by almost one cell.
+			if d > .0012 {
+				t.Fatalf("a=%g: normal jumps %g for da=.0005", a, d)
+			}
+		}
+		previous = r.Normals
+	}
+}
+
+func TestAnchoredNormalsPreserveGeometryAndRequestOrder(t *testing.T) {
+	q := nodalPresets(t)[2].Config
+	q.Curve.Implicit.StableNormals = false
+	a := contours(t, q)
+	stable := anchoredRequest(t, q)
+	b := contours(t, stable)
+	left, right := *a, *b
+	left.Normals, right.Normals = nil, nil
+	l, _ := json.Marshal(left)
+	r, _ := json.Marshal(right)
+	if string(l) != string(r) {
+		t.Fatal("normal anchoring changed contour geometry")
+	}
+	old, _ := json.Marshal(a.Normals)
+	anchored, _ := json.Marshal(b.Normals)
+	if string(old) == string(anchored) {
+		t.Fatal("normal anchoring has no effect")
+	}
+	for _, angle := range []float64{math.Pi / 4, 0, math.Pi / 2, -.002, .002} {
+		other := stable
+		other.Curve.A = angle
+		res := contours(t, other)
+		for _, n := range res.Normals {
+			f, _ := nodalField(3, 5, angle, n.Point)
+			if math.Abs(f) > 2e-12 || !n.Gradient.Valid() {
+				t.Fatal("invalid normal through a reconnection")
+			}
+		}
+	}
+	again, _ := json.Marshal(contours(t, stable).Normals)
+	if string(again) != string(anchored) {
+		t.Fatal("normal positions depend on prior frames")
+	}
+}
+
+func TestBalancedNodalDetail(t *testing.T) {
+	q := nodalPresets(t)[2].Config
+	fine := true
+	q.Curve.Implicit.Fine = &fine
+	data, _ := json.Marshal(q)
+	var fields map[string]any
+	json.Unmarshal(data, &fields)
+	fields["curve"].(map[string]any)["implicit"].(map[string]any)["fine"] = false
+	data, _ = json.Marshal(fields)
+	var balanced Request
+	json.Unmarshal(data, &balanced)
+	for _, angle := range []float64{math.Pi / 8, .7, 1.1} {
+		q.Curve.A, balanced.Curve.A = angle, angle
+		a, b := contours(t, q), contours(t, balanced)
+		fineSets := append([]LevelSet{a.Curve}, a.Family...)
+		sets := append([]LevelSet{b.Curve}, b.Family...)
+		points := 0
+		for k, set := range sets {
+			if len(set.Contours) != len(fineSets[k].Contours) {
+				t.Fatal("detail changed the extracted components")
+			}
+			for _, c := range set.Contours {
+				points += len(c.Points)
+				for _, chord := range contourChords(c) {
+					mid := chord[0].Add(chord[1]).Mul(.5)
+					f, g := nodalField(3, 5, angle, mid)
+					if g.Norm() < 1 {
+						continue
+					}
+					if d := math.Abs(f-set.Level) / g.Norm(); d > 1.05*.03*.96/float64(q.Curve.Implicit.Cells) {
+						t.Fatalf("balanced chord error %g", d)
+					}
+				}
+			}
+		}
+		// At 200 cells the fine sampler emitted over 20,000 points. This
+		// keeps all seven levels and grid decisions within a subpixel
+		// chord budget, without that unnecessary drawing/transport work.
+		if points > 8000 {
+			t.Fatalf("balanced detail emitted %d points, want at most 8000", points)
+		}
+	}
+}

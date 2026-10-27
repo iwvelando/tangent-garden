@@ -148,6 +148,9 @@ func (m similarity) copyOf(q Request) (Request, bool) {
 		w := c.Implicit.Window
 		lo, hi := m.at(Vec{w.XMin, w.YMin}), m.at(Vec{w.XMax, w.YMax})
 		c.Implicit.Window = Window{lo.X, hi.X, lo.Y, hi.Y}
+		if c.Implicit.Window.validate() != nil {
+			return q, false
+		}
 	}
 	q.Curve = c
 	if q.Source.Coordinates == "polar" {
@@ -558,6 +561,23 @@ func TestScaledPresetsDrawTheOriginalsImage(t *testing.T) {
 	checkCopies(t, scaledCopies, func(preset, *copies) string { return "" })
 }
 
+func TestImplicitSimilarityRespectsWindowLimits(t *testing.T) {
+	q := nodalPresets(t)[0].Config
+	for _, tc := range []struct {
+		scale float64
+		want  bool
+	}{{0x1p-20, false}, {0x1p-19, true}, {1, true}} {
+		m := similarity{"bounded window", tc.scale, Vec{}}
+		copy, ok := m.copyOf(q)
+		if ok != tc.want {
+			t.Fatalf("scale %g: transform accepted=%v, want %v", tc.scale, ok, tc.want)
+		}
+		if ok {
+			compute(t, copy)
+		}
+	}
+}
+
 // Every preset carried hundreds of diameters from the origin draws the
 // image of the original within the translation budget, with the same gaps,
 // breaks and diagnostics. A study so small for its distance that the
@@ -565,6 +585,9 @@ func TestScaledPresetsDrawTheOriginalsImage(t *testing.T) {
 // within rounding there, as a few thousandths of a unit 36,000 units out.
 func TestTranslatedPresetsDrawTheOriginalsImage(t *testing.T) {
 	checkCopies(t, translatedCopies, func(p preset, c *copies) string {
+		if p.Title == "A lattice changing its mind" {
+			return "the exact nodal crossing is checked against its analytical grid in TestTranslatedNodalGrid, not a rounded polyline at the saddle"
+		}
 		if order(p.Config) > 2 {
 			return "a construction on an evolute reads three derivatives, past the translation budget"
 		}
@@ -573,6 +596,36 @@ func TestTranslatedPresetsDrawTheOriginalsImage(t *testing.T) {
 		}
 		return ""
 	})
+}
+
+func TestTranslatedNodalGrid(t *testing.T) {
+	q := nodalPresets(t)[1].Config
+	for _, m := range translatedCopies {
+		copy, ok := m.copyOf(q)
+		if !ok {
+			continue
+		} // The separate window-limit test covers refusal.
+		r := contours(t, copy)
+		points := 0
+		for _, c := range r.Curve.Contours {
+			for _, p := range c.Points {
+				points++
+				x, y := (p.X-m.c.X)/m.s, (p.Y-m.c.Y)/m.s
+				d := math.Min(math.Abs(x-.5), math.Min(math.Abs(y-1.0/3), math.Abs(y-2.0/3)))
+				if d > 2e-10 {
+					t.Fatalf("%s: point %v is off the exact nodal grid by %g", m.name, p, d)
+				}
+			}
+		}
+		if points < 100 {
+			t.Fatal("translated nodal grid is empty")
+		}
+		for _, p := range []Vec{{.5, .231}, {.231, 1.0 / 3}, {.231, 2.0 / 3}} {
+			if d := nodalDistance(r.Curve, m.at(p)) / m.s; d > 2e-10 {
+				t.Fatalf("%s: missing branch at %v, distance %g", m.name, p, d)
+			}
+		}
+	}
 }
 
 // A cusp, (1 − cos 20t, 20t − sin 20t) at t = 0, a sample, scaled and

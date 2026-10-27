@@ -664,6 +664,27 @@ details p,
   accent-color: #347e75;
   margin: 0;
 }
+.field.contour-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  align-items: center;
+}
+.contour-option > .field-label {
+  grid-column: 2;
+  margin-bottom: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+.contour-option > input {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  accent-color: #347e75;
+}
+.contour-option > .hint {
+  grid-column: 1 / -1;
+}
 .closing {
   border-top: 1px solid var(--border);
   margin: 28px 0 0;

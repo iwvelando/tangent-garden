@@ -29,11 +29,14 @@ type Levels struct {
 // Implicit is the curve F(x, y) = Level within Window, sought on a grid of
 // Cells square cells along the window's longer side. F may use a, but not t.
 type Implicit struct {
-	F      string  `json:"f"`
-	Level  float64 `json:"level"`
-	Family Levels  `json:"family"`
-	Window Window  `json:"window"`
-	Cells  int     `json:"cells"`
+	F             string  `json:"f"`
+	Level         float64 `json:"level"`
+	Family        Levels  `json:"family"`
+	Window        Window  `json:"window"`
+	Cells         int     `json:"cells"`
+	StableNormals bool    `json:"stableNormals,omitempty"`
+	// Nil retains fine refinement for studies predating this option.
+	Fine *bool `json:"fine,omitempty"`
 }
 
 // Contour is one connected piece of a level set, running with larger F on
@@ -156,8 +159,9 @@ type sheet struct {
 	crossings, points int
 	// Grid edges where F changes sign without being continuous, over every
 	// level.
-	rejected  map[int]Vec
-	truncated bool
+	rejected   map[int]Vec
+	truncated  bool
+	refinement float64
 	// Per edge, the edge the segment starting there leads to, and whether
 	// a segment ends there, kept between levels and cleared after each.
 	next    []int32
@@ -188,7 +192,11 @@ func newSheet(v Implicit, a float64) (*sheet, error) {
 	if timed {
 		return nil, fieldErr("f", "F(x, y) cannot use t; animate a or the level instead")
 	}
-	return sample(func(x, y float64) float64 { return f(x, y, 0) }, v.Window, v.Cells), nil
+	s := sample(func(x, y float64) float64 { return f(x, y, 0) }, v.Window, v.Cells)
+	if v.Fine != nil && !*v.Fine {
+		s.refinement = .03
+	}
+	return s, nil
 }
 
 // sample evaluates f on the grid of cells cells along the window's longer
@@ -502,6 +510,9 @@ func (s *sheet) subdivide(out []Vec, p, q Vec, c, tol float64, depth int) []Vec 
 
 func (s *sheet) refine(set *LevelSet) {
 	tol := contourTolerance * math.Min(s.hx, s.hy)
+	if s.refinement > 0 {
+		tol = s.refinement * math.Min(s.hx, s.hy)
+	}
 	for k := range set.Contours {
 		c := &set.Contours[k]
 		pts := c.Points
@@ -609,7 +620,11 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 	if s.truncated {
 		warnings = append(warnings, fmt.Sprintf("Contours stopped being refined at %d points; they are drawn with straighter chords.", maxContourPoints))
 	}
-	out.Normals = s.normals(out.Curve, lines)
+	normalSet := out.Curve
+	if v.StableNormals {
+		normalSet = s.anchorNormals(normalSet)
+	}
+	out.Normals = s.normals(normalSet, lines)
 	out.Discontinuities = s.discontinuities()
 	out.Nonfinite = s.nonfinite
 	return out, warnings, nil
