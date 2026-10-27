@@ -120,8 +120,7 @@ export type Config = {
       family: { enabled: boolean; from: number; to: number; count: number };
       window: Window;
       cells: number;
-      // Absent retains fine refinement and the original arc-length origin.
-      fine?: boolean;
+      // Absent retains the original arc-length origin of the normals.
       stableNormals?: boolean;
     };
     // An iterated map's orbit from start: the first `discard` iterates

@@ -16,38 +16,28 @@ import { lineColor, palette } from "../web/spatial/palette";
 const exportMP4 = (page: Page) =>
   page.getByRole("button", { name: "Export MP4 video" });
 
-test("contour detail and normal anchors preserve checkbox clicks and scalar blur in WebKit", async ({
+test("anchoring contour normals preserves checkbox clicks and scalar blur in WebKit", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await choosePreset(page, { label: "An engraving of standing waves" });
-  const fine = page.getByRole("checkbox", {
-    name: "Fine contour detail",
-    exact: true,
-  });
   const stable = page.getByRole("checkbox", {
     name: "Anchor contour normals",
     exact: true,
   });
-  await expect(fine).not.toBeChecked();
   await expect(stable).toBeChecked();
   await page
     .getByRole("textbox", { name: "Shape parameter a", exact: true })
     .fill("pi/7");
-  await page.getByText("Fine contour detail", { exact: true }).click();
-  await expect(fine).toBeChecked();
-  await stable.uncheck();
+  await page.getByText("Anchor contour normals", { exact: true }).click();
   await expect(stable).not.toBeChecked();
   await expect
     .poll(
       async () =>
         JSON.parse((await page.locator("#artwork desc").textContent())!).curve,
     )
-    .toMatchObject({
-      a: Math.PI / 7,
-      implicit: { fine: true, stableNormals: false },
-    });
+    .toMatchObject({ a: Math.PI / 7, implicit: { stableNormals: false } });
   await expect(
     page.getByRole("textbox", { name: "Shape parameter a", exact: true }),
   ).toHaveValue("pi/7");

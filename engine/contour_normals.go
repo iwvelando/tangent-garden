@@ -2,6 +2,25 @@ package engine
 
 import "math"
 
+// anchoredNormals spaces normals as normals does, but restarts the spacing
+// on each contour at its own origin (see anchorNormals). A piece that
+// splits, joins or appears elsewhere then leaves this one's normals in
+// place. Each contour takes the normals that fit its length, so their
+// number can differ from n by about half the number of contours.
+func (s *sheet) anchoredNormals(set LevelSet, n int) []Normal {
+	set = s.anchorNormals(set)
+	out := []Normal{}
+	_, total := levelChords(set.Contours)
+	if !(total > 0) {
+		return out
+	}
+	for _, c := range set.Contours {
+		chords, _ := levelChords([]Contour{c})
+		out = s.place(out, chords, total, n, set.Level)
+	}
+	return out
+}
+
 // anchorNormals gives each closed contour a geometric arc-length origin:
 // its lower intersection with a vertical line through its arc-length
 // centroid. The origin moves with the contour, rather than advancing to a

@@ -35,8 +35,6 @@ type Implicit struct {
 	Window        Window  `json:"window"`
 	Cells         int     `json:"cells"`
 	StableNormals bool    `json:"stableNormals,omitempty"`
-	// Nil retains fine refinement for studies predating this option.
-	Fine *bool `json:"fine,omitempty"`
 }
 
 // Contour is one connected piece of a level set, running with larger F on
@@ -79,8 +77,15 @@ type ContourResult struct {
 const (
 	minCells, maxCells = 4, 1024
 	// Refinement stops once a chord's midpoint is within this fraction of a
-	// cell of the curve.
+	// cell of the curve, for a section traced with TraceLevel.
 	contourTolerance = 1e-3
+	// An implicit curve's chords refine to this fraction of the window's
+	// longer side instead: below a pixel even in a 4K drawing.
+	drawingTolerance = 2e-4
+	// They also refine until successive chords turn by at most this angle,
+	// in radians, so a small loop stays round. An arc of chord L turns by
+	// about 8d/L, where d is its midpoint's distance from the chord.
+	drawingBend = 3 * math.Pi / 180
 )
 
 // Work bounds: grid edges crossed over all levels, points over all contours,
@@ -159,9 +164,13 @@ type sheet struct {
 	crossings, points int
 	// Grid edges where F changes sign without being continuous, over every
 	// level.
-	rejected   map[int]Vec
-	truncated  bool
-	refinement float64
+	rejected  map[int]Vec
+	truncated bool
+	// The distance from the curve within which a chord is left unrefined,
+	// and the largest ratio of that distance to the chord's length.
+	tolerance, flatness float64
+	// Newton's method recomputes the gradient on every refresh-th step.
+	refresh int
 	// Per edge, the edge the segment starting there leads to, and whether
 	// a segment ends there, kept between levels and cleared after each.
 	next    []int32
@@ -193,9 +202,8 @@ func newSheet(v Implicit, a float64) (*sheet, error) {
 		return nil, fieldErr("f", "F(x, y) cannot use t; animate a or the level instead")
 	}
 	s := sample(func(x, y float64) float64 { return f(x, y, 0) }, v.Window, v.Cells)
-	if v.Fine != nil && !*v.Fine {
-		s.refinement = .03
-	}
+	s.tolerance = drawingTolerance * math.Max(v.Window.XMax-v.Window.XMin, v.Window.YMax-v.Window.YMin)
+	s.flatness, s.refresh = drawingBend/8, 5
 	return s, nil
 }
 
@@ -206,6 +214,7 @@ func sample(f func(x, y float64) float64, w Window, cells int) *sheet {
 	s := &sheet{f: f, w: w, rejected: map[int]Vec{}}
 	s.nx, s.ny = gridShape(w, cells)
 	s.hx, s.hy = width/float64(s.nx), height/float64(s.ny)
+	s.tolerance, s.flatness, s.refresh = contourTolerance*math.Min(s.hx, s.hy), math.Inf(1), 1
 	s.scale = math.Max(width, height) + math.Max(math.Max(math.Abs(w.XMin), math.Abs(w.XMax)), math.Max(math.Abs(w.YMin), math.Abs(w.YMax)))
 	s.values = make([]float64, (s.nx+1)*(s.ny+1))
 	for j := 0; j <= s.ny; j++ {
@@ -463,15 +472,20 @@ func (s *sheet) level(c float64) (LevelSet, bool) {
 }
 
 // project follows F's gradient from x to the curve F = c by Newton's
-// method.
+// method. Reusing a gradient for a few steps converges to the same
+// tolerance with a fraction of the evaluations.
 func (s *sheet) project(x Vec, c float64) (Vec, bool) {
-	for range 30 {
+	var d Vec
+	var n float64
+	for i := range 30 {
 		g := s.at(x) - c
 		if g == 0 {
 			return x, true
 		}
-		d := s.gradient(x)
-		n := d.Dot(d)
+		if i%s.refresh == 0 {
+			d = s.gradient(x)
+			n = d.Dot(d)
+		}
 		if !finite(g) || !finite(n) || n == 0 {
 			return x, false
 		}
@@ -488,14 +502,18 @@ func (s *sheet) project(x Vec, c float64) (Vec, bool) {
 
 // subdivide appends the curve's points strictly between p and q, then q.
 // A chord is halved where its midpoint projects onto the curve farther than
-// tol away, between p and q and within half the chord, so refinement never
+// tol away, or far enough that the curve bends more than the sheet allows
+// across it, between p and q and within half the chord, so refinement never
 // crosses to another piece of the level set.
 func (s *sheet) subdivide(out []Vec, p, q Vec, c, tol float64, depth int) []Vec {
 	if depth > 0 {
 		mid, chord := p.Add(q).Mul(.5), q.Sub(p)
 		r, ok := s.project(mid, c)
 		along := r.Sub(p).Dot(chord) / chord.Dot(chord)
-		if ok && r.Sub(mid).Norm() > tol && r.Sub(mid).Norm() <= chord.Norm()/2 && along > 0 && along < 1 {
+		d := r.Sub(mid).Norm()
+		// A chord shorter than tol turns invisibly, however sharply.
+		bent := chord.Norm() > tol && d > s.flatness*chord.Norm()
+		if ok && (d > tol || bent) && d <= chord.Norm()/2 && along > 0 && along < 1 {
 			if s.points >= maxContourPoints {
 				s.truncated = true
 			} else {
@@ -509,10 +527,7 @@ func (s *sheet) subdivide(out []Vec, p, q Vec, c, tol float64, depth int) []Vec 
 }
 
 func (s *sheet) refine(set *LevelSet) {
-	tol := contourTolerance * math.Min(s.hx, s.hy)
-	if s.refinement > 0 {
-		tol = s.refinement * math.Min(s.hx, s.hy)
-	}
+	tol := s.tolerance
 	for k := range set.Contours {
 		c := &set.Contours[k]
 		pts := c.Points
@@ -531,10 +546,18 @@ func (s *sheet) refine(set *LevelSet) {
 // normals places n points evenly by arc length along the set's contours,
 // each projected onto the curve, with F's gradient there.
 func (s *sheet) normals(set LevelSet, n int) []Normal {
-	out := []Normal{}
+	chords, total := levelChords(set.Contours)
+	if !(total > 0) {
+		return []Normal{}
+	}
+	return s.place([]Normal{}, chords, total, n, set.Level)
+}
+
+// levelChords returns the contours' chords in order and their total length.
+func levelChords(contours []Contour) ([][2]Vec, float64) {
 	var chords [][2]Vec
 	total := 0.0
-	for _, c := range set.Contours {
+	for _, c := range contours {
 		for j := 1; j < len(c.Points); j++ {
 			chords = append(chords, [2]Vec{c.Points[j-1], c.Points[j]})
 		}
@@ -545,16 +568,19 @@ func (s *sheet) normals(set LevelSet, n int) []Normal {
 	for _, e := range chords {
 		total += e[1].Sub(e[0]).Norm()
 	}
-	if !(total > 0) {
-		return out
-	}
+	return chords, total
+}
+
+// place appends the normals at the middle of each total/n of arc length
+// along chords, at most n, each projected onto the level c.
+func (s *sheet) place(out []Normal, chords [][2]Vec, total float64, n int, c float64) []Normal {
 	k, walked := 0, 0.0
 	for _, e := range chords {
 		length := e[1].Sub(e[0]).Norm()
 		for ; k < n && (float64(k)+.5)*total/float64(n) <= walked+length; k++ {
 			u := ((float64(k)+.5)*total/float64(n) - walked) / length
 			x := e[0].Add(e[1].Sub(e[0]).Mul(u))
-			p, ok := s.project(x, set.Level)
+			p, ok := s.project(x, c)
 			if !ok || p.Sub(x).Norm() > length {
 				continue
 			}
@@ -620,11 +646,11 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 	if s.truncated {
 		warnings = append(warnings, fmt.Sprintf("Contours stopped being refined at %d points; they are drawn with straighter chords.", maxContourPoints))
 	}
-	normalSet := out.Curve
 	if v.StableNormals {
-		normalSet = s.anchorNormals(normalSet)
+		out.Normals = s.anchoredNormals(out.Curve, lines)
+	} else {
+		out.Normals = s.normals(out.Curve, lines)
 	}
-	out.Normals = s.normals(normalSet, lines)
 	out.Discontinuities = s.discontinuities()
 	out.Nonfinite = s.nonfinite
 	return out, warnings, nil

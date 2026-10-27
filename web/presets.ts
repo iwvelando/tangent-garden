@@ -1494,6 +1494,7 @@ export const presets: {
       ...base,
       // A mixed mode at pi/8, with six nonzero nearby levels around the
       // nodal curve; these extra contours are level sets, not nodal lines.
+      // Anchored normals keep the arrows on their own pieces during play.
       curve: {
         ...base.curve,
         format: "implicit",
@@ -1503,8 +1504,7 @@ export const presets: {
           level: 0,
           family: { enabled: true, from: -0.24, to: 0.24, count: 6 },
           window: { xMin: 0.02, xMax: 0.98, yMin: 0.02, yMax: 0.98 },
-          cells: 128,
-          fine: false,
+          cells: 96,
           stableNormals: true,
         },
       },

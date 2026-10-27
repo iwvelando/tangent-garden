@@ -95,6 +95,7 @@ import {
   type PlotCamera,
 } from "./planar-link";
 import {
+  CheckSetting,
   Field,
   HelpToggle,
   HelpText,
@@ -1069,34 +1070,16 @@ function App({
         />
         Family of levels
       </label>
-      <Field
-        label="Fine contour detail"
-        className="contour-option"
-        help={tiered(
-          "Tighter refinement for precise close-ups; turn off for faster dense families.",
-          "Fine chords refine to 0.001 of a cell; otherwise, to 0.03 of a cell. Grid crossings and saddle decisions stay the same. More cells still resolve smaller components. This setting applies equally to playback and exports.",
-        )}
-      >
-        <input
-          type="checkbox"
-          checked={config.curve.implicit.fine !== false}
-          onChange={(e) => toImplicit({ fine: e.target.checked })}
-        />
-      </Field>
-      <Field
+      <CheckSetting
         label="Anchor contour normals"
-        className="contour-option"
+        topic="anchoring contour normals"
+        checked={!!config.curve.implicit.stableNormals}
+        onChange={(on) => toImplicit({ stableNormals: on })}
         help={tiered(
-          "Keep closed contours' normal origins tied to their geometry while parameters change.",
-          "Each closed contour starts its normal spacing at its lower centerline crossing. This reduces jumps when grid crossings move. Open contours keep their endpoint origin. Components can still split, merge or disappear at reconnections; arrows are never carried across them.",
+          "Space arrows along each piece from its own origin, so changes elsewhere leave them in place.",
+          "A closed piece starts at its lower centerline crossing, an open piece at its end. Each piece takes the arrows that fit its length at the usual spacing, so their number can differ slightly from Construction lines. Arrows still move where pieces split, join or vanish.",
         )}
-      >
-        <input
-          type="checkbox"
-          checked={!!config.curve.implicit.stableNormals}
-          onChange={(e) => toImplicit({ stableNormals: e.target.checked })}
-        />
-      </Field>
+      />
       {levels.enabled && (
         <>
           <div className="pair">

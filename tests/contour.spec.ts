@@ -120,48 +120,37 @@ test("three nodal studies carry literal equal-eigenvalue modes and full-period a
   expect(preset(nodalTitles[0]).curve.implicit.family.enabled).toBe(false);
   expect(preset(nodalTitles[2]).curve.implicit.family.enabled).toBe(true);
   expect(preset(nodalTitles[2]).curve.implicit).toMatchObject({
-    cells: 128,
-    fine: false,
+    cells: 96,
     stableNormals: true,
   });
 });
 
-test("engraving detail and anchored normals are editable and travel in a copied link", async ({
+test("anchored normals are editable, move only the arrows, and travel in a copied link", async ({
   page,
 }) => {
   await ready(page, nodalTitles[2]);
-  const fine = page.getByRole("checkbox", {
-    name: "Fine contour detail",
-    exact: true,
-  });
   const stable = page.getByRole("checkbox", {
     name: "Anchor contour normals",
     exact: true,
   });
-  await expect(fine).not.toBeChecked();
   await expect(stable).toBeChecked();
+  const arrows = () =>
+    normals(page).evaluateAll((all) => all.map((n) => n.outerHTML));
   const geometry = await drawn(page);
+  const anchored = await arrows();
   await stable.uncheck();
   await expect
     .poll(async () => (await definition(page)).curve.implicit.stableNormals)
     .toBe(false);
+  await settled(page);
+  await expect.poll(arrows).not.toEqual(anchored);
   expect(await drawn(page)).toEqual(geometry);
-  await fine.check();
-  await expect
-    .poll(async () => (await definition(page)).curve.implicit.fine)
-    .toBe(true);
-  await expect
-    .poll(async () => (await drawn(page)).flatMap((c) => c.points).length)
-    .toBeGreaterThan(geometry.flatMap((c) => c.points).length);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy link", exact: true }).click();
   await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
   const link = await page.evaluate(() => navigator.clipboard.readText());
   const other = await page.context().newPage();
   await other.goto(link);
-  await expect(
-    other.getByRole("checkbox", { name: "Fine contour detail", exact: true }),
-  ).toBeChecked();
   await expect(
     other.getByRole("checkbox", {
       name: "Anchor contour normals",
@@ -170,8 +159,9 @@ test("engraving detail and anchored normals are editable and travel in a copied 
   ).not.toBeChecked();
   await other.close();
   await choosePreset(page, { label: nodalTitles[2] });
-  await expect(fine).not.toBeChecked();
   await expect(stable).toBeChecked();
+  await settled(page);
+  await expect.poll(arrows).toEqual(anchored);
 });
 
 for (const theme of ["light", "dark"] as const)
@@ -192,10 +182,24 @@ for (const theme of ["light", "dark"] as const)
           };
         });
     const expected = await textStyle("Family of levels");
-    for (const name of ["Fine contour detail", "Anchor contour normals"])
-      expect(await textStyle(name), name).toEqual(expected);
+    expect(await textStyle("Anchor contour normals")).toEqual(expected);
+    // Stacked checkboxes are spaced as the drawing's layer checkboxes are,
+    // box to box.
+    const top = (name: string) =>
+      page.getByRole("checkbox", { name, exact: true }).evaluate((input) => {
+        const r = input.getBoundingClientRect();
+        return { y: r.top, height: r.height };
+      });
+    const family = await top("Family of levels");
+    const anchor = await top("Anchor contour normals");
+    const curve = await top("Curve F = c");
+    const construction = await top("Construction lines");
+    expect(anchor.y - (family.y + family.height)).toBeCloseTo(
+      construction.y - (curve.y + curve.height),
+      0,
+    );
     await page
-      .locator(".contour-option")
+      .locator(".check-setting")
       .first()
       .screenshot({ path: info.outputPath(`checkbox-${theme}.png`) });
   });
