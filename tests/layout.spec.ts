@@ -302,11 +302,11 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
 
 // Opens every help toggle of every visible pair after each setup, and its
 // Show more, and returns how many it opened.
-async function sweepPairs(page: Page, setups: Setup[]) {
+async function sweepPairs(page: Page, setups: Setup[], scope = "aside") {
   let checked = 0;
   for (const setup of setups) {
     await setup();
-    for (const pair of await page.locator("aside .pair").all()) {
+    for (const pair of await page.locator(`${scope} .pair`).all()) {
       if (!(await pair.isVisible())) continue;
       const controls = pair.locator(":scope > .field > :is(input, select)");
       const boxes = async () =>
@@ -764,3 +764,124 @@ test("an open help toggle stays filled under the pointer in every theme", async 
     expect(style.glyph, scheme).not.toBe(style.fill);
   }
 });
+
+for (const width of [390, 1440])
+  test(`atlas help and range errors never move paired controls at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/");
+    const setups = [
+      "Hypotrochoid & its evolute",
+      "Ellipse & its pedal",
+      "Clifford attractor",
+    ].map((title) => async () => {
+      const atlas = page.getByRole("dialog", {
+        name: "A field of possible flowers",
+        exact: true,
+      });
+      if (await atlas.isVisible())
+        await atlas
+          .getByRole("button", { name: "Cancel atlas", exact: true })
+          .click();
+      await choosePreset(page, { label: title });
+      await expect(page.locator(".plot-wrap")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      await page
+        .getByRole("button", { name: "Explore parameter atlas", exact: true })
+        .click();
+      await expect(
+        atlas.locator('.atlas-cell[data-state="valid"]'),
+      ).toHaveCount(9);
+    });
+    expect(await sweepPairs(page, setups, ".atlas")).toBeGreaterThanOrEqual(12);
+    const atlas = page.getByRole("dialog", {
+      name: "A field of possible flowers",
+      exact: true,
+    });
+    const from = atlas.getByLabel("Coefficient a from", { exact: true });
+    const to = atlas.getByLabel("Coefficient a to", { exact: true });
+    const before = (await to.boundingBox())!.y;
+    await from.fill("t");
+    await expect(from).toHaveAttribute("aria-invalid", "true");
+    expect((await to.boundingBox())!.y).toBe(before);
+  });
+
+for (const width of [390, 1440])
+  for (const mode of ["light", "dark"] as const)
+    test(`atlas entry help and parameter pair use ordinary spacing at ${width}px in ${mode}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ colorScheme: mode });
+      await page.goto("/");
+      await choosePreset(page, { label: "Ellipse & its pedal" });
+      const about = page.getByRole("button", {
+        name: "About parameter atlas",
+        exact: true,
+      });
+      await about.click();
+      const help = page.locator(
+        `#${await about.getAttribute("aria-controls")}`,
+      );
+      const shape = page.getByRole("button", {
+        name: "About shape parameter a",
+        exact: true,
+      });
+      await shape.click();
+      const reference = page.locator(
+        `#${await shape.getAttribute("aria-controls")}`,
+      );
+      const referenceGap = await reference.evaluate(
+        (e) =>
+          e.getBoundingClientRect().top -
+          e.closest(".field")!.querySelector("input")!.getBoundingClientRect()
+            .bottom,
+      );
+      const gap = () =>
+        help.evaluate(
+          (e) =>
+            e.getBoundingClientRect().top -
+            e
+              .closest(".atlas-entry")!
+              .querySelector(".atlas-entry-actions")!
+              .getBoundingClientRect().bottom,
+        );
+      expect(referenceGap).toBe(8);
+      expect.soft(await gap()).toBe(referenceGap);
+      await help
+        .getByRole("button", { name: "Show more", exact: true })
+        .click();
+      expect.soft(await gap()).toBe(referenceGap);
+      await page
+        .getByRole("button", { name: "Explore parameter atlas", exact: true })
+        .click();
+      const atlas = page.getByRole("dialog", {
+        name: "A field of possible flowers",
+        exact: true,
+      });
+      const spacing = await atlas.evaluate((root) => {
+        const first = root
+          .querySelector(".atlas-controls > .field:first-child select")!
+          .getBoundingClientRect();
+        const labels = [
+          ...root.querySelectorAll(".atlas-controls > .pair .field-label"),
+        ].map((e) => e.getBoundingClientRect().top);
+        const options = [
+          ...root.querySelectorAll(".atlas-controls > .pair select"),
+        ].map((e) => e.getBoundingClientRect().bottom);
+        const ranges = [
+          ...root.querySelectorAll(
+            ".atlas-ranges > .pair:first-child .field-label",
+          ),
+        ].map((e) => e.getBoundingClientRect().top);
+        return {
+          pair: Math.min(...labels) - first.bottom,
+          ranges: Math.min(...ranges) - Math.max(...options),
+        };
+      });
+      expect.soft(spacing.pair).toBe(16);
+      expect(spacing.ranges).toBe(16);
+    });

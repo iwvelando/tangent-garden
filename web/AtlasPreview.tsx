@@ -7,11 +7,19 @@ import {
   useState,
 } from "react";
 import {
-  RouletteAtlas,
+  ParameterAtlas,
   atlasBudget,
+  atlasGridSize,
+  rememberAtlasGridSize,
+  atlasPairs,
+  atlasPair,
+  atlasPreviewConfig,
+  type AtlasSize,
+  type AtlasPairId,
   atlasDefaults,
   atlasRangeError,
   atlasRangeHelp,
+  atlasControlHelp,
   type AtlasRanges,
   type AtlasState,
 } from "./atlas";
@@ -28,6 +36,7 @@ import { useTheme } from "./useTheme";
 import type { Frame } from "./types";
 import type { JourneyVia } from "./JourneyContext";
 import "./atlas.css";
+import { atlasSharedFrame } from "./atlas-framing";
 
 type AtlasTab = "grid" | "variant";
 const short = (value: number) => Number(value.toPrecision(5)).toString();
@@ -67,6 +76,19 @@ export function AtlasPreview({
   const quiet = useQuietFocus(dialog);
   const via = useRef(request.via);
   const title = useId();
+  const pairs = useMemo(() => atlasPairs(study.config), [study]);
+  const [pair, setPair] = useState<AtlasPairId>(() => pairs[0].id);
+  const descriptor = atlasPair(pair);
+  const [size, setSize] = useState<AtlasSize>(atlasGridSize);
+  const [framing, setFraming] = useState("independent");
+  const preview = useMemo(
+    () => atlasPreviewConfig(study.config, size),
+    [study, size],
+  );
+  const quality = (config: typeof study.config) =>
+    config.curve.format === "attractor"
+      ? `${config.curve.attractor.iterates.toLocaleString("en-US")} accumulated iterates, ${config.curve.attractor.discard.toLocaleString("en-US")} discarded, grid up to ${config.curve.attractor.cells} × ${config.curve.attractor.cells} bins, ${config.lines} orbit segments`
+      : `${config.samples.toLocaleString("en-US")} samples, ${config.lines} construction lines, refinement ${config.adaptive ? "on" : "off"}`;
   const [ranges, setRanges] = useState<AtlasRanges>(() =>
     atlasDefaults(study.config),
   );
@@ -75,7 +97,7 @@ export function AtlasPreview({
     selection: null,
     queued: 0,
   });
-  const scheduler = useRef<RouletteAtlas | null>(null);
+  const scheduler = useRef<ParameterAtlas | null>(null);
   const client = useRef<EngineClient | null>(null);
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
   const generation = useRef(0);
@@ -96,8 +118,8 @@ export function AtlasPreview({
   );
   const pending = Object.values(scalars).some((s) => s.pending);
   const invalid = Object.values(scalars).find((s) => s.error);
-  const rangeError = atlasRangeError(ranges);
-  const budget = atlasBudget(study.config);
+  const rangeError = atlasRangeError(ranges, pair);
+  const budget = atlasBudget(study.config, size);
   // Range expressions are evaluated by the atlas's own worker. Once it has
   // failed, their errors are that failure, shown once below, not the fields'.
   const failure = state.failed
@@ -117,9 +139,9 @@ export function AtlasPreview({
   useEffect(() => {
     const engine = new EngineClient();
     client.current = engine;
-    const atlas = new RouletteAtlas(engine, setState);
+    const atlas = new ParameterAtlas(engine, setState);
     scheduler.current = atlas;
-    atlas.generate(study, atlasDefaults(study.config));
+    atlas.generate(study, atlasDefaults(study.config, pair), { pair, size });
     return () => {
       generation.current++;
       atlas.cancel();
@@ -194,20 +216,36 @@ export function AtlasPreview({
     dialog.current?.close();
     action();
   };
+  const focusStage = useRef<number | null>(null);
   const select = (index: number) => {
-    const frame = state.cells[index].frame!;
-    const view =
+    // Establish the candidate's full-quality fit before refining to its manual
+    // camera. A capped thumbnail can have different extrema or refined reach.
+    focusStage.current =
       study.config.adaptive &&
       study.config.adaptiveView &&
       study.camera.zoom > 1
-        ? viewRect(inspectedFraming(frame, study))
-        : undefined;
-    scheduler.current?.inspect(index, view);
+        ? index
+        : null;
+    scheduler.current?.inspect(index);
     gridScroll.current = dialog.current?.scrollTop ?? 0;
     setTab("variant");
   };
+  useLayoutEffect(() => {
+    const selected = state.selection;
+    if (!selected?.frame || focusStage.current !== selected.index) return;
+    focusStage.current = null;
+    scheduler.current?.inspect(
+      selected.index,
+      viewRect(inspectedFraming(selected.frame, study)),
+    );
+  }, [state.selection]);
+  const sharedFrame = useMemo(
+    () => (framing === "shared" ? atlasSharedFrame(state.cells) : undefined),
+    [framing, state.cells],
+  );
   const selected = state.selection;
-  const frame = selected?.frame;
+  const frame =
+    focusStage.current === selected?.index ? undefined : selected?.frame;
   const cell = selected && state.cells[selected.index];
   const activateTab = (next: AtlasTab) => {
     if (next === tab || (next === "variant" && !selected)) return;
@@ -247,7 +285,9 @@ export function AtlasPreview({
       <div className="atlas-body">
         <div className="atlas-heading">
           <div>
-            <div className="eyebrow">PARAMETER ATLAS · 3 × 3</div>
+            <div className="eyebrow">
+              PARAMETER ATLAS · {size} × {size}
+            </div>
             <h2 id={title}>A field of possible flowers</h2>
           </div>
           <button ref={back} type="button" onClick={() => finish()}>
@@ -256,8 +296,9 @@ export function AtlasPreview({
         </div>
         <NotebookMode />
         <p className="note">
-          Your study stays here until you adopt a variant. Radius runs across
-          columns; tracing distance runs down rows.
+          Your study stays here until you adopt a variant.{" "}
+          {descriptor.axes[0].label} runs across columns;{" "}
+          {descriptor.axes[1].label.toLowerCase()} runs down rows.
         </p>
         <div className="atlas-tabs" role="tablist" aria-label="Atlas views">
           {(["grid", "variant"] as const).map((key) => (
@@ -306,6 +347,52 @@ export function AtlasPreview({
         >
           <div className="atlas-layout">
             <div className="atlas-controls">
+              <Field label="Parameter pair" help={atlasControlHelp.pair}>
+                <select
+                  value={pair}
+                  onChange={(event) => {
+                    const next = event.target.value as AtlasPairId;
+                    if (next === pair) return;
+                    generation.current++;
+                    editRanges();
+                    setScalars({});
+                    setPair(next);
+                    setRanges(atlasDefaults(study.config, next));
+                  }}
+                >
+                  {pairs.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="pair">
+                <Field label="Grid size" help={atlasControlHelp.size}>
+                  <select
+                    value={size}
+                    onChange={(event) => {
+                      const next = Number(event.target.value) as AtlasSize;
+                      if (next === size) return;
+                      editRanges();
+                      rememberAtlasGridSize(next);
+                      setSize(next);
+                    }}
+                  >
+                    <option value="3">3 × 3</option>
+                    <option value="5">5 × 5</option>
+                  </select>
+                </Field>
+                <Field label="Framing" help={atlasControlHelp.framing}>
+                  <select
+                    value={framing}
+                    onChange={(event) => setFraming(event.target.value)}
+                  >
+                    <option value="independent">Fit each variant</option>
+                    <option value="shared">Use one common scale</option>
+                  </select>
+                </Field>
+              </div>
               <ScalarStatus.Provider value={status}>
                 <FieldErrorContext.Provider
                   value={{
@@ -315,11 +402,15 @@ export function AtlasPreview({
                     touch: () => {},
                   }}
                 >
-                  <div className="atlas-ranges" onChangeCapture={editRanges}>
-                    {(["radius", "arm"] as const).map((key) => (
+                  <div
+                    className="atlas-ranges"
+                    key={pair}
+                    onChangeCapture={editRanges}
+                  >
+                    {descriptor.axes.map(({ key, label }) => (
                       <div className="pair" key={key}>
                         {([0, 1] as const).map((index) => {
-                          const name = `${key === "radius" ? "Rolling radius" : "Tracing distance"} ${index === 0 ? "from" : "to"}`;
+                          const name = `${label} ${index === 0 ? "from" : "to"}`;
                           return (
                             <Field
                               key={index}
@@ -351,41 +442,50 @@ export function AtlasPreview({
               <button
                 type="button"
                 disabled={blocked}
-                onClick={() => scheduler.current?.generate(study, ranges)}
+                onClick={() =>
+                  scheduler.current?.generate(study, ranges, { pair, size })
+                }
               >
                 Generate atlas
               </button>
               <p className="atlas-feedback" role="status">
                 {state.cells.length
-                  ? `${state.cells.filter((c) => c.frame || c.error).length} of 9 variants ready.`
-                  : "Set ranges, then generate nine variants."}
+                  ? `${state.cells.filter((c) => c.frame || c.error).length} of ${size * size} variants ready.`
+                  : `Set ranges, then generate ${size * size} variants.`}
               </p>
               {(budget.error || state.error) && (
                 <p role="alert" className="field-error">
                   {budget.error ?? state.error}
                 </p>
               )}
-              <p className="note">Independent framing</p>
               <p className="note">
-                Original quality: {study.config.samples.toLocaleString("en-US")}{" "}
-                samples, {study.config.lines} construction lines, refinement{" "}
-                {study.config.adaptive ? "on" : "off"}.
+                {framing === "shared"
+                  ? "Shared framing"
+                  : "Independent framing"}
               </p>
+              <p className="note atlas-quality">
+                Preview quality: {quality(preview)}. Inspect at original quality
+                before adoption.
+              </p>
+              <p className="note">Original quality: {quality(study.config)}.</p>
               <details>
                 <summary>Atlas limits</summary>
                 <p className="note">
-                  Nine previews and one inspection. At most 80,000 total uniform
-                  samples, 2,560 construction lines, 500,000 reserved path
-                  points and 80 million weighted work units. Delivered geometry
-                  is limited to four million numbers. Quality is never lowered.
+                  At most 25 previews and one inspection, one calculation in
+                  flight and 25 unsent requests. Up to 80,000 uniform samples,
+                  2,560 construction lines, 500,000 reserved path points and 80
+                  million weighted work units. Clifford densities reserve at
+                  most 20 million evaluated iterations and two million bins.
+                  Retained geometry is limited to four million numbers.
                 </p>
               </details>
             </div>
-            <div>
+            <div className="atlas-grid-scroll">
               <div
                 className="atlas-grid"
+                data-size={size}
                 role="group"
-                aria-label="Roulette variants"
+                aria-label={`${descriptor.label} variants`}
               >
                 {state.cells.map((cell, index) => (
                   <div
@@ -399,13 +499,53 @@ export function AtlasPreview({
                       type="button"
                       disabled={!cell.frame || blocked}
                       aria-pressed={selected?.index === index}
-                      aria-label={`Inspect row ${Math.floor(index / 3) + 1}, column ${(index % 3) + 1}`}
+                      aria-label={`Inspect row ${Math.floor(index / size) + 1}, column ${(index % size) + 1}`}
                       onClick={() => select(index)}
+                      onKeyDown={(event) => {
+                        const step =
+                          event.key === "ArrowRight"
+                            ? 1
+                            : event.key === "ArrowLeft"
+                              ? -1
+                              : event.key === "ArrowDown"
+                                ? size
+                                : event.key === "ArrowUp"
+                                  ? -size
+                                  : 0;
+                        if (
+                          !step &&
+                          event.key !== "Home" &&
+                          event.key !== "End"
+                        )
+                          return;
+                        event.preventDefault();
+                        const buttons = event.currentTarget
+                          .closest(".atlas-grid")!
+                          .querySelectorAll<HTMLButtonElement>(
+                            ".atlas-cell > button",
+                          );
+                        let target =
+                          event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? buttons.length - 1
+                              : index + step;
+                        const direction =
+                          step || (event.key === "Home" ? 1 : -1);
+                        while (target >= 0 && target < buttons.length) {
+                          if (!buttons[target].disabled) {
+                            buttons[target].focus();
+                            break;
+                          }
+                          target += direction;
+                        }
+                      }}
                     >
                       {cell.frame ? (
                         <div className="atlas-art" inert>
                           <Plot
                             id={`atlas-cell-${index}`}
+                            framing={sharedFrame}
                             result={cell.frame.result}
                             config={cell.frame.config}
                             layers={study.layers}
@@ -423,8 +563,9 @@ export function AtlasPreview({
                         </div>
                       )}
                       <span className="atlas-values">
-                        r = {short(cell.radius)}
-                        <br />d = {short(cell.arm)}
+                        {descriptor.axes[0].symbol} = {short(cell.values[0])}
+                        <br />
+                        {descriptor.axes[1].symbol} = {short(cell.values[1])}
                       </span>
                     </button>
                     {cell.error && <p className="field-error">{cell.error}</p>}
@@ -449,13 +590,16 @@ export function AtlasPreview({
               <div className="atlas-inspection-header">
                 <div>
                   <h3>
-                    Inspect variant · row {Math.floor(selected.index / 3) + 1},
-                    column {(selected.index % 3) + 1}
+                    Inspect variant · row{" "}
+                    {Math.floor(selected.index / size) + 1}, column{" "}
+                    {(selected.index % size) + 1}
                   </h3>
                   <p className="note">
-                    r = {cell && short(cell.radius)} · d ={" "}
-                    {cell && short(cell.arm)} · Original quality and manual
-                    camera
+                    {descriptor.axes[0].symbol} ={" "}
+                    {cell && short(cell.values[0])} ·{" "}
+                    {descriptor.axes[1].symbol} ={" "}
+                    {cell && short(cell.values[1])} · Original quality and
+                    manual camera
                   </p>
                 </div>
                 <button

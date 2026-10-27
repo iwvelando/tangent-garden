@@ -154,6 +154,9 @@ Preset fingerprints cover definitions, not numerical or rendering output, so unc
 
 - Side-by-side fields go in `.pair` as `Field`s, whose CSS subgrid gives labels, controls and help their own shared rows. Do not bottom-align or otherwise couple them.
 - `tests/layout.spec.ts` opens every paired help toggle in every preset at desktop and phone widths. Extend its setups when a pair appears only under another setting.
+- Put clearance between a pair and neighboring controls on a containing block's padding or grid gap, not on the subgrid `Field` children. First-open portrait layouts on iOS have omitted clearance from those margins until a dropdown or another native action triggers layout again. In `web/atlas.css`, `.atlas-ranges` owns both its leading padding after Grid size/Framing and its trailing padding before Generate; its child fields have zero margins. Do not repair only the trailing gap when adding a new pair above it.
+- Do not stack a block field's bottom margin with the next pair's child top margins. The atlas's Parameter pair field has zero margins and owns 16px of trailing padding; Grid size/Framing children have zero margins. This gives the same 16px gap as the following range boundary, instead of 14px + 14px. Help outside a `.field`, such as atlas-entry help, also needs an explicit 8px control-to-help margin; `.field .hint` styles only help inside a Field. Compare its brief and expanded forms with an ordinary field at both widths.
+- Check both boundaries immediately after opening, before focusing or opening a native control, and after portrait/landscape transitions. `tests/webkit.spec.ts` covers these atlas gaps, including a constructed stylesheet that suppresses the preceding pair's child bottom margins. That controlled reproduction proves spacing no longer depends on them; it does not replace checking the first paint on an actual phone over HTTPS.
 
 ## Adding a preset
 
@@ -179,6 +182,15 @@ Compute a 3D preset's `view` rather than adjusting it by screenshot. The turntab
 
 - Use `ScalarInput` (`web/ScalarInput.tsx`), never `<input type="number">`, and add the field to `tests/scalar-fields.spec.ts`.
 - Only whole-number counts (samples, lines, offsets) and animation settings stay numeric.
+
+## Generated numeric defaults
+
+Editable defaults computed from other numbers can acquire binary arithmetic tails: `1.65 - 1` becomes `0.6499999999999999`, and `1.6 * 0.75` becomes `1.2000000000000002`. The exact center rule introduced for the roulette atlas addresses a related midpoint problem; it does not clean endpoints on its own.
+
+- Normalize only defaults produced by arithmetic, not a directly copied source value such as a zero-arm range's upper rolling radius. `roundedGenerated` in `web/atlas.ts` searches for the shortest decimal within `Number.EPSILON * max(abs(computedValue), operandScale)`. Carry `operandScale` from the operation: the original value for the roulette multiplications, the larger magnitude of a coordinate/coefficient and its range half-width for sums/differences, and the largest endpoint magnitude for grid interpolation. A tolerance scaled only to the small result of cancellation misses `1.15 - 1`, whose raw result is `0.1499999999999999`. If none is shorter, keep the original. Preserve finite/increasing endpoints and distinct subnormals. This removes rounding-sized tails without a fixed decimal-place or significant-digit cutoff that would erase small or precise values.
+- Do not change a frozen source, raw scalar text or endpoints explicitly entered by the user. `ScalarInput` should continue to display and resolve those normally; do not hide the issue with a global formatting change.
+- Clean generated interior grid values with their interpolation budget as well; otherwise an adopted choice can carry a tail into the next excursion. Preserve the frozen center independently, before cleanup. The interpolation's rounding scale is the larger magnitude of the source value and either endpoint. Comparing only with the source magnitude loses a small coordinate between endpoints near ±1: for example, the midpoint of −1.2 and 0.8 differs from −0.2 by more than its own one-epsilon budget. Snap the center only within the endpoint-aware rounding budget; an off-center range keeps its own midpoint and all entered endpoints stay exact.
+- Cover negative and near-zero coordinates, meaningful long precision, subnormals, both grid sizes, and reopening after adopting off-center variants. Sweep every axis and cell through repeated adoption with independent exact-decimal expectations, including values near the minimum half-width where subtraction cancels. Assert the actual generated numbers and the unchanged source/full-quality center request, with an ordinary WASM comparison for representative studies. Tests belong in `tests/gallery.spec.ts` with the atlas's existing defaults and ownership cases.
 
 ## Adding a validation error
 
