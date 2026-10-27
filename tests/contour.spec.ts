@@ -184,7 +184,9 @@ for (const theme of ["light", "dark"] as const)
     const expected = await textStyle("Family of levels");
     expect(await textStyle("Anchor contour normals")).toEqual(expected);
     // Stacked checkboxes are spaced as the drawing's layer checkboxes are,
-    // box to box.
+    // box to box, within a pixel: a label's line height, which centers each
+    // box, differs between platforms' fonts (13px here on macOS, 14px on
+    // Linux), while the help toggle beside the anchor does not.
     const top = (name: string) =>
       page.getByRole("checkbox", { name, exact: true }).evaluate((input) => {
         const r = input.getBoundingClientRect();
@@ -194,10 +196,12 @@ for (const theme of ["light", "dark"] as const)
     const anchor = await top("Anchor contour normals");
     const curve = await top("Curve F = c");
     const construction = await top("Construction lines");
-    expect(anchor.y - (family.y + family.height)).toBeCloseTo(
-      construction.y - (curve.y + curve.height),
-      0,
-    );
+    const gap = anchor.y - (family.y + family.height);
+    const layers = construction.y - (curve.y + curve.height);
+    expect(
+      Math.abs(gap - layers),
+      `${gap} beside ${layers}`,
+    ).toBeLessThanOrEqual(1);
     await page
       .locator(".check-setting")
       .first()
