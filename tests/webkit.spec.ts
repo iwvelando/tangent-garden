@@ -1212,3 +1212,109 @@ for (const source of ["3d", "4d"] as const)
       );
     } else await expect(browse).toBeFocused();
   });
+
+for (const width of [390, 1440])
+  test(`atlas pointer blur and keyboard focus preserve the study at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+    await page.goto("/");
+    await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+    await expect(page.locator(".plot-wrap")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const entry = page.getByRole("button", {
+      name: "Explore parameter atlas",
+      exact: true,
+    });
+    await entry.click();
+    const atlas = page.getByRole("dialog", {
+      name: "A field of possible flowers",
+      exact: true,
+    });
+    await expect(atlas).toBeVisible();
+    await expect(atlas).toHaveAttribute("data-quiet", "");
+    const first = atlas.getByRole("button", {
+      name: "Inspect row 1, column 1",
+      exact: true,
+    });
+    await first.click();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    await expect(
+      atlas.getByRole("tab", { name: "Selected variant", exact: true }),
+    ).toBeFocused();
+    await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+    await expect(
+      atlas.getByRole("tab", { name: "Atlas grid", exact: true }),
+    ).toBeFocused();
+    await first.focus();
+    await page.keyboard.press("Enter");
+    await expect(atlas).not.toHaveAttribute("data-quiet", "");
+    await page.keyboard.press("Escape");
+    await expect(atlas).toBeHidden();
+    await expect(entry).toBeFocused();
+    await expect(page.locator(".atlas-entry")).not.toHaveAttribute(
+      "data-quiet",
+      "",
+    );
+    await entry.click();
+    await atlas.getByLabel("Rolling radius from", { exact: true }).fill("pi/2");
+    await atlas
+      .getByRole("button", { name: "Generate atlas", exact: true })
+      .click();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    await atlas
+      .getByRole("button", { name: "Cancel atlas", exact: true })
+      .click();
+    await expect(entry).toBeFocused();
+    await expect(page.locator(".atlas-entry")).toHaveAttribute(
+      "data-quiet",
+      "",
+    );
+    await expect(page.locator("#artwork")).toBeVisible();
+  });
+
+test("atlas portrait Generate clearance survives first open and landscape rotation", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await page
+    .getByRole("button", { name: "Explore parameter atlas", exact: true })
+    .click();
+  const atlas = page.getByRole("dialog", {
+    name: "A field of possible flowers",
+    exact: true,
+  });
+  await expect(atlas).toBeVisible();
+  const spacing = () =>
+    atlas.evaluate((root) => {
+      const inputs = [...root.querySelectorAll(".atlas-controls input")];
+      const input = inputs.at(-1)!.getBoundingClientRect();
+      const generate = [...root.querySelectorAll("button")]
+        .find((b) => b.textContent?.trim() === "Generate atlas")!
+        .getBoundingClientRect();
+      return generate.top - input.bottom;
+    });
+  await expect.poll(spacing).toBeGreaterThanOrEqual(12);
+  const first = await spacing();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect.poll(spacing).toBeGreaterThanOrEqual(12);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(spacing).toBe(first);
+  await atlas
+    .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+    .click();
+  const adopt = atlas.getByRole("button", {
+    name: "Adopt variant",
+    exact: true,
+  });
+  await expect(adopt).toBeEnabled();
+  await expect(adopt).toBeInViewport({ ratio: 1 });
+});

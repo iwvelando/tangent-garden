@@ -9,6 +9,7 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -18,6 +19,10 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
+import { AtlasPreview } from "./AtlasPreview";
+import { AtlasContext, type AtlasRequest } from "./AtlasContext";
+import { atlasBudget, atlasEntryHelp } from "./atlas";
+import { useQuietFocus } from "./quiet-focus";
 import { JourneyPreview } from "./JourneyPreview";
 import {
   JourneyContext,
@@ -91,6 +96,9 @@ import {
 } from "./planar-link";
 import {
   Field,
+  HelpToggle,
+  HelpText,
+  useHelp,
   FieldErrorContext,
   StudyError,
   type FieldErrorTarget,
@@ -268,6 +276,16 @@ function App({
   shared?: SharedStudy;
   adoption?: AdoptedJourney;
 }) {
+  const atlasOwner = useContext(AtlasContext);
+  const excursionActive = useContext(JourneyContext).active;
+  const [atlasWaiting, setAtlasWaiting] = useState<
+    "keyboard" | "pointer" | null
+  >(null);
+  const [atlasNotice, setAtlasNotice] = useState("");
+  const atlasEntry = useRef<HTMLDivElement>(null);
+  const atlasButton = useRef<HTMLButtonElement>(null);
+  const atlasQuiet = useQuietFocus(atlasEntry);
+  const atlasHelp = useHelp();
   const [config, setConfig] = useState<Config>(opening.config);
   const [preset, setPreset] = useState("0");
   // Remembers the pole construction while another tab is selected.
@@ -397,6 +415,7 @@ function App({
     return () => engine.dispose();
   }, []);
   useEffect(() => {
+    if (excursionActive) return;
     let canceled = false;
     const timer = setTimeout(() => {
       client
@@ -424,7 +443,7 @@ function App({
       canceled = true;
       clearTimeout(timer);
     };
-  }, [config, bounds, probing, view]);
+  }, [config, bounds, probing, view, excursionActive]);
   // Between samples, Go places the probe at its own t over the drawn
   // study, apart from the study itself, so moving it redraws only the
   // probe. A point belongs to the frame and position it was asked for, and
@@ -1262,6 +1281,8 @@ function App({
     settings: PlanarAnimation;
   } | null>(null);
   const openStudy = (id: number, study: PlanarStudy, preset = "custom") => {
+    setAtlasWaiting(null);
+    setAtlasNotice("");
     touched.current = null;
     setPreset(preset);
     scalarGeneration.current++;
@@ -1310,6 +1331,31 @@ function App({
     probe,
     animation: animationSettings.current ?? defaultAnimation,
   });
+  useEffect(() => {
+    if (!active) {
+      setAtlasWaiting(null);
+      setAtlasNotice("");
+    } else if (atlasWaiting && !busy) {
+      setAtlasWaiting(null);
+      if (error)
+        setAtlasNotice(
+          "Correct the highlighted input before starting the atlas.",
+        );
+      else {
+        setAtlasNotice("");
+        atlasOwner.begin({
+          study: structuredClone(snapshot()),
+          via: atlasWaiting,
+          restoreFocus: (via) => {
+            if (via === "pointer") atlasQuiet.onPointerDown();
+            else atlasQuiet.onKeyDownCapture();
+            atlasQuiet.quiet();
+            atlasButton.current?.focus({ preventScroll: true });
+          },
+        });
+      }
+    }
+  }, [active, atlasWaiting, busy, error]);
   // Where the error is shown: under the input that failed to parse, or
   // under the control the engine's error names, or, for an error about the
   // whole study, the control just changed; the drawing shows it only when
@@ -1343,7 +1389,7 @@ function App({
         />
         <AnimationButton section="animation-section" />
         <ExportImageMenu
-          revision={journey.requested}
+          revision={journey.requested || !!atlasWaiting}
           disabled={!result || busy || !!error || animationRunning}
           kind={studyName(config)}
         />
@@ -1362,13 +1408,47 @@ function App({
               <NotebookMode />
               <ExampleGallery
                 onJourney={journey.onJourney}
-                onBrowse={journey.onBrowse}
+                onBrowse={() => {
+                  journey.onBrowse();
+                  setAtlasWaiting(null);
+                  setAtlasNotice("");
+                }}
                 examples={planarExamples}
                 current={preset === "custom" ? null : +preset}
                 onChoose={choosePreset}
                 thumbnail={planarThumbnail}
                 dark={dark}
               />
+              <div
+                className="atlas-entry"
+                ref={atlasEntry}
+                onPointerDown={atlasQuiet.onPointerDown}
+                onKeyDownCapture={atlasQuiet.onKeyDownCapture}
+              >
+                <div className="atlas-entry-actions">
+                  <button
+                    ref={atlasButton}
+                    type="button"
+                    disabled={
+                      !frame || busy || !!error || !!atlasBudget(config).error
+                    }
+                    aria-describedby={atlasHelp.open ? atlasHelp.id : undefined}
+                    onClick={(e) => {
+                      setAtlasWaiting(e.detail === 0 ? "keyboard" : "pointer");
+                      setAtlasNotice("Waiting for your study’s inputs…");
+                    }}
+                  >
+                    Explore parameter atlas
+                  </button>
+                  <HelpToggle topic="parameter atlas" help={atlasHelp} />
+                </div>
+                <HelpText help={atlasHelp}>{atlasEntryHelp}</HelpText>
+                {atlasNotice && (
+                  <p className="note" role="status">
+                    {atlasNotice}
+                  </p>
+                )}
+              </div>
               {journey.notice && (
                 <p className="note" role="status">
                   {journey.notice}
@@ -2321,6 +2401,7 @@ function App({
                 stopAtCaustic,
                 active,
                 journey.requested,
+                atlasWaiting,
                 probing,
               ])}
               disabled={busy || !!error}
@@ -2461,18 +2542,19 @@ function Notebook() {
   const focusRequest = useRef<FocusRequest>(false);
   const theme = useTheme();
   const [excursion, setExcursion] = useState<JourneyRequest | null>(null);
+  const [atlas, setAtlas] = useState<AtlasRequest | null>(null);
   const [adoptions, setAdoptions] = useState<
     Partial<Record<NotebookKind, AdoptedJourney>>
   >({});
   const adoptionId = useRef(0);
   const restoreFocus = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
-    if (!excursion && restoreFocus.current) {
+    if (!excursion && !atlas && restoreFocus.current) {
       const focus = restoreFocus.current;
       restoreFocus.current = null;
       focus();
     }
-  }, [excursion]);
+  }, [excursion, atlas]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -2486,6 +2568,8 @@ function Notebook() {
   };
   const choose = (next: NotebookKind, via: "keyboard" | "pointer") => {
     if (next === mode) return;
+    setAtlas(null);
+    setExcursion(null);
     focusRequest.current = via;
     show(next);
     const url = new URL(location.href);
@@ -2507,6 +2591,7 @@ function Notebook() {
   useEffect(() => {
     const pop = () => {
       setExcursion(null);
+      setAtlas(null);
       show(notebookKind());
     };
     window.addEventListener("popstate", pop);
@@ -2523,6 +2608,7 @@ function Notebook() {
       const token = linkToken(location.hash);
       if (token === null) return;
       setExcursion(null);
+      setAtlas(null);
       const id = ++links.current;
       let next: { notebook: NotebookKind; link: SharedStudy };
       try {
@@ -2554,82 +2640,114 @@ function Notebook() {
   }, []);
   return (
     <NotebookContext.Provider value={{ mode, choose, focusRequest }}>
-      <JourneyContext.Provider
-        value={{
-          active: !!excursion,
-          begin: setExcursion,
-        }}
-      >
-        {excursion && (
-          <div
-            className={theme.dark ? "app dark" : "app"}
-            style={{ ...theme.style, display: "contents" }}
-          >
-            <JourneyPreview
-              journey={excursion.journey}
-              via={excursion.via}
-              onReturn={(via) => {
-                restoreFocus.current = () => excursion.restoreFocus(via);
-                setExcursion(null);
-              }}
-              onOpen={(adoption: JourneyAdoption, via) => {
-                links.current++;
-                setShared((s) => ({ ...s, [adoption.notebook]: undefined }));
-                setAdoptions((a) => ({
-                  ...a,
-                  [adoption.notebook]: {
-                    ...adoption,
-                    id: ++adoptionId.current,
-                  },
-                }));
-                if (adoption.notebook === mode)
+      <AtlasContext.Provider value={{ begin: setAtlas }}>
+        <JourneyContext.Provider
+          value={{
+            active: !!excursion || !!atlas,
+            begin: setExcursion,
+          }}
+        >
+          {atlas && (
+            <div
+              className={theme.dark ? "app dark" : "app"}
+              style={{ ...theme.style, display: "contents" }}
+            >
+              <AtlasPreview
+                request={atlas}
+                onReturn={(via) => {
+                  restoreFocus.current = () => atlas.restoreFocus(via);
+                  setAtlas(null);
+                }}
+                onAdopt={(study, via) => {
+                  links.current++;
+                  setShared((s) => ({ ...s, "2d": undefined }));
+                  setAdoptions((a) => ({
+                    ...a,
+                    "2d": {
+                      notebook: "2d",
+                      study,
+                      custom: true,
+                      preset: 0,
+                      id: ++adoptionId.current,
+                    },
+                  }));
+                  restoreFocus.current = () => atlas.restoreFocus(via);
+                  setAtlas(null);
+                }}
+              />
+            </div>
+          )}
+          {excursion && (
+            <div
+              className={theme.dark ? "app dark" : "app"}
+              style={{ ...theme.style, display: "contents" }}
+            >
+              <JourneyPreview
+                journey={excursion.journey}
+                via={excursion.via}
+                onReturn={(via) => {
                   restoreFocus.current = () => excursion.restoreFocus(via);
-                else choose(adoption.notebook, via);
-                setExcursion(null);
-              }}
-            />
-          </div>
-        )}
-        {seen["2d"] && (
-          <div inert={!!excursion} hidden={mode !== "2d"}>
-            <App
-              active={mode === "2d"}
-              shared={shared["2d"]}
-              adoption={adoptions["2d"]}
-            />
-          </div>
-        )}
-        {seen["3d"] && (
-          <div inert={!!excursion} hidden={mode !== "3d"}>
-            <Suspense
-              fallback={
-                <div className="loading">Opening the spatial notebook…</div>
-              }
-            >
-              <SpatialApp
-                active={mode === "3d"}
-                shared={shared["3d"]}
-                adoption={adoptions["3d"]}
+                  setExcursion(null);
+                }}
+                onOpen={(adoption: JourneyAdoption, via) => {
+                  links.current++;
+                  setShared((s) => ({ ...s, [adoption.notebook]: undefined }));
+                  setAdoptions((a) => ({
+                    ...a,
+                    [adoption.notebook]: {
+                      ...adoption,
+                      id: ++adoptionId.current,
+                    },
+                  }));
+                  if (adoption.notebook === mode)
+                    restoreFocus.current = () => excursion.restoreFocus(via);
+                  else choose(adoption.notebook, via);
+                  setExcursion(null);
+                }}
               />
-            </Suspense>
-          </div>
-        )}
-        {seen["4d"] && (
-          <div inert={!!excursion} hidden={mode !== "4d"}>
-            <Suspense
-              fallback={
-                <div className="loading">Opening the fourth dimension…</div>
-              }
-            >
-              <TesseractApp
-                active={mode === "4d"}
-                shared={shared["4d"]}
-                adoption={adoptions["4d"]}
+            </div>
+          )}
+          {seen["2d"] && (
+            <div inert={!!excursion || !!atlas} hidden={mode !== "2d"}>
+              <App
+                active={mode === "2d"}
+                shared={shared["2d"]}
+                adoption={adoptions["2d"]}
               />
-            </Suspense>
-          </div>
-        )}
-      </JourneyContext.Provider>
+            </div>
+          )}
+          {seen["3d"] && (
+            <div inert={!!excursion || !!atlas} hidden={mode !== "3d"}>
+              <Suspense
+                fallback={
+                  <div className="loading">Opening the spatial notebook…</div>
+                }
+              >
+                <SpatialApp
+                  active={mode === "3d"}
+                  shared={shared["3d"]}
+                  adoption={adoptions["3d"]}
+                />
+              </Suspense>
+            </div>
+          )}
+          {seen["4d"] && (
+            <div inert={!!excursion || !!atlas} hidden={mode !== "4d"}>
+              <Suspense
+                fallback={
+                  <div className="loading">Opening the fourth dimension…</div>
+                }
+              >
+                <TesseractApp
+                  active={mode === "4d"}
+                  shared={shared["4d"]}
+                  adoption={adoptions["4d"]}
+                />
+              </Suspense>
+            </div>
+          )}
+        </JourneyContext.Provider>
+      </AtlasContext.Provider>
     </NotebookContext.Provider>
   );
 }

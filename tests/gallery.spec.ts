@@ -2493,3 +2493,1414 @@ for (const dimension of ["3d", "4d"] as const)
       );
       await expect(page.getByRole("alert")).toHaveCount(0);
     });
+
+test("atlas opens nine roulette variants and cancel preserves the original study", async ({
+  page,
+}) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await settled(page);
+  const before = (await copiedStudy(page)).study;
+  await page
+    .getByRole("button", { name: "Explore parameter atlas", exact: true })
+    .click();
+  const atlas = page.getByRole("dialog", {
+    name: "A field of possible flowers",
+    exact: true,
+  });
+  await expect(atlas).toBeVisible();
+  await expect(atlas.locator(".atlas-cell[data-state=valid]")).toHaveCount(9);
+  await expect(
+    atlas.getByText("Independent framing", { exact: true }),
+  ).toBeVisible();
+  await expect(atlas.locator("svg text")).toHaveCount(0);
+  await atlas
+    .getByRole("button", { name: "Inspect row 2, column 2", exact: true })
+    .click();
+  await expect(atlas.locator(".atlas-inspection")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(atlas).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "Explore parameter atlas", exact: true }),
+  ).toBeFocused();
+  expect((await copiedStudy(page)).study).toEqual(before);
+});
+
+test("atlas scheduler bounds work, supersedes stale generations and isolates snapshots", async () => {
+  const { RouletteAtlas, atlasDefaults, atlasBudget } =
+    await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  const original = structuredClone(study);
+  const calls: { config: any; resolve: (frame: any) => void }[] = [];
+  let active = 0,
+    maximum = 0;
+  const atlas = new RouletteAtlas(
+    {
+      compute: (config: any) => {
+        active++;
+        maximum = Math.max(maximum, active);
+        return new Promise<any>((resolve) =>
+          calls.push({
+            config,
+            resolve: (frame) => {
+              active--;
+              resolve(frame);
+            },
+          }),
+        );
+      },
+    },
+    () => {},
+  );
+  const finish = async (n: number) => {
+    const call = calls[n];
+    call.resolve({
+      config: structuredClone(call.config),
+      result: { base: [{ x: n, y: 1 }] },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  atlas.generate(study, atlasDefaults(study.config));
+  study.config.curve.roulette.phase = 99;
+  expect(calls).toHaveLength(1);
+  expect(atlas.state.cells).toHaveLength(9);
+  expect(atlas.state.queued).toBeLessThanOrEqual(9);
+  expect(atlas.state.cells.map((c) => [c.radius, c.arm])).toEqual([
+    [1.5, 2.25],
+    [2, 2.25],
+    [2.5, 2.25],
+    [1.5, 3],
+    [2, 3],
+    [2.5, 3],
+    [1.5, 3.75],
+    [2, 3.75],
+    [2.5, 3.75],
+  ]);
+  atlas.generate(original, { radius: [1, 3], arm: [0, 2] });
+  expect(calls).toHaveLength(1); // a newer generation cannot enqueue behind the active request
+  await finish(0);
+  expect(atlas.state.cells.every((c) => !c.frame)).toBe(true);
+  expect(calls).toHaveLength(2);
+  expect(calls[1].config.curve.roulette.phase).toBe(
+    original.config.curve.roulette.phase,
+  );
+  await finish(1);
+  const saved = structuredClone(atlas.state.cells[0].frame);
+  atlas.inspect(0);
+  atlas.inspect(0); // only the latest selection may be presented
+  await finish(2);
+  expect(calls).toHaveLength(4);
+  await finish(3);
+  expect(atlas.state.selection?.frame).toBeDefined();
+  const candidate = atlas.candidate()!;
+  expect(candidate.config.curve.roulette.radius).toBe(1);
+  expect(candidate.config.curve.roulette.arm).toBe(0);
+  const expected = structuredClone(original);
+  expected.config.curve.roulette.radius = 1;
+  expected.config.curve.roulette.arm = 0;
+  expect(candidate).toEqual(expected);
+  candidate.layers.base = false;
+  candidate.config.curve.roulette.phase = 123;
+  expect(atlas.candidate()).toEqual(expected);
+  expect(atlas.state.cells[0].frame).toEqual(saved);
+  expect(maximum).toBe(1);
+  atlas.cancel();
+  const last = calls.length - 1;
+  if (active) await finish(last);
+  expect(atlas.state.cells).toHaveLength(0);
+  expect(atlas.state.selection).toBeNull();
+  expect(atlas.state.queued).toBe(0);
+  expect(atlasBudget({ ...original.config, samples: 32768 }).error).toMatch(
+    /atlas.*limit/i,
+  );
+});
+
+async function observeAtlasWorkers(page: Page, delay = 0) {
+  await page.addInitScript(
+    ({ delay }) => {
+      const Native = window.Worker;
+      const logs: any[] = [];
+      Object.assign(window, { atlasWorkers: logs, atlasDelay: delay });
+      window.Worker = class extends Native {
+        log: any;
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super(url, options);
+          this.log = {
+            url: String(url),
+            requests: [],
+            replies: [],
+            active: 0,
+            maximum: 0,
+            terminated: false,
+          };
+          logs.push(this.log);
+        }
+        postMessage(data: any, options?: any) {
+          if (data.action === "compute" && !data.probeOnly) {
+            this.log.active++;
+            this.log.maximum = Math.max(this.log.maximum, this.log.active);
+            this.log.requests.push({
+              data: structuredClone(data),
+              started: performance.now(),
+            });
+          }
+          super.postMessage(data, options);
+        }
+        set onmessage(handler: any) {
+          super.onmessage = (event: MessageEvent) => {
+            const deliver = () => {
+              const request = this.log.requests.find(
+                (r: any) => r.data.id === event.data.id,
+              );
+              if (request) {
+                this.log.active--;
+                this.log.replies.push({
+                  data: structuredClone(event.data),
+                  took: performance.now() - request.started,
+                });
+              }
+              handler?.call(this, event);
+            };
+            if (logs.indexOf(this.log) > 0)
+              setTimeout(deliver, (window as any).atlasDelay);
+            else deliver();
+          };
+        }
+        terminate() {
+          this.log.terminated = true;
+          super.terminate();
+        }
+      };
+    },
+    { delay },
+  );
+}
+
+async function openAtlas(page: Page) {
+  await page
+    .getByRole("button", { name: "Explore parameter atlas", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "A field of possible flowers",
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+test("atlas geometry and resolved parameters match ordinary WASM requests in every cell", async ({
+  page,
+}, info) => {
+  await observeAtlasWorkers(page);
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await settled(page);
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  const observations = await page.evaluate(async () => {
+    const logs = (window as any).atlasWorkers;
+    const original = logs[0].replies.at(-1).data;
+    const grid = logs[1];
+    const ordinary = new Worker(grid.url);
+    const results = [];
+    for (let i = 0; i < 9; i++) {
+      const request = grid.requests[i].data;
+      const data: any = await new Promise((resolve) => {
+        ordinary.onmessage = (e) => resolve(e.data);
+        ordinary.postMessage({ ...request, id: i + 100 });
+      });
+      const actual = grid.replies[i].data;
+      results.push({
+        same:
+          JSON.stringify(data.result) === JSON.stringify(actual.result) &&
+          JSON.stringify(data.config) === JSON.stringify(actual.config),
+        resultSame:
+          JSON.stringify(data.result) === JSON.stringify(actual.result),
+        configSame:
+          JSON.stringify(data.config) === JSON.stringify(actual.config),
+        referenceError: data.error,
+        referenceKeys: Object.keys(data),
+        samples: actual.result.base.length,
+        derived: actual.result.derived.filter(Boolean).length,
+        radius: actual.config.curve.roulette.radius,
+        arm: actual.config.curve.roulette.arm,
+        milliseconds: grid.replies[i].took,
+        bytes: JSON.stringify(actual.result).length,
+      });
+    }
+    ordinary.terminate();
+    return {
+      results,
+      maximum: grid.maximum,
+      workersBeforeOrdinary: logs.length - 1,
+      centerMatchesOriginal:
+        JSON.stringify(grid.replies[4].data.result) ===
+        JSON.stringify(original.result),
+    };
+  });
+  expect(observations.maximum).toBe(1);
+  expect(observations.workersBeforeOrdinary).toBe(2);
+  expect(observations.centerMatchesOriginal).toBe(true);
+  for (const result of observations.results) {
+    expect(result, JSON.stringify(result)).toHaveProperty("same", true);
+    expect(result.samples).toBe(2000);
+    expect(result.derived).toBeGreaterThan(1900);
+  }
+  await info.attach("atlas-wasm-measurements", {
+    body: JSON.stringify(observations, null, 2),
+    contentType: "application/json",
+  });
+});
+
+test("atlas expression ranges identify invalid cells and never adopt invalid drafts", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  const atlas = await openAtlas(page);
+  await atlas.getByLabel("Rolling radius from", { exact: true }).fill("pi");
+  await atlas.getByLabel("Rolling radius to", { exact: true }).fill("2*pi");
+  await atlas.getByLabel("Tracing distance from", { exact: true }).fill("0");
+  await atlas.getByLabel("Tracing distance to", { exact: true }).fill("phi");
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(6);
+  await expect(atlas.locator('.atlas-cell[data-state="invalid"]')).toHaveCount(
+    3,
+  );
+  for (const row of [1, 2, 3])
+    await expect(
+      atlas.getByRole("button", {
+        name: `Inspect row ${row}, column 3`,
+        exact: true,
+      }),
+    ).toBeDisabled();
+  await expect(
+    atlas.locator('.atlas-cell[data-state="invalid"]').first(),
+  ).toContainText("smaller than the fixed radius");
+  await atlas
+    .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+  await atlas.getByLabel("Rolling radius to", { exact: true }).fill("pi");
+  await expect(
+    atlas.getByLabel("Rolling radius to", { exact: true }),
+  ).toHaveAttribute("aria-invalid", "true");
+  await expect(
+    atlas.getByRole("button", { name: "Generate atlas", exact: true }),
+  ).toBeDisabled();
+  await expect(atlas.locator(".atlas-cell")).toHaveCount(0);
+  await atlas.getByLabel("Rolling radius to", { exact: true }).fill("1");
+  await expect(atlas.getByRole("alert")).toContainText("Rolling radius to");
+  await atlas.getByLabel("Rolling radius to", { exact: true }).fill("t+1");
+  await expect(
+    atlas.getByLabel("Rolling radius to", { exact: true }),
+  ).toHaveAttribute("aria-invalid", "true");
+  await expect(atlas.getByRole("alert")).toContainText("Rolling radius to");
+});
+
+test("atlas adoption changes only its two parameters and matches copied-link reload and SVG export", async ({
+  page,
+}) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await page.getByLabel("Fixed radius R", { exact: true }).fill("2+4");
+  await page.getByLabel("t from", { exact: true }).fill("-pi/3");
+  await settled(page);
+  const artwork = page.locator("#artwork");
+  await artwork.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("+");
+  const before = (await copiedStudy(page)).study;
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas
+    .getByRole("button", { name: "Inspect row 3, column 1", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  const inspectedPaths = await atlas
+    .locator("#atlas-inspected path")
+    .evaluateAll((paths) => paths.map((p) => p.getAttribute("d")));
+  await atlas
+    .getByRole("button", { name: "Adopt variant", exact: true })
+    .click();
+  await expect(atlas).toBeHidden();
+  await settled(page);
+  const expected = structuredClone(before);
+  expected.config.curve.roulette.radius = 1.5;
+  expected.config.curve.roulette.arm = 3.75;
+  const after = await copiedStudy(page);
+  expect(after.study).toEqual(expected);
+  await expect(page.locator(".plot-heading .eyebrow")).toHaveText(
+    "YOUR OWN EXPLORATION",
+  );
+  await expect(page.getByLabel("Fixed radius R", { exact: true })).toHaveValue(
+    "2+4",
+  );
+  await expect(page.getByLabel("t from", { exact: true })).toHaveValue("-pi/3");
+  expect(
+    await artwork
+      .locator("path")
+      .evaluateAll((paths) => paths.map((p) => p.getAttribute("d"))),
+  ).toEqual(inspectedPaths);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const saved = await download;
+  const svg = await readFile((await saved.path())!, "utf8");
+  expect(svg).not.toMatch(/<text\b/);
+  const metadata = JSON.parse(
+    svg
+      .match(/<desc>(.*?)<\/desc>/s)![1]
+      .replaceAll("&quot;", '"')
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&amp;", "&"),
+  );
+  expect(metadata.curve.roulette.radius).toBe(1.5);
+  expect(metadata.curve.roulette.arm).toBe(3.75);
+  await page.goto(after.url);
+  await settled(page);
+  expect((await copiedStudy(page)).study).toEqual(expected);
+  expect(
+    await artwork
+      .locator("path")
+      .evaluateAll((paths) => paths.map((p) => p.getAttribute("d"))),
+  ).toEqual(inspectedPaths);
+});
+
+test("atlas delayed work is serial and cannot revive after regeneration, cancel or notebook switch", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page, 250);
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  let atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="pending"]')).toHaveCount(
+    9,
+  );
+  await atlas.getByLabel("Rolling radius from", { exact: true }).fill("1");
+  await atlas.getByLabel("Rolling radius to", { exact: true }).fill("3");
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await expect(atlas.locator(".atlas-values").first()).toContainText("r = 1");
+  expect(
+    await page.evaluate(() => (window as any).atlasWorkers[1].maximum),
+  ).toBe(1);
+  await atlas
+    .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+    .click();
+  await atlas
+    .getByRole("button", { name: "Cancel atlas", exact: true })
+    .click();
+  await expect(atlas).toBeHidden();
+  await settled(page);
+  expect(
+    await page.evaluate(() => (window as any).atlasWorkers[1].terminated),
+  ).toBe(true);
+  await page.waitForTimeout(400);
+  await expect(page.locator(".atlas")).toHaveCount(0);
+  atlas = await openAtlas(page);
+  await atlas.getByRole("radio", { name: "3D studies", exact: true }).click();
+  await expect(atlas).toBeHidden();
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(page.locator(".atlas")).toHaveCount(0);
+});
+
+for (const mode of ["light", "dark"] as const)
+  for (const width of [390, 1440])
+    test(`atlas artwork and keyboard controls at ${width}px in ${mode} with alternate colors`, async ({
+      page,
+    }, info) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+      await page.emulateMedia({ colorScheme: mode });
+      await page.addInitScript(() =>
+        localStorage.setItem("tangent-garden.color-scheme", "forest"),
+      );
+      await page.goto("/");
+      await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+      const atlas = await openAtlas(page);
+      await expect(
+        atlas.locator('.atlas-cell[data-state="valid"]'),
+      ).toHaveCount(9);
+      expect(await atlas.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
+        true,
+      );
+      const first = atlas.getByRole("button", {
+        name: "Inspect row 1, column 1",
+        exact: true,
+      });
+      await first.focus();
+      await page.keyboard.press("Enter");
+      await expect(
+        atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+      ).toBeEnabled();
+      await expect(atlas.locator("svg text")).toHaveCount(0);
+      await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+      const selectedInk = await first.evaluate((e) => {
+        const style = getComputedStyle(e);
+        return {
+          border: style.borderTopColor,
+          ink: style.getPropertyValue("--base-ink").trim(),
+        };
+      });
+      const ink = selectedInk.ink
+        .match(/[a-f\d]{2}/gi)!
+        .map((v) => parseInt(v, 16));
+      expect(selectedInk.border).toBe(`rgb(${ink.join(", ")})`);
+      await first.scrollIntoViewIfNeeded();
+      await atlas.screenshot({
+        path: info.outputPath(`atlas-${mode}-${width}.png`),
+      });
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("button", {
+          name: "Explore parameter atlas",
+          exact: true,
+        }),
+      ).toBeFocused();
+    });
+
+test("atlas defaults stay finite and increasing at scalar extremes and zero tracing distance", async () => {
+  const { atlasDefaults, atlasRangeError } = await import("../web/atlas");
+  for (const radius of [Number.MIN_VALUE, 2, 100000])
+    for (const arm of [0, Number.MIN_VALUE, 100000]) {
+      const config = structuredClone(presets[0].config);
+      Object.assign(config.curve.roulette, { radius, arm });
+      const ranges = atlasDefaults(config);
+      expect(atlasRangeError(ranges)).toBeNull();
+      expect(ranges.radius[0]).toBeGreaterThan(0);
+      expect(ranges.arm[0]).toBeGreaterThanOrEqual(0);
+      if (arm === 0) expect(ranges.arm).toEqual([0, radius]);
+    }
+});
+
+test("atlas entry stays disabled for invalid and pending scalar edits", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (data: any, options?: any) {
+      if (data.action === "scalars")
+        setTimeout(() => post.call(this, data, options), 350);
+      else post.call(this, data, options);
+    };
+  });
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  const entry = page.getByRole("button", {
+    name: "Explore parameter atlas",
+    exact: true,
+  });
+  await expect(entry).toBeEnabled();
+  const radius = page.getByLabel("Rolling radius r", { exact: true });
+  await radius.fill("t");
+  await expect(entry).toBeDisabled();
+  await expect(radius).toHaveAttribute("aria-invalid", "true");
+  await expect(entry).toBeDisabled();
+  await expect(page.locator(".atlas")).toHaveCount(0);
+  await expect(radius).toHaveValue("t");
+  await radius.fill("6");
+  await expect(radius).toHaveAttribute("aria-invalid", "true");
+  await expect(entry).toBeDisabled();
+  await radius.fill("1+2");
+  await expect(entry).toBeDisabled();
+  await expect(entry).toBeEnabled();
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await expect(atlas.locator(".atlas-values").nth(4)).toContainText("r = 3");
+  await page.keyboard.press("Escape");
+  await expect(radius).toHaveValue("1+2");
+});
+
+test("atlas entry uses tiered compatibility help and disables unsupported or excessive studies", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page);
+  await page.goto("/");
+  await settled(page);
+  const entry = page.getByRole("button", {
+    name: "Explore parameter atlas",
+    exact: true,
+  });
+  await expect(entry).toBeDisabled();
+  await expect(
+    page.getByText(
+      "Available for roulette curves. Try Hypotrochoid & its evolute in the examples.",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+  const info = page.getByRole("button", {
+    name: "About parameter atlas",
+    exact: true,
+  });
+  await info.click();
+  const help = page.locator(`#${await info.getAttribute("aria-controls")}`);
+  await expect(help.locator(".hint-brief")).toContainText(
+    "for supported definitions",
+  );
+  await expect(help.locator(".hint-more")).toBeHidden();
+  await help.getByRole("button", { name: "Show more", exact: true }).click();
+  await expect(help.locator(".hint-more")).toContainText("Roulette");
+  await expect(help.locator(".hint-more")).toContainText("along a line");
+  expect(await page.evaluate(() => (window as any).atlasWorkers.length)).toBe(
+    1,
+  );
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await expect(entry).toBeEnabled();
+  await page.getByLabel("Numerical samples", { exact: true }).fill("32768");
+  await settled(page);
+  await expect(entry).toBeDisabled();
+  await expect(page.locator(".atlas")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).atlasWorkers.length)).toBe(
+    1,
+  );
+  await expect(
+    page.getByLabel("Numerical samples", { exact: true }),
+  ).toHaveValue("32768");
+  // Admission remains defensive even when a caller bypasses the entry button.
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  let calls = 0;
+  const scheduler = new RouletteAtlas(
+    {
+      compute: async () => {
+        calls++;
+        throw new Error("unexpected request");
+      },
+    },
+    () => {},
+  );
+  const unsupported = presetStudy(0);
+  scheduler.generate(unsupported, atlasDefaults(unsupported.config));
+  expect(scheduler.state.error).toMatch(/available for roulette/);
+  expect(calls).toBe(0);
+});
+
+test("atlas preserves edited layers, probe, animation, raw bounds and refined manual camera on cancel and adoption", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const source = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  source.config.adaptive = true;
+  source.config.adaptiveView = true;
+  source.config.adaptiveFrame = true;
+  source.layers = {
+    base: true,
+    derived: true,
+    lines: false,
+    incident: false,
+    virtual: false,
+    axes: true,
+  };
+  source.weight = "bold";
+  source.probe = { enabled: true, between: true, position: 0.417 };
+  source.camera = { x: 31, y: -19, zoom: 4 };
+  source.length = 1.1;
+  source.stop = true;
+  source.poleKind = "orthotomic";
+  source.animation = {
+    ...source.animation,
+    duration: 17,
+    mode: "parameters",
+    camera: "current",
+    tracks: [{ target: "rollRadius", from: "1", to: "3" }],
+  } as any;
+  const token = deflateRawSync(
+    JSON.stringify({ v: 1, notebook: "2d", study: source }),
+  ).toString("base64url");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(`/#s=${token}`);
+  await settled(page);
+  await page.getByLabel("Fixed radius R", { exact: true }).fill("2+3");
+  await page.getByLabel("t from", { exact: true }).fill("-pi/7");
+  await settled(page);
+  const before = (await copiedStudy(page)).study;
+  let atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  for (const [row, column] of [
+    [1, 1],
+    [3, 3],
+    [2, 2],
+  ]) {
+    await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+    await atlas
+      .getByRole("button", {
+        name: `Inspect row ${row}, column ${column}`,
+        exact: true,
+      })
+      .click();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+  }
+  await page.keyboard.press("Escape");
+  await settled(page);
+  expect((await copiedStudy(page)).study).toEqual(before);
+  await expect(page.getByLabel("Fixed radius R", { exact: true })).toHaveValue(
+    "2+3",
+  );
+  await expect(page.getByLabel("t from", { exact: true })).toHaveValue("-pi/7");
+  atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas
+    .getByRole("button", { name: "Inspect row 2, column 3", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  const inspected = await atlas
+    .locator("#atlas-inspected path")
+    .evaluateAll((paths) => paths.map((p) => p.getAttribute("d")));
+  await atlas
+    .getByRole("button", { name: "Adopt variant", exact: true })
+    .click();
+  await settled(page);
+  const expected = structuredClone(before);
+  expected.config.curve.roulette.radius = 2.5;
+  expect((await copiedStudy(page)).study).toEqual(expected);
+  expect(
+    await page
+      .locator("#artwork path")
+      .evaluateAll((paths) => paths.map((p) => p.getAttribute("d"))),
+  ).toEqual(inspected);
+  await expect(page.getByLabel("Fixed radius R", { exact: true })).toHaveValue(
+    "2+3",
+  );
+});
+
+test("atlas engine timeout stops unsent numerical work instead of queuing behind a timed-out computation", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  let calls = 0;
+  const atlas = new RouletteAtlas(
+    {
+      compute: async () => {
+        calls++;
+        throw new Error(
+          "Calculation timed out. Reduce the resolution or simplify the expression.",
+        );
+      },
+    },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(calls).toBe(1);
+  expect(atlas.state.queued).toBe(0);
+  expect(atlas.state.error).toMatch(/timed out/);
+});
+
+test("atlas center cell keeps the frozen values exactly when rounding moves the midpoint", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  // 0.75·0.83 and 1.25·0.83 halve and sum to 0.8299999999999998, and the
+  // entered range 0.63 to 1.03 to 0.8300000000000001.
+  study.config.curve.roulette.radius = 1.1;
+  study.config.curve.roulette.arm = 0.83;
+  for (const ranges of [
+    atlasDefaults(study.config),
+    { radius: [0.9, 1.3], arm: [0.63, 1.03] } as const,
+  ]) {
+    const requested: any[] = [];
+    const atlas = new RouletteAtlas(
+      {
+        compute: (config) => {
+          requested.push(structuredClone(config));
+          return new Promise(() => {});
+        },
+      },
+      () => {},
+    );
+    atlas.generate(study, structuredClone(ranges) as any);
+    expect(atlas.state.cells[4]).toMatchObject({ radius: 1.1, arm: 0.83 });
+    // Only the center is snapped; the other cells keep their axis values.
+    expect(atlas.state.cells[0]).toMatchObject({
+      radius: ranges.radius[0],
+      arm: ranges.arm[0],
+    });
+    expect(atlas.state.cells[8]).toMatchObject({
+      radius: ranges.radius[1],
+      arm: ranges.arm[1],
+    });
+    atlas.cancel();
+  }
+  // A range centered elsewhere keeps its own midpoint.
+  const offCenter = new RouletteAtlas(
+    { compute: () => new Promise(() => {}) },
+    () => {},
+  );
+  offCenter.generate(study, { radius: [1.5, 2], arm: [1, 2] });
+  expect(offCenter.state.cells[4]).toMatchObject({ radius: 1.75, arm: 1.5 });
+  offCenter.cancel();
+  // The center's request is the frozen study's configuration, unchanged.
+  const requested: any[] = [];
+  const atlas = new RouletteAtlas(
+    {
+      compute: async (config) => {
+        requested.push(structuredClone(config));
+        return { config, result: { base: [] } } as any;
+      },
+    },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  await expect.poll(() => requested.length).toBe(9);
+  expect(requested[4]).toEqual(study.config);
+});
+
+test("atlas treats any engine refusal as an unavailable cell, whatever its wording", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { EngineError } = await import("../web/engine-client");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  let calls = 0;
+  let disposed = 0;
+  const atlas = new RouletteAtlas(
+    {
+      compute: async (config) => {
+        // Wording a transport failure also uses must not end the atlas.
+        if (calls++ === 0)
+          throw new EngineError(
+            "The rolling path is not closed; the request timed out of range.",
+            "curve.roulette.radius",
+          );
+        return { config, result: { base: [] } } as any;
+      },
+      dispose: () => {
+        disposed++;
+      },
+    },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  await expect.poll(() => calls).toBe(9);
+  await expect
+    .poll(() => atlas.state.cells.filter((c) => c.frame).length)
+    .toBe(8);
+  expect(atlas.state.cells[0].error).toMatch(/not closed/);
+  expect(atlas.state.error).toBeUndefined();
+  expect(disposed).toBe(0);
+});
+
+for (const width of [390, 1440])
+  test(`atlas tabs switch between grid and full-quality variant without scrolling at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+    await observeAtlasWorkers(page);
+    await page.goto("/");
+    await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+    const atlas = await openAtlas(page);
+    const gridTab = atlas.getByRole("tab", { name: "Atlas grid", exact: true });
+    const variantTab = atlas.getByRole("tab", {
+      name: "Selected variant",
+      exact: true,
+    });
+    await expect(gridTab).toHaveAttribute("aria-selected", "true");
+    await expect(variantTab).toBeDisabled();
+    await atlas
+      .getByLabel("Tracing distance from", { exact: true })
+      .fill("1+1");
+    await atlas
+      .getByRole("button", { name: "Generate atlas", exact: true })
+      .click();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    const cell = atlas.getByRole("button", {
+      name: "Inspect row 1, column 1",
+      exact: true,
+    });
+    await cell.click();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    await expect(variantTab).toHaveAttribute("aria-selected", "true");
+    await expect(variantTab).toBeFocused();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    const centers = await atlas
+      .locator(".atlas-inspected-art")
+      .evaluate((art) => {
+        const a = art.getBoundingClientRect();
+        const panel = art.closest(".atlas-inspection")!.getBoundingClientRect();
+        return {
+          art: (a.left + a.right) / 2,
+          panel: (panel.left + panel.right) / 2,
+        };
+      });
+    expect(Math.abs(centers.art - centers.panel)).toBeLessThan(1);
+    await expect(
+      atlas.getByRole("tabpanel", { name: "Atlas grid", exact: true }),
+    ).toBeHidden();
+    await expect(
+      atlas.getByRole("heading", {
+        name: "Inspect variant · row 1, column 1",
+        exact: true,
+      }),
+    ).toBeInViewport();
+    await expect(
+      atlas.getByRole("button", { name: "Back to variants", exact: true }),
+    ).toHaveCount(0);
+    const requests = await page.evaluate(
+      () => (window as any).atlasWorkers[1].requests.length,
+    );
+    await gridTab.click();
+    await expect(
+      atlas.getByLabel("Tracing distance from", { exact: true }),
+    ).toHaveValue("1+1");
+    await expect(cell).toBeVisible();
+    await expect(cell).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      atlas.getByRole("tabpanel", { name: "Selected variant", exact: true }),
+    ).toBeHidden();
+    await page.keyboard.press("ArrowRight");
+    await expect(variantTab).toBeFocused();
+    await expect(variantTab).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Home");
+    await expect(gridTab).toBeFocused();
+    await expect(gridTab).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("End");
+    await expect(variantTab).toBeFocused();
+    expect(
+      await page.evaluate(
+        () => (window as any).atlasWorkers[1].requests.length,
+      ),
+    ).toBe(requests);
+  });
+
+test("atlas reports a worker failure that arrives after an edit and keeps it through later edits", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  let reject!: (error: Error) => void;
+  const seen: (string | undefined)[] = [];
+  const atlas = new RouletteAtlas(
+    {
+      compute: () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        }),
+    },
+    (state) => seen.push(state.failed),
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  // A range edit cancels the generation while its request is still running.
+  atlas.cancel();
+  reject(
+    new Error(
+      "Calculation timed out. Reduce the resolution or simplify the expression.",
+    ),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(seen.at(-1)).toMatch(/timed out/);
+  atlas.cancel();
+  expect(atlas.state.failed).toMatch(/timed out/);
+  expect(atlas.state.error).toBe(atlas.state.failed);
+});
+
+test("atlas stale worker timeout also invalidates a replacement generation", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  let calls = 0;
+  let reject!: (error: Error) => void;
+  const atlas = new RouletteAtlas(
+    {
+      compute: () => {
+        calls++;
+        return new Promise((_, fail) => {
+          reject = fail;
+        });
+      },
+    },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  atlas.generate(study, { radius: [1, 3], arm: [0, 2] });
+  reject(
+    new Error(
+      "Calculation timed out. Reduce the resolution or simplify the expression.",
+    ),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(calls).toBe(1);
+  expect(atlas.state.queued).toBe(0);
+  expect(atlas.state.error).toMatch(/timed out/);
+  atlas.generate(study, atlasDefaults(study.config));
+  expect(calls).toBe(1);
+});
+
+test("atlas owns delivered geometry independently across cells and inspection", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  const shared: any = { config: null, result: { base: [{ x: 0, y: 1 }] } };
+  let calls = 0;
+  const atlas = new RouletteAtlas(
+    {
+      compute: async (config) => {
+        shared.config = config;
+        shared.result.base[0].x = ++calls;
+        return shared;
+      },
+    },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(atlas.state.cells.map((c) => c.frame!.result.base[0]!.x)).toEqual([
+    1, 2, 3, 4, 5, 6, 7, 8, 9,
+  ]);
+  atlas.state.cells[0].frame!.result.base[0]!.x = 999;
+  atlas.inspect(1);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(atlas.state.selection!.frame!.result.base[0]!.x).toBe(10);
+  expect(atlas.state.cells[1].frame!.result.base[0]!.x).toBe(2);
+  shared.result.base[0].x = 500;
+  expect(atlas.state.selection!.frame!.result.base[0]!.x).toBe(10);
+});
+
+test("atlas freezes the whole study before later queued cells or adoption read it", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  const original = structuredClone(study);
+  const configs: any[] = [];
+  const atlas = new RouletteAtlas(
+    {
+      compute: async (config) => {
+        configs.push(structuredClone(config));
+        return { config, result: { base: [{ x: 0, y: 1 }] } } as any;
+      },
+    },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  study.config.curve.roulette.phase = 99;
+  study.layers.base = false;
+  study.animation.duration = 123;
+  study.bounds.max = "pi";
+  study.camera.zoom = 6;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(configs).toHaveLength(9);
+  expect(configs.map((c) => c.curve.roulette.phase)).toEqual(
+    Array(9).fill(original.config.curve.roulette.phase),
+  );
+  atlas.inspect(0);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  original.config.curve.roulette.radius = 1.5;
+  original.config.curve.roulette.arm = 2.25;
+  expect(atlas.candidate()).toEqual(original);
+});
+
+test("atlas pending range replacements and a newer study link discard old work", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page, 250);
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  let atlas = await openAtlas(page);
+  const from = atlas.getByLabel("Rolling radius from", { exact: true });
+  await from.fill("pi/2");
+  await from.fill("phi");
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await expect(atlas.locator(".atlas-values").first()).toContainText(
+    "r = 1.618",
+  );
+  await expect(from).toHaveValue("phi");
+  const { presetStudy } = await import("../web/planar-link");
+  const replacement = presetStudy(0);
+  replacement.config.curve.a = 7;
+  const token = deflateRawSync(
+    JSON.stringify({ v: 1, notebook: "2d", study: replacement }),
+  ).toString("base64url");
+  await atlas
+    .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+    .click();
+  await page.goto(`/#s=${token}`);
+  await expect.poll(() => new URL(page.url()).hash).toBe("");
+  await expect(atlas).toBeHidden();
+  await settled(page);
+  await expect(
+    page.getByLabel("Shape parameter a", { exact: true }),
+  ).toHaveValue("7");
+  await page.waitForTimeout(400);
+  await expect(page.locator(".atlas")).toHaveCount(0);
+  await expect(
+    page.getByLabel("Shape parameter a", { exact: true }),
+  ).toHaveValue("7");
+});
+
+test("atlas entry stops playback and desktop sidebar scrolling leaves the drawing fixed", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await settled(page);
+  const before = await page.locator("#artwork").boundingBox();
+  await page.locator("aside").evaluate((e) => {
+    e.scrollTop = e.scrollHeight;
+  });
+  expect(await page.locator("#artwork").boundingBox()).toEqual(before);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await page.keyboard.press("Escape");
+  await settled(page);
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeEnabled();
+});
+
+test("atlas entry invalidates a pending still export and never emits its late file", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const encode = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+      (window as any).atlasEncoding = true;
+      return encode.call(
+        this,
+        (blob) => setTimeout(() => callback(blob), 900),
+        ...args,
+      );
+    };
+  });
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await settled(page);
+  const downloads: string[] = [];
+  page.on("download", (file) => downloads.push(file.suggestedFilename()));
+  await exportImage(page, "PNG");
+  await expect
+    .poll(() => page.evaluate(() => !!(window as any).atlasEncoding))
+    .toBe(true);
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await page.waitForTimeout(1100);
+  expect(downloads).toEqual([]);
+  await page.keyboard.press("Escape");
+  await settled(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("atlas admission accounts for hidden families, refinement and composed work without reducing quality", async () => {
+  const { atlasBudget } = await import("../web/atlas");
+  const config = structuredClone(
+    presets.find((p) => p.title === "Hypotrochoid & its evolute")!.config,
+  );
+  expect(atlasBudget(config)).toEqual({
+    points: 40000,
+    work: 360000,
+    error: undefined,
+  });
+  expect(
+    atlasBudget({ ...config, samples: 8000, lines: 256 }).error,
+  ).toBeUndefined();
+  expect(atlasBudget({ ...config, samples: 8001 }).error).toMatch(/limit/);
+  expect(atlasBudget({ ...config, lines: 257 }).error).toMatch(/limit/);
+  expect(atlasBudget({ ...config, adaptive: true }).error).toBeUndefined();
+  expect(
+    atlasBudget({ ...config, adaptive: true, input: "pedal" }).error,
+  ).toMatch(/limit/);
+  expect(
+    atlasBudget({ ...config, adaptive: true, kind: "rolling" }).error,
+  ).toMatch(/limit/);
+  expect(
+    atlasBudget({
+      ...config,
+      adaptive: true,
+      kind: "offset",
+      stack: { ...config.stack, enabled: true },
+    }).error,
+  ).toMatch(/limit/);
+  expect(config.samples).toBe(2000);
+  expect(config.adaptive).toBeUndefined();
+});
+
+test("atlas refuses delivered geometry beyond its aggregate numeric storage cap", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  // A single unexpected large reply must be rejected before copying or retaining it.
+  const large = { base: Array(4000001).fill(0) };
+  const atlas = new RouletteAtlas(
+    { compute: async (config) => ({ config, result: large }) as any },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(atlas.state.cells).toHaveLength(9);
+  expect(
+    atlas.state.cells.every(
+      (c) => !c.frame && /geometry limit/.test(c.error ?? ""),
+    ),
+  ).toBe(true);
+  expect(atlas.state.queued).toBe(0);
+  expect(atlas.candidate()).toBeNull();
+});
+
+test("atlas typing keeps the Generate button and feedback stable between scalar replies", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page, 40);
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  await atlas.locator(".atlas-controls").evaluate((controls) => {
+    const button = [...controls.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Generate atlas",
+    )!;
+    const status = controls.querySelector(".atlas-feedback")!;
+    const disabled: boolean[] = [];
+    const messages: string[] = [];
+    const record = () => {
+      if (disabled.at(-1) !== button.disabled) disabled.push(button.disabled);
+      const text = status.textContent!.trim();
+      if (messages.at(-1) !== text) messages.push(text);
+    };
+    const observer = new MutationObserver(record);
+    observer.observe(controls, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
+    record();
+    Object.assign(window, { atlasTyping: { disabled, messages, observer } });
+  });
+  const input = atlas.getByLabel("Tracing distance from", { exact: true });
+  await input.fill("0");
+  await input.pressSequentially(".125", { delay: 90 });
+  await expect(
+    atlas.getByRole("button", { name: "Generate atlas", exact: true }),
+  ).toBeEnabled();
+  const observed = await page.evaluate(() => {
+    const { disabled, messages, observer } = (window as any).atlasTyping;
+    observer.disconnect();
+    return { disabled, messages };
+  });
+  expect(observed.disabled).toEqual([false, true, false]);
+  expect(observed.messages).toEqual([
+    "9 of 9 variants ready.",
+    "Set ranges, then generate nine variants.",
+  ]);
+  await expect(input).toHaveValue("0.125");
+});
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+  { width: 1440, height: 1000 },
+])
+  test(`atlas actions and headers align with their drawings at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+    const atlas = await openAtlas(page);
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    if (viewport.width > 700) {
+      const alignment = await atlas.evaluate((root) => {
+        const label = root
+          .querySelector(".atlas-controls .field-label")!
+          .getBoundingClientRect();
+        const grid = root.querySelector(".atlas-grid")!.getBoundingClientRect();
+        return { label: label.top, grid: grid.top };
+      });
+      expect(Math.abs(alignment.label - alignment.grid)).toBeLessThan(1);
+    }
+    await atlas
+      .getByRole("button", { name: "Inspect row 1, column 2", exact: true })
+      .click();
+    const adopt = atlas.getByRole("button", {
+      name: "Adopt variant",
+      exact: true,
+    });
+    await expect(adopt).toBeEnabled();
+    const layout = await atlas.evaluate((root) => {
+      const button = [...root.querySelectorAll("button")]
+        .find((b) => b.textContent?.trim() === "Adopt variant")!
+        .getBoundingClientRect();
+      const heading = root
+        .querySelector(".atlas-inspection h3")!
+        .getBoundingClientRect();
+      const art = root
+        .querySelector(".atlas-inspected-art")!
+        .getBoundingClientRect();
+      const tabs = root.querySelector(".atlas-tabs")!.getBoundingClientRect();
+      return {
+        buttonTop: button.top,
+        buttonBottom: button.bottom,
+        headingLeft: heading.left,
+        artLeft: art.left,
+        artTop: art.top,
+        tabsBottom: tabs.bottom,
+      };
+    });
+    expect(layout.buttonBottom).toBeLessThanOrEqual(layout.artTop - 8);
+    expect(Math.abs(layout.headingLeft - layout.artLeft)).toBeLessThan(1);
+    expect(layout.buttonTop - layout.tabsBottom).toBeLessThan(160);
+    await expect(adopt).toBeInViewport({ ratio: 1 });
+  });
+
+test("atlas Generate spacing is independent of paired-field margins on first portrait open and rotation", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    // Model the observed zero clearance by removing a subgrid child's margin.
+    // This does not reproduce the iPhone's underlying first-layout bug.
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(
+      ".atlas-controls .pair > .field { margin-block-end: 0; }",
+    );
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  });
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  const atlas = await openAtlas(page);
+  const gap = () =>
+    atlas.evaluate((root) => {
+      const input = [...root.querySelectorAll(".atlas-controls input")]
+        .at(-1)!
+        .getBoundingClientRect();
+      const button = [...root.querySelectorAll("button")]
+        .find((b) => b.textContent?.trim() === "Generate atlas")!
+        .getBoundingClientRect();
+      return button.top - input.bottom;
+    });
+  await expect.poll(gap).toBeGreaterThanOrEqual(12);
+  const initial = await gap();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect.poll(gap).toBeGreaterThanOrEqual(12);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(gap).toBe(initial);
+});
+
+test("atlas inspection timeout returns to the grid with its failure visible", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  // A real timeout: Go never replies, and EngineClient's own deadline (cut
+  // from 30 s) rejects the request. Scalar evaluations still reach Go.
+  await page.evaluate(() => {
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (data: any, options?: any) {
+      if (data.action !== "compute") post.call(this, data, options);
+    };
+    const later = window.setTimeout;
+    window.setTimeout = ((handler: TimerHandler, ms?: number, ...rest: any[]) =>
+      later(handler, ms === 30000 ? 50 : ms, ...rest)) as typeof setTimeout;
+  });
+  await atlas
+    .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+    .click();
+  await expect(atlas.getByRole("alert")).toContainText("timed out");
+  await expect(
+    atlas.getByRole("tab", { name: "Atlas grid", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    atlas.getByRole("tab", { name: "Selected variant", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toHaveCount(0);
+  // The disposed worker cannot evaluate a range. That is the atlas's
+  // failure, not the entered expression's, and it stays on screen.
+  const to = atlas.getByLabel("Rolling radius to", { exact: true });
+  await to.fill("2*pi");
+  await expect(atlas.getByRole("alert")).toHaveText(
+    "The atlas’s numerical engine stopped: Calculation timed out. Reduce the resolution or simplify the expression. Close the atlas and reopen it to continue.",
+  );
+  await expect(to).not.toHaveAttribute("aria-invalid", "true");
+  await expect(atlas).not.toContainText("Numerical engine");
+  await expect(
+    atlas.getByRole("button", { name: "Generate atlas", exact: true }),
+  ).toBeDisabled();
+});
+
+test("atlas keeps focus in a range when editing after inspecting a variant", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  const atlas = await openAtlas(page);
+  await atlas
+    .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+  const input = atlas.getByLabel("Tracing distance from", { exact: true });
+  await input.focus();
+  await input.press("End");
+  await input.pressSequentially("12", { delay: 80 });
+  await expect(input).toHaveValue("2.2512");
+  await expect(input).toBeFocused();
+  await expect(
+    atlas.getByRole("tab", { name: "Selected variant", exact: true }),
+  ).toBeDisabled();
+});
