@@ -98,10 +98,15 @@ export function AtlasPreview({
   const invalid = Object.values(scalars).find((s) => s.error);
   const rangeError = atlasRangeError(ranges);
   const budget = atlasBudget(study.config);
-  const failure = invalid
-    ? { label: invalid.name, message: `${invalid.name}: ${invalid.error}` }
-    : rangeError;
-  const blocked = editing || pending || !!failure || !!budget.error;
+  // Range expressions are evaluated by the atlas's own worker. Once it has
+  // failed, their errors are that failure, shown once below, not the fields'.
+  const failure = state.failed
+    ? null
+    : invalid
+      ? { label: invalid.name, message: `${invalid.name}: ${invalid.error}` }
+      : rangeError;
+  const blocked =
+    editing || pending || !!failure || !!budget.error || !!state.failed;
   useEffect(() => () => clearTimeout(editTimer.current), []);
   const editRanges = () => {
     scheduler.current?.cancel();

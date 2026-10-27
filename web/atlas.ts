@@ -1,4 +1,4 @@
-import type { EngineClient } from "./engine-client";
+import { EngineError, type EngineClient } from "./engine-client";
 import type { PlanarStudy } from "./planar-link";
 import { refineBudget } from "./refinement";
 import type { Config, Frame, ViewRect } from "./types";
@@ -23,6 +23,8 @@ export type AtlasState = {
   selection: { index: number; frame?: Frame; error?: string } | null;
   queued: number;
   error?: string;
+  // The worker failed; nothing more can be calculated in this excursion.
+  failed?: string;
 };
 
 export function atlasDefaults(config: Config): AtlasRanges {
@@ -91,7 +93,18 @@ export function atlasRangeError(ranges: AtlasRanges) {
   return null;
 }
 
-const axis = ([a, b]: [number, number]) => [a, a / 2 + b / 2, b];
+// A midpoint within rounding of the frozen value is that value, so a range
+// symmetric about it (as the defaults are) centers on the study itself.
+const axis = ([a, b]: [number, number], current: number) => {
+  const middle = a / 2 + b / 2;
+  return [
+    a,
+    Math.abs(middle - current) <= Number.EPSILON * Math.abs(current)
+      ? current
+      : middle,
+    b,
+  ];
+};
 const maxNumbers = 4000000;
 // Bound delivered geometry as well as the preflight reservation: a result
 // includes diagnostics, representative circles and refinement breaks too.
@@ -135,7 +148,12 @@ export class RouletteAtlas {
     this.wanted = null;
     this.source = null;
     this.retained.clear();
-    this.state = { cells: [], selection: null, queued: 0 };
+    this.state = {
+      cells: [],
+      selection: null,
+      queued: 0,
+      ...(this.failed && { error: this.failed, failed: this.failed }),
+    };
     this.emit();
   }
   generate(study: PlanarStudy, ranges: AtlasRanges) {
@@ -151,8 +169,10 @@ export class RouletteAtlas {
     }
     this.source = structuredClone(study);
     this.state = {
-      cells: axis(ranges.arm).flatMap((arm) =>
-        axis(ranges.radius).map((radius) => ({ radius, arm })),
+      cells: axis(ranges.arm, study.config.curve.roulette.arm).flatMap((arm) =>
+        axis(ranges.radius, study.config.curve.roulette.radius).map(
+          (radius) => ({ radius, arm }),
+        ),
       ),
       selection: null,
       queued: 0,
@@ -199,6 +219,17 @@ export class RouletteAtlas {
     const current = () =>
       generation === this.generation &&
       (!selection || selection.choice === this.choice);
+    const refuse = (message: string) => {
+      if (selection)
+        this.state = { ...this.state, selection: { index, error: message } };
+      else
+        this.state = {
+          ...this.state,
+          cells: this.state.cells.map((cell, i) =>
+            i === index ? { ...cell, error: message } : cell,
+          ),
+        };
+    };
     void this.engine
       .compute(study.config, study.bounds, {
         diagnostics: study.probe.enabled,
@@ -215,58 +246,56 @@ export class RouletteAtlas {
           }),
         ...(selection?.view && { view: selection.view }),
       })
-      .then((frame) => {
-        if (!current()) return;
-        const count = numbers(frame.result);
-        const total =
-          [...this.retained.values()].reduce((a, b) => a + b, 0) + count;
-        if (total > maxNumbers)
-          throw new Error(
-            "The atlas geometry limit was reached. Reduce the study’s quality and try again.",
-          );
-        this.retained.set(selection ? -1 : index, count);
-        // Ownership crosses this boundary once; no result or caller-supplied
-        // config can mutate another candidate or the frozen source.
-        const own = structuredClone(frame);
-        if (selection)
-          this.state = { ...this.state, selection: { index, frame: own } };
-        else
-          this.state = {
-            ...this.state,
-            cells: this.state.cells.map((cell, i) =>
-              i === index ? { ...cell, frame: own } : cell,
-            ),
-          };
-      })
-      .catch((error: Error) => {
-        // A request deadline does not stop synchronous Go work. Never send
-        // another cell behind that computation, even after regeneration.
-        if (/timed out|closed|could not start/i.test(error.message)) {
-          this.failed = `${error.message} Close the atlas and reopen it to retry.`;
-          this.remaining = [];
-          this.wanted = null;
-          if (this.source) {
-            this.source = null;
-            this.state = { ...this.state, selection: null, error: this.failed };
-            this.emit();
+      .then(
+        (frame) => {
+          if (!current()) return;
+          const count = numbers(frame.result);
+          const total =
+            [...this.retained.values()].reduce((a, b) => a + b, 0) + count;
+          if (total > maxNumbers) {
+            refuse(
+              "The atlas geometry limit was reached. Reduce the study’s quality and try again.",
+            );
+            return;
           }
-          this.engine.dispose?.();
-          return;
-        }
-        if (!current()) return;
-        if (selection)
-          this.state = {
-            ...this.state,
-            selection: { index, error: error.message },
-          };
-        else
-          this.state = {
-            ...this.state,
-            cells: this.state.cells.map((cell, i) =>
-              i === index ? { ...cell, error: error.message } : cell,
-            ),
-          };
-      })
+          this.retained.set(selection ? -1 : index, count);
+          // Ownership crosses this boundary once; no result or caller-supplied
+          // config can mutate another candidate or the frozen source.
+          const own = structuredClone(frame);
+          if (selection)
+            this.state = { ...this.state, selection: { index, frame: own } };
+          else
+            this.state = {
+              ...this.state,
+              cells: this.state.cells.map((cell, i) =>
+                i === index ? { ...cell, frame: own } : cell,
+              ),
+            };
+        },
+        (error: Error) => {
+          // Go refuses a cell with an EngineError. Anything else is the worker
+          // failing: a request deadline does not stop synchronous Go work, so
+          // never send another cell behind that computation, even after
+          // regeneration.
+          if (!(error instanceof EngineError)) {
+            this.failed = `The atlas’s numerical engine stopped: ${error.message} Close the atlas and reopen it to continue.`;
+            this.remaining = [];
+            this.wanted = null;
+            this.source = null;
+            // Reported even when an edit already canceled this generation.
+            this.state = {
+              ...this.state,
+              selection: null,
+              error: this.failed,
+              failed: this.failed,
+            };
+            this.emit();
+            this.engine.dispose?.();
+            return;
+          }
+          if (current()) refuse(error.message);
+        },
+      )
       .finally(() => {
         this.working = false;
         if (current()) this.emit();

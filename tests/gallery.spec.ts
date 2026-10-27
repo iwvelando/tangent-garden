@@ -3215,6 +3215,103 @@ test("atlas engine timeout stops unsent numerical work instead of queuing behind
   expect(atlas.state.error).toMatch(/timed out/);
 });
 
+test("atlas center cell keeps the frozen values exactly when rounding moves the midpoint", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  // 0.75·0.83 and 1.25·0.83 halve and sum to 0.8299999999999998, and the
+  // entered range 0.63 to 1.03 to 0.8300000000000001.
+  study.config.curve.roulette.radius = 1.1;
+  study.config.curve.roulette.arm = 0.83;
+  for (const ranges of [
+    atlasDefaults(study.config),
+    { radius: [0.9, 1.3], arm: [0.63, 1.03] } as const,
+  ]) {
+    const requested: any[] = [];
+    const atlas = new RouletteAtlas(
+      {
+        compute: (config) => {
+          requested.push(structuredClone(config));
+          return new Promise(() => {});
+        },
+      },
+      () => {},
+    );
+    atlas.generate(study, structuredClone(ranges) as any);
+    expect(atlas.state.cells[4]).toMatchObject({ radius: 1.1, arm: 0.83 });
+    // Only the center is snapped; the other cells keep their axis values.
+    expect(atlas.state.cells[0]).toMatchObject({
+      radius: ranges.radius[0],
+      arm: ranges.arm[0],
+    });
+    expect(atlas.state.cells[8]).toMatchObject({
+      radius: ranges.radius[1],
+      arm: ranges.arm[1],
+    });
+    atlas.cancel();
+  }
+  // A range centered elsewhere keeps its own midpoint.
+  const offCenter = new RouletteAtlas(
+    { compute: () => new Promise(() => {}) },
+    () => {},
+  );
+  offCenter.generate(study, { radius: [1.5, 2], arm: [1, 2] });
+  expect(offCenter.state.cells[4]).toMatchObject({ radius: 1.75, arm: 1.5 });
+  offCenter.cancel();
+  // The center's request is the frozen study's configuration, unchanged.
+  const requested: any[] = [];
+  const atlas = new RouletteAtlas(
+    {
+      compute: async (config) => {
+        requested.push(structuredClone(config));
+        return { config, result: { base: [] } } as any;
+      },
+    },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  await expect.poll(() => requested.length).toBe(9);
+  expect(requested[4]).toEqual(study.config);
+});
+
+test("atlas treats any engine refusal as an unavailable cell, whatever its wording", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { EngineError } = await import("../web/engine-client");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  let calls = 0;
+  let disposed = 0;
+  const atlas = new RouletteAtlas(
+    {
+      compute: async (config) => {
+        // Wording a transport failure also uses must not end the atlas.
+        if (calls++ === 0)
+          throw new EngineError(
+            "The rolling path is not closed; the request timed out of range.",
+            "curve.roulette.radius",
+          );
+        return { config, result: { base: [] } } as any;
+      },
+      dispose: () => {
+        disposed++;
+      },
+    },
+    () => {},
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  await expect.poll(() => calls).toBe(9);
+  await expect
+    .poll(() => atlas.state.cells.filter((c) => c.frame).length)
+    .toBe(8);
+  expect(atlas.state.cells[0].error).toMatch(/not closed/);
+  expect(atlas.state.error).toBeUndefined();
+  expect(disposed).toBe(0);
+});
+
 for (const width of [390, 1440])
   test(`atlas tabs switch between grid and full-quality variant without scrolling at ${width}px`, async ({
     page,
@@ -3302,6 +3399,38 @@ for (const width of [390, 1440])
       ),
     ).toBe(requests);
   });
+
+test("atlas reports a worker failure that arrives after an edit and keeps it through later edits", async () => {
+  const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  const study = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  let reject!: (error: Error) => void;
+  const seen: (string | undefined)[] = [];
+  const atlas = new RouletteAtlas(
+    {
+      compute: () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        }),
+    },
+    (state) => seen.push(state.failed),
+  );
+  atlas.generate(study, atlasDefaults(study.config));
+  // A range edit cancels the generation while its request is still running.
+  atlas.cancel();
+  reject(
+    new Error(
+      "Calculation timed out. Reduce the resolution or simplify the expression.",
+    ),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(seen.at(-1)).toMatch(/timed out/);
+  atlas.cancel();
+  expect(atlas.state.failed).toMatch(/timed out/);
+  expect(atlas.state.error).toBe(atlas.state.failed);
+});
 
 test("atlas stale worker timeout also invalidates a replacement generation", async () => {
   const { RouletteAtlas, atlasDefaults } = await import("../web/atlas");
@@ -3714,23 +3843,16 @@ test("atlas inspection timeout returns to the grid with its failure visible", as
   await choosePreset(page, { label: "Hypotrochoid & its evolute" });
   const atlas = await openAtlas(page);
   await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(9);
+  // A real timeout: Go never replies, and EngineClient's own deadline (cut
+  // from 30 s) rejects the request. Scalar evaluations still reach Go.
   await page.evaluate(() => {
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (data: any, options?: any) {
-      if (data.action === "compute") {
-        queueMicrotask(() =>
-          this.dispatchEvent(
-            new MessageEvent("message", {
-              data: {
-                id: data.id,
-                error:
-                  "Calculation timed out. Reduce the resolution or simplify the expression.",
-              },
-            }),
-          ),
-        );
-      } else post.call(this, data, options);
+      if (data.action !== "compute") post.call(this, data, options);
     };
+    const later = window.setTimeout;
+    window.setTimeout = ((handler: TimerHandler, ms?: number, ...rest: any[]) =>
+      later(handler, ms === 30000 ? 50 : ms, ...rest)) as typeof setTimeout;
   });
   await atlas
     .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
@@ -3745,6 +3867,18 @@ test("atlas inspection timeout returns to the grid with its failure visible", as
   await expect(
     atlas.getByRole("button", { name: "Adopt variant", exact: true }),
   ).toHaveCount(0);
+  // The disposed worker cannot evaluate a range. That is the atlas's
+  // failure, not the entered expression's, and it stays on screen.
+  const to = atlas.getByLabel("Rolling radius to", { exact: true });
+  await to.fill("2*pi");
+  await expect(atlas.getByRole("alert")).toHaveText(
+    "The atlas’s numerical engine stopped: Calculation timed out. Reduce the resolution or simplify the expression. Close the atlas and reopen it to continue.",
+  );
+  await expect(to).not.toHaveAttribute("aria-invalid", "true");
+  await expect(atlas).not.toContainText("Numerical engine");
+  await expect(
+    atlas.getByRole("button", { name: "Generate atlas", exact: true }),
+  ).toBeDisabled();
 });
 
 test("atlas keeps focus in a range when editing after inspecting a variant", async ({
