@@ -6,7 +6,7 @@ Use this procedure for a PR, branch or local diff, including a review started in
 
 Record the target base, merge base and reviewed head, or the base revision and uncommitted scope for a local diff. Distinguish review-only work from an authorized takeover that includes fixes. Preserve user edits and use isolated scratch copies or compiler overlays for experiments. A review request does not by itself authorize posting comments, merging or deploying.
 
-Read the intended behavior and compatibility promises, then independently reconstruct the implementation from code. Treat the author's explanation, reported checks and existing test names as claims to verify. Separate personally reproduced evidence from reported evidence. Follow the user's validation scope: a targeted-only implementation handoff is legitimate when authorized, and final verification may belong to a later stage. Use [Validation scope and handoff](contributing.md#validation-scope-and-handoff) to track that work.
+Read the intended behavior and compatibility promises, then independently reconstruct the implementation from code. Treat the author's explanation, reported checks and existing test names as claims to verify. Separate personally reproduced evidence from reported evidence. Follow the user's validation scope and the default product-iteration procedure: targeted checks support early artwork and interaction feedback, while final verification belongs to the implementing session or its designated integration stage. Do not require a full `make pre-pr` merely to offer feedback on an early product preview. Use [Validation scope and handoff](contributing.md#validation-scope-and-handoff) to track that work.
 
 ## Follow the change beyond the diff
 
