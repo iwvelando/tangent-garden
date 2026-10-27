@@ -243,6 +243,26 @@ test("a 2D link carries a probe between samples; older ones snap it", async () =
     });
 });
 
+test("anchored contour normals round trip; older studies retain their drawing", async () => {
+  const study = planarPreset(
+    presets.findIndex((p) => p.title === "An engraving of standing waves"),
+  );
+  for (const stableNormals of [true, false]) {
+    Object.assign(study.config.curve.implicit, { stableNormals });
+    const read = await readStudyLink(await writeStudyLink("2d", study));
+    assert.deepEqual(planarStudy(read.study), study);
+  }
+  const old = structuredClone(study) as any;
+  delete old.config.curve.implicit.stableNormals;
+  assert.equal(
+    (planarStudy(old).config.curve.implicit as any).stableNormals,
+    undefined,
+  );
+  const bad = structuredClone(study) as any;
+  bad.config.curve.implicit.stableNormals = "true";
+  await refused(() => planarStudy(bad), "config.curve.implicit.stableNormals");
+});
+
 test("a 3D link carries a probe between samples; older ones snap it", async () => {
   const study: SpatialStudy = {
     ...spatial(),

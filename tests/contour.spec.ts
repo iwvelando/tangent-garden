@@ -11,10 +11,23 @@ import { contourNote } from "../web/contour";
 import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { ContourResult, Result, Vec } from "../web/types";
-import { exportImage, openAnimation, choosePreset } from "./helpers";
+import {
+  exportImage,
+  openAnimation,
+  choosePreset,
+  openExportSettings,
+  chooseColorScheme,
+  imageButton,
+} from "./helpers";
+import { wireStudy } from "./study-link-wire";
 
 const cassini = "Cassini ovals & the lemniscate";
 const circles = "Circles through two points";
+const nodalTitles = [
+  "Two modes trading places",
+  "A lattice changing its mind",
+  "An engraving of standing waves",
+];
 const preset = (title: string) =>
   presets.find((p) => p.title === title)!.config;
 async function ready(page: Page, title: string) {
@@ -79,6 +92,361 @@ const drawn = (page: Page, id = "contour-path") =>
   );
 const cassiniF = (p: Vec) =>
   ((p.x - 1) ** 2 + p.y ** 2) * ((p.x + 1) ** 2 + p.y ** 2);
+
+test("three nodal studies carry literal equal-eigenvalue modes and full-period animations", () => {
+  const pairs = [
+    [1, 2],
+    [2, 3],
+    [3, 5],
+  ];
+  expect(presets).toHaveLength(68);
+  for (const [i, title] of nodalTitles.entries()) {
+    const p = presets.find((p) => p.title === title);
+    expect(p, title).toBeDefined();
+    const [m, n] = pairs[i];
+    expect(p!.config.curve.format).toBe("implicit");
+    expect(p!.config.curve.implicit.f).toBe(
+      `cos(a)*sin(${m}*pi*x)*sin(${n}*pi*y)+sin(a)*sin(${n}*pi*x)*sin(${m}*pi*y)`,
+    );
+    expect(p!.config.curve.implicit.level).toBe(0);
+    expect(p!.animation).toMatchObject({
+      mode: "parameters",
+      camera: "hold",
+      repeat: "loop",
+      pace: "steady",
+      tracks: [{ target: "a" }],
+    });
+  }
+  expect(preset(nodalTitles[0]).curve.implicit.family.enabled).toBe(false);
+  expect(preset(nodalTitles[2]).curve.implicit.family.enabled).toBe(true);
+  expect(preset(nodalTitles[2]).curve.implicit).toMatchObject({
+    cells: 96,
+    stableNormals: true,
+  });
+});
+
+test("anchored normals are editable, move only the arrows, and travel in a copied link", async ({
+  page,
+}) => {
+  await ready(page, nodalTitles[2]);
+  const stable = page.getByRole("checkbox", {
+    name: "Anchor contour normals",
+    exact: true,
+  });
+  await expect(stable).toBeChecked();
+  const arrows = () =>
+    normals(page).evaluateAll((all) => all.map((n) => n.outerHTML));
+  const geometry = await drawn(page);
+  const anchored = await arrows();
+  await stable.uncheck();
+  await expect
+    .poll(async () => (await definition(page)).curve.implicit.stableNormals)
+    .toBe(false);
+  await settled(page);
+  await expect.poll(arrows).not.toEqual(anchored);
+  expect(await drawn(page)).toEqual(geometry);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  const other = await page.context().newPage();
+  await other.goto(link);
+  await expect(
+    other.getByRole("checkbox", {
+      name: "Anchor contour normals",
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await other.close();
+  await choosePreset(page, { label: nodalTitles[2] });
+  await expect(stable).toBeChecked();
+  await settled(page);
+  await expect.poll(arrows).toEqual(anchored);
+});
+
+for (const theme of ["light", "dark"] as const)
+  test(`contour checkbox labels match existing checkbox text in ${theme}`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ colorScheme: theme });
+    await ready(page, nodalTitles[2]);
+    const textStyle = async (name: string) =>
+      page
+        .getByRole("checkbox", { name, exact: true })
+        .evaluate((input: HTMLInputElement) => {
+          const style = getComputedStyle(input.labels![0]);
+          return {
+            color: style.color,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+          };
+        });
+    const expected = await textStyle("Family of levels");
+    expect(await textStyle("Anchor contour normals")).toEqual(expected);
+    // Stacked checkboxes are spaced as the drawing's layer checkboxes are,
+    // box to box, within a pixel: a label's line height, which centers each
+    // box, differs between platforms' fonts (13px here on macOS, 14px on
+    // Linux), while the help toggle beside the anchor does not.
+    const top = (name: string) =>
+      page.getByRole("checkbox", { name, exact: true }).evaluate((input) => {
+        const r = input.getBoundingClientRect();
+        return { y: r.top, height: r.height };
+      });
+    const family = await top("Family of levels");
+    const anchor = await top("Anchor contour normals");
+    const curve = await top("Curve F = c");
+    const construction = await top("Construction lines");
+    const gap = anchor.y - (family.y + family.height);
+    const layers = construction.y - (curve.y + curve.height);
+    expect(
+      Math.abs(gap - layers),
+      `${gap} beside ${layers}`,
+    ).toBeLessThanOrEqual(1);
+    await page
+      .locator(".check-setting")
+      .first()
+      .screenshot({ path: info.outputPath(`checkbox-${theme}.png`) });
+  });
+
+for (const [index, title] of nodalTitles.entries()) {
+  test(`${title}: its own animation keeps enabled geometry, pauses, scrubs, stops, and invalidates on edit`, async ({
+    page,
+  }) => {
+    await ready(page, title);
+    const original = await definition(page);
+    const opening = await drawn(page);
+    expect(opening.length).toBeGreaterThan(0);
+    expect(opening.flatMap((c) => c.points).length).toBeGreaterThan(40);
+    await expect(normals(page)).toHaveCount(preset(title).lines);
+    await expect(page.locator("#artwork text")).toHaveCount(0);
+    await expect(page.locator("#artwork")).not.toHaveAttribute(
+      "data-animation-progress",
+    );
+    await openAnimation(page);
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Pause", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".animation-error")).toHaveCount(0);
+    await expect.poll(() => progress(page)).toBeGreaterThan(0.01);
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const paused = await progress(page);
+    await expect.poll(() => progress(page)).toBe(paused);
+    await page.getByRole("slider", { name: "Animation progress" }).fill("0.25");
+    await expect(page.locator("#artwork")).toHaveAttribute(
+      "data-animation-progress",
+      "0.25",
+    );
+    const quarter = await definition(page);
+    expect(quarter.curve.a).toBeCloseTo(original.curve.a + Math.PI / 2, 12);
+    expect(await drawn(page)).not.toEqual(opening);
+    await expect(normals(page)).toHaveCount(preset(title).lines);
+    if (index === 2) expect(await family(page).count()).toBeGreaterThan(6);
+    else await expect(family(page)).toHaveCount(0);
+    await page.getByRole("button", { name: "Resume", exact: true }).click();
+    await expect.poll(() => progress(page)).not.toBe(0.25);
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await settled(page);
+    expect(await definition(page)).toEqual(original);
+    expect(await drawn(page)).toEqual(opening);
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect.poll(() => progress(page)).toBeGreaterThan(0);
+    await input(page, "Shape parameter a").fill("pi/7");
+    await expect
+      .poll(async () => (await definition(page)).curve.a)
+      .toBeCloseTo(Math.PI / 7, 12);
+    await expect(page.locator("#artwork")).not.toHaveAttribute(
+      "data-animation-progress",
+    );
+    await input(page, "Level c").fill("1/10");
+    await expect
+      .poll(async () => (await definition(page)).curve.implicit.level)
+      .toBe(0.1);
+    await input(page, "Grid cells").fill("96");
+    await expect
+      .poll(async () => (await definition(page)).curve.implicit.cells)
+      .toBe(96);
+    await settled(page);
+    expect((await drawn(page)).flatMap((c) => c.points).length).toBeGreaterThan(
+      40,
+    );
+    // Copy the edited study, then replace it with an example before opening
+    // its link in another tab. Read the link with an independent decoder.
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.getByRole("button", { name: "Copy link", exact: true }).click();
+    await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    const saved = wireStudy(link.split("#s=")[1]);
+    expect(saved.config.curve.implicit.cells).toBe(96);
+    expect(saved.config.curve.implicit.level).toBe(0.1);
+    await choosePreset(page, { label: title });
+    await expect.poll(() => definition(page)).toEqual(original);
+    const other = await page.context().newPage();
+    await other.goto(link);
+    await expect.poll(() => other.evaluate(() => location.hash)).toBe("");
+    await expect.poll(() => definition(other)).toEqual(saved.config);
+    expect(await drawn(other)).not.toEqual(opening);
+    await other.close();
+  });
+}
+
+test("pending scalar edits cannot overwrite any nodal preset replacement", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    (window as any).holdNodalScalars = false;
+    (window as any).releaseNodalScalar = null;
+    Worker.prototype.postMessage = function (message: any, ...rest: any[]) {
+      if ((window as any).holdNodalScalars && message.action === "scalars")
+        (window as any).releaseNodalScalar = () =>
+          send.call(this, message, ...rest);
+      else send.call(this, message, ...rest);
+    };
+  });
+  await ready(page, cassini);
+  for (const title of nodalTitles) {
+    await page.evaluate(() => {
+      (window as any).holdNodalScalars = true;
+      (window as any).releaseNodalScalar = null;
+    });
+    await input(page, "Level c").fill("pi/13");
+    await expect
+      .poll(() => page.evaluate(() => !!(window as any).releaseNodalScalar))
+      .toBe(true);
+    await choosePreset(page, { label: title });
+    await page.evaluate(() => {
+      (window as any).holdNodalScalars = false;
+      (window as any).releaseNodalScalar();
+    });
+    await expect(input(page, "Level c")).toHaveValue("0");
+    await expect.poll(() => definition(page)).toEqual(preset(title));
+    // Round-trip a fresh scalar request so the superseded reply has arrived.
+    await input(page, "Shape parameter a").fill("pi/7");
+    await expect
+      .poll(async () => (await definition(page)).curve.a)
+      .toBeCloseTo(Math.PI / 7, 12);
+    expect((await definition(page)).curve.implicit.level).toBe(0);
+  }
+});
+
+test("nodal still exports preserve the actual paths, nearby levels and metadata", async ({
+  page,
+}) => {
+  await ready(page, nodalTitles[2]);
+  const live = await page
+    .locator("#artwork path")
+    .evaluateAll((all) => all.map((p) => p.getAttribute("d")));
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const saved = await page.evaluate((s) => {
+    const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+    return {
+      config: JSON.parse(doc.querySelector("desc")!.textContent!),
+      paths: [...doc.querySelectorAll("path")].map((p) => p.getAttribute("d")),
+      text: doc.querySelectorAll("text").length,
+    };
+  }, svg);
+  expect(saved.config).toEqual(preset(nodalTitles[2]));
+  expect(saved.paths).toEqual(live);
+  expect(saved.paths.length).toBeGreaterThan(12);
+  expect(saved.text).toBe(0);
+});
+
+test("a full-period nodal WebP decodes with exact duration and matching endpoints", async ({
+  page,
+}) => {
+  await ready(page, nodalTitles[2]);
+  await imageButton(page).click();
+  await page
+    .getByRole("menuitemradio", { name: "1000 × 760", exact: true })
+    .click();
+  const stillDownload = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: /^PNG image/ }).click();
+  const still = await readFile((await (await stillDownload).path())!);
+  const opening = await page.evaluate(async (data) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${data}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = 250;
+    canvas.height = 190;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(image, 0, 0, 250, 190);
+    return Array.from(ctx.getImageData(0, 0, 250, 190).data);
+  }, still.toString("base64"));
+  await openExportSettings(page);
+  await input(page, "Repeat").selectOption("once");
+  await input(page, "Duration (seconds)").fill(".4");
+  await input(page, "Export frame rate").selectOption("15");
+  await input(page, "Export resolution").fill("1");
+  await input(page, "Export format").selectOption("webp");
+  await input(page, "Export quality").fill("100");
+  await input(page, "Loop exported animation").uncheck();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /^Export animated WebP/ }).click();
+  const bytes = await readFile((await (await download).path())!);
+  const frames = await page.evaluate(async (data) => {
+    const decoder = new (window as any).ImageDecoder({
+      data: new Uint8Array(data),
+      type: "image/webp",
+    });
+    await decoder.tracks.ready;
+    const out: { duration: number; pixels: number[] }[] = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = 250;
+    canvas.height = 190;
+    const ctx = canvas.getContext("2d")!;
+    for (let i = 0; i < decoder.tracks.selectedTrack.frameCount; i++) {
+      const { image } = await decoder.decode({ frameIndex: i });
+      ctx.drawImage(image, 0, 0, 250, 190);
+      out.push({
+        duration: image.duration / 1000,
+        pixels: Array.from(ctx.getImageData(0, 0, 250, 190).data),
+      });
+      image.close();
+    }
+    decoder.close();
+    return out;
+  }, Array.from(bytes));
+  expect(frames).toHaveLength(6);
+  expect(frames.reduce((s, f) => s + f.duration, 0)).toBe(400);
+  const difference = (a: number[], b: number[]) =>
+    a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length;
+  expect(difference(frames[0].pixels, opening)).toBeLessThan(0.3);
+  expect(difference(frames[0].pixels, frames[5].pixels)).toBeLessThan(0.15);
+  expect(difference(frames[0].pixels, frames[2].pixels)).toBeGreaterThan(0.5);
+  await expect.poll(() => definition(page)).toEqual(preset(nodalTitles[2]));
+});
+
+for (const theme of ["light", "dark"] as const)
+  test(`nodal artwork stays readable at phone width in ${theme} with an alternate palette`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: theme });
+    await ready(page, nodalTitles[0]);
+    await chooseColorScheme(page, "cobalt");
+    for (const title of nodalTitles) {
+      await choosePreset(page, { label: title });
+      await expect.poll(() => definition(page)).toEqual(preset(title));
+      await settled(page);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBe(390);
+      await expect(page.locator("#artwork text")).toHaveCount(0);
+      await page.locator("#artwork").screenshot({
+        path: info.outputPath(`${nodalTitles.indexOf(title)}-${theme}.png`),
+      });
+    }
+  });
 
 test("the implicit presets are Cassini ovals and circles through two points", () => {
   const ovals = preset(cassini);

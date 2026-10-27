@@ -22,7 +22,7 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 - Vector-field trajectories from 1–16 seeds, integrated with adaptive error control and explicit escape, singularity, and step-budget ends, with the direction field of an autonomous field.
 - Implicit curves F(x, y) = c and families of levels, traced on a bounded grid with exact crossings, deliberately decided saddle cells, poles and jumps told apart from zero crossings, and adaptive refinement, drawn with F's gradient.
 - Iterated maps (Clifford, Peter de Jong, Hénon) drawn as the logarithmic visit density of their orbits on a bounded grid, never joined into curves, with escapes counted.
-- Sixty-one example studies; point and parallel light sources; polar source coordinates; configurable refraction; rays drawn to a chosen length or stopped where they reach the caustic, real or virtual.
+- Sixty-eight example studies; point and parallel light sources; polar source coordinates; configurable refraction; rays drawn to a chosen length or stopped where they reach the caustic, real or virtual.
 - Independent poles for pedal, contrapedal, and orthotomic constructions, with tangent/normal projections, reflected segments, and pole-coordinate animation.
 - Signed normal offsets (parallel curves) that keep their cusps and swallowtails, with distance animation, evenly spaced offset stacks, and optional generating circles whose envelope is the offsets ±R.
 - Construction lines, virtual rays, singularity diagnostics, pan/zoom, light/dark themes, and four drawing color schemes.

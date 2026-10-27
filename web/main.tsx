@@ -95,6 +95,7 @@ import {
   type PlotCamera,
 } from "./planar-link";
 import {
+  CheckSetting,
   Field,
   HelpToggle,
   HelpText,
@@ -1069,6 +1070,16 @@ function App({
         />
         Family of levels
       </label>
+      <CheckSetting
+        label="Anchor contour normals"
+        topic="anchoring contour normals"
+        checked={!!config.curve.implicit.stableNormals}
+        onChange={(on) => toImplicit({ stableNormals: on })}
+        help={tiered(
+          "Space arrows along each piece from its own origin, so changes elsewhere leave them in place.",
+          "A closed piece starts at its lower centerline crossing, an open piece at its end. Each piece takes the arrows that fit its length at the usual spacing, so their number can differ slightly from Construction lines. Arrows still move where pieces split, join or vanish.",
+        )}
+      />
       {levels.enabled && (
         <>
           <div className="pair">

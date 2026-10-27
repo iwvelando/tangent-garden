@@ -120,6 +120,8 @@ export type Config = {
       family: { enabled: boolean; from: number; to: number; count: number };
       window: Window;
       cells: number;
+      // Absent retains the original arc-length origin of the normals.
+      stableNormals?: boolean;
     };
     // An iterated map's orbit from start: the first `discard` iterates
     // (0–1,000,000) are dropped and the next `iterates` (0–5,000,000) counted

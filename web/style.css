@@ -1386,11 +1386,18 @@ header {
   gap: 6px;
   margin-bottom: 13px;
 }
-/* Stopping rays at the caustic (StopAtCaustic.tsx): the checkbox sits in
-   line with its help toggle. */
+/* Stopping rays at the caustic (StopAtCaustic.tsx) and a CheckSetting
+   (Field.tsx): the checkbox sits in line with its help toggle. */
 .caustic-switch .check,
+.check-setting .check,
 .view-switch .check {
   margin-bottom: 0;
+}
+/* A setting below a plain checkbox owns the gap between their boxes, the
+   same as between the drawing's layer checkboxes (13px). Its help toggle
+   makes its row 3px taller than a label, with the checkbox centered. */
+.check + .check-setting {
+  margin-top: 11.5px;
 }
 /* Refinement's settings stack as closely as the checkbox above them. */
 .view-switch:has(+ .hint[hidden] + .view-switch) {

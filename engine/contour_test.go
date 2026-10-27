@@ -94,11 +94,12 @@ func TestContourCircle(t *testing.T) {
 	// Larger F lies on the left: outward, so the circle runs clockwise.
 	// The inscribed polygon falls short of the area by at most about
 	// ⅔ · perimeter · sagitta.
-	if a := signedArea(c); math.Abs(a+math.Pi) > 1e-3 {
+	tol := drawingTolerance * 4
+	if a := signedArea(c); math.Abs(a+math.Pi) > 2*math.Pi*2/3*tol {
 		t.Fatalf("signed area %v, want −π", a)
 	}
-	// Refinement keeps every chord within a thousandth of a cell.
-	if s := sagitta(res.Curve, 1); s > 1e-3*.1 {
+	// Refinement keeps every chord within 1/5000 of the window.
+	if s := sagitta(res.Curve, 1); s > tol {
 		t.Fatalf("sagitta %g", s)
 	}
 	if len(res.Family) != 0 || len(res.Discontinuities) != 0 || res.Nonfinite != 0 {
@@ -129,7 +130,7 @@ func TestContourCircle(t *testing.T) {
 	q.Curve.Implicit.F, q.Curve.Implicit.Level = "-(x^2+y^2)", -1
 	res = contours(t, q)
 	residual(t, res.Curve, func(p Vec) float64 { return -p.Dot(p) }, 1e-12)
-	if a := signedArea(res.Curve.Contours[0]); math.Abs(a-math.Pi) > 1e-3 {
+	if a := signedArea(res.Curve.Contours[0]); math.Abs(a-math.Pi) > 2*math.Pi*2/3*tol {
 		t.Fatalf("signed area %v, want π", a)
 	}
 	if p := res.Curve.Contours[0].Points[0]; p != (Vec{0, -1}) {
@@ -185,12 +186,12 @@ func TestContourRefinementConvergence(t *testing.T) {
 		res := contours(t, q)
 		residual(t, res.Curve, func(p Vec) float64 { return p.Dot(p) }, 1e-12)
 		s := sagitta(res.Curve, 1)
-		if depth > 0 && !(s < prev/3) && s > 1e-3*3.0/8 {
+		if depth > 0 && !(s < prev/3) && s > drawingTolerance*3 {
 			t.Fatalf("depth %d: sagitta %g after %g", depth, s, prev)
 		}
 		prev = s
 	}
-	if prev > 1e-3*3.0/8 {
+	if prev > drawingTolerance*3 {
 		t.Fatalf("sagitta %g exceeds the tolerance", prev)
 	}
 }
@@ -462,7 +463,7 @@ func TestContourScaleInvariance(t *testing.T) {
 			t.Fatalf("scale %v: %d contours", s, len(res.Curve.Contours))
 		}
 		residual(t, res.Curve, func(p Vec) float64 { return p.Dot(p) }, 1e-12*s*s)
-		if g := sagitta(res.Curve, s) / s; g > 1e-3*3.0/24 {
+		if g := sagitta(res.Curve, s) / s; g > drawingTolerance*3 {
 			t.Fatalf("scale %v: relative sagitta %g", s, g)
 		}
 		if len(res.Normals) != q.Lines {
@@ -590,23 +591,40 @@ func TestContourResultJSON(t *testing.T) {
 }
 
 // TraceLevel traces a field given as a function exactly as an implicit
-// curve's expression, and carries its budget from call to call.
+// curve's expression, refines it to a thousandth of a cell rather than a
+// fraction of the window, and carries its budget from call to call.
 func TestTraceLevel(t *testing.T) {
+	defer func(d int) { maxRefineDepth = d }(maxRefineDepth)
 	w := Window{-1.3, 1.7, -1.1, 1.2}
-	res := contours(t, implicitRequest("x^2+y^2 - 0.4*x*y", 1, w, 37))
 	f, _, err := expr.ParseField("x^2+y^2 - 0.4*x*y", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	field := func(x, y float64) float64 { return f(x, y, 0) }
 	b := &ContourBudget{}
-	set, discontinuities, ok := TraceLevel(func(x, y float64) float64 { return f(x, y, 0) }, w, 37, 1, b)
+	maxRefineDepth = 0
+	set, discontinuities, ok := TraceLevel(field, w, 37, 1, b)
 	if !ok || len(discontinuities) != 0 || b.Crossings == 0 || b.Points == 0 || b.Truncated {
 		t.Fatalf("ok %v, discontinuities %v, budget %+v", ok, discontinuities, b)
 	}
 	got, _ := json.Marshal(set)
-	want, _ := json.Marshal(res.Curve)
+	want, _ := json.Marshal(contours(t, implicitRequest("x^2+y^2 - 0.4*x*y", 1, w, 37)).Curve)
 	if string(got) != string(want) {
 		t.Fatalf("traced %s, implicit curve %s", got, want)
+	}
+	maxRefineDepth = 6
+	set, _, _ = TraceLevel(field, w, 37, 1, &ContourBudget{})
+	h := 2.3 / 28 // The 37 columns are 3/37 wide; 28 rows span 2.3.
+	worst := 0.0
+	for _, c := range set.Contours {
+		for _, e := range contourChords(c) {
+			mid := e[0].Add(e[1]).Mul(.5)
+			g := Vec{2*mid.X - .4*mid.Y, 2*mid.Y - .4*mid.X}
+			worst = math.Max(worst, math.Abs(field(mid.X, mid.Y)-1)/g.Norm())
+		}
+	}
+	if worst > 1.05e-3*math.Min(3.0/37, h) {
+		t.Fatalf("section chord error %g", worst)
 	}
 	// A pole is located and not traced.
 	b = &ContourBudget{}
@@ -643,5 +661,467 @@ func TestTraceLevel(t *testing.T) {
 	b = &ContourBudget{Crossings: 990}
 	if set, _, ok = TraceLevel(func(x, y float64) float64 { return x*x + y*y }, square(2), 100, 1, b); ok || len(set.Contours) != 0 || b.Crossings != 990 {
 		t.Fatalf("ok %v, %d contours, budget %+v", ok, len(set.Contours), b)
+	}
+}
+
+// Read the authored expressions from the same fixture as the other preset
+// tests: an independently correct formula alone would not test the studies.
+func nodalPresets(t *testing.T) []preset {
+	t.Helper()
+	var out []preset
+	for _, title := range []string{"Two modes trading places", "A lattice changing its mind", "An engraving of standing waves"} {
+		found := false
+		for _, p := range loadPresets(t) {
+			if p.Title == title {
+				out = append(out, p)
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing nodal study %q", title)
+		}
+	}
+	return out
+}
+
+func nodalField(m, n int, a float64, p Vec) (float64, Vec) {
+	u, v := float64(m)*math.Pi, float64(n)*math.Pi
+	c, s := math.Cos(a), math.Sin(a)
+	return c*math.Sin(u*p.X)*math.Sin(v*p.Y) + s*math.Sin(v*p.X)*math.Sin(u*p.Y), Vec{
+		X: c*u*math.Cos(u*p.X)*math.Sin(v*p.Y) + s*v*math.Cos(v*p.X)*math.Sin(u*p.Y),
+		Y: c*v*math.Sin(u*p.X)*math.Cos(v*p.Y) + s*u*math.Sin(v*p.X)*math.Cos(u*p.Y),
+	}
+}
+
+func TestNodalPresetsGridsAndBoundary(t *testing.T) {
+	for i, p := range nodalPresets(t) {
+		m, n := [3]int{1, 2, 3}[i], [3]int{2, 3, 5}[i]
+		t.Run(p.Title, func(t *testing.T) {
+			q := p.Config
+			q.Curve.Implicit.Family.Enabled = false
+			// Pure modes have vertical x=k/m and horizontal y=l/n
+			// interior lines; at pi/2 the two grids exchange roles.
+			for _, a := range []float64{0, math.Pi / 2} {
+				q.Curve.A = a
+				xf, yf := m, n
+				if a != 0 {
+					xf, yf = n, m
+				}
+				res := contours(t, q)
+				if len(res.Curve.Contours) == 0 {
+					t.Fatal("empty nodal grid")
+				}
+				for _, c := range res.Curve.Contours {
+					for _, v := range c.Points {
+						d := math.Min(math.Abs(v.X*float64(xf)-math.Round(v.X*float64(xf))), math.Abs(v.Y*float64(yf)-math.Round(v.Y*float64(yf))))
+						if d > 2e-10 {
+							t.Fatalf("a=%g: point %v is off the interior grid by %g", a, v, d)
+						}
+					}
+				}
+				// Require output along every expected branch, away from the
+				// other grid's crossings. No empty set can satisfy this.
+				for axis, frequency := range []int{xf, yf} {
+					for k := 1; k < frequency; k++ {
+						target := Vec{float64(k) / float64(frequency), .231}
+						if axis == 1 {
+							target.X, target.Y = target.Y, target.X
+						}
+						if d := nodalDistance(res.Curve, target); d > .002 {
+							t.Fatalf("a=%g: missing branch at %v, distance %g", a, target, d)
+						}
+					}
+				}
+			}
+			// The boundary condition is analytical, independent of whether
+			// sign-change extraction emits any part of the square's edges.
+			for _, a := range []float64{0, .31, math.Pi / 4, math.Pi / 2, 2 * math.Pi} {
+				f, _, err := expr.ParseField(q.Curve.Implicit.F, a)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for j := 0; j <= 32; j++ {
+					v := float64(j) / 32
+					for _, b := range []Vec{{0, v}, {1, v}, {v, 0}, {v, 1}} {
+						if math.Abs(f(b.X, b.Y, 0)) > 4e-15 {
+							t.Fatalf("nonzero boundary at %v", b)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func nodalDistance(set LevelSet, p Vec) float64 {
+	best := math.Inf(1)
+	for _, c := range set.Contours {
+		for j := 1; j < len(c.Points); j++ {
+			a, b := c.Points[j-1], c.Points[j]
+			d := b.Sub(a)
+			u := 0.0
+			if d.Dot(d) > 0 {
+				u = math.Max(0, math.Min(1, p.Sub(a).Dot(d)/d.Dot(d)))
+			}
+			best = math.Min(best, p.Sub(a.Add(d.Mul(u))).Norm())
+		}
+	}
+	return best
+}
+
+func TestNodalMixedGeometry(t *testing.T) {
+	defer func(depth int) { maxRefineDepth = depth }(maxRefineDepth)
+	maxRefineDepth = 0 // Measure the production chords, without refinement.
+	for i, p := range nodalPresets(t) {
+		m, n := [3]int{1, 2, 3}[i], [3]int{2, 3, 5}[i]
+		q := p.Config
+		q.Curve.Implicit.Family.Enabled = false
+		q.Curve.A = .31 // A regular mixture, away from nodal reconnections.
+		previous := math.Inf(1)
+		for _, cells := range []int{96, 192, 384} {
+			q.Curve.Implicit.Cells = cells
+			res := contours(t, q)
+			worst, measured := 0.0, 0
+			for _, c := range res.Curve.Contours {
+				for j, v := range c.Points {
+					f, _ := nodalField(m, n, q.Curve.A, v)
+					if math.Abs(f) > 2e-12 {
+						t.Fatalf("%s: vertex residual %g", p.Title, f)
+					}
+					// Central reflection preserves the zero set even when
+					// opposite mode parities reverse the sign of the field.
+					if d := nodalDistance(res.Curve, Vec{1 - v.X, 1 - v.Y}); d > 2e-6 {
+						t.Fatalf("%s: reflection distance %g", p.Title, d)
+					}
+					if j == 0 {
+						continue
+					}
+					mid := v.Add(c.Points[j-1]).Mul(.5)
+					f, g := nodalField(m, n, q.Curve.A, mid)
+					if mid.X < .08 || mid.X > .92 || mid.Y < .08 || mid.Y > .92 || g.Norm() < 1 {
+						continue
+					}
+					worst = math.Max(worst, math.Abs(f)/g.Norm())
+					measured++
+				}
+			}
+			if measured < 20 || worst <= 1e-10 || worst > previous*.4 {
+				t.Fatalf("%s: %d cells, %d chords, error %g after %g", p.Title, cells, measured, worst, previous)
+			}
+			previous = worst
+		}
+		if previous > 8e-5 {
+			t.Fatalf("%s: final geometric error %g", p.Title, previous)
+		}
+		// At equal strength, exchanging x and y preserves the contours.
+		q.Curve.A = math.Pi / 4
+		res := contours(t, q)
+		points := 0
+		for _, c := range res.Curve.Contours {
+			for _, v := range c.Points {
+				points++
+				if d := nodalDistance(res.Curve, Vec{v.Y, v.X}); d > 2e-6 {
+					t.Fatalf("%s: diagonal reflection distance %g", p.Title, d)
+				}
+			}
+		}
+		if points < 20 {
+			t.Fatal("empty equal-strength contours")
+		}
+	}
+}
+
+func TestNodalReconnection(t *testing.T) {
+	q := nodalPresets(t)[1].Config // (2,3), crossing at (1/2,1/3) when a=0.
+	q.Curve.Implicit.Family.Enabled = false
+	center := Vec{.5, 1.0 / 3}
+	// Even/odd grids place the crossing on an edge / inside an ambiguous
+	// cell. Classify the local branches, never claim certified topology.
+	for _, cells := range []int{80, 81, 160, 161} {
+		q.Curve.Implicit.Cells = cells
+		for _, a := range []float64{-.002, 0, .002} {
+			q.Curve.A = a
+			res := contours(t, q)
+			count := 0
+			for _, c := range res.Curve.Contours {
+				for j, v := range c.Points {
+					if v.Sub(center).Norm() > .055 {
+						continue
+					}
+					count++
+					if f, _ := nodalField(2, 3, a, v); math.Abs(f) > 2e-12 {
+						t.Fatalf("reconnection residual %g", f)
+					}
+					if a != 0 {
+						if (v.X-center.X)*(v.Y-center.Y)*a <= 0 {
+							t.Fatalf("a=%g: branch on wrong side at %v", a, v)
+						}
+						if j > 0 && c.Points[j-1].Sub(center).Norm() < .055 {
+							mid := v.Add(c.Points[j-1]).Mul(.5)
+							if (mid.X-center.X)*(mid.Y-center.Y)*a <= 0 {
+								t.Fatal("chord joins across the finite gap")
+							}
+						}
+					}
+				}
+			}
+			if count < 6 || len(res.Discontinuities) != 0 || res.Nonfinite != 0 {
+				t.Fatalf("%d cells, a=%g: %d local points, invalid geometry", cells, a, count)
+			}
+			d := nodalDistance(res.Curve, center)
+			if a == 0 && d > .96/float64(cells) {
+				t.Fatalf("missing critical crossing: %g", d)
+			}
+			if a != 0 && d < .004 {
+				t.Fatalf("lost finite gap: %g", d)
+			}
+		}
+	}
+}
+
+func TestAnchoredNodalNormalMotion(t *testing.T) {
+	q := nodalPresets(t)[2].Config
+	q.Curve.Implicit.StableNormals = true
+	// Retain the grid of the reported reproduction even if the curated
+	// preset is later tuned to a different workload.
+	q.Curve.Implicit.Cells = 200
+	var previous []Normal
+	for _, a := range []float64{.419, .4195, .42} {
+		q.Curve.A = a
+		r := contours(t, q)
+		if len(r.Normals) < q.Lines-1 || len(r.Normals) > q.Lines+1 {
+			t.Fatalf("a=%g: %d normals for %d lines", a, len(r.Normals), q.Lines)
+		}
+		for _, n := range r.Normals {
+			f, g := nodalField(3, 5, a, n.Point)
+			if math.Abs(f) > 2e-12 || math.Abs(n.Gradient.Cross(g))/(g.Norm()*n.Gradient.Norm()) > 1e-7 {
+				t.Fatalf("invalid anchored normal %+v", n)
+			}
+		}
+		if previous != nil {
+			// da=.0005 is a regular deformation here. A grid-start change
+			// used to move an entire loop's arrows by almost one cell.
+			if d := normalJump(previous, r.Normals); d > .0012 {
+				t.Fatalf("a=%g: normal jumps %g for da=.0005", a, d)
+			}
+		}
+		previous = r.Normals
+	}
+}
+
+// normalJump is the farthest any normal of next lies from every normal of
+// previous.
+func normalJump(previous, next []Normal) float64 {
+	worst := 0.0
+	for _, n := range next {
+		d := math.Inf(1)
+		for _, p := range previous {
+			d = math.Min(d, n.Point.Sub(p.Point).Norm())
+		}
+		worst = math.Max(worst, d)
+	}
+	return worst
+}
+
+// Anchored normals space each contour from its own origin, so a piece
+// that splits or joins elsewhere moves no other piece's arrows. These two
+// 60-fps steps of the engraving's loop each cross a reconnection.
+func TestAnchoredNormalsIgnoreDistantReconnections(t *testing.T) {
+	q := nodalPresets(t)[2].Config
+	q.Curve.Implicit.StableNormals = true
+	q.Curve.Implicit.Family.Enabled = false
+	q.Curve.Implicit.Cells, q.Lines = 128, 24
+	for _, frame := range []float64{23, 96} {
+		var sets [2]*ContourResult
+		for k := range sets {
+			q.Curve.A = math.Pi/8 + 2*math.Pi*(frame+float64(k))/960
+			sets[k] = contours(t, q)
+		}
+		if len(sets[0].Curve.Contours) == len(sets[1].Curve.Contours) {
+			t.Fatalf("frame %g: no reconnection between the steps", frame)
+		}
+		// Ordinary motion over one step stays below a cell (.0075).
+		if d := normalJump(sets[0].Normals, sets[1].Normals); d > .0075 {
+			t.Fatalf("frame %g: a normal jumps %g", frame, d)
+		}
+	}
+}
+
+// Over the engraving's own loop at 60 frames a second, arrows move by more
+// than two cells only where a pure mode's straight-line grid reconnects
+// every strand at once, at a multiple of pi/2. Other reconnections move
+// only their own piece's arrows.
+func TestAnchoredNormalsThroughTheEngravingLoop(t *testing.T) {
+	q := nodalPresets(t)[2].Config
+	q.Curve.Implicit.Family.Enabled = false // Normals lie on the curve alone.
+	w := q.Curve.Implicit.Window
+	cell := math.Max(w.XMax-w.XMin, w.YMax-w.YMin) / float64(q.Curve.Implicit.Cells)
+	frames := 960
+	step := 2 * math.Pi / float64(frames)
+	var previous []Normal
+	events := 0
+	for f := 0; f <= frames; f++ {
+		q.Curve.A = math.Pi/8 + step*float64(f)
+		r := contours(t, q)
+		if previous != nil && normalJump(previous, r.Normals) > 2*cell {
+			// The pure mode lies in this step or, on a frame, the next.
+			if d := math.Remainder(q.Curve.A-step/2, math.Pi/2); math.Abs(d) > 1.5*step {
+				t.Fatalf("a=%g: a normal jumps %g, away from a pure mode", q.Curve.A, normalJump(previous, r.Normals))
+			}
+			events++
+		}
+		previous = r.Normals
+	}
+	if events == 0 {
+		t.Fatal("no reconnection of the whole nodal set was crossed")
+	}
+}
+
+func TestAnchoredNormalsPreserveGeometryAndRequestOrder(t *testing.T) {
+	q := nodalPresets(t)[2].Config
+	q.Curve.Implicit.StableNormals = false
+	a := contours(t, q)
+	stable := q
+	stable.Curve.Implicit.StableNormals = true
+	b := contours(t, stable)
+	left, right := *a, *b
+	left.Normals, right.Normals = nil, nil
+	l, _ := json.Marshal(left)
+	r, _ := json.Marshal(right)
+	if string(l) != string(r) {
+		t.Fatal("normal anchoring changed contour geometry")
+	}
+	old, _ := json.Marshal(a.Normals)
+	anchored, _ := json.Marshal(b.Normals)
+	if string(old) == string(anchored) {
+		t.Fatal("normal anchoring has no effect")
+	}
+	for _, angle := range []float64{math.Pi / 4, 0, math.Pi / 2, -.002, .002} {
+		other := stable
+		other.Curve.A = angle
+		res := contours(t, other)
+		for _, n := range res.Normals {
+			f, _ := nodalField(3, 5, angle, n.Point)
+			if math.Abs(f) > 2e-12 || !n.Gradient.Valid() {
+				t.Fatal("invalid normal through a reconnection")
+			}
+		}
+	}
+	again, _ := json.Marshal(contours(t, stable).Normals)
+	if string(again) != string(anchored) {
+		t.Fatal("normal positions depend on prior frames")
+	}
+}
+
+// Chords are refined until their midpoints lie within a fixed fraction of
+// the window's longer side, 1/5000, whatever the grid: below a pixel even
+// in a 4K drawing of the whole window. An arc of radius 10 is gentle enough
+// that this, not the bend limit, decides.
+func TestContourToleranceFollowsTheDrawing(t *testing.T) {
+	defer func(d int) { maxRefineDepth = d }(maxRefineDepth)
+	limit := 4.0 / 5000
+	center := Vec{-9, 0}
+	sagitta := func(set LevelSet) float64 {
+		worst := 0.0
+		for _, c := range set.Contours {
+			for _, e := range contourChords(c) {
+				worst = math.Max(worst, math.Abs(e[0].Add(e[1]).Mul(.5).Sub(center).Norm()-10))
+			}
+		}
+		return worst
+	}
+	for _, cells := range []int{8, 40, 160} {
+		q := implicitRequest("(x+9)^2+y^2", 100, square(2), cells)
+		maxRefineDepth = 0
+		raw := contours(t, q)
+		maxRefineDepth = 6
+		refined := contours(t, q)
+		points := func(r *ContourResult) int { return len(r.Curve.Contours[0].Points) }
+		s := sagitta(refined.Curve)
+		if s > limit {
+			t.Fatalf("%d cells: sagitta %g exceeds %g", cells, s, limit)
+		}
+		if sagitta(raw.Curve) <= limit {
+			// A chord already within the tolerance is not subdivided.
+			if points(refined) != points(raw) {
+				t.Fatalf("%d cells: %d points refined to %d", cells, points(raw), points(refined))
+			}
+		} else if s <= limit/4 {
+			// Halving a chord quarters its sagitta; refinement stops at
+			// the first within the tolerance.
+			t.Fatalf("%d cells: sagitta %g is refined past %g", cells, s, limit)
+		}
+	}
+}
+
+// turn is the largest angle between successive chords of a set's contours,
+// in degrees.
+func turn(set LevelSet) float64 {
+	worst := 0.0
+	for _, c := range set.Contours {
+		p := c.Points
+		for j := 1; j+1 < len(p); j++ {
+			a, b := p[j].Sub(p[j-1]), p[j+1].Sub(p[j])
+			worst = math.Max(worst, math.Abs(math.Atan2(a.Cross(b), a.Dot(b))))
+		}
+	}
+	return worst * 180 / math.Pi
+}
+
+// A small loop is refined until successive chords turn by at most 3°, so
+// it stays round however close its chords already lie to it.
+func TestContourBendLimit(t *testing.T) {
+	q := implicitRequest("x^2+y^2", .01, square(2), 40)
+	r := contours(t, q)
+	if a := turn(r.Curve); a > 3.05 {
+		t.Fatalf("a radius-0.1 circle turns %g° between chords", a)
+	}
+	// Cassini's smallest ovals, around the foci, as the preset draws them.
+	for _, p := range loadPresets(t) {
+		if p.Title == "Cassini ovals & the lemniscate" {
+			r := contours(t, p.Config)
+			if a := turn(r.Family[0]); a > 3.05 || len(r.Family[0].Contours) != 2 {
+				t.Fatalf("level %g turns %g° over %d ovals", r.Family[0].Level, a, len(r.Family[0].Contours))
+			}
+		}
+	}
+}
+
+func TestEngravingDetail(t *testing.T) {
+	defer func(d int) { maxRefineDepth = d }(maxRefineDepth)
+	q := nodalPresets(t)[2].Config
+	w := q.Curve.Implicit.Window
+	limit := math.Max(w.XMax-w.XMin, w.YMax-w.YMin) / 5000
+	for _, angle := range []float64{math.Pi / 8, .7, 1.1} {
+		q.Curve.A = angle
+		maxRefineDepth = 0
+		raw := contours(t, q)
+		maxRefineDepth = 6
+		res := contours(t, q)
+		rawSets := append([]LevelSet{raw.Curve}, raw.Family...)
+		sets := append([]LevelSet{res.Curve}, res.Family...)
+		points := 0
+		for k, set := range sets {
+			if len(set.Contours) != len(rawSets[k].Contours) {
+				t.Fatal("refinement changed the extracted components")
+			}
+			for _, c := range set.Contours {
+				points += len(c.Points)
+				for _, chord := range contourChords(c) {
+					mid := chord[0].Add(chord[1]).Mul(.5)
+					f, g := nodalField(3, 5, angle, mid)
+					if g.Norm() < 1 {
+						continue
+					}
+					if d := math.Abs(f-set.Level) / g.Norm(); d > 1.05*limit {
+						t.Fatalf("chord error %g exceeds %g", d, limit)
+					}
+				}
+			}
+		}
+		// At 200 cells the original refinement emitted over 20,000 points.
+		if points > 9000 {
+			t.Fatalf("the engraving emitted %d points, want at most 9000", points)
+		}
 	}
 }

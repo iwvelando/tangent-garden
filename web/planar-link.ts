@@ -203,6 +203,7 @@ const config: SchemaOf<Config> = {
             family,
             window,
             cells: "number",
+            stableNormals: { optional: "boolean" },
           },
         },
         attractor: {

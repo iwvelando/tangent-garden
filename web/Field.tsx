@@ -212,3 +212,36 @@ export function StudyError({ message }: { message: string }) {
     </p>
   );
 }
+
+// A checkbox in line with its help toggle, with its help beneath them.
+export function CheckSetting({
+  label,
+  topic,
+  checked,
+  onChange,
+  help: text,
+}: {
+  label: string;
+  topic: string;
+  checked: boolean;
+  onChange: (on: boolean) => void;
+  help: Help;
+}) {
+  const help = useHelp();
+  return (
+    <>
+      <div className="probe-switch check-setting">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => onChange(e.target.checked)}
+          />
+          {label}
+        </label>
+        <HelpToggle topic={topic} help={help} />
+      </div>
+      <HelpText help={help}>{text}</HelpText>
+    </>
+  );
+}
