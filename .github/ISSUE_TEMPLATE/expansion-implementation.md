@@ -32,10 +32,17 @@ Excluded:
 
 <!-- Observable behavior and independent assertions, including difficult cases and regressions. -->
 
+## Early product checkpoint and performance
+
+<!-- Signature still/motion and central interaction through the real production path.
+     Separate enforced work/storage caps from representative responsiveness measurements.
+     Identify any owner-requested sign-off before final verification. -->
+
 ## Verification
 
 <!-- Feature-specific checks plus the normal repository requirements.
-     Explicit user authorization is required for any deferral; name its integration owner. -->
+     Targeted checks are the default during product iteration; the implementing session owns
+     final full verification after iteration settles. Additional deferrals need user authorization. -->
 
 ## Documentation and downstream effects
 
