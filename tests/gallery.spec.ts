@@ -241,7 +241,7 @@ async function settled(page: Page) {
 }
 
 for (const [path, count] of [
-  ["/", 68],
+  ["/", 69],
   ["/?study=3d", 141],
   ["/?study=4d", 13],
 ] as const)
@@ -2842,6 +2842,12 @@ test("atlas adoption changes only its two parameters and matches copied-link rel
     .getByRole("button", { name: "Adopt variant", exact: true })
     .click();
   await expect(atlas).toBeHidden();
+  // The adopted study opens in an effect after the atlas closes, so the
+  // previous study can still read as settled; a click then would land on
+  // Copy link just as the adopted study disables it.
+  await expect(page.locator(".plot-heading .eyebrow")).toHaveText(
+    "YOUR OWN EXPLORATION",
+  );
   await settled(page);
   const expected = structuredClone(before);
   expected.config.curve.roulette.radius = 1.5;
@@ -5133,4 +5139,827 @@ test("atlas entry refuses an unsupported study that settles after the request", 
     "implicit",
   );
   expect(errors).toEqual([]);
+});
+
+test("finite engraving sampling, curated applicability and literal aggregate ceilings", async () => {
+  const { familyTargets, familyValues, familyBudget, familyDefaults } =
+    await import("../web/planar-family");
+  const { presetStudy } = await import("../web/planar-link");
+  const s = presetStudy(0);
+  expect(familyTargets(s.config)).toEqual([]); // unused a is not a track
+  s.config.curve.x = "a*cos(t)";
+  expect(familyTargets(s.config).map((t) => t.target)).toEqual(["a"]);
+  s.config.kind = "pedal";
+  expect(familyTargets(s.config).map((t) => t.target)).toEqual([
+    "poleX",
+    "poleY",
+    "a",
+  ]);
+  s.config.kind = "catacaustic";
+  expect(familyTargets(s.config).map((t) => t.target)).toEqual([
+    "sourceX",
+    "sourceY",
+    "a",
+  ]);
+  s.config.source.coordinates = "polar";
+  expect(familyTargets(s.config).map((t) => t.target)).toEqual([
+    "sourceTheta",
+    "sourceRadius",
+    "a",
+  ]);
+  // A theta default turns once around the lamp's circle and stops one step
+  // short, so its last member never repeats the first lamp position.
+  s.config.source.theta = 1;
+  const turn = familyDefaults(s.config, "sourceTheta");
+  expect(turn.from).toBe(1);
+  expect(turn.to).toBe(1 + (2 * Math.PI * 15) / 16);
+  const positions = familyValues(turn, 1).map((v) =>
+    [Math.cos(v), Math.sin(v)].map((c) => c.toFixed(9)).join(),
+  );
+  expect(new Set(positions).size).toBe(turn.count);
+  const f = {
+    ...familyDefaults(s.config),
+    enabled: true,
+    from: -1.2,
+    to: 0.8,
+    count: 5,
+  };
+  expect(familyValues(f, -0.2)).toEqual([-1.2, -0.7, -0.2, 0.3, 0.8]);
+  expect(familyValues({ ...f, from: 0.8, to: -1.2 }, -0.2)).toEqual([
+    0.8, 0.3, -0.2, -0.7, -1.2,
+  ]);
+  expect(
+    familyValues(
+      { ...f, from: 0.12345678901234567, to: 0.12345678901234567 },
+      0,
+    ),
+  ).toEqual(Array(5).fill(0.12345678901234567));
+  s.config.samples = 7800;
+  s.config.lines = 32;
+  const admitted = familyBudget(s.config, { ...f, count: 32 });
+  expect(admitted.points).toBe(499200);
+  expect(admitted.work).toBe(4492800);
+  expect(admitted.error).toBeUndefined();
+  expect(
+    familyBudget({ ...s.config, samples: 7813 }, { ...f, count: 32 }).error,
+  ).toMatch(/limit/);
+  expect(
+    familyBudget({ ...s.config, adaptive: true }, { ...f, count: 32 }).error,
+  ).toMatch(/limit/);
+  expect(familyBudget(s.config, { ...f, target: "poleX" }).error).toMatch(
+    /supported/,
+  );
+  for (const format of ["implicit", "attractor", "field", "pursuit"] as const)
+    expect(
+      familyTargets({ ...s.config, curve: { ...s.config.curve, format } }),
+    ).toEqual([]);
+  expect(
+    familyTargets({
+      ...s.config,
+      kind: "offset",
+      stack: { ...s.config.stack, enabled: true },
+    }),
+  ).toEqual([]);
+});
+
+test("finite engraving scheduler owns full-quality results and retires stale and fatal work", async () => {
+  const { PlanarFamily, familyDefaults } = await import("../web/planar-family");
+  const { presetStudy } = await import("../web/planar-link");
+  const { EngineError } = await import("../web/engine-client");
+  const s = presetStudy(0);
+  s.config.kind = "pedal";
+  const f = {
+    ...familyDefaults(s.config),
+    enabled: true,
+    count: 3,
+    from: -1,
+    to: 1,
+  };
+  const calls: any[] = [];
+  let disposed = false;
+  const scheduler = new PlanarFamily(
+    {
+      compute: (config: any, bounds: any, options: any) =>
+        new Promise<any>((resolve, reject) =>
+          calls.push({ config, bounds, options, resolve, reject }),
+        ),
+      dispose: () => {
+        disposed = true;
+      },
+    },
+    () => {},
+  );
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  scheduler.generate(s, f);
+  expect(calls).toHaveLength(1);
+  expect(scheduler.state.queued).toBe(2);
+  expect(calls[0].config.samples).toBe(s.config.samples);
+  const original = structuredClone(s);
+  s.config.curve.x = "999";
+  scheduler.generate(original, { ...f, from: 2, to: 4 });
+  expect(calls).toHaveLength(1);
+  const frame = (i: number) => ({
+    config: calls[i].config,
+    result: {
+      base: [{ x: 1, y: 2 }],
+      derived: [{ x: i, y: 3 }],
+      rays: [],
+      family: [],
+    },
+  });
+  calls[0].resolve(frame(0));
+  await tick();
+  expect(scheduler.state.members.every((m) => !m.frame)).toBe(true);
+  expect(calls[1].config.pole.x).toBe(2);
+  calls[1].resolve(frame(1));
+  await tick();
+  const own = structuredClone(scheduler.state.members[0].frame);
+  calls[1].config.curve.x = "corrupted";
+  expect(scheduler.state.members[0].frame).toEqual(own);
+  calls[2].reject(new EngineError("bad member"));
+  await tick();
+  expect(scheduler.state.members[1].error).toBe("bad member");
+  calls[3].resolve(frame(3));
+  await tick();
+  expect(scheduler.state.members.filter((m) => m.frame)).toHaveLength(2);
+  expect(scheduler.state.members.map((m) => m.value)).toEqual([2, 3, 4]);
+  expect(scheduler.state.retained).toBeGreaterThan(0);
+  scheduler.cancel();
+  expect(scheduler.state.members).toEqual([]);
+  scheduler.generate(original, f);
+  calls[4].reject(new Error("worker deadline"));
+  await tick();
+  expect(disposed).toBe(true);
+  expect(scheduler.state.queued).toBe(0);
+  expect(scheduler.state.failed).toMatch(/worker deadline/);
+  scheduler.generate(original, f);
+  expect(calls).toHaveLength(5);
+});
+
+test("finite engraving production overlay, selected construction, recovery and vector still", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const before = await page.locator("#artwork").innerHTML();
+  await page.getByRole("button", { name: "catacaustic", exact: true }).click();
+  await settled(page);
+  await page.getByLabel("Finite engraving", { exact: true }).check();
+  await settled(page);
+  await expect(page.locator("[data-family-member]")).toHaveCount(16);
+  await expect(page.locator("#artwork text")).toHaveCount(0);
+  const desc = JSON.parse(
+    (await page.locator("#artwork > desc").textContent())!,
+  );
+  expect(desc.family.presentation).toBe("family");
+  expect(desc.family.members).toHaveLength(16);
+  await page
+    .getByLabel("Family presentation", { exact: true })
+    .selectOption("selected");
+  await page.getByLabel("Selected member", { exact: true }).selectOption("7");
+  await settled(page);
+  await expect(page.locator("[data-family-member]")).toHaveCount(1);
+  await expect(page.locator("[data-family-member]")).toHaveAttribute(
+    "data-family-member",
+    "7",
+  );
+  await expect(
+    page.locator('#artwork [data-family-member] circle[r="5"]'),
+  ).toHaveCount(1);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const image = await readFile((await (await download).path())!, "utf8");
+  expect(image).toContain("<path");
+  expect(image).not.toContain("<image");
+  expect(
+    JSON.parse(/<desc>(.*?)<\/desc>/s.exec(image)![1]).family.selected,
+  ).toBe(7);
+  await page.getByLabel("Finite engraving", { exact: true }).uncheck();
+  await settled(page);
+  await page.getByRole("button", { name: "evolute", exact: true }).click();
+  await settled(page);
+  expect(await page.locator("#artwork").innerHTML()).toBe(before);
+});
+
+test("lamp lace preset declares a circular polar track and explanatory member", async () => {
+  const { presetStudy } = await import("../web/planar-link");
+  const index = presets.findIndex((p) => p.title === "A lamp's lace");
+  expect(index).toBeGreaterThanOrEqual(0);
+  const s = presetStudy(index);
+  expect(s.family).toMatchObject({
+    enabled: true,
+    target: "sourceTheta",
+    count: 16,
+    presentation: "family",
+  });
+  expect(s.config.source).toMatchObject({
+    kind: "point",
+    coordinates: "polar",
+    radius: 0.3,
+  });
+  expect(s.config.curve.x).toBe("1.02*cos(t)");
+  expect(s.config.curve.y).toBe("sin(t)");
+  expect(s.family!.from).toBe(0);
+  // Inclusive sampling of a whole turn would draw the first lamp twice: the
+  // last member stops one step short, so all sixteen positions are distinct.
+  expect(s.family!.to).toBe((15 * Math.PI) / 8);
+  const { familyValues } = await import("../web/planar-family");
+  const turns = familyValues(s.family!, 0).map(
+    (v) => Math.round((v / (2 * Math.PI)) * 16) % 16,
+  );
+  expect(new Set(turns).size).toBe(16);
+});
+
+test("lamp lace production WASM members match standalone geometry at their displayed values", async ({
+  page,
+}, info) => {
+  await observeAtlasWorkers(page);
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const observations = await page.evaluate(async () => {
+    const logs = (window as any).atlasWorkers;
+    const family = logs.find((l: any) => l.requests.length === 16);
+    const ordinary = new Worker(family.url);
+    const members = [];
+    for (const [i, item] of family.requests.entries()) {
+      const expected: any = await new Promise((resolve) => {
+        ordinary.onmessage = (e) => resolve(e.data);
+        ordinary.postMessage({ ...item.data, id: i + 100 });
+      });
+      const actual = family.replies[i].data;
+      members.push({
+        same: JSON.stringify(actual.result) === JSON.stringify(expected.result),
+        configSame:
+          JSON.stringify(actual.config) === JSON.stringify(expected.config),
+        value: actual.config.source.theta,
+        samples: actual.result.base.length,
+        finite: actual.result.derived.filter(Boolean).length,
+        rays: actual.result.rays.length,
+        bytes: JSON.stringify(actual.result).length,
+        milliseconds: family.replies[i].took,
+      });
+    }
+    ordinary.terminate();
+    return { members, maximum: family.maximum };
+  });
+  expect(observations.maximum).toBe(1);
+  expect(observations.members).toHaveLength(16);
+  const values = await page
+    .locator("[data-family-member]")
+    .evaluateAll((nodes) =>
+      nodes.map((n) => Number(n.getAttribute("data-family-value"))),
+    );
+  expect(values).toEqual(observations.members.map((m) => m.value));
+  for (const m of observations.members) {
+    expect(m.same).toBe(true);
+    expect(m.configSame).toBe(true);
+    expect(m.samples).toBe(1500);
+    expect(m.finite).toBeGreaterThan(1400);
+    expect(m.rays).toBe(24);
+  }
+  await info.attach("lamp-lace-worker-transport", {
+    body: JSON.stringify(observations, null, 2),
+    contentType: "application/json",
+  });
+});
+
+test("finite engraving reverse sampling is bit-exact and coincident values preserve entered precision", async () => {
+  const { familyValues, familyDefaults } = await import("../web/planar-family");
+  const { presetStudy } = await import("../web/planar-link");
+  const f = familyDefaults(presetStudy(0).config);
+  for (const count of [3, 16, 31, 32]) {
+    const forward = { ...f, from: 0, to: 2 * Math.PI, count };
+    expect(
+      familyValues({ ...forward, from: forward.to, to: forward.from }, 0),
+    ).toEqual(familyValues(forward, 0).reverse());
+    const value = 0.12345678901234567;
+    expect(familyValues({ ...forward, from: value, to: value }, value)).toEqual(
+      Array(count).fill(value),
+    );
+  }
+});
+
+test("finite engraving camera is shared independently and disabling restores the source camera", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await settled(page);
+  const art = page.locator("#artwork");
+  await art.focus();
+  await page.keyboard.press("+");
+  await page.keyboard.press("ArrowRight");
+  const source = await art.getAttribute("data-camera-center");
+  await page.getByRole("button", { name: "catacaustic", exact: true }).click();
+  await settled(page);
+  const sourceView = await art.getAttribute("data-camera-center");
+  await page.getByLabel("Finite engraving", { exact: true }).check();
+  await settled(page);
+  await art.focus();
+  await page.keyboard.press("+");
+  await page.keyboard.press("ArrowLeft");
+  const familyView = await art.getAttribute("data-camera-center");
+  const shared = (await copiedStudy(page)).study as any;
+  expect(shared.family.camera.zoom).toBeGreaterThan(1);
+  await page.goto(
+    `/#s=${deflateRawSync(Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study: shared }))).toString("base64url")}`,
+  );
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  await settled(page);
+  expect(await art.getAttribute("data-camera-center")).toBe(familyView);
+  await page.getByLabel("Finite engraving", { exact: true }).uncheck();
+  await settled(page);
+  expect(await art.getAttribute("data-camera-center")).toBe(sourceView);
+  expect(source).not.toBe("0,0");
+});
+
+for (const target of [
+  "sourceX",
+  "sourceY",
+  "sourceRadius",
+  "poleX",
+  "poleY",
+  "a",
+] as const)
+  test(`finite engraving curated ${target} uses real standalone requests`, async ({
+    page,
+  }) => {
+    const { presetStudy } = await import("../web/planar-link");
+    const { familyDefaults } = await import("../web/planar-family");
+    const study = presetStudy(0);
+    study.config.kind = target.startsWith("source") ? "catacaustic" : "pedal";
+    study.config.curve.x = "a*cos(t)";
+    if (target === "sourceRadius")
+      study.config.source = {
+        ...study.config.source,
+        coordinates: "polar",
+        radius: 0.3,
+        theta: 0.4,
+      };
+    study.family = {
+      ...familyDefaults(study.config, target),
+      enabled: true,
+      count: 3,
+      from: target === "a" ? -1 : 0.1,
+      to: 0.6,
+    };
+    await observeAtlasWorkers(page);
+    await page.goto(
+      `/#s=${deflateRawSync(Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study }))).toString("base64url")}`,
+    );
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+    await settled(page);
+    const outcome = await page.evaluate(async () => {
+      const logs = (window as any).atlasWorkers;
+      const family = logs.find((l: any) => l.requests.length === 3);
+      const ordinary = new Worker(family.url);
+      const checks = [];
+      for (const [i, call] of family.requests.entries()) {
+        const data: any = await new Promise((resolve) => {
+          ordinary.onmessage = (e) => resolve(e.data);
+          ordinary.postMessage({ ...call.data, id: 100 + i });
+        });
+        checks.push({
+          same:
+            JSON.stringify(data.result) ===
+            JSON.stringify(family.replies[i].data.result),
+          finite: data.result.derived.filter(Boolean).length,
+          rays: data.result.rays.length,
+        });
+      }
+      ordinary.terminate();
+      return checks;
+    });
+    expect(outcome).toHaveLength(3);
+    for (const result of outcome) {
+      expect(result.same).toBe(true);
+      expect(result.finite).toBeGreaterThan(900);
+      expect(result.rays).toBe(48);
+    }
+    if (target === "a")
+      await expect(
+        page.locator("#artwork [data-testid=base-curve]"),
+      ).toHaveCount(3);
+    else
+      await expect(
+        page.locator("#artwork [data-testid=base-curve]"),
+      ).toHaveCount(1);
+  });
+
+test("finite engraving partial and all-invalid families preserve gaps and disclose missing members", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const { familyDefaults } = await import("../web/planar-family");
+  const study = presetStudy(0);
+  study.config.kind = "pedal";
+  study.config.curve.x = "sqrt(a)*cos(t)";
+  study.config.curve.y = "sqrt(a)*sin(t)";
+  study.family = {
+    ...familyDefaults(study.config, "a"),
+    enabled: true,
+    count: 3,
+    from: -1,
+    to: 1,
+  };
+  await page.goto(
+    `/#s=${deflateRawSync(Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study }))).toString("base64url")}`,
+  );
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  await settled(page);
+  await expect(page.locator("[data-family-member]")).toHaveCount(1);
+  await expect(
+    page.getByText("1 of 3 members available.", { exact: true }),
+  ).toBeVisible();
+  let desc = JSON.parse((await page.locator("#artwork > desc").textContent())!);
+  expect(desc.family.partial).toBe(true);
+  expect(desc.family.members.filter((m: any) => m.error)).toHaveLength(2);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  expect(await readFile((await (await download).path())!, "utf8")).toContain(
+    '\"partial\":true',
+  );
+  await page.getByLabel("Family to", { exact: true }).fill("-1");
+  await settled(page);
+  await expect(
+    page.getByRole("button", { name: "Export image", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("0 of 3 members available.", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Finite engraving", { exact: true }).uncheck();
+  await settled(page);
+  await expect(page.getByLabel("x(t)", { exact: true })).toHaveValue(
+    "sqrt(a)*cos(t)",
+  );
+});
+
+test("finite engraving scalar edits reset target ranges and preserve work on a refused budget", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  await page.getByLabel("Family from", { exact: true }).fill("-pi");
+  await page.getByLabel("Family to", { exact: true }).fill("pi");
+  await settled(page);
+  await page
+    .getByLabel("Family parameter", { exact: true })
+    .selectOption("sourceRadius");
+  await settled(page);
+  await expect(page.getByLabel("Family from", { exact: true })).toHaveValue(
+    "0",
+  );
+  await expect(page.getByLabel("Family to", { exact: true })).toHaveValue(
+    "1.3",
+  );
+  await page.getByLabel("Family members", { exact: true }).fill("32");
+  await page.getByLabel("Numerical samples", { exact: true }).fill("32768");
+  await settled(page);
+  await expect(page.getByRole("alert")).toContainText(/limit/);
+  await expect(
+    page.getByRole("button", { name: "Export image", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Finite engraving", { exact: true }).uncheck();
+  await settled(page);
+  await expect(
+    page.getByLabel("Numerical samples", { exact: true }),
+  ).toHaveValue("32768");
+  await expect(page.getByLabel("Source radius r", { exact: true })).toHaveValue(
+    "0.3",
+  );
+});
+
+test("finite engraving invalid constants identify their own field", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const from = page.getByLabel("Family from", { exact: true });
+  await from.fill("a");
+  await expect(from).toHaveAttribute("aria-invalid", "true");
+  await expect(from.locator("..").locator(".field-error")).toContainText(
+    /constant|variable|a/,
+  );
+  await expect(
+    page.getByRole("button", { name: "Export image", exact: true }),
+  ).toBeDisabled();
+  await from.fill("pi/2");
+  await settled(page);
+  await expect(from).not.toHaveAttribute("aria-invalid", "true");
+  // A refused setting, not a parse error, also belongs to its own control,
+  // and the panel does not repeat it.
+  const to = page.getByLabel("Family to", { exact: true });
+  await to.fill("");
+  await expect(to).toHaveAttribute("aria-invalid", "true");
+  await expect(to.locator("..").locator(".field-error")).toHaveText(
+    "Family to must be a finite constant.",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(1);
+  await to.fill("2*pi");
+  await settled(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("finite engraving cancels deferred generations, selection coalesces and notebook replacement retires its worker", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page, 200);
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).atlasWorkers[1]?.requests.length ?? 0,
+      ),
+    )
+    .toBe(1);
+  await page.getByLabel("Finite engraving", { exact: true }).uncheck();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).atlasWorkers[1].terminated))
+    .toBe(true);
+  await page.getByLabel("Finite engraving", { exact: true }).check();
+  for (const value of ["3", "9", "1"])
+    await page
+      .getByLabel("Selected member", { exact: true })
+      .selectOption(value);
+  await settled(page);
+  const data = await page.evaluate(() =>
+    (window as any).atlasWorkers.map((l: any) => ({
+      requests: l.requests.length,
+      maximum: l.maximum,
+      terminated: l.terminated,
+    })),
+  );
+  expect(data[1].requests).toBe(1);
+  expect(data[2].requests).toBe(16);
+  expect(data[2].maximum).toBe(1);
+  await page
+    .getByLabel("Family presentation", { exact: true })
+    .selectOption("selected");
+  await expect(page.locator("[data-family-member]")).toHaveAttribute(
+    "data-family-member",
+    "1",
+  );
+  await chooseNotebook(page, "3d");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).atlasWorkers[2].terminated))
+    .toBe(true);
+  await chooseNotebook(page, "2d");
+  await settled(page);
+  await expect(page.locator("[data-family-member]")).toHaveAttribute(
+    "data-family-member",
+    "1",
+  );
+});
+
+test("finite engraving worker deadline stops the queue and re-enable starts a fresh engine", async ({
+  page,
+}) => {
+  await observeAtlasWorkers(page);
+  await page.goto("/");
+  await settled(page);
+  await page.evaluate(() => {
+    const post = Worker.prototype.postMessage;
+    const later = window.setTimeout;
+    (window as any).blockFamily = true;
+    Worker.prototype.postMessage = function (data: any, options?: any) {
+      if (data.action !== "compute" || !(window as any).blockFamily)
+        post.call(this, data, options);
+    };
+    // Only while delivery is blocked: a fresh engine's first request loads
+    // its WASM, which a loaded CI runner cannot do in 80 ms.
+    window.setTimeout = ((handler: TimerHandler, ms?: number, ...rest: any[]) =>
+      later(
+        handler,
+        ms === 30000 && (window as any).blockFamily ? 80 : ms,
+        ...rest,
+      )) as typeof setTimeout;
+  });
+  await choosePreset(page, { label: "A lamp's lace" });
+  await expect(page.getByRole("alert")).toContainText("timed out");
+  const dead = await page.evaluate(() => (window as any).atlasWorkers[1]);
+  expect(dead.requests).toHaveLength(0); // the test blocked delivery to the native worker
+  expect(dead.terminated).toBe(true);
+  await page.getByLabel("Family from", { exact: true }).fill("1");
+  await expect(page.getByRole("alert")).toContainText("timed out");
+  await page.evaluate(() => {
+    (window as any).blockFamily = false;
+  });
+  await page.getByLabel("Finite engraving", { exact: true }).uncheck();
+  await page.getByLabel("Finite engraving", { exact: true }).check();
+  await settled(page);
+  await expect(page.locator("[data-family-member]")).toHaveCount(16);
+});
+
+test("finite engraving legend names the members it draws, not the previous study", async ({
+  page,
+}) => {
+  // The notebook opens on an evolute; the family's members are catacaustics.
+  await page.goto("/");
+  await settled(page);
+  await expect(page.locator('.legend [data-legend="derived"]')).toHaveText(
+    "evolute",
+  );
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  await expect(page.locator("[data-family-member]")).toHaveCount(16);
+  await expect(page.locator('.legend [data-legend="derived"]')).toHaveText(
+    "catacaustic",
+  );
+});
+
+test("choosing an ordinary preset after the lamp's lace leaves no family behind", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const opening = await page.locator("#artwork").innerHTML();
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  await expect(page.locator("[data-family-member]")).toHaveCount(16);
+  await choosePreset(page, 0);
+  await settled(page);
+  await expect(
+    page.getByLabel("Finite engraving", { exact: true }),
+  ).not.toBeChecked();
+  await expect(page.locator(".plot-wrap")).not.toHaveAttribute("data-family");
+  await expect(page.locator("[data-family-member]")).toHaveCount(0);
+  await expect(page.locator("#artwork")).toHaveJSProperty("innerHTML", opening);
+  await expect(
+    page.getByRole("button", { name: "Animation", exact: true }),
+  ).toBeVisible();
+});
+
+test("finite engraving caps bind independently at their literal limits and the scheduler retires what it refuses", async () => {
+  const { PlanarFamily, familyBudget, familyDefaults, familyValues } =
+    await import("../web/planar-family");
+  const { presetStudy } = await import("../web/planar-link");
+  const { EngineError } = await import("../web/engine-client");
+  const s = presetStudy(0);
+  s.config.curve.x = "a*cos(t)";
+  s.config.lines = 24;
+  const f = { ...familyDefaults(s.config, "a"), enabled: true };
+  // Weighted work alone: a refined rolling construction of two members.
+  const rolling = { ...s.config, kind: "rolling" as const, adaptive: true };
+  const work = (samples: number) =>
+    familyBudget({ ...rolling, samples }, { ...f, count: 2 });
+  expect(work(977)).toMatchObject({ points: 69444, work: 79999488 });
+  expect(work(977).error).toBeUndefined();
+  expect(work(978)).toMatchObject({ points: 69448, work: 80004096 });
+  expect(work(978).numbers).toBeLessThan(4000000);
+  expect(work(978).error).toMatch(/limit/);
+  // Retained numbers alone: three members refined to the view.
+  const framed = { ...s.config, adaptive: true, adaptiveFrame: true };
+  const numbers = (samples: number) =>
+    familyBudget({ ...framed, samples }, { ...f, count: 3 });
+  expect(numbers(25234).numbers).toBe(3999936);
+  expect(numbers(25234).error).toBeUndefined();
+  expect(numbers(25235).numbers).toBe(4000032);
+  expect(numbers(25235).points).toBeLessThan(500000);
+  expect(numbers(25235).work).toBeLessThan(80000000);
+  expect(numbers(25235).error).toMatch(/limit/);
+  // Member count, and the field each setting's refusal names.
+  expect(familyBudget(s.config, { ...f, count: 32 }).error).toBeUndefined();
+  expect(familyBudget(s.config, { ...f, count: 33 })).toMatchObject({
+    field: "Family members",
+  });
+  expect(familyBudget(s.config, { ...f, count: 1 }).field).toBe(
+    "Family members",
+  );
+  // A generated midpoint that lands on the entered value keeps it exactly,
+  // where shortening would otherwise drop its last digits.
+  const entered = 0.12345678901234568;
+  expect(
+    familyValues({ ...f, from: 0, to: 2 * entered, count: 3 }, entered)[1],
+  ).toBe(entered);
+
+  const calls: any[] = [];
+  const scheduler = new PlanarFamily(
+    {
+      compute: () =>
+        new Promise<any>((resolve, reject) => calls.push({ resolve, reject })),
+    },
+    () => {},
+  );
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const points = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ x: i, y: 0 }));
+  const frame = (derived: unknown[]) => ({
+    config: s.config,
+    result: { base: [], derived, rays: [], family: [] },
+  });
+  // A stale member's refusal never reaches its replacement.
+  scheduler.generate(s, { ...f, count: 3 });
+  scheduler.generate(s, { ...f, count: 3, from: 5, to: 6 });
+  calls[0].reject(new EngineError("stale refusal"));
+  await tick();
+  expect(scheduler.state.members.some((m) => m.error)).toBe(false);
+  // Delivered geometry is counted against four million numbers: a member
+  // that would pass it is refused, and later small members still arrive.
+  calls[1].resolve(frame(points(1500000)));
+  await tick();
+  expect(scheduler.state.retained).toBe(3000000);
+  calls[2].resolve(frame(points(500001)));
+  await tick();
+  expect(scheduler.state.members[1].error).toMatch(/retained geometry limit/);
+  expect(scheduler.state.retained).toBe(3000000);
+  // A member with no finite derived point is explicitly unavailable.
+  calls[3].resolve(frame([null, null]));
+  await tick();
+  expect(scheduler.state.members[2].error).toMatch(/No finite derived/);
+  expect(scheduler.state.pending).toBe(false);
+  // Canceling drops the queue: the request in flight is the last one.
+  scheduler.generate(s, { ...f, count: 3 });
+  expect(calls).toHaveLength(5);
+  expect(scheduler.state.queued).toBe(2);
+  scheduler.cancel();
+  expect(scheduler.state.queued).toBe(0);
+  calls[4].resolve(frame(points(2)));
+  await tick();
+  expect(calls).toHaveLength(5);
+  expect(scheduler.state.members).toEqual([]);
+});
+
+test("finite engraving survives clearing the member count before typing a new one", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const count = page.getByLabel("Family members", { exact: true });
+  await count.fill("");
+  await expect(count).toHaveAttribute("aria-invalid", "true");
+  await count.fill("8");
+  await settled(page);
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(8);
+  await expect(page.getByLabel("Selected member", { exact: true })).toHaveValue(
+    "4",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("finite engraving refined to its view keeps its drawing while a zoom recomputes it", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await page.getByLabel("Family members", { exact: true }).fill("8");
+  await page.getByText("Refine between samples", { exact: true }).click();
+  await page
+    .getByText("Refine to the view as you zoom", { exact: true })
+    .click();
+  await settled(page);
+  const members = page.locator("#artwork [data-family-member]");
+  await expect(members).toHaveCount(8);
+  await page.evaluate(() => {
+    const seen = ((window as any).seen = { busy: false, lost: false });
+    const wrap = document.querySelector(".plot-wrap")!;
+    new MutationObserver(() => {
+      if (wrap.getAttribute("aria-busy") === "true") seen.busy = true;
+      if (
+        !wrap.querySelector("[data-family-member]") ||
+        wrap.querySelector(".loading")
+      )
+        seen.lost = true;
+    }).observe(wrap, { subtree: true, childList: true, attributes: true });
+  });
+  await page.locator("#artwork").focus();
+  await page.keyboard.press("+");
+  await page.keyboard.press("+");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).seen.busy))
+    .toBe(true);
+  await settled(page);
+  await expect(members).toHaveCount(8);
+  expect(await page.evaluate(() => (window as any).seen.lost)).toBe(false);
+});
+
+test("a linked trace animation survives opening with the engraving on", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const shared = (await copiedStudy(page)).study as any;
+  shared.animation.mode = "trace";
+  // A fresh page, so the notebook has no frame of its own yet.
+  await page.goto(
+    `/#s=${deflateRawSync(Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study: shared }))).toString("base64url")}`,
+  );
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  await settled(page);
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(16);
+  // Shared again with the engraving on, the animation is unchanged.
+  expect(((await copiedStudy(page)).study as any).animation.mode).toBe("trace");
+  await page.getByLabel("Finite engraving", { exact: true }).uncheck();
+  await settled(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("trace");
 });

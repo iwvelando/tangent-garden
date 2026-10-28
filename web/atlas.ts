@@ -159,7 +159,7 @@ export type AtlasState = {
 // scale: cancellation in 1.15 - 1 leaves more uncertainty than epsilon times
 // its small result. Interpolation uses its endpoint scale for the same reason.
 // Never apply this to the source, copied/entered endpoints, or raw scalar text.
-function roundedGenerated(value: number, scale: number) {
+export function roundedGenerated(value: number, scale: number) {
   if (!Number.isFinite(value) || value === 0) return value;
   for (let digits = 1; digits <= 16; digits++) {
     const short = Number(value.toPrecision(digits));

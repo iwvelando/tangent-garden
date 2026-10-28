@@ -64,12 +64,18 @@ try {
         ([notebook, want]) => {
           // A 2D example's definition, with its probe and stopped rays
           // when it has them.
-          const planar = (wrap, desc) =>
-            wrap && desc
-              ? wrap.dataset.probe || wrap.dataset.stop
-                ? `{"config":${desc}${wrap.dataset.probe ? `,"probe":${wrap.dataset.probe}` : ""}${wrap.dataset.stop ? `,"stop":${wrap.dataset.stop}` : ""}}`
-                : desc
-              : undefined;
+          const planar = (wrap, desc) => {
+            if (!wrap || !desc) return undefined;
+            if (wrap.dataset.family) {
+              const { family, ...config } = JSON.parse(desc);
+              desc = JSON.stringify(config);
+            }
+            return wrap.dataset.probe ||
+              wrap.dataset.stop ||
+              wrap.dataset.family
+              ? `{"config":${desc}${wrap.dataset.probe ? `,"probe":${wrap.dataset.probe}` : ""}${wrap.dataset.stop ? `,"stop":${wrap.dataset.stop}` : ""}${wrap.dataset.family ? `,"family":${wrap.dataset.family}` : ""}}`
+              : desc;
+          };
           const spatial = document.querySelector(
             ".spatial-stage[aria-busy=false]",
           )?.dataset;

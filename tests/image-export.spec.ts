@@ -1,6 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { exportImage, imageButton, openAnimation } from "./helpers";
+import {
+  choosePreset,
+  exportImage,
+  imageButton,
+  openAnimation,
+} from "./helpers";
+import { decodePng } from "./png";
 
 async function ready(page: Page) {
   await page.goto("/");
@@ -178,4 +184,35 @@ test("a failed PNG encode shows a plain error and recovers", async ({
   await exportImage(page, "SVG");
   await svg;
   await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+// A family's members are drawn into one composition, each in its own nested
+// drawing: a transparent export leaves out every background, not just the
+// outer page's, and still records the member set.
+test("a finite engraving exports with a transparent background throughout", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A lamp's lace" });
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(16);
+  await expect(imageButton(page)).toBeEnabled();
+  await imageButton(page).click();
+  await page
+    .getByRole("menuitemcheckbox", { name: "Transparent background" })
+    .click();
+  await page.keyboard.press("Escape");
+  const svg = (await save(page, "SVG")).bytes.toString();
+  // No painted background on the root or on any member's drawing.
+  expect(svg).not.toMatch(/background(-color)?:\s*(#|rgb)/);
+  expect(svg).not.toMatch(/<rect width="\d+" height="\d+" fill="#/);
+  expect(svg).toContain(`"background":"transparent"`);
+  expect(svg).toContain(`"members":[`);
+  const png = (await save(page, "PNG")).bytes;
+  const image = decodePng(png);
+  // Corners lie outside the ellipse, so nothing is drawn there.
+  expect(image.rgba[3]).toBe(0);
+  expect(image.rgba[image.rgba.length - 1]).toBe(0);
+  let inked = 0;
+  for (let i = 3; i < image.rgba.length; i += 4) if (image.rgba[i]) inked++;
+  expect(inked).toBeGreaterThan(0.005 * image.width * image.height);
 });

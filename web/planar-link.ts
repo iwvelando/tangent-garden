@@ -1,3 +1,8 @@
+import {
+  familyDefaults,
+  familyTargets,
+  type FamilySettings,
+} from "./planar-family";
 // The 2D notebook's study in a portable link (see study-link.ts).
 import {
   animationSettings,
@@ -67,6 +72,7 @@ export type PlanarStudy = {
   // The probe, off in links made before it.
   probe: PlanarProbe;
   animation: PlanarAnimation;
+  family?: FamilySettings;
 };
 export const defaultLayers: Layers = {
   base: true,
@@ -102,6 +108,7 @@ export function presetStudy(index: number): PlanarStudy {
     weight: "regular",
     probe: structuredClone(preset.probe ?? defaultProbe),
     animation: structuredClone(preset.animation ?? defaultAnimation),
+    ...(preset.family && { family: structuredClone(preset.family) }),
   };
 }
 
@@ -353,6 +360,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "weight",
         "probe",
         "animation",
+        "family",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -464,7 +472,65 @@ export function planarStudy(value: unknown): PlanarStudy {
       "animation.mode",
       "animation.mode traces light only in a catacaustic or diacaustic.",
     );
-  return { ...study, animation };
+  const family =
+    raw.family === undefined
+      ? undefined
+      : conform<FamilySettings>(
+          raw.family,
+          {
+            fields: {
+              enabled: "boolean",
+              target: {
+                options: {
+                  sourceTheta: true,
+                  sourceRadius: true,
+                  sourceX: true,
+                  sourceY: true,
+                  poleX: true,
+                  poleY: true,
+                  a: true,
+                },
+              },
+              from: "number",
+              to: "number",
+              count: { range: [2, 32] },
+              selected: { range: [0, 31] },
+              presentation: { options: { family: true, selected: true } },
+              camera: {
+                optional: {
+                  fields: {
+                    x: "number",
+                    y: "number",
+                    zoom: { range: zoomRange },
+                  },
+                },
+              },
+            },
+          },
+          familyDefaults(study.config),
+          "family",
+        );
+  if (family) {
+    if (!Number.isInteger(family.count))
+      throw new LinkError(
+        "family.count",
+        "family.count must be a whole number.",
+      );
+    if (!Number.isInteger(family.selected) || family.selected >= family.count)
+      throw new LinkError(
+        "family.selected",
+        "family.selected must name a member of this family.",
+      );
+    if (
+      family.enabled &&
+      !familyTargets(study.config).some((t) => t.target === family.target)
+    )
+      throw new LinkError(
+        "family.target",
+        "family.target is not supported by this study.",
+      );
+  }
+  return { ...study, animation, ...(family && { family }) };
 }
 
 // A probe snapped to samples carries no between flag, as the notebook keeps

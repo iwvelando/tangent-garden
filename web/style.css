@@ -1403,6 +1403,17 @@ header {
 .view-switch:has(+ .hint[hidden] + .view-switch) {
   margin-bottom: 4px;
 }
+/* The first setting below refinement's own checkbox, whose row has no help
+   toggle and is 3px shorter, keeps the same 22px between their boxes. */
+.check + .view-switch {
+  margin-top: 5.5px;
+}
+/* The engraving's range pair sits between ordinary fields, whose margins
+   own the gaps on either side; its subgrid children add none (see
+   docs/contributing.md, Side-by-side fields). */
+.family-panel .pair > .field {
+  margin: 0;
+}
 .probe-slider input {
   width: 100%;
   accent-color: #638f82;

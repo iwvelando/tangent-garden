@@ -60,11 +60,12 @@ export const planarExamples: Example[] = presets.map((p) => ({
   // A preset's probe and stopped rays are part of its picture; presets
   // without them keep the fingerprints they had before those existed.
   fingerprint: fingerprint(
-    p.probe || p.stop
+    p.probe || p.stop || p.family
       ? {
           config: p.config,
           ...(p.probe && { probe: p.probe }),
           ...(p.stop && { stop: p.stop }),
+          ...(p.family && { family: p.family }),
         }
       : p.config,
   ),
