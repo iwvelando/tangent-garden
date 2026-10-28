@@ -2842,6 +2842,12 @@ test("atlas adoption changes only its two parameters and matches copied-link rel
     .getByRole("button", { name: "Adopt variant", exact: true })
     .click();
   await expect(atlas).toBeHidden();
+  // The adopted study opens in an effect after the atlas closes, so the
+  // previous study can still read as settled; a click then would land on
+  // Copy link just as the adopted study disables it.
+  await expect(page.locator(".plot-heading .eyebrow")).toHaveText(
+    "YOUR OWN EXPLORATION",
+  );
   await settled(page);
   const expected = structuredClone(before);
   expected.config.curve.roulette.radius = 1.5;
