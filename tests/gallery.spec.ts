@@ -5724,8 +5724,14 @@ test("finite engraving worker deadline stops the queue and re-enable starts a fr
       if (data.action !== "compute" || !(window as any).blockFamily)
         post.call(this, data, options);
     };
+    // Only while delivery is blocked: a fresh engine's first request loads
+    // its WASM, which a loaded CI runner cannot do in 80 ms.
     window.setTimeout = ((handler: TimerHandler, ms?: number, ...rest: any[]) =>
-      later(handler, ms === 30000 ? 80 : ms, ...rest)) as typeof setTimeout;
+      later(
+        handler,
+        ms === 30000 && (window as any).blockFamily ? 80 : ms,
+        ...rest,
+      )) as typeof setTimeout;
   });
   await choosePreset(page, { label: "A lamp's lace" });
   await expect(page.getByRole("alert")).toContainText("timed out");

@@ -904,5 +904,9 @@ test("refinement's checkboxes are evenly spaced", async ({ page }) => {
       return box.top + box.height / 2;
     }),
   );
-  expect(centers[1] - centers[0]).toBeCloseTo(centers[2] - centers[1], 0);
+  // Within a pixel: Linux font metrics move a label row by half a pixel,
+  // while the uneven spacing this guards was 5.5px short.
+  expect(
+    Math.abs(centers[1] - centers[0] - (centers[2] - centers[1])),
+  ).toBeLessThan(1);
 });
