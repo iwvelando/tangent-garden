@@ -7,6 +7,7 @@ import {
 } from "./Field";
 import { ScalarInput } from "./ScalarInput";
 import { tiered } from "./help";
+import { familyMotionHelp } from "./family-motion";
 import { EngineClient } from "./engine-client";
 import {
   familyDefaults,
@@ -83,7 +84,11 @@ export function usePlanarFamily(
     : delivered.key === key
       ? delivered.state
       : { ...emptyFamily(), pending: true };
-  return { ...state, held: state.pending ? held.current : undefined };
+  return {
+    ...state,
+    revision: key,
+    held: state.pending ? held.current : undefined,
+  };
 }
 export function FamilyPanel({
   study,
@@ -140,7 +145,7 @@ export function FamilyPanel({
           onChange={(enabled) => change({ enabled })}
           help={tiered(
             "Overlay full-quality constructions from one changing parameter.",
-            "Only active point-source coordinates, pedal-family poles and consumed shape a are supported. Implicit curves, densities, integrated paths and nested stacks are excluded. Disabling restores the source study. Family motion arrives separately; ordinary animation is unavailable here.",
+            "Only active point-source coordinates, pedal-family poles and consumed shape a are supported. Implicit curves, densities, integrated paths and nested stacks are excluded. Disabling restores the source study. Reveal members or move a band in Animation; ordinary study animation is unavailable here.",
           )}
         />
         {f.enabled && (
@@ -211,6 +216,16 @@ export function FamilyPanel({
                     return {
                       ...(previous ?? f),
                       count,
+                      ...(previous?.animation &&
+                        Number.isFinite(count) && {
+                          animation: {
+                            ...previous.animation,
+                            width: Math.max(
+                              1,
+                              Math.min(previous.animation.width, count),
+                            ),
+                          },
+                        }),
                       selected: Number.isFinite(count)
                         ? Math.max(0, Math.min(selected, count - 1))
                         : selected,
@@ -221,7 +236,7 @@ export function FamilyPanel({
             </Field>
             <Field
               label="Family presentation"
-              help="Exports save the presentation and framing shown here."
+              help="Choose the complete family or inspect one member alone."
             >
               <select
                 value={f.presentation}
@@ -236,6 +251,15 @@ export function FamilyPanel({
                 <option value="selected">Selected member · construction</option>
               </select>
             </Field>
+            <CheckSetting
+              topic="construction for all members"
+              label="Construction lines for all members"
+              checked={!!f.allConstruction}
+              onChange={(allConstruction) =>
+                change({ allConstruction: allConstruction || undefined })
+              }
+              help={familyMotionHelp.construction}
+            />
             <Field label="Selected member">
               <select
                 value={f.selected}
@@ -263,8 +287,10 @@ export function FamilyPanel({
               <summary>Members and limits</summary>
               <p className="note">
                 A finite overlay, not an envelope. Complete families show member
-                curves; select one to explain its source or pole and
-                construction. At most 500,000 reserved path points, four million
+                curves. Construction layers show the selected member, or every
+                visible member with Construction lines for all members enabled.
+                Selection does not follow the moving band. Select one to inspect
+                it alone. At most 500,000 reserved path points, four million
                 retained numbers and 80 million weighted work units. One
                 calculation runs at a time. Hidden geometry counts too.
               </p>

@@ -62,6 +62,7 @@ export async function exportAnimation(options: Options): Promise<Blob> {
       signal.throwIfAborted();
       const svg = renderToStaticMarkup(
         <Plot
+          family={view.family}
           result={view.frame.result}
           config={view.frame.config}
           layers={layers}

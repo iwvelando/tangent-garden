@@ -1,6 +1,12 @@
 import { test, expect, devices, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { exportImage, openExportSettings, choosePreset, open } from "./helpers";
+import {
+  exportImage,
+  openExportSettings,
+  choosePreset,
+  open,
+  openAnimation,
+} from "./helpers";
 import { decodeVideo, probe, frameCoverage } from "./video";
 import { exportTiming } from "../web/export-quality";
 import { deflateRawSync } from "node:zlib";
@@ -1576,3 +1582,75 @@ for (const suppressMargins of [false, true])
     expect(first.above).toBe(first.ordinary);
     expect(first.below).toBe(first.ordinary);
   });
+
+test("finite engraving shares Safari playback, slider keys and selected construction clicks", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(16);
+  await page.getByText("Incident rays", { exact: true }).click();
+  await expect
+    .poll(() => page.locator('#artwork [data-family-member="4"] line').count())
+    .toBe(24);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", {
+    name: "Animation progress",
+    exact: true,
+  });
+  await slider.fill("0.45");
+  await slider.press("ArrowRight");
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(16);
+  await slider.press("Home");
+  await expect(page.locator("#artwork [data-family-member]")).toHaveAttribute(
+    "data-family-member",
+    "0",
+  );
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(16);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
+});
+
+test("finite engraving all-member construction label clicks work in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(16);
+  await page.getByText("Incident rays", { exact: true }).click();
+  await page
+    .getByText("Construction lines for all members", { exact: true })
+    .click();
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Construction lines for all members",
+      exact: true,
+    }),
+  ).toBeChecked();
+  await expect
+    .poll(() => page.locator('#artwork [data-family-member="0"] line').count())
+    .toBe(24);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .press("Home");
+  await expect(page.locator("#artwork [data-family-member]")).toHaveAttribute(
+    "data-family-member",
+    "0",
+  );
+  await expect
+    .poll(() => page.locator('#artwork [data-family-member="0"] line').count())
+    .toBe(24);
+});

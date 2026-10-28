@@ -2728,3 +2728,59 @@ test("finite engraving links retain settings and old links remain ordinary", asy
       .from,
   ).toBe(1);
 });
+
+test("finite engraving animation links keep independent saved setup and reject invalid windows", async () => {
+  const { planarStudy, presetStudy } = await import("../web/planar-link");
+  const { presets } = await import("../web/presets");
+  const s = presetStudy(presets.findIndex((p) => p.title === "A lamp's lace"));
+  const animation = {
+    mode: "window",
+    width: 3,
+    duration: 8,
+    repeat: "back-and-forth",
+    pace: "ease",
+    camera: "current",
+  };
+  const raw = { ...s, family: { ...s.family!, animation } };
+  expect(planarStudy(raw).family!.animation).toEqual(animation);
+  const old = structuredClone(s);
+  delete old.family!.animation;
+  expect(planarStudy(old).family!.animation).toBeUndefined();
+  expect(planarStudy(raw).animation).toEqual(s.animation);
+  for (const patch of [
+    { width: 0 },
+    { width: 17 },
+    { width: 1.5 },
+    { duration: 0 },
+    { duration: 3601 },
+    { repeat: "loop" },
+    { camera: "follow" },
+    { mode: "parameters" },
+  ])
+    expect(() =>
+      planarStudy({
+        ...raw,
+        family: { ...raw.family, animation: { ...animation, ...patch } },
+      }),
+    ).toThrow(/family.animation/);
+});
+
+test("finite engraving all-member construction links are opt-in and typed", async () => {
+  const { planarStudy, presetStudy } = await import("../web/planar-link");
+  const { presets } = await import("../web/presets");
+  const s = presetStudy(presets.findIndex((p) => p.title === "A lamp's lace"));
+  const raw = { ...s, family: { ...s.family!, allConstruction: true } };
+  expect(planarStudy(raw).family!.allConstruction).toBe(true);
+  expect(planarStudy(s).family!.allConstruction).toBeUndefined();
+  expect(
+    planarStudy({ ...raw, family: { ...raw.family, allConstruction: false } })
+      .family!.allConstruction,
+  ).toBe(false);
+  for (const value of [1, "true", null, {}])
+    expect(() =>
+      planarStudy({
+        ...raw,
+        family: { ...raw.family, allConstruction: value },
+      }),
+    ).toThrow(/family.allConstruction/);
+});

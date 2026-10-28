@@ -1,4 +1,5 @@
 import type { FamilyMember, FamilySettings } from "./planar-family";
+import { familyMotionMembers, type FamilyComposition } from "./family-motion";
 import { atlasSharedFrame } from "./atlas-framing";
 import type { ColorScheme } from "./color-schemes";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -31,7 +32,7 @@ export type Layers = {
 };
 type Props = {
   result: Result;
-  family?: { settings: FamilySettings; members: readonly FamilyMember[] };
+  family?: FamilyComposition;
   markers?: boolean;
   config: Config;
   layers: Layers;
@@ -201,7 +202,8 @@ export function Plot({
   // animation's framing, so the manual one is intact when the study returns.
   const [explore, setExplore] = useState({ x: 0, y: 0, zoom: 1, reset: refit });
   const exploring = !!animation?.complete;
-  const locked = !!framing || (!!animation && !exploring);
+  const animationLocked = !!framing || (!!animation && !exploring);
+  const locked = animationLocked || (!animation && !!family?.motion);
   useEffect(() => {
     if (!exploring) setExplore({ x: 0, y: 0, zoom: 1, reset: refit });
   }, [exploring]);
@@ -224,7 +226,7 @@ export function Plot({
   // While an animation plays, its frame's framing is the whole camera: a
   // held view already carries the manual pan and zoom.
   const cam = limited(
-    locked
+    animationLocked
       ? { x: 0, y: 0, zoom: 1, reset: key }
       : current.reset === key
         ? current
@@ -278,7 +280,7 @@ export function Plot({
     () =>
       family
         ? (atlasSharedFrame(
-            family.settings.presentation === "selected"
+            !family.motion && family.settings.presentation === "selected"
               ? family.members.filter((m) => m.id === family.settings.selected)
               : family.members,
           ) ?? fitFrame(result, config))
@@ -290,6 +292,7 @@ export function Plot({
       family?.members,
       family?.settings.presentation,
       family?.settings.selected,
+      !!family?.motion,
     ],
   );
   const finalFrame = useMemo(
@@ -329,12 +332,13 @@ export function Plot({
     onViewport,
   ]);
   useEffect(() => {
-    if (!animation) onCamera?.({ x: cam.x, y: cam.y, zoom: cam.zoom });
-  }, [animation, cam.x, cam.y, cam.zoom, onCamera]);
+    if (!animation && !family?.motion)
+      onCamera?.({ x: cam.x, y: cam.y, zoom: cam.zoom });
+  }, [animation, !!family?.motion, cam.x, cam.y, cam.zoom, onCamera]);
   // What the study is refined to: the view while zoomed in, or nothing.
   // An animation keeps the study's refinement as it was.
   useEffect(() => {
-    if (animation || !onFocus) return;
+    if (animation || family?.motion || !onFocus) return;
     onFocus(
       refineView && cam.zoom > 1
         ? viewRect({
@@ -346,6 +350,7 @@ export function Plot({
     );
   }, [
     animation,
+    !!family?.motion,
     refineView,
     frame.cx,
     frame.cy,
@@ -715,6 +720,7 @@ export function Plot({
                 ...(m.error && { error: m.error }),
               })),
               partial: family.members.some((m) => m.error),
+              ...(family.motion && { motion: family.motion }),
             },
           }),
           animation: animation
@@ -730,16 +736,54 @@ export function Plot({
         })}
       </desc>
       {!transparent && <rect width={W} height={H} fill={palette.bg} />}
+      {family?.motion && commonBase && family.members.find((m) => m.frame) && (
+        <g data-family-base="true">
+          <Plot
+            id={`${id}-family-base`}
+            result={family.members.find((m) => m.frame)!.frame!.result}
+            config={family.members.find((m) => m.frame)!.frame!.config}
+            layers={{
+              ...layers,
+              derived: false,
+              lines: false,
+              incident: false,
+              virtual: false,
+            }}
+            markers={false}
+            dark={dark}
+            scheme={scheme}
+            length={length}
+            stop={stop}
+            reset={0}
+            weight={weight}
+            transparent
+            framing={{
+              cx: frame.cx - cam.x / scale,
+              cy: frame.cy + cam.y / scale,
+              scale,
+              span: frame.span / cam.zoom,
+            }}
+          />
+        </g>
+      )}
       {family ? (
-        family.members
+        (family.motion
+          ? familyMotionMembers(family.members, family.motion)
+          : family.members
+        )
           .filter(
             (m) =>
               m.frame &&
-              (family.settings.presentation === "family" ||
+              (family.motion ||
+                family.settings.presentation === "family" ||
                 m.id === family.settings.selected),
           )
           .map((m, i) => {
-            const selected = family.settings.presentation === "selected";
+            const selected =
+              !family.motion && family.settings.presentation === "selected";
+            const construction =
+              !!family.settings.allConstruction ||
+              m.id === family.settings.selected;
             // Equality includes refined base/input geometry: do not erase member
             // bases when the pole feeds the construction or shape a moves it.
             return (
@@ -757,13 +801,21 @@ export function Plot({
                       ? layers
                       : {
                           ...layers,
-                          base: layers.base && (!commonBase || i === 0),
-                          lines: false,
-                          incident: false,
-                          axes: layers.axes && i === 0,
+                          base:
+                            layers.base &&
+                            (!commonBase || (!family.motion && i === 0)),
+                          lines: layers.lines && construction,
+                          incident: layers.incident && construction,
+                          axes:
+                            layers.axes &&
+                            i === 0 &&
+                            !(family.motion && commonBase),
                         }
                   }
-                  markers={selected}
+                  markers={
+                    selected ||
+                    (construction && (layers.lines || layers.incident))
+                  }
                   dark={dark}
                   scheme={scheme}
                   length={length}

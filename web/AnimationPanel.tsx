@@ -1,3 +1,13 @@
+import { atlasSharedFrame } from "./atlas-framing";
+import {
+  defaultFamilyAnimation,
+  familyMotionHelp,
+  familyMotionMembers,
+  sampleFamily,
+  type FamilyAnimation,
+  type FamilyComposition,
+  type PreparedFamily,
+} from "./family-motion";
 import type { ColorScheme } from "./color-schemes";
 import { AnimationValues } from "./AnimationValues";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -126,6 +136,8 @@ import { useDisclosure } from "./useDisclosure";
 type Status =
   "idle" | "preparing" | "playing" | "paused" | "complete" | "exporting";
 type Session = {
+  family?: PreparedFamily;
+  owner?: string;
   original: Frame;
   first: Frame;
   final: Frame;
@@ -171,20 +183,33 @@ type Session = {
 // a probe moved between samples. Every other frame is cut from the
 // prepared study.
 const calculates = (
-  s: Pick<Session, "mode" | "tracks" | "original" | "between" | "refine">,
+  s: Pick<
+    Session,
+    "mode" | "tracks" | "original" | "between" | "refine" | "family"
+  >,
 ) =>
-  (s.mode === "parameters" &&
+  !s.family &&
+  ((s.mode === "parameters" &&
     !s.tracks.every((t) => t.target === "rayLength")) ||
-  (s.mode === "reveal" && !!s.original.result.attractor) ||
-  (s.mode === "probe" && !!s.between) ||
-  (s.mode === "path" && !!s.refine);
+    (s.mode === "reveal" && !!s.original.result.attractor) ||
+    (s.mode === "probe" && !!s.between) ||
+    (s.mode === "path" && !!s.refine));
 // Whether the session's frames come without calculating, so playback may
 // aim for 60 a second: every mode but those calculate lists, and a flight,
 // whose pieces are calculated once each, not every frame.
 export const redraws = (
-  s: Pick<Session, "mode" | "tracks" | "original" | "between" | "refine">,
+  s: Pick<
+    Session,
+    "mode" | "tracks" | "original" | "between" | "refine" | "family"
+  >,
 ) => !calculates(s) || s.mode === "path";
 type Props = {
+  // Same controls and lifecycle, with a separately saved family setup.
+  family?: FamilyComposition & {
+    onAnimation: (patch: Partial<FamilyAnimation>) => void;
+  };
+  // Preserve the ordinary setup while its notebook shows a family.
+  suspended?: boolean;
   // A journey offers only deliberate playback of its preset setup.
   preview?: boolean;
   frame: Frame | null;
@@ -222,6 +247,8 @@ type Props = {
 };
 
 export function AnimationPanel({
+  family,
+  suspended = false,
   preview = false,
   frame,
   client,
@@ -244,11 +271,37 @@ export function AnimationPanel({
   settings,
   restore,
 }: Props) {
-  const [mode, setMode] = useState<AnimationMode>("reveal");
-  const [camera, setCamera] = useState<CameraMode>("hold");
-  const [duration, setDuration] = useState(10);
-  const [repeat, setRepeat] = useState<Repeat>("once");
-  const [pace, setPace] = useState<Pace>("steady");
+  const [ordinaryMode, setMode] = useState<AnimationMode>("reveal");
+  const mode = family ? "reveal" : ordinaryMode;
+  const [ordinaryCamera, setOrdinaryCamera] = useState<CameraMode>("hold");
+  const [ordinaryDuration, setOrdinaryDuration] = useState(10);
+  const [ordinaryRepeat, setOrdinaryRepeat] = useState<Repeat>("once");
+  const [ordinaryPace, setOrdinaryPace] = useState<Pace>("steady");
+  const familySetup = family
+    ? (family.settings.animation ?? {
+        ...defaultFamilyAnimation,
+        width: Math.min(3, family.settings.count),
+      })
+    : undefined;
+  const camera = familySetup?.camera ?? ordinaryCamera;
+  const duration = familySetup?.duration ?? ordinaryDuration;
+  const repeat = familySetup?.repeat ?? ordinaryRepeat;
+  const pace = familySetup?.pace ?? ordinaryPace;
+  const setCamera = (value: CameraMode) =>
+    family
+      ? (value === "hold" || value === "current") &&
+        family.onAnimation({ camera: value })
+      : setOrdinaryCamera(value);
+  const setDuration = (value: number) =>
+    family
+      ? family.onAnimation({ duration: value })
+      : setOrdinaryDuration(value);
+  const setRepeat = (value: Repeat) =>
+    family
+      ? value !== "loop" && family.onAnimation({ repeat: value })
+      : setOrdinaryRepeat(value);
+  const setPace = (value: Pace) =>
+    family ? family.onAnimation({ pace: value }) : setOrdinaryPace(value);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [probeMotion, setProbeMotion] = useState<ProbeMotion>("stays");
   const [path, setPath] = useState<PlanarPath>(defaultPlanarPath);
@@ -342,7 +395,7 @@ export function AnimationPanel({
           : [];
     });
   }, [targets.join(",")]);
-  if (settings)
+  if (settings && !family)
     settings.current = {
       mode,
       camera,
@@ -464,6 +517,15 @@ export function AnimationPanel({
     time: number,
     engine = client.current!,
   ): Promise<AnimationView> {
+    if (s.family)
+      return sampleFamily(
+        s.family,
+        s.original,
+        time,
+        s.length,
+        s.stop,
+        s.owner!,
+      );
     return {
       ...(await frameAt(s, progressAt(time, s.repeat, s.pace), engine)),
       time,
@@ -678,7 +740,11 @@ export function AnimationPanel({
     s.progress = view.time ?? view.progress;
     setProgress(s.progress);
     onView(view);
-    if (s.mode === "reveal" && view.frame.result.attractor)
+    if (view.family)
+      setLive(
+        `${familyMotionMembers(view.family.members, view.family.motion!).length} / ${view.family.members.length} members · selected ${view.family.settings.selected + 1}`,
+      );
+    else if (s.mode === "reveal" && view.frame.result.attractor)
       setLive(
         `Accumulated iterates = ${view.frame.result.attractor.accumulated.toLocaleString("en-US")}`,
       );
@@ -776,6 +842,41 @@ export function AnimationPanel({
       if (holds && !heldView)
         throw new Error("The current view is not ready yet.");
       if (save) exportTiming(duration, fps);
+      if (family && familySetup) {
+        if (
+          !Number.isInteger(familySetup.width) ||
+          familySetup.width < 1 ||
+          familySetup.width > family.settings.count
+        )
+          throw new Error(
+            "Window members must be a whole number within the family.",
+          );
+        const fitted = atlasSharedFrame(family.members);
+        if (!fitted) throw new Error("No family members are available.");
+        const s: Session = {
+          original: frame,
+          first: frame,
+          final: frame,
+          tracks: [],
+          mode: "reveal",
+          camera,
+          duration,
+          repeat,
+          pace,
+          length,
+          stop: stopAtCaustic,
+          progress: 0,
+          owner: revision,
+          family: {
+            settings: structuredClone(family.settings),
+            members: family.members,
+            setup: { ...familySetup },
+            view: heldView ?? fitted,
+          },
+        };
+        await launch(s, save, token);
+        return;
+      }
       // The probe moves along the curve, is held while the parameters
       // vary, or stays at its sample of the fixed study, on the diagnostics
       // of the study as it begins.
@@ -934,79 +1035,82 @@ export function AnimationPanel({
                 ),
               ),
       };
-      // A loop joins the end to the start, so they must be the same drawing.
-      if (repeat === "loop") {
-        const { planarLoopGap } = await import("./planar-loop");
-        if (epoch.current !== token) return;
-        const gap = await planarLoopGap(
-          await frameAt(s, 0),
-          await frameAt(s, 1),
-          layers,
-          weight,
-        );
-        if (gap) throw new Error(gap);
-      }
-      if (epoch.current !== token) return;
-      session.current = s;
-      if (save) {
-        const controller = new AbortController();
-        exportAbort.current = controller;
-        changeStatus("exporting");
-        setProgress(0);
-        onView(null);
-        const { exportAnimation } = await import("./export-animation");
-        if (epoch.current !== token) return;
-        // Parameter frames each need a calculation. Temporary engines compute
-        // them in parallel for this export only; frames are still drawn in order.
-        const extras = Array.from(
-          { length: calculates(s) ? exportEngineCount() - 1 : 0 },
-          () => new EngineClient(),
-        );
-        const release = () => extras.forEach((engine) => engine.dispose());
-        controller.signal.addEventListener("abort", release);
-        const engines = [client.current, ...extras];
-        let next = 0;
-        const blob = await exportAnimation({
-          format: chosen,
-          duration,
-          fps: fps,
-          loop: chosen === "webp" && (loop || cycles(repeat)),
-          cyclic: cycles(repeat),
-          settings: { scale: exportScale, quality },
-          dark,
-          scheme,
-          layers: { ...layers },
-          weight,
-          signal: controller.signal,
-          lookahead: engines.length + 1,
-          sample: (time) => sample(s, time, engines[next++ % engines.length]),
-          onProgress: (completed, total) => {
-            if (epoch.current !== token) return;
-            setProgress(completed / total);
-            setLive(`Rendering frame ${completed} of ${total}`);
-          },
-        }).finally(release);
-        if (epoch.current !== token) return;
-        saveFile(
-          blob,
-          `tangent-garden-${studyName(frame.config)}-${mode}.${text.extension}`,
-        );
-        exportAbort.current = null;
-        session.current = null;
-        changeStatus("idle");
-        setExportNotice(
-          `Saved ${text.name} · ${(blob.size / (1024 * 1024)).toFixed(1)} MiB`,
-        );
-        return;
-      }
-      const firstView = await sample(s, 0);
-      if (epoch.current !== token) return;
-      display(s, firstView);
-      onReveal();
-      schedule(s, 0);
+      await launch(s, save, token);
     } catch (error) {
       if (epoch.current === token) fail(error, save ? "Export" : "Animation");
     }
+  }
+  async function launch(s: Session, save: boolean, token: number) {
+    // A loop joins the end to the start, so they must be the same drawing.
+    if (repeat === "loop") {
+      const { planarLoopGap } = await import("./planar-loop");
+      if (epoch.current !== token) return;
+      const gap = await planarLoopGap(
+        await frameAt(s, 0),
+        await frameAt(s, 1),
+        layers,
+        weight,
+      );
+      if (gap) throw new Error(gap);
+    }
+    if (epoch.current !== token) return;
+    session.current = s;
+    if (save) {
+      const controller = new AbortController();
+      exportAbort.current = controller;
+      changeStatus("exporting");
+      setProgress(0);
+      onView(null);
+      const { exportAnimation } = await import("./export-animation");
+      if (epoch.current !== token) return;
+      // Parameter frames each need a calculation. Temporary engines compute
+      // them in parallel for this export only; frames are still drawn in order.
+      const extras = Array.from(
+        { length: calculates(s) ? exportEngineCount() - 1 : 0 },
+        () => new EngineClient(),
+      );
+      const release = () => extras.forEach((engine) => engine.dispose());
+      controller.signal.addEventListener("abort", release);
+      const engines = [client.current!, ...extras];
+      let next = 0;
+      const blob = await exportAnimation({
+        format: chosen,
+        duration,
+        fps: fps,
+        loop: chosen === "webp" && (loop || cycles(repeat)),
+        cyclic: cycles(repeat),
+        settings: { scale: exportScale, quality },
+        dark,
+        scheme,
+        layers: { ...layers },
+        weight,
+        signal: controller.signal,
+        lookahead: engines.length + 1,
+        sample: (time) => sample(s, time, engines[next++ % engines.length]),
+        onProgress: (completed, total) => {
+          if (epoch.current !== token) return;
+          setProgress(completed / total);
+          setLive(`Rendering frame ${completed} of ${total}`);
+        },
+      }).finally(release);
+      if (epoch.current !== token) return;
+      saveFile(
+        blob,
+        `tangent-garden-${studyName(s.original.config)}-${s.family ? "family-" + s.family.setup.mode : s.mode}.${text.extension}`,
+      );
+      exportAbort.current = null;
+      session.current = null;
+      changeStatus("idle");
+      setExportNotice(
+        `Saved ${text.name} · ${(blob.size / (1024 * 1024)).toFixed(1)} MiB`,
+      );
+      return;
+    }
+    const firstView = await sample(s, 0);
+    if (epoch.current !== token) return;
+    display(s, firstView);
+    onReveal();
+    schedule(s, 0);
   }
   // A click can reach Pause after playback ended, before Replay is drawn
   // in its place; the animation stays complete.
@@ -1043,6 +1147,7 @@ export function AnimationPanel({
       if (scrubbing.current === token) scrubbing.current = -1;
     }
   }
+  if (suspended) return null;
   return (
     <section className="animation-section">
       <details
@@ -1070,55 +1175,90 @@ export function AnimationPanel({
             label="Animate"
             topic="animation modes"
             help={
-              mode === "path"
-                ? planarPathHelp.mode
-                : mode === "probe"
-                  ? probe && frame && probeBetween(frame.config, probe)
-                    ? "Move the probe from start to end through every t. The geometry stays fixed."
-                    : "Move the probe from start to end, sample by sample. The geometry stays fixed."
-                  : mode === "trace"
-                    ? tiered(
-                        "Send light from the source; each caustic point appears as its ray reaches it.",
-                        "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
-                      )
-                    : mode === "reveal"
-                      ? iterated
-                        ? "Count the iterates in order, in the finished drawing's window and grid."
-                        : tiered(
-                            "Draw the study from its domain start to its end.",
-                            "Each frame keeps the finished drawing's sample spacing and arc-length anchor.",
-                          )
-                      : tiered(
-                          <>
-                            Tracks vary together, linearly. Use <var>a</var> in
-                            a curve expression to animate any coefficient.
-                          </>,
-                          <>
-                            For example,{" "}
-                            <code>
-                              <var>a</var>*cos(t)
-                            </code>
-                            . Counts change in whole steps. Endpoints accept
-                            constants such as pi.
-                          </>,
+              familySetup
+                ? familyMotionHelp[familySetup.mode]
+                : mode === "path"
+                  ? planarPathHelp.mode
+                  : mode === "probe"
+                    ? probe && frame && probeBetween(frame.config, probe)
+                      ? "Move the probe from start to end through every t. The geometry stays fixed."
+                      : "Move the probe from start to end, sample by sample. The geometry stays fixed."
+                    : mode === "trace"
+                      ? tiered(
+                          "Send light from the source; each caustic point appears as its ray reaches it.",
+                          "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
                         )
+                      : mode === "reveal"
+                        ? iterated
+                          ? "Count the iterates in order, in the finished drawing's window and grid."
+                          : tiered(
+                              "Draw the study from its domain start to its end.",
+                              "Each frame keeps the finished drawing's sample spacing and arc-length anchor.",
+                            )
+                        : tiered(
+                            <>
+                              Tracks vary together, linearly. Use <var>a</var>{" "}
+                              in a curve expression to animate any coefficient.
+                            </>,
+                            <>
+                              For example,{" "}
+                              <code>
+                                <var>a</var>*cos(t)
+                              </code>
+                              . Counts change in whole steps. Endpoints accept
+                              constants such as pi.
+                            </>,
+                          )
             }
           >
             <select
-              value={mode}
-              onChange={(e) => parameterMode(e.target.value as typeof mode)}
+              value={familySetup?.mode ?? mode}
+              onChange={(e) =>
+                family
+                  ? family.onAnimation({
+                      mode: e.target.value as FamilyAnimation["mode"],
+                    })
+                  : parameterMode(e.target.value as typeof mode)
+              }
             >
-              <option value="reveal">
-                {iterated ? "Accumulate the iterates" : "Draw along the curve"}
-              </option>
-              <option value="parameters">Vary parameters</option>
-              {traceable && <option value="trace">Trace rays</option>}
-              {probe && (
-                <option value="probe">Move the probe along the curve</option>
+              {family ? (
+                <>
+                  <option value="reveal">Reveal member by member</option>
+                  <option value="window">Moving band</option>
+                </>
+              ) : (
+                <>
+                  <option value="reveal">
+                    {iterated
+                      ? "Accumulate the iterates"
+                      : "Draw along the curve"}
+                  </option>
+                  <option value="parameters">Vary parameters</option>
+                  {traceable && <option value="trace">Trace rays</option>}
+                  {probe && (
+                    <option value="probe">
+                      Move the probe along the curve
+                    </option>
+                  )}
+                  <option value="path">Fly through key views</option>
+                </>
               )}
-              <option value="path">Fly through key views</option>
             </select>
           </Field>
+          {family && familySetup?.mode === "window" && (
+            <Field label="Window members" help={familyMotionHelp.width}>
+              <input
+                type="number"
+                min="1"
+                max={family.settings.count}
+                step="1"
+                value={Number.isNaN(familySetup.width) ? "" : familySetup.width}
+                onChange={(e) =>
+                  family.onAnimation({ width: e.target.valueAsNumber })
+                }
+              />
+            </Field>
+          )}
           {mode === "path" && (
             <>
               <Field
@@ -1299,7 +1439,7 @@ export function AnimationPanel({
                 onChange={(e) => setRepeat(e.target.value as Repeat)}
               >
                 {repeatChoices
-                  .filter((c) => c.value !== "loop" || loops(mode))
+                  .filter((c) => c.value !== "loop" || (!family && loops(mode)))
                   .map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
@@ -1327,7 +1467,9 @@ export function AnimationPanel({
                 camera === "current"
                   ? "Keeps your current pan and zoom throughout, including export."
                   : camera === "hold"
-                    ? "Frames the final result once and holds that view."
+                    ? family
+                      ? "Frames the complete family once and holds that view."
+                      : "Frames the final result once and holds that view."
                     : tiered(
                         camera === "follow"
                           ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
@@ -1342,7 +1484,7 @@ export function AnimationPanel({
               >
                 <option value="hold">Hold final view</option>
                 <option value="current">Hold current view</option>
-                {mode !== "trace" && (
+                {!family && mode !== "trace" && (
                   <>
                     <option value="follow">Follow center, fixed zoom</option>
                     <option value="fit">Fit each frame</option>
