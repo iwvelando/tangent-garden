@@ -5,6 +5,7 @@ import {
   chooseNotebook,
   exportImage,
   openExportSettings,
+  openAnimation,
   open,
   scriptedKeyboard,
 } from "./helpers";
@@ -13,7 +14,7 @@ import { readFile } from "node:fs/promises";
 import { presets } from "../web/presets";
 import { wireStudy } from "./study-link-wire";
 import { decodePng } from "./png";
-import { decodeVideo, probe as videoProbe } from "./video";
+import { decodeVideo, frameDifference, probe as videoProbe } from "./video";
 import { deflateRawSync } from "node:zlib";
 
 const gallery = (page: Page) =>
@@ -5962,4 +5963,804 @@ test("a linked trace animation survives opening with the engraving on", async ({
   await expect(
     page.getByRole("combobox", { name: "Animate", exact: true }),
   ).toHaveValue("trace");
+});
+
+test("finite engraving motion membership has exact boundaries and keeps unavailable slots", async () => {
+  const { familyMotionMembers } = await import("../web/family-motion");
+  const members = Array.from({ length: 16 }, (_, id) => ({
+    id,
+    value: id,
+    ...(id === 2 ? { error: "singular" } : {}),
+  }));
+  const ids = (mode: "reveal" | "window", width: number, progress: number) =>
+    familyMotionMembers(members, { mode, width, progress }).map((m) => m.id);
+  // Expectations are literal, independent of the production membership rule.
+  expect(ids("reveal", 3, 0)).toEqual([0]);
+  expect(ids("reveal", 3, 1 / 15 - 1e-9)).toEqual([0]);
+  expect(ids("reveal", 3, 1 / 15)).toEqual([0, 1]);
+  expect(ids("reveal", 3, 0.5)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  expect(ids("reveal", 3, 0.999999999)).toHaveLength(15);
+  expect(ids("reveal", 3, 1)).toEqual(members.map((m) => m.id));
+  expect(ids("window", 3, 0)).toEqual([0, 1, 2]);
+  expect(ids("window", 3, 1 / 14 - 1e-9)).toEqual([0, 1, 2]);
+  expect(ids("window", 3, 1 / 14)).toEqual([1, 2, 3]);
+  expect(ids("window", 3, 0.5)).toEqual([7, 8, 9]);
+  expect(ids("window", 3, 1)).toEqual([13, 14, 15]);
+  expect(ids("window", 16, 1)).toEqual(members.map((m) => m.id));
+  expect(ids("window", 1, 1)).toEqual([15]);
+  expect(
+    familyMotionMembers(members, { mode: "window", width: 3, progress: 0 })[2],
+  ).toBe(members[2]);
+  for (const progress of [1, 0.5, 0, 0.5, 1])
+    expect(ids("window", 3, progress)).toEqual(
+      progress === 0 ? [0, 1, 2] : progress === 1 ? [13, 14, 15] : [7, 8, 9],
+    );
+  const { sampleFamily, defaultFamilyAnimation } =
+    await import("../web/family-motion");
+  const { presetStudy } = await import("../web/planar-link");
+  const source = presetStudy(0);
+  const frame = {
+    config: source.config,
+    result: { base: [], derived: [], rays: [], family: [] },
+  } as any;
+  const prepared = {
+    settings: { ...source.family, count: 16 } as any,
+    members,
+    setup: { ...defaultFamilyAnimation, mode: "window" as const },
+    view: { cx: 0, cy: 0, span: 2, scale: 100 },
+  };
+  for (let i = 0; i < 1000; i++) {
+    const sampled = sampleFamily(
+      prepared,
+      frame,
+      i / 999,
+      0.8,
+      false,
+      "source-generation",
+    );
+    expect(sampled.family!.members).toBe(members);
+    expect(sampled.frame).toBe(frame);
+    expect(sampled.owner).toBe("source-generation");
+  }
+  expect(members).toHaveLength(16);
+  expect(members[2].error).toBe("singular");
+});
+
+test("finite engraving turnaround holds the exact endpoint for visible absolute time", async () => {
+  const { familyProgressAt } = await import("../web/family-motion");
+  const p = (time: number, duration = 8) =>
+    familyProgressAt(time, {
+      duration,
+      repeat: "back-and-forth",
+      pace: "steady",
+    });
+  expect(p(0)).toBe(0);
+  expect(p(0.4375 - 1e-8)).toBeLessThan(1);
+  for (const t of [0.4375, 0.45, 0.499, 0.5, 0.501, 0.55, 0.5625])
+    expect(p(t)).toBe(1);
+  expect(p(0.5625 + 1e-8)).toBeLessThan(1);
+  expect(p(1)).toBe(0);
+  expect(p(0.25)).toBeCloseTo(4 / 7, 14);
+  expect(p(0.75)).toBeCloseTo(4 / 7, 14);
+  // Very short animations spend at most a quarter of their time resting.
+  expect(p(0.375, 0.4)).toBe(1);
+  expect(p(0.625, 0.4)).toBe(1);
+  expect(p(0.25, 0.4)).toBeCloseTo(2 / 3, 14);
+  expect(
+    familyProgressAt(0.5, { duration: 8, repeat: "once", pace: "steady" }),
+  ).toBe(0.5);
+  expect(
+    familyProgressAt(0.4375, {
+      duration: 8,
+      repeat: "back-and-forth",
+      pace: "ease",
+    }),
+  ).toBe(1);
+});
+
+async function familyAnimation(page: Page) {
+  await openAnimation(page);
+  await expect(page.locator("#animation-section")).toHaveCount(1);
+  await page.getByLabel("Repeat", { exact: true }).selectOption("once");
+}
+async function pauseFamily(page: Page) {
+  await expect(
+    page.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+}
+
+test("finite engraving uses the normal animation panel and prepared member geometry", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).motionComputes = 0;
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (data: any, options?: any) {
+      if (data.action === "compute") (window as any).motionComputes++;
+      post.call(this, data, options);
+    };
+  });
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const art = page.locator("#artwork"),
+    members = art.locator("[data-family-member]");
+  const paths = await members
+    .getByTestId("derived-curve")
+    .evaluateAll((ns) => ns.map((n) => n.getAttribute("d")));
+  expect(paths).toHaveLength(16);
+  expect(paths.every((d) => d && d.length > 100)).toBe(true);
+  const requests = await page.evaluate(() => (window as any).motionComputes);
+  await page
+    .locator(".family-panel")
+    .getByRole("button", { name: "About finite engraving", exact: true })
+    .click();
+  await page
+    .locator(".family-panel")
+    .getByRole("button", { name: "Show more", exact: true })
+    .click();
+  await expect(page.locator(".family-panel")).toContainText("in Animation");
+  await familyAnimation(page);
+  await expect(
+    page.getByRole("button", { name: "Preview engraving motion", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Selected member", { exact: true }).selectOption("0");
+  await page
+    .getByRole("checkbox", { name: "Incident rays", exact: true })
+    .check();
+  await pauseFamily(page);
+  const slider = page.getByRole("slider", {
+    name: "Animation progress",
+    exact: true,
+  });
+  for (const [time, ids] of [
+    [0, [0]],
+    [0.5, [0, 1, 2, 3, 4, 5, 6, 7]],
+    [1, Array.from({ length: 16 }, (_, i) => i)],
+  ] as const) {
+    await slider.fill(String(time));
+    await expect
+      .poll(() =>
+        members.evaluateAll((ns) =>
+          ns.map((n) => Number(n.getAttribute("data-family-member"))),
+        ),
+      )
+      .toEqual(ids);
+    await expect(art.getByTestId("base-curve")).toHaveCount(1);
+    await expect(art.locator('[data-family-member="0"] line')).toHaveCount(24);
+  }
+  expect(await page.evaluate(() => (window as any).motionComputes)).toBe(
+    requests,
+  );
+  await page
+    .getByRole("button", { name: "Back to study", exact: true })
+    .click();
+  expect(
+    await members
+      .getByTestId("derived-curve")
+      .evaluateAll((ns) => ns.map((n) => n.getAttribute("d"))),
+  ).toEqual(paths);
+  await page.getByLabel("Animate", { exact: true }).selectOption("window");
+  await page.getByLabel("Window members", { exact: true }).fill("3");
+  await pauseFamily(page);
+  await slider.fill("1");
+  await expect
+    .poll(() =>
+      members.evaluateAll((ns) =>
+        ns.map((n) => Number(n.getAttribute("data-family-member"))),
+      ),
+    )
+    .toEqual([13, 14, 15]);
+  await slider.fill("0");
+  await expect
+    .poll(() =>
+      members.evaluateAll((ns) =>
+        ns.map((n) => Number(n.getAttribute("data-family-member"))),
+      ),
+    )
+    .toEqual([0, 1, 2]);
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const at = await slider.inputValue();
+  await page.waitForTimeout(100);
+  await expect(slider).toHaveValue(at);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(slider).toHaveCount(0);
+  await page.getByLabel("Family members", { exact: true }).fill("2");
+  await settled(page);
+  await expect(page.getByLabel("Window members", { exact: true })).toHaveValue(
+    "2",
+  );
+  await pauseFamily(page);
+  await choosePreset(page, 0);
+  await settled(page);
+  await expect(members).toHaveCount(0);
+  await openAnimation(page);
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue(
+    "reveal",
+  );
+});
+
+for (const narrow of [false, true])
+  test(`finite engraving shared playback restores edited camera and vector capture at ${narrow ? "phone" : "desktop"} width`, async ({
+    page,
+  }) => {
+    if (narrow) await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await choosePreset(page, { label: "A lamp's lace" });
+    await settled(page);
+    await page
+      .getByLabel("Family presentation", { exact: true })
+      .selectOption("selected");
+    await page.getByLabel("Selected member", { exact: true }).selectOption("7");
+    const art = page.locator("#artwork");
+    await art.focus();
+    await page.keyboard.press("+");
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(
+        async () =>
+          JSON.parse(
+            (await page.locator(".plot-wrap").getAttribute("data-family"))!,
+          ).camera,
+      )
+      .toEqual({ x: 20, y: 0, zoom: 1.1 });
+    const scale = await art.getAttribute("data-camera-scale"),
+      center = await art.getAttribute("data-camera-center");
+    await familyAnimation(page);
+    await page
+      .getByLabel("Animation camera", { exact: true })
+      .selectOption("current");
+    await pauseFamily(page);
+    const slider = page.getByRole("slider", {
+      name: "Animation progress",
+      exact: true,
+    });
+    await slider.fill("0.5");
+    await expect(art.locator("[data-family-member]")).toHaveCount(8);
+    await expect(art).toHaveAttribute("data-camera-scale", scale!);
+    await expect(art).toHaveAttribute("data-camera-center", center!);
+    const download = page.waitForEvent("download");
+    await exportImage(page, "SVG");
+    const svg = await readFile((await (await download).path())!, "utf8");
+    expect(svg).not.toContain("<image");
+    expect(
+      [...svg.matchAll(/data-family-member="(\d+)"/g)].map((m) => Number(m[1])),
+    ).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(
+      JSON.parse(/<desc>(.*?)<\/desc>/s.exec(svg)![1]).family.motion.progress,
+    ).toBe(0.5);
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    // Saved animation setup changes metadata but never the original geometry/camera.
+    await expect(art.locator("[data-family-member]")).toHaveAttribute(
+      "data-family-member",
+      "7",
+    );
+    await expect(art).toHaveAttribute("data-camera-scale", scale!);
+    await expect(art).toHaveAttribute("data-camera-center", center!);
+    await expect(
+      page.getByLabel("Selected member", { exact: true }),
+    ).toHaveValue("7");
+  });
+
+test("finite engraving construction toggles draw only its selected member", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const member = page.locator('#artwork [data-family-member="4"]');
+  await page
+    .getByRole("checkbox", { name: "Construction lines", exact: true })
+    .check();
+  await page
+    .getByRole("checkbox", { name: "Incident rays", exact: true })
+    .check();
+  await page
+    .getByRole("checkbox", { name: "Virtual extensions", exact: true })
+    .check();
+  await expect.poll(() => member.locator("line").count()).toBeGreaterThan(24);
+  expect(
+    await page
+      .locator(
+        '#artwork [data-family-member]:not([data-family-member="4"]) line',
+      )
+      .count(),
+  ).toBe(0);
+  const before = await member
+    .locator("line")
+    .evaluateAll((ns) => ns.map((n) => n.outerHTML));
+  await page
+    .getByRole("checkbox", { name: "Stop rays at the caustic", exact: true })
+    .check();
+  await expect
+    .poll(() =>
+      member.locator("line").evaluateAll((ns) => ns.map((n) => n.outerHTML)),
+    )
+    .not.toEqual(before);
+  await page
+    .getByRole("checkbox", { name: "Construction lines", exact: true })
+    .uncheck();
+  await page
+    .getByRole("checkbox", { name: "Incident rays", exact: true })
+    .uncheck();
+  await expect(member.locator("line")).toHaveCount(0);
+});
+
+test("lamp lace opens clean with authored family playback and working construction layers", async () => {
+  const { presetStudy } = await import("../web/planar-link");
+  const s = presetStudy(presets.findIndex((p) => p.title === "A lamp's lace"));
+  expect(s.layers).toMatchObject({
+    lines: false,
+    incident: false,
+    virtual: false,
+  });
+  expect(s.family!.animation).toEqual({
+    mode: "reveal",
+    width: 3,
+    duration: 8,
+    repeat: "back-and-forth",
+    pace: "steady",
+    camera: "hold",
+  });
+});
+
+for (const family of [false, true])
+  test(`shared ${family ? "family" : "ordinary"} playback keeps its timeline inside the scrolled desktop sidebar`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.goto("/");
+    if (family) await choosePreset(page, { label: "A lamp's lace" });
+    await settled(page);
+    await openAnimation(page);
+    await page.locator("aside").evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    const art = await page.locator("#artwork").boundingBox();
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    const slider = page.getByRole("slider", {
+      name: "Animation progress",
+      exact: true,
+    });
+    await expect(slider).toBeVisible();
+    await expect
+      .poll(async () => {
+        const bounds = await slider.boundingBox(),
+          aside = await page.locator("aside").boundingBox();
+        return (
+          !!bounds &&
+          !!aside &&
+          bounds.y >= aside.y &&
+          bounds.y + bounds.height <= aside.y + aside.height
+        );
+      })
+      .toBe(true);
+    expect(await page.locator("#artwork").boundingBox()).toEqual(art);
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const buttons = await page
+      .locator("#playback button")
+      .evaluateAll((ns) => ns.map((n) => n.getBoundingClientRect().height));
+    expect(Math.max(...buttons)).toBeLessThanOrEqual(50);
+  });
+
+for (const [mode, repeat, allConstruction] of [
+  ["reveal", "once", false],
+  ["window", "once", false],
+  ["reveal", "back-and-forth", false],
+  ["window", "once", true],
+] as const)
+  test(`finite engraving ${mode} ${repeat}${allConstruction ? " all-construction" : ""} movie decodes with exact timing and held-current endpoint geometry`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as any).exportSVGs = [];
+      const create = URL.createObjectURL;
+      URL.createObjectURL = function (blob: Blob | MediaSource) {
+        if (
+          (window as any).recordExportSVG &&
+          blob instanceof Blob &&
+          blob.type === "image/svg+xml"
+        )
+          void blob
+            .text()
+            .then((text) => (window as any).exportSVGs.push(text));
+        return create.call(this, blob);
+      };
+    });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/");
+    await choosePreset(page, { label: "A lamp's lace" });
+    await settled(page);
+    await page
+      .getByRole("button", { name: "Color scheme", exact: true })
+      .click();
+    await page.getByText("Cobalt & rose", { exact: true }).click();
+    const art = page.locator("#artwork");
+    await art.focus();
+    await page.keyboard.press("+");
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(
+        async () =>
+          JSON.parse(
+            (await page.locator(".plot-wrap").getAttribute("data-family"))!,
+          ).camera,
+      )
+      .toEqual({ x: 20, y: 0, zoom: 1.1 });
+    if (allConstruction) {
+      await page.getByLabel("Family members", { exact: true }).fill("4");
+      await page
+        .getByRole("spinbutton", { name: "Construction lines", exact: true })
+        .fill("4");
+      await settled(page);
+      await page
+        .getByRole("checkbox", {
+          name: "Construction lines for all members",
+          exact: true,
+        })
+        .check();
+      await page
+        .getByRole("checkbox", { name: "Construction lines", exact: true })
+        .check();
+      await page
+        .getByRole("checkbox", { name: "Incident rays", exact: true })
+        .check();
+    }
+    await familyAnimation(page);
+    await page.getByLabel("Animate", { exact: true }).selectOption(mode);
+    if (allConstruction)
+      await page.getByLabel("Window members", { exact: true }).fill("2");
+    if (repeat === "back-and-forth") {
+      await page.getByLabel("Repeat", { exact: true }).selectOption(repeat);
+      await page.getByLabel("Duration (seconds)", { exact: true }).fill("0.4");
+    }
+    await page
+      .getByLabel("Animation camera", { exact: true })
+      .selectOption("current");
+    await openExportSettings(page);
+    await page.getByLabel("Export resolution", { exact: true }).fill("1");
+    await page.getByLabel("Export quality", { exact: true }).fill("80");
+    await page
+      .getByLabel("Export frame rate", { exact: true })
+      .selectOption("15");
+    await pauseFamily(page);
+    const slider = page.getByRole("slider", {
+      name: "Animation progress",
+      exact: true,
+    });
+    const refs = [];
+    const liveSVGs: string[] = [];
+    for (const time of repeat === "once" ? [0, 1] : [0, 0.5, 0.833]) {
+      await slider.fill(String(time));
+      await expect(art).toHaveAttribute("data-animation-time", String(time));
+      if (repeat === "back-and-forth")
+        await expect(art.locator("[data-family-member]")).toHaveCount(
+          time === 0 ? 1 : time === 0.5 ? 16 : 7,
+        );
+      liveSVGs.push(
+        await art.evaluate((svg) => new XMLSerializer().serializeToString(svg)),
+      );
+      refs.push(
+        await art.evaluate(async (svg) => {
+          const copy = svg.cloneNode(true) as SVGSVGElement;
+          const url = URL.createObjectURL(
+            new Blob([new XMLSerializer().serializeToString(copy)], {
+              type: "image/svg+xml",
+            }),
+          );
+          try {
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = 1000;
+            canvas.height = 760;
+            const ctx = canvas.getContext("2d")!;
+            ctx.drawImage(image, 0, 0, 1000, 760);
+            return Array.from(ctx.getImageData(0, 0, 1000, 760).data);
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+        }),
+      );
+    }
+    await page
+      .getByRole("button", {
+        name: repeat === "once" ? "Back to study" : "Stop",
+        exact: true,
+      })
+      .click();
+    await page.getByLabel("Duration (seconds)", { exact: true }).fill("0.4");
+    await page.evaluate(() => {
+      (window as any).recordExportSVG = true;
+    });
+    const download = page.waitForEvent("download");
+    await page
+      .getByRole("button", { name: "Export MP4 video", exact: false })
+      .click();
+    const saved = await download,
+      path = (await saved.path())!;
+    expect(saved.suggestedFilename()).toContain(`family-${mode}`);
+    const exportedSVGs = await page.evaluate(
+      () => (window as any).exportSVGs as string[],
+    );
+    expect(exportedSVGs).toHaveLength(6);
+    const indices = repeat === "once" ? [0, 5] : [0, 3, 5];
+    const comparison = await page.evaluate(
+      ({ exportedSVGs, liveSVGs, indices }) => {
+        const lines = (text: string) =>
+          [
+            ...new DOMParser()
+              .parseFromString(text, "image/svg+xml")
+              .querySelectorAll("line"),
+          ].map((n) =>
+            ["x1", "y1", "x2", "y2", "stroke", "opacity"].map((a) =>
+              n.getAttribute(a),
+            ),
+          );
+        return indices.map((index, k) => {
+          const actual = lines(exportedSVGs[index]),
+            expected = lines(liveSVGs[k]);
+          const mismatch = actual.findIndex(
+            (line, j) => JSON.stringify(line) !== JSON.stringify(expected[j]),
+          );
+          return {
+            index,
+            actual: actual.length,
+            expected: expected.length,
+            mismatch,
+            got: actual[mismatch],
+            want: expected[mismatch],
+          };
+        });
+      },
+      { exportedSVGs, liveSVGs, indices },
+    );
+    for (const frame of comparison) {
+      expect(frame.actual).toBe(frame.expected);
+      expect(frame.mismatch).toBe(-1);
+      if (allConstruction) expect(frame.actual).toBe(16);
+    }
+    const probed = videoProbe(path);
+    expect(probed).not.toBeNull();
+    expect(probed!.frames).toBe(6);
+    expect(probed!.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    expect([probed!.width, probed!.height]).toEqual([1000, 760]);
+    for (const [i, reference] of (repeat === "once"
+      ? [
+          [0, refs[0]],
+          [5, refs[1]],
+        ]
+      : [
+          [0, refs[0]],
+          [3, refs[1]],
+          [5, refs[2]],
+        ]) as [number, number[]][]) {
+      const diff = frameDifference(path, 1000, 760, i, reference);
+      expect(diff).not.toBeNull();
+      expect(diff!.meanDifference).toBeLessThan(2);
+      expect(diff!.unmatchedInk).toBeLessThan(0.08);
+    }
+    const decoded = await decodeVideo(page, await readFile(path));
+    expect(decoded.duration).toBeCloseTo(0.4, 3);
+    expect(decoded.first.hash).not.toBe(decoded.last.hash);
+    await expect(page.locator("#artwork [data-family-member]")).toHaveCount(
+      allConstruction ? 4 : 16,
+    );
+  });
+
+test("planar thumbnail fingerprints include authored layer visibility", async ({
+  page,
+}) => {
+  const p = presets.find((p) => p.title === "A lamp's lace")!;
+  let hash = 0x811c9dc5;
+  for (const c of JSON.stringify({
+    config: p.config,
+    family: p.family,
+    layers: p.layers,
+  }))
+    hash = Math.imul(hash ^ c.codePointAt(0)!, 0x01000193) >>> 0;
+  await page.goto("/");
+  await examplesButton(page).click();
+  await expect(
+    gallery(page).getByRole("button", { name: "A lamp's lace", exact: true }),
+  ).toHaveAttribute("data-fingerprint", hash.toString(16).padStart(8, "0"));
+});
+
+test("finite engraving edits and cancellation discard obsolete shared movie and playback sessions", async ({
+  page,
+}) => {
+  const downloads: string[] = [];
+  page.on("download", (d) => downloads.push(d.suggestedFilename()));
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  await familyAnimation(page);
+  await openExportSettings(page);
+  await page.getByLabel("Export resolution", { exact: true }).fill("0.5");
+  await page.getByLabel("Duration (seconds)", { exact: true }).fill("10");
+  const save = page.getByRole("button", {
+    name: "Export MP4 video",
+    exact: false,
+  });
+  await save.click();
+  await page
+    .getByRole("button", { name: "Cancel export", exact: true })
+    .click();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(
+    page.getByRole("button", { name: "Cancel export", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("checkbox", {
+      name: "Construction lines for all members",
+      exact: true,
+    })
+    .check();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(
+    page.getByRole("button", { name: "Cancel export", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Family members", { exact: true }).fill("8");
+  await settled(page);
+  await expect(save).toBeEnabled();
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(8);
+  await expect(
+    page.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByLabel("Family from", { exact: true }).fill("pi");
+  await page.getByLabel("Family to", { exact: true }).focus();
+  await settled(page);
+  await expect(
+    page.getByRole("slider", { name: "Animation progress", exact: true }),
+  ).toHaveCount(0);
+  await page.waitForTimeout(100);
+  await expect(page.locator("#artwork")).not.toHaveAttribute(
+    "data-animation-time",
+  );
+  await pauseFamily(page);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.waitForTimeout(150);
+  expect(downloads).toEqual([]);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("finite engraving all-member construction applies to visible slots and retires stale sessions without resampling", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.addInitScript(() => {
+    (window as any).familyComputes = 0;
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (data: any, options?: any) {
+      if (data.action === "compute") (window as any).familyComputes++;
+      post.call(this, data, options);
+    };
+  });
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const scope = page.getByRole("checkbox", {
+    name: "Construction lines for all members",
+    exact: true,
+  });
+  await expect(scope).toBeVisible();
+  await expect(scope).not.toBeChecked();
+  const requests = await page.evaluate(() => (window as any).familyComputes);
+  const members = page.locator("#artwork [data-family-member]");
+  const ink = () =>
+    members.evaluateAll((ns) =>
+      ns.map((n) => ({
+        id: Number(n.getAttribute("data-family-member")),
+        lines: n.querySelectorAll("line").length,
+      })),
+    );
+  await page
+    .getByRole("checkbox", { name: "Incident rays", exact: true })
+    .check();
+  await expect
+    .poll(ink)
+    .toEqual(
+      Array.from({ length: 16 }, (_, id) => ({ id, lines: id === 4 ? 24 : 0 })),
+    );
+  await scope.check();
+  await expect
+    .poll(ink)
+    .toEqual(Array.from({ length: 16 }, (_, id) => ({ id, lines: 24 })));
+  // All-member scope does not turn on outgoing/virtual layers implicitly.
+  await expect(
+    page.getByRole("checkbox", { name: "Construction lines", exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Virtual extensions", exact: true }),
+  ).not.toBeChecked();
+  expect(((await copiedStudy(page)).study as any).family.allConstruction).toBe(
+    true,
+  );
+  await familyAnimation(page);
+  await page.getByLabel("Animate", { exact: true }).selectOption("window");
+  await page.getByLabel("Window members", { exact: true }).fill("3");
+  await pauseFamily(page);
+  const slider = page.getByRole("slider", {
+    name: "Animation progress",
+    exact: true,
+  });
+  await slider.fill("1");
+  await expect.poll(ink).toEqual([
+    { id: 13, lines: 24 },
+    { id: 14, lines: 24 },
+    { id: 15, lines: 24 },
+  ]);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(
+    JSON.parse(/<desc>(.*?)<\/desc>/s.exec(svg)![1]).family.allConstruction,
+  ).toBe(true);
+  expect(
+    [...svg.matchAll(/data-family-member="(\d+)"/g)].map((m) => +m[1]),
+  ).toEqual([13, 14, 15]);
+  expect((svg.match(/<line /g) ?? []).length).toBe(72);
+  await scope.uncheck();
+  await expect(slider).toHaveCount(0);
+  await expect
+    .poll(ink)
+    .toEqual(
+      Array.from({ length: 16 }, (_, id) => ({ id, lines: id === 4 ? 24 : 0 })),
+    );
+  await pauseFamily(page);
+  await slider.fill("1");
+  await expect.poll(ink).toEqual([
+    { id: 13, lines: 0 },
+    { id: 14, lines: 0 },
+    { id: 15, lines: 0 },
+  ]);
+  expect(await page.evaluate(() => (window as any).familyComputes)).toBe(
+    requests,
+  );
+});
+
+test("finite engraving all-member construction also applies to pedal constructions", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Ellipse & its pedal" });
+  await settled(page);
+  await page.getByLabel("Finite engraving", { exact: true }).check();
+  await page.getByLabel("Family members", { exact: true }).fill("3");
+  await settled(page);
+  const members = page.locator("#artwork [data-family-member]");
+  await expect(members).toHaveCount(3);
+  const counts = () =>
+    members.evaluateAll((ns) =>
+      ns.map((n) => n.querySelectorAll("line").length),
+    );
+  await expect
+    .poll(async () => (await counts()).map((n) => n > 0))
+    .toEqual([true, false, false]);
+  await page
+    .getByRole("checkbox", {
+      name: "Construction lines for all members",
+      exact: true,
+    })
+    .check();
+  await expect
+    .poll(async () => (await counts()).map((n) => n > 0))
+    .toEqual([true, true, true]);
 });

@@ -1,3 +1,4 @@
+import { defaultFamilyAnimation } from "./family-motion";
 import {
   familyDefaults,
   familyTargets,
@@ -103,7 +104,7 @@ export function presetStudy(index: number): PlanarStudy {
     length: defaultLength,
     stop: !!preset.stop,
     poleKind: usesPole(kind) ? kind : "pedal",
-    layers: { ...defaultLayers },
+    layers: { ...defaultLayers, ...preset.layers },
     camera: { ...defaultCamera },
     weight: "regular",
     probe: structuredClone(preset.probe ?? defaultProbe),
@@ -496,6 +497,19 @@ export function planarStudy(value: unknown): PlanarStudy {
               count: { range: [2, 32] },
               selected: { range: [0, 31] },
               presentation: { options: { family: true, selected: true } },
+              allConstruction: { optional: "boolean" },
+              animation: {
+                optional: {
+                  fields: {
+                    mode: { options: { reveal: true, window: true } },
+                    width: { range: [1, 32] },
+                    duration: { range: [0.1, 3600] },
+                    repeat: { options: { once: true, "back-and-forth": true } },
+                    pace: { options: { steady: true, ease: true } },
+                    camera: { options: { hold: true, current: true } },
+                  },
+                },
+              },
               camera: {
                 optional: {
                   fields: {
@@ -507,10 +521,22 @@ export function planarStudy(value: unknown): PlanarStudy {
               },
             },
           },
-          familyDefaults(study.config),
+          {
+            ...familyDefaults(study.config),
+            animation: defaultFamilyAnimation,
+          },
           "family",
         );
   if (family) {
+    if (
+      family.animation &&
+      (!Number.isInteger(family.animation.width) ||
+        family.animation.width > family.count)
+    )
+      throw new LinkError(
+        "family.animation.width",
+        "family.animation.width must be a whole number within the family.",
+      );
     if (!Number.isInteger(family.count))
       throw new LinkError(
         "family.count",

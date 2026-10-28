@@ -1,3 +1,4 @@
+import type { FamilyAnimation } from "./family-motion";
 import {
   applyTracks,
   availableTargets,
@@ -26,7 +27,9 @@ export type FamilySettings = {
   count: number;
   selected: number;
   presentation: "family" | "selected";
+  allConstruction?: boolean;
   camera?: PlotCamera;
+  animation?: FamilyAnimation;
 };
 const consumedA = (c: Config) => {
   const format = c.curve.format;

@@ -1,3 +1,4 @@
+import type { FamilyComposition } from "./family-motion";
 import type { HeldProbe } from "./planar-probe";
 import { revealRefined } from "./refinement";
 import {
@@ -101,6 +102,8 @@ type FixedTarget =
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
 export type AnimationView = {
+  family?: FamilyComposition;
+  owner?: string;
   frame: Frame;
   final: Frame;
   camera: CameraMode;

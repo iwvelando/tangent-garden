@@ -1,3 +1,4 @@
+import type { Layers } from "./Plot";
 import type { FamilySettings } from "./planar-family";
 import type { Config } from "./types";
 import type { PlanarAnimation } from "./planar-link";
@@ -121,6 +122,7 @@ export const presets: {
   // Whether its rays stop at the caustic; others draw them full length.
   stop?: true;
   family?: FamilySettings;
+  layers?: Partial<Layers>;
 }[] = [
   {
     title: "Ellipse & its evolute",
@@ -1528,6 +1530,7 @@ export const presets: {
   // stops one sixteenth of a turn short of the first rather than repeat it.
   {
     title: "A lamp's lace",
+    layers: { lines: false, incident: false, virtual: false },
     note: "An elliptical mirror gathers a circling lamp into sixteen interwoven caustics",
     config: {
       ...base,
@@ -1551,6 +1554,14 @@ export const presets: {
       count: 16,
       selected: 4,
       presentation: "family",
+      animation: {
+        mode: "reveal",
+        width: 3,
+        duration: 8,
+        repeat: "back-and-forth",
+        pace: "steady",
+        camera: "hold",
+      },
     },
   },
 ];

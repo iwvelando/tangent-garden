@@ -72,8 +72,9 @@ try {
             }
             return wrap.dataset.probe ||
               wrap.dataset.stop ||
-              wrap.dataset.family
-              ? `{"config":${desc}${wrap.dataset.probe ? `,"probe":${wrap.dataset.probe}` : ""}${wrap.dataset.stop ? `,"stop":${wrap.dataset.stop}` : ""}${wrap.dataset.family ? `,"family":${wrap.dataset.family}` : ""}}`
+              wrap.dataset.family ||
+              wrap.dataset.openingLayers
+              ? `{"config":${desc}${wrap.dataset.probe ? `,"probe":${wrap.dataset.probe}` : ""}${wrap.dataset.stop ? `,"stop":${wrap.dataset.stop}` : ""}${wrap.dataset.family ? `,"family":${wrap.dataset.family}` : ""}${wrap.dataset.openingLayers ? `,"layers":${wrap.dataset.openingLayers}` : ""}}`
               : desc;
           };
           const spatial = document.querySelector(

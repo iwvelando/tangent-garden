@@ -1,4 +1,5 @@
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
+import { defaultFamilyAnimation } from "./family-motion";
 import type { FamilySettings } from "./planar-family";
 import { StudyExplanation } from "./StudyExplanation";
 import {
@@ -423,6 +424,7 @@ function App({
     [],
   );
   const manualView = useRef<Viewport | undefined>(undefined);
+  const familyView = useRef<Viewport | undefined>(undefined);
   const plotWrap = useRef<HTMLDivElement>(null);
   const revealPlot = () =>
     revealDrawing(plotWrap.current, document.getElementById("playback"));
@@ -1386,13 +1388,35 @@ function App({
   // What the drawing shows: the settled family, or while a newer one
   // computes, the last settled one beneath Computing….
   const drawnMembers = familyReady ? familyState.members : familyState.held;
+  const familyRevision = JSON.stringify([
+    familyState.revision,
+    active,
+    excursionActive,
+    family?.selected,
+    family?.presentation,
+    family?.allConstruction,
+    family?.animation,
+    length,
+    stopAtCaustic,
+    layers,
+    weight,
+    dark,
+    scheme,
+  ]);
+  const familyPlayback =
+    familyReady && animation?.family && animation.owner === familyRevision
+      ? animation
+      : null;
   const familyFrame = drawnMembers?.find((m) => m.frame)?.frame;
   const familyDrawing = useMemo(
     () =>
       family?.enabled && drawnMembers
-        ? { settings: family, members: drawnMembers }
+        ? (familyPlayback?.family ?? {
+            settings: family,
+            members: drawnMembers,
+          })
         : undefined,
-    [family, drawnMembers],
+    [family, drawnMembers, familyPlayback],
   );
   const drawingBusy = family?.enabled
     ? familyState.pending || scalarStates.some((s) => s.pending)
@@ -1464,7 +1488,7 @@ function App({
     >
       <AppHeader theme={theme} inert={journey.active}>
         <ShareLink notebook="2d" study={snapshot} disabled={!outputReady} />
-        {!family?.enabled && <AnimationButton section="animation-section" />}
+        <AnimationButton section="animation-section" />
         <ExportImageMenu
           revision={JSON.stringify([
             journey.requested,
@@ -2494,6 +2518,7 @@ function App({
                 dark={dark}
               />
               <AnimationPanel
+                suspended={!!family?.enabled}
                 getCurrentView={() => manualView.current}
                 getFocus={() => viewRef.current}
                 refineView={refineView}
@@ -2530,10 +2555,48 @@ function App({
               />
             </div>
             {family?.enabled && (
-              <p className="note" id="animation-section">
-                An engraving does not animate yet. Turn it off to animate the
-                study.
-              </p>
+              <AnimationPanel
+                family={{
+                  settings: family,
+                  members: drawnMembers ?? [],
+                  onAnimation: (patch) => {
+                    setPreset("custom");
+                    setFamily(
+                      (previous) =>
+                        previous && {
+                          ...previous,
+                          animation: {
+                            ...defaultFamilyAnimation,
+                            width: Math.min(3, previous.count),
+                            ...previous.animation,
+                            ...patch,
+                          },
+                        },
+                    );
+                  },
+                }}
+                frame={familyFrame ?? null}
+                client={client}
+                length={length}
+                stopAtCaustic={stopAtCaustic}
+                revision={familyRevision}
+                disabled={
+                  !familyReady ||
+                  scalarStates.some((s) => s.pending || !!s.error)
+                }
+                dark={dark}
+                scheme={scheme}
+                layers={layers}
+                weight={weight}
+                probe={null}
+                getCurrentView={() => familyView.current}
+                getFocus={() => viewRef.current}
+                refineView={refineView}
+                onShowCamera={() => {}}
+                onView={setAnimation}
+                onRunning={setAnimationRunning}
+                onReveal={revealPlot}
+              />
             )}
           </aside>
         </ScalarStatus.Provider>
@@ -2549,7 +2612,10 @@ function App({
             </div>
             <button
               className="fit"
-              disabled={!!animation && !animation.complete}
+              disabled={
+                !!(family?.enabled ? familyPlayback : animation) &&
+                !(family?.enabled ? familyPlayback : animation)!.complete
+              }
               onClick={() =>
                 animation ? setRefit(refit + 1) : setReset(reset + 1)
               }
@@ -2566,11 +2632,28 @@ function App({
             data-probe={probing ? JSON.stringify(probe) : undefined}
             data-stop={stopAtCaustic ? "true" : undefined}
             data-family={family?.enabled ? JSON.stringify(family) : undefined}
+            data-opening-layers={
+              preset !== "custom" && presets[+preset]?.layers
+                ? JSON.stringify(
+                    Object.fromEntries(
+                      Object.keys(presets[+preset].layers!).map((key) => [
+                        key,
+                        layers[key as keyof Layers],
+                      ]),
+                    ),
+                  )
+                : undefined
+            }
           >
             {family?.enabled && familyFrame && familyDrawing ? (
               <FamilyDrawing
                 key={`family-${restoredAnimation?.id ?? 0}`}
                 family={familyDrawing}
+                animation={familyPlayback}
+                refit={refit}
+                onViewport={(view) => {
+                  familyView.current = view;
+                }}
                 result={familyFrame.result}
                 config={config}
                 layers={layers}
