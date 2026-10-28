@@ -16,6 +16,45 @@ import { lineColor, palette } from "../web/spatial/palette";
 const exportMP4 = (page: Page) =>
   page.getByRole("button", { name: "Export MP4 video" });
 
+// Safari does not focus a clicked button or checkbox: the engraving's
+// controls must work from a click on their labels, and a constant entered in
+// a range field must resolve when it loses focus to a tap elsewhere.
+test("finite engraving controls work from label clicks and scalar blur in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  const members = page.locator("#artwork [data-family-member]");
+  await expect(members).toHaveCount(16);
+  const enabled = page.getByRole("checkbox", {
+    name: "Finite engraving",
+    exact: true,
+  });
+  const to = page.getByRole("textbox", { name: "Family to", exact: true });
+  await to.fill("pi");
+  await page.getByText("Selected member", { exact: true }).click();
+  await expect
+    .poll(async () =>
+      JSON.parse(
+        (await page.locator(".plot-wrap").getAttribute("data-family")) ?? "{}",
+      ),
+    )
+    .toMatchObject({ to: Math.PI });
+  await expect(members).toHaveCount(16);
+  await page
+    .getByLabel("Family presentation", { exact: true })
+    .selectOption("selected");
+  await expect(members).toHaveCount(1);
+  await page.getByText("Finite engraving", { exact: true }).click();
+  await expect(enabled).not.toBeChecked();
+  await expect(members).toHaveCount(0);
+  await page.getByText("Finite engraving", { exact: true }).click();
+  await expect(enabled).toBeChecked();
+  await expect(members).toHaveCount(1);
+  await expect(to).toHaveValue("pi");
+});
+
 test("anchoring contour normals preserves checkbox clicks and scalar blur in WebKit", async ({
   page,
 }) => {
@@ -1488,4 +1527,52 @@ for (const suppressMargins of [false, true])
     await expect.poll(spacing).toBeGreaterThanOrEqual(12);
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(spacing).toBe(first);
+  });
+
+// The engraving's range pair sits between ordinary fields: the gaps above and
+// below it are the same as between any two of its fields, owned by those
+// fields rather than by the pair's subgrid children.
+for (const suppressMargins of [false, true])
+  test(`finite engraving range pair has ordinary field gaps on first open (margin suppression ${suppressMargins})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    if (suppressMargins)
+      await page.addInitScript(() => {
+        // Model the on-device first-paint loss of subgrid child margins.
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(".family-panel .pair > .field { margin: 0 }");
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      });
+    await page.goto("/");
+    await choosePreset(page, { label: "A lamp's lace" });
+    const panel = page.locator(".family-panel");
+    await expect(panel.locator(".pair")).toBeVisible();
+    const gaps = () =>
+      panel.evaluate((root) => {
+        const control = (label: string) =>
+          root
+            .querySelector(
+              `[id="${
+                [...root.querySelectorAll("label")].find(
+                  (l) => l.textContent === label,
+                )!.htmlFor
+              }"]`,
+            )!
+            .getBoundingClientRect();
+        const label = (text: string) =>
+          [...root.querySelectorAll(".field-label")]
+            .find((l) => l.querySelector("label")!.textContent === text)!
+            .getBoundingClientRect();
+        return {
+          above: label("Family from").top - control("Family parameter").bottom,
+          below: label("Family members").top - control("Family to").bottom,
+          ordinary:
+            label("Family presentation").top - control("Family members").bottom,
+        };
+      });
+    const first = await gaps();
+    expect(first.ordinary).toBeGreaterThan(10);
+    expect(first.above).toBe(first.ordinary);
+    expect(first.below).toBe(first.ordinary);
   });

@@ -1,3 +1,5 @@
+import type { FamilyMember, FamilySettings } from "./planar-family";
+import { atlasSharedFrame } from "./atlas-framing";
 import type { ColorScheme } from "./color-schemes";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { svgStroke, type LineWeight } from "./line-weight";
@@ -29,6 +31,8 @@ export type Layers = {
 };
 type Props = {
   result: Result;
+  family?: { settings: FamilySettings; members: readonly FamilyMember[] };
+  markers?: boolean;
   config: Config;
   layers: Layers;
   dark: boolean;
@@ -163,6 +167,8 @@ const cameraKeys: Record<string, [number, number, number]> = {
 
 export function Plot({
   result,
+  family,
+  markers = true,
   config,
   layers,
   dark,
@@ -254,9 +260,30 @@ export function Plot({
     return () => svg.removeEventListener("wheel", zoom);
   }, [key, locked, exploring, zoomLimit]);
   const palette = plotPalette(dark, scheme);
+  const commonBase = useMemo(() => {
+    if (!family) return false;
+    const key = (member: FamilyMember) =>
+      JSON.stringify([
+        member.frame?.result.base,
+        member.frame?.result.input,
+        member.frame?.result.second,
+        member.frame?.result.adaptive?.base,
+        member.frame?.result.adaptive?.input,
+      ]);
+    const members = family.members.filter((m) => m.frame);
+    const first = members[0] && key(members[0]);
+    return members.every((m) => key(m) === first);
+  }, [family?.members]);
   const currentFrame = useMemo(
-    () => fitFrame(result, config),
-    [result, config],
+    () =>
+      family
+        ? (atlasSharedFrame(
+            family.settings.presentation === "selected"
+              ? family.members.filter((m) => m.id === family.settings.selected)
+              : family.members,
+          ) ?? fitFrame(result, config))
+        : fitFrame(result, config),
+    [result, config, family],
   );
   const finalFrame = useMemo(
     () =>
@@ -672,6 +699,17 @@ export function Plot({
       <desc>
         {JSON.stringify({
           ...config,
+          ...(family && {
+            family: {
+              ...family.settings,
+              members: family.members.map((m) => ({
+                id: m.id,
+                value: m.value,
+                ...(m.error && { error: m.error }),
+              })),
+              partial: family.members.some((m) => m.error),
+            },
+          }),
           animation: animation
             ? {
                 mode: animation.mode,
@@ -684,729 +722,803 @@ export function Plot({
           weight: weight === "regular" ? undefined : weight,
         })}
       </desc>
-      <rect width={W} height={H} fill={palette.bg} />
-      {grid}
-      {result.rays.map((ray, i) => {
-        const distance = (finalFrame?.span ?? frame.span) * length;
-        const { ahead, behind } = reach(ray, distance, stop);
-        const end = {
-          x: ray.origin.x + ray.direction.x * ahead,
-          y: ray.origin.y + ray.direction.y * ahead,
-        };
-        const back = {
-          x: ray.origin.x - ray.direction.x * behind,
-          y: ray.origin.y - ray.direction.y * behind,
-        };
-        const incoming =
-          config.source.kind === "point"
-            ? config.source.position
-            : {
-                x: ray.origin.x - ray.incident.x * distance,
-                y: ray.origin.y - ray.incident.y * distance,
-              };
-        // An orthotomic point is the pole reflected across the tangent. Draw
-        // the genuine projection foot H=(P+Q)/2 and dash the reflected part.
-        const foot =
-          config.kind === "orthotomic" && ray.target
-            ? {
-                x: (config.pole.x + ray.target.x) / 2,
-                y: (config.pole.y + ray.target.y) / 2,
-              }
-            : ray.target;
-        // A point joined to its image, along a ray from the center.
-        if (inversion)
-          return (
-            layers.lines &&
-            ray.target && (
-              <g key={i} data-testid="inversion-segment">
-                {line(ray.origin, ray.target, palette.line, 0.4)}
+      {!transparent && <rect width={W} height={H} fill={palette.bg} />}
+      {family ? (
+        family.members
+          .filter(
+            (m) =>
+              m.frame &&
+              (family.settings.presentation === "family" ||
+                m.id === family.settings.selected),
+          )
+          .map((m, i) => {
+            const selected = family.settings.presentation === "selected";
+            // Equality includes refined base/input geometry: do not erase member
+            // bases when the pole feeds the construction or shape a moves it.
+            return (
+              <g
+                key={m.id}
+                data-family-member={m.id}
+                data-family-value={m.value}
+              >
+                <Plot
+                  id={`${id}-member-${m.id}`}
+                  result={m.frame!.result}
+                  config={m.frame!.config}
+                  layers={
+                    selected
+                      ? layers
+                      : {
+                          ...layers,
+                          base: layers.base && (!commonBase || i === 0),
+                          lines: false,
+                          incident: false,
+                          axes: layers.axes && i === 0,
+                        }
+                  }
+                  markers={selected}
+                  dark={dark}
+                  scheme={scheme}
+                  length={length}
+                  stop={stop}
+                  reset={0}
+                  weight={weight}
+                  transparent
+                  framing={{
+                    cx: frame.cx - cam.x / scale,
+                    cy: frame.cy + cam.y / scale,
+                    scale,
+                    span: frame.span / cam.zoom,
+                  }}
+                />
               </g>
-            )
-          );
-        // A circle's radius to one of its touching points.
-        if (rings)
-          return (
-            layers.lines &&
-            ray.target && (
-              <g key={i} data-testid="envelope-radius">
-                {line(ray.origin, ray.target, palette.line, 0.45)}
-              </g>
-            )
-          );
-        if (config.kind === "envelope") {
-          const ends =
-            ray.end && !extended
-              ? [ray.origin, ray.end]
-              : across(
-                  ray.origin,
-                  ray.direction,
-                  x0 - pad,
-                  x1 + pad,
-                  y0 - pad,
-                  y1 + pad,
-                );
-          return (
-            layers.lines &&
-            ends && (
-              <g key={i} data-testid="envelope-line">
-                {line(ends[0], ends[1], palette.line, 0.45)}
-              </g>
-            )
-          );
-        }
-        // A traced ray is drawn as far as its light has traveled.
-        const traced = ray.traced;
-        return (
-          <g key={i}>
-            {optical &&
-              layers.incident &&
-              (traced
-                ? line(traced.from, traced.to, palette.incident, 0.3)
-                : line(incoming, ray.origin, palette.incident, 0.3))}
-            {layers.lines &&
-              (optical
-                ? (!traced || traced.out) &&
+            );
+          })
+      ) : (
+        <>
+          {grid}
+          {result.rays.map((ray, i) => {
+            const distance = (finalFrame?.span ?? frame.span) * length;
+            const { ahead, behind } = reach(ray, distance, stop);
+            const end = {
+              x: ray.origin.x + ray.direction.x * ahead,
+              y: ray.origin.y + ray.direction.y * ahead,
+            };
+            const back = {
+              x: ray.origin.x - ray.direction.x * behind,
+              y: ray.origin.y - ray.direction.y * behind,
+            };
+            const incoming =
+              config.source.kind === "point"
+                ? config.source.position
+                : {
+                    x: ray.origin.x - ray.incident.x * distance,
+                    y: ray.origin.y - ray.incident.y * distance,
+                  };
+            // An orthotomic point is the pole reflected across the tangent. Draw
+            // the genuine projection foot H=(P+Q)/2 and dash the reflected part.
+            const foot =
+              config.kind === "orthotomic" && ray.target
+                ? {
+                    x: (config.pole.x + ray.target.x) / 2,
+                    y: (config.pole.y + ray.target.y) / 2,
+                  }
+                : ray.target;
+            // A point joined to its image, along a ray from the center.
+            if (inversion)
+              return (
+                layers.lines &&
+                ray.target && (
+                  <g key={i} data-testid="inversion-segment">
+                    {line(ray.origin, ray.target, palette.line, 0.4)}
+                  </g>
+                )
+              );
+            // A circle's radius to one of its touching points.
+            if (rings)
+              return (
+                layers.lines &&
+                ray.target && (
+                  <g key={i} data-testid="envelope-radius">
+                    {line(ray.origin, ray.target, palette.line, 0.45)}
+                  </g>
+                )
+              );
+            if (config.kind === "envelope") {
+              const ends =
+                ray.end && !extended
+                  ? [ray.origin, ray.end]
+                  : across(
+                      ray.origin,
+                      ray.direction,
+                      x0 - pad,
+                      x1 + pad,
+                      y0 - pad,
+                      y1 + pad,
+                    );
+              return (
+                layers.lines &&
+                ends && (
+                  <g key={i} data-testid="envelope-line">
+                    {line(ends[0], ends[1], palette.line, 0.45)}
+                  </g>
+                )
+              );
+            }
+            // A traced ray is drawn as far as its light has traveled.
+            const traced = ray.traced;
+            return (
+              <g key={i}>
+                {optical &&
+                  layers.incident &&
+                  (traced
+                    ? line(traced.from, traced.to, palette.incident, 0.3)
+                    : line(incoming, ray.origin, palette.incident, 0.3))}
+                {layers.lines &&
+                  (optical
+                    ? (!traced || traced.out) &&
+                      line(
+                        ray.origin,
+                        traced?.out ?? end,
+                        ray.tir ? "#c18b32" : palette.line,
+                        0.5,
+                      )
+                    : foot && line(ray.origin, foot, palette.line, 0.52))}
+                {usesPole(config.kind) &&
+                  layers.lines &&
+                  foot &&
+                  line(config.pole, foot, palette.line, 0.35)}
+                {config.kind === "orthotomic" &&
+                  layers.lines &&
+                  foot &&
+                  ray.target &&
+                  line(foot, ray.target, palette.line, 0.35, true)}
+                {optical &&
+                  layers.lines &&
+                  layers.virtual &&
+                  behind > 0 &&
+                  (!traced || traced.back) &&
                   line(
                     ray.origin,
-                    traced?.out ?? end,
-                    ray.tir ? "#c18b32" : palette.line,
-                    0.5,
-                  )
-                : foot && line(ray.origin, foot, palette.line, 0.52))}
-            {usesPole(config.kind) &&
-              layers.lines &&
-              foot &&
-              line(config.pole, foot, palette.line, 0.35)}
-            {config.kind === "orthotomic" &&
-              layers.lines &&
-              foot &&
-              ray.target &&
-              line(foot, ray.target, palette.line, 0.35, true)}
-            {optical &&
-              layers.lines &&
-              layers.virtual &&
-              behind > 0 &&
-              (!traced || traced.back) &&
-              line(ray.origin, traced?.back ?? back, palette.line, 0.23, true)}
-          </g>
-        );
-      })}
-      {layers.lines && result.circles.length > 0 && (
-        <g data-testid="generating-circles" aria-label="Generating circles">
-          {result.circles.map((c) => {
-            const center = xy(c.center);
-            const radius = c.radius * scale;
-            return (
-              Number.isFinite(radius) &&
-              radius < 1e7 && (
-                <circle
-                  key={c.sampleIndex}
-                  cx={center.x}
-                  cy={center.y}
-                  r={radius}
-                  fill="none"
-                  stroke={palette.line}
-                  {...stroke(1)}
-                  opacity=".32"
-                />
-              )
+                    traced?.back ?? back,
+                    palette.line,
+                    0.23,
+                    true,
+                  )}
+              </g>
             );
           })}
-        </g>
-      )}
-      {layers.lines && roulette && (
-        <g data-testid="rolling-geometry" aria-label="Rolling circle">
-          {roulette.roll === "line" ? (
-            <g data-testid="fixed-line">
-              {line({ x: x0, y: 0 }, { x: x1, y: 0 }, palette.line, 0.6, false)}
-            </g>
-          ) : (
-            <circle
-              data-testid="fixed-circle"
-              cx={xy({ x: 0, y: 0 }).x}
-              cy={xy({ x: 0, y: 0 }).y}
-              r={roulette.fixedRadius * scale}
-              fill="none"
-              stroke={palette.line}
-              {...stroke(1.8)}
-              opacity=".9"
-            />
-          )}
-          {rolling && (
-            <g data-testid="rolling-circle" data-sample={rolling.sampleIndex}>
-              {rollingParts(rolling)}
-            </g>
-          )}
-        </g>
-      )}
-      {layers.lines && pursuit && (
-        <g data-testid="pursuit-polygons" aria-label="Connecting polygons">
-          {pursuit.polygons.map((p) => (
-            <path
-              key={p.sampleIndex}
-              data-testid="pursuit-polygon"
-              data-sample={p.sampleIndex}
-              d={
-                // Always joined: a long edge is not a jump, as in a path.
-                `M${p.points
-                  .map((q) => `${xy(q).x.toFixed(3)},${xy(q).y.toFixed(3)}`)
-                  .join("L")}Z`
-              }
-              fill="none"
-              stroke={palette.line}
-              {...stroke(1)}
-              strokeLinejoin="round"
-              opacity=".55"
-            />
-          ))}
-        </g>
-      )}
-      {layers.lines && field && (
-        <g data-testid="field-construction" aria-label="Direction field">
-          {/* Trajectories end where they leave this circle; it does not
-              frame the drawing, so a large one only shows as an arc. */}
-          <circle
-            data-testid="escape-circle"
-            cx={xy({ x: 0, y: 0 }).x}
-            cy={xy({ x: 0, y: 0 }).y}
-            r={config.curve.field.escape * scale}
-            fill="none"
-            stroke={palette.line}
-            {...stroke(1)}
-            strokeDasharray="4 5"
-            opacity=".5"
-          />
-          {/* Directions only: the speed varies too widely to draw to
-              scale. Each arrow is centered on its lattice point. */}
-          {field.grid.points.map(({ point, velocity }, k) => {
-            const length = 0.6 * field.grid.spacing * scale;
-            const { x, y } = xy(point);
-            return (
-              <path
-                key={k}
-                data-testid="field-direction"
-                d={arrow(x, y, velocity, length, length / 2, length * 0.3)}
-                fill="none"
-                stroke={palette.line}
-                {...stroke(1)}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity=".55"
-              />
-            );
-          })}
-        </g>
-      )}
-      {/* One pixel per cell, embedded as a PNG so exports carry it; cells
-          stay square-edged at any size rather than blurring into each
-          other. */}
-      {layers.base &&
-        attractor &&
-        attractor.accumulated > attractor.outside && (
-          <image
-            data-testid="attractor-density"
-            data-columns={attractor.columns}
-            data-rows={attractor.rows}
-            data-accumulated={attractor.accumulated}
-            href={densityImage(attractor, palette.base)}
-            x={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).x}
-            y={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).y}
-            width={(attractor.window.xMax - attractor.window.xMin) * scale}
-            height={(attractor.window.yMax - attractor.window.yMin) * scale}
-            preserveAspectRatio="none"
-            imageRendering="pixelated"
-          />
-        )}
-      {layers.lines && attractor && (
-        <g
-          data-testid="attractor-construction"
-          aria-label="Window and first iterates"
-        >
-          <rect
-            data-testid="attractor-window"
-            x={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).x}
-            y={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).y}
-            width={(attractor.window.xMax - attractor.window.xMin) * scale}
-            height={(attractor.window.yMax - attractor.window.yMin) * scale}
-            fill="none"
-            stroke={palette.line}
-            {...stroke(1)}
-            strokeDasharray="4 5"
-            opacity=".5"
-          />
-          {/* The start and the first iterates as separate dots: a map jumps
-              from one to the next, so they are never joined. */}
-          {attractor.orbit.map((p, k) => {
-            const { x, y } = xy(p);
-            if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-            return (
-              <circle
-                key={k}
-                data-testid="attractor-orbit"
-                cx={x}
-                cy={y}
-                r={k === 0 ? 4 : 2.2}
-                fill={k === 0 ? "none" : palette.line}
-                stroke={palette.line}
-                {...stroke(k === 0 ? 1.5 : 0)}
-                opacity=".85"
-              />
-            );
-          })}
-          {attractor.orbit.length > 0 && (
-            <circle
-              data-testid="attractor-start"
-              cx={xy(attractor.orbit[0]).x}
-              cy={xy(attractor.orbit[0]).y}
-              r="7"
-              fill="none"
-              stroke={palette.line}
-              {...stroke(1)}
-              opacity=".6"
-            />
-          )}
-        </g>
-      )}
-      {layers.lines && contours && (
-        <g data-testid="contour-construction" aria-label="Window and normals">
-          {/* The contours are sought only inside the window. */}
-          <rect
-            data-testid="contour-window"
-            x={xy({ x: contours.window.xMin, y: contours.window.yMax }).x}
-            y={xy({ x: contours.window.xMin, y: contours.window.yMax }).y}
-            width={(contours.window.xMax - contours.window.xMin) * scale}
-            height={(contours.window.yMax - contours.window.yMin) * scale}
-            fill="none"
-            stroke={palette.line}
-            {...stroke(1)}
-            strokeDasharray="4 5"
-            opacity=".5"
-          />
-          {/* Where F changes sign without reaching the level: a pole or a
-              jump, not a curve. */}
-          {contours.discontinuities.map((p, k) => {
-            const { x, y } = xy(p);
-            return (
-              <path
-                key={`break-${k}`}
-                data-testid="contour-break"
-                data-x={p.x}
-                data-y={p.y}
-                d={`M${x - 2.5},${y - 2.5}L${x + 2.5},${y + 2.5}M${x - 2.5},${y + 2.5}L${x + 2.5},${y - 2.5}`}
-                stroke={palette.line}
-                {...stroke(1)}
-                opacity=".6"
-              />
-            );
-          })}
-          {/* F's gradient, from the curve toward larger values; a fixed
-              length, since its size varies too widely to draw to scale. */}
-          {contours.normals.map(({ point, gradient }, k) => {
-            const length =
-              0.05 *
-              Math.max(
-                contours.window.xMax - contours.window.xMin,
-                contours.window.yMax - contours.window.yMin,
-              ) *
-              scale;
-            const { x, y } = xy(point);
-            return (
-              <path
-                key={k}
-                data-testid="contour-normal"
-                d={arrow(x, y, gradient, length, 0, 5)}
-                fill="none"
-                stroke={palette.line}
-                {...stroke(1.2)}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity=".75"
-              />
-            );
-          })}
-        </g>
-      )}
-      {layers.lines && harmonic && (
-        <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
-          {harmonic.guides.map((g, k) => (
-            <circle
-              key={k}
-              data-testid="lissajous-guide"
-              cx={xy(g.center).x}
-              cy={xy(g.center).y}
-              r={g.radius * scale}
-              fill="none"
-              stroke={palette.line}
-              {...stroke(1.5)}
-              opacity=".85"
-            />
-          ))}
-          {epicycles && (
-            <g data-testid="epicycles" data-sample={epicycles.sampleIndex}>
-              {harmonic.radii.map(
-                (r, k) =>
-                  r > 0 && (
+          {layers.lines && result.circles.length > 0 && (
+            <g data-testid="generating-circles" aria-label="Generating circles">
+              {result.circles.map((c) => {
+                const center = xy(c.center);
+                const radius = c.radius * scale;
+                return (
+                  Number.isFinite(radius) &&
+                  radius < 1e7 && (
                     <circle
-                      key={`c${k}`}
-                      data-testid="epicycle"
-                      cx={xy(epicycles.joints[k]).x}
-                      cy={xy(epicycles.joints[k]).y}
-                      r={r * scale}
+                      key={c.sampleIndex}
+                      cx={center.x}
+                      cy={center.y}
+                      r={radius}
                       fill="none"
                       stroke={palette.line}
                       {...stroke(1)}
-                      opacity=".55"
+                      opacity=".32"
                     />
-                  ),
-              )}
-              {harmonic.radii.map((_, k) => (
-                <g key={`v${k}`} data-testid="epicycle-arm">
+                  )
+                );
+              })}
+            </g>
+          )}
+          {layers.lines && roulette && (
+            <g data-testid="rolling-geometry" aria-label="Rolling circle">
+              {roulette.roll === "line" ? (
+                <g data-testid="fixed-line">
                   {line(
-                    epicycles.joints[k],
-                    epicycles.joints[k + 1] ?? epicycles.point,
+                    { x: x0, y: 0 },
+                    { x: x1, y: 0 },
                     palette.line,
-                    0.95,
+                    0.6,
+                    false,
                   )}
                 </g>
-              ))}
-              {harmonic.guides.map((g, k) => (
-                <g key={`g${k}`}>
-                  {line(g.center, epicycles.joints[k], palette.line, 0.8)}
-                  <g data-testid="lissajous-projection">
-                    {line(
-                      epicycles.joints[k],
-                      epicycles.point,
-                      palette.line,
-                      0.6,
-                      true,
-                    )}
-                  </g>
-                </g>
-              ))}
-              {epicycles.joints.map((j, k) => (
+              ) : (
                 <circle
-                  key={`j${k}`}
-                  cx={xy(j).x}
-                  cy={xy(j).y}
-                  r="2.5"
-                  fill={palette.line}
+                  data-testid="fixed-circle"
+                  cx={xy({ x: 0, y: 0 }).x}
+                  cy={xy({ x: 0, y: 0 }).y}
+                  r={roulette.fixedRadius * scale}
+                  fill="none"
+                  stroke={palette.line}
+                  {...stroke(1.8)}
+                  opacity=".9"
+                />
+              )}
+              {rolling && (
+                <g
+                  data-testid="rolling-circle"
+                  data-sample={rolling.sampleIndex}
+                >
+                  {rollingParts(rolling)}
+                </g>
+              )}
+            </g>
+          )}
+          {layers.lines && pursuit && (
+            <g data-testid="pursuit-polygons" aria-label="Connecting polygons">
+              {pursuit.polygons.map((p) => (
+                <path
+                  key={p.sampleIndex}
+                  data-testid="pursuit-polygon"
+                  data-sample={p.sampleIndex}
+                  d={
+                    // Always joined: a long edge is not a jump, as in a path.
+                    `M${p.points
+                      .map((q) => `${xy(q).x.toFixed(3)},${xy(q).y.toFixed(3)}`)
+                      .join("L")}Z`
+                  }
+                  fill="none"
+                  stroke={palette.line}
+                  {...stroke(1)}
+                  strokeLinejoin="round"
+                  opacity=".55"
                 />
               ))}
             </g>
           )}
-        </g>
-      )}
-      {layers.lines && roller && (
-        <g
-          data-testid="rolling-construction"
-          data-sample={roller.sampleIndex}
-          aria-label="Circle rolling on the curve"
-        >
-          {rollingParts(roller)}
-        </g>
-      )}
-      {layers.lines && moving && placed && (
-        <g
-          data-testid="rolling-curve"
-          data-sample={placed.sampleIndex}
-          aria-label="Curve rolling on the curve"
-        >
-          <path
-            d={path(moving.path.map((p) => p && carry(placed, p)))}
-            fill="none"
-            stroke={palette.line}
-            {...stroke(1.2)}
-            strokeLinejoin="round"
-            opacity=".75"
-          />
-          {line(placed.contact, placed.point, palette.line, 0.75)}
-          <circle
-            data-testid="contact-point"
-            cx={xy(placed.contact).x}
-            cy={xy(placed.contact).y}
-            r="3.5"
-            fill="none"
-            stroke={palette.line}
-            {...stroke(1.5)}
-          />
-        </g>
-      )}
-      {layers.base && result.second && (
-        <path
-          data-testid="second-curve"
-          aria-label="Second endpoints"
-          d={path(result.second)}
-          fill="none"
-          stroke={palette.base}
-          {...stroke(1.4)}
-          opacity=".55"
-        />
-      )}
-      {layers.lines && inversion && (
-        <circle
-          data-testid="inversion-circle"
-          aria-label="Circle of inversion"
-          cx={xy(inversion.center).x}
-          cy={xy(inversion.center).y}
-          r={inversion.radius * scale}
-          fill="none"
-          stroke={palette.line}
-          {...stroke(1.4)}
-          strokeDasharray="7 5"
-          opacity=".85"
-        />
-      )}
-      {layers.base && result.input && (
-        <path
-          data-testid="construction-input"
-          aria-label={`The curve's ${config.input}, which the construction acts on`}
-          d={path(refined.input?.points ?? result.input)}
-          fill="none"
-          stroke={palette.derived}
-          {...stroke(1.5)}
-          strokeLinejoin="round"
-          opacity=".5"
-        />
-      )}
-      {layers.base &&
-        pursuit?.paths.map((points, k) => (
-          <path
-            key={k}
-            data-testid="pursuit-path"
-            d={path(points)}
-            fill="none"
-            stroke={palette.base}
-            {...stroke(2.3)}
-            strokeLinejoin="round"
-          />
-        ))}
-      {layers.base &&
-        contours?.curve.contours.map((c, k) => (
-          <path
-            key={k}
-            data-testid="contour-path"
-            d={path(c.points) + (c.closed ? "Z" : "")}
-            fill="none"
-            stroke={palette.base}
-            {...stroke(2.3)}
-            strokeLinejoin="round"
-          />
-        ))}
-      {layers.base &&
-        field?.paths.map((points, k) => (
-          <path
-            key={k}
-            data-testid="field-path"
-            d={path(points)}
-            fill="none"
-            stroke={palette.base}
-            {...stroke(2.3)}
-            strokeLinejoin="round"
-          />
-        ))}
-      {layers.base && (
-        <path
-          data-testid="base-curve"
-          d={path(refined.base?.points ?? result.base)}
-          fill="none"
-          stroke={palette.base}
-          {...stroke(2.3)}
-        />
-      )}
-      {layers.lines &&
-        chasers?.points.map((p, k) => (
-          <circle
-            key={k}
-            data-testid="pursuer"
-            cx={xy(p).x}
-            cy={xy(p).y}
-            r="3.5"
-            fill={palette.base}
-          />
-        ))}
-      {layers.lines &&
-        field?.arrows.map((a) => {
-          // The direction of travel at representative samples.
-          const { x, y } = xy(a.point);
-          return (
+          {layers.lines && field && (
+            <g data-testid="field-construction" aria-label="Direction field">
+              {/* Trajectories end where they leave this circle; it does not
+              frame the drawing, so a large one only shows as an arc. */}
+              <circle
+                data-testid="escape-circle"
+                cx={xy({ x: 0, y: 0 }).x}
+                cy={xy({ x: 0, y: 0 }).y}
+                r={config.curve.field.escape * scale}
+                fill="none"
+                stroke={palette.line}
+                {...stroke(1)}
+                strokeDasharray="4 5"
+                opacity=".5"
+              />
+              {/* Directions only: the speed varies too widely to draw to
+              scale. Each arrow is centered on its lattice point. */}
+              {field.grid.points.map(({ point, velocity }, k) => {
+                const length = 0.6 * field.grid.spacing * scale;
+                const { x, y } = xy(point);
+                return (
+                  <path
+                    key={k}
+                    data-testid="field-direction"
+                    d={arrow(x, y, velocity, length, length / 2, length * 0.3)}
+                    fill="none"
+                    stroke={palette.line}
+                    {...stroke(1)}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity=".55"
+                  />
+                );
+              })}
+            </g>
+          )}
+          {/* One pixel per cell, embedded as a PNG so exports carry it; cells
+          stay square-edged at any size rather than blurring into each
+          other. */}
+          {layers.base &&
+            attractor &&
+            attractor.accumulated > attractor.outside && (
+              <image
+                data-testid="attractor-density"
+                data-columns={attractor.columns}
+                data-rows={attractor.rows}
+                data-accumulated={attractor.accumulated}
+                href={densityImage(attractor, palette.base)}
+                x={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).x}
+                y={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).y}
+                width={(attractor.window.xMax - attractor.window.xMin) * scale}
+                height={(attractor.window.yMax - attractor.window.yMin) * scale}
+                preserveAspectRatio="none"
+                imageRendering="pixelated"
+              />
+            )}
+          {layers.lines && attractor && (
+            <g
+              data-testid="attractor-construction"
+              aria-label="Window and first iterates"
+            >
+              <rect
+                data-testid="attractor-window"
+                x={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).x}
+                y={xy({ x: attractor.window.xMin, y: attractor.window.yMax }).y}
+                width={(attractor.window.xMax - attractor.window.xMin) * scale}
+                height={(attractor.window.yMax - attractor.window.yMin) * scale}
+                fill="none"
+                stroke={palette.line}
+                {...stroke(1)}
+                strokeDasharray="4 5"
+                opacity=".5"
+              />
+              {/* The start and the first iterates as separate dots: a map jumps
+              from one to the next, so they are never joined. */}
+              {attractor.orbit.map((p, k) => {
+                const { x, y } = xy(p);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                return (
+                  <circle
+                    key={k}
+                    data-testid="attractor-orbit"
+                    cx={x}
+                    cy={y}
+                    r={k === 0 ? 4 : 2.2}
+                    fill={k === 0 ? "none" : palette.line}
+                    stroke={palette.line}
+                    {...stroke(k === 0 ? 1.5 : 0)}
+                    opacity=".85"
+                  />
+                );
+              })}
+              {attractor.orbit.length > 0 && (
+                <circle
+                  data-testid="attractor-start"
+                  cx={xy(attractor.orbit[0]).x}
+                  cy={xy(attractor.orbit[0]).y}
+                  r="7"
+                  fill="none"
+                  stroke={palette.line}
+                  {...stroke(1)}
+                  opacity=".6"
+                />
+              )}
+            </g>
+          )}
+          {layers.lines && contours && (
+            <g
+              data-testid="contour-construction"
+              aria-label="Window and normals"
+            >
+              {/* The contours are sought only inside the window. */}
+              <rect
+                data-testid="contour-window"
+                x={xy({ x: contours.window.xMin, y: contours.window.yMax }).x}
+                y={xy({ x: contours.window.xMin, y: contours.window.yMax }).y}
+                width={(contours.window.xMax - contours.window.xMin) * scale}
+                height={(contours.window.yMax - contours.window.yMin) * scale}
+                fill="none"
+                stroke={palette.line}
+                {...stroke(1)}
+                strokeDasharray="4 5"
+                opacity=".5"
+              />
+              {/* Where F changes sign without reaching the level: a pole or a
+              jump, not a curve. */}
+              {contours.discontinuities.map((p, k) => {
+                const { x, y } = xy(p);
+                return (
+                  <path
+                    key={`break-${k}`}
+                    data-testid="contour-break"
+                    data-x={p.x}
+                    data-y={p.y}
+                    d={`M${x - 2.5},${y - 2.5}L${x + 2.5},${y + 2.5}M${x - 2.5},${y + 2.5}L${x + 2.5},${y - 2.5}`}
+                    stroke={palette.line}
+                    {...stroke(1)}
+                    opacity=".6"
+                  />
+                );
+              })}
+              {/* F's gradient, from the curve toward larger values; a fixed
+              length, since its size varies too widely to draw to scale. */}
+              {contours.normals.map(({ point, gradient }, k) => {
+                const length =
+                  0.05 *
+                  Math.max(
+                    contours.window.xMax - contours.window.xMin,
+                    contours.window.yMax - contours.window.yMin,
+                  ) *
+                  scale;
+                const { x, y } = xy(point);
+                return (
+                  <path
+                    key={k}
+                    data-testid="contour-normal"
+                    d={arrow(x, y, gradient, length, 0, 5)}
+                    fill="none"
+                    stroke={palette.line}
+                    {...stroke(1.2)}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity=".75"
+                  />
+                );
+              })}
+            </g>
+          )}
+          {layers.lines && harmonic && (
+            <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
+              {harmonic.guides.map((g, k) => (
+                <circle
+                  key={k}
+                  data-testid="lissajous-guide"
+                  cx={xy(g.center).x}
+                  cy={xy(g.center).y}
+                  r={g.radius * scale}
+                  fill="none"
+                  stroke={palette.line}
+                  {...stroke(1.5)}
+                  opacity=".85"
+                />
+              ))}
+              {epicycles && (
+                <g data-testid="epicycles" data-sample={epicycles.sampleIndex}>
+                  {harmonic.radii.map(
+                    (r, k) =>
+                      r > 0 && (
+                        <circle
+                          key={`c${k}`}
+                          data-testid="epicycle"
+                          cx={xy(epicycles.joints[k]).x}
+                          cy={xy(epicycles.joints[k]).y}
+                          r={r * scale}
+                          fill="none"
+                          stroke={palette.line}
+                          {...stroke(1)}
+                          opacity=".55"
+                        />
+                      ),
+                  )}
+                  {harmonic.radii.map((_, k) => (
+                    <g key={`v${k}`} data-testid="epicycle-arm">
+                      {line(
+                        epicycles.joints[k],
+                        epicycles.joints[k + 1] ?? epicycles.point,
+                        palette.line,
+                        0.95,
+                      )}
+                    </g>
+                  ))}
+                  {harmonic.guides.map((g, k) => (
+                    <g key={`g${k}`}>
+                      {line(g.center, epicycles.joints[k], palette.line, 0.8)}
+                      <g data-testid="lissajous-projection">
+                        {line(
+                          epicycles.joints[k],
+                          epicycles.point,
+                          palette.line,
+                          0.6,
+                          true,
+                        )}
+                      </g>
+                    </g>
+                  ))}
+                  {epicycles.joints.map((j, k) => (
+                    <circle
+                      key={`j${k}`}
+                      cx={xy(j).x}
+                      cy={xy(j).y}
+                      r="2.5"
+                      fill={palette.line}
+                    />
+                  ))}
+                </g>
+              )}
+            </g>
+          )}
+          {layers.lines && roller && (
+            <g
+              data-testid="rolling-construction"
+              data-sample={roller.sampleIndex}
+              aria-label="Circle rolling on the curve"
+            >
+              {rollingParts(roller)}
+            </g>
+          )}
+          {layers.lines && moving && placed && (
+            <g
+              data-testid="rolling-curve"
+              data-sample={placed.sampleIndex}
+              aria-label="Curve rolling on the curve"
+            >
+              <path
+                d={path(moving.path.map((p) => p && carry(placed, p)))}
+                fill="none"
+                stroke={palette.line}
+                {...stroke(1.2)}
+                strokeLinejoin="round"
+                opacity=".75"
+              />
+              {line(placed.contact, placed.point, palette.line, 0.75)}
+              <circle
+                data-testid="contact-point"
+                cx={xy(placed.contact).x}
+                cy={xy(placed.contact).y}
+                r="3.5"
+                fill="none"
+                stroke={palette.line}
+                {...stroke(1.5)}
+              />
+            </g>
+          )}
+          {layers.base && result.second && (
             <path
-              key={`${a.seed}-${a.sampleIndex}`}
-              data-testid="field-arrow"
-              data-sample={a.sampleIndex}
-              d={arrow(x, y, a.velocity, 0, 0, 5.5)}
+              data-testid="second-curve"
+              aria-label="Second endpoints"
+              d={path(result.second)}
               fill="none"
               stroke={palette.base}
-              {...stroke(2)}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              {...stroke(1.4)}
+              opacity=".55"
             />
-          );
-        })}
-      {layers.lines &&
-        seeds.map((p, k) => (
-          <circle
-            key={k}
-            data-testid="seed"
-            cx={xy(p).x}
-            cy={xy(p).y}
-            r="3.5"
-            fill={palette.bg}
-            stroke={palette.base}
-            {...stroke(1.5)}
-          />
-        ))}
-      {layers.lines && epicycles && (
-        <circle
-          data-testid="harmonic-point"
-          cx={xy(epicycles.point).x}
-          cy={xy(epicycles.point).y}
-          r="4"
-          fill={palette.base}
-        />
-      )}
-      {layers.lines && rolling && (
-        <circle
-          data-testid="tracing-point"
-          cx={xy(rolling.point).x}
-          cy={xy(rolling.point).y}
-          r="4"
-          fill={palette.base}
-        />
-      )}
-      {layers.derived && result.derived.length > 0 && (
-        <path
-          data-testid="derived-curve"
-          d={
-            refined.derived
-              ? refinedPath(refined.derived, dashed ? false : undefined)
-              : path(result.derived, dashed ? false : undefined, breaks)
-          }
-          fill="none"
-          stroke={palette.derived}
-          {...stroke(2.6)}
-          strokeLinejoin="round"
-        />
-      )}
-      {dashed && layers.derived && layers.virtual && (
-        <path
-          data-testid="virtual-derived-curve"
-          d={
-            refined.derived
-              ? refinedPath(refined.derived, true)
-              : path(result.derived, true)
-          }
-          fill="none"
-          stroke={palette.derived}
-          {...stroke(2.3)}
-          strokeDasharray="6 4"
-        />
-      )}
-      {layers.derived && contours && contours.family.length > 0 && (
-        <g data-testid="contour-levels" aria-label="Family of levels">
-          {contours.family.flatMap((set, k) =>
-            set.contours.map((c, j) => (
-              <path
-                key={`${k}-${j}`}
-                data-testid="contour-family"
-                data-level={set.level}
-                d={path(c.points) + (c.closed ? "Z" : "")}
-                fill="none"
-                stroke={palette.derived}
-                {...stroke(1.5)}
-                strokeLinejoin="round"
-                opacity=".8"
-              />
-            )),
           )}
-        </g>
-      )}
-      {layers.derived && result.family.length > 0 && (
-        <g
-          data-testid={rings ? "envelope-branches" : "offset-family"}
-          aria-label={rings ? "Envelope branches" : "Offset stack"}
-        >
-          {result.family.map((member, k) => (
+          {layers.lines && inversion && (
+            <circle
+              data-testid="inversion-circle"
+              aria-label="Circle of inversion"
+              cx={xy(inversion.center).x}
+              cy={xy(inversion.center).y}
+              r={inversion.radius * scale}
+              fill="none"
+              stroke={palette.line}
+              {...stroke(1.4)}
+              strokeDasharray="7 5"
+              opacity=".85"
+            />
+          )}
+          {layers.base && result.input && (
             <path
-              key={k}
-              data-distance={rings ? undefined : member.distance}
-              data-branch={member.branch}
-              d={path((refined.family?.[k] ?? member).points)}
+              data-testid="construction-input"
+              aria-label={`The curve's ${config.input}, which the construction acts on`}
+              d={path(refined.input?.points ?? result.input)}
               fill="none"
               stroke={palette.derived}
-              {...stroke(1.8)}
+              {...stroke(1.5)}
               strokeLinejoin="round"
-              opacity=".9"
+              opacity=".5"
             />
-          ))}
-        </g>
+          )}
+          {layers.base &&
+            pursuit?.paths.map((points, k) => (
+              <path
+                key={k}
+                data-testid="pursuit-path"
+                d={path(points)}
+                fill="none"
+                stroke={palette.base}
+                {...stroke(2.3)}
+                strokeLinejoin="round"
+              />
+            ))}
+          {layers.base &&
+            contours?.curve.contours.map((c, k) => (
+              <path
+                key={k}
+                data-testid="contour-path"
+                d={path(c.points) + (c.closed ? "Z" : "")}
+                fill="none"
+                stroke={palette.base}
+                {...stroke(2.3)}
+                strokeLinejoin="round"
+              />
+            ))}
+          {layers.base &&
+            field?.paths.map((points, k) => (
+              <path
+                key={k}
+                data-testid="field-path"
+                d={path(points)}
+                fill="none"
+                stroke={palette.base}
+                {...stroke(2.3)}
+                strokeLinejoin="round"
+              />
+            ))}
+          {layers.base && (
+            <path
+              data-testid="base-curve"
+              d={path(refined.base?.points ?? result.base)}
+              fill="none"
+              stroke={palette.base}
+              {...stroke(2.3)}
+            />
+          )}
+          {layers.lines &&
+            chasers?.points.map((p, k) => (
+              <circle
+                key={k}
+                data-testid="pursuer"
+                cx={xy(p).x}
+                cy={xy(p).y}
+                r="3.5"
+                fill={palette.base}
+              />
+            ))}
+          {layers.lines &&
+            field?.arrows.map((a) => {
+              // The direction of travel at representative samples.
+              const { x, y } = xy(a.point);
+              return (
+                <path
+                  key={`${a.seed}-${a.sampleIndex}`}
+                  data-testid="field-arrow"
+                  data-sample={a.sampleIndex}
+                  d={arrow(x, y, a.velocity, 0, 0, 5.5)}
+                  fill="none"
+                  stroke={palette.base}
+                  {...stroke(2)}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              );
+            })}
+          {layers.lines &&
+            seeds.map((p, k) => (
+              <circle
+                key={k}
+                data-testid="seed"
+                cx={xy(p).x}
+                cy={xy(p).y}
+                r="3.5"
+                fill={palette.bg}
+                stroke={palette.base}
+                {...stroke(1.5)}
+              />
+            ))}
+          {layers.lines && epicycles && (
+            <circle
+              data-testid="harmonic-point"
+              cx={xy(epicycles.point).x}
+              cy={xy(epicycles.point).y}
+              r="4"
+              fill={palette.base}
+            />
+          )}
+          {layers.lines && rolling && (
+            <circle
+              data-testid="tracing-point"
+              cx={xy(rolling.point).x}
+              cy={xy(rolling.point).y}
+              r="4"
+              fill={palette.base}
+            />
+          )}
+          {layers.derived && result.derived.length > 0 && (
+            <path
+              data-testid="derived-curve"
+              d={
+                refined.derived
+                  ? refinedPath(refined.derived, dashed ? false : undefined)
+                  : path(result.derived, dashed ? false : undefined, breaks)
+              }
+              fill="none"
+              stroke={palette.derived}
+              {...stroke(2.6)}
+              strokeLinejoin="round"
+            />
+          )}
+          {dashed && layers.derived && layers.virtual && (
+            <path
+              data-testid="virtual-derived-curve"
+              d={
+                refined.derived
+                  ? refinedPath(refined.derived, true)
+                  : path(result.derived, true)
+              }
+              fill="none"
+              stroke={palette.derived}
+              {...stroke(2.3)}
+              strokeDasharray="6 4"
+            />
+          )}
+          {layers.derived && contours && contours.family.length > 0 && (
+            <g data-testid="contour-levels" aria-label="Family of levels">
+              {contours.family.flatMap((set, k) =>
+                set.contours.map((c, j) => (
+                  <path
+                    key={`${k}-${j}`}
+                    data-testid="contour-family"
+                    data-level={set.level}
+                    d={path(c.points) + (c.closed ? "Z" : "")}
+                    fill="none"
+                    stroke={palette.derived}
+                    {...stroke(1.5)}
+                    strokeLinejoin="round"
+                    opacity=".8"
+                  />
+                )),
+              )}
+            </g>
+          )}
+          {layers.derived && result.family.length > 0 && (
+            <g
+              data-testid={rings ? "envelope-branches" : "offset-family"}
+              aria-label={rings ? "Envelope branches" : "Offset stack"}
+            >
+              {result.family.map((member, k) => (
+                <path
+                  key={k}
+                  data-distance={rings ? undefined : member.distance}
+                  data-branch={member.branch}
+                  d={path((refined.family?.[k] ?? member).points)}
+                  fill="none"
+                  stroke={palette.derived}
+                  {...stroke(1.8)}
+                  strokeLinejoin="round"
+                  opacity=".9"
+                />
+              ))}
+            </g>
+          )}
+          {layers.lines && tracer && (
+            <circle
+              data-testid="rolling-construction-point"
+              cx={xy(tracer.point).x}
+              cy={xy(tracer.point).y}
+              r="4"
+              fill={palette.derived}
+            />
+          )}
+          {layers.derived &&
+            focuses.map((focus, i) => (
+              <circle
+                key={i}
+                data-testid="focus-point"
+                cx={focus.x}
+                cy={focus.y}
+                r="3.5"
+                fill={palette.derived}
+              />
+            ))}
+          {markers && optical && config.source.kind === "point" && (
+            <g>
+              <circle
+                cx={xy(config.source.position).x}
+                cy={xy(config.source.position).y}
+                r="5"
+                fill={palette.derived}
+              />
+              <circle
+                cx={xy(config.source.position).x}
+                cy={xy(config.source.position).y}
+                r="10"
+                fill="none"
+                stroke={palette.derived}
+                opacity=".35"
+              />
+            </g>
+          )}
+          {markers && inversion && (
+            <g data-testid="inversion-center" aria-label="Center of inversion">
+              <circle
+                cx={xy(inversion.center).x}
+                cy={xy(inversion.center).y}
+                r="4"
+                fill={palette.line}
+              />
+            </g>
+          )}
+          {markers &&
+            (usesPole(kind) || (result.input && usesPole(config.input))) && (
+              <g data-testid="pole-point" aria-label="Pole">
+                <circle
+                  cx={xy(config.pole).x}
+                  cy={xy(config.pole).y}
+                  r="5"
+                  fill={palette.derived}
+                />
+                <circle
+                  cx={xy(config.pole).x}
+                  cy={xy(config.pole).y}
+                  r="10"
+                  fill="none"
+                  stroke={palette.derived}
+                  opacity=".35"
+                />
+              </g>
+            )}
+          {probeDrawing}
+        </>
       )}
-      {layers.lines && tracer && (
-        <circle
-          data-testid="rolling-construction-point"
-          cx={xy(tracer.point).x}
-          cy={xy(tracer.point).y}
-          r="4"
-          fill={palette.derived}
-        />
-      )}
-      {layers.derived &&
-        focuses.map((focus, i) => (
-          <circle
-            key={i}
-            data-testid="focus-point"
-            cx={focus.x}
-            cy={focus.y}
-            r="3.5"
-            fill={palette.derived}
-          />
-        ))}
-      {optical && config.source.kind === "point" && (
-        <g>
-          <circle
-            cx={xy(config.source.position).x}
-            cy={xy(config.source.position).y}
-            r="5"
-            fill={palette.derived}
-          />
-          <circle
-            cx={xy(config.source.position).x}
-            cy={xy(config.source.position).y}
-            r="10"
-            fill="none"
-            stroke={palette.derived}
-            opacity=".35"
-          />
-        </g>
-      )}
-      {inversion && (
-        <g data-testid="inversion-center" aria-label="Center of inversion">
-          <circle
-            cx={xy(inversion.center).x}
-            cy={xy(inversion.center).y}
-            r="4"
-            fill={palette.line}
-          />
-        </g>
-      )}
-      {(usesPole(kind) || (result.input && usesPole(config.input))) && (
-        <g data-testid="pole-point" aria-label="Pole">
-          <circle
-            cx={xy(config.pole).x}
-            cy={xy(config.pole).y}
-            r="5"
-            fill={palette.derived}
-          />
-          <circle
-            cx={xy(config.pole).x}
-            cy={xy(config.pole).y}
-            r="10"
-            fill="none"
-            stroke={palette.derived}
-            opacity=".35"
-          />
-        </g>
-      )}
-      {probeDrawing}
     </svg>
   );
 }

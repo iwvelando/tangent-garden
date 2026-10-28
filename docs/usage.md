@@ -37,6 +37,16 @@ Changing ranges, pair or size discards the affected grid immediately; choose **G
 
 The atlas uses one active numerical request, at most 25 unsent requests, 25 preview outcomes and one retained inspection. Curves allow at most 8,000 original samples and 256 construction lines, with further aggregate limits for refinement, stacks, compositions, trajectories and pursuits: 80,000 evaluated uniform samples, 2,560 representative lines, 500,000 reserved retained path points and 80 million weighted work units. A zoomed view-refined inspection reserves two full passes but retains only its final result. Clifford grids reserve at most 20 million evaluated iterations and two million density bins, counting a fitted density's two traversals. Retained geometry across all outcomes is capped at four million numeric entries. Studies over the 3 × 3 limits keep entry disabled; its reachable info help lists support and limits. A study that fits 3 × 3 but not a remembered 5 × 5 opens with a notice to choose 3 × 3. Refinement counts only for definitions refined between samples, not pursuits or vector fields. Reduce requested complexity deliberately, then reopen.
 
+## A lamp's lace
+
+Choose **A lamp's lace** in the planar notebook: sixteen caustics of an elliptical mirror, one for each position of a lamp circling inside it. To make an engraving of your own study, turn on **Finite engraving** below the controls.
+
+**Family parameter** offers only what the study uses: a point source's theta and radius (polar) or x and y (Cartesian), a pedal, contrapedal or orthotomic pole's x and y, and shape `a` when an expression uses it. Implicit curves, iterated maps, vector fields, pursuits, offset stacks and circle envelopes have no engraving. Changing the parameter opens its own default range. **Family from** and **Family to** accept constant expressions such as `pi/2`; both are members, they may descend or be equal, and a theta range opens one step short of a whole turn so no lamp repeats. **Family members** takes 2 to 32. Every member is computed at the study's full quality.
+
+**Family presentation** shows the **Complete family**, or the **Selected member · construction** with its source or pole and representative lines. Choose the member under **Selected member**; members that could not be computed are listed as unavailable, with their reasons under **Members and limits**, and the rest stay available. An engraving is limited to 500,000 reserved path points, four million retained numbers and 80 million weighted work units; a refused family keeps your study as it was. Pan and zoom the engraving freely: turning it off returns your study with its own view.
+
+Copy link saves the engraving with the study. Export image saves the presentation shown, as vectors in SVG; the file records the member set and notes any unavailable members. Ordinary animation and the probe are set aside while an engraving is on.
+
 ## Explore
 
 - On phones, **Drawing** and **Controls** stay at the top of the screen. After editing, tap **Drawing** to inspect the result, then **Controls** to return to the same place. Swipes over the drawing scroll the page by default. Tap **Adjust view** to pan or orbit with one finger and pan/zoom with two; **Done** or **Controls** returns to page scrolling. Mouse and keyboard controls remain available.

@@ -1,3 +1,5 @@
+import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
+import type { FamilySettings } from "./planar-family";
 import { StudyExplanation } from "./StudyExplanation";
 import {
   NotebookContext,
@@ -16,6 +18,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type ComponentProps,
 } from "react";
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
@@ -267,6 +270,12 @@ const poleOptions: Record<PoleKind, { label: string; note: string }> = {
 // Numeric parameters addressed by their path in the configuration. An unset
 // optional value, such as a polar source radius before first use, reads as 0.
 // The notebook opens on its first example.
+// Capture a family's opening camera once. Fit view then resets it normally;
+// the source drawing keeps its own camera while this composition is mounted.
+function FamilyDrawing(props: ComponentProps<typeof Plot>) {
+  const initialCamera = useRef(props.initialCamera);
+  return <Plot {...props} initialCamera={initialCamera.current} />;
+}
 const opening = presetStudy(0);
 function App({
   active,
@@ -287,6 +296,9 @@ function App({
   const atlasButton = useRef<HTMLButtonElement>(null);
   const atlasQuiet = useQuietFocus(atlasEntry);
   const atlasHelp = useHelp();
+  const [family, setFamily] = useState<FamilySettings | undefined>(
+    opening.family,
+  );
   const [config, setConfig] = useState<Config>(opening.config);
   const [preset, setPreset] = useState("0");
   // Remembers the pole construction while another tab is selected.
@@ -351,15 +363,19 @@ function App({
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
   const scalarStates = Object.values(scalars);
   const scalarError = scalarStates.find((s) => s.error);
+  // An active family suspends the ordinary computation, so only its fields'
+  // evaluations decide readiness and errors; its members report their own.
   const busy =
-    settledKey !== requestKey ||
-    (refineView && focusPending) ||
+    (!family?.enabled &&
+      (settledKey !== requestKey || (refineView && focusPending))) ||
     scalarStates.some((s) => s.pending);
   const error = busy
     ? ""
     : scalarError
       ? `${scalarError.name}: ${scalarError.error}`
-      : computeError.message;
+      : family?.enabled
+        ? ""
+        : computeError.message;
   const theme = useTheme();
   const { dark, preference, scheme } = theme;
   const [reset, setReset] = useState(0);
@@ -416,7 +432,7 @@ function App({
     return () => engine.dispose();
   }, []);
   useEffect(() => {
-    if (excursionActive) return;
+    if (excursionActive || family?.enabled) return;
     let canceled = false;
     const timer = setTimeout(() => {
       client
@@ -444,7 +460,7 @@ function App({
       canceled = true;
       clearTimeout(timer);
     };
-  }, [config, bounds, probing, view, excursionActive]);
+  }, [config, bounds, probing, view, excursionActive, family?.enabled]);
   // Between samples, Go places the probe at its own t over the drawn
   // study, apart from the study itself, so moving it redraws only the
   // probe. A point belongs to the frame and position it was asked for, and
@@ -506,10 +522,6 @@ function App({
   const result = shown?.result;
   // What the legend names: the drawn study's entries, each while its layer
   // draws something.
-  const drawnFormat = (shown?.config ?? config).curve.format;
-  const drawn = shown
-    ? legendGeometry(shown.result, shown.config, layers)
-    : { base: layers.base, derived: layers.derived };
   // A level set and an iterated map have no parameter, so no construction
   // applies to them.
   const implicit = config.curve.format === "implicit";
@@ -1305,6 +1317,8 @@ function App({
     setLayers(study.layers);
     setWeight(study.weight);
     setProbe(study.probe);
+    setFamily(study.family);
+    camera.current = { ...study.camera };
     setRestoredCamera({ reset: reset + 1, camera: study.camera });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -1341,7 +1355,37 @@ function App({
     weight,
     probe,
     animation: animationSettings.current ?? defaultAnimation,
+    ...(family && { family }),
   });
+  const familyState = usePlanarFamily(
+    snapshot(),
+    active && !excursionActive,
+    scalarStates.some((s) => s.pending || !!s.error),
+    view,
+  );
+  const familyReady =
+    !!family?.enabled &&
+    !familyState.pending &&
+    !familyState.error &&
+    (family.presentation === "selected"
+      ? !!familyState.members[family.selected]?.frame
+      : familyState.members.some((m) => m.frame));
+  const familyFrame = familyState.members.find((m) => m.frame)?.frame;
+  const drawingBusy = family?.enabled
+    ? familyState.pending || scalarStates.some((s) => s.pending)
+    : busy || placing;
+  const outputReady = family?.enabled
+    ? familyReady && !drawingBusy
+    : !!result && !busy && !error;
+  const displayFrame = family?.enabled
+    ? family.presentation === "selected"
+      ? familyState.members[family.selected]?.frame
+      : familyFrame
+    : shown;
+  const drawnFormat = (displayFrame?.config ?? config).curve.format;
+  const drawn = displayFrame
+    ? legendGeometry(displayFrame.result, displayFrame.config, layers)
+    : { base: false, derived: false };
   useEffect(() => {
     if (!active) {
       setAtlasWaiting(null);
@@ -1396,16 +1440,25 @@ function App({
       data-theme-preference={preference}
     >
       <AppHeader theme={theme} inert={journey.active}>
-        <ShareLink
-          notebook="2d"
-          study={snapshot}
-          disabled={!result || busy || !!error}
-        />
-        <AnimationButton section="animation-section" />
+        <ShareLink notebook="2d" study={snapshot} disabled={!outputReady} />
+        {!family?.enabled && <AnimationButton section="animation-section" />}
         <ExportImageMenu
-          revision={journey.requested || !!atlasWaiting}
-          disabled={!result || busy || !!error || animationRunning}
-          kind={studyName(config)}
+          revision={JSON.stringify([
+            journey.requested,
+            atlasWaiting,
+            family,
+            config,
+            bounds,
+            layers,
+            weight,
+            reset,
+          ])}
+          disabled={!outputReady || animationRunning}
+          kind={
+            family?.enabled
+              ? `engraving-${family.presentation}`
+              : studyName(config)
+          }
         />
       </AppHeader>
       <NotebookMain inert={journey.active}>
@@ -1444,7 +1497,11 @@ function App({
                     ref={atlasButton}
                     type="button"
                     disabled={
-                      !frame || busy || !!error || !!atlasBudget(config).error
+                      family?.enabled ||
+                      !frame ||
+                      busy ||
+                      !!error ||
+                      !!atlasBudget(config).error
                     }
                     aria-describedby={atlasHelp.open ? atlasHelp.id : undefined}
                     onClick={(e) => {
@@ -2372,59 +2429,89 @@ function App({
               </section>
             </FieldErrorContext.Provider>
             {error && !claimedHere && <StudyError message={error} />}
-            <PlanarProbePanel
-              config={config}
-              frame={
-                // While an animation holds or moves the probe, the readout
-                // describes the frame it shows.
-                animation?.probe !== undefined
-                  ? animation.frame
-                  : probing && !busy
-                    ? frame
-                    : null
-              }
-              probe={probe}
-              onProbe={setProbe}
-              animating={!!animation && !animation.complete}
-              at={animation?.probe !== undefined ? animation.probe : heldProbe}
-              moving={animation?.probe !== undefined}
-              away={animation?.probeAway}
-              dark={dark}
-            />
-            <AnimationPanel
-              getCurrentView={() => manualView.current}
-              getFocus={() => viewRef.current}
-              refineView={refineView}
-              onShowCamera={(camera) => {
-                setRestoredCamera({ reset: reset + 1, camera });
-                setReset(reset + 1);
+            <FamilyPanel
+              study={snapshot()}
+              value={family}
+              state={familyState}
+              pending={scalarStates.some((s) => s.pending)}
+              fieldError={fieldError}
+              onChange={(update) => {
+                setPreset("custom");
+                const next = update(family);
+                if (family?.enabled && !next.enabled) {
+                  setRestoredCamera({
+                    reset: reset + 1,
+                    camera: camera.current,
+                  });
+                  setReset(reset + 1);
+                }
+                setFamily(update);
               }}
-              dark={dark}
-              scheme={scheme}
-              layers={layers}
-              weight={weight}
-              probe={probing ? probe : null}
-              frame={frame}
-              client={client}
-              length={length}
-              stopAtCaustic={stopAtCaustic}
-              revision={JSON.stringify([
-                config,
-                bounds,
-                length,
-                stopAtCaustic,
-                active,
-                journey.requested,
-                atlasWaiting,
-                probing,
-              ])}
-              disabled={busy || !!error}
-              onView={setAnimation}
-              onRunning={setAnimationRunning}
-              onReveal={revealPlot}
-              settings={animationSettings}
-              restore={busy ? null : restoredAnimation}
             />
+            <div hidden={!!family?.enabled}>
+              <PlanarProbePanel
+                config={config}
+                frame={
+                  // While an animation holds or moves the probe, the readout
+                  // describes the frame it shows.
+                  animation?.probe !== undefined
+                    ? animation.frame
+                    : probing && !busy
+                      ? frame
+                      : null
+                }
+                probe={probe}
+                onProbe={setProbe}
+                animating={!!animation && !animation.complete}
+                at={
+                  animation?.probe !== undefined ? animation.probe : heldProbe
+                }
+                moving={animation?.probe !== undefined}
+                away={animation?.probeAway}
+                dark={dark}
+              />
+              <AnimationPanel
+                getCurrentView={() => manualView.current}
+                getFocus={() => viewRef.current}
+                refineView={refineView}
+                onShowCamera={(camera) => {
+                  setRestoredCamera({ reset: reset + 1, camera });
+                  setReset(reset + 1);
+                }}
+                dark={dark}
+                scheme={scheme}
+                layers={layers}
+                weight={weight}
+                probe={probing ? probe : null}
+                frame={frame}
+                client={client}
+                length={length}
+                stopAtCaustic={stopAtCaustic}
+                revision={JSON.stringify([
+                  config,
+                  bounds,
+                  length,
+                  stopAtCaustic,
+                  active,
+                  journey.requested,
+                  atlasWaiting,
+                  probing,
+                  family?.enabled,
+                ])}
+                disabled={!!family?.enabled || busy || !!error}
+                onView={setAnimation}
+                onRunning={setAnimationRunning}
+                onReveal={revealPlot}
+                settings={animationSettings}
+                restore={busy ? null : restoredAnimation}
+              />
+            </div>
+            {family?.enabled && (
+              <p className="note" id="animation-section">
+                An engraving does not animate yet. Turn it off to animate the
+                study.
+              </p>
+            )}
           </aside>
         </ScalarStatus.Provider>
         <article>
@@ -2450,13 +2537,53 @@ function App({
           <div
             className="plot-wrap"
             ref={plotWrap}
-            aria-busy={busy || placing}
+            aria-busy={drawingBusy}
             // The probe while it is on, and stopped rays, as an example's
             // fingerprint records them (examples/index.ts).
             data-probe={probing ? JSON.stringify(probe) : undefined}
             data-stop={stopAtCaustic ? "true" : undefined}
+            data-family={family?.enabled ? JSON.stringify(family) : undefined}
           >
-            {result && shown ? (
+            {family?.enabled && familyFrame && familyReady ? (
+              <FamilyDrawing
+                key={`family-${restoredAnimation?.id ?? 0}`}
+                family={{ settings: family, members: familyState.members }}
+                result={familyFrame.result}
+                config={config}
+                layers={layers}
+                weight={weight}
+                dark={dark}
+                scheme={scheme}
+                length={length}
+                stop={stopAtCaustic}
+                reset={reset}
+                initialCamera={{
+                  reset,
+                  camera: family.camera ?? camera.current,
+                }}
+                onCamera={(next) =>
+                  setFamily((previous) => {
+                    if (!previous?.enabled) return previous;
+                    const before = previous.camera ?? camera.current;
+                    return before.x === next.x &&
+                      before.y === next.y &&
+                      before.zoom === next.zoom
+                      ? previous
+                      : { ...previous, camera: next };
+                  })
+                }
+                refineView={refineView}
+                onFocus={onFocus}
+              />
+            ) : family?.enabled ? (
+              <div className="loading">
+                {familyState.pending
+                  ? "Calculating full-quality members…"
+                  : (familyState.members[family.selected]?.error ??
+                    familyState.error ??
+                    "No family members are available. Your source study is kept.")}
+              </div>
+            ) : result && shown ? (
               <Plot
                 onViewport={(view) => {
                   manualView.current = view;
@@ -2490,7 +2617,9 @@ function App({
             {frame && error && (
               <span className="stale-study">Previous valid study</span>
             )}
-            {busy && result && <span className="computing">Computing…</span>}
+            {drawingBusy && result && (
+              <span className="computing">Computing…</span>
+            )}
             <div className="plot-meta">
               <div className="legend">
                 <LegendEntries
@@ -2520,7 +2649,7 @@ function App({
                                 <span className="derived-dot" />
                                 {drawnFormat === "implicit"
                                   ? "Other levels"
-                                  : (shown?.config ?? config).kind}
+                                  : (displayFrame?.config ?? config).kind}
                               </>
                             ),
                           },

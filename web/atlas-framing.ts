@@ -1,10 +1,10 @@
 import { fitFrame, viewRect } from "./Plot";
-import type { AtlasCell } from "./atlas";
+import type { Frame } from "./types";
 
 // Fit each member through the ordinary robust production path first. Union
 // its padded view, never pool samples and fence away a small distant member.
 // A common scalar scale keeps both axes equal. Invalid cells contribute nothing.
-export function atlasSharedFrame(cells: readonly AtlasCell[]) {
+export function atlasSharedFrame(cells: readonly { frame?: Frame }[]) {
   const frames = cells.flatMap((c) =>
     c.frame ? [fitFrame(c.frame.result, c.frame.config)] : [],
   );

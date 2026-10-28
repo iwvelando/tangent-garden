@@ -1,7 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { choosePreset, imageButton } from "./helpers";
+import { chooseColorScheme, choosePreset, imageButton } from "./helpers";
+import { plotPalette } from "../web/palette";
 import { decodePng } from "./png";
 
 // The drawing a visitor sees and the file they save are the same drawing:
@@ -365,6 +366,7 @@ async function vectorEquivalence(
   // wide about 3.
   const perInk = (difference(live, file) * W * H) / fromLive.total;
   expect(perInk).toBeLessThan(inkBound);
+  return svgBytes.toString();
 }
 
 for (const scheme of ["light", "dark"] as const) {
@@ -391,6 +393,65 @@ for (const scheme of ["light", "dark"] as const) {
     await vectorEquivalence(page, "#tesseract-artwork", [1000, 760], 5);
   });
 }
+
+// A finite engraving exports the presentation it shows: every member's
+// vectors in the complete family, or the selected member's construction,
+// under the scheme in use, with the member set recorded beside the drawing.
+for (const [presentation, scheme, colors] of [
+  ["family", "light", "default"],
+  ["family", "dark", "cobalt"],
+  ["selected", "light", "cobalt"],
+  ["selected", "dark", "default"],
+] as const)
+  test(`2D engraving, ${presentation}, ${scheme}, ${colors}: the 1 × PNG and the SVG are the drawing shown`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto("/");
+    await expect(page.locator("#artwork")).toBeVisible();
+    await chooseColorScheme(page, colors);
+    await choosePreset(page, { label: "A lamp's lace" });
+    await page
+      .getByLabel("Family presentation", { exact: true })
+      .selectOption(presentation);
+    const members = presentation === "family" ? 16 : 1;
+    await expect(page.locator("#artwork [data-family-member]")).toHaveCount(
+      members,
+    );
+    await expect(page.locator(".plot-wrap")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(imageButton(page)).toBeEnabled();
+    const svg = await vectorEquivalence(page, "#artwork", [1000, 760], 1.5);
+    expect(svg).not.toMatch(/<image|<text|<foreignObject/);
+    expect(
+      [...svg.matchAll(/data-family-member="(\d+)"/g)].map((m) => m[1]),
+    ).toEqual(
+      presentation === "family"
+        ? Array.from({ length: 16 }, (_, i) => String(i))
+        : ["4"],
+    );
+    // Member curves in this scheme's derived ink.
+    expect(svg).toContain(
+      `stroke="${plotPalette(scheme === "dark", colors).derived}"`,
+    );
+    const meta = JSON.parse(
+      svg
+        .match(/<desc>(.*?)<\/desc>/)![1]
+        .replaceAll("&quot;", '"')
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&"),
+    );
+    expect(meta.family).toMatchObject({
+      target: "sourceTheta",
+      presentation,
+      selected: 4,
+      partial: false,
+    });
+    expect(meta.family.members).toHaveLength(16);
+  });
 
 test("4D paired: the 1 × PNG and the SVG are both panels shown", async ({
   page,

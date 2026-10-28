@@ -885,3 +885,24 @@ for (const width of [390, 1440])
       expect.soft(spacing.pair).toBe(16);
       expect(spacing.ranges).toBe(16);
     });
+
+// Refinement's settings stack evenly under its checkbox: the first, whose
+// row has no help toggle, is as far from the next as they are from each other.
+test("refinement's checkboxes are evenly spaced", async ({ page }) => {
+  await page.goto("/");
+  await page.getByText("Refine between samples", { exact: true }).click();
+  const centers = await page.evaluate(() =>
+    [
+      "Refine between samples",
+      "Refine to the view as you zoom",
+      "Frame the points between samples",
+    ].map((text) => {
+      const label = [...document.querySelectorAll("label.check")].find(
+        (l) => l.textContent!.trim() === text,
+      )!;
+      const box = label.querySelector("input")!.getBoundingClientRect();
+      return box.top + box.height / 2;
+    }),
+  );
+  expect(centers[1] - centers[0]).toBeCloseTo(centers[2] - centers[1], 0);
+});

@@ -1,5 +1,5 @@
 import { wireEnvelope, wireStudy } from "./study-link-wire";
-import { test } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
@@ -2688,4 +2688,43 @@ test("published omissions stay historical even when live preset definitions chan
   } finally {
     presets[0].config.curve.x = original;
   }
+});
+
+test("finite engraving links retain settings and old links remain ordinary", async () => {
+  const s = planarPreset(0);
+  expect((planarStudy(s) as any).family).toBeUndefined();
+  s.config.kind = "catacaustic";
+  s.config.source.coordinates = "polar";
+  const family = {
+    enabled: true,
+    target: "sourceTheta",
+    from: 2,
+    to: -2,
+    count: 16,
+    selected: 7,
+    presentation: "selected",
+  };
+  expect((planarStudy({ ...s, family }) as any).family).toEqual(family);
+  for (const [field, value] of [
+    ["count", 1],
+    ["count", 33],
+    ["count", 2.5],
+    ["selected", 16],
+    ["from", "pi"],
+    ["target", "min"],
+    ["presentation", "other"],
+  ] as const)
+    await refused(
+      () => planarStudy({ ...s, family: { ...family, [field]: value } }),
+      `family.${field}`,
+    );
+  await refused(
+    () => planarStudy({ ...s, family: { ...family, target: "poleX" } }),
+    "family.target",
+    /supported/,
+  );
+  expect(
+    (planarStudy({ ...s, family: { ...family, from: 1, to: 1 } }) as any).family
+      .from,
+  ).toBe(1);
 });

@@ -1,3 +1,4 @@
+import type { FamilySettings } from "./planar-family";
 import type { Config } from "./types";
 import type { PlanarAnimation } from "./planar-link";
 import type { PlanarProbe } from "./planar-probe";
@@ -119,6 +120,7 @@ export const presets: {
   probe?: PlanarProbe;
   // Whether its rays stop at the caustic; others draw them full length.
   stop?: true;
+  family?: FamilySettings;
 }[] = [
   {
     title: "Ellipse & its evolute",
@@ -1518,6 +1520,37 @@ export const presets: {
       repeat: "loop",
       pace: "steady",
       probeMotion: "stays",
+    },
+  },
+  // A lamp circles inside the ellipse (1.02 cos t, sin t). Sixteen independent
+  // full-quality caustics form the engraving; selected member 5 explains it
+  // with 24 representative rays. Sampling is inclusive, so the last lamp
+  // stops one sixteenth of a turn short of the first rather than repeat it.
+  {
+    title: "A lamp's lace",
+    note: "An elliptical mirror gathers a circling lamp into sixteen interwoven caustics",
+    config: {
+      ...base,
+      kind: "catacaustic",
+      curve: { ...base.curve, x: "1.02*cos(t)", y: "sin(t)" },
+      source: {
+        ...base.source,
+        position: { x: 0.3, y: 0 },
+        coordinates: "polar",
+        radius: 0.3,
+        theta: 0,
+      },
+      samples: 1500,
+      lines: 24,
+    },
+    family: {
+      enabled: true,
+      target: "sourceTheta",
+      from: 0,
+      to: (15 * Math.PI) / 8,
+      count: 16,
+      selected: 4,
+      presentation: "family",
     },
   },
 ];
