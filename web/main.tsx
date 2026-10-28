@@ -1323,6 +1323,18 @@ function App({
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
   };
+  // A restored animation reaches the panel only once the frame belongs to
+  // the restored study, so neither its tracks nor a trace mode is judged
+  // against another frame. An engraving suspends that frame; until then a
+  // link records the restored settings, not the panel's previous ones.
+  const animationHeld = busy || !!family?.enabled;
+  const handedAnimation = useRef<number | null>(null);
+  if (!animationHeld && restoredAnimation)
+    handedAnimation.current = restoredAnimation.id;
+  const pendingAnimation =
+    restoredAnimation && handedAnimation.current !== restoredAnimation.id
+      ? restoredAnimation.settings
+      : undefined;
   useEffect(() => {
     if (!shared) return;
     setLinkNotice(shared.error ?? "");
@@ -1354,7 +1366,8 @@ function App({
     camera: camera.current,
     weight,
     probe,
-    animation: animationSettings.current ?? defaultAnimation,
+    animation:
+      pendingAnimation ?? animationSettings.current ?? defaultAnimation,
     ...(family && { family }),
   });
   const familyState = usePlanarFamily(
@@ -1370,7 +1383,17 @@ function App({
     (family.presentation === "selected"
       ? !!familyState.members[family.selected]?.frame
       : familyState.members.some((m) => m.frame));
-  const familyFrame = familyState.members.find((m) => m.frame)?.frame;
+  // What the drawing shows: the settled family, or while a newer one
+  // computes, the last settled one beneath Computing….
+  const drawnMembers = familyReady ? familyState.members : familyState.held;
+  const familyFrame = drawnMembers?.find((m) => m.frame)?.frame;
+  const familyDrawing = useMemo(
+    () =>
+      family?.enabled && drawnMembers
+        ? { settings: family, members: drawnMembers }
+        : undefined,
+    [family, drawnMembers],
+  );
   const drawingBusy = family?.enabled
     ? familyState.pending || scalarStates.some((s) => s.pending)
     : busy || placing;
@@ -1379,7 +1402,7 @@ function App({
     : !!result && !busy && !error;
   const displayFrame = family?.enabled
     ? family.presentation === "selected"
-      ? familyState.members[family.selected]?.frame
+      ? drawnMembers?.[family.selected]?.frame
       : familyFrame
     : shown;
   const drawnFormat = (displayFrame?.config ?? config).curve.format;
@@ -2503,7 +2526,7 @@ function App({
                 onRunning={setAnimationRunning}
                 onReveal={revealPlot}
                 settings={animationSettings}
-                restore={busy ? null : restoredAnimation}
+                restore={animationHeld ? null : restoredAnimation}
               />
             </div>
             {family?.enabled && (
@@ -2544,10 +2567,10 @@ function App({
             data-stop={stopAtCaustic ? "true" : undefined}
             data-family={family?.enabled ? JSON.stringify(family) : undefined}
           >
-            {family?.enabled && familyFrame && familyReady ? (
+            {family?.enabled && familyFrame && familyDrawing ? (
               <FamilyDrawing
                 key={`family-${restoredAnimation?.id ?? 0}`}
-                family={{ settings: family, members: familyState.members }}
+                family={familyDrawing}
                 result={familyFrame.result}
                 config={config}
                 layers={layers}
@@ -2617,7 +2640,7 @@ function App({
             {frame && error && (
               <span className="stale-study">Previous valid study</span>
             )}
-            {drawingBusy && result && (
+            {drawingBusy && (family?.enabled ? familyFrame : result) && (
               <span className="computing">Computing…</span>
             )}
             <div className="plot-meta">

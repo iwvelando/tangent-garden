@@ -14,6 +14,7 @@ import {
   familyBudget,
   PlanarFamily,
   emptyFamily,
+  type FamilyMember,
   type FamilySettings,
   type FamilyState,
 } from "./planar-family";
@@ -66,11 +67,23 @@ export function usePlanarFamily(
     else family.generate(study, f, view ?? undefined);
     return () => family.cancel();
   }, [key]);
-  return !enabled
+  // The last settled members, drawn while a newer specification computes, as
+  // the ordinary notebook keeps its previous frame. A zoom refined to the
+  // view recomputes every member and must not take the drawing away.
+  const held = useRef<FamilyMember[] | undefined>(undefined);
+  if (!enabled) held.current = undefined;
+  else if (
+    delivered.key === key &&
+    !delivered.state.pending &&
+    delivered.state.members.some((m) => m.frame)
+  )
+    held.current = delivered.state.members;
+  const state = !enabled
     ? emptyFamily()
     : delivered.key === key
       ? delivered.state
       : { ...emptyFamily(), pending: true };
+  return { ...state, held: state.pending ? held.current : undefined };
 }
 export function FamilyPanel({
   study,
@@ -191,14 +204,18 @@ export function FamilyPanel({
                 value={Number.isNaN(f.count) ? "" : f.count}
                 onChange={(e) => {
                   const count = e.target.valueAsNumber;
-                  onChange((previous) => ({
-                    ...(previous ?? f),
-                    count,
-                    selected: Math.max(
-                      0,
-                      Math.min((previous ?? f).selected, count - 1),
-                    ),
-                  }));
+                  // An emptied field is NaN while the next count is typed;
+                  // the selection waits for a count it can be clamped to.
+                  onChange((previous) => {
+                    const { selected } = previous ?? f;
+                    return {
+                      ...(previous ?? f),
+                      count,
+                      selected: Number.isFinite(count)
+                        ? Math.max(0, Math.min(selected, count - 1))
+                        : selected,
+                    };
+                  });
                 }}
               />
             </Field>

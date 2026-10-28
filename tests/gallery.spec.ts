@@ -5871,3 +5871,83 @@ test("finite engraving caps bind independently at their literal limits and the s
   expect(calls).toHaveLength(5);
   expect(scheduler.state.members).toEqual([]);
 });
+
+test("finite engraving survives clearing the member count before typing a new one", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const count = page.getByLabel("Family members", { exact: true });
+  await count.fill("");
+  await expect(count).toHaveAttribute("aria-invalid", "true");
+  await count.fill("8");
+  await settled(page);
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(8);
+  await expect(page.getByLabel("Selected member", { exact: true })).toHaveValue(
+    "4",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("finite engraving refined to its view keeps its drawing while a zoom recomputes it", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await page.getByLabel("Family members", { exact: true }).fill("8");
+  await page.getByText("Refine between samples", { exact: true }).click();
+  await page
+    .getByText("Refine to the view as you zoom", { exact: true })
+    .click();
+  await settled(page);
+  const members = page.locator("#artwork [data-family-member]");
+  await expect(members).toHaveCount(8);
+  await page.evaluate(() => {
+    const seen = ((window as any).seen = { busy: false, lost: false });
+    const wrap = document.querySelector(".plot-wrap")!;
+    new MutationObserver(() => {
+      if (wrap.getAttribute("aria-busy") === "true") seen.busy = true;
+      if (
+        !wrap.querySelector("[data-family-member]") ||
+        wrap.querySelector(".loading")
+      )
+        seen.lost = true;
+    }).observe(wrap, { subtree: true, childList: true, attributes: true });
+  });
+  await page.locator("#artwork").focus();
+  await page.keyboard.press("+");
+  await page.keyboard.press("+");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).seen.busy))
+    .toBe(true);
+  await settled(page);
+  await expect(members).toHaveCount(8);
+  expect(await page.evaluate(() => (window as any).seen.lost)).toBe(false);
+});
+
+test("a linked trace animation survives opening with the engraving on", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await settled(page);
+  const shared = (await copiedStudy(page)).study as any;
+  shared.animation.mode = "trace";
+  // A fresh page, so the notebook has no frame of its own yet.
+  await page.goto(
+    `/#s=${deflateRawSync(Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study: shared }))).toString("base64url")}`,
+  );
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  await settled(page);
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(16);
+  // Shared again with the engraving on, the animation is unchanged.
+  expect(((await copiedStudy(page)).study as any).animation.mode).toBe("trace");
+  await page.getByLabel("Finite engraving", { exact: true }).uncheck();
+  await settled(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("trace");
+});

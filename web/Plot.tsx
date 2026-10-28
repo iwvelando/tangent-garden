@@ -283,7 +283,14 @@ export function Plot({
               : family.members,
           ) ?? fitFrame(result, config))
         : fitFrame(result, config),
-    [result, config, family],
+    // Not the settings object, which a pan replaces with each camera move.
+    [
+      result,
+      config,
+      family?.members,
+      family?.settings.presentation,
+      family?.settings.selected,
+    ],
   );
   const finalFrame = useMemo(
     () =>
