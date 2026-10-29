@@ -137,6 +137,7 @@ import {
   compilePhrase,
   defaultPhrase,
   phraseAt,
+  phraseDuration,
   phraseError,
   phraseTargets,
   createPhraseSampler,
@@ -332,7 +333,7 @@ export function AnimationPanel({
     phrase ?? (frame ? defaultPhrase(frame.config, length) : undefined);
   const duration =
     mode === "phrase" && phraseDraft
-      ? phraseDraft.phases.reduce((sum, p) => sum + p.duration, 0)
+      ? phraseDuration(phraseDraft)
       : simpleDuration;
   const phraseSignature = JSON.stringify([phraseDraft, frame?.config, length]);
   const [resolvedPhrase, setResolvedPhrase] = useState<{
@@ -488,6 +489,12 @@ export function AnimationPanel({
   useEffect(() => {
     if (!traceable && mode === "trace") setMode("reveal");
   }, [traceable, mode]);
+  // A phrase needs a continuous input the study consumes; without one, the
+  // curve is drawn.
+  const phrasable = !!frame && phraseTargets(frame.config).length > 0;
+  useEffect(() => {
+    if (frame && !phrasable && mode === "phrase") setMode("reveal");
+  }, [phrasable, mode]);
   // The probe moves only while it is on; otherwise the curve is drawn.
   useEffect(() => {
     if (!probe && mode === "probe") setMode("reveal");
@@ -1499,9 +1506,7 @@ export function AnimationPanel({
                       : "Draw along the curve"}
                   </option>
                   <option value="parameters">Vary parameters</option>
-                  {!!frame && phraseTargets(frame.config).length > 0 && (
-                    <option value="phrase">Play a phrase</option>
-                  )}
+                  {phrasable && <option value="phrase">Play a phrase</option>}
                   {traceable && <option value="trace">Trace rays</option>}
                   {probe && (
                     <option value="probe">

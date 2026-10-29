@@ -57,6 +57,11 @@ export type CompiledPhrase = {
   }[];
 };
 
+// The phases' total for readouts and links, without the binary tail their sum
+// can accumulate (0.1 + 6.1 + …). Sampling keeps the exact compiled phase ends.
+export const phraseDuration = (phrase: Phrase) =>
+  Number(phrase.phases.reduce((sum, p) => sum + p.duration, 0).toPrecision(12));
+
 // A starter composition acts on the current study; only choosing an authored
 // preset replaces its formulas, source or construction.
 export function defaultPhrase(

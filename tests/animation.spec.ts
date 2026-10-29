@@ -832,6 +832,58 @@ test("changing a phrase target resets offered keys to the edited study and durat
   await page.getByRole("button", { name: "Stop", exact: true }).click();
 });
 
+// These durations accumulate to 17.299999999999997 in binary.
+test("the phrase playback readout states its phase total without an arithmetic tail", async ({
+  page,
+}) => {
+  await ready(page, "2");
+  await page
+    .getByRole("combobox", { name: "Animate", exact: true })
+    .selectOption("phrase");
+  for (const [i, seconds] of [
+    "0.1",
+    "6.1",
+    "0.1",
+    "3",
+    "3",
+    "2",
+    "3",
+  ].entries())
+    await page
+      .getByRole("spinbutton", { name: `Phase ${i + 1} duration`, exact: true })
+      .fill(seconds);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(page.locator("#playback")).toContainText(/ \/ 17\.3 s/);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+});
+
+// As tracing falls back without light, a phrase falls back when an edit
+// leaves the study nothing a phrase can vary.
+test("a phrase falls back to drawing when the edited study offers no phrase target", async ({
+  page,
+}) => {
+  await ready(page, "2");
+  const mode = page.getByRole("combobox", { name: "Animate", exact: true });
+  await mode.selectOption("phrase");
+  await page
+    .getByRole("combobox", { name: "Definition", exact: true })
+    .selectOption("attractor");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(mode.locator("option[value=phrase]")).toHaveCount(0);
+  await expect(mode).toHaveValue("reveal");
+  await expect(
+    page.getByRole("combobox", { name: "Phrase parameter", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeEnabled();
+});
+
 test("same-study phrase link replacement cancels preparation and discards stale keys and frames", async ({
   page,
 }) => {
@@ -1171,8 +1223,11 @@ for (const expensive of [false, true])
           .getByRole("textbox", { name: `Phase ${i} key`, exact: true })
           .fill(key);
     }
+    // Stop is pressed as soon as the hold appears, so a long dense hold costs
+    // nothing; it must outlast that detection, up to two dense calculations
+    // on a slow runner, or playback completes first.
     const durations = expensive
-      ? [0.2, 0.3, 0.3, 1, 1, 3, 0.5]
+      ? [0.2, 0.3, 0.3, 1, 1, 12, 0.5]
       : [0.1, 0.2, 0.2, 0.5, 0.5, 0.7, 0.5];
     for (const [i, duration] of durations.entries())
       await page
