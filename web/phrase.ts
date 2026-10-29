@@ -18,10 +18,25 @@ import {
 } from "./planar-probe";
 import { heldCurveSample, unreached } from "./probe";
 import type { Layers } from "./Plot";
+import {
+  flightPieces,
+  keyFromViewport,
+  keyViewport,
+  pieceAt,
+  planarPathView,
+  type Fit,
+  type Piece,
+  type PlanarPath,
+} from "./planar-path";
+import { viewZoom } from "./refinement";
 import { progressAt, type Pace } from "./timing";
 import type { Config, Result, Frame, ViewRect } from "./types";
 
 export const maxPhases = 12;
+// A camera key: the point of the plane in the middle of the page and the
+// zoom relative to the opening study's fitted framing, as a planar camera
+// path's view (planar-path.ts), or the phrase's own opening view.
+export type PhraseView = { x: number; y: number; zoom: number };
 export type PhraseReveal = {
   base: number;
   construction: number;
@@ -35,18 +50,30 @@ export type PhrasePhase = {
   key?: string;
   layers?: Partial<Layers>;
   reveal?: Partial<PhraseReveal>;
+  // The view reached at the phase's end; omitted holds the preceding view.
+  view?: PhraseView | "entry";
 };
 export type Phrase = {
   target: Target;
   opening: PhraseReveal;
   phases: PhrasePhase[];
 };
-type Boundary = { value: number; layers: Layers; reveal: PhraseReveal };
+type Boundary = {
+  value: number;
+  layers: Layers;
+  reveal: PhraseReveal;
+  // Present only in a phrase that moves its camera.
+  view?: Viewport;
+};
+// The opening study's fitted framing, which keys are taken about, and the
+// view the phrase opens at: the fitted one, or the effective manual view.
+export type PhraseCamera = { fit: Fit; entry: Viewport };
 export type CompiledPhrase = {
   config: Config;
   length: number;
   target: Target;
   duration: number;
+  camera?: PhraseCamera;
   phases: {
     name: string;
     start: number;
@@ -188,11 +215,35 @@ export function phraseError(config: Config, phrase: Phrase): string | null {
       return `Phase ${i + 1} key must be a finite constant.`;
     if (p.reveal && !Object.values(p.reveal).every(fraction))
       return `Phase ${i + 1} reveal fractions must be between 0 and 1.`;
+    if (p.view !== undefined && p.view !== "entry" && !validView(p.view))
+      return `Phase ${i + 1} view must be a finite center with a zoom of 0.1–${viewZoom.toLocaleString("en-US")}×, or the opening view.`;
   }
   const duration = phrase.phases.reduce((sum, p) => sum + p.duration, 0);
   return !Number.isFinite(duration) || duration > 3600
     ? "Total phrase duration must be between 0.1 and 3600 seconds."
     : null;
+}
+
+const validView = (view: unknown) => {
+  if (typeof view !== "object" || view === null) return false;
+  const { x, y, zoom } = view as PhraseView;
+  return (
+    [x, y, zoom].every((v) => typeof v === "number" && Number.isFinite(v)) &&
+    zoom >= 0.1 &&
+    zoom <= viewZoom
+  );
+};
+export const phraseFlies = (phrase: Phrase) =>
+  phrase.phases.some((p) => p.view !== undefined);
+// A view deeper than the drawing allows: 20×, unless the study is refined
+// to its view (as for camera paths).
+export function phraseViewError(phrase: Phrase, zoomLimit: number) {
+  const i = phrase.phases.findIndex(
+    (p) => typeof p.view === "object" && p.view.zoom > zoomLimit,
+  );
+  return i < 0
+    ? null
+    : `Phase ${i + 1} view zooms past ${zoomLimit}×${zoomLimit < viewZoom ? "; refine the study to its view to zoom further" : ""}.`;
 }
 
 // Compile all carried values once from the immutable entry study. No seek or
@@ -204,6 +255,9 @@ export function compilePhrase(
   length: number,
   phrase: Phrase,
   keys: number[],
+  // The reference framing and opening view, taken once per session. A
+  // phrase without views keeps its fixed camera and compiles none.
+  camera?: PhraseCamera,
 ): CompiledPhrase {
   const error = phraseError(config, phrase);
   if (error) throw new Error(error);
@@ -212,10 +266,12 @@ export function compilePhrase(
     !keys.every(Number.isFinite)
   )
     throw new Error("Every phase key must resolve to a finite constant.");
+  const flies = !!camera && phraseFlies(phrase);
   let previous: Boundary = {
     value: targetValue(config, phrase.target, length),
     layers: { ...layers },
     reveal: { ...phrase.opening },
+    ...(flies && { view: camera.entry }),
   };
   let duration = 0,
     k = 0;
@@ -228,6 +284,14 @@ export function compilePhrase(
       value: p.key === undefined ? from.value : keys[k++],
       layers: { ...from.layers },
       reveal: { ...from.reveal, ...p.reveal },
+      ...(flies && {
+        view:
+          p.view === undefined
+            ? from.view
+            : p.view === "entry"
+              ? camera.entry
+              : keyViewport({ name: "", ...p.view }, camera.fit),
+      }),
     };
     if (phrase.target === "rayLength" && (to.value < 0.01 || to.value > 100))
       throw new Error(`Phase ${i + 1} key: Ray length keys must be 0.01–100.`);
@@ -241,27 +305,56 @@ export function compilePhrase(
     length,
     target: phrase.target,
     duration,
+    ...(flies && { camera: { fit: { ...camera.fit }, entry: camera.entry } }),
     phases,
   };
 }
 
 // Absolute seconds, clamped to the phrase. A boundary belongs to the phase on
 // its right; the exact final time uses the explicitly compiled final state.
-export function phraseAt(phrase: CompiledPhrase, seconds: number) {
+// p is the phase's eased progress, which inputs, reveal and camera share.
+function locatePhase(phrase: CompiledPhrase, seconds: number) {
   const time = Math.max(0, Math.min(phrase.duration, seconds));
-  const index = Math.max(
-    0,
-    phrase.phases.findIndex((p) => time < p.end),
-  );
-  const phase =
+  const index =
     time === phrase.duration
-      ? phrase.phases[phrase.phases.length - 1]
-      : phrase.phases[index];
+      ? phrase.phases.length - 1
+      : Math.max(
+          0,
+          phrase.phases.findIndex((p) => time < p.end),
+        );
+  const phase = phrase.phases[index];
   const p = progressAt(
     (time - phase.start) / (phase.end - phase.start),
     "once",
     phase.pace,
   );
+  return { index, phase, p };
+}
+const sameView = (a: Viewport, b: Viewport) =>
+  a === b ||
+  (a.cx === b.cx && a.cy === b.cy && a.scale === b.scale && a.span === b.span);
+// A phase's camera as a two-view planar path about the reference fit.
+const legPath = (from: Viewport, to: Viewport, fit: Fit): PlanarPath => ({
+  style: "steady",
+  keys: [keyFromViewport(from, fit), keyFromViewport(to, fit)],
+});
+// The camera within a phase: exactly its stored views at both ends and
+// throughout a hold, and otherwise a steady planar leg at the phase's eased
+// progress: log zoom linear, and the framed point moving straight to the
+// middle (mathematics.md#planar-camera-paths).
+function viewAt(
+  phrase: CompiledPhrase,
+  from: Viewport,
+  to: Viewport,
+  p: number,
+): Viewport {
+  if (p === 0 || sameView(from, to)) return from;
+  if (p === 1) return to;
+  const fit = phrase.camera!.fit;
+  return planarPathView(legPath(from, to, fit), fit, p);
+}
+export function phraseAt(phrase: CompiledPhrase, seconds: number) {
+  const { phase, p } = locatePhase(phrase, seconds);
   const mix = (a: number, b: number) => (a === b ? a : a * (1 - p) + b * p);
   const value = mix(phase.from.value, phase.to.value);
   const values = applyTracks(
@@ -283,14 +376,25 @@ export function phraseAt(phrase: CompiledPhrase, seconds: number) {
       ),
       derived: mix(phase.from.reveal.derived, phase.to.reveal.derived),
     },
+    ...(phase.from.view && {
+      view: viewAt(phrase, phase.from.view, phase.to.view!, p),
+    }),
   };
 }
 
 type PhraseEngine = Pick<EngineClient, "compute">;
 // One reusable renderer-input sampler for playback, direct seeks, stills and
 // export. The caller maps repeat time into absolute phrase seconds and owns
-// cancellation. Each engine retains only its last geometry/pending request;
-// fixed holds and reveal-only phases perform no repeated numerical work.
+// cancellation. Each engine retains only its last geometry/pending request,
+// keyed by the input value and the area it is refined to; fixed holds and
+// reveal-only phases perform no repeated numerical work.
+//
+// A phrase that moves its camera draws each frame at its sampled view. In a
+// study refined to its view (refine), a frame zoomed past the reference fit
+// is refined to its own view while the input moves, and to its planar
+// flight piece while only the camera moves, so that phase refines once per
+// piece rather than once per frame; frames at the fitted zoom or wider at
+// the opening value draw plain, the study refined to no view.
 export function createPhraseSampler(options: {
   phrase: CompiledPhrase;
   original: Frame;
@@ -298,12 +402,39 @@ export function createPhraseSampler(options: {
   stop: boolean;
   focus?: ViewRect;
   probe?: PlanarProbe;
+  refine?: boolean;
+  plain?: Frame;
+  // The rectangle a view shows (Plot's viewRect).
+  rect?: (view: Viewport) => ViewRect;
 }) {
-  const { phrase, original, view, stop, focus, probe } = options;
+  const { phrase, original, view, stop, focus, probe, refine, rect } = options;
+  const camera = phrase.camera;
+  const plain = options.plain ?? original;
   const frames = new WeakMap<
     PhraseEngine,
-    { value: number; frame: Promise<Frame> }
+    { value: number; area: string; frame: Promise<Frame> }
   >();
+  // Each camera-only phase's pieces, cut when first needed: a few per
+  // doubling of zoom, bounded by the phase count.
+  const pieces = new Map<number, Piece[]>();
+  const area = (index: number, p: number, shown: Viewport) => {
+    if (!camera || !refine || !rect || !(shown.scale > camera.fit.scale))
+      return camera ? undefined : focus;
+    const phase = phrase.phases[index];
+    if (phase.from.value !== phase.to.value) return rect(shown);
+    if (!pieces.has(index))
+      pieces.set(
+        index,
+        flightPieces(
+          legPath(phase.from.view!, phase.to.view!, camera.fit),
+          camera.fit,
+          false,
+          rect,
+        ),
+      );
+    const cut = pieces.get(index)!;
+    return cut.length ? cut[pieceAt(cut, p)].view : rect(shown);
+  };
   const between = !!probe && probeBetween(original.config, probe);
   const t = probe
     ? parameterAt(
@@ -317,22 +448,36 @@ export function createPhraseSampler(options: {
     engine: PhraseEngine,
   ): Promise<AnimationView> => {
     const state = phraseAt(phrase, seconds);
+    const shown = state.view ?? view;
+    const { index, p } = locatePhase(phrase, seconds);
+    const refined = area(index, p, shown);
+    // A held frame refined to the fixed entry view reuses the original.
+    const key =
+      camera && refined
+        ? [
+            refined.x0,
+            refined.y0,
+            refined.x1,
+            refined.y1,
+            refined.radius,
+          ].join()
+        : "";
     let cached = frames.get(engine);
-    if (!cached || cached.value !== state.value) {
+    if (!cached || cached.value !== state.value || cached.area !== key) {
       const unchanged =
         phrase.target === "rayLength" ||
         state.value ===
           targetValue(original.config, phrase.target, phrase.length);
       const within = t >= state.config.curve.min && t <= state.config.curve.max;
       const frame =
-        unchanged && !between
-          ? Promise.resolve(original)
+        unchanged && !between && !key
+          ? Promise.resolve(camera && refine ? plain : original)
           : engine.compute(state.config, undefined, {
               diagnostics: !!probe,
-              ...(focus && { view: focus }),
+              ...(refined && { view: refined }),
               ...(between && within && { probe: { t } }),
             });
-      cached = { value: state.value, frame };
+      cached = { value: state.value, area: key, frame };
       frames.set(engine, cached);
       const entry = cached;
       frame.catch(() => {
@@ -363,7 +508,7 @@ export function createPhraseSampler(options: {
       },
       final: original,
       camera: "current",
-      heldView: view,
+      heldView: shown,
       length: state.length,
       stop,
       progress: Math.max(0, Math.min(1, seconds / phrase.duration)),

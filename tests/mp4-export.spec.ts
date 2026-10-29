@@ -519,7 +519,10 @@ for (const caption of [false, true])
       exact: true,
     });
     const stills = [];
-    for (const time of ["0", "0.7", "1"]) {
+    let fitted = 0;
+    // 0.517 (frame 15 of 30, at 15/29 of 2 s within half a millisecond) is
+    // reached by scrubbing backward, while the lamp and camera move.
+    for (const time of ["0", "0.7", "1", "0.517"]) {
       await slider.fill(time);
       await expect(page.locator("#artwork")).toHaveAttribute(
         "data-animation-time",
@@ -528,9 +531,24 @@ for (const caption of [false, true])
       const metadata = JSON.parse(
         (await page.locator("#artwork desc").textContent())!,
       );
-      expect(metadata.source.position.x).toBe(
-        time === "0" ? 1 : time === "0.7" ? 0.65 : 0.95,
-      );
+      const { heldView } = metadata.animation;
+      if (time === "0") fitted = heldView.scale;
+      if (time === "0.517") {
+        // 1.034 s is u = 0.78 through the 0.3 s eased approach from x = .85
+        // to .65, which has covered h = (1 − cos πu)/2 of each motion.
+        const h = (1 - Math.cos(Math.PI * ((1.034 - 0.8) / 0.3))) / 2;
+        expect(metadata.source.position.x).toBeCloseTo(0.85 - 0.2 * h, 12);
+        expect(heldView.scale / fitted).toBeCloseTo(1.7 ** h, 9);
+      } else
+        expect(metadata.source.position.x).toBe(
+          time === "0" ? 1 : time === "0.7" ? 0.65 : 0.95,
+        );
+      // The hold is the authored key view; both ends are the opening view.
+      if (time === "0.7") {
+        expect(heldView.cx).toBe(-0.19);
+        expect(heldView.scale / fitted).toBeCloseTo(1.7, 12);
+      }
+      if (time === "1") expect(heldView.scale).toBe(fitted);
       if (time === "0.7") {
         expect(metadata.animation.phrase.phase).toBe("Hold the cusps");
         const saved = page.waitForEvent("download");
@@ -550,9 +568,7 @@ for (const caption of [false, true])
       await exportImage(page, "PNG");
       stills.push(decodePng(await readFile((await (await saved).path())!)));
     }
-    await page
-      .getByRole("button", { name: "Back to study", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
     const download = page.waitForEvent("download");
     await exportMP4(page).click();
     const file = await download;
@@ -566,6 +582,7 @@ for (const caption of [false, true])
         frameDifference(path, 2000, 1520, i, reference.rgba)!;
       for (const [i, reference] of [
         [0, stills[0]],
+        [15, stills[3]],
         [20, stills[1]],
         [23, stills[1]],
         [29, stills[2]],
@@ -576,6 +593,8 @@ for (const caption of [false, true])
       }
       // A wrong held frame must fail even though both stills show a caustic.
       expect(match(20, stills[2]).unmatchedInk).toBeGreaterThan(0.3);
+      // So must a mid-flight frame drawn at the held view.
+      expect(match(15, stills[1]).unmatchedInk).toBeGreaterThan(0.3);
     }
     const video = await decodeVideo(page, await readFile(path));
     expect(video.duration).toBeCloseTo(2, 3);

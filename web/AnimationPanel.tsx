@@ -139,6 +139,8 @@ import {
   phraseAt,
   phraseDuration,
   phraseError,
+  phraseFlies,
+  phraseViewError,
   phraseTargets,
   createPhraseSampler,
   type CompiledPhrase,
@@ -335,6 +337,8 @@ export function AnimationPanel({
     mode === "phrase" && phraseDraft
       ? phraseDuration(phraseDraft)
       : simpleDuration;
+  // A phrase whose phases move the camera opens at the chosen view.
+  const flown = mode === "phrase" && !!phraseDraft && phraseFlies(phraseDraft);
   const phraseSignature = JSON.stringify([phraseDraft, frame?.config, length]);
   const [resolvedPhrase, setResolvedPhrase] = useState<{
     signature: string;
@@ -357,9 +361,15 @@ export function AnimationPanel({
     numericalRefusal.key === phraseDraft?.phases[numericalRefusal.phase]?.key
       ? numericalRefusal.message
       : undefined;
+  // A view deeper than the drawing allows refuses before Play, by phase.
+  const deepView =
+    mode === "phrase" && phraseDraft
+      ? phraseViewError(phraseDraft, refineView ? viewZoom : plainZoom)
+      : null;
   const phraseReady =
     mode !== "phrase" ||
     (!knownRefusal &&
+      !deepView &&
       resolvedPhrase.signature === phraseSignature &&
       !!resolvedPhrase.compiled);
   const phraseProblem =
@@ -367,7 +377,9 @@ export function AnimationPanel({
       ? (knownRefusal ??
         (resolvedPhrase.signature === phraseSignature
           ? resolvedPhrase.error
-          : undefined))
+          : undefined) ??
+        deepView ??
+        undefined)
       : undefined;
   useEffect(() => {
     if (mode !== "phrase" || !frame || !phraseDraft || !client.current) return;
@@ -1060,6 +1072,15 @@ export function AnimationPanel({
           throw new Error(
             phraseProblem ?? "Phrase keys are still being evaluated.",
           );
+        const deep = phraseViewError(
+          phraseDraft!,
+          refineView ? viewZoom : plainZoom,
+        );
+        if (deep) throw new Error(deep);
+        // Camera keys are taken about the opening study's fitted framing,
+        // once; the phrase opens at the entry view, fitted or manual.
+        const fit = fitFrame(frame.result, frame.config);
+        const flies = phraseFlies(phraseDraft!);
         const compiled = compilePhrase(
           frame.config,
           layers,
@@ -1068,7 +1089,19 @@ export function AnimationPanel({
           resolvedPhrase.compiled.phases
             .filter((_, i) => phraseDraft!.phases[i].key !== undefined)
             .map((p) => p.to.value),
+          { fit, entry: heldView ?? fit },
         );
+        // A flight refines each zoomed frame to its own view, so the
+        // manual view's refinement, whether or not the phrase opens at it,
+        // gives way to the study refined to none.
+        const refine = flies && refineView;
+        const plain =
+          refine && getFocus()
+            ? await client.current.compute(frame.config, undefined, {
+                diagnostics: !!probe,
+              })
+            : frame;
+        if (epoch.current !== token) return;
         // Validate each explicit key through the engine, without retaining a
         // movie or even a geometry collection proportional to the phase count.
         for (const [i, phase] of compiled.phases.entries()) {
@@ -1079,12 +1112,17 @@ export function AnimationPanel({
               targetValue(frame.config, compiled.target, length)
           )
             continue;
+          const end = phraseAt(compiled, phase.end);
+          const area = !flies
+            ? view
+            : refine && end.view && end.view.scale > fit.scale
+              ? { view: viewRect(end.view) }
+              : undefined;
           try {
-            await client.current.compute(
-              phraseAt(compiled, phase.end).config,
-              undefined,
-              { ...(view ?? {}), diagnostics: !!probe },
-            );
+            await client.current.compute(end.config, undefined, {
+              ...(area ?? {}),
+              diagnostics: !!probe,
+            });
           } catch (reason) {
             if (epoch.current !== token) return;
             if (!(reason instanceof EngineError)) throw reason;
@@ -1116,13 +1154,16 @@ export function AnimationPanel({
           phraseSample: createPhraseSampler({
             phrase: compiled,
             original: frame,
-            view: heldView ?? fitFrame(frame.result, frame.config),
+            view: heldView ?? fit,
             stop: stopAtCaustic,
             focus,
             probe: probe ?? undefined,
+            refine,
+            plain,
+            rect: viewRect,
           }),
           camera: "current",
-          heldView: heldView ?? fitFrame(frame.result, frame.config),
+          heldView: heldView ?? fit,
           focus,
           duration: compiled.duration,
           repeat,
@@ -1308,6 +1349,11 @@ export function AnimationPanel({
         await frameAt(s, 1),
         layers,
         weight,
+        ...(s.phrase
+          ? [
+              " End the last phase at the opening value, layers, reveal and view, or choose Back and forth.",
+            ]
+          : []),
       );
       if (gap) throw new Error(gap);
     }
@@ -1537,7 +1583,10 @@ export function AnimationPanel({
               phrase={phraseDraft}
               problem={phraseProblem}
               targets={phraseTargets(frame.config)}
-              onChange={(next) =>
+              onChange={(next) => {
+                // Set to drawing edits outside a change event; any edit
+                // returns to the study, as the fieldset's own changes do.
+                if (active) stop();
                 setPhrase((previous) => {
                   const before = previous ?? phraseDraft!;
                   if (next.target === before.target || !frame) return next;
@@ -1550,8 +1599,29 @@ export function AnimationPanel({
                       p.key === undefined ? p : { ...p, key: value },
                     ),
                   };
-                })
-              }
+                });
+              }}
+              describe={(view) => describeKey({ name: "", ...view })}
+              drawn={() => {
+                const view = getCurrentView();
+                if (!view) return null;
+                const { name: _, ...key } = keyFromViewport(
+                  view,
+                  fitFrame(frame.result, frame.config),
+                );
+                return key;
+              }}
+              onShow={(view) => {
+                // Showing a view returns to the study, whose manual camera
+                // it sets.
+                if (active) stop();
+                onShowCamera(
+                  keyCamera(
+                    { name: "", ...view },
+                    fitFrame(frame.result, frame.config),
+                  ),
+                );
+              }}
             />
           )}
           {family && familySetup?.mode === "window" && (
@@ -1786,20 +1856,24 @@ export function AnimationPanel({
             <Field
               label="Animation camera"
               help={
-                camera === "current"
-                  ? "Keeps your current pan and zoom throughout, including export."
-                  : camera === "hold"
-                    ? family
-                      ? "Frames the complete family once and holds that view."
-                      : mode === "phrase"
-                        ? "Frames the entry study once and holds that view."
-                        : "Frames the final result once and holds that view."
-                    : tiered(
-                        camera === "follow"
-                          ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
-                          : "Recenters and zooms to fit the evolving geometry.",
-                        asymptoteHelp,
-                      )
+                flown
+                  ? camera === "current"
+                    ? "Opens at your current pan and zoom; phases with views move the camera from it."
+                    : "Opens at the entry study's framing; phases with views move the camera from it."
+                  : camera === "current"
+                    ? "Keeps your current pan and zoom throughout, including export."
+                    : camera === "hold"
+                      ? family
+                        ? "Frames the complete family once and holds that view."
+                        : mode === "phrase"
+                          ? "Frames the entry study once and holds that view."
+                          : "Frames the final result once and holds that view."
+                      : tiered(
+                          camera === "follow"
+                            ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
+                            : "Recenters and zooms to fit the evolving geometry.",
+                          asymptoteHelp,
+                        )
               }
             >
               <select
@@ -1807,9 +1881,15 @@ export function AnimationPanel({
                 onChange={(e) => setCamera(e.target.value as CameraMode)}
               >
                 <option value="hold">
-                  {mode === "phrase" ? "Hold entry view" : "Hold final view"}
+                  {flown
+                    ? "Open at the entry view"
+                    : mode === "phrase"
+                      ? "Hold entry view"
+                      : "Hold final view"}
                 </option>
-                <option value="current">Hold current view</option>
+                <option value="current">
+                  {flown ? "Open at the current view" : "Hold current view"}
+                </option>
                 {!family && mode !== "trace" && mode !== "phrase" && (
                   <>
                     <option value="follow">Follow center, fixed zoom</option>

@@ -1,34 +1,47 @@
 import { useMemo } from "react";
 import { Field, FieldErrorContext } from "./Field";
 import { targetLabel, type Target } from "./animation";
-import type { Phrase } from "./phrase";
+import type { Phrase, PhraseView } from "./phrase";
 import { tiered } from "./help";
+import { plainZoom, viewZoom } from "./refinement";
 
 export const phraseHelp = tiered(
   "Reveal, move and hold one study through labeled phases.",
-  "Edit phase durations and numeric keys; omitted keys hold the preceding value. Keys accept constants such as pi. Each phase lasts at least 0.1 seconds, with at most 12 phases and 3600 seconds total. Visibility changes at phase starts; geometry is never blended. Stop restores your study.",
+  "Edit phase durations, numeric keys and camera views; omitted ones hold the preceding value. Keys accept constants such as pi. Each phase lasts at least 0.1 seconds, with at most 12 phases and 3600 seconds total. Visibility changes at phase starts; geometry is never blended. Stop restores your study.",
 );
 export const phrasePaceHelp = tiered(
   "Sets how inputs and reveals move within each phase.",
   "Steady uses a constant rate within each phase. Ease in and out rests at every boundary. Choosing a pace applies it to all phases, preserving their durations and stationary holds.",
 );
 export const phraseRayLengthHelp = "Ray length keys must be 0.01–100.";
+export const phraseCameraHelp = tiered(
+  "Hold the view, move to a key view, or return to the opening view.",
+  `The camera arrives as the phase ends, at the phase's pace, together with its value and reveal. Set to drawing takes the drawing's pan and zoom. Views zoom up to ${plainZoom}×, or ${viewZoom.toLocaleString("en-US")}× in a study refined to its view.`,
+);
+type PhaseCamera = "hold" | "view" | "entry";
 
 // These labels are also the controls' accessible names. A scalar failure or
 // duration refusal stays beside the editable draft that produced it.
 export const phraseProblemField = (problem?: string) =>
-  /^Phase \d+ (duration|key)\b/.exec(problem ?? "")?.[0];
+  /^Phase \d+ (duration|key|view)\b/.exec(problem ?? "")?.[0];
 
 export function PhraseEditor({
   phrase,
   targets,
   onChange,
   problem,
+  drawn,
+  onShow,
+  describe,
 }: {
   phrase: Phrase;
   targets: Target[];
   onChange: (phrase: Phrase) => void;
   problem?: string;
+  // The drawing's view as a key, or null before it is drawn.
+  drawn: () => PhraseView | null;
+  onShow: (view: PhraseView) => void;
+  describe: (view: PhraseView) => string;
 }) {
   const fieldError = useMemo(() => {
     const label = phraseProblemField(problem);
@@ -103,6 +116,68 @@ export function PhraseEditor({
                   />
                 </Field>
               </div>
+              <Field
+                label="Camera"
+                topic={`Phase ${i + 1} view`}
+                help={i === 0 ? phraseCameraHelp : undefined}
+              >
+                <select
+                  aria-label={`Phase ${i + 1} camera`}
+                  value={
+                    phase.view === undefined
+                      ? "hold"
+                      : phase.view === "entry"
+                        ? "entry"
+                        : "view"
+                  }
+                  onChange={(e) => {
+                    const choice = e.target.value as PhaseCamera;
+                    if (choice === "hold") {
+                      const { view: _, ...rest } = phase;
+                      onChange({
+                        ...phrase,
+                        phases: phrase.phases.map((p, j) =>
+                          j === i ? rest : p,
+                        ),
+                      });
+                    } else if (choice === "entry") update({ view: "entry" });
+                    else {
+                      const view = drawn();
+                      if (view) update({ view });
+                    }
+                  }}
+                >
+                  <option value="hold">Hold the view</option>
+                  <option value="view">Move to a key view</option>
+                  <option value="entry">Return to the opening view</option>
+                </select>
+              </Field>
+              {typeof phase.view === "object" && (
+                <>
+                  <p className="hint">{describe(phase.view)}</p>
+                  <div className="path-view-buttons">
+                    <button
+                      type="button"
+                      className="text-button"
+                      aria-label={`Show phase ${i + 1} view`}
+                      onClick={() => onShow(phase.view as PhraseView)}
+                    >
+                      Show
+                    </button>
+                    <button
+                      type="button"
+                      className="text-button"
+                      aria-label={`Set phase ${i + 1} view to the drawing's view`}
+                      onClick={() => {
+                        const view = drawn();
+                        if (view) update({ view });
+                      }}
+                    >
+                      Set to drawing
+                    </button>
+                  </div>
+                </>
+              )}
             </li>
           );
         })}

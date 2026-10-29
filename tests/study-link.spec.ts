@@ -2843,6 +2843,46 @@ test("planar phrases conform bounded durations, consumed targets and explicit ph
   );
 });
 
+test("phrase camera views round trip by phase, return to the entry view, and refuse malformed keys", async () => {
+  const { defaultPhrase } = await import("../web/phrase");
+  const study = planar(2);
+  const phrase = defaultPhrase(study.config, study.length);
+  phrase.phases[3].view = { x: 0.5, y: -0.25, zoom: 4 };
+  phrase.phases[6].view = "entry";
+  study.animation = {
+    ...study.animation,
+    mode: "phrase",
+    camera: "current",
+    phrase,
+  };
+  const conformed = planarStudy(study);
+  expect(conformed.animation.phrase!.phases[3].view).toEqual({
+    x: 0.5,
+    y: -0.25,
+    zoom: 4,
+  });
+  expect(conformed.animation.phrase!.phases[6].view).toBe("entry");
+  expect(conformed.animation.phrase!.phases[0].view).toBeUndefined();
+  expect(planarStudy(unpack(envelope("2d", study)).study)).toEqual(conformed);
+  const bad = (view: unknown) => {
+    const s: any = structuredClone(study);
+    s.animation.phrase.phases[3].view = view;
+    return () => planarStudy(s);
+  };
+  for (const view of [
+    "exit",
+    { x: 0, y: 0 },
+    { x: 0, y: 0, zoom: 0.01 },
+    { x: 0, y: 0, zoom: 2000 },
+    { x: "0", y: 0, zoom: 1 },
+    { x: 0, y: 0, zoom: 1, name: "extra" },
+    null,
+  ])
+    expect(bad(view)).toThrow(
+      /animation\.phrase\.phases\[3\]\.view|Phase 4 view/,
+    );
+});
+
 test("phrase caption placement is a strictly conformed opt-in and older links keep it off", () => {
   const study = planar(2);
   const old = planarStudy(study);

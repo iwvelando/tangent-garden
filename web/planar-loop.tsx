@@ -15,6 +15,7 @@ export function planarLoopGap(
   end: AnimationView,
   layers: Layers,
   weight: LineWeight,
+  advice = " End each track one period after it starts, for example a from 0 to 2*pi in cos(t + a), or choose Back and forth.",
 ): Promise<string | null> {
   const draw = (view: AnimationView) =>
     renderToStaticMarkup(
@@ -29,10 +30,5 @@ export function planarLoopGap(
         reset={0}
       />,
     );
-  return loopRefusal(
-    draw(start),
-    draw(end),
-    " End each track one period after it starts, for example a from 0 to 2*pi in cos(t + a), or choose Back and forth.",
-    exportBaseSize(),
-  );
+  return loopRefusal(draw(start), draw(end), advice, exportBaseSize());
 }

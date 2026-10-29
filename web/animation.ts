@@ -22,16 +22,16 @@ export type AnimationMode =
   "reveal" | "parameters" | "trace" | "probe" | "path" | "phrase";
 export const canTrace = (config: Config) =>
   config.kind === "catacaustic" || config.kind === "diacaustic";
-// Only parameter tracks and a camera path can return to their start;
-// drawing along the curve and tracing light start empty and end full, so
-// they offer back and forth instead of a loop (see timing.ts).
+// Only parameter tracks, a camera path and a phrase can return to their
+// start; drawing along the curve and tracing light start empty and end
+// full, so they offer back and forth instead of a loop (see timing.ts).
 export const loops = (mode: AnimationMode) =>
-  mode === "parameters" || mode === "path";
+  mode === "parameters" || mode === "path" || mode === "phrase";
 export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
   loop: tiered(
     "Plays again and again; the last frame must match the first.",
-    "Play compares both ends and says what differs. A parameter track returns when it spans one period, as a from 0 to 2*pi in cos(t + a); a count must end where it starts; a camera path, when its last view is its first. Exports drop the repeated last frame and loop forever.",
+    "Play compares both ends and says what differs. A parameter track returns when it spans one period, as a from 0 to 2*pi in cos(t + a); a count must end where it starts; a camera path, when its last view is its first; a phrase, when its whole opening returns. Exports drop the repeated last frame and loop forever.",
   ),
   "back-and-forth": backAndForthHelp,
 };
