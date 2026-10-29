@@ -1,3 +1,9 @@
+import {
+  memberCount,
+  memberInterval,
+  supportedSource,
+  type LoomStudy,
+} from "./loom/model";
 import { defaultFamilyAnimation } from "./family-motion";
 import {
   familyDefaults,
@@ -89,6 +95,7 @@ export type PlanarStudy = {
   probe: PlanarProbe;
   animation: PlanarAnimation;
   family?: FamilySettings;
+  loom?: LoomStudy;
 };
 export const defaultAnimation: PlanarAnimation = {
   mode: "reveal",
@@ -468,6 +475,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "probe",
         "animation",
         "family",
+        "loom",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -716,11 +724,111 @@ export function planarStudy(value: unknown): PlanarStudy {
         "family.target is not supported by this study.",
       );
   }
-  return { ...study, animation, ...(family && { family }) };
+  const loom = raw.loom === undefined ? undefined : loomStudy(raw.loom);
+  return {
+    ...study,
+    animation,
+    ...(family && { family }),
+    ...(loom && { loom }),
+  };
 }
 
 // A probe snapped to samples carries no between flag, as the notebook keeps
 // it, so a link's false and its absence open the same study.
 function betweenOnlyWhenSet({ between, ...probe }: PlanarProbe): PlanarProbe {
   return between ? { ...probe, between } : probe;
+}
+
+// Reuse the ordinary curve schema; numerical validation stays in its Go compiler.
+function loomStudy(value: unknown): LoomStudy {
+  const camera: SchemaOf<PlotCamera> = {
+    fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
+  };
+  const out = conform<LoomStudy>(
+    value,
+    {
+      fields: {
+        map: { options: { square: true } },
+        source: {
+          fields: {
+            kind: {
+              options: {
+                grid: true,
+                concentric: true,
+                rosette: true,
+                curve: true,
+              },
+            },
+            count: { range: [1, 32] },
+            xCount: { range: [1, 32] },
+            yCount: { range: [1, 32] },
+            xMin: "number",
+            xMax: "number",
+            yMin: "number",
+            yMax: "number",
+            radius: "number",
+            input: config.fields.input,
+            curve: config.fields.curve,
+          },
+        },
+        samples: { range: [4, 1024] },
+        tolerance: { range: [0.000001, 0.05] },
+        selected: { range: [0, 63] },
+        parameter: "number",
+        views: { fields: { source: camera, image: camera } },
+        framing: {
+          optional: {
+            fields: {
+              source: {
+                fields: {
+                  cx: "number",
+                  cy: "number",
+                  scale: { range: [Number.MIN_VALUE, Number.MAX_VALUE] },
+                },
+              },
+              image: {
+                fields: {
+                  cx: "number",
+                  cy: "number",
+                  scale: { range: [Number.MIN_VALUE, Number.MAX_VALUE] },
+                },
+              },
+            },
+          },
+        },
+        duration: { range: [0.1, 3600] },
+      },
+    },
+    undefined,
+    "loom",
+  );
+  for (const [path, v] of Object.entries({
+    count: out.source.count,
+    xCount: out.source.xCount,
+    yCount: out.source.yCount,
+  }))
+    if (!Number.isInteger(v))
+      throw new LinkError(
+        `loom.source.${path}`,
+        "Family counts must be whole numbers.",
+      );
+  if (!Number.isInteger(out.samples))
+    throw new LinkError("loom.samples", "Samples must be a whole number.");
+  if (
+    !Number.isInteger(out.selected) ||
+    out.selected >= memberCount(out.source)
+  )
+    throw new LinkError("loom.selected", "Select a member of this source.");
+  const [lo, hi] = memberInterval(out.source, out.selected);
+  if (out.parameter < lo || out.parameter > hi)
+    throw new LinkError(
+      "loom.parameter",
+      "The parameter must be inside the selected source interval.",
+    );
+  if (out.source.kind === "curve" && !supportedSource(out.source))
+    throw new LinkError(
+      "loom.source.curve.format",
+      "This selected source is unsupported; choose a direct ordinary curve.",
+    );
+  return out;
 }

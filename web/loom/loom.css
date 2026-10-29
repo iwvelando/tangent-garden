@@ -1,0 +1,198 @@
+html.loom-open {
+  overflow: hidden;
+}
+.loom {
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100svh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  background: var(--panel);
+  overscroll-behavior: contain;
+  overflow: hidden;
+}
+.loom::backdrop {
+  background: var(--panel);
+}
+.loom-content {
+  height: calc(100svh - 80px);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 24px 0;
+  min-height: 0;
+}
+.loom .loom-heading {
+  display: block;
+  height: auto;
+  padding: 0 8px;
+  border: 0;
+  flex: none;
+}
+.loom h2 {
+  font:
+    normal 30px Georgia,
+    serif;
+  margin: 8px 0;
+}
+.loom h3 {
+  font:
+    normal 20px Georgia,
+    serif;
+  margin: 0;
+}
+.loom-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 276px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 20px;
+  margin-top: 20px;
+}
+.loom-layout > aside,
+.loom-layout > main {
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  border: 0;
+}
+.loom-layout > main {
+  height: auto;
+  display: block;
+  margin: 0;
+  max-width: none;
+}
+.loom fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.loom-panes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 4px;
+}
+.loom-panes section {
+  border: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+.loom-pane-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.loom-pane-heading button {
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.loom-panes svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1000/760;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  touch-action: none;
+  cursor: grab;
+}
+.loom-panes svg path {
+  cursor: pointer;
+}
+.loom-panes svg path:hover {
+  opacity: 1;
+}
+.loom .pair {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.loom .pair > .field {
+  margin: 0;
+}
+.loom details {
+  margin: 16px 0;
+}
+.loom summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+.loom-correspondence {
+  min-height: 3em;
+  font-variant-numeric: tabular-nums;
+}
+.loom-parameter > .hint {
+  margin: 8px 0 12px;
+}
+.loom-traversal {
+  padding-top: 8px !important;
+}
+.loom .animation-buttons {
+  max-width: 420px;
+  margin: 0 0 16px;
+}
+.loom[data-quiet] :focus-visible {
+  outline: none;
+}
+@media (max-width: 1000px) {
+  .loom-layout {
+    grid-template-columns: 226px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .loom-panes {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .loom {
+    overflow-y: auto;
+  }
+  .loom-content {
+    display: block;
+    height: auto;
+    padding: 20px 12px;
+  }
+  .loom-layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .loom-layout > aside,
+  .loom-layout > main {
+    overflow: visible;
+  }
+  .loom-layout > aside {
+    order: 0;
+  }
+  .loom-layout > main {
+    order: 1;
+  }
+  .loom-panes {
+    gap: 18px;
+  }
+  .loom .playback.active {
+    z-index: 20;
+  }
+  .loom .animation-section {
+    padding-bottom: 20px;
+  }
+  .loom main:has(.playback.active) {
+    padding-bottom: 120px;
+  }
+}
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
+  .loom-panes svg {
+    height: max(80px, calc((100svh - 150px) / 2));
+  }
+}

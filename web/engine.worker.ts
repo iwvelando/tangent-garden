@@ -16,6 +16,10 @@ declare const Go: new () => {
 };
 declare const tangentGardenCompute: (json: string) => string;
 declare const tangentGardenProbe: (json: string) => string;
+declare const tangentGardenLoom: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
+declare const tangentGardenLoomPoint: (json: string) => string;
 declare const tangentGardenFit: (json: string) => string;
 declare const tangentGardenSpatialProbe: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
@@ -68,7 +72,10 @@ self.onmessage = async ({
   config: import("./types").Config;
   bounds?: import("./types").Bounds;
   expressions?: string[];
-  action: "compute" | "scalars" | "spatial" | "tesseract" | "fourier-fit";
+  action:
+    "compute" | "scalars" | "spatial" | "tesseract" | "fourier-fit" | "loom";
+  loom?: import("./loom/model").LoomRequest;
+  pointOnly?: boolean;
   points?: import("./types").Vec[];
   closed?: boolean;
   count?: number;
@@ -112,6 +119,58 @@ self.onmessage = async ({
       ready = undefined;
       throw error;
     }));
+    if (data.action === "loom") {
+      const q = data.loom;
+      if (!q) throw new Error("Enter a loom source.");
+      // Validate numbers before JSON can turn NaN or infinity into null.
+      const check = (v: unknown, path: string) => {
+        if (typeof v === "number" && !Number.isFinite(v))
+          throw fieldError(path, "Enter a finite number.");
+        if (Array.isArray(v)) v.forEach((x, i) => check(x, `${path}.${i}`));
+        else if (typeof v === "object" && v !== null)
+          for (const [k, x] of Object.entries(v))
+            check(x, path ? `${path}.${k}` : k);
+      };
+      check(q, "");
+      for (const [path, n] of [
+        ["samples", q.samples],
+        ["selected", q.selected],
+        ["source.count", q.source.count],
+        ["source.xCount", q.source.xCount],
+        ["source.yCount", q.source.yCount],
+      ] as const)
+        if (!Number.isInteger(n))
+          throw fieldError(path, "Enter a whole number.");
+      const json = JSON.stringify(q);
+      if (json.length > 65536) throw new Error("Loom source is too large.");
+      const start = performance.now();
+      const raw = data.pointOnly
+        ? tangentGardenLoomPoint(json)
+        : tangentGardenLoom(json);
+      const prepared = performance.now();
+      if (typeof raw === "string") {
+        const r = JSON.parse(raw);
+        self.postMessage({
+          id: data.id,
+          ...(r.error ? r : { result: r }),
+          timings: { prepare: prepared - start, bytes: raw.length },
+        });
+      } else {
+        const { json, lifted } = raw;
+        const bytes =
+          new TextEncoder().encode(json).length + lifted.floats.byteLength;
+        self.postMessage(
+          {
+            id: data.id,
+            result: JSON.parse(json),
+            lifted,
+            timings: { prepare: prepared - start, bytes },
+          },
+          [lifted.floats.buffer],
+        );
+      }
+      return;
+    }
     if (data.action === "fourier-fit") {
       // JSON would turn a nonfinite coordinate into zero-valued null in Go.
       if (

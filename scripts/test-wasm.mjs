@@ -40,6 +40,51 @@ const { instance } = await WebAssembly.instantiate(
 );
 void go.run(instance);
 checkFourierFit();
+// Complex loom uses the same lifted transport as spatial/4D replies.
+{
+  const q = {
+    map: "square",
+    source: { kind: "rosette", count: 8, input: "curve", radius: 1 },
+    samples: 32,
+    tolerance: 0.001,
+    selected: 0,
+    parameter: Math.PI,
+  };
+  const raw = globalThis.tangentGardenLoom(JSON.stringify(q));
+  assert.equal(typeof raw, "object", "loom geometry must use typed transport");
+  assert.ok(raw.lifted.floats.length > 0);
+  const r = lifted(raw);
+  assert.equal(r.members.length, 8);
+  assert.deepEqual(r.marker.source, { x: 0, y: 0 });
+  assert.equal(r.marker.critical, true);
+  for (const m of r.members) {
+    assert.ok(m.source.length >= 32);
+    assert.equal(m.source.length, m.at.length);
+    for (let i = 0; i < m.source.length; i++) {
+      const p = m.source[i],
+        w = m.image[i];
+      if (!p) continue;
+      assert.ok(w);
+      assert.ok(Math.abs(w.x - (p.x * p.x - p.y * p.y)) < 1e-12);
+      assert.ok(Math.abs(w.y - 2 * p.x * p.y) < 1e-12);
+    }
+  }
+  const marker = JSON.parse(
+    globalThis.tangentGardenLoomPoint(JSON.stringify(q)),
+  );
+  assert.deepEqual(marker.marker, r.marker);
+  assert.equal(
+    JSON.parse(
+      globalThis.tangentGardenLoom(
+        JSON.stringify({ ...q, source: { ...q.source, count: 33 } }),
+      ),
+    ).field,
+    "source.count",
+  );
+  console.log(
+    `Loom: typed paired geometry, correspondence and point-only bridge passed (${replyBytes(raw)} bytes)`,
+  );
+}
 const config = {
   kind: "evolute",
   curve: {

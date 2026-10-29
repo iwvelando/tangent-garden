@@ -115,6 +115,15 @@ export class EngineClient {
     });
     return { result, config: resolved };
   }
+  async loom(
+    q: import("./loom/model").LoomRequest,
+    pointOnly = false,
+  ): Promise<
+    | import("./loom/model").LoomResult
+    | { marker: import("./loom/model").LoomMarker }
+  > {
+    return (await this.request({ action: "loom", loom: q, pointOnly })).result;
+  }
   async fitFourier(
     count: number,
     points?: import("./types").Vec[],

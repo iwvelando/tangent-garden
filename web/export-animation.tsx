@@ -34,8 +34,13 @@ type Options = {
 
 // Rendering is independent of the live DOM, manual camera, and wall clock.
 // Only compressed frames accumulate; cancellation discards them without a file.
-export async function exportAnimation(options: Options): Promise<Blob> {
-  const { signal, sample, onProgress, dark, layers, weight } = options;
+export async function exportSvgAnimation<T>(
+  options: Omit<Options, "sample" | "dark" | "scheme" | "layers" | "weight"> & {
+    sample: (time: number) => Promise<T>;
+    draw: (view: T, scale: number) => string;
+  },
+): Promise<Blob> {
+  const { signal, sample, onProgress } = options;
   const timing = exportTiming(options.duration, options.fps, options.cyclic);
   const canvas = document.createElement("canvas");
   const encoding = exportEncoding(options.settings);
@@ -60,22 +65,7 @@ export async function exportAnimation(options: Options): Promise<Blob> {
     for await (const view of views) {
       const frame = timing[i];
       signal.throwIfAborted();
-      const svg = renderToStaticMarkup(
-        <Plot
-          family={view.family}
-          result={view.frame.result}
-          config={view.frame.config}
-          layers={layers}
-          weight={weight}
-          dark={dark}
-          scheme={options.scheme}
-          length={view.length}
-          stop={view.stop}
-          animation={view}
-          reset={0}
-          pixelRatio={encoding.scale}
-        />,
-      );
+      const svg = options.draw(view, encoding.scale);
       const url = URL.createObjectURL(
         new Blob([svg], { type: "image/svg+xml" }),
       );
@@ -99,5 +89,32 @@ export async function exportAnimation(options: Options): Promise<Blob> {
     return blob;
   } finally {
     sink.close();
+    canvas.width = canvas.height = 0;
   }
+}
+
+// The ordinary planar renderer keeps its previous numerical/export semantics.
+export function exportAnimation(options: Options): Promise<Blob> {
+  const { dark, layers, weight } = options;
+  return exportSvgAnimation({
+    ...options,
+    draw: (view, scale) => {
+      return renderToStaticMarkup(
+        <Plot
+          family={view.family}
+          result={view.frame.result}
+          config={view.frame.config}
+          layers={layers}
+          weight={weight}
+          dark={dark}
+          scheme={options.scheme}
+          length={view.length}
+          stop={view.stop}
+          animation={view}
+          reset={0}
+          pixelRatio={scale}
+        />,
+      );
+    },
+  });
 }

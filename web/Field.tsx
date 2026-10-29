@@ -107,6 +107,8 @@ type FieldProps = {
   // Shown at the end of the label row, such as a slider's current value.
   value?: ReactNode;
   help?: Help;
+  // A timeline can show its explanation beside the label, ahead of the slider.
+  helpBeforeControl?: boolean;
   // Names the help toggle when the label is not plain text.
   topic?: string;
   className?: string;
@@ -121,6 +123,7 @@ export function Field({
   label,
   value,
   help,
+  helpBeforeControl = false,
   topic,
   className,
   children,
@@ -178,6 +181,7 @@ export function Field({
         )}
         {value !== undefined && <b>{value}</b>}
       </div>
+      {help && helpBeforeControl && <HelpText help={state}>{help}</HelpText>}
       {cloneElement(children, {
         id,
         "aria-describedby": described.length ? described.join(" ") : undefined,
@@ -193,7 +197,7 @@ export function Field({
           {error}
         </p>
       )}
-      {help && <HelpText help={state}>{help}</HelpText>}
+      {help && !helpBeforeControl && <HelpText help={state}>{help}</HelpText>}
     </div>
   );
 }

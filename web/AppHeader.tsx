@@ -9,10 +9,12 @@ export function AppHeader({
   theme: { dark, preference, toggle, followSystem, scheme, chooseScheme },
   children,
   inert,
+  appearance = true,
 }: {
   theme: ReturnType<typeof useTheme>;
   children: ReactNode;
   inert?: boolean;
+  appearance?: boolean;
 }) {
   return (
     <header inert={inert} aria-hidden={inert || undefined}>
@@ -27,46 +29,48 @@ export function AppHeader({
       </a>
       <div className="header-actions">
         <span className="local-note">A little geometry. A lot of beauty.</span>
-        <div className="appearance-controls">
-          <ColorSchemeMenu {...{ scheme, dark }} onChange={chooseScheme} />
-          <button
-            className="theme-toggle"
-            onClick={toggle}
-            title={
-              preference === "system"
-                ? "Following your system theme. Click to choose a fixed theme."
-                : "Your theme choice is saved in this browser."
-            }
-            aria-label={dark ? "Use light background" : "Use dark background"}
-          >
-            {dark ? "☼" : "◐"}
-          </button>
-          <button
-            className="system-theme"
-            aria-label="Follow system"
-            aria-pressed={preference === "system"}
-            onClick={followSystem}
-            title={
-              preference === "system"
-                ? "Following your system theme"
-                : "Follow system changes, including time-of-day changes"
-            }
-          >
-            <svg
-              className="system-theme-icon"
-              viewBox="0 0 24 24"
-              width="19"
-              height="19"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
+        {appearance && (
+          <div className="appearance-controls">
+            <ColorSchemeMenu {...{ scheme, dark }} onChange={chooseScheme} />
+            <button
+              className="theme-toggle"
+              onClick={toggle}
+              title={
+                preference === "system"
+                  ? "Following your system theme. Click to choose a fixed theme."
+                  : "Your theme choice is saved in this browser."
+              }
+              aria-label={dark ? "Use light background" : "Use dark background"}
             >
-              <rect x="3" y="4" width="18" height="13" rx="2" />
-              <path d="M8 21h8m-4-4v4" />
-            </svg>
-          </button>
-        </div>
+              {dark ? "☼" : "◐"}
+            </button>
+            <button
+              className="system-theme"
+              aria-label="Follow system"
+              aria-pressed={preference === "system"}
+              onClick={followSystem}
+              title={
+                preference === "system"
+                  ? "Following your system theme"
+                  : "Follow system changes, including time-of-day changes"
+              }
+            >
+              <svg
+                className="system-theme-icon"
+                viewBox="0 0 24 24"
+                width="19"
+                height="19"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <rect x="3" y="4" width="18" height="13" rx="2" />
+                <path d="M8 21h8m-4-4v4" />
+              </svg>
+            </button>
+          </div>
+        )}
         <div className="study-actions">{children}</div>
       </div>
     </header>

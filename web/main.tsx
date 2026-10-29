@@ -1,3 +1,5 @@
+import { LoomContext, type LoomEntry } from "./loom/Context";
+
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
 import { defaultFamilyAnimation } from "./family-motion";
 import type { FamilySettings } from "./planar-family";
@@ -292,6 +294,15 @@ function App({
   shared?: SharedStudy;
   adoption?: AdoptedJourney;
 }) {
+  const loomOwner = useContext(LoomContext);
+  const loomHelp = useHelp();
+  const [loomWaiting, setLoomWaiting] = useState<"keyboard" | "pointer" | null>(
+    null,
+  );
+  const [loomNotice, setLoomNotice] = useState("");
+  const loomEntry = useRef<HTMLDivElement>(null),
+    loomButton = useRef<HTMLButtonElement>(null),
+    loomQuiet = useQuietFocus(loomEntry);
   const fitOwner = useContext(FourierFitContext);
   const [fitWaiting, setFitWaiting] = useState<"keyboard" | "pointer" | null>(
     null,
@@ -1321,6 +1332,8 @@ function App({
     settings: PlanarAnimation;
   } | null>(null);
   const openStudy = (id: number, study: PlanarStudy, preset = "custom") => {
+    setLoomWaiting(null);
+    setLoomNotice("");
     setFitWaiting(null);
     setFitNotice("");
     setAtlasWaiting(null);
@@ -1359,7 +1372,15 @@ function App({
     setLinkNotice(shared.error ?? "");
     if (shared.error !== undefined) return;
     try {
-      openStudy(shared.id, planarStudy(shared.study));
+      const incoming = planarStudy(shared.study);
+      if (incoming.loom)
+        loomOwner.begin({
+          study: incoming,
+          via: "keyboard",
+          restoreFocus: () =>
+            loomButton.current?.focus({ preventScroll: true }),
+        });
+      else openStudy(shared.id, incoming);
     } catch (e) {
       setLinkNotice(
         e instanceof LinkError ? e.message : "This link could not be read.",
@@ -1504,6 +1525,50 @@ function App({
       }
     }
   }, [active, fitWaiting, busy, error]);
+  useEffect(() => {
+    if (!active) {
+      setLoomWaiting(null);
+      return;
+    }
+    if (!loomWaiting || busy) return;
+    if (error) {
+      setLoomWaiting(null);
+      setLoomNotice("Correct the highlighted inputs before opening the loom.");
+      return;
+    }
+    let canceled = false;
+    const frozen = structuredClone(snapshot());
+    // A finite engraving suspends the ordinary frame. Freeze the current
+    // editor definition, resolving its raw bounds through the shared parser.
+    void client.current!.scalars([bounds.min, bounds.max]).then(
+      ([min, max]) => {
+        if (canceled) return;
+        frozen.config.curve.min = min;
+        frozen.config.curve.max = max;
+        setLoomWaiting(null);
+        setLoomNotice("");
+        loomOwner.begin({
+          study: frozen,
+          via: loomWaiting,
+          restoreFocus: (via) => {
+            if (via === "pointer") loomQuiet.onPointerDown();
+            else loomQuiet.onKeyDownCapture();
+            loomQuiet.quiet();
+            loomButton.current?.focus({ preventScroll: true });
+          },
+        });
+      },
+      (e) => {
+        if (!canceled) {
+          setLoomWaiting(null);
+          setLoomNotice(e.message);
+        }
+      },
+    );
+    return () => {
+      canceled = true;
+    };
+  }, [active, loomWaiting, busy, error, config, bounds]);
   // Where the error is shown: under the input that failed to parse, or
   // under the control the engine's error names, or, for an error about the
   // whole study, the control just changed; the drawing shows it only when
@@ -1639,6 +1704,38 @@ function App({
                 {fitNotice && (
                   <p className="note" role="status">
                     {fitNotice}
+                  </p>
+                )}
+              </div>
+              <div
+                ref={loomEntry}
+                className="fit-entry"
+                onPointerDown={loomQuiet.onPointerDown}
+                onKeyDownCapture={loomQuiet.onKeyDownCapture}
+              >
+                <div className="fit-entry-actions">
+                  <button
+                    ref={loomButton}
+                    disabled={animationRunning}
+                    aria-describedby={loomHelp.open ? loomHelp.id : undefined}
+                    onClick={(e) => {
+                      setLoomWaiting(e.detail === 0 ? "keyboard" : "pointer");
+                      setLoomNotice("Waiting for your study’s inputs…");
+                    }}
+                  >
+                    Open complex loom
+                  </button>
+                  <HelpToggle topic="complex loom" help={loomHelp} />
+                </div>
+                <HelpText help={loomHelp}>
+                  {tiered(
+                    "Compare paired source curves and their square, with corresponding moving points.",
+                    "Explore a grid, circles or a frozen copy of the curve from your base study. Each plane has its own view. Return restores your ordinary study. Links, still images and traversal movies save the paired composition.",
+                  )}
+                </HelpText>
+                {loomNotice && (
+                  <p className="note" role="status">
+                    {loomNotice}
                   </p>
                 )}
               </div>
@@ -2828,6 +2925,9 @@ function App({
     </div>
   );
 }
+const LoomPreview = lazy(() =>
+  import("./loom/Preview").then((m) => ({ default: m.LoomPreview })),
+);
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
 type NotebookKind = "2d" | "3d" | "4d";
@@ -2842,18 +2942,19 @@ function Notebook() {
   const [excursion, setExcursion] = useState<JourneyRequest | null>(null);
   const [atlas, setAtlas] = useState<AtlasRequest | null>(null);
   const [fit, setFit] = useState<FourierFitRequest | null>(null);
+  const [loom, setLoom] = useState<LoomEntry | null>(null);
   const [adoptions, setAdoptions] = useState<
     Partial<Record<NotebookKind, AdoptedJourney>>
   >({});
   const adoptionId = useRef(0);
   const restoreFocus = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
-    if (!excursion && !atlas && !fit && restoreFocus.current) {
+    if (!excursion && !atlas && !fit && !loom && restoreFocus.current) {
       const focus = restoreFocus.current;
       restoreFocus.current = null;
       focus();
     }
-  }, [excursion, atlas, fit]);
+  }, [excursion, atlas, fit, loom]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -2869,6 +2970,7 @@ function Notebook() {
     if (next === mode) return;
     setAtlas(null);
     setFit(null);
+    setLoom(null);
     setExcursion(null);
     focusRequest.current = via;
     show(next);
@@ -2893,6 +2995,7 @@ function Notebook() {
       setExcursion(null);
       setAtlas(null);
       setFit(null);
+      setLoom(null);
       show(notebookKind());
     };
     window.addEventListener("popstate", pop);
@@ -2911,6 +3014,7 @@ function Notebook() {
       setExcursion(null);
       setAtlas(null);
       setFit(null);
+      setLoom(null);
       const id = ++links.current;
       let next: { notebook: NotebookKind; link: SharedStudy };
       try {
@@ -2946,10 +3050,33 @@ function Notebook() {
         <AtlasContext.Provider value={{ begin: setAtlas }}>
           <JourneyContext.Provider
             value={{
-              active: !!excursion || !!atlas || !!fit,
+              active: !!excursion || !!atlas || !!fit || !!loom,
               begin: setExcursion,
             }}
           >
+            {loom && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening the complex loom…
+                    </div>
+                  }
+                >
+                  <LoomPreview
+                    key={shared["2d"]?.id ?? "local"}
+                    entry={loom}
+                    onReturn={(via) => {
+                      restoreFocus.current = () => loom.restoreFocus(via);
+                      setLoom(null);
+                    }}
+                  />
+                </Suspense>
+              </div>
+            )}
             {fit && (
               <div
                 className={theme.dark ? "app dark" : "app"}
@@ -3047,19 +3174,21 @@ function Notebook() {
             )}
             {seen["2d"] && (
               <div
-                inert={!!excursion || !!atlas || !!fit}
+                inert={!!excursion || !!atlas || !!fit || !!loom}
                 hidden={mode !== "2d"}
               >
-                <App
-                  active={mode === "2d"}
-                  shared={shared["2d"]}
-                  adoption={adoptions["2d"]}
-                />
+                <LoomContext.Provider value={{ begin: setLoom }}>
+                  <App
+                    active={mode === "2d"}
+                    shared={shared["2d"]}
+                    adoption={adoptions["2d"]}
+                  />
+                </LoomContext.Provider>
               </div>
             )}
             {seen["3d"] && (
               <div
-                inert={!!excursion || !!atlas || !!fit}
+                inert={!!excursion || !!atlas || !!fit || !!loom}
                 hidden={mode !== "3d"}
               >
                 <Suspense
@@ -3077,7 +3206,7 @@ function Notebook() {
             )}
             {seen["4d"] && (
               <div
-                inert={!!excursion || !!atlas || !!fit}
+                inert={!!excursion || !!atlas || !!fit || !!loom}
                 hidden={mode !== "4d"}
               >
                 <Suspense
