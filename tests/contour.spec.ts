@@ -183,10 +183,10 @@ for (const theme of ["light", "dark"] as const)
         });
     const expected = await textStyle("Family of levels");
     expect(await textStyle("Anchor contour normals")).toEqual(expected);
-    // Stacked checkboxes are spaced as the drawing's layer checkboxes are,
-    // box to box, within a pixel: a label's line height, which centers each
-    // box, differs between platforms' fonts (13px here on macOS, 14px on
-    // Linux), while the help toggle beside the anchor does not.
+    // Preserve the ordinary compact checkbox spacing. The drawing's layers
+    // now have separate headings, so they are no longer a spacing reference.
+    // A 13px row gap also includes the native checkbox's centering inside its
+    // label, whose height differs between macOS and Linux.
     const top = (name: string) =>
       page.getByRole("checkbox", { name, exact: true }).evaluate((input) => {
         const r = input.getBoundingClientRect();
@@ -194,13 +194,18 @@ for (const theme of ["light", "dark"] as const)
       });
     const family = await top("Family of levels");
     const anchor = await top("Anchor contour normals");
-    const curve = await top("Curve F = c");
-    const construction = await top("Construction lines");
+    const ordinary = await page
+      .getByRole("checkbox", { name: "Family of levels", exact: true })
+      .evaluate(
+        (input: HTMLInputElement) =>
+          13 +
+          input.labels![0].getBoundingClientRect().height -
+          input.getBoundingClientRect().height,
+      );
     const gap = anchor.y - (family.y + family.height);
-    const layers = construction.y - (curve.y + curve.height);
     expect(
-      Math.abs(gap - layers),
-      `${gap} beside ${layers}`,
+      Math.abs(gap - ordinary),
+      `${gap} beside ${ordinary}`,
     ).toBeLessThanOrEqual(1);
     await page
       .locator(".check-setting")

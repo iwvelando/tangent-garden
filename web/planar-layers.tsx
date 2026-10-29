@@ -58,7 +58,8 @@ export function PlanarLayers({
   const chords =
     parameterized &&
     config.kind === "envelope" &&
-    config.envelope.mode === "chord";
+    config.envelope.mode === "chord" &&
+    !config.envelope.extend;
   const rolling = parameterized && config.kind === "rolling";
   const definition = {
     fourier: "Fourier circles & vectors",

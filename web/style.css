@@ -672,7 +672,7 @@ details p,
   margin-bottom: 6px;
   padding: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1478,9 +1478,9 @@ header {
 .view-switch .check {
   margin-bottom: 0;
 }
-/* A setting below a plain checkbox owns the gap between their boxes, the
-   same as between the drawing's layer checkboxes (13px). Its help toggle
-   makes its row 3px taller than a label, with the checkbox centered. */
+/* A setting below a plain checkbox keeps the ordinary compact row spacing.
+   Its help toggle makes its row 3px taller than a label, with the checkbox
+   centered. */
 .check + .check-setting {
   margin-top: 11.5px;
 }
