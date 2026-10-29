@@ -332,7 +332,10 @@ export function AnimationPanel({
   const [phrase, setPhrase] = useState<Phrase | undefined>();
   const [phraseLabelInDrawing, setPhraseLabelInDrawing] = useState(false);
   const phraseDraft =
-    phrase ?? (frame ? defaultPhrase(frame.config, length) : undefined);
+    phrase ??
+    (frame
+      ? defaultPhrase(frame.config, length, undefined, layers)
+      : undefined);
   const duration =
     mode === "phrase" && phraseDraft
       ? phraseDuration(phraseDraft)
@@ -672,7 +675,8 @@ export function AnimationPanel({
     if (next === "parameters" && !tracks.length && targets.length)
       setTracks([defaultTrack(targets[0])]);
     if (next === "phrase") {
-      if (!phrase && frame) setPhrase(defaultPhrase(frame.config, length));
+      if (!phrase && frame)
+        setPhrase(defaultPhrase(frame.config, length, undefined, layers));
       if (camera !== "current") setCamera("hold");
       setPace("ease");
     }

@@ -709,6 +709,8 @@ test("a fitted study opens with short offset normals and a clean opt-in reveal",
     base: true,
     derived: false,
     lines: true,
+    definitionGuides: true,
+    rollingGuides: true,
     incident: true,
     virtual: true,
     axes: false,
@@ -1106,13 +1108,16 @@ test("the Lissajous preset projects its figure from two turning guides", async (
     expect(cy - r).toBeGreaterThan(0);
     expect(cy + r).toBeLessThan(760);
   }
-  // The rotating geometry is construction geometry, hidden with the lines
-  // layer, and hiding it never reframes the drawing.
-  await page.getByRole("checkbox", { name: "Construction lines" }).uncheck();
+  // Definition guides have their own layer; hiding them never reframes the drawing.
+  await page
+    .getByRole("checkbox", { name: "Guide circles & projections", exact: true })
+    .uncheck();
   await expect(page.getByTestId("harmonic-geometry")).toHaveCount(0);
   await expect(page.getByTestId("harmonic-point")).toHaveCount(0);
   expect(await scale(page)).toBe(s);
-  await page.getByRole("checkbox", { name: "Construction lines" }).check();
+  await page
+    .getByRole("checkbox", { name: "Guide circles & projections", exact: true })
+    .check();
   await expect(epicycles(page)).toBeVisible();
 });
 

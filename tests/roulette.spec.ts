@@ -210,13 +210,17 @@ test("the preset draws the fixed and rolling circles at the end of the trace", a
   expect(fx + fr).toBeLessThan(1000);
   expect(fy - fr).toBeGreaterThan(0);
   expect(fy + fr).toBeLessThan(760);
-  // Rolling geometry is construction geometry, hidden with the lines layer,
+  // The definition's rolling geometry has its own visibility layer,
   // and hiding it never reframes the drawing.
-  await page.getByRole("checkbox", { name: "Construction lines" }).uncheck();
+  await page
+    .getByRole("checkbox", { name: "Roulette circles & arm", exact: true })
+    .uncheck();
   await expect(page.getByTestId("rolling-geometry")).toHaveCount(0);
   await expect(page.getByTestId("tracing-point")).toHaveCount(0);
   expect(await scale(page)).toBe(s);
-  await page.getByRole("checkbox", { name: "Construction lines" }).check();
+  await page
+    .getByRole("checkbox", { name: "Roulette circles & arm", exact: true })
+    .check();
   await expect(rolling(page)).toBeVisible();
 });
 

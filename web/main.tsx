@@ -41,6 +41,7 @@ import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
 import { planarExamples, planarThumbnail } from "./examples";
 import { Plot, legendGeometry, type Layers } from "./Plot";
+import { PlanarLayers } from "./planar-layers";
 import { LegendEntries } from "./Legend";
 import { PhraseCaption } from "./PhraseCaption";
 import { LineWeightField } from "./LineWeightField";
@@ -2481,43 +2482,13 @@ function App({
                     )}
                   />
                 )}
-                <div className="layer-grid">
-                  {(Object.keys(layers) as (keyof Layers)[])
-                    .filter(
-                      (k) =>
-                        (optical ||
-                          (k === "virtual" && chords) ||
-                          !["incident", "virtual"].includes(k)) &&
-                        !(attractor && k === "derived"),
-                    )
-                    .map((k) => (
-                      <label className="check" key={k}>
-                        <input
-                          type="checkbox"
-                          checked={layers[k]}
-                          onChange={(e) =>
-                            setLayers({ ...layers, [k]: e.target.checked })
-                          }
-                        />
-                        {
-                          {
-                            base: implicit
-                              ? "Curve F = c"
-                              : attractor
-                                ? "Visit density"
-                                : "Base curve",
-                            derived: implicit
-                              ? "Other levels"
-                              : "Derived curve",
-                            lines: "Construction lines",
-                            incident: "Incident rays",
-                            virtual: "Virtual extensions",
-                            axes: "Grid & axes",
-                          }[k]
-                        }
-                      </label>
-                    ))}
-                </div>
+                <PlanarLayers
+                  config={config}
+                  layers={layers}
+                  onChange={(key, visible) =>
+                    setLayers((current) => ({ ...current, [key]: visible }))
+                  }
+                />
                 <LineWeightField value={weight} onChange={setWeight} />
                 {!unparametrized &&
                   number(

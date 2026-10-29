@@ -4,9 +4,268 @@ import { applyTracks, availableTargets, reveal } from "../web/animation";
 import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { Result, Vec } from "../web/types";
-import { exportImage, openAnimation, choosePreset } from "./helpers";
+import {
+  exportImage,
+  openAnimation,
+  openExportSettings,
+  choosePreset,
+} from "./helpers";
+import { decodeVideo, probe as probeMovie } from "./video";
+import { deflateRawSync } from "node:zlib";
+import { presetStudy } from "../web/planar-link";
 
 const title = "Flower & a rolling circle";
+
+test("exported motion renders only the selected construction subsets in every frame", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const frames: Promise<string>[] = [];
+    (window as any).constructionExportFrames = frames;
+    const create = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (blob) => {
+      if (blob instanceof Blob && blob.type === "image/svg+xml")
+        frames.push(blob.text());
+      return create(blob);
+    };
+  });
+  await ready(page);
+  await field(page, "Definition").selectOption("fourier");
+  await settled(page);
+  await page
+    .getByRole("checkbox", { name: "Fourier circles & vectors", exact: true })
+    .uncheck();
+  await page
+    .getByRole("checkbox", { name: "Contact normals", exact: true })
+    .uncheck();
+  await openExportSettings(page);
+  await field(page, "Duration (seconds)").fill(".4");
+  await field(page, "Export frame rate").selectOption("15");
+  await field(page, "Export resolution").fill("0.5");
+  await field(page, "Export format").selectOption("mp4");
+  const saving = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export MP4 video" }).click();
+  const file = (await (await saving).path())!;
+  const frames = await page.evaluate(async () => {
+    const frames = await Promise.all(
+      (window as any).constructionExportFrames as Promise<string>[],
+    );
+    return frames.map((s) => {
+      const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+      return {
+        progress: Number(
+          doc.documentElement.getAttribute("data-animation-progress"),
+        ),
+        roller: doc.querySelectorAll('[data-testid="rolling-construction"]')
+          .length,
+        fourier: doc.querySelectorAll(
+          '[data-testid="harmonic-geometry"], [data-testid="harmonic-point"]',
+        ).length,
+        normals: doc.querySelectorAll("svg > g:not([data-testid]) > line")
+          .length,
+        sample: Number(
+          doc
+            .querySelector('[data-testid="rolling-construction"]')
+            ?.getAttribute("data-sample"),
+        ),
+      };
+    });
+  });
+  expect(frames).toHaveLength(6);
+  expect(frames[0].progress).toBe(0);
+  expect(frames.at(-1)!.progress).toBe(1);
+  expect(frames[0].sample).toBe(0);
+  expect(frames.at(-1)!.sample).toBeGreaterThan(0);
+  for (const frame of frames)
+    expect(frame).toMatchObject({ roller: 1, fourier: 0, normals: 0 });
+  const independent = probeMovie(file);
+  if (independent) {
+    expect(independent.frames).toBe(6);
+    expect(independent.durations.reduce((a, b) => a + b, 0)).toBe(400);
+  }
+  const decoded = await decodeVideo(page, await readFile(file));
+  expect(decoded.duration).toBeCloseTo(0.4, 3);
+  expect(decoded.first.ink).toBeGreaterThan(0);
+  expect(decoded.last.ink).toBeGreaterThan(0);
+  expect(decoded.first.hash).not.toBe(decoded.last.hash);
+});
+
+test("family construction selection applies to definition and rolling guides too", async ({
+  page,
+}) => {
+  const study = presetStudy(
+    presets.findIndex((p) => p.config.curve.format === "fourier"),
+  );
+  study.config.kind = "rolling";
+  study.config.input = "pedal";
+  study.config.curve.terms = [{ frequency: 1, radius: 2, phase: 0 }];
+  study.family = {
+    enabled: true,
+    target: "poleX",
+    from: 0.1,
+    to: 0.3,
+    count: 3,
+    selected: 1,
+    presentation: "family",
+  };
+  study.layers.lines = false;
+  const token = deflateRawSync(
+    Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study })),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(3);
+  for (const i of [0, 1, 2]) {
+    const member = page.locator(`#artwork [data-family-member="${i}"]`);
+    await expect(member.getByTestId("harmonic-geometry")).toHaveCount(
+      i === 1 ? 1 : 0,
+    );
+    await expect(member.getByTestId("rolling-construction")).toHaveCount(
+      i === 1 ? 1 : 0,
+    );
+  }
+  await page
+    .getByRole("checkbox", {
+      name: "Construction lines for all members",
+      exact: true,
+    })
+    .check();
+  await expect(page.getByTestId("harmonic-geometry")).toHaveCount(3);
+  await expect(page.getByTestId("rolling-construction")).toHaveCount(3);
+  await page
+    .getByRole("checkbox", { name: "Fourier circles & vectors", exact: true })
+    .uncheck();
+  await expect(page.getByTestId("harmonic-geometry")).toHaveCount(0);
+  await expect(page.getByTestId("rolling-construction")).toHaveCount(3);
+});
+
+test("Fourier guides, rolling mechanism and contact normals are independent in playback, links and SVG", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const study = presetStudy(
+    presets.findIndex((p) => p.config.curve.format === "fourier"),
+  );
+  study.config.kind = "rolling";
+  study.config.curve.terms = Array.from({ length: 16 }, (_, i) => ({
+    frequency: i + 1,
+    radius: 1 / (i + 1) ** 2,
+    phase: 0,
+  }));
+  const token = deflateRawSync(
+    Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study })),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  await settled(page);
+  await expect(page.getByTestId("epicycle")).toHaveCount(16);
+  const original = await definition(page);
+  const camera = await page
+    .locator("#artwork")
+    .getAttribute("data-camera-center");
+  const s = await scale(page);
+  const basePath = await page.getByTestId("base-curve").getAttribute("d");
+  const layers = page.getByRole("group", {
+    name: "Visible layers",
+    exact: true,
+  });
+  await expect(
+    layers.getByRole("group", { name: "Curve layers", exact: true }),
+  ).toBeVisible();
+  await expect(
+    layers.getByRole("group", { name: "Construction layers", exact: true }),
+  ).toBeVisible();
+  await expect(
+    layers.getByRole("group", { name: "Reference layers", exact: true }),
+  ).toBeVisible();
+  const fourier = layers.getByRole("checkbox", {
+    name: "Fourier circles & vectors",
+    exact: true,
+  });
+  const roller = layers.getByRole("checkbox", {
+    name: "Rolling circle & arm",
+    exact: true,
+  });
+  const normals = layers.getByRole("checkbox", {
+    name: "Contact normals",
+    exact: true,
+  });
+  await fourier.uncheck();
+  await normals.uncheck();
+  await expect(page.getByTestId("harmonic-geometry")).toHaveCount(0);
+  await expect(page.getByTestId("harmonic-point")).toHaveCount(0);
+  await expect(
+    page.locator("#artwork > g:not([data-testid]) > line"),
+  ).toHaveCount(0);
+  await expect(construction(page)).toBeVisible();
+  await expect(page.getByTestId("rolling-construction-point")).toBeVisible();
+  expect(await definition(page)).toEqual(original);
+  expect(await page.getByTestId("base-curve").getAttribute("d")).toBe(basePath);
+  expect(await scale(page)).toBe(s);
+  expect(
+    await page.locator("#artwork").getAttribute("data-camera-center"),
+  ).toBe(camera);
+  await roller.uncheck();
+  await expect(construction(page)).toHaveCount(0);
+  await expect(page.getByTestId("rolling-construction-point")).toHaveCount(0);
+  await normals.check();
+  expect(
+    await page.locator("#artwork > g:not([data-testid]) > line").count(),
+  ).toBeGreaterThan(0);
+  await normals.uncheck();
+  await roller.check();
+  await openAnimation(page);
+  await page
+    .getByRole("combobox", { name: "Animation camera", exact: true })
+    .selectOption("current");
+  await page
+    .getByRole("spinbutton", { name: "Duration (seconds)", exact: true })
+    .fill("30");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const seek = page.getByRole("slider", {
+    name: "Animation progress",
+    exact: true,
+  });
+  await seek.fill("0.5");
+  await expect.poll(() => progress(page)).toBe(0.5);
+  const before = await construction(page).getAttribute("data-sample");
+  await fourier.check();
+  await expect(page.getByTestId("epicycle")).toHaveCount(16);
+  await fourier.uncheck();
+  expect(await progress(page)).toBe(0.5);
+  expect(await construction(page).getAttribute("data-sample")).toBe(before);
+  expect(await scale(page)).toBe(s);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain('data-testid="rolling-construction"');
+  expect(svg).not.toContain('data-testid="harmonic-geometry"');
+  expect(svg).not.toContain('data-testid="harmonic-point"');
+  await seek.fill("1");
+  await expect.poll(() => progress(page)).toBe(1);
+  await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const href = await page.evaluate(() => navigator.clipboard.readText());
+  await page.goto(href);
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  await settled(page);
+  await expect(fourier).not.toBeChecked();
+  await expect(normals).not.toBeChecked();
+  await expect(roller).toBeChecked();
+  await expect(construction(page)).toBeVisible();
+  await expect(page.getByTestId("harmonic-geometry")).toHaveCount(0);
+  await choosePreset(page, { label: title });
+  await settled(page);
+  await expect(roller).toBeChecked();
+  await expect(normals).toBeChecked();
+  expect(
+    await page.locator("#artwork > g:not([data-testid]) > line").count(),
+  ).toBe(60);
+});
+
 async function ready(page: Page, preset = title) {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
@@ -175,13 +434,17 @@ test("the preset draws the rolling circle at the end of the trace", async ({
   });
   expect(px).toBeCloseTo(tracing.x, 3);
   expect(py).toBeCloseTo(tracing.y, 3);
-  // The circle is construction geometry: hidden with the lines layer, and
+  // The circle has its own visibility layer, and
   // hiding it never reframes the drawing.
-  await page.getByRole("checkbox", { name: "Construction lines" }).uncheck();
+  await page
+    .getByRole("checkbox", { name: "Rolling circle & arm", exact: true })
+    .uncheck();
   await expect(construction(page)).toHaveCount(0);
   await expect(page.getByTestId("rolling-construction-point")).toHaveCount(0);
   expect(await scale(page)).toBe(s);
-  await page.getByRole("checkbox", { name: "Construction lines" }).check();
+  await page
+    .getByRole("checkbox", { name: "Rolling circle & arm", exact: true })
+    .check();
   await expect(construction(page)).toBeVisible();
 });
 
@@ -360,7 +623,10 @@ for (const theme of ["light", "dark"] as const) {
       await ready(page);
       await expect(field(page, "Phase ψ (radians)")).toBeVisible();
       // Every construction tab stays inside the sidebar.
-      const group = page.getByRole("group", { name: "Construction" });
+      const group = page.getByRole("group", {
+        name: "Construction",
+        exact: true,
+      });
       const bounds = (await group.boundingBox())!;
       for (const button of await group.getByRole("button").all()) {
         const box = (await button.boundingBox())!;

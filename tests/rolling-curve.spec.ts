@@ -173,13 +173,17 @@ test("the preset draws the rolling ellipse mirrored across the tangent at the en
   const focus = await toScreen(page, { x: 2.4, y: 0 });
   expect(px).toBeCloseTo(focus.x, 2);
   expect(py).toBeCloseTo(focus.y, 2);
-  // The rolling curve is construction geometry: hidden with the lines layer,
+  // The rolling curve has its own visibility layer,
   // and hiding it never reframes the drawing.
-  await page.getByRole("checkbox", { name: "Construction lines" }).uncheck();
+  await page
+    .getByRole("checkbox", { name: "Rolling curve & tracing arm", exact: true })
+    .uncheck();
   await expect(rolling(page)).toHaveCount(0);
   await expect(page.getByTestId("rolling-construction-point")).toHaveCount(0);
   expect(await scale(page)).toBe(s);
-  await page.getByRole("checkbox", { name: "Construction lines" }).check();
+  await page
+    .getByRole("checkbox", { name: "Rolling curve & tracing arm", exact: true })
+    .check();
   await expect(rolling(page)).toBeVisible();
 });
 

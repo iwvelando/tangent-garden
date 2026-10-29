@@ -83,6 +83,8 @@ const planar = (i = 0): PlanarStudy => ({
     base: true,
     derived: true,
     lines: false,
+    definitionGuides: false,
+    rollingGuides: false,
     incident: true,
     virtual: true,
     axes: true,
@@ -746,6 +748,55 @@ test("3D and 4D fields are refused by name", async () => {
     change(study);
     await refused(() => tesseractStudy(study), field);
   }
+});
+
+test("construction subsets round-trip independently and old links preserve their combined visibility", async () => {
+  for (const lines of [true, false]) {
+    const old = planar() as any;
+    delete old.layers.definitionGuides;
+    delete old.layers.rollingGuides;
+    old.layers.lines = lines;
+    const read = planarStudy(old);
+    expect(read.layers).toMatchObject({
+      lines,
+      definitionGuides: lines,
+      rollingGuides: lines,
+    });
+  }
+  const study = planar();
+  study.layers = {
+    ...study.layers,
+    lines: false,
+    definitionGuides: false,
+    rollingGuides: true,
+  };
+  expect(planarStudy(study).layers).toEqual(study.layers);
+  const read = await readStudyLink(envelope("2d", study));
+  expect(read?.study.layers).toEqual(study.layers);
+  for (const field of ["definitionGuides", "rollingGuides"]) {
+    const bad = structuredClone(study) as any;
+    bad.layers[field] = "yes";
+    await refused(() => planarStudy(bad), `layers.${field}`);
+  }
+});
+
+test("every planar preset retains the old construction visibility for all subsets", () => {
+  presets.forEach((preset, i) => {
+    const old = {
+      base: true,
+      derived: true,
+      lines: true,
+      incident: true,
+      virtual: true,
+      axes: false,
+      ...preset.layers,
+    };
+    expect(planarPreset(i).layers, preset.title).toEqual({
+      ...old,
+      definitionGuides: old.lines,
+      rollingGuides: old.lines,
+    });
+  });
 });
 
 test("fields a link predates take the notebook's defaults", async () => {
@@ -2371,7 +2422,11 @@ test("compact writing emits exact independent deltas and preserves the click-tim
   const expected = JSON.parse(JSON.stringify(study));
   const pending = writeStudyLink("2d", study);
   study.camera.x = 99;
-  assert.deepEqual(unpack(await pending), { v: 2, notebook: "2d", delta: {} });
+  assert.deepEqual(unpack(await pending), {
+    v: 2,
+    notebook: "2d",
+    delta: { layers: { definitionGuides: true, rollingGuides: true } },
+  });
   assert.deepEqual((await readStudyLink(await pending)).study, expected);
   expected.camera.x = 0;
   expected.layers.lines = false;
@@ -2383,7 +2438,7 @@ test("compact writing emits exact independent deltas and preserves the click-tim
     v: 2,
     notebook: "2d",
     delta: {
-      layers: { lines: false },
+      layers: { lines: false, definitionGuides: true, rollingGuides: true },
       bounds: { min: "" },
       probe: null,
       animation: { tracks: [{ target: "a", from: "0", to: "pi" }] },
@@ -2528,7 +2583,14 @@ test("a delta ignores member order, so reordered unchanged data adds nothing", a
     // Reorder every object, including those inside arrays, which a
     // changed array would have to carry in full.
     const t = await writeStudyLink(notebook, reversed(study));
-    assert.deepEqual(wireEnvelope(t), { v: 2, notebook, delta: {} });
+    assert.deepEqual(wireEnvelope(t), {
+      v: 2,
+      notebook,
+      delta:
+        notebook === "2d"
+          ? { layers: { definitionGuides: true, rollingGuides: true } }
+          : {},
+    });
     assert.deepEqual((await readStudyLink(t)).study, study);
   }
 });

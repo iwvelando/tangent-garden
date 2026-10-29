@@ -21,6 +21,59 @@ import {
   leafFit,
 } from "./fourier-fit-checks";
 
+test("construction layer labels work by click, keyboard and scalar blur at phone width in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "Flower & a rolling circle" });
+  await page.getByLabel("Definition", { exact: true }).selectOption("fourier");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const group = page.getByRole("group", {
+    name: "Visible layers",
+    exact: true,
+  });
+  const guides = group.getByRole("checkbox", {
+    name: "Fourier circles & vectors",
+    exact: true,
+  });
+  const rolling = group.getByRole("checkbox", {
+    name: "Rolling circle & arm",
+    exact: true,
+  });
+  await page.getByLabel("Circle radius ρ", { exact: true }).fill("pi/10");
+  await group.getByText("Fourier circles & vectors", { exact: true }).click();
+  await expect(guides).not.toBeChecked();
+  await expect(page.getByTestId("epicycles")).toHaveCount(0);
+  await expect(page.getByTestId("rolling-construction")).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await page.locator("#artwork desc").textContent())!).rolling
+          .radius,
+    )
+    .toBe(Math.PI / 10);
+  await group.getByText("Rolling circle & arm", { exact: true }).click();
+  await expect(rolling).not.toBeChecked();
+  await expect(page.getByTestId("rolling-construction")).toHaveCount(0);
+  await rolling.focus();
+  await page.keyboard.press("Space");
+  await expect(rolling).toBeChecked();
+  await expect(rolling).toBeFocused();
+  await expect(page.getByTestId("rolling-construction")).toBeVisible();
+  const overflow = await group.evaluate((el) =>
+    [...el.querySelectorAll("label")].some(
+      (label) =>
+        label.getBoundingClientRect().right >
+        el.getBoundingClientRect().right + 1,
+    ),
+  );
+  expect(overflow).toBe(false);
+});
+
 test("drawn Fourier playback stays with the visible drawing through phone rotations in WebKit", async ({
   page,
 }) => {

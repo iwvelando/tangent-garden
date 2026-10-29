@@ -18,6 +18,7 @@ import {
 } from "./planar-probe";
 import { heldCurveSample, unreached } from "./probe";
 import type { Layers } from "./Plot";
+import { constructionLayerChange, defaultLayers } from "./planar-layers";
 import {
   flightPieces,
   keyFromViewport,
@@ -95,6 +96,7 @@ export function defaultPhrase(
   config: Config,
   length: number,
   target = phraseTargets(config)[0] ?? "a",
+  layers: Layers = defaultLayers,
 ): Phrase {
   const start = targetValue(config, target, length);
   const computed =
@@ -129,13 +131,25 @@ export function defaultPhrase(
         name: "Establish the base",
         duration: 1,
         pace: "ease",
-        layers: { base: true, lines: false, incident: false, derived: false },
+        layers: {
+          base: true,
+          lines: false,
+          definitionGuides: false,
+          rollingGuides: false,
+          incident: false,
+          derived: false,
+        },
       },
       {
         name: "Reveal the construction",
         duration: 2,
         pace: "ease",
-        layers: { lines: true, incident: true },
+        layers: {
+          lines: true,
+          definitionGuides: layers.definitionGuides,
+          rollingGuides: layers.rollingGuides,
+          incident: true,
+        },
         reveal: { construction: 1 },
       },
       {
@@ -278,7 +292,10 @@ export function compilePhrase(
   const phases = phrase.phases.map((p, i) => {
     const from: Boundary = {
       ...previous,
-      layers: { ...previous.layers, ...p.layers },
+      layers: {
+        ...previous.layers,
+        ...constructionLayerChange(p.layers ?? {}),
+      },
     };
     const to: Boundary = {
       value: p.key === undefined ? from.value : keys[k++],
