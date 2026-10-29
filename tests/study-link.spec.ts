@@ -2784,3 +2784,75 @@ test("finite engraving all-member construction links are opt-in and typed", asyn
       }),
     ).toThrow(/family.allConstruction/);
 });
+
+test("planar phrases conform bounded durations, consumed targets and explicit phase events without changing old modes", async () => {
+  const { defaultPhrase } = await import("../web/phrase");
+  const study = planar(2);
+  const original = planarStudy(study);
+  expect(original.animation.phrase).toBeUndefined();
+  study.animation = {
+    ...study.animation,
+    mode: "phrase",
+    camera: "current",
+    phrase: defaultPhrase(study.config, study.length),
+  };
+  const conformed = planarStudy(study);
+  expect(conformed.animation.phrase).toEqual(study.animation.phrase);
+  expect(planarStudy(unpack(envelope("2d", study)).study)).toEqual(conformed);
+  const bad = (change: (s: any) => void) => {
+    const s = structuredClone(study);
+    change(s);
+    return s;
+  };
+  expect(() =>
+    planarStudy(
+      bad((s) =>
+        s.animation.phrase.phases.push(
+          ...Array(13).fill(s.animation.phrase.phases[0]),
+        ),
+      ),
+    ),
+  ).toThrow(/12/);
+  expect(() =>
+    planarStudy(bad((s) => (s.animation.phrase.phases[0].duration = 0))),
+  ).toThrow(/duration/);
+  expect(() =>
+    planarStudy(bad((s) => (s.animation.phrase.target = "lines"))),
+  ).toThrow(/target|parameter/);
+  expect(() =>
+    planarStudy(bad((s) => (s.animation.phrase.target = "a"))),
+  ).toThrow(/target|parameter/);
+  expect(() =>
+    planarStudy(
+      bad((s) => (s.animation.phrase.phases[0].reveal = { base: 2 })),
+    ),
+  ).toThrow(/reveal/);
+  expect(() =>
+    planarStudy(bad((s) => (s.animation.phrase.phases[0].surprise = true))),
+  ).toThrow(/known field/);
+  expect(() =>
+    planarStudy(
+      bad((s) => s.animation.phrase.phases.forEach((p) => (p.duration = 1000))),
+    ),
+  ).toThrow(/duration/);
+  expect(() => planarStudy(bad((s) => (s.animation.camera = "fit")))).toThrow(
+    /camera/,
+  );
+  expect(() => planarStudy(bad((s) => delete s.animation.phrase))).toThrow(
+    /phrase/,
+  );
+});
+
+test("phrase caption placement is a strictly conformed opt-in and older links keep it off", () => {
+  const study = planar(2);
+  const old = planarStudy(study);
+  expect(old.animation.phraseLabelInDrawing ?? false).toBe(false);
+  study.animation.phraseLabelInDrawing = true;
+  expect(planarStudy(study).animation.phraseLabelInDrawing).toBe(true);
+  study.animation.phraseLabelInDrawing = false;
+  expect(planarStudy(study).animation.phraseLabelInDrawing).toBe(false);
+  for (const invalid of ["true", 1, null, {}]) {
+    study.animation.phraseLabelInDrawing = invalid as any;
+    expect(() => planarStudy(study)).toThrow(/phraseLabelInDrawing/);
+  }
+});

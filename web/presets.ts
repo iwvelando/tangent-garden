@@ -1564,4 +1564,82 @@ export const presets: {
       },
     },
   },
+  // Opens on the mirror and a lamp on its rim. Playback reveals up to 32 reflected
+  // rays while the lamp moves just inside, to x=.95, before revealing its
+  // caustic. Move to x=.85 and x=.65, hold, then return to x=.95. Keeping the
+  // near-rim asymptotic tails hidden avoids their unresolved sampled ends.
+  // Stopped rays and hidden virtual parts keep the construction legible.
+  {
+    title: "A circle's caustic, opened",
+    note: "Reveal reflected rays and their caustic, then move the lamp inward and hold the separated cusps",
+    config: {
+      ...base,
+      kind: "catacaustic",
+      curve: { ...base.curve, x: "cos(t)", y: "sin(t)" },
+      samples: 1600,
+      lines: 32,
+    },
+    stop: true,
+    layers: { derived: false, lines: false, incident: false, virtual: false },
+    animation: {
+      mode: "phrase",
+      camera: "hold",
+      duration: 16,
+      tracks: [],
+      repeat: "once",
+      pace: "ease",
+      probeMotion: "stays",
+      phrase: {
+        target: "sourceX",
+        opening: { base: 1, construction: 0, derived: 0 },
+        phases: [
+          {
+            name: "Establish the mirror",
+            duration: 1,
+            pace: "ease",
+            layers: {
+              base: true,
+              derived: false,
+              lines: false,
+              incident: false,
+            },
+          },
+          {
+            name: "Reveal reflected rays",
+            duration: 2,
+            pace: "ease",
+            key: "0.95",
+            layers: { lines: true },
+            reveal: { construction: 1 },
+          },
+          {
+            name: "Find the caustic",
+            duration: 2,
+            pace: "ease",
+            layers: { derived: true },
+            reveal: { derived: 1 },
+          },
+          {
+            name: "Move the lamp inward",
+            duration: 3,
+            pace: "ease",
+            key: "0.85",
+          },
+          {
+            name: "Separate the cusps",
+            duration: 3,
+            pace: "ease",
+            key: "0.65",
+          },
+          { name: "Hold the cusps", duration: 2, pace: "ease" },
+          {
+            name: "Return near the rim",
+            duration: 3,
+            pace: "ease",
+            key: "0.95",
+          },
+        ],
+      },
+    },
+  },
 ];

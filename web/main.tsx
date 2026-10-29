@@ -39,6 +39,7 @@ import { ExampleGallery } from "./ExampleGallery";
 import { planarExamples, planarThumbnail } from "./examples";
 import { Plot, legendGeometry, type Layers } from "./Plot";
 import { LegendEntries } from "./Legend";
+import { PhraseCaption } from "./PhraseCaption";
 import { LineWeightField } from "./LineWeightField";
 import { RefineBetweenSamples } from "./RefineBetweenSamples";
 import { StopAtCaustic } from "./StopAtCaustic";
@@ -1299,6 +1300,7 @@ function App({
     camera: PlotCamera;
   } | null>(null);
   const animationSettings = useRef<PlanarAnimation | null>(null);
+  const [animationSettingsReady, setAnimationSettingsReady] = useState(true);
   // Preset setups count down from -1, apart from links' ids.
   const presetAnimations = useRef(0);
   const [restoredAnimation, setRestoredAnimation] = useState<{
@@ -1431,7 +1433,11 @@ function App({
     : shown;
   const drawnFormat = (displayFrame?.config ?? config).curve.format;
   const drawn = displayFrame
-    ? legendGeometry(displayFrame.result, displayFrame.config, layers)
+    ? legendGeometry(
+        displayFrame.result,
+        displayFrame.config,
+        animation?.phrase?.layers ?? layers,
+      )
     : { base: false, derived: false };
   useEffect(() => {
     if (!active) {
@@ -1487,7 +1493,11 @@ function App({
       data-theme-preference={preference}
     >
       <AppHeader theme={theme} inert={journey.active}>
-        <ShareLink notebook="2d" study={snapshot} disabled={!outputReady} />
+        <ShareLink
+          notebook="2d"
+          study={snapshot}
+          disabled={!outputReady || !animationSettingsReady}
+        />
         <AnimationButton section="animation-section" />
         <ExportImageMenu
           revision={JSON.stringify([
@@ -2551,6 +2561,7 @@ function App({
                 onRunning={setAnimationRunning}
                 onReveal={revealPlot}
                 settings={animationSettings}
+                onSettingsReady={setAnimationSettingsReady}
                 restore={animationHeld ? null : restoredAnimation}
               />
             </div>
@@ -2725,6 +2736,9 @@ function App({
             )}
             {drawingBusy && (family?.enabled ? familyFrame : result) && (
               <span className="computing">Computing…</span>
+            )}
+            {animation?.phrase && !family?.enabled && (
+              <PhraseCaption phrase={animation.phrase} />
             )}
             <div className="plot-meta">
               <div className="legend">

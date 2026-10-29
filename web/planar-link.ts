@@ -44,6 +44,7 @@ import { defaultProbe, probeSupported, type PlanarProbe } from "./planar-probe";
 import { viewZoom } from "./refinement";
 import { legRange, maxKeyName, maxKeys } from "./key-views";
 import type { PlanarPath } from "./planar-path";
+import { maxPhases, phraseError, phraseTargets, type Phrase } from "./phrase";
 
 // The manual camera, offset from the fitted framing, which the drawing
 // derives deterministically from the study: pixels of pan and a zoom factor.
@@ -54,7 +55,12 @@ export const zoomRange: [number, number] = [0.1, viewZoom];
 // probe's motion while parameters vary is the 3D notebook's (probe.ts).
 // A camera path's key views, absent in links and presets without one.
 export type PlanarAnimation = AnimationSettings<AnimationMode, Target> &
-  Timing & { probeMotion: ProbeMotion; path?: PlanarPath };
+  Timing & {
+    probeMotion: ProbeMotion;
+    path?: PlanarPath;
+    phrase?: Phrase;
+    phraseLabelInDrawing?: boolean;
+  };
 export type PlanarStudy = {
   config: Config;
   // Domain bounds as entered, so constant expressions such as 2*pi survive.
@@ -340,6 +346,60 @@ function cameraPath(value: unknown): PlanarPath {
   return out;
 }
 
+function animationPhrase(value: unknown, config: Config): Phrase {
+  const partialLayers: SchemaOf<Partial<Layers>> = {
+    fields: {
+      base: { optional: "boolean" },
+      derived: { optional: "boolean" },
+      lines: { optional: "boolean" },
+      incident: { optional: "boolean" },
+      virtual: { optional: "boolean" },
+      axes: { optional: "boolean" },
+    },
+  };
+  const schema: SchemaOf<Phrase> = {
+    fields: {
+      target: {
+        options: Object.fromEntries(
+          phraseTargets(config).map((t) => [t, true]),
+        ) as Record<Target, true>,
+      },
+      opening: {
+        fields: {
+          base: { range: [0, 1] },
+          construction: { range: [0, 1] },
+          derived: { range: [0, 1] },
+        },
+      },
+      phases: {
+        list: {
+          fields: {
+            name: "text",
+            duration: { range: [0.1, 3600] },
+            pace: { options: { steady: true, ease: true } },
+            key: { optional: "text" },
+            layers: { optional: partialLayers },
+            reveal: {
+              optional: {
+                fields: {
+                  base: { optional: { range: [0, 1] } },
+                  construction: { optional: { range: [0, 1] } },
+                  derived: { optional: { range: [0, 1] } },
+                },
+              },
+            },
+          },
+        },
+        max: maxPhases,
+      },
+    },
+  };
+  const phrase = conform<Phrase>(value, schema, undefined, "animation.phrase");
+  const error = phraseError(config, phrase);
+  if (error) throw new LinkError("animation.phrase", error);
+  return phrase;
+}
+
 // The study a link describes, or a LinkError naming the first bad field.
 export function planarStudy(value: unknown): PlanarStudy {
   if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -435,13 +495,26 @@ export function planarStudy(value: unknown): PlanarStudy {
     typeof raw.animation === "object" &&
     raw.animation !== null &&
     !Array.isArray(raw.animation);
-  const { repeat, pace, probeMotion, path, ...shared } = grouped
-    ? (raw.animation as Record<string, unknown>)
-    : {};
+  const {
+    repeat,
+    pace,
+    probeMotion,
+    path,
+    phrase,
+    phraseLabelInDrawing,
+    ...shared
+  } = grouped ? (raw.animation as Record<string, unknown>) : {};
   const animation: PlanarAnimation = {
     ...animationSettings(
       grouped ? shared : raw.animation,
-      { reveal: true, parameters: true, trace: true, probe: true, path: true },
+      {
+        reveal: true,
+        parameters: true,
+        trace: true,
+        probe: true,
+        path: true,
+        phrase: true,
+      },
       availableTargets(study.config),
       defaultAnimation,
     ),
@@ -454,7 +527,32 @@ export function planarStudy(value: unknown): PlanarStudy {
     ),
     // Links made before 2D camera paths have none.
     ...(path !== undefined && { path: cameraPath(path) }),
+    ...(phrase !== undefined && {
+      phrase: animationPhrase(phrase, study.config),
+    }),
+    ...(phraseLabelInDrawing !== undefined && {
+      phraseLabelInDrawing: conform<boolean>(
+        phraseLabelInDrawing,
+        "boolean",
+        false,
+        "animation.phraseLabelInDrawing",
+      ),
+    }),
   };
+  if (animation.mode === "phrase" && !animation.phrase)
+    throw new LinkError(
+      "animation.phrase",
+      "A phrase animation needs phase settings.",
+    );
+  if (
+    animation.mode === "phrase" &&
+    animation.camera !== "hold" &&
+    animation.camera !== "current"
+  )
+    throw new LinkError(
+      "animation.camera",
+      "A phrase camera must hold the entry or current view.",
+    );
   if (
     animation.mode === "probe" &&
     !(study.probe.enabled && probeSupported(study.config))

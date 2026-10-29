@@ -1,5 +1,7 @@
 import type { FamilyComposition } from "./family-motion";
 import type { HeldProbe } from "./planar-probe";
+import type { Layers } from "./Plot";
+import type { PhraseReveal } from "./phrase";
 import { revealRefined } from "./refinement";
 import {
   ownsShape,
@@ -17,7 +19,7 @@ export type CameraMode = "hold" | "current" | "follow" | "fit";
 // caustic (catacaustics and diacaustics only), move the probe, or fly the
 // camera through key views (planar-path.ts).
 export type AnimationMode =
-  "reveal" | "parameters" | "trace" | "probe" | "path";
+  "reveal" | "parameters" | "trace" | "probe" | "path" | "phrase";
 export const canTrace = (config: Config) =>
   config.kind === "catacaustic" || config.kind === "diacaustic";
 // Only parameter tracks and a camera path can return to their start;
@@ -102,6 +104,15 @@ type FixedTarget =
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
 export type AnimationView = {
+  // Compiled presentation shared by the live plot, stills and motion export.
+  phrase?: {
+    phase: string;
+    layers: Layers;
+    reveal: PhraseReveal;
+    target: Target;
+    value: number;
+    inDrawing?: boolean;
+  };
   family?: FamilyComposition;
   owner?: string;
   frame: Frame;

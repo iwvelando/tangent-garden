@@ -8,6 +8,11 @@ import { backAndForthHelp, onceHelp, paceHelp } from "../web/timing";
 import { repeatHelp as planarRepeatHelp } from "../web/animation";
 import { presets } from "../web/presets";
 import { familyMotionHelp } from "../web/family-motion";
+import {
+  phraseHelp,
+  phrasePaceHelp,
+  phraseRayLengthHelp,
+} from "../web/PhraseEditor";
 import { atlasRangeHelp, atlasEntryHelp, atlasControlHelp } from "../web/atlas";
 import {
   betweenHelp as planarBetweenHelp,
@@ -196,6 +201,9 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("atlas ranges", atlasRangeHelp, true);
   add("atlas entry", atlasEntryHelp);
   table("family motion", familyMotionHelp);
+  add("phrase mode", phraseHelp);
+  add("phrase pace", phrasePaceHelp, true);
+  add("phrase ray length", phraseRayLengthHelp);
   table("atlas controls", atlasControlHelp, ["size", "framing"]);
   add("once", onceHelp);
   add("back and forth", backAndForthHelp);
@@ -320,4 +328,10 @@ test("path help distinguishes zero, partial and fully settling easing factors", 
     expect(helpText(easedPath(style, 0.5))).toContain("easing to rest");
     expect(helpText(easedPath(style, 1))).toContain("easing to rest");
   }
+});
+
+test("phrase pace help explains interpolation within phases rather than retiming the complete phrase", async () => {
+  const { phrasePaceHelp } = await import("../web/PhraseEditor");
+  expect(phrasePaceHelp).toBeDefined();
+  expect(helpText(phrasePaceHelp)).toContain("within each phase");
 });

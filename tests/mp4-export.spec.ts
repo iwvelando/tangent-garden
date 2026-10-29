@@ -1,6 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openExportSettings, choosePreset } from "./helpers";
-import { decodeVideo, probe } from "./video";
+import { decodeVideo, probe, frameDifference } from "./video";
+import { exportImage } from "./helpers";
+import { decodePng } from "./png";
+import { readFile } from "node:fs/promises";
+import { presets } from "../web/presets";
+import { watchEngines, engines } from "./engines";
 import { exportTiming } from "../web/export-quality";
 
 // Safari and every iOS browser return PNG when asked for a WebP canvas image.
@@ -476,4 +481,183 @@ test("a dropped encoder frame is still refused", async ({ page }) => {
     "This browser couldn't save the MP4 video (the encoder dropped or reordered frames).",
   );
   await expect(exportMP4(page)).toBeEnabled();
+});
+
+for (const caption of [false, true])
+  test(`phrase MP4 and SVG preserve reveal, exact endpoints and a decoded stationary hold${caption ? " with caption" : ""}`, async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    const index = presets.findIndex(
+      (p) => p.title === "A circle's caustic, opened",
+    );
+    await ready(page, String(index));
+    if (caption)
+      await page
+        .getByRole("checkbox", { name: "Stage label in drawing", exact: true })
+        .check();
+    await page
+      .getByRole("combobox", { name: "Export format", exact: true })
+      .selectOption("mp4");
+    await page
+      .getByRole("combobox", { name: "Export frame rate", exact: true })
+      .selectOption("15");
+    const durations = [0.1, 0.2, 0.2, 0.3, 0.3, 0.6, 0.3];
+    for (const [i, duration] of durations.entries())
+      await page
+        .getByRole("spinbutton", {
+          name: `Phase ${i + 1} duration`,
+          exact: true,
+        })
+        .fill(String(duration));
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const slider = page.getByRole("slider", {
+      name: "Animation progress",
+      exact: true,
+    });
+    const stills = [];
+    for (const time of ["0", "0.7", "1"]) {
+      await slider.fill(time);
+      await expect(page.locator("#artwork")).toHaveAttribute(
+        "data-animation-time",
+        time,
+      );
+      const metadata = JSON.parse(
+        (await page.locator("#artwork desc").textContent())!,
+      );
+      expect(metadata.source.position.x).toBe(
+        time === "0" ? 1 : time === "0.7" ? 0.65 : 0.95,
+      );
+      if (time === "0.7") {
+        expect(metadata.animation.phrase.phase).toBe("Hold the cusps");
+        const saved = page.waitForEvent("download");
+        await exportImage(page, "SVG");
+        const svg = await readFile((await (await saved).path())!, "utf8");
+        expect(svg).toContain('"phase":"Hold the cusps"');
+        expect(svg).toContain('"construction":1');
+        if (caption) {
+          expect(svg).toMatch(/<text[\s>]/);
+          expect(svg).toContain('data-phrase-caption="true"');
+          expect(svg).toContain('"inDrawing":true');
+          expect(svg).toContain("Hold the cusps");
+          expect(svg).toContain("Source x = 0.650000");
+        } else expect(svg).not.toMatch(/<text[\s>]/);
+      }
+      const saved = page.waitForEvent("download");
+      await exportImage(page, "PNG");
+      stills.push(decodePng(await readFile((await (await saved).path())!)));
+    }
+    await page
+      .getByRole("button", { name: "Back to study", exact: true })
+      .click();
+    const download = page.waitForEvent("download");
+    await exportMP4(page).click();
+    const file = await download;
+    const path = (await file.path())!;
+    const data = probe(path);
+    if (data) {
+      expect(data.frames).toBe(30);
+      expect(data.durations.reduce((a, b) => a + b, 0)).toBe(2000);
+      expect(data.times[0]).toBe(0);
+      const match = (i: number, reference: (typeof stills)[number]) =>
+        frameDifference(path, 2000, 1520, i, reference.rgba)!;
+      for (const [i, reference] of [
+        [0, stills[0]],
+        [20, stills[1]],
+        [23, stills[1]],
+        [29, stills[2]],
+      ] as const) {
+        const difference = match(i, reference);
+        expect(difference.meanDifference).toBeLessThan(3);
+        expect(difference.unmatchedInk).toBeLessThan(0.05);
+      }
+      // A wrong held frame must fail even though both stills show a caustic.
+      expect(match(20, stills[2]).unmatchedInk).toBeGreaterThan(0.3);
+    }
+    const video = await decodeVideo(page, await readFile(path));
+    expect(video.duration).toBeCloseTo(2, 3);
+    expect(video.first.hash).not.toBe(video.last.hash); // reveal has changed layers
+  });
+
+test("editing an exporting phrase cancels pending geometry and suppresses its download", async ({
+  page,
+}) => {
+  await watchEngines(page, 8, { compute: 100 });
+  await ready(
+    page,
+    String(presets.findIndex((p) => p.title === "A circle's caustic, opened")),
+  );
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  for (let i = 1; i <= 7; i++)
+    await page
+      .getByRole("spinbutton", { name: `Phase ${i} duration`, exact: true })
+      .fill("10");
+  await page
+    .getByRole("combobox", { name: "Export format", exact: true })
+    .selectOption("mp4");
+  await page
+    .getByRole("combobox", { name: "Export frame rate", exact: true })
+    .selectOption("15");
+  await exportMP4(page).click();
+  await expect(
+    page.getByRole("button", { name: "Cancel export", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Phase 4 key", exact: true })
+    .fill("0.9");
+  await expect(
+    page.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeEnabled();
+  await expect(page.locator("#artwork")).not.toHaveAttribute(
+    "data-animation-progress",
+  );
+  await page.waitForTimeout(400); // longer than the deliberately delayed obsolete calculation
+  expect(downloads).toBe(0);
+  const workers = await engines(page);
+  expect(workers.filter((e) => !e.terminated)).toHaveLength(1);
+  await expect(
+    page.getByRole("textbox", { name: "Phase 4 key", exact: true }),
+  ).toHaveValue("0.9");
+});
+
+test("changing phrase caption placement during export discards its old presentation", async ({
+  page,
+}) => {
+  await watchEngines(page, 8, { compute: 100 });
+  await ready(
+    page,
+    String(presets.findIndex((p) => p.title === "A circle's caustic, opened")),
+  );
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  for (let i = 1; i <= 7; i++)
+    await page
+      .getByRole("spinbutton", { name: `Phase ${i} duration`, exact: true })
+      .fill("10");
+  await page
+    .getByRole("combobox", { name: "Export format", exact: true })
+    .selectOption("mp4");
+  await page
+    .getByRole("combobox", { name: "Export frame rate", exact: true })
+    .selectOption("15");
+  await exportMP4(page).click();
+  await expect(
+    page.getByRole("button", { name: "Cancel export", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("checkbox", { name: "Stage label in drawing", exact: true })
+    .check();
+  await expect(
+    page.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeEnabled();
+  await expect(page.locator("#artwork")).not.toHaveAttribute(
+    "data-animation-progress",
+  );
+  await page.waitForTimeout(400);
+  expect(downloads).toBe(0);
+  expect((await engines(page)).filter((e) => !e.terminated)).toHaveLength(1);
 });

@@ -16,6 +16,7 @@ import { ProgressSlider } from "./ProgressSlider";
 import type { PlanarAnimation } from "./planar-link";
 import {
   EngineClient,
+  EngineError,
   exportEngineCount,
   playbackEngineCount,
 } from "./engine-client";
@@ -104,7 +105,7 @@ import {
   type Formats,
 } from "./export-formats";
 import { saveFile } from "./export-image";
-import { Field } from "./Field";
+import { Field, CheckSetting } from "./Field";
 import { KeyViews, KeyViewEasing } from "./KeyViews";
 import {
   easedPath,
@@ -132,10 +133,30 @@ import { plainZoom, viewZoom } from "./refinement";
 import type { PlotCamera } from "./planar-link";
 import { tiered } from "./help";
 import { useDisclosure } from "./useDisclosure";
+import {
+  compilePhrase,
+  defaultPhrase,
+  phraseAt,
+  phraseDuration,
+  phraseError,
+  phraseTargets,
+  createPhraseSampler,
+  type CompiledPhrase,
+  type Phrase,
+} from "./phrase";
+import {
+  PhraseEditor,
+  phraseHelp,
+  phraseProblemField,
+  phrasePaceHelp,
+} from "./PhraseEditor";
 
 type Status =
   "idle" | "preparing" | "playing" | "paused" | "complete" | "exporting";
 type Session = {
+  phraseLabelInDrawing?: boolean;
+  phrase?: CompiledPhrase;
+  phraseSample?: ReturnType<typeof createPhraseSampler>;
   family?: PreparedFamily;
   owner?: string;
   original: Frame;
@@ -189,8 +210,9 @@ const calculates = (
   >,
 ) =>
   !s.family &&
-  ((s.mode === "parameters" &&
-    !s.tracks.every((t) => t.target === "rayLength")) ||
+  (s.mode === "phrase" ||
+    (s.mode === "parameters" &&
+      !s.tracks.every((t) => t.target === "rayLength")) ||
     (s.mode === "reveal" && !!s.original.result.attractor) ||
     (s.mode === "probe" && !!s.between) ||
     (s.mode === "path" && !!s.refine));
@@ -240,6 +262,7 @@ type Props = {
   onReveal: () => void;
   // The animation setup, kept current for a study link.
   settings?: { current: PlanarAnimation | null };
+  onSettingsReady?: (ready: boolean) => void;
   // A setup from a study link, applied once per id. The notebook passes it
   // only once the frame belongs to the linked study, so neither its tracks
   // nor a trace mode is judged against the previous study.
@@ -269,6 +292,7 @@ export function AnimationPanel({
   onRunning,
   onReveal,
   settings,
+  onSettingsReady,
   restore,
 }: Props) {
   const [ordinaryMode, setMode] = useState<AnimationMode>("reveal");
@@ -284,7 +308,7 @@ export function AnimationPanel({
       })
     : undefined;
   const camera = familySetup?.camera ?? ordinaryCamera;
-  const duration = familySetup?.duration ?? ordinaryDuration;
+  const simpleDuration = familySetup?.duration ?? ordinaryDuration;
   const repeat = familySetup?.repeat ?? ordinaryRepeat;
   const pace = familySetup?.pace ?? ordinaryPace;
   const setCamera = (value: CameraMode) =>
@@ -303,6 +327,97 @@ export function AnimationPanel({
   const setPace = (value: Pace) =>
     family ? family.onAnimation({ pace: value }) : setOrdinaryPace(value);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [phrase, setPhrase] = useState<Phrase | undefined>();
+  const [phraseLabelInDrawing, setPhraseLabelInDrawing] = useState(false);
+  const phraseDraft =
+    phrase ?? (frame ? defaultPhrase(frame.config, length) : undefined);
+  const duration =
+    mode === "phrase" && phraseDraft
+      ? phraseDuration(phraseDraft)
+      : simpleDuration;
+  const phraseSignature = JSON.stringify([phraseDraft, frame?.config, length]);
+  const [resolvedPhrase, setResolvedPhrase] = useState<{
+    signature: string;
+    compiled?: CompiledPhrase;
+    error?: string;
+  }>({ signature: "" });
+  // A changed duration, pace or layer cannot fix an endpoint Go refused.
+  // Retain that refusal until its numerical input or study actually changes.
+  const [numericalRefusal, setNumericalRefusal] = useState<{
+    config: string;
+    target: Target;
+    phase: number;
+    key: string;
+    message: string;
+  } | null>(null);
+  const knownRefusal =
+    numericalRefusal &&
+    numericalRefusal.config === JSON.stringify(frame?.config) &&
+    numericalRefusal.target === phraseDraft?.target &&
+    numericalRefusal.key === phraseDraft?.phases[numericalRefusal.phase]?.key
+      ? numericalRefusal.message
+      : undefined;
+  const phraseReady =
+    mode !== "phrase" ||
+    (!knownRefusal &&
+      resolvedPhrase.signature === phraseSignature &&
+      !!resolvedPhrase.compiled);
+  const phraseProblem =
+    mode === "phrase"
+      ? (knownRefusal ??
+        (resolvedPhrase.signature === phraseSignature
+          ? resolvedPhrase.error
+          : undefined))
+      : undefined;
+  useEffect(() => {
+    if (mode !== "phrase" || !frame || !phraseDraft || !client.current) return;
+    let current = true;
+    const error = phraseError(frame.config, phraseDraft);
+    if (error) {
+      setResolvedPhrase({ signature: phraseSignature, error });
+      return;
+    }
+    const keys = phraseDraft.phases.flatMap((p, i) =>
+      p.key === undefined ? [] : [{ text: p.key, index: i }],
+    );
+    void Promise.all(
+      keys.map(async (key) => {
+        try {
+          return (await client.current!.scalars([key.text]))[0];
+        } catch (error) {
+          throw new Error(
+            `Phase ${key.index + 1} key: ${error instanceof Error ? error.message : error}`,
+          );
+        }
+      }),
+    )
+      .then((values) => {
+        if (current)
+          setResolvedPhrase({
+            signature: phraseSignature,
+            compiled: compilePhrase(
+              frame.config,
+              layers,
+              length,
+              phraseDraft,
+              values,
+            ),
+          });
+      })
+      .catch((error) => {
+        if (current)
+          setResolvedPhrase({
+            signature: phraseSignature,
+            error: error.message,
+          });
+      });
+    return () => {
+      current = false;
+    };
+  }, [mode, phraseSignature, layers]);
+  useEffect(() => {
+    onSettingsReady?.(phraseReady);
+  }, [phraseReady, onSettingsReady]);
   const [probeMotion, setProbeMotion] = useState<ProbeMotion>("stays");
   const [path, setPath] = useState<PlanarPath>(defaultPlanarPath);
   const [status, setStatus] = useState<Status>("idle");
@@ -360,6 +475,7 @@ export function AnimationPanel({
   const epoch = useRef(0),
     playing = useRef<(() => void) | null>(null),
     session = useRef<Session | null>(null);
+  const lastView = useRef<AnimationView | null>(null);
   // A second engine for parameter playback, alive only while it plays.
   const helper = useRef<EngineClient | null>(null);
   const release = () => {
@@ -373,6 +489,12 @@ export function AnimationPanel({
   useEffect(() => {
     if (!traceable && mode === "trace") setMode("reveal");
   }, [traceable, mode]);
+  // A phrase needs a continuous input the study consumes; without one, the
+  // curve is drawn.
+  const phrasable = !!frame && phraseTargets(frame.config).length > 0;
+  useEffect(() => {
+    if (frame && !phrasable && mode === "phrase") setMode("reveal");
+  }, [phrasable, mode]);
   // The probe moves only while it is on; otherwise the curve is drawn.
   useEffect(() => {
     if (!probe && mode === "probe") setMode("reveal");
@@ -406,6 +528,9 @@ export function AnimationPanel({
       probeMotion,
       // A link records a path only where there is one.
       ...(path.keys.length > 0 && { path }),
+      ...(phraseDraft && mode === "phrase" && { phrase: phraseDraft }),
+      ...(mode === "phrase" &&
+        phraseLabelInDrawing && { phraseLabelInDrawing: true }),
     };
   // After the retention and trace fallbacks above, which then see the
   // linked study's own frame.
@@ -421,6 +546,9 @@ export function AnimationPanel({
     setPace(restore.settings.pace);
     setProbeMotion(restore.settings.probeMotion);
     setPath(restore.settings.path ?? defaultPlanarPath);
+    setPhrase(restore.settings.phrase);
+    setPhraseLabelInDrawing(restore.settings.phraseLabelInDrawing ?? false);
+    setNumericalRefusal(null);
     // A refusal belongs to the setup it judged.
     setError("");
   }, [restore]);
@@ -445,6 +573,7 @@ export function AnimationPanel({
   const stop = () => {
     cancel();
     session.current = null;
+    lastView.current = null;
     onView(null);
     changeStatus("idle");
     setProgress(0);
@@ -452,9 +581,30 @@ export function AnimationPanel({
     setError("");
     setExportNotice("");
   };
+  function changePhraseCaption(inDrawing: boolean) {
+    setPhraseLabelInDrawing(inDrawing);
+    if (status === "preparing" || status === "exporting") {
+      stop();
+      return;
+    }
+    const s = session.current;
+    if (!s?.phrase) return;
+    s.phraseLabelInDrawing = inDrawing;
+    const shown = lastView.current;
+    if (shown?.phrase) {
+      const view = { ...shown, phrase: { ...shown.phrase, inDrawing } };
+      lastView.current = view;
+      onView(view);
+    }
+  }
   useEffect(() => {
     stop();
   }, [revision]);
+  // A phrase compiles its layer events from the entry study. Editing those
+  // layers starts a new study presentation rather than showing stale events.
+  useEffect(() => {
+    if (session.current?.phrase) stop();
+  }, [layers]);
   useEffect(
     () => () => {
       epoch.current++;
@@ -509,6 +659,11 @@ export function AnimationPanel({
       setCamera("hold");
     if (next === "parameters" && !tracks.length && targets.length)
       setTracks([defaultTrack(targets[0])]);
+    if (next === "phrase") {
+      if (!phrase && frame) setPhrase(defaultPhrase(frame.config, length));
+      if (camera !== "current") setCamera("hold");
+      setPace("ease");
+    }
   }
   // The frame at a time on the timeline, drawn at the progress the repeat
   // and pace give it (timing.ts).
@@ -527,7 +682,11 @@ export function AnimationPanel({
         s.owner!,
       );
     return {
-      ...(await frameAt(s, progressAt(time, s.repeat, s.pace), engine)),
+      ...(await frameAt(
+        s,
+        progressAt(time, s.repeat, s.phrase ? "steady" : s.pace),
+        engine,
+      )),
       time,
       complete: s.repeat === "once" && time === 1,
     };
@@ -537,6 +696,12 @@ export function AnimationPanel({
     p: number,
     engine = client.current!,
   ): Promise<AnimationView> {
+    if (s.phrase) {
+      const view = await s.phraseSample!(p * s.phrase.duration, engine);
+      return s.phraseLabelInDrawing
+        ? { ...view, phrase: { ...view.phrase!, inDrawing: true } }
+        : view;
+    }
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
     let current: Frame;
     let held: HeldProbe | number | string | null | undefined;
@@ -739,10 +904,15 @@ export function AnimationPanel({
   function display(s: Session, view: AnimationView) {
     s.progress = view.time ?? view.progress;
     setProgress(s.progress);
+    lastView.current = view;
     onView(view);
     if (view.family)
       setLive(
         `${familyMotionMembers(view.family.members, view.family.motion!).length} / ${view.family.members.length} members · selected ${view.family.settings.selected + 1}`,
+      );
+    else if (view.phrase)
+      setLive(
+        `${view.phrase.phase} · ${targetLabel(s.phrase!.target)} = ${targetValue(view.frame.config, s.phrase!.target, view.length).toPrecision(6)}`,
       );
     else if (s.mode === "reveal" && view.frame.result.attractor)
       setLive(
@@ -781,6 +951,7 @@ export function AnimationPanel({
   function fail(reason: unknown, what = "Animation") {
     cancel();
     session.current = null;
+    lastView.current = null;
     onView(null);
     changeStatus("idle");
     setError(
@@ -837,11 +1008,18 @@ export function AnimationPanel({
     const focus = (holds && getFocus()) || undefined;
     const view = focus && { view: focus };
     try {
-      if (!Number.isFinite(duration) || duration < 0.1 || duration > 3600)
+      if (
+        mode !== "phrase" &&
+        (!Number.isFinite(duration) || duration < 0.1 || duration > 3600)
+      )
         throw new Error("Duration must be between 0.1 and 3600 seconds.");
       if (holds && !heldView)
         throw new Error("The current view is not ready yet.");
-      if (save) exportTiming(duration, fps);
+      if (save)
+        exportTiming(
+          mode === "phrase" ? resolvedPhrase.compiled!.duration : duration,
+          fps,
+        );
       if (family && familySetup) {
         if (
           !Number.isInteger(familySetup.width) ||
@@ -873,6 +1051,86 @@ export function AnimationPanel({
             setup: { ...familySetup },
             view: heldView ?? fitted,
           },
+        };
+        await launch(s, save, token);
+        return;
+      }
+      if (mode === "phrase") {
+        if (!phraseReady || !resolvedPhrase.compiled)
+          throw new Error(
+            phraseProblem ?? "Phrase keys are still being evaluated.",
+          );
+        const compiled = compilePhrase(
+          frame.config,
+          layers,
+          length,
+          phraseDraft!,
+          resolvedPhrase.compiled.phases
+            .filter((_, i) => phraseDraft!.phases[i].key !== undefined)
+            .map((p) => p.to.value),
+        );
+        // Validate each explicit key through the engine, without retaining a
+        // movie or even a geometry collection proportional to the phase count.
+        for (const [i, phase] of compiled.phases.entries()) {
+          if (
+            compiled.target === "rayLength" ||
+            phase.from.value === phase.to.value ||
+            phase.to.value ===
+              targetValue(frame.config, compiled.target, length)
+          )
+            continue;
+          try {
+            await client.current.compute(
+              phraseAt(compiled, phase.end).config,
+              undefined,
+              { ...(view ?? {}), diagnostics: !!probe },
+            );
+          } catch (reason) {
+            if (epoch.current !== token) return;
+            if (!(reason instanceof EngineError)) throw reason;
+            cancel();
+            session.current = null;
+            onView(null);
+            changeStatus("idle");
+            setProgress(0);
+            setError("");
+            setNumericalRefusal({
+              config: JSON.stringify(frame.config),
+              target: compiled.target,
+              phase: i,
+              key: phraseDraft!.phases[i].key!,
+              message: `Phase ${i + 1} key: ${reason.message}`,
+            });
+            return;
+          }
+          if (epoch.current !== token) return;
+        }
+        const s: Session = {
+          original: frame,
+          first: frame,
+          final: frame,
+          tracks: [],
+          mode,
+          phrase: compiled,
+          phraseLabelInDrawing,
+          phraseSample: createPhraseSampler({
+            phrase: compiled,
+            original: frame,
+            view: heldView ?? fitFrame(frame.result, frame.config),
+            stop: stopAtCaustic,
+            focus,
+            probe: probe ?? undefined,
+          }),
+          camera: "current",
+          heldView: heldView ?? fitFrame(frame.result, frame.config),
+          focus,
+          duration: compiled.duration,
+          repeat,
+          pace: "steady",
+          length,
+          stop: stopAtCaustic,
+          progress: 0,
+          probe: probe ?? undefined,
         };
         await launch(s, save, token);
         return;
@@ -1075,7 +1333,7 @@ export function AnimationPanel({
       let next = 0;
       const blob = await exportAnimation({
         format: chosen,
-        duration,
+        duration: s.duration,
         fps: fps,
         loop: chosen === "webp" && (loop || cycles(repeat)),
         cyclic: cycles(repeat),
@@ -1166,9 +1424,20 @@ export function AnimationPanel({
         </summary>
         <fieldset
           hidden={preview}
-          disabled={running || status === "paused" || disabled}
-          onChangeCapture={() => {
-            if (status === "complete") stop();
+          disabled={
+            mode === "phrase"
+              ? disabled
+              : running || status === "paused" || disabled
+          }
+          onChangeCapture={(event) => {
+            if (
+              (event.target as HTMLElement).closest(
+                "[data-phrase-presentation]",
+              )
+            )
+              return;
+            if (mode === "phrase") setError("");
+            if (status === "complete" || (mode === "phrase" && active)) stop();
           }}
         >
           <Field
@@ -1177,38 +1446,41 @@ export function AnimationPanel({
             help={
               familySetup
                 ? familyMotionHelp[familySetup.mode]
-                : mode === "path"
-                  ? planarPathHelp.mode
-                  : mode === "probe"
-                    ? probe && frame && probeBetween(frame.config, probe)
-                      ? "Move the probe from start to end through every t. The geometry stays fixed."
-                      : "Move the probe from start to end, sample by sample. The geometry stays fixed."
-                    : mode === "trace"
-                      ? tiered(
-                          "Send light from the source; each caustic point appears as its ray reaches it.",
-                          "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
-                        )
-                      : mode === "reveal"
-                        ? iterated
-                          ? "Count the iterates in order, in the finished drawing's window and grid."
-                          : tiered(
-                              "Draw the study from its domain start to its end.",
-                              "Each frame keeps the finished drawing's sample spacing and arc-length anchor.",
-                            )
-                        : tiered(
-                            <>
-                              Tracks vary together, linearly. Use <var>a</var>{" "}
-                              in a curve expression to animate any coefficient.
-                            </>,
-                            <>
-                              For example,{" "}
-                              <code>
-                                <var>a</var>*cos(t)
-                              </code>
-                              . Counts change in whole steps. Endpoints accept
-                              constants such as pi.
-                            </>,
+                : mode === "phrase"
+                  ? phraseHelp
+                  : mode === "path"
+                    ? planarPathHelp.mode
+                    : mode === "probe"
+                      ? probe && frame && probeBetween(frame.config, probe)
+                        ? "Move the probe from start to end through every t. The geometry stays fixed."
+                        : "Move the probe from start to end, sample by sample. The geometry stays fixed."
+                      : mode === "trace"
+                        ? tiered(
+                            "Send light from the source; each caustic point appears as its ray reaches it.",
+                            "Parallel light comes in from the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
                           )
+                        : mode === "reveal"
+                          ? iterated
+                            ? "Count the iterates in order, in the finished drawing's window and grid."
+                            : tiered(
+                                "Draw the study from its domain start to its end.",
+                                "Each frame keeps the finished drawing's sample spacing and arc-length anchor.",
+                              )
+                          : tiered(
+                              <>
+                                Tracks vary together, linearly. Use <var>a</var>{" "}
+                                in a curve expression to animate any
+                                coefficient.
+                              </>,
+                              <>
+                                For example,{" "}
+                                <code>
+                                  <var>a</var>*cos(t)
+                                </code>
+                                . Counts change in whole steps. Endpoints accept
+                                constants such as pi.
+                              </>,
+                            )
             }
           >
             <select
@@ -1234,6 +1506,7 @@ export function AnimationPanel({
                       : "Draw along the curve"}
                   </option>
                   <option value="parameters">Vary parameters</option>
+                  {phrasable && <option value="phrase">Play a phrase</option>}
                   {traceable && <option value="trace">Trace rays</option>}
                   {probe && (
                     <option value="probe">
@@ -1245,6 +1518,42 @@ export function AnimationPanel({
               )}
             </select>
           </Field>
+          {mode === "phrase" && (
+            <div data-phrase-presentation="true">
+              <CheckSetting
+                label="Stage label in drawing"
+                topic="stage label in drawing"
+                checked={phraseLabelInDrawing}
+                onChange={changePhraseCaption}
+                help={tiered(
+                  "Move the stage and parameter caption into the drawing.",
+                  "Included in SVG, PNG and motion exports. Off by default; otherwise the caption sits below the viewport on desktop and mobile. Changing placement keeps playback and paused frames intact, and cancels an export already in progress.",
+                )}
+              />
+            </div>
+          )}
+          {mode === "phrase" && phraseDraft && frame && (
+            <PhraseEditor
+              phrase={phraseDraft}
+              problem={phraseProblem}
+              targets={phraseTargets(frame.config)}
+              onChange={(next) =>
+                setPhrase((previous) => {
+                  const before = previous ?? phraseDraft!;
+                  if (next.target === before.target || !frame) return next;
+                  const value = String(
+                    targetValue(frame.config, next.target, length),
+                  );
+                  return {
+                    ...next,
+                    phases: next.phases.map((p) =>
+                      p.key === undefined ? p : { ...p, key: value },
+                    ),
+                  };
+                })
+              }
+            />
+          )}
           {family && familySetup?.mode === "window" && (
             <Field label="Window members" help={familyMotionHelp.width}>
               <input
@@ -1422,16 +1731,18 @@ export function AnimationPanel({
               </button>
             </>
           )}
-          <Field label="Duration (seconds)">
-            <input
-              type="number"
-              min="0.1"
-              max="3600"
-              step="any"
-              value={Number.isNaN(duration) ? "" : duration}
-              onChange={(e) => setDuration(e.target.valueAsNumber)}
-            />
-          </Field>
+          {mode !== "phrase" && (
+            <Field label="Duration (seconds)">
+              <input
+                type="number"
+                min="0.1"
+                max="3600"
+                step="any"
+                value={Number.isNaN(duration) ? "" : duration}
+                onChange={(e) => setDuration(e.target.valueAsNumber)}
+              />
+            </Field>
+          )}
           <div className="pair">
             <Field label="Repeat" help={repeatHelp[repeat]}>
               <select
@@ -1447,10 +1758,21 @@ export function AnimationPanel({
                   ))}
               </select>
             </Field>
-            <Field label="Pace" help={paceHelp[pace]}>
+            <Field
+              label="Pace"
+              help={mode === "phrase" ? phrasePaceHelp : paceHelp[pace]}
+            >
               <select
                 value={pace}
-                onChange={(e) => setPace(e.target.value as Pace)}
+                onChange={(e) => {
+                  const pace = e.target.value as Pace;
+                  setPace(pace);
+                  if (mode === "phrase" && phraseDraft)
+                    setPhrase({
+                      ...phraseDraft,
+                      phases: phraseDraft.phases.map((p) => ({ ...p, pace })),
+                    });
+                }}
               >
                 {paceChoices.map((c) => (
                   <option key={c.value} value={c.value}>
@@ -1469,7 +1791,9 @@ export function AnimationPanel({
                   : camera === "hold"
                     ? family
                       ? "Frames the complete family once and holds that view."
-                      : "Frames the final result once and holds that view."
+                      : mode === "phrase"
+                        ? "Frames the entry study once and holds that view."
+                        : "Frames the final result once and holds that view."
                     : tiered(
                         camera === "follow"
                           ? "Keeps the final zoom and recenters on the evolving geometry; growing shapes may leave the frame."
@@ -1482,9 +1806,11 @@ export function AnimationPanel({
                 value={camera}
                 onChange={(e) => setCamera(e.target.value as CameraMode)}
               >
-                <option value="hold">Hold final view</option>
+                <option value="hold">
+                  {mode === "phrase" ? "Hold entry view" : "Hold final view"}
+                </option>
                 <option value="current">Hold current view</option>
-                {!family && mode !== "trace" && (
+                {!family && mode !== "trace" && mode !== "phrase" && (
                   <>
                     <option value="follow">Follow center, fixed zoom</option>
                     <option value="fit">Fit each frame</option>
@@ -1615,7 +1941,7 @@ export function AnimationPanel({
             ) : (
               <button
                 className="export"
-                disabled={disabled || running || !frame}
+                disabled={disabled || running || !frame || !phraseReady}
                 onClick={() => void start()}
               >
                 {status === "complete"
@@ -1658,7 +1984,9 @@ export function AnimationPanel({
                           ? "Preparing"
                           : `${(progress * duration).toFixed(1)} / ${duration} s`}
               </div>
-              {!preview && <AnimationValues text={live} />}
+              {!preview && (mode !== "phrase" || status === "exporting") && (
+                <AnimationValues text={live} />
+              )}
               <p className="note playback-tip" hidden={preview}>
                 {status === "exporting"
                   ? "Cancel export discards the file; your study stays as it was."
@@ -1672,7 +2000,9 @@ export function AnimationPanel({
         <button
           hidden={preview}
           className="animation-export"
-          disabled={disabled || running || !frame || !exportReady}
+          disabled={
+            disabled || running || !frame || !exportReady || !phraseReady
+          }
           onClick={() => void start(true)}
         >
           Export {text.name} ↗
@@ -1683,9 +2013,9 @@ export function AnimationPanel({
             {exportNotice}
           </p>
         )}
-        {error && (
+        {(error || (phraseProblem && !phraseProblemField(phraseProblem))) && (
           <p className="animation-error" role="alert">
-            {error}
+            {phraseProblem || error}
           </p>
         )}
       </details>

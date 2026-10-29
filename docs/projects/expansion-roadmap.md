@@ -42,7 +42,7 @@ The implementation has unusually useful foundations: pure Go numerical packages 
 4. **Let people explore without losing their work.** Previews, excursions, and suggested variants must be reversible; opening a chosen preset still replaces the whole study.
 5. **Distinguish mathematical objects.** An overlay is a family, not an envelope. A trajectory on a surface is not a free-space trajectory. A planar shadow is not a faithful view of every point in four dimensions.
 6. **Keep the quiet experience.** Progressive controls, short help, a static first frame, reduced-motion behavior, and deliberate Play actions. Dense linework must remain legible on a phone.
-7. **Keep the existing boundaries.** Browser-only computation, no accounts or remote collection, no scene/material editor, and no physical-rendering expansion. New numerical work belongs in Go. Text and legends remain outside every renderable viewport, including exports.
+7. **Keep the existing boundaries.** Browser-only computation, no accounts or remote collection, no scene/material editor, and no physical-rendering expansion. New numerical work belongs in Go. Text and legends remain outside renderable viewports, including exports, except an owner-authorized planar phrase stage-and-parameter caption. Its explicit checkbox defaults off and moves the caption from the surrounding UI into live drawings and still/motion exports; thumbnails remain geometry-only.
 
 ## 3. Portfolio and recommended order
 
