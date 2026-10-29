@@ -8,7 +8,10 @@ import {
 import { applyTracks, reveal } from "../web/animation";
 import { presets } from "../web/presets";
 import type { Result } from "../web/types";
-import { presetStudy as planarPreset } from "../web/planar-link";
+import {
+  presetStudy as planarPreset,
+  type PlotCamera,
+} from "../web/planar-link";
 import { deflateRawSync } from "node:zlib";
 import { watchEngines, engines } from "./engines";
 import { createElement } from "react";
@@ -1777,6 +1780,90 @@ test("a flown phrase opens and ends at a manually panned current view while its 
   expect(fit.scale).toBeCloseTo(fitted, 9);
   expect(fit.cx - start.cx).toBeCloseTo(60 / start.scale, 12);
   expect(fit.cy - start.cy).toBeCloseTo(25 / start.scale, 12);
+});
+
+// Opening at the entry view while the study is refined to a manual view
+// deeper than the fit, the fitted frames at the opening value draw the study
+// refined to no view, as a camera path's do, not the manual view's refinement.
+test("a flown phrase opening at the entry view draws the study refined to no view while the manual view is zoomed", async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  // The views the study is refined to, to show the manual view's refinement
+  // is in effect before Play.
+  await page.addInitScript(() => {
+    const log: unknown[] = [];
+    (window as any).refinedViews = log;
+    const Base = window.Worker;
+    window.Worker = class extends Base {
+      postMessage(message: any, ...rest: any[]) {
+        if (message.action === "compute" && message.view)
+          log.push(message.view);
+        (super.postMessage as any)(message, ...rest);
+      }
+    };
+  });
+  const index = presets.findIndex((p) => p.title === "Inside a star's point");
+  const phrased = (camera: PlotCamera) => {
+    const study = planarPreset(index);
+    study.camera = camera;
+    study.animation = {
+      ...study.animation,
+      mode: "phrase",
+      camera: "hold",
+      repeat: "once",
+      phrase: {
+        target: "stackTo",
+        opening: { base: 1, construction: 1, derived: 1 },
+        phases: [
+          { name: "Hold", duration: 1, pace: "ease" },
+          {
+            name: "Fly into the point",
+            duration: 1,
+            pace: "ease",
+            view: { x: 3.9585, y: 0, zoom: 50 },
+          },
+        ],
+      },
+    };
+    return deflateRawSync(
+      Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study })),
+    ).toString("base64url");
+  };
+  const refinedViews = () =>
+    page.evaluate(() => (window as any).refinedViews.length as number);
+  const opening = async (camera: PlotCamera, refines: boolean) => {
+    await page.goto(`/#s=${phrased(camera)}`);
+    await expect(page).not.toHaveURL(/#s=/);
+    await openAnimation(page);
+    if (refines) await expect.poll(refinedViews).toBeGreaterThan(0);
+    await expect(page.locator(".plot-wrap")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const refined = (await refinedViews()) > 0;
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const slider = page.getByRole("slider", { name: "Animation progress" });
+    await slider.fill("0.25");
+    await expect(page.locator("#artwork")).toHaveAttribute(
+      "data-animation-time",
+      "0.25",
+    );
+    const paths = await page
+      .locator("#artwork path")
+      .evaluateAll((e) => e.map((p) => p.getAttribute("d")));
+    return { refined, paths };
+  };
+  const fitted = await opening({ x: 0, y: 0, zoom: 1 }, false);
+  expect(fitted.refined).toBe(false);
+  expect(fitted.paths.length).toBeGreaterThan(0);
+  // 20× about the star's point: the study is refined to that view.
+  const zoomed = await opening({ x: -5926, y: 0, zoom: 20 }, true);
+  expect(zoomed.refined).toBe(true);
+  expect(zoomed.paths).toEqual(fitted.paths);
 });
 
 test("phase camera keys are taken from the drawing, shown, returned, refused past the zoom limit and saved in links", async ({

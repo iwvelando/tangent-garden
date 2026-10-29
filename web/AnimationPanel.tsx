@@ -1092,10 +1092,11 @@ export function AnimationPanel({
           { fit, entry: heldView ?? fit },
         );
         // A flight refines each zoomed frame to its own view, so the
-        // entry view's refinement gives way to the study refined to none.
+        // manual view's refinement, whether or not the phrase opens at it,
+        // gives way to the study refined to none.
         const refine = flies && refineView;
         const plain =
-          refine && focus
+          refine && getFocus()
             ? await client.current.compute(frame.config, undefined, {
                 diagnostics: !!probe,
               })
