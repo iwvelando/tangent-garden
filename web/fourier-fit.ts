@@ -103,10 +103,12 @@ export type FitState = {
 type FitEngine = Pick<EngineClient, "fitFourier" | "compute" | "dispose">;
 
 // Exactly one worker and one request at a time. Selection changes replace a
-// single wanted count; the current worker caches only this stroke's fit.
+// single wanted count; the current worker caches only this stroke's fit. The
+// stroke is resent until Go accepts it, since a refusal leaves no cached fit.
 export class FourierFitSession {
   private generation = 0;
   private client: FitEngine | null = null;
+  private stroke?: Vec[];
   private wanted = 8;
   private state: FitState = { count: 8, pending: false };
   private running = false;
@@ -117,9 +119,10 @@ export class FourierFitSession {
   close(points: Vec[]) {
     this.cancel();
     this.client = this.factory();
+    this.stroke = points;
     this.state = { count: this.wanted, pending: true };
     this.publish(this.state);
-    void this.run(points);
+    void this.run();
   }
   select(count: number) {
     if (!Number.isInteger(count) || count < 2 || count > 16) return;
@@ -128,7 +131,7 @@ export class FourierFitSession {
     this.publish(this.state);
     if (this.client && !this.running) void this.run();
   }
-  private async run(points?: Vec[]) {
+  private async run() {
     const client = this.client,
       generation = this.generation;
     if (!client) return;
@@ -137,9 +140,9 @@ export class FourierFitSession {
       while (generation === this.generation) {
         const count = this.wanted;
         try {
-          const fit = await client.fitFourier(count, points);
-          points = undefined;
+          const fit = await client.fitFourier(count, this.stroke);
           if (generation !== this.generation) return;
+          this.stroke = undefined;
           if (count !== this.wanted) continue;
           const study = fittedStudy(fit.terms);
           const frame = await client.compute(study.config, study.bounds);
@@ -176,6 +179,7 @@ export class FourierFitSession {
     this.generation++;
     this.client?.dispose();
     this.client = null;
+    this.stroke = undefined;
     this.running = false;
     this.state = { count: this.wanted, pending: false };
     this.publish(this.state);

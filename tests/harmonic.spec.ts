@@ -609,6 +609,45 @@ test("drawn Fourier fitting coalesces selection, owns replies and refuses stale 
   session.cancel();
 });
 
+test("drawn Fourier fitting keeps a refused stroke's reason when the term count changes", async () => {
+  // Go keeps no fit after refusing a stroke, so a count-only request could
+  // only report a missing outline while Close is already spent.
+  const sent: (Vec[] | undefined)[] = [];
+  const states: any[] = [];
+  const client = {
+    fitFourier: async (_count: number, points?: Vec[]) => {
+      sent.push(points);
+      throw new Error(
+        points
+          ? "an outline needs at least three distinct points"
+          : "close a valid outline before selecting terms",
+      );
+    },
+    compute: async () => ({}) as Frame,
+    dispose: () => {},
+  };
+  const session = new FourierFitSession(
+    () => client,
+    (s) => states.push(s),
+  );
+  const flush = async () => {
+    for (let j = 0; j < 10; j++) await Promise.resolve();
+  };
+  const tap = [
+    { x: 1, y: 1 },
+    { x: 1, y: 1 },
+  ];
+  session.close(tap);
+  await flush();
+  expect(states.at(-1).error).toMatch(/three distinct/);
+  session.select(12);
+  await flush();
+  expect(sent).toEqual([tap, tap]);
+  expect(states.at(-1)).toMatchObject({ count: 12, pending: false });
+  expect(states.at(-1).error).toMatch(/three distinct/);
+  session.cancel();
+});
+
 test("drawn Fourier fitting rejects an obsolete computation error and continues the latest selection", async () => {
   const jobs: { resolve: (v: any) => void; reject: (e: Error) => void }[] = [];
   const fit = {
