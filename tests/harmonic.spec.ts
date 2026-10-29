@@ -12,8 +12,747 @@ import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { Result, Vec } from "../web/types";
 import { exportImage, openAnimation, choosePreset } from "./helpers";
+import { FourierFitSession, fittedStudy } from "../web/fourier-fit";
+import type { Frame } from "../web/types";
+import {
+  checkFitMouseAndReturn,
+  checkFitPlaybackLayout,
+  checkFitAdoptionVisibility,
+  fitDialog,
+  leafFit,
+  openFit,
+} from "./fourier-fit-checks";
+import { readStudyLink, writeStudyLink } from "../web/study-link";
+import { decodePng } from "./png";
+import { decodeVideo, probe as probeMovie } from "./video";
+import { openExportSettings } from "./helpers";
+
+test("drawing playback stays beside its scrubber immediately below the visible art in both phone orientations", async ({
+  page,
+}) => {
+  await checkFitPlaybackLayout(page);
+});
+
+test("drawing adoption stays visible as a primary action from capture through preview", async ({
+  page,
+}) => {
+  await checkFitAdoptionVisibility(page);
+});
+
+test("drawing entry explains arbitrary shapes before Fourier details and labels the leaf as an example", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const entry = page.getByRole("button", { name: "Draw a loop", exact: true });
+  const toggle = page.getByRole("button", {
+    name: "About Draw a loop",
+    exact: true,
+  });
+  await expect(toggle).toBeVisible();
+  const before = (await entry.boundingBox())!;
+  const icon = (await toggle.boundingBox())!;
+  expect(icon.x).toBeGreaterThan(before.x + before.width);
+  expect(
+    Math.abs(icon.y + icon.height / 2 - before.y - before.height / 2),
+  ).toBeLessThan(2);
+  await toggle.click();
+  const help = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
+  await expect(help.locator(".hint-brief")).toContainText("Draw any shape");
+  await expect(help.locator(".hint-brief")).toContainText("editable study");
+  await expect(help.locator(".hint-more")).toBeHidden();
+  await expect(entry).toHaveAttribute(
+    "aria-describedby",
+    (await help.getAttribute("id"))!,
+  );
+  await expect(fitDialog(page)).toBeHidden();
+  await help.getByRole("button", { name: "Show more", exact: true }).click();
+  await expect(help.locator(".hint-more")).toContainText("Fourier");
+  await expect(help.locator(".hint-more")).toContainText("rotating circles");
+  await expect(help.locator(".hint-more")).toContainText("4,096");
+  expect((await entry.boundingBox())!.y).toBe(before.y);
+  await toggle.click();
+  await toggle.click();
+  await expect(help.locator(".hint-more")).toBeHidden();
+  await entry.click();
+  const dialog = fitDialog(page);
+  await expect(
+    dialog.getByRole("heading", {
+      name: "1. Draw or try an example",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Use example leaf", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: /^Sample leaf$/, exact: true }),
+  ).toHaveCount(0);
+});
+
+test("drawing presents an example leaf without mathematical-sounding capture labels", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const dialog = await openFit(page);
+  await expect(
+    dialog.getByRole("button", { name: "Use example leaf", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", {
+      name: "1. Draw or try an example",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Use example leaf", exact: true })
+    .click();
+  await expect(dialog.getByTestId("stroke-reference")).toHaveAttribute(
+    "data-point-count",
+    "29",
+  );
+  await expect(dialog.getByTestId("stroke-reference")).toHaveAttribute(
+    "data-closed",
+    "false",
+  );
+});
+
+test("adopted drawing links, stills and decoded reveal match an equivalent ordinary Fourier study", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await settled(page);
+  await page.getByLabel("Line weight", { exact: true }).selectOption("bold");
+  await page.getByLabel("Duration (seconds)", { exact: true }).fill("7");
+  const dialog = await leafFit(page);
+  await expect(
+    dialog.getByText(/A short offset is ready to show/),
+  ).toBeVisible();
+  await dialog
+    .getByLabel("Show original outline in preview", { exact: true })
+    .check();
+  const terms = JSON.parse(
+    (await dialog.locator("#fit-artwork desc").textContent())!,
+  ).curve.terms;
+  await dialog.getByRole("button", { name: "Adopt fitted study" }).click();
+  await expect
+    .poll(async () => (await definition(page)).curve.format)
+    .toBe("fourier");
+  await settled(page);
+  await expect(page.getByLabel("Line weight", { exact: true })).toHaveValue(
+    "regular",
+  );
+  await expect(
+    page.getByLabel("Duration (seconds)", { exact: true }),
+  ).toHaveValue("10");
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const url = await page.evaluate(() => navigator.clipboard.readText());
+  const linked = await readStudyLink(url.split("#s=")[1]);
+  const expected = fittedStudy(terms);
+  expect(linked).toEqual({ notebook: "2d", study: expected });
+  expect(JSON.stringify(linked)).not.toMatch(/stroke|residual|rawPoints/);
+  await page.mouse.click(1, 1);
+  // Existing controls now operate on the fit's ordinary evaluator.
+  await page.getByRole("button", { name: "inversion", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: "Derived curve", exact: true })
+    .check();
+  await settled(page);
+  const config = await definition(page);
+  expect(config.kind).toBe("inversion");
+  expect(config.curve.terms).toEqual(terms);
+  const ordinary = {
+    ...expected,
+    config,
+    layers: { ...expected.layers, derived: true },
+  };
+  const ordinaryURL = `/#s=${await writeStudyLink("2d", ordinary)}`;
+  const still = async (kind: "SVG" | "PNG") => {
+    const save = page.waitForEvent("download");
+    await exportImage(page, kind);
+    return readFile((await (await save).path())!);
+  };
+  const movie = async () => {
+    await openExportSettings(page);
+    await page.getByLabel("Duration (seconds)", { exact: true }).fill(".4");
+    await page
+      .getByLabel("Export frame rate", { exact: true })
+      .selectOption("15");
+    await page.getByLabel("Export resolution", { exact: true }).fill("0.5");
+    await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+    const save = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export MP4 video" }).click();
+    const path = (await (await save).path())!;
+    const independent = probeMovie(path);
+    if (independent) {
+      expect(independent.frames).toBe(6);
+      expect(independent.durations.reduce((a, b) => a + b, 0)).toBe(400);
+    }
+    return decodeVideo(page, await readFile(path));
+  };
+  const svg = await still("SVG"),
+    png = decodePng(await still("PNG")),
+    video = await movie();
+  expect(svg.toString()).not.toContain("<text");
+  expect(svg.toString()).not.toContain("stroke-reference");
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  expect(video.first.hash).not.toBe(video.last.hash);
+  await page.goto(ordinaryURL);
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  await settled(page);
+  expect(
+    (await still("SVG")).toString().replace(/<desc>.*?<\/desc>/s, ""),
+  ).toBe(svg.toString().replace(/<desc>.*?<\/desc>/s, ""));
+  const normalPNG = decodePng(await still("PNG"));
+  expect([normalPNG.width, normalPNG.height]).toEqual([png.width, png.height]);
+  expect(Buffer.from(normalPNG.rgba)).toEqual(Buffer.from(png.rgba));
+  const normalVideo = await movie();
+  expect(normalVideo).toEqual(video);
+  await choosePreset(page, 0);
+  await settled(page);
+  expect((await definition(page)).curve.format).toBe("parametric");
+});
+
+test("delayed drawing work is disposed on reset, cancel and a replacement link", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const Original = Worker;
+    (window as any).fitWorkers = [];
+    (window as any).releaseFits = [];
+    window.Worker = class extends Original {
+      tracked: any;
+      postMessage(data: any, ...rest: any[]) {
+        if (data.action === "fourier-fit") {
+          this.tracked ??= { terminated: false };
+          (window as any).fitWorkers.push(this.tracked);
+          (window as any).releaseFits.push(() =>
+            super.postMessage(data, ...rest),
+          );
+        } else super.postMessage(data, ...rest);
+      }
+      terminate() {
+        if (this.tracked) this.tracked.terminated = true;
+        super.terminate();
+      }
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  const dialog = await openFit(page);
+  const begin = async () => {
+    await dialog
+      .getByRole("button", { name: "Use example leaf", exact: true })
+      .click();
+    await dialog.getByRole("button", { name: "Close outline" }).click();
+    await expect(dialog.locator(".fit-result")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+  };
+  await begin();
+  await dialog.getByRole("button", { name: "Reset outline" }).click();
+  expect(
+    await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
+  ).toBe(true);
+  await begin();
+  await dialog.getByRole("button", { name: "Cancel drawing" }).click();
+  expect(
+    await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
+  ).toBe(true);
+  await openFit(page);
+  await begin();
+  const replacement = fittedStudy([
+    { frequency: 0, radius: 0, phase: 0 },
+    { frequency: 1, radius: 2, phase: 0 },
+  ]);
+  await page.goto(`/#s=${await writeStudyLink("2d", replacement)}`);
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+  expect(
+    await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
+  ).toBe(true);
+  await expect
+    .poll(async () => (await definition(page)).curve.terms)
+    .toEqual(replacement.config.curve.terms);
+  await page.evaluate(() => {
+    for (const release of (window as any).releaseFits) release();
+  });
+  await expect(dialog).toBeHidden();
+  await expect(page.getByLabel("Definition", { exact: true })).toHaveValue(
+    "fourier",
+  );
+});
+
+test("drawing captures a real mouse stroke, preserves geometry on resize and returns raw drafts and camera", async ({
+  page,
+}) => {
+  await checkFitMouseAndReturn(page);
+});
+
+test("drawing entry settles pending scalars and defers invalid original work", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    (window as any).releaseFitScalar = () => {};
+    Worker.prototype.postMessage = function (data: any, ...rest: any[]) {
+      if (data.action === "scalars")
+        (window as any).releaseFitScalar = () => post.call(this, data, ...rest);
+      else post.call(this, data, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  const scalar = page.getByLabel("Shape parameter a", { exact: true });
+  await scalar.fill("2*pi");
+  await page.getByRole("button", { name: "Draw a loop", exact: true }).click();
+  await expect(fitDialog(page)).toBeHidden();
+  await page.evaluate(() => (window as any).releaseFitScalar());
+  await expect(fitDialog(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(scalar).toHaveValue("2*pi");
+  await scalar.fill("sqrt(-1)");
+  await page.getByRole("button", { name: "Draw a loop", exact: true }).click();
+  await page.evaluate(() => (window as any).releaseFitScalar());
+  await expect(
+    page.getByText("Correct the highlighted input before drawing a loop.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(fitDialog(page)).toBeHidden();
+  await expect(scalar).toHaveValue("sqrt(-1)");
+  await expect(scalar).toHaveAttribute("aria-invalid", "true");
+});
+
+test("drawing captures real pen and touch in equal-scale coordinates and replaces drafts", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await settled(page);
+  const dialog = await openFit(page),
+    surface = dialog.getByTestId("stroke-reference");
+  await surface.scrollIntoViewIfNeeded();
+  const cdp = await context.newCDPSession(page);
+  const box = (await surface.boundingBox())!;
+  const positions = [
+    [0.2, 0.3],
+    [0.8, 0.3],
+    [0.5, 0.8],
+  ];
+  const event = (p: number[]) => ({
+    x: box.x + p[0] * box.width,
+    y: box.y + p[1] * box.height,
+  });
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    ...event(positions[0]),
+    button: "left",
+    buttons: 1,
+    clickCount: 1,
+    pointerType: "pen",
+  });
+  for (const p of positions.slice(1))
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      ...event(p),
+      button: "left",
+      buttons: 1,
+      pointerType: "pen",
+    });
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    ...event(positions[2]),
+    button: "left",
+    buttons: 0,
+    clickCount: 1,
+    pointerType: "pen",
+  });
+  const pen = await surface.locator("polyline").getAttribute("points");
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ ...event(positions[0]), id: 7 }],
+  });
+  for (const p of positions.slice(1))
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ ...event(p), id: 7 }],
+    });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  const touch = await surface.locator("polyline").getAttribute("points");
+  const parse = (s: string) =>
+    s.split(" ").map((p) => p.split(",").map(Number));
+  expect(parse(touch!)).toEqual(parse(pen!));
+  expect(parse(touch!)[0][0]).toBeCloseTo(-1.8, 1);
+  expect(parse(touch!)[0][1]).toBeCloseTo(-0.912, 1); // SVG y-down; model y is +.912.
+  await expect(surface).toHaveAttribute("data-closed", "false");
+  await dialog.getByRole("button", { name: "Close outline" }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await dialog.getByRole("button", { name: "Reset outline" }).click();
+  await expect(surface).toHaveAttribute("data-point-count", "0");
+  await expect(
+    dialog.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeDisabled();
+});
+
+test("drawing caps visible samples and handles lost pointer capture and touch cancellation", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const dialog = await openFit(page),
+    surface = dialog.getByTestId("stroke-reference");
+  const box = (await surface.boundingBox())!;
+  await surface.evaluate((s) =>
+    s.addEventListener(
+      "pointerdown",
+      (e) => {
+        (s as SVGSVGElement).dataset.pointer = String(
+          (e as PointerEvent).pointerId,
+        );
+      },
+      { once: true },
+    ),
+  );
+  await page.mouse.move(box.x + 50, box.y + 50);
+  await page.mouse.down();
+  await surface.evaluate((s, box) => {
+    const id = Number((s as SVGSVGElement).dataset.pointer);
+    for (let j = 0; j < 4100; j++)
+      s.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          pointerId: id,
+          isPrimary: true,
+          clientX: box.x + 50 + (j % 100),
+          clientY: box.y + 50 + Math.floor(j / 100),
+        }),
+      );
+  }, box);
+  await expect(surface).toHaveAttribute("data-point-count", "4096");
+  await expect(dialog.getByRole("status")).toContainText(
+    "4,096 points reached",
+  );
+  await surface.evaluate((s) =>
+    s.releasePointerCapture(Number((s as SVGSVGElement).dataset.pointer)),
+  );
+  await page.mouse.up();
+  await expect(dialog.getByRole("status")).toContainText("Stroke interrupted");
+  await expect(surface).toHaveAttribute("data-closed", "false");
+  await dialog.getByRole("button", { name: "Close outline" }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await dialog.getByRole("button", { name: "Reset outline" }).click();
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: box.x + 100, y: box.y + 100, id: 1 }],
+  });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchCancel",
+    touchPoints: [],
+  });
+  await expect(dialog.getByRole("status")).toContainText("Stroke interrupted");
+  await expect(
+    dialog.getByRole("button", { name: "Use example leaf", exact: true }),
+  ).toBeEnabled();
+});
+
+for (const dark of [false, true])
+  test(`drawing geometry and keyboard controls at phone width with ${dark ? "dark" : "light"} alternate colors`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
+    await page.addInitScript(() =>
+      localStorage.setItem("tangent-garden.color-scheme", "forest"),
+    );
+    await page.goto("/");
+    await settled(page);
+    await page
+      .getByRole("button", { name: "Draw a loop", exact: true })
+      .focus();
+    await page.keyboard.press("Enter");
+    const dialog = fitDialog(page);
+    const title = (await dialog
+      .getByRole("heading", { name: "Your leaf, made of circles" })
+      .boundingBox())!;
+    const cancel = (await dialog
+      .getByRole("button", { name: "Cancel drawing" })
+      .boundingBox())!;
+    expect(cancel.x).toBeGreaterThan(title.x + 100);
+    expect(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
+      true,
+    );
+    await dialog
+      .getByRole("button", { name: "Use example leaf", exact: true })
+      .focus();
+    await page.keyboard.press("Enter");
+    await dialog.getByRole("button", { name: "Close outline" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      dialog.getByRole("button", { name: "Adopt fitted study" }),
+    ).toBeEnabled();
+    await expect(dialog.locator("svg text")).toHaveCount(0);
+    const inks = await dialog
+      .getByTestId("stroke-reference")
+      .locator("polygon")
+      .evaluate((p) => ({
+        stroke: getComputedStyle(p).stroke,
+        ink: getComputedStyle(p).getPropertyValue("--base-ink").trim(),
+      }));
+    const rgb = inks.ink.match(/[a-f\d]{2}/gi)!.map((n) => parseInt(n, 16));
+    expect(inks.stroke).toBe(`rgb(${rgb.join(", ")})`);
+    await dialog
+      .getByLabel("Show original outline in preview", { exact: true })
+      .check();
+    await expect(dialog.getByTestId("fit-reference")).toBeVisible();
+    await dialog.getByLabel("Preview position", { exact: true }).fill("0.5");
+    await dialog.screenshot({
+      path: info.outputPath(`fit-phone-${dark ? "dark" : "light"}.png`),
+    });
+    await page.keyboard.press("Escape");
+  });
+
+test("drawn Fourier fitting coalesces selection, owns replies and refuses stale adoption", async () => {
+  const jobs: {
+    kind: string;
+    count?: number;
+    resolve: (v: any) => void;
+    reject: (e: Error) => void;
+  }[] = [];
+  let disposed = 0;
+  const factory = () => ({
+    fitFourier: (count: number) =>
+      new Promise<any>((resolve, reject) =>
+        jobs.push({ kind: "fit", count, resolve, reject }),
+      ),
+    compute: () =>
+      new Promise<Frame>((resolve, reject) =>
+        jobs.push({ kind: "compute", resolve, reject }),
+      ),
+    dispose: () => {
+      disposed++;
+    },
+  });
+  const states: any[] = [];
+  const session = new FourierFitSession(factory, (s) => states.push(s));
+  const points = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+  ];
+  const fit = (n: number) => ({
+    terms: Array.from({ length: n }, (_, j) => ({
+      frequency: j,
+      radius: 1,
+      phase: 0,
+    })),
+    rms: 1,
+    maxResidual: 2,
+    sampleCount: 1024,
+    length: 4,
+  });
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+  session.close(points);
+  expect(jobs).toHaveLength(1);
+  session.select(16);
+  session.select(3);
+  session.select(12);
+  expect(session.candidate()).toBeNull();
+  expect(jobs).toHaveLength(1);
+  jobs.shift()!.resolve(fit(8));
+  await flush();
+  expect(jobs.map((j) => [j.kind, j.count])).toEqual([["fit", 12]]);
+  jobs.shift()!.resolve(fit(12));
+  await flush();
+  expect(jobs[0].kind).toBe("compute");
+  session.select(16);
+  jobs
+    .shift()!
+    .resolve({ config: fittedStudy(fit(12).terms).config, result: {} });
+  await flush();
+  expect(session.candidate()).toBeNull();
+  expect(jobs[0].count).toBe(16);
+  session.cancel();
+  expect(disposed).toBe(1);
+  const count = states.length;
+  jobs.shift()!.reject(new Error("late failure"));
+  await flush();
+  expect(states).toHaveLength(count);
+  session.close(points);
+  jobs.shift()!.resolve(fit(16));
+  await flush();
+  jobs
+    .shift()!
+    .resolve({ config: fittedStudy(fit(16).terms).config, result: {} });
+  await flush();
+  expect(session.candidate()?.config.curve.terms).toEqual(fit(16).terms);
+  const adopted = session.candidate()!;
+  adopted.config.curve.terms[0].radius = 99;
+  expect(session.candidate()!.config.curve.terms[0].radius).toBe(1);
+  session.cancel();
+});
+
+test("drawn Fourier fitting rejects an obsolete computation error and continues the latest selection", async () => {
+  const jobs: { resolve: (v: any) => void; reject: (e: Error) => void }[] = [];
+  const fit = {
+    terms: [
+      { frequency: 0, radius: 0, phase: 0 },
+      { frequency: 1, radius: 1, phase: 0 },
+    ],
+    rms: 0,
+    maxResidual: 0,
+    sampleCount: 1024,
+    length: 6,
+  };
+  const states: any[] = [];
+  const client = {
+    fitFourier: () =>
+      new Promise<any>((resolve, reject) => jobs.push({ resolve, reject })),
+    compute: () =>
+      new Promise<any>((resolve, reject) => jobs.push({ resolve, reject })),
+    dispose: () => {},
+  };
+  const session = new FourierFitSession(
+    () => client,
+    (s) => states.push(s),
+  );
+  const flush = async () => {
+    for (let j = 0; j < 10; j++) await Promise.resolve();
+  };
+  session.close([
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+  ]);
+  jobs.shift()!.resolve(fit);
+  await flush();
+  session.select(16);
+  jobs.shift()!.reject(new Error("obsolete preview failed"));
+  await flush();
+  expect(states.at(-1).error).toBeUndefined();
+  expect(jobs).toHaveLength(1);
+  jobs.shift()!.resolve(fit);
+  await flush();
+  jobs.shift()!.resolve({ config: fittedStudy(fit.terms).config, result: {} });
+  await flush();
+  expect(session.candidate()).not.toBeNull();
+  session.cancel();
+});
+
+test("a fitted study opens with short offset normals and a clean opt-in reveal", () => {
+  const study = fittedStudy([
+    { frequency: 0, radius: 0, phase: 0 },
+    { frequency: 1, radius: 1, phase: 0 },
+  ]);
+  expect(study.config.kind).toBe("offset");
+  expect(study.config.distance).toBe(0.15);
+  expect(study.config.input).toBe("curve");
+  expect(study.config.stack.enabled).toBe(false);
+  expect(study.config.circles).toBe(false);
+  expect(study.layers).toEqual({
+    base: true,
+    derived: false,
+    lines: true,
+    incident: true,
+    virtual: true,
+    axes: false,
+  });
+  expect(study.animation.mode).toBe("reveal");
+  expect(study.animation.tracks).toEqual([]);
+  expect(study.animation.phrase).toBeUndefined();
+  expect(study.family).toBeUndefined();
+  expect(study.probe.enabled).toBe(false);
+});
 
 const lissajousTitle = "Lissajous 3 : 2 & its pedal";
+test("drawn leaf closes explicitly, previews ordinary epicycles and adopts a complete custom study", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const original = await definition(page);
+  await page.getByRole("button", { name: "Draw a loop", exact: true }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Your leaf, made of circles",
+  });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Use example leaf", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeDisabled();
+  await expect(
+    dialog.locator("[data-testid=stroke-reference]"),
+  ).toHaveAttribute("data-closed", "false");
+  await dialog.getByRole("button", { name: "Close outline" }).click();
+  await expect(
+    dialog.locator("[data-testid=stroke-reference]"),
+  ).toHaveAttribute("data-closed", "true");
+  await expect(
+    dialog.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await expect(dialog.getByTestId("epicycles")).toBeVisible();
+  const eight = JSON.parse(
+    (await dialog.locator("#fit-artwork desc").textContent())!,
+  );
+  expect(eight.curve.terms).toHaveLength(8);
+  await dialog.getByLabel("Total terms", { exact: true }).selectOption("16");
+  await expect(
+    dialog.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  const sixteen = JSON.parse(
+    (await dialog.locator("#fit-artwork desc").textContent())!,
+  );
+  expect(sixteen.curve.terms).toHaveLength(16);
+  expect(sixteen.curve.terms.slice(0, 8)).toEqual(eight.curve.terms);
+  await dialog.getByRole("button", { name: "Cancel drawing" }).click();
+  await expect(dialog).toBeHidden();
+  expect(await definition(page)).toEqual(original);
+  await expect(
+    page.getByRole("button", { name: "Draw a loop", exact: true }),
+  ).toBeFocused();
+  await page
+    .getByRole("button", { name: "Draw a loop", exact: true })
+    .press("Enter");
+  await dialog
+    .getByRole("button", { name: "Use example leaf", exact: true })
+    .click();
+  await dialog.getByRole("button", { name: "Close outline" }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await dialog.getByRole("button", { name: "Adopt fitted study" }).click();
+  await settled(page);
+  await expect
+    .poll(async () => (await definition(page)).curve.format)
+    .toBe("fourier");
+  const adopted = await definition(page);
+  expect(adopted.curve.format).toBe("fourier");
+  expect(adopted.curve.terms).toHaveLength(8);
+  expect(adopted.input).toBe("curve");
+  expect([adopted.curve.min, adopted.curve.max]).toEqual([0, 2 * Math.PI]);
+  expect(adopted.kind).toBe("offset");
+  await expect(page.getByTestId("epicycles")).toBeVisible();
+  await expect(page.locator("[data-testid=stroke-reference]")).toHaveCount(0);
+});
 const fourierTitle = "Epicycles, turned inside out";
 const irrationalTitle = "Lissajous √2 : 1, never closing";
 const preset = (title: string) =>

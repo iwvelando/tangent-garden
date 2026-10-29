@@ -23,6 +23,9 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
+import { FourierFitPreview } from "./FourierFitPreview";
+import { FourierFitContext, type FourierFitRequest } from "./FourierFitContext";
+import { fitEntryHelp } from "./fourier-fit";
 import { AtlasPreview } from "./AtlasPreview";
 import { AtlasContext, type AtlasRequest } from "./AtlasContext";
 import { atlasBudget, atlasEntryHelp } from "./atlas";
@@ -288,6 +291,15 @@ function App({
   shared?: SharedStudy;
   adoption?: AdoptedJourney;
 }) {
+  const fitOwner = useContext(FourierFitContext);
+  const [fitWaiting, setFitWaiting] = useState<"keyboard" | "pointer" | null>(
+    null,
+  );
+  const [fitNotice, setFitNotice] = useState("");
+  const fitEntry = useRef<HTMLDivElement>(null);
+  const fitButton = useRef<HTMLButtonElement>(null);
+  const fitQuiet = useQuietFocus(fitEntry);
+  const fitHelp = useHelp();
   const atlasOwner = useContext(AtlasContext);
   const excursionActive = useContext(JourneyContext).active;
   const [atlasWaiting, setAtlasWaiting] = useState<
@@ -1308,6 +1320,8 @@ function App({
     settings: PlanarAnimation;
   } | null>(null);
   const openStudy = (id: number, study: PlanarStudy, preset = "custom") => {
+    setFitWaiting(null);
+    setFitNotice("");
     setAtlasWaiting(null);
     setAtlasNotice("");
     touched.current = null;
@@ -1467,6 +1481,28 @@ function App({
       }
     }
   }, [active, atlasWaiting, busy, error]);
+  useEffect(() => {
+    if (!active) {
+      setFitWaiting(null);
+      setFitNotice("");
+    } else if (fitWaiting && !busy) {
+      setFitWaiting(null);
+      if (error)
+        setFitNotice("Correct the highlighted input before drawing a loop.");
+      else {
+        setFitNotice("");
+        fitOwner.begin({
+          via: fitWaiting,
+          restoreFocus: (via) => {
+            if (via === "pointer") fitQuiet.onPointerDown();
+            else fitQuiet.onKeyDownCapture();
+            fitQuiet.quiet();
+            fitButton.current?.focus({ preventScroll: true });
+          },
+        });
+      }
+    }
+  }, [active, fitWaiting, busy, error]);
   // Where the error is shown: under the input that failed to parse, or
   // under the control the engine's error names, or, for an error about the
   // whole study, the control just changed; the drawing shows it only when
@@ -1574,6 +1610,34 @@ function App({
                 {atlasNotice && (
                   <p className="note" role="status">
                     {atlasNotice}
+                  </p>
+                )}
+              </div>
+              <div
+                className="fit-entry"
+                ref={fitEntry}
+                onPointerDown={fitQuiet.onPointerDown}
+                onKeyDownCapture={fitQuiet.onKeyDownCapture}
+              >
+                <div className="fit-entry-actions">
+                  <button
+                    ref={fitButton}
+                    type="button"
+                    disabled={animationRunning}
+                    aria-describedby={fitHelp.open ? fitHelp.id : undefined}
+                    onClick={(e) => {
+                      setFitWaiting(e.detail === 0 ? "keyboard" : "pointer");
+                      setFitNotice("Waiting for your study’s inputs…");
+                    }}
+                  >
+                    Draw a loop
+                  </button>
+                  <HelpToggle topic="Draw a loop" help={fitHelp} />
+                </div>
+                <HelpText help={fitHelp}>{fitEntryHelp}</HelpText>
+                {fitNotice && (
+                  <p className="note" role="status">
+                    {fitNotice}
                   </p>
                 )}
               </div>
@@ -2806,18 +2870,19 @@ function Notebook() {
   const theme = useTheme();
   const [excursion, setExcursion] = useState<JourneyRequest | null>(null);
   const [atlas, setAtlas] = useState<AtlasRequest | null>(null);
+  const [fit, setFit] = useState<FourierFitRequest | null>(null);
   const [adoptions, setAdoptions] = useState<
     Partial<Record<NotebookKind, AdoptedJourney>>
   >({});
   const adoptionId = useRef(0);
   const restoreFocus = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
-    if (!excursion && !atlas && restoreFocus.current) {
+    if (!excursion && !atlas && !fit && restoreFocus.current) {
       const focus = restoreFocus.current;
       restoreFocus.current = null;
       focus();
     }
-  }, [excursion, atlas]);
+  }, [excursion, atlas, fit]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -2832,6 +2897,7 @@ function Notebook() {
   const choose = (next: NotebookKind, via: "keyboard" | "pointer") => {
     if (next === mode) return;
     setAtlas(null);
+    setFit(null);
     setExcursion(null);
     focusRequest.current = via;
     show(next);
@@ -2855,6 +2921,7 @@ function Notebook() {
     const pop = () => {
       setExcursion(null);
       setAtlas(null);
+      setFit(null);
       show(notebookKind());
     };
     window.addEventListener("popstate", pop);
@@ -2872,6 +2939,7 @@ function Notebook() {
       if (token === null) return;
       setExcursion(null);
       setAtlas(null);
+      setFit(null);
       const id = ++links.current;
       let next: { notebook: NotebookKind; link: SharedStudy };
       try {
@@ -2903,114 +2971,160 @@ function Notebook() {
   }, []);
   return (
     <NotebookContext.Provider value={{ mode, choose, focusRequest }}>
-      <AtlasContext.Provider value={{ begin: setAtlas }}>
-        <JourneyContext.Provider
-          value={{
-            active: !!excursion || !!atlas,
-            begin: setExcursion,
-          }}
-        >
-          {atlas && (
-            <div
-              className={theme.dark ? "app dark" : "app"}
-              style={{ ...theme.style, display: "contents" }}
-            >
-              <AtlasPreview
-                request={atlas}
-                onReturn={(via) => {
-                  restoreFocus.current = () => atlas.restoreFocus(via);
-                  setAtlas(null);
-                }}
-                onAdopt={(study, via) => {
-                  links.current++;
-                  setShared((s) => ({ ...s, "2d": undefined }));
-                  setAdoptions((a) => ({
-                    ...a,
-                    "2d": {
-                      notebook: "2d",
-                      study,
-                      custom: true,
-                      preset: 0,
-                      id: ++adoptionId.current,
-                    },
-                  }));
-                  restoreFocus.current = () => atlas.restoreFocus(via);
-                  setAtlas(null);
-                }}
-              />
-            </div>
-          )}
-          {excursion && (
-            <div
-              className={theme.dark ? "app dark" : "app"}
-              style={{ ...theme.style, display: "contents" }}
-            >
-              <JourneyPreview
-                journey={excursion.journey}
-                via={excursion.via}
-                onReturn={(via) => {
-                  restoreFocus.current = () => excursion.restoreFocus(via);
-                  setExcursion(null);
-                }}
-                onOpen={(adoption: JourneyAdoption, via) => {
-                  links.current++;
-                  setShared((s) => ({ ...s, [adoption.notebook]: undefined }));
-                  setAdoptions((a) => ({
-                    ...a,
-                    [adoption.notebook]: {
-                      ...adoption,
-                      id: ++adoptionId.current,
-                    },
-                  }));
-                  if (adoption.notebook === mode)
+      <FourierFitContext.Provider value={{ begin: setFit }}>
+        <AtlasContext.Provider value={{ begin: setAtlas }}>
+          <JourneyContext.Provider
+            value={{
+              active: !!excursion || !!atlas || !!fit,
+              begin: setExcursion,
+            }}
+          >
+            {fit && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <FourierFitPreview
+                  request={fit}
+                  onReturn={(via) => {
+                    restoreFocus.current = () => fit.restoreFocus(via);
+                    setFit(null);
+                  }}
+                  onAdopt={(study, via) => {
+                    links.current++;
+                    setShared((s) => ({ ...s, "2d": undefined }));
+                    setAdoptions((a) => ({
+                      ...a,
+                      "2d": {
+                        notebook: "2d",
+                        study,
+                        custom: true,
+                        preset: 0,
+                        id: ++adoptionId.current,
+                      },
+                    }));
+                    restoreFocus.current = () => fit.restoreFocus(via);
+                    setFit(null);
+                  }}
+                />
+              </div>
+            )}
+            {atlas && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <AtlasPreview
+                  request={atlas}
+                  onReturn={(via) => {
+                    restoreFocus.current = () => atlas.restoreFocus(via);
+                    setAtlas(null);
+                    setFit(null);
+                  }}
+                  onAdopt={(study, via) => {
+                    links.current++;
+                    setShared((s) => ({ ...s, "2d": undefined }));
+                    setAdoptions((a) => ({
+                      ...a,
+                      "2d": {
+                        notebook: "2d",
+                        study,
+                        custom: true,
+                        preset: 0,
+                        id: ++adoptionId.current,
+                      },
+                    }));
+                    restoreFocus.current = () => atlas.restoreFocus(via);
+                    setAtlas(null);
+                    setFit(null);
+                  }}
+                />
+              </div>
+            )}
+            {excursion && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <JourneyPreview
+                  journey={excursion.journey}
+                  via={excursion.via}
+                  onReturn={(via) => {
                     restoreFocus.current = () => excursion.restoreFocus(via);
-                  else choose(adoption.notebook, via);
-                  setExcursion(null);
-                }}
-              />
-            </div>
-          )}
-          {seen["2d"] && (
-            <div inert={!!excursion || !!atlas} hidden={mode !== "2d"}>
-              <App
-                active={mode === "2d"}
-                shared={shared["2d"]}
-                adoption={adoptions["2d"]}
-              />
-            </div>
-          )}
-          {seen["3d"] && (
-            <div inert={!!excursion || !!atlas} hidden={mode !== "3d"}>
-              <Suspense
-                fallback={
-                  <div className="loading">Opening the spatial notebook…</div>
-                }
-              >
-                <SpatialApp
-                  active={mode === "3d"}
-                  shared={shared["3d"]}
-                  adoption={adoptions["3d"]}
+                    setExcursion(null);
+                  }}
+                  onOpen={(adoption: JourneyAdoption, via) => {
+                    links.current++;
+                    setShared((s) => ({
+                      ...s,
+                      [adoption.notebook]: undefined,
+                    }));
+                    setAdoptions((a) => ({
+                      ...a,
+                      [adoption.notebook]: {
+                        ...adoption,
+                        id: ++adoptionId.current,
+                      },
+                    }));
+                    if (adoption.notebook === mode)
+                      restoreFocus.current = () => excursion.restoreFocus(via);
+                    else choose(adoption.notebook, via);
+                    setExcursion(null);
+                  }}
                 />
-              </Suspense>
-            </div>
-          )}
-          {seen["4d"] && (
-            <div inert={!!excursion || !!atlas} hidden={mode !== "4d"}>
-              <Suspense
-                fallback={
-                  <div className="loading">Opening the fourth dimension…</div>
-                }
+              </div>
+            )}
+            {seen["2d"] && (
+              <div
+                inert={!!excursion || !!atlas || !!fit}
+                hidden={mode !== "2d"}
               >
-                <TesseractApp
-                  active={mode === "4d"}
-                  shared={shared["4d"]}
-                  adoption={adoptions["4d"]}
+                <App
+                  active={mode === "2d"}
+                  shared={shared["2d"]}
+                  adoption={adoptions["2d"]}
                 />
-              </Suspense>
-            </div>
-          )}
-        </JourneyContext.Provider>
-      </AtlasContext.Provider>
+              </div>
+            )}
+            {seen["3d"] && (
+              <div
+                inert={!!excursion || !!atlas || !!fit}
+                hidden={mode !== "3d"}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loading">Opening the spatial notebook…</div>
+                  }
+                >
+                  <SpatialApp
+                    active={mode === "3d"}
+                    shared={shared["3d"]}
+                    adoption={adoptions["3d"]}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {seen["4d"] && (
+              <div
+                inert={!!excursion || !!atlas || !!fit}
+                hidden={mode !== "4d"}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loading">Opening the fourth dimension…</div>
+                  }
+                >
+                  <TesseractApp
+                    active={mode === "4d"}
+                    shared={shared["4d"]}
+                    adoption={adoptions["4d"]}
+                  />
+                </Suspense>
+              </div>
+            )}
+          </JourneyContext.Provider>
+        </AtlasContext.Provider>
+      </FourierFitContext.Provider>
     </NotebookContext.Provider>
   );
 }

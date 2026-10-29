@@ -16,6 +16,7 @@ declare const Go: new () => {
 };
 declare const tangentGardenCompute: (json: string) => string;
 declare const tangentGardenProbe: (json: string) => string;
+declare const tangentGardenFit: (json: string) => string;
 declare const tangentGardenSpatialProbe: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
 // (cmd/wasm/lift); the page puts them back (web/lifted.ts). A refusal is
@@ -67,7 +68,10 @@ self.onmessage = async ({
   config: import("./types").Config;
   bounds?: import("./types").Bounds;
   expressions?: string[];
-  action: "compute" | "scalars" | "spatial" | "tesseract";
+  action: "compute" | "scalars" | "spatial" | "tesseract" | "fourier-fit";
+  points?: import("./types").Vec[];
+  closed?: boolean;
+  count?: number;
   tesseract?: import("./tesseract/types").Config;
   spatial?: import("./spatial/types").SpatialConfig;
   // Asks Go for the base curve's diagnostics (see engine.Diagnostics and
@@ -108,6 +112,28 @@ self.onmessage = async ({
       ready = undefined;
       throw error;
     }));
+    if (data.action === "fourier-fit") {
+      // JSON would turn a nonfinite coordinate into zero-valued null in Go.
+      if (
+        data.points &&
+        (!Array.isArray(data.points) ||
+          data.points.length > 4096 ||
+          !data.points.every(
+            (p) => Number.isFinite(p?.x) && Number.isFinite(p?.y),
+          ))
+      )
+        throw new Error("Use at most 4096 points with finite coordinates.");
+      const fit = JSON.parse(
+        tangentGardenFit(
+          JSON.stringify({
+            count: data.count,
+            ...(data.points && { points: data.points, closed: data.closed }),
+          }),
+        ),
+      );
+      self.postMessage({ id: data.id, ...(fit.error ? fit : { fit }) });
+      return;
+    }
     const scalar = (expressions: string[]): number[] => {
       const parsed = JSON.parse(
         tangentGardenScalars(JSON.stringify(expressions)),

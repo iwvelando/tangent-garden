@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
+import { checkFourierFit } from "./fourier-fit-checks.mjs";
 import { createServer } from "vite";
 await import("../public/wasm_exec.js");
 // The page's own code to put a result's lifted arrays back.
@@ -38,6 +39,7 @@ const { instance } = await WebAssembly.instantiate(
   go.importObject,
 );
 void go.run(instance);
+checkFourierFit();
 const config = {
   kind: "evolute",
   curve: {

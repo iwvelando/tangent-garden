@@ -14,6 +14,69 @@ import { spatialPresets } from "../web/spatial/presets";
 import { defaultLayers } from "../web/spatial/renderer";
 import { defaultSight, strokeWidth } from "../web/spatial/sight";
 import { lineColor, palette } from "../web/spatial/palette";
+import {
+  checkFitMouseAndReturn,
+  checkFitPlaybackLayout,
+  checkFitAdoptionVisibility,
+  leafFit,
+} from "./fourier-fit-checks";
+
+test("drawn Fourier playback stays with the visible drawing through phone rotations in WebKit", async ({
+  page,
+}) => {
+  await checkFitPlaybackLayout(page);
+});
+
+test("drawn Fourier adoption stays prominent and visible while scrolling in WebKit", async ({
+  page,
+}) => {
+  await checkFitAdoptionVisibility(page);
+});
+
+test("drawn Fourier input preserves drafts and camera across click, blur and keyboard return in WebKit", async ({
+  page,
+}) => {
+  await checkFitMouseAndReturn(page);
+});
+
+test("drawn Fourier controls fit, play, scrub and adopt from label clicks in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const dialog = await leafFit(page, 16);
+  await dialog
+    .getByLabel("Show original outline in preview", { exact: true })
+    .check();
+  await expect(dialog.getByTestId("fit-reference")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Play circles", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Pause circles", exact: true }),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Pause circles", exact: true })
+    .click();
+  await dialog.getByLabel("Preview position", { exact: true }).fill("0.5");
+  await expect(dialog.getByTestId("epicycles")).toBeVisible();
+  await dialog.getByRole("button", { name: "Adopt fitted study" }).click();
+  await expect(page.getByLabel("Definition", { exact: true })).toHaveValue(
+    "fourier",
+  );
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await page.locator("#artwork desc").textContent())!).curve
+          .terms.length,
+    )
+    .toBe(16);
+  await expect(page.getByTestId("fit-reference")).toHaveCount(0);
+});
 
 // Safari's engine, which every iOS browser also uses: no canvas WebP, and its
 // own H.264 encoder and VideoFrame behavior. Runs in the WebKit project only
