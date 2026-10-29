@@ -723,6 +723,252 @@ test("phrase holds preserve nonbinary keys exactly and the shared sampler reuses
   expect(calls).toBe(3); // bounded last-value cache, no history-sized frame collection
 });
 
+test("phrase camera keys share phase boundaries with inputs and reveal, about one reference fit", async () => {
+  const { compilePhrase, phraseAt, phraseError, phraseViewError } =
+    await import("../web/phrase");
+  const config = structuredClone(presets[2].config);
+  const layers = {
+    base: true,
+    derived: true,
+    lines: true,
+    incident: true,
+    virtual: true,
+    axes: false,
+  };
+  const fit = { cx: 0.25, cy: -0.5, scale: 90, span: 9 };
+  // A manually panned and zoomed entry view, as Hold current view captures it.
+  const entry = { cx: -0.4, cy: 0.3, scale: 135, span: 6 };
+  const draft = {
+    target: "sourceX" as const,
+    opening: { base: 1, construction: 1, derived: 1 },
+    phases: [
+      { name: "Establish", duration: 1, pace: "steady" as const },
+      {
+        name: "Approach",
+        duration: 2,
+        pace: "steady" as const,
+        key: "0.5",
+        view: { x: 0.5, y: 0.1, zoom: 6 },
+      },
+      { name: "Hold", duration: 1.5, pace: "ease" as const },
+      {
+        name: "Return",
+        duration: 2.5,
+        pace: "ease" as const,
+        key: "1",
+        view: "entry" as const,
+      },
+    ],
+  };
+  const phrase = compilePhrase(config, layers, 0.8, draft, [0.5, 1], {
+    fit,
+    entry,
+  });
+  const at = (s: number) => phraseAt(phrase, s);
+  // The opening, a hold and the exact end are their stored views, unrefitted.
+  for (const s of [0, 0.5, 1 - 1e-9, 1]) expect(at(s).view).toEqual(entry);
+  expect(at(7).view).toEqual(entry);
+  const detail = { cx: 0.5, cy: 0.1, scale: 90 * 6, span: 9 / 6 };
+  for (const s of [3, 3.4, 4.5 - 1e-9]) expect(at(s).view).toEqual(detail);
+  // Halfway through the steady approach: log zoom halfway between 1.5 and
+  // 6 (3), and the framed point at σ = (1/z − 1/z₀)/(1/z₁ − 1/z₀) = 2/3, at
+  // the moment the source is halfway to 0.5.
+  const mid = at(2);
+  expect(mid.value).toBe(0.75);
+  expect(mid.view!.scale).toBeCloseTo(270, 9);
+  expect(mid.view!.cx).toBeCloseTo(-0.4 + 0.9 * (2 / 3), 12);
+  expect(mid.view!.cy).toBeCloseTo(0.3 - 0.2 * (2 / 3), 12);
+  expect(mid.view!.span * mid.view!.scale).toBeCloseTo(9 * 90, 9);
+  // The eased return at u = 1/2 has h = 1/2: zoom 3 again, σ = 1/3 of the
+  // way back toward the entry view.
+  const back = at(4.5 + 1.25);
+  expect(back.value).toBeCloseTo(0.75, 14);
+  expect(back.view!.scale).toBeCloseTo(270, 9);
+  expect(back.view!.cx).toBeCloseTo(0.5 - 0.9 / 3, 12);
+  // Seek history never contributes: a fresh compilation agrees bit for bit.
+  const again = compilePhrase(config, layers, 0.8, draft, [0.5, 1], {
+    fit,
+    entry,
+  });
+  for (const s of [7, 5.1, 0, 2, 4.5, 1, 3.99])
+    expect(phraseAt(again, s)).toEqual(at(s));
+  // The return is the entry view itself, not one recomputed from a key:
+  // 90 × (100.7/90) is not 100.7 in binary.
+  const manual = { cx: -0.4, cy: 0.3, scale: 100.7, span: 810 / 100.7 };
+  const returned = compilePhrase(config, layers, 0.8, draft, [0.5, 1], {
+    fit,
+    entry: manual,
+  });
+  for (const s of [0, 7]) expect(phraseAt(returned, s).view).toEqual(manual);
+  // A phrase without views keeps its fixed camera and records none.
+  const fixed = compilePhrase(
+    config,
+    layers,
+    0.8,
+    {
+      ...draft,
+      phases: draft.phases.map(({ view: _, ...p }: any) => p),
+    },
+    [0.5, 1],
+    { fit, entry },
+  );
+  expect(phraseAt(fixed, 2).view).toBeUndefined();
+  // Malformed views are refused by name; zoom limits follow the drawing.
+  const bad = (view: unknown) =>
+    phraseError(config, {
+      ...draft,
+      phases: [draft.phases[0], { ...draft.phases[1], view } as any],
+    });
+  for (const view of [
+    { x: NaN, y: 0, zoom: 1 },
+    { x: 0, y: 0, zoom: 0.05 },
+    { x: 0, y: 0, zoom: 1001 },
+    "exit",
+  ])
+    expect(bad(view)).toMatch(/^Phase 2 view/);
+  expect(bad({ x: 0, y: 0, zoom: 30 })).toBeNull();
+  const deep = {
+    ...draft,
+    phases: [
+      draft.phases[0],
+      { ...draft.phases[1], view: { x: 0, y: 0, zoom: 30 } },
+    ],
+  };
+  expect(phraseViewError(deep, 20)).toMatch(/^Phase 2 view zooms past 20×/);
+  expect(phraseViewError(deep, 1000)).toBeNull();
+});
+
+test("a flown phrase refines each zoomed frame to its own view, keyed by value and view", async () => {
+  const { compilePhrase, phraseAt, createPhraseSampler } =
+    await import("../web/phrase");
+  const config = structuredClone(presets[2].config);
+  const layers = {
+    base: true,
+    derived: true,
+    lines: true,
+    incident: true,
+    virtual: true,
+    axes: false,
+  };
+  const fit = { cx: 0, cy: 0, scale: 100, span: 4 };
+  const phrase = compilePhrase(
+    config,
+    layers,
+    0.8,
+    {
+      target: "sourceX",
+      opening: { base: 1, construction: 1, derived: 1 },
+      phases: [
+        // Simultaneous: the source moves while the camera zooms in.
+        {
+          name: "Approach",
+          duration: 2,
+          pace: "steady",
+          key: "0.5",
+          view: { x: 0.4, y: 0.2, zoom: 8 },
+        },
+        // Camera only: the source holds while the camera zooms further.
+        {
+          name: "Closer",
+          duration: 2,
+          pace: "steady",
+          view: { x: 0.4, y: 0.2, zoom: 64 },
+        },
+        { name: "Hold", duration: 2, pace: "steady" },
+        {
+          name: "Return",
+          duration: 2,
+          pace: "steady",
+          key: "1",
+          view: "entry",
+        },
+      ],
+    },
+    [0.5, 1],
+    { fit, entry: fit },
+  );
+  const requests: { x: number; view?: any }[] = [];
+  const original = {
+    config,
+    result: {
+      base: [{ x: 0, y: 0 }],
+      derived: [{ x: 0, y: 0 }],
+      virtual: [false],
+      rays: [],
+      family: [],
+      circles: [],
+      rolling: [],
+      warnings: [],
+      invalid: 0,
+    },
+  };
+  const plain = { ...original, result: { ...original.result, invalid: 0 } };
+  const engine = {
+    compute: async (c: any, _?: unknown, options?: any) => {
+      requests.push({ x: c.source.position.x, view: options?.view });
+      return { ...original, config: c, view: options?.view };
+    },
+  };
+  const rect = (v: { cx: number; cy: number; scale: number }) => ({
+    x0: v.cx - 5 / v.scale,
+    y0: v.cy - 4 / v.scale,
+    x1: v.cx + 5 / v.scale,
+    y1: v.cy + 4 / v.scale,
+  });
+  const sample = createPhraseSampler({
+    phrase,
+    original,
+    view: fit,
+    stop: true,
+    refine: true,
+    plain,
+    rect,
+  });
+  // At the fitted zoom the entry value draws the study refined to no view.
+  const first = await sample(0, engine);
+  expect(first.frame.result).toBe(plain.result);
+  expect(first.heldView).toEqual(fit);
+  expect(requests).toHaveLength(0);
+  // A simultaneous frame is computed at its value, refined to its own view.
+  const one = await sample(1, engine);
+  const view = phraseAt(phrase, 1).view!;
+  expect(one.heldView).toEqual(view);
+  expect(requests.at(-1)!.x).toBe(0.75);
+  expect(requests.at(-1)!.view).toEqual(rect(view));
+  await sample(1, engine);
+  expect(requests).toHaveLength(1);
+  await sample(1.5, engine);
+  expect(requests).toHaveLength(2);
+  // Camera-only frames share a planar flight piece: each frame's own view
+  // lies inside the refined area, and frames within one piece reuse it.
+  const before = requests.length;
+  for (const s of [2.5, 2.5001, 2.5002]) {
+    const frame = await sample(s, engine);
+    const r = requests.at(-1)!.view;
+    expect(requests.at(-1)!.x).toBe(0.5);
+    const own = rect(frame.heldView!);
+    expect(r.x0).toBeLessThanOrEqual(own.x0);
+    expect(r.x1).toBeGreaterThanOrEqual(own.x1);
+    expect(r.radius).toBeLessThanOrEqual(
+      Math.hypot(own.x1 - own.x0, own.y1 - own.y0) / 2 + 1e-12,
+    );
+  }
+  expect(requests.length - before).toBe(1);
+  // The same value at a view eight times closer is not drawn from that
+  // refinement.
+  await sample(3.9, engine);
+  expect(requests.length - before).toBe(2);
+  // A held frame performs no further work.
+  await sample(4.5, engine);
+  const held = requests.length;
+  for (const s of [4.6, 5, 5.9]) await sample(s, engine);
+  expect(requests).toHaveLength(held);
+  // The exact end is the entry view and value: the unrefined study again.
+  const end = await sample(8, engine);
+  expect(end.heldView).toEqual(fit);
+  expect(end.frame.result).toBe(plain.result);
+});
+
 for (const width of [1440, 390])
   for (const theme of ["light", "dark"] as const)
     test(`authored phrase opens statically, reveals reflected cusps and holds at ${width} in ${theme}`, async ({
@@ -1042,6 +1288,11 @@ test("fresh absolute samples and backward UI seeks agree around every unequal ph
     study.length,
     draft,
     [0.95, 0.85, 0.65, 0.95],
+    // The reference fit and entry view the panel takes for Hold entry view.
+    {
+      fit: fitFrame(original.result, original.config),
+      entry: fitFrame(original.result, original.config),
+    },
   );
   await page
     .getByRole("button", { name: "Play animation", exact: true })
@@ -1135,9 +1386,25 @@ test("fresh absolute samples and backward UI seeks agree around every unequal ph
         live: geometry(document.querySelector("#artwork")!),
       };
     }, svg);
-    expect(comparison.live, `geometry at ${seconds} s`).toEqual(
-      comparison.direct,
+    // The flown camera interpolates with exp, log and expm1, which Node and
+    // Chromium may round an ulp apart: numbers agree within 1e-9 page
+    // units, while elements, commands and every other attribute stay exact.
+    const number = /-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi;
+    const shape = (rows: (string | null)[][]) =>
+      rows.map((row) => row.map((v) => v?.replace(number, "#") ?? null));
+    const numbers = (rows: (string | null)[][]) =>
+      rows.flatMap((row) => row.flatMap((v) => v?.match(number) ?? []));
+    expect(shape(comparison.live), `geometry at ${seconds} s`).toEqual(
+      shape(comparison.direct),
     );
+    const live = numbers(comparison.live),
+      direct = numbers(comparison.direct);
+    expect(live.length).toBe(direct.length);
+    const gap = Math.max(
+      0,
+      ...live.map((v, i) => Math.abs(Number(v) - Number(direct[i]))),
+    );
+    expect(gap, `geometry at ${seconds} s`).toBeLessThan(1e-9);
   }
   function definitionAt() {
     return page
@@ -1305,6 +1572,296 @@ for (const expensive of [false, true])
     });
   });
 
+test("a deep view-refined phrase refines camera-only frames by piece and simultaneous frames to their own views, without a backlog", async ({
+  page,
+}, info) => {
+  test.setTimeout(180000);
+  await page.addInitScript(() => {
+    const log: any[] = [];
+    (window as any).refinedRequests = log;
+    (window as any).refinedMaximumPending = 0;
+    const Base = window.Worker;
+    window.Worker = class extends Base {
+      pending = new Map<number, any>();
+      constructor(...args: ConstructorParameters<typeof Worker>) {
+        super(...args);
+        this.addEventListener("message", (e) => {
+          const sent = this.pending.get(e.data.id);
+          if (!sent) return;
+          this.pending.delete(e.data.id);
+          sent.milliseconds = performance.now() - sent.start;
+        });
+      }
+      postMessage(message: any, ...rest: any[]) {
+        if (message.action === "compute" && !message.probeOnly) {
+          const entry = {
+            start: performance.now(),
+            to: message.config.stack.to,
+            view: message.view,
+          };
+          log.push(entry);
+          this.pending.set(message.id, entry);
+          (window as any).refinedMaximumPending = Math.max(
+            (window as any).refinedMaximumPending,
+            this.pending.size,
+          );
+        }
+        (super.postMessage as any)(message, ...rest);
+      }
+    };
+  });
+  const index = presets.findIndex((p) => p.title === "Inside a star's point");
+  const study = planarPreset(index);
+  study.animation = {
+    ...study.animation,
+    mode: "phrase",
+    repeat: "once",
+    phrase: {
+      target: "stackTo",
+      opening: { base: 1, construction: 1, derived: 1 },
+      phases: [
+        {
+          name: "Fly into the point",
+          duration: 2,
+          pace: "ease",
+          view: { x: 3.9585, y: 0, zoom: 800 },
+        },
+        {
+          name: "Spread the offsets",
+          duration: 2,
+          pace: "ease",
+          key: "0.0052",
+        },
+        { name: "Hold", duration: 8, pace: "ease" },
+        {
+          name: "Return",
+          duration: 1,
+          pace: "ease",
+          key: "0.0039",
+          view: "entry",
+        },
+      ],
+    },
+  };
+  await page.goto(
+    `/#s=${deflateRawSync(
+      Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study })),
+    ).toString("base64url")}`,
+  );
+  await expect(page).not.toHaveURL(/#s=/);
+  await openAnimation(page);
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const log = () =>
+    page.evaluate(() =>
+      structuredClone((window as any).refinedRequests as any[]),
+    );
+  const before = (await log()).length;
+  const began = Date.now();
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(page.locator("#artwork")).toHaveAttribute("data-animation-time");
+  const firstFrameMilliseconds = Date.now() - began;
+  await expect
+    .poll(async () => (await definition(page)).animation?.phrase?.phase, {
+      intervals: [50],
+      timeout: 60000,
+    })
+    .toBe("Hold");
+  const throughHold = (await log()).length;
+  await page.waitForTimeout(300);
+  expect((await log()).length).toBe(throughHold);
+  // The held frame is refined to a rectangle covering its own view.
+  const held = (await definition(page)).animation.heldView;
+  const requests = (await log()).slice(before);
+  const last = requests.at(-1)!;
+  expect(last.to).toBe(0.0052);
+  const halfWidth = 500 / held.scale;
+  expect(last.view.x0).toBeLessThanOrEqual(held.cx - halfWidth + 1e-12);
+  expect(last.view.x1).toBeGreaterThanOrEqual(held.cx + halfWidth - 1e-12);
+  // Flying in at a fixed input is refined by flight piece (a radius), each
+  // once: zoom 800 needs about ten doublings, not one per frame.
+  const pieces = requests.filter((r) => r.to === 0.0039 && r.view?.radius);
+  expect(pieces.length).toBeGreaterThan(3);
+  expect(pieces.length).toBeLessThan(60);
+  // While the offsets spread, frames are refined to their own views.
+  const own = requests.filter(
+    (r) => r.to !== 0.0039 && r.view && r.view.radius === undefined,
+  );
+  expect(own.length).toBeGreaterThan(0);
+  expect(
+    await page.evaluate(() => (window as any).refinedMaximumPending),
+  ).toBeLessThanOrEqual(1);
+  const canceled = Date.now();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.locator("#artwork")).not.toHaveAttribute(
+    "data-animation-progress",
+  );
+  const cancellationMilliseconds = Date.now() - canceled;
+  await info.attach("refined-phrase-observations", {
+    body: JSON.stringify(
+      {
+        study: "Inside a star's point, refined to its view, flown to 800×",
+        firstFrameMilliseconds,
+        cancellationMilliseconds,
+        pieceRefinements: pieces.length,
+        ownViewRefinements: own.length,
+        workerMilliseconds: requests.map((r) => r.milliseconds),
+        browser: await page.evaluate(() => navigator.userAgent),
+      },
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
+});
+
+test("a flown phrase opens and ends at a manually panned current view while its keys stay on the plane", async ({
+  page,
+}) => {
+  const index = presets.findIndex(
+    (p) => p.title === "A circle's caustic, opened",
+  );
+  const study = planarPreset(index);
+  study.camera = { x: 60, y: -25, zoom: 1.3 };
+  study.animation.camera = "current";
+  const token = deflateRawSync(
+    Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study })),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  await expect(page).not.toHaveURL(/#s=/);
+  await openAnimation(page);
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(
+    page.getByRole("combobox", { name: "Animation camera", exact: true }),
+  ).toHaveValue("current");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const viewAt = async (time: string) => {
+    await slider.fill(time);
+    await expect(page.locator("#artwork")).toHaveAttribute(
+      "data-animation-time",
+      time,
+    );
+    return (await definition(page)).animation.heldView;
+  };
+  const end = await viewAt("1");
+  const hold = await viewAt("0.75");
+  const start = await viewAt("0");
+  // The opening view is the effective manual view: the fitted scale times
+  // 1.3, shifted 60 page units left and 25 down from the fitted center.
+  expect(end).toEqual(start);
+  const fitted = start.scale / 1.3;
+  expect(hold.cx).toBe(-0.19);
+  expect(hold.cy).toBe(0);
+  expect(hold.scale / fitted).toBeCloseTo(1.7, 12);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  // Stop returns the manual camera with the study.
+  await page
+    .getByRole("combobox", { name: "Animation camera" })
+    .selectOption("hold");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const fit = await viewAt("0");
+  expect(fit.scale).toBeCloseTo(fitted, 9);
+  expect(fit.cx - start.cx).toBeCloseTo(60 / start.scale, 12);
+  expect(fit.cy - start.cy).toBeCloseTo(25 / start.scale, 12);
+});
+
+test("phase camera keys are taken from the drawing, shown, returned, refused past the zoom limit and saved in links", async ({
+  page,
+}) => {
+  await ready(page, "2");
+  await page
+    .getByRole("combobox", { name: "Animate", exact: true })
+    .selectOption("phrase");
+  const camera = (i: number) =>
+    page.getByRole("combobox", { name: `Phase ${i} camera`, exact: true });
+  await expect(camera(4)).toHaveValue("hold");
+  await expect(
+    page.getByRole("combobox", { name: "Animation camera", exact: true }),
+  ).toContainText("Hold entry view");
+  await camera(4).selectOption("view");
+  await expect(page.locator(".phrase-phases li").nth(3)).toContainText(
+    "zoom 1×, centered at",
+  );
+  await expect(
+    page.getByRole("combobox", { name: "Animation camera", exact: true }),
+  ).toContainText("Open at the entry view");
+  await camera(7).selectOption("entry");
+  // Zoom the drawing in, set phase 4 to it, zoom further, then show it.
+  const artwork = page.locator("#artwork");
+  await artwork.hover();
+  await page.mouse.wheel(0, -300);
+  const framed = await artwork.locator("path").first().getAttribute("d");
+  await page
+    .getByRole("button", {
+      name: "Set phase 4 view to the drawing's view",
+      exact: true,
+    })
+    .click();
+  const hint = page.locator(".phrase-phases li").nth(3).locator(".hint");
+  await expect(hint).not.toContainText("zoom 1×");
+  const zoom = Number(/zoom ([\d.]+)×/.exec((await hint.textContent())!)![1]);
+  expect(zoom).toBeGreaterThan(1.2);
+  await artwork.hover();
+  await page.mouse.wheel(0, -300);
+  await expect(artwork.locator("path").first()).not.toHaveAttribute(
+    "d",
+    framed!,
+  );
+  await page
+    .getByRole("button", { name: "Show phase 4 view", exact: true })
+    .click();
+  await expect(artwork.locator("path").first()).toHaveAttribute("d", framed!);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const viewAt = async (time: string) => {
+    await slider.fill(time);
+    await expect(artwork).toHaveAttribute("data-animation-time", time);
+    return (await definition(page)).animation.heldView;
+  };
+  // Phase 4 ends at 8 of 16 s and phase 5 holds its view; phase 7 returns.
+  const held = await viewAt("0.6");
+  const opening = await viewAt("0");
+  expect(held.scale / opening.scale).toBeCloseTo(zoom, 3);
+  expect(await viewAt("1")).toEqual(opening);
+  // Editing a key view returns to the study.
+  await camera(4).selectOption("hold");
+  await expect(artwork).not.toHaveAttribute("data-animation-time");
+  // A link's key deeper than an unrefined drawing allows is refused before
+  // Play, under its phase's camera.
+  const study = planarPreset(2);
+  const { defaultPhrase } = await import("../web/phrase");
+  const phrase = defaultPhrase(study.config, study.length);
+  phrase.phases[4].view = { x: 0, y: 0, zoom: 30 };
+  study.animation = { ...study.animation, mode: "phrase", phrase };
+  await page.goto(
+    `/#s=${deflateRawSync(
+      Buffer.from(JSON.stringify({ v: 1, notebook: "2d", study })),
+    ).toString("base64url")}`,
+  );
+  await expect(page).not.toHaveURL(/#s=/);
+  await expect(page.getByText("Phase 5 view zooms past 20×")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeDisabled();
+});
+
 test("phrase starter keys respect edited domains and ignore dormant construction coefficients", async () => {
   const { defaultPhrase, phraseTargets } = await import("../web/phrase");
   const config = structuredClone(presets[2].config);
@@ -1380,14 +1937,20 @@ test("phrase back and forth uses phase-local easing and returns to its opening p
     (p) => p.title === "A circle's caustic, opened",
   );
   await ready(page, String(index));
+  // A loop is offered, but the authored reveal does not return to its
+  // opening presentation, so it is refused by what differs.
+  await page
+    .getByRole("combobox", { name: "Repeat", exact: true })
+    .selectOption("loop");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(page.locator(".animation-error")).toContainText(
+    "End the last phase at the opening value, layers, reveal and view",
+  );
   await page
     .getByRole("combobox", { name: "Repeat", exact: true })
     .selectOption("back-and-forth");
-  await expect(
-    page
-      .getByRole("combobox", { name: "Repeat", exact: true })
-      .locator('option[value="loop"]'),
-  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Play animation", exact: true })
     .click();

@@ -1655,6 +1655,54 @@ test("finite engraving all-member construction label clicks work in WebKit", asy
     .toBe(24);
 });
 
+// Safari does not focus a clicked button; the phase camera's buttons act on
+// the click alone, and Show returns a paused phrase to the study.
+test("phrase camera buttons set and show a key view in WebKit at phone width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "A circle's caustic, opened" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await openAnimation(page);
+  const hint = page.locator(".phrase-phases li").nth(4).locator(".hint");
+  await expect(hint).toContainText("zoom 1.7×, centered at (-0.19, 0)");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: "Set phase 5 view to the drawing's view",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator("#artwork")).not.toHaveAttribute(
+    "data-animation-time",
+  );
+  await expect(hint).toContainText("zoom 1×");
+  const fitted = await page.locator("#artwork path").first().getAttribute("d");
+  await page
+    .getByRole("combobox", { name: "Phase 5 camera", exact: true })
+    .selectOption("view");
+  await page.locator("#artwork").hover();
+  await page.mouse.wheel(0, -300);
+  await expect(page.locator("#artwork path").first()).not.toHaveAttribute(
+    "d",
+    fitted!,
+  );
+  await page
+    .getByRole("button", { name: "Show phase 5 view", exact: true })
+    .click();
+  await expect(page.locator("#artwork path").first()).toHaveAttribute(
+    "d",
+    fitted!,
+  );
+});
+
 test("phrase keys survive scalar blur, invalid drafts and seek in WebKit at phone width", async ({
   page,
 }) => {

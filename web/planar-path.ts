@@ -95,7 +95,8 @@ export function keyCamera(key: PlanarKeyView, fit: Fit): PlotCamera {
   const s = fit.scale * key.zoom;
   return { x: -(key.x - fit.cx) * s, y: (key.y - fit.cy) * s, zoom: key.zoom };
 }
-const viewport = (key: PlanarKeyView, fit: Fit): Viewport => ({
+// The viewport a key view shows.
+export const keyViewport = (key: PlanarKeyView, fit: Fit): Viewport => ({
   cx: key.x,
   cy: key.y,
   scale: fit.scale * key.zoom,
@@ -117,10 +118,10 @@ export function planarPathView(
 ): Viewport {
   const keys = path.keys,
     n = keys.length;
-  if (n < 2) return viewport(keys[0], fit);
+  if (n < 2) return keyViewport(keys[0], fit);
   const { h, i, f, end } = locate(path, p);
-  if (end) return viewport(keys[n - 1], fit);
-  if (f === 0) return viewport(keys[i], fit);
+  if (end) return keyViewport(keys[n - 1], fit);
+  if (f === 0) return keyViewport(keys[i], fit);
   const lz = keys.map((k) => Math.log(k.zoom));
   const z =
     path.style === "smooth"

@@ -1566,9 +1566,11 @@ export const presets: {
   },
   // Opens on the mirror and a lamp on its rim. Playback reveals up to 32 reflected
   // rays while the lamp moves just inside, to x=.95, before revealing its
-  // caustic. Move to x=.85 and x=.65, hold, then return to x=.95. Keeping the
-  // near-rim asymptotic tails hidden avoids their unresolved sampled ends.
-  // Stopped rays and hidden virtual parts keep the construction legible.
+  // caustic. Move to x=.85, then to x=.65 while the camera approaches the
+  // separated cusps, near (−0.28, 0) and (−0.10, ±0.64); hold, then return to
+  // x=.95 and the opening view together. Keeping the near-rim asymptotic
+  // tails hidden avoids their unresolved sampled ends. Stopped rays and
+  // hidden virtual parts keep the construction legible.
   {
     title: "A circle's caustic, opened",
     note: "Reveal reflected rays and their caustic, then move the lamp inward and hold the separated cusps",
@@ -1630,6 +1632,7 @@ export const presets: {
             duration: 3,
             pace: "ease",
             key: "0.65",
+            view: { x: -0.19, y: 0, zoom: 1.7 },
           },
           { name: "Hold the cusps", duration: 2, pace: "ease" },
           {
@@ -1637,6 +1640,125 @@ export const presets: {
             duration: 3,
             pace: "ease",
             key: "0.95",
+            view: "entry",
+          },
+        ],
+      },
+    },
+  },
+  // Opens on the oval spool, its strings and its involute. Playback
+  // unwinds the thread: each string appears with the point it draws. The
+  // thread then lengthens by c = 0.8 while the camera approaches its free
+  // start, holds that parallel involute, and returns with the opening view.
+  {
+    title: "A thread becomes an involute",
+    note: "A thread unwound from an oval spool draws its involute; a longer thread draws a parallel one",
+    config: {
+      ...base,
+      kind: "involute",
+      curve: { ...base.curve, x: "1.2*cos(t)", y: "0.8*sin(t)" },
+      samples: 1200,
+      lines: 40,
+    },
+    animation: {
+      mode: "phrase",
+      camera: "hold",
+      duration: 14,
+      tracks: [],
+      repeat: "once",
+      pace: "ease",
+      probeMotion: "stays",
+      phrase: {
+        target: "offset",
+        opening: { base: 1, construction: 0, derived: 0 },
+        phases: [
+          {
+            name: "Establish the spool",
+            duration: 1,
+            pace: "ease",
+            layers: { base: true, derived: false, lines: false },
+          },
+          {
+            name: "Unwind the thread",
+            duration: 5,
+            pace: "ease",
+            layers: { lines: true, derived: true },
+            reveal: { construction: 1, derived: 1 },
+          },
+          {
+            name: "Lengthen the thread",
+            duration: 3,
+            pace: "ease",
+            key: "0.8",
+            view: { x: 1.35, y: -0.2, zoom: 3.5 },
+          },
+          { name: "Hold the parallel involute", duration: 2, pace: "ease" },
+          {
+            name: "Return",
+            duration: 3,
+            pace: "ease",
+            key: "0",
+            view: "entry",
+          },
+        ],
+      },
+    },
+  },
+  // e^{it} + 0.35e^{6it} + 0.15e^{−4it}: frequencies 1 more than a multiple
+  // of 5, so five petals. Playback lets the turning circles draw the flower,
+  // then turns the smallest circle's phase a fifth of a turn while the camera
+  // approaches one petal, holds, and turns it back with the opening view.
+  {
+    title: "Circles drawing a flower",
+    note: "Three circles, each turning on the last, draw a five-petaled flower; turning the smallest one reshapes every petal",
+    layers: { derived: false },
+    config: {
+      ...base,
+      curve: {
+        ...base.curve,
+        format: "fourier",
+        terms: [
+          { frequency: 1, radius: 1, phase: 0 },
+          { frequency: 6, radius: 0.35, phase: 0 },
+          { frequency: -4, radius: 0.15, phase: 0 },
+        ],
+      },
+      samples: 2000,
+      lines: 180,
+    },
+    animation: {
+      mode: "phrase",
+      camera: "hold",
+      duration: 13,
+      tracks: [],
+      repeat: "once",
+      pace: "ease",
+      probeMotion: "stays",
+      phrase: {
+        target: "term3Phase",
+        opening: { base: 0, construction: 0, derived: 0 },
+        phases: [
+          {
+            name: "Set the circles turning",
+            duration: 5,
+            pace: "steady",
+            layers: { base: true, lines: true, derived: false },
+            reveal: { base: 1, construction: 1 },
+          },
+          {
+            name: "Turn the smallest circle",
+            duration: 3,
+            pace: "ease",
+            key: "2*pi/5",
+            view: { x: 1.05, y: 0.05, zoom: 1.9 },
+          },
+          { name: "Hold the petal", duration: 2, pace: "ease" },
+          {
+            name: "Turn it back",
+            duration: 3,
+            pace: "ease",
+            key: "0",
+            view: "entry",
           },
         ],
       },

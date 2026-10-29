@@ -319,3 +319,56 @@ test("the loop preset brings its tracks, repeat and pace, and passes the closure
   await expect(repeat(page)).toHaveValue("once");
   await expect(pace(page)).toHaveValue("steady");
 });
+
+// A phrase loops only when its whole ending presentation is its opening:
+// value, layers, reveal and camera. Each phase eases to rest, so the seam
+// is a rest, as at every other phase boundary.
+test("a phrase loop joins only an ending that returns its value, reveal and camera", async ({
+  page,
+}) => {
+  const phrase = (last: Record<string, unknown>) => ({
+    mode: "phrase",
+    repeat: "loop",
+    phrase: {
+      target: "a",
+      opening: { base: 1, construction: 1, derived: 1 },
+      phases: [
+        {
+          name: "Turn and approach",
+          duration: 0.5,
+          pace: "ease",
+          key: "pi/2",
+          view: { x: 1, y: 1, zoom: 3 },
+        },
+        {
+          name: "Return",
+          duration: 0.5,
+          pace: "ease",
+          key: "2*pi",
+          ...last,
+        },
+      ],
+    },
+  });
+  await open(page, study(phrase({ view: "entry" })));
+  await expect(repeat(page)).toHaveValue("loop");
+  await button(page, "Play animation").click();
+  await expect(button(page, "Pause")).toBeVisible();
+  await expect(error(page)).toHaveCount(0);
+  await button(page, "Stop").click();
+  // The value returns a period later, but the camera stays zoomed in.
+  await open(page, study(phrase({})));
+  await button(page, "Play animation").click();
+  await expect(error(page)).toContainText(
+    "Repeat can loop only motion that ends where it starts",
+  );
+  await expect(error(page)).toContainText(
+    "End the last phase at the opening value, layers, reveal and view",
+  );
+  // So does a phrase that ends with a reveal its opening lacks.
+  const hidden = phrase({ view: "entry", reveal: { derived: 1 } });
+  hidden.phrase.opening.derived = 0;
+  await open(page, study(hidden));
+  await button(page, "Play animation").click();
+  await expect(error(page)).toContainText("Repeat can loop only motion");
+});

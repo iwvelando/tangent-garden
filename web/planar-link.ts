@@ -44,7 +44,14 @@ import { defaultProbe, probeSupported, type PlanarProbe } from "./planar-probe";
 import { viewZoom } from "./refinement";
 import { legRange, maxKeyName, maxKeys } from "./key-views";
 import type { PlanarPath } from "./planar-path";
-import { maxPhases, phraseError, phraseTargets, type Phrase } from "./phrase";
+import {
+  maxPhases,
+  phraseError,
+  phraseTargets,
+  type Phrase,
+  type PhrasePhase,
+  type PhraseView,
+} from "./phrase";
 
 // The manual camera, offset from the fitted framing, which the drawing
 // derives deterministically from the study: pixels of pan and a zoom factor.
@@ -357,7 +364,11 @@ function animationPhrase(value: unknown, config: Config): Phrase {
       axes: { optional: "boolean" },
     },
   };
-  const schema: SchemaOf<Phrase> = {
+  // A phase's view is a key view or "entry", which the schema cannot state
+  // as one field: it is checked on its own below.
+  const schema: SchemaOf<
+    Omit<Phrase, "phases"> & { phases: Omit<PhrasePhase, "view">[] }
+  > = {
     fields: {
       target: {
         options: Object.fromEntries(
@@ -394,7 +405,46 @@ function animationPhrase(value: unknown, config: Config): Phrase {
       },
     },
   };
-  const phrase = conform<Phrase>(value, schema, undefined, "animation.phrase");
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const rawPhases = Array.isArray(record?.phases) ? record.phases : undefined;
+  const views = rawPhases?.map((p) =>
+    typeof p === "object" && p !== null && !Array.isArray(p)
+      ? (p as Record<string, unknown>).view
+      : undefined,
+  );
+  const phrase: Phrase = conform<
+    Omit<Phrase, "phases"> & { phases: Omit<PhrasePhase, "view">[] }
+  >(
+    rawPhases
+      ? {
+          ...record,
+          phases: rawPhases.map((p) => {
+            if (typeof p !== "object" || p === null || Array.isArray(p))
+              return p;
+            const { view: _, ...rest } = p as Record<string, unknown>;
+            return rest;
+          }),
+        }
+      : value,
+    schema,
+    undefined,
+    "animation.phrase",
+  );
+  views?.forEach((view, i) => {
+    if (view === undefined || view === "entry") {
+      if (view) phrase.phases[i].view = view;
+      return;
+    }
+    phrase.phases[i].view = conform<PhraseView>(
+      view,
+      { fields: { x: "number", y: "number", zoom: { range: zoomRange } } },
+      undefined,
+      `animation.phrase.phases[${i}].view`,
+    );
+  });
   const error = phraseError(config, phrase);
   if (error) throw new LinkError("animation.phrase", error);
   return phrase;
