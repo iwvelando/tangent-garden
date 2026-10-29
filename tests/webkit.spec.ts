@@ -1654,3 +1654,86 @@ test("finite engraving all-member construction label clicks work in WebKit", asy
     .poll(() => page.locator('#artwork [data-family-member="0"] line').count())
     .toBe(24);
 });
+
+test("phrase keys survive scalar blur, invalid drafts and seek in WebKit at phone width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "A circle's caustic, opened" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await openAnimation(page);
+  const key = page.getByRole("textbox", { name: "Phase 4 key", exact: true });
+  await key.fill("pi/4");
+  await page
+    .getByRole("button", { name: "About animation modes", exact: true })
+    .click();
+  await expect(key).toHaveValue("pi/4");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .fill("0.5");
+  await expect(page.locator("#artwork")).toHaveAttribute(
+    "data-animation-time",
+    "0.5",
+  );
+  const config = JSON.parse(
+    (await page.locator("#artwork desc").textContent())!,
+  );
+  expect(config.source.position.x).toBe(Math.PI / 4);
+  const caption = page.getByRole("group", {
+    name: "Animation stage",
+    exact: true,
+  });
+  await expect(caption).toContainText("Separate the cusps");
+  const placement = page.getByRole("checkbox", {
+    name: "Stage label in drawing",
+    exact: true,
+  });
+  await placement.check();
+  await page
+    .getByRole("button", { name: "About stage label in drawing", exact: true })
+    .click();
+  await expect(page.locator("#artwork [data-phrase-caption]")).toContainText(
+    "Separate the cusps",
+  );
+  await expect(page.locator("#artwork")).toHaveAttribute(
+    "data-animation-time",
+    "0.5",
+  );
+  await expect(
+    page.getByRole("button", { name: "Resume", exact: true }),
+  ).toBeVisible();
+  await placement.uncheck();
+  await page.setViewportSize({ width: 320, height: 667 });
+  await page.locator(".plot-wrap").scrollIntoViewIfNeeded();
+  const captionBox = (await caption.boundingBox())!;
+  const dockBox = (await page.locator("#playback").boundingBox())!;
+  expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(dockBox.y);
+  await expect(page.locator("#artwork text")).toHaveCount(0);
+  // Rotating to landscape restores the same minimum as ordinary drawings.
+  await page.setViewportSize({ width: 956, height: 440 });
+  expect((await page.locator("#artwork").boundingBox())!.height).toBe(420);
+  await placement.check();
+  expect((await page.locator("#artwork").boundingBox())!.height).toBe(420);
+  await key.fill("t");
+  await page
+    .getByRole("button", { name: "About animation modes", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeDisabled();
+  await expect(key).toHaveValue("t");
+  await expect(key.locator("..").getByRole("alert")).toContainText(
+    "Phase 4 key",
+  );
+  await expect(page.locator("#artwork")).not.toHaveAttribute(
+    "data-animation-progress",
+  );
+});

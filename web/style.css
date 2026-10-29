@@ -59,6 +59,14 @@ fieldset:disabled {
 .animation-track .pair .field {
   margin-top: 0;
 }
+.phrase-phases {
+  padding-left: 22px;
+}
+.phrase-name {
+  margin: 10px 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 /* A camera path's key view: its fields, where it stands, and its actions. */
 .path-view-buttons {
   display: flex;
@@ -733,6 +741,38 @@ h1 {
   font-size: 12px;
   color: var(--muted);
 }
+.phrase-caption {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(20px, auto) minmax(18px, auto);
+  gap: 2px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.phrase-caption-stage {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.phrase-caption-value {
+  font:
+    12px/18px ui-monospace,
+    SFMono-Regular,
+    monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.phrase-caption.in-drawing {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
 .legend {
   display: flex;
   align-items: center;
@@ -1042,6 +1082,14 @@ h1 {
   #artwork {
     height: 55vh;
     min-height: 340px;
+  }
+  @media (orientation: portrait) {
+    /* Leave room for the caption and dock in portrait. Landscape keeps the
+       ordinary viewport height, including its existing vertical scrolling. */
+    .plot-wrap:has(> .phrase-caption) > #artwork {
+      height: min(55vh, max(160px, calc(100svh - 400px)));
+      min-height: 0;
+    }
   }
   .explanation {
     margin-top: 20px;

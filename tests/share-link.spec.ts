@@ -593,3 +593,96 @@ test("copy snapshots before delayed compression while later edits remain editabl
   await expect(field(page, "to")).toHaveValue("3*pi");
   expect(requests).toEqual([]);
 });
+
+test("an edited phrase link preserves Go expressions, phase durations and the held manual camera", async ({
+  page,
+  browser,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "A circle's caustic, opened" });
+  await planarReady(page);
+  await openAnimation(page);
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Stop rays at the caustic",
+      exact: true,
+    }),
+  ).toBeChecked();
+  await page
+    .getByRole("checkbox", { name: "Stage label in drawing", exact: true })
+    .check();
+  await field(page, "Phase 5 key").fill("1/phi");
+  await page
+    .getByRole("spinbutton", { name: "Phase 1 duration", exact: true })
+    .fill("2.5");
+  await page
+    .getByRole("combobox", { name: "Animation camera", exact: true })
+    .selectOption("current");
+  await page.locator("#artwork").hover();
+  await page.mouse.wheel(0, -170);
+  await expect(copyButton(page)).toBeEnabled();
+  const href = await copyLink(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .fill("0.75");
+  await expect(page.locator("#artwork")).toHaveAttribute(
+    "data-animation-time",
+    "0.75",
+  );
+  expect((await planarDefinition(page)).source.position.x).toBeCloseTo(
+    2 / (1 + Math.sqrt(5)),
+    14,
+  );
+  const expected = await planarDrawing(page);
+  const receiver = await recipient(browser, href);
+  try {
+    await planarReady(receiver);
+    await openAnimation(receiver);
+    await expect(field(receiver, "Phase 5 key")).toHaveValue("1/phi");
+    await expect(
+      receiver.getByRole("checkbox", {
+        name: "Stage label in drawing",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await expect(
+      receiver.getByRole("spinbutton", {
+        name: "Phase 1 duration",
+        exact: true,
+      }),
+    ).toHaveValue("2.5");
+    expect((await planarDefinition(receiver)).animation).toBeUndefined();
+    await receiver
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await receiver.getByRole("button", { name: "Pause", exact: true }).click();
+    await receiver
+      .getByRole("slider", { name: "Animation progress", exact: true })
+      .fill("0.75");
+    await expect(receiver.locator("#artwork")).toHaveAttribute(
+      "data-animation-time",
+      "0.75",
+    );
+    expect(await planarDrawing(receiver)).toEqual(expected);
+    await expect(
+      receiver.locator("#artwork [data-phrase-caption]"),
+    ).toContainText("Hold the cusps");
+    await choosePreset(receiver, { label: "Light inside a circle" });
+    await planarReady(receiver);
+    await receiver
+      .getByRole("combobox", { name: "Animate", exact: true })
+      .selectOption("phrase");
+    await expect(
+      receiver.getByRole("checkbox", {
+        name: "Stage label in drawing",
+        exact: true,
+      }),
+    ).not.toBeChecked();
+  } finally {
+    await receiver.context().close();
+  }
+});

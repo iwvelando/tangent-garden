@@ -1,5 +1,6 @@
 import type { FamilyMember, FamilySettings } from "./planar-family";
 import { familyMotionMembers, type FamilyComposition } from "./family-motion";
+import { SvgPhraseCaption } from "./PhraseCaption";
 import { atlasSharedFrame } from "./atlas-framing";
 import type { ColorScheme } from "./color-schemes";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -171,7 +172,7 @@ export function Plot({
   family,
   markers = true,
   config,
-  layers,
+  layers: studyLayers,
   dark,
   scheme = "default",
   length,
@@ -191,6 +192,7 @@ export function Plot({
   transparent = false,
   id = "artwork",
 }: Props) {
+  const layers = animation?.phrase?.layers ?? studyLayers;
   // Every stroke's regular width, at the chosen line weight.
   const stroke = svgStroke(weight);
   const [camera, setCamera] = useState(() =>
@@ -729,6 +731,7 @@ export function Plot({
                 progress: animation.progress,
                 camera: animation.camera,
                 heldView: animation.heldView,
+                ...(animation.phrase && { phrase: animation.phrase }),
               }
             : undefined,
           // Recorded only when it is not the drawing as it always was.
@@ -1577,6 +1580,13 @@ export function Plot({
             )}
           {probeDrawing}
         </>
+      )}
+      {animation?.phrase?.inDrawing && (
+        <SvgPhraseCaption
+          phrase={animation.phrase}
+          palette={palette}
+          dark={dark}
+        />
       )}
     </svg>
   );
