@@ -38,6 +38,8 @@ import {
   type Target,
 } from "./animation";
 import type { Layers } from "./Plot";
+import { completeLayers, defaultLayers } from "./planar-layers";
+export { defaultLayers } from "./planar-layers";
 import { lineWeightSchema, type LineWeight } from "./line-weight";
 import { probeMotionSchema, type ProbeMotion } from "./probe";
 import { defaultProbe, probeSupported, type PlanarProbe } from "./planar-probe";
@@ -88,14 +90,6 @@ export type PlanarStudy = {
   animation: PlanarAnimation;
   family?: FamilySettings;
 };
-export const defaultLayers: Layers = {
-  base: true,
-  derived: true,
-  lines: true,
-  incident: true,
-  virtual: true,
-  axes: false,
-};
 export const defaultAnimation: PlanarAnimation = {
   mode: "reveal",
   camera: "hold",
@@ -117,7 +111,7 @@ export function presetStudy(index: number): PlanarStudy {
     length: defaultLength,
     stop: !!preset.stop,
     poleKind: usesPole(kind) ? kind : "pedal",
-    layers: { ...defaultLayers, ...preset.layers },
+    layers: completeLayers(preset.layers ?? {}),
     camera: { ...defaultCamera },
     weight: "regular",
     probe: structuredClone(preset.probe ?? defaultProbe),
@@ -359,6 +353,8 @@ function animationPhrase(value: unknown, config: Config): Phrase {
       base: { optional: "boolean" },
       derived: { optional: "boolean" },
       lines: { optional: "boolean" },
+      definitionGuides: { optional: "boolean" },
+      rollingGuides: { optional: "boolean" },
       incident: { optional: "boolean" },
       virtual: { optional: "boolean" },
       axes: { optional: "boolean" },
@@ -511,7 +507,23 @@ export function planarStudy(value: unknown): PlanarStudy {
       "pedal",
       "poleKind",
     ),
-    layers: conform(raw.layers, flags(defaultLayers), defaultLayers, "layers"),
+    layers: completeLayers(
+      conform<
+        Omit<Layers, "definitionGuides" | "rollingGuides"> &
+          Partial<Pick<Layers, "definitionGuides" | "rollingGuides">>
+      >(
+        raw.layers,
+        {
+          fields: {
+            ...flags(defaultLayers).fields,
+            definitionGuides: { optional: "boolean" },
+            rollingGuides: { optional: "boolean" },
+          },
+        },
+        defaultLayers,
+        "layers",
+      ),
+    ),
     camera: conform<PlotCamera>(
       raw.camera,
       { fields: { x: "number", y: "number", zoom: { range: zoomRange } } },

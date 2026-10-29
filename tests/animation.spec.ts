@@ -461,6 +461,90 @@ test("the star's winding string stays inside its animation view", async ({
   }
 });
 
+test("a new phrase honors the chosen construction subsets when revealing its guides", async () => {
+  const { compilePhrase, defaultPhrase, phraseAt } =
+    await import("../web/phrase");
+  const { defaultLayers } = await import("../web/planar-link");
+  const config = presets.find(
+    (p) => p.config.curve.format === "fourier",
+  )!.config;
+  const layers = {
+    ...defaultLayers,
+    definitionGuides: false,
+    rollingGuides: true,
+  };
+  const draft = defaultPhrase(config, 0.8, "term1Radius", layers);
+  const keys = draft.phases.flatMap((p) =>
+    p.key === undefined ? [] : [Number(p.key)],
+  );
+  const phrase = compilePhrase(config, layers, 0.8, draft, keys);
+  expect(phraseAt(phrase, 0).layers).toMatchObject({
+    definitionGuides: false,
+    rollingGuides: false,
+  });
+  expect(phraseAt(phrase, 1).layers).toMatchObject({
+    definitionGuides: false,
+    rollingGuides: true,
+  });
+});
+
+test("phrase layers preserve legacy combined construction events and allow independent subsets", async () => {
+  const { compilePhrase, phraseAt } = await import("../web/phrase");
+  const { defaultLayers } = await import("../web/planar-link");
+  const config = presets.find(
+    (p) => p.config.curve.format === "fourier",
+  )!.config;
+  const phrase = compilePhrase(
+    config,
+    defaultLayers,
+    0.8,
+    {
+      target: "term1Radius",
+      opening: { base: 1, construction: 1, derived: 1 },
+      phases: [
+        {
+          name: "Old hide",
+          duration: 1,
+          pace: "steady",
+          layers: { lines: false },
+        },
+        {
+          name: "Old show",
+          duration: 1,
+          pace: "steady",
+          layers: { lines: true },
+        },
+        {
+          name: "Only rolling",
+          duration: 1,
+          pace: "steady",
+          layers: {
+            lines: false,
+            definitionGuides: false,
+            rollingGuides: true,
+          },
+        },
+      ],
+    },
+    [],
+  );
+  expect(phraseAt(phrase, 0).layers).toMatchObject({
+    lines: false,
+    definitionGuides: false,
+    rollingGuides: false,
+  });
+  expect(phraseAt(phrase, 1).layers).toMatchObject({
+    lines: true,
+    definitionGuides: true,
+    rollingGuides: true,
+  });
+  expect(phraseAt(phrase, 2).layers).toMatchObject({
+    lines: false,
+    definitionGuides: false,
+    rollingGuides: true,
+  });
+});
+
 test("phrase boundaries carry explicit inputs and right-continuous layers independently of seek history", async () => {
   const { compilePhrase, phraseAt, phraseTargets, revealPhrase } =
     await import("../web/phrase");

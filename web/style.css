@@ -657,6 +657,43 @@ details p,
   gap: 13px 8px;
   margin: 22px 0;
 }
+.drawing-layers {
+  display: grid;
+  gap: 16px;
+  margin: 22px 0;
+}
+.drawing-layers fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.drawing-layers legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.curve-layer-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+}
+.construction-layer-options {
+  display: grid;
+  gap: 4px;
+}
+.drawing-layers .check {
+  min-height: 30px;
+  line-height: 1.5;
+  gap: 8px;
+}
+.drawing-layers .check input {
+  flex: none;
+}
 .closure {
   width: 100%;
   margin: 4px 0 8px;
@@ -1441,9 +1478,9 @@ header {
 .view-switch .check {
   margin-bottom: 0;
 }
-/* A setting below a plain checkbox owns the gap between their boxes, the
-   same as between the drawing's layer checkboxes (13px). Its help toggle
-   makes its row 3px taller than a label, with the checkbox centered. */
+/* A setting below a plain checkbox keeps the ordinary compact row spacing.
+   Its help toggle makes its row 3px taller than a label, with the checkbox
+   centered. */
 .check + .check-setting {
   margin-top: 11.5px;
 }

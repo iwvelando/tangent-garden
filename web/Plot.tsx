@@ -1,6 +1,8 @@
 import type { FamilyMember, FamilySettings } from "./planar-family";
 import { familyMotionMembers, type FamilyComposition } from "./family-motion";
 import { SvgPhraseCaption } from "./PhraseCaption";
+import { completeLayers, type Layers } from "./planar-layers";
+export type { Layers } from "./planar-layers";
 import { atlasSharedFrame } from "./atlas-framing";
 import type { ColorScheme } from "./color-schemes";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -23,14 +25,6 @@ import { plotPalette } from "./palette";
 import { createGesture } from "./gestures";
 import { useDrawingTouch } from "./MobileNotebookNav";
 import { plainZoom, viewZoom, type RefinedPath } from "./refinement";
-export type Layers = {
-  base: boolean;
-  derived: boolean;
-  lines: boolean;
-  incident: boolean;
-  virtual: boolean;
-  axes: boolean;
-};
 type Props = {
   result: Result;
   family?: FamilyComposition;
@@ -192,7 +186,7 @@ export function Plot({
   transparent = false,
   id = "artwork",
 }: Props) {
-  const layers = animation?.phrase?.layers ?? studyLayers;
+  const layers = completeLayers(animation?.phrase?.layers ?? studyLayers);
   // Every stroke's regular width, at the chosen line weight.
   const stroke = svgStroke(weight);
   const [camera, setCamera] = useState(() =>
@@ -808,6 +802,9 @@ export function Plot({
                             layers.base &&
                             (!commonBase || (!family.motion && i === 0)),
                           lines: layers.lines && construction,
+                          definitionGuides:
+                            layers.definitionGuides && construction,
+                          rollingGuides: layers.rollingGuides && construction,
                           incident: layers.incident && construction,
                           axes:
                             layers.axes &&
@@ -973,7 +970,7 @@ export function Plot({
               })}
             </g>
           )}
-          {layers.lines && roulette && (
+          {layers.definitionGuides && roulette && (
             <g data-testid="rolling-geometry" aria-label="Rolling circle">
               {roulette.roll === "line" ? (
                 <g data-testid="fixed-line">
@@ -1197,7 +1194,7 @@ export function Plot({
               })}
             </g>
           )}
-          {layers.lines && harmonic && (
+          {layers.definitionGuides && harmonic && (
             <g data-testid="harmonic-geometry" aria-label="Rotating vectors">
               {harmonic.guides.map((g, k) => (
                 <circle
@@ -1267,7 +1264,7 @@ export function Plot({
               )}
             </g>
           )}
-          {layers.lines && roller && (
+          {layers.rollingGuides && roller && (
             <g
               data-testid="rolling-construction"
               data-sample={roller.sampleIndex}
@@ -1276,7 +1273,7 @@ export function Plot({
               {rollingParts(roller)}
             </g>
           )}
-          {layers.lines && moving && placed && (
+          {layers.rollingGuides && moving && placed && (
             <g
               data-testid="rolling-curve"
               data-sample={placed.sampleIndex}
@@ -1426,7 +1423,7 @@ export function Plot({
                 {...stroke(1.5)}
               />
             ))}
-          {layers.lines && epicycles && (
+          {layers.definitionGuides && epicycles && (
             <circle
               data-testid="harmonic-point"
               cx={xy(epicycles.point).x}
@@ -1435,7 +1432,7 @@ export function Plot({
               fill={palette.base}
             />
           )}
-          {layers.lines && rolling && (
+          {layers.definitionGuides && rolling && (
             <circle
               data-testid="tracing-point"
               cx={xy(rolling.point).x}
@@ -1511,7 +1508,7 @@ export function Plot({
               ))}
             </g>
           )}
-          {layers.lines && tracer && (
+          {layers.rollingGuides && tracer && (
             <circle
               data-testid="rolling-construction-point"
               cx={xy(tracer.point).x}
