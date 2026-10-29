@@ -33,6 +33,20 @@ A rotation of frequency `k` repeats after `2π/|k|`, so a harmonic curve repeats
 
 The generators are evaluated in closed form. Constructions use the engine's usual five-point numerical derivatives, which the tests check against the analytic `z′ = Σ i k r e^{iθ}` and `z″ = −Σ k² r e^{iθ}`. High frequencies need proportionally more samples.
 
+### Fitting a drawn loop
+
+The drawing input maps a fixed equal-scale rectangle to `x ∈ [−3,3]`, `y ∈ [−2.28,2.28]`, with x right and y up. Resizing changes only its display. One primary mouse, pen or touch pointer supplies at most 4,096 points; additional samples are visibly refused. Pointer-up leaves the outline open. **Close outline** explicitly adds the straight segment from the last point to the first. Self-intersections are allowed.
+
+`engine.FitFourier` rejects more than 4,096 points before allocating input-sized storage, nonfinite coordinates, coordinates outside ±100000, fewer than three distinct points, and closed total length below `10⁻⁶`. It drops consecutive duplicates and a repeated closing endpoint. The closed polyline, including the closing segment, is sampled at 1,024 uniformly spaced arc-length positions `s_j = j L/1024`, excluding the repeated endpoint. The first point remains the phase origin and traversal direction is preserved. Spending longer with the pointer in a region does not give that region more weight. The mathematical parameter of the fitted curve is `t_j = 2πj/1024`, not the original pointer time or an arbitrary original curve parameter.
+
+For complex samples `z_j = x_j + i y_j`, the projection computes `c_k = (1/1024) Σ z_j exp(−i k t_j)` for signed integer frequencies `−64 ≤ k ≤ 64`. The first sample is subtracted during accumulation to condition the computation, then restored to `c_0`. The zero-frequency coefficient is always first and retains translation. Nonzero coefficients are ordered by descending magnitude; exact ties use smaller absolute frequency, then smaller signed frequency. This single ranking is retained for every term count. Choosing 2–16 total terms includes the DC term, and does not rerank the earlier vectors.
+
+Each coefficient becomes an ordinary Fourier term `(k, |c_k|, arg c_k)` under the existing positive-exponent sum convention. A zero-radius coefficient has phase zero. The selected terms must satisfy ordinary Fourier validation. A largest moving radius no greater than `10⁻¹²` of the sampled outline's displacement from its first point is refused as an unusable projection in this frequency band. Coordinates, translation and scale are retained rather than normalized into a new drawing.
+
+The displayed RMS is `sqrt(Σ |z_fit(t_j) − z_j|² / 1024)`; the maximum is the largest of those same sample residuals, in model units. Adding a coefficient cannot increase sample RMS beyond rounding error because these signed integer modes are orthogonal on the declared sample grid. Neither measure bounds between-sample error, distance to a smooth intended shape, or maximum overshoot. Finite sums smooth corners and may overshoot them. A known Fourier curve sampled uniformly in its own parameter tests coefficient recovery directly; its arc-length reparameterization generally has different coefficients.
+
+After adoption, constructions differentiate the ordinary fitted evaluator, never the pointer polyline. The transient outline is discarded; links and image/motion exports carry the fitted study alone.
+
 ## Cyclic pursuit
 
 `n` pursuers (`2 ≤ n ≤ 16`) start at points `p_i` when `t` is at the domain start, and each runs straight at the next, the last at the first, at its own constant speed `0 ≤ v_i ≤ 100000`:

@@ -115,6 +115,18 @@ export class EngineClient {
     });
     return { result, config: resolved };
   }
+  async fitFourier(
+    count: number,
+    points?: import("./types").Vec[],
+  ): Promise<import("./fourier-fit").FourierFitResult> {
+    return (
+      await this.request({
+        action: "fourier-fit",
+        count,
+        ...(points && { points, closed: true }),
+      })
+    ).fit;
+  }
   // The 2D probe alone at one parameter of a study, for a probe moved over
   // a study already drawn.
   async probe(
