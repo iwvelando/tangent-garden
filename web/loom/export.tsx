@@ -11,7 +11,13 @@ import {
 } from "../export-image";
 import type { MotionExport } from "../MotionExportSettings";
 
-import { traversal, type LoomStudy, type LoomMarker } from "./model";
+import {
+  loomFrame,
+  poleExclusion,
+  type LoomStudy,
+  type LoomMarker,
+  type LoomResult,
+} from "./model";
 export function pairedSVG(
   source: DrawingProps,
   image: DrawingProps,
@@ -49,7 +55,8 @@ export async function loomStill(
           "png",
           record,
         );
-  if (current()) saveFile(blob, `complex-square.${format}`);
+  if (current())
+    saveFile(blob, `complex-${(metadata as { map: string }).map}.${format}`);
 }
 export async function loomMovie(o: {
   study: LoomStudy;
@@ -59,7 +66,8 @@ export async function loomMovie(o: {
   options: MotionExport;
   signal: AbortSignal;
   current: () => boolean;
-  marker: (q: ReturnType<typeof traversal>) => Promise<LoomMarker>;
+  marker: (q: ReturnType<typeof loomFrame>) => Promise<LoomMarker>;
+  frame: (q: ReturnType<typeof loomFrame>) => Promise<LoomResult>;
   progress: (p: number) => void;
 }) {
   const blob = await exportSvgAnimation({
@@ -68,18 +76,38 @@ export async function loomMovie(o: {
     settings: { ...o.options.settings, layout: "columns" },
     signal: o.signal,
     lookahead: 1,
-    sample: (p) => o.marker(traversal(o.study, p)),
-    draw: (marker) =>
-      new XMLSerializer().serializeToString(
+    sample: async (p) => {
+      const request = loomFrame(o.study, p);
+      const result = o.study.motion ? await o.frame(request) : undefined;
+      if (result && result.numericEntries > 2000000)
+        throw new Error("The loom exceeded its retained geometry budget.");
+      return {
+        request,
+        result,
+        marker: result?.marker ?? (await o.marker(request)),
+      };
+    },
+    draw: ({ request, result, marker }) => {
+      const geometry = result ? { result } : {};
+      const exclusion = poleExclusion(request, o.study.showExclusion ?? true);
+      return new XMLSerializer().serializeToString(
         pairedSVG(
-          { ...o.source, marker },
-          { ...o.image, marker },
-          { ...(o.metadata as object), parameter: marker.parameter },
+          { ...o.source, ...geometry, exclusion, marker },
+          { ...o.image, ...geometry, marker },
+          {
+            ...(o.metadata as object),
+            parameter: marker.parameter,
+            mapParameter: request.mapParameter,
+          },
         ),
-      ),
+      );
+    },
     onProgress: (n, total) => o.progress(n / total),
   });
   const annotated = await loomMetadata(blob, o.options.format, o.metadata);
   if (o.current())
-    saveFile(annotated, `tangent-garden-complex-square.${o.options.format}`);
+    saveFile(
+      annotated,
+      `tangent-garden-complex-${o.study.map}.${o.options.format}`,
+    );
 }

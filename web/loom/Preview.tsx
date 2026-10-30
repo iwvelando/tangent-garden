@@ -26,6 +26,11 @@ import { svgWeightHelp } from "../line-weight";
 import { play } from "../playback";
 import {
   defaultLoom,
+  maps,
+  mapHelp,
+  replaceMap,
+  loomFrame,
+  poleExclusion,
   replaceSource,
   loomRequest,
   traversal,
@@ -36,6 +41,7 @@ import {
   type LoomResult,
   type LoomMarker,
   type LoomSource,
+  type LoomRequest,
 } from "./model";
 import type { LoomEntry } from "./Context";
 import { LoomSession } from "./session";
@@ -43,6 +49,8 @@ import { PaneDrawing, loomFit, type DrawingProps, type Pane } from "./Drawing";
 import { loomStill, loomMovie } from "./export";
 import "./loom.css";
 const labels: Record<string, string> = {
+  mapParameter: "Map parameter",
+  exclusionRadius: "Pole exclusion radius",
   "source.count": "Circle count",
   "source.xCount": "Vertical lines",
   "source.yCount": "Horizontal lines",
@@ -63,11 +71,19 @@ const phoneLayout =
 // Gaps by reason, in the engine's terms: undefined (invalid), still beyond
 // tolerance at the depth limit (unresolved), or out of budget (exhausted).
 function gapSummary(result: LoomResult) {
-  const count = { invalid: 0, unresolved: 0, exhausted: 0 };
+  const count = {
+    invalid: 0,
+    excluded: 0,
+    clipped: 0,
+    unresolved: 0,
+    exhausted: 0,
+  };
   for (const m of result.members)
     for (const g of m.intervals)
       if (g.reason in count) count[g.reason as keyof typeof count]++;
   const parts = [
+    count.excluded && `${count.excluded.toLocaleString()} excluded`,
+    count.clipped && `${count.clipped.toLocaleString()} clipped`,
     count.invalid && `${count.invalid.toLocaleString()} undefined`,
     count.unresolved && `${count.unresolved.toLocaleString()} unresolved`,
     count.exhausted && `${count.exhausted.toLocaleString()} out of budget`,
@@ -95,7 +111,11 @@ export function LoomPreview({
   const [result, setResult] = useState<LoomResult>();
   const [resultKey, setResultKey] = useState("");
   const [placed, setPlaced] = useState<{ key: string; marker: LoomMarker }>();
-  const [error, setError] = useState<{ message: string; field?: string }>({
+  const [error, setError] = useState<{
+    message: string;
+    field?: string;
+    request?: string;
+  }>({
     message: "",
   });
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
@@ -103,6 +123,26 @@ export function LoomPreview({
     generation = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
   const session = useRef<LoomSession | null>(null);
+  const [sessionVersion, setSessionVersion] = useState(0);
+  const [playbackActive, setPlaybackActive] = useState(false);
+  const [scrubProgress, setScrubProgress] = useState<number | null>(null);
+  const scrubRevision = useRef(0);
+  const scrubOwner = useRef<{ context: string } | null>(null);
+  const currentStudy = useRef(study);
+  currentStudy.current = study;
+  // Only the scrubbed coordinate may change without invalidating delivered
+  // frames. Cameras and display settings do not affect numerical ownership.
+  const scrubContext = (s: LoomStudy) =>
+    JSON.stringify([
+      s.map,
+      s.exclusionRadius,
+      s.source,
+      s.samples,
+      s.tolerance,
+      s.selected,
+      s.motion,
+      s.motion ? s.parameter : s.mapParameter,
+    ]);
   const [playing, setPlaying] = useState(false),
     [exporting, setExporting] = useState(false),
     [exportProgress, setExportProgress] = useState(0);
@@ -113,8 +153,30 @@ export function LoomPreview({
   const panes = useRef<HTMLDivElement>(null),
     playback = useRef<HTMLDivElement>(null);
   const exportAbort = useRef<AbortController | null>(null);
-  const key = JSON.stringify([study.source, study.samples, study.tolerance]);
+  const playerActive = playbackActive || exporting;
+  const measurePlayback = () => {
+    const bar = playback.current,
+      box = dialog.current;
+    if (bar && box)
+      box.style.setProperty("--loom-playback-height", `${bar.offsetHeight}px`);
+  };
+  const geometryKey = (s: LoomRequest) =>
+    JSON.stringify([
+      s.map,
+      s.mapParameter,
+      s.exclusionRadius,
+      s.source,
+      s.samples,
+      s.tolerance,
+    ]);
+  const key = geometryKey(study);
+  const [applied, setApplied] = useState<LoomRequest>(loomRequest(study));
+  const mapInfo = maps[study.map];
   const markerKey = JSON.stringify([key, study.selected, study.parameter]);
+  const activeError =
+    error.request && error.request !== markerKey
+      ? { message: "", field: undefined }
+      : error;
   const sourceError =
     study.source.kind === "curve" && !supportedSource(study.source)
       ? "This source is unsupported. Choose a direct parametric, Cartesian, polar, roulette, Lissajous or Fourier curve."
@@ -125,14 +187,44 @@ export function LoomPreview({
     study.duration > 3600
       ? "Traversal duration must be 0.1–3,600 seconds."
       : "";
+  const badMotionField =
+    study.motion &&
+    (["from", "to"] as const).find((k) => {
+      const v = study.motion![k];
+      return (
+        !mapInfo.parameterized ||
+        !Number.isFinite(v) ||
+        v < mapInfo.range[0] ||
+        v > mapInfo.range[1]
+      );
+    });
+  const motionLabel = badMotionField ? `Map motion ${badMotionField}` : "";
+  const motionError = badMotionField
+    ? `${motionLabel} must be ${mapInfo.range[0]}–${mapInfo.range[1]}.`
+    : "";
   const ready =
     !sourceError &&
     !durationError &&
+    !motionError &&
     resultKey === key &&
     placed?.key === markerKey &&
     !!result &&
-    !error.message &&
+    !activeError.message &&
     !Object.values(scalars).some((s) => s.pending || s.error);
+  // Point intent may be newer than the displayed marker. Keep its controls
+  // usable; captures explicitly resolve that intent before drawing it.
+  const interval = memberInterval(study.source, study.selected);
+  const canAct =
+    !!result &&
+    resultKey === key &&
+    !sourceError &&
+    !durationError &&
+    !motionError &&
+    !activeError.message &&
+    !Object.values(scalars).some((s) => s.pending || s.error) &&
+    Number.isFinite(study.parameter) &&
+    study.parameter >= interval[0] &&
+    study.parameter <= interval[1];
   const scalarStatus = useMemo(
     () => ({
       client: scalarClient,
@@ -151,9 +243,10 @@ export function LoomPreview({
     }),
     [],
   );
-  const fail = (e: Error) => {
+  const fail = (e: Error, request?: string) => {
     setError({
       message: e.message,
+      request,
       field: e instanceof EngineError ? e.field : undefined,
     });
     setPlaying(false);
@@ -178,54 +271,132 @@ export function LoomPreview({
     document.documentElement.classList.add("loom-open");
     return () => document.documentElement.classList.remove("loom-open");
   }, []);
+  // Safari can leave the visual viewport shorter than the layout viewport
+  // containing the modal's fixed player. Follow its visible bottom without
+  // moving the reader's scroll position. Pinch zoom keeps native behavior.
+  useLayoutEffect(() => {
+    const viewport = window.visualViewport,
+      box = dialog.current!;
+    const phone = matchMedia("(max-width: 700px)");
+    const fit = () => {
+      if (phone.matches && viewport && Math.abs(viewport.scale - 1) < 0.01) {
+        const top = Math.max(0, viewport.offsetTop);
+        box.style.top = `${top}px`;
+        box.style.height = box.style.maxHeight = `${viewport.height}px`;
+        box.style.setProperty("--loom-view-height", `${viewport.height}px`);
+        box.style.setProperty(
+          "--loom-dock-bottom",
+          `${Math.max(0, window.innerHeight - top - viewport.height)}px`,
+        );
+      } else {
+        box.style.top = box.style.height = box.style.maxHeight = "";
+        box.style.removeProperty("--loom-view-height");
+        box.style.removeProperty("--loom-dock-bottom");
+      }
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    viewport?.addEventListener("resize", fit);
+    viewport?.addEventListener("scroll", fit);
+    phone.addEventListener("change", fit);
+    return () => {
+      window.removeEventListener("resize", fit);
+      viewport?.removeEventListener("resize", fit);
+      viewport?.removeEventListener("scroll", fit);
+      phone.removeEventListener("change", fit);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const bar = playback.current;
+    if (!bar) return;
+    const observer = new ResizeObserver(measurePlayback);
+    observer.observe(bar);
+    measurePlayback();
+    return () => observer.disconnect();
+  }, [!!result]);
+  useLayoutEffect(() => {
+    if (!playbackActive) return;
+    measurePlayback();
+    revealDrawing(panes.current, playback.current);
+  }, [playbackActive]);
+  // One intent owns both paths. Separate effects can let a point request
+  // supersede the geometry needed to satisfy that same edited study.
   useEffect(() => {
+    const owner = scrubOwner.current;
+    const continuous = !!owner && owner.context === scrubContext(study);
+    if (resultKey === key && placed?.key === markerKey && !continuous) {
+      if (error.message) setError({ message: "" });
+      return;
+    }
     stop.current();
     setPlaying(false);
-    setError({ message: "" });
-    session.current!.update(
-      loomRequest(study),
-      false,
-      (r: LoomResult) => {
-        // This bound covers restored geometry; the worker transfers its buffer.
-        if (r.numericEntries > 2000000) {
-          fail(new Error("The loom exceeded its retained geometry budget."));
-          return;
-        }
-        setStudy((s) =>
-          s.framing
-            ? s
-            : {
-                ...s,
-                framing: {
-                  source: loomFit(r, "source"),
-                  image: loomFit(r, "image"),
-                },
-              },
-        );
-        setResult(r);
-        setResultKey(key);
-        setPlaced({ key: markerKey, marker: r.marker });
-      },
-      fail,
-    );
-  }, [key]);
-  useEffect(() => {
-    if (resultKey !== key || !result) return;
-    if (placed?.key === markerKey) return;
-    setError({ message: "" });
-    session.current!.update(
-      loomRequest(study),
-      true,
-      (r: { marker: LoomMarker }) =>
-        setPlaced({ key: markerKey, marker: r.marker }),
-      fail,
-    );
-  }, [markerKey, resultKey]);
+    let canceled = false;
+    const request = loomRequest(study);
+    const pointOnly =
+      !!result && resultKey === key && !(continuous && study.motion);
+    const valid = () =>
+      continuous
+        ? scrubOwner.current === owner &&
+          owner.context === scrubContext(currentStudy.current)
+        : !canceled;
+    const submit = () => {
+      const active = session.current!;
+      (continuous ? active.scrub.bind(active) : active.update.bind(active))(
+        request,
+        pointOnly,
+        (r: LoomResult | { marker: LoomMarker }) => {
+          if (!valid()) return;
+          if ("members" in r) {
+            if (r.numericEntries > 2000000) {
+              fail(
+                new Error("The loom exceeded its retained geometry budget."),
+                markerKey,
+              );
+              return;
+            }
+            setStudy((s) =>
+              s.framing
+                ? s
+                : {
+                    ...s,
+                    framing: {
+                      source: loomFit(r, "source"),
+                      image: loomFit(r, "image"),
+                    },
+                  },
+            );
+            setApplied(request);
+            setResult(r);
+            setResultKey(key);
+          }
+          setError({ message: "" });
+          setPlaced({ key: markerKey, marker: r.marker });
+        },
+        (e) => {
+          if (valid()) fail(e, markerKey);
+        },
+      );
+    };
+    const timer = continuous
+      ? undefined
+      : setTimeout(submit, pointOnly || !result ? 0 : 120);
+    if (continuous) submit();
+    return () => {
+      canceled = true;
+      clearTimeout(timer);
+    };
+  }, [markerKey, sessionVersion]);
+  const resetSession = () => {
+    scrubOwner.current = null;
+    session.current?.cancel();
+    session.current = new LoomSession(() => new EngineClient());
+    setSessionVersion((v) => v + 1);
+  };
   const pause = () => {
+    scrubOwner.current = null;
     stop.current();
     if (playing) {
-      session.current?.cancel();
-      session.current = new LoomSession(() => new EngineClient());
+      resetSession();
       if (placed)
         setStudy((s) => ({ ...s, parameter: placed.marker.parameter }));
     }
@@ -256,29 +427,88 @@ export function LoomPreview({
       };
     });
   };
-  const changeParameter = (parameter: number) => {
+  const changeParameter = (parameter: number, scrub = false) => {
+    const owner = scrubOwner.current;
     pause();
+    if (scrub)
+      scrubOwner.current =
+        owner?.context === scrubContext(study)
+          ? owner
+          : { context: scrubContext(study) };
     setStudy((s) => ({ ...s, parameter }));
   };
   const marker = placed?.marker;
   const progress = (() => {
+    if (study.motion) {
+      const { from, to } = study.motion;
+      return from === to
+        ? 0
+        : Math.max(
+            0,
+            Math.min(1, ((study.mapParameter ?? from) - from) / (to - from)),
+          );
+    }
     const [lo, hi] = memberInterval(study.source, study.selected);
     return (study.parameter - lo) / (hi - lo);
   })();
+  const seekMotion = async (p: number, scrub = false) => {
+    // Echo the thumb before awaiting scalar endpoints. Otherwise WebKit can
+    // restore the old controlled value and send it again on change/release.
+    const revision = ++scrubRevision.current;
+    setScrubProgress(p);
+    const owner = scrubOwner.current;
+    pause();
+    const current = generation.current;
+    await Promise.all([...jobs.current]);
+    if (revision !== scrubRevision.current) return;
+    if (current === generation.current) {
+      if (scrub) {
+        const context = scrubContext(currentStudy.current);
+        scrubOwner.current = owner?.context === context ? owner : { context };
+      }
+      setStudy((s) => ({ ...s, mapParameter: loomFrame(s, p).mapParameter }));
+    }
+    setScrubProgress(null);
+  };
   const start = () => {
-    if (!ready) return;
+    if (!canAct) return;
+    scrubOwner.current = null;
     const frozen = structuredClone(study);
-    revealDrawing(panes.current, playback.current);
+    if (playbackActive) revealDrawing(panes.current, playback.current);
+    setPlaybackActive(true);
     setPlaying(true);
-    stop.current = play<LoomMarker>({
+    stop.current = play<LoomResult | { marker: LoomMarker }>({
       from: progress >= 1 ? 0 : progress,
       duration: frozen.duration * 1000,
-      lanes: [(p) => session.current!.point(traversal(frozen, p))],
-      show: (marker) => {
-        setStudy((s) => ({ ...s, parameter: marker.parameter }));
+      lanes: [
+        (p) =>
+          frozen.motion
+            ? session.current!.frame(loomFrame(frozen, p))
+            : session
+                .current!.point(loomFrame(frozen, p))
+                .then((marker) => ({ marker })),
+      ],
+      show: (frame, p) => {
+        const request = loomFrame(frozen, p),
+          nextKey = geometryKey(request);
+        if ("members" in frame) {
+          if (frame.numericEntries > 2000000) {
+            pause();
+            fail(new Error("The loom exceeded its retained geometry budget."));
+            return;
+          }
+          setResult(frame);
+          setResultKey(nextKey);
+          setApplied(request);
+        }
+        setStudy((s) => ({
+          ...s,
+          parameter: request.parameter,
+          ...(frozen.motion && { mapParameter: request.mapParameter }),
+        }));
         setPlaced({
-          key: JSON.stringify([key, frozen.selected, marker.parameter]),
-          marker,
+          key: JSON.stringify([nextKey, frozen.selected, request.parameter]),
+          marker: frame.marker,
         });
       },
       end: () => setPlaying(false),
@@ -295,15 +525,23 @@ export function LoomPreview({
     dark: theme.dark,
     scheme: theme.scheme,
     weight,
+    imageLabel: mapInfo.imageLabel,
+    exclusion: poleExclusion(applied, study.showExclusion ?? true),
     onCamera: (c) =>
       setStudy((s) => ({ ...s, views: { ...s.views, [pane]: c } })),
     onSelect: select,
   });
   const metadata = () => ({
     kind: "complex-loom",
-    map: "square",
-    formula: "w = z²",
-    pace: "uniform source parameter",
+    map: study.map,
+    formula: mapInfo.formula,
+    mapParameter: study.mapParameter,
+    exclusionRadius: study.exclusionRadius,
+    showExclusion: study.showExclusion,
+    exclusion:
+      "Closed source disk omitted at each actual pole; no pole for identity. Image radius above 100000000 clipped. Finite expression sampling is not certified topology.",
+    motion: study.motion,
+    pace: study.motion ? "uniform map parameter" : "uniform source parameter",
     layout: "source left; image right",
     source: study.source,
     samples: study.samples,
@@ -318,14 +556,20 @@ export function LoomPreview({
     weight,
   });
   async function still(kind: string, settings: Still) {
-    if (!ready) return;
+    if (!canAct) return;
     pause();
     const id = ++exportGeneration.current;
     try {
+      const marker =
+        placed?.key === markerKey
+          ? placed.marker
+          : await session.current!.point(loomRequest(study));
+      if (id !== exportGeneration.current) return;
+      setPlaced({ key: markerKey, marker });
       await loomStill(
         kind as "svg" | "png",
-        props("source"),
-        props("image"),
+        { ...props("source"), marker, selected: study.selected },
+        { ...props("image"), marker, selected: study.selected },
         metadata(),
         () => id === exportGeneration.current,
         settings,
@@ -337,12 +581,11 @@ export function LoomPreview({
   function cancelExport() {
     exportGeneration.current++;
     exportAbort.current?.abort();
-    session.current?.cancel();
-    session.current = new LoomSession(() => new EngineClient());
+    resetSession();
     setExporting(false);
   }
   async function movie() {
-    if (!ready) return;
+    if (!canAct) return;
     pause();
     setExporting(true);
     setExportProgress(0);
@@ -352,8 +595,8 @@ export function LoomPreview({
     try {
       await loomMovie({
         study: structuredClone(study),
-        source: props("source"),
-        image: props("image"),
+        source: { ...props("source"), selected: study.selected },
+        image: { ...props("image"), selected: study.selected },
         metadata: metadata(),
         options: {
           format: exportState.chosen,
@@ -368,6 +611,7 @@ export function LoomPreview({
         signal: controller.signal,
         current: () => id === exportGeneration.current,
         marker: (q) => session.current!.point(q),
+        frame: (q) => session.current!.frame(q),
         progress: setExportProgress,
       });
     } catch (e) {
@@ -385,22 +629,26 @@ export function LoomPreview({
     weight,
     study.views,
     study.framing,
+    study.motion,
+    study.showExclusion,
     theme.dark,
     theme.scheme,
   ]);
   const scalarError = Object.values(scalars).find((s) => s.error);
   const message = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
-    : sourceError || durationError || error.message;
+    : sourceError || durationError || motionError || activeError.message;
   const title =
     scalarError?.name ??
     (sourceError
       ? "Source family"
       : durationError
         ? "Traversal duration"
-        : error.field
-          ? labels[error.field]
-          : undefined);
+        : motionError
+          ? motionLabel
+          : activeError.field
+            ? labels[activeError.field]
+            : undefined);
   const [claimed, setClaimed] = useState(false);
   const claim = useCallback((_key: string, on: boolean) => setClaimed(on), []);
   const target = useMemo(
@@ -443,11 +691,11 @@ export function LoomPreview({
         <ShareLink
           notebook="2d"
           study={() => ({ ...entry.study, weight, loom: study })}
-          disabled={!ready || exporting}
+          disabled={!canAct || exporting}
         />
         <AnimationButton section="loom-animation-section" />
         <ExportImageMenu
-          kind="complex-square"
+          kind={`complex-${study.map}`}
           revision={
             markerKey +
             JSON.stringify([
@@ -458,22 +706,99 @@ export function LoomPreview({
               weight,
             ])
           }
-          disabled={!ready || exporting}
+          disabled={!canAct || exporting}
           base={{ width: 2000, height: 760 }}
           onSave={still}
         />
       </AppHeader>
       <div className="loom-content">
         <div className="loom-heading">
-          <p className="eyebrow">Complex transformation · w = z²</p>
+          <p className="eyebrow">Complex transformation · {mapInfo.formula}</p>
           <h2 id="loom-title">The complex loom</h2>
-          <p>Choose a thread in one plane. Find its square in the other.</p>
+          <p>
+            Choose a thread in one plane. Find its {mapInfo.imageNoun} in the
+            other.
+          </p>
         </div>
         <ScalarStatus.Provider value={scalarStatus}>
           <FieldErrorContext.Provider value={target}>
             <div className="loom-layout">
               <aside>
                 <fieldset disabled={exporting}>
+                  <Field label="Complex map" help={mapHelp}>
+                    <select
+                      value={study.map}
+                      onChange={async (e) => {
+                        const map = e.target.value as LoomRequest["map"];
+                        pause();
+                        await Promise.all([...jobs.current]);
+                        setStudy((s) =>
+                          replaceMap(
+                            s,
+                            map,
+                            result ? 295 / loomFit(result, "source").scale : 1,
+                          ),
+                        );
+                      }}
+                    >
+                      {Object.entries(maps).map(([id, m]) => (
+                        <option key={id} value={id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  {mapInfo.parameterized && (
+                    <details>
+                      <summary>Map settings</summary>
+                      <p className="note">{mapInfo.note}</p>
+                      <Field
+                        label="Map parameter"
+                        help={`${mapInfo.range[0]}–${mapInfo.range[1]}. Zero gives the identity map.`}
+                      >
+                        <ScalarInput
+                          name="Map parameter"
+                          value={study.mapParameter!}
+                          onChange={(v) => {
+                            pause();
+                            setStudy((s) => ({ ...s, mapParameter: v }));
+                          }}
+                        />
+                      </Field>
+                      <Field
+                        label="Pole exclusion radius"
+                        help={tiered(
+                          "Omit a closed source disk: 0.000001–1,000,000 source units.",
+                          "The initial radius is 2.5% of the circle radius, grid half-span or frozen curve’s fitted half-height. This deliberate domain restriction omits part of the mathematical image. Analytic circles and lines split at crossings; arbitrary expression checks are finite and cannot certify topology. Values outside the supported range are refused.",
+                        )}
+                      >
+                        <ScalarInput
+                          name="Pole exclusion radius"
+                          value={study.exclusionRadius!}
+                          onChange={(v) => {
+                            pause();
+                            setStudy((s) => ({ ...s, exclusionRadius: v }));
+                          }}
+                        />
+                      </Field>
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={study.showExclusion ?? true}
+                          onChange={(e) => {
+                            const checked = e.currentTarget.checked;
+                            setStudy((s) => ({ ...s, showExclusion: checked }));
+                          }}
+                        />{" "}
+                        Show pole exclusion
+                      </label>
+                      <p className="note">
+                        Dashed source disk: excluded boundary and interior.
+                        Images beyond radius 100,000,000 are clipped; gaps stay
+                        open.
+                      </p>
+                    </details>
+                  )}
                   <Field
                     label="Source family"
                     help={tiered(
@@ -484,14 +809,11 @@ export function LoomPreview({
                     <select
                       value={study.source.kind}
                       onChange={(e) => {
+                        const kind = e.currentTarget
+                          .value as LoomSource["kind"];
                         generation.current++;
                         setScalars({});
-                        setSource((s) =>
-                          replaceSource(
-                            s,
-                            e.target.value as LoomSource["kind"],
-                          ),
-                        );
+                        setSource((s) => replaceSource(s, kind));
                       }}
                     >
                       {Object.entries(sourceChoices).map(([v, label]) => (
@@ -527,13 +849,15 @@ export function LoomPreview({
                               type="number"
                               min={1}
                               max={32}
-                              value={study.source.xCount}
-                              onChange={(e) =>
-                                setSource((s) => ({
-                                  ...s,
-                                  xCount: +e.target.value,
-                                }))
+                              value={
+                                Number.isNaN(study.source.xCount)
+                                  ? ""
+                                  : study.source.xCount
                               }
+                              onChange={(e) => {
+                                const value = e.currentTarget.valueAsNumber;
+                                setSource((s) => ({ ...s, xCount: value }));
+                              }}
                             />
                           </Field>
                           <Field
@@ -544,13 +868,15 @@ export function LoomPreview({
                               type="number"
                               min={1}
                               max={32}
-                              value={study.source.yCount}
-                              onChange={(e) =>
-                                setSource((s) => ({
-                                  ...s,
-                                  yCount: +e.target.value,
-                                }))
+                              value={
+                                Number.isNaN(study.source.yCount)
+                                  ? ""
+                                  : study.source.yCount
                               }
+                              onChange={(e) => {
+                                const value = e.currentTarget.valueAsNumber;
+                                setSource((s) => ({ ...s, yCount: value }));
+                              }}
                             />
                           </Field>
                         </div>
@@ -589,13 +915,15 @@ export function LoomPreview({
                             type="number"
                             min={1}
                             max={32}
-                            value={study.source.count}
-                            onChange={(e) =>
-                              setSource((s) => ({
-                                ...s,
-                                count: +e.target.value,
-                              }))
+                            value={
+                              Number.isNaN(study.source.count)
+                                ? ""
+                                : study.source.count
                             }
+                            onChange={(e) => {
+                              const value = e.currentTarget.valueAsNumber;
+                              setSource((s) => ({ ...s, count: value }));
+                            }}
                           />
                         </Field>
                         {scalar(
@@ -615,13 +943,13 @@ export function LoomPreview({
                           type="number"
                           min={4}
                           max={1024}
-                          value={study.samples}
+                          value={
+                            Number.isNaN(study.samples) ? "" : study.samples
+                          }
                           onChange={(e) => {
+                            const value = e.currentTarget.valueAsNumber;
                             pause();
-                            setStudy((s) => ({
-                              ...s,
-                              samples: +e.target.value,
-                            }));
+                            setStudy((s) => ({ ...s, samples: value }));
                           }}
                         />
                       </Field>
@@ -664,7 +992,7 @@ export function LoomPreview({
                         <h3>
                           {pane === "source"
                             ? "Source plane · z"
-                            : "Image plane · z²"}
+                            : mapInfo.imageHeading}
                         </h3>
                         <button
                           disabled={exporting}
@@ -712,10 +1040,7 @@ export function LoomPreview({
                         highlighted. Drag each pane to pan; scroll to zoom.
                         Keyboard: arrows, +/−, Home.
                       </p>
-                      <fieldset
-                        disabled={exporting || resultKey !== key}
-                        className="loom-traversal"
-                      >
+                      <fieldset disabled={exporting} className="loom-traversal">
                         <Field label="Selected member">
                           <select
                             value={study.selected}
@@ -728,55 +1053,115 @@ export function LoomPreview({
                             ))}
                           </select>
                         </Field>
-                        <Field
-                          label="Source parameter"
-                          className="loom-parameter"
-                          helpBeforeControl
-                          value={study.parameter.toPrecision(6)}
-                          help={tiered(
-                            "Move corresponding points at the same original source parameter.",
-                            "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have center r exp(iα), α = 2πk/N and z(θ) = r exp(iα)(1 + exp(iθ)); θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero.",
-                          )}
-                        >
-                          <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step="any"
-                            value={progress}
-                            aria-valuetext={String(study.parameter)}
-                            onChange={(e) =>
-                              changeParameter(
-                                traversal(study, +e.target.value).parameter,
-                              )
-                            }
-                          />
-                        </Field>
                       </fieldset>
                       <div
                         ref={playback}
                         id="loom-playback"
-                        className={`playback ${playing ? "active" : ""}`}
+                        className={`playback ${playerActive ? "active" : ""}`}
                         role="group"
                         aria-label="Playback"
                       >
                         <div className="animation-buttons">
                           <button
-                            disabled={(!ready && !playing) || exporting}
+                            disabled={(!canAct && !playing) || exporting}
                             onClick={() => (playing ? pause() : start())}
                           >
-                            {playing ? "Pause traversal" : "Play traversal"}
+                            {playing
+                              ? study.motion
+                                ? "Pause map motion"
+                                : "Pause traversal"
+                              : playbackActive && progress < 1
+                                ? study.motion
+                                  ? "Resume map motion"
+                                  : "Resume traversal"
+                                : study.motion
+                                  ? "Play map motion"
+                                  : "Play traversal"}
                           </button>
                           <button
-                            onClick={() =>
-                              exporting ? cancelExport() : changeParameter(lo)
-                            }
+                            onClick={() => {
+                              if (exporting) cancelExport();
+                              else {
+                                if (study.motion) void seekMotion(0);
+                                else changeParameter(lo);
+                                setPlaybackActive(false);
+                              }
+                            }}
                           >
-                            {exporting ? "Cancel export" : "Stop traversal"}
+                            {exporting
+                              ? "Cancel export"
+                              : study.motion
+                                ? "Stop map motion"
+                                : "Stop traversal"}
                           </button>
                         </div>
+                        <div className="timeline">
+                          <fieldset disabled={exporting}>
+                            <Field
+                              label={
+                                study.motion
+                                  ? "Motion progress"
+                                  : "Source parameter"
+                              }
+                              className="loom-parameter"
+                              helpBeforeControl
+                              value={(study.motion
+                                ? study.mapParameter!
+                                : study.parameter
+                              ).toPrecision(6)}
+                              help={
+                                study.motion
+                                  ? "Seek the same absolute map time used by playback and export."
+                                  : tiered(
+                                      "Move corresponding points at the same original source parameter.",
+                                      mapInfo.traversalHelp,
+                                    )
+                              }
+                            >
+                              <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step="any"
+                                value={scrubProgress ?? progress}
+                                aria-valuetext={String(
+                                  study.motion
+                                    ? study.mapParameter
+                                    : study.parameter,
+                                )}
+                                onChange={(e) =>
+                                  study.motion
+                                    ? seekMotion(+e.target.value, true)
+                                    : changeParameter(
+                                        traversal(study, +e.target.value)
+                                          .parameter,
+                                        true,
+                                      )
+                                }
+                              />
+                            </Field>
+                          </fieldset>
+                          <div className="note" aria-live="off">
+                            {Number.isFinite(progress) && !durationError
+                              ? `${(progress * study.duration).toFixed(1)} / ${study.duration} s`
+                              : "—"}
+                            {playbackActive && !playing && progress < 1
+                              ? " · Paused"
+                              : ""}
+                          </div>
+                          <div className="animation-values">
+                            t = {marker.parameter.toPrecision(6)}
+                            {study.motion && (
+                              <>
+                                {" "}
+                                · {mapInfo.symbol} ={" "}
+                                {(applied.mapParameter ?? 0).toPrecision(6)}
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <fieldset disabled={exporting || resultKey !== key}>
+                      <fieldset disabled={exporting}>
                         <Field
                           label="Exact source parameter"
                           help="Enter a source parameter, including constants such as pi."
@@ -803,8 +1188,8 @@ export function LoomPreview({
                             </p>
                           ) : (
                             <p>
-                              Correspondence undefined here; the marker is
-                              omitted.
+                              Correspondence undefined, excluded or clipped
+                              here; the image marker is omitted.
                             </p>
                           )}
                         </div>
@@ -813,9 +1198,77 @@ export function LoomPreview({
                         <details id="loom-animation-section" open>
                           <summary className="section-label">ANIMATION</summary>
                           <fieldset disabled={exporting}>
+                            {mapInfo.parameterized && (
+                              <>
+                                <Field
+                                  label="Motion"
+                                  help="Animate the point or the map parameter separately."
+                                >
+                                  <select
+                                    value={study.motion ? "map" : "point"}
+                                    onChange={(e) => {
+                                      const mode = e.currentTarget.value;
+                                      pause();
+                                      setStudy((s) => {
+                                        const { motion: _motion, ...rest } = s;
+                                        return mode === "map"
+                                          ? {
+                                              ...s,
+                                              motion: {
+                                                mode: "map",
+                                                from:
+                                                  s.mapParameter ??
+                                                  maps[s.map].initial,
+                                                to: maps[s.map].range[1],
+                                              },
+                                            }
+                                          : rest;
+                                      });
+                                    }}
+                                  >
+                                    <option value="point">
+                                      Point traversal
+                                    </option>
+                                    <option value="map">Map parameter</option>
+                                  </select>
+                                </Field>
+                                {study.motion && (
+                                  <>
+                                    <div className="pair">
+                                      {(["from", "to"] as const).map((k) => (
+                                        <Field
+                                          key={k}
+                                          label={`Map motion ${k}`}
+                                          help={`${mapInfo.range[0]}–${mapInfo.range[1]}; ${k} parameter.`}
+                                        >
+                                          <ScalarInput
+                                            name={`Map motion ${k}`}
+                                            value={study.motion![k]}
+                                            onChange={(v) => {
+                                              pause();
+                                              setStudy((s) => ({
+                                                ...s,
+                                                motion: {
+                                                  ...s.motion!,
+                                                  [k]: v,
+                                                },
+                                              }));
+                                            }}
+                                          />
+                                        </Field>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </>
+                            )}
                             <Field
                               label="Traversal duration"
-                              help="0.1–3,600 seconds at uniform source-parameter pace."
+                              help={
+                                study.motion
+                                  ? "0.1–3,600 seconds at uniform map-parameter pace."
+                                  : "0.1–3,600 seconds at uniform source-parameter pace."
+                              }
                             >
                               <input
                                 type="number"
@@ -828,14 +1281,9 @@ export function LoomPreview({
                                     : study.duration
                                 }
                                 onChange={(e) => {
+                                  const value = e.currentTarget.valueAsNumber;
                                   pause();
-                                  setStudy((s) => ({
-                                    ...s,
-                                    duration:
-                                      e.target.value === ""
-                                        ? NaN
-                                        : +e.target.value,
-                                  }));
+                                  setStudy((s) => ({ ...s, duration: value }));
                                 }}
                               />
                             </Field>
@@ -848,7 +1296,7 @@ export function LoomPreview({
                           <button
                             className="animation-export"
                             disabled={
-                              !ready ||
+                              !canAct ||
                               playing ||
                               exporting ||
                               exportState.formats?.[exportState.chosen] !==
@@ -873,7 +1321,7 @@ export function LoomPreview({
                       </p>
                     </>
                   )}
-                  {!ready && !message && (
+                  {!result && !message && (
                     <p className="note" role="status">
                       Computing correspondence…
                     </p>

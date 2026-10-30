@@ -378,7 +378,7 @@ test("arrow keys move between cards", async ({ page }) => {
   await expect(dialog.locator(".example-card:visible").last()).toBeFocused();
   await expect(page.locator(".example-card:focus")).toHaveAttribute(
     "data-loom-example",
-    "2",
+    "4",
   );
 });
 
@@ -6382,6 +6382,9 @@ for (const [mode, repeat, allConstruction] of [
   test(`finite engraving ${mode} ${repeat}${allConstruction ? " all-construction" : ""} movie decodes with exact timing and held-current endpoint geometry`, async ({
     page,
   }) => {
+    // Full-page reference rasters and a decoded movie: 27–41 s per variant
+    // on CI runners, and back-and-forth's third reference exceeded 60 s.
+    test.slow();
     await page.addInitScript(() => {
       (window as any).exportSVGs = [];
       const create = URL.createObjectURL;

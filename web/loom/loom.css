@@ -5,7 +5,7 @@ html.loom-open {
   inset: 0;
   width: 100%;
   max-width: none;
-  height: 100svh;
+  height: 100dvh;
   max-height: none;
   margin: 0;
   padding: 0;
@@ -20,7 +20,7 @@ html.loom-open {
   background: var(--panel);
 }
 .loom-content {
-  height: calc(100svh - 80px);
+  height: calc(100dvh - 80px);
   display: flex;
   flex-direction: column;
   padding: 24px 24px 0;
@@ -183,12 +183,37 @@ html.loom-open {
   }
   .loom .playback.active {
     z-index: 20;
+    bottom: var(--loom-dock-bottom, 0px);
+  }
+  .loom .playback.active .animation-buttons {
+    max-width: none;
+    margin: 0;
   }
   .loom .animation-section {
     padding-bottom: 20px;
   }
   .loom main:has(.playback.active) {
-    padding-bottom: 120px;
+    padding-bottom: calc(var(--loom-playback-height, 220px) + 20px);
+  }
+}
+@media (max-width: 700px) and (orientation: portrait) {
+  /* Keep both panes above the complete dock with equal axes and the same
+     SVG proportions. The measured player includes help and safe-area space. */
+  .loom:has(.playback.active) .loom-panes svg {
+    width: min(
+      100%,
+      max(
+        100px,
+        calc(
+          (
+              var(--loom-view-height, 100dvh) -
+                var(--loom-playback-height, 220px) - 100px
+            ) *
+            1000 / 1520
+        )
+      )
+    );
+    margin-inline: auto;
   }
 }
 /* A phone held sideways scrolls one page. The family picker leads; then both

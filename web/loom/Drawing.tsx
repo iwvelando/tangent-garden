@@ -56,6 +56,8 @@ export type DrawingProps = {
   dark: boolean;
   scheme: ColorScheme;
   weight: LineWeight;
+  exclusion?: { center: Vec; radius: number };
+  imageLabel?: string;
   onCamera?: (c: PlotCamera) => void;
   onSelect?: (id: number) => void;
 };
@@ -72,6 +74,14 @@ export function PaneDrawing(p: DrawingProps) {
     x: 500 + (v.x - fit.cx) * fit.scale * p.camera.zoom + p.camera.x,
     y: 380 - (v.y - fit.cy) * fit.scale * p.camera.zoom + p.camera.y,
   });
+  const exclusion = p.exclusion && {
+    ...xy(p.exclusion.center),
+    radius: p.exclusion.radius * fit.scale * p.camera.zoom,
+  };
+  // A pole tending to infinity can overflow screen coordinates even while
+  // its source coordinates are finite. Its disk is outside this viewport.
+  const visibleExclusion =
+    exclusion && Object.values(exclusion).every(Number.isFinite);
   const svgRef = useRef<SVGSVGElement>(null),
     gesture = useRef(createGesture());
   const camera = useRef(p.camera);
@@ -135,7 +145,9 @@ export function PaneDrawing(p: DrawingProps) {
       viewBox="0 0 1000 760"
       role="img"
       aria-label={
-        p.pane === "source" ? "Complex source plane" : "Squared image plane"
+        p.pane === "source"
+          ? "Complex source plane"
+          : (p.imageLabel ?? "Squared image plane")
       }
       data-pane={p.pane}
       tabIndex={p.onCamera ? 0 : undefined}
@@ -217,6 +229,17 @@ export function PaneDrawing(p: DrawingProps) {
         strokeLinecap="round"
         strokeLinejoin="round"
       >
+        {p.pane === "source" && visibleExclusion && (
+          <circle
+            data-exclusion="true"
+            cx={exclusion.x}
+            cy={exclusion.y}
+            r={exclusion.radius}
+            stroke={palette.probe}
+            strokeDasharray="6 5"
+            {...stroke(1.25)}
+          />
+        )}
         {p.result.members.map((m) => (
           <path
             key={m.id}

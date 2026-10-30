@@ -1,4 +1,5 @@
 import {
+  maps,
   memberCount,
   memberInterval,
   supportedSource,
@@ -748,7 +749,19 @@ function loomStudy(value: unknown): LoomStudy {
     value,
     {
       fields: {
-        map: { options: { square: true } },
+        map: { options: { square: true, mobius: true, joukowski: true } },
+        mapParameter: { optional: "number" },
+        exclusionRadius: { optional: { range: [0.000001, 1000000] } },
+        showExclusion: { optional: "boolean" },
+        motion: {
+          optional: {
+            fields: {
+              mode: { options: { map: true } },
+              from: "number",
+              to: "number",
+            },
+          },
+        },
         source: {
           fields: {
             kind: {
@@ -802,6 +815,38 @@ function loomStudy(value: unknown): LoomStudy {
     undefined,
     "loom",
   );
+  if (maps[out.map].parameterized) {
+    const [lo, hi] = maps[out.map].range;
+    if (
+      out.mapParameter === undefined ||
+      out.mapParameter < lo ||
+      out.mapParameter > hi
+    )
+      throw new LinkError(
+        "loom.mapParameter",
+        "Enter a supported map parameter.",
+      );
+    if (out.exclusionRadius === undefined)
+      throw new LinkError(
+        "loom.exclusionRadius",
+        "Enter a positive exclusion radius.",
+      );
+    if (
+      out.motion &&
+      (out.motion.from < lo ||
+        out.motion.from > hi ||
+        out.motion.to < lo ||
+        out.motion.to > hi)
+    )
+      throw new LinkError(
+        "loom.motion",
+        "Map motion endpoints must be in the supported range.",
+      );
+  } else if (out.motion)
+    throw new LinkError(
+      "loom.motion",
+      `${maps[out.map].label} supports point traversal only.`,
+    );
   for (const [path, v] of Object.entries({
     count: out.source.count,
     xCount: out.source.xCount,

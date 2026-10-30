@@ -81,6 +81,62 @@ checkFourierFit();
     ).field,
     "source.count",
   );
+  for (const map of ["mobius", "joukowski"]) {
+    const request = {
+      ...q,
+      map,
+      mapParameter: map === "mobius" ? 0.5 : 1,
+      exclusionRadius: 0.025,
+    };
+    const raw = globalThis.tangentGardenLoom(JSON.stringify(request));
+    assert.equal(typeof raw, "object");
+    const result = lifted(raw);
+    assert.ok(
+      result.members.some((m) =>
+        m.intervals.some((g) => g.reason === "excluded"),
+      ),
+    );
+    assert.deepEqual(
+      JSON.parse(globalThis.tangentGardenLoomPoint(JSON.stringify(request)))
+        .marker,
+      result.marker,
+    );
+    let drawn = 0,
+      gaps = 0;
+    for (const m of result.members) {
+      assert.equal(m.source.length, m.image.length);
+      for (let i = 0; i < m.at.length; i++) {
+        const p = m.source[i],
+          w = m.image[i];
+        if (!w) {
+          gaps++;
+          continue;
+        }
+        assert.ok(p);
+        drawn++;
+        const x = map === "mobius" ? 1 - 0.5 * p.x : p.x,
+          y = map === "mobius" ? -0.5 * p.y : p.y,
+          d = x * x + y * y;
+        const expected =
+          map === "mobius"
+            ? {
+                x: ((p.x - 0.5) * x + p.y * y) / d,
+                y: (p.y * x - (p.x - 0.5) * y) / d,
+              }
+            : { x: p.x + p.x / d, y: p.y - p.y / d };
+        assert.ok(Math.hypot(w.x - expected.x, w.y - expected.y) < 1e-9);
+      }
+    }
+    assert.ok(drawn > 32 && gaps > 0);
+    assert.equal(
+      JSON.parse(
+        globalThis.tangentGardenLoom(
+          JSON.stringify({ ...request, exclusionRadius: 0 }),
+        ),
+      ).field,
+      "exclusionRadius",
+    );
+  }
   console.log(
     `Loom: typed paired geometry, correspondence and point-only bridge passed (${replyBytes(raw)} bytes)`,
   );

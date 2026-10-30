@@ -1,11 +1,26 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { crc32 } from "node:zlib";
+import { crc32, deflateRawSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { wireStudy } from "./study-link-wire";
 import { decodePng } from "./png";
 import { decodeVideo, probe as videoProbe } from "./video";
 import { choosePreset } from "./helpers";
+import { checkLoomPortraitPlayer, checkLoomLiveScrub } from "./loom-playback";
+
+for (const title of ["A square grid, curved", "Circles through infinity"])
+  test(`loom drawings update during an uninterrupted scrub: ${title}`, async ({
+    page,
+  }) => {
+    await checkLoomLiveScrub(page, title);
+  });
+
+for (const title of ["A square grid, curved", "Circles through infinity"])
+  test(`portrait loom playback keeps its complete player visible: ${title}`, async ({
+    page,
+  }) => {
+    await checkLoomPortraitPlayer(page, title);
+  });
 
 // The complex loom: paired squaring geometry, its entry from the notebook and
 // gallery, links, controls, and still and movie exports.
@@ -30,6 +45,530 @@ async function openLoomExample(
     .click();
   await gallery.waitFor({ state: "hidden" });
 }
+
+// The owner's Loops upon loops source, mapped at b=.8, saved at 64 samples.
+// Build its link from the production preset rather than an opaque URL token.
+async function openEditedLoom(page: Page) {
+  const { presets } = await import("../web/presets");
+  const { presetStudy } = await import("../web/planar-link");
+  const { curveLoom, replaceMap } = await import("../web/loom/model");
+  const base = presetStudy(
+    presets.findIndex((p) => p.title === "Loops upon loops"),
+  );
+  const loom = {
+    ...replaceMap(curveLoom(base.config), "mobius"),
+    samples: 64,
+    mapParameter: 0.8,
+    exclusionRadius: 0.03427937158324301,
+    framing: {
+      source: { cx: 0.145558547505649, cy: 0, scale: 215.14396733005353 },
+      image: { cx: -1.0690566223618285, cy: 0, scale: 216.01888172746047 },
+    },
+  };
+  const token = deflateRawSync(
+    JSON.stringify({ v: 1, notebook: "2d", study: { ...base, loom } }),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await d.getByText("Sampling and limits", { exact: true }).click();
+  return d;
+}
+
+for (const variant of ["replace", "edit digits"])
+  test(`loom sample editing recovers from intermediate values: ${variant}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const send = Worker.prototype.postMessage;
+      (window as any).sampleRequests = [];
+      Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+        if (q.action === "loom")
+          (window as any).sampleRequests.push({
+            samples: q.loom.samples,
+            point: q.pointOnly,
+          });
+        return send.call(this, q, ...rest);
+      };
+    });
+    const d = await openEditedLoom(page),
+      samples = d.getByLabel("Samples per member", { exact: true });
+    if (variant === "replace") {
+      await samples.selectText();
+      await samples.pressSequentially("32", { delay: 40 });
+    } else {
+      await samples.fill("64");
+      await samples.press("3");
+      await samples.press("ArrowLeft");
+      await samples.press("ArrowLeft");
+      await samples.press("Backspace");
+      await samples.press("ArrowRight");
+      await samples.press("ArrowRight");
+      await samples.press("ArrowRight");
+      await samples.press("2");
+      await samples.press("ArrowLeft");
+      await samples.press("ArrowLeft");
+      await samples.press("Backspace");
+    }
+    await expect(samples).toHaveValue("32");
+    await expect(d.getByRole("alert")).toHaveCount(0);
+    await expect(
+      d.getByRole("button", { name: "Play traversal", exact: true }),
+    ).toBeEnabled();
+    expect(
+      await page.evaluate(() => (window as any).sampleRequests.at(-1).samples),
+    ).toBe(32);
+    if (variant === "replace")
+      expect(
+        await page.evaluate(() =>
+          (window as any).sampleRequests.some((q: any) => q.samples === 3),
+        ),
+      ).toBe(false);
+  });
+
+test("loom count inputs retain a blank draft instead of inserting zero", async ({
+  page,
+}) => {
+  const d = await openEditedLoom(page);
+  const samples = d.getByLabel("Samples per member", { exact: true });
+  await samples.fill("");
+  await expect(samples).toHaveValue("");
+  await samples.pressSequentially("32");
+  await expect(samples).toHaveValue("32");
+  await expect(
+    d.getByRole("button", { name: "Play traversal", exact: true }),
+  ).toBeEnabled();
+});
+
+test("complex map help explains the three pictures and expands to their mathematics", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  const toggle = d.getByRole("button", {
+    name: "About Complex map",
+    exact: true,
+  });
+  await toggle.click();
+  const help = d.locator(
+    `[id="${await toggle.getAttribute("aria-controls")}"]`,
+  );
+  await expect(help).toContainText(/squaring/i);
+  await expect(help).toContainText(/Möbius/);
+  await expect(
+    help.getByRole("button", { name: "Show more", exact: true }),
+  ).toBeVisible();
+  await help.getByRole("button", { name: "Show more", exact: true }).click();
+  for (const text of ["z²", "1/b", "±√λ", "identity", "pole"])
+    await expect(help).toContainText(text);
+});
+
+for (const gesture of ["pointer", "touch"])
+  test(`loom scrubbing stays enabled and continuous while correspondence is pending: ${gesture}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const send = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+        if (q.action === "loom" && q.pointOnly)
+          setTimeout(() => send.call(this, q, ...rest), 200);
+        else send.call(this, q, ...rest);
+      };
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await settled(page);
+    await openLoomExample(page);
+    const d = page.getByRole("dialog", { name: "The complex loom" });
+    await expect(d.locator(".loom-panes")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const slider = d.getByLabel("Source parameter", { exact: true });
+    await slider.scrollIntoViewIfNeeded();
+    const box = (await slider.boundingBox())!;
+    const cdp =
+      gesture === "touch"
+        ? await page.context().newCDPSession(page)
+        : undefined;
+    const touch = async (type: string, fraction = 0) =>
+      cdp!.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints:
+          type === "touchEnd"
+            ? []
+            : [
+                {
+                  id: 1,
+                  x: box.x + box.width * fraction,
+                  y: box.y + box.height / 2,
+                },
+              ],
+      });
+    if (cdp) {
+      await touch("touchStart", 0.1);
+      await touch("touchMove", 0.3);
+    } else {
+      await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2, {
+        steps: 3,
+      });
+    }
+    // A request in flight must not disable/recreate the slider or insert a
+    // status row that moves the surrounding controls during the gesture.
+    await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "true");
+    expect(
+      await d
+        .getByLabel("Selected member", { exact: true })
+        .evaluate((e) => e.matches(":disabled")),
+    ).toBe(false);
+    expect(
+      await d
+        .getByLabel("Exact source parameter", { exact: true })
+        .evaluate((e) => e.matches(":disabled")),
+    ).toBe(false);
+    expect(
+      await d
+        .getByRole("button", { name: "Play traversal", exact: true })
+        .isDisabled(),
+    ).toBe(false);
+    expect(
+      await d
+        .getByRole("button", { name: "Copy link", exact: true })
+        .isDisabled(),
+    ).toBe(false);
+    await page.waitForTimeout(240);
+    if (cdp) {
+      await touch("touchMove", 0.85);
+      await touch("touchEnd");
+    } else {
+      await page.mouse.move(box.x + box.width * 0.85, box.y + box.height / 2, {
+        steps: 8,
+      });
+      await page.mouse.up();
+    }
+    expect(Number(await slider.inputValue())).toBeGreaterThan(0.8);
+    await expect(d.locator(".loom-panes")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    expect(
+      Number(
+        await d.locator(".loom-correspondence").getAttribute("data-parameter"),
+      ),
+    ).toBeGreaterThan(1.6 * Math.PI);
+  });
+
+test("a loom still requested during scrubbing resolves the latest marker and settles the view", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "loom" && q.pointOnly)
+        setTimeout(() => send.call(this, q, ...rest), 200);
+      else send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page);
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await d.getByLabel("Source parameter", { exact: true }).fill("0.25");
+  const download = page.waitForEvent("download");
+  await loomImage(d, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const markers = await page.evaluate((text) => {
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    return Array.from(doc.querySelectorAll("[data-marker]"), (e) =>
+      JSON.parse(e.getAttribute("data-point")!),
+    );
+  }, svg);
+  expect(markers).toEqual([
+    { x: 1, y: 1 },
+    { x: 0, y: 2 },
+  ]);
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".loom-correspondence")).toHaveAttribute(
+    "data-parameter",
+    String(Math.PI / 2),
+  );
+});
+
+test("canceling a loom movie during a pending scrub restores the current correspondence", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "loom" && q.pointOnly)
+        setTimeout(() => send.call(this, q, ...rest), 350);
+      else send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await openLoomExportSettings(d);
+  await d.getByLabel("Source parameter", { exact: true }).fill("0.25");
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  await loomMovieAction(d).click();
+  await d.getByRole("button", { name: "Cancel export", exact: true }).click();
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".loom-correspondence")).toHaveAttribute(
+    "data-parameter",
+    String(Math.PI / 2),
+  );
+  expect(downloads).toBe(0);
+});
+
+test("rational loom controls split poles, seek maps and save vector metadata", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page);
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const source = await d
+    .locator('[data-pane="source"] [data-member="0"]')
+    .getAttribute("d");
+  await d.locator('[data-pane="source"]').press("+");
+  await d.getByLabel("Complex map", { exact: true }).selectOption("mobius");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator('[data-pane="source"]')).toHaveAttribute(
+    "data-zoom",
+    "1.2",
+  );
+  await d.getByText("Map settings", { exact: true }).click();
+  await d.getByLabel("Map parameter", { exact: true }).fill(".5");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator("[data-gaps]")).toContainText("excluded");
+  await expect(d.locator('[data-pane="source"] [data-exclusion]')).toHaveCount(
+    1,
+  );
+  await d.getByLabel("Pole exclusion radius", { exact: true }).fill("0");
+  await expect(d.getByRole("alert")).toContainText("0.000001");
+  await d.getByLabel("Pole exclusion radius", { exact: true }).fill("1/40");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await d.getByLabel("Motion", { exact: true }).selectOption("map");
+  await d.getByLabel("Map motion from", { exact: true }).fill(".5");
+  await d.getByLabel("Map motion to", { exact: true }).fill("2");
+  await expect(d.getByRole("alert")).toContainText("Map motion to");
+  await expect(d.getByLabel("Map motion to", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await d.getByLabel("Map motion to", { exact: true }).fill("0");
+  await d.getByLabel("Motion progress", { exact: true }).fill("1");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("0");
+  await expect(d.locator('[data-pane="source"] [data-exclusion]')).toHaveCount(
+    0,
+  );
+  await expect(d.locator("[data-gaps]")).toContainText("No gaps");
+  const a = await d
+    .locator('[data-pane="source"] [data-member="0"]')
+    .getAttribute("d");
+  expect(a).not.toBeNull();
+  expect(source).not.toBeNull();
+  const download = page.waitForEvent("download");
+  await loomImage(d, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain('"map":"mobius"');
+  expect(svg).toContain('"exclusionRadius":0.025');
+  expect(svg).toContain('"mapParameter":0');
+  expect(svg).not.toMatch(/<text|<image/);
+  await d.getByLabel("Map parameter", { exact: true }).fill("1e-308");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(() =>
+      d.locator(".loom-panes svg").evaluateAll((es) => {
+        return es.every((svg) =>
+          Array.from(svg.querySelectorAll("circle")).every((e) => {
+            return ["cx", "cy", "r"].every((k) =>
+              Number.isFinite(Number(e.getAttribute(k))),
+            );
+          }),
+        );
+      }),
+    )
+    .toBe(true);
+  await d.getByLabel("Complex map", { exact: true }).selectOption("joukowski");
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("pi");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".loom-correspondence")).toContainText("excluded");
+});
+
+test("changing loom maps waits for pending source scalars and retains manual work", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "scalars")
+        setTimeout(() => send.call(this, q, ...rest), 200);
+      else send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await d.getByLabel("Circle radius", { exact: true }).fill("phi");
+  await d.getByLabel("Complex map", { exact: true }).selectOption("joukowski");
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () =>
+      JSON.parse(
+        (await d
+          .locator('[data-pane="source"] [data-marker]')
+          .getAttribute("data-point"))!,
+      ),
+    )
+    .toEqual({ x: 1 + Math.sqrt(5), y: 0 });
+});
+
+test("rational performances recompute motion, pause safely and decode a moving-pole film", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "Circles through infinity");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Complex map", { exact: true })).toHaveValue(
+    "mobius",
+  );
+  await expect(d.getByLabel("Source parameter", { exact: true })).toHaveCount(
+    0,
+  );
+  const controls = d.getByRole("group", { name: "Playback", exact: true });
+  const playButton = (await controls
+    .getByRole("button", { name: "Play map motion", exact: true })
+    .boundingBox())!;
+  expect(
+    (await controls
+      .getByLabel("Motion progress", { exact: true })
+      .boundingBox())!.y,
+  ).toBeGreaterThanOrEqual(playButton.y + playButton.height);
+  const image = d.locator('[data-pane="image"] [data-member="0"]');
+  const start = await image.getAttribute("d");
+  await d.getByLabel("Motion progress", { exact: true }).fill("0.5");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const middle = await image.getAttribute("d");
+  expect(middle).not.toBe(start);
+  await expect(d.locator("[data-exclusion]")).toHaveCount(0);
+  await d.getByLabel("Traversal duration", { exact: true }).fill("10");
+  await d.getByRole("button", { name: "Play map motion", exact: true }).click();
+  await expect.poll(() => image.getAttribute("d")).not.toBe(middle);
+  await d
+    .getByRole("button", { name: "Pause map motion", exact: true })
+    .click();
+  const held = await image.getAttribute("d");
+  await page.waitForTimeout(150);
+  expect(await image.getAttribute("d")).toBe(held);
+  await d.getByRole("button", { name: "Stop map motion", exact: true }).click();
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  expect(await image.getAttribute("d")).toBe(start);
+  // Middle frame b=.5 moves the pole onto the radius-2 source circle.
+  await d.getByLabel("Map motion to", { exact: true }).fill(".35");
+  // Rasterize the actual live image pane at each absolute movie time. This
+  // tests the production renderer, without duplicating either map formula.
+  const seeks: number[][] = [];
+  for (const progress of [0, 0.5, 1]) {
+    await d
+      .getByLabel("Motion progress", { exact: true })
+      .fill(String(progress));
+    await expect(art).toHaveAttribute("aria-busy", "false");
+    if (progress === 0.5)
+      await expect(d.locator("[data-gaps]")).toContainText("excluded");
+    seeks.push(
+      await d.locator('[data-pane="image"]').evaluate(async (e) => {
+        const svg = e.cloneNode(true) as SVGSVGElement;
+        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        svg.setAttribute("width", "500");
+        svg.setAttribute("height", "380");
+        const url = URL.createObjectURL(
+          new Blob([new XMLSerializer().serializeToString(svg)], {
+            type: "image/svg+xml",
+          }),
+        );
+        try {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+          const canvas = Object.assign(document.createElement("canvas"), {
+            width: 500,
+            height: 380,
+          });
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(image, 0, 0);
+          return Array.from(ctx.getImageData(0, 0, 500, 380).data);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }),
+    );
+  }
+  await d.getByLabel("Motion progress", { exact: true }).fill("0");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await openLoomExportSettings(d);
+  await d.getByLabel("Traversal duration", { exact: true }).fill(".2");
+  await loomResolution(d, 0.5);
+  await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
+  await d.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  const download = page.waitForEvent("download");
+  await loomMovieAction(d).click();
+  const path = (await (await download).path())!,
+    bytes = await readFile(path);
+  expect(bytes.includes(Buffer.from('"map":"mobius"'))).toBe(true);
+  expect(bytes.includes(Buffer.from('"mode":"map"'))).toBe(true);
+  const decoded = await decodeVideo(page, bytes);
+  expect(decoded.duration).toBeCloseTo(0.2, 3);
+  expect(decoded.first.ink).toBeGreaterThan(0);
+  expect(decoded.last.ink).toBeGreaterThan(0);
+  const timing = videoProbe(path);
+  expect(timing?.frames).toBe(3);
+  expect(timing?.durations.reduce((a, b) => a + b, 0)).toBe(200);
+  const frames = execFileSync(
+    "ffmpeg",
+    ["-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    { maxBuffer: 4 * 1024 * 1024 },
+  );
+  expect(frames.length).toBe(3 * 1000 * 380 * 3);
+  for (let f = 0; f < 3; f++) {
+    const errors = seeks.map((expected) => {
+      let error = 0;
+      for (let y = 0; y < 380; y++)
+        for (let x = 0; x < 500; x++)
+          for (let c = 0; c < 3; c++)
+            error += Math.abs(
+              frames[f * 1000 * 380 * 3 + (y * 1000 + x + 500) * 3 + c] -
+                expected[(y * 500 + x) * 4 + c],
+            );
+      return error / (500 * 380 * 3);
+    });
+    expect(errors[f], `frame ${f}: ${errors}`).toBeLessThan(2);
+    for (let other = 0; other < 3; other++)
+      if (other !== f)
+        expect(
+          errors[f],
+          `frame ${f} must match its own seek: ${errors}`,
+        ).toBeLessThan(errors[other] * 0.7);
+  }
+});
 
 test("complex loom pairs source and square, seeks through zero and restores the editor", async ({
   page,
@@ -1020,8 +1559,13 @@ for (const size of [
     const play = (await d
       .getByRole("button", { name: "Play traversal", exact: true })
       .boundingBox())!;
-    expect(play.y - scrub.y - scrub.height).toBeGreaterThanOrEqual(0);
-    expect(play.y - scrub.y - scrub.height).toBeLessThan(30);
+    const parameter = (await d.locator(".loom-parameter").boundingBox())!;
+    expect(parameter.y - play.y - play.height).toBeGreaterThanOrEqual(0);
+    expect(parameter.y - play.y - play.height).toBeLessThanOrEqual(30);
+    expect(scrub.y).toBeGreaterThanOrEqual(parameter.y);
+    expect(scrub.y + scrub.height).toBeLessThanOrEqual(
+      parameter.y + parameter.height + 1,
+    );
   });
 
 test("complex loom phone configuration appears before the artwork", async ({
@@ -1417,7 +1961,7 @@ test("gallery loom examples open their family over the study and return to it", 
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
   const section = gallery.getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
-  await expect(cards).toHaveCount(3);
+  await expect(cards).toHaveCount(5);
   await expect(gallery.locator("[data-example]")).toHaveCount(72);
   for (const card of await cards.all()) {
     await card.scrollIntoViewIfNeeded();

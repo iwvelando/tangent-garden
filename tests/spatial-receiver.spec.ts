@@ -854,6 +854,10 @@ test("a refined receiver plays one level coarser unless asked not to", async ({
   await expect(page.locator(".playback-tip")).toContainText(
     "one refinement level coarser",
   );
+  // The coarser level already applies to the first frame, at the track's
+  // start; pause only once a later frame shows, so the hold is observable.
+  const at = async () => (await config(page))?.rays.receiver.at;
+  await expect.poll(at).not.toBe(-1.6);
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await settled(page);
   await expect.poll(refine).toBe(2);

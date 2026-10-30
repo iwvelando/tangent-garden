@@ -127,7 +127,14 @@ export class FourierFitSession {
   select(count: number) {
     if (!Number.isInteger(count) || count < 2 || count > 16) return;
     this.wanted = count;
-    this.state = { count, pending: !!this.client };
+    // Keep the last fitted drawing and its residuals together while the
+    // replacement computes. candidate() still refuses pending adoption.
+    this.state = {
+      ...this.state,
+      count,
+      pending: !!this.client,
+      error: undefined,
+    };
     this.publish(this.state);
     if (this.client && !this.running) void this.run();
   }
