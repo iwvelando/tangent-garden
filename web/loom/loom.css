@@ -191,8 +191,63 @@ html.loom-open {
     padding-bottom: 120px;
   }
 }
-@media (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
+/* A phone held sideways scrolls one page. The family picker leads; then both
+   panes sit side by side, held at the top of the view beside the controls
+   column, which is always free to scroll. Playback stays beside the
+   scrubber rather than docking over the artwork. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .loom {
+    overflow-y: auto;
+  }
+  .loom-content {
+    display: block;
+    height: auto;
+    padding: 12px 16px 24px;
+  }
+  .loom h2 {
+    font-size: 24px;
+    margin: 4px 0;
+  }
+  .loom-layout {
+    display: block;
+    margin-top: 8px;
+  }
+  .loom-layout > aside,
+  .loom-layout > main {
+    overflow: visible;
+    padding: 0;
+  }
+  .loom-layout > aside {
+    max-width: 420px;
+  }
+  .loom-layout > main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(200px, 28vw, 260px);
+    align-items: start;
+    gap: 12px;
+  }
+  .loom-panes {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 4px 0 8px;
+    background: var(--panel);
+  }
+  .loom-pane-heading {
+    margin-bottom: 6px;
+  }
+  .loom h3 {
+    font-size: 16px;
+  }
   .loom-panes svg {
-    height: max(80px, calc((100svh - 150px) / 2));
+    max-height: calc(100svh - 56px);
+  }
+  .loom .playback.active {
+    position: static;
+    border: 0;
+    box-shadow: none;
+    background: none;
   }
 }

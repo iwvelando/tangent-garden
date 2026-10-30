@@ -986,9 +986,11 @@ test("complex loom slider endpoints preserve the exact source interval", async (
   }
 });
 
+// A short desktop window keeps contained columns; phones held sideways have
+// their own single-scroll layout, tested below.
 for (const size of [
   { width: 1440, height: 900 },
-  { width: 844, height: 390 },
+  { width: 1280, height: 560 },
 ])
   test(`complex loom desktop scroll contains all controls at ${size.width}x${size.height}`, async ({
     page,
@@ -1504,3 +1506,80 @@ test("returning from an opened loom link shows the link's base study", async ({
   );
   await fresh.close();
 });
+
+// A phone held sideways scrolls one page: both panes side by side at their
+// own proportions, held in view beside the controls column while it scrolls.
+for (const size of [
+  { width: 844, height: 390 },
+  { width: 667, height: 375 },
+])
+  test(`complex loom keeps both panes legible beside its controls in phone landscape ${size.width}x${size.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await page.goto("/");
+    await settled(page);
+    await openLoomExample(page);
+    const d = page.getByRole("dialog", { name: "The complex loom" });
+    await expect(d.locator(".loom-panes")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(d.locator(".loom-source-settings")).toHaveJSProperty(
+      "open",
+      false,
+    );
+    // One scroll container: the dialog, not its columns.
+    for (const column of ["aside", "main"])
+      expect(
+        await d
+          .locator(`.loom-layout > ${column}`)
+          .evaluate((e) => getComputedStyle(e).overflowY),
+      ).toBe("visible");
+    const panes = d.locator(".loom-panes svg");
+    const boxes = async () =>
+      Promise.all([0, 1].map(async (i) => (await panes.nth(i).boundingBox())!));
+    let [source, image] = await boxes();
+    expect(Math.abs(source.y - image.y)).toBeLessThan(1);
+    expect(image.x).toBeGreaterThan(source.x + source.width);
+    for (const box of [source, image]) {
+      // Not letterboxed: the box keeps the drawing's own proportions.
+      expect(Math.abs(box.width / box.height - 1000 / 760)).toBeLessThan(0.02);
+      expect(box.height).toBeGreaterThanOrEqual(130);
+    }
+    // Scrubbing and playing keep both panes wholly in view.
+    const play = d.getByRole("button", { name: "Play traversal" });
+    const slider = d.getByLabel("Source parameter", { exact: true });
+    await play.scrollIntoViewIfNeeded();
+    for (const control of [play, slider]) {
+      const c = (await control.boundingBox())!;
+      expect(c.y).toBeGreaterThanOrEqual(0);
+      expect(c.y + c.height).toBeLessThanOrEqual(size.height);
+      expect(c.x).toBeGreaterThanOrEqual(image.x + image.width);
+    }
+    [source, image] = await boxes();
+    for (const box of [source, image]) {
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(size.height);
+    }
+    await play.click();
+    await expect(
+      d.getByRole("button", { name: "Pause traversal" }),
+    ).toBeVisible();
+    const docked = await d
+      .locator("#loom-playback")
+      .evaluate((e) => getComputedStyle(e).position);
+    expect(docked).not.toBe("fixed");
+    await d.getByRole("button", { name: "Pause traversal" }).click();
+    // Export is reachable below, and the header above.
+    await loomMovieAction(d).scrollIntoViewIfNeeded();
+    const exportBox = (await loomMovieAction(d).boundingBox())!;
+    expect(exportBox.y).toBeGreaterThanOrEqual(0);
+    expect(exportBox.y + exportBox.height).toBeLessThanOrEqual(size.height);
+    await d
+      .getByRole("button", { name: "Return to study" })
+      .scrollIntoViewIfNeeded();
+    expect((await d.locator("header").boundingBox())!.y).toBeGreaterThanOrEqual(
+      0,
+    );
+  });

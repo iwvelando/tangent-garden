@@ -56,6 +56,10 @@ const labels: Record<string, string> = {
   selected: "Selected member",
   parameter: "Source parameter",
 };
+// Phones, upright or sideways, open with source settings folded so the
+// artwork follows the family picker closely.
+const phoneLayout =
+  "(max-width: 700px), (orientation: landscape) and (max-height: 500px)";
 // Gaps by reason, in the engine's terms: undefined (invalid), still beyond
 // tolerance at the depth limit (unresolved), or out of budget (exhausted).
 function gapSummary(result: LoomResult) {
@@ -85,7 +89,7 @@ export function LoomPreview({
     structuredClone(entry.study.loom ?? defaultLoom(entry.study.config)),
   );
   const [sourceSettings, setSourceSettings] = useState(
-    () => !matchMedia("(max-width: 700px)").matches,
+    () => !matchMedia(phoneLayout).matches,
   );
   const [weight, setWeight] = useState(entry.study.weight);
   const [result, setResult] = useState<LoomResult>();
@@ -699,185 +703,187 @@ export function LoomPreview({
                     </section>
                   ))}
                 </div>
-                {result && marker && (
-                  <>
-                    <p className="note">
-                      {describeColors("Teal", theme.scheme)} threads retain
-                      their source identities; the selected member is
-                      highlighted. Drag each pane to pan; scroll to zoom.
-                      Keyboard: arrows, +/−, Home.
-                    </p>
-                    <fieldset
-                      disabled={exporting || resultKey !== key}
-                      className="loom-traversal"
-                    >
-                      <Field label="Selected member">
-                        <select
-                          value={study.selected}
-                          onChange={(e) => select(+e.target.value)}
-                        >
-                          {result.members.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field
-                        label="Source parameter"
-                        className="loom-parameter"
-                        helpBeforeControl
-                        value={study.parameter.toPrecision(6)}
-                        help={tiered(
-                          "Move corresponding points at the same original source parameter.",
-                          "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have center r exp(iα), α = 2πk/N and z(θ) = r exp(iα)(1 + exp(iθ)); θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero.",
-                        )}
+                <div className="loom-controls">
+                  {result && marker && (
+                    <>
+                      <p className="note">
+                        {describeColors("Teal", theme.scheme)} threads retain
+                        their source identities; the selected member is
+                        highlighted. Drag each pane to pan; scroll to zoom.
+                        Keyboard: arrows, +/−, Home.
+                      </p>
+                      <fieldset
+                        disabled={exporting || resultKey !== key}
+                        className="loom-traversal"
                       >
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step="any"
-                          value={progress}
-                          aria-valuetext={String(study.parameter)}
-                          onChange={(e) =>
-                            changeParameter(
-                              traversal(study, +e.target.value).parameter,
-                            )
-                          }
-                        />
-                      </Field>
-                    </fieldset>
-                    <div
-                      ref={playback}
-                      id="loom-playback"
-                      className={`playback ${playing ? "active" : ""}`}
-                      role="group"
-                      aria-label="Playback"
-                    >
-                      <div className="animation-buttons">
-                        <button
-                          disabled={(!ready && !playing) || exporting}
-                          onClick={() => (playing ? pause() : start())}
-                        >
-                          {playing ? "Pause traversal" : "Play traversal"}
-                        </button>
-                        <button
-                          onClick={() =>
-                            exporting ? cancelExport() : changeParameter(lo)
-                          }
-                        >
-                          {exporting ? "Cancel export" : "Stop traversal"}
-                        </button>
-                      </div>
-                    </div>
-                    <fieldset disabled={exporting || resultKey !== key}>
-                      <Field
-                        label="Exact source parameter"
-                        help="Enter a source parameter, including constants such as pi."
-                      >
-                        <ScalarInput
-                          name="Exact source parameter"
-                          value={study.parameter}
-                          onChange={changeParameter}
-                        />
-                      </Field>
-                      <div
-                        className="loom-correspondence"
-                        data-parameter={marker.parameter}
-                      >
-                        {marker.source && marker.image ? (
-                          <p>
-                            z = ({marker.source.x.toPrecision(5)},{" "}
-                            {marker.source.y.toPrecision(5)}) → w = (
-                            {marker.image.x.toPrecision(5)},{" "}
-                            {marker.image.y.toPrecision(5)}).{" "}
-                            {marker.critical
-                              ? "Critical point: derivative zero; no regular conformality."
-                              : "Regular map point."}
-                          </p>
-                        ) : (
-                          <p>
-                            Correspondence undefined here; the marker is
-                            omitted.
-                          </p>
-                        )}
-                      </div>
-                    </fieldset>
-                    <section className="animation-section">
-                      <details id="loom-animation-section" open>
-                        <summary className="section-label">ANIMATION</summary>
-                        <fieldset disabled={exporting}>
-                          <Field
-                            label="Traversal duration"
-                            help="0.1–3,600 seconds at uniform source-parameter pace."
+                        <Field label="Selected member">
+                          <select
+                            value={study.selected}
+                            onChange={(e) => select(+e.target.value)}
                           >
-                            <input
-                              type="number"
-                              min={0.1}
-                              max={3600}
-                              step="any"
-                              value={
-                                Number.isNaN(study.duration)
-                                  ? ""
-                                  : study.duration
-                              }
-                              onChange={(e) => {
-                                pause();
-                                setStudy((s) => ({
-                                  ...s,
-                                  duration:
-                                    e.target.value === ""
-                                      ? NaN
-                                      : +e.target.value,
-                                }));
-                              }}
-                            />
-                          </Field>
-                          <MotionExportSettings
-                            state={exportState}
-                            id="loom-export-settings"
-                            disclosure={exportSection}
-                          />
-                        </fieldset>
-                        <button
-                          className="animation-export"
-                          disabled={
-                            !ready ||
-                            playing ||
-                            exporting ||
-                            exportState.formats?.[exportState.chosen] !==
-                              "yes" ||
-                            Math.ceil(study.duration * exportState.fps) > 7200
-                          }
-                          onClick={() => void movie()}
+                            {result.members.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field
+                          label="Source parameter"
+                          className="loom-parameter"
+                          helpBeforeControl
+                          value={study.parameter.toPrecision(6)}
+                          help={tiered(
+                            "Move corresponding points at the same original source parameter.",
+                            "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have center r exp(iα), α = 2πk/N and z(θ) = r exp(iα)(1 + exp(iθ)); θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero.",
+                          )}
                         >
-                          Export {exportState.text.name} ↗
-                        </button>
-                        {exporting && (
-                          <p role="status" aria-live="off">
-                            Exporting {exportState.text.short}…{" "}
-                            {Math.round(exportProgress * 100)}%
-                          </p>
-                        )}
-                      </details>
-                    </section>
-                    <p className="note" data-gaps>
-                      {gapSummary(result)} {result.points.toLocaleString()}{" "}
-                      paired points.
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step="any"
+                            value={progress}
+                            aria-valuetext={String(study.parameter)}
+                            onChange={(e) =>
+                              changeParameter(
+                                traversal(study, +e.target.value).parameter,
+                              )
+                            }
+                          />
+                        </Field>
+                      </fieldset>
+                      <div
+                        ref={playback}
+                        id="loom-playback"
+                        className={`playback ${playing ? "active" : ""}`}
+                        role="group"
+                        aria-label="Playback"
+                      >
+                        <div className="animation-buttons">
+                          <button
+                            disabled={(!ready && !playing) || exporting}
+                            onClick={() => (playing ? pause() : start())}
+                          >
+                            {playing ? "Pause traversal" : "Play traversal"}
+                          </button>
+                          <button
+                            onClick={() =>
+                              exporting ? cancelExport() : changeParameter(lo)
+                            }
+                          >
+                            {exporting ? "Cancel export" : "Stop traversal"}
+                          </button>
+                        </div>
+                      </div>
+                      <fieldset disabled={exporting || resultKey !== key}>
+                        <Field
+                          label="Exact source parameter"
+                          help="Enter a source parameter, including constants such as pi."
+                        >
+                          <ScalarInput
+                            name="Exact source parameter"
+                            value={study.parameter}
+                            onChange={changeParameter}
+                          />
+                        </Field>
+                        <div
+                          className="loom-correspondence"
+                          data-parameter={marker.parameter}
+                        >
+                          {marker.source && marker.image ? (
+                            <p>
+                              z = ({marker.source.x.toPrecision(5)},{" "}
+                              {marker.source.y.toPrecision(5)}) → w = (
+                              {marker.image.x.toPrecision(5)},{" "}
+                              {marker.image.y.toPrecision(5)}).{" "}
+                              {marker.critical
+                                ? "Critical point: derivative zero; no regular conformality."
+                                : "Regular map point."}
+                            </p>
+                          ) : (
+                            <p>
+                              Correspondence undefined here; the marker is
+                              omitted.
+                            </p>
+                          )}
+                        </div>
+                      </fieldset>
+                      <section className="animation-section">
+                        <details id="loom-animation-section" open>
+                          <summary className="section-label">ANIMATION</summary>
+                          <fieldset disabled={exporting}>
+                            <Field
+                              label="Traversal duration"
+                              help="0.1–3,600 seconds at uniform source-parameter pace."
+                            >
+                              <input
+                                type="number"
+                                min={0.1}
+                                max={3600}
+                                step="any"
+                                value={
+                                  Number.isNaN(study.duration)
+                                    ? ""
+                                    : study.duration
+                                }
+                                onChange={(e) => {
+                                  pause();
+                                  setStudy((s) => ({
+                                    ...s,
+                                    duration:
+                                      e.target.value === ""
+                                        ? NaN
+                                        : +e.target.value,
+                                  }));
+                                }}
+                              />
+                            </Field>
+                            <MotionExportSettings
+                              state={exportState}
+                              id="loom-export-settings"
+                              disclosure={exportSection}
+                            />
+                          </fieldset>
+                          <button
+                            className="animation-export"
+                            disabled={
+                              !ready ||
+                              playing ||
+                              exporting ||
+                              exportState.formats?.[exportState.chosen] !==
+                                "yes" ||
+                              Math.ceil(study.duration * exportState.fps) > 7200
+                            }
+                            onClick={() => void movie()}
+                          >
+                            Export {exportState.text.name} ↗
+                          </button>
+                          {exporting && (
+                            <p role="status" aria-live="off">
+                              Exporting {exportState.text.short}…{" "}
+                              {Math.round(exportProgress * 100)}%
+                            </p>
+                          )}
+                        </details>
+                      </section>
+                      <p className="note" data-gaps>
+                        {gapSummary(result)} {result.points.toLocaleString()}{" "}
+                        paired points.
+                      </p>
+                    </>
+                  )}
+                  {!ready && !message && (
+                    <p className="note" role="status">
+                      Computing correspondence…
                     </p>
-                  </>
-                )}
-                {!ready && !message && (
-                  <p className="note" role="status">
-                    Computing correspondence…
-                  </p>
-                )}
-                {message && !claimed && (
-                  <p className="study-error" role="alert">
-                    {message}
-                  </p>
-                )}
+                  )}
+                  {message && !claimed && (
+                    <p className="study-error" role="alert">
+                      {message}
+                    </p>
+                  )}
+                </div>
               </main>
             </div>
           </FieldErrorContext.Provider>
