@@ -6976,13 +6976,21 @@ test("complex loom PNG and decoded traversal movie preserve both panes and endpo
       }
     return found;
   };
+  // At 50% resolution the probe radius is only 2.75 pixels. H.264 chroma
+  // subsampling can leave very few distinctly pink pixels (three on Linux),
+  // so test presence at the exact expected position, not a minimum ink area.
+  // Contrasting frames must have no probe color there: static geometry alone
+  // cannot satisfy these checks, and neither pane may retain an old marker.
   for (const frame of [0, 2]) {
-    expect(pink(frame, 397.5, 190)).toBeGreaterThan(3);
-    expect(pink(frame, 897.5, 190)).toBeGreaterThan(3);
+    expect(pink(frame, 397.5, 190)).toBeGreaterThan(0);
+    expect(pink(frame, 897.5, 190)).toBeGreaterThan(0);
+    expect(pink(frame, 250, 190)).toBe(0);
+    expect(pink(frame, 750, 190)).toBe(0);
   }
-  expect(pink(1, 250, 190)).toBeGreaterThan(3);
-  expect(pink(1, 750, 190)).toBeGreaterThan(3);
+  expect(pink(1, 250, 190)).toBeGreaterThan(0);
+  expect(pink(1, 750, 190)).toBeGreaterThan(0);
   expect(pink(1, 397.5, 190)).toBe(0);
+  expect(pink(1, 897.5, 190)).toBe(0);
   // The same source-time sampler also drives animated WebP, with metadata.
   await d.getByLabel("Export format", { exact: true }).selectOption("webp");
   const webp = page.waitForEvent("download");
