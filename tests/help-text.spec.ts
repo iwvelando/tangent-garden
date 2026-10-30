@@ -353,32 +353,43 @@ test("complex loom help fits both tiers in every source family", async ({
   const d = page.getByRole("dialog", { name: "The complex loom" });
   await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
   await d.getByText("Sampling and limits", { exact: true }).click();
-  for (const family of ["rosette", "grid", "concentric", "curve"]) {
-    await d.getByLabel("Source family", { exact: true }).selectOption(family);
+  for (const map of ["square", "mobius", "joukowski"]) {
+    await d.getByLabel("Complex map", { exact: true }).selectOption(map);
     await expect(d.locator(".loom-panes")).toHaveAttribute(
       "aria-busy",
       "false",
     );
-    const entries = await d.evaluate((root) =>
-      Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
-        const h = document.getElementById(
-          toggle.getAttribute("aria-controls")!,
-        )!;
-        const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
-          HTMLElement | undefined;
-        brief?.querySelector(".help-more")?.remove();
-        return {
-          topic: toggle.getAttribute("aria-label"),
-          paired: !!toggle.closest(".pair"),
-          brief: brief?.textContent ?? h.textContent ?? "",
-          more: h.querySelector(".hint-more")?.textContent ?? "",
-        };
-      }),
-    );
-    expect(entries.length).toBeGreaterThan(5);
-    for (const e of entries) {
-      expect(words(e.brief), e.topic!).toBeLessThanOrEqual(e.paired ? 12 : 20);
-      expect(words(e.more), e.topic!).toBeLessThanOrEqual(60);
+    if (map !== "square")
+      await d.getByLabel("Motion", { exact: true }).selectOption("map");
+    for (const family of ["rosette", "grid", "concentric", "curve"]) {
+      await d.getByLabel("Source family", { exact: true }).selectOption(family);
+      await expect(d.locator(".loom-panes")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      const entries = await d.evaluate((root) =>
+        Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
+          const h = document.getElementById(
+            toggle.getAttribute("aria-controls")!,
+          )!;
+          const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+            HTMLElement | undefined;
+          brief?.querySelector(".help-more")?.remove();
+          return {
+            topic: toggle.getAttribute("aria-label"),
+            paired: !!toggle.closest(".pair"),
+            brief: brief?.textContent ?? h.textContent ?? "",
+            more: h.querySelector(".hint-more")?.textContent ?? "",
+          };
+        }),
+      );
+      expect(entries.length).toBeGreaterThan(5);
+      for (const e of entries) {
+        expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
+          e.paired ? 12 : 20,
+        );
+        expect(words(e.more), e.topic!).toBeLessThanOrEqual(60);
+      }
     }
   }
 });

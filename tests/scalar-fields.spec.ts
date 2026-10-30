@@ -23,6 +23,57 @@ const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
 const phi = (1 + Math.sqrt(5)) / 2;
 
+test("loom map, exclusion and motion endpoints share Go scalar expressions", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "loom" && !q.pointOnly)
+        (window as any).loomScalarRequest = q.loom;
+      if (q.action === "scalars")
+        setTimeout(() => send.call(this, q, ...rest), 200);
+      else return send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  await page
+    .getByRole("button", { name: "Open complex loom", exact: true })
+    .click();
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await d.getByLabel("Complex map", { exact: true }).selectOption("mobius");
+  await d.getByText("Map settings", { exact: true }).click();
+  await d
+    .getByRole("textbox", { name: "Map parameter", exact: true })
+    .fill("phi/10");
+  await d
+    .getByRole("textbox", { name: "Pole exclusion radius", exact: true })
+    .fill("pi/100");
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  expect(
+    await page.evaluate(() => (window as any).loomScalarRequest.mapParameter),
+  ).toBe(phi / 10);
+  expect(
+    await page.evaluate(
+      () => (window as any).loomScalarRequest.exclusionRadius,
+    ),
+  ).toBe(Math.PI / 100);
+  await d.getByLabel("Motion", { exact: true }).selectOption("map");
+  await d
+    .getByRole("textbox", { name: "Map motion from", exact: true })
+    .fill("1/10");
+  await d
+    .getByRole("textbox", { name: "Map motion to", exact: true })
+    .fill("phi/2");
+  await d.getByLabel("Motion progress", { exact: true }).fill("0.5");
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  expect(
+    await page.evaluate(() => (window as any).loomScalarRequest.mapParameter),
+  ).toBe(0.1 + (phi / 2 - 0.1) / 2);
+});
+
 type Case = { name: string; text: string; value: number; path: string[] };
 const studies: {
   preset: string;

@@ -23,9 +23,11 @@ type LoomSource struct {
 	Curve  Curve   `json:"curve"`
 }
 type LoomRequest struct {
-	Map     string     `json:"map"`
-	Source  LoomSource `json:"source"`
-	Samples int        `json:"samples"`
+	Map             string     `json:"map"`
+	MapParameter    float64    `json:"mapParameter,omitempty"`
+	ExclusionRadius float64    `json:"exclusionRadius,omitempty"`
+	Source          LoomSource `json:"source"`
+	Samples         int        `json:"samples"`
 	// Fraction of each member's robust image/source radius, in that pane's units.
 	Tolerance float64 `json:"tolerance"`
 	Selected  int     `json:"selected"`
@@ -76,8 +78,8 @@ type loomCurve struct {
 }
 
 func (q LoomRequest) sources() ([]loomCurve, error) {
-	if q.Map != "square" {
-		return nil, fieldErr("map", "choose the squaring map")
+	if err := q.validateMap(); err != nil {
+		return nil, err
 	}
 	if q.Samples < 4 || q.Samples > 1024 {
 		return nil, fieldErr("samples", "samples must be 4–1024")
@@ -176,12 +178,12 @@ func (q LoomRequest) sources() ([]loomCurve, error) {
 	return out, nil
 }
 func loomSquare(p Vec) *Vec { return point(Vec{p.X*p.X - p.Y*p.Y, 2 * p.X * p.Y}) }
-func loomMarker(c loomCurve, id int, t float64) LoomMarker {
+func (q LoomRequest) marker(c loomCurve, id int, t float64) LoomMarker {
 	p := point(c.at(t))
 	m := LoomMarker{Member: id, Parameter: t, Source: p}
 	if p != nil {
-		m.Image = loomSquare(*p)
-		m.Critical = p.X == 0 && p.Y == 0
+		m.Image = q.image(*p)
+		m.Critical = m.Image != nil && q.critical(*p)
 	}
 	return m
 }
@@ -193,7 +195,7 @@ func LoomPoint(q LoomRequest) (LoomMarker, error) {
 	if err != nil {
 		return LoomMarker{}, err
 	}
-	return loomMarker(cs[q.Selected], q.Selected, q.Parameter), nil
+	return q.marker(cs[q.Selected], q.Selected, q.Parameter), nil
 }
 func ComputeLoom(q LoomRequest) (LoomResult, error) {
 	return computeLoom(q, loomLimits{LoomMaxPoints, LoomMaxEvaluations, LoomMaxDepth})
@@ -206,6 +208,7 @@ type loomNode struct {
 	t       float64
 	p, w    *Vec
 	missing bool
+	reason  string
 }
 
 // A segment of one member awaits judgment at its depth; mid, when set, is
@@ -239,7 +242,7 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	}
 	r := LoomResult{Members: make([]LoomMember, 0, len(cs))}
 	// One global budget includes pilot samples, probes and the marker.
-	r.Marker = loomMarker(cs[q.Selected], q.Selected, q.Parameter)
+	r.Marker = q.marker(cs[q.Selected], q.Selected, q.Parameter)
 	r.Evaluations = 1
 	eval := func(c loomCurve, t float64) loomNode {
 		n := loomNode{t: t}
@@ -251,7 +254,11 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 		r.Evaluations++
 		n.p = point(c.at(t))
 		if n.p != nil {
-			n.w = loomSquare(*n.p)
+			n.w = q.image(*n.p)
+			n.reason = q.domain(*n.p)
+			if q.Map != "square" && n.w == nil && n.reason == "" {
+				n.w, n.reason = nil, "clipped"
+			}
 		}
 		return n
 	}
@@ -265,10 +272,37 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	// result, so bisection stops before the delivered-point ceiling.
 	reserved := 0
 	for id, c := range cs {
-		pilot := make([]loomNode, q.Samples)
-		src, img := make([]*Vec, q.Samples), make([]*Vec, q.Samples)
+		at := make([]float64, q.Samples)
+		for i := range at {
+			at[i] = c.min + (c.max-c.min)*float64(i)/float64(q.Samples-1)
+		}
+		cuts := q.poleCuts(id)
+		for _, t := range cuts {
+			if t >= c.min && t <= c.max {
+				at = append(at, t)
+			}
+		}
+		slices.Sort(at)
+		at = slices.Compact(at)
+		// At least one probe inside every analytic root interval distinguishes
+		// the inside and outside arcs, including a very narrow surviving arc.
+		if len(cuts) > 0 {
+			base := slices.Clone(at)
+			for i := 1; i < len(base); i++ {
+				if slices.Contains(cuts, base[i-1]) || slices.Contains(cuts, base[i]) {
+					at = append(at, base[i-1]+(base[i]-base[i-1])/2)
+				}
+			}
+			slices.Sort(at)
+			at = slices.Compact(at)
+		}
+		pilot := make([]loomNode, len(at))
+		src, img := make([]*Vec, len(at)), make([]*Vec, len(at))
 		for i := range pilot {
-			pilot[i] = eval(c, c.min+(c.max-c.min)*float64(i)/float64(q.Samples-1))
+			pilot[i] = eval(c, at[i])
+			if slices.Contains(cuts, at[i]) {
+				pilot[i].w, pilot[i].reason = nil, "excluded"
+			}
 			src[i], img[i] = pilot[i].p, pilot[i].w
 		}
 		sourceTolerance[id] = q.Tolerance * studyRadius(src)
@@ -298,6 +332,15 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	}
 	// A chord is judged only between nodes defined in both panes.
 	defined := func(n loomNode) bool { return n.p != nil && n.w != nil }
+	invalidReason := func(a, b loomNode) string {
+		if a.reason != "" {
+			return a.reason
+		}
+		if b.reason != "" {
+			return b.reason
+		}
+		return "invalid"
+	}
 	for len(pending) > 0 {
 		var next []loomSegment
 		for _, s := range pending {
@@ -308,11 +351,11 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 			case s.a.missing || s.b.missing:
 				settle(s, "exhausted")
 			case !defined(s.a) && !defined(s.b):
-				settle(s, "invalid")
+				settle(s, invalidReason(s.a, s.b))
 			case !defined(s.a) || !defined(s.b):
 				// Localize where the source stops, toward the undefined end.
 				if !split {
-					settle(s, "invalid")
+					settle(s, invalidReason(s.a, s.b))
 					continue
 				}
 				m := s.mid
@@ -348,6 +391,7 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 					valid = valid && defined(n)
 				}
 				if valid {
+					accept = q.domainSafe(*s.a.p, *s.b.p, probes)
 					for _, n := range probes {
 						accept = accept && plane.Distance(*n.w, *s.a.w, *s.b.w) <= imageTolerance[s.member] && plane.Distance(*n.p, *s.a.p, *s.b.p) <= sourceTolerance[s.member]
 					}
@@ -356,7 +400,14 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 				case valid && accept:
 					settle(s, "")
 				case !split && !valid:
-					settle(s, "invalid")
+					reason := "invalid"
+					for _, n := range probes {
+						if n.reason != "" {
+							reason = n.reason
+							break
+						}
+					}
+					settle(s, reason)
 				case !split:
 					settle(s, "unresolved")
 				case afford(s, 0):
@@ -384,7 +435,7 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 			m.At = append(m.At, n.t)
 			m.Source = append(m.Source, n.p)
 			m.Image = append(m.Image, n.w)
-			m.Critical = append(m.Critical, n.p != nil && n.p.X == 0 && n.p.Y == 0)
+			m.Critical = append(m.Critical, n.p != nil && n.w != nil && q.critical(*n.p))
 			r.Points += 2
 		}
 		segments := settled[id]

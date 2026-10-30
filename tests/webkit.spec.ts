@@ -1,4 +1,6 @@
 import { test, expect, devices, type Page } from "@playwright/test";
+import { checkLoomPortraitPlayer, checkLoomLiveScrub } from "./loom-playback";
+
 import { readFile } from "node:fs/promises";
 import {
   exportImage,
@@ -20,6 +22,20 @@ import {
   checkFitAdoptionVisibility,
   leafFit,
 } from "./fourier-fit-checks";
+
+for (const title of ["A square grid, curved", "Circles through infinity"])
+  test(`loom drawings update during uninterrupted scrubbing in WebKit: ${title}`, async ({
+    page,
+  }) => {
+    await checkLoomLiveScrub(page, title);
+  });
+
+for (const title of ["A square grid, curved", "Circles through infinity"])
+  test(`portrait loom playback remains visible in WebKit: ${title}`, async ({
+    page,
+  }) => {
+    await checkLoomPortraitPlayer(page, title);
+  });
 
 test("construction layer labels work by click, keyboard and scalar blur at phone width in WebKit", async ({
   page,
@@ -1961,6 +1977,18 @@ test("complex loom entry, scalar blur, paired phone controls and return preserve
   const first = await d.locator(".pair").first().boundingBox();
   const second = await d.locator(".pair").nth(1).boundingBox();
   expect(second!.y - first!.y - first!.height).toBeGreaterThanOrEqual(0);
+  await d.getByLabel("Complex map", { exact: true }).selectOption("mobius");
+  await d.getByText("Map settings", { exact: true }).click();
+  await d.getByLabel("Map parameter", { exact: true }).fill("1/phi");
+  await d.getByLabel("Pole exclusion radius", { exact: true }).fill("1/20");
+  await d.getByLabel("Show pole exclusion", { exact: true }).click();
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect(
+    d.getByLabel("Show pole exclusion", { exact: true }),
+  ).not.toBeChecked();
+  await expect(d.locator("[data-exclusion]")).toHaveCount(0);
+  await d.getByLabel("Show pole exclusion", { exact: true }).click();
+  await expect(d.locator("[data-exclusion]")).toHaveCount(1);
   await d.getByRole("button", { name: "Return to study", exact: true }).click();
   await expect(entry).toBeFocused();
   await expect(

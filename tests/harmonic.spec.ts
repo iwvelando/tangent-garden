@@ -527,6 +527,38 @@ for (const dark of [false, true])
     await page.keyboard.press("Escape");
   });
 
+test("drawn Fourier term edits retain geometry and residual layout while fitting", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "fourier-fit")
+        setTimeout(() => send.call(this, q, ...rest), 250);
+      else send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  const d = await leafFit(page);
+  const residual = d.getByTestId("fit-residuals"),
+    checkbox = d.getByLabel("Show original outline in preview", {
+      exact: true,
+    });
+  const text = await residual.textContent(),
+    oldBox = (await checkbox.boundingBox())!;
+  const oldPath = await d.locator("#fit-artwork").innerHTML();
+  await d.getByLabel("Total terms", { exact: true }).selectOption("12");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "true");
+  expect(await residual.count()).toBe(1);
+  expect(await residual.textContent()).toBe(text);
+  expect(await d.locator("#fit-artwork").innerHTML()).toBe(oldPath);
+  expect((await checkbox.boundingBox())!.y).toBe(oldBox.y);
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeEnabled();
+  expect(await residual.textContent()).not.toBe(text);
+});
+
 test("drawn Fourier fitting coalesces selection, owns replies and refuses stale adoption", async () => {
   const jobs: {
     kind: string;

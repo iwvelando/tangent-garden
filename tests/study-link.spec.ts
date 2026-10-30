@@ -2991,6 +2991,79 @@ test("loom links conform complete settings and keep older planar links unchanged
   );
 });
 
+test("rational loom links and map motion preserve frozen sources and manual views", async () => {
+  const model = await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  const square = model.defaultLoom(ordinary.config);
+  const before = structuredClone(square);
+  square.views.image = { x: 37, y: -19, zoom: 2 };
+  for (const map of ["mobius", "joukowski"] as const) {
+    const study = model.replaceMap(square, map);
+    assert.deepEqual(study.source, square.source);
+    assert.deepEqual(study.views, square.views);
+    assert.ok(study.exclusionRadius! > 0);
+    const motion = {
+      ...study,
+      motion: {
+        mode: "map" as const,
+        from: map === "mobius" ? -0.9 : 0,
+        to: map === "mobius" ? 0.9 : 1,
+      },
+    };
+    assert.equal(model.loomFrame(motion, 0).mapParameter, motion.motion.from);
+    assert.equal(model.loomFrame(motion, 1).mapParameter, motion.motion.to);
+    assert.equal(
+      model.loomFrame(motion, 0.5).mapParameter,
+      (motion.motion.from + motion.motion.to) / 2,
+    );
+    assert.equal(model.loomFrame(motion, 0.5).parameter, motion.parameter);
+    const saved = planarStudy({ ...ordinary, loom: motion });
+    assert.deepEqual(saved.loom, motion);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).loom, motion);
+    for (const patch of [
+      { exclusionRadius: 0 },
+      { exclusionRadius: 1e-7 },
+      { exclusionRadius: Infinity },
+      { mapParameter: 2 },
+      { motion: { mode: "map", from: -2, to: 1 } },
+    ])
+      assert.throws(
+        () => planarStudy({ ...ordinary, loom: { ...motion, ...patch } }),
+        LinkError,
+      );
+  }
+  assert.deepEqual(model.defaultLoom(ordinary.config), before);
+  assert.deepEqual(planarStudy({ ...ordinary, loom: before }).loom, before);
+});
+
+test("rational loom performances open at their own motion start without replacing the base curve", async () => {
+  const model = await import("../web/loom/model");
+  for (const [title, map] of [
+    ["Circles through infinity", "mobius"],
+    ["Circles folded into ellipses", "joukowski"],
+  ] as const) {
+    const index = model.loomPresets.findIndex((p) => p.title === title);
+    assert.ok(index >= 0, `${title} is missing`);
+    const s = model.presetLoom(index, planarPreset(0).config);
+    assert.equal(s.map, map);
+    assert.equal(model.loomFrame(s, 0).mapParameter, s.mapParameter);
+    assert.deepEqual(s.source.curve, planarPreset(0).config.curve);
+    assert.equal(s.source.kind, "concentric");
+    assert.ok(s.motion && s.motion.from !== s.motion.to);
+    assert.deepEqual(planarStudy({ ...planarPreset(0), loom: s }).loom, s);
+  }
+});
+
+test("loom generated exclusions use source scale without exposing arithmetic tails", async () => {
+  const { defaultLoom, replaceMap } = await import("../web/loom/model");
+  const s = defaultLoom(planarPreset(0).config);
+  s.source.radius = 1.6;
+  assert.equal(replaceMap(s, "mobius").exclusionRadius, 0.04);
+  s.source.kind = "curve";
+  assert.equal(replaceMap(s, "mobius", 16).exclusionRadius, 0.4);
+});
+
 test("loom ownership coalesces changes and rejects stale/canceled replies", async () => {
   const { LoomSession } = await import("../web/loom/session");
   const { defaultLoom, loomRequest } = await import("../web/loom/model");
@@ -3055,6 +3128,104 @@ test("loom ownership coalesces changes and rejects stale/canceled replies", asyn
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(shown, [3]);
   assert.equal(disposed, true);
+});
+
+test("replacing a loom point request settles its superseded sampler", async () => {
+  const { LoomSession } = await import("../web/loom/session");
+  const { defaultLoom, loomRequest } = await import("../web/loom/model");
+  const q = loomRequest(defaultLoom(planarPreset(0).config));
+  let resolve: (v: any) => void = () => {};
+  const session = new LoomSession(
+    () =>
+      ({
+        loom: () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+        dispose: () => {},
+      }) as any,
+  );
+  let rejected = false;
+  const sample = session.point(q).catch(() => {
+    rejected = true;
+  });
+  session.update(
+    { ...q, parameter: 1 },
+    true,
+    () => {},
+    () => {},
+  );
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(rejected, true, "superseded export must not wait forever");
+  session.cancel();
+  resolve({ marker: {} });
+  await sample;
+});
+
+test("loom live scrubbing publishes completed frames while coalescing the newest intent", async () => {
+  const { LoomSession } = await import("../web/loom/session");
+  const { defaultLoom, loomRequest } = await import("../web/loom/model");
+  const q = loomRequest(defaultLoom(planarPreset(0).config));
+  const jobs: { q: any; resolve: (v: any) => void }[] = [];
+  const sent: number[] = [],
+    shown: number[] = [];
+  const session = new LoomSession(
+    () =>
+      ({
+        loom: (request: any) => {
+          sent.push(request.parameter);
+          return new Promise((resolve) => jobs.push({ q: request, resolve }));
+        },
+        dispose: () => {},
+      }) as any,
+  );
+  const scrub = (t: number) =>
+    (session as any).scrub(
+      { ...q, parameter: t },
+      true,
+      (r: any) => shown.push(r.marker.parameter),
+      () => assert.fail("unexpected refusal"),
+    );
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+  scrub(0.1);
+  scrub(0.2);
+  scrub(0.3);
+  assert.deepEqual(
+    sent,
+    [0.1],
+    "one active request, one replaceable pending intent",
+  );
+  jobs.shift()!.resolve({ marker: { parameter: 0.1 } });
+  await flush();
+  assert.deepEqual(
+    shown,
+    [0.1],
+    "finished work must show even while the thumb keeps moving",
+  );
+  assert.deepEqual(
+    sent,
+    [0.1, 0.3],
+    "the unsent middle intent must be replaced",
+  );
+  session.update(
+    { ...q, parameter: 0.4 },
+    true,
+    (r: any) => shown.push(r.marker.parameter),
+    () => assert.fail("unexpected refusal"),
+  );
+  jobs.shift()!.resolve({ marker: { parameter: 0.3 } });
+  await flush();
+  assert.deepEqual(
+    shown,
+    [0.1],
+    "an ordinary edit invalidates the old scrub generation",
+  );
+  jobs.shift()!.resolve({ marker: { parameter: 0.4 } });
+  await flush();
+  assert.deepEqual(shown, [0.1, 0.4]);
+  session.cancel();
 });
 
 test("loom traversal preserves exact entered endpoints under cancellation in subtraction", async () => {
