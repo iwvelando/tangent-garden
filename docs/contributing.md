@@ -122,7 +122,7 @@ Close a parent only after its feature-level acceptance criteria are satisfied, i
 
 New-feature development uses [Product iteration before final verification](#product-iteration-before-final-verification) by default: targeted checks support early previews and feedback, and the implementing session owns final full verification. That is scheduled verification, not a waiver of the final requirements.
 
-Follow the user's testing scope. When implementation is explicitly limited to targeted checks so parallel work fits the machine, hand off the tested revision, any uncommitted changes, exact commands and results, reproduced failures, and deferred checks with the reason. Name the designated integration or review stage that owns final verification, or mark it unassigned; do not silently omit that work or describe the targeted run as a full pass. Schedule the full run in a quiet slot instead of starting competing suites. Use an isolated preview port for concurrent targeted browser work, as [README.md](../README.md#verify-and-contribute) describes.
+Follow the user's testing scope. When implementation is explicitly limited to targeted checks so parallel work fits the machine, hand off the tested revision, any uncommitted changes, exact commands and results, reproduced failures, and deferred checks with the reason. Name the designated integration or review stage that owns final verification, or mark it unassigned; do not silently omit that work or describe the targeted run as a full pass. Schedule the full run in a quiet slot instead of starting competing suites. Use an isolated preview port for concurrent targeted browser work, as [Development](development.md#checks-and-tests) describes.
 
 `make pre-pr` checks existing assertions and generated artifacts. It does not run deployed-site benchmarks, the whole-preset deployed comparison, or targeted mutations. Those remain separate checks when required by the change; if the user's scope defers them too, record each deferral. A larger run cannot supply an assertion that no test makes. After a rebase, reassess changed dependencies and consumers before deciding which prior results still apply. Final verification follows [AGENTS.md](../AGENTS.md#verification), including its Markdown-only, demonstrated timing and verification-only follow-up exceptions.
 
@@ -255,6 +255,8 @@ CI runs the Chromium tests in six shards packed by each spec file's recorded dur
 - `tests/shards.spec.ts` checks the balance of recorded files only, so an unrecorded file never fails it, but it packs at the average and can leave one shard minutes longer than the rest.
 - A single file longer than a balanced shard's share can't be packed around. Split that file instead.
 - Changing the shard count needs only the matrix in `.github/workflows/ci.yml`.
+
+The native race pass runs in its own three-shard `race` job, and `check` runs `make check SKIP_RACE=1`. Under race detection the `engine3` package alone took 15 minutes of the 20 `check` allows. `scripts/go-race.mjs` lists every test, example and fuzz target with `go test -list`, sorts the names, and gives every third name to the same shard, so the shards together run every test once. Reproduce one shard with `make test-go-race RACE_SHARD=2/3`; `make test-go` and `make check` still run the whole pass locally. If a shard nears its limit, raise the count in the matrix.
 
 When a shard fails on a wait for a study to settle (`aria-busy` = "false") or on a test's time limit:
 
