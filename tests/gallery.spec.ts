@@ -449,8 +449,23 @@ async function journeyReady(page: Page) {
     "false",
   );
 }
+// Copy link is disabled while a study computes, and settled() can return on
+// the previous state just before an action's computation starts. Under load
+// a click checked against the enabled button then landed on it disabled, so
+// no click reached it; click again until one does.
 async function copiedStudy(page: Page) {
-  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  const button = page.getByRole("button", { name: "Copy link", exact: true });
+  await expect(async () => {
+    const reached = button.evaluate(
+      (b) =>
+        new Promise<boolean>((resolve) => {
+          b.addEventListener("click", () => resolve(true), { once: true });
+          setTimeout(() => resolve(false), 1000);
+        }),
+    );
+    await button.click();
+    expect(await reached).toBe(true);
+  }).toPass({ timeout: 15_000 });
   await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
   const url = await page.evaluate(() => navigator.clipboard.readText());
   await page.mouse.click(1, 1);
