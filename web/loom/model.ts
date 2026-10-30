@@ -59,6 +59,65 @@ export const sourceChoices = {
   concentric: "Concentric circles",
   curve: "Curve from your base study",
 } as const;
+// The authored families, offered in the 2D examples gallery. Each opens the
+// loom over the notebook's study without replacing it; the notebook's curve
+// remains the loom's curve source.
+export const loomPresets = [
+  {
+    title: sourceChoices.rosette,
+    note: "Circles through the origin square into a rosette of cardioids",
+    kind: "rosette",
+  },
+  {
+    title: sourceChoices.grid,
+    note: "A grid's lines square into two families of parabolas",
+    kind: "grid",
+  },
+  {
+    title: sourceChoices.concentric,
+    note: "Each circle squares to a circle, wound around twice",
+    kind: "concentric",
+  },
+] as const satisfies readonly {
+  title: string;
+  note: string;
+  kind: LoomSource["kind"];
+}[];
+export function presetLoom(index: number, config: Config): LoomStudy {
+  const study = defaultLoom(config);
+  const source = { ...study.source, kind: loomPresets[index].kind };
+  return {
+    ...study,
+    source,
+    parameter: memberInterval(source, 0)[0],
+  };
+}
+// What a preset draws, without the notebook's curve it carries.
+export function presetDefinition(index: number) {
+  const { source, ...rest } = presetLoom(index, {
+    input: "curve",
+    curve: {},
+  } as unknown as Config);
+  const { input: _input, curve: _curve, ...family } = source;
+  return { ...rest, source: family };
+}
+export const supportedFormats = [
+  "parametric",
+  "cartesian",
+  "polar",
+  "roulette",
+  "lissajous",
+  "fourier",
+] as const;
+// The loom on the notebook's own curve, which must be supported.
+export function curveLoom(config: Config): LoomStudy {
+  const study = defaultLoom(config);
+  return {
+    ...study,
+    source: { ...study.source, kind: "curve" },
+    parameter: config.curve.min,
+  };
+}
 export function defaultLoom(config: Config): LoomStudy {
   return {
     map: "square",
@@ -83,16 +142,9 @@ export function defaultLoom(config: Config): LoomStudy {
     duration: 10,
   };
 }
-export const supportedSource = (s: LoomSource) =>
+export const supportedSource = (s: Pick<LoomSource, "input" | "curve">) =>
   s.input === "curve" &&
-  [
-    "parametric",
-    "cartesian",
-    "polar",
-    "roulette",
-    "lissajous",
-    "fourier",
-  ].includes(s.curve.format);
+  (supportedFormats as readonly string[]).includes(s.curve.format);
 export function memberInterval(s: LoomSource, id: number): [number, number] {
   return s.kind === "curve"
     ? [s.curve.min, s.curve.max]

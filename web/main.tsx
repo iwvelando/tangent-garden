@@ -1,4 +1,5 @@
 import { LoomContext, type LoomEntry } from "./loom/Context";
+import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
 import { defaultFamilyAnimation } from "./family-motion";
@@ -41,7 +42,7 @@ import {
 import type { AdoptedJourney, JourneyAdoption } from "./journeys";
 import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
-import { planarExamples, planarThumbnail } from "./examples";
+import { loomExamples, planarExamples, planarThumbnail } from "./examples";
 import { Plot, legendGeometry, type Layers } from "./Plot";
 import { PlanarLayers } from "./planar-layers";
 import { LegendEntries } from "./Legend";
@@ -296,9 +297,13 @@ function App({
 }) {
   const loomOwner = useContext(LoomContext);
   const loomHelp = useHelp();
-  const [loomWaiting, setLoomWaiting] = useState<"keyboard" | "pointer" | null>(
-    null,
-  );
+  // An entry waiting for the study's inputs to settle: the study's own curve
+  // from the loom button, or an authored family from the gallery.
+  const [loomWaiting, setLoomWaiting] = useState<{
+    via: "keyboard" | "pointer";
+    preset?: number;
+    restoreFocus?: (via: "keyboard" | "pointer") => void;
+  } | null>(null);
   const [loomNotice, setLoomNotice] = useState("");
   const loomEntry = useRef<HTMLDivElement>(null),
     loomButton = useRef<HTMLButtonElement>(null),
@@ -1373,6 +1378,9 @@ function App({
     if (shared.error !== undefined) return;
     try {
       const incoming = planarStudy(shared.study);
+      // A loom link's base study lies beneath the loom, as it was when the
+      // link was copied, so returning shows the study its curve came from.
+      openStudy(shared.id, incoming);
       if (incoming.loom)
         loomOwner.begin({
           study: incoming,
@@ -1380,7 +1388,6 @@ function App({
           restoreFocus: () =>
             loomButton.current?.focus({ preventScroll: true }),
         });
-      else openStudy(shared.id, incoming);
     } catch (e) {
       setLinkNotice(
         e instanceof LinkError ? e.message : "This link could not be read.",
@@ -1531,13 +1538,43 @@ function App({
       return;
     }
     if (!loomWaiting || busy) return;
-    if (error) {
+    const { via, preset } = loomWaiting;
+    const frozen = structuredClone(snapshot());
+    const begin = () => {
       setLoomWaiting(null);
-      setLoomNotice("Correct the highlighted inputs before opening the loom.");
+      setLoomNotice("");
+      loomOwner.begin({
+        study: {
+          ...frozen,
+          loom:
+            preset === undefined
+              ? curveLoom(frozen.config)
+              : presetLoom(preset, frozen.config),
+        },
+        via,
+        restoreFocus:
+          loomWaiting.restoreFocus ??
+          ((via) => {
+            if (via === "pointer") loomQuiet.onPointerDown();
+            else loomQuiet.onKeyDownCapture();
+            loomQuiet.quiet();
+            loomButton.current?.focus({ preventScroll: true });
+          }),
+      });
+    };
+    // An authored family needs nothing from the study, so it opens even when
+    // the study's inputs do not; its curve source is then refused if chosen.
+    if (error) {
+      if (preset !== undefined) begin();
+      else {
+        setLoomWaiting(null);
+        setLoomNotice(
+          "Correct the highlighted inputs before opening the loom.",
+        );
+      }
       return;
     }
     let canceled = false;
-    const frozen = structuredClone(snapshot());
     // A finite engraving suspends the ordinary frame. Freeze the current
     // editor definition, resolving its raw bounds through the shared parser.
     void client.current!.scalars([bounds.min, bounds.max]).then(
@@ -1545,21 +1582,12 @@ function App({
         if (canceled) return;
         frozen.config.curve.min = min;
         frozen.config.curve.max = max;
-        setLoomWaiting(null);
-        setLoomNotice("");
-        loomOwner.begin({
-          study: frozen,
-          via: loomWaiting,
-          restoreFocus: (via) => {
-            if (via === "pointer") loomQuiet.onPointerDown();
-            else loomQuiet.onKeyDownCapture();
-            loomQuiet.quiet();
-            loomButton.current?.focus({ preventScroll: true });
-          },
-        });
+        begin();
       },
       (e) => {
-        if (!canceled) {
+        if (canceled) return;
+        if (preset !== undefined) begin();
+        else {
           setLoomWaiting(null);
           setLoomNotice(e.message);
         }
@@ -1644,6 +1672,11 @@ function App({
                 onChoose={choosePreset}
                 thumbnail={planarThumbnail}
                 dark={dark}
+                looms={{
+                  examples: loomExamples,
+                  open: (preset, restoreFocus, via) =>
+                    setLoomWaiting({ via, preset, restoreFocus }),
+                }}
               />
               <div
                 className="atlas-entry"
@@ -1716,10 +1749,18 @@ function App({
                 <div className="fit-entry-actions">
                   <button
                     ref={loomButton}
-                    disabled={animationRunning}
+                    disabled={
+                      animationRunning ||
+                      !supportedSource({
+                        input: config.input,
+                        curve: config.curve,
+                      })
+                    }
                     aria-describedby={loomHelp.open ? loomHelp.id : undefined}
                     onClick={(e) => {
-                      setLoomWaiting(e.detail === 0 ? "keyboard" : "pointer");
+                      setLoomWaiting({
+                        via: e.detail === 0 ? "keyboard" : "pointer",
+                      });
                       setLoomNotice("Waiting for your study’s inputs…");
                     }}
                   >
@@ -1729,8 +1770,8 @@ function App({
                 </div>
                 <HelpText help={loomHelp}>
                   {tiered(
-                    "Compare paired source curves and their square, with corresponding moving points.",
-                    "Explore a grid, circles or a frozen copy of the curve from your base study. Each plane has its own view. Return restores your ordinary study. Links, still images and traversal movies save the paired composition.",
+                    "Square this study's curve, w = z², in paired planes with corresponding moving points.",
+                    "Available for parametric, Cartesian, polar, roulette, Lissajous and Fourier curves with direct input. The loom keeps a frozen copy of the curve; Return restores your study. Its rosette, grid and concentric circles are under Complex maps in the examples. Links, still images and traversal movies save the paired composition.",
                   )}
                 </HelpText>
                 {loomNotice && (

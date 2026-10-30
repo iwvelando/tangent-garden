@@ -1,5 +1,5 @@
 // Draws the example gallery's thumbnails from the built site: each 2D example
-// as its plot's own SVG, and each 3D example as a small WebP per theme, just as
+// as its plot's own SVG (a complex loom example as its image plane), and each 3D example as a small WebP per theme, just as
 // the example first appears. Run `make thumbnails` after adding or changing a
 // preset, look at the gallery, and commit web/examples.
 //
@@ -141,6 +141,45 @@ try {
       await page.emulateMedia({ colorScheme: "light" });
       console.log(`${notebook} ${name}`);
     }
+    // The complex loom's authored families open the loom over the study.
+    if (notebook === "2d") {
+      await button.click();
+      const looms = await gallery
+        .locator("[data-loom-example]")
+        .evaluateAll((cards) =>
+          cards
+            .map((c) => ({ ...c.dataset }))
+            .sort((a, b) => a.loomExample - b.loomExample),
+        );
+      await page.keyboard.press("Escape");
+      for (const example of looms) {
+        await button.click();
+        await gallery
+          .locator(`[data-loom-example="${example.loomExample}"]`)
+          .click();
+        await gallery.waitFor({ state: "hidden" });
+        const loom = page.getByRole("dialog", { name: "The complex loom" });
+        await loom
+          .locator(".loom-panes[aria-busy=false]")
+          .waitFor({ timeout: 60_000 });
+        const name = example.exampleSlug;
+        if (name in recorded["2d"])
+          throw new Error(`Two examples are named ${name}.`);
+        recorded["2d"][name] = example.fingerprint;
+        const svg = await page.evaluate(planarThumbnail, {
+          name,
+          stroke,
+          roles,
+          selector: 'dialog.loom [data-pane="image"]',
+        });
+        writeFileSync(`${out}/2d/${name}.svg`, svg + "\n");
+        await loom
+          .getByRole("button", { name: "Return to study", exact: true })
+          .click();
+        await loom.waitFor({ state: "hidden" });
+        console.log(`2d ${name}`);
+      }
+    }
   }
 } finally {
   await browser.close();
@@ -152,9 +191,12 @@ writeFileSync(
 );
 console.log(`Wrote thumbnails and ${out}/thumbnails.json.`);
 
-// Runs in the page: a lean, theme-free copy of the plot.
-async function planarThumbnail({ name, stroke, roles }) {
-  const art = document.getElementById("artwork").cloneNode(true);
+// Runs in the page: a lean, theme-free copy of the plot, or of the drawing
+// the selector names. The thumbnail's own viewport clips it.
+async function planarThumbnail({ name, stroke, roles, selector = "#artwork" }) {
+  const art = document.querySelector(selector).cloneNode(true);
+  // A loom pane's invisible selection targets and clip are not drawing.
+  for (const e of art.querySelectorAll("[data-hit-member], defs")) e.remove();
   const round = (v) => {
     const n = Math.round(+v);
     return Object.is(n, -0) ? "0" : String(n);
@@ -206,7 +248,7 @@ async function planarThumbnail({ name, stroke, roles }) {
   for (const e of [art, ...art.querySelectorAll("*")]) {
     for (const { name: attr, value } of [...e.attributes]) {
       if (
-        /^(id|style|role|class|tabindex|width|height|data-.*|aria-.*)$/.test(
+        /^(id|style|role|class|tabindex|width|height|clip-path|data-.*|aria-.*)$/.test(
           attr,
         ) &&
         !(e !== art && /^(width|height)$/.test(attr))

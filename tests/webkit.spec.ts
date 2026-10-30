@@ -1940,6 +1940,10 @@ test("complex loom entry, scalar blur, paired phone controls and return preserve
     "0",
   );
   await expect(d.getByRole("alert")).toHaveCount(0);
+  // The button opens the study's own curve; the circle fields belong to a
+  // family.
+  await d.getByLabel("Source family", { exact: true }).selectOption("rosette");
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
   await d.getByLabel("Circle radius", { exact: true }).fill("1/phi");
   await d.getByLabel("Source family", { exact: true }).selectOption("grid");
   await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
