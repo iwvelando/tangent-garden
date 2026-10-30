@@ -257,8 +257,14 @@ async function measure(source) {
     }
     results.push({ name, hash, time: median(times), error: last.error });
   }
-  process.stdout.write(JSON.stringify(results));
-  process.exit(0);
+  reply(results);
+}
+
+// The child's results, written to its parent through a pipe. Exit only once
+// the write has finished: macOS writes to a pipe asynchronously, and exiting
+// sooner cut the results off at the pipe's 64 KiB buffer.
+export function reply(results) {
+  process.stdout.write(JSON.stringify(results), () => process.exit(0));
 }
 
 export function childOptions(source, options) {
@@ -316,7 +322,8 @@ async function main() {
       );
       if (differ.length) {
         console.log(`Different:\n  ${differ.join("\n  ")}`);
-        process.exit(1);
+        // Not process.exit, which can cut off output still being written.
+        process.exitCode = 1;
       }
     }
   }

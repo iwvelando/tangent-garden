@@ -754,12 +754,16 @@ h1 {
   border-radius: 8px;
   overflow: hidden;
 }
-#artwork {
-  display: block;
-  width: 100%;
+/* A placeholder holds the drawing's place, so its arrival moves nothing. */
+#artwork,
+.plot-wrap > .loading {
   height: calc(100vh - 325px);
   min-height: 420px;
   max-height: 880px;
+}
+#artwork {
+  display: block;
+  width: 100%;
   cursor: grab;
 }
 #artwork:active {
@@ -1116,14 +1120,16 @@ h1 {
     padding: 24px;
     display: block;
   }
-  #artwork {
+  #artwork,
+  .plot-wrap > .loading {
     height: 55vh;
     min-height: 340px;
   }
   @media (orientation: portrait) {
     /* Leave room for the caption and dock in portrait. Landscape keeps the
        ordinary viewport height, including its existing vertical scrolling. */
-    .plot-wrap:has(> .phrase-caption) > #artwork {
+    .plot-wrap:has(> .phrase-caption) > #artwork,
+    .plot-wrap:has(> .phrase-caption) > .loading {
       height: min(55vh, max(160px, calc(100svh - 400px)));
       min-height: 0;
     }

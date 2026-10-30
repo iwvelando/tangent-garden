@@ -1,4 +1,4 @@
-.PHONY: install wasm bench preset-hashes preset-fixtures test test-go test-wasm test-scripts test-browser test-webkit test-durations typecheck vet format format-check build dev dev-lan preview preview-lan check pre-pr clean share-card thumbnails
+.PHONY: install wasm bench preset-hashes preset-fixtures test test-go test-go-race test-go-cover test-wasm test-scripts test-browser test-webkit test-durations typecheck vet format format-check build dev dev-lan preview preview-lan check pre-pr clean share-card thumbnails
 
 install:
 	npm ci
@@ -7,8 +7,12 @@ wasm:
 # Race detection forces atomic coverage counters. Instrumenting those counter
 # accesses under -race makes the numerical suites much slower than
 # running race detection and coverage separately. Both passes run every test.
-test-go:
-	go test -race -timeout 20m ./...
+# CI runs the race pass in shards beside `check`: RACE_SHARD=k/n runs the kth
+# of n (scripts/go-race.mjs), and SKIP_RACE=1 leaves it out of `check`.
+test-go: $(if $(SKIP_RACE),,test-go-race) test-go-cover
+test-go-race:
+	$(if $(RACE_SHARD),node scripts/go-race.mjs $(RACE_SHARD),go test -race -timeout 20m ./...)
+test-go-cover:
 	go test -cover -timeout 20m ./...
 test-wasm: wasm
 	node --test scripts/preset-hashes.test.mjs
@@ -16,7 +20,7 @@ test-wasm: wasm
 	node scripts/test-dev-worker.mjs
 # Tests of the project scripts that need no engine.
 test-scripts:
-	node --test scripts/test-durations.test.mjs
+	node --test scripts/test-durations.test.mjs scripts/go-race.test.mjs
 # Times large implicit surfaces and curve meshes; ARGS="--compare <site or directory>" adds another engine.
 bench: wasm
 	node scripts/bench-spatial.mjs $(ARGS)

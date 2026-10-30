@@ -21,6 +21,34 @@ test("a failed WASM download can recover on the next input change", async ({
   expect(attempts).toBe(2);
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+// The placeholder holds the drawing's place, so the first result moves
+// nothing beneath it: at phone width, the study's controls.
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+  { width: 1440, height: 1000 },
+  { width: 1280, height: 560 },
+])
+  test(`the first drawing takes the placeholder's height at ${viewport.width}×${viewport.height}`, async ({
+    page,
+    context,
+  }) => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await context.route("**/engine.wasm", async (route) => {
+      await held;
+      await route.continue();
+    });
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    const placeholder = page.locator(".plot-wrap > .loading");
+    await expect(placeholder).toHaveText("Preparing the numerical engine…");
+    const before = (await placeholder.boundingBox())!.height;
+    release();
+    await expect(page.locator("#artwork")).toBeVisible();
+    expect((await page.locator("#artwork").boundingBox())!.height).toBe(before);
+  });
+
 import { readFile } from "node:fs/promises";
 
 test("WASM loads, all notebook studies compute, and SVG exports geometry", async ({

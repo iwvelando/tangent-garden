@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 import {
   assertMatchingPresets,
@@ -97,4 +98,27 @@ test("child process options preserve the default unfiltered comparison", () => {
     ...filtered,
     child: "public/",
   });
+});
+
+test("a child's reply reaches its parent whole through a pipe", () => {
+  // Far beyond a pipe's buffer, as every preset's results are; macOS writes
+  // to a pipe asynchronously, so exiting before the write ends truncates it.
+  // The child builds them itself: Linux refuses an argument over 128 KiB.
+  const build = `Array.from({ length: 4000 }, (_, i) => ({
+    name: "preset " + i,
+    hash: "0".repeat(64),
+    time: i,
+  }))`;
+  const results = new Function(`return ${build}`)();
+  const out = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { reply } from ${JSON.stringify(import.meta.resolve("./preset-hashes.mjs"))};
+       reply(${build});`,
+    ],
+    { encoding: "utf8", maxBuffer: 1 << 24 },
+  );
+  assert.deepEqual(JSON.parse(out), results);
 });

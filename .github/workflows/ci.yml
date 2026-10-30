@@ -68,7 +68,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: make install
-      - run: make check
+      # The race pass runs in the `race` job's shards instead.
+      - run: make check SKIP_RACE=1
       - id: tree
         run: echo "sha=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       # Pull request runs upload too, so main can deploy a build that already passed.
@@ -80,10 +81,35 @@ jobs:
           retention-days: 7
           overwrite: true
 
+  # The native race pass, split across runners: on its own, one engine3
+  # package took 15 of the 20 minutes `check` allows. Each shard runs every
+  # nth test by name (scripts/go-race.mjs); together they run every test.
+  race:
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
+    name: go race (${{ matrix.shard }}/${{ matrix.total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+        total: [3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: make test-go-race RACE_SHARD=${{ matrix.shard }}/${{ matrix.total }}
+
   # The Chromium suite, split across runners. Each shard builds its own copy of
   # the production app, which takes seconds, rather than waiting on `check`.
   # Shards get whole spec files, so they are uneven; six keep the slowest near
-  # the `check` and `webkit` jobs while setup stays a small share of each.
+  # the `webkit` job while setup stays a small share of each.
   browser:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
@@ -193,8 +219,8 @@ jobs:
       # ffprobe independently decodes the exported MP4 files.
       - run: brew install ffmpeg
         env:
-          HOMEBREW_NO_AUTO_UPDATE: '1'
-          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
       - run: make test-webkit
       # A "Page crashed" failure leaves no trace in the log. macOS writes the
       # WebContent crash or jetsam (memory) report here, which tells an engine
@@ -218,14 +244,14 @@ jobs:
   # The one required status check. Every test job must pass, except on main when
   # `reuse` found a passing run of this exact tree and the tests were skipped.
   verify:
-    needs: [reuse, check, browser, webkit]
+    needs: [reuse, check, race, browser, webkit]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - env:
           REUSED: ${{ needs.reuse.outputs.run-id }}
-          RESULTS: ${{ needs.check.result }} ${{ needs.browser.result }} ${{ needs.webkit.result }}
+          RESULTS: ${{ needs.check.result }} ${{ needs.race.result }} ${{ needs.browser.result }} ${{ needs.webkit.result }}
         run: |
           for result in $RESULTS; do
             case "$result" in
