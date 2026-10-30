@@ -188,6 +188,17 @@ test("anchoring contour normals preserves checkbox clicks and scalar blur in Web
     exact: true,
   });
   await expect(stable).toBeChecked();
+  // The example card shrinks once its thumbnail appears, and the drawing
+  // grows once it arrives, each moving the checkbox; a click between a
+  // stability check and either shift lands beside the label.
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(page.locator(".example-trigger .example-thumb")).toHaveAttribute(
+    "data-state",
+    "ready",
+  );
   await page
     .getByRole("textbox", { name: "Shape parameter a", exact: true })
     .fill("pi/7");
