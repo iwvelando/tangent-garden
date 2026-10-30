@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"cmp"
 	"math"
+	"slices"
 	"strconv"
 )
 
@@ -197,106 +199,211 @@ func ComputeLoom(q LoomRequest) (LoomResult, error) {
 	return computeLoom(q, loomLimits{LoomMaxPoints, LoomMaxEvaluations, LoomMaxDepth})
 }
 
+// A node is one evaluation of a member at source parameter t: p and w are
+// nil where the source is undefined or its square is not finite. A missing
+// node was never evaluated because the evaluation budget ran out.
 type loomNode struct {
-	t    float64
-	p, w *Vec
+	t       float64
+	p, w    *Vec
+	missing bool
 }
 
+// A segment of one member awaits judgment at its depth; mid, when set, is
+// its midpoint already evaluated as a quarter probe of its parent.
+type loomSegment struct {
+	member int
+	a, b   loomNode
+	mid    *loomNode
+	depth  int
+}
+
+// A settled segment is drawn as its chord (reason "") or broken.
+type loomSettled struct {
+	a, b   loomNode
+	reason string
+}
+
+// computeLoom refines every member level by level: each pass judges every
+// pending segment of every member at one depth before any is bisected
+// further, so a budget that runs out leaves the remaining error spread across
+// members and intervals rather than an undrawn tail. Where the budget does
+// not bind, the result is the same as judging the segments in any order.
+// Undefined stretches follow the shared refiner (engine/refine): a segment
+// undefined at both ends is a gap without evaluation, and one undefined at
+// one end is bisected toward that end only, its midpoint alone evaluated.
+// Reaching the depth limit there is a settled break, not exhaustion.
 func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	cs, err := q.sources()
 	if err != nil {
 		return LoomResult{}, err
 	}
 	r := LoomResult{Members: make([]LoomMember, 0, len(cs))}
-	// One global budget includes pilot samples, quarter probes and the marker.
+	// One global budget includes pilot samples, probes and the marker.
 	r.Marker = loomMarker(cs[q.Selected], q.Selected, q.Parameter)
 	r.Evaluations = 1
-	for id, c := range cs {
-		m := LoomMember{ID: id, Name: c.name, Min: c.min, Max: c.max, Intervals: []LoomInterval{}}
-		eval := func(t float64) loomNode {
-			n := loomNode{t: t}
-			if r.Evaluations >= limits.evaluations {
-				r.Exhausted = true
-				return n
-			}
-			r.Evaluations++
-			n.p = point(c.at(t))
-			if n.p != nil {
-				n.w = loomSquare(*n.p)
-			}
+	eval := func(c loomCurve, t float64) loomNode {
+		n := loomNode{t: t}
+		if r.Evaluations >= limits.evaluations {
+			r.Exhausted = true
+			n.missing = true
 			return n
 		}
-		appendNode := func(n loomNode) bool {
+		r.Evaluations++
+		n.p = point(c.at(t))
+		if n.p != nil {
+			n.w = loomSquare(*n.p)
+		}
+		return n
+	}
+	sourceTolerance := make([]float64, len(cs))
+	imageTolerance := make([]float64, len(cs))
+	first := make([]loomNode, len(cs))
+	settled := make([][]loomSettled, len(cs))
+	var pending []loomSegment
+	// Delivered entries, two per node, if every pending segment ended as a
+	// gap and every settled chord as its end point: an upper bound on the
+	// result, so bisection stops before the delivered-point ceiling.
+	reserved := 0
+	for id, c := range cs {
+		pilot := make([]loomNode, q.Samples)
+		src, img := make([]*Vec, q.Samples), make([]*Vec, q.Samples)
+		for i := range pilot {
+			pilot[i] = eval(c, c.min+(c.max-c.min)*float64(i)/float64(q.Samples-1))
+			src[i], img[i] = pilot[i].p, pilot[i].w
+		}
+		sourceTolerance[id] = q.Tolerance * studyRadius(src)
+		imageTolerance[id] = q.Tolerance * studyRadius(img)
+		first[id] = pilot[0]
+		reserved += 2
+		for i := 1; i < len(pilot); i++ {
+			pending = append(pending, loomSegment{member: id, a: pilot[i-1], b: pilot[i]})
+			reserved += 4
+		}
+	}
+	settle := func(s loomSegment, reason string) {
+		if reason == "" {
+			reserved -= 2
+		}
+		settled[s.member] = append(settled[s.member], loomSettled{s.a, s.b, reason})
+	}
+	// afford reports whether bisecting a segment fits the budget; otherwise
+	// it settles the segment as exhausted.
+	afford := func(s loomSegment, evaluations int) bool {
+		if r.Evaluations+evaluations > limits.evaluations || reserved+4 > limits.points {
+			r.Exhausted = true
+			settle(s, "exhausted")
+			return false
+		}
+		return true
+	}
+	// A chord is judged only between nodes defined in both panes.
+	defined := func(n loomNode) bool { return n.p != nil && n.w != nil }
+	for len(pending) > 0 {
+		var next []loomSegment
+		for _, s := range pending {
+			c := cs[s.member]
+			mid := (s.a.t + s.b.t) / 2
+			split := s.depth < limits.depth && mid > s.a.t && mid < s.b.t
+			switch {
+			case s.a.missing || s.b.missing:
+				settle(s, "exhausted")
+			case !defined(s.a) && !defined(s.b):
+				settle(s, "invalid")
+			case !defined(s.a) || !defined(s.b):
+				// Localize where the source stops, toward the undefined end.
+				if !split {
+					settle(s, "invalid")
+					continue
+				}
+				m := s.mid
+				if m == nil {
+					if !afford(s, 1) {
+						continue
+					}
+					n := eval(c, mid)
+					m = &n
+				} else if !afford(s, 0) {
+					continue
+				}
+				reserved += 4
+				next = append(next, loomSegment{s.member, s.a, *m, nil, s.depth + 1}, loomSegment{s.member, *m, s.b, nil, s.depth + 1})
+			default:
+				need := 3
+				if s.mid != nil {
+					need = 2
+				}
+				if r.Evaluations+need > limits.evaluations {
+					r.Exhausted = true
+					settle(s, "exhausted")
+					continue
+				}
+				probes := [3]loomNode{eval(c, (s.a.t+mid)/2), {}, eval(c, (mid+s.b.t)/2)}
+				if s.mid != nil {
+					probes[1] = *s.mid
+				} else {
+					probes[1] = eval(c, mid)
+				}
+				valid, accept := true, true
+				for _, n := range probes {
+					valid = valid && defined(n)
+				}
+				if valid {
+					for _, n := range probes {
+						accept = accept && plane.Distance(*n.w, *s.a.w, *s.b.w) <= imageTolerance[s.member] && plane.Distance(*n.p, *s.a.p, *s.b.p) <= sourceTolerance[s.member]
+					}
+				}
+				switch {
+				case valid && accept:
+					settle(s, "")
+				case !split && !valid:
+					settle(s, "invalid")
+				case !split:
+					settle(s, "unresolved")
+				case afford(s, 0):
+					reserved += 4
+					next = append(next, loomSegment{s.member, s.a, probes[1], &probes[0], s.depth + 1}, loomSegment{s.member, probes[1], s.b, &probes[2], s.depth + 1})
+				}
+			}
+		}
+		pending = next
+	}
+	for id, c := range cs {
+		m := LoomMember{ID: id, Name: c.name, Min: c.min, Max: c.max, Intervals: []LoomInterval{}}
+		gap := false
+		emit := func(n loomNode) {
 			if r.Points+2 > limits.points {
 				r.Exhausted = true
-				return false
+				return
 			}
+			// Consecutive break entries carry nothing more than one.
+			empty := n.p == nil && n.w == nil
+			if empty && gap {
+				return
+			}
+			gap = empty
 			m.At = append(m.At, n.t)
 			m.Source = append(m.Source, n.p)
 			m.Image = append(m.Image, n.w)
 			m.Critical = append(m.Critical, n.p != nil && n.p.X == 0 && n.p.Y == 0)
 			r.Points += 2
-			return true
 		}
-		pilot := make([]loomNode, q.Samples)
-		src, img := make([]*Vec, q.Samples), make([]*Vec, q.Samples)
-		for i := range pilot {
-			t := c.min + (c.max-c.min)*float64(i)/float64(q.Samples-1)
-			pilot[i] = eval(t)
-			src[i], img[i] = pilot[i].p, pilot[i].w
-		}
-		sourceTolerance := q.Tolerance * studyRadius(src)
-		imageTolerance := q.Tolerance * studyRadius(img)
-		appendNode(pilot[0])
-		var refine func(loomNode, loomNode, int)
-		refine = func(a, b loomNode, depth int) {
-			if r.Points+4 > limits.points {
-				r.Exhausted = true
-				m.Intervals = append(m.Intervals, LoomInterval{a.t, b.t, "exhausted"})
-				return
+		segments := settled[id]
+		slices.SortFunc(segments, func(x, y loomSettled) int { return cmp.Compare(x.a.t, y.a.t) })
+		emit(first[id])
+		for _, s := range segments {
+			if s.reason == "" {
+				emit(s.b)
+				continue
 			}
-			mid := (a.t + b.t) / 2
-			probes := [3]loomNode{eval((a.t + mid) / 2), eval(mid), eval((mid + b.t) / 2)}
-			valid := a.p != nil && a.w != nil && b.p != nil && b.w != nil
-			for _, n := range probes {
-				valid = valid && n.p != nil && n.w != nil
+			if k := len(m.Intervals) - 1; k >= 0 && m.Intervals[k].Reason == s.reason && m.Intervals[k].To == s.a.t {
+				m.Intervals[k].To = s.b.t
+			} else {
+				m.Intervals = append(m.Intervals, LoomInterval{s.a.t, s.b.t, s.reason})
 			}
-			accept := valid
-			if valid {
-				for _, n := range probes {
-					accept = accept && plane.Distance(*n.w, *a.w, *b.w) <= imageTolerance && plane.Distance(*n.p, *a.p, *b.p) <= sourceTolerance
-				}
+			emit(loomNode{t: (s.a.t + s.b.t) / 2})
+			if s.b.p != nil || s.b.w != nil {
+				emit(s.b)
 			}
-			if accept {
-				appendNode(b)
-				return
-			}
-			if depth < limits.depth && r.Evaluations < limits.evaluations && mid > a.t && mid < b.t {
-				refine(a, probes[1], depth+1)
-				refine(probes[1], b, depth+1)
-				return
-			}
-			reason := "unresolved"
-			if !valid {
-				reason = "invalid"
-			}
-			if r.Evaluations >= limits.evaluations || depth == limits.depth {
-				r.Exhausted = true
-				if valid {
-					reason = "exhausted"
-				}
-			}
-			m.Intervals = append(m.Intervals, LoomInterval{a.t, b.t, reason})
-			appendNode(loomNode{t: mid})
-			appendNode(b)
-		}
-		for i := 1; i < len(pilot); i++ {
-			if r.Points+4 > limits.points || r.Evaluations >= limits.evaluations {
-				r.Exhausted = true
-				m.Intervals = append(m.Intervals, LoomInterval{pilot[i-1].t, c.max, "exhausted"})
-				break
-			}
-			refine(pilot[i-1], pilot[i], 0)
 		}
 		r.NumericEntries += 6*len(m.At) + 2*len(m.Intervals) + 3
 		r.Members = append(r.Members, m)

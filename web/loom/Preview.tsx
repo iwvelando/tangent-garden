@@ -56,6 +56,20 @@ const labels: Record<string, string> = {
   selected: "Selected member",
   parameter: "Source parameter",
 };
+// Gaps by reason, in the engine's terms: undefined (invalid), still beyond
+// tolerance at the depth limit (unresolved), or out of budget (exhausted).
+function gapSummary(result: LoomResult) {
+  const count = { invalid: 0, unresolved: 0, exhausted: 0 };
+  for (const m of result.members)
+    for (const g of m.intervals)
+      if (g.reason in count) count[g.reason as keyof typeof count]++;
+  const parts = [
+    count.invalid && `${count.invalid.toLocaleString()} undefined`,
+    count.unresolved && `${count.unresolved.toLocaleString()} unresolved`,
+    count.exhausted && `${count.exhausted.toLocaleString()} out of budget`,
+  ].filter(Boolean);
+  return `${result.exhausted ? "Refinement ran out of budget. " : ""}${parts.length ? `Gaps: ${parts.join(", ")}.` : "No gaps."}`;
+}
 export function LoomPreview({
   entry,
   onReturn,
@@ -848,16 +862,9 @@ export function LoomPreview({
                         )}
                       </details>
                     </section>
-                    <p className="note">
-                      {result.exhausted
-                        ? "Refinement exhausted; unresolved intervals remain gaps. "
-                        : ""}
-                      {result.members.reduce(
-                        (n, m) => n + m.intervals.length,
-                        0,
-                      )}{" "}
-                      invalid or unresolved intervals.{" "}
-                      {result.points.toLocaleString()} paired points.
+                    <p className="note" data-gaps>
+                      {gapSummary(result)} {result.points.toLocaleString()}{" "}
+                      paired points.
                     </p>
                   </>
                 )}

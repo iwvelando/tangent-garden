@@ -213,3 +213,145 @@ func TestLoomOrdinarySourceFormatsAndFrozenOwnership(t *testing.T) {
 		t.Fatal("returned geometry aliases a mutable source")
 	}
 }
+
+// A curve's undefined stretch is a gap found at the uniform samples and
+// localized only toward each defined end, as in the shared refiner. It is
+// neither subdivided throughout nor reported as exhausted work.
+func TestLoomUndefinedStretchesSettleCheaply(t *testing.T) {
+	for _, c := range []struct {
+		curve     Curve
+		gaps      int
+		edges     []float64
+		onCircle  bool
+		circleRad float64
+	}{
+		// Defined only for t in [2, 4]: a semicircle of radius 1 about 3.
+		{Curve{Format: "parametric", X: "t-3", Y: "sqrt(1-(t-3)^2)", Min: 0, Max: 2 * math.Pi}, 2, []float64{2, 4}, true, 1},
+		// A lemniscate is undefined on (π/4, 3π/4) and (5π/4, 7π/4).
+		{Curve{Format: "polar", R: "sqrt(cos(2*t))", Min: 0, Max: 2 * math.Pi}, 2, []float64{math.Pi / 4, 3 * math.Pi / 4, 5 * math.Pi / 4, 7 * math.Pi / 4}, false, 0},
+	} {
+		q := loomExample("curve")
+		q.Source.Curve = c.curve
+		q.Samples, q.Tolerance, q.Parameter = 32, 5e-4, c.curve.Min
+		r, err := ComputeLoom(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := r.Members[0]
+		if r.Exhausted || r.Points > 20000 || r.Evaluations > 20000 {
+			t.Fatalf("%s: undefined stretch spent the budget: %d points, %d evaluations, exhausted %v", c.curve.Format, r.Points, r.Evaluations, r.Exhausted)
+		}
+		if len(m.Intervals) != c.gaps {
+			t.Fatalf("%s: want %d merged gaps, got %+v", c.curve.Format, c.gaps, m.Intervals)
+		}
+		for _, g := range m.Intervals {
+			if g.Reason != "invalid" {
+				t.Fatalf("%s: undefined stretch reported as %q", c.curve.Format, g.Reason)
+			}
+		}
+		defined := 0
+		for i, p := range m.Source {
+			if p == nil {
+				continue
+			}
+			defined++
+			w := complex(p.X, p.Y) * complex(p.X, p.Y)
+			if m.Image[i] == nil || math.Hypot(m.Image[i].X-real(w), m.Image[i].Y-imag(w)) > 1e-12 {
+				t.Fatal("defined source point lost its square")
+			}
+			if c.onCircle && math.Abs(math.Hypot(p.X, p.Y)-c.circleRad) > 1e-9 {
+				t.Fatalf("source point %v is off the semicircle", p)
+			}
+		}
+		if defined < 32 {
+			t.Fatalf("%s: only %d defined points drawn", c.curve.Format, defined)
+		}
+		// Each defined stretch reaches within a localization step of its edges.
+		for _, edge := range c.edges {
+			nearest := math.Inf(1)
+			for i, p := range m.Source {
+				if p != nil {
+					nearest = math.Min(nearest, math.Abs(m.At[i]-edge))
+				}
+			}
+			if nearest > 1e-4 {
+				t.Fatalf("%s: edge %g localized only to %g", c.curve.Format, edge, nearest)
+			}
+		}
+	}
+	// Contrast: a curve defined throughout reports no gap.
+	q := loomExample("curve")
+	r, err := ComputeLoom(q)
+	if err != nil || r.Exhausted || len(r.Members[0].Intervals) != 0 {
+		t.Fatalf("defined curve reported gaps: %v %+v", err, r.Members[0].Intervals)
+	}
+}
+
+// Oscillation that refinement cannot resolve by its depth limit is an
+// unresolved break, not exhaustion of the work budget.
+func TestLoomDepthLimitIsUnresolvedNotExhausted(t *testing.T) {
+	q := loomExample("curve")
+	// sin(1/t) oscillates without limit near 0; the samples never land on 0.
+	q.Source.Curve = Curve{Format: "parametric", X: "t", Y: "sin(1/t)", Min: -1, Max: 1.5}
+	q.Samples, q.Tolerance, q.Parameter = 5, 5e-4, -1
+	r, err := ComputeLoom(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := r.Members[0].Intervals
+	if r.Exhausted || len(g) == 0 {
+		t.Fatalf("unresolved oscillation: exhausted %v, %d gaps", r.Exhausted, len(g))
+	}
+	near := false
+	for _, i := range g {
+		if i.Reason != "unresolved" || math.Abs(i.From) > .05 || math.Abs(i.To) > .05 {
+			t.Fatalf("gap away from the oscillation or misreported: %+v", i)
+		}
+		near = near || (i.From <= 0 && i.To >= 0) || math.Abs(i.From) < 1e-3
+	}
+	if !near {
+		t.Fatalf("no unresolved break at the accumulation point: %+v", g)
+	}
+}
+
+// A budget that runs out is spread evenly, level by level, across every
+// member and interval: no member or tail is left undrawn while another is
+// refined deeply.
+func TestLoomExhaustedBudgetSpreadsAcrossMembers(t *testing.T) {
+	q := loomExample("grid")
+	// Single lines at x = 2 and y = 2 square to parabolas, not segments.
+	q.Source.XCount, q.Source.YCount = 1, 1
+	q.Source.XMin, q.Source.XMax, q.Source.YMin, q.Source.YMax = 1, 3, 1, 3
+	q.Parameter = 1
+	q.Samples, q.Tolerance = 16, 1e-6
+	r, err := computeLoom(q, loomLimits{points: 400, evaluations: LoomMaxEvaluations, depth: LoomMaxDepth})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Exhausted || r.Points > 400 {
+		t.Fatalf("budget not enforced: exhausted %v, %d points", r.Exhausted, r.Points)
+	}
+	for _, m := range r.Members {
+		drawn := map[float64]bool{}
+		for i, p := range m.Image {
+			if p != nil {
+				drawn[m.At[i]] = true
+			}
+		}
+		for i := 0; i < q.Samples; i++ {
+			at := m.Min + (m.Max-m.Min)*float64(i)/float64(q.Samples-1)
+			if !drawn[at] {
+				t.Fatalf("%s: uniform sample %g left undrawn by exhaustion", m.Name, at)
+			}
+		}
+		exhausted := 0
+		for _, g := range m.Intervals {
+			if g.Reason == "exhausted" {
+				exhausted++
+			}
+		}
+		if exhausted == 0 {
+			t.Fatalf("%s: exhaustion not reported on the member", m.Name)
+		}
+	}
+}
