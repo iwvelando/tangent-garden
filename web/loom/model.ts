@@ -33,27 +33,56 @@ export type LoomStudy = LoomRequest & {
   showExclusion?: boolean;
   motion?: { mode: "map"; from: number; to: number };
 };
+const rationalTraversal =
+  "Traversal advances uniformly in the original source parameter, not arc length. Poles and their excluded source disks have no image. Critical images remain drawable, but do not claim regular conformality. Map motion keeps this point fixed while changing the map.";
+// Each map's labels, help, supported parameter and actual pole. Components
+// read these instead of branching on map names.
 export const maps = {
   square: {
     label: "Squaring",
     formula: "w = z²",
+    parameterized: false,
+    symbol: "",
     range: [0, 0],
     initial: 0,
     note: "Squaring doubles angles about zero. Zero is drawable but critical.",
+    imageLabel: "Squared image plane",
+    imageHeading: "Image plane · z²",
+    imageNoun: "square",
+    traversalHelp:
+      "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have center r exp(iα), α = 2πk/N and z(θ) = r exp(iα)(1 + exp(iθ)); θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero.",
+    pole: (_parameter: number): Vec | undefined => undefined,
   },
   mobius: {
     label: "Möbius",
     formula: "w = (z − b)/(1 − bz)",
+    parameterized: true,
+    symbol: "b",
     range: [-0.9, 0.9],
     initial: 0.5,
     note: "Circles become circles or lines. The pole is 1/b; b = 0 is identity. The inverse uses −b.",
+    imageLabel: "Möbius image plane",
+    imageHeading: "Image plane · w",
+    imageNoun: "image",
+    traversalHelp: rationalTraversal,
+    // At b = 0 the pole has gone to infinity.
+    pole: (b: number): Vec | undefined =>
+      b && Number.isFinite(1 / b) ? { x: 1 / b, y: 0 } : undefined,
   },
   joukowski: {
     label: "z + λ/z",
     formula: "w = z + λ/z",
+    parameterized: true,
+    symbol: "λ",
     range: [0, 1],
     initial: 0.5,
     note: "Zero is a pole when λ > 0; ±√λ are drawable critical points. At λ = 0 the map is identity, including zero.",
+    imageLabel: "z + λ/z image plane",
+    imageHeading: "Image plane · w",
+    imageNoun: "image",
+    traversalHelp: rationalTraversal,
+    pole: (lambda: number): Vec | undefined =>
+      lambda ? { x: 0, y: 0 } : undefined,
   },
 } as const;
 export const mapHelp = tiered(
@@ -68,7 +97,7 @@ export function replaceMap(
 ): LoomStudy {
   if (map === s.map) return s;
   const { motion: _motion, ...rest } = s;
-  if (map === "square") return { ...rest, map };
+  if (!maps[map].parameterized) return { ...rest, map };
   const size =
     s.source.kind === "grid"
       ? Math.max(s.source.xMax - s.source.xMin, s.source.yMax - s.source.yMin) /
@@ -112,12 +141,11 @@ export function loomFrame(s: LoomStudy, progress: number): LoomRequest {
   };
 }
 export function poleExclusion(q: LoomRequest, visible = true) {
-  if (!visible || q.map === "square" || !q.mapParameter || !q.exclusionRadius)
-    return undefined;
-  const x = q.map === "mobius" ? 1 / q.mapParameter : 0;
-  return Number.isFinite(x)
-    ? { center: { x, y: 0 }, radius: q.exclusionRadius }
-    : undefined;
+  const center =
+    visible && q.exclusionRadius && q.mapParameter !== undefined
+      ? maps[q.map].pole(q.mapParameter)
+      : undefined;
+  return center && { center, radius: q.exclusionRadius! };
 }
 export type LoomMarker = {
   member: number;
@@ -177,6 +205,7 @@ export const loomPresets = [
     note: "A moving Möbius pole opens circles into lines and closes them again",
     kind: "concentric",
     map: "mobius",
+    motion: { from: 0.65, to: -0.65 },
   },
   // Opens at λ=.5; each concentric circle becomes an ellipse, flattened
   // to a doubly traced segment when its radius is √λ.
@@ -185,12 +214,14 @@ export const loomPresets = [
     note: "The map z + λ/z folds nested circles through critical line segments",
     kind: "concentric",
     map: "joukowski",
+    motion: { from: 0.5, to: 1 },
   },
 ] as const satisfies readonly {
   title: string;
   note: string;
   kind: LoomSource["kind"];
   map?: LoomRequest["map"];
+  motion?: { from: number; to: number };
 }[];
 export function presetLoom(index: number, config: Config): LoomStudy {
   const study = defaultLoom(config);
@@ -198,19 +229,14 @@ export function presetLoom(index: number, config: Config): LoomStudy {
   const definition = loomPresets[index];
   const rational = "map" in definition;
   const mapped = rational ? replaceMap(study, definition.map) : study;
-  const initial = rational && definition.map === "mobius" ? 0.65 : 0.5;
   return {
     ...mapped,
     source: rational ? { ...source, radius: 2.4 } : source,
     ...(rational && {
       selected: 5,
-      mapParameter: initial,
+      mapParameter: definition.motion.from,
       exclusionRadius: 0.06,
-      motion: {
-        mode: "map" as const,
-        from: initial,
-        to: definition.map === "mobius" ? -0.65 : 1,
-      },
+      motion: { mode: "map" as const, ...definition.motion },
     }),
     ...(rational && {
       framing: {

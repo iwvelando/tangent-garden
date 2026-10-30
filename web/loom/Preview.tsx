@@ -192,7 +192,7 @@ export function LoomPreview({
     (["from", "to"] as const).find((k) => {
       const v = study.motion![k];
       return (
-        study.map === "square" ||
+        !mapInfo.parameterized ||
         !Number.isFinite(v) ||
         v < mapInfo.range[0] ||
         v > mapInfo.range[1]
@@ -525,10 +525,7 @@ export function LoomPreview({
     dark: theme.dark,
     scheme: theme.scheme,
     weight,
-    imageLabel:
-      study.map === "square"
-        ? "Squared image plane"
-        : `${mapInfo.label} image plane`,
+    imageLabel: mapInfo.imageLabel,
     exclusion: poleExclusion(applied, study.showExclusion ?? true),
     onCamera: (c) =>
       setStudy((s) => ({ ...s, views: { ...s.views, [pane]: c } })),
@@ -719,8 +716,8 @@ export function LoomPreview({
           <p className="eyebrow">Complex transformation · {mapInfo.formula}</p>
           <h2 id="loom-title">The complex loom</h2>
           <p>
-            Choose a thread in one plane. Find its{" "}
-            {study.map === "square" ? "square" : "image"} in the other.
+            Choose a thread in one plane. Find its {mapInfo.imageNoun} in the
+            other.
           </p>
         </div>
         <ScalarStatus.Provider value={scalarStatus}>
@@ -751,7 +748,7 @@ export function LoomPreview({
                       ))}
                     </select>
                   </Field>
-                  {study.map !== "square" && (
+                  {mapInfo.parameterized && (
                     <details>
                       <summary>Map settings</summary>
                       <p className="note">{mapInfo.note}</p>
@@ -995,9 +992,7 @@ export function LoomPreview({
                         <h3>
                           {pane === "source"
                             ? "Source plane · z"
-                            : study.map === "square"
-                              ? "Image plane · z²"
-                              : "Image plane · w"}
+                            : mapInfo.imageHeading}
                         </h3>
                         <button
                           disabled={exporting}
@@ -1119,9 +1114,7 @@ export function LoomPreview({
                                   ? "Seek the same absolute map time used by playback and export."
                                   : tiered(
                                       "Move corresponding points at the same original source parameter.",
-                                      study.map !== "square"
-                                        ? "Traversal advances uniformly in the original source parameter, not arc length. Poles and their excluded source disks have no image. Critical images remain drawable, but do not claim regular conformality. Map motion keeps this point fixed while changing the map."
-                                        : "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have center r exp(iα), α = 2πk/N and z(θ) = r exp(iα)(1 + exp(iθ)); θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero.",
+                                      mapInfo.traversalHelp,
                                     )
                               }
                             >
@@ -1161,7 +1154,7 @@ export function LoomPreview({
                             {study.motion && (
                               <>
                                 {" "}
-                                · {study.map === "mobius" ? "b" : "λ"} ={" "}
+                                · {mapInfo.symbol} ={" "}
                                 {(applied.mapParameter ?? 0).toPrecision(6)}
                               </>
                             )}
@@ -1205,7 +1198,7 @@ export function LoomPreview({
                         <details id="loom-animation-section" open>
                           <summary className="section-label">ANIMATION</summary>
                           <fieldset disabled={exporting}>
-                            {study.map !== "square" && (
+                            {mapInfo.parameterized && (
                               <>
                                 <Field
                                   label="Motion"

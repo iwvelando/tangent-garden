@@ -113,6 +113,40 @@ func TestLoomRationalIdentityCriticalAndAngles(t *testing.T) {
 	}
 }
 
+// A circle of radius √λ meets both critical points, but its θ = π source
+// value carries sin(π) rounding residue in y. It is still critical; a
+// visibly nearby point is not.
+func TestLoomJoukowskiCriticalPointsOnTheCriticalCircle(t *testing.T) {
+	q := rationalLoom("joukowski", .36, .01, "concentric")
+	// 17 pilot samples place θ = π exactly on a path node.
+	q.Source.Count, q.Source.Radius, q.Samples = 1, .6, 17
+	for _, c := range []struct {
+		at       float64
+		critical bool
+	}{{0, true}, {math.Pi, true}, {math.Pi + 1e-6, false}, {math.Pi / 2, false}} {
+		q.Parameter = c.at
+		p, err := LoomPoint(q)
+		if err != nil || p.Image == nil || p.Critical != c.critical {
+			t.Fatalf("θ=%v: %+v %v, want critical %v", c.at, p, err, c.critical)
+		}
+		r, err := ComputeLoom(q)
+		if err != nil || r.Marker.Critical != c.critical {
+			t.Fatalf("θ=%v: marker %+v %v", c.at, r.Marker, err)
+		}
+	}
+	r, _ := ComputeLoom(q)
+	// The closed circle repeats θ = 0 at θ = 2π.
+	var at []float64
+	for i, critical := range r.Members[0].Critical {
+		if critical {
+			at = append(at, r.Members[0].At[i])
+		}
+	}
+	if len(at) != 3 || at[0] != 0 || at[1] != math.Pi || at[2] != 2*math.Pi {
+		t.Fatal("critical path nodes", at)
+	}
+}
+
 func TestLoomPoleIntervalsSplitBeforeMapping(t *testing.T) {
 	for _, source := range []string{"grid", "concentric", "rosette", "curve"} {
 		q := rationalLoom("mobius", .9, .001, source)

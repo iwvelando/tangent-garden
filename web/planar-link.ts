@@ -1,4 +1,5 @@
 import {
+  maps,
   memberCount,
   memberInterval,
   supportedSource,
@@ -814,9 +815,8 @@ function loomStudy(value: unknown): LoomStudy {
     undefined,
     "loom",
   );
-  if (out.map !== "square") {
-    const lo = out.map === "mobius" ? -0.9 : 0,
-      hi = out.map === "mobius" ? 0.9 : 1;
+  if (maps[out.map].parameterized) {
+    const [lo, hi] = maps[out.map].range;
     if (
       out.mapParameter === undefined ||
       out.mapParameter < lo ||
@@ -845,7 +845,7 @@ function loomStudy(value: unknown): LoomStudy {
   } else if (out.motion)
     throw new LinkError(
       "loom.motion",
-      "Squaring supports point traversal only.",
+      `${maps[out.map].label} supports point traversal only.`,
     );
   for (const [path, v] of Object.entries({
     count: out.source.count,

@@ -163,7 +163,11 @@ func (q LoomRequest) critical(p Vec) bool {
 		return p.X == 0 && p.Y == 0
 	}
 	if q.Map == "joukowski" && q.MapParameter > 0 {
-		return p.Y == 0 && math.Abs(p.X) == math.Sqrt(q.MapParameter)
+		// J′ = 1 − λ/z² vanishes where z² = λ. Sources reach ±√λ through
+		// trigonometry, such as sin π on a circle of radius √λ, so accept
+		// z² within a few roundings of λ rather than only exact equality.
+		u, v := p.X*p.X-p.Y*p.Y-q.MapParameter, 2*p.X*p.Y
+		return math.Hypot(u, v) <= 8*0x1p-52*(p.Dot(p)+q.MapParameter)
 	}
 	return false
 }
