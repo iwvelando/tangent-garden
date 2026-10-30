@@ -1703,3 +1703,14 @@ header {
     padding-right: 8px;
   }
 }
+
+/* Eagerly styled because the loom itself is still being loaded. */
+.loom-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  background: var(--panel);
+}

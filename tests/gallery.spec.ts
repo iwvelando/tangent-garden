@@ -373,8 +373,13 @@ test("arrow keys move between cards", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   const below = page.locator("[data-example]:focus");
   expect((await below.boundingBox())!.y).toBeGreaterThan(top);
+  // End reaches the last card of all, a complex loom example in 2D.
   await page.keyboard.press("End");
-  await expect(dialog.locator("[data-example]:visible").last()).toBeFocused();
+  await expect(dialog.locator(".example-card:visible").last()).toBeFocused();
+  await expect(page.locator(".example-card:focus")).toHaveAttribute(
+    "data-loom-example",
+    "2",
+  );
 });
 
 for (const path of ["/", "/?study=3d"])

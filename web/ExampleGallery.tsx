@@ -65,6 +65,7 @@ export function ExampleGallery({
   dark,
   onJourney,
   onBrowse,
+  looms,
 }: {
   examples: Example[];
   // null while the study is the reader's own.
@@ -78,6 +79,17 @@ export function ExampleGallery({
     via: "keyboard" | "pointer",
   ) => void;
   onBrowse?: () => void;
+  // Examples that open the complex loom over the study instead of replacing
+  // it. They join the families, search and thumbnails, but not the
+  // previous/next steps through the notebook's own examples.
+  looms?: {
+    examples: Example[];
+    open: (
+      index: number,
+      restoreFocus: (via: "keyboard" | "pointer") => void,
+      via: "keyboard" | "pointer",
+    ) => void;
+  };
 }) {
   const { scheme } = useTheme();
   const wrap = useRef<HTMLDivElement>(null);
@@ -90,24 +102,33 @@ export function ExampleGallery({
   const [query, setQuery] = useState("");
   const [family, setFamily] = useState<string | null>(null);
   const currentId = useId();
+  const entries = useMemo(
+    () => [
+      ...examples.map((example, index) => ({ example, index, loom: false })),
+      ...(looms?.examples ?? []).map((example, index) => ({
+        example,
+        index,
+        loom: true,
+      })),
+    ],
+    [examples, looms?.examples],
+  );
   const families = useMemo(
-    () => [...new Set(examples.map((e) => e.family))],
-    [examples],
+    () => [...new Set(entries.map((e) => e.example.family))],
+    [entries],
   );
   const matches = useMemo(() => {
     const terms = words(query);
-    return examples
-      .map((example, index) => ({ example, index }))
-      .filter(
-        ({ example: e }) =>
-          (family === null || e.family === family) &&
-          terms.every((t) =>
-            `${e.title} ${e.caption} ${e.family} ${e.keywords}`
-              .toLowerCase()
-              .includes(t),
-          ),
-      );
-  }, [examples, query, family]);
+    return entries.filter(
+      ({ example: e }) =>
+        (family === null || e.family === family) &&
+        terms.every((t) =>
+          `${e.title} ${e.caption} ${e.family} ${e.keywords}`
+            .toLowerCase()
+            .includes(t),
+        ),
+    );
+  }, [entries, query, family]);
   // Grouped by family, keeping preset order within each.
   const groups = families
     .map((f) => ({
@@ -159,6 +180,20 @@ export function ExampleGallery({
     onChoose(index);
     close();
   };
+  const openLoom = (index: number) => {
+    close();
+    looms?.open(
+      index,
+      (returnVia) => {
+        via.current = returnVia;
+        if (returnVia === "pointer") quiet.onPointerDown();
+        else quiet.onKeyDownCapture();
+        quiet.quiet();
+        trigger.current?.focus();
+      },
+      via.current,
+    );
+  };
   const step = (by: number) => {
     const n = examples.length;
     onChoose(current === null ? (by > 0 ? 0 : n - 1) : (current + by + n) % n);
@@ -168,7 +203,7 @@ export function ExampleGallery({
   // up and down to the nearest card in the adjacent row.
   const move = (e: KeyboardEvent<HTMLDivElement>) => {
     const cards = [
-      ...e.currentTarget.querySelectorAll<HTMLButtonElement>("[data-example]"),
+      ...e.currentTarget.querySelectorAll<HTMLButtonElement>(".example-card"),
     ];
     const from = cards.indexOf(document.activeElement as HTMLButtonElement);
     if (from < 0) return;
@@ -232,7 +267,7 @@ export function ExampleGallery({
             {currentExample?.title ?? "Custom study"}
           </span>
           <span className="example-browse">
-            Browse all {examples.length} <span aria-hidden="true">→</span>
+            Browse all {entries.length} <span aria-hidden="true">→</span>
           </span>
         </span>
       </button>
@@ -277,7 +312,9 @@ export function ExampleGallery({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && matches.length > 0) {
                     e.preventDefault();
-                    choose(groups[0].items[0].index);
+                    const top = groups[0].items[0];
+                    if (top.loom) openLoom(top.index);
+                    else choose(top.index);
                   }
                 }}
               />
@@ -356,8 +393,8 @@ export function ExampleGallery({
                   {f ?? "All"}{" "}
                   <small>
                     {f === null
-                      ? examples.length
-                      : examples.filter((e) => e.family === f).length}
+                      ? entries.length
+                      : entries.filter((e) => e.example.family === f).length}
                   </small>
                 </button>
               ))}
@@ -372,19 +409,22 @@ export function ExampleGallery({
                 <section key={g.family} aria-label={g.family}>
                   <h3>{g.family}</h3>
                   <div className="gallery-grid">
-                    {g.items.map(({ example, index }) => (
+                    {g.items.map(({ example, index, loom }) => (
                       <button
-                        key={index}
+                        key={`${loom ? "l" : "c"}${index}`}
                         type="button"
                         className="example-card"
-                        data-example={index}
+                        data-example={loom ? undefined : index}
+                        data-loom-example={loom ? index : undefined}
                         data-example-title={example.title}
                         data-example-slug={slug(example.title)}
                         data-fingerprint={example.fingerprint}
-                        aria-current={index === current ? "true" : undefined}
+                        aria-current={
+                          !loom && index === current ? "true" : undefined
+                        }
                         aria-label={example.title}
-                        aria-describedby={`${currentId}-c${index}`}
-                        onClick={() => choose(index)}
+                        aria-describedby={`${currentId}-${loom ? "l" : "c"}${index}`}
+                        onClick={() => (loom ? openLoom(index) : choose(index))}
                       >
                         <ExampleThumb
                           example={example}
@@ -397,7 +437,7 @@ export function ExampleGallery({
                         </span>
                         <span
                           className="example-card-caption"
-                          id={`${currentId}-c${index}`}
+                          id={`${currentId}-${loom ? "l" : "c"}${index}`}
                         >
                           {example.caption}
                         </span>

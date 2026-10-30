@@ -188,6 +188,17 @@ test("anchoring contour normals preserves checkbox clicks and scalar blur in Web
     exact: true,
   });
   await expect(stable).toBeChecked();
+  // The example card shrinks once its thumbnail appears, and the drawing
+  // grows once it arrives, each moving the checkbox; a click between a
+  // stability check and either shift lands beside the label.
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(page.locator(".example-trigger .example-thumb")).toHaveAttribute(
+    "data-state",
+    "ready",
+  );
   await page
     .getByRole("textbox", { name: "Shape parameter a", exact: true })
     .fill("pi/7");
@@ -1900,4 +1911,59 @@ test("phrase keys survive scalar blur, invalid drafts and seek in WebKit at phon
   await expect(page.locator("#artwork")).not.toHaveAttribute(
     "data-animation-progress",
   );
+});
+
+test("complex loom entry, scalar blur, paired phone controls and return preserve focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entry = page.getByRole("button", {
+    name: "Open complex loom",
+    exact: true,
+  });
+  await entry.click();
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d).toHaveAttribute("data-quiet", "");
+  await expect(
+    d.getByRole("button", { name: "Return to study", exact: true }),
+  ).toBeFocused();
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  const family = (await d
+    .getByLabel("Source family", { exact: true })
+    .boundingBox())!;
+  const art = (await d.locator(".loom-panes").boundingBox())!;
+  expect(family.y + family.height).toBeLessThan(art.y);
+  await d.getByText("Source settings", { exact: true }).click();
+  const slider = d.getByLabel("Source parameter", { exact: true });
+  await slider.press("End");
+  await expect(d.locator(".loom-correspondence")).toHaveAttribute(
+    "data-parameter",
+    String(2 * Math.PI),
+  );
+  await slider.press("Home");
+  await expect(d.locator(".loom-correspondence")).toHaveAttribute(
+    "data-parameter",
+    "0",
+  );
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  // The button opens the study's own curve; the circle fields belong to a
+  // family.
+  await d.getByLabel("Source family", { exact: true }).selectOption("rosette");
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await d.getByLabel("Circle radius", { exact: true }).fill("1/phi");
+  await d.getByLabel("Source family", { exact: true }).selectOption("grid");
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  const first = await d.locator(".pair").first().boundingBox();
+  const second = await d.locator(".pair").nth(1).boundingBox();
+  expect(second!.y - first!.y - first!.height).toBeGreaterThanOrEqual(0);
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await expect(entry).toBeFocused();
+  await expect(
+    entry.locator("xpath=ancestor::div[@class='fit-entry'][1]"),
+  ).toHaveAttribute("data-quiet", "");
 });

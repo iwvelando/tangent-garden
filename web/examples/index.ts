@@ -6,6 +6,7 @@ import {
   type ThumbnailSource,
 } from "../ExampleGallery";
 import { presets } from "../presets";
+import { loomPresets, presetDefinition } from "../loom/model";
 import { spatialPresets } from "../spatial/presets";
 import { defaultSight, isPlain } from "../spatial/sight";
 import { composes } from "../spatial/types";
@@ -70,6 +71,16 @@ export const planarExamples: Example[] = presets.map((p) => ({
         }
       : p.config,
   ),
+}));
+
+// The complex loom's authored families open the loom over the study rather
+// than replacing it. Their thumbnails show the image plane as it opens.
+export const loomExamples: Example[] = loomPresets.map((p, i) => ({
+  title: p.title,
+  caption: p.note,
+  family: "Complex maps",
+  keywords: `complex loom square squaring z² ${p.kind}`,
+  fingerprint: fingerprint(presetDefinition(i)),
 }));
 
 export const spatialExamples: Example[] = spatialPresets.map((p) => ({

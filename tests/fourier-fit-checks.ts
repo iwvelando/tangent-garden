@@ -289,8 +289,9 @@ export async function checkFitMouseAndReturn(page: Page) {
     camera,
   );
   const entry = page.getByRole("button", { name: "Draw a loop", exact: true });
+  const entryBox = page.locator(".fit-entry").filter({ has: entry });
   await expect(entry).toBeFocused();
-  await expect(page.locator(".fit-entry")).toHaveAttribute("data-quiet", "");
+  await expect(entryBox).toHaveAttribute("data-quiet", "");
   await entry.press("Enter");
   await expect(fitDialog(page)).toBeVisible();
   await expect(
@@ -298,8 +299,5 @@ export async function checkFitMouseAndReturn(page: Page) {
   ).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(entry).toBeFocused();
-  await expect(page.locator(".fit-entry")).not.toHaveAttribute(
-    "data-quiet",
-    "",
-  );
+  await expect(entryBox).not.toHaveAttribute("data-quiet", "");
 }

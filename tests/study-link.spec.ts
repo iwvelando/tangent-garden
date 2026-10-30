@@ -2958,3 +2958,154 @@ test("phrase caption placement is a strictly conformed opt-in and older links ke
     expect(() => planarStudy(study)).toThrow(/phraseLabelInDrawing/);
   }
 });
+
+test("loom links conform complete settings and keep older planar links unchanged", async () => {
+  const { defaultLoom } = await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  const expected = structuredClone(ordinary);
+  const loom = defaultLoom(ordinary.config);
+  loom.selected = 3;
+  loom.parameter = 1.25;
+  loom.views.image = { x: 21, y: -12, zoom: 2.5 };
+  const study = { ...ordinary, loom };
+  const saved = planarStudy(study);
+  assert.deepEqual(saved.loom, loom);
+  const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+  assert.deepEqual(planarStudy(decoded.study).loom, loom);
+  assert.deepEqual(planarStudy(ordinary), expected);
+  assert.throws(
+    () => planarStudy({ ...study, loom: { ...loom, map: "eval" } }),
+    LinkError,
+  );
+  assert.throws(
+    () => planarStudy({ ...study, loom: { ...loom, selected: 99 } }),
+    LinkError,
+  );
+  assert.throws(
+    () =>
+      planarStudy({
+        ...study,
+        loom: { ...loom, source: { ...loom.source, kind: "implicit" } },
+      }),
+    LinkError,
+  );
+});
+
+test("loom ownership coalesces changes and rejects stale/canceled replies", async () => {
+  const { LoomSession } = await import("../web/loom/session");
+  const { defaultLoom, loomRequest } = await import("../web/loom/model");
+  const q = loomRequest(defaultLoom(planarPreset(0).config));
+  const replies: ((v: any) => void)[] = [];
+  let inFlight = 0,
+    peak = 0,
+    calls = 0,
+    disposed = false;
+  const client = {
+    loom: async () => {
+      calls++;
+      peak = Math.max(peak, ++inFlight);
+      return new Promise((resolve) =>
+        replies.push((v) => {
+          inFlight--;
+          resolve(v);
+        }),
+      );
+    },
+    dispose: () => {
+      disposed = true;
+    },
+  };
+  const shown: number[] = [];
+  const session = new LoomSession(() => client as any);
+  session.update(
+    q,
+    false,
+    () => shown.push(1),
+    () => assert.fail("unexpected refusal"),
+  );
+  session.update(
+    { ...q, selected: 1 },
+    false,
+    () => shown.push(2),
+    () => {},
+  );
+  session.update(
+    { ...q, selected: 2 },
+    false,
+    () => shown.push(3),
+    () => {},
+  );
+  assert.equal(calls, 1);
+  replies.shift()!({});
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(shown, []);
+  assert.equal(calls, 2);
+  replies.shift()!({});
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(shown, [3]);
+  assert.equal(peak, 1);
+  session.update(
+    q,
+    true,
+    () => shown.push(4),
+    () => {},
+  );
+  session.cancel();
+  replies.shift()!({});
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(shown, [3]);
+  assert.equal(disposed, true);
+});
+
+test("loom traversal preserves exact entered endpoints under cancellation in subtraction", async () => {
+  const { defaultLoom, traversal } = await import("../web/loom/model");
+  const s = defaultLoom(planarPreset(0).config);
+  s.source.kind = "curve";
+  s.source.curve.min = -10000;
+  s.source.curve.max = 0.001;
+  assert.equal(traversal(s, 0).parameter, -10000);
+  assert.equal(traversal(s, 1).parameter, 0.001);
+  assert.equal(traversal(s, -0.2).parameter, -10000);
+  assert.equal(traversal(s, 1.2).parameter, 0.001);
+});
+
+test("loom replaces a timed-out worker before processing coalesced replacement work", async () => {
+  const { LoomSession } = await import("../web/loom/session");
+  const { defaultLoom, loomRequest } = await import("../web/loom/model");
+  const q = loomRequest(defaultLoom(planarPreset(0).config));
+  let rejectFirst: (e: Error) => void = () => {};
+  let created = 0,
+    disposed = false,
+    shown = false;
+  const session = new LoomSession(() => {
+    created++;
+    if (created === 1)
+      return {
+        loom: () => new Promise((_r, reject) => (rejectFirst = reject)),
+        dispose: () => (disposed = true),
+      } as any;
+    assert.equal(
+      disposed,
+      true,
+      "old worker must terminate before its replacement starts",
+    );
+    return { loom: async () => ({}), dispose: () => {} } as any;
+  });
+  session.update(
+    q,
+    false,
+    () => assert.fail("obsolete work"),
+    () => {},
+  );
+  session.update(
+    { ...q, selected: 1 },
+    false,
+    () => (shown = true),
+    () => {},
+  );
+  rejectFirst(new Error("Calculation timed out."));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(created, 2);
+  assert.equal(shown, true);
+  session.cancel();
+});

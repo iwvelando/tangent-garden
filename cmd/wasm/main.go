@@ -14,6 +14,7 @@ import (
 
 func main() {
 	registerFourierFit()
+	registerLoom()
 	hyper := js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) != 1 {
 			return `{"error":"expected one tesseract JSON request"}`
