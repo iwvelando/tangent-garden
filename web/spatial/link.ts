@@ -323,6 +323,17 @@ const config: SchemaOf<SpatialConfig> = {
               length: "number",
               samples: "number",
               selected: "number",
+              // A carried arrow; links made before it have none.
+              transport: {
+                optional: {
+                  fields: {
+                    path: { options: { thread: true, triangle: true } },
+                    angle: "number",
+                    size: "number",
+                    arrows: "number",
+                  },
+                },
+              },
             },
           },
         },

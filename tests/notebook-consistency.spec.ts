@@ -153,7 +153,7 @@ test("each 3D example names itself above a shared construction title", async ({
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
-  expect(titles).toHaveLength(144);
+  expect(titles).toHaveLength(146);
   // The construction, not the example, titles the drawing.
   const involutes = [
     "A staircase's shadow, unwinding",
@@ -241,6 +241,10 @@ test("each 3D example names itself above a shared construction title", async ({
     "A torus woven from one point",
     "Great circles through a pole",
   ];
+  const arrows = [
+    "The arrow that came home turned",
+    "An arrow carried along a torus thread",
+  ];
   const mirrors = [
     "A paraboloid gathering light",
     "A tilted beam folding into coma",
@@ -324,17 +328,19 @@ test("each 3D example names itself above a shared construction title", async ({
                             ? "A surface and its centers of curvature"
                             : threads.includes(label)
                               ? "Threads that go straight on a surface"
-                              : mirrors.includes(label)
-                                ? "A mirror and its caustics"
-                                : interfaces.includes(label)
-                                  ? "An interface and its caustics"
-                                  : levels.includes(label)
-                                    ? "A level surface and its sections"
-                                    : "A ribbon of tangent lines",
+                              : arrows.includes(label)
+                                ? "An arrow carried along a surface"
+                                : mirrors.includes(label)
+                                  ? "A mirror and its caustics"
+                                  : interfaces.includes(label)
+                                    ? "An interface and its caustics"
+                                    : levels.includes(label)
+                                      ? "A level surface and its sections"
+                                      : "A ribbon of tangent lines",
     );
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
-  expect(eyebrows.size).toBe(144);
+  expect(eyebrows.size).toBe(146);
   expect(eyebrows).toContain("THREE HARMONICS; THE THREAD PAUSES TWICE");
   await choosePreset(page, { label: titles[4] });
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");

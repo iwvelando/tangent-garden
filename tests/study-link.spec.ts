@@ -709,6 +709,36 @@ test("3D and 4D fields are refused by name", async () => {
           selected: 1,
         }),
     ],
+    [
+      "config.surface.geodesics.transport.path",
+      (s) =>
+        (s.config.surface.geodesics = {
+          u: 0,
+          v: 0,
+          direction: 0,
+          spread: 0,
+          count: 1,
+          length: 2,
+          samples: 100,
+          selected: 1,
+          transport: { path: "square", angle: 0, size: 0.3, arrows: 1 },
+        }),
+    ],
+    [
+      "config.surface.geodesics.transport.size",
+      (s) =>
+        (s.config.surface.geodesics = {
+          u: 0,
+          v: 0,
+          direction: 0,
+          spread: 0,
+          count: 1,
+          length: 2,
+          samples: 100,
+          selected: 1,
+          transport: { path: "thread", angle: 0, size: "big", arrows: 1 },
+        }),
+    ],
     ["view.pitch", (s) => (s.view.pitch = 2)],
     ["view.zoom", (s) => (s.view.zoom = 1001)],
     ["probe.position", (s) => (s.probe.position = 1.5)],
@@ -885,6 +915,24 @@ test("fields a link predates take the notebook's defaults", async () => {
     );
     delete threaded.config.surface.geodesics;
     assert.equal("geodesics" in spatialStudy(threaded).config.surface, false);
+  }
+  // A fan drawn before an arrow could be carried has none, and one with an
+  // arrow keeps its path, angle, length and reference count.
+  for (const name of [
+    "The arrow that came home turned",
+    "An arrow carried along a torus thread",
+  ]) {
+    const index = spatialPresets.findIndex((p) => p.name === name);
+    const carried = spatial(index) as any;
+    assert.deepEqual(
+      spatialStudy(carried).config.surface.geodesics,
+      spatialPresets[index].config.surface.geodesics,
+    );
+    delete carried.config.surface.geodesics.transport;
+    assert.equal(
+      "transport" in spatialStudy(carried).config.surface.geodesics,
+      false,
+    );
   }
   // A receiver placed before it could turn stands square to its axis.
   const turned = spatial(
@@ -2620,7 +2668,15 @@ test("a delta ignores member order, so reordered unchanged data adds nothing", a
         notebook === "2d"
           ? { layers: { definitionGuides: true, rollingGuides: true } }
           : notebook === "3d"
-            ? { layers: { selected: true, threads: true } }
+            ? {
+                layers: {
+                  selected: true,
+                  threads: true,
+                  route: true,
+                  carried: true,
+                  references: true,
+                },
+              }
             : {},
     });
     assert.deepEqual((await readStudyLink(t)).study, study);

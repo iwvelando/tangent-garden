@@ -81,6 +81,27 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
             },
           ] as const)
         : []),
+      // A carried arrow: the triangle in the curves' ink, the arrow in
+      // rust and its references in slate.
+      ...(c.surface.geodesics?.transport
+        ? ([
+            ...(c.surface.geodesics.transport.path === "triangle"
+              ? ([
+                  {
+                    layer: "route",
+                    swatch: "thread-dot",
+                    label: "Octant triangle",
+                  },
+                ] as const)
+              : []),
+            { layer: "carried", swatch: "focal-dot", label: "Carried arrow" },
+            {
+              layer: "references",
+              swatch: "focal-dot second",
+              label: "Reference arrows",
+            },
+          ] as const)
+        : []),
     ];
   // A curve study: the curve (a derived input drawn as the curve, or a
   // field's or pursuit's first path), what its construction draws in the
@@ -138,7 +159,7 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
       ? [
           {
             layer: "parent",
-            swatch: "parent-dot",
+            swatch: "focal-dot second",
             label: "Base curve",
           } as const,
         ]

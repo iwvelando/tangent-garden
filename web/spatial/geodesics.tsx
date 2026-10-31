@@ -5,10 +5,13 @@ import { tiered, type Help } from "../help";
 import {
   maxGeodesicSamples,
   maxGeodesicThreads,
+  maxTransportArrows,
   type GeodesicConfig,
   type GeodesicResult,
   type SurfaceConfig,
   type SurfaceKind,
+  type TransportConfig,
+  type TransportPath,
 } from "./types";
 export { revealGeodesics, threadPath } from "./geodesic-path";
 
@@ -257,4 +260,153 @@ export function GeodesicFields({
       </div>
     </>
   );
+}
+
+// Carrying an arrow starts it along the selected thread at a right angle to
+// it, to its left, drawn about a third of the sphere's radius or half the
+// tube's, to two figures, with eight reference arrows.
+export function transportDefaults(s: SurfaceConfig): TransportConfig {
+  const r =
+    s.kind === "torus"
+      ? 0.5 * Math.abs(s.b)
+      : 0.3 * Math.max(Math.abs(s.a), Math.abs(s.b), Math.abs(s.c));
+  return {
+    path: "thread",
+    angle: 90,
+    size: Number((Number.isFinite(r) && r > 0 ? r : 0.3).toPrecision(2)),
+    arrows: 8,
+  };
+}
+
+// Carrying a tangent arrow (`surface.geodesics.transport`). Absent means
+// off, as in links made before it.
+export const transportHelp = tiered(
+  "Carries a tangent arrow along a path without turning it within the surface: parallel transport.",
+  "It stays a unit tangent vector and is never reset at a corner, so a closed path can bring it home turned. Play moves it along its path and holds where it arrives.",
+);
+export const transportFieldHelp = {
+  path: tiered(
+    "The selected thread, or on a sphere the octant triangle.",
+    "The triangle runs from (r, 0, 0) to (0, r, 0), (0, 0, r) and back along quarter great circles. A torus has no triangle.",
+  ),
+  angle: tiered(
+    "Degrees from the path's direction toward its left, N × T.",
+    "N points out of the sphere or the tube, whichever way the normal is set; within ±100000.",
+  ),
+  size: tiered(
+    "How long it is drawn; the carried vector has length 1.",
+    "Above 0 and at most 100000, in the surface's units.",
+  ),
+  arrows: tiered(
+    `0–${maxTransportArrows} left along the way, the first at the start.`,
+    "They stand at equal arc lengths along the path and appear as Play passes them.",
+  ),
+} satisfies Record<string, Help<string>>;
+
+const pathLabels: Record<TransportPath, string> = {
+  thread: "Selected thread",
+  triangle: "Octant triangle",
+};
+
+// The arrow's own fields, shown while it is carried.
+export function TransportFields({
+  t,
+  vector,
+  set,
+}: {
+  t: TransportConfig;
+  vector: Vector;
+  set: (change: (t: TransportConfig) => TransportConfig) => void;
+}) {
+  return (
+    <>
+      <div className="pair">
+        <Field label="Arrow's path" help={transportFieldHelp.path}>
+          <select
+            value={t.path}
+            onChange={(e) => {
+              const path = e.target.value as TransportPath;
+              set((t) => ({ ...t, path }));
+            }}
+          >
+            {(Object.keys(pathLabels) as TransportPath[]).map((p) => (
+              <option key={p} value={p}>
+                {pathLabels[p]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {vector(
+          "Arrow angle α (°)",
+          t.angle,
+          (angle) => set((t) => ({ ...t, angle })),
+          transportFieldHelp.angle,
+        )}
+      </div>
+      <div className="pair">
+        {vector(
+          "Arrow length",
+          t.size,
+          (size) => set((t) => ({ ...t, size })),
+          transportFieldHelp.size,
+        )}
+        <Whole
+          label="Reference arrows"
+          value={t.arrows}
+          min={0}
+          max={maxTransportArrows}
+          help={transportFieldHelp.arrows}
+          onChange={(arrows) => set((t) => ({ ...t, arrows }))}
+        />
+      </div>
+    </>
+  );
+}
+
+const signed = (radians: number) => {
+  const d = (radians * 180) / Math.PI;
+  return `${d > 0 ? "+" : d < 0 ? "−" : ""}${format(Math.abs(d))}°`;
+};
+
+// Where the arrow went and how it came back, how well it kept its length
+// and tangency, and the colors.
+export function transportNote(
+  g: GeodesicResult,
+  config: TransportConfig,
+  scheme: ColorScheme,
+): string[] {
+  const tr = g.transport;
+  if (!tr || tr.unavailable) return [];
+  const out: string[] = [];
+  if (tr.path === "triangle")
+    out.push(
+      `Around the octant triangle the arrow comes home turned ${signed(tr.holonomy)} about the outward normal: the area enclosed, πr²/2, times the curvature 1/r².`,
+    );
+  else if (tr.returns)
+    out.push(
+      `Thread ${g.selected} returns to its start, and the arrow comes home turned ${signed(tr.holonomy)}, keeping its angle to the thread as along any geodesic.`,
+    );
+  else
+    out.push(
+      `Along thread ${g.selected} the arrow keeps its ${format(config.angle)}° angle to the thread, as along any geodesic.`,
+    );
+  if (tr.reason === "exhausted")
+    out.push(
+      `It ran out of its share of the 200,000 steps at ${format(tr.reached)}.`,
+    );
+  else if (tr.reason === "unresolved")
+    out.push(`It could not be integrated past ${format(tr.reached)}.`);
+  const drift = Math.max(tr.drift.norm, tr.drift.tangency);
+  out.push(
+    drift < 1e-12
+      ? "Its length stays 1 and it stays tangent to rounding."
+      : `Its length stays 1 and it stays tangent within ${format(drift)}.`,
+  );
+  out.push(
+    describeColors(
+      "The arrow is drawn in rust, its reference arrows in slate.",
+      scheme,
+    ),
+  );
+  return out;
 }

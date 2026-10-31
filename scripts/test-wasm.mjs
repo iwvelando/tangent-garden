@@ -3183,6 +3183,49 @@ console.log("WASM surface: sphere, torus and validation passed");
   );
   // Without threads the surface is unchanged, and the key is absent.
   assert.ok(!("geodesics" in fan({}, undefined).surface));
+  // An arrow carried around the octant triangle comes home along +z,
+  // turned π/2, its arrays restored from the typed transport.
+  const octant = fan(
+    {},
+    { ...g, transport: { path: "triangle", angle: 0, size: 0.3, arrows: 3 } },
+  ).surface.geodesics.transport;
+  assert.equal(octant.unavailable, undefined);
+  assert.equal(octant.samples.arcs.length, 67);
+  assert.deepEqual(octant.corners.length, 2);
+  const home = octant.samples.vectors.at(-1);
+  assert.ok(Math.hypot(home.x, home.y, home.z - 1) < 1e-14);
+  assert.ok(Math.abs(octant.holonomy - Math.PI / 2) < 1e-14);
+  assert.equal(octant.references.vectors.length, 3);
+  // Along a torus thread it keeps its right angle to the thread.
+  const along = fan(torus, {
+    ...g,
+    direction: 70,
+    length: 40,
+    samples: 400,
+    transport: { path: "thread", angle: 90, size: 0.3, arrows: 0 },
+  }).surface.geodesics;
+  const carried = along.transport;
+  assert.equal(carried.reason, "end");
+  assert.equal(carried.samples.vectors.length, 401);
+  carried.samples.vectors.forEach((v, k) => {
+    const t = carried.samples.tangents[k];
+    assert.ok(Math.abs(v.x * t.x + v.y * t.y + v.z * t.z) < 1e-9);
+    assert.ok(Math.abs(Math.hypot(v.x, v.y, v.z) - 1) < 1e-9);
+  });
+  assert.equal(
+    fan(torus, {
+      ...g,
+      transport: { path: "triangle", angle: 90, size: 0.3, arrows: 0 },
+    }).surface.geodesics.transport.unavailable,
+    "The octant triangle lies on a sphere; on a torus the arrow can follow the selected thread.",
+  );
+  assert.match(
+    fan(
+      {},
+      { ...g, transport: { path: "thread", angle: 0, size: 0, arrows: 0 } },
+    ).error,
+    /arrow's length must be above 0/,
+  );
 }
 console.log("WASM geodesics: sphere, torus, transport and refusals passed");
 const spatialRays = (surface, rays, flags = {}) =>
