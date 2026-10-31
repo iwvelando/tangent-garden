@@ -23,6 +23,12 @@ Excluded:
 
 <!-- Set native blocked-by relationships too. Explain what is consumed and delivered. -->
 
+## Application integration and user path
+
+<!-- Entry, edit/explore, share/export, return/adopt; source/view/preference ownership.
+     Name existing application precedents and intentional departures. The implementer
+     records concrete reuse decisions and performs the contributor walkthrough before preview. -->
+
 ## Design constraints
 
 <!-- Mathematical definitions, invariants, state/compatibility semantics and work bounds.

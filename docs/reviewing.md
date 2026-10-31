@@ -23,6 +23,12 @@ Load guidance by the behavior touched; there is no need to read every topic for 
 | Settings, controls, defaults, help or changed limits | [Documentation and indirect behavior](contributing.md#documentation-and-indirect-behavior); the applicable preset, field, link and layout procedures |
 | Asynchronous controls, playback tests or flaky CI | [Running the tests](contributing.md#running-the-tests), [CI shards](contributing.md#ci-shards), and [Safari and iOS](contributing.md#safari-and-ios) when applicable |
 
+## Application consistency and complete flows
+
+For a new or substantially changed interface, read the implementation's integration plan and [Application integration and user walkthrough](contributing.md#application-integration-and-user-walkthrough). Compare the actual entry, retained study/view ownership, preferences, controls, gestures, help/errors and sharing/export experience with the named application precedents. Follow a complete user flow, including return and incoming links, rather than assessing only the signature artwork or isolated components. Use browser interaction and targeted tests for the material risks; report which layouts and input methods were actually exercised. Passing screenshots do not establish reachable controls or correct scrolling.
+
+Treat owner-approved product choices as context, not proof of correctness. Independently check supported edited inputs beyond the authored presets, including domain gaps and degenerate cases relevant to the numerical path. Distinguish a deliberate product difference from a bug or an unapproved scope change. Do not redesign a sound interface to satisfy a preference the owner has not expressed. Material product changes made during an authorized takeover return to the exploration checkpoint before final verification.
+
 ## Challenge the approach
 
 Identify the assumption most likely to fail and choose a small experiment that could disprove it. For numerics, examine both false acceptance and false rejection under the relevant transformations and near the decision boundary. For state, examine request sequences and storage ownership. For a new option, trace indirect effects and the transition back from edited values. For performance, inspect nested work and eager construction before interpreting timing; after an allocation saving, check that the path's existing allocation bounds, not only the new one, still reject the regressions they name. The contributing procedures specify the detailed checks.
