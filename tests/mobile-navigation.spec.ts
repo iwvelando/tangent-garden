@@ -221,6 +221,40 @@ test("mobile navigation stays at the top of a visual viewport the keyboard panne
   await expect.poll(top).toBe(0);
 });
 
+// Dismissing the keyboard, iOS returns the screen to the top at once but
+// goes on reporting the old offset until its next viewport event (measured
+// on an iPhone: 93px for a moment after the blur). The navigation returns
+// with the screen rather than following the stale offset; only an offset
+// still reported after the blur, as when iOS leaves the screen panned, moves
+// it again. Moving between fields never lets it go.
+test("mobile navigation returns with the screen when the keyboard is dismissed", async ({
+  page,
+}) => {
+  const keyboard = await scriptedKeyboard(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Notebook sections" });
+  await nav.getByRole("button", { name: "Controls", exact: true }).click();
+  const field = (name: string) =>
+    page.getByRole("spinbutton", { name, exact: true });
+  await field("Numerical samples").scrollIntoViewIfNeeded();
+  const top = async () => (await nav.boundingBox())!.y;
+  await field("Numerical samples").focus();
+  await keyboard(195, 447);
+  await expect.poll(top).toBe(195);
+  await keyboard(93, 447);
+  await expect.poll(top).toBe(93);
+  // To another field, with the keyboard still open.
+  const next = page.locator(".app:visible aside input[type=text]").first();
+  await next.focus();
+  expect(await top()).toBe(93);
+  // Dismissed: the offset still reads 93, with no event yet.
+  await next.blur();
+  await expect.poll(top, { timeout: 300 }).toBe(0);
+  await keyboard(0, 796);
+  expect(await top()).toBe(0);
+});
+
 for (const [name, offsetTop, fieldTop] of [
   // The keyboard covers a field near the bottom of the screen.
   ["below the keyboard", 0, 700],

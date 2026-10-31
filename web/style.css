@@ -56,8 +56,8 @@ fieldset:disabled {
   border-radius: 6px;
   margin: 12px 0;
 }
-.animation-track .pair .field {
-  margin-top: 0;
+.animation-track .pair:has(> .field) {
+  padding-top: 0;
 }
 .phrase-phases {
   padding-left: 22px;
@@ -539,16 +539,26 @@ input[type="range"] {
    Labels align to the bottom of their row, so a wrapped label keeps the
    controls level, and help opens in its own row below both controls instead
    of pushing the neighboring field down. */
+/* A pair of fields owns the clearance a field's margins give it: WebKit leaves subgrid
+   children's margins out of the pair's height (on iOS until a native
+   control lays it out again; in Safari, after it), so a checkbox or note
+   below would touch the controls (docs/contributing.md, Side-by-side
+   fields). Padding does not collapse, so pairs and fields keep their
+   spacing. */
 .pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
   column-gap: 10px;
+}
+.pair:has(> .field) {
+  padding-block: 14px;
 }
 .pair > .field {
   display: grid;
   grid-row: span 4;
   grid-template-rows: subgrid;
   row-gap: 0;
+  margin: 0;
 }
 .pair > .field > .field-label {
   align-self: end;
@@ -1502,8 +1512,8 @@ header {
 /* The engraving's range pair sits between ordinary fields, whose margins
    own the gaps on either side; its subgrid children add none (see
    docs/contributing.md, Side-by-side fields). */
-.family-panel .pair > .field {
-  margin: 0;
+.family-panel .pair:has(> .field) {
+  padding-block: 0;
 }
 .probe-slider input {
   width: 100%;

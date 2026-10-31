@@ -615,7 +615,7 @@ func TestSurfaceJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"format":"surface","surface":{"kind":"ellipsoid","a":1,"b":2,"c":3,"uMin":0,"uMax":1,"vMin":-1,"vMax":1,"uSamples":12,"vSamples":14,"curves":5,"reverse":true,"offset":-0.5,"reach":0.25,"edges":true,"ridges":true}}`), &c); err != nil {
 		t.Fatal(err)
 	}
-	want := SurfaceRequest{"ellipsoid", 1, 2, 3, 0, 1, -1, 1, 12, 14, 5, true, -.5, .25, true, true}
+	want := SurfaceRequest{"ellipsoid", 1, 2, 3, 0, 1, -1, 1, 12, 14, 5, true, -.5, .25, true, true, nil}
 	if c.Surface != want {
 		t.Fatalf("%+v", c.Surface)
 	}

@@ -47,7 +47,14 @@ export function NotebookMain({
   // field until the offset next returns to zero. Any other offset is the
   // page bouncing past its end, which the navigation rides with the page.
   const keyboard = useRef(false);
-  const navTop = () => (keyboard.current ? screenTop() : 0);
+  // Dismissing the keyboard, iOS returns the screen to the top at once but
+  // goes on reporting the old offset until its next viewport event: from
+  // leaving a field until then, the navigation stays at the screen's top.
+  // An offset reported after that, as when iOS leaves the screen panned,
+  // moves it again.
+  const dismissed = useRef(false);
+  const navTop = () =>
+    keyboard.current && !dismissed.current ? screenTop() : 0;
   const [inControls, setInControls] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const narrow = useMediaQuery("(max-width: 700px)");
@@ -89,16 +96,38 @@ export function NotebookMain({
           aside.getBoundingClientRect().top <= top + bar.offsetHeight + 1,
         );
     };
+    const reported = () => {
+      dismissed.current = false;
+      update();
+    };
+    const left = (e: FocusEvent) => {
+      if (!(e.target instanceof Element) || !e.target.matches(editable)) return;
+      // Moving to another field keeps the keyboard open.
+      if (
+        e.relatedTarget instanceof Element &&
+        e.relatedTarget.matches(editable)
+      )
+        return;
+      dismissed.current = true;
+      update();
+    };
+    const entered = (e: FocusEvent) => {
+      if (e.target instanceof Element && e.target.matches(editable)) reported();
+    };
     update();
     window.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
-    viewport?.addEventListener("scroll", update);
-    viewport?.addEventListener("resize", update);
+    viewport?.addEventListener("scroll", reported);
+    viewport?.addEventListener("resize", reported);
+    document.addEventListener("focusout", left);
+    document.addEventListener("focusin", entered);
     return () => {
       window.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
-      viewport?.removeEventListener("scroll", update);
-      viewport?.removeEventListener("resize", update);
+      viewport?.removeEventListener("scroll", reported);
+      viewport?.removeEventListener("resize", reported);
+      document.removeEventListener("focusout", left);
+      document.removeEventListener("focusin", entered);
       if (nav.current) nav.current.style.top = "";
     };
   }, [narrow]);

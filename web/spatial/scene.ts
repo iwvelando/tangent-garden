@@ -1,3 +1,4 @@
+import { threadPath } from "./geodesic-path";
 import type {
   CuspidalEdge,
   HarmonicPosition,
@@ -103,7 +104,9 @@ export const initialView = { yaw: 0.3, pitch: 0.75, zoom: 1, panX: 0, panY: 0 };
 // left out (with crosses at poles and jumps) as their own layers. A curve
 // study's shadow on a plane draws the curve's shadow with the plane's
 // window, the 2D construction of that shadow, and the shadow of the study's
-// own construction, each as its own layer. The base
+// own construction, each as its own layer. A surface's geodesic threads are
+// drawn as the fan, with their starts and any early stops, and the selected
+// thread again, broad, as their own layers. The base
 // curve is always drawn. When a construction is built on a derived input
 // curve, that curve is drawn as the base, and the base curve itself is the
 // parent, with the projection's connectors and pole, or an involute's
@@ -150,6 +153,8 @@ export type Layers = {
   shadow: boolean;
   planar: boolean;
   cast: boolean;
+  threads: boolean;
+  selected: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -193,6 +198,8 @@ export const defaultLayers: Layers = {
   shadow: true,
   planar: true,
   cast: true,
+  threads: true,
+  selected: true,
 };
 
 // A receiver bin's shade: the irradiance's log over three decades below
@@ -961,6 +968,37 @@ function buildSingleScene(result: SpatialResult) {
   const surface = result.surface,
     rays = result.rays,
     patch = surface ?? rays;
+  // Geodesic threads shade from teal to gold by fan order (decorative),
+  // each joined along its samples and on to where it stopped; the start
+  // and any early stop are marked, the latter only once a reveal reaches
+  // it. The selected thread is drawn again, broad, in the curves' ink.
+  const fan = surface?.geodesics;
+  const fanPaths = (fan?.threads ?? []).map((th) =>
+    joined(threadPath(th, fan!.step).points),
+  );
+  const geodesicThreads = batch(
+    [
+      ...fanPaths.flatMap((points, k) =>
+        vertices(points, fanPaths.length > 1 ? k / (fanPaths.length - 1) : 0),
+      ),
+      ...vertices([
+        ...(fan?.threads[0]
+          ? cross(fan.threads[0].points[0], result.bounds.radius * 0.02)
+          : []),
+        ...(fan?.threads ?? [])
+          .filter((th) => th.reason !== "end" && !th.partial)
+          .flatMap((th) => cross(th.end, result.bounds.radius * 0.012)),
+      ]),
+    ],
+    "lines",
+    3,
+  );
+  const selectedThread = batch(
+    vertices(fan ? (fanPaths[fan.selected - 1] ?? []) : []),
+    "lines",
+    2,
+    2.2,
+  );
   const empty: SurfaceSheet = {
     points: [],
     normals: [],
@@ -1217,6 +1255,8 @@ function buildSingleScene(result: SpatialResult) {
     4,
   );
   return {
+    geodesicThreads,
+    selectedThread,
     mesh,
     base,
     minus,
@@ -1327,6 +1367,20 @@ export function scenePasses(
   s.focalCurves.forEach((f, k) => add(focal(k), layers[focal(k)], false, f));
   add("curves", layers.curves, false, s.sheetCurves);
   add("normals", layers.normals, false, s.normalLines);
+  // Only a study with threads has their passes, so the selected thread's
+  // broad stroke moves no other study's sheets.
+  add(
+    "threads",
+    layers.threads && s.geodesicThreads.data.length > 0,
+    false,
+    s.geodesicThreads,
+  );
+  add(
+    "selected",
+    layers.selected && s.selectedThread.data.length > 0,
+    false,
+    s.selectedThread,
+  );
   // As with a shadow's passes below, only a study with cuspidal edges or
   // ridges has their passes, so their stroke moves no other study's sheets.
   add(

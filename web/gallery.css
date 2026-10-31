@@ -353,15 +353,8 @@
     order: 3;
     flex-basis: 100%;
   }
-  /* One scrolling row of families, so the pictures start sooner. */
   .gallery-families {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
     padding: 0 16px 12px;
-  }
-  .gallery-families button {
-    flex-shrink: 0;
   }
   .gallery-grid-wrap {
     padding: 0 16px 24px;
@@ -369,5 +362,36 @@
   .gallery-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 14px;
+  }
+}
+/* A short window, as a phone on its side, gives the pictures every row it
+   has, as a phone held upright does. */
+@media (max-height: 560px) {
+  .gallery-body {
+    height: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .gallery-head {
+    padding-block: 12px 8px;
+  }
+}
+/* One scrolling row of families, so the pictures start sooner: on a phone
+   upright or on its side, and in any short window. A touch screen swipes
+   it, so it hides the scrollbar a mouse needs. */
+@media (max-width: 700px), (max-height: 560px) {
+  .gallery-families {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .gallery-families button {
+    flex-shrink: 0;
+  }
+}
+@media (pointer: coarse) {
+  .gallery-families {
+    scrollbar-width: none;
   }
 }

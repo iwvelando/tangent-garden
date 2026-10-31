@@ -67,6 +67,20 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
             } as const,
           ]
         : []),
+      ...(c.surface.geodesics
+        ? ([
+            {
+              layer: "threads",
+              swatch: "ribbon-dot",
+              label: "Geodesic threads",
+            },
+            {
+              layer: "selected",
+              swatch: "thread-dot",
+              label: "Selected thread",
+            },
+          ] as const)
+        : []),
     ];
   // A curve study: the curve (a derived input drawn as the curve, or a
   // field's or pursuit's first path), what its construction draws in the

@@ -3108,6 +3108,83 @@ const spatialSurface = (surface, study = {}) =>
   assert.match(spatialSurface({ curves: 1 }).error, /parameter curves/);
 }
 console.log("WASM surface: sphere, torus and validation passed");
+{
+  // Geodesic threads come through the typed transport: a sphere's great
+  // circles exactly, a torus's integrated threads with their unwrapped
+  // chart, and refusals and unavailable surfaces by name.
+  const fan = (surface, geodesics) =>
+    spatialSurface({ offset: 0, reach: 0, ...surface, geodesics });
+  const g = {
+    u: 0,
+    v: 0,
+    direction: 90,
+    spread: 0,
+    count: 1,
+    length: Math.PI * 1.5,
+    samples: 64,
+    selected: 1,
+  };
+  const round = fan({}, g).surface.geodesics;
+  assert.equal(round.surface, "sphere");
+  const pole = round.threads[0];
+  assert.equal(pole.points.length, 65);
+  // Northward from (1.5, 0, 0), over the pole at s = 3π/4.
+  for (const [k, want] of [
+    [0, [1.5, 0, 0]],
+    [32, [0, 0, 1.5]],
+    [64, [-1.5, 0, 0]],
+  ])
+    assert.ok(
+      Math.hypot(
+        pole.points[k].x - want[0],
+        pole.points[k].y - want[1],
+        pole.points[k].z - want[2],
+      ) < 1e-12,
+    );
+  assert.equal(pole.u, undefined);
+  const torus = {
+    kind: "torus",
+    a: 2,
+    b: 0.8,
+    c: 0,
+    vMin: 0,
+    vMax: 2 * Math.PI,
+  };
+  const woven = fan(torus, {
+    ...g,
+    direction: 70,
+    spread: 20,
+    count: 3,
+    length: 40,
+    samples: 400,
+    selected: 2,
+  }).surface.geodesics;
+  assert.equal(woven.surface, "torus");
+  assert.equal(woven.threads.length, 3);
+  for (const th of woven.threads) {
+    assert.equal(th.reason, "end");
+    assert.equal(th.points.length, 401);
+    assert.equal(th.u.length, 401);
+    const c0 =
+      th.points[0].x * th.tangents[0].y - th.points[0].y * th.tangents[0].x;
+    th.points.forEach((p, k) => {
+      assert.ok(
+        Math.abs(Math.hypot(Math.hypot(p.x, p.y) - 2, p.z) - 0.8) < 1e-9,
+      );
+      const t = th.tangents[k];
+      assert.ok(Math.abs(Math.hypot(t.x, t.y, t.z) - 1) < 1e-9);
+      assert.ok(Math.abs(p.x * t.y - p.y * t.x - c0) < 1e-9);
+    });
+  }
+  assert.match(fan(torus, { ...g, count: 40 }).error, /1–32 threads/);
+  assert.equal(
+    fan({ c: 1 }, g).surface.geodesics.unavailable,
+    "Geodesic threads need a sphere: give the ellipsoid equal axes a = b = c.",
+  );
+  // Without threads the surface is unchanged, and the key is absent.
+  assert.ok(!("geodesics" in fan({}, undefined).surface));
+}
+console.log("WASM geodesics: sphere, torus, transport and refusals passed");
 const spatialRays = (surface, rays, flags = {}) =>
   spatialResult(
     tangentGardenSpatial(

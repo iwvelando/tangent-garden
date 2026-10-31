@@ -5538,4 +5538,133 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // Sixteen geodesics leave one point of the outer equator of the ring
+  // torus R = 2, r = 0.8, within 15° of 65° from the parallel. Each keeps
+  // Clairaut's ρ cos ψ = 2.8 cos β: a thread whose constant exceeds
+  // R − r = 1.2 (β below about 64.6°) turns back before the inner equator
+  // and weaves a band round the outside, and one below it winds through the
+  // hole, so the fan straddles the two. Play reveals every thread along its
+  // arc length together; the eighth, at 64.1°, is selected.
+  {
+    name: "Threads finding their way around a torus",
+    detail:
+      "Nearby directions part: some weave a band outside, others wind through the hole",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        uSamples: 96,
+        vSamples: 48,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0,
+          direction: 65,
+          spread: 30,
+          count: 16,
+          length: 60,
+          samples: 2000,
+          selected: 8,
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    // The torus's second focal sheet, its axis, sets the bounds; the
+    // threads fill the view.
+    view: { ...initialView, zoom: 2.3, panX: 0, panY: 0 },
+    flight: { ...revealInPlace, duration: 14 },
+  },
+  // The same torus without its surface: a ring of 32 geodesics from one
+  // point of the outer equator, each 30 long, every direction at once. The
+  // threads near the parallel stay in the outer band, the steep ones wind
+  // through the hole, and between them the textile thickens where threads
+  // turn back.
+  {
+    name: "A torus woven from one point",
+    detail:
+      "Thirty-two geodesics in every direction, drawn without the surface",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        uSamples: 96,
+        vSamples: 48,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0,
+          direction: 0,
+          spread: 360,
+          count: 32,
+          length: 30,
+          samples: 1500,
+          selected: 1,
+        },
+      },
+    },
+    layers: {
+      surface: false,
+      curves: false,
+      normals: false,
+      focal1: false,
+      focal2: false,
+    },
+    // The torus's second focal sheet, its axis, sets the bounds; the
+    // threads fill the view.
+    view: { ...initialView, zoom: 2.3, panX: 0, panY: 0 },
+    flight: { ...revealInPlace, duration: 12 },
+  },
+  // Thirteen great circles of a sphere of radius 1.2 leave the equator at
+  // u = 0 within 60° of north, each one whole turn, 2πr, long. Every one
+  // passes through the antipode (−1.2, 0, 0) halfway round and closes on
+  // its start; the selected middle one, due north, runs over both poles.
+  {
+    name: "Great circles through a pole",
+    detail:
+      "A fan of great circles from one point meets again at its antipode and closes",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.2,
+        b: 1.2,
+        c: 1.2,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 72,
+        vSamples: 36,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0,
+          direction: 90,
+          spread: 120,
+          count: 13,
+          length: 2 * Math.PI * 1.2,
+          samples: 720,
+          selected: 7,
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    flight: { ...revealInPlace, duration: 10 },
+  },
 ];

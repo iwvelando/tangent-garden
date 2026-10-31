@@ -694,6 +694,21 @@ test("3D and 4D fields are refused by name", async () => {
     ],
     ["config.surface.edges", (s) => (s.config.surface.edges = "on")],
     ["config.surface.ridges", (s) => (s.config.surface.ridges = 1)],
+    ["config.surface.geodesics", (s) => (s.config.surface.geodesics = "on")],
+    [
+      "config.surface.geodesics.length",
+      (s) =>
+        (s.config.surface.geodesics = {
+          u: 0,
+          v: 0,
+          direction: 0,
+          spread: 0,
+          count: 1,
+          length: "2",
+          samples: 100,
+          selected: 1,
+        }),
+    ],
     ["view.pitch", (s) => (s.view.pitch = 2)],
     ["view.zoom", (s) => (s.view.zoom = 1001)],
     ["probe.position", (s) => (s.probe.position = 1.5)],
@@ -856,6 +871,21 @@ test("fields a link predates take the notebook's defaults", async () => {
   assert.equal(spatialStudy(ridged).config.surface.ridges, true);
   delete ridged.config.surface.ridges;
   assert.equal("ridges" in spatialStudy(ridged).config.surface, false);
+  // A surface drawn before geodesic threads could be launched has none,
+  // and one with threads keeps every field of its fan.
+  for (const name of [
+    "Threads finding their way around a torus",
+    "Great circles through a pole",
+  ]) {
+    const index = spatialPresets.findIndex((p) => p.name === name);
+    const threaded = spatial(index) as any;
+    assert.deepEqual(
+      spatialStudy(threaded).config.surface.geodesics,
+      spatialPresets[index].config.surface.geodesics,
+    );
+    delete threaded.config.surface.geodesics;
+    assert.equal("geodesics" in spatialStudy(threaded).config.surface, false);
+  }
   // A receiver placed before it could turn stands square to its axis.
   const turned = spatial(
     spatialPresets.findIndex((p) => p.config.rays.receiver.tilt),
@@ -2589,7 +2619,9 @@ test("a delta ignores member order, so reordered unchanged data adds nothing", a
       delta:
         notebook === "2d"
           ? { layers: { definitionGuides: true, rollingGuides: true } }
-          : {},
+          : notebook === "3d"
+            ? { layers: { selected: true, threads: true } }
+            : {},
     });
     assert.deepEqual((await readStudyLink(t)).study, study);
   }

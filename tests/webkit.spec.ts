@@ -1726,6 +1726,42 @@ for (const suppressMargins of [false, true])
     expect(first.below).toBe(first.ordinary);
   });
 
+// A checkbox below a pair keeps the pair's clearance: the pair owns it, so
+// it survives WebKit leaving subgrid children's margins out (modeled here as
+// on a phone's first paint) and Safari's own layout.
+for (const suppressMargins of [false, true])
+  test(`a checkbox below a surface's pair keeps its clearance (margin suppression ${suppressMargins})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    if (suppressMargins)
+      await page.addInitScript(() => {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(".pair > .field { margin: 0 !important }");
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      });
+    await page.goto("/?study=3d");
+    await choosePreset(page, { label: "A torus revealing its centers" });
+    const reach = page.getByRole("textbox", {
+      name: "Normal reach ℓ",
+      exact: true,
+    });
+    const ridges = page.locator(".probe-switch", { hasText: "Locate ridges" });
+    await expect(ridges).toBeVisible();
+    const offset = page.getByRole("textbox", { name: "Offset d", exact: true });
+    const gap = async () =>
+      (await ridges.boundingBox())!.y -
+      Math.max(
+        ...(await Promise.all(
+          [offset, reach].map(async (l) => {
+            const box = (await l.boundingBox())!;
+            return box.y + box.height;
+          }),
+        )),
+      );
+    expect(await gap()).toBeGreaterThanOrEqual(13);
+  });
+
 test("finite engraving shares Safari playback, slider keys and selected construction clicks", async ({
   page,
 }) => {

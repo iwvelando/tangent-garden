@@ -204,6 +204,13 @@ func similar(q Request, m similarity) (Request, Request, bool) {
 	}
 	c.Surface.Offset *= s
 	c.Surface.Reach *= s
+	if q.Surface.Geodesics != nil {
+		// A thread's length is a length; its start and directions are
+		// angles.
+		g := *q.Surface.Geodesics
+		g.Length *= s
+		c.Surface.Geodesics = &g
+	}
 	c.Rays.Source = m.point(q.Rays.Source)
 	c.Rays.Length *= s
 	if q.Shadow != nil {
@@ -308,6 +315,13 @@ var kinds = map[string]kind{
 	"surface.focal.normals": asUnchanged, "surface.focal.points": asPosition, "surface.lines.end": asPosition,
 	"surface.lines.point": asPosition, "surface.offset.normals": asUnchanged, "surface.offset.points": asPosition,
 	"surface.surface.normals": asUnchanged, "surface.surface.points": asPosition,
+	"surface.geodesics.length": asLength, "surface.geodesics.step": asLength,
+	"surface.geodesics.threads.points": asPosition, "surface.geodesics.threads.end": asPosition,
+	"surface.geodesics.threads.tangents": asUnchanged, "surface.geodesics.threads.endTangent": asUnchanged,
+	"surface.geodesics.threads.direction": asUnchanged, "surface.geodesics.threads.reached": asLength,
+	"surface.geodesics.threads.u": asUnchanged, "surface.geodesics.threads.v": asUnchanged,
+	"surface.geodesics.threads.endU": asUnchanged, "surface.geodesics.threads.endV": asUnchanged,
+	"surface.geodesics.threads.return.position": asUnchanged, "surface.geodesics.threads.return.direction": asUnchanged,
 	"surfaceDiagnostics.curvature": asCurvature, "surfaceDiagnostics.direction": asAxis,
 	"surfaceDiagnostics.focal": asPosition, "surfaceDiagnostics.normals": asUnchanged,
 	"surfaceDiagnostics.points": asPosition, "surfaceDiagnostics.u": asUnchanged, "surfaceDiagnostics.v": asUnchanged,

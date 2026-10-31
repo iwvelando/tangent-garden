@@ -1,3 +1,4 @@
+import { revealGeodesics } from "./geodesic-path";
 import {
   projectsInput,
   coilsInput,
@@ -117,7 +118,13 @@ type NamedTarget =
   | "sectionFrom"
   | "sectionTo"
   | "cells"
-  | "sectionCount";
+  | "sectionCount"
+  | "geodesicU"
+  | "geodesicV"
+  | "geodesicDirection"
+  | "geodesicSpread"
+  | "geodesicLength"
+  | "geodesicCount";
 // One coordinate of a vector field's seed, numbered from 1.
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
 // A pursuer's starting coordinate or speed, numbered from 1.
@@ -237,6 +244,12 @@ export const targetLabels: Record<NamedTarget, string> = {
   sectionTo: "Last offset d₁",
   cells: "Cells",
   sectionCount: "Section planes",
+  geodesicU: "Start u₀",
+  geodesicV: "Start v₀",
+  geodesicDirection: "Direction β (°)",
+  geodesicSpread: "Fan spread (°)",
+  geodesicLength: "Thread length L",
+  geodesicCount: "Threads",
 };
 const subscript = (n: number) =>
   String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
@@ -286,6 +299,17 @@ const surfaceFields = {
 } as const;
 const isSurface = (t: Target): t is keyof typeof surfaceFields =>
   t in surfaceFields;
+// Geodesic targets and the GeodesicConfig field each one moves.
+const geodesicFields = {
+  geodesicU: "u",
+  geodesicV: "v",
+  geodesicDirection: "direction",
+  geodesicSpread: "spread",
+  geodesicLength: "length",
+  geodesicCount: "count",
+} as const;
+const isGeodesic = (t: Target): t is keyof typeof geodesicFields =>
+  t in geodesicFields;
 // Light targets and the RaysConfig field each one moves.
 const raysFields = {
   azimuth: "azimuth",
@@ -399,6 +423,7 @@ export const integerTargets: Target[] = [
   "curves",
   "cells",
   "sectionCount",
+  "geodesicCount",
 ];
 const curveTargets = ["a", "min", "max"] as const;
 const involuteTargets = ["anchor", "offset", "from", "to", "count"] as const;
@@ -427,7 +452,20 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
         (f) => `surface${f.key.toUpperCase()}` as Target,
       ),
       ...(c.format === "surface"
-        ? (["surfaceOffset", "reach"] as const)
+        ? ([
+            "surfaceOffset",
+            "reach",
+            ...(c.surface.geodesics
+              ? ([
+                  "geodesicU",
+                  "geodesicV",
+                  "geodesicDirection",
+                  "geodesicSpread",
+                  "geodesicLength",
+                  "geodesicCount",
+                ] as const)
+              : []),
+          ] as const)
         : ([
             ...(c.rays.interaction === "refract" ? ["n1", "n2"] : []),
             ...(c.rays.light === "point"
@@ -546,6 +584,7 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (isImplicit(t)) return c.implicit[implicitFields[t]];
   if (isSection(t)) return c.implicit.sections[sectionFields[t]];
   if (isSurface(t)) return c.surface[surfaceFields[t]];
+  if (isGeodesic(t)) return c.surface.geodesics?.[geodesicFields[t]] ?? 0;
   if (isRays(t)) return c.rays[raysFields[t]];
   if (isReceiver(t)) return c.rays.receiver[receiverFields[t]] ?? 0;
   if (isSource(t)) return c.rays.source[sourceAxis(t)];
@@ -614,6 +653,15 @@ export function applyTracks(
     }
     if (isSurface(t.target)) {
       config.surface[surfaceFields[t.target]] = v;
+      continue;
+    }
+    if (isGeodesic(t.target)) {
+      // Fewer threads keep the selection among them.
+      const g = config.surface.geodesics;
+      if (g) {
+        g[geodesicFields[t.target]] = v;
+        g.selected = Math.min(g.selected, Math.max(1, g.count));
+      }
       continue;
     }
     if (isRays(t.target)) {
@@ -945,8 +993,11 @@ export function keepEdges(
 }
 // The last sample (or a surface's row) a reveal at progress p draws, over
 // what it reveals along: a surface's or mirror's rows along u, or the
-// curve's samples. A level surface reveals through its box instead.
+// curve's samples. A level surface reveals through its box instead, and a
+// surface with geodesic threads reveals them, drawing every row at once.
 export function revealedThrough(result: SpatialResult, p: number) {
+  if (result.surface?.geodesics?.threads.length)
+    return result.surface.surface.points.length - 1;
   const count = result.surface
     ? result.surface.surface.points.length
     : result.rays
@@ -1015,6 +1066,17 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
     return result;
   if (result.implicit)
     return { ...result, implicit: revealImplicit(result.implicit, p) };
+  // A surface's geodesic threads are revealed along their arc length, all
+  // together, on the whole surface, framed as the finished study is.
+  const fan = result.surface?.geodesics;
+  if (fan?.threads.length)
+    return {
+      ...result,
+      surface: {
+        ...result.surface!,
+        geodesics: revealGeodesics(fan, p, fan.length),
+      },
+    };
   const last = revealedThrough(result, p);
   if (result.surface) {
     const s = result.surface;

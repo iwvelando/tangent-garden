@@ -18,9 +18,18 @@ import {
   CuspidalEdgesCheck,
   goldCausticEdges,
   goldEdges,
+  LocateCheck,
   locatesEdges,
   RidgesCheck,
 } from "./cuspidal";
+import {
+  GeodesicFields,
+  geodesicDefaults,
+  geodesicKinds,
+  geodesicsHelp,
+  geodesicsNote,
+  selectedNote,
+} from "./geodesics";
 import {
   useCallback,
   useEffect,
@@ -1369,6 +1378,66 @@ export default function SpatialApp({
       </p>
     </>
   );
+  // Geodesic threads, offered with the surfaces that can carry them, and
+  // with any other whose study already has them, so they can be turned off.
+  const threads = patch?.geodesics;
+  // A surface that cannot carry them says why under the checkbox, as an
+  // error; the surface is still drawn and the fan's fields kept.
+  const unavailable = config.surface.geodesics && threads?.unavailable;
+  const geodesicControls = (geodesicKinds.includes(config.surface.kind) ||
+    config.surface.geodesics) && (
+    <>
+      <LocateCheck
+        label="Launch geodesic threads"
+        topic="launching geodesic threads"
+        text={geodesicsHelp}
+        checked={!!config.surface.geodesics}
+        onChange={(on) =>
+          setSurface(({ geodesics: _, ...s }) =>
+            on ? { ...s, geodesics: geodesicDefaults(s) } : s,
+          )
+        }
+      />
+      {unavailable && (
+        <p
+          className="field-error geodesics-unavailable"
+          role="alert"
+          data-testid="geodesics-unavailable"
+        >
+          {unavailable}
+        </p>
+      )}
+      {config.surface.geodesics && (
+        <>
+          <GeodesicFields
+            g={config.surface.geodesics}
+            vector={vector}
+            set={(change) =>
+              setSurface((s) =>
+                s.geodesics ? { ...s, geodesics: change(s.geodesics) } : s,
+              )
+            }
+          />
+          {!unavailable && (
+            <p className="note" data-testid="geodesics-note">
+              {threads && frame?.config.surface.geodesics
+                ? geodesicsNote(
+                    threads,
+                    frame.config.surface.geodesics,
+                    theme.scheme,
+                  ).join(" ")
+                : "Launching the threads…"}
+            </p>
+          )}
+          {threads && !threads.unavailable && (
+            <p className="note" data-testid="selected-thread">
+              {selectedNote(threads)}
+            </p>
+          )}
+        </>
+      )}
+    </>
+  );
   const shapeFields = surfaceShape[config.surface.kind].map((f) =>
     vector(
       f.label,
@@ -1492,6 +1561,7 @@ export default function SpatialApp({
               }
             />
           )}
+          {geodesicControls}
           <p className="note" data-testid="surface-note">
             {patch ? surfaceNote(patch).join(" ") : "Measuring the curvature…"}
           </p>
@@ -3497,6 +3567,12 @@ export default function SpatialApp({
                           : []),
                         ["focal1", "Focal sheet 1 · κ₁"],
                         ["focal2", "Focal sheet 2 · κ₂"],
+                        ...(config.surface.geodesics
+                          ? ([
+                              ["threads", "Geodesic threads"],
+                              ["selected", "Selected thread"],
+                            ] as const)
+                          : []),
                       ] as const)
                     : [
                         ...(none
@@ -4074,7 +4150,9 @@ export default function SpatialApp({
                     : mirroring
                       ? "A mirror and its caustics"
                       : surfacing
-                        ? "A surface and its centers of curvature"
+                        ? config.surface.geodesics
+                          ? "Threads that go straight on a surface"
+                          : "A surface and its centers of curvature"
                         : none
                           ? flowing
                             ? "Paths that follow a field"

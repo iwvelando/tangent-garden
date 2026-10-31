@@ -8,15 +8,15 @@ Use this procedure for assignments tracked in GitHub issues or a design brief un
 
 ### Information ownership
 
-| Information | Authoritative home |
-| --- | --- |
-| Accepted motivation, visual goals, scope boundaries and wave rationale | A stable design brief under `docs/projects/` |
-| A feature's current agreed outcome and acceptance criteria | Its parent GitHub issue |
-| A specific implementation assignment | A child GitHub issue |
-| Readiness, active work and prerequisites | Issue labels, native parent/sub-issue and blocking relationships |
-| Shipped mathematics, interfaces, limits and usage | Code, tests and the permanent repository guides |
-| Change explanation and verification evidence | The implementation PR |
-| Discussion, experiments and superseded decisions | Issue or PR comments |
+| Information                                                            | Authoritative home                                               |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Accepted motivation, visual goals, scope boundaries and wave rationale | A stable design brief under `docs/projects/`                     |
+| A feature's current agreed outcome and acceptance criteria             | Its parent GitHub issue                                          |
+| A specific implementation assignment                                   | A child GitHub issue                                             |
+| Readiness, active work and prerequisites                               | Issue labels, native parent/sub-issue and blocking relationships |
+| Shipped mathematics, interfaces, limits and usage                      | Code, tests and the permanent repository guides                  |
+| Change explanation and verification evidence                           | The implementation PR                                            |
+| Discussion, experiments and superseded decisions                       | Issue or PR comments                                             |
 
 Do not append progress, deferred tasks or completed-work narratives to a brief. Amend it only for an intentional change in direction; link the owner's decision. Keep the issue body coherent as the current assignment, and explain material edits in a comment. Settled mathematical definitions and interface contracts must move into permanent documentation in the implementation PR. A downstream implementer should not need to reconstruct the contract from an old comment thread. If shipped behavior disagrees with the accepted requirement, report the discrepancy; do not silently redefine either one.
 
@@ -188,7 +188,7 @@ Preset fingerprints cover definitions, not numerical or rendering output, so unc
 
 - Side-by-side fields go in `.pair` as `Field`s, whose CSS subgrid gives labels, controls and help their own shared rows. Do not bottom-align or otherwise couple them.
 - `tests/layout.spec.ts` opens every paired help toggle in every preset at desktop and phone widths. Extend its setups when a pair appears only under another setting.
-- Put clearance between a pair and neighboring controls on a containing block's padding or grid gap, not on the subgrid `Field` children. First-open portrait layouts on iOS have omitted clearance from those margins until a dropdown or another native action triggers layout again. In `web/atlas.css`, `.atlas-ranges` owns both its leading padding after Grid size/Framing and its trailing padding before Generate; its child fields have zero margins. Do not repair only the trailing gap when adding a new pair above it.
+- Put clearance between a pair and neighboring controls on a containing block's padding or grid gap, not on the subgrid `Field` children. First-open portrait layouts on iOS have omitted clearance from those margins until a dropdown or another native action triggers layout again, and Safari leaves them out entirely. Every pair of fields therefore owns 14px of padding above and below (`.pair:has(> .field)` in `web/style.css`) and its `Field` children have no margins, so a checkbox or note after a pair keeps its clearance. Padding does not collapse, so pairs and fields keep the spacing the children's margins gave them in Chromium. A context that needs other clearance overrides that padding with the same `:has(> .field)` selector (animation tracks, the engraving range, the sight panel, the atlas and the loom). In `web/atlas.css`, `.atlas-ranges` owns both its leading padding after Grid size/Framing and its trailing padding before Generate; its child fields have zero margins. Do not repair only the trailing gap when adding a new pair above it.
 - Do not stack a block field's bottom margin with the next pair's child top margins. The atlas's Parameter pair field has zero margins and owns 16px of trailing padding; Grid size/Framing children have zero margins. This gives the same 16px gap as the following range boundary, instead of 14px + 14px. Help outside a `.field`, such as atlas-entry help, also needs an explicit 8px control-to-help margin; `.field .hint` styles only help inside a Field. Compare its brief and expanded forms with an ordinary field at both widths.
 - Check both boundaries immediately after opening, before focusing or opening a native control, and after portrait/landscape transitions. `tests/webkit.spec.ts` covers these atlas gaps, including a constructed stylesheet that suppresses the preceding pair's child bottom margins. That controlled reproduction proves spacing no longer depends on them; it does not replace checking the first paint on an actual phone over HTTPS.
 
@@ -294,5 +294,6 @@ Safari and every iOS browser use WebKit. Playwright's WebKit uses the macOS user
 - **Focus rings after a tap.** iOS Safari treats a programmatic `focus()` after a tap as `:focus-visible` and draws a ring. A menu that moves focus after a pointer action marks itself quiet with `useQuietFocus` (`web/quiet-focus.ts`), as `NotebookMode` does for its picker.
 - **Radio and checkbox size.** iOS Safari gives `input[type=radio|checkbox]` a small fixed size, so `appearance: none` with `inset: 0` does not stretch the input over its label. Set `width: 100%; height: 100%` explicitly. To reproduce it in a test, add a weak author rule (`input { width: 16px; height: 16px }`) through a constructed stylesheet (`new CSSStyleSheet()` with `document.adoptedStyleSheets`), which the CSP allows.
 - **Button clicks and blur.** Safari does not focus a button when it is clicked, so a blur's `relatedTarget` is null when the reader clicks a menu's own button. Cover click, focus and blur behavior in `tests/webkit.spec.ts` (`make test-webkit`).
+- **Keyboard dismissal.** iOS opens its keyboard by panning the visual viewport inside the layout viewport and reports that pan as `visualViewport.offsetTop`. When the keyboard is dismissed it returns the screen to the top at once but goes on reporting the old offset until its next viewport event (measured at 93px on an iPhone). Anything positioned from that offset, such as the mobile notebook navigation (`web/MobileNotebookNav.tsx`), returns to the top on leaving a field and follows the offset again only once a later viewport event reports it. `tests/mobile-navigation.spec.ts` scripts that sequence with `scriptedKeyboard`.
 - **On-device checks.** Check on a phone over HTTPS with `make preview-lan`: WebKit is several times slower on plain HTTP.
 - **Asking for them.** When a change touches controls, touch or gestures, layout at phone width, or the cost of drawing and playback, list what to check on a phone in the PR's verification items: the controls at phone width, and the affected presets in motion. Report them as pending, never as passing. They are not recorded in `docs/`.

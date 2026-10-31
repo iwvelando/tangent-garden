@@ -54,7 +54,7 @@ type CheckProps = { checked: boolean; onChange: (on: boolean) => void };
 
 // A checkbox and its help. Unchecking drops the field, so the link is the
 // one made before the setting existed.
-function LocateCheck({
+export function LocateCheck({
   label,
   topic,
   text,
