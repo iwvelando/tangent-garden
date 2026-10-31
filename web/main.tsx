@@ -88,6 +88,7 @@ import { fieldLabel } from "./planar-fields";
 import { useTheme } from "./useTheme";
 import { AnimationPanel } from "./AnimationPanel";
 import { AppHeader } from "./AppHeader";
+import { AboutSite } from "./AboutSite";
 import { NotebookMain } from "./MobileNotebookNav";
 import { revealDrawing } from "./revealDrawing";
 import { ExportImageMenu } from "./ExportImageMenu";
@@ -2782,6 +2783,7 @@ function App({
                 onReveal={revealPlot}
               />
             )}
+            <AboutSite />
           </aside>
         </ScalarStatus.Provider>
         <article>

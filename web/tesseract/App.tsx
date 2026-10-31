@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { AppHeader } from "../AppHeader";
+import { AboutSite } from "../AboutSite";
 import { NotebookMain } from "../MobileNotebookNav";
 import { Orientation } from "../Orientation";
 import { turnTo, turntableBasis } from "../named-views";
@@ -1122,6 +1123,7 @@ export default function TesseractApp({
               onPlay={() => void play()}
               onExport={(options) => void save(options)}
             />
+            <AboutSite />
           </aside>
         </ScalarStatus.Provider>
         <article>

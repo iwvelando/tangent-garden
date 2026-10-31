@@ -495,3 +495,49 @@ for (const width of [280, 320]) {
     }
   });
 }
+
+// Every notebook closes its sidebar with a link to the public repository,
+// as isaacvelando.com closes its page. It opens a new tab so that following
+// it never discards an unsaved study. On a phone the sidebar stacks below
+// the drawing, so the link ends the page there.
+for (const width of [1440, 390]) {
+  test(`each notebook ends its sidebar with About this site at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const notebook of ["2d", "3d", "4d"]) {
+      await page.goto(notebook === "2d" ? "/" : `/?study=${notebook}`);
+      const app = page.locator(".app:visible");
+      const links = app.getByRole("link", { name: "About this site" });
+      await expect(links).toHaveCount(1);
+      const link = links.first();
+      await expect(link).toHaveAttribute(
+        "href",
+        "https://github.com/iwvelando/tangent-garden",
+      );
+      await expect(link).toHaveAttribute("target", "_blank");
+      await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      // The sidebar's last element, after every control.
+      expect(
+        await app
+          .locator("aside")
+          .first()
+          .evaluate((aside) =>
+            aside.lastElementChild?.querySelector("a")?.textContent?.trim(),
+          ),
+      ).toBe("About this site");
+      await link.scrollIntoViewIfNeeded();
+      await expect(link).toBeInViewport();
+      const box = (await link.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      if (width < 700) {
+        const drawing = (await app
+          .locator("#artwork, .spatial-canvas-wrap, .tesseract-canvas-wrap")
+          .first()
+          .boundingBox())!;
+        expect(box.y).toBeGreaterThan(drawing.y + drawing.height);
+      }
+    }
+  });
+}

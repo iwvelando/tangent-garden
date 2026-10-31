@@ -59,6 +59,7 @@ import {
 import { tiered, type Help } from "../help";
 import { fieldLabel } from "./fields";
 import { AppHeader } from "../AppHeader";
+import { AboutSite } from "../AboutSite";
 import { NotebookMain } from "../MobileNotebookNav";
 import { AnimationButton } from "../AnimationButton";
 import { useJourneyEntry } from "../JourneyContext";
@@ -4137,6 +4138,7 @@ export default function SpatialApp({
               setReset(reset + 1);
             }}
           />
+          <AboutSite />
         </aside>
         <article
           className="spatial-stage"
