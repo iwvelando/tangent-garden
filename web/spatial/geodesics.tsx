@@ -68,11 +68,11 @@ export const geodesicHelp = {
   selected: "The thread drawn broad and described, counted from 1.",
   length: tiered(
     "Each thread's arc length, above 0 and at most 100000.",
-    "On a torus the fan shares 200,000 integration steps; a thread that runs out stops there, marked by a cross.",
+    "On a torus the fan, with any arrow carried along a thread, shares 200,000 integration steps; a thread that runs out stops there, marked by a cross.",
   ),
   samples: tiered(
     `8–${maxGeodesicSamples} per thread, 200,000 points in all.`,
-    "Samples are evenly spaced in arc length. The integration takes its own steps between them.",
+    "Samples are evenly spaced in arc length. The integration takes its own steps between them. A carried arrow's path counts as one more thread, plus two points.",
   ),
 } satisfies Record<string, Help<string>>;
 

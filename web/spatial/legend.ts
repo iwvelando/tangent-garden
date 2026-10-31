@@ -159,7 +159,7 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
       ? [
           {
             layer: "parent",
-            swatch: "focal-dot second",
+            swatch: "parent-dot",
             label: "Base curve",
           } as const,
         ]
