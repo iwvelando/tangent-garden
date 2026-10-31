@@ -5667,4 +5667,101 @@ export const spatialPresets: {
     },
     flight: { ...revealInPlace, duration: 10 },
   },
+  // An arrow carried around the octant triangle of the unit sphere, from
+  // (1, 0, 0) to (0, 1, 0), (0, 0, 1) and back along quarter great circles.
+  // It leaves along the first side, +y, keeps whatever it arrives with at
+  // each corner, and comes home along +z: turned +π/2, the octant's area
+  // times the curvature. Twelve reference arrows, four to a side, show it
+  // carried parallel; the fan's one thread, a whole great circle that the
+  // study needs, is hidden. The view looks down the diagonal (1, 1, 1),
+  // and the reveal holds the returned arrow beside the first.
+  {
+    name: "The arrow that came home turned",
+    detail:
+      "Carried around a spherical triangle without turning, an arrow returns rotated a quarter turn",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1,
+        b: 1,
+        c: 1,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 72,
+        vSamples: 36,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0,
+          direction: 0,
+          spread: 0,
+          count: 1,
+          length: 2 * Math.PI,
+          samples: 720,
+          selected: 1,
+          transport: { path: "triangle", angle: 0, size: 0.33, arrows: 12 },
+        },
+      },
+    },
+    layers: {
+      curves: false,
+      focal1: false,
+      focal2: false,
+      threads: false,
+      selected: false,
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: -0.785, pitch: 0.615, zoom: 1 },
+    flight: { ...revealInPlace, duration: 12 },
+  },
+  // An arrow carried along one thread winding through a torus's hole, at a
+  // right angle to it. Along a geodesic a carried arrow keeps its angle to
+  // the path, so it turns in space only as the thread does. The thread's
+  // 38 units end on the side of the tube facing the view, so the arrow
+  // finishes in sight.
+  {
+    name: "An arrow carried along a torus thread",
+    detail:
+      "Along a geodesic a carried arrow keeps its angle to the path while turning in space",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        uSamples: 96,
+        vSamples: 48,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0,
+          direction: 50,
+          spread: 0,
+          count: 1,
+          length: 38,
+          samples: 1900,
+          selected: 1,
+          transport: { path: "thread", angle: 90, size: 0.5, arrows: 24 },
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false, threads: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, zoom: 2.3, panX: 0, panY: 0 },
+    flight: { ...revealInPlace, duration: 14 },
+  },
 ];

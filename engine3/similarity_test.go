@@ -209,6 +209,12 @@ func similar(q Request, m similarity) (Request, Request, bool) {
 		// angles.
 		g := *q.Surface.Geodesics
 		g.Length *= s
+		if g.Transport != nil {
+			// The arrow's drawn length is a length; its angle is an angle.
+			tq := *g.Transport
+			tq.Size *= s
+			g.Transport = &tq
+		}
 		c.Surface.Geodesics = &g
 	}
 	c.Rays.Source = m.point(q.Rays.Source)
@@ -322,7 +328,16 @@ var kinds = map[string]kind{
 	"surface.geodesics.threads.u": asUnchanged, "surface.geodesics.threads.v": asUnchanged,
 	"surface.geodesics.threads.endU": asUnchanged, "surface.geodesics.threads.endV": asUnchanged,
 	"surface.geodesics.threads.return.position": asUnchanged, "surface.geodesics.threads.return.direction": asUnchanged,
-	"surfaceDiagnostics.curvature": asCurvature, "surfaceDiagnostics.direction": asAxis,
+	"surface.geodesics.transport.length": asLength, "surface.geodesics.transport.size": asLength,
+	"surface.geodesics.transport.reached": asLength, "surface.geodesics.transport.holonomy": asUnchanged,
+	"surface.geodesics.transport.drift.norm": asUnchanged, "surface.geodesics.transport.drift.tangency": asUnchanged,
+	"surface.geodesics.transport.samples.arcs": asLength, "surface.geodesics.transport.samples.points": asPosition,
+	"surface.geodesics.transport.samples.vectors": asUnchanged, "surface.geodesics.transport.samples.normals": asUnchanged,
+	"surface.geodesics.transport.samples.tangents": asUnchanged,
+	"surface.geodesics.transport.references.arcs":  asLength, "surface.geodesics.transport.references.points": asPosition,
+	"surface.geodesics.transport.references.vectors": asUnchanged, "surface.geodesics.transport.references.normals": asUnchanged,
+	"surface.geodesics.transport.references.tangents": asUnchanged,
+	"surfaceDiagnostics.curvature":                    asCurvature, "surfaceDiagnostics.direction": asAxis,
 	"surfaceDiagnostics.focal": asPosition, "surfaceDiagnostics.normals": asUnchanged,
 	"surfaceDiagnostics.points": asPosition, "surfaceDiagnostics.u": asUnchanged, "surfaceDiagnostics.v": asUnchanged,
 	"probe.t": asUnchanged, "probe.point": asPosition, "probe.tangent": asUnchanged, "probe.normal": asUnchanged,

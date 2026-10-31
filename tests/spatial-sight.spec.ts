@@ -72,7 +72,10 @@ const predating = (b: Buffer) =>
       .replace('"parent":true,', "")
       .replace('"adaptive":false,', "")
       .replace(',"shadow":true,"planar":true,"cast":true', "")
-      .replace(',"threads":true,"selected":true', "")
+      .replace(
+        ',"threads":true,"selected":true,"route":true,"carried":true,"references":true',
+        "",
+      )
       .replace('"cusps":true,', "")
       .replace('"ridges":true,', ""),
   );

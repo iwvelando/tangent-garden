@@ -171,7 +171,10 @@ export type SurfaceConfig = {
 // those vectors are their limits along meridian u. The fan shares `spread`
 // degrees evenly, each thread at the middle of its share, so thread k of n
 // leaves at β + spread((2k + 1)/2n − 1/2). `selected`, from 1, is the
-// thread drawn and described on its own. Mirrors engine3.GeodesicRequest.
+// thread drawn and described on its own. With `transport` a tangent arrow
+// is carried along it, or around a sphere's octant triangle (see
+// TransportConfig); absent, as in links made before it, there is none.
+// Mirrors engine3.GeodesicRequest.
 export type GeodesicConfig = {
   u: number;
   v: number;
@@ -181,7 +184,25 @@ export type GeodesicConfig = {
   length: number;
   samples: number;
   selected: number;
+  transport?: TransportConfig;
 };
+// A unit tangent vector carried by the surface's Levi-Civita connection
+// along the selected thread ("thread") or around the octant triangle of a
+// sphere ("triangle"): (r, 0, 0) to (0, r, 0) to (0, 0, r) and back.
+// `angle` α, in degrees, is measured from the path's first unit tangent T
+// toward N × T, N the unit vector along X_u × X_v (outward on the sphere
+// and the torus, whichever way the study's normal points). `size` is the
+// drawn length, in the surface's units, and `arrows` the number of
+// reference arrows, at s = jL/M for j = 0…M − 1, the first where it
+// starts. Mirrors engine3.TransportRequest.
+export type TransportPath = "thread" | "triangle";
+export type TransportConfig = {
+  path: TransportPath;
+  angle: number;
+  size: number;
+  arrows: number;
+};
+export const maxTransportArrows = 36;
 export const maxGeodesicThreads = 32;
 export const maxGeodesicSamples = 20000;
 export const maxGeodesicPoints = 200000;
@@ -965,6 +986,39 @@ export type GeodesicThread = {
   // Set by a reveal that ends the thread short of where it stopped.
   partial?: boolean;
 };
+// Mirrors engine3.TransportSamples: states at arc lengths `arcs`, each a
+// point, the carried unit vector, the unit normal and the path's unit
+// tangent (at a corner, the arriving side's).
+export type TransportSamples = {
+  arcs: number[];
+  points: Vec3[];
+  vectors: Vec3[];
+  normals: Vec3[];
+  tangents: Vec3[];
+};
+// Mirrors engine3.TransportResult: the samples at kL/N, with a triangle's
+// corners (their indices) among them and a stop between samples last; the
+// reference arrows; how the path ended; whether it returns to its start
+// heading the same way, and then the turn `holonomy`, in radians within
+// (−π, π] about the start's normal; the largest departures from unit
+// length and from the tangent plane; and the drawn length `size`.
+export type TransportResult = {
+  path: TransportPath;
+  unavailable?: string;
+  length: number;
+  size: number;
+  samples: TransportSamples;
+  references: TransportSamples;
+  corners: number[];
+  reason: "end" | "exhausted" | "unresolved";
+  reached: number;
+  steps: number;
+  returns: boolean;
+  holonomy: number;
+  drift: { norm: number; tangency: number };
+  // Set by a reveal: the arc length the arrow has reached.
+  shown?: number;
+};
 // Mirrors engine3.GeodesicResult. With `unavailable` set the surface has
 // no threads, and says why.
 export type GeodesicResult = {
@@ -975,6 +1029,7 @@ export type GeodesicResult = {
   threads: GeodesicThread[];
   selected: number;
   steps: number;
+  transport?: TransportResult;
 };
 // Mirrors engine3.CuspidalEdge: a curve on the offset where 1 − dκᵢ = 0,
 // along which it folds and meets focal sheet `branch`, or a curve along

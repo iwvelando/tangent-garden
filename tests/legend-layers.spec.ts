@@ -111,6 +111,20 @@ test("a 3D composition's base curve follows its layer", async ({ page }) => {
   await expect
     .poll(() => shown(legend))
     .toEqual(["Tangent-foot curve", "Tangent developable", "Base curve"]);
+  // Its swatch is the receding ink it is drawn in.
+  const ink = (selector: string) =>
+    legend
+      .locator(selector)
+      .evaluate((e) => getComputedStyle(e).backgroundColor);
+  const recede = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.background = "var(--parent-ink)";
+    document.querySelector(".spatial-stage")!.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  });
+  expect(await ink('[data-legend="parent"] > span')).toBe(recede);
   await layer(page, "Base curve").uncheck();
   await expect
     .poll(() => shown(legend))

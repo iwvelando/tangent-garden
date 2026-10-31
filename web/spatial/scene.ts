@@ -1,4 +1,10 @@
-import { threadPath } from "./geodesic-path";
+import {
+  arrowLines,
+  carries,
+  routeThrough,
+  threadPath,
+  transportIndex,
+} from "./geodesic-path";
 import type {
   CuspidalEdge,
   HarmonicPosition,
@@ -155,6 +161,9 @@ export type Layers = {
   cast: boolean;
   threads: boolean;
   selected: boolean;
+  route: boolean;
+  carried: boolean;
+  references: boolean;
 };
 export const defaultLayers: Layers = {
   surface: true,
@@ -200,6 +209,9 @@ export const defaultLayers: Layers = {
   cast: true,
   threads: true,
   selected: true,
+  route: true,
+  carried: true,
+  references: true,
 };
 
 // A receiver bin's shade: the irradiance's log over three decades below
@@ -999,6 +1011,43 @@ function buildSingleScene(result: SpatialResult) {
     2,
     2.2,
   );
+  // A carried arrow: the octant triangle it travels, broad in the curves'
+  // ink as the selected thread is; the arrow itself, broad in rust, where a
+  // reveal has brought it (or where its path ended); and the reference
+  // arrows the reveal has passed, the first where it started, in slate.
+  const carried = carries(fan) ? fan!.transport! : undefined;
+  const shown = carried?.shown ?? Infinity;
+  const transportRoute = batch(
+    vertices(
+      carried?.path === "triangle" ? joined(routeThrough(carried, shown)) : [],
+    ),
+    "lines",
+    2,
+    2.2,
+  );
+  const standing = carried ? transportIndex(carried, shown) : -1;
+  const transportArrow = batch(
+    vertices(
+      carried && standing >= 0
+        ? arrowLines(carried.samples, standing, carried.size)
+        : [],
+    ),
+    "lines",
+    5,
+    3,
+  );
+  const transportArrows = batch(
+    vertices(
+      carried
+        ? carried.references.arcs.flatMap((a, j) =>
+            a <= shown ? arrowLines(carried.references, j, carried.size) : [],
+          )
+        : [],
+    ),
+    "lines",
+    6,
+    1.6,
+  );
   const empty: SurfaceSheet = {
     points: [],
     normals: [],
@@ -1257,6 +1306,9 @@ function buildSingleScene(result: SpatialResult) {
   return {
     geodesicThreads,
     selectedThread,
+    transportRoute,
+    transportArrow,
+    transportArrows,
     mesh,
     base,
     minus,
@@ -1380,6 +1432,24 @@ export function scenePasses(
     layers.selected && s.selectedThread.data.length > 0,
     false,
     s.selectedThread,
+  );
+  add(
+    "route",
+    layers.route && s.transportRoute.data.length > 0,
+    false,
+    s.transportRoute,
+  );
+  add(
+    "references",
+    layers.references && s.transportArrows.data.length > 0,
+    false,
+    s.transportArrows,
+  );
+  add(
+    "carried",
+    layers.carried && s.transportArrow.data.length > 0,
+    false,
+    s.transportArrow,
   );
   // As with a shadow's passes below, only a study with cuspidal edges or
   // ridges has their passes, so their stroke moves no other study's sheets.

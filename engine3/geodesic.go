@@ -18,16 +18,18 @@ import (
 // each at the middle of its share: thread k of n leaves at
 // β + Spread((2k + 1)/2n − 1/2), so one thread leaves at β and a spread of
 // 360 rings the point. Selected, from 1 to Count, is the thread drawn and
-// described on its own.
+// described on its own. Transport, when set, carries a tangent arrow along
+// it or around a sphere's octant triangle (see TransportRequest).
 type GeodesicRequest struct {
-	U         float64 `json:"u"`
-	V         float64 `json:"v"`
-	Direction float64 `json:"direction"`
-	Spread    float64 `json:"spread"`
-	Count     int     `json:"count"`
-	Length    float64 `json:"length"`
-	Samples   int     `json:"samples"`
-	Selected  int     `json:"selected"`
+	U         float64           `json:"u"`
+	V         float64           `json:"v"`
+	Direction float64           `json:"direction"`
+	Spread    float64           `json:"spread"`
+	Count     int               `json:"count"`
+	Length    float64           `json:"length"`
+	Samples   int               `json:"samples"`
+	Selected  int               `json:"selected"`
+	Transport *TransportRequest `json:"transport,omitempty"`
 }
 
 // GeodesicReturn is how far a thread's end lies from its start: in
@@ -71,7 +73,8 @@ type GeodesicThread struct {
 // Length each thread's arc length as requested, Step the arc length between
 // samples and Steps the steps attempted in all.
 // Unavailable, when set, says why this surface has no threads, and
-// Threads is empty; the surface itself is drawn as before.
+// Threads is empty; the surface itself is drawn as before. Transport is
+// the carried arrow, when the request has one and there are threads.
 type GeodesicResult struct {
 	Surface     string           `json:"surface"`
 	Unavailable string           `json:"unavailable,omitempty"`
@@ -80,6 +83,7 @@ type GeodesicResult struct {
 	Threads     []GeodesicThread `json:"threads"`
 	Selected    int              `json:"selected"`
 	Steps       int              `json:"steps"`
+	Transport   *TransportResult `json:"transport,omitempty"`
 }
 
 // Local error per torus step, in the dimensionless state (see
@@ -104,6 +108,12 @@ const (
 )
 
 func (g GeodesicRequest) validate() error {
+	// The arrow's path counts toward the fan's points.
+	points, with := g.Count*(g.Samples+1), ""
+	if g.Transport != nil {
+		points += g.Samples + 1 + transportExtra
+		with = " and the arrow's path"
+	}
 	switch {
 	case !bounded(g.U):
 		return fieldErr("surface.geodesics.u", "the start u₀ must be finite and within ±100000")
@@ -115,12 +125,15 @@ func (g GeodesicRequest) validate() error {
 		return fieldErr("surface.geodesics.spread", "the spread must be within 0–360°")
 	case g.Count < 1 || g.Count > maxGeodesicThreads:
 		return fieldErr("surface.geodesics.count", "use 1–32 threads")
-	case g.Samples < 8 || g.Samples > maxGeodesicSamples || g.Count*(g.Samples+1) > maxGeodesicPoints:
-		return fieldErr("surface.geodesics.samples", "use 8–20000 samples per thread, with at most 200,000 points across the fan")
+	case g.Samples < 8 || g.Samples > maxGeodesicSamples || points > maxGeodesicPoints:
+		return fieldErr("surface.geodesics.samples", "use 8–20000 samples per thread, with at most 200,000 points across the fan%s", with)
 	case !finite(g.Length) || g.Length <= 0 || g.Length > 1e5:
 		return fieldErr("surface.geodesics.length", "the length L must be above 0 and at most 100000")
 	case g.Selected < 1 || g.Selected > g.Count:
 		return fieldErr("surface.geodesics.selected", "the selected thread must be one of the %d", g.Count)
+	}
+	if g.Transport != nil {
+		return g.Transport.validate()
 	}
 	return nil
 }
@@ -159,7 +172,13 @@ func (q SurfaceRequest) geodesics() (*GeodesicResult, error) {
 		return nil, fieldErr("surface.geodesics.v", "on a sphere v₀ is a latitude, within ±π/2")
 	}
 	out.Surface = surface
-	budget := maxGeodesicSteps / g.Count
+	// An arrow integrated along a torus thread takes one more share of
+	// the steps.
+	shares := g.Count
+	if surface == "torus" && g.Transport != nil && g.Transport.Path == "thread" {
+		shares++
+	}
+	budget := maxGeodesicSteps / shares
 	for k := 0; k < g.Count; k++ {
 		beta := g.Direction + g.Spread*((2*float64(k)+1)/(2*float64(g.Count))-0.5)
 		var th GeodesicThread
@@ -170,6 +189,9 @@ func (q SurfaceRequest) geodesics() (*GeodesicResult, error) {
 		}
 		out.Steps += th.Steps
 		out.Threads = append(out.Threads, th)
+	}
+	if g.Transport != nil {
+		out.Transport = q.transport(surface, out.Threads[g.Selected-1].Direction, budget)
 	}
 	return out, nil
 }
@@ -235,35 +257,80 @@ func sphereThread(r float64, g GeodesicRequest, beta float64) GeodesicThread {
 // step's start, as ode.Solution evaluates them.
 func torusThread(R, r float64, g GeodesicRequest, beta float64, budget int) GeodesicThread {
 	k := R / r
-	f := func(_ float64, y, out []float64) {
-		w, sv := k+math.Cos(y[1]), math.Sin(y[1])
-		out[0], out[1] = y[2], y[3]
-		out[2] = 2 * sv * y[2] * y[3] / w
-		out[3] = -w * sv * y[2] * y[2]
-	}
 	b := beta * math.Pi / 180
 	y := []float64{g.U, g.V, math.Cos(b) / (k + math.Cos(g.V)), math.Sin(b)}
 	th := GeodesicThread{Direction: beta}
-	sample := func(y []float64) {
+	sample := func(_ int, y []float64) {
 		x, eu, ev := chartFrame(R, r, y[0], y[1])
 		th.Points = append(th.Points, x)
 		th.Tangents = append(th.Tangents, eu.mul((k+math.Cos(y[1]))*y[2]).add(ev.mul(y[3])))
 		th.U, th.V = append(th.U, y[0]), append(th.V, y[1])
 	}
-	sample(y)
-	total := g.Length / r
-	tau := func(i int) float64 { return arc(g.Length, i, g.Samples) / r }
+	sample(0, y)
+	targets := make([]float64, g.Samples)
+	for i := range targets {
+		targets[i] = arc(g.Length, i+1, g.Samples) / r
+	}
+	var t float64
+	th.Reason, t, th.Steps = torusRun(torusGeodesic(k), y, g.Length/r, targets, budget, torusError(k), sample)
+	x, eu, ev := chartFrame(R, r, y[0], y[1])
+	th.End, th.EndTangent = x, eu.mul((k+math.Cos(y[1]))*y[2]).add(ev.mul(y[3]))
+	th.EndU, th.EndV, th.Reached = y[0], y[1], t*r
+	if th.Reason == "end" {
+		th.Reached = g.Length
+	}
+	th.closing(r)
+	return th
+}
+
+// torusGeodesic is the dimensionless geodesic system of a torus with
+// k = R/r (see torusThread). A longer state carries more vectors (see
+// torusTransport), which it leaves to its caller.
+func torusGeodesic(k float64) ode.Func {
+	return func(_ float64, y, out []float64) {
+		w, sv := k+math.Cos(y[1]), math.Sin(y[1])
+		out[0], out[1] = y[2], y[3]
+		out[2] = 2 * sv * y[2] * y[3] / w
+		out[3] = -w * sv * y[2] * y[2]
+	}
+}
+
+// torusError is a step's local error relative to geodesicTolerance: the
+// largest of (k + cos v)δu, δv and, for each tangent vector the state
+// carries as its u and v rates (r u′, r v′), (k + cos v) times the first
+// and the second, with the larger k + cos v at the step's ends.
+func torusError(k float64) func(y, end, e []float64) float64 {
+	return func(y, end, e []float64) float64 {
+		w := k + math.Max(math.Cos(y[1]), math.Cos(end[1]))
+		size := math.Max(math.Max(w*math.Abs(e[0]), math.Abs(e[1])), math.Max(w*math.Abs(e[2]), math.Abs(e[3])))
+		for i := 4; i+1 < len(e); i += 2 {
+			size = math.Max(size, math.Max(w*math.Abs(e[i]), math.Abs(e[i+1])))
+		}
+		return size / geodesicTolerance
+	}
+}
+
+// torusRun integrates the dimensionless system f from y, in place, over
+// τ ∈ [0, total], for at most budget attempted Dormand–Prince 5(4) steps,
+// each accepted when its relative error size is at most 1. It samples the
+// state at each of the increasing targets through sample, the last at the
+// end state of the final step, so that a target rounded past total is
+// still the end. Samples between steps are one step of the same method
+// from the step's start, as ode.Solution evaluates them. It returns why
+// it stopped ("end", "exhausted" or "unresolved"), the τ it reached and
+// the steps it attempted.
+func torusRun(f ode.Func, y []float64, total float64, targets []float64, budget int, size func(y, end, e []float64) float64, sample func(i int, state []float64)) (reason string, t float64, steps int) {
 	var step, dense ode.Stages
-	e := make([]float64, 4)
-	t, h, next := 0.0, math.Min(0.1, total), 1
-	th.Reason = "unresolved"
+	e := make([]float64, len(y))
+	h, next := math.Min(0.1, total), 0
+	reason = "unresolved"
 	for {
 		if t >= total {
-			th.Reason = "end"
+			reason = "end"
 			break
 		}
-		if th.Steps >= budget {
-			th.Reason = "exhausted"
+		if steps >= budget {
+			reason = "exhausted"
 			break
 		}
 		h = math.Min(h, maxTorusStep)
@@ -273,47 +340,43 @@ func torusThread(R, r float64, g GeodesicRequest, beta float64, budget int) Geod
 		} else if h < 1e-12*total {
 			break
 		}
-		th.Steps++
+		steps++
 		end := step.Step(f, t, y, h, true)
 		step.Estimate(h, e)
-		w := k + math.Max(math.Cos(y[1]), math.Cos(end[1]))
-		size := math.Max(math.Max(w*math.Abs(e[0]), math.Abs(e[1])), math.Max(w*math.Abs(e[2]), math.Abs(e[3]))) / geodesicTolerance
-		if !(size <= 1) || !finite(end[0]+end[1]+end[2]+end[3]) {
-			if math.IsNaN(size) || math.IsInf(size, 0) {
-				size = 1e10
+		sz := size(y, end, e)
+		bad := false
+		for _, x := range end {
+			bad = bad || !finite(x)
+		}
+		if !(sz <= 1) || bad {
+			if math.IsNaN(sz) || math.IsInf(sz, 0) {
+				sz = 1e10
 			}
-			h *= math.Max(.2, .9*math.Pow(math.Max(size, 1), -.2))
+			h *= math.Max(.2, .9*math.Pow(math.Max(sz, 1), -.2))
 			continue
 		}
 		reached := t + h
 		if last {
 			reached = total
 		}
-		// The last step takes every remaining sample: s_N = L·N/N can
+		// The last step takes every remaining target: s_N = L·N/N can
 		// round above L, and so past the end it reaches.
-		for ; next <= g.Samples && (last || tau(next) <= reached); next++ {
-			if d := tau(next) - t; d < h && !(last && next == g.Samples) {
-				sample(dense.Step(f, t, y, d, false))
+		for ; next < len(targets) && (last || targets[next] <= reached); next++ {
+			if d := targets[next] - t; d < h && !(last && next == len(targets)-1) {
+				sample(next, dense.Step(f, t, y, d, false))
 			} else {
-				sample(end)
+				sample(next, end)
 			}
 		}
 		t = reached
 		copy(y, end)
-		if size == 0 {
+		if sz == 0 {
 			h *= 5
 		} else {
-			h *= math.Min(5, .9*math.Pow(size, -.2))
+			h *= math.Min(5, .9*math.Pow(sz, -.2))
 		}
 	}
-	x, eu, ev := chartFrame(R, r, y[0], y[1])
-	th.End, th.EndTangent = x, eu.mul((k+math.Cos(y[1]))*y[2]).add(ev.mul(y[3]))
-	th.EndU, th.EndV, th.Reached = y[0], y[1], t*r
-	if th.Reason == "end" {
-		th.Reached = g.Length
-	}
-	th.closing(r)
-	return th
+	return reason, t, steps
 }
 
 // geodesicFamily is every thread's points, for the bounds.

@@ -29,6 +29,10 @@ import {
   geodesicsHelp,
   geodesicsNote,
   selectedNote,
+  TransportFields,
+  transportDefaults,
+  transportHelp,
+  transportNote,
 } from "./geodesics";
 import {
   useCallback,
@@ -109,6 +113,7 @@ import {
   type FieldConfig,
   type SpatialPursuitConfig,
   type SurfaceConfig,
+  type TransportConfig,
   type SurfaceKind,
   type RaysConfig,
   type ReceiverConfig,
@@ -1384,6 +1389,58 @@ export default function SpatialApp({
   // A surface that cannot carry them says why under the checkbox, as an
   // error; the surface is still drawn and the fan's fields kept.
   const unavailable = config.surface.geodesics && threads?.unavailable;
+  // A carried arrow, offered with the threads. The triangle on a torus says
+  // why it is unavailable, as the threads do, and keeps its fields.
+  const carried = config.surface.geodesics?.transport;
+  const carriedUnavailable = carried && threads?.transport?.unavailable;
+  // Changes the arrow, starting from the surface's defaults when there is
+  // none; a change to undefined turns it off.
+  const setTransport = (
+    change: (t: TransportConfig) => TransportConfig | undefined,
+  ) =>
+    setSurface((s) => {
+      if (!s.geodesics) return s;
+      const { transport, ...g } = s.geodesics;
+      const next = change(transport ?? transportDefaults(s));
+      return { ...s, geodesics: next ? { ...g, transport: next } : g };
+    });
+  const transportControls = (
+    <>
+      <LocateCheck
+        label="Carry a tangent arrow"
+        topic="carrying a tangent arrow"
+        text={transportHelp}
+        checked={!!carried}
+        onChange={(on) => setTransport((t) => (on ? t : undefined))}
+      />
+      {carriedUnavailable && (
+        <p
+          className="field-error geodesics-unavailable"
+          role="alert"
+          data-testid="transport-unavailable"
+        >
+          {carriedUnavailable}
+        </p>
+      )}
+      {carried && (
+        <>
+          <TransportFields t={carried} vector={vector} set={setTransport} />
+          {!carriedUnavailable &&
+            threads &&
+            !threads.unavailable &&
+            frame?.config.surface.geodesics?.transport && (
+              <p className="note" data-testid="transport-note">
+                {transportNote(
+                  threads,
+                  frame.config.surface.geodesics.transport,
+                  theme.scheme,
+                ).join(" ")}
+              </p>
+            )}
+        </>
+      )}
+    </>
+  );
   const geodesicControls = (geodesicKinds.includes(config.surface.kind) ||
     config.surface.geodesics) && (
     <>
@@ -1434,6 +1491,7 @@ export default function SpatialApp({
               {selectedNote(threads)}
             </p>
           )}
+          {transportControls}
         </>
       )}
     </>
@@ -3573,6 +3631,16 @@ export default function SpatialApp({
                               ["selected", "Selected thread"],
                             ] as const)
                           : []),
+                        ...(config.surface.geodesics?.transport
+                          ? ([
+                              ...(config.surface.geodesics.transport.path ===
+                              "triangle"
+                                ? ([["route", "Octant triangle"]] as const)
+                                : []),
+                              ["carried", "Carried arrow"],
+                              ["references", "Reference arrows"],
+                            ] as const)
+                          : []),
                       ] as const)
                     : [
                         ...(none
@@ -4150,9 +4218,11 @@ export default function SpatialApp({
                     : mirroring
                       ? "A mirror and its caustics"
                       : surfacing
-                        ? config.surface.geodesics
-                          ? "Threads that go straight on a surface"
-                          : "A surface and its centers of curvature"
+                        ? config.surface.geodesics?.transport
+                          ? "An arrow carried along a surface"
+                          : config.surface.geodesics
+                            ? "Threads that go straight on a surface"
+                            : "A surface and its centers of curvature"
                         : none
                           ? flowing
                             ? "Paths that follow a field"

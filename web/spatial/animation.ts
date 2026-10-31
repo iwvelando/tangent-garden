@@ -1,4 +1,4 @@
-import { revealGeodesics } from "./geodesic-path";
+import { carries, revealGeodesics, travel } from "./geodesic-path";
 import {
   projectsInput,
   coilsInput,
@@ -124,7 +124,8 @@ type NamedTarget =
   | "geodesicDirection"
   | "geodesicSpread"
   | "geodesicLength"
-  | "geodesicCount";
+  | "geodesicCount"
+  | "transportAngle";
 // One coordinate of a vector field's seed, numbered from 1.
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
 // A pursuer's starting coordinate or speed, numbered from 1.
@@ -250,6 +251,7 @@ export const targetLabels: Record<NamedTarget, string> = {
   geodesicSpread: "Fan spread (°)",
   geodesicLength: "Thread length L",
   geodesicCount: "Threads",
+  transportAngle: "Arrow angle α (°)",
 };
 const subscript = (n: number) =>
   String(n).replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[+d]);
@@ -463,6 +465,9 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
                   "geodesicSpread",
                   "geodesicLength",
                   "geodesicCount",
+                  ...(c.surface.geodesics.transport
+                    ? (["transportAngle"] as const)
+                    : []),
                 ] as const)
               : []),
           ] as const)
@@ -585,6 +590,7 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (isSection(t)) return c.implicit.sections[sectionFields[t]];
   if (isSurface(t)) return c.surface[surfaceFields[t]];
   if (isGeodesic(t)) return c.surface.geodesics?.[geodesicFields[t]] ?? 0;
+  if (t === "transportAngle") return c.surface.geodesics?.transport?.angle ?? 0;
   if (isRays(t)) return c.rays[raysFields[t]];
   if (isReceiver(t)) return c.rays.receiver[receiverFields[t]] ?? 0;
   if (isSource(t)) return c.rays.source[sourceAxis(t)];
@@ -662,6 +668,11 @@ export function applyTracks(
         g[geodesicFields[t.target]] = v;
         g.selected = Math.min(g.selected, Math.max(1, g.count));
       }
+      continue;
+    }
+    if (t.target === "transportAngle") {
+      const carried = config.surface.geodesics?.transport;
+      if (carried) carried.angle = v;
       continue;
     }
     if (isRays(t.target)) {
@@ -1067,14 +1078,20 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
   if (result.implicit)
     return { ...result, implicit: revealImplicit(result.implicit, p) };
   // A surface's geodesic threads are revealed along their arc length, all
-  // together, on the whole surface, framed as the finished study is.
+  // together, on the whole surface, framed as the finished study is. A
+  // carried arrow travels its path with them and then holds where it
+  // arrived.
   const fan = result.surface?.geodesics;
   if (fan?.threads.length)
     return {
       ...result,
       surface: {
         ...result.surface!,
-        geodesics: revealGeodesics(fan, p, fan.length),
+        geodesics: revealGeodesics(
+          fan,
+          carries(fan) ? travel(p) : p,
+          fan.length,
+        ),
       },
     };
   const last = revealedThrough(result, p);

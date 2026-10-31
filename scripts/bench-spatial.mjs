@@ -122,6 +122,27 @@ const curves = [
   ["ellipsoid", "The whole focal surface of an ellipsoid", "a surface"],
   ["coma", "A tilted beam folding into coma", "rays"],
   ["vortex", "A row of seeds wound up by a vortex", "a vector field"],
+  // A carried arrow: around the octant triangle, along one torus thread,
+  // and the largest fan the point cap admits with an arrow, eight threads
+  // of 20,000 samples 2,000 long sharing every step of the budget.
+  ["octant", "The arrow that came home turned", "the octant triangle"],
+  ["carried", "An arrow carried along a torus thread", "one torus thread"],
+  [
+    "carried-max",
+    "An arrow carried along a torus thread",
+    "8 threads × 20,000 samples, 2,000 long, with the arrow",
+    (c) => ({
+      surface: {
+        ...c.surface,
+        geodesics: {
+          ...c.surface.geodesics,
+          count: 8,
+          samples: 20000,
+          length: 2000,
+        },
+      },
+    }),
+  ],
   [
     "receiver-view",
     "A glass dome's luminous ring, close up",
