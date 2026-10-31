@@ -27,6 +27,8 @@ Keep a short working record in internal notes or a concise artifact, rather than
 
 These are prompts for selecting evidence, not a mandatory test matrix for every PR. Apply the detailed procedures to the relevant risks. Choose the smallest test, mutation or inspection that can disprove a doubtful assumption. A full suite cannot supply a missing assertion; a test failure is not evidence of a product defect until its cause is understood.
 
+For new or substantially changed interfaces, follow [Application consistency and complete flows](../../../docs/reviewing.md#application-consistency-and-complete-flows). Assess integration with existing user flows and controls as well as isolated correctness; distinguish accepted product choices from demonstrated defects. Use the contributor handoff procedure to preserve verification ownership during an authorized takeover.
+
 ## Resolve and report
 
 Resolve material hypotheses or state their uncertainty. Classify demonstrated defects, performance regressions, coverage gaps, integration work, defensive improvements, documentation inconsistencies and optional cleanup separately. For a defect, provide the trigger, expected and actual behavior, location and evidence. A sound change can receive a no-findings conclusion; do not impose a quota of findings, edits or mutations.
