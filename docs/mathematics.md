@@ -1136,7 +1136,7 @@ from `u′ = cos β/ρ`, `v′ = sin β/r`. It is integrated without units: the 
 
 - great circles at every sample against the rotation formula, on the sphere and in the plane through the center (to `10⁻¹²` of r), with unit tangents; crossings of the north pole, and launches from a pole, east and north, against known points;
 - chord sums against `2rN sin(Δs/2r)`; a whole great circle returns, and 0.999 of one does not;
-- on the torus, the outer and inner equators and a meridian as exact circles that return; an oblique winding thread over 80 units with its invariants, unwrapped chart and no return; and the thread retraced from its end, reversed, to its start within `10⁻⁶`;
+- on the torus, the outer and inner equators and a meridian as exact circles that return; an oblique winding thread over 80 units with its invariants, unwrapped chart and no return; the thread retraced from its end, reversed, to its start within `10⁻⁶`; and all `N + 1` samples, the last at the end state, where `kL/N` rounds past L;
 - convergence: the end of a 60-unit thread at `R/r = 1.3` against a `10⁻¹⁴` reference falls from `1.6·10⁻⁴` to `8.8·10⁻⁷`, `8.1·10⁻⁹` and `8.4·10⁻¹¹` as the tolerance tightens from `10⁻⁶` to `10⁻¹²`, with more steps;
 - near-horn tori (R/r = 1.01, 1.002) keep their invariants to `10⁻⁷`, and R/r = 1, 0.6, 0 and 1.0005 are unavailable;
 - every fan member is bit for bit the thread a single launch in its direction draws; a whole-turn spread repeats no direction;

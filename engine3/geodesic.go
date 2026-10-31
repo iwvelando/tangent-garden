@@ -289,7 +289,9 @@ func torusThread(R, r float64, g GeodesicRequest, beta float64, budget int) Geod
 		if last {
 			reached = total
 		}
-		for ; next <= g.Samples && tau(next) <= reached; next++ {
+		// The last step takes every remaining sample: s_N = L·N/N can
+		// round above L, and so past the end it reaches.
+		for ; next <= g.Samples && (last || tau(next) <= reached); next++ {
 			if d := tau(next) - t; d < h && !(last && next == g.Samples) {
 				sample(dense.Step(f, t, y, d, false))
 			} else {

@@ -190,6 +190,22 @@ func TestTorusGeodesicInvariants(t *testing.T) {
 	if short := threads(t, launch(torusPatch(R, r, 24, 24), 0.4, -0.3, 70, 0, 1, 13.7, 100)).Threads[0]; short.Reached != 13.7 {
 		t.Fatalf("reached %.17g of 13.7", short.Reached)
 	}
+	// It also keeps its last sample, s_N = L, at its end, though L·N/N
+	// rounds above L for these lengths and counts.
+	for _, c := range []struct {
+		length  float64
+		samples int
+	}{{0.1, 12}, {0.7, 187}, {7.7, 13}, {4 * math.Pi, 13}} {
+		if c.length*float64(c.samples)/float64(c.samples) <= c.length {
+			t.Fatalf("L = %g, N = %d no longer rounds above L", c.length, c.samples)
+		}
+		th := threads(t, launch(torusPatch(R, r, 24, 24), 0.4, -0.3, 70, 0, 1, c.length, c.samples)).Threads[0]
+		if th.Reason != "end" || len(th.Points) != c.samples+1 || len(th.Tangents) != c.samples+1 || len(th.U) != c.samples+1 {
+			t.Fatalf("L = %g, N = %d: %s with %d points", c.length, c.samples, th.Reason, len(th.Points))
+		}
+		nearVec(t, "last sample", th.Points[c.samples], th.End, 1e-15*(R+r))
+		nearVec(t, "last tangent", th.Tangents[c.samples], th.EndTangent, 1e-15)
+	}
 	if last := len(th.U) - 1; math.Abs(th.U[last]-th.U[0]) < 4*math.Pi || math.Abs(th.V[last]-th.V[0]) < 4*math.Pi {
 		t.Fatalf("oblique: the chart should unwrap across several seams, ends at (%g, %g)", th.U[last], th.V[last])
 	}

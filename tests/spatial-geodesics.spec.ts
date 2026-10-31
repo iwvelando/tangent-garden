@@ -120,6 +120,7 @@ test("threads launched on an edited torus take defaults, refuse bad fields by na
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "A surface and its centers of curvature",
   );
+  const plain = await pixels(page);
   await launch(page).check();
   await settled(page);
   const surface = (await config(page)).surface;
@@ -140,6 +141,7 @@ test("threads launched on an edited torus take defaults, refuse bad fields by na
     selected: 4,
   });
   const drawn = await pixels(page);
+  expect(drawn).not.toBe(plain);
   for (const [name, text, message] of [
     ["Thread length L", "0", "length L"],
     ["Fan spread (°)", "400", "spread"],
@@ -194,6 +196,10 @@ test("threads launched on an edited torus take defaults, refuse bad fields by na
   await expect(unavailable(page)).toHaveCount(0);
   expect((await config(page)).surface.b).toBe(0.5);
   await expect(note(page)).toContainText("12 threads on the torus");
+  // Turned off again, the edited study draws as it did before the threads.
+  await launch(page).uncheck();
+  await settled(page);
+  expect(await pixels(page)).toBe(plain);
 });
 
 test("an ellipsoid with unequal axes has no threads until it is a sphere", async ({

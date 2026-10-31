@@ -364,9 +364,6 @@
     gap: 14px;
   }
 }
-/* One scrolling row of families, so the pictures start sooner: on a phone
-   upright or on its side, and in any short window. A touch screen swipes
-   it, so it hides the scrollbar a mouse needs. */
 /* A short window, as a phone on its side, gives the pictures every row it
    has, as a phone held upright does. */
 @media (max-height: 560px) {
@@ -380,6 +377,9 @@
     padding-block: 12px 8px;
   }
 }
+/* One scrolling row of families, so the pictures start sooner: on a phone
+   upright or on its side, and in any short window. A touch screen swipes
+   it, so it hides the scrollbar a mouse needs. */
 @media (max-width: 700px), (max-height: 560px) {
   .gallery-families {
     flex-wrap: nowrap;
