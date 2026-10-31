@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import {
   openAnimation,
   exportImage,
@@ -35,6 +35,18 @@ async function progress(page: Page) {
 }
 async function definition(page: Page) {
   return JSON.parse((await page.locator("#artwork desc").textContent())!);
+}
+// The requests a test's worker wrapper recorded as outstanding together on
+// one engine (in the window global named), attached when there are any, as
+// the message for the assertion that there are none.
+async function overlapping(page: Page, info: TestInfo, global: string) {
+  const overlaps = await page.evaluate((name) => (window as any)[name], global);
+  if (overlaps.length)
+    await info.attach("overlapping-requests", {
+      body: JSON.stringify(overlaps, null, 2),
+      contentType: "application/json",
+    });
+  return `Requests outstanding together on one engine: ${JSON.stringify(overlaps)}`;
 }
 
 test("tracks interpolate independently and reveal preserves gaps and sample identity", () => {
@@ -1511,9 +1523,25 @@ for (const expensive of [false, true])
       (window as any).phraseCosts = records;
       (window as any).phraseRequests = 0;
       (window as any).phraseMaximumPending = 0;
+      // Each time a request is sent while another is outstanding on the
+      // same engine, the requests then outstanding, so a failure shows
+      // which engine and whether Play had been pressed.
+      const overlaps: any[] = [];
+      (window as any).phraseOverlaps = overlaps;
+      let workers = 0;
       const Base = window.Worker;
       window.Worker = class extends Base {
-        pending = new Map<number, { start: number; samples: number }>();
+        worker = ++workers;
+        pending = new Map<
+          number,
+          {
+            id: number;
+            start: number;
+            samples: number;
+            probeOnly: boolean;
+            afterPlay: boolean;
+          }
+        >();
         constructor(...args: ConstructorParameters<typeof Worker>) {
           super(...args);
           this.addEventListener("message", (e) => {
@@ -1531,13 +1559,25 @@ for (const expensive of [false, true])
           if (message.action === "compute") {
             (window as any).phraseRequests++;
             this.pending.set(message.id, {
+              id: message.id,
               start: performance.now(),
               samples: message.config.samples,
+              probeOnly: !!message.probeOnly,
+              afterPlay: !!(window as any).playPressed,
             });
             (window as any).phraseMaximumPending = Math.max(
               (window as any).phraseMaximumPending,
               this.pending.size,
             );
+            if (this.pending.size > 1 && overlaps.length < 10)
+              overlaps.push({
+                worker: this.worker,
+                at: Math.round(performance.now()),
+                outstanding: [...this.pending.values()].map((r) => ({
+                  ...r,
+                  start: Math.round(r.start),
+                })),
+              });
           }
           (super.postMessage as any)(message, ...rest);
         }
@@ -1590,6 +1630,7 @@ for (const expensive of [false, true])
           exact: true,
         })
         .fill(String(duration));
+    await page.evaluate(() => ((window as any).playPressed = true));
     const began = Date.now();
     await page
       .getByRole("button", { name: "Play animation", exact: true })
@@ -1634,6 +1675,7 @@ for (const expensive of [false, true])
     const records = await costs();
     expect(
       await page.evaluate(() => (window as any).phraseMaximumPending),
+      await overlapping(page, info, "phraseOverlaps"),
     ).toBeLessThanOrEqual(1);
     await info.attach("phrase-worker-observations", {
       body: JSON.stringify(
@@ -1667,8 +1709,13 @@ test("a deep view-refined phrase refines camera-only frames by piece and simulta
     const log: any[] = [];
     (window as any).refinedRequests = log;
     (window as any).refinedMaximumPending = 0;
+    // As in the phrase cost tests: requests outstanding together.
+    const overlaps: any[] = [];
+    (window as any).refinedOverlaps = overlaps;
+    let workers = 0;
     const Base = window.Worker;
     window.Worker = class extends Base {
+      worker = ++workers;
       pending = new Map<number, any>();
       constructor(...args: ConstructorParameters<typeof Worker>) {
         super(...args);
@@ -1682,9 +1729,11 @@ test("a deep view-refined phrase refines camera-only frames by piece and simulta
       postMessage(message: any, ...rest: any[]) {
         if (message.action === "compute" && !message.probeOnly) {
           const entry = {
+            id: message.id,
             start: performance.now(),
             to: message.config.stack.to,
             view: message.view,
+            afterPlay: !!(window as any).playPressed,
           };
           log.push(entry);
           this.pending.set(message.id, entry);
@@ -1692,6 +1741,22 @@ test("a deep view-refined phrase refines camera-only frames by piece and simulta
             (window as any).refinedMaximumPending,
             this.pending.size,
           );
+          if (this.pending.size > 1 && overlaps.length < 10)
+            overlaps.push({
+              worker: this.worker,
+              at: Math.round(performance.now()),
+              outstanding: [...this.pending.values()].map((r) => ({
+                id: r.id,
+                start: Math.round(r.start),
+                to: r.to,
+                refined: !r.view
+                  ? "none"
+                  : r.view.radius === undefined
+                    ? "own view"
+                    : "piece",
+                afterPlay: r.afterPlay,
+              })),
+            });
         }
         (super.postMessage as any)(message, ...rest);
       }
@@ -1746,6 +1811,7 @@ test("a deep view-refined phrase refines camera-only frames by piece and simulta
       structuredClone((window as any).refinedRequests as any[]),
     );
   const before = (await log()).length;
+  await page.evaluate(() => ((window as any).playPressed = true));
   const began = Date.now();
   await page
     .getByRole("button", { name: "Play animation", exact: true })
@@ -1781,6 +1847,7 @@ test("a deep view-refined phrase refines camera-only frames by piece and simulta
   expect(own.length).toBeGreaterThan(0);
   expect(
     await page.evaluate(() => (window as any).refinedMaximumPending),
+    await overlapping(page, info, "refinedOverlaps"),
   ).toBeLessThanOrEqual(1);
   const canceled = Date.now();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
