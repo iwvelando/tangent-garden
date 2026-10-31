@@ -6,6 +6,8 @@ Use this procedure for a PR, branch or local diff, including a review started in
 
 Record the target base, merge base and reviewed head, or the base revision and uncommitted scope for a local diff. Distinguish review-only work from an authorized takeover that includes fixes. Preserve user edits and use isolated scratch copies or compiler overlays for experiments. A review request does not by itself authorize posting comments, merging or deploying.
 
+An authorized takeover after an implementer's handoff includes the PR's CI. The implementer opens the PR without waiting for it, so its first results are the reviewer's to read: rerun, correct and refresh durations under [Verification-only follow-ups](contributing.md#verification-only-follow-ups), or treat a failure as a finding when its cause is the change. Read the handoff for the full run's revision and any spec file still unrecorded in the shard durations.
+
 Read the intended behavior and compatibility promises, then independently reconstruct the implementation from code. Treat the author's explanation, reported checks and existing test names as claims to verify. Separate personally reproduced evidence from reported evidence. Follow the user's validation scope and the default product-iteration procedure: targeted checks support early artwork and interaction feedback, while final verification belongs to the implementing session or its designated integration stage. Do not require a full `make pre-pr` merely to offer feedback on an early product preview. Use [Validation scope and handoff](contributing.md#validation-scope-and-handoff) to track that work.
 
 ## Follow the change beyond the diff
@@ -63,6 +65,8 @@ Lead the final response with the verdict, material changes, verification status 
 For an authorized takeover, update the PR description before handing it back: replace stale instructions to run deferred checks with their actual status, identify the reviewed and tested revisions, and distinguish author-reported evidence, personally performed checks and CI results. A green CI run does not establish that a local command ran. Keep unfinished checks and their owner explicit. If updating the PR is outside the task's authorization, supply the corrected handoff text to the user. A human validation guide complements this status; it does not replace it.
 
 Stop when material review hypotheses are resolved or clearly qualified, required verification is complete or explicitly deferred under the user's authorization, and the handoff is accurate. Additional experiments need a concrete unresolved risk or new evidence. Pending required CI remains pending verification; use bounded waits and avoid repeating unaffected local checks while it runs. A sound implementation needs no edits merely to demonstrate review effort.
+
+When the takeover authorizes merging, merge only once material findings are resolved, required verification is complete and CI passes on the final head. Then follow the `main` run through its deploy and live smoke tests ([Deployment](development.md#deployment)); report a failed deploy rather than retrying it another way. Finish with the post-merge handoff in [Review, completion and downstream handoff](contributing.md#review-completion-and-downstream-handoff): the outcome comment, reconciled issue bodies and downstream refreshes.
 
 ## Evaluating the review procedure
 
