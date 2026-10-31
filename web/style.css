@@ -423,6 +423,20 @@ aside {
 aside section {
   border-top-color: var(--section-rule);
 }
+/* The sidebar's closing line, set apart like a section but quieter. */
+.about-site {
+  border-top: 1px solid var(--section-rule);
+  padding-top: 18px;
+  margin: 28px 0 0;
+  font-size: 12px;
+}
+.about-site a {
+  color: var(--muted);
+}
+.about-site a:hover,
+.about-site a:focus-visible {
+  color: var(--text);
+}
 .field {
   display: block;
   margin: 14px 0;
