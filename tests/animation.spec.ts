@@ -38,7 +38,11 @@ async function definition(page: Page) {
 }
 // The requests a test's worker wrapper recorded as outstanding together on
 // one engine (in the window global named), attached when there are any, as
-// the message for the assertion that there are none.
+// the message for the assertion that playback never queues a second request.
+// Overlaps before Play are recorded too, for context: the page's own
+// debounced recalculations may overlap, since a superseded one is ignored
+// rather than aborted, so only requests sent after Play count toward the
+// limit.
 async function overlapping(page: Page, info: TestInfo, global: string) {
   const overlaps = await page.evaluate((name) => (window as any)[name], global);
   if (overlaps.length)
@@ -46,7 +50,7 @@ async function overlapping(page: Page, info: TestInfo, global: string) {
       body: JSON.stringify(overlaps, null, 2),
       contentType: "application/json",
     });
-  return `Requests outstanding together on one engine: ${JSON.stringify(overlaps)}`;
+  return `Requests outstanding together on one engine (only those sent after Play count): ${JSON.stringify(overlaps)}`;
 }
 
 test("tracks interpolate independently and reveal preserves gaps and sample identity", () => {
@@ -1522,10 +1526,13 @@ for (const expensive of [false, true])
       const records: any[] = [];
       (window as any).phraseCosts = records;
       (window as any).phraseRequests = 0;
-      (window as any).phraseMaximumPending = 0;
+      // The most requests sent after Play outstanding together on one
+      // engine: more than one is a frame backlog.
+      (window as any).phraseMaximumPlayback = 0;
       // Each time a request is sent while another is outstanding on the
       // same engine, the requests then outstanding, so a failure shows
-      // which engine and whether Play had been pressed.
+      // which engine and whether Play had been pressed. Up to ten before
+      // Play and ten after, so the first cannot crowd out the second.
       const overlaps: any[] = [];
       (window as any).phraseOverlaps = overlaps;
       let workers = 0;
@@ -1558,21 +1565,27 @@ for (const expensive of [false, true])
         postMessage(message: any, ...rest: any[]) {
           if (message.action === "compute") {
             (window as any).phraseRequests++;
+            const afterPlay = !!(window as any).playPressed;
             this.pending.set(message.id, {
               id: message.id,
               start: performance.now(),
               samples: message.config.samples,
               probeOnly: !!message.probeOnly,
-              afterPlay: !!(window as any).playPressed,
+              afterPlay,
             });
-            (window as any).phraseMaximumPending = Math.max(
-              (window as any).phraseMaximumPending,
-              this.pending.size,
-            );
-            if (this.pending.size > 1 && overlaps.length < 10)
+            if (afterPlay)
+              (window as any).phraseMaximumPlayback = Math.max(
+                (window as any).phraseMaximumPlayback,
+                [...this.pending.values()].filter((r) => r.afterPlay).length,
+              );
+            if (
+              this.pending.size > 1 &&
+              overlaps.filter((o) => o.afterPlay === afterPlay).length < 10
+            )
               overlaps.push({
                 worker: this.worker,
                 at: Math.round(performance.now()),
+                afterPlay,
                 outstanding: [...this.pending.values()].map((r) => ({
                   ...r,
                   start: Math.round(r.start),
@@ -1674,7 +1687,7 @@ for (const expensive of [false, true])
     const cancellationMilliseconds = Date.now() - canceled;
     const records = await costs();
     expect(
-      await page.evaluate(() => (window as any).phraseMaximumPending),
+      await page.evaluate(() => (window as any).phraseMaximumPlayback),
       await overlapping(page, info, "phraseOverlaps"),
     ).toBeLessThanOrEqual(1);
     await info.attach("phrase-worker-observations", {
@@ -1708,8 +1721,9 @@ test("a deep view-refined phrase refines camera-only frames by piece and simulta
   await page.addInitScript(() => {
     const log: any[] = [];
     (window as any).refinedRequests = log;
-    (window as any).refinedMaximumPending = 0;
-    // As in the phrase cost tests: requests outstanding together.
+    // As in the phrase cost tests: the most requests sent after Play
+    // outstanding together on one engine, and every overlap.
+    (window as any).refinedMaximumPlayback = 0;
     const overlaps: any[] = [];
     (window as any).refinedOverlaps = overlaps;
     let workers = 0;
@@ -1737,14 +1751,19 @@ test("a deep view-refined phrase refines camera-only frames by piece and simulta
           };
           log.push(entry);
           this.pending.set(message.id, entry);
-          (window as any).refinedMaximumPending = Math.max(
-            (window as any).refinedMaximumPending,
-            this.pending.size,
-          );
-          if (this.pending.size > 1 && overlaps.length < 10)
+          if (entry.afterPlay)
+            (window as any).refinedMaximumPlayback = Math.max(
+              (window as any).refinedMaximumPlayback,
+              [...this.pending.values()].filter((r) => r.afterPlay).length,
+            );
+          if (
+            this.pending.size > 1 &&
+            overlaps.filter((o) => o.afterPlay === entry.afterPlay).length < 10
+          )
             overlaps.push({
               worker: this.worker,
               at: Math.round(performance.now()),
+              afterPlay: entry.afterPlay,
               outstanding: [...this.pending.values()].map((r) => ({
                 id: r.id,
                 start: Math.round(r.start),
@@ -1846,7 +1865,7 @@ test("a deep view-refined phrase refines camera-only frames by piece and simulta
   );
   expect(own.length).toBeGreaterThan(0);
   expect(
-    await page.evaluate(() => (window as any).refinedMaximumPending),
+    await page.evaluate(() => (window as any).refinedMaximumPlayback),
     await overlapping(page, info, "refinedOverlaps"),
   ).toBeLessThanOrEqual(1);
   const canceled = Date.now();
