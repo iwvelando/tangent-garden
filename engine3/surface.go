@@ -37,6 +37,9 @@ type SurfaceRequest struct {
 	Reach    float64 `json:"reach"`
 	Edges    bool    `json:"edges,omitempty"`
 	Ridges   bool    `json:"ridges,omitempty"`
+	// Geodesics launches a fan of geodesic threads on a sphere or a ring
+	// torus (see GeodesicRequest); absent, there are none.
+	Geodesics *GeodesicRequest `json:"geodesics,omitempty"`
 }
 
 // SurfaceSheet is a surface sampled on the parameter grid. Points[i][j] is
@@ -98,6 +101,8 @@ type SurfaceResult struct {
 	Folded   int             `json:"folded"`
 	Edges    *[]CuspidalEdge `json:"edges,omitempty"`
 	Ridges   *[]CuspidalEdge `json:"ridges,omitempty"`
+	// Geodesics are the threads, only when the request launches them.
+	Geodesics *GeodesicResult `json:"geodesics,omitempty"`
 }
 
 const (
@@ -121,6 +126,9 @@ func (q SurfaceRequest) validate() error {
 	}
 	if !bounded(q.Reach) {
 		return fieldErr("surface.reach", "the normal reach ℓ must be finite and within ±100000")
+	}
+	if q.Geodesics != nil {
+		return q.Geodesics.validate()
 	}
 	return nil
 }
@@ -500,9 +508,16 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 		}
 	}
 	// The sparse normal lines fit with the surface they stand on; the
-	// offset and each focal sheet fit on their own, so the fences trim only
-	// a focal sheet's asymptotic tails.
+	// offset, each focal sheet and the geodesic threads fit on their own,
+	// so the fences trim only a focal sheet's asymptotic tails, and threads
+	// that run beyond an opened patch are framed.
 	families := [][]*Vec3{positions}
+	if q.Geodesics != nil {
+		if out.Geodesics, err = q.geodesics(); err != nil {
+			return Result{}, err
+		}
+		families = append(families, out.Geodesics.family())
+	}
 	for k := range out.Lines {
 		families[0] = append(families[0], &out.Lines[k].End)
 	}

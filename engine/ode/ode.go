@@ -29,11 +29,7 @@ func DormandPrince(f Func, t float64, y []float64, h float64, estimate bool) (ne
 	next = append([]float64{}, w.Step(f, t, y, h, estimate)...)
 	if estimate {
 		err = make([]float64, len(y))
-		for q := range err {
-			for r, e := range dpE {
-				err[q] += h * e * w.k[r][q]
-			}
-		}
+		w.Estimate(h, err)
 	}
 	return next, err
 }
@@ -70,6 +66,17 @@ func (w *Stages) Step(f Func, t float64, y []float64, h float64, estimate bool) 
 		}
 	}
 	return w.stage
+}
+
+// Estimate writes the embedded error estimate of the last Step, which must
+// have been taken by h with its estimate, component by component, into out.
+func (w *Stages) Estimate(h float64, out []float64) {
+	for q := range out {
+		out[q] = 0
+		for r, e := range dpE {
+			out[q] += h * e * w.k[r][q]
+		}
+	}
 }
 
 // Solution is an integrated system: the accepted steps from states Ys at

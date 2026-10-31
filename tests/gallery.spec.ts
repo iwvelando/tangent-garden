@@ -243,7 +243,7 @@ async function settled(page: Page) {
 
 for (const [path, count] of [
   ["/", 72],
-  ["/?study=3d", 141],
+  ["/?study=3d", 144],
   ["/?study=4d", 13],
 ] as const)
   test(`the ${path === "/" ? "2D" : path.endsWith("4d") ? "4D" : "3D"} gallery shows every example with a current thumbnail`, async ({
@@ -400,6 +400,47 @@ for (const path of ["/", "/?study=3d"])
     await expect(
       gallery(page).locator(`[data-example="${(await cards.count()) - 1}"]`),
     ).toHaveAttribute("aria-current", "true");
+  });
+
+// However many families a notebook has, a phone keeps them to one row that
+// scrolls sideways, upright or on its side, so the pictures keep the
+// screen; the row itself never widens the dialog.
+for (const [width, height] of [
+  [390, 844],
+  [844, 390],
+] as const)
+  test(`the gallery's families stay one scrolling row on a ${width} × ${height} phone`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/?study=3d");
+    await examplesButton(page).click();
+    const row = gallery(page).locator(".gallery-families");
+    await expect(row).toBeVisible();
+    const tops = await row
+      .getByRole("button")
+      .evaluateAll((buttons) =>
+        buttons.map((b) => Math.round(b.getBoundingClientRect().top)),
+      );
+    expect(tops.length).toBeGreaterThan(8);
+    expect(new Set(tops).size).toBe(1);
+    const [scroll, client] = await row.evaluate((r) => [
+      r.scrollWidth,
+      r.clientWidth,
+    ]);
+    expect(scroll).toBeGreaterThan(client);
+    expect(
+      await gallery(page).evaluate((d) => d.scrollWidth - d.clientWidth),
+    ).toBeLessThanOrEqual(0);
+    // The last family scrolls into reach, and the pictures fill most of
+    // what the head leaves.
+    const last = row.getByRole("button").last();
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
+    const grid = (await gallery(page)
+      .locator(".gallery-grid-wrap")
+      .boundingBox())!;
+    expect(grid.height).toBeGreaterThan(height * 0.4);
   });
 
 for (const colorScheme of ["light", "dark"] as const)

@@ -89,8 +89,8 @@
   margin: 0;
   padding-bottom: 16px;
 }
-.atlas-controls > .pair > .field {
-  margin: 0;
+.atlas-controls > .pair:has(> .field) {
+  padding-block: 0;
 }
 .atlas-ranges {
   display: grid;
@@ -100,8 +100,8 @@
 /* Keep first-open portrait spacing independent of subgrid child margins:
    row gaps, the options-to-ranges clearance and the Generate clearance
    belong to this wrapper. */
-.atlas-ranges .pair > .field {
-  margin: 0;
+.atlas-ranges .pair:has(> .field) {
+  padding-block: 0;
 }
 .atlas-ranges .pair > .field > .field-label {
   align-self: start;

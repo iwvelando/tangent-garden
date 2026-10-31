@@ -312,6 +312,20 @@ const config: SchemaOf<SpatialConfig> = {
         reach: "number",
         edges: { optional: "boolean" },
         ridges: { optional: "boolean" },
+        geodesics: {
+          optional: {
+            fields: {
+              u: "number",
+              v: "number",
+              direction: "number",
+              spread: "number",
+              count: "number",
+              length: "number",
+              samples: "number",
+              selected: "number",
+            },
+          },
+        },
       },
     },
     rays: {

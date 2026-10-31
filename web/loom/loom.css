@@ -115,12 +115,10 @@ html.loom-open {
 .loom-panes svg path:hover {
   opacity: 1;
 }
-.loom .pair {
+.loom .pair,
+.loom .pair:has(> .field) {
   padding-top: 12px;
   padding-bottom: 12px;
-}
-.loom .pair > .field {
-  margin: 0;
 }
 .loom details {
   margin: 16px 0;

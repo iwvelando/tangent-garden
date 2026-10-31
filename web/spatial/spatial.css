@@ -22,9 +22,11 @@
 }
 /* A subsection that opens with a field starts as close under its heading as
    one that opens with a checkbox: the fieldset's padding already clears it. */
-.spatial-probe > div > .field:first-child,
-.spatial-sight > div > .pair:first-child > .field {
+.spatial-probe > div > .field:first-child {
   margin-top: 0;
+}
+.spatial-sight > div > .pair:first-child:has(> .field) {
+  padding-top: 0;
 }
 /* Checkbox labels only: a Field's label keeps the shared .field-label row,
    in line with its help toggle and value. */

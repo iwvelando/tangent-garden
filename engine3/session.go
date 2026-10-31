@@ -55,10 +55,14 @@ func (e *Engine) Compute(c Request) (Result, error) {
 	} else {
 		light := c.Rays
 		light.Receiver = ReceiverRequest{}
-		if e.rays == nil || e.rays.surface != c.Surface || e.rays.light != light {
+		// A ray study draws no geodesic threads; a decoded request's
+		// pointer to them would never match the cached one.
+		surface := c.Surface
+		surface.Geodesics = nil
+		if e.rays == nil || e.rays.surface != surface || e.rays.light != light {
 			// A family used just once cannot benefit. Remember its key,
 			// but defer all tracing storage until the family repeats.
-			e.rays = &rayCache{surface: c.Surface, light: light}
+			e.rays = &rayCache{surface: surface, light: light}
 		} else {
 			c.rayCache = e.rays
 		}

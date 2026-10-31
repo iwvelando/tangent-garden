@@ -74,3 +74,25 @@ func TestSolutionState(t *testing.T) {
 		t.Fatal("an empty solution has no state")
 	}
 }
+
+// Estimate gives the same embedded error as DormandPrince, from the stages
+// of the last step, without allocating.
+func TestStagesEstimate(t *testing.T) {
+	var w Stages
+	y := []float64{1, 0, 0}
+	for _, h := range []float64{.4, .1, .025} {
+		_, want := DormandPrince(spiral, 0, y, h, true)
+		w.Step(spiral, 0, y, h, true)
+		got := make([]float64, 3)
+		w.Estimate(h, got)
+		for q := range got {
+			if got[q] != want[q] {
+				t.Fatalf("h=%v: estimate %v, want %v", h, got, want)
+			}
+		}
+	}
+	out := make([]float64, 3)
+	if n := testing.AllocsPerRun(20, func() { w.Step(spiral, 0, y, .1, true); w.Estimate(.1, out) }); n != 0 {
+		t.Fatalf("%v allocations per step", n)
+	}
+}

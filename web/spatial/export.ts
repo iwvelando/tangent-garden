@@ -58,7 +58,10 @@ import { probePoint } from "./probe";
 function studyTitle(frame: Frame) {
   const format = frame.config.format;
   if (format === "implicit") return "spatial implicit surface and sections";
-  if (format === "surface") return "spatial surface normals and focal sheets";
+  if (format === "surface")
+    return frame.config.surface.geodesics
+      ? "spatial surface geodesic threads"
+      : "spatial surface normals and focal sheets";
   if (format === "rays") return "spatial mirror rays and caustics";
   const title: Record<Frame["config"]["construction"], string> = {
     developable: "spatial tangent developable",

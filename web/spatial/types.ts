@@ -140,7 +140,9 @@ export const maxSpatialPursuers = 16;
 // each normal line runs from X to X + reach·n. With `edges` the offset's
 // cuspidal edges are located and drawn, and with `ridges` the patch's
 // ridges and the focal sheets' cuspidal edges over them; absent means off,
-// as in links made before them. Mirrors engine3.SurfaceRequest.
+// as in links made before them. With `geodesics` a fan of geodesic threads
+// is launched on a sphere or a ring torus (see GeodesicConfig); absent, as
+// in links made before it, there is none. Mirrors engine3.SurfaceRequest.
 export type SurfaceKind =
   "ellipsoid" | "torus" | "cylinder" | "paraboloid" | "monkey";
 export type SurfaceConfig = {
@@ -160,7 +162,29 @@ export type SurfaceConfig = {
   reach: number;
   edges?: boolean;
   ridges?: boolean;
+  geodesics?: GeodesicConfig;
 };
+// A fan of `count` geodesic threads from the chart point X(u, v), each
+// `length` long in the surface's units, sampled at `samples` + 1 evenly
+// spaced arc lengths. `direction` β, in degrees, is measured from unit X_u
+// toward unit X_v; on a sphere v is a latitude within ±π/2, and at a pole
+// those vectors are their limits along meridian u. The fan shares `spread`
+// degrees evenly, each thread at the middle of its share, so thread k of n
+// leaves at β + spread((2k + 1)/2n − 1/2). `selected`, from 1, is the
+// thread drawn and described on its own. Mirrors engine3.GeodesicRequest.
+export type GeodesicConfig = {
+  u: number;
+  v: number;
+  direction: number;
+  spread: number;
+  count: number;
+  length: number;
+  samples: number;
+  selected: number;
+};
+export const maxGeodesicThreads = 32;
+export const maxGeodesicSamples = 20000;
+export const maxGeodesicPoints = 200000;
 export const maxSurfaceCells = 14400;
 export const maxSurfaceCurves = 48;
 // The light on a surface, for one reflection ("reflect", a mirror) or one
@@ -913,6 +937,44 @@ export type SurfaceResult = {
   folded: number;
   edges?: CuspidalEdge[];
   ridges?: CuspidalEdge[];
+  geodesics?: GeodesicResult;
+};
+// Mirrors engine3.GeodesicThread: the samples at arc lengths k·step through
+// the last reached, nothing after a stop. `reason` is "end" (its whole
+// length), "exhausted" (its share of the step budget) or "unresolved" (the
+// integration failed); `end` is its state at arc length `reached`, which can
+// lie between samples. A torus thread's `u` and `v` are its unwrapped chart
+// coordinates. `return` is how far a thread that ran its length ends from
+// its start (in radii r, and between unit tangents), and `closes` whether
+// both are within 10⁻⁶.
+export type GeodesicThread = {
+  direction: number;
+  points: Vec3[];
+  tangents: Vec3[];
+  u?: number[];
+  v?: number[];
+  reason: "end" | "exhausted" | "unresolved";
+  reached: number;
+  end: Vec3;
+  endTangent: Vec3;
+  endU: number;
+  endV: number;
+  steps: number;
+  return: { position: number; direction: number };
+  closes: boolean;
+  // Set by a reveal that ends the thread short of where it stopped.
+  partial?: boolean;
+};
+// Mirrors engine3.GeodesicResult. With `unavailable` set the surface has
+// no threads, and says why.
+export type GeodesicResult = {
+  surface: "sphere" | "torus" | "";
+  unavailable?: string;
+  length: number;
+  step: number;
+  threads: GeodesicThread[];
+  selected: number;
+  steps: number;
 };
 // Mirrors engine3.CuspidalEdge: a curve on the offset where 1 − dκᵢ = 0,
 // along which it folds and meets focal sheet `branch`, or a curve along
