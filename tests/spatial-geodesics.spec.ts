@@ -62,6 +62,9 @@ const torusThreads = { label: "Threads finding their way around a torus" };
 test("the torus preset draws its fan, its selected thread and their notes", async ({
   page,
 }) => {
+  // Dense linework exports and canvas reads on CI's software WebGL took
+  // 22–30 s on one runner and over 60 s on a runner half as fast.
+  test.slow();
   await ready(page);
   await choosePreset(page, torusThreads);
   await settled(page);
@@ -228,6 +231,9 @@ test("an ellipsoid with unequal axes has no threads until it is a sphere", async
 test("the reveal draws every thread along its arc length; seeking and stopping agree", async ({
   page,
 }) => {
+  // Dense linework exports and canvas reads on CI's software WebGL took
+  // 22–30 s on one runner and over 60 s on a runner half as fast.
+  test.slow();
   await ready(page);
   await choosePreset(page, torusThreads);
   await settled(page);
