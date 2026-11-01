@@ -226,7 +226,8 @@ test("a click near a thin circle selects exactly that circle and its generating 
   // The generators are mutually tangent too: a Descartes configuration.
   for (const a of generators)
     for (const b of generators)
-      if (a.i < b.i) expect(tangent(b.i === 0 ? a : b, b.i === 0 ? b : a));
+      if (a.i < b.i)
+        expect(tangent(b.i === 0 ? a : b, b.i === 0 ? b : a)).toBe(true);
   const buttons = await d
     .getByRole("group", { name: "Generating circles" })
     .getByRole("button")
@@ -587,6 +588,90 @@ test("rapid edits keep one computation and show only the latest packing", async 
     .toBeGreaterThanOrEqual(before + 2);
   await settled(page);
 });
+
+test("restoring the shown cutoffs invalidates a pending replacement", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const w = window as any;
+    w.gardenPosts = [];
+    w.releaseGarden = () => {};
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q?.action === "garden") {
+        w.gardenPosts.push(q.garden.depth);
+        if (q.garden.depth === 11) {
+          this.addEventListener("message", (event) => {
+            if (event.data.id === q.id) w.gardenDelivered = true;
+          });
+          w.releaseGarden = () => send.call(this, q, ...rest);
+          return;
+        }
+      }
+      send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  const d = await openGarden(page);
+  const art = d.locator("#garden-artwork");
+  const original = await circles(art);
+  const depth = d.getByLabel("Depth", { exact: true });
+  await depth.fill("11");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).gardenPosts))
+    .toEqual([12, 11]);
+  await depth.fill("12");
+  await ready(d);
+  await page.evaluate(() => (window as any).releaseGarden());
+  // Wait until the held reply crosses the real worker/client boundary.
+  await expect
+    .poll(() => page.evaluate(() => (window as any).gardenDelivered))
+    .toBe(true);
+  await ready(d);
+  expect(await circles(art)).toEqual(original);
+  await expect(summary(d)).toHaveAttribute("data-current", "true");
+  await expect(
+    d.getByRole("button", { name: "Copy link", exact: true }),
+  ).toBeEnabled();
+});
+
+for (const queued of [false, true])
+  test(`invalidating garden work ignores an active refusal with queued intent ${queued}`, async () => {
+    const { GardenSession } = await import("../web/garden/session");
+    const { gardenSeed } = await import("../web/garden/model");
+    const requests: number[] = [];
+    let reject!: (e: Error) => void;
+    const client = {
+      garden: (q: { depth: number }) => {
+        requests.push(q.depth);
+        return new Promise((_, fail) => {
+          reject = fail;
+        });
+      },
+      dispose: () => {},
+    };
+    const session = new GardenSession(() => client as any);
+    const published: unknown[] = [];
+    const show = (r: unknown) => published.push(r);
+    const fail = (e: Error) => published.push(e);
+    const q = {
+      seed: gardenSeed,
+      depth: 11,
+      minRadius: 0.002,
+      maxCircles: 5000,
+    };
+    session.update(q, show, fail);
+    if (queued) session.update({ ...q, depth: 10 }, show, fail);
+    session.invalidate();
+    const { EngineError } = await import("../web/engine-client");
+    reject(new EngineError("obsolete refusal", "depth"));
+    // Drain the active promise and its continuation, without a timer race.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(requests).toEqual([11]);
+    expect(published).toEqual([]);
+    session.cancel();
+  });
 
 test("a failed engine is reported and the garden recovers when asked again", async ({
   page,

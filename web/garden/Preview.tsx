@@ -166,7 +166,10 @@ export function GardenPreview({
         ),
       result ? 120 : 0,
     );
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      session.current?.invalidate();
+    };
   }, [key, !!countError, !!scalarError, scalarPending, attempt]);
   // The camera's eased move to a view, or a jump when reduced motion is
   // requested. It interpolates the model point at the page's center and the

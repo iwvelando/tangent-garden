@@ -56,10 +56,15 @@ export class GardenSession {
     }
     this.busy = false;
   }
-  cancel() {
-    this.closed = true;
+  // Settings can return to the shown result without another computation.
+  // Drop ownership of active work and any queued intent in that case too.
+  invalidate() {
     this.revision++;
     this.next = undefined;
+  }
+  cancel() {
+    this.closed = true;
+    this.invalidate();
     this.client.dispose();
   }
 }
