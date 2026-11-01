@@ -609,8 +609,11 @@ test("flower path controls preserve latitude work and reject invalid intermediat
   await expect(petals).toHaveValue("5");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await amplitude.fill("pi/8");
+  // Settling alone can precede Go's resolution of the expression.
+  await expect
+    .poll(async () => (await meta(page)).config.weave.amplitude)
+    .toBe(Math.PI / 8);
   await settle(page);
-  expect((await meta(page)).config.weave.amplitude).toBe(Math.PI / 8);
   for (const bad of ["t", "x", "a", "1/0", "-0.1", "pi/2"]) {
     await amplitude.fill(bad);
     await expect(page.getByRole("alert")).toBeVisible();
@@ -820,6 +823,10 @@ for (const size of [
       exact: true,
     });
     await amplitude.fill("pi/4");
+    // The stage is not yet busy while Go resolves the entered expression.
+    await expect
+      .poll(async () => (await meta(page)).config.weave.amplitude)
+      .toBe(Math.PI / 4);
     await settle(page);
     const petals = page.getByRole("spinbutton", {
       name: "Petals",
@@ -829,11 +836,15 @@ for (const size of [
       name: "Central latitude α",
       exact: true,
     });
-    const before = (await neighbor.boundingBox())!.y;
+    // In page coordinates: a phone keeps the focused amplitude's caret in
+    // view, scrolling a few pixels once its resolved value renders.
+    const top = () =>
+      neighbor.evaluate((e) => e.getBoundingClientRect().top + scrollY);
+    const before = await top();
     await page
       .getByRole("button", { name: "About Flower amplitude A", exact: true })
       .click();
-    expect((await neighbor.boundingBox())!.y).toBe(before);
+    expect(await top()).toBe(before);
     await amplitude.fill("pi/4+0.01");
     await expect(page.getByRole("alert")).toBeVisible();
     await amplitude.fill("pi/8");
