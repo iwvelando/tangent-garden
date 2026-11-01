@@ -536,6 +536,31 @@ test("3D subsections open the same distance under their headings", async ({
   const reference = gaps[0][1] as number;
   for (const [name, gap] of gaps)
     expect(Math.abs((gap as number) - reference), String(name)).toBeLessThan(2);
+  // A subsection that opens with a switch, whose help toggle makes its row
+  // taller than a plain checkbox label, puts its checkbox where the layer
+  // list puts its first one. Fonts differ by platform, hence within 1px.
+  const boxes = await page
+    .locator(".spatial-layers, .spatial-cut")
+    .evaluateAll((sets) =>
+      sets.map((set) => {
+        const legend = set.querySelector("legend")!.getBoundingClientRect();
+        const box = set
+          .querySelector(
+            "legend ~ div input[type=checkbox], legend ~ label input[type=checkbox]",
+          )!
+          .getBoundingClientRect();
+        return [
+          set.querySelector("legend")!.textContent,
+          box.top - legend.bottom,
+        ];
+      }),
+    );
+  expect(boxes.map(([name]) => name)).toContain("Cut away");
+  for (const [name, gap] of boxes)
+    expect(
+      Math.abs((gap as number) - (boxes[0][1] as number)),
+      String(name),
+    ).toBeLessThan(1);
 });
 
 // On phones every notebook puts its view buttons on their own row, under the

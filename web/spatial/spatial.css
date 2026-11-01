@@ -28,6 +28,13 @@
 .spatial-sight > div > .pair:first-child:has(> .field) {
   padding-top: 0;
 }
+/* One that opens with a switch, whose help toggle makes its row 3px taller
+   than a checkbox label, with the checkbox centered, starts 1.5px higher so
+   its checkbox sits where the layer list's first one does. */
+.spatial-probe > div > .probe-switch:first-child,
+.spatial-cut > div > .probe-switch:first-child {
+  margin-top: -1.5px;
+}
 /* Checkbox labels only: a Field's label keeps the shared .field-label row,
    in line with its help toggle and value. */
 .spatial-layers label,
