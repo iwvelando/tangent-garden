@@ -138,6 +138,19 @@ func TestValidationNamesItsField(t *testing.T) {
 		{"v samples", "surface.vSamples", func() Request { c := ellipsoid(); c.Surface.VSamples = 4; return c }},
 		{"surface curves", "surface.curves", func() Request { c := ellipsoid(); c.Surface.Curves = 1; return c }},
 		{"surface offset", "surface.offset", func() Request { c := ellipsoid(); c.Surface.Offset = nan; return c }},
+		{"family scale", "surface.a", func() Request { return associateStudy(0, 0, -1, 1, -1, 1, 24, 24) }},
+		{"family angle", "surface.b", func() Request { return associateStudy(1, 2, -1, 1, -1, 1, 24, 24) }},
+		{"family u end", "surface.uMax", func() Request { return associateStudy(1, 0, -1, 13, -1, 1, 24, 24) }},
+		{"family v start", "surface.vMin", func() Request { return associateStudy(1, 0, -1, 1, -5, 1, 24, 24) }},
+		{"family offset", "surface.offset", func() Request { c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24); c.Surface.Offset = 1; return c }},
+		{"family edges", "surface.edges", func() Request { c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24); c.Surface.Edges = true; return c }},
+		{"family ridges", "surface.ridges", func() Request { c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24); c.Surface.Ridges = true; return c }},
+		{"family lit", "surface.kind", func() Request {
+			c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24)
+			c.Format = "rays"
+			c.Rays = RaysRequest{Interaction: "reflect", N1: 1, N2: 1.5, Light: "parallel", Elevation: 90, Length: 1, Receiver: ReceiverRequest{Plane: "none"}}
+			return c
+		}},
 		{"surface reach", "surface.reach", func() Request { c := ellipsoid(); c.Surface.Reach = 2e5; return c }},
 		{"n2", "rays.n2", func() Request {
 			c := rays(parallel(0, 90))

@@ -1,3 +1,4 @@
+import { tiered, type Help } from "../help";
 import { edgesNote, ridgesNote } from "./cuspidal";
 import type {
   FocalShape,
@@ -26,6 +27,16 @@ export const surfaceDefaults: Record<SurfaceKind, Shape> = {
   cylinder: { a: 1.4, b: 0.8, c: 0, uMin: 0, uMax: turn, vMin: -1, vMax: 1 },
   paraboloid: { a: 1, b: -1, c: 0, uMin: -1, uMax: 1, vMin: -1, vMax: 1 },
   monkey: { a: 0.5, b: 0, c: 0, uMin: -1, uMax: 1, vMin: -1, vMax: 1 },
+  // The helicoid, one turn of its stair: a patch, not a whole chart.
+  "helicoid-catenoid": {
+    a: 1,
+    b: 0,
+    c: 0,
+    uMin: -Math.PI,
+    uMax: Math.PI,
+    vMin: -1.5,
+    vMax: 1.5,
+  },
 };
 export const surfaceNames: Record<SurfaceKind, string> = {
   ellipsoid: "Ellipsoid · sphere",
@@ -33,6 +44,7 @@ export const surfaceNames: Record<SurfaceKind, string> = {
   cylinder: "Elliptic cylinder",
   paraboloid: "Paraboloid · saddle",
   monkey: "Monkey saddle",
+  "helicoid-catenoid": "Helicoid · catenoid family",
 };
 // The equation of each chart, as shown beside its controls.
 export const surfaceCharts: Record<SurfaceKind, string> = {
@@ -41,11 +53,13 @@ export const surfaceCharts: Record<SurfaceKind, string> = {
   cylinder: "X = (a cos u, b sin u, v)",
   paraboloid: "X = (u, v, (k₁u² + k₂v²)/2)",
   monkey: "X = (u, v, k(u³ − 3uv²))",
+  "helicoid-catenoid":
+    "X = s(cos θ sinh v sin u + sin θ cosh v cos u, −cos θ sinh v cos u + sin θ cosh v sin u, u cos θ + v sin θ)",
 };
 // The shape fields each kind reads, with their labels and help.
 export const surfaceShape: Record<
   SurfaceKind,
-  { key: "a" | "b" | "c"; label: string; help?: string }[]
+  { key: "a" | "b" | "c"; label: string; help?: Help<string> }[]
 > = {
   ellipsoid: [
     {
@@ -91,7 +105,95 @@ export const surfaceShape: Record<
       help: "Scales the three valleys and ridges, within ±100000.",
     },
   ],
+  "helicoid-catenoid": [
+    {
+      key: "a",
+      label: "Scale s",
+      help: "The patch's size, above 0 and at most 100000.",
+    },
+    {
+      key: "b",
+      label: "Associate angle θ",
+      help: tiered(
+        "0 is the helicoid, π/2 the catenoid; within 0–π/2.",
+        "Every angle has the metric E = G = s²cosh²v, F = 0, so the grid's lengths never change.",
+      ),
+    },
+  ],
 };
+// What each kind offers beyond its sheet, parameter curves, normal lines
+// and curvatures, mirroring engine3's surfaceKinds; the controls, layers,
+// legend, probe and animation read it. offset is the offset surface, its
+// cuspidal edges, probe and track; focal the focal sheets, ridges and
+// their probes; optics the kind as a mirror or interface; correspondence
+// the parameter curves the probe draws through its point. domain is the
+// help beside the u interval, note follows the chart, and title heads the
+// drawing.
+export type SurfaceCapabilities = {
+  offset: boolean;
+  focal: boolean;
+  optics: boolean;
+  correspondence: boolean;
+  domain: Help<string>;
+  note: string;
+  title: string;
+};
+const analyticPatch: SurfaceCapabilities = {
+  offset: true,
+  focal: true,
+  optics: true,
+  correspondence: false,
+  domain:
+    "The parameter intervals the patch covers, each within ±1000000 and 0.000001–100000 wide.",
+  note: "A domain shorter than the whole chart opens the surface, so what lies inside it shows.",
+  title: "A surface and its centers of curvature",
+};
+export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
+  ellipsoid: analyticPatch,
+  torus: analyticPatch,
+  cylinder: analyticPatch,
+  paraboloid: analyticPatch,
+  monkey: analyticPatch,
+  // Its curvature is validated; its offsets, focal sheets and optics are
+  // not offered.
+  "helicoid-catenoid": {
+    offset: false,
+    focal: false,
+    optics: false,
+    correspondence: true,
+    domain: tiered(
+      "u within ±4π and v within ±4, each at least 0.000001 wide.",
+      "The patch stays one open rectangle at every angle: its edges are never joined, even where the catenoid's ends meet.",
+    ),
+    note: "Every angle bends one patch without stretching it, so each grid curve keeps its length; the probe follows one (u, v).",
+    title: "A minimal surface bent, not stretched",
+  },
+};
+// The kinds a study can choose: a ray study only those offered as a
+// mirror or interface, and the current kind, so that a link's choice
+// shows with its refusal.
+export const surfaceChoices = (rays: boolean, current: SurfaceKind) =>
+  (Object.keys(surfaceNames) as SurfaceKind[]).filter(
+    (kind) => !rays || surfaceCapabilities[kind].optics || kind === current,
+  );
+// A study's surface with what its kind does not offer turned off: no
+// offset or cuspidal edges without an offset, and no ridges without focal
+// sheets.
+export function offered(s: SurfaceConfig): SurfaceConfig {
+  const can = surfaceCapabilities[s.kind];
+  const { edges, ridges, ...rest } = s;
+  if (
+    (can.offset || (s.offset === 0 && edges === undefined)) &&
+    (can.focal || ridges === undefined)
+  )
+    return s;
+  return {
+    ...rest,
+    offset: can.offset ? s.offset : 0,
+    ...(edges !== undefined && can.offset && { edges }),
+    ...(ridges !== undefined && can.focal && { ridges }),
+  };
+}
 const shapes: Record<FocalShape, string> = {
   surface: "is a surface",
   curve: "collapses to a curve",

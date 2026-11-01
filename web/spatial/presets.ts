@@ -5764,4 +5764,94 @@ export const spatialPresets: {
     view: { ...initialView, zoom: 2.3, panX: 0, panY: 0 },
     flight: { ...revealInPlace, duration: 14 },
   },
+  // A helicoid's stair, u in [−0.85π, 0.85π] and v in [−1.2, 1.2], bent
+  // through the associated family into a catenoid's neck and back: the
+  // associate angle θ runs from 0 to π/2. Every angle has the metric
+  // E = G = cosh²v, F = 0, so each of the grid's 25 curves each way keeps
+  // its length while the surface moves. A whole turn would cross itself
+  // near the neck (θ above about 1.06, where a sheet meets its mirror
+  // image in v a turn away; see docs/mathematics.md), so the patch spans
+  // 1.7π of u, under the 1.78π that v ±1.2 allows, and the neck keeps an
+  // open slit: the patch's two ends, never joined. Seen from a little
+  // above, the axis upright.
+  {
+    name: "A staircase becoming a throat",
+    detail:
+      "A helicoid bends into a catenoid; every grid curve keeps its length",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -0.85 * Math.PI,
+        uMax: 0.85 * Math.PI,
+        vMin: -1.2,
+        vMax: 1.2,
+        uSamples: 96,
+        vSamples: 48,
+        curves: 25,
+        offset: 0,
+        reach: 0,
+      },
+    },
+    view: { ...initialView, yaw: 0.6, pitch: -1.15, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // One side of the stair, v in [0, 1.6] over a whole turn, u in [−π, π]:
+  // a spiral ramp whose inner edge is the axis. Bent through the family it
+  // opens into a funnel, the half of a catenoid above its waist, whose
+  // circle the ramp's inner edge becomes (radius sin θ). With v on one
+  // side a sheet has no mirror image to meet, so the ramp never crosses
+  // itself; its two ends meet only at π/2, along one meridian, unjoined.
+  {
+    name: "A spiral ramp opening into a funnel",
+    detail:
+      "One side of the stair bends into half a neck, its edge on the axis becoming the waist",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -Math.PI,
+        uMax: Math.PI,
+        vMin: 0,
+        vMax: 1.6,
+        uSamples: 120,
+        vSamples: 32,
+        curves: 21,
+        offset: 0,
+        reach: 0,
+      },
+    },
+    view: { ...initialView, yaw: 0.4, pitch: -0.7, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
 ];

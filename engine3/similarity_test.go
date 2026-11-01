@@ -197,6 +197,10 @@ func similar(q Request, m similarity) (Request, Request, bool) {
 		c.Surface.A, c.Surface.B = q.Surface.A/s, q.Surface.B/s
 		c.Surface.UMin, c.Surface.UMax = s*q.Surface.UMin, s*q.Surface.UMax
 		c.Surface.VMin, c.Surface.VMax = s*q.Surface.VMin, s*q.Surface.VMax
+	case "helicoid-catenoid":
+		// Only the scale is a length; the angle and the (u, v) domain are
+		// not.
+		c.Surface.A = s * q.Surface.A
 	case "monkey":
 		c.Surface.A = q.Surface.A / (s * s)
 		c.Surface.UMin, c.Surface.UMax = s*q.Surface.UMin, s*q.Surface.UMax

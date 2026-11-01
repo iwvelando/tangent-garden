@@ -17,7 +17,9 @@
 // one does, and prints each preset's time beside the other engine's. The
 // time is the median of --runs runs (default 1) after one warm-up, of the
 // worker's whole reply: resolving fields, Go's work and encoding, and
-// decoding. --only keeps the presets whose name contains its text.
+// decoding. --only keeps the presets whose name contains its text, and
+// --skip leaves out those whose name contains any of its comma-separated
+// texts, such as presets new on a branch that the other engine cannot draw.
 // --refine on (or off) draws every 2D and 3D preset with refinement between
 // samples on (or off) instead of as the preset sets it, since a reader can
 // turn it either way on any preset; 4D studies have no such setting.
@@ -35,6 +37,7 @@ export function parseOptions(args) {
     engine: "public/",
     compare: "",
     only: "",
+    skip: "",
     refine: "preset",
   };
   for (let k = 0; k < args.length; k += 2) {
@@ -152,10 +155,15 @@ async function requests(server) {
       action: "tesseract",
       tesseract: p.config,
     });
+  const skipped = options.skip
+    .split(",")
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
   return all.filter(
     (r) =>
-      !options.only ||
-      r.name.toLowerCase().includes(options.only.toLowerCase()),
+      (!options.only ||
+        r.name.toLowerCase().includes(options.only.toLowerCase())) &&
+      !skipped.some((t) => r.name.toLowerCase().includes(t)),
   );
 }
 
@@ -274,6 +282,7 @@ export function childOptions(source, options) {
     "--runs",
     String(options.runs),
     ...(options.only ? ["--only", options.only] : []),
+    ...(options.skip ? ["--skip", options.skip] : []),
     ...(options.refine !== "preset" ? ["--refine", options.refine] : []),
   ];
 }

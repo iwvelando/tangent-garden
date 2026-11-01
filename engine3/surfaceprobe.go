@@ -71,7 +71,12 @@ type SurfaceDiagnostics struct {
 	// draws from its own row: a canal's contact circle, closed, or a
 	// ruling from end to end.
 	Through []Vec3 `json:"through,omitempty"`
-	closed  bool
+	// Crossing is present only for one point of a patch whose kind draws
+	// its correspondence (see SurfaceRequest.correspondence): the u-curve
+	// through it, at the grid's u samples and the point's v, then the
+	// v-curve, at its u and the grid's v samples.
+	Crossing [][]Vec3 `json:"crossing,omitempty"`
+	closed   bool
 }
 
 // newSurfaceDiagnostics allocates a grid of rows × columns.

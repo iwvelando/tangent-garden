@@ -749,9 +749,27 @@ article {
 }
 .plot-heading {
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 14px;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+}
+/* The title keeps at least 300px beside the view buttons; where the
+   drawing's column is too narrow for both, as beside the sidebar on a
+   phone held sideways, the buttons take their own row under a title as
+   wide as the column. Phones stack them anyway (below). */
+@media (min-width: 701px) {
+  .plot-heading > :first-child {
+    flex: 1 1 300px;
+    min-width: 0;
+  }
+  /* The title stays as wide as its words, as before its column grew, so
+     the space beside it is the heading's, not the title's. */
+  .plot-heading h1 {
+    width: fit-content;
+    max-width: 100%;
+  }
 }
 h1 {
   font:
@@ -1499,6 +1517,13 @@ header {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 13px;
+}
+/* A switch's help, when open and followed by another switch (past that
+   switch's own closed help), keeps the gap the switches keep between them;
+   the help outside a Field otherwise has no margin of its own. */
+.probe-switch
+  + .hint:not([hidden]):has(+ .probe-switch, + .hint[hidden] + .probe-switch) {
   margin-bottom: 13px;
 }
 /* Stopping rays at the caustic (StopAtCaustic.tsx) and a CheckSetting

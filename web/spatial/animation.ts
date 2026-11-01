@@ -8,7 +8,7 @@ import {
 import { harmonicLabels } from "./harmonic";
 import { reveal as revealPlanar } from "../animation";
 import { revealRefined } from "../refinement";
-import { surfaceShape } from "./surface";
+import { surfaceCapabilities, surfaceShape } from "./surface";
 import type {
   RefinedPath,
   SpatialConfig,
@@ -455,7 +455,9 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
       ),
       ...(c.format === "surface"
         ? ([
-            "surfaceOffset",
+            ...(surfaceCapabilities[c.surface.kind].offset
+              ? (["surfaceOffset"] as const)
+              : []),
             "reach",
             ...(c.surface.geodesics
               ? ([

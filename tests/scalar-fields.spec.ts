@@ -1109,6 +1109,16 @@ test("spatial surface shape, domain, offset and reach share the bounded scalar p
     ["Semi-axis b", "phi-1", phi - 1, "b"],
   ] as const)
     await check(name, text, value, ["surface", key]);
+  await page
+    .getByLabel("Surface", { exact: true })
+    .selectOption("helicoid-catenoid");
+  for (const [name, text, value, key] of [
+    ["Scale s", "1/phi", 1 / phi, "a"],
+    ["Associate angle θ", "pi/3", Math.PI / 3, "b"],
+    ["u to", "3*pi", 3 * Math.PI, "uMax"],
+    ["v from", "-e", -Math.E, "vMin"],
+  ] as const)
+    await check(name, text, value, ["surface", key]);
 });
 
 test("spatial mirror light, source and ray length share the bounded scalar parser", async ({

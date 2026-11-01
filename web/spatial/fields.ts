@@ -104,6 +104,8 @@ const labeled: Record<string, string> = {
   "ruled.partner": "Partner",
   "canal.profile": "Profile ρ(t)",
   "surface.kind": "Surface",
+  "surface.edges": "Locate cuspidal edges",
+  "surface.ridges": "Locate ridges",
   "surface.geodesics.samples": "Samples per thread",
   "surface.geodesics.selected": "Selected thread",
   "surface.geodesics.transport.path": "Arrow's path",

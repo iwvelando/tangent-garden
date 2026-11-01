@@ -155,7 +155,10 @@ import { canalNote } from "./canal";
 import { fieldNote, nextSpatialSeed } from "./field";
 import { nextSpatialPursuer, pursuitNote } from "./pursuit";
 import {
+  offered,
+  surfaceCapabilities,
   surfaceCharts,
+  surfaceChoices,
   surfaceDefaults,
   surfaceNames,
   surfaceNote,
@@ -588,6 +591,10 @@ export default function SpatialApp({
     if (!center) return;
     void changeCut((c) => addCutPlane(c, center));
   };
+  // The first surface offered as a mirror or interface.
+  const lit = (Object.keys(surfaceCapabilities) as SurfaceKind[]).find(
+    (kind) => surfaceCapabilities[kind].optics,
+  )!;
   async function definition(format: SpatialConfig["format"]) {
     const token = generation.current;
     await Promise.allSettled([...jobs.current]);
@@ -609,6 +616,16 @@ export default function SpatialApp({
           c.allPaths === undefined
             ? { allPaths: true }
             : {}),
+          // A surface not offered as a mirror or interface gives way to
+          // the first that is, from its own shape and chart.
+          ...(format === "rays" &&
+            !surfaceCapabilities[c.surface.kind].optics && {
+              surface: offered({
+                ...c.surface,
+                kind: lit,
+                ...surfaceDefaults[lit],
+              }),
+            }),
         };
       // Preserve an edited custom definition. A generated knot can also be opened
       // as expressions, with every pending scalar resolved before conversion.
@@ -1111,13 +1128,14 @@ export default function SpatialApp({
   const setSurface = (change: (s: SurfaceConfig) => SurfaceConfig) =>
     update((c) => ({ ...c, surface: change(c.surface) }));
   // Each kind's shape fields mean something different, so choosing a kind
-  // starts from its own shape and whole chart; evaluations still pending
-  // land first, and a preset chosen meanwhile wins.
+  // starts from its own shape and whole chart, without what it does not
+  // offer (see surfaceCapabilities); evaluations still pending land first,
+  // and a preset chosen meanwhile wins.
   async function chooseSurface(kind: SurfaceKind) {
     const token = generation.current;
     await Promise.allSettled([...jobs.current]);
     if (token !== generation.current) return;
-    setSurface((s) => ({ ...s, kind, ...surfaceDefaults[kind] }));
+    setSurface((s) => offered({ ...s, kind, ...surfaceDefaults[kind] }));
   }
   const patch =
     frame?.config.format === "surface" ? frame.result.surface : undefined;
@@ -1497,6 +1515,17 @@ export default function SpatialApp({
       )}
     </>
   );
+  // What the chosen kind offers (see surfaceCapabilities).
+  const offers = surfaceCapabilities[config.surface.kind];
+  const reachField = vector(
+    "Normal reach ℓ",
+    config.surface.reach,
+    (reach) => setSurface((s) => ({ ...s, reach })),
+    tiered(
+      "Normal lines' length along n, within ±100000; 0 hides them.",
+      "Each runs from X to X + ℓn.",
+    ),
+  );
   const shapeFields = surfaceShape[config.surface.kind].map((f) =>
     vector(
       f.label,
@@ -1515,7 +1544,7 @@ export default function SpatialApp({
           value={config.surface.kind}
           onChange={(e) => void chooseSurface(e.target.value as SurfaceKind)}
         >
-          {(Object.keys(surfaceNames) as SurfaceKind[]).map((kind) => (
+          {surfaceChoices(mirroring, config.surface.kind).map((kind) => (
             <option key={kind} value={kind}>
               {surfaceNames[kind]}
             </option>
@@ -1523,8 +1552,7 @@ export default function SpatialApp({
         </select>
       </Field>
       <p className="note">
-        {surfaceCharts[config.surface.kind]}. A domain shorter than the whole
-        chart opens the surface, so what lies inside it shows.
+        {surfaceCharts[config.surface.kind]}. {offers.note}
       </p>
       {shapeFields.length === 1 ? (
         shapeFields
@@ -1539,9 +1567,7 @@ export default function SpatialApp({
             `${axis} from`,
             config.surface[`${axis}Min`],
             (value) => setSurface((s) => ({ ...s, [`${axis}Min`]: value })),
-            axis === "u"
-              ? "The parameter intervals the patch covers, each within ±1000000 and 0.000001–100000 wide."
-              : undefined,
+            axis === "u" ? offers.domain : undefined,
           )}
           {vector(`${axis} to`, config.surface[`${axis}Max`], (value) =>
             setSurface((s) => ({ ...s, [`${axis}Max`]: value })),
@@ -1582,35 +1608,33 @@ export default function SpatialApp({
         lightControls
       ) : (
         <>
-          <div className="pair">
-            {vector(
-              "Offset d",
-              config.surface.offset,
-              (offset) => setSurface((s) => ({ ...s, offset })),
-              tiered(
-                "Offset along n, within ±100000; 0 hides it.",
-                "The offset surface is X + d n.",
-              ),
-            )}
-            {vector(
-              "Normal reach ℓ",
-              config.surface.reach,
-              (reach) => setSurface((s) => ({ ...s, reach })),
-              tiered(
-                "Normal lines' length along n, within ±100000; 0 hides them.",
-                "Each runs from X to X + ℓn.",
-              ),
-            )}
-          </div>
-          <RidgesCheck
-            checked={!!config.surface.ridges}
-            onChange={(on) =>
-              setSurface(({ ridges: _, ...s }) =>
-                on ? { ...s, ridges: true } : s,
-              )
-            }
-          />
-          {config.surface.offset !== 0 && (
+          {offers.offset ? (
+            <div className="pair">
+              {vector(
+                "Offset d",
+                config.surface.offset,
+                (offset) => setSurface((s) => ({ ...s, offset })),
+                tiered(
+                  "Offset along n, within ±100000; 0 hides it.",
+                  "The offset surface is X + d n.",
+                ),
+              )}
+              {reachField}
+            </div>
+          ) : (
+            reachField
+          )}
+          {offers.focal && (
+            <RidgesCheck
+              checked={!!config.surface.ridges}
+              onChange={(on) =>
+                setSurface(({ ridges: _, ...s }) =>
+                  on ? { ...s, ridges: true } : s,
+                )
+              }
+            />
+          )}
+          {offers.offset && config.surface.offset !== 0 && (
             <CuspidalEdgesCheck
               checked={!!config.surface.edges}
               onChange={(on) =>
@@ -1621,9 +1645,15 @@ export default function SpatialApp({
             />
           )}
           {geodesicControls}
-          <p className="note" data-testid="surface-note">
-            {patch ? surfaceNote(patch).join(" ") : "Measuring the curvature…"}
-          </p>
+          {/* A patch with nothing to report (no focal sheets, singular
+              samples or umbilics) has no note. */}
+          {(!patch || surfaceNote(patch).length > 0) && (
+            <p className="note" data-testid="surface-note">
+              {patch
+                ? surfaceNote(patch).join(" ")
+                : "Measuring the curvature…"}
+            </p>
+          )}
         </>
       )}
     </>
@@ -3620,12 +3650,18 @@ export default function SpatialApp({
                         ...(config.surface.ridges
                           ? ([["ridges", "Ridges"]] as const)
                           : []),
-                        ["offset", "Offset surface"],
+                        ...(surfaceCapabilities[config.surface.kind].offset
+                          ? ([["offset", "Offset surface"]] as const)
+                          : []),
                         ...(locatesEdges(config.surface)
                           ? ([["cusps", "Cuspidal edges"]] as const)
                           : []),
-                        ["focal1", "Focal sheet 1 · κ₁"],
-                        ["focal2", "Focal sheet 2 · κ₂"],
+                        ...(surfaceCapabilities[config.surface.kind].focal
+                          ? ([
+                              ["focal1", "Focal sheet 1 · κ₁"],
+                              ["focal2", "Focal sheet 2 · κ₂"],
+                            ] as const)
+                          : []),
                         ...(config.surface.geodesics
                           ? ([
                               ["threads", "Geodesic threads"],
@@ -4224,7 +4260,7 @@ export default function SpatialApp({
                           ? "An arrow carried along a surface"
                           : config.surface.geodesics
                             ? "Threads that go straight on a surface"
-                            : "A surface and its centers of curvature"
+                            : surfaceCapabilities[config.surface.kind].title
                         : none
                           ? flowing
                             ? "Paths that follow a field"

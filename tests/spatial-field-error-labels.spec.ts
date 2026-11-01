@@ -253,6 +253,48 @@ const cases: Case[] = [
     "Minor radius r",
   ],
   [
+    "surface.a",
+    "A staircase becoming a throat",
+    (c) => (c.surface.a = 0),
+    "Scale s",
+  ],
+  [
+    "surface.b",
+    "A staircase becoming a throat",
+    (c) => (c.surface.b = 2),
+    "Associate angle θ",
+  ],
+  [
+    "surface.uMax",
+    "A staircase becoming a throat",
+    (c) => (c.surface.uMax = 13),
+    "u to",
+  ],
+  [
+    "surface.vMin",
+    "A staircase becoming a throat",
+    (c) => (c.surface.vMin = -5),
+    "v from",
+  ],
+  // The family lit as a mirror is refused under the Surface choice.
+  [
+    "surface.kind",
+    "A paraboloid gathering light",
+    (c) => {
+      c.surface = {
+        ...c.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        uMin: -Math.PI,
+        uMax: Math.PI,
+        vMin: -1.5,
+        vMax: 1.5,
+      };
+    },
+    "Surface",
+  ],
+  [
     "surface.c",
     "The focal sheets of an ellipsoid",
     (c) => (c.surface.c = 0),

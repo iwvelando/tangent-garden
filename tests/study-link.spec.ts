@@ -29,6 +29,7 @@ import {
   type TesseractStudy,
 } from "../web/tesseract/link";
 import { presets } from "../web/presets";
+import { probeTarget } from "../web/spatial/probe";
 import { spatialPresets } from "../web/spatial/presets";
 import { tesseractPresets } from "../web/tesseract/presets";
 import { defaultLayers } from "../web/spatial/renderer";
@@ -501,6 +502,62 @@ test("a link carries the probe on a patch's offset", async () => {
   const unknown = structuredClone(study) as any;
   unknown.probe.target = "offsets";
   await refused(() => Promise.resolve(spatialStudy(unknown)), "probe.target");
+});
+
+test("a link carries the helicoid–catenoid family, and what it does not offer opens off", async () => {
+  const staircase = spatialPresets.findIndex(
+    (p) => p.name === "A staircase becoming a throat",
+  );
+  assert.ok(staircase >= 0);
+  const study: SpatialStudy = {
+    ...spatial(staircase),
+    probe: {
+      enabled: true,
+      position: 0.4,
+      target: "surface",
+      across: 0.7,
+      betweenGrid: true,
+    },
+  };
+  study.config.surface.b = 0.7;
+  const back = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(back.study), study);
+  // A link that asks the family for an offset, its cuspidal edges or
+  // ridges opens without them, as the family draws; its focal probe target
+  // is kept as written and describes the surface.
+  const asked = structuredClone(study) as any;
+  Object.assign(asked.config.surface, {
+    offset: 0.3,
+    edges: true,
+    ridges: true,
+  });
+  asked.probe.target = "focal1";
+  const opened = spatialStudy(asked);
+  assert.equal(opened.config.surface.offset, 0);
+  assert.equal("edges" in opened.config.surface, false);
+  assert.equal("ridges" in opened.config.surface, false);
+  assert.equal(opened.probe.target, "focal1");
+  assert.equal(probeTarget(opened.config, opened.probe), "surface");
+  // Another surface keeps all three, as before the family existed.
+  const torus = structuredClone(asked) as any;
+  torus.config.surface.kind = "torus";
+  assert.deepEqual(
+    (({ offset, edges, ridges }) => ({ offset, edges, ridges }))(
+      spatialStudy(torus).config.surface,
+    ),
+    { offset: 0.3, edges: true, ridges: true },
+  );
+  // An animation of the offset is refused by name on the family.
+  const offsetTrack = structuredClone(study) as any;
+  offsetTrack.animation = {
+    ...defaultAnimation,
+    mode: "parameters",
+    tracks: [{ target: "surfaceOffset", from: "0", to: "1" }],
+  };
+  await refused(
+    () => Promise.resolve(spatialStudy(offsetTrack)),
+    "animation.tracks[0].target",
+  );
 });
 
 test("a link carries the probe on a patch's focal sheet", async () => {
