@@ -612,6 +612,56 @@ func TestHopfFlowerPoleTouches(t *testing.T) {
 	}
 }
 
+// A pole touch entered as two constant expressions can round one ulp past
+// the boundary (pi/15 + 13·pi/30 does, through the scalar parser). It is
+// the same exact touch and reaches the pole through the 10⁻¹² snap; only a
+// range genuinely beyond that snap is refused.
+func TestHopfFlowerRoundedPoleTouches(t *testing.T) {
+	tenth := .1 // at run time, 0.1 + 0.2 rounds above 0.3
+	for _, tc := range []struct {
+		name             string
+		alpha, amplitude float64
+		sample           int
+		pole             Vec3
+	}{
+		// t = 0 reaches α₀ + A, the south pole.
+		{"south", math.Pi / 3, math.Pi / 6, 0, Vec3{0, 0, -1}},
+		// t = π/5 reaches α₀ − A, the north pole, with five petals.
+		{"north", .3, tenth + .2, 1, Vec3{0, 0, 1}},
+	} {
+		if d := tc.alpha + tc.amplitude - math.Pi/2; tc.name == "south" && d <= 0 {
+			t.Fatalf("fixture does not round past π/2: %g", d)
+		}
+		if d := tc.alpha - tc.amplitude; tc.name == "north" && d >= 0 {
+			t.Fatalf("fixture does not round below 0: %g", d)
+		}
+		q := flowerRequest(t, tc.alpha, tc.amplitude, 5, 10, tc.sample)
+		r, err := Compute(q)
+		if err != nil {
+			t.Fatalf("%s pole touch refused: %v", tc.name, err)
+		}
+		if c := r.Weave.Correspondence; c.Base != tc.pole || c.Selected != tc.sample {
+			t.Fatalf("%s touch did not reach the pole: %+v", tc.name, c)
+		}
+	}
+	// Each case crosses a single bound.
+	for _, e := range []float64{1e-10, 1e-6} {
+		for _, tc := range []struct {
+			alpha, amplitude float64
+			field            string
+		}{
+			{.1, .1 + e, "weave.amplitude"},             // below 0 only
+			{math.Pi/2 - .1, .1 + e, "weave.amplitude"}, // above π/2 only
+			{-e, 0, "weave.alpha"}, {math.Pi/2 + e, 0, "weave.alpha"},
+		} {
+			_, err := Compute(flowerRequest(t, tc.alpha, tc.amplitude, 5, 10, 0))
+			if fe, ok := err.(*FieldError); !ok || fe.Field != tc.field {
+				t.Fatalf("α=%v A=%v beyond the snap: %v, want %s", tc.alpha, tc.amplitude, err, tc.field)
+			}
+		}
+	}
+}
+
 func TestHopfFlowerValidation(t *testing.T) {
 	for _, tc := range []struct {
 		key   string

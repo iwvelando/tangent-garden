@@ -393,10 +393,13 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		if petals < 1 || petals > 8 {
 			return r, fieldErr("weave.petals", "Petals must be a whole number from 1 to 8")
 		}
-		if !finite(w.Alpha) || w.Alpha < 0 || w.Alpha > math.Pi/2 {
+		// The latitude's rounding tolerance: a touch entered as constant
+		// expressions can round past a pole, which the snap below restores.
+		if !finite(w.Alpha) || w.Alpha < -weaveTolerance || w.Alpha > math.Pi/2+weaveTolerance {
 			return r, fieldErr("weave.alpha", "Central latitude α must be between 0 and π/2")
 		}
-		if !finite(w.Amplitude) || w.Amplitude < 0 || w.Alpha-w.Amplitude < 0 || w.Alpha+w.Amplitude > math.Pi/2 {
+		if !finite(w.Amplitude) || w.Amplitude < 0 || w.Alpha-w.Amplitude < -weaveTolerance ||
+			w.Alpha+w.Amplitude > math.Pi/2+weaveTolerance {
 			return r, fieldErr("weave.amplitude", "Flower amplitude A must be nonnegative and keep α ± A within 0 and π/2")
 		}
 	}
