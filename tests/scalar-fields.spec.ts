@@ -1515,6 +1515,54 @@ test("every spherical weave geometric field shares scalar parsing and supersedes
   expect((await config()).weave.alpha).toBe(Math.PI / 4);
 });
 
+test("flower geometry fields share scalar parsing and preserve overlapping edits", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "scalars")
+        setTimeout(() => send.call(this, q, ...rest), 200);
+      else return send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  await settle();
+  await choosePreset(page, { label: "A flower below, a bouquet above" });
+  await settle();
+  for (const [name, text, value, key] of [
+    ["Central latitude α", "pi/4", Math.PI / 4, "alpha"],
+    ["Flower amplitude A", "1/phi/2", 1 / phi / 2, "amplitude"],
+  ] as const) {
+    await field(page, name).fill(text);
+    await settle();
+    expect(
+      JSON.parse((await stage.getAttribute("data-config"))!).weave[key],
+    ).toBe(value);
+    for (const bad of ["t", "x", "a", "1/0"]) {
+      await field(page, name).fill(bad);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await settle();
+  }
+  await field(page, "Central latitude α").fill("pi/3");
+  await field(page, "Flower amplitude A").fill("pi/12");
+  await page.getByRole("spinbutton", { name: "Petals", exact: true }).fill("7");
+  await settle();
+  expect(
+    JSON.parse((await stage.getAttribute("data-config"))!).weave,
+  ).toMatchObject({ alpha: Math.PI / 3, amplitude: Math.PI / 12, petals: 7 });
+  await field(page, "Flower amplitude A").fill("pi/9");
+  await choosePreset(page, { label: "A circle over every point" });
+  await settle();
+  expect(
+    JSON.parse((await stage.getAttribute("data-config"))!).weave.path,
+  ).toBeUndefined();
+});
+
 test("the cut plane's normal and offset share the bounded scalar parser", async ({
   page,
 }) => {

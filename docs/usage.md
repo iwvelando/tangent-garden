@@ -17,6 +17,12 @@ Your edited work stays intact in all three notebooks: entered expressions, layer
 
 **Open study** replaces only the step's target notebook with its complete example, exactly as choosing its gallery card and making the experiment edit would. An invalid entry must be corrected first. The original preset animation comes with it; then edit anything, copy a link, or export an image or animation normally. Other notebooks keep their work. Opening another dimension follows ordinary notebook history; preview steps themselves add no history entries. Journey edits disappear on return, and journey progress is never saved in study links.
 
+## A flower of linked circles
+
+In **4D**, open **A flower below, a bouquet above**. The base sphere and spatial bouquet share a selection: tap a sampled point or fiber, or focus either pane and press `[` or `]`. **Trace the flower** carries that point's whole fiber around the path; pause and scrub in either direction. Orbit or zoom each pane before playback to set its camera.
+
+Under **Base path**, choose **Spherical flower** or **Latitude**. **Central latitude α** and **Flower amplitude A** accept constant expressions such as `pi/4` and `pi/8`; **Petals** is a whole number from 1 to 8. The entire range α ± A must stay between 0 and π/2. A = 0 gives a latitude; equality at a boundary touches a pole, where coincident fibers are drawn once. Samples are even in the path parameter, not in distance along the sphere. **Copy link**, **Export image** and the ordinary animation export keep both panes, cameras and appearance together. See [the spherical flower guide](tesseracts.md#spherical-flower) for formulas, limits and chart conventions.
+
 ## A field of possible flowers
 
 In the planar notebook, choose **Hypotrochoid & its evolute**, **Ellipse & its pedal**, or **Clifford attractor**, then **Explore parameter atlas**. Your complete study stays in place while you compare variants.

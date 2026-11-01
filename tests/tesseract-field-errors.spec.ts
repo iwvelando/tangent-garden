@@ -300,6 +300,38 @@ const cases: Case[] = [
     (c) => (c.curves = 4.5),
     "Fibers on the latitude",
   ],
+  [
+    "weave.amplitude",
+    (c) => c.weave?.path === "flower",
+    (c) => {
+      c.weave!.amplitude = -0.1;
+    },
+    "Flower amplitude A",
+  ],
+  [
+    "weave.petals",
+    (c) => c.weave?.path === "flower",
+    (c) => {
+      c.weave!.petals = 0;
+    },
+    "Petals",
+  ],
+  [
+    "weave.petals",
+    (c) => c.weave?.path === "flower",
+    (c) => {
+      c.weave!.petals = 2.5;
+    },
+    "Petals",
+  ],
+  [
+    "curves",
+    (c) => c.weave?.path === "flower",
+    (c) => {
+      c.curves = 33;
+    },
+    "Fibers on the flower",
+  ],
 ];
 
 const study = (config: Config, motion: TesseractStudy["motion"]) =>

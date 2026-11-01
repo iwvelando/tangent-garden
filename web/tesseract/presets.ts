@@ -205,4 +205,33 @@ export const tesseractPresets: {
     motion: "trace",
     repeat: "loop",
   },
+  // Opens the five-petal spherical flower, sample zero selected, and
+  // traces its corresponding fiber once around a seamless loop.
+  {
+    name: "A flower below, a bouquet above",
+    detail:
+      "A flower winds across the base sphere. Each sampled point lifts to a linked circle; trace the flower and one whole fiber moves through the bouquet.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 20,
+      samples: 128,
+      clip: 3,
+      angles: [0, 0.2, 0.15, 0.3, 0.2, 0.1],
+      weave: {
+        family: "fibers",
+        alpha: Math.PI / 4,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 0,
+        path: "flower",
+        amplitude: Math.PI / 8,
+        petals: 5,
+      },
+    },
+    motion: "trace",
+    repeat: "loop",
+  },
 ];

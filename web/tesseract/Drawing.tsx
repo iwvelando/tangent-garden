@@ -21,7 +21,12 @@ export const movingInk = (dark: boolean, scheme: ColorScheme = "default") =>
 export function sampleOf(source: string, result: Result): number | undefined {
   const c = result.weave?.correspondence;
   const m = /^weave\/latitude\/0\/(?:fiber|base)\/(\d+)$/.exec(source);
-  if (m) return Number(m[1]);
+  if (m) {
+    const index = Number(m[1]);
+    // A pole's one drawn fiber retains every parameter sample's
+    // provenance. Highlight/select the entered alias when it belongs here.
+    return c?.aliases?.[c.selected] === index ? c.selected : index;
+  }
   if (/^weave\/latitude\/0\/(?:core|base\/core)$/.test(source))
     return c?.selected;
   return undefined;
@@ -127,7 +132,11 @@ export function Drawing({
       return "moving";
     const sample = sampleOf(source, result);
     if (sample === undefined) return undefined;
-    if (sample === correspondence.movingSample) return "moving";
+    if (
+      (correspondence.aliases?.[sample] ?? sample) ===
+      correspondence.movingSample
+    )
+      return "moving";
     return sample === correspondence.selected ? "selected" : "sample";
   };
   const mapped = result.paths

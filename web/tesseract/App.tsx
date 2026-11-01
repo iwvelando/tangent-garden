@@ -341,6 +341,16 @@ export default function TesseractApp({
     setPreview(false);
     setLoopError("");
   };
+  // A descriptor choice can change the available motions as a view can.
+  // Reconcile the actual state; a native select displaying its first
+  // option does not change an unavailable value held in React.
+  useEffect(() => {
+    const offered = motions(config);
+    if (!offered.some((m) => m.value === motion)) {
+      resetMotion();
+      setMotion(offered[0].value);
+    }
+  }, [config, motion]);
   // Only a whole turn or a slice passage returns to its start; another
   // motion keeps repeating, back and forth.
   const loopable = !!motions(config).find((m) => m.value === motion)?.loops;
@@ -375,8 +385,9 @@ export default function TesseractApp({
     min: number,
     max: number,
     change: (c: Config, n: number) => Config,
+    help?: Help<string>,
   ) => (
-    <Field label={label}>
+    <Field label={label} help={help}>
       <input
         type="number"
         min={min}
@@ -597,29 +608,29 @@ export default function TesseractApp({
       >
         {row[0].group && <div className="term-heading">{row[0].group}</div>}
         <div className={row[0].group ? "pair trio" : "pair"}>
-          {row.map((f) =>
-            cloneElement(
-              scalar(
-                f.label,
-                f.index === undefined
-                  ? (parameters[f.key] as number)
-                  : (parameters[f.key] as number[])[f.index],
-                (c, n) => {
-                  const lift = { ...c[parameterKey] } as unknown as Record<
-                    string,
-                    number | number[]
-                  >;
-                  if (f.index === undefined)
-                    Object.assign(lift, { [f.key]: n });
-                  else {
-                    const values = [...(lift[f.key] as number[])];
-                    values[f.index] = n;
-                    Object.assign(lift, { [f.key]: values });
-                  }
-                  return { ...c, [parameterKey]: lift };
-                },
-                typeof f.help === "function" ? f.help(config) : f.help,
-              ),
+          {row.map((f) => {
+            const value =
+              (f.index === undefined
+                ? (parameters[f.key] as number | undefined)
+                : (parameters[f.key] as number[])[f.index]) ?? f.fallback!;
+            const help = typeof f.help === "function" ? f.help(config) : f.help;
+            const change = (c: Config, n: number): Config => {
+              const lift = { ...c[parameterKey] } as unknown as Record<
+                string,
+                number | number[]
+              >;
+              if (f.index === undefined) Object.assign(lift, { [f.key]: n });
+              else {
+                const values = [...(lift[f.key] as number[])];
+                values[f.index] = n;
+                Object.assign(lift, { [f.key]: values });
+              }
+              return { ...c, [parameterKey]: lift };
+            };
+            return cloneElement(
+              f.whole
+                ? count(f.label, value, f.whole.min, f.whole.max, change, help)
+                : scalar(f.label, value, change, help),
               {
                 key: f.label,
                 ...(f.group
@@ -636,8 +647,8 @@ export default function TesseractApp({
                     }
                   : {}),
               },
-            ),
-          )}
+            );
+          })}
         </div>
       </div>
     ));
@@ -647,7 +658,10 @@ export default function TesseractApp({
     .map((choice) => (
       <Field key={choice.key} label={choice.label} help={choice.help}>
         <select
-          value={(parameters as unknown as Record<string, string>)[choice.key]}
+          value={
+            (parameters as unknown as Record<string, string>)[choice.key] ??
+            choice.values[0].value
+          }
           onChange={(e) => {
             const value = e.target.value;
             update((c) => ({
@@ -1027,7 +1041,14 @@ export default function TesseractApp({
                           </p>
                         )}
                         {selection?.visible(config) && (
-                          <Field label={selection.label} help={selection.help}>
+                          <Field
+                            label={selection.label}
+                            help={
+                              typeof selection.help === "function"
+                                ? selection.help(config)
+                                : selection.help
+                            }
+                          >
                             <input
                               type="number"
                               min="1"
@@ -1057,12 +1078,13 @@ export default function TesseractApp({
                         (c, samples) => ({ ...c, samples }),
                       )
                     )}
-                    {descriptor.motionEndpointsLabel && (
-                      <details className="subsection">
-                        <summary>{descriptor.motionEndpointsLabel}</summary>
-                        {renderNumericFields(true)}
-                      </details>
-                    )}
+                    {descriptor.motionEndpointsLabel &&
+                      liftFields.some((f) => f.endpoint) && (
+                        <details className="subsection">
+                          <summary>{descriptor.motionEndpointsLabel}</summary>
+                          {renderNumericFields(true)}
+                        </details>
+                      )}
                     {!descriptor.choicesFirst && choices}
                   </>
                 )}
@@ -1452,6 +1474,13 @@ export default function TesseractApp({
                 controller.current?.abort();
                 setSpinning(false);
                 setView((v) => turnTo(v, name));
+                const companionMode =
+                  config.mode === "paired" && descriptor.pairedModes?.[1];
+                if (
+                  companionMode &&
+                  !descriptor.flat?.({ ...config, mode: companionMode })
+                )
+                  setDiagramView((v) => turnTo(v, name));
               }}
             />
           )}

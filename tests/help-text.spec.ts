@@ -297,7 +297,12 @@ test("every help a setting reveals keeps to the same limits", () => {
         typeof field.help === "function" ? field.help(config) : field.help,
       );
     if (object.selection?.visible(config))
-      add(`${name} ${object.selection.label}`, object.selection.help);
+      add(
+        `${name} ${object.selection.label}`,
+        typeof object.selection.help === "function"
+          ? object.selection.help(config)
+          : object.selection.help,
+      );
     for (const choice of object.choices ?? [])
       add(`${name} ${choice.label}`, choice.help);
     for (const field of object.radiusFields)

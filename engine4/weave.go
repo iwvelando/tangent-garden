@@ -27,6 +27,11 @@ type WeaveParameters struct {
 	// the moving point's offset from it, in turns.
 	Selected int     `json:"selected,omitempty"`
 	Trace    float64 `json:"trace,omitempty"`
+	// The paired base path; absent means the original latitude. A flower
+	// uses alpha(t) = Alpha + Amplitude cos(Petals t), in radians.
+	Path      string  `json:"path,omitempty"`
+	Amplitude float64 `json:"amplitude,omitempty"`
+	Petals    *int    `json:"petals,omitempty"` // absent means 5
 }
 type WeaveDiagnostics struct {
 	Family          string  `json:"family"`
@@ -49,6 +54,10 @@ type CorrespondenceDiagnostics struct {
 	Base         Vec3    `json:"base"`
 	Chart        string  `json:"chart"`
 	Coincident   bool    `json:"coincident"`
+	Path         string  `json:"path,omitempty"`
+	// Only needed when distinct parameter samples coincide at a pole.
+	// Entry j is the first sample at that point; Selected retains j.
+	Aliases []int `json:"aliases,omitempty"`
 }
 type sphereCircle struct {
 	id, role string
@@ -362,8 +371,8 @@ func pairedWeavePoints(n, samples int) int {
 	return (n+1)*(samples+2) + 3*(samples+1) + (samples + 1) + 3*(samples+1) + n + 1
 }
 
-// pairedWeave draws Base sphere and fibers: one latitude of S² with n
-// evenly spaced base samples δ_j = 2πj/n, their Hopf fibers, and a moving
+// pairedWeave draws Base sphere and fibers: a latitude or spherical flower
+// of S² with n uniform parameter samples δ_j = 2πj/n, their fibers, and a moving
 // point at δ = δ_selected + 2π·frac(trace) with its own fiber. One request
 // produces both panes, so a frame never mixes a base point with another
 // moment's fiber. The bouquet is the result; the base sphere its companion.
@@ -372,12 +381,37 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		return r, fmt.Errorf("spherical weave parameters are required")
 	}
 	w := *q.Weave
+	flower := w.Path == "flower"
+	if w.Path != "" && w.Path != "latitude" && !flower {
+		return r, fieldErr("weave.path", "Base path must be Latitude or Spherical flower")
+	}
+	petals := 5
+	if flower {
+		if w.Petals != nil {
+			petals = *w.Petals
+		}
+		if petals < 1 || petals > 8 {
+			return r, fieldErr("weave.petals", "Petals must be a whole number from 1 to 8")
+		}
+		// The latitude's rounding tolerance: a touch entered as constant
+		// expressions can round past a pole, which the snap below restores.
+		if !finite(w.Alpha) || w.Alpha < -weaveTolerance || w.Alpha > math.Pi/2+weaveTolerance {
+			return r, fieldErr("weave.alpha", "Central latitude α must be between 0 and π/2")
+		}
+		if !finite(w.Amplitude) || w.Amplitude < 0 || w.Alpha-w.Amplitude < -weaveTolerance ||
+			w.Alpha+w.Amplitude > math.Pi/2+weaveTolerance {
+			return r, fieldErr("weave.amplitude", "Flower amplitude A must be nonnegative and keep α ± A within 0 and π/2")
+		}
+	}
 	for i, a := range q.Angles {
 		if !finite(a) || math.Abs(a) > 1e6 {
 			return r, fieldErr(fmt.Sprintf("angles.%d", i), "rotation angles must be finite and within ±1000000 radians")
 		}
 	}
 	if q.Curves < 1 || q.Curves > 32 {
+		if flower {
+			return r, fieldErr("curves", "use 1–32 fibers on the flower")
+		}
 		return r, fieldErr("curves", "use 1–32 fibers on the latitude")
 	}
 	if q.Samples < 8 || q.Samples > 256 {
@@ -390,6 +424,10 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		name, key string
 		v         float64
 	}{{"Central latitude α", "alpha", w.Alpha}, {"Latitude start", "alphaFrom", w.AlphaFrom}, {"Latitude end", "alphaTo", w.AlphaTo}} {
+		// A flower offers trace and rotations, not a latitude sweep.
+		if flower && field.key != "alpha" {
+			continue
+		}
 		if !finite(field.v) || field.v < -weaveTolerance || field.v > math.Pi/2+weaveTolerance {
 			return r, fieldErr("weave."+field.key, "%s must be between 0 and π/2", field.name)
 		}
@@ -403,15 +441,36 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	}
 	// The maximum counts stay well inside the ceiling; the check keeps it so
 	// if they grow.
-	if pairedWeavePoints(q.Curves, q.Samples) > maxPoints {
+	baseSamples := q.Samples
+	if flower && w.Amplitude > 0 {
+		// Even the lowest circle resolution must resolve every petal.
+		baseSamples = max(baseSamples, 16*petals)
+	}
+	if pairedWeavePoints(q.Curves, q.Samples)+baseSamples-q.Samples > maxPoints {
 		return r, fmt.Errorf("base sphere and fibers exceeds budget: at most 65,536 points; reduce fibers or samples")
 	}
 
 	n, j := q.Curves, w.Selected
 	alpha := weaveLatitudes(w.Alpha, 0, 1)[0]
-	collapsed := alpha == 0 || alpha == math.Pi/2
+	collapsed := (alpha == 0 || alpha == math.Pi/2) && (!flower || w.Amplitude == 0)
+	pointAt := func(t float64) Vec3 {
+		if !flower || w.Amplitude == 0 {
+			return latitudePoint(alpha, t)
+		}
+		a := w.Alpha + w.Amplitude*math.Cos(float64(petals)*t)
+		// Reuse the latitude's rounding-distance pole policy.
+		if a <= weaveTolerance {
+			a = 0
+		} else if a >= math.Pi/2-weaveTolerance {
+			a = math.Pi / 2
+		}
+		return latitudePoint(a, t)
+	}
 	b := newWeaveBuilder(q, &r, "fibers")
 	section := Section{ID: "weave/latitude/0", Kind: "torus", Level: alpha, Dimension: 2}
+	if flower && w.Amplitude > 0 {
+		section.Kind, section.Dimension = "flower", 1
+	}
 	if collapsed {
 		section.Kind, section.Dimension = "circle", 1
 		b.diag.Collapsed++
@@ -437,12 +496,55 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		}
 		delta = 2 * math.Pi * u
 	}
-	moving := latitudePoint(alpha, delta)
+	moving := pointAt(delta)
 	_, chart := hopfFiber(moving)
 	c := &CorrespondenceDiagnostics{Fibers: n, Selected: j, MovingSample: -1, Parameter: delta, Base: moving,
 		Chart: chart, Coincident: collapsed}
 	if f == 0 || collapsed {
 		c.MovingSample = j
+	}
+	if flower {
+		c.Path = "flower"
+	}
+	// Preserve the original latitude path exactly, including its trace
+	// presentation. Nonconstant flowers merge repeated pole fibers and use
+	// the frozen sample itself when the trace lands on it.
+	var points []Vec3
+	var aliases []int
+	if flower && w.Amplitude > 0 {
+		points, aliases = make([]Vec3, n), make([]int, n)
+		duplicates := false
+		for i := range points {
+			points[i], aliases[i] = pointAt(sampleDelta(i)), i
+			if points[i][2] == 1 || points[i][2] == -1 {
+				for h := 0; h < i; h++ {
+					if points[h] == points[i] {
+						aliases[i], duplicates = h, true
+						break
+					}
+				}
+			}
+		}
+		if duplicates {
+			c.Aliases = aliases
+		}
+		x := delta / (2 * math.Pi) * float64(n)
+		if math.Abs(x-math.Round(x)) <= 8e-15*float64(n) {
+			i := int(math.Round(x)) % n
+			delta, moving = sampleDelta(i), points[i]
+			c.Parameter, c.Base, c.MovingSample = delta, moving, aliases[i]
+		}
+		if moving[2] == 1 || moving[2] == -1 {
+			matches := 0
+			for i, p := range points {
+				if p == moving {
+					c.MovingSample = aliases[i]
+					matches++
+				}
+			}
+			c.Coincident = matches > 1
+		}
+		_, c.Chart = hopfFiber(moving)
 	}
 	b.diag.Correspondence = c
 	// The base pane draws the same selection and moving point; its counts
@@ -458,7 +560,13 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		marker(section.ID+"/base/core", "sample", moving)
 	} else {
 		for i := 0; i < n; i++ {
-			p := latitudePoint(alpha, sampleDelta(i))
+			p := pointAt(sampleDelta(i))
+			if points != nil {
+				if aliases[i] != i {
+					continue
+				}
+				p = points[i]
+			}
 			rep, _ := hopfFiber(p)
 			b.source(fiberCircle(fmt.Sprintf("%s/fiber/%d", section.ID, i), "fiber", 0, rep), section.ID)
 			marker(fmt.Sprintf("%s/base/%d", section.ID, i), "sample", p)
@@ -468,13 +576,16 @@ func pairedWeave(q Request, r Result) (Result, error) {
 			b.source(fiberCircle("weave/moving", "moving", 0, rep), section.ID)
 			marker("weave/moving/base", "moving", moving)
 		}
-		// The latitude itself, closed exactly.
+		// The base path itself, closed exactly.
 		curve := Path{Source: section.ID + "/base", SectionID: section.ID, Branch: "0", Role: "base-curve",
-			Parameters: make([]float64, 0, q.Samples+1), Points: make([]Vec3, 0, q.Samples+1)}
-		for i := 0; i <= q.Samples; i++ {
+			Parameters: make([]float64, 0, baseSamples+1), Points: make([]Vec3, 0, baseSamples+1)}
+		for i := 0; i <= baseSamples; i++ {
 			t := float64(i) * b.step
-			p := latitudePoint(alpha, t)
-			if i == q.Samples {
+			if baseSamples != q.Samples {
+				t = float64(i) * (2 * math.Pi / float64(baseSamples))
+			}
+			p := pointAt(t)
+			if i == baseSamples {
 				p = curve.Points[0]
 			}
 			curve.Parameters = append(curve.Parameters, t)

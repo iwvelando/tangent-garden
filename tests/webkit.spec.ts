@@ -11,6 +11,7 @@ import {
 } from "./helpers";
 import { decodeVideo, probe, frameCoverage } from "./video";
 import { exportTiming } from "../web/export-quality";
+import { namedViews } from "../web/named-views";
 import { deflateRawSync } from "node:zlib";
 import { spatialPresets } from "../web/spatial/presets";
 import { defaultLayers } from "../web/spatial/renderer";
@@ -992,6 +993,78 @@ for (const width of [1440, 390])
     expect(video.duration).toBeCloseTo(0.4, 3);
     expect(video.first.hash).not.toBe(video.last.hash);
   });
+
+test("flower controls, pole selection and paired still work after click and blur in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=4d");
+  await choosePreset(page, { label: "A flower below, a bouquet above" });
+  const settle = () =>
+    expect(page.locator(".tesseract-stage")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+  await settle();
+  const amp = page.getByRole("textbox", {
+    name: "Flower amplitude A",
+    exact: true,
+  });
+  await amp.fill("pi/4");
+  await page
+    .getByRole("button", { name: "About Flower amplitude A", exact: true })
+    .click();
+  await settle();
+  const petals = page.getByRole("spinbutton", { name: "Petals", exact: true });
+  await petals.fill("8");
+  await page
+    .getByRole("spinbutton", { name: "Fibers on the flower", exact: true })
+    .fill("32");
+  await settle();
+  await page
+    .getByRole("spinbutton", { name: "Selected fiber", exact: true })
+    .fill("17");
+  await settle();
+  await expect(
+    page.locator(
+      'svg[data-representation="base"] [data-correspondence="moving"]',
+    ),
+  ).toHaveAttribute("data-sample", "16");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  for (const v of Object.values(namedViews)) {
+    await page
+      .getByRole("group", { name: "Named views", exact: true })
+      .getByRole("button", { name: v.label, exact: true })
+      .click();
+    await expect
+      .poll(async () => {
+        const meta = JSON.parse(
+          (await page.locator("#tesseract-artwork > desc").textContent())!,
+        );
+        return meta.views.map((p: any) => ({
+          yaw: p.view.yaw,
+          pitch: p.view.pitch,
+        }));
+      })
+      .toEqual(
+        [0, 1].map(() => ({
+          yaw: expect.closeTo(v.yaw, 12),
+          pitch: expect.closeTo(v.pitch, 12),
+        })),
+      );
+  }
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain('data-representation="base"');
+  expect(svg).toContain('data-representation="stereo"');
+  expect(svg).not.toMatch(/<text|<foreignObject/);
+  await page
+    .getByRole("combobox", { name: "Base path", exact: true })
+    .selectOption("latitude");
+  await settle();
+  await expect(amp).toHaveCount(0);
+});
 
 test("WebKit opens a study link made elsewhere and copies its own", async ({
   page,

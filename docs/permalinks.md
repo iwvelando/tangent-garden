@@ -38,6 +38,8 @@ Exactness is equality in the existing JSON-serialized data domain. Configuration
 
 The reader restores the full raw study before handing it to `planarStudy`, `spatialStudy` or `tesseractStudy`. The ordinary schemas then validate every field, reject unknown fields and supply historical compatibility defaults; Go validates numerical limits. In particular, older 3D links retain historical line weights and probe-presence behavior, and 4D links retain object-specific defaults. Compact omissions are expanded from the frozen snapshot, never today's defaults. Planar layers include independent `definitionGuides` (Fourier, Lissajous and roulette guides) and `rollingGuides` (the Rolling study's circle or curve, arm and markers). Older links inherit both from their conformed `layers.lines` value. Legacy phrase events that set `lines` inherit that same combined behavior unless they explicitly set the new flags. The frozen compact baselines remain unchanged.
 
+The paired 4D weave also saves `weave.path` (`latitude` or `flower`), `amplitude` and `petals`. Their absence preserves the original latitude, zero amplitude and five petals. `weave.selected` retains the original parameter-sample index even when pole-coincident fibers share one drawing; `view` and `diagramView` save its two cameras. Tracing progress and its `trace` offset remain transient (only zero is accepted in a link). See [the spherical flower](tesseracts.md#spherical-flower).
+
 Limits apply independently:
 
 | Budget | Limit |
