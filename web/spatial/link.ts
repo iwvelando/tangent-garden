@@ -40,6 +40,7 @@ import {
   maxCutValue,
   type Cut,
 } from "./cut";
+import { offered } from "./surface";
 import { defaultSight, legacyWeight, opacityRange, type Sight } from "./sight";
 import { lineWeightSchema } from "../line-weight";
 import { viewZoom } from "../refinement";
@@ -295,6 +296,7 @@ const config: SchemaOf<SpatialConfig> = {
             cylinder: true,
             paraboloid: true,
             monkey: true,
+            "helicoid-catenoid": true,
           },
         },
         a: "number",
@@ -641,8 +643,16 @@ export function spatialStudy(value: unknown): SpatialStudy {
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
+  const conformed = conform(
+    raw.config,
+    config,
+    spatialPresets[0].config,
+    "config",
+  );
   const study = {
-    config: conform(raw.config, config, spatialPresets[0].config, "config"),
+    // What the surface's kind does not offer is turned off, so a link
+    // that asks for it opens as the kind draws.
+    config: { ...conformed, surface: offered(conformed.surface) },
     layers: conform(raw.layers, flags(defaultLayers), defaultLayers, "layers"),
     view: conform(raw.view, view, initialView, "view"),
   };

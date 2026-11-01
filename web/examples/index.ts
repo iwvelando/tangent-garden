@@ -89,37 +89,40 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
   family:
     p.config.format === "implicit"
       ? "Implicit surfaces and sections"
-      : p.config.format === "surface"
-        ? "Surface normals and focal sheets"
-        : p.config.format === "rays"
-          ? p.config.rays.interaction === "refract" ||
-            p.config.rays.receiver.plane !== "none"
-            ? "Refraction and receivers"
-            : "Mirrors and caustics"
-          : p.config.format === "pursuit"
-            ? "Spatial pursuit"
-            : p.config.format === "field"
-              ? "Vector-field trajectories"
-              : composes(p.config)
-                ? "Built on a derived curve"
-                : p.config.construction === "canal"
-                  ? "Tubes and canal surfaces"
-                  : p.config.construction === "ruled"
-                    ? "Ruled surfaces"
-                    : p.config.construction === "framed"
-                      ? "Framed ribbons"
-                      : p.config.format === "harmonic"
-                        ? "Harmonic generators"
-                        : p.config.construction === "involute"
-                          ? "Involute filaments"
-                          : p.config.construction === "tangent-foot" ||
-                              p.config.construction === "orthotomic"
-                            ? "Tangent projections"
-                            : p.config.construction === "inversion"
-                              ? "Sphere inversions"
-                              : p.config.format === "torus"
-                                ? "Torus knots"
-                                : "Parametric curves",
+      : p.config.format === "surface" &&
+          p.config.surface.kind === "helicoid-catenoid"
+        ? "Minimal surfaces"
+        : p.config.format === "surface"
+          ? "Surface normals and focal sheets"
+          : p.config.format === "rays"
+            ? p.config.rays.interaction === "refract" ||
+              p.config.rays.receiver.plane !== "none"
+              ? "Refraction and receivers"
+              : "Mirrors and caustics"
+            : p.config.format === "pursuit"
+              ? "Spatial pursuit"
+              : p.config.format === "field"
+                ? "Vector-field trajectories"
+                : composes(p.config)
+                  ? "Built on a derived curve"
+                  : p.config.construction === "canal"
+                    ? "Tubes and canal surfaces"
+                    : p.config.construction === "ruled"
+                      ? "Ruled surfaces"
+                      : p.config.construction === "framed"
+                        ? "Framed ribbons"
+                        : p.config.format === "harmonic"
+                          ? "Harmonic generators"
+                          : p.config.construction === "involute"
+                            ? "Involute filaments"
+                            : p.config.construction === "tangent-foot" ||
+                                p.config.construction === "orthotomic"
+                              ? "Tangent projections"
+                              : p.config.construction === "inversion"
+                                ? "Sphere inversions"
+                                : p.config.format === "torus"
+                                  ? "Torus knots"
+                                  : "Parametric curves",
   keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.cut?.others?.length ? (p.cut.beyond === "any" ? " planes slab box" : " planes notch corner wedge") : ""}${p.sight && !isPlain(p.sight) ? " see-through" : ""}${p.sight && p.sight.weight !== defaultSight.weight ? ` ${p.sight.weight} line weight strokes` : ""}${p.projection && p.projection !== "orthographic" ? ` perspective${p.projection === "chosen" ? " lens angle" : ""}` : ""}${p.flight ? `${p.flight.path.keys.length ? " flight" : ""}${p.flight.path.keys.some((k) => k.leg !== undefined) ? " leg times linger" : ""}${p.flight.ride ? " ride perspective" : ""}${p.flight.repeat === "loop" ? " seamless loop" : p.flight.repeat === "back-and-forth" ? " back and forth" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}${p.config.adaptive && p.config.adaptiveSurface ? " refined surface" : ""}${p.config.adaptive && p.config.adaptiveView ? " refined to the view deep zoom" : ""}${p.probe?.enabled ? " probe curvature torsion" : ""}`,
   // A preset's cut, sight, projection (with its lens angle), opening view,
   // probe and layers are

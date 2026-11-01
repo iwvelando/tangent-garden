@@ -93,7 +93,10 @@ test("child process options preserve the default unfiltered comparison", () => {
     "3",
     "--refine",
     "on",
+    "--skip",
+    "staircase, one net",
   ]);
+  assert.equal(filtered.skip, "staircase, one net");
   assert.deepEqual(parseOptions(childOptions("public/", filtered)), {
     ...filtered,
     child: "public/",

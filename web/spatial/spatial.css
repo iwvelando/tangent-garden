@@ -39,6 +39,13 @@
   margin-bottom: 13px;
   font-size: 12px;
 }
+/* Their checkboxes start at the panel's edge, as a .check's do, without
+   the browser's own margin. */
+.spatial-layers input[type="checkbox"],
+.spatial-probe input[type="checkbox"],
+.spatial-cut input[type="checkbox"] {
+  margin: 0;
+}
 .spatial-layers input,
 .spatial-probe input,
 .spatial-cut input {

@@ -6,6 +6,7 @@
 // engine3.SurfaceDiagnostics for a surface) or the study's own per-sample
 // arrays; this module only selects and draws them.
 import { tiered } from "../help";
+import { surfaceCapabilities } from "./surface";
 import {
   drawingOrigin,
   harmonicChain,
@@ -377,7 +378,8 @@ export function surfaceKind(c: SpatialConfig): SurfaceKind | null {
 }
 
 // Whether a study offers the probe, what it can describe (a surface patch
-// its surface, its offset while it has one, and its focal sheets; a curve
+// its surface, its offset while it has one, and its focal sheets, where
+// its kind offers them; a curve
 // with a surface built on it either; another curve study its curve), and
 // what the curve
 // probe's highlight shows (null when only the frame and circle are drawn).
@@ -394,10 +396,15 @@ export function probeSupport(c: SpatialConfig): {
       : [
           ...(curve ? (["curve"] as const) : []),
           ...(surfaceKind(c) ? (["surface"] as const) : []),
-          ...(c.format === "surface" && c.surface.offset !== 0
+          ...(c.format === "surface" &&
+          surfaceCapabilities[c.surface.kind].offset &&
+          c.surface.offset !== 0
             ? (["offset"] as const)
             : []),
-          ...(c.format === "surface" ? (["focal1", "focal2"] as const) : []),
+          ...(c.format === "surface" &&
+          surfaceCapabilities[c.surface.kind].focal
+            ? (["focal1", "focal2"] as const)
+            : []),
         ];
   const format = formats[c.format];
   const names = [
@@ -486,7 +493,11 @@ export function betweenGridHelp(c: SpatialConfig, target: ProbeTarget) {
   return c.format === "surface"
     ? tiered(
         "Lets the probe stand at any u and v, not only at a grid sample, describing the surface exactly there.",
-        "The offset and focal sheets are described there too; a focal sheet's normal keeps the nearest sample's side. The plots still read the grid's samples.",
+        `${
+          surfaceCapabilities[c.surface.kind].focal
+            ? "The offset and focal sheets are described there too; a focal sheet's normal keeps the nearest sample's side."
+            : "The u- and v-curves through it are evaluated there too."
+        } The plots still read the grid's samples.`,
       )
     : tiered(
         `Lets the probe stand at any ${t.along} and ${t.around}, not only at a sample, describing the surface there.`,
@@ -835,7 +846,11 @@ export function surfaceProbeHelp(
       t.moves
         ? `${between ? `It stands at any ${t.along} and ${t.around}, evaluated exactly there.` : t.moves} `
         : ""
-    }${t.help} A sphere with outward normal has κ = −1/R; centers beyond 100 study radii are not drawn.`,
+    }${t.help} ${
+      corresponds(c, target)
+        ? "It also draws the u- and v-curves through its point, which keep their lengths at every angle. Centers"
+        : "A sphere with outward normal has κ = −1/R; centers"
+    } beyond 100 study radii are not drawn.`,
   );
 }
 
@@ -966,6 +981,7 @@ export function surfaceProbeBatches(
   result: SpatialResult,
   row: number,
   column: number,
+  through: Vec3[][] = [],
 ): Batch[] {
   const d = result.surfaceDiagnostics,
     p = d?.points[row]?.[column];
@@ -1004,6 +1020,11 @@ export function surfaceProbeBatches(
     const known = d.points[row].filter((q): q is Vec3 => !!q);
     if (known.length > 1) marked.push(known[0], known.at(-1)!);
   }
+  // The parameter curves through the point, as polylines.
+  for (const curve of through)
+    curve.forEach((q, k) => {
+      if (k > 0) marked.push(curve[k - 1], q);
+    });
   const out = [lines(marked, probeInk.mark)];
   const light = d.light;
   if (light) {
@@ -1095,7 +1116,13 @@ export function surfaceProbeReadout(
     radius: curvature.map((k) => (k ? 1 / k : null)),
     infinite: curvature.map((k, b) => k !== null && !d.focal[b][row][column]),
     gauss: known ? k1 * k2 : null,
-    mean: known ? (k1 + k2) / 2 : null,
+    // A mean within 10⁻¹² of the larger curvature is rounding, as on a
+    // minimal surface, where it is exactly 0: shown as 0.
+    mean: known
+      ? Math.abs(k1 + k2) / 2 <= 1e-12 * larger
+        ? 0
+        : (k1 + k2) / 2
+      : null,
   };
 }
 
@@ -1395,9 +1422,27 @@ export function probePoint(
   return curveAt(result, i)?.point ?? null;
 }
 
+// Whether the probe draws the parameter curves through its point: on a
+// patch whose kind draws its correspondence (see surfaceCapabilities).
+const corresponds = (c: SpatialConfig, target: ProbeTarget) =>
+  c.format === "surface" &&
+  target === "surface" &&
+  surfaceCapabilities[c.surface.kind].correspondence;
+
+// The u- and v-curves through the surface probe's point at (row, column):
+// Go's between samples, or the grid's own column and row at a sample.
+function crossing(d: SurfaceDiagnostics, row: number, column: number) {
+  return (
+    d.crossing ?? [
+      d.points.map((r) => r[column]).filter((p): p is Vec3 => !!p),
+      (d.points[row] ?? []).filter((p): p is Vec3 => !!p),
+    ]
+  );
+}
+
 // The probe's drawing at its place: the curve probe at its point (or at
 // sample i), or the surface probe at row i in the column the probe stands
-// in.
+// in, with the parameter curves through it where the study draws them.
 export function probeDrawing(
   result: SpatialResult,
   config: SpatialConfig,
@@ -1408,13 +1453,19 @@ export function probeDrawing(
     const at = curveAt(result, i);
     return at ? probeBatches(result, config, at) : [];
   }
-  if (isGridPoint(i)) return surfaceProbeBatches(atPoint(result, i), 0, 0);
+  const curves = corresponds(config, probeTarget(config, probe));
+  if (isGridPoint(i)) {
+    const at = atPoint(result, i);
+    return surfaceProbeBatches(at, 0, 0, curves ? crossing(i.grid, 0, 0) : []);
+  }
   const d = result.surfaceDiagnostics;
   if (!d || typeof i !== "number") return [];
+  const column = surfaceProbeAt(d, 0, probe.across).column;
   return surfaceProbeBatches(
     result,
     i,
-    surfaceProbeAt(d, 0, probe.across).column,
+    column,
+    curves ? crossing(d, i, column) : [],
   );
 }
 

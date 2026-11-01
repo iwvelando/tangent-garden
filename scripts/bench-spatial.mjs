@@ -121,6 +121,37 @@ const curves = [
   // Studies whose grids, paths and rays, not a mesh, are most of a frame.
   ["ellipsoid", "The whole focal surface of an ellipsoid", "a surface"],
   ["coma", "A tilted beam folding into coma", "rays"],
+  // The helicoid–catenoid family as it plays with its probe on, half way
+  // (θ = π/4), and the densest patch it admits: 240 × 60 samples, 48
+  // curves each way, over its widest domain.
+  [
+    "staircase",
+    "A staircase becoming a throat",
+    "96 × 48 samples, θ = π/4, probed",
+    (c) => ({
+      surfaceDiagnostics: true,
+      surface: { ...c.surface, b: Math.PI / 4 },
+    }),
+  ],
+  [
+    "staircase-max",
+    "A staircase becoming a throat",
+    "240 × 60 samples, 48 curves, u ±4π, v ±4, θ = π/4, probed",
+    (c) => ({
+      surfaceDiagnostics: true,
+      surface: {
+        ...c.surface,
+        b: Math.PI / 4,
+        uMin: -4 * Math.PI,
+        uMax: 4 * Math.PI,
+        vMin: -4,
+        vMax: 4,
+        uSamples: 240,
+        vSamples: 60,
+        curves: 48,
+      },
+    }),
+  ],
   ["vortex", "A row of seeds wound up by a vortex", "a vector field"],
   // A carried arrow: around the octant triangle, along one torus thread,
   // and the largest fan the point cap admits with an arrow, eight threads

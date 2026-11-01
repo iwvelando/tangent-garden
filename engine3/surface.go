@@ -11,7 +11,11 @@ import (
 // a torus's major radius R = A ≥ 0 and minor radius r = B > 0 (a spindle
 // torus when R < r); an elliptic cylinder's semi-axes A and B; a
 // paraboloid z = (A x² + B y²)/2, whose principal curvatures at the vertex
-// are A and B; and a monkey saddle z = A(x³ − 3xy²).
+// are A and B; a monkey saddle z = A(x³ − 3xy²); and the helicoid–catenoid
+// associated family at scale s = A > 0 and associate angle θ = B in
+// [0, π/2] (see associate), the helicoid at θ = 0 and the catenoid at π/2.
+// What each kind offers beyond its sheet, normals and curvatures is in
+// surfaceKinds.
 //
 // The normal is n = X_u × X_v / |X_u × X_v|, or its opposite when Reverse
 // is set. The shape operator is A = −dn, so κ > 0 where the surface bends
@@ -105,6 +109,43 @@ type SurfaceResult struct {
 	Geodesics *GeodesicResult `json:"geodesics,omitempty"`
 }
 
+// surfaceCapabilities says what a kind of patch offers beyond its sheet,
+// parameter curves, normal lines and curvatures: an offset (with its
+// cuspidal edges and diagnostics), focal sheets (with ridges and their
+// diagnostics), light (a ray study's mirror or interface), and the
+// correspondence its probe draws: the u- and v-curves through the point
+// probed between samples (see SurfaceDiagnostics.Crossing). A kind never
+// computes what it does not offer, and a request for it is refused.
+type surfaceCapabilities struct {
+	offset, focal, optics, correspondence bool
+}
+
+var analyticPatch = surfaceCapabilities{offset: true, focal: true, optics: true}
+
+// surfaceKinds lists every kind of patch with what it offers. The
+// helicoid–catenoid family's curvature has been validated, not its focal
+// sheets, offsets or optics.
+var surfaceKinds = map[string]surfaceCapabilities{
+	"ellipsoid":         analyticPatch,
+	"torus":             analyticPatch,
+	"cylinder":          analyticPatch,
+	"paraboloid":        analyticPatch,
+	"monkey":            analyticPatch,
+	"helicoid-catenoid": {correspondence: true},
+}
+
+// offers is what the request's kind offers; an unknown kind offers
+// nothing, and validation refuses it.
+func (q SurfaceRequest) offers() surfaceCapabilities { return surfaceKinds[q.Kind] }
+
+// The helicoid–catenoid family's parameter domain: u within ±4π and v
+// within ±4, where cosh v is below 28, so no hyperbolic function comes
+// near overflow at any admitted scale.
+const (
+	associateU = 4 * math.Pi
+	associateV = 4
+)
+
 const (
 	maxSurfaceSamples = 240
 	maxSurfaceCells   = 14400
@@ -123,6 +164,13 @@ func (q SurfaceRequest) validate() error {
 	}
 	if !bounded(q.Offset) {
 		return fieldErr("surface.offset", "the offset distance d must be finite and within ±100000")
+	}
+	if offers := q.offers(); !offers.offset && q.Offset != 0 {
+		return fieldErr("surface.offset", "%s has no offset surface: d must be 0", surfaceTitle(q.Kind))
+	} else if !offers.offset && q.Edges {
+		return fieldErr("surface.edges", "%s has no offset, so no cuspidal edges to locate", surfaceTitle(q.Kind))
+	} else if !offers.focal && q.Ridges {
+		return fieldErr("surface.ridges", "%s has no focal sheets, so no ridges to locate", surfaceTitle(q.Kind))
 	}
 	if !bounded(q.Reach) {
 		return fieldErr("surface.reach", "the normal reach ℓ must be finite and within ±100000")
@@ -169,6 +217,22 @@ func (q SurfaceRequest) validatePatch() error {
 		if !bounded(q.A) {
 			return fieldErr("surface.a", "the height k must be finite and within ±100000")
 		}
+	case "helicoid-catenoid":
+		if !shape(q.A) {
+			return fieldErr("surface.a", "the scale s must be finite, positive, and at most 100000")
+		}
+		if !(q.B >= 0 && q.B <= math.Pi/2) {
+			return fieldErr("surface.b", "the associate angle θ must be within 0–π/2")
+		}
+		within := func(lo, hi, limit float64) bool {
+			return lo >= -limit && hi <= limit && hi-lo >= 1e-6
+		}
+		if !within(q.UMin, q.UMax, associateU) {
+			return fieldErr(associateEnds("surface.uMin", "surface.uMax", q.UMin, associateU), "u domain: the start must be below the end, within ±4π, at least 0.000001 wide")
+		}
+		if !within(q.VMin, q.VMax, associateV) {
+			return fieldErr(associateEnds("surface.vMin", "surface.vMax", q.VMin, associateV), "v domain: the start must be below the end, within ±4, at least 0.000001 wide")
+		}
 	default:
 		return fieldErr("surface.kind", "unknown surface")
 	}
@@ -191,9 +255,29 @@ func (q SurfaceRequest) validatePatch() error {
 	return nil
 }
 
+// associateEnds names the end of a domain at fault: its start when that
+// is out of range, otherwise its end, as ends does.
+func associateEnds(start, end string, lo, limit float64) string {
+	if !(lo >= -limit && lo <= limit) {
+		return start
+	}
+	return end
+}
+
+// surfaceTitle names a kind of patch in a refusal.
+func surfaceTitle(kind string) string {
+	if kind == "helicoid-catenoid" {
+		return "the helicoid–catenoid family"
+	}
+	return "this surface"
+}
+
 // patch returns X and its exact first and second partial derivatives.
 func (q SurfaceRequest) patch(u, v float64) (x, xu, xv, xuu, xuv, xvv Vec3) {
 	a, b, c := q.A, q.B, q.C
+	if q.Kind == "helicoid-catenoid" {
+		return associate(a, b, u, v)
+	}
 	cu, su, cv, sv := math.Cos(u), math.Sin(u), math.Cos(v), math.Sin(v)
 	switch q.Kind {
 	case "ellipsoid":
@@ -223,10 +307,41 @@ func (q SurfaceRequest) patch(u, v float64) (x, xu, xv, xuu, xuv, xvv Vec3) {
 	}
 }
 
+// associate is the helicoid–catenoid associated family at scale s and
+// associate angle θ, in 3D-XplorMath's convention,
+//
+//	X = s(cos θ sinh v sin u + sin θ cosh v cos u,
+//	      −cos θ sinh v cos u + sin θ cosh v sin u,
+//	      cos θ u + sin θ v),
+//
+// with its exact first and second derivatives: the helicoid at θ = 0 and
+// the catenoid at θ = π/2. Every member has the conformal metric E = G =
+// s²cosh²v, F = 0 and the Gauss map (cos u, sin u, −sinh v)/cosh v, and
+// X_uu + X_vv = 0, so it is minimal, with κ = ±1/(s cosh²v).
+func associate(s, theta, u, v float64) (x, xu, xv, xuu, xuv, xvv Vec3) {
+	c, a := math.Cos(theta), math.Sin(theta)
+	cu, su, ch, sh := math.Cos(u), math.Sin(u), math.Cosh(v), math.Sinh(v)
+	// p = X_vv = −X_uu and r = X_uv, both horizontal.
+	p := Vec3{s * (c*sh*su + a*ch*cu), s * (-c*sh*cu + a*ch*su), 0}
+	r := Vec3{s * (c*ch*cu - a*sh*su), s * (c*ch*su + a*sh*cu), 0}
+	return Vec3{p.X, p.Y, s * (c*u + a*v)},
+		Vec3{s * (c*sh*cu - a*ch*su), s * (c*sh*su + a*ch*cu), s * c},
+		Vec3{s * (c*ch*su + a*sh*cu), s * (-c*ch*cu + a*sh*su), s * a},
+		p.mul(-1), r, p
+}
+
 // third returns the patch's exact third partial derivatives, which its
 // focal sheets' curvatures need (see focalProbe).
 func (q SurfaceRequest) third(u, v float64) (xuuu, xuuv, xuvv, xvvv Vec3) {
 	a, b, c := q.A, q.B, q.C
+	if q.Kind == "helicoid-catenoid" {
+		// w = X_uvv = −X_uuu and z = X_vvv = −X_uuv, both horizontal.
+		ct, st := math.Cos(b), math.Sin(b)
+		cu, su, ch, sh := math.Cos(u), math.Sin(u), math.Cosh(v), math.Sinh(v)
+		w := Vec3{a * (ct*sh*cu - st*ch*su), a * (ct*sh*su + st*ch*cu), 0}
+		z := Vec3{a * (ct*ch*su + st*sh*cu), a * (-ct*ch*cu + st*sh*su), 0}
+		return w.mul(-1), z.mul(-1), w, z
+	}
 	cu, su, cv, sv := math.Cos(u), math.Sin(u), math.Cos(v), math.Sin(v)
 	switch q.Kind {
 	case "ellipsoid":
@@ -413,6 +528,13 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 	if err := q.validate(); err != nil {
 		return Result{}, err
 	}
+	offers := q.offers()
+	if offset && !offers.offset {
+		return Result{}, fmt.Errorf("%s has no offset to probe", surfaceTitle(q.Kind))
+	}
+	if focused != 0 && !offers.focal {
+		return Result{}, fmt.Errorf("%s has no focal sheets to probe", surfaceTitle(q.Kind))
+	}
 	nu, nv := q.USamples, q.VSamples
 	at := q.at
 	positions, scale, err := q.positions()
@@ -427,9 +549,14 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 	if q.Offset != 0 {
 		offsets, offsetNormals = grid2[*Vec3](nu+1, nv+1), grid2[*Vec3](nu+1, nv+1)
 	}
+	// A kind without focal sheets neither samples nor joins them.
 	focal := [2][2][][]*Vec3{}
-	for k := range focal {
-		focal[k] = [2][][]*Vec3{grid2[*Vec3](nu+1, nv+1), grid2[*Vec3](nu+1, nv+1)}
+	if offers.focal {
+		for k := range focal {
+			focal[k] = [2][][]*Vec3{grid2[*Vec3](nu+1, nv+1), grid2[*Vec3](nu+1, nv+1)}
+		}
+	} else {
+		out.Focal = []FocalSheet{}
 	}
 	clipped := [2]int{}
 	for i := 0; i <= nu; i++ {
@@ -455,6 +582,9 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 				}
 			}
 			for k := range focal {
+				if !offers.focal {
+					break
+				}
 				f, ok := s.focal(k, reach)
 				if !ok {
 					clipped[k]++
@@ -479,6 +609,9 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 		}
 	}
 	for k := range focal {
+		if !offers.focal {
+			break
+		}
 		join := func(i, j, di, dj int) bool {
 			u0, v0 := at(i, j)
 			u1, v1 := at(i+di, j+dj)

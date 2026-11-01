@@ -106,6 +106,9 @@ func pointProbe(q SurfaceRequest, grid *SurfaceDiagnostics, at SurfaceQuery, sca
 	switch grid.Kind {
 	case "patch":
 		d.patchAt(0, 0, s)
+		if q.offers().correspondence {
+			d.Crossing = q.crossing(at.U, at.V)
+		}
 	case "offset":
 		d.Distance, d.Folds = grid.Distance, grid2[bool](1, 1)
 		d.offsetAt(0, 0, s)
@@ -122,6 +125,19 @@ func pointProbe(q SurfaceRequest, grid *SurfaceDiagnostics, at SurfaceQuery, sca
 	}
 	d.clip(scale)
 	return d
+}
+
+// crossing returns the u-curve through (u, v), at the grid's u samples,
+// and the v-curve, at its v samples (see SurfaceDiagnostics.Crossing).
+func (q SurfaceRequest) crossing(u, v float64) [][]Vec3 {
+	along, across := make([]Vec3, q.USamples+1), make([]Vec3, q.VSamples+1)
+	for i := range along {
+		along[i], _, _, _, _, _ = q.patch(lerp(q.UMin, q.UMax, i, q.USamples), v)
+	}
+	for j := range across {
+		across[j], _, _, _, _, _ = q.patch(u, lerp(q.VMin, q.VMax, j, q.VSamples))
+	}
+	return [][]Vec3{along, across}
 }
 
 // surfacePoint places a study's surface probe at its query: a patch's or a

@@ -913,3 +913,85 @@ test("refinement's checkboxes are evenly spaced", async ({ page }) => {
     Math.abs(centers[1] - centers[0] - (centers[2] - centers[1])),
   ).toBeLessThan(1);
 });
+
+// The 3D probe's switches start at the panel's edge together, and an open
+// help keeps the switches' own gap before the next switch, at desktop and
+// phone widths. The first switch's checkbox once kept the browser's margin
+// and sat 4px in; its open help once touched the switch below.
+for (const width of [1440, 390])
+  test(`the 3D probe's switches line up and keep their gap below an open help (${width}px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/?study=3d");
+    await choosePreset(page, {
+      label: "A spheroid's evolute, spun about its axis",
+    });
+    await expect(page.locator(".spatial-stage")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const panel = page.locator(".spatial-probe");
+    const switches = panel.locator(".probe-switch");
+    const box = (i: number) =>
+      switches
+        .nth(i)
+        .locator("input")
+        .evaluate((e) => {
+          const r = e.getBoundingClientRect();
+          return { left: r.left, top: r.top };
+        });
+    const gap = () =>
+      switches.nth(1).evaluate((s) => {
+        let help = s.previousElementSibling as HTMLElement;
+        while (help.hidden) help = help.previousElementSibling as HTMLElement;
+        return (
+          s.getBoundingClientRect().top - help.getBoundingClientRect().bottom
+        );
+      });
+    const first = await box(0),
+      second = await box(1);
+    expect(Math.abs(first.left - second.left)).toBeLessThanOrEqual(0.5);
+    // Closed, the switches are 13px apart.
+    const closed = await gap();
+    expect(closed).toBeGreaterThanOrEqual(12);
+    await panel
+      .getByRole("button", { name: /the probe/ })
+      .first()
+      .click();
+    await expect(
+      switches.nth(0).locator("xpath=following-sibling::div[1]"),
+    ).toBeVisible();
+    // Allowing a pixel for fonts on CI's Linux runners.
+    expect(Math.abs((await gap()) - 13)).toBeLessThanOrEqual(1);
+  });
+
+// Beside the sidebar on a phone held sideways, the 3D view buttons take
+// their own row and the title the column's width, rather than the title
+// wrapping word by word in what the buttons leave. A wide desktop keeps
+// them on one row.
+for (const [width, height, stacked] of [
+  [844, 390, true],
+  [1024, 768, true],
+  [1440, 900, false],
+] as const)
+  test(`the 3D title ${stacked ? "takes the column's width" : "shares its row"} at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/?study=3d");
+    await choosePreset(page, { label: "A staircase becoming a throat" });
+    const heading = page.locator(".app:visible .plot-heading");
+    const m = await heading.evaluate((h) => {
+      const title = h.firstElementChild!.getBoundingClientRect(),
+        buttons = h.lastElementChild!.getBoundingClientRect(),
+        row = h.getBoundingClientRect();
+      return {
+        title: title.width,
+        width: row.width,
+        below: buttons.top >= title.bottom,
+      };
+    });
+    expect(m.below).toBe(stacked);
+    if (stacked) expect(m.title).toBeGreaterThanOrEqual(m.width - 1);
+  });

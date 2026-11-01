@@ -335,6 +335,9 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool, cache *rayC
 	if err := q.validatePatch(); err != nil {
 		return Result{}, err
 	}
+	if !q.offers().optics {
+		return Result{}, fieldErr("surface.kind", "%s is not offered as a mirror or interface", surfaceTitle(q.Kind))
+	}
 	if err := r.validate(); err != nil {
 		return Result{}, err
 	}

@@ -133,8 +133,10 @@ export const maxSpatialPursuers = 16;
 // An analytic patch X(u, v) on a uSamples × vSamples grid of cells. a, b
 // and c are an ellipsoid's semi-axes; a torus's major radius R and minor
 // radius r; an elliptic cylinder's semi-axes; the curvatures k₁ and k₂ of
-// the paraboloid z = (k₁x² + k₂y²)/2 at its vertex; or the height k of the
-// monkey saddle z = k(x³ − 3xy²). The normal is X_u × X_v normalized, or its
+// the paraboloid z = (k₁x² + k₂y²)/2 at its vertex; the height k of the
+// monkey saddle z = k(x³ − 3xy²); or the scale s and associate angle θ of
+// the helicoid–catenoid family, which leaves c unused. What a kind offers
+// beyond its sheet and curvatures is in surfaceCapabilities. The normal is X_u × X_v normalized, or its
 // opposite when `reverse` is set; the shape operator is −dn, so κ > 0 where
 // the surface bends toward n. The offset is X + offset·n (none at 0), and
 // each normal line runs from X to X + reach·n. With `edges` the offset's
@@ -144,7 +146,12 @@ export const maxSpatialPursuers = 16;
 // is launched on a sphere or a ring torus (see GeodesicConfig); absent, as
 // in links made before it, there is none. Mirrors engine3.SurfaceRequest.
 export type SurfaceKind =
-  "ellipsoid" | "torus" | "cylinder" | "paraboloid" | "monkey";
+  | "ellipsoid"
+  | "torus"
+  | "cylinder"
+  | "paraboloid"
+  | "monkey"
+  | "helicoid-catenoid";
 export type SurfaceConfig = {
   kind: SurfaceKind;
   a: number;
@@ -650,6 +657,10 @@ export type SurfaceDiagnostics = {
   // it, which a grid draws from its own row (a canal's contact circle,
   // closed, or a ruling from end to end).
   through?: Vec3[];
+  // One point of a patch that draws its correspondence only (see
+  // surfaceCapabilities): the u-curve through it at the grid's u samples,
+  // then the v-curve at the grid's v samples.
+  crossing?: Vec3[][];
 };
 // Mirrors engine3.LightDiagnostics: on the wavefront's grid, the incident
 // direction (null at a singularity or the source), the surface's normal
