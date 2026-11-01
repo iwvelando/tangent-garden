@@ -36,11 +36,19 @@ import { LineWeightField } from "../LineWeightField";
 import { ExampleGallery } from "../ExampleGallery";
 import { tesseractExamples, tesseractThumbnail } from "../examples";
 import { ExportImageMenu } from "../ExportImageMenu";
-import { saveFile, pngFile, stillSize, svgFile } from "../export-image";
+import {
+  saveFile,
+  pngFile,
+  stillRecord,
+  stillSize,
+  svgFile,
+  type Still,
+} from "../export-image";
 import { AnimationPanel, type MotionExport } from "./AnimationPanel";
 import { StudyPlot } from "./Plot";
 import { exportBaseSize, type ExportLayout } from "../export-quality";
-import { drawnInks, inks, sectionInk } from "./Drawing";
+import { drawnInks, inks, movingInk, sectionInk } from "./Drawing";
+import { pairedOrder } from "./Composition";
 import { LegendEntries } from "../Legend";
 import { Sampler } from "./sampler";
 import { tesseractPresets } from "./presets";
@@ -54,7 +62,7 @@ import {
   type Motion,
   type View,
 } from "./types";
-import { objects, modes } from "./objects";
+import { objects, modeLabel } from "./objects";
 import { axes, fieldLabel, labels } from "./fields";
 import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
@@ -68,6 +76,27 @@ import {
 import { cycles, progressAt, type Pace, type Repeat } from "../timing";
 import "./style.css";
 
+// An SVG export's page is the still's size, as a 3D export's is, so a
+// viewer shows the drawing and nothing beyond it; a size other than the
+// default is recorded as the 3D notebook records it.
+function sized(
+  svg: SVGSVGElement,
+  still: Still,
+  base: { width: number; height: number },
+) {
+  const copy = svg.cloneNode(true) as SVGSVGElement,
+    size = stillSize(still, base);
+  copy.setAttribute("width", String(size.width));
+  copy.setAttribute("height", String(size.height));
+  const desc = copy.querySelector(":scope > desc"),
+    { image } = stillRecord(still, base);
+  if (image && desc?.textContent)
+    desc.textContent = JSON.stringify({
+      ...JSON.parse(desc.textContent),
+      image,
+    });
+  return copy;
+}
 // Each of the six rotation angles shares one help.
 const angleHelp = tiered(
   "Radians; pi/2 is a quarter turn.",
@@ -146,7 +175,8 @@ export default function TesseractApp({
   const [preview, setPreview] = useState(false);
   const [revision, setRevision] = useState(0);
   const [ready, setReady] = useState(false),
-    [settled, setSettled] = useState("");
+    [settled, setSettled] = useState(""),
+    [shownDefinition, setShownDefinition] = useState("");
   const [exporting, setExporting] = useState(""),
     [exportProgress, setExportProgress] = useState(0),
     [exportError, setExportError] = useState("");
@@ -162,7 +192,20 @@ export default function TesseractApp({
   const held = preview && (playing || !complete);
   const request = preview ? sample(config, motion, motionProgress) : config,
     key = JSON.stringify(request);
-  const busy = !ready || scalarBusy || (!playing && key !== settled);
+  // The study apart from the timeline's position. Changing it, starting
+  // or stopping playback, or leaving the notebook drops every result in
+  // flight; moving along a paused timeline does not, so a quick scrub
+  // shows each frame the engine finishes, as playback does.
+  const definition = preview
+    ? JSON.stringify([config, motion, repeat, pace])
+    : key;
+  // Busy while the study itself is being computed. A scrub's frame catching
+  // up with the scrubber only lags, as in the 3D notebook: it leaves the
+  // link and image buttons and the drawing's label alone, and is visible
+  // to tests and assistive technology through aria-busy.
+  const busy =
+      !ready || scalarBusy || (!playing && definition !== shownDefinition),
+    lagging = !playing && key !== settled;
   useEffect(() => {
     const c = new EngineClient();
     client.current = c;
@@ -190,35 +233,52 @@ export default function TesseractApp({
       setSpinning(false);
     }
   }, [active]);
+  const asked = useRef(0),
+    shown = useRef(0);
+  useEffect(() => {
+    epoch.current++;
+  }, [definition, ready, playing, active, scalarBusy, revision]);
   useEffect(() => {
     if (!ready || playing || !active || scalarBusy) return;
-    const ticket = ++epoch.current;
-    const timer = setTimeout(() => {
-      void sampler
-        .current!.request(request)
-        .then((result) => {
-          if (ticket !== epoch.current || !result) return;
-          if (!preview)
-            remembered.current[request.object] = structuredClone(request);
-          setFrame({ config: request, result });
-          setSettled(key);
-          setError("");
-        })
-        .catch((e: Error) => {
-          if (ticket === epoch.current) {
-            setError(e.message, e instanceof EngineError ? e.field : undefined);
+    const ticket = epoch.current,
+      order = ++asked.current;
+    // An edit waits for typing to pause; a scrub asks at once, since the
+    // sampler holds at most one waiting request.
+    const timer = setTimeout(
+      () => {
+        void sampler
+          .current!.request(request)
+          .then((result) => {
+            if (ticket !== epoch.current || !result || order < shown.current)
+              return;
+            shown.current = order;
+            if (!preview)
+              remembered.current[request.object] = structuredClone(request);
+            setFrame({ config: request, result });
             setSettled(key);
-          }
-        });
-    }, 40);
-    return () => {
-      clearTimeout(timer);
-      epoch.current++;
-    };
+            setShownDefinition(definition);
+            setError("");
+          })
+          .catch((e: Error) => {
+            if (ticket === epoch.current && order >= shown.current) {
+              shown.current = order;
+              setError(
+                e.message,
+                e instanceof EngineError ? e.field : undefined,
+              );
+              setSettled(key);
+              setShownDefinition(definition);
+            }
+          });
+      },
+      preview ? 0 : 40,
+    );
+    return () => clearTimeout(timer);
   }, [key, ready, playing, active, scalarBusy, revision]);
   useEffect(() => {
     if (!playing || !ready || !active) return;
-    const ticket = ++epoch.current;
+    const ticket = ++epoch.current,
+      played = JSON.stringify([config, motion, repeat, pace]);
     // Every frame is calculated; while one engine calculates, a helper,
     // alive only while playback runs, can calculate the next.
     const helper = playbackEngineCount() > 1 ? new EngineClient() : null;
@@ -239,6 +299,7 @@ export default function TesseractApp({
         if (ticket !== epoch.current) return;
         setFrame(next);
         setSettled(JSON.stringify(next.config));
+        setShownDefinition(played);
         setProgress(p);
         setError("");
       },
@@ -434,8 +495,14 @@ export default function TesseractApp({
         block: "start",
       });
   };
+  // Scrubbing pauses playback; a paused timeline keeps the frame being
+  // computed, which the next scrub position follows (see definition).
   const editTimeline = (p: number) => {
-    stop();
+    if (playing) stop();
+    else {
+      checks.current++;
+      controller.current?.abort();
+    }
     setPreview(true);
     setProgress(p);
   };
@@ -551,7 +618,7 @@ export default function TesseractApp({
                   }
                   return { ...c, [parameterKey]: lift };
                 },
-                f.help,
+                typeof f.help === "function" ? f.help(config) : f.help,
               ),
               {
                 key: f.label,
@@ -575,30 +642,50 @@ export default function TesseractApp({
       </div>
     ));
   };
-  const choices = descriptor.choices?.map((choice) => (
-    <Field key={choice.key} label={choice.label} help={choice.help}>
-      <select
-        value={(parameters as unknown as Record<string, string>)[choice.key]}
-        onChange={(e) => {
-          const value = e.target.value;
-          update((c) => ({
-            ...c,
-            [parameterKey]: {
-              ...c[parameterKey],
-              [choice.key]: value,
-            },
-          }));
-        }}
-      >
-        {choice.values.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </Field>
-  ));
+  const choices = descriptor.choices
+    ?.filter((choice) => !choice.visible || choice.visible(config))
+    .map((choice) => (
+      <Field key={choice.key} label={choice.label} help={choice.help}>
+        <select
+          value={(parameters as unknown as Record<string, string>)[choice.key]}
+          onChange={(e) => {
+            const value = e.target.value;
+            update((c) => ({
+              ...c,
+              [parameterKey]: {
+                ...c[parameterKey],
+                [choice.key]: value,
+              },
+            }));
+          }}
+        >
+          {choice.values.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+    ));
   const info = descriptor.explanation(config);
+  const selection = descriptor.selection;
+  // Choosing a sample from either view or the field stops playback and
+  // returns to the entered study, as any edit does.
+  const select = (index: number) => {
+    if (playing || exporting || !selection) return;
+    update((c) => selection.set(c, index));
+  };
+  // Keys step from the latest study, so quick presses all count.
+  const step = (by: 1 | -1) => {
+    if (playing || exporting || !selection) return;
+    update((c) => {
+      const n = selection.count(c);
+      return Number.isInteger(n) && n >= 1
+        ? selection.set(c, (selection.get(c) + by + n) % n)
+        : c;
+    });
+  };
+  const movingLegend = drawnDescriptor.movingLegend?.(frame?.config ?? config);
   const selected =
     frame?.result.sections[
       Math.min(
@@ -700,7 +787,10 @@ export default function TesseractApp({
               const size = stillSize(still, exportBaseSize(liveLayout));
               const blob =
                 format === "svg"
-                  ? svgFile(svg, still.transparent)
+                  ? svgFile(
+                      sized(svg, still, exportBaseSize(liveLayout)),
+                      still.transparent,
+                    )
                   : await pngFile(
                       svg,
                       size.width,
@@ -812,14 +902,17 @@ export default function TesseractApp({
                         setConfig((c) => ({ ...c, mode }));
                         return;
                       }
-                      if (mode !== "section" && motion === "slice")
-                        setMotion("double");
+                      // A motion the new view does not offer gives way to
+                      // the first one it does.
+                      const offered = motions({ ...config, mode });
+                      if (!offered.some((m) => m.value === motion))
+                        setMotion(offered[0].value);
                       update((c) => ({ ...c, mode }));
                     }}
                   >
                     {descriptor.modes.map((mode) => (
                       <option key={mode} value={mode}>
-                        {modes[mode]}
+                        {modeLabel(config.object, mode)}
                       </option>
                     ))}
                   </select>
@@ -915,7 +1008,11 @@ export default function TesseractApp({
                                     config[f.key],
                                     f.min,
                                     f.max,
-                                    (c, n) => ({ ...c, [f.key]: n }),
+                                    (c, n) =>
+                                      (descriptor.reconcile ?? ((c) => c))({
+                                        ...c,
+                                        [f.key]: n,
+                                      }),
                                   ),
                                   { key: f.key },
                                 ),
@@ -923,7 +1020,32 @@ export default function TesseractApp({
                           </div>
                         ))}
                         {descriptor.countNote && (
-                          <p className="note">{descriptor.countNote}</p>
+                          <p className="note">
+                            {typeof descriptor.countNote === "function"
+                              ? descriptor.countNote(config)
+                              : descriptor.countNote}
+                          </p>
+                        )}
+                        {selection?.visible(config) && (
+                          <Field label={selection.label} help={selection.help}>
+                            <input
+                              type="number"
+                              min="1"
+                              max={selection.count(config)}
+                              step="1"
+                              value={selection.get(config) + 1}
+                              onChange={(e) => {
+                                const n = Number(e.target.value);
+                                if (
+                                  !Number.isInteger(n) ||
+                                  n < 1 ||
+                                  n > selection.count(config)
+                                )
+                                  return;
+                                select(n - 1);
+                              }}
+                            />
+                          </Field>
                         )}
                       </>
                     ) : (
@@ -951,7 +1073,9 @@ export default function TesseractApp({
                     (c, distance) => ({ ...c, distance }),
                     "From 2.05 to 20, so the eye stays outside the tesseract.",
                   )}
-                {config.mode === "stereo" &&
+                {(config.mode === "stereo" ||
+                  (config.mode === "paired" &&
+                    descriptor.pairedModes?.includes("stereo"))) &&
                   scalar(
                     labels.clip,
                     config.clip,
@@ -1141,7 +1265,7 @@ export default function TesseractApp({
               </div>
               <h1>
                 {preset === null
-                  ? modes[config.mode]
+                  ? modeLabel(config.object, config.mode)
                   : tesseractPresets[preset].name}
               </h1>
             </div>
@@ -1171,17 +1295,17 @@ export default function TesseractApp({
           <div
             className="plot-wrap tesseract-stage"
             ref={stage}
-            aria-busy={busy}
+            aria-busy={busy || lagging}
             data-config={frame ? JSON.stringify(frame.config) : undefined}
             data-progress={preview ? motionProgress : progress}
             data-time={preview ? progress : undefined}
           >
             {frame?.result.companion && (
               <div className="paired-view-labels" data-layout={liveLayout}>
-                {objects[frame.config.object].pairedModes?.map(
+                {pairedOrder(objects[frame.config.object]).map(
                   (mode, index) => (
                     <span key={mode}>
-                      {`${index + 1} / ${modes[mode]} (${
+                      {`${index + 1} / ${objects[frame.config.object].panelLabels?.[mode] ?? modeLabel(frame.config.object, mode)} (${
                         liveLayout === "rows"
                           ? ["top", "bottom"][index]
                           : ["left", "right"][index]
@@ -1201,6 +1325,10 @@ export default function TesseractApp({
                   config={frame.config}
                   {...{ view, diagramView, layers, dark, scheme }}
                   layout={liveLayout}
+                  onSelect={
+                    selection?.visible(frame.config) ? select : undefined
+                  }
+                  onStep={selection?.visible(frame.config) ? step : undefined}
                   onDiagramView={(v) => {
                     if (held || exporting) return;
                     controller.current?.abort();
@@ -1230,8 +1358,8 @@ export default function TesseractApp({
             >
               <div className="tesseract-legend">
                 <LegendEntries
-                  entries={
-                    indexed
+                  entries={[
+                    ...(indexed
                       ? // The section key reports every section, an empty
                         // one too, while the layer that draws them is on.
                         (frame?.result.sections ?? []).map((s, i) => {
@@ -1286,8 +1414,26 @@ export default function TesseractApp({
                               {label}
                             </>
                           ),
-                        }))
-                  }
+                        }))),
+                    ...(movingLegend
+                      ? [
+                          {
+                            key: movingLegend,
+                            shown: layers.edges,
+                            content: (
+                              <>
+                                <i
+                                  style={{
+                                    background: movingInk(dark, scheme),
+                                  }}
+                                />
+                                {movingLegend}
+                              </>
+                            ),
+                          },
+                        ]
+                      : []),
+                  ]}
                 />
               </div>
               <span>

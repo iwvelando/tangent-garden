@@ -1,7 +1,7 @@
 import type { ColorScheme } from "../color-schemes";
 import type { ReactNode } from "react";
 import { Drawing } from "./Drawing";
-import { objects } from "./objects";
+import { objects, type ObjectDescriptor } from "./objects";
 import {
   initialView,
   type Config,
@@ -29,10 +29,15 @@ export type PanelViewport = {
   width: number;
   height: number;
 };
+// A paired study's modes in display order: left to right, or top to bottom.
+export const pairedOrder = (d: ObjectDescriptor): Config["mode"][] =>
+  d.companionFirst ? [...d.pairedModes!].reverse() : [...d.pairedModes!];
 // Compose already-projected Go geometry. No collision or 4D geometry is
 // evaluated here. One returned result determines both panels' physical time.
 export function Composition(
   p: CompositionProps & {
+    // index is 0 for the result's own panel and 1 for its companion's,
+    // wherever the layout places them.
     renderPanel?: (
       panel: DrawingProps,
       viewport: PanelViewport,
@@ -44,7 +49,8 @@ export function Composition(
   if (!companion) return <Drawing {...p} />;
   const layout = p.layout ?? "columns",
     size = exportBaseSize(layout),
-    modes = objects[p.config.object].pairedModes!,
+    descriptor = objects[p.config.object],
+    modes = descriptor.pairedModes!,
     panels: DrawingProps[] = [
       {
         ...p,
@@ -63,7 +69,9 @@ export function Composition(
         result: companion,
         view: p.diagramView ?? initialView,
       },
-    ];
+    ],
+    // Logical panel indices in display order.
+    order = descriptor.companionFirst ? [1, 0] : [0, 1];
   return (
     <>
       <title>{objects[p.config.object].title(p.config)}</title>
@@ -77,13 +85,15 @@ export function Composition(
           operation: p.result.operation,
           emittedPoints: p.result.emittedPoints,
           evaluations: p.result.evaluations,
-          views: panels.map((panel) => ({
-            operation: panel.config.mode,
-            view: panel.view,
-            bypass: panel.result.bypass,
-            markers: panel.result.markers,
-            framingRadius: panel.result.radius,
-          })),
+          views: order
+            .map((i) => panels[i])
+            .map((panel) => ({
+              operation: panel.config.mode,
+              view: panel.view,
+              bypass: panel.result.bypass,
+              markers: panel.result.markers,
+              framingRadius: panel.result.radius,
+            })),
           limitations: objects[p.config.object].limitations,
           rendering: "transparent vector construction",
         })}
@@ -93,10 +103,11 @@ export function Composition(
         height={size.height}
         fill={plotPalette(p.dark, p.scheme).bg}
       />
-      {panels.map((panel, index) => {
+      {order.map((index, position) => {
+        const panel = panels[index];
         const viewport = {
-          x: layout === "columns" ? index * 1000 : 0,
-          y: layout === "rows" ? index * 760 : 0,
+          x: layout === "columns" ? position * 1000 : 0,
+          y: layout === "rows" ? position * 760 : 0,
           width: 1000,
           height: 760,
         };

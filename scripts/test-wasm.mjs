@@ -4091,4 +4091,79 @@ console.log("Curved sections WASM contract passed");
   );
 }
 
+// Base sphere and fibers: the bouquet and its base-sphere companion, both
+// with their lifted arrays restored, through the real bridge.
+{
+  const request = {
+    object: "weave",
+    mode: "paired",
+    angles: [0, 0.2, 0.15, 0.3, 0.2, 0.1],
+    curves: 12,
+    samples: 64,
+    clip: 3,
+    weave: {
+      family: "fibers",
+      alpha: 0.5,
+      spread: 0,
+      alphaFrom: 0.5,
+      alphaTo: 0.5,
+      selected: 2,
+      trace: 0.3,
+    },
+  };
+  const result = hyperResult(tangentGardenTesseract(JSON.stringify(request)));
+  const base = result.companion;
+  assert.equal(result.operation, "paired");
+  assert.equal(base.operation, "base");
+  assert.deepEqual(base.weave.correspondence, result.weave.correspondence);
+  assert.equal(result.weave.correspondence.movingSample, -1);
+  const hopf = ([x, y, z, w]) => [
+    2 * (x * z + y * w),
+    2 * (y * z - x * w),
+    x * x + y * y - z * z - w * w,
+  ];
+  // Every marker's representative maps to its own base point, and the
+  // latitude lies on S².
+  assert.equal(base.markers.length, 13);
+  for (const m of base.markers)
+    hopf(m.fourPoint).forEach((h, c) =>
+      assert.ok(Math.abs(h - m.point[c]) < 1e-15),
+    );
+  const curve = base.paths.find((p) => p.role === "base-curve");
+  assert.equal(curve.points.length, 65);
+  for (const p of curve.points)
+    assert.ok(Math.abs(Math.hypot(...p) - 1) < 1e-15);
+  assert.equal(
+    result.paths.filter((p) => p.role === "fiber" || p.role === "moving")
+      .length,
+    13,
+  );
+  assert.equal(
+    hyperResult(
+      tangentGardenTesseract(
+        JSON.stringify({
+          ...request,
+          weave: { ...request.weave, selected: 12 },
+        }),
+      ),
+    ).field,
+    "weave.selected",
+  );
+  const largest = {
+    ...request,
+    curves: 32,
+    samples: 256,
+    angles: [0, 0, 0, 0, 0, 0],
+    clip: 12,
+  };
+  const start = performance.now();
+  const json = tangentGardenTesseract(JSON.stringify(largest));
+  const max = hyperResult(json);
+  assert.equal(max.weave.completeCircles, 33);
+  assert.equal(max.emittedPoints, 33 * 257 + 3 * 257 + 257 + 3 * 257 + 33);
+  console.log(
+    `Base sphere and fibers WASM: ${max.emittedPoints} points, ${max.evaluations} evaluations; ${(performance.now() - start).toFixed(1)} ms including parse; ${replyBytes(json)} bytes sent`,
+  );
+}
+
 process.exit(0);

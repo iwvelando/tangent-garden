@@ -304,10 +304,23 @@ test("a larger PNG is drawn at its size, not enlarged from a smaller one", async
 test("2D and 4D SVG files leave out the background when it is transparent", async ({
   page,
 }) => {
-  for (const [open, selector, small] of [
-    [planarReady, "#artwork", "1000 × 760"],
-    [fourReady, "#tesseract-artwork", "1000 × 760"],
-    [fourPaired, "#tesseract-artwork", "2000 × 760"],
+  // The size setting leaves a 2D file's page alone. A 4D file's page is
+  // the still's size, as
+  // a 3D file's is, recorded when it is not the default.
+  for (const [open, selector, small, sizes] of [
+    [planarReady, "#artwork", "1000 × 760", null],
+    [
+      fourReady,
+      "#tesseract-artwork",
+      "1000 × 760",
+      ["2000", "1520", "1000", "760"],
+    ],
+    [
+      fourPaired,
+      "#tesseract-artwork",
+      "2000 × 760",
+      ["4000", "1520", "2000", "760"],
+    ],
   ] as const) {
     await open(page);
     const opaque = (await save(page, /^SVG/)).bytes.toString();
@@ -336,10 +349,31 @@ test("2D and 4D SVG files leave out the background when it is transparent", asyn
           .replaceAll("&amp;", "&"),
       ).background,
     ).toBe("transparent");
-    // A vector file has no pixel size: the size setting leaves it alone.
     const root = (svg: string) =>
-      svg.match(/<svg[^>]*>/)![0].replace(/ style="[^"]*"/, "");
+      svg
+        .match(/<svg[^>]*>/)![0]
+        .replace(/ style="[^"]*"/, "")
+        .replace(/ width="\d+" height="\d+"/, "");
     expect(root(clear)).toBe(root(opaque));
+    const size = (svg: string) =>
+      svg.match(/<svg[^>]* width="(\d+)" height="(\d+)"/)?.slice(1, 3) ?? null;
+    const record = (svg: string) =>
+      JSON.parse(
+        svg
+          .match(/<desc>(.*?)<\/desc>/s)![1]
+          .replaceAll("&quot;", '"')
+          .replaceAll("&lt;", "<")
+          .replaceAll("&gt;", ">")
+          .replaceAll("&amp;", "&"),
+      ).image;
+    if (sizes) {
+      expect(size(opaque)).toEqual(sizes.slice(0, 2));
+      expect(size(clear)).toEqual(sizes.slice(2));
+    } else expect(size(clear)).toEqual(size(opaque));
+    expect(record(opaque)).toBeUndefined();
+    expect(record(clear)).toEqual(
+      sizes ? { width: Number(sizes[2]), height: Number(sizes[3]) } : undefined,
+    );
   }
 });
 

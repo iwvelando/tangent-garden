@@ -219,6 +219,9 @@ self.onmessage = async ({
       const weave = q.object === "weave" ? q.weave : undefined;
       if (q.object === "weave" && !weave)
         throw new Error("Enter spherical weave parameters.");
+      // Base sphere and fibers draws one latitude: no latitude count or
+      // spread, and a whole-number selection.
+      const pairedWeave = !!weave && q.mode === "paired";
       if (weave) {
         for (const [i, value] of q.angles.entries())
           if (!Number.isFinite(value))
@@ -229,7 +232,7 @@ self.onmessage = async ({
         const fields: [string, string, number][] = [
           ["weave.alpha", "Central latitude α", weave.alpha],
           // A single latitude ignores spread.
-          ...(q.count === 1
+          ...(q.count === 1 || pairedWeave
             ? []
             : [
                 ["weave.spread", "Latitude spread", weave.spread] as [
@@ -246,14 +249,21 @@ self.onmessage = async ({
           if (!Number.isFinite(value))
             throw fieldError(field, `${label} must be a finite constant.`);
         for (const [field, label, value] of [
-          ["count", "Latitudes", q.count],
-          [
-            "curves",
-            weave.family === "fibers"
-              ? "Fibers per latitude"
-              : "Curves per direction",
-            q.curves,
-          ],
+          ...(pairedWeave
+            ? [
+                ["curves", "Fibers on the latitude", q.curves],
+                ["weave.selected", "Selected fiber", weave.selected ?? 0],
+              ]
+            : [
+                ["count", "Latitudes", q.count],
+                [
+                  "curves",
+                  weave.family === "fibers"
+                    ? "Fibers per latitude"
+                    : "Curves per direction",
+                  q.curves,
+                ],
+              ]),
           ["samples", "Arc samples", q.samples],
         ] as [string, string, number][]) {
           if (!Number.isFinite(value))
@@ -349,17 +359,19 @@ self.onmessage = async ({
         if (!Number.isInteger(q.samples))
           throw fieldError("samples", "Thread samples must be a whole number.");
       }
-      const counted: ("count" | "curves" | "samples" | "grid")[] = weave
-        ? ["count", "curves", "samples"]
-        : lift || route
-          ? ["samples"]
-          : curved
-            ? ["count", "curves", "samples"]
-            : q.mode === "section"
-              ? ["count"]
-              : q.mode === "stereo"
-                ? ["grid", "samples"]
-                : ["grid"];
+      const counted: ("count" | "curves" | "samples" | "grid")[] = pairedWeave
+        ? ["curves", "samples"]
+        : weave
+          ? ["count", "curves", "samples"]
+          : lift || route
+            ? ["samples"]
+            : curved
+              ? ["count", "curves", "samples"]
+              : q.mode === "section"
+                ? ["count"]
+                : q.mode === "stereo"
+                  ? ["grid", "samples"]
+                  : ["grid"];
       const counts = counted.map((key) => q[key]);
       const values = weave
         ? [q.clip]
@@ -397,8 +409,12 @@ self.onmessage = async ({
         object: q.object,
         ...(weave
           ? {
-              weave: { ...weave, spread: q.count === 1 ? 0 : weave.spread },
-              count: q.count,
+              weave: {
+                ...weave,
+                spread: q.count === 1 || pairedWeave ? 0 : weave.spread,
+              },
+              // Inactive in the paired view, which draws one latitude.
+              count: pairedWeave ? 1 : q.count,
               curves: q.curves,
               samples: q.samples,
               clip: q.clip,

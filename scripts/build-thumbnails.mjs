@@ -345,6 +345,14 @@ function spatialThumbnail() {
 
 async function tesseractThumbnail() {
   const svg = document.getElementById("tesseract-artwork").cloneNode(true);
+  // A paired study's thumbnail shows its result's own panel, which has
+  // the card's proportions.
+  const panel = svg.querySelector("svg[data-primary-panel]");
+  if (panel)
+    svg.setAttribute(
+      "viewBox",
+      ["x", "y", "width", "height"].map((k) => panel.getAttribute(k)).join(" "),
+    );
   svg.setAttribute("width", "480");
   svg.setAttribute("height", "365");
   const canvas = Object.assign(document.createElement("canvas"), {

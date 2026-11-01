@@ -208,7 +208,9 @@ test("seeking, scrubbing back and playback agree across the triangle's corners a
     expect(played).not.toBe(at["0"]);
     expect(played).not.toBe(full);
   }
-  await button(page, "Stop").click();
+  // On a loaded runner playback can end before Pause lands; Stop is then
+  // Back to study, which restores the study the same way.
+  await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
   await settled(page);
   await page.getByLabel("Duration (seconds)").fill("1");
   await button(page, "Play animation").click();
