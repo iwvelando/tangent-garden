@@ -764,6 +764,12 @@ article {
     flex: 1 1 300px;
     min-width: 0;
   }
+  /* The title stays as wide as its words, as before its column grew, so
+     the space beside it is the heading's, not the title's. */
+  .plot-heading h1 {
+    width: fit-content;
+    max-width: 100%;
+  }
 }
 h1 {
   font:
