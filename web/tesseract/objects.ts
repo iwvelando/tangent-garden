@@ -19,7 +19,11 @@ export const modes = {
   shadow: "XYZ shadow",
   diagram: "Coordinate diagram",
   paired: "Side-by-side views",
+  base: "Base sphere",
 };
+// A mode's name for an object, which may name its own views.
+export const modeLabel = (object: Object4, mode: Config["mode"]) =>
+  objects[object].modeLabels?.[mode] ?? modes[mode];
 const explanations: Record<
   "perspective" | "orthographic" | "stereo" | "section",
   readonly [string, string, string]
@@ -91,7 +95,9 @@ export type ObjectDescriptor = {
   rotations: boolean;
   controls: "polyhedral" | "curved" | "lift" | "route" | "weave";
   linkedViews?: boolean;
-  motionChoices?: MotionChoice[];
+  motionChoices?: MotionChoice[] | ((c: Config) => MotionChoice[]);
+  // Names of views for this object, where they differ from modes above.
+  modeLabels?: Partial<Record<Config["mode"], string>>;
   // The legend's entries, each the geometry drawn in one ink family, and
   // only in the given roles where other geometry shares that ink. An entry
   // is shown while the drawing has such geometry (drawnInks in Drawing.tsx).
@@ -103,7 +109,7 @@ export type ObjectDescriptor = {
       keyof Lift | keyof Omit<Bypass, "obstacle"> | keyof Omit<Weave, "family">;
     index?: number;
     label: string;
-    help: Help<string>;
+    help: Help<string> | ((c: Config) => Help<string>);
     group?: string;
     endpoint?: boolean;
     visible?: (c: Config) => boolean;
@@ -115,16 +121,38 @@ export type ObjectDescriptor = {
     min: number;
     max: number;
   }[];
-  countNote?: string;
+  countNote?: string | ((c: Config) => string);
+  // A whole-number selection among the drawing's items, saved with the
+  // study: its control, and how to read and write it.
+  selection?: {
+    label: string;
+    help: Help<string>;
+    visible: (c: Config) => boolean;
+    count: (c: Config) => number;
+    get: (c: Config) => number;
+    set: (c: Config, index: number) => Config;
+  };
+  // Keeps a study valid after a count changes, such as a selection beyond
+  // a reduced count.
+  reconcile?: (c: Config) => Config;
   choicesFirst?: boolean;
   choices?: {
     key: "obstacle" | "family";
     label: string;
     help: Help<string>;
     values: { value: string; label: string }[];
+    visible?: (c: Config) => boolean;
   }[];
   flat?: (c: Config) => boolean;
+  // The result's mode, then its companion's.
   pairedModes?: readonly [Config["mode"], Config["mode"]];
+  // Names of the paired panels above the drawing, where they differ.
+  panelLabels?: Partial<Record<Config["mode"], string>>;
+  // Draws the companion first: left, or on top when stacked.
+  companionFirst?: boolean;
+  pairedLabel?: string;
+  // The legend's entry for a moving point's accent ink, when drawn.
+  movingLegend?: (c: Config) => string | undefined;
   animationFramingHelp?: (c: Config) => string;
   viewingHelp?: (c: Config) => string;
   viewingLabel?: (c: Config) => string;
@@ -236,6 +264,39 @@ const curvedCommon = {
   limitations:
     "axis-aligned finite sections; representative boundary circles only; no interior or fourth-coordinate projection",
 };
+const weaveMotions: MotionChoice[] = [
+  ...rotationMotions.map((m) => ({
+    ...m,
+    help: withMore(
+      m.help,
+      "The projection window stays fixed, so circles open into arcs as they pass the pole.",
+    ),
+  })),
+  {
+    value: "latitude",
+    label: "Sweep latitudes",
+    help: tiered(
+      "Moves the central α from Latitude start to Latitude end.",
+      "Spread and rotation stay fixed. A latitude reaching 0 or π/2 collapses to one circle.",
+    ),
+  },
+];
+type Correspondence = NonNullable<
+  NonNullable<Result["weave"]>["correspondence"]
+>;
+const signed = (n: number, digits: number) =>
+  n.toFixed(digits).replace("-", "−");
+function correspondenceReadouts(c: Correspondence) {
+  return [
+    { label: "Selected fiber", value: `${c.selected + 1} of ${c.fibers}` },
+    { label: "Moving point δ", value: c.parameter.toPrecision(5) },
+    // One coordinate each, so every value fits its readout column.
+    ...c.base.map((n, i) => ({
+      label: `Base point ${"xyz"[i]}`,
+      value: signed(n, 4),
+    })),
+  ];
+}
 export const objects: Record<Object4, ObjectDescriptor> = {
   tesseract: {
     name: "Tesseract",
@@ -695,7 +756,25 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     noun: "spherical ring weave",
     controls: "weave",
     parameterKey: "weave",
-    modes: ["stereo"],
+    modes: ["stereo", "paired"],
+    modeLabels: {
+      paired: "Base sphere and fibers",
+      stereo: "Stereographic loom",
+    },
+    pairedModes: ["stereo", "base"],
+    panelLabels: { base: "Base sphere S²", stereo: "Fibers in space" },
+    companionFirst: true,
+    pairedLabel: "Base sphere and its Hopf fibers",
+    animationFramingHelp: (c) =>
+      c.mode === "paired"
+        ? "Both views share one timeline. Orbit, pan or zoom either view before playback; animation holds both."
+        : "Animation holds your current view. Drag, pan, or zoom before playback to choose the framing.",
+    viewingHelp: (c) =>
+      c.mode === "paired"
+        ? "1: base sphere · 2: fibers · tap a point or fiber to select it · [ and ] step the selection · drag to orbit · shift-drag to pan · each view zooms independently"
+        : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home",
+    movingLegend: (c) =>
+      c.mode === "paired" ? "Moving point and its fiber" : undefined,
     rotations: true,
     viewLabel: "View operation",
     selectorNote:
@@ -715,21 +794,52 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         s.level.toPrecision(3),
         s.kind === "circle" ? " (one circle)" : " (torus)",
       ] as const,
-    countFields: (c) => [
-      { key: "count", label: "Latitudes", min: 1, max: 9 },
-      {
-        key: "curves",
-        label:
-          c.weave!.family === "fibers"
-            ? "Fibers per latitude"
-            : "Curves per direction",
-        min: 1,
-        max: 16,
-      },
-      { key: "samples", label: "Arc samples", min: 8, max: 256 },
-    ],
-    countNote:
-      "Arc samples divide each full circle. A study draws at most 65,536 points: latitudes × circles per latitude × (samples + 2), plus the window guides.",
+    countFields: (c) =>
+      c.mode === "paired"
+        ? [
+            {
+              key: "curves",
+              label: "Fibers on the latitude",
+              min: 1,
+              max: 32,
+            },
+            { key: "samples", label: "Arc samples", min: 8, max: 256 },
+          ]
+        : [
+            { key: "count", label: "Latitudes", min: 1, max: 9 },
+            {
+              key: "curves",
+              label:
+                c.weave!.family === "fibers"
+                  ? "Fibers per latitude"
+                  : "Curves per direction",
+              min: 1,
+              max: 16,
+            },
+            { key: "samples", label: "Arc samples", min: 8, max: 256 },
+          ],
+    countNote: (c) =>
+      c.mode === "paired"
+        ? "Fibers sit at evenly spaced points of the latitude. Arc samples divide each circle, on the sphere and in space."
+        : "Arc samples divide each full circle. A study draws at most 65,536 points: latitudes × circles per latitude × (samples + 2), plus the window guides.",
+    selection: {
+      label: "Selected fiber",
+      help: tiered(
+        "Which sampled point and fiber are selected, from 1 to the number of fibers.",
+        "Tap a point or fiber in either view, or press [ or ] there, to choose another. Trace the latitude starts from it.",
+      ),
+      visible: (c) => c.mode === "paired",
+      count: (c) => c.curves,
+      get: (c) => c.weave!.selected ?? 0,
+      set: (c, index) => ({ ...c, weave: { ...c.weave!, selected: index } }),
+    },
+    reconcile: (c) =>
+      c.mode === "paired" &&
+      Number.isInteger(c.curves) &&
+      c.curves >= 1 &&
+      (c.weave!.selected ?? 0) >= c.curves
+        ? { ...c, weave: { ...c.weave!, selected: c.curves - 1 } }
+        : c,
     choicesFirst: true,
     choices: [
       {
@@ -743,16 +853,24 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           { value: "tori", label: "Clifford tori" },
           { value: "fibers", label: "Hopf fibers" },
         ],
+        // The base sphere's correspondence draws Hopf fibers only.
+        visible: (c) => c.mode !== "paired",
       },
     ],
     numericFields: [
       {
         key: "alpha",
         label: "Central latitude α",
-        help: tiered(
-          "Radians, from 0 to π/2 (pi/2).",
-          "Every latitude α ± spread/2 must stay within 0 and π/2. At 0 or π/2 a torus collapses to one circle; pi/4 gives the Clifford torus.",
-        ),
+        help: (c) =>
+          c.mode === "paired"
+            ? tiered(
+                "Radians, 0 to π/2 (pi/2); the latitude is z = cos 2α.",
+                "At 0 or π/2 the latitude is a pole: every fiber is then one circle, drawn once.",
+              )
+            : tiered(
+                "Radians, from 0 to π/2 (pi/2).",
+                "Every latitude α ± spread/2 must stay within 0 and π/2. At 0 or π/2 a torus collapses to one circle; pi/4 gives the Clifford torus.",
+              ),
       },
       {
         key: "spread",
@@ -761,38 +879,58 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           "Radians from first to last latitude, 0 to π/2.",
           "It must be positive when there is more than one latitude; a single latitude ignores it.",
         ),
+        visible: (c) => c.mode !== "paired",
       },
       {
         key: "alphaFrom",
         label: "Latitude start",
-        help: tiered(
-          "Radians; α where Sweep latitudes begins.",
-          "Every latitude α ± spread/2 must stay within 0 and π/2.",
-        ),
+        help: (c) =>
+          tiered(
+            "Radians; α where Sweep latitudes begins.",
+            c.mode === "paired"
+              ? "It must stay within 0 and π/2."
+              : "Every latitude α ± spread/2 must stay within 0 and π/2.",
+          ),
         endpoint: true,
       },
       {
         key: "alphaTo",
         label: "Latitude end",
-        help: tiered(
-          "Radians; α where Sweep latitudes ends.",
-          "Every latitude α ± spread/2 must stay within 0 and π/2.",
-        ),
+        help: (c) =>
+          tiered(
+            "Radians; α where Sweep latitudes ends.",
+            c.mode === "paired"
+              ? "It must stay within 0 and π/2."
+              : "Every latitude α ± spread/2 must stay within 0 and π/2.",
+          ),
         endpoint: true,
       },
     ],
     motionEndpointsLabel: "Latitude motion endpoints",
-    layerOptions: () => [
-      { key: "edges", label: "Circles and open arcs" },
-      { key: "guides", label: "Projection window" },
-    ],
+    layerOptions: (c) =>
+      c.mode === "paired"
+        ? [
+            { key: "edges", label: "Latitude, points and fibers" },
+            { key: "guides", label: "Sphere and window guides" },
+          ]
+        : [
+            { key: "edges", label: "Circles and open arcs" },
+            { key: "guides", label: "Projection window" },
+          ],
+    // A summary that stays the same through the motion: the moving fiber
+    // is counted among the sources only between samples.
     diagnostics: (r) =>
-      r.weave
-        ? `${r.weave.sources} source circles on the unit 3-sphere. Open ends mark the projection window, not broken curves.`
-        : "",
+      r.weave?.correspondence
+        ? `${r.weave.correspondence.fibers} ${r.weave.correspondence.fibers === 1 ? "fiber" : "fibers"} over one latitude of S², and the moving point's fiber. Open ends mark the projection window, not broken curves.`
+        : r.weave
+          ? `${r.weave.sources} source circles on the unit 3-sphere. Open ends mark the projection window, not broken curves.`
+          : "",
     readouts: (r) =>
       r.weave
         ? [
+            ...(r.weave.correspondence
+              ? correspondenceReadouts(r.weave.correspondence)
+              : []),
             {
               label: "Complete circles",
               value: String(r.weave.completeCircles),
@@ -810,21 +948,31 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           ]
         : [],
     colorNote: (c) =>
-      `Each numbered latitude has its own color and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
+      c.mode === "paired"
+        ? "The latitude, its points and their fibers share the latitude's color; the selected fiber is drawn stronger, and the moving point and its fiber take the accent color. The base sphere shows each fiber's point before the 4D rotation. Open ends mark the projection window, not broken curves."
+        : `Each numbered latitude has its own color and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
     explanation: (c) =>
-      c.weave!.family === "tori"
+      c.mode === "paired"
         ? [
-            "Tori on a sphere",
-            "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or becomes a line through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
-            "q(u, v, α) = (cos α cos u, cos α sin u, sin α cos v, sin α sin v),   P(q) = q_xyz / (1 − q_w)",
+            "One point, one circle",
+            "Each point p of the sphere S² has a whole great circle of the 3-sphere over it: its Hopf fiber, every q with H(q) = p. Points along one latitude give linked circles on one torus. Move the point and its fiber sweeps through the bouquet, meeting each sampled fiber exactly. The declared 4D rotation turns the fibers before projection; the base sphere still shows where each unrotated fiber maps.",
+            "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   p(δ) = (sin 2α cos δ, sin 2α sin δ, cos 2α)",
           ]
-        : [
-            "Rings from a sphere",
-            "These curves lie on a sphere in four dimensions. Stereographic projection turns them into a weave of circles and open arcs. Open ends mark the drawing's finite window, not broken connections. Each Hopf fiber is a great circle that the Hopf map sends to a single point of S², and any two distinct fibers link once. Fibers over one latitude lie on its torus; at α = 0 or π/2 they coincide and are drawn once. The declared 4D rotation turns the whole sphere before projection. Fibers are circles, not sealed solids.",
-            "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   z₁ = x + iy, z₂ = z + iw",
-          ],
+        : c.weave!.family === "tori"
+          ? [
+              "Tori on a sphere",
+              "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or becomes a line through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
+              "q(u, v, α) = (cos α cos u, cos α sin u, sin α cos v, sin α sin v),   P(q) = q_xyz / (1 − q_w)",
+            ]
+          : [
+              "Rings from a sphere",
+              "These curves lie on a sphere in four dimensions. Stereographic projection turns them into a weave of circles and open arcs. Open ends mark the drawing's finite window, not broken connections. Each Hopf fiber is a great circle that the Hopf map sends to a single point of S², and any two distinct fibers link once. Fibers over one latitude lie on its torus; at α = 0 or π/2 they coincide and are drawn once. The declared 4D rotation turns the whole sphere before projection. Fibers are circles, not sealed solids.",
+              "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   z₁ = x + iy, z₂ = z + iw",
+            ],
     title: (c) =>
-      `Tangent Garden — ${c.weave!.family === "fibers" ? "Hopf fibers" : "Clifford tori"} on the 3-sphere`,
+      c.mode === "paired" || c.mode === "base"
+        ? "Tangent Garden — Hopf fibers over a base sphere"
+        : `Tangent Garden — ${c.weave!.family === "fibers" ? "Hopf fibers" : "Clifford tori"} on the 3-sphere`,
     limitations:
       "finite selected circles on the unit 3-sphere; analytic stereographic window clipping; transparent linework; screen crossings are not intersections; clipped arcs do not carry the complete circles' linking",
     defaults: () => ({
@@ -844,22 +992,34 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       },
     }),
     motion: "double",
-    motionChoices: [
-      ...rotationMotions.map((m) => ({
-        ...m,
-        help: withMore(
-          m.help,
-          "The projection window stays fixed, so circles open into arcs as they pass the pole.",
-        ),
-      })),
-      {
-        value: "latitude",
-        label: "Sweep latitudes",
-        help: tiered(
-          "Moves the central α from Latitude start to Latitude end.",
-          "Spread and rotation stay fixed. A latitude reaching 0 or π/2 collapses to one circle.",
-        ),
-      },
-    ],
+    motionChoices: (c) =>
+      c.mode === "paired"
+        ? [
+            {
+              value: "trace",
+              label: "Trace the latitude",
+              help: tiered(
+                "Moves a point once around the latitude from the selected fiber, carrying its whole fiber.",
+                "It meets each sampled fiber exactly and returns to the start, so it can loop. α and rotation stay fixed.",
+              ),
+              loops: true,
+            },
+            ...rotationMotions.map((m) => ({
+              ...m,
+              help: withMore(
+                m.help,
+                "The base sphere stays fixed: it shows where each fiber maps before the rotation.",
+              ),
+            })),
+            {
+              value: "latitude",
+              label: "Sweep latitudes",
+              help: tiered(
+                "Moves α from Latitude start to Latitude end.",
+                "The latitude and its fibers move together; rotation stays fixed. At 0 or π/2 every fiber is one circle.",
+              ),
+            },
+          ]
+        : weaveMotions,
   },
 };

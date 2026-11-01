@@ -11,6 +11,51 @@ export const sectionInk = (
   scheme: ColorScheme = "default",
 ) =>
   `hsl(${(sectionHue(scheme) + index * 137.508) % 360} 55% ${dark ? 72 : 36}%)`;
+// The accent of a moving point and its fiber: the palette's second ink,
+// distinct from every latitude ink in each scheme.
+export const movingInk = (dark: boolean, scheme: ColorScheme = "default") =>
+  plotPalette(dark, scheme).derived;
+// The sample a weave path or base marker belongs to, from its source id
+// (weave/latitude/0/fiber/j or weave/latitude/0/base/j), or the selection
+// for a collapsed latitude's single circle and point.
+export function sampleOf(source: string, result: Result): number | undefined {
+  const c = result.weave?.correspondence;
+  const m = /^weave\/latitude\/0\/(?:fiber|base)\/(\d+)$/.exec(source);
+  if (m) return Number(m[1]);
+  if (/^weave\/latitude\/0\/(?:core|base\/core)$/.test(source))
+    return c?.selected;
+  return undefined;
+}
+// The camera's projection of a drawing's 3D points into the 1000 × 760
+// panel, with depth third. Drawing and selection share it.
+export function projector(
+  result: Result,
+  config: Config,
+  view: View,
+): (p: Vec3) => [number, number, number] {
+  const scale = (310 * view.zoom) / result.radius,
+    flat = objects[config.object].flat?.(config);
+  return (p: Vec3) => {
+    if (flat)
+      return [
+        500 + scale * p[0] + view.panX,
+        380 - scale * p[1] + view.panY,
+        p[2],
+      ];
+    const cy = Math.cos(view.yaw),
+      sy = Math.sin(view.yaw),
+      cp = Math.cos(view.pitch),
+      sp = Math.sin(view.pitch);
+    const x = cy * p[0] + sy * p[2],
+      z = -sy * p[0] + cy * p[2],
+      y = cp * p[1] - sp * z;
+    return [
+      500 + scale * x + view.panX,
+      380 - scale * y + view.panY,
+      sp * p[1] + cp * z,
+    ];
+  };
+}
 // Whether these layers draw a path or marker: guides, the missing region's
 // guide, displacement connectors and comparison points have their own
 // layers, and edges draw the rest.
@@ -60,42 +105,42 @@ export function Drawing({
   scheme?: ColorScheme;
 }) {
   const colors = inks(dark, scheme),
-    scale = (310 * view.zoom) / result.radius,
     stroke = svgStroke(layers.weight ?? "regular");
   const descriptor = objects[config.object];
   const curved = descriptor.legend === "sections";
   // Latitude studies share the section key's colors, without its selection.
   const latitudes = descriptor.legend === "latitudes";
-  const flat = descriptor.flat?.(config);
   const selected = Math.min(
     layers.selectedSection ?? 0,
     result.sections.length - 1,
   );
   const sectionIndex = (id?: string) =>
     result.sections.findIndex((s) => s.id === id);
-  const project = (p: Vec3) => {
-    if (flat)
-      return [
-        500 + scale * p[0] + view.panX,
-        380 - scale * p[1] + view.panY,
-        p[2],
-      ];
-    const cy = Math.cos(view.yaw),
-      sy = Math.sin(view.yaw),
-      cp = Math.cos(view.pitch),
-      sp = Math.sin(view.pitch);
-    const x = cy * p[0] + sy * p[2],
-      z = -sy * p[0] + cy * p[2],
-      y = cp * p[1] - sp * z;
-    return [
-      500 + scale * x + view.panX,
-      380 - scale * y + view.panY,
-      sp * p[1] + cp * z,
-    ];
+  const flat = descriptor.flat?.(config);
+  const project = projector(result, config, view);
+  // A correspondence's selected sample, and the sample the moving point
+  // is on: that sample is drawn as the moving one.
+  const correspondence = result.weave?.correspondence;
+  const role = (source: string) => {
+    if (!correspondence) return undefined;
+    if (source === "weave/moving" || source === "weave/moving/base")
+      return "moving";
+    const sample = sampleOf(source, result);
+    if (sample === undefined) return undefined;
+    if (sample === correspondence.movingSample) return "moving";
+    return sample === correspondence.selected ? "selected" : "sample";
   };
   const mapped = result.paths
     .filter((p) => pathShown(p, layers))
     .map((p) => ({ ...p, points: p.points.map(project) }));
+  // The moving fiber is drawn last, over the selection, then the rest.
+  if (correspondence) {
+    const rank = (source: string) => {
+      const r = role(source);
+      return r === "moving" ? 2 : r === "selected" ? 1 : 0;
+    };
+    mapped.sort((a, b) => rank(a.source) - rank(b.source));
+  }
   if (curved)
     mapped.sort((a, b) => {
       const rank = (id?: string) =>
@@ -145,6 +190,12 @@ export function Drawing({
                   : "orthographic XYZ shadow",
               }
             : {}),
+          ...(result.operation === "base"
+            ? {
+                representation: "unit base sphere S², orthographic",
+                markers: result.markers,
+              }
+            : {}),
           ...(result.weave
             ? {
                 weave: result.weave,
@@ -179,6 +230,19 @@ export function Drawing({
         })}
       </desc>
       <rect width="1000" height="760" fill={plotPalette(dark, scheme).bg} />
+      {result.operation === "base" && layers.guides && (
+        // The unit sphere's outline as the camera sees it.
+        <circle
+          data-role="outline"
+          cx={500 + view.panX}
+          cy={380 + view.panY}
+          r={(310 * view.zoom) / result.radius}
+          fill="none"
+          stroke={colors[3]}
+          strokeOpacity={dark ? 0.6 : 0.5}
+          {...stroke(1.25)}
+        />
+      )}
       {faces.map((f, i) => (
         <path
           key={`f${i}`}
@@ -188,62 +252,107 @@ export function Drawing({
           stroke="none"
         />
       ))}
-      {mapped.map((p) => (
-        <path
-          key={`${p.sectionId ?? "base"}/${p.source}/${p.role}/${p.branch}`}
-          data-source={p.source}
-          data-section={p.sectionId}
-          data-role={p.role}
-          data-family={p.family}
-          data-guide={p.guide}
-          data-selected={
-            curved ? sectionIndex(p.sectionId) === selected : undefined
-          }
-          d={d(p.points)}
-          fill="none"
-          stroke={
-            curved || (latitudes && p.sectionId)
-              ? sectionInk(sectionIndex(p.sectionId), dark, scheme)
-              : colors[p.family]
-          }
-          strokeDasharray={
-            p.dashed
-              ? "7 5"
-              : curved &&
-                  (result.sections[sectionIndex(p.sectionId)]?.level ?? 0) < 0
+      {mapped.map((p) => {
+        const r = role(p.source);
+        return (
+          <path
+            key={`${p.sectionId ?? "base"}/${p.source}/${p.role}/${p.branch}`}
+            data-source={p.source}
+            data-sample={r ? sampleOf(p.source, result) : undefined}
+            data-correspondence={r}
+            data-section={p.sectionId}
+            data-role={p.role}
+            data-family={p.family}
+            data-guide={p.guide}
+            data-selected={
+              curved ? sectionIndex(p.sectionId) === selected : undefined
+            }
+            d={d(p.points)}
+            fill="none"
+            stroke={
+              r === "moving"
+                ? movingInk(dark, scheme)
+                : curved || (latitudes && p.sectionId)
+                  ? sectionInk(sectionIndex(p.sectionId), dark, scheme)
+                  : colors[p.family]
+            }
+            strokeDasharray={
+              p.dashed
                 ? "7 5"
-                : undefined
-          }
-          {...stroke(
-            curved
-              ? sectionIndex(p.sectionId) === selected
+                : curved &&
+                    (result.sections[sectionIndex(p.sectionId)]?.level ?? 0) < 0
+                  ? "7 5"
+                  : undefined
+            }
+            {...stroke(
+              r === "moving"
                 ? 3
-                : 1.8
-              : p.guide
-                ? 1.25
-                : 2.1,
-          )}
-          strokeOpacity={
-            p.role === "route-context"
-              ? 0.35
-              : curved
-                ? sectionIndex(p.sectionId) === selected
-                  ? 1
-                  : 0.65
-                : p.guide
-                  ? dark
-                    ? 0.6
-                    : 0.5
-                  : 0.94
-          }
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-      ))}
+                : r === "selected"
+                  ? 2.6
+                  : r === "sample"
+                    ? 1.5
+                    : curved
+                      ? sectionIndex(p.sectionId) === selected
+                        ? 3
+                        : 1.8
+                      : p.guide
+                        ? 1.25
+                        : 2.1,
+            )}
+            strokeOpacity={
+              r === "sample"
+                ? 0.72
+                : p.role === "route-context"
+                  ? 0.35
+                  : curved
+                    ? sectionIndex(p.sectionId) === selected
+                      ? 1
+                      : 0.65
+                    : p.guide
+                      ? dark
+                        ? 0.6
+                        : 0.5
+                      : 0.94
+            }
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        );
+      })}
       {result.markers
         ?.filter((m) => markerShown(m, layers))
         .map((m) => {
           const [x, y] = project(m.point);
+          const r = role(m.id);
+          if (r) {
+            // A base point: the latitude's ink, ringed when selected; the
+            // moving point in the accent.
+            const ink =
+              r === "moving"
+                ? movingInk(dark, scheme)
+                : sectionInk(0, dark, scheme);
+            return (
+              <g
+                key={m.id}
+                data-marker={m.id}
+                data-role={m.role}
+                data-sample={sampleOf(m.id, result)}
+                data-correspondence={r}
+              >
+                {r !== "sample" && (
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={r === "moving" ? 11 : 9}
+                    fill="none"
+                    stroke={ink}
+                    {...stroke(1.6)}
+                  />
+                )}
+                <circle cx={x} cy={y} r={r === "moving" ? 6 : 4.5} fill={ink} />
+              </g>
+            );
+          }
           return (
             <circle
               key={m.id}

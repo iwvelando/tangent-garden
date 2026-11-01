@@ -67,6 +67,12 @@ const weave = {
     spread: "number",
     alphaFrom: "number",
     alphaTo: "number",
+    // Base sphere and fibers: the selected sample, absent (0) in older
+    // links and in every other weave.
+    selected: { optional: { range: [0, 31] } },
+    // Only playback moves the traced point, so a link never carries an
+    // offset: 0 is the only value it accepts.
+    trace: { optional: { range: [0, 0] } },
   },
 } satisfies SchemaOf<Weave>;
 const config: SchemaOf<Config> = {
@@ -90,6 +96,8 @@ const config: SchemaOf<Config> = {
         shadow: true,
         diagram: true,
         paired: true,
+        // Only a pane of the weave's paired views; no object offers it.
+        base: true,
       },
     },
     lift: { optional: lift },

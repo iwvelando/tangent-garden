@@ -10,6 +10,11 @@ export type Weave = {
   spread: number;
   alphaFrom: number;
   alphaTo: number;
+  // Base sphere and fibers only. The selected base sample, counted from 0
+  // (absent is 0), and the traced point's offset from it in turns, which
+  // only the sampler below sets.
+  selected?: number;
+  trace?: number;
 };
 export type Bypass = {
   inner: number;
@@ -46,7 +51,9 @@ export type Config = {
     | "lifted"
     | "shadow"
     | "diagram"
-    | "paired";
+    | "paired"
+    // The base sphere pane of the weave's paired views; never a study's mode.
+    | "base";
   lift?: Lift;
   bypass?: Bypass;
   weave?: Weave;
@@ -85,7 +92,10 @@ export type Result = {
       | "fixed-v"
       | "fiber"
       | "collapsed"
-      | "window";
+      | "window"
+      | "moving"
+      | "base-curve"
+      | "globe";
     dashed?: boolean;
     parameters?: number[];
     fourPoints?: [number, number, number, number][];
@@ -119,7 +129,7 @@ export type Result = {
   };
   markers?: {
     id: string;
-    role: "moving" | "comparison";
+    role: "moving" | "comparison" | "sample";
     point: Vec3;
     fourPoint: [number, number, number, number];
     family: number;
@@ -134,6 +144,17 @@ export type Result = {
     collapsed: number;
     window: number;
     projection: string;
+    // Base sphere and fibers: the samples, selection and moving point.
+    correspondence?: {
+      fibers: number;
+      selected: number;
+      // The sample the moving point is on, or −1 between samples.
+      movingSample: number;
+      parameter: number;
+      base: Vec3;
+      chart: "north" | "south";
+      coincident: boolean;
+    };
   };
   lift?: {
     thickness: number;
@@ -178,7 +199,8 @@ export type Motion =
   | "support"
   | "route"
   | "return"
-  | "latitude";
+  | "latitude"
+  | "trace";
 // Playback and export use this exact sampler. The base definition is immutable.
 export function sample(
   config: Config,
@@ -187,7 +209,9 @@ export function sample(
 ): Config {
   const q = structuredClone(config),
     p = Math.max(0, Math.min(1, progress));
-  if (q.weave && motion === "latitude") {
+  if (q.weave && motion === "trace") {
+    q.weave.trace = p;
+  } else if (q.weave && motion === "latitude") {
     q.weave.alpha = q.weave.alphaFrom * (1 - p) + q.weave.alphaTo * p;
   } else if (q.bypass && (motion === "route" || motion === "return")) {
     q.bypass.position = motion === "route" ? p : 1 - p;
@@ -224,8 +248,8 @@ function passageHelp(config: Config): Help<string> {
 }
 // Choices describe the mathematical study, independently of the notebook name.
 export function motions(config: Config): MotionChoice[] {
-  if (objects[config.object].motionChoices)
-    return objects[config.object].motionChoices!;
+  const own = objects[config.object].motionChoices;
+  if (own) return typeof own === "function" ? own(config) : own;
   const choices: MotionChoice[] = [
     ...rotationMotions,
     ...(config.mode === "section"

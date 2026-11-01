@@ -257,6 +257,49 @@ const cases: Case[] = [
     "Latitude end",
   ],
   ["angles.3", object("weave"), (c) => (c.angles[3] = 2e6), "xw angle"],
+  // Base sphere and fibers names its own counts and selection, and keeps
+  // the projection window.
+  [
+    "curves",
+    object("weave", "paired"),
+    (c) => (c.curves = 33),
+    "Fibers on the latitude",
+  ],
+  [
+    "weave.selected",
+    object("weave", "paired"),
+    (c) => (c.weave!.selected = 20),
+    "Selected fiber",
+  ],
+  [
+    "clip",
+    object("weave", "paired"),
+    (c) => (c.clip = 1),
+    "Projection window radius",
+  ],
+  [
+    "weave.alpha",
+    object("weave", "paired"),
+    (c) => (c.weave!.alpha = -1),
+    "Central latitude α",
+  ],
+  // The worker checks whole numbers before Go; the latitude count, which
+  // the paired view does not use, cannot block it.
+  [
+    "weave.selected",
+    object("weave", "paired"),
+    (c) => {
+      c.weave!.selected = 2.5;
+      c.count = 2.5;
+    },
+    "Selected fiber",
+  ],
+  [
+    "curves",
+    object("weave", "paired"),
+    (c) => (c.curves = 4.5),
+    "Fibers on the latitude",
+  ],
 ];
 
 const study = (config: Config, motion: TesseractStudy["motion"]) =>
@@ -318,6 +361,7 @@ test("every field the engine names has a control", () => {
     section: "tesseract",
     curvedRequest: "ball",
     weaving: "weave",
+    paired: "weave",
     lift: "lift",
     route: "bypass",
   };
@@ -328,7 +372,11 @@ test("every field the engine names has a control", () => {
         : builders[builder];
     expect(o, name).toBeDefined();
     const config = structuredClone(
-      tesseractPresets.find((p) => p.config.object === o)!.config,
+      tesseractPresets.find(
+        (p) =>
+          p.config.object === o &&
+          (builder !== "paired" || p.config.mode === "paired"),
+      )!.config,
     );
     expect(fieldLabel(config, path), `${name}: ${path}`).toEqual(
       expect.any(String),

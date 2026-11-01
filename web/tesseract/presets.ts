@@ -179,4 +179,30 @@ export const tesseractPresets: {
     motion: "double",
     repeat: "loop",
   },
+  // Opens Base sphere and fibers on one latitude, the first sample
+  // selected, and traces the latitude in a loop.
+  {
+    name: "A circle over every point",
+    detail:
+      "Each point of a latitude on the sphere owns one great circle of the 3-sphere. Move the point and its circle sweeps through the linked bouquet.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 12,
+      samples: 128,
+      clip: 3,
+      angles: [0, 0.2, 0.15, 0.3, 0.2, 0.1],
+      weave: {
+        family: "fibers",
+        alpha: 0.5,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 0,
+      },
+    },
+    motion: "trace",
+    repeat: "loop",
+  },
 ];

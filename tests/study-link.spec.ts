@@ -1026,6 +1026,40 @@ test("fields a link predates take the notebook's defaults", async () => {
   weave.mode = "stereo";
   const readWeave = tesseractStudy({ ...tesseract(), config: weave });
   assert.equal(readWeave.config.weave!.family, "fibers");
+  // A weave link without a selection, as every link before Base sphere and
+  // fibers, keeps none; the paired study carries its selection and both
+  // cameras.
+  assert.equal("selected" in readWeave.config.weave!, false);
+  const pairedIndex = tesseractPresets.findIndex(
+    (p) => p.config.mode === "paired" && p.config.object === "weave",
+  );
+  const pairedStudy: TesseractStudy = {
+    ...tesseract(pairedIndex),
+    config: {
+      ...tesseract(pairedIndex).config,
+      weave: { ...tesseract(pairedIndex).config.weave!, selected: 7 },
+    },
+    view: { yaw: 1, pitch: 0.2, zoom: 1.5, panX: 10, panY: -4 },
+    diagramView: { yaw: -0.4, pitch: 0.6, zoom: 0.8, panX: -3, panY: 9 },
+  };
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", pairedStudy))).study,
+    ),
+    pairedStudy,
+  );
+  for (const [key, value] of [
+    ["selected", 32],
+    ["selected", -1],
+    ["trace", 0.5],
+  ] as const) {
+    const bad = structuredClone(pairedStudy) as any;
+    bad.config.weave[key] = value;
+    await refused(() => tesseractStudy(bad), `config.weave.${key}`, /from/);
+  }
+  const pane = structuredClone(pairedStudy) as any;
+  pane.config.mode = "base";
+  await refused(() => tesseractStudy(pane), "config.mode", /one of/);
 });
 
 // Links made by version 1 of the format, frozen when it shipped. They must

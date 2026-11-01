@@ -52,6 +52,7 @@ export function fieldLabel(c: Config, path: string): string | undefined {
   if (m) return `${axes[+m[1]]} angle`;
   m = /^(lift|bypass|weave)\.(\w+)(?:\.(\d))?$/.exec(path);
   if (!m || m[1] !== d.parameterKey) return undefined;
+  if (m[2] === "selected") return d.selection?.label;
   const index = m[3] === undefined ? undefined : +m[3];
   return (
     d.numericFields?.find((f) => f.key === m[2] && f.index === index)?.label ??

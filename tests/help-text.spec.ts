@@ -292,7 +292,12 @@ test("every help a setting reveals keeps to the same limits", () => {
     for (const motion of motions(config))
       add(`${name} ${motion.label}`, motion.help);
     for (const field of object.numericFields ?? [])
-      add(`${name} ${field.label}`, field.help);
+      add(
+        `${name} ${field.label}`,
+        typeof field.help === "function" ? field.help(config) : field.help,
+      );
+    if (object.selection?.visible(config))
+      add(`${name} ${object.selection.label}`, object.selection.help);
     for (const choice of object.choices ?? [])
       add(`${name} ${choice.label}`, choice.help);
     for (const field of object.radiusFields)

@@ -15,6 +15,7 @@ func TestValidationNamesItsField(t *testing.T) {
 	lift := func() Request { return liftRequest(t, "lifted", Vec3{}, 1, 1) }
 	route := func() Request { return bypassRequest(t, "shadow", "embedded", 1, .5) }
 	section := func() Request { q := request(); q.Mode, q.Count, q.Spread = "section", 3, 1; return q }
+	paired := func() Request { return pairedRequest(.7, 12, 3) }
 	cases := []struct {
 		name  string
 		field string
@@ -50,6 +51,10 @@ func TestValidationNamesItsField(t *testing.T) {
 		{"central latitude", "weave.alpha", func() Request { q := weaving(); q.Weave.Alpha = 1.4; return q }},
 		{"latitude start", "weave.alphaFrom", func() Request { q := weaving(); q.Weave.AlphaFrom = -.1; return q }},
 		{"latitude end", "weave.alphaTo", func() Request { q := weaving(); q.Weave.AlphaTo = nan; return q }},
+		{"paired fibers", "curves", func() Request { q := paired(); q.Curves = 33; return q }},
+		{"selected fiber", "weave.selected", func() Request { q := paired(); q.Weave.Selected = 12; return q }},
+		{"paired latitude", "weave.alpha", func() Request { q := paired(); q.Weave.Alpha = -.1; return q }},
+		{"paired angle", "angles.5", func() Request { q := paired(); q.Angles[5] = nan; return q }},
 		{"lift mode", "mode", func() Request { q := lift(); q.Mode = "stereo"; return q }},
 		{"lift center", "lift.center.1", func() Request { q := lift(); q.Lift.Center[1] = 21; return q }},
 		{"drift start", "lift.from.2", func() Request { q := lift(); q.Lift.From[2] = nan; return q }},
@@ -100,6 +105,7 @@ func TestStudyErrorsNameNoField(t *testing.T) {
 		"outside within b":    inside,
 		"turned curved solid": turned,
 		"no weave":            {Object: "weave", Mode: "stereo"},
+		"no paired weave":     {Object: "weave", Mode: "paired"},
 	} {
 		_, err := Compute(q)
 		var named *FieldError
