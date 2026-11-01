@@ -10,7 +10,7 @@ Go computes the geometry in a browser Web Worker through WebAssembly. React and 
 
 ## The notebooks
 
-- **2D.** Curves given parametrically, in Cartesian or polar form, or generated as roulettes, Lissajous and Fourier curves, cyclic pursuits, vector-field trajectories, implicit curves and iterated maps. Constructions include evolutes, involutes, catacaustics and diacaustics, pedals, contrapedals, orthotomics, offsets, rolling circles and curves, envelopes of lines, chords and circles, and circle inversion, built on the curve or on one another. Around them are a curvature probe, refinement between samples, a guided journey, a parameter atlas, Fourier fits of a drawn loop, finite engravings and a paired complex-map loom. See the [usage guide](docs/usage.md).
+- **2D.** Curves given parametrically, in Cartesian or polar form, or generated as roulettes, Lissajous and Fourier curves, cyclic pursuits, vector-field trajectories, implicit curves and iterated maps. Constructions include evolutes, involutes, catacaustics and diacaustics, pedals, contrapedals, orthotomics, offsets, rolling circles and curves, envelopes of lines, chords and circles, and circle inversion, built on the curve or on one another. Around them are a curvature probe, refinement between samples, a guided journey, a parameter atlas, Fourier fits of a drawn loop, finite engravings, a paired complex-map loom and an Apollonian circle garden. See the [usage guide](docs/usage.md).
 - **3D** (`?study=3d`). Space curves and what they carry: tangent developables, involute filaments, framed ribbons, ruled and canal surfaces. It also draws surfaces with their focal sheets, a helicoid bending into a catenoid without stretching, mirrors and refracting interfaces with their caustics, and implicit surfaces with their sections, with probes, cut planes, see-through drawing, perspective lenses and camera flights. See [the spatial study](docs/spatial-study.md).
 - **4D** (`?study=4d`). Shadows, sections and section families of four-dimensional shapes, and Hopf fibers and Clifford tori on the 3-sphere. See [the tesseract study](docs/tesseracts.md).
 
@@ -63,6 +63,7 @@ Proposals, fixes and tests should respect the project's mathematical-art focus.
 | `web/spatial/`         | The 3D notebook and its WebGL renderer                          |
 | `web/tesseract/`       | The 4D notebook                                                 |
 | `web/loom/`            | The complex-map loom                                            |
+| `web/garden/`          | The Apollonian garden                                           |
 | `web/examples/`        | The example gallery; its thumbnails come from `make thumbnails` |
 | `tests/`               | Browser integration, rendering and export tests                 |
 | `scripts/`             | Build, WASM, notice, thumbnail and measurement scripts          |

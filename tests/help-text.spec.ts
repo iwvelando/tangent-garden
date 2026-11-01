@@ -349,6 +349,50 @@ test("phrase pace help explains interpolation within phases rather than retiming
   expect(helpText(phrasePaceHelp)).toContain("within each phase");
 });
 
+test("Apollonian garden help fits both tiers", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator("[data-garden-example]").first().click();
+  const d = page.getByRole("dialog", { name: "The Apollonian garden" });
+  await expect(d.locator("#garden-artwork")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entries = await d.evaluate((root) =>
+    Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
+      const h = document.getElementById(toggle.getAttribute("aria-controls")!)!;
+      const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+        HTMLElement | undefined;
+      brief?.querySelector(".help-more")?.remove();
+      return {
+        topic: toggle.getAttribute("aria-label"),
+        paired: !!toggle.closest(".pair"),
+        brief: brief?.textContent ?? h.textContent ?? "",
+        more: h.querySelector(".hint-more")?.textContent ?? "",
+      };
+    }),
+  );
+  expect(entries.map((e) => e.topic)).toEqual([
+    "About Circle",
+    "About following the selection",
+    "About Presentation",
+    "About Minimum radius",
+    "About Depth",
+    "About Circle limit",
+    "About Line weight",
+  ]);
+  for (const e of entries) {
+    expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
+      e.paired ? pairedBriefWords : 20,
+    );
+    expect(words(e.more), e.topic!).toBeLessThanOrEqual(moreWords);
+  }
+  // The help states the limits the engine enforces.
+  const text = entries.map((e) => `${e.brief} ${e.more}`).join(" ");
+  for (const limit of ["above 0, at most 1", "0–12", "4–5,000", "20,000"])
+    expect(text).toContain(limit);
+});
+
 test("complex loom help fits both tiers in every source family", async ({
   page,
 }) => {

@@ -1,4 +1,6 @@
 import { LoomContext, type LoomEntry } from "./loom/Context";
+import { GardenContext, type GardenEntry } from "./garden/Context";
+import { presetGarden } from "./garden/model";
 import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
@@ -42,7 +44,12 @@ import {
 import type { AdoptedJourney, JourneyAdoption } from "./journeys";
 import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
-import { loomExamples, planarExamples, planarThumbnail } from "./examples";
+import {
+  gardenExamples,
+  loomExamples,
+  planarExamples,
+  planarThumbnail,
+} from "./examples";
 import { Plot, legendGeometry, type Layers } from "./Plot";
 import { PlanarLayers } from "./planar-layers";
 import { LegendEntries } from "./Legend";
@@ -297,6 +304,7 @@ function App({
   adoption?: AdoptedJourney;
 }) {
   const loomOwner = useContext(LoomContext);
+  const gardenOwner = useContext(GardenContext);
   const loomHelp = useHelp();
   // An entry waiting for the study's inputs to settle: the study's own curve
   // from the loom button, or an authored family from the gallery.
@@ -1389,6 +1397,16 @@ function App({
           restoreFocus: () =>
             loomButton.current?.focus({ preventScroll: true }),
         });
+      // A garden link's base study lies beneath the garden in the same way.
+      if (incoming.garden)
+        gardenOwner.begin({
+          study: incoming,
+          via: "keyboard",
+          restoreFocus: () =>
+            document
+              .querySelector<HTMLButtonElement>(".example-trigger")
+              ?.focus({ preventScroll: true }),
+        });
     } catch (e) {
       setLinkNotice(
         e instanceof LinkError ? e.message : "This link could not be read.",
@@ -1677,6 +1695,20 @@ function App({
                   examples: loomExamples,
                   open: (preset, restoreFocus, via) =>
                     setLoomWaiting({ via, preset, restoreFocus }),
+                }}
+                // A garden needs nothing from the study, which it leaves
+                // beneath it exactly as it is.
+                gardens={{
+                  examples: gardenExamples,
+                  open: (preset, restoreFocus, via) =>
+                    gardenOwner.begin({
+                      study: {
+                        ...structuredClone(snapshot()),
+                        garden: presetGarden(preset),
+                      },
+                      via,
+                      restoreFocus,
+                    }),
                 }}
               />
               <div
@@ -2971,6 +3003,9 @@ function App({
 const LoomPreview = lazy(() =>
   import("./loom/Preview").then((m) => ({ default: m.LoomPreview })),
 );
+const GardenPreview = lazy(() =>
+  import("./garden/Preview").then((m) => ({ default: m.GardenPreview })),
+);
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
 type NotebookKind = "2d" | "3d" | "4d";
@@ -2986,18 +3021,21 @@ function Notebook() {
   const [atlas, setAtlas] = useState<AtlasRequest | null>(null);
   const [fit, setFit] = useState<FourierFitRequest | null>(null);
   const [loom, setLoom] = useState<LoomEntry | null>(null);
+  const [garden, setGarden] = useState<GardenEntry | null>(null);
+  // An overlay study holds the notebooks beneath it inert.
+  const overlay = !!excursion || !!atlas || !!fit || !!loom || !!garden;
   const [adoptions, setAdoptions] = useState<
     Partial<Record<NotebookKind, AdoptedJourney>>
   >({});
   const adoptionId = useRef(0);
   const restoreFocus = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
-    if (!excursion && !atlas && !fit && !loom && restoreFocus.current) {
+    if (!overlay && restoreFocus.current) {
       const focus = restoreFocus.current;
       restoreFocus.current = null;
       focus();
     }
-  }, [excursion, atlas, fit, loom]);
+  }, [excursion, atlas, fit, loom, garden]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -3014,6 +3052,7 @@ function Notebook() {
     setAtlas(null);
     setFit(null);
     setLoom(null);
+    setGarden(null);
     setExcursion(null);
     focusRequest.current = via;
     show(next);
@@ -3039,6 +3078,7 @@ function Notebook() {
       setAtlas(null);
       setFit(null);
       setLoom(null);
+      setGarden(null);
       show(notebookKind());
     };
     window.addEventListener("popstate", pop);
@@ -3058,6 +3098,7 @@ function Notebook() {
       setAtlas(null);
       setFit(null);
       setLoom(null);
+      setGarden(null);
       const id = ++links.current;
       let next: { notebook: NotebookKind; link: SharedStudy };
       try {
@@ -3093,7 +3134,7 @@ function Notebook() {
         <AtlasContext.Provider value={{ begin: setAtlas }}>
           <JourneyContext.Provider
             value={{
-              active: !!excursion || !!atlas || !!fit || !!loom,
+              active: overlay,
               begin: setExcursion,
             }}
           >
@@ -3115,6 +3156,29 @@ function Notebook() {
                     onReturn={(via) => {
                       restoreFocus.current = () => loom.restoreFocus(via);
                       setLoom(null);
+                    }}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {garden && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening the Apollonian garden…
+                    </div>
+                  }
+                >
+                  <GardenPreview
+                    key={shared["2d"]?.id ?? "local"}
+                    entry={garden}
+                    onReturn={(via) => {
+                      restoreFocus.current = () => garden.restoreFocus(via);
+                      setGarden(null);
                     }}
                   />
                 </Suspense>
@@ -3216,24 +3280,20 @@ function Notebook() {
               </div>
             )}
             {seen["2d"] && (
-              <div
-                inert={!!excursion || !!atlas || !!fit || !!loom}
-                hidden={mode !== "2d"}
-              >
+              <div inert={overlay} hidden={mode !== "2d"}>
                 <LoomContext.Provider value={{ begin: setLoom }}>
-                  <App
-                    active={mode === "2d"}
-                    shared={shared["2d"]}
-                    adoption={adoptions["2d"]}
-                  />
+                  <GardenContext.Provider value={{ begin: setGarden }}>
+                    <App
+                      active={mode === "2d"}
+                      shared={shared["2d"]}
+                      adoption={adoptions["2d"]}
+                    />
+                  </GardenContext.Provider>
                 </LoomContext.Provider>
               </div>
             )}
             {seen["3d"] && (
-              <div
-                inert={!!excursion || !!atlas || !!fit || !!loom}
-                hidden={mode !== "3d"}
-              >
+              <div inert={overlay} hidden={mode !== "3d"}>
                 <Suspense
                   fallback={
                     <div className="loading">Opening the spatial notebook…</div>
@@ -3248,10 +3308,7 @@ function Notebook() {
               </div>
             )}
             {seen["4d"] && (
-              <div
-                inert={!!excursion || !!atlas || !!fit || !!loom}
-                hidden={mode !== "4d"}
-              >
+              <div inert={overlay} hidden={mode !== "4d"}>
                 <Suspense
                   fallback={
                     <div className="loading">Opening the fourth dimension…</div>

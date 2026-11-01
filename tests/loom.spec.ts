@@ -283,6 +283,8 @@ test("a loom still requested during scrubbing resolves the latest marker and set
   const download = page.waitForEvent("download");
   await loomImage(d, "SVG");
   const svg = await readFile((await (await download).path())!, "utf8");
+  // The page's color fills a viewer beyond the page, as 2D and 4D exports do.
+  expect(svg).toMatch(/^<svg[^>]* style="background:#f3f1ea"/);
   const markers = await page.evaluate((text) => {
     const doc = new DOMParser().parseFromString(text, "image/svg+xml");
     return Array.from(doc.querySelectorAll("[data-marker]"), (e) =>

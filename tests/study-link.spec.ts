@@ -3185,6 +3185,103 @@ test("loom links conform complete settings and keep older planar links unchanged
   );
 });
 
+test("garden links conform settings, selection and view without geometry, and older planar links stay unchanged", async () => {
+  const { presetGarden, gardenPresets } = await import("../web/garden/model");
+  const ordinary = planarPreset(0);
+  const expected = structuredClone(ordinary);
+  // Absent: an older link opens exactly as before, with no garden.
+  assert.equal("garden" in planarStudy(ordinary), false);
+  assert.deepEqual(planarStudy(ordinary), expected);
+  for (let i = 0; i < gardenPresets.length; i++) {
+    const garden = { ...presetGarden(i), view: { x: 12, y: -4, zoom: 3.5 } };
+    const study = { ...ordinary, garden };
+    const saved = planarStudy(study);
+    assert.deepEqual(saved.garden, garden);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).garden, garden);
+    assert.deepEqual(
+      Object.keys(planarStudy(decoded.study).garden!).sort(),
+      [
+        "depth",
+        "maxCircles",
+        "minRadius",
+        "presentation",
+        "seed",
+        "view",
+        "weight",
+        ...(garden.selected ? ["selected"] : []),
+      ].sort(),
+    );
+  }
+  const garden = presetGarden(1);
+  // Bounds are accepted.
+  for (const patch of [
+    { depth: 0 },
+    { depth: 12 },
+    { minRadius: 1 },
+    { minRadius: Number.MIN_VALUE },
+    { maxCircles: 4 },
+    { maxCircles: 5000 },
+  ])
+    assert.deepEqual(
+      planarStudy({ ...ordinary, garden: { ...garden, ...patch } }).garden,
+      { ...garden, ...patch },
+    );
+  for (const [patch, field] of [
+    [{ seed: "0,0,1,1" }, "garden.seed"],
+    [{ depth: 13 }, "garden.depth"],
+    [{ depth: 2.5 }, "garden.depth"],
+    [{ minRadius: 0 }, "garden.minRadius"],
+    [{ minRadius: 1.5 }, "garden.minRadius"],
+    [{ minRadius: "0.01" }, "garden.minRadius"],
+    [{ maxCircles: 3 }, "garden.maxCircles"],
+    [{ maxCircles: 100.5 }, "garden.maxCircles"],
+    [{ presentation: "sparse" }, "garden.presentation"],
+    [
+      { selected: { curvature: 23.5, x: 8, y: 12 } },
+      "garden.selected.curvature",
+    ],
+    [{ selected: { curvature: 23, x: 8 } }, "garden.selected.y"],
+    [{ view: { x: 0, y: 0, zoom: 1000 } }, "garden.view.zoom"],
+    [{ weight: "heavy" }, "garden.weight"],
+    [{ follow: "yes" }, "garden.follow"],
+    [
+      { follow: true, viewBeforeFollow: { x: 0, y: 0, zoom: 0 } },
+      "garden.viewBeforeFollow.zoom",
+    ],
+    [{ circles: [] }, "garden"],
+  ] as const) {
+    let error: unknown;
+    try {
+      planarStudy({ ...ordinary, garden: { ...garden, ...patch } });
+    } catch (e) {
+      error = e;
+    }
+    assert.ok(error instanceof LinkError, JSON.stringify(patch));
+    assert.equal(
+      error.field.startsWith(field),
+      true,
+      `${error.field} for ${JSON.stringify(patch)}`,
+    );
+  }
+  // Following, with the view to return to, round-trips.
+  const following = {
+    ...garden,
+    follow: true,
+    viewBeforeFollow: { x: -40, y: 12, zoom: 2 },
+  };
+  assert.deepEqual(
+    planarStudy({ ...ordinary, garden: following }).garden,
+    following,
+  );
+  // An absent selection is valid: nothing is selected.
+  const { selected: _selected, ...none } = garden;
+  assert.equal(
+    "selected" in planarStudy({ ...ordinary, garden: none }).garden!,
+    false,
+  );
+});
+
 test("rational loom links and map motion preserve frozen sources and manual views", async () => {
   const model = await import("../web/loom/model");
   const ordinary = planarPreset(0);

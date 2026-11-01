@@ -296,6 +296,9 @@ export function PairedDrawing({
       viewBox="0 0 2000 760"
       width="2000"
       height="760"
+      // The page's color fills whatever viewer shows the file, beyond the
+      // page too, as the ordinary notebooks' exports do.
+      style={{ background: plotPalette(source.dark, source.scheme).bg }}
     >
       <desc>{JSON.stringify(metadata)}</desc>
       <g>

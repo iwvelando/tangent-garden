@@ -2104,3 +2104,55 @@ test("complex loom entry, scalar blur, paired phone controls and return preserve
     entry.locator("xpath=ancestor::div[@class='fit-entry'][1]"),
   ).toHaveAttribute("data-quiet", "");
 });
+
+test("Apollonian garden entry, scalar blur, phone controls and return preserve focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const trigger = page.getByRole("button", {
+    name: "Browse notebook examples",
+  });
+  await trigger.click();
+  await page.locator('[data-garden-example="1"]').click();
+  const d = page.getByRole("dialog", { name: "The Apollonian garden" });
+  await expect(d).toHaveAttribute("data-quiet", "");
+  await expect(
+    d.getByRole("button", { name: "Return to study", exact: true }),
+  ).toBeFocused();
+  const art = d.locator("#garden-artwork");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  // On a phone the drawing leads, then the selection's explanation.
+  const drawing = (await art.boundingBox())!;
+  const circle = (await d.getByLabel("Circle", { exact: true }).boundingBox())!;
+  expect(drawing.y + drawing.height).toBeLessThan(circle.y);
+  // A constant typed and left resolves through the shared parser.
+  const radius = d.getByLabel("Minimum radius", { exact: true });
+  await radius.fill("1/400");
+  await radius.blur();
+  await expect(d.locator(".garden-summary")).toContainText(
+    "minimum radius 0.0025",
+  );
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  // The paired cutoffs keep their clearance from what follows.
+  const pair = (await d.locator(".pair").first().boundingBox())!;
+  const next = (await d.locator(".garden-summary").boundingBox())!;
+  expect(next.y - pair.y - pair.height).toBeGreaterThanOrEqual(0);
+  // A click on a generator selects it; Safari does not focus buttons it
+  // clicks, so selection must not depend on focus.
+  const generator = d
+    .getByRole("group", { name: "Generating circles" })
+    .getByRole("button")
+    .first();
+  const name = (await generator.textContent())!.split(" · ")[0];
+  await generator.click();
+  await expect(d.locator(".garden-about h3")).toHaveText(name);
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await expect(d).toBeHidden();
+  await expect(trigger).toBeFocused();
+});

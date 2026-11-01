@@ -7,6 +7,7 @@ import {
 } from "../ExampleGallery";
 import { presets } from "../presets";
 import { loomPresets, presetDefinition } from "../loom/model";
+import { gardenPresets } from "../garden/model";
 import { spatialPresets } from "../spatial/presets";
 import { defaultSight, isPlain } from "../spatial/sight";
 import { composes } from "../spatial/types";
@@ -81,6 +82,17 @@ export const loomExamples: Example[] = loomPresets.map((p, i) => ({
   family: "Complex maps",
   keywords: `complex loom square squaring z² ${p.kind}`,
   fingerprint: fingerprint(presetDefinition(i)),
+}));
+
+// The Apollonian garden's authored studies likewise open over the study.
+// Their thumbnails are the garden's drawing as it opens.
+export const gardenExamples: Example[] = gardenPresets.map((p) => ({
+  title: p.title,
+  caption: p.note,
+  family: "Circle packings",
+  keywords:
+    "apollonian circle packing descartes tangent circles rose window garden curvature",
+  fingerprint: fingerprint(p.study),
 }));
 
 export const spatialExamples: Example[] = spatialPresets.map((p) => ({
