@@ -549,7 +549,13 @@ test("rapid edits keep one computation and show only the latest packing", async 
   const d = await openGarden(page);
   const radius = d.getByLabel("Minimum radius", { exact: true });
   await page.evaluate(() => ((window as any).gardenPosts.length = 0));
-  for (const v of ["0.01", "0.02", "0.03", "0.005"]) {
+  await radius.fill("0.01");
+  // Begin the coalescing sequence only once its first request is active;
+  // scalar evaluation plus the debounce can exceed 160 ms on a loaded runner.
+  await expect
+    .poll(() => page.evaluate(() => (window as any).gardenPosts))
+    .toEqual([0.01]);
+  for (const v of ["0.02", "0.03", "0.005"]) {
     await radius.fill(v);
     await page.waitForTimeout(160);
   }
