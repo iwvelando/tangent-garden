@@ -2,11 +2,15 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import {
   chooseColorScheme,
+  chooseNotebook,
   choosePreset,
   exportImage,
   openShapeExport,
 } from "./helpers";
 import { decodeVideo, frameDifference, probe } from "./video";
+import { objects } from "../web/tesseract/objects";
+import { motions } from "../web/tesseract/types";
+import { helpText } from "../web/help";
 
 // Base sphere and fibers (docs/tesseracts.md): one latitude of S² beside
 // the Hopf fibers over its points, with a selection and a moving point.
@@ -24,10 +28,31 @@ const meta = async (p: Page) =>
   JSON.parse((await p.locator("#tesseract-artwork > desc").textContent())!);
 const selectedField = (p: Page) =>
   p.getByRole("spinbutton", { name: "Selected fiber", exact: true });
-const open = async (p: Page) => {
+const flower = "A flower below, a bouquet above";
+test("the latitude's existing selection help stays unchanged", () => {
+  const c = objects.weave.defaults({} as any);
+  c.mode = "paired";
+  const help = objects.weave.selection!.help;
+  expect(helpText(typeof help === "function" ? help(c) : help)).toContain(
+    "Trace the latitude starts from it.",
+  );
+});
+test("flower trace help distinguishes fixed path settings from its changing latitude", () => {
+  const c = objects.weave.defaults({} as any);
+  c.mode = "paired";
+  c.weave!.path = "flower";
+  expect
+    .soft(helpText(motions(c).find((m) => m.value === "trace")!.help))
+    .toContain("Path settings and rotation stay fixed.");
+  const note = objects.weave.countNote!;
+  expect(typeof note === "function" ? note(c) : note).toContain(
+    "nonconstant flowers",
+  );
+});
+const open = async (p: Page, preset = name) => {
   await p.goto("/?study=4d");
   await settle(p);
-  await choosePreset(p, { label: name });
+  await choosePreset(p, { label: preset });
   await settle(p);
 };
 // What each pane draws as moving and selected, by sample.
@@ -507,120 +532,496 @@ test("the accent and latitude inks follow the color scheme in drawing and legend
   }
 });
 
-test("the traced motion exports both panes with its duration and endpoints", async ({
+for (const preset of [name, flower])
+  test(`the traced motion of ${preset} exports both panes with its duration and endpoints`, async ({
+    page,
+  }) => {
+    test.slow();
+    await open(page, preset);
+    await page
+      .getByRole("spinbutton", { name: "Duration (seconds)" })
+      .fill("1");
+    // Live references at the progress of frames 0 and 6: a loop's frames sit
+    // at i/15, leaving out the end, which is its start again.
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const references: number[][] = [];
+    for (const s of [0, 0.4]) {
+      await page
+        .getByRole("slider", { name: "Animation progress" })
+        .fill(String(s));
+      await settle(page);
+      references.push(await raster(page, 1000, 380));
+    }
+    await openShapeExport(page);
+    await page
+      .getByRole("combobox", { name: "Export format" })
+      .selectOption("mp4");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("0.5");
+    await page
+      .getByRole("combobox", { name: "Export frame rate" })
+      .selectOption("15");
+    const download = page.waitForEvent("download");
+    const exportStarted = Date.now();
+    await page.getByRole("button", { name: /^Export MP4 video/ }).click();
+    const path = (await (await download).path())!;
+    console.log(
+      `${preset}: 1s / 15fps / 1000×380 paired MP4 saved in ${Date.now() - exportStarted} ms`,
+    );
+    const p = probe(path);
+    // A loop leaves out its last frame, which is its first.
+    if (p) {
+      expect([p.width, p.height, p.frames]).toEqual([1000, 380, 15]);
+      expect(p.durations.reduce((a, b) => a + b, 0)).toBe(1000);
+    }
+    expect(
+      (await decodeVideo(page, await readFile(path))).duration,
+    ).toBeCloseTo(1, 3);
+    for (const [k, index] of [0, 6].entries()) {
+      const d = frameDifference(path, 1000, 380, index, references[k]);
+      if (d) {
+        expect(d.meanDifference).toBeLessThan(6);
+        expect(d.unmatchedInk).toBeLessThan(0.02);
+      }
+    }
+  });
+
+test("flower path controls preserve latitude work and reject invalid intermediate edits", async ({
   page,
 }) => {
-  test.slow();
   await open(page);
-  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("1");
-  // Live references at the progress of frames 0 and 6: a loop's frames sit
-  // at i/15, leaving out the end, which is its start again.
+  const path = page.getByRole("combobox", { name: "Base path", exact: true });
+  await expect(path).toHaveValue("latitude");
+  const old = await meta(page);
+  await path.selectOption("flower");
+  await settle(page);
+  const amplitude = page.getByRole("textbox", {
+    name: "Flower amplitude A",
+    exact: true,
+  });
+  const petals = page.getByRole("spinbutton", { name: "Petals", exact: true });
+  // Switching from any valid latitude opens a valid zero-amplitude path.
+  await expect(amplitude).toHaveValue("0");
+  await expect(petals).toHaveValue("5");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await amplitude.fill("pi/8");
+  await settle(page);
+  expect((await meta(page)).config.weave.amplitude).toBe(Math.PI / 8);
+  for (const bad of ["t", "x", "a", "1/0", "-0.1", "pi/2"]) {
+    await amplitude.fill(bad);
+    await expect(page.getByRole("alert")).toBeVisible();
+  }
+  await amplitude.fill("pi/8");
+  await settle(page);
+  for (const bad of ["", "0", "2.5", "9"]) {
+    await petals.fill(bad);
+    await expect(page.getByRole("alert")).toContainText("Petals");
+  }
+  await petals.fill("8");
+  await settle(page);
+  await path.selectOption("latitude");
+  await settle(page);
+  await expect(amplitude).toHaveCount(0);
+  expect((await meta(page)).config.weave.alpha).toBe(old.config.weave.alpha);
+  await path.selectOption("flower");
+  await settle(page);
+  await expect(petals).toHaveValue("8");
+  expect((await meta(page)).config.weave.amplitude).toBe(Math.PI / 8);
+  // Notebook and object switches keep the whole edited path, both cameras
+  // and selection, while a preset replaces pending scalar work.
+  await selectedField(page).fill("7");
+  await settle(page);
+  const edited = await meta(page);
+  await page
+    .getByRole("combobox", { name: "4D object", exact: true })
+    .selectOption("ball");
+  await settle(page);
+  await page
+    .getByRole("combobox", { name: "4D object", exact: true })
+    .selectOption("weave");
+  await settle(page);
+  expect((await meta(page)).config).toEqual(edited.config);
+  await amplitude.fill("1/phi");
+  await choosePreset(page, { label: flower });
+  await settle(page);
+  expect((await meta(page)).config.weave.amplitude).toBe(Math.PI / 8);
+});
+
+test("the flower trace shares selection, chart transitions, clipping and both loop endpoints", async ({
+  page,
+}) => {
+  await open(page, flower);
+  const initial = await meta(page);
+  await expect(
+    page.getByRole("combobox", { name: "Animate", exact: true }),
+  ).toHaveValue("trace");
+  const at = await pointOn(
+    page,
+    'svg[data-representation="base"] g[data-sample="3"]',
+  );
+  await page.mouse.click(at.x, at.y);
+  await settle(page);
+  await expect(selectedField(page)).toHaveValue("4");
   await page
     .getByRole("button", { name: "Play animation", exact: true })
     .click();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
-  const references: number[][] = [];
-  for (const s of [0, 0.4]) {
+  let first: any;
+  for (const s of [0, 0.41, 0.09, 0.7, 1, 0]) {
     await page
       .getByRole("slider", { name: "Animation progress" })
       .fill(String(s));
     await settle(page);
-    references.push(await raster(page, 1000, 380));
-  }
-  await openShapeExport(page);
-  await page
-    .getByRole("combobox", { name: "Export format" })
-    .selectOption("mp4");
-  await page
-    .getByRole("slider", { name: "Export resolution", exact: true })
-    .fill("0.5");
-  await page
-    .getByRole("combobox", { name: "Export frame rate" })
-    .selectOption("15");
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: /^Export MP4 video/ }).click();
-  const path = (await (await download).path())!;
-  const p = probe(path);
-  // A loop leaves out its last frame, which is its first.
-  if (p) {
-    expect([p.width, p.height, p.frames]).toEqual([1000, 380, 15]);
-    expect(p.durations.reduce((a, b) => a + b, 0)).toBe(1000);
-  }
-  expect((await decodeVideo(page, await readFile(path))).duration).toBeCloseTo(
-    1,
-    3,
-  );
-  for (const [k, index] of [0, 6].entries()) {
-    const d = frameDifference(path, 1000, 380, index, references[k]);
-    if (d) {
-      expect(d.meanDifference).toBeLessThan(6);
-      expect(d.unmatchedInk).toBeLessThan(0.02);
+    const c = await correspondence(page);
+    expect(c.base).toEqual(c.stereo);
+    const t = c.base.parameter,
+      alpha = Math.PI / 4 + (Math.PI / 8) * Math.cos(5 * t);
+    expect(c.base.base[0]).toBeCloseTo(Math.sin(2 * alpha) * Math.cos(t), 12);
+    expect(c.base.base[1]).toBeCloseTo(Math.sin(2 * alpha) * Math.sin(t), 12);
+    expect(c.base.base[2]).toBeCloseTo(Math.cos(2 * alpha), 12);
+    if (s === 0 && !first) first = await roles(page);
+    if (s === 0 || s === 1) {
+      expect(c.base.movingSample).toBe(3);
+      expect(await roles(page)).toEqual(first);
     }
   }
+  await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
+  await settle(page);
+  expect((await meta(page)).views).toEqual(initial.views);
+  // Exact touches of both poles collapse duplicate fibers but retain the
+  // original selected index, including when it aliases an earlier sample.
+  await page
+    .getByRole("spinbutton", { name: "Fibers on the flower", exact: true })
+    .fill("32");
+  await page.getByRole("spinbutton", { name: "Petals", exact: true }).fill("8");
+  await page
+    .getByRole("textbox", { name: "Flower amplitude A", exact: true })
+    .fill("pi/4");
+  await settle(page);
+  await selectedField(page).fill("17");
+  await settle(page);
+  const c = (await correspondence(page)).base;
+  expect(c).toMatchObject({ selected: 16, coincident: true, base: [0, 0, -1] });
+  await expect(panel(page, "base").locator("g[data-sample]")).toHaveCount(18);
+  await expect(
+    panel(page, "base").locator('[data-correspondence="moving"]'),
+  ).toHaveAttribute("data-sample", "16");
+});
+
+test("switching from a latitude sweep to the flower selects an offered motion in the actual sampler", async ({
+  page,
+}) => {
+  await open(page);
+  await page
+    .getByRole("combobox", { name: "Animate", exact: true })
+    .selectOption("latitude");
+  await page
+    .getByRole("combobox", { name: "Repeat", exact: true })
+    .selectOption("once");
+  const before = await meta(page);
+  await page
+    .getByRole("combobox", { name: "Base path", exact: true })
+    .selectOption("flower");
+  await page
+    .getByRole("textbox", { name: "Flower amplitude A", exact: true })
+    .fill("pi/16");
+  await settle(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("slider", { name: "Animation progress" }).fill("0.25");
+  await settle(page);
+  // A native select can display its first option while its actual state
+  // remains an unavailable value: assert the request the sampler produced.
+  const c = (await meta(page)).config;
+  expect(c.weave.alpha).toBe(before.config.weave.alpha);
+  expect(c.weave.trace).toBe(0.25);
+});
+
+test("an edited flower link and still preserve both cameras, controls and appearance", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, flower);
+  await page.getByRole("spinbutton", { name: "Petals", exact: true }).fill("7");
+  await page
+    .getByRole("textbox", { name: "Flower amplitude A", exact: true })
+    .fill("1/phi/2");
+  await settle(page);
+  await selectedField(page).fill("9");
+  await panel(page, "base").focus();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("+");
+  await panel(page, "stereo").focus();
+  await page.keyboard.press("ArrowRight");
+  await settle(page);
+  await chooseColorScheme(page, "cobalt");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(
+    panel(page, "stereo").locator('[data-correspondence="moving"]'),
+  ).toHaveAttribute("stroke", "#ff9fbd");
+  await settle(page);
+  const live = await meta(page),
+    moving = await panel(page, "stereo")
+      .locator('[data-correspondence="moving"]')
+      .getAttribute("stroke");
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const m = JSON.parse(
+    svg.match(/<desc>([^<]*)<\/desc>/)![1].replace(/&quot;/g, '"'),
+  );
+  expect(m.config).toEqual(live.config);
+  expect(m.views).toEqual(live.views);
+  expect(svg).toContain(moving!);
+  expect(svg).not.toMatch(/<text|<foreignObject/);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const url = await page.evaluate(() => navigator.clipboard.readText());
+  await page.goto("about:blank");
+  await page.goto(url.replace(/^https?:\/\/[^/]+/, ""));
+  await settle(page);
+  expect((await meta(page)).config).toEqual(live.config);
+  expect((await meta(page)).views).toEqual(live.views);
+});
+
+for (const size of [
+  { width: 1440, height: 650 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+])
+  test(`flower walkthrough keeps controls, both panes and paired export reachable (${size.width}×${size.height})`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      viewport: size,
+      hasTouch: size.width < 1000,
+      isMobile: size.width < 1000,
+    });
+    const page = await context.newPage();
+    await open(page, flower);
+    await expect(panel(page, "base")).toBeVisible();
+    await expect(panel(page, "stereo")).toBeVisible();
+    const fits = () =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      );
+    expect(await fits()).toBe(true);
+    const amplitude = page.getByRole("textbox", {
+      name: "Flower amplitude A",
+      exact: true,
+    });
+    await amplitude.fill("pi/4");
+    await settle(page);
+    const petals = page.getByRole("spinbutton", {
+      name: "Petals",
+      exact: true,
+    });
+    const neighbor = page.getByRole("textbox", {
+      name: "Central latitude α",
+      exact: true,
+    });
+    const before = (await neighbor.boundingBox())!.y;
+    await page
+      .getByRole("button", { name: "About Flower amplitude A", exact: true })
+      .click();
+    expect((await neighbor.boundingBox())!.y).toBe(before);
+    await amplitude.fill("pi/4+0.01");
+    await expect(page.getByRole("alert")).toBeVisible();
+    await amplitude.fill("pi/8");
+    await settle(page);
+    await panel(page, "base").scrollIntoViewIfNeeded();
+    const at = await pointOn(
+      page,
+      'svg[data-representation="base"] g[data-sample="3"]',
+    );
+    if (size.width < 1000) await page.touchscreen.tap(at.x, at.y);
+    else await page.mouse.click(at.x, at.y);
+    await settle(page);
+    await expect(selectedField(page)).toHaveValue("4");
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect(page.locator('[data-source="weave/moving"]')).toHaveCount(1);
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await page.getByRole("slider", { name: "Animation progress" }).fill("0.37");
+    await settle(page);
+    expect((await correspondence(page)).base).toEqual(
+      (await correspondence(page)).stereo,
+    );
+    expect(await fits()).toBe(true);
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
+    await settle(page);
+    const entered = await meta(page);
+    await chooseNotebook(page, "2d");
+    await chooseNotebook(page, "4d");
+    await settle(page);
+    expect((await meta(page)).config).toEqual(entered.config);
+    expect((await meta(page)).views).toEqual(entered.views);
+    const download = page.waitForEvent("download");
+    await exportImage(page, "SVG");
+    const svg = await readFile((await (await download).path())!, "utf8");
+    expect(svg).toContain('data-representation="base"');
+    expect(svg).toContain('data-representation="stereo"');
+    expect(svg).toContain(
+      size.width <= 700 ? 'viewBox="0 0 1000 1520"' : 'viewBox="0 0 2000 760"',
+    );
+    await context.close();
+  });
+
+test("flower cancellation discards exports and late worker frames without losing the study", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    (window as any).flowerDelayedFrames = 0;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "tesseract" && q.tesseract?.weave?.trace) {
+        (window as any).flowerDelayedFrames++;
+        setTimeout(() => send.call(this, q, ...rest), 80);
+      } else return send.call(this, q, ...rest);
+    };
+  });
+  await open(page, flower);
+  const entered = await meta(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).flowerDelayedFrames))
+    .toBeGreaterThan(0);
+  await page.getByRole("spinbutton", { name: "Petals", exact: true }).fill("6");
+  await settle(page);
+  expect((await meta(page)).config.weave).toEqual({
+    ...entered.config.weave,
+    petals: 6,
+  });
+  expect((await correspondence(page)).base).toEqual(
+    (await correspondence(page)).stereo,
+  );
+  expect((await correspondence(page)).base.movingSample).toBe(0);
+  await page.getByRole("spinbutton", { name: "Petals", exact: true }).fill("5");
+  await settle(page);
+  await openShapeExport(page);
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  for (const action of ["cancel", "edit", "switch"]) {
+    await page
+      .getByRole("button", { name: /^Export (MP4 video|animated WebP)/ })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Cancel export" }),
+    ).toBeVisible();
+    if (action === "cancel")
+      await page.getByRole("button", { name: "Cancel export" }).click();
+    else if (action === "edit")
+      await page
+        .getByRole("spinbutton", { name: "Petals", exact: true })
+        .fill("7");
+    else {
+      await chooseNotebook(page, "2d");
+      await chooseNotebook(page, "4d");
+    }
+    await expect(
+      page.getByRole("button", { name: "Cancel export" }),
+    ).toHaveCount(0);
+    await settle(page);
+  }
+  expect(downloads).toBe(0);
+  expect((await meta(page)).config.weave).toEqual({
+    ...entered.config.weave,
+    petals: 7,
+  });
+  expect((await meta(page)).views.map((v: any) => v.view)).toEqual(
+    entered.views.map((v: any) => v.view),
+  );
 });
 
 // The largest admitted correspondence, 32 fibers at 256 arc samples, every
 // circle complete, through the worker, transport and both panes; a trace
 // over it, stopped, keeps nothing of the motion. Times and heap are
 // observations; the bounds are generous ceilings.
-test("maximum correspondence sampling has bounded cost, matching counts and cancels", async ({
-  page,
-}) => {
-  test.slow();
-  await open(page);
-  for (const name of [
-    "xz angle",
-    "yz angle",
-    "xw angle",
-    "yw angle",
-    "zw angle",
-  ])
-    await page.getByRole("textbox", { name, exact: true }).fill("0");
-  await page
-    .getByRole("textbox", { name: "Projection window radius", exact: true })
-    .fill("12");
-  await settle(page);
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("HeapProfiler.collectGarbage");
-  const before = await cdp.send("Runtime.getHeapUsage");
-  const start = Date.now();
-  await page
-    .getByRole("spinbutton", { name: "Arc samples", exact: true })
-    .fill("256");
-  await page
-    .getByRole("spinbutton", { name: "Fibers on the latitude", exact: true })
-    .fill("32");
-  await settle(page);
-  const elapsed = Date.now() - start;
-  const m = await meta(page);
-  const points = 32 * 257 + 3 * 257 + 257 + 3 * 257 + 32;
-  expect(m.emittedPoints).toBe(points);
-  expect(m.evaluations).toBe(points);
-  expect((await desc(page, "stereo")).weave.completeCircles).toBe(32);
-  await expect(panel(page, "stereo").locator("path[data-sample]")).toHaveCount(
-    32,
-  );
-  await expect(panel(page, "base").locator("g[data-sample]")).toHaveCount(32);
-  expect(elapsed).toBeLessThan(10_000);
-  // Trace, then stop: the entered study returns, with no moving fiber.
-  await page
-    .getByRole("button", { name: "Play animation", exact: true })
-    .click();
-  await expect(page.locator('[data-source="weave/moving"]')).toHaveCount(1);
-  const stopAt = Date.now();
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await settle(page);
-  const stopped = Date.now() - stopAt;
-  await expect(page.locator('[data-source="weave/moving"]')).toHaveCount(0);
-  expect((await meta(page)).config).toEqual(m.config);
-  expect(stopped).toBeLessThan(10_000);
-  await cdp.send("HeapProfiler.collectGarbage");
-  const after = await cdp.send("Runtime.getHeapUsage");
-  console.log(
-    `Correspondence maximum: ${elapsed} ms control-to-drawing; stop to entered study ${stopped} ms; ${((after.usedSize - before.usedSize) / 1024).toFixed(0)} KB retained main-page heap`,
-  );
-  expect(after.usedSize - before.usedSize).toBeLessThan(32 * 1024 * 1024);
-});
+for (const preset of [name, flower])
+  test(`maximum correspondence sampling of ${preset} has bounded cost, matching counts and cancels`, async ({
+    page,
+  }) => {
+    test.slow();
+    const openedAt = Date.now();
+    await open(page, preset);
+    console.log(
+      `${preset}: ${Date.now() - openedAt} ms navigation/gallery/worker-to-drawing at signature settings`,
+    );
+    const selectionAt = Date.now();
+    await selectedField(page).fill("2");
+    await settle(page);
+    console.log(
+      `${preset}: ${Date.now() - selectionAt} ms signature selection-to-drawing`,
+    );
+    for (const name of [
+      "xz angle",
+      "yz angle",
+      "xw angle",
+      "yw angle",
+      "zw angle",
+    ])
+      await page.getByRole("textbox", { name, exact: true }).fill("0");
+    await page
+      .getByRole("textbox", { name: "Projection window radius", exact: true })
+      .fill("12");
+    await settle(page);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("HeapProfiler.collectGarbage");
+    const before = await cdp.send("Runtime.getHeapUsage");
+    const start = Date.now();
+    await page
+      .getByRole("spinbutton", { name: "Arc samples", exact: true })
+      .fill("256");
+    await page
+      .getByRole("spinbutton", {
+        name:
+          preset === flower ? "Fibers on the flower" : "Fibers on the latitude",
+        exact: true,
+      })
+      .fill("32");
+    await settle(page);
+    const elapsed = Date.now() - start;
+    const m = await meta(page);
+    const points = 32 * 257 + 3 * 257 + 257 + 3 * 257 + 32;
+    expect(m.emittedPoints).toBe(points);
+    expect(m.evaluations).toBe(points);
+    expect((await desc(page, "stereo")).weave.completeCircles).toBe(32);
+    await expect(
+      panel(page, "stereo").locator("path[data-sample]"),
+    ).toHaveCount(32);
+    await expect(panel(page, "base").locator("g[data-sample]")).toHaveCount(32);
+    expect(elapsed).toBeLessThan(10_000);
+    // Trace, then stop: the entered study returns, with no moving fiber.
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await expect(page.locator('[data-source="weave/moving"]')).toHaveCount(1);
+    const stopAt = Date.now();
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await settle(page);
+    const stopped = Date.now() - stopAt;
+    await expect(page.locator('[data-source="weave/moving"]')).toHaveCount(0);
+    expect((await meta(page)).config).toEqual(m.config);
+    expect(stopped).toBeLessThan(10_000);
+    await cdp.send("HeapProfiler.collectGarbage");
+    const after = await cdp.send("Runtime.getHeapUsage");
+    console.log(
+      `${preset} maximum: ${elapsed} ms control-to-drawing; stop to entered study ${stopped} ms; ${((after.usedSize - before.usedSize) / 1024).toFixed(0)} KB retained main-page heap`,
+    );
+    expect(after.usedSize - before.usedSize).toBeLessThan(32 * 1024 * 1024);
+  });
 
 // A quick scrub, faster than the engine, keeps redrawing as playback does,
 // both panes from one result, and ends on the scrubbed position.

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
-import { choosePreset } from "./helpers";
+import { choosePreset, exportImage } from "./helpers";
+import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { camera } from "../web/spatial/scene";
 import { namedViews, turnTo, type NamedView } from "../web/named-views";
@@ -7,6 +8,8 @@ import { spatialPresets } from "../web/spatial/presets";
 import { defaultLayers } from "../web/spatial/renderer";
 import { defaultPath } from "../web/spatial/path";
 import { defaultRide } from "../web/spatial/ride";
+import { tesseractPresets } from "../web/tesseract/presets";
+import { presetStudy } from "../web/tesseract/link";
 
 // Named views and the orientation indicator, shared by the 3D and 4D
 // turntables (web/named-views.ts).
@@ -317,6 +320,130 @@ async function edges(page: Page) {
 const tesseractView = async (page: Page) =>
   JSON.parse((await page.locator("#tesseract-artwork desc").textContent())!)
     .view;
+const pairedMeta = async (page: Page) =>
+  JSON.parse((await page.locator("#tesseract-artwork > desc").textContent())!);
+const pairedViews = async (page: Page) =>
+  (await pairedMeta(page)).views.map((p: any) => p.view);
+
+for (const width of [1440, 390])
+  for (const preset of [
+    "A circle over every point",
+    "A flower below, a bouquet above",
+  ])
+    test(`4D: named views turn both Hopf cameras and retain each framing (${preset}, ${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      const study = presetStudy(
+        tesseractPresets.findIndex((p) => p.name === preset),
+      );
+      study.view = { yaw: -0.4, pitch: 0.5, zoom: 1.3, panX: 23, panY: -17 };
+      study.diagramView = {
+        yaw: 0.7,
+        pitch: -0.3,
+        zoom: 0.8,
+        panX: -31,
+        panY: 11,
+      };
+      await page.goto(
+        `/?study=4d#s=${deflateRawSync(Buffer.from(JSON.stringify({ v: 1, notebook: "4d", study }))).toString("base64url")}`,
+      );
+      const settle = () =>
+        expect(page.locator(".tesseract-stage")).toHaveAttribute(
+          "aria-busy",
+          "false",
+        );
+      await settle();
+      const initial = await pairedMeta(page);
+      expect(initial.views.map((p: any) => p.operation)).toEqual([
+        "base",
+        "stereo",
+      ]);
+      expect(await pairedViews(page)).toEqual([study.diagramView, study.view]);
+      const drawing = () =>
+        page
+          .locator(
+            '#tesseract-artwork path[data-role="base-curve"], #tesseract-artwork path[data-role="fiber"]',
+          )
+          .evaluateAll((ps) => ps.map((p) => p.getAttribute("d")));
+      for (const name of Object.keys(namedViews) as NamedView[]) {
+        const before = await drawing();
+        await views(page)
+          .getByRole("button", { name: namedViews[name].label, exact: true })
+          .click();
+        const wanted = [study.diagramView, study.view].map((v) => ({
+          ...v,
+          yaw: expect.closeTo(namedViews[name].yaw, 12),
+          pitch: expect.closeTo(namedViews[name].pitch, 12),
+        }));
+        await expect.poll(() => pairedViews(page)).toEqual(wanted);
+        // Observe each renderer as well as the outer composition's state.
+        const panels = await page
+          .locator("#tesseract-artwork svg[data-representation] > desc")
+          .evaluateAll((ds) => ds.map((d) => JSON.parse(d.textContent!).view));
+        expect(panels).toEqual(wanted);
+        const after = await drawing();
+        expect(after[0]).not.toBe(before[0]);
+        expect(after.slice(1)).not.toEqual(before.slice(1));
+        expect((await pairedMeta(page)).config).toEqual(initial.config);
+      }
+      // Ordinary orbit keys remain local to the focused pane.
+      await page.locator('svg[data-representation="base"]').focus();
+      await page.keyboard.press("ArrowRight");
+      await expect
+        .poll(async () => (await pairedViews(page))[0].yaw)
+        .toBeCloseTo(namedViews.isometric.yaw + 0.1, 12);
+      expect((await pairedViews(page))[1]).toEqual({
+        ...study.view,
+        yaw: expect.closeTo(namedViews.isometric.yaw, 12),
+        pitch: expect.closeTo(namedViews.isometric.pitch, 12),
+      });
+      if (width === 1440 && preset === "A flower below, a bouquet above") {
+        // A quick view stops automatic rotation and holds both directions.
+        await button(page, "Rotate view").click();
+        await views(page)
+          .getByRole("button", { name: "Front", exact: true })
+          .click();
+        await expect(button(page, "Rotate view")).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+        const cameras = await pairedViews(page);
+        const download = page.waitForEvent("download");
+        await exportImage(page, "SVG");
+        const svg = await readFile((await (await download).path())!, "utf8");
+        const exported = JSON.parse(
+          svg.match(/<desc>([^<]*)<\/desc>/)![1].replace(/&quot;/g, '"'),
+        );
+        expect(exported.views.map((p: any) => p.view)).toEqual(cameras);
+        await page
+          .context()
+          .grantPermissions(["clipboard-read", "clipboard-write"]);
+        await button(page, "Copy link").click();
+        await expect(
+          page.getByText("Link copied", { exact: true }),
+        ).toBeVisible();
+        const url = await page.evaluate(() => navigator.clipboard.readText());
+        await page.goto("about:blank");
+        await page.goto(url);
+        await settle();
+        expect(await pairedViews(page)).toEqual(cameras);
+        await button(page, "Play animation").click();
+        await button(page, "Pause").click();
+        for (const name of Object.values(namedViews))
+          await expect(
+            views(page).getByRole("button", { name: name.label, exact: true }),
+          ).toBeDisabled();
+        await page
+          .getByRole("slider", { name: "Animation progress" })
+          .fill("0.4");
+        await settle();
+        expect(await pairedViews(page)).toEqual(cameras);
+        await button(page, "Stop").click();
+        await settle();
+        expect(await pairedViews(page)).toEqual(cameras);
+      }
+    });
 
 test("4D: named views turn the shadow's camera, seen in the edges", async ({
   page,
@@ -398,11 +525,28 @@ test("4D: a flat coordinate diagram has no named views; side by side they turn t
   await expect(page.locator(".orientation")).toHaveCount(0);
   await operation.selectOption("paired");
   await settle();
-  await views(page).getByRole("button", { name: "Top", exact: true }).click();
-  const meta = JSON.parse(
-    (await page.locator("#tesseract-artwork > desc").textContent())!,
-  );
-  expect(meta.views[0].view).toMatchObject({ yaw: 0, pitch: 1.5 });
-  // The diagram's own camera is untouched.
-  expect(meta.views[1].view).toMatchObject({ yaw: 0.32, pitch: 0.35 });
+  // Edited diagram framing must survive every named camera direction.
+  await page.locator('svg[data-representation="diagram"]').focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("+");
+  const before = await pairedMeta(page);
+  const diagramPaths = () =>
+    page
+      .locator('svg[data-representation="diagram"] path')
+      .evaluateAll((ps) => ps.map((p) => p.getAttribute("d")));
+  const diagramDrawing = await diagramPaths();
+  for (const view of Object.values(namedViews)) {
+    await views(page)
+      .getByRole("button", { name: view.label, exact: true })
+      .click();
+    await expect
+      .poll(async () => (await pairedViews(page))[0])
+      .toEqual({
+        ...before.views[0].view,
+        yaw: expect.closeTo(view.yaw, 12),
+        pitch: expect.closeTo(view.pitch, 12),
+      });
+    expect((await pairedViews(page))[1]).toEqual(before.views[1].view);
+    expect(await diagramPaths()).toEqual(diagramDrawing);
+  }
 });

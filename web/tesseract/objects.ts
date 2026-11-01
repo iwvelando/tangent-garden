@@ -106,13 +106,17 @@ export type ObjectDescriptor = {
   parameterKey?: "lift" | "bypass" | "weave";
   numericFields?: {
     key:
-      keyof Lift | keyof Omit<Bypass, "obstacle"> | keyof Omit<Weave, "family">;
+      | keyof Lift
+      | keyof Omit<Bypass, "obstacle">
+      | keyof Omit<Weave, "family" | "path">;
     index?: number;
     label: string;
     help: Help<string> | ((c: Config) => Help<string>);
     group?: string;
     endpoint?: boolean;
     visible?: (c: Config) => boolean;
+    fallback?: number;
+    whole?: { min: number; max: number };
   }[];
   // Whole-number counts; studies without them use one sample count.
   countFields?: (c: Config) => {
@@ -126,7 +130,7 @@ export type ObjectDescriptor = {
   // study: its control, and how to read and write it.
   selection?: {
     label: string;
-    help: Help<string>;
+    help: Help<string> | ((c: Config) => Help<string>);
     visible: (c: Config) => boolean;
     count: (c: Config) => number;
     get: (c: Config) => number;
@@ -137,7 +141,7 @@ export type ObjectDescriptor = {
   reconcile?: (c: Config) => Config;
   choicesFirst?: boolean;
   choices?: {
-    key: "obstacle" | "family";
+    key: "obstacle" | "family" | "path";
     label: string;
     help: Help<string>;
     values: { value: string; label: string }[];
@@ -789,17 +793,22 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     sectionDetail: () => "",
     legend: "latitudes",
     sectionKey: (s, i) =>
-      [
-        `${i + 1}: α = `,
-        s.level.toPrecision(3),
-        s.kind === "circle" ? " (one circle)" : " (torus)",
-      ] as const,
+      s.kind === "flower"
+        ? ["1: ", "Spherical flower", ""]
+        : ([
+            `${i + 1}: α = `,
+            s.level.toPrecision(3),
+            s.kind === "circle" ? " (one circle)" : " (torus)",
+          ] as const),
     countFields: (c) =>
       c.mode === "paired"
         ? [
             {
               key: "curves",
-              label: "Fibers on the latitude",
+              label:
+                c.weave!.path === "flower"
+                  ? "Fibers on the flower"
+                  : "Fibers on the latitude",
               min: 1,
               max: 32,
             },
@@ -820,14 +829,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           ],
     countNote: (c) =>
       c.mode === "paired"
-        ? "Fibers sit at evenly spaced points of the latitude. Arc samples divide each circle, on the sphere and in space."
+        ? c.weave!.path === "flower"
+          ? "Samples are even in parameter t, not spherical arc length. Arc samples divide each fiber; nonconstant flowers use at least 16 base segments per petal."
+          : "Fibers sit at evenly spaced points of the latitude. Arc samples divide each circle, on the sphere and in space."
         : "Arc samples divide each full circle. A study draws at most 65,536 points: latitudes × circles per latitude × (samples + 2), plus the window guides.",
     selection: {
       label: "Selected fiber",
-      help: tiered(
-        "Which sampled point and fiber are selected, from 1 to the number of fibers.",
-        "Tap a point or fiber in either view, or press [ or ] there, to choose another. Trace the latitude starts from it.",
-      ),
+      help: (c) =>
+        tiered(
+          "Which sampled point and fiber are selected, from 1 to the number of fibers.",
+          `Tap a point or fiber in either view, or press [ or ] there, to choose another. Trace the ${c.weave!.path === "flower" ? "flower" : "latitude"} starts from it.`,
+        ),
       visible: (c) => c.mode === "paired",
       count: (c) => c.curves,
       get: (c) => c.weave!.selected ?? 0,
@@ -842,6 +854,19 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         : c,
     choicesFirst: true,
     choices: [
+      {
+        key: "path",
+        label: "Base path",
+        help: tiered(
+          "A latitude or a smooth flower on the base sphere.",
+          "The flower varies α as α₀ + A cos(kt). With amplitude zero it is the latitude. Repeated pole samples share one fiber; the selected sample keeps its identity.",
+        ),
+        values: [
+          { value: "latitude", label: "Latitude" },
+          { value: "flower", label: "Spherical flower" },
+        ],
+        visible: (c) => c.mode === "paired",
+      },
       {
         key: "family",
         label: "Weave family",
@@ -863,14 +888,37 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         label: "Central latitude α",
         help: (c) =>
           c.mode === "paired"
-            ? tiered(
-                "Radians, 0 to π/2 (pi/2); the latitude is z = cos 2α.",
-                "At 0 or π/2 the latitude is a pole: every fiber is then one circle, drawn once.",
-              )
+            ? c.weave!.path === "flower"
+              ? tiered(
+                  "Radians, 0 to π/2; the flower's central value α₀.",
+                  "Flower amplitude A must keep the entire range α₀ ± A within 0 and π/2. The path is p(t) = (sin(2α) cos t, sin(2α) sin t, cos(2α)).",
+                )
+              : tiered(
+                  "Radians, 0 to π/2 (pi/2); the latitude is z = cos 2α.",
+                  "At 0 or π/2 the latitude is a pole: every fiber is then one circle, drawn once.",
+                )
             : tiered(
                 "Radians, from 0 to π/2 (pi/2).",
                 "Every latitude α ± spread/2 must stay within 0 and π/2. At 0 or π/2 a torus collapses to one circle; pi/4 gives the Clifford torus.",
               ),
+      },
+      {
+        key: "amplitude",
+        label: "Flower amplitude A",
+        fallback: 0,
+        help: tiered(
+          "Nonnegative radians; keep α₀ ± A within 0 and π/2.",
+          "Zero reduces the flower to the latitude. Equality touches a pole: coincident sampled fibers are drawn once. Invalid ranges are refused, never clipped into shape.",
+        ),
+        visible: (c) => c.mode === "paired" && c.weave!.path === "flower",
+      },
+      {
+        key: "petals",
+        label: "Petals",
+        fallback: 5,
+        whole: { min: 1, max: 8 },
+        help: "Whole-number oscillations of α per turn, from 1 to 8.",
+        visible: (c) => c.mode === "paired" && c.weave!.path === "flower",
       },
       {
         key: "spread",
@@ -892,6 +940,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
               : "Every latitude α ± spread/2 must stay within 0 and π/2.",
           ),
         endpoint: true,
+        visible: (c) => c.mode !== "paired" || c.weave!.path !== "flower",
       },
       {
         key: "alphaTo",
@@ -904,13 +953,20 @@ export const objects: Record<Object4, ObjectDescriptor> = {
               : "Every latitude α ± spread/2 must stay within 0 and π/2.",
           ),
         endpoint: true,
+        visible: (c) => c.mode !== "paired" || c.weave!.path !== "flower",
       },
     ],
     motionEndpointsLabel: "Latitude motion endpoints",
     layerOptions: (c) =>
       c.mode === "paired"
         ? [
-            { key: "edges", label: "Latitude, points and fibers" },
+            {
+              key: "edges",
+              label:
+                c.weave!.path === "flower"
+                  ? "Flower, points and fibers"
+                  : "Latitude, points and fibers",
+            },
             { key: "guides", label: "Sphere and window guides" },
           ]
         : [
@@ -921,7 +977,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     // is counted among the sources only between samples.
     diagnostics: (r) =>
       r.weave?.correspondence
-        ? `${r.weave.correspondence.fibers} ${r.weave.correspondence.fibers === 1 ? "fiber" : "fibers"} over one latitude of S², and the moving point's fiber. Open ends mark the projection window, not broken curves.`
+        ? `${r.weave.correspondence.fibers} ${r.weave.correspondence.fibers === 1 ? "fiber" : "fibers"} over one ${r.weave.correspondence.path === "flower" ? "flower" : "latitude"} of S², and the moving point's fiber. Open ends mark the projection window, not broken curves.`
         : r.weave
           ? `${r.weave.sources} source circles on the unit 3-sphere. Open ends mark the projection window, not broken curves.`
           : "",
@@ -949,15 +1005,23 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         : [],
     colorNote: (c) =>
       c.mode === "paired"
-        ? "The latitude, its points and their fibers share the latitude's color; the selected fiber is drawn stronger, and the moving point and its fiber take the accent color. The base sphere shows each fiber's point before the 4D rotation. Open ends mark the projection window, not broken curves."
+        ? c.weave!.path === "flower"
+          ? "The flower, its points and their fibers share one color. The selected fiber is stronger; the moving point and fiber take the accent color. The base sphere shows the unrotated correspondence. Open ends mark the projection window."
+          : "The latitude, its points and their fibers share the latitude's color; the selected fiber is drawn stronger, and the moving point and its fiber take the accent color. The base sphere shows each fiber's point before the 4D rotation. Open ends mark the projection window, not broken curves."
         : `Each numbered latitude has its own color and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
     explanation: (c) =>
       c.mode === "paired"
-        ? [
-            "One point, one circle",
-            "Each point p of the sphere S² has a whole great circle of the 3-sphere over it: its Hopf fiber, every q with H(q) = p. Points along one latitude give linked circles on one torus. Move the point and its fiber sweeps through the bouquet, meeting each sampled fiber exactly. The declared 4D rotation turns the fibers before projection; the base sphere still shows where each unrotated fiber maps.",
-            "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   p(δ) = (sin 2α cos δ, sin 2α sin δ, cos 2α)",
-          ]
+        ? c.weave!.path === "flower"
+          ? [
+              "A flower, a bouquet",
+              "A smooth path wanders north and south on the sphere. Each sampled point owns a whole Hopf fiber; together they form a linked bouquet. Tracing carries one complete fiber around the flower. Changing coordinate charts only shifts a fiber's parameter origin: it never cuts the circle. The 4D rotation turns the fibers before projection; the base still shows their unrotated points.",
+              "α(t) = α₀ + A cos(kt),   p(t) = (sin 2α cos t, sin 2α sin t, cos 2α)",
+            ]
+          : [
+              "One point, one circle",
+              "Each point p of the sphere S² has a whole great circle of the 3-sphere over it: its Hopf fiber, every q with H(q) = p. Points along one latitude give linked circles on one torus. Move the point and its fiber sweeps through the bouquet, meeting each sampled fiber exactly. The declared 4D rotation turns the fibers before projection; the base sphere still shows where each unrotated fiber maps.",
+              "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   p(δ) = (sin 2α cos δ, sin 2α sin δ, cos 2α)",
+            ]
         : c.weave!.family === "tori"
           ? [
               "Tori on a sphere",
@@ -997,10 +1061,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         ? [
             {
               value: "trace",
-              label: "Trace the latitude",
+              label:
+                c.weave!.path === "flower"
+                  ? "Trace the flower"
+                  : "Trace the latitude",
               help: tiered(
-                "Moves a point once around the latitude from the selected fiber, carrying its whole fiber.",
-                "It meets each sampled fiber exactly and returns to the start, so it can loop. α and rotation stay fixed.",
+                c.weave!.path === "flower"
+                  ? "Moves a point once around the flower from the selected fiber, carrying its whole fiber."
+                  : "Moves a point once around the latitude from the selected fiber, carrying its whole fiber.",
+                c.weave!.path === "flower"
+                  ? "It meets each sampled fiber exactly and returns to the start, so it can loop. Path settings and rotation stay fixed."
+                  : "It meets each sampled fiber exactly and returns to the start, so it can loop. α and rotation stay fixed.",
               ),
               loops: true,
             },
@@ -1011,14 +1082,18 @@ export const objects: Record<Object4, ObjectDescriptor> = {
                 "The base sphere stays fixed: it shows where each fiber maps before the rotation.",
               ),
             })),
-            {
-              value: "latitude",
-              label: "Sweep latitudes",
-              help: tiered(
-                "Moves α from Latitude start to Latitude end.",
-                "The latitude and its fibers move together; rotation stays fixed. At 0 or π/2 every fiber is one circle.",
-              ),
-            },
+            ...(c.weave!.path === "flower"
+              ? []
+              : [
+                  {
+                    value: "latitude",
+                    label: "Sweep latitudes",
+                    help: tiered(
+                      "Moves α from Latitude start to Latitude end.",
+                      "The latitude and its fibers move together; rotation stays fixed. At 0 or π/2 every fiber is one circle.",
+                    ),
+                  } satisfies MotionChoice,
+                ]),
           ]
         : weaveMotions,
   },

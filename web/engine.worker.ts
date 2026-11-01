@@ -219,9 +219,10 @@ self.onmessage = async ({
       const weave = q.object === "weave" ? q.weave : undefined;
       if (q.object === "weave" && !weave)
         throw new Error("Enter spherical weave parameters.");
-      // Base sphere and fibers draws one latitude: no latitude count or
+      // Base sphere and fibers draws one base path: no latitude count or
       // spread, and a whole-number selection.
       const pairedWeave = !!weave && q.mode === "paired";
+      const flower = pairedWeave && weave.path === "flower";
       if (weave) {
         for (const [i, value] of q.angles.entries())
           if (!Number.isFinite(value))
@@ -241,8 +242,26 @@ self.onmessage = async ({
                   number,
                 ],
               ]),
-          ["weave.alphaFrom", "Latitude start", weave.alphaFrom],
-          ["weave.alphaTo", "Latitude end", weave.alphaTo],
+          ...(flower
+            ? [
+                [
+                  "weave.amplitude",
+                  "Flower amplitude A",
+                  weave.amplitude ?? 0,
+                ] as [string, string, number],
+              ]
+            : [
+                ["weave.alphaFrom", "Latitude start", weave.alphaFrom] as [
+                  string,
+                  string,
+                  number,
+                ],
+                ["weave.alphaTo", "Latitude end", weave.alphaTo] as [
+                  string,
+                  string,
+                  number,
+                ],
+              ]),
           ["clip", "Projection window radius", q.clip],
         ];
         for (const [field, label, value] of fields)
@@ -251,7 +270,11 @@ self.onmessage = async ({
         for (const [field, label, value] of [
           ...(pairedWeave
             ? [
-                ["curves", "Fibers on the latitude", q.curves],
+                [
+                  "curves",
+                  flower ? "Fibers on the flower" : "Fibers on the latitude",
+                  q.curves,
+                ],
                 ["weave.selected", "Selected fiber", weave.selected ?? 0],
               ]
             : [
@@ -265,6 +288,7 @@ self.onmessage = async ({
                 ],
               ]),
           ["samples", "Arc samples", q.samples],
+          ...(flower ? [["weave.petals", "Petals", weave.petals ?? 5]] : []),
         ] as [string, string, number][]) {
           if (!Number.isFinite(value))
             throw fieldError(field, `${label} must be a finite whole number.`);
@@ -411,9 +435,12 @@ self.onmessage = async ({
           ? {
               weave: {
                 ...weave,
+                // Inactive unfinished counts must not fail Go's integer
+                // decoding or prevent returning to the ordinary loom.
+                petals: flower ? weave.petals : undefined,
                 spread: q.count === 1 || pairedWeave ? 0 : weave.spread,
               },
-              // Inactive in the paired view, which draws one latitude.
+              // Inactive in the paired view, which draws one base path.
               count: pairedWeave ? 1 : q.count,
               curves: q.curves,
               samples: q.samples,

@@ -1058,6 +1058,21 @@ test("fields a link predates take the notebook's defaults", async () => {
     await refused(() => tesseractStudy(bad), `config.weave.${key}`, /from/);
   }
   const pane = structuredClone(pairedStudy) as any;
+  // Flower fields are optional; old paired and stereo links keep the
+  // original latitude. New controls survive the same portable schema.
+  assert.equal((readWeave.config.weave as any).path, undefined);
+  const flowerStudy = structuredClone(pairedStudy) as any;
+  Object.assign(flowerStudy.config.weave, {
+    path: "flower",
+    amplitude: Math.PI / 8,
+    petals: 5,
+  });
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", flowerStudy))).study,
+    ),
+    flowerStudy,
+  );
   pane.config.mode = "base";
   await refused(() => tesseractStudy(pane), "config.mode", /one of/);
 });

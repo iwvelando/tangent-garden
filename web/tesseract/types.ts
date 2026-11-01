@@ -15,6 +15,9 @@ export type Weave = {
   // only the sampler below sets.
   selected?: number;
   trace?: number;
+  path?: "latitude" | "flower";
+  amplitude?: number;
+  petals?: number;
 };
 export type Bypass = {
   inner: number;
@@ -108,7 +111,14 @@ export type Result = {
   points: Vec3[];
   sections: {
     id: string;
-    kind?: "empty" | "point" | "core-circle" | "solid" | "torus" | "circle";
+    kind?:
+      | "empty"
+      | "point"
+      | "core-circle"
+      | "solid"
+      | "torus"
+      | "circle"
+      | "flower";
     radius?: number;
     level: number;
     vertices?: number;
@@ -154,6 +164,8 @@ export type Result = {
       base: Vec3;
       chart: "north" | "south";
       coincident: boolean;
+      path?: "flower";
+      aliases?: number[];
     };
   };
   lift?: {

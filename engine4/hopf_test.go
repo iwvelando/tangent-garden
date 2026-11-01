@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -196,7 +197,7 @@ func TestPairedWeaveFibersMapToTheirBasePoints(t *testing.T) {
 				t.Fatalf("companion %q %q", b.Object, b.Operation)
 			}
 			// The base pane draws the same selection and moving point.
-			if b.Weave == nil || b.Weave.Correspondence == nil || *b.Weave.Correspondence != *c {
+			if b.Weave == nil || !reflect.DeepEqual(b.Weave.Correspondence, c) {
 				t.Fatalf("companion correspondence %+v, want %+v", b.Weave, c)
 			}
 			curves := weavePaths(*b, "base-curve")
@@ -478,5 +479,273 @@ func BenchmarkPairedWeaveLargest(b *testing.B) {
 		if _, err := Compute(q); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// Go's ordinary JSON request path also proves omitted flower fields keep
+// their old meaning. Unknown fields are deliberately ignored by the old
+// engine, so these regressions fail behaviorally before the extension.
+func flowerRequest(t *testing.T, alpha, amplitude float64, petals, n, selected int) Request {
+	t.Helper()
+	q := pairedRequest(alpha, n, selected)
+	data, _ := json.Marshal(q)
+	var raw map[string]any
+	json.Unmarshal(data, &raw)
+	w := raw["weave"].(map[string]any)
+	w["path"], w["amplitude"], w["petals"] = "flower", amplitude, petals
+	data, _ = json.Marshal(raw)
+	if err := json.Unmarshal(data, &q); err != nil {
+		t.Fatal(err)
+	}
+	return q
+}
+
+func TestHopfFlowerReturnedGeometry(t *testing.T) {
+	for _, k := range []int{1, 5, 8} {
+		for _, trace := range []float64{0, .137, -.137, .25 - 1e-10, .25 + 1e-10} {
+			q := flowerRequest(t, math.Pi/4, math.Pi/8, k, 13, 3)
+			q.Weave.Trace = trace
+			r := weaveCompute(t, q)
+			c := r.Weave.Correspondence
+			wantAt := func(t float64) Vec3 { return expectedBasePoint(math.Pi/4+math.Pi/8*math.Cos(float64(k)*t), t) }
+			if dist3(c.Base, wantAt(c.Parameter)) > 2e-15 {
+				t.Fatalf("k=%d trace=%v: moving point %v is not on the flower", k, trace, c.Base)
+			}
+			curves := weavePaths(*r.Companion, "base-curve")
+			if len(curves) != 1 || !closedPath(curves[0]) || len(curves[0].Points) < 16*k+1 {
+				t.Fatalf("k=%d: missing or undersampled flower", k)
+			}
+			for i, p := range curves[0].Points {
+				if math.Abs(math.Sqrt(dot(p, p))-1) > 1e-15 || dist3(p, wantAt(curves[0].Parameters[i])) > 3e-15 {
+					t.Fatalf("k=%d base point %d off S² or flower", k, i)
+				}
+			}
+			for _, m := range r.Companion.Markers {
+				parameter := c.Parameter
+				if m.Role == "sample" {
+					var j int
+					if _, err := fmt.Sscanf(m.ID, "weave/latitude/0/base/%d", &j); err != nil {
+						t.Fatal(err)
+					}
+					parameter = 2 * math.Pi * float64(j) / 13
+				}
+				if dist3(m.Point, wantAt(parameter)) > 2e-15 || dist3(hopfMap(m.FourPoint), m.Point) > 2e-15 {
+					t.Fatalf("marker %s off flower/fiber", m.ID)
+				}
+			}
+			for _, p := range r.Paths {
+				if p.Guide {
+					continue
+				}
+				want := c.Base
+				if p.Role == "fiber" {
+					var j int
+					fmt.Sscanf(p.Source, "weave/latitude/0/fiber/%d", &j)
+					want = wantAt(2 * math.Pi * float64(j) / 13)
+				}
+				for _, v := range p.FourPoints {
+					if math.Abs(norm4(v)-1) > 1e-15 || dist3(hopfMap(v), want) > 3e-15 {
+						t.Fatalf("k=%d %s leaves its fiber", k, p.Source)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestHopfFlowerZeroAmplitudeAndPeriodicTrace(t *testing.T) {
+	for _, alpha := range []float64{0, .6, math.Pi / 2} {
+		q := flowerRequest(t, alpha, 0, 5, 8, 3)
+		q.Weave.Trace = .137
+		r := weaveCompute(t, q)
+		old := pairedRequest(alpha, 8, 3)
+		old.Weave.Trace = .137
+		latitude := weaveCompute(t, old)
+		// Compare the whole returned geometry, identities and clipping;
+		// flower-only provenance may extend its diagnostics.
+		r.Weave.Correspondence = latitude.Weave.Correspondence
+		r.Companion.Weave.Correspondence = latitude.Companion.Weave.Correspondence
+		if !reflect.DeepEqual(r, latitude) {
+			t.Fatalf("A=0 α=%v changed the latitude", alpha)
+		}
+	}
+	q := flowerRequest(t, math.Pi/4, math.Pi/8, 5, 12, 7)
+	q.Angles = [6]float64{.3, .2, .1, 1.7, .5, 2.3}
+	q.Clip = 2
+	at := func(trace float64) Result { q.Weave.Trace = trace; return weaveCompute(t, q) }
+	if !reflect.DeepEqual(at(0), at(1)) || !reflect.DeepEqual(at(0), at(-1)) || !reflect.DeepEqual(at(.125), at(-.875)) {
+		t.Fatal("flower endpoint/reversed traversal changed presentation")
+	}
+	q.Weave.Selected = 0
+	q.Weave.Trace = .25
+	r := weaveCompute(t, q)
+	if r.Weave.Correspondence.MovingSample != 3 || len(weavePaths(r, "moving")) != 0 {
+		t.Fatal("trace must reuse the frozen sample's fiber")
+	}
+}
+
+func TestHopfFlowerPoleTouches(t *testing.T) {
+	q := flowerRequest(t, math.Pi/4, math.Pi/4, 8, 32, 16)
+	r := weaveCompute(t, q)
+	// Eight north and eight south samples share two circles; the other
+	// sixteen samples stay distinct. The base curve is still present.
+	if r.Weave.Sources != 18 || len(r.Companion.Markers) != 18 || len(weavePaths(*r.Companion, "base-curve")) != 1 {
+		t.Fatalf("coincident pole fibers drawn repeatedly: %+v, markers %d", r.Weave, len(r.Companion.Markers))
+	}
+	c := r.Weave.Correspondence
+	if !c.Coincident || c.Selected != 16 || c.Base != (Vec3{0, 0, -1}) {
+		t.Fatalf("lost selected pole provenance: %+v", c)
+	}
+	for _, trace := range []float64{0, .0625, -.0625, .03125} {
+		q.Weave.Trace = trace
+		r = weaveCompute(t, q)
+		if r.Weave.Sources != 18 || r.Weave.Correspondence.MovingSample < 0 {
+			t.Fatalf("pole/sample trace duplicates a fiber: %+v", r.Weave)
+		}
+	}
+	// Near a pole is finite; it must not be treated as an arbitrary chart
+	// discontinuity or be joined to another fiber.
+	q.Weave.Trace = 1e-4
+	r = weaveCompute(t, q)
+	if r.Weave.Sources != 19 || r.Weave.Correspondence.MovingSample != -1 {
+		t.Fatal("near-pole moving fiber was lost")
+	}
+}
+
+func TestHopfFlowerValidation(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		value any
+		field string
+	}{
+		{"path", "arbitrary", "weave.path"}, {"amplitude", -.01, "weave.amplitude"}, {"amplitude", math.Pi/4 + .001, "weave.amplitude"},
+		{"alpha", -.01, "weave.alpha"}, {"alpha", math.Pi/2 + .01, "weave.alpha"}, {"alpha", .1, "weave.amplitude"},
+		{"alpha", 1.4, "weave.amplitude"},
+		{"petals", 0, "weave.petals"}, {"petals", 9, "weave.petals"},
+	} {
+		q := flowerRequest(t, math.Pi/4, math.Pi/8, 5, 12, 0)
+		b, _ := json.Marshal(q)
+		var raw map[string]any
+		json.Unmarshal(b, &raw)
+		raw["weave"].(map[string]any)[tc.key] = tc.value
+		b, _ = json.Marshal(raw)
+		json.Unmarshal(b, &q)
+		_, err := Compute(q)
+		fe, ok := err.(*FieldError)
+		if !ok || fe.Field != tc.field {
+			t.Errorf("%s=%v: %v, want %s", tc.key, tc.value, err, tc.field)
+		}
+	}
+}
+
+func TestHopfFlowerDistinctCompleteFibersLinkOnce(t *testing.T) {
+	q := flowerRequest(t, math.Pi/4, math.Pi/8, 5, 7, 1)
+	q.Samples = 128
+	q.Weave.Trace = .137
+	r := weaveCompute(t, q)
+	if r.Weave.CompleteCircles != 8 || r.Clipped != 0 {
+		t.Fatalf("fixture must have 8 distinct complete fibers: %+v", r.Weave)
+	}
+	var paths []Path
+	for _, p := range r.Paths {
+		if !p.Guide {
+			paths = append(paths, p)
+		}
+	}
+	for i, a := range paths {
+		for _, b := range paths[i+1:] {
+			if !closedPath(a) || !closedPath(b) {
+				t.Fatal("clipped fixture")
+			}
+			if lk := polygonLinking(a.Points, b.Points); math.Abs(math.Abs(lk)-1) > 1e-6 {
+				t.Fatalf("%s %s: linking %v", a.Source, b.Source, lk)
+			}
+		}
+	}
+}
+
+func TestHopfFlowerChartSeamAndClipping(t *testing.T) {
+	for _, dt := range []float64{-1e-9, 1e-9} {
+		// α crosses π/4 at t=π/10; approach the seam from both charts.
+		q := flowerRequest(t, math.Pi/4, math.Pi/8, 5, 13, 0)
+		q.Weave.Trace = .05 + dt
+		q.Angles = [6]float64{.3, .2, .1, 1.7, .5, 2.3}
+		q.Clip = 2
+		r := weaveCompute(t, q)
+		c := r.Weave.Correspondence
+		if (c.Chart == "north") != (dt > 0) {
+			t.Fatalf("seam chart: %+v", c)
+		}
+		if r.Weave.RetainedArcs == 0 {
+			t.Fatal("fixture must exercise clipping")
+		}
+		moving := weavePaths(r, "moving")
+		if len(moving) != 1 {
+			t.Fatal("missing moving fiber at seam")
+		}
+		// The opposite overlapping chart spans the same returned, rotated
+		// fiber. A gauge change cannot join it to another sample's circle.
+		other := hopfChart(c.Base, c.Chart != "north")
+		a := rotate(other, q.Angles)
+		b := rotate(Vec4{-other[1], other[0], -other[3], other[2]}, q.Angles)
+		for _, v := range moving[0].FourPoints {
+			if planeResidual(v, a, b) > 2e-15 {
+				t.Fatal("chart seam changed the circle set")
+			}
+		}
+		for _, p := range r.Paths {
+			if p.Guide {
+				continue
+			}
+			for _, v := range p.Points {
+				if !finite(v[0]) || !finite(v[1]) || !finite(v[2]) || math.Sqrt(dot(v, v)) > q.Clip+1e-11 {
+					t.Fatal("nonfinite point or stray join past window")
+				}
+			}
+			if !closedPath(p) {
+				for _, v := range []Vec3{p.Points[0], p.Points[len(p.Points)-1]} {
+					if math.Abs(math.Sqrt(dot(v, v))-q.Clip) > 1e-11 {
+						t.Fatal("arc ends away from analytic window")
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestHopfFlowerSamplingBudgetsAndInactiveFields(t *testing.T) {
+	defaults := flowerRequest(t, math.Pi/4, math.Pi/8, 5, 12, 3)
+	explicit := weaveCompute(t, defaults)
+	defaults.Weave.Petals = nil
+	if !reflect.DeepEqual(weaveCompute(t, defaults), explicit) {
+		t.Fatal("absent petal count must retain the authored five-petal path")
+	}
+	for _, samples := range []int{8, 256} {
+		q := flowerRequest(t, math.Pi/4, math.Pi/8, 8, 32, 7)
+		q.Samples = samples
+		q.Weave.Trace = .0137
+		r := weaveCompute(t, q)
+		base := max(samples, 128)
+		want := 33*(samples+1) + 6*(samples+1) + base + 1 + 33
+		if r.Weave.Sources != 33 || r.EmittedPoints != want || r.Evaluations != want || r.EmittedPoints > maxPoints {
+			t.Fatalf("N=%d: %+v, points/evaluations %d/%d want %d", samples, r.Weave, r.EmittedPoints, r.Evaluations, want)
+		}
+	}
+	// Flower controls and incomplete latitude sweep endpoints belong only
+	// to their own active paths. Neither may refuse an unrelated study.
+	q := flowerRequest(t, math.Pi/4, math.Pi/8, 5, 12, 0)
+	q.Weave.AlphaFrom, q.Weave.AlphaTo = math.NaN(), math.Inf(1)
+	weaveCompute(t, q)
+	q = pairedRequest(.6, 12, 0)
+	q.Weave.Amplitude = math.NaN()
+	q.Weave.Petals = new(int)
+	r := weaveCompute(t, q)
+	old := weaveCompute(t, pairedRequest(.6, 12, 0))
+	if !reflect.DeepEqual(r, old) {
+		t.Fatal("inactive flower fields changed the latitude")
+	}
+	q.Weave.Path = "latitude"
+	if !reflect.DeepEqual(weaveCompute(t, q), old) {
+		t.Fatal("explicit latitude path changed an older study")
 	}
 }

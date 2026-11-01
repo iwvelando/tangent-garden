@@ -73,6 +73,9 @@ const weave = {
     // Only playback moves the traced point, so a link never carries an
     // offset: 0 is the only value it accepts.
     trace: { optional: { range: [0, 0] } },
+    path: { optional: { options: { latitude: true, flower: true } } },
+    amplitude: { optional: "number" },
+    petals: { optional: "number" },
   },
 } satisfies SchemaOf<Weave>;
 const config: SchemaOf<Config> = {
