@@ -110,6 +110,28 @@ Update dependent issue bodies with the actual interface, documentation and tests
 
 Close a parent only after its feature-level acceptance criteria are satisfied, including artwork, supported controls, links, exports and required verification. An optional improvement can be a separate issue; deferring a required criterion keeps the parent open unless the project owner explicitly agrees to revise scope. Record the disposition of rejected or superseded work and its replacement, if any; do not count it as delivered. Substantial scope changes update the parent and, when direction changes, the brief. Keep pending on-device checks and verification obligations in issues/PRs rather than permanent documentation.
 
+### Prompts for the owner
+
+These prompts start the three stages of an issue assignment. Replace `[issue]` and `[PR]` with their GitHub URLs. The procedures above and [Reviewing changes](reviewing.md) supply the detailed requirements; the owner does not need to repeat their checklists in each chat.
+
+**Start implementation:**
+
+> Implement [issue] following the repository delivery procedure. Stop at the required HTTPS exploration checkpoint.
+
+**After approving exploration, return to the implementer:**
+
+> Exploration approved. Complete final verification, open the PR, reconcile the issues and leave the reviewer handoff. Stop there; do not merge.
+
+The implementer stops after that handoff, with remote CI pending for the reviewer. Approval applies to the explored product; material later product changes return to exploration under the procedure above.
+
+**Start a fresh reviewer takeover, with merge authorization:**
+
+> Use the repository's tangent-garden-review procedure to take over [PR] for [issue], including its handoff and accepted decisions. You may fix and push warranted changes. Once review and required verification are complete and final-head CI passes, merge, confirm deployment, and reconcile the issues. Return material product changes to the exploration checkpoint.
+
+The review procedure works even when the agent cannot load the repository skill. This last prompt explicitly authorizes merge and deployment follow-through. For review without that authority, replace its merge sentence with “Once review and required verification are complete and final-head CI passes, hand the PR back without merging.” A sound review may require no edits.
+
+For a research issue, the assignment's experiment and decision gate still govern: these prompts do not authorize expanding it into a public feature or closing its parent. Record the evidence and go/no-go recommendation, then obtain the required owner decision before starting dependent delivery.
+
 ## Running the tests
 
 - `make check` runs formatting checks, Go vet, native tests with race and coverage, a real WASM bridge test, TypeScript checks, and the production build.
