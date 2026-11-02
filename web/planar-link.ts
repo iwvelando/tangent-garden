@@ -7,6 +7,12 @@ import {
 } from "./loom/model";
 import { defaultFamilyAnimation } from "./family-motion";
 import {
+  gardenLimits,
+  gardenSeed,
+  type GardenCircle,
+  type GardenStudy,
+} from "./garden/model";
+import {
   familyDefaults,
   familyTargets,
   type FamilySettings,
@@ -97,6 +103,8 @@ export type PlanarStudy = {
   animation: PlanarAnimation;
   family?: FamilySettings;
   loom?: LoomStudy;
+  // An Apollonian garden open over this study; absent in older links.
+  garden?: GardenStudy;
 };
 export const defaultAnimation: PlanarAnimation = {
   mode: "reveal",
@@ -477,6 +485,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "animation",
         "family",
         "loom",
+        "garden",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -726,11 +735,13 @@ export function planarStudy(value: unknown): PlanarStudy {
       );
   }
   const loom = raw.loom === undefined ? undefined : loomStudy(raw.loom);
+  const garden = raw.garden === undefined ? undefined : gardenStudy(raw.garden);
   return {
     ...study,
     animation,
     ...(family && { family }),
     ...(loom && { loom }),
+    ...(garden && { garden }),
   };
 }
 
@@ -738,6 +749,50 @@ export function planarStudy(value: unknown): PlanarStudy {
 // it, so a link's false and its absence open the same study.
 function betweenOnlyWhenSet({ between, ...probe }: PlanarProbe): PlanarProbe {
   return between ? { ...probe, between } : probe;
+}
+
+// Generation settings, selection by integer identity, presentation, view
+// and weight; never generated geometry. Go validates the same limits again.
+function gardenStudy(value: unknown): GardenStudy {
+  const identity: SchemaOf<GardenCircle> = {
+    fields: { curvature: "number", x: "number", y: "number" },
+  };
+  const out = conform<GardenStudy>(
+    value,
+    {
+      fields: {
+        seed: { options: { [gardenSeed]: true } },
+        depth: { range: [0, gardenLimits.depth] },
+        minRadius: { range: [Number.MIN_VALUE, 1] },
+        maxCircles: { range: [4, gardenLimits.circles] },
+        selected: { optional: identity },
+        presentation: { options: { complete: true, selected: true } },
+        view: {
+          fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
+        },
+        weight: lineWeightSchema,
+        follow: { optional: "boolean" },
+        viewBeforeFollow: {
+          optional: {
+            fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
+          },
+        },
+      },
+    },
+    undefined,
+    "garden",
+  );
+  for (const k of ["depth", "maxCircles"] as const)
+    if (!Number.isInteger(out[k]))
+      throw new LinkError(`garden.${k}`, `garden.${k} must be a whole number.`);
+  if (out.selected)
+    for (const k of ["curvature", "x", "y"] as const)
+      if (!Number.isSafeInteger(out.selected[k]))
+        throw new LinkError(
+          `garden.selected.${k}`,
+          `garden.selected.${k} must be a whole number.`,
+        );
+  return out;
 }
 
 // Reuse the ordinary curve schema; numerical validation stays in its Go compiler.

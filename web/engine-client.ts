@@ -124,6 +124,12 @@ export class EngineClient {
   > {
     return (await this.request({ action: "loom", loom: q, pointOnly })).result;
   }
+  // The Apollonian garden's finite packing (see engine.GardenResult).
+  async garden(
+    q: import("./garden/model").GardenRequest,
+  ): Promise<import("./garden/model").GardenResult> {
+    return (await this.request({ action: "garden", garden: q })).result;
+  }
   async fitFourier(
     count: number,
     points?: import("./types").Vec[],

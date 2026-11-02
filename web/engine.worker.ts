@@ -20,6 +20,9 @@ declare const tangentGardenLoom: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenLoomPoint: (json: string) => string;
+declare const tangentGardenGarden: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
 declare const tangentGardenSpatialProbe: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
@@ -73,8 +76,15 @@ self.onmessage = async ({
   bounds?: import("./types").Bounds;
   expressions?: string[];
   action:
-    "compute" | "scalars" | "spatial" | "tesseract" | "fourier-fit" | "loom";
+    | "compute"
+    | "scalars"
+    | "spatial"
+    | "tesseract"
+    | "fourier-fit"
+    | "loom"
+    | "garden";
   loom?: import("./loom/model").LoomRequest;
+  garden?: import("./garden/model").GardenRequest;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
   closed?: boolean;
@@ -119,6 +129,44 @@ self.onmessage = async ({
       ready = undefined;
       throw error;
     }));
+    if (data.action === "garden") {
+      const q = data.garden;
+      if (!q) throw new Error("Enter garden settings.");
+      // JSON would turn NaN or infinity into null, which Go reads as zero.
+      if (typeof q.minRadius !== "number" || !Number.isFinite(q.minRadius))
+        throw fieldError("minRadius", "Enter a finite number.");
+      for (const path of ["depth", "maxCircles"] as const)
+        if (!Number.isInteger(q[path]))
+          throw fieldError(path, "Enter a whole number.");
+      const start = performance.now();
+      const raw = tangentGardenGarden(
+        JSON.stringify({
+          seed: q.seed,
+          depth: q.depth,
+          minRadius: q.minRadius,
+          maxCircles: q.maxCircles,
+        }),
+      );
+      const prepared = performance.now();
+      if (typeof raw === "string") {
+        const r = JSON.parse(raw);
+        self.postMessage({ id: data.id, ...(r.error ? r : { result: r }) });
+      } else {
+        const { json, lifted } = raw;
+        const bytes =
+          new TextEncoder().encode(json).length + lifted.floats.byteLength;
+        self.postMessage(
+          {
+            id: data.id,
+            result: JSON.parse(json),
+            lifted,
+            timings: { prepare: prepared - start, bytes },
+          },
+          [lifted.floats.buffer],
+        );
+      }
+      return;
+    }
     if (data.action === "loom") {
       const q = data.loom;
       if (!q) throw new Error("Enter a loom source.");

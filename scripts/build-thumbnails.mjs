@@ -1,5 +1,6 @@
 // Draws the example gallery's thumbnails from the built site: each 2D example
-// as its plot's own SVG (a complex loom example as its image plane), and each 3D example as a small WebP per theme, just as
+// as its plot's own SVG (a complex loom example as its image plane, an
+// Apollonian garden as its drawing), and each 3D example as a small WebP per theme, just as
 // the example first appears. Run `make thumbnails` after adding or changing a
 // preset, look at the gallery, and commit web/examples.
 //
@@ -179,6 +180,45 @@ try {
         await loom.waitFor({ state: "hidden" });
         console.log(`2d ${name}`);
       }
+      // The Apollonian garden's authored studies open over the study too.
+      await button.click();
+      const gardens = await gallery
+        .locator("[data-garden-example]")
+        .evaluateAll((cards) =>
+          cards
+            .map((c) => ({ ...c.dataset }))
+            .sort((a, b) => a.gardenExample - b.gardenExample),
+        );
+      await page.keyboard.press("Escape");
+      for (const example of gardens) {
+        await button.click();
+        await gallery
+          .locator(`[data-garden-example="${example.gardenExample}"]`)
+          .click();
+        await gallery.waitFor({ state: "hidden" });
+        const garden = page.getByRole("dialog", {
+          name: "The Apollonian garden",
+        });
+        await garden
+          .locator("#garden-artwork[aria-busy=false]")
+          .waitFor({ timeout: 60_000 });
+        const name = example.exampleSlug;
+        if (name in recorded["2d"])
+          throw new Error(`Two examples are named ${name}.`);
+        recorded["2d"][name] = example.fingerprint;
+        const svg = await page.evaluate(planarThumbnail, {
+          name,
+          stroke,
+          roles,
+          selector: "#garden-artwork",
+        });
+        writeFileSync(`${out}/2d/${name}.svg`, svg + "\n");
+        await garden
+          .getByRole("button", { name: "Return to study", exact: true })
+          .click();
+        await garden.waitFor({ state: "hidden" });
+        console.log(`2d ${name}`);
+      }
     }
   }
 } finally {
@@ -197,6 +237,10 @@ async function planarThumbnail({ name, stroke, roles, selector = "#artwork" }) {
   const art = document.querySelector(selector).cloneNode(true);
   // A loom pane's invisible selection targets and clip are not drawing.
   for (const e of art.querySelectorAll("[data-hit-member], defs")) e.remove();
+  // A garden circle under a unit across is under a quarter of a thumbnail
+  // pixel: leave it out rather than draw a dot.
+  for (const e of art.querySelectorAll("circle[data-circle]"))
+    if (+e.getAttribute("r") < 1) e.remove();
   const round = (v) => {
     const n = Math.round(+v);
     return Object.is(n, -0) ? "0" : String(n);

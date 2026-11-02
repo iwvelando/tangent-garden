@@ -57,6 +57,17 @@ export const slug = (title: string) =>
 
 const words = (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean);
 
+// Examples of a mode that opens over the notebook's study.
+type Overlay = {
+  examples: Example[];
+  open: (
+    index: number,
+    restoreFocus: (via: "keyboard" | "pointer") => void,
+    via: "keyboard" | "pointer",
+  ) => void;
+};
+type EntryKind = "curve" | "loom" | "garden";
+
 export function ExampleGallery({
   examples,
   current,
@@ -66,6 +77,7 @@ export function ExampleGallery({
   onJourney,
   onBrowse,
   looms,
+  gardens,
 }: {
   examples: Example[];
   // null while the study is the reader's own.
@@ -82,14 +94,9 @@ export function ExampleGallery({
   // Examples that open the complex loom over the study instead of replacing
   // it. They join the families, search and thumbnails, but not the
   // previous/next steps through the notebook's own examples.
-  looms?: {
-    examples: Example[];
-    open: (
-      index: number,
-      restoreFocus: (via: "keyboard" | "pointer") => void,
-      via: "keyboard" | "pointer",
-    ) => void;
-  };
+  looms?: Overlay;
+  // Examples that open the Apollonian garden over the study, likewise.
+  gardens?: Overlay;
 }) {
   const { scheme } = useTheme();
   const wrap = useRef<HTMLDivElement>(null);
@@ -104,14 +111,23 @@ export function ExampleGallery({
   const currentId = useId();
   const entries = useMemo(
     () => [
-      ...examples.map((example, index) => ({ example, index, loom: false })),
+      ...examples.map((example, index) => ({
+        example,
+        index,
+        kind: "curve" as EntryKind,
+      })),
       ...(looms?.examples ?? []).map((example, index) => ({
         example,
         index,
-        loom: true,
+        kind: "loom" as EntryKind,
+      })),
+      ...(gardens?.examples ?? []).map((example, index) => ({
+        example,
+        index,
+        kind: "garden" as EntryKind,
       })),
     ],
-    [examples, looms?.examples],
+    [examples, looms?.examples, gardens?.examples],
   );
   const families = useMemo(
     () => [...new Set(entries.map((e) => e.example.family))],
@@ -180,9 +196,9 @@ export function ExampleGallery({
     onChoose(index);
     close();
   };
-  const openLoom = (index: number) => {
+  const openOverlay = (kind: EntryKind, index: number) => {
     close();
-    looms?.open(
+    (kind === "loom" ? looms : gardens)?.open(
       index,
       (returnVia) => {
         via.current = returnVia;
@@ -313,8 +329,8 @@ export function ExampleGallery({
                   if (e.key === "Enter" && matches.length > 0) {
                     e.preventDefault();
                     const top = groups[0].items[0];
-                    if (top.loom) openLoom(top.index);
-                    else choose(top.index);
+                    if (top.kind === "curve") choose(top.index);
+                    else openOverlay(top.kind, top.index);
                   }
                 }}
               />
@@ -409,22 +425,31 @@ export function ExampleGallery({
                 <section key={g.family} aria-label={g.family}>
                   <h3>{g.family}</h3>
                   <div className="gallery-grid">
-                    {g.items.map(({ example, index, loom }) => (
+                    {g.items.map(({ example, index, kind }) => (
                       <button
-                        key={`${loom ? "l" : "c"}${index}`}
+                        key={`${kind[0]}${index}`}
                         type="button"
                         className="example-card"
-                        data-example={loom ? undefined : index}
-                        data-loom-example={loom ? index : undefined}
+                        data-example={kind === "curve" ? index : undefined}
+                        data-loom-example={kind === "loom" ? index : undefined}
+                        data-garden-example={
+                          kind === "garden" ? index : undefined
+                        }
                         data-example-title={example.title}
                         data-example-slug={slug(example.title)}
                         data-fingerprint={example.fingerprint}
                         aria-current={
-                          !loom && index === current ? "true" : undefined
+                          kind === "curve" && index === current
+                            ? "true"
+                            : undefined
                         }
                         aria-label={example.title}
-                        aria-describedby={`${currentId}-${loom ? "l" : "c"}${index}`}
-                        onClick={() => (loom ? openLoom(index) : choose(index))}
+                        aria-describedby={`${currentId}-${kind[0]}${index}`}
+                        onClick={() =>
+                          kind === "curve"
+                            ? choose(index)
+                            : openOverlay(kind, index)
+                        }
                       >
                         <ExampleThumb
                           example={example}
@@ -437,7 +462,7 @@ export function ExampleGallery({
                         </span>
                         <span
                           className="example-card-caption"
-                          id={`${currentId}-${loom ? "l" : "c"}${index}`}
+                          id={`${currentId}-${kind[0]}${index}`}
                         >
                           {example.caption}
                         </span>

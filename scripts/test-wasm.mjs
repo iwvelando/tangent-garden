@@ -141,6 +141,52 @@ checkFourierFit();
     `Loom: typed paired geometry, correspondence and point-only bridge passed (${replyBytes(raw)} bytes)`,
   );
 }
+// The Apollonian garden uses the same lifted transport.
+{
+  const q = { seed: "-1,2,2,3", depth: 12, minRadius: 0.002, maxCircles: 5000 };
+  const raw = globalThis.tangentGardenGarden(JSON.stringify(q));
+  assert.equal(typeof raw, "object", "garden circles must use typed transport");
+  const r = lifted(raw);
+  assert.ok(r.curvature.length > 1000);
+  for (const k of [
+    "x",
+    "y",
+    "radius",
+    "weightedX",
+    "weightedY",
+    "generation",
+    "opposite",
+    "parents",
+  ])
+    assert.equal(r[k].length, r.curvature.length, k);
+  assert.deepEqual(
+    [r.curvature[4], r.weightedX[4], r.weightedY[4], r.parents[4]],
+    [15, 0, 4, [1, 2, 3]],
+  );
+  // Tangency to each generator survives the bridge.
+  for (let i = 4; i < r.curvature.length; i++)
+    for (const p of r.parents[i]) {
+      const d = Math.hypot(r.x[i] - r.x[p], r.y[i] - r.y[p]);
+      const want =
+        r.curvature[p] < 0
+          ? r.radius[p] - r.radius[i]
+          : r.radius[p] + r.radius[i];
+      assert.ok(Math.abs(d - want) < 1e-13, `circle ${i} and generator ${p}`);
+    }
+  for (const [field, request] of [
+    ["depth", { ...q, depth: 13 }],
+    ["minRadius", { ...q, minRadius: 0 }],
+    ["maxCircles", { ...q, maxCircles: 5001 }],
+    ["seed", { ...q, seed: "x" }],
+  ])
+    assert.equal(
+      JSON.parse(globalThis.tangentGardenGarden(JSON.stringify(request))).field,
+      field,
+    );
+  console.log(
+    `Garden: typed circle packing bridge passed (${r.curvature.length} circles, ${replyBytes(raw)} bytes)`,
+  );
+}
 const config = {
   kind: "evolute",
   curve: {

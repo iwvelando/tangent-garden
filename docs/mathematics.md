@@ -334,6 +334,45 @@ Some constructions follow the direction of travel: the offset's left normal, the
 
 The tests check: the second pedal of the circle through the pole, which is Cayley's sextic `4(x² + y² − x/2)³ = 27(x² + y²)²/4` for the unit circle through the origin; the contrapedal as the pedal of the evolute; the involute of an ellipse's evolute with `c` the radius of curvature at `t_min`, which retraces the ellipse to 10⁻⁶; the evolute of an offset as the evolute; offsets of an offset as a single offset by twice the distance while both are regular; a circle rolling on the offset of a circle as the circular roulette of the smaller circle; chords and caustics on an offset circle as on the circle itself; gaps in the input, not the base; the refused combinations; and jumps left open at cusps between samples for offsets, stacks, the involute, and circle envelopes, but not the pedal. The WebAssembly bridge test checks the involute of an evolute and the refused evolute of an evolute.
 
+## Apollonian garden
+
+The garden is a separate bounded planar mode that draws a finite Apollonian circle packing. It is not a curve family and has no derived constructions. `engine/apollonian.go` generates it; the definitions below are its contract.
+
+**Seed and signs.** The one seed, identified as `-1,2,2,3`, is a Descartes configuration of four mutually tangent circles in model units, where the enclosing circle has radius 1:
+
+| Index | Circle    | Curvature `b` | Center      | Radius |
+| ----- | --------- | ------------- | ----------- | ------ |
+| 0     | enclosing | −1            | (0, 0)      | 1      |
+| 1     | left      | 2             | (−1/2, 0)   | 1/2    |
+| 2     | right     | 2             | (1/2, 0)    | 1/2    |
+| 3     | top       | 3             | (0, 2/3)    | 1/3    |
+
+Curvature is signed: positive for a circle whose interior is disjoint from the others' interiors, negative for the enclosing circle, which contains them. The model's y axis points up; the drawing maps it to the page's upward direction. Two circles with curvatures of the same sign are externally tangent when their centers are `r₁ + r₂` apart; the enclosing circle is internally tangent to each circle inside it, with centers `R − r` apart. The packing is symmetric in both axes.
+
+**Descartes' theorem.** Four mutually tangent circles satisfy `(b₁ + b₂ + b₃ + b₄)² = 2(b₁² + b₂² + b₃² + b₄²)`. Writing each center as a complex number `c` and `z = b·c` for its curvature-weighted center, the complex Descartes theorem gives the same relation, `(Σz)² = 2Σz²`. Fixing three circles, each relation is a quadratic in the fourth with two roots whose sum is twice the sum of the three. So the circle on the other side of three mutually tangent circles `j, k, l` from a fourth circle `o` is
+
+`b_new = 2(b_j + b_k + b_l) − b_o`, and `z_new = 2(z_j + z_k + z_l) − z_o`.
+
+Both coordinates of `z` obey the real version of the linear relation separately. The seed's curvatures and weighted centers, `(−1; 0, 0)`, `(2; −1, 0)`, `(2; 1, 0)` and `(3; 0, 2)`, are integers. Each replacement keeps integers, so every circle of this packing has an integer curvature and weighted center. Center and radius follow as `c = z/b` and `r = 1/|b|`.
+
+**Identity.** A circle's identity is its integer triple `(b, bx, by)`, which determines its center and radius exactly. It is the same circle under any cutoffs, unlike its position in the generation order. Rounded positions are never used to identify circles. Replacements are computed in checked 64-bit integer arithmetic and refused beyond ±2⁵³, so they reach the page exactly as float64 values. With depth at most 12, the largest curvature is far below that range: each replacement is at most seven times the largest of its four inputs.
+
+**Generation.** The packing grows breadth-first over Descartes quadruples, starting from the seed. Each quadruple is expanded by replacing its circles in index order 0–3, skipping the index whose replacement produced it, which would only restore its parent quadruple. A replacement fills one curvilinear triangular gap bounded by three mutually tangent circles; each new circle creates three new gaps, so each gap is met once. The new circle's **generating triple** is the three circles it was placed among, in quadruple order, and its **opposite** is the replaced circle on the gap's other side. A circle's generation is one more than its quadruple's; the seed is generation 0. Circles are numbered in this order. The generator also keeps every identity it has admitted and would skip a repeated circle, counting it; in exact arithmetic, the tree never produces one. The four seed circles have no generating triple; they are explained as the seed, not given a fabricated ancestry. The order and parentage are deterministic.
+
+**Cutoffs.** A candidate is admitted when, in order:
+
+1. its radius `1/b` is at least the **minimum radius**, in model units, `0 < r_min ≤ 1`; otherwise its gap is counted under radius;
+2. its generation is at most the **depth**, `0–12`; otherwise its gap is counted under depth;
+3. fewer than the **circle limit**, `4–5,000` circles including the seeds, have been admitted; otherwise generation stops.
+
+Every circle inside a gap lies in that gap and is smaller than the circle that fills it, so a radius cutoff leaves out exactly the circles below the minimum radius, given enough depth. Near points of tangency, chains of circles shrink only quadratically with generation, and depth can stop them first. Generation also stops after examining 20,000 candidate gaps. With the circle limit this cannot be reached: each admitted circle adds at most three candidates. The result reports the gaps left unfilled by radius and by depth, and whether the circle limit or the work limit stopped generation, with the number of quadruples left unexpanded. A count-limited packing has an incomplete last generation and is not symmetric. The four seed circles are always present.
+
+**Finiteness.** The mathematical packing has infinitely many circles. The garden draws a finite subset and states its cutoffs outside the drawing. Zooming enlarges the same circles; this release does not generate finer circles for the view, and it does not animate.
+
+**Selection.** A pointer chooses a circle arithmetically. Inside a packing circle (`b > 0`) it chooses that circle: every other circle lies outside it, so no other boundary is nearer. Elsewhere it chooses the nearest drawn boundary within a screen tolerance, the smaller circle on a tie, and otherwise nothing. The enclosing circle is chosen only near its boundary.
+
+The tests check, on every returned circle and independently of the recurrence: Descartes' identity in exact integers for curvatures and complex weighted centers, on both the circle's quadruple and the quadruple it replaced in; tangency to each generator with a scale-aware residual, internal for the enclosing circle; containment; disjoint interiors; and distinct identities. They also check hand-worked early circles, such as curvature 15 at `(0, 4/15)` and curvature 6 at `(±1/2, 2/3)`, the completeness of a radius-limited packing through its mirror symmetry, each cutoff's report, the circle counts per generation, and deterministic repetition.
+
 ## Finite engravings
 
 A finite engraving draws `n` ordinary studies that differ in one scalar `p`: a point source's polar `θ` or radius `r`, its Cartesian `x` or `y`, a pedal-family pole's `x` or `y`, or the shape parameter `a` where the study's expressions use it. It is a finite overlay, not an envelope or a limit as `n` grows: each member is the complete construction at its own value, computed by the same evaluator, samples, refinement and gaps as the study alone, and nothing is interpolated between members. Each member keeps its own singularities, gaps and unavailable regions; paths of different members are never joined.
