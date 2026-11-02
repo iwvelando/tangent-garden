@@ -66,7 +66,7 @@ type Overlay = {
     via: "keyboard" | "pointer",
   ) => void;
 };
-type EntryKind = "curve" | "loom" | "garden";
+type EntryKind = "curve" | "loom" | "garden" | "lace";
 
 export function ExampleGallery({
   examples,
@@ -78,6 +78,7 @@ export function ExampleGallery({
   onBrowse,
   looms,
   gardens,
+  laces,
 }: {
   examples: Example[];
   // null while the study is the reader's own.
@@ -97,6 +98,8 @@ export function ExampleGallery({
   looms?: Overlay;
   // Examples that open the Apollonian garden over the study, likewise.
   gardens?: Overlay;
+  // Examples that open hyperbolic lace over the study, likewise.
+  laces?: Overlay;
 }) {
   const { scheme } = useTheme();
   const wrap = useRef<HTMLDivElement>(null);
@@ -126,8 +129,13 @@ export function ExampleGallery({
         index,
         kind: "garden" as EntryKind,
       })),
+      ...(laces?.examples ?? []).map((example, index) => ({
+        example,
+        index,
+        kind: "lace" as EntryKind,
+      })),
     ],
-    [examples, looms?.examples, gardens?.examples],
+    [examples, looms?.examples, gardens?.examples, laces?.examples],
   );
   const families = useMemo(
     () => [...new Set(entries.map((e) => e.example.family))],
@@ -198,7 +206,9 @@ export function ExampleGallery({
   };
   const openOverlay = (kind: EntryKind, index: number) => {
     close();
-    (kind === "loom" ? looms : gardens)?.open(
+    (({ loom: looms, garden: gardens, lace: laces }) as const)[
+      kind as "loom" | "garden" | "lace"
+    ]?.open(
       index,
       (returnVia) => {
         via.current = returnVia;
@@ -427,7 +437,7 @@ export function ExampleGallery({
                   <div className="gallery-grid">
                     {g.items.map(({ example, index, kind }) => (
                       <button
-                        key={`${kind[0]}${index}`}
+                        key={`${kind}${index}`}
                         type="button"
                         className="example-card"
                         data-example={kind === "curve" ? index : undefined}
@@ -435,6 +445,7 @@ export function ExampleGallery({
                         data-garden-example={
                           kind === "garden" ? index : undefined
                         }
+                        data-lace-example={kind === "lace" ? index : undefined}
                         data-example-title={example.title}
                         data-example-slug={slug(example.title)}
                         data-fingerprint={example.fingerprint}
@@ -444,7 +455,7 @@ export function ExampleGallery({
                             : undefined
                         }
                         aria-label={example.title}
-                        aria-describedby={`${currentId}-${kind[0]}${index}`}
+                        aria-describedby={`${currentId}-${kind}${index}`}
                         onClick={() =>
                           kind === "curve"
                             ? choose(index)
@@ -462,7 +473,7 @@ export function ExampleGallery({
                         </span>
                         <span
                           className="example-card-caption"
-                          id={`${currentId}-${kind[0]}${index}`}
+                          id={`${currentId}-${kind}${index}`}
                         >
                           {example.caption}
                         </span>

@@ -130,6 +130,12 @@ export class EngineClient {
   ): Promise<import("./garden/model").GardenResult> {
     return (await this.request({ action: "garden", garden: q })).result;
   }
+  // A finite patch of the {7,3} hyperbolic tiling (see engine.LaceResult).
+  async lace(
+    q: import("./lace/model").LaceRequest,
+  ): Promise<import("./lace/model").LaceResult> {
+    return (await this.request({ action: "lace", lace: q })).result;
+  }
   async fitFourier(
     count: number,
     points?: import("./types").Vec[],

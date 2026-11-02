@@ -1,11 +1,11 @@
-import { EngineError, type EngineClient } from "../engine-client";
-import type { GardenRequest, GardenResult } from "./model";
+import { EngineError, type EngineClient } from "./engine-client";
 
-// One numerical request at a time and at most one unsent intent, which a
-// newer request replaces. Only the newest revision may publish; a closed
-// session publishes nothing. The worker keeps no geometry, and the page
-// keeps only the result it shows.
-export class GardenSession {
+// The request lane of a mode that shows one Go result at a time, such as
+// the Apollonian garden and hyperbolic lace: one numerical request at a
+// time and at most one unsent intent, which a newer request replaces. Only
+// the newest revision may publish; a closed session publishes nothing. The
+// worker keeps no geometry, and the page keeps only the result it shows.
+export class LatestSession<Q, R> {
   private client: EngineClient;
   private revision = 0;
   private busy = false;
@@ -13,14 +13,13 @@ export class GardenSession {
   // The worker failed or timed out; the next request starts a fresh one.
   private broken = false;
   private next: (() => Promise<void>) | undefined;
-  constructor(private create: () => EngineClient) {
+  constructor(
+    private create: () => EngineClient,
+    private call: (client: EngineClient, q: Q) => Promise<R>,
+  ) {
     this.client = create();
   }
-  update(
-    q: GardenRequest,
-    show: (r: GardenResult) => void,
-    fail: (e: Error) => void,
-  ) {
+  update(q: Q, show: (r: R) => void, fail: (e: Error) => void) {
     if (this.closed) return;
     const id = ++this.revision;
     const frozen = structuredClone(q);
@@ -30,7 +29,7 @@ export class GardenSession {
         this.broken = false;
       }
       try {
-        const r = await this.client.garden(frozen);
+        const r = await this.call(this.client, frozen);
         if (!this.closed && id === this.revision) show(r);
       } catch (e) {
         // A timeout or a failed worker may still be running or be unusable:

@@ -8,6 +8,7 @@ import {
 import { presets } from "../presets";
 import { loomPresets, presetDefinition } from "../loom/model";
 import { gardenPresets } from "../garden/model";
+import { lacePresets } from "../lace/model";
 import { spatialPresets } from "../spatial/presets";
 import { defaultSight, isPlain } from "../spatial/sight";
 import { composes } from "../spatial/types";
@@ -92,6 +93,17 @@ export const gardenExamples: Example[] = gardenPresets.map((p) => ({
   family: "Circle packings",
   keywords:
     "apollonian circle packing descartes tangent circles rose window garden curvature",
+  fingerprint: fingerprint(p.study),
+}));
+
+// Hyperbolic lace's authored studies likewise open over the study. Their
+// thumbnails are the lace's drawing as it opens.
+export const laceExamples: Example[] = lacePresets.map((p) => ({
+  title: p.title,
+  caption: p.note,
+  family: "Hyperbolic tilings",
+  keywords:
+    "hyperbolic lace tiling tessellation poincare disk heptagon reflection escher circle limit infinity star motif",
   fingerprint: fingerprint(p.study),
 }));
 

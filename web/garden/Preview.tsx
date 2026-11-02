@@ -32,7 +32,8 @@ import { play } from "../playback";
 import { cycles, progressAt, repeatChoices, type Repeat } from "../timing";
 import { loopLead } from "../loop-check";
 import type { GardenEntry } from "./Context";
-import { GardenSession } from "./session";
+import { LatestSession } from "../latest-session";
+import { useCameraMove } from "../camera-move";
 import { GardenDrawing, type GardenDrawingProps } from "./Drawing";
 import { gardenMovie, gardenStill } from "./export";
 import {
@@ -48,13 +49,13 @@ import {
   followView,
   gardenHelp,
   gardenScale,
-  toModel,
   gardenLimits,
   gardenPage,
   gardenRequest,
   identity,
   indexOf,
   type GardenPresentation,
+  type GardenRequest,
   type GardenResult,
   type GardenStudy,
 } from "./model";
@@ -101,7 +102,9 @@ export function GardenPreview({
   const scalarClient = useRef<EngineClient | null>(null),
     generation = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
-  const session = useRef<GardenSession | null>(null);
+  const session = useRef<LatestSession<GardenRequest, GardenResult> | null>(
+    null,
+  );
   const exportGeneration = useRef(0);
   const key = JSON.stringify(gardenRequest(study));
   const current = shown?.key === key;
@@ -173,7 +176,10 @@ export function GardenPreview({
     [],
   );
   useEffect(() => {
-    session.current = new GardenSession(() => new EngineClient());
+    session.current = new LatestSession(
+      () => new EngineClient(),
+      (client, q: GardenRequest) => client.garden(q),
+    );
     scalarClient.current = new EngineClient();
     return () => {
       exportGeneration.current++;
@@ -220,47 +226,12 @@ export function GardenPreview({
       session.current?.invalidate();
     };
   }, [key, !!countError, !!scalarError, scalarPending, attempt, !!film]);
-  // The camera's eased move to a view, or a jump when reduced motion is
-  // requested. It interpolates the model point at the page's center and the
-  // logarithm of zoom, so the zoom changes monotonically and the target
-  // ends exactly where it was aimed. A manual change stops it.
-  const camera = useRef(study.view);
-  camera.current = study.view;
-  const move = useRef(0);
-  const halt = () => {
-    cancelAnimationFrame(move.current);
-    move.current = 0;
-  };
-  useEffect(() => halt, []);
-  const moveTo = (target: PlotCamera) => {
-    halt();
-    const from = camera.current;
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setStudy((s) => ({ ...s, view: target }));
-      return;
-    }
-    const center = { x: gardenPage.width / 2, y: gardenPage.height / 2 };
-    const a = toModel(center, from),
-      b = toModel(center, target);
-    const start = performance.now();
-    const step = (now: number) => {
-      const t = Math.min(1, (now - start) / 250);
-      const e = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
-      let view = target;
-      if (t < 1) {
-        const zoom = from.zoom * (target.zoom / from.zoom) ** e;
-        const k = gardenScale * zoom;
-        view = {
-          zoom,
-          x: -(a.x + (b.x - a.x) * e) * k,
-          y: (a.y + (b.y - a.y) * e) * k,
-        };
-      }
-      setStudy((s) => ({ ...s, view }));
-      move.current = t < 1 ? requestAnimationFrame(step) : 0;
-    };
-    move.current = requestAnimationFrame(step);
-  };
+  // Follow selection's eased camera move, which a manual change stops.
+  const { moveTo, halt } = useCameraMove({
+    view: study.view,
+    setView: (view) => setStudy((s) => ({ ...s, view })),
+    scale: gardenScale,
+  });
   // The reveal's clock. Pause keeps the frozen packing and its time; Stop
   // and any edit to what generation needs end it and restore the static
   // drawing.

@@ -654,7 +654,7 @@ test("restoring the shown cutoffs invalidates a pending replacement", async ({
 
 for (const queued of [false, true])
   test(`invalidating garden work ignores an active refusal with queued intent ${queued}`, async () => {
-    const { GardenSession } = await import("../web/garden/session");
+    const { LatestSession } = await import("../web/latest-session");
     const { gardenSeed } = await import("../web/garden/model");
     const requests: number[] = [];
     let reject!: (e: Error) => void;
@@ -667,7 +667,10 @@ for (const queued of [false, true])
       },
       dispose: () => {},
     };
-    const session = new GardenSession(() => client as any);
+    const session = new LatestSession(
+      () => client as any,
+      (c, q: { depth: number }) => c.garden(q as any),
+    );
     const published: unknown[] = [];
     const show = (r: unknown) => published.push(r);
     const fail = (e: Error) => published.push(e);

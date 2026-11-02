@@ -2184,3 +2184,51 @@ test("Apollonian garden entry, scalar blur, phone controls and return preserve f
   await expect(d).toBeHidden();
   await expect(trigger).toBeFocused();
 });
+
+test("hyperbolic lace entry, scalar blur, phone controls and return preserve focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const trigger = page.getByRole("button", {
+    name: "Browse notebook examples",
+  });
+  await trigger.click();
+  await page.locator('[data-lace-example="1"]').click();
+  const d = page.getByRole("dialog", { name: "Hyperbolic lace" });
+  await expect(d).toHaveAttribute("data-quiet", "");
+  await expect(
+    d.getByRole("button", { name: "Return to study", exact: true }),
+  ).toBeFocused();
+  const art = d.locator("#lace-artwork");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  // On a phone the drawing leads, then the selection's explanation.
+  const drawing = (await art.boundingBox())!;
+  const tile = (await d.getByLabel("Tile", { exact: true }).boundingBox())!;
+  expect(drawing.y + drawing.height).toBeLessThan(tile.y);
+  // A constant typed and left resolves through the shared parser.
+  const star = d.getByLabel("Star point", { exact: true });
+  await star.fill("1/phi^2");
+  await star.blur();
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  // The paired cutoffs keep their clearance from what follows.
+  const pair = (await d.locator(".pair").first().boundingBox())!;
+  const next = (await d.locator(".lace-summary").boundingBox())!;
+  expect(next.y - pair.y - pair.height).toBeGreaterThanOrEqual(0);
+  // A click on a neighbor selects it; Safari does not focus buttons it
+  // clicks, so selection must not depend on focus.
+  const neighbor = d
+    .getByRole("group", { name: "Neighboring tiles" })
+    .getByRole("button", { name: /^Across side 4: Tile/ });
+  const name = (await neighbor.getAttribute("aria-label"))!.split(": ")[1];
+  await neighbor.click();
+  await expect(d.locator(".garden-about h3")).toHaveText(name);
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await expect(d).toBeHidden();
+  await expect(trigger).toBeFocused();
+});

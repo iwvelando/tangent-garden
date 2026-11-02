@@ -3283,6 +3283,111 @@ test("garden links conform settings, selection and view without geometry, and ol
   );
 });
 
+test("lace links conform settings, selection and view without geometry, and older planar links stay unchanged", async () => {
+  const { presetLace, lacePresets } = await import("../web/lace/model");
+  const ordinary = planarPreset(0);
+  const expected = structuredClone(ordinary);
+  // Absent: an older link opens exactly as before, with no lace.
+  assert.equal("lace" in planarStudy(ordinary), false);
+  assert.deepEqual(planarStudy(ordinary), expected);
+  for (let i = 0; i < lacePresets.length; i++) {
+    const lace = { ...presetLace(i), view: { x: 12, y: -4, zoom: 3.5 } };
+    const saved = planarStudy({ ...ordinary, lace });
+    assert.deepEqual(saved.lace, lace);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).lace, lace);
+    assert.deepEqual(
+      Object.keys(planarStudy(decoded.study).lace!).sort(),
+      [
+        "depth",
+        "edges",
+        "maxTiles",
+        "motif",
+        "presentation",
+        "starPoint",
+        "tiling",
+        "view",
+        "weight",
+        ...(lace.selected ? ["selected"] : []),
+      ].sort(),
+    );
+    // A link and a garden link are separate modes on the same study.
+    assert.equal("garden" in saved, false);
+  }
+  const lace = presetLace(1);
+  for (const patch of [
+    { depth: 0 },
+    { depth: 8 },
+    { maxTiles: 1 },
+    { maxTiles: 1000 },
+    { starPoint: 0 },
+    { starPoint: 1 },
+    { selected: [] },
+    { selected: [6, 6, 6, 6, 6, 6, 6, 6] },
+    { edges: false, motif: false },
+  ])
+    assert.deepEqual(
+      planarStudy({ ...ordinary, lace: { ...lace, ...patch } }).lace,
+      { ...lace, ...patch },
+    );
+  for (const [patch, field] of [
+    [{ tiling: "5,4" }, "lace.tiling"],
+    [{ depth: 9 }, "lace.depth"],
+    [{ depth: 2.5 }, "lace.depth"],
+    [{ maxTiles: 0 }, "lace.maxTiles"],
+    [{ maxTiles: 1001 }, "lace.maxTiles"],
+    [{ maxTiles: 10.5 }, "lace.maxTiles"],
+    [{ starPoint: -0.1 }, "lace.starPoint"],
+    [{ starPoint: 1.1 }, "lace.starPoint"],
+    [{ starPoint: "0.3" }, "lace.starPoint"],
+    [{ edges: "yes" }, "lace.edges"],
+    [{ motif: 1 }, "lace.motif"],
+    [{ presentation: "sparse" }, "lace.presentation"],
+    [{ selected: [7] }, "lace.selected"],
+    [{ selected: [1.5] }, "lace.selected"],
+    [{ selected: [0, 1, 2, 3, 4, 5, 6, 0, 1] }, "lace.selected"],
+    [{ selected: "0.3" }, "lace.selected"],
+    [{ view: { x: 0, y: 0, zoom: 1000 } }, "lace.view.zoom"],
+    [{ weight: "heavy" }, "lace.weight"],
+    [{ tiles: [] }, "lace"],
+    [{ follow: "yes" }, "lace.follow"],
+    [
+      { follow: true, viewBeforeFollow: { x: 0, y: 0, zoom: 0 } },
+      "lace.viewBeforeFollow.zoom",
+    ],
+  ] as const) {
+    let error: unknown;
+    try {
+      planarStudy({ ...ordinary, lace: { ...lace, ...patch } });
+    } catch (e) {
+      error = e;
+    }
+    assert.ok(error instanceof LinkError, JSON.stringify(patch));
+    assert.equal(
+      error.field.startsWith(field),
+      true,
+      `${error.field} for ${JSON.stringify(patch)}`,
+    );
+  }
+  // An absent selection is valid: nothing is selected.
+  const { selected: _selected, ...none } = lace;
+  assert.equal(
+    "selected" in planarStudy({ ...ordinary, lace: none }).lace!,
+    false,
+  );
+  // Following, with the view to return to, round-trips; absent, it is off.
+  const following = {
+    ...lace,
+    follow: true,
+    viewBeforeFollow: { x: -40, y: 12, zoom: 2 },
+  };
+  assert.deepEqual(
+    planarStudy({ ...ordinary, lace: following }).lace,
+    following,
+  );
+  assert.equal("follow" in planarStudy({ ...ordinary, lace }).lace!, false);
+});
+
 test("garden detail and reveal settings round-trip, default to the static garden, and refuse invalid values", async () => {
   const { presetGarden, gardenRequest, defaultReveal } =
     await import("../web/garden/model");
