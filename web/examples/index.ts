@@ -191,13 +191,15 @@ export const tesseractExamples: Example[] = tesseractPresets.map((p) => ({
   family:
     p.config.object === "bypass"
       ? "Extra-coordinate routes"
-      : p.config.mode === "reference" || p.config.mode === "lifted"
-        ? "Lifted threads"
-        : p.config.mode === "section"
-          ? "Sections"
-          : p.config.mode === "stereo"
-            ? "Stereographic curves"
-            : "Shadows",
+      : p.config.object === "cell24"
+        ? "Polytope duality"
+        : p.config.mode === "reference" || p.config.mode === "lifted"
+          ? "Lifted threads"
+          : p.config.mode === "section"
+            ? "Sections"
+            : p.config.mode === "stereo"
+              ? "Stereographic curves"
+              : "Shadows",
   keywords: `${p.config.object} 4D ${p.config.mode}${p.repeat === "loop" ? " seamless loop" : p.repeat === "back-and-forth" ? " back and forth" : ""}`,
   fingerprint: fingerprint(p.config),
 }));

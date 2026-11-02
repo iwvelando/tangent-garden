@@ -4350,4 +4350,66 @@ console.log("Curved sections WASM contract passed");
   );
 }
 
+// The self-dual 24-cell: its vertex arrays travel in the typed buffer and
+// its incidence as small index lists.
+{
+  const request = {
+    object: "cell24",
+    mode: "orthographic",
+    angles: [0.3, 0.2, 0.1, 0.7, 0.5, 0.3],
+    cell24: { selected: 0, view: "cell" },
+  };
+  const start = performance.now();
+  const raw = tangentGardenTesseract(JSON.stringify(request));
+  assert.equal(
+    typeof raw,
+    "object",
+    "24-cell vertices must use typed transport",
+  );
+  for (const key of ["source", "rotated", "points"])
+    for (const layer of ["primal", "dual"])
+      assert.equal(
+        JSON.parse(raw.json).polytope[layer][key],
+        null,
+        `${layer}.${key} must be lifted`,
+      );
+  const r = lifted(raw);
+  assert.equal(r.object, "cell24");
+  assert.equal(r.radius, Math.SQRT2);
+  const { primal, dual } = r.polytope;
+  assert.deepEqual(
+    [primal.source.length, primal.edges.length, primal.faces, primal.cells],
+    [24, 96, 96, 24],
+  );
+  assert.deepEqual(
+    [dual.source.length, dual.edges.length, dual.faces, dual.cells],
+    [24, 96, 96, 24],
+  );
+  // Primal cell 0 lies on d₀·x = 1, with d₀ = e_x, its center.
+  assert.deepEqual(dual.source[0], [1, 0, 0, 0]);
+  assert.deepEqual(primal.source[0], [1, 1, 0, 0]);
+  for (const v of r.polytope.cellVertices) assert.equal(primal.source[v][0], 1);
+  for (let i = 0; i < 6; i += 2) {
+    const [a, b] = [
+      primal.points[r.polytope.cellVertices[i]],
+      primal.points[r.polytope.cellVertices[i + 1]],
+    ];
+    for (let j = 0; j < 3; j++)
+      assert.ok(Math.abs((a[j] + b[j]) / 2 - dual.points[0][j]) < 1e-12);
+  }
+  assert.equal(r.polytope.neighbors.length, 8);
+  assert.equal(r.polytope.cellEdges.length, 12);
+  assert.equal(
+    hyperResult(
+      tangentGardenTesseract(
+        JSON.stringify({ ...request, cell24: { selected: 24, view: "cell" } }),
+      ),
+    ).field,
+    "cell24.selected",
+  );
+  console.log(
+    `24-cell WASM: ${r.emittedPoints} vertex shadows; ${(performance.now() - start).toFixed(1)} ms including parse; ${replyBytes(raw)} bytes sent`,
+  );
+}
+
 process.exit(0);

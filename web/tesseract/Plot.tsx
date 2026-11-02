@@ -9,7 +9,7 @@ import {
 } from "./Composition";
 import { exportBaseSize } from "../export-quality";
 import { plotPalette } from "../palette";
-import { Drawing, projector, sampleOf } from "./Drawing";
+import { Drawing, markerShown, projector, sampleOf } from "./Drawing";
 import { objects } from "./objects";
 import {
   initialView,
@@ -89,19 +89,25 @@ export function Plot({
     const x = 500 + (cx - (box.left + box.width / 2)) / scale,
       y = 380 + (cy - (box.top + box.height / 2)) / scale,
       reach = 24 / scale,
-      project = projector(result, config, view);
+      project = projector(result, config, view),
+      selection = objects[config.object].selection,
+      itemOf = selection?.itemOf ?? sampleOf;
     let best: { d: number; sample: number } | undefined;
+    const near: { d: number; sample: number }[] = [];
     const consider = (d: number, sample: number | undefined) => {
-      if (sample !== undefined && d <= reach && (!best || d < best.d))
-        best = { d, sample };
+      if (sample === undefined || d > reach) return;
+      near.push({ d, sample });
+      if (!best || d < best.d) best = { d, sample };
     };
-    if (layers.edges) {
-      for (const m of result.markers ?? []) {
+    // Only drawn markers can be tapped.
+    for (const m of result.markers ?? [])
+      if (markerShown(m, layers)) {
         const [px, py] = project(m.point);
-        consider(Math.hypot(px - x, py - y), sampleOf(m.id, result));
+        consider(Math.hypot(px - x, py - y), itemOf(m.id, result));
       }
+    if (layers.edges) {
       for (const p of result.paths) {
-        const sample = sampleOf(p.source, result);
+        const sample = itemOf(p.source, result);
         if (sample === undefined) continue;
         const q = p.points.map(project);
         for (let i = 0; i < q.length; i++) {
@@ -117,6 +123,19 @@ export function Plot({
           consider(Math.hypot(ax + s * dx - x, ay + s * dy - y), sample);
         }
       }
+    }
+    if (best && selection?.cycleCoincident) {
+      // Items drawn within half a pixel of the nearest coincide: choose
+      // the first after the current selection, in ID order.
+      const current = selection.get(config),
+        n = selection.count(config),
+        tied = near
+          .filter((c) => c.d <= best!.d + 0.5 / scale)
+          .map((c) => c.sample);
+      if (tied.length > 1)
+        return tied.sort(
+          (a, b) => ((a - current - 1 + n) % n) - ((b - current - 1 + n) % n),
+        )[0];
     }
     return best?.sample;
   };
@@ -242,7 +261,7 @@ export function Plot({
             break;
           case "[":
           case "]": {
-            if (!onStep || !result.weave?.correspondence) return;
+            if (!onStep) return;
             e.preventDefault();
             onStep(e.key === "]" ? 1 : -1);
             return;

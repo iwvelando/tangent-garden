@@ -1,5 +1,6 @@
 import { tiered, withMore, type Help } from "../help";
 import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
+import { cellOf } from "./polytope";
 import type {
   Config,
   Object4,
@@ -93,7 +94,7 @@ export type ObjectDescriptor = {
   noun: string;
   modes: readonly Config["mode"][];
   rotations: boolean;
-  controls: "polyhedral" | "curved" | "lift" | "route" | "weave";
+  controls: "polyhedral" | "curved" | "lift" | "route" | "weave" | "polytope";
   linkedViews?: boolean;
   motionChoices?: MotionChoice[] | ((c: Config) => MotionChoice[]);
   // Names of views for this object, where they differ from modes above.
@@ -103,7 +104,7 @@ export type ObjectDescriptor = {
   // is shown while the drawing has such geometry (drawnInks in Drawing.tsx).
   // Without them, the legend names the four coordinate directions.
   legendItems?: LegendItem[] | ((c: Config) => LegendItem[]);
-  parameterKey?: "lift" | "bypass" | "weave";
+  parameterKey?: "lift" | "bypass" | "weave" | "cell24";
   numericFields?: {
     key:
       | keyof Lift
@@ -135,13 +136,19 @@ export type ObjectDescriptor = {
     count: (c: Config) => number;
     get: (c: Config) => number;
     set: (c: Config, index: number) => Config;
+    // The item a drawn source or marker ID selects; the Hopf pair's
+    // samples (Drawing.tsx sampleOf) when absent.
+    itemOf?: (id: string, result: Result) => number | undefined;
+    // Where tapped items coincide on screen, choose the next after the
+    // current selection in ID order, so repeated taps step through them.
+    cycleCoincident?: boolean;
   };
   // Keeps a study valid after a count changes, such as a selection beyond
   // a reduced count.
   reconcile?: (c: Config) => Config;
   choicesFirst?: boolean;
   choices?: {
-    key: "obstacle" | "family" | "path";
+    key: "obstacle" | "family" | "path" | "view";
     label: string;
     help: Help<string>;
     values: { value: string; label: string }[];
@@ -288,6 +295,9 @@ const weaveMotions: MotionChoice[] = [
 type Correspondence = NonNullable<
   NonNullable<Result["weave"]>["correspondence"]
 >;
+// A dual coordinate, a whole number or a half.
+const rational = (n: number) =>
+  (n < 0 ? "−" : "") + (Math.abs(n) === 0.5 ? "½" : String(Math.abs(n)));
 const signed = (n: number, digits: number) =>
   n.toFixed(digits).replace("-", "−");
 function correspondenceReadouts(c: Correspondence) {
@@ -1096,5 +1106,109 @@ export const objects: Record<Object4, ObjectDescriptor> = {
                 ]),
           ]
         : weaveMotions,
+  },
+  cell24: {
+    name: "24-cell and its dual",
+    noun: "24-cell",
+    controls: "polytope",
+    parameterKey: "cell24",
+    choicesFirst: true,
+    modes: ["orthographic"],
+    rotations: true,
+    viewLabel: "View of the 24-cell",
+    selectorNote:
+      "24 vertices · 96 edges · 96 triangles · 24 octahedral cells, and the same for its dual",
+    constructionNumber: "03",
+    radiusFields: [],
+    support: () => Math.SQRT2,
+    familyPassage: false,
+    passageHelp: "",
+    sliceHelp: "",
+    spreadHelp: "",
+    sectionDetail: () => "",
+    legend: "threads",
+    legendItems: [
+      { label: "24-cell", family: 0 },
+      { label: "Selected octahedral cell", family: 1 },
+      { label: "Dual vertices and edges", family: 2 },
+      { label: "The cell's center, a dual vertex", family: 3 },
+    ],
+    choices: [
+      {
+        key: "view",
+        label: "Show",
+        help: tiered(
+          "One cell and its center, or both whole crystals.",
+          "One cell draws its 12 edges, 3 diagonals, its center and the 8 dual edges to neighboring centers. The whole crystal adds every other edge of both, fainter.",
+        ),
+        values: [
+          { value: "cell", label: "One cell and its center" },
+          { value: "crystal", label: "The whole crystal" },
+        ],
+      },
+    ],
+    selection: {
+      label: "Selected cell",
+      help: tiered(
+        "Which of the 24 octahedral cells is selected, from 1 to 24.",
+        "Tap a cell's center, a dual vertex, to select it, or press [ or ] on the drawing. Tapping again where centers coincide steps through them.",
+      ),
+      visible: () => true,
+      count: () => 24,
+      get: (c) => c.cell24!.selected,
+      set: (c, index) => ({ ...c, cell24: { ...c.cell24!, selected: index } }),
+      itemOf: cellOf,
+      cycleCoincident: true,
+    },
+    layerOptions: () => [
+      { key: "edges", label: "24-cell" },
+      { key: "guides", label: "Dual 24-cell" },
+    ],
+    viewingHelp: () =>
+      "Orthographic · tap a center to select its cell · [ and ] step · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom",
+    viewingLabel: () =>
+      "Interactive 24-cell and its dual. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom.",
+    readouts: (r) => {
+      const p = r.polytope;
+      if (!p) return [];
+      return [
+        { label: "Selected cell", value: `${p.selected + 1} of 24` },
+        ...p.dual.source[p.selected].map((n, i) => ({
+          label: `Center ${"xyzw"[i]}`,
+          value: rational(n),
+        })),
+        {
+          label: "Shortest shadow edge",
+          value: p.shadowEdges[0].toFixed(3),
+        },
+        {
+          label: "Longest shadow edge",
+          value: p.shadowEdges[1].toFixed(3),
+        },
+        { label: "Cell edges in 4D", value: "√2 ≈ 1.414" },
+      ];
+    },
+    diagnostics: (r) =>
+      r.polytope
+        ? `Cell ${r.polytope.selected + 1} of 24 and its center, a vertex of the dual${r.polytope.view === "crystal" ? ", in both whole crystals" : ""}.`
+        : "",
+    colorNote: (c) =>
+      `Inks mark roles, not coordinate directions. The cell's three dashed diagonals cross at its center in every shadow. ${c.cell24!.view === "crystal" ? "The rest of both crystals is drawn fainter. " : ""}Coinciding shadows of distinct vertices are not merged.`,
+    explanation: () => [
+      "A crystal and its companion",
+      "The 24-cell's vertices are the permutations of (±1, ±1, 0, 0). Each of its 24 octahedral cells lies in a hyperplane d · x = 1, and these 24 vectors d, ±eᵢ and (±½, ±½, ±½, ±½), are the vertices of its polar dual. So every dual vertex is the center of one cell, where the cell's three diagonals cross. Dual edges join the centers of cells that share a triangle. The dual is the same shape, turned and scaled by 1/√2.",
+      "P = { x : d · x ≤ 1 for every dual vertex d },   cell d = P ∩ { d · x = 1 }",
+    ],
+    title: () => "Tangent Garden — the 24-cell and its dual",
+    limitations:
+      "orthogonal shadow of exact vertex and edge incidence; transparent linework; shadow crossings and coincident vertex shadows are not incidences; no sections or perspective",
+    defaults: () => ({
+      ...structuredClone(defaultConfig),
+      object: "cell24",
+      mode: "orthographic",
+      angles: [0.3, 0.2, 0.1, 0.7, 0.5, 0.3],
+      cell24: { selected: 0, view: "cell" },
+    }),
+    motion: "double",
   },
 };

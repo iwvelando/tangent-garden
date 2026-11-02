@@ -14,6 +14,7 @@ import {
   initialView,
   motions,
   type Bypass,
+  type Cell24,
   type Config,
   type Layers,
   type Lift,
@@ -78,6 +79,14 @@ const weave = {
     petals: { optional: "number" },
   },
 } satisfies SchemaOf<Weave>;
+// The 24-cell: its selected cell, counted from 0, and how much it draws.
+// The worker refuses a fractional cell by name.
+const cell24 = {
+  fields: {
+    selected: { range: [0, 23] },
+    view: { options: { cell: true, crystal: true } },
+  },
+} satisfies SchemaOf<Cell24>;
 const config: SchemaOf<Config> = {
   fields: {
     object: {
@@ -106,6 +115,7 @@ const config: SchemaOf<Config> = {
     lift: { optional: lift },
     bypass: { optional: bypass },
     weave: { optional: weave },
+    cell24: { optional: cell24 },
     angles: { tuple: "number", length: 6 },
     distance: "number",
     slice: "number",

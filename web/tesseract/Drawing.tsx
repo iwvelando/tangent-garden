@@ -3,6 +3,7 @@ import { objects } from "./objects";
 import { axisInks, plotPalette } from "../palette";
 import { svgStroke } from "../line-weight";
 import type { Config, Result, View, Layers, Vec3 } from "./types";
+import { dualRoles } from "./polytope";
 export const inks = axisInks;
 // Index colors separate coincident levels without reusing coordinate inks.
 export const sectionInk = (
@@ -72,10 +73,26 @@ const pathShown = (p: Result["paths"][number], layers: Layers) =>
       : p.guide
         ? layers.guides
         : layers.edges;
-const markerShown = (
+export const markerShown = (
   m: NonNullable<Result["markers"]>[number],
   layers: Layers,
-) => (m.role === "comparison" ? !!layers.comparison : layers.edges);
+) =>
+  m.role === "comparison"
+    ? !!layers.comparison
+    : dualRoles.includes(m.role)
+      ? layers.guides
+      : layers.edges;
+// The 24-cell's roles: the whole crystals faint, the selected cell and its
+// center strong, its diagonals dashed (./polytope.ts).
+const polytopeStroke: Partial<
+  Record<Result["paths"][number]["role"], { width: number; opacity: number }>
+> = {
+  primal: { width: 1.2, opacity: 0.42 },
+  dual: { width: 1.1, opacity: 0.4 },
+  spoke: { width: 2, opacity: 0.95 },
+  cell: { width: 2.8, opacity: 1 },
+  diagonal: { width: 1.4, opacity: 0.9 },
+};
 // Everything a result (and a paired view's companion) draws with these
 // layers, by ink family and role, so that the legend names only what is
 // drawn.
@@ -220,6 +237,28 @@ export function Drawing({
                   })),
               }
             : {}),
+          ...(result.polytope
+            ? {
+                framingRadius: result.radius,
+                polytope: {
+                  view: result.polytope.view,
+                  selectedCell: result.polytope.selected,
+                  center: result.polytope.dual.source[result.polytope.selected],
+                  cellVertices: result.polytope.cellVertices,
+                  neighbors: result.polytope.neighbors,
+                  primal: {
+                    circumradius: result.polytope.primal.circumradius,
+                    edgeLength: result.polytope.primal.edgeLength,
+                  },
+                  dual: {
+                    circumradius: result.polytope.dual.circumradius,
+                    edgeLength: result.polytope.dual.edgeLength,
+                  },
+                  projection: "orthogonal: (x, y, z, w) → (x, y, z)",
+                  ids: "cell24/primal/edge/j, cell24/dual/edge/j, cell24/dual/vertex/k (the center of primal cell k)",
+                },
+              }
+            : {}),
           ...(result.lift
             ? {
                 lift: result.lift,
@@ -262,7 +301,8 @@ export function Drawing({
         />
       ))}
       {mapped.map((p) => {
-        const r = role(p.source);
+        const r = role(p.source),
+          own = polytopeStroke[p.role];
         return (
           <path
             key={`${p.sectionId ?? "base"}/${p.source}/${p.role}/${p.branch}`}
@@ -286,42 +326,51 @@ export function Drawing({
                   : colors[p.family]
             }
             strokeDasharray={
-              p.dashed
-                ? "7 5"
-                : curved &&
-                    (result.sections[sectionIndex(p.sectionId)]?.level ?? 0) < 0
+              p.role === "diagonal"
+                ? "5 6"
+                : p.dashed
                   ? "7 5"
-                  : undefined
+                  : curved &&
+                      (result.sections[sectionIndex(p.sectionId)]?.level ?? 0) <
+                        0
+                    ? "7 5"
+                    : undefined
             }
             {...stroke(
-              r === "moving"
-                ? 3
-                : r === "selected"
-                  ? 2.6
-                  : r === "sample"
-                    ? 1.5
-                    : curved
-                      ? sectionIndex(p.sectionId) === selected
-                        ? 3
-                        : 1.8
-                      : p.guide
-                        ? 1.25
-                        : 2.1,
+              own
+                ? own.width
+                : r === "moving"
+                  ? 3
+                  : r === "selected"
+                    ? 2.6
+                    : r === "sample"
+                      ? 1.5
+                      : curved
+                        ? sectionIndex(p.sectionId) === selected
+                          ? 3
+                          : 1.8
+                        : p.guide
+                          ? 1.25
+                          : 2.1,
             )}
             strokeOpacity={
-              r === "sample"
-                ? 0.72
-                : p.role === "route-context"
-                  ? 0.35
-                  : curved
-                    ? sectionIndex(p.sectionId) === selected
-                      ? 1
-                      : 0.65
-                    : p.guide
-                      ? dark
-                        ? 0.6
-                        : 0.5
-                      : 0.94
+              own
+                ? dark
+                  ? Math.min(1, own.opacity + 0.08)
+                  : own.opacity
+                : r === "sample"
+                  ? 0.72
+                  : p.role === "route-context"
+                    ? 0.35
+                    : curved
+                      ? sectionIndex(p.sectionId) === selected
+                        ? 1
+                        : 0.65
+                      : p.guide
+                        ? dark
+                          ? 0.6
+                          : 0.5
+                        : 0.94
             }
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -362,6 +411,28 @@ export function Drawing({
               </g>
             );
           }
+          if (m.role === "center" || m.role === "vertex")
+            // A dual vertex; the selected cell's center is ringed.
+            return (
+              <g key={m.id} data-marker={m.id} data-role={m.role}>
+                {m.role === "center" && (
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={10}
+                    fill="none"
+                    stroke={colors[m.family]}
+                    {...stroke(1.6)}
+                  />
+                )}
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={m.role === "center" ? 5.5 : 3.4}
+                  fill={colors[m.family]}
+                />
+              </g>
+            );
           return (
             <circle
               key={m.id}
