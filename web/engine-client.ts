@@ -136,6 +136,13 @@ export class EngineClient {
   ): Promise<import("./lace/model").LaceResult> {
     return (await this.request({ action: "lace", lace: q })).result;
   }
+  // The frozen patch moved to one time of a motion: its geometry alone.
+  // The worker keeps one patch to move, the latest frame's.
+  async laceFrame(
+    f: import("./lace/model").LaceFrameRequest,
+  ): Promise<import("./lace/model").LaceFrame> {
+    return (await this.request({ action: "laceFrame", laceFrame: f })).result;
+  }
   async fitFourier(
     count: number,
     points?: import("./types").Vec[],

@@ -1,4 +1,5 @@
 import { tiered } from "../help";
+import type { Repeat } from "../timing";
 import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
 import type { Vec } from "../types";
@@ -11,6 +12,11 @@ export const laceLimits = {
   depth: 8,
   tiles: 1000,
   candidates: 10000,
+  // The isometry's offset |a|, its angles in radians, and the motion's
+  // whole orbits and turns either way (engine.LaceMaxOffset and so on).
+  offset: 0.8,
+  angle: 100,
+  turns: 3,
 } as const;
 export const laceStrokes = 14;
 
@@ -21,7 +27,48 @@ export type LaceRequest = {
   // Where the motif's strands turn, as a fraction of the hyperbolic
   // distance from a tile's center to its corners: 0–1.
   starPoint: number;
+  // Moves the patch; absent, it stays in place.
+  isometry?: LaceIsometry;
 };
+// The disk isometry T(z) = e^{iθ}(z − a)/(1 − āz), a = offset·e^{i·direction}
+// and θ = rotation, angles in radians (engine.LaceIsometry). It brings the
+// point a to the disk's center, then turns the disk.
+export type LaceIsometry = {
+  offset: number;
+  direction: number;
+  rotation: number;
+};
+// The authored closed path from the static isometry (engine.LacePathAt):
+// the offset swells to this farthest offset halfway and returns, while the
+// direction makes whole orbits and the rotation whole turns.
+export type LaceMotion = {
+  offset: number;
+  orbits: number;
+  turns: number;
+};
+export type LaceCoverage = { radius: number; distance: number };
+export type LaceFrameRequest = {
+  lace: LaceRequest;
+  motion: LaceMotion;
+  progress: number;
+};
+// A moved patch's geometry alone (engine.LaceFrame).
+export type LaceFrame = Pick<
+  LaceResult,
+  | "center"
+  | "transform"
+  | "vertex"
+  | "edgeCenter"
+  | "edgeRadius"
+  | "edgeStraight"
+  | "arcStart"
+  | "arcEnd"
+  | "arcCenter"
+  | "arcRadius"
+  | "arcStraight"
+  | "isometry"
+  | "coverage"
+> & { progress: number };
 // Parallel arrays in model units, the rim being the unit circle; see
 // engine.LaceResult. Tiles are in breadth-first order, tile 0 the seed.
 export type LaceResult = {
@@ -58,6 +105,10 @@ export type LaceResult = {
   circumradius: number;
   apothem: number;
   sideLength: number;
+  // The isometry that placed the patch, and how far about the disk's
+  // center it is complete under it.
+  isometry: LaceIsometry;
+  coverage: LaceCoverage;
 };
 export type LacePresentation = "complete" | "selected";
 // A tile's address: the sides crossed from the center tile, each numbered
@@ -75,6 +126,27 @@ export type LaceStudy = Omit<LaceRequest, "tiling"> & {
   // following is turned off; both absent while off.
   follow?: boolean;
   viewBeforeFollow?: PlotCamera;
+  // The motion's path and timing; absent, defaultLaceMotion.
+  motion?: LaceStudyMotion;
+};
+export type LaceStudyMotion = LaceMotion & {
+  duration: number;
+  repeat: Repeat;
+};
+
+// The identity isometry: the patch as generated.
+export const centered: LaceIsometry = { offset: 0, direction: 0, rotation: 0 };
+// An isometry with no offset and no rotation leaves every point where it
+// is, whatever its direction; Go reproduces the unmoved patch exactly.
+export const isIdentity = (iso: LaceIsometry | undefined) =>
+  !iso || (iso.offset === 0 && iso.rotation === 0);
+// A glide along the direction, out to 0.6 and back, looping every 12 s.
+export const defaultLaceMotion: LaceStudyMotion = {
+  offset: 0.6,
+  orbits: 0,
+  turns: 0,
+  duration: 12,
+  repeat: "loop",
 };
 
 export const laceRequest = (s: LaceStudy): LaceRequest => ({
@@ -82,7 +154,14 @@ export const laceRequest = (s: LaceStudy): LaceRequest => ({
   depth: s.depth,
   maxTiles: s.maxTiles,
   starPoint: s.starPoint,
+  ...(s.isometry && { isometry: { ...s.isometry } }),
 });
+// A frame's geometry on its frozen patch: the patch's tiles and incidence
+// with the frame's positions.
+export function movedResult(source: LaceResult, frame: LaceFrame): LaceResult {
+  const { progress: _, ...geometry } = frame;
+  return { ...source, ...geometry };
+}
 
 export const defaultLace: LaceStudy = {
   tiling: laceTiling,
@@ -111,6 +190,28 @@ export const lacePresets = [
     study: {
       ...defaultLace,
       selected: [4, 0, 3],
+    },
+  },
+  // The signature motion. Tile 24 (address 4, 6) lies beyond the center
+  // tile's corner at direction −π/14, a mirror line of the tiling, at
+  // Euclidean radius 0.71814307181038606. Gliding the disk out to that
+  // offset along the mirror brings the tile to the center halfway, drawn at
+  // full size, and carries it back to its place: the picture stays
+  // symmetric about the mirror throughout. It opens still and unmoved.
+  {
+    title: "A tile glides to the center and back",
+    note: "A disk isometry draws one small tile in to the middle along a mirror line, then lets it flow out again",
+    study: {
+      ...defaultLace,
+      selected: [4, 6],
+      isometry: { offset: 0, direction: -Math.PI / 14, rotation: 0 },
+      motion: {
+        offset: 0.71814307181038606,
+        orbits: 0,
+        turns: 0,
+        duration: 10,
+        repeat: "loop",
+      },
     },
   },
 ] as const satisfies readonly {
@@ -291,6 +392,14 @@ export const addressText = (a: LaceAddress) =>
   a.length ? a.map((k) => k + 1).join(" → ") : "none";
 // Hyperbolic distance from the origin, 2 artanh |z|.
 export const fromCenter = (v: Vec) => 2 * Math.atanh(Math.hypot(v.x, v.y));
+// Hyperbolic distance between two points of the disk,
+// 2 asinh(|z − w| / √((1 − |z|²)(1 − |w|²))).
+export const between = (z: Vec, w: Vec) =>
+  2 *
+  Math.asinh(
+    Math.hypot(z.x - w.x, z.y - w.y) /
+      Math.sqrt((1 - z.x * z.x - z.y * z.y) * (1 - w.x * w.x - w.y * w.y)),
+  );
 // How large a tile is drawn, relative to the center tile.
 export const drawnShare = (r: LaceResult, i: number) =>
   reach(r, i) / r.vertexRadius;
@@ -301,7 +410,16 @@ const percent = (v: number) =>
 export function explain(r: LaceResult, i: number) {
   const d = r.depth[i];
   const side = r.sideLength.toFixed(3);
-  const facts = `Depth ${d} · center (${r.center[i].x.toFixed(4)}, ${r.center[i].y.toFixed(4)}) · hyperbolic distance ${fromCenter(r.center[i]).toFixed(3)} from the center · drawn ${percent(drawnShare(r, i))} of the center tile's size`;
+  // A coordinate that rounds to zero reads 0.0000, never −0.0000, as a
+  // tile carried to the center does.
+  const fixed = (v: number) => (+v.toFixed(4) || 0).toFixed(4);
+  const at = `(${fixed(r.center[i].x)}, ${fixed(r.center[i].y)})`;
+  // Moved, the center tile no longer lies at the disk's center, so the
+  // distance from it, which the isometry keeps, is named apart from the
+  // distance from the disk's center, which it changes.
+  const facts = isIdentity(r.isometry)
+    ? `Depth ${d} · center ${at} · hyperbolic distance ${fromCenter(r.center[i]).toFixed(3)} from the center · drawn ${percent(drawnShare(r, i))} of the center tile's size`
+    : `Depth ${d} · drawn at ${at} · hyperbolic distance ${between(r.center[0], r.center[i]).toFixed(3)} from the center tile and ${fromCenter(r.center[i]).toFixed(3)} from the disk's center · drawn ${percent(drawnShare(r, i))} of a tile's size at the disk's center`;
   if (i === 0)
     return {
       facts,
@@ -338,6 +456,14 @@ export function cutoffSummary(r: LaceResult, q: LaceRequest) {
       `${tiles(r.omitted.precision)} too near the rim to place reliably`,
   ].filter(Boolean);
   if (cut.length) parts.push(`Left out: ${cut.join("; ")}.`);
+  // Moved off center, the patch's finite edge nears the disk's center on
+  // one side: say how far it is complete about the center.
+  if (r.isometry.offset > 0)
+    parts.push(
+      r.coverage.radius > 0
+        ? `Moved off center, it is complete only to radius ${r.coverage.radius.toFixed(3)} about the disk's center (hyperbolic distance ${r.coverage.distance.toFixed(2)}); beyond, the tiling goes on but this finite patch stops.`
+        : "Moved off center, the disk's center lies beyond the patch.",
+    );
   const stopped =
     r.stopped === "count"
       ? `Stopped at the ${number(q.maxTiles)}-tile limit with ${tiles(r.pending)} unexpanded, so depth ${deepest} is incomplete.`
@@ -366,7 +492,41 @@ export const laceHelp = {
     "Show every tile, or only the selected tile and those crossed to reach it.",
   follow: tiered(
     "Center each newly selected tile, zoomed to a quarter of the drawing's height.",
-    "Pan and zoom freely while following; the next selection frames again. Turning this off returns to the view from before you turned it on. With reduced motion requested, the view moves at once.",
+    "Pan and zoom freely while following; the next selection frames again. Turning this off returns to the view from before you turned it on. With reduced motion requested, the view moves at once. The camera moves only when you select: while the disk moves, it holds still.",
+  ),
+  offset: tiered(
+    `Brings the point this far out to the middle: 0–${laceLimits.offset}.`,
+    "In model units, where the rim has radius 1; 0.8 is hyperbolic distance 2.2. The rim stays put while the tiles move through it, each keeping its hyperbolic size, unlike zoom.",
+  ),
+  direction: tiered(
+    "Which way that point lies, in radians counterclockwise from the right.",
+    `−${laceLimits.angle}–${laceLimits.angle} radians; constants such as pi/7 work. It is also the line the motion glides along.`,
+  ),
+  rotation: tiered(
+    "Turns the disk about its center, in radians counterclockwise.",
+    `−${laceLimits.angle}–${laceLimits.angle} radians, applied after the offset, so the point brought to the middle stays there.`,
+  ),
+  motionOffset: tiered(
+    `The offset reached halfway through the motion: 0–${laceLimits.offset}.`,
+    "The offset eases from the isometry's to this and back, while the direction orbits. The motion starts and ends at the isometry, the same tiles throughout, so every loop is seamless.",
+  ),
+  orbits: tiered(
+    `Whole turns of the direction: −${laceLimits.turns}–${laceLimits.turns}.`,
+    "With 0, the lace glides out and back along one line through the center; otherwise the point at the middle circles the disk.",
+  ),
+  turns: tiered(
+    `Whole turns of rotation: −${laceLimits.turns}–${laceLimits.turns}.`,
+    "The disk turns about its center at a steady rate, after the offset.",
+  ),
+  progress:
+    "Seek the motion by its time; the same time always shows the same frame.",
+  duration: tiered(
+    "Seconds for the whole motion: 0.1–3,600.",
+    "Export makes at most 7,200 frames.",
+  ),
+  repeat: tiered(
+    "Once, loop, or back and forth: every frame returns.",
+    "The motion ends where it starts, with the same tiles, camera and layers, so a loop is seamless. Back and forth plays the motion, then reverses it, within the duration. Repeating playback continues until paused; a repeating export leaves out its last frame, which is its first.",
   ),
   tile: tiered(
     "Choose a tile by its number, in ring order.",

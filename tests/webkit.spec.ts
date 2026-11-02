@@ -2217,9 +2217,33 @@ test("hyperbolic lace entry, scalar blur, phone controls and return preserve foc
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect(d.getByRole("alert")).toHaveCount(0);
   // The paired cutoffs keep their clearance from what follows.
-  const pair = (await d.locator(".pair").first().boundingBox())!;
+  const pair = (await d
+    .locator(".pair")
+    .filter({ has: page.getByLabel("Depth", { exact: true }) })
+    .boundingBox())!;
   const next = (await d.locator(".lace-summary").boundingBox())!;
   expect(next.y - pair.y - pair.height).toBeGreaterThanOrEqual(0);
+  // The motion plays, pauses and stops by clicks alone, which Safari does
+  // not follow with focus; its playback docks within reach.
+  await d.getByRole("button", { name: "Play motion" }).click();
+  const pauseButton = d.getByRole("button", { name: "Pause motion" });
+  await expect(pauseButton).toBeInViewport();
+  await pauseButton.click();
+  await expect(d.getByRole("button", { name: "Resume motion" })).toBeVisible();
+  await d.getByRole("button", { name: "Stop motion" }).click();
+  await expect(d.locator(".garden-view")).not.toHaveAttribute(
+    "data-motion-time",
+    /.*/,
+  );
+  // A constant typed as the isometry's direction and left resolves too.
+  const direction = d.getByLabel("Direction", { exact: true });
+  await direction.fill("pi/2");
+  await direction.blur();
+  await d.getByLabel("Offset", { exact: true }).fill("0.4");
+  await d.getByLabel("Offset", { exact: true }).blur();
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  await expect(d.locator(".lace-summary")).toContainText("Moved off center");
   // A click on a neighbor selects it; Safari does not focus buttons it
   // clicks, so selection must not depend on focus.
   const neighbor = d

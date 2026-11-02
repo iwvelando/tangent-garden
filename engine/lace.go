@@ -15,6 +15,13 @@ const (
 	LaceMaxCandidates = 10000
 	// LaceStrokes is the motif's geodesic segments in each tile.
 	LaceStrokes = 14
+	// LaceMaxOffset bounds the isometry's |a|, the Euclidean distance from
+	// the disk's center of the point it brings there; LaceMaxAngle bounds
+	// its direction and rotation in radians, and LaceMaxTurns the motion's
+	// whole orbits and turns either way.
+	LaceMaxOffset = 0.8
+	LaceMaxAngle  = 100
+	LaceMaxTurns  = 3
 )
 
 // LaceRequest asks for a finite patch of the {7,3} tiling of the Poincaré
@@ -26,6 +33,38 @@ type LaceRequest struct {
 	Depth     int     `json:"depth"`
 	MaxTiles  int     `json:"maxTiles"`
 	StarPoint float64 `json:"starPoint"`
+	// Isometry moves the generated patch; absent, it stays in place.
+	Isometry *LaceIsometry `json:"isometry,omitempty"`
+}
+
+// LaceIsometry is the orientation-preserving disk automorphism
+// T(z) = e^{iθ}(z − a)/(1 − āz) with a = Offset·e^{i·Direction} and
+// θ = Rotation, angles in radians counterclockwise. It brings the point a
+// of the lace to the disk's center, then turns the disk about its center.
+// The zero value is the identity.
+type LaceIsometry struct {
+	Offset    float64 `json:"offset"`
+	Direction float64 `json:"direction"`
+	Rotation  float64 `json:"rotation"`
+}
+
+// LaceMotion is the authored closed path from a static isometry: the
+// offset swells to Offset halfway and returns, while the direction makes
+// Orbits whole turns about the center and the rotation Turns whole turns
+// (see LacePathAt).
+type LaceMotion struct {
+	Offset float64 `json:"offset"`
+	Orbits int     `json:"orbits"`
+	Turns  int     `json:"turns"`
+}
+
+// LaceCoverage is how far from the disk's center the finite patch is
+// complete: the radius of the largest disk about the center inside its
+// tiles, in model units and as hyperbolic distance. Both are zero when
+// the center lies outside the patch.
+type LaceCoverage struct {
+	Radius   float64 `json:"radius"`
+	Distance float64 `json:"distance"`
 }
 
 // LaceOmitted counts distinct candidate tiles left out: beyond the depth, or
@@ -93,6 +132,10 @@ type LaceResult struct {
 	Circumradius float64 `json:"circumradius"`
 	Apothem      float64 `json:"apothem"`
 	SideLength   float64 `json:"sideLength"`
+	// The isometry that placed the patch (the identity when unmoved) and
+	// the patch's coverage about the disk's center under it.
+	Isometry LaceIsometry `json:"isometry"`
+	Coverage LaceCoverage `json:"coverage"`
 }
 
 // The near-rim precision policy (docs/mathematics.md, Hyperbolic lace). A
@@ -109,11 +152,18 @@ type laceLimits struct {
 	precision         lacePrecision
 }
 
+// ComputeLace generates the patch and places it under the request's
+// isometry, or in place when there is none.
 func ComputeLace(q LaceRequest) (LaceResult, error) {
-	if err := q.validate(); err != nil {
+	src, err := NewLaceSource(q)
+	if err != nil {
 		return LaceResult{}, err
 	}
-	return computeLace(q, laceLimits{q.Depth, LaceMaxCandidates, lacePolicy}), nil
+	var iso LaceIsometry
+	if q.Isometry != nil {
+		iso = *q.Isometry
+	}
+	return src.result(iso)
 }
 
 func (q LaceRequest) validate() error {
@@ -128,6 +178,35 @@ func (q LaceRequest) validate() error {
 	}
 	if !finite(q.StarPoint) || q.StarPoint < 0 || q.StarPoint > 1 {
 		return fieldErr("starPoint", "star point must be 0–1")
+	}
+	if q.Isometry != nil {
+		return q.Isometry.validate()
+	}
+	return nil
+}
+
+func (iso LaceIsometry) validate() error {
+	if !finite(iso.Offset) || iso.Offset < 0 || iso.Offset > LaceMaxOffset {
+		return fieldErr("isometry.offset", "offset must be 0–%v", LaceMaxOffset)
+	}
+	if !finite(iso.Direction) || math.Abs(iso.Direction) > LaceMaxAngle {
+		return fieldErr("isometry.direction", "direction must be −%d–%d radians", LaceMaxAngle, LaceMaxAngle)
+	}
+	if !finite(iso.Rotation) || math.Abs(iso.Rotation) > LaceMaxAngle {
+		return fieldErr("isometry.rotation", "rotation must be −%d–%d radians", LaceMaxAngle, LaceMaxAngle)
+	}
+	return nil
+}
+
+func (m LaceMotion) validate() error {
+	if !finite(m.Offset) || m.Offset < 0 || m.Offset > LaceMaxOffset {
+		return fieldErr("motion.offset", "farthest offset must be 0–%v", LaceMaxOffset)
+	}
+	if m.Orbits < -LaceMaxTurns || m.Orbits > LaceMaxTurns {
+		return fieldErr("motion.orbits", "orbits must be −%d–%d", LaceMaxTurns, LaceMaxTurns)
+	}
+	if m.Turns < -LaceMaxTurns || m.Turns > LaceMaxTurns {
+		return fieldErr("motion.turns", "turns must be −%d–%d", LaceMaxTurns, LaceMaxTurns)
 	}
 	return nil
 }
@@ -327,14 +406,28 @@ func (g diskGrid) near(z complex128, d float64, at func(int) complex128) (int, f
 	return best, bestD
 }
 
+func computeLace(q LaceRequest, limits laceLimits) LaceResult {
+	r, err := generateLace(q, limits).result(LaceIsometry{})
+	if err != nil {
+		// The unmoved patch passed the precision policy as it grew.
+		panic(err)
+	}
+	return r
+}
+
 // Breadth-first over tiles: each admitted tile's neighbor across side j is
 // its transformation followed by the seed's reflection in side j. Sides
 // are taken in index order, skipping the one crossed to reach the tile,
 // whose reflection is the parent. The first transformation to reach a
-// tile is kept; later ones are duplicates.
-func computeLace(q LaceRequest, limits laceLimits) LaceResult {
+// tile is kept; later ones are duplicates. Generation decides the tiles,
+// their incidence and the transformations that place them; place then
+// computes every position from those transformations.
+func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
 	seed := newLaceSeed(q.StarPoint)
-	r := LaceResult{
+	q.Isometry = nil
+	src := &LaceSource{q: q, seed: seed}
+	r := &src.topology
+	*r = LaceResult{
 		Tiling:       q.Tiling,
 		VertexRadius: seed.vertexRadius,
 		Circumradius: seed.circumradius,
@@ -364,15 +457,14 @@ func computeLace(q LaceRequest, limits laceLimits) LaceResult {
 	admit := func(g mobius, corners [7]int, depth, parent, via int) {
 		i := len(tiles)
 		tiles = append(tiles, tile{g, corners, depth, via})
+		src.place = append(src.place, g)
 		c := g.apply(0)
 		centers = append(centers, c)
 		tileGrid.add(c, i)
-		r.Center = append(r.Center, Vec{real(c), imag(c)})
 		r.Depth = append(r.Depth, float64(depth))
 		r.Parent = append(r.Parent, float64(parent))
 		r.Via = append(r.Via, float64(via))
 		r.Reversed = append(r.Reversed, g.odd)
-		r.Transform = append(r.Transform, [4]float64{real(g.a), imag(g.a), real(g.b), imag(g.b)})
 		for k := range 7 {
 			v := corners[k]
 			r.Corners = append(r.Corners, float64(v))
@@ -381,29 +473,16 @@ func computeLace(q LaceRequest, limits laceLimits) LaceResult {
 			key := [2]int{min(a, b), max(a, b)}
 			e, ok := edges[key]
 			if !ok {
+				// The tile that first has an edge places it, as side k.
 				e = len(r.EdgeA)
 				edges[key] = e
-				c, radius, straight := line(g, seed.reflect[k], vertices[a], vertices[b])
+				src.edgeOwner = append(src.edgeOwner, 7*i+k)
 				r.EdgeA = append(r.EdgeA, float64(a))
 				r.EdgeB = append(r.EdgeB, float64(b))
 				r.EdgeTiles = append(r.EdgeTiles, 0)
-				r.EdgeCenter = append(r.EdgeCenter, Vec{real(c), imag(c)})
-				r.EdgeRadius = append(r.EdgeRadius, radius)
-				r.EdgeStraight = append(r.EdgeStraight, straight)
 			}
 			r.EdgeTiles[e]++
 			r.Sides = append(r.Sides, float64(e))
-		}
-		for k := range 7 {
-			m, s, next := g.apply(seed.mid[k]), g.apply(seed.star[k]), g.apply(seed.mid[(k+1)%7])
-			for half, ends := range [2][2]complex128{{m, s}, {s, next}} {
-				c, radius, straight := line(g, seed.strokes[2*k+half], ends[0], ends[1])
-				r.ArcStart = append(r.ArcStart, Vec{real(ends[0]), imag(ends[0])})
-				r.ArcEnd = append(r.ArcEnd, Vec{real(ends[1]), imag(ends[1])})
-				r.ArcCenter = append(r.ArcCenter, Vec{real(c), imag(c)})
-				r.ArcRadius = append(r.ArcRadius, radius)
-				r.ArcStraight = append(r.ArcStraight, straight)
-			}
 		}
 	}
 	// vertex is the stored vertex at z, −1 for a new one, or false when z
@@ -419,12 +498,13 @@ func computeLace(q LaceRequest, limits laceLimits) LaceResult {
 		seedCorners[k] = len(vertices)
 		vertexGrid.add(seed.vertex[k], len(vertices))
 		vertices = append(vertices, seed.vertex[k])
-		r.Vertex = append(r.Vertex, Vec{real(seed.vertex[k]), imag(seed.vertex[k])})
+		src.vertexOwner = append(src.vertexOwner, k)
 		r.VertexTiles = append(r.VertexTiles, 0)
 	}
 	if q.MaxTiles > 0 {
 		admit(identity, seedCorners, 0, -1, -1)
 	}
+grow:
 	for head := 0; head < len(tiles); head++ {
 		t := tiles[head]
 		for j := range 7 {
@@ -433,7 +513,7 @@ func computeLace(q LaceRequest, limits laceLimits) LaceResult {
 			}
 			if r.Processed == limits.candidates {
 				r.Stopped, r.Pending = "candidates", len(tiles)-head
-				return r
+				break grow
 			}
 			r.Processed++
 			g := t.g.then(seed.reflect[j])
@@ -479,21 +559,23 @@ func computeLace(q LaceRequest, limits laceLimits) LaceResult {
 			}
 			if len(tiles) == q.MaxTiles {
 				r.Stopped, r.Pending = "count", len(tiles)-head
-				return r
+				break grow
 			}
 			for k, v := range corners {
 				if v < 0 {
+					// The tile about to be admitted places its new
+					// corners: its number is len(tiles).
 					corners[k] = len(vertices)
 					vertexGrid.add(placed[k], len(vertices))
 					vertices = append(vertices, placed[k])
-					r.Vertex = append(r.Vertex, Vec{real(placed[k]), imag(placed[k])})
+					src.vertexOwner = append(src.vertexOwner, 7*len(tiles)+k)
 					r.VertexTiles = append(r.VertexTiles, 0)
 				}
 			}
 			admit(g, corners, depth, head, j)
 		}
 	}
-	return r
+	return src
 }
 
 // sameCorners reports whether g's corners are, as a set, the stored corners
