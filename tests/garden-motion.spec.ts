@@ -219,7 +219,12 @@ test("seeking, pausing, resuming and stopping the reveal show the same circles a
   await expect
     .poll(async () => Number(await view.getAttribute("data-reveal-time")))
     .toBeGreaterThan(0.33);
+  // A still waits while the reveal plays, as in the other notebooks: each
+  // frame would discard a PNG still being drawn. A paused frame exports.
+  const image = d.getByRole("button", { name: "Export image" });
+  await expect(image).toBeDisabled();
   await d.getByRole("button", { name: "Pause reveal" }).click();
+  await expect(image).toBeEnabled();
   const paused = Number(await view.getAttribute("data-reveal-time"));
   expect(paused).toBeGreaterThan(0.3);
   expect(paused).toBeLessThan(1);

@@ -572,7 +572,7 @@ export function GardenPreview({
             theme.dark,
             theme.scheme,
           ])}
-          disabled={!(ready || (film && valid)) || exporting}
+          disabled={!(ready || (film && valid)) || playing || exporting}
           base={gardenPage}
           onSave={still}
         />
