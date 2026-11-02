@@ -1075,6 +1075,46 @@ test("fields a link predates take the notebook's defaults", async () => {
   );
   pane.config.mode = "base";
   await refused(() => tesseractStudy(pane), "config.mode", /one of/);
+  // The 24-cell: links before it have no cell24 field and open unchanged;
+  // its link restores the selection and view; a 24-cell link without them
+  // opens the object's defaults; a cell beyond 24 or another view is
+  // refused by name, and so is a mode the 24-cell does not offer.
+  assert.equal("cell24" in tesseractStudy(tesseract()).config, false);
+  const cellIndex = tesseractPresets.findIndex(
+    (p) => p.config.object === "cell24",
+  );
+  const cellStudy: TesseractStudy = {
+    ...tesseract(cellIndex),
+    config: {
+      ...tesseract(cellIndex).config,
+      cell24: { selected: 17, view: "crystal" },
+    },
+    view: { yaw: 0.8, pitch: -0.3, zoom: 1.4, panX: 6, panY: 2 },
+  };
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", cellStudy))).study,
+    ),
+    cellStudy,
+  );
+  const bare = structuredClone(cellStudy) as any;
+  delete bare.config.cell24;
+  assert.deepEqual(tesseractStudy(bare).config.cell24, {
+    selected: 0,
+    view: "cell",
+  });
+  for (const [key, value] of [
+    ["selected", 24],
+    ["selected", -1],
+    ["view", "faces"],
+  ] as const) {
+    const bad = structuredClone(cellStudy) as any;
+    bad.config.cell24[key] = value;
+    await refused(() => tesseractStudy(bad), `config.cell24.${key}`);
+  }
+  const sectioned = structuredClone(cellStudy) as any;
+  sectioned.config.mode = "section";
+  await refused(() => tesseractStudy(sectioned), "config.mode", /one of/);
 });
 
 // Links made by version 1 of the format, frozen when it shipped. They must

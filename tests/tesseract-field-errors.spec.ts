@@ -332,6 +332,15 @@ const cases: Case[] = [
     },
     "Fibers on the flower",
   ],
+  // The 24-cell: a fractional cell is refused by the worker, by name, and
+  // its rotation fields are the shared angle controls.
+  [
+    "cell24.selected",
+    object("cell24"),
+    (c) => (c.cell24!.selected = 2.5),
+    "Selected cell",
+  ],
+  ["angles.1", object("cell24"), (c) => (c.angles[1] = 2e6), "xz angle"],
 ];
 
 const study = (config: Config, motion: TesseractStudy["motion"]) =>
@@ -396,6 +405,7 @@ test("every field the engine names has a control", () => {
     paired: "weave",
     lift: "lift",
     route: "bypass",
+    cell24Request: "cell24",
   };
   for (const [, name, path, builder] of rows) {
     const o =

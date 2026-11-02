@@ -79,11 +79,24 @@ export function svgFile(svg: SVGSVGElement, transparent = false): Blob {
   return new Blob(
     [
       new XMLSerializer().serializeToString(
-        transparent ? withoutBackground(svg) : svg,
+        standalone(transparent ? withoutBackground(svg) : svg),
       ),
     ],
     { type: "image/svg+xml" },
   );
+}
+
+// A copy of a drawing without the live page's interaction settings on its
+// root: opened on its own, the root's overflow is the window's, so a hidden
+// overflow would stop a still larger than the window from scrolling, and
+// focus and touch handling belong to the page. Nested panels keep theirs.
+function standalone(svg: SVGSVGElement) {
+  const copy = svg.cloneNode(true) as SVGSVGElement;
+  copy.removeAttribute("overflow");
+  copy.removeAttribute("tabindex");
+  copy.style.removeProperty("touch-action");
+  if (copy.getAttribute("style") === "") copy.removeAttribute("style");
+  return copy;
 }
 
 // A copy of a drawing with its background left out, not painted over: the

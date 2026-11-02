@@ -1,4 +1,5 @@
 import { restore } from "./lifted";
+import { expandPolytope } from "./tesseract/polytope";
 import type {
   RefinementView,
   SpatialConfig,
@@ -243,8 +244,10 @@ export class EngineClient {
   async tesseract(
     config: import("./tesseract/types").Config,
   ): Promise<import("./tesseract/types").Result> {
-    return (await this.request({ action: "tesseract", tesseract: config }))
-      .result;
+    // A 24-cell's paths are drawn from its returned vertex arrays.
+    return expandPolytope(
+      (await this.request({ action: "tesseract", tesseract: config })).result,
+    );
   }
   async scalars(expressions: string[]): Promise<number[]> {
     return (await this.request({ action: "scalars", expressions })).values;

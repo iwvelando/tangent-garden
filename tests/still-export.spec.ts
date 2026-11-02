@@ -227,6 +227,42 @@ for (const setup of setups) {
   });
 }
 
+// An SVG file opened on its own is a document whose root's overflow is the
+// window's: a still larger than the window must scroll, so the root keeps
+// no live drawing's overflow, focus or touch settings.
+for (const setup of [
+  setups[0],
+  setups[1],
+  setups.find((s) => s.name === "4D")!,
+  setups.find((s) => s.name === "4D paired")!,
+])
+  test(`${setup.name}: an SVG still scrolls when opened on its own`, async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(120_000);
+    await setup.open(page);
+    const { bytes } = await save(page, /^SVG/);
+    const text = bytes.toString("utf8");
+    const root = text.slice(0, text.indexOf(">") + 1);
+    expect(root).not.toMatch(/overflow=|tabindex=|touch-action/);
+    const viewer = await context.newPage();
+    try {
+      await viewer.setViewportSize({ width: 800, height: 600 });
+      await viewer.route("http://export.test/still.svg", (route) =>
+        route.fulfill({ body: bytes, contentType: "image/svg+xml" }),
+      );
+      await viewer.goto("http://export.test/still.svg");
+      await viewer.mouse.move(400, 300);
+      await viewer.mouse.wheel(300, 400);
+      await expect
+        .poll(() => viewer.evaluate(() => [scrollX > 0, scrollY > 0]))
+        .toEqual([true, true]);
+    } finally {
+      await viewer.close();
+    }
+  });
+
 // The PNG against the exported SVG rasterized directly at the PNG's size,
 // in a blank page, and against the default PNG enlarged to that size.
 async function againstVector(

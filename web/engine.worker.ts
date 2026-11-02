@@ -313,6 +313,22 @@ self.onmessage = async ({
       const weave = q.object === "weave" ? q.weave : undefined;
       if (q.object === "weave" && !weave)
         throw new Error("Enter spherical weave parameters.");
+      const polytope = q.object === "cell24" ? q.cell24 : undefined;
+      if (q.object === "cell24") {
+        if (!polytope) throw new Error("Choose a cell of the 24-cell.");
+        for (const [i, value] of q.angles.entries())
+          if (!Number.isFinite(value))
+            throw fieldError(
+              `angles.${i}`,
+              `${["xy", "xz", "yz", "xw", "yw", "zw"][i]} angle must be a finite constant.`,
+            );
+        // Go's integer decoding would refuse a fraction without naming it.
+        if (!Number.isInteger(polytope.selected))
+          throw fieldError(
+            "cell24.selected",
+            "Selected cell must be a whole number from 1 to 24.",
+          );
+      }
       // Base sphere and fibers draws one base path: no latitude count or
       // spread, and a whole-number selection.
       const pairedWeave = !!weave && q.mode === "paired";
@@ -477,19 +493,21 @@ self.onmessage = async ({
         if (!Number.isInteger(q.samples))
           throw fieldError("samples", "Thread samples must be a whole number.");
       }
-      const counted: ("count" | "curves" | "samples" | "grid")[] = pairedWeave
-        ? ["curves", "samples"]
-        : weave
-          ? ["count", "curves", "samples"]
-          : lift || route
-            ? ["samples"]
-            : curved
-              ? ["count", "curves", "samples"]
-              : q.mode === "section"
-                ? ["count"]
-                : q.mode === "stereo"
-                  ? ["grid", "samples"]
-                  : ["grid"];
+      const counted: ("count" | "curves" | "samples" | "grid")[] = polytope
+        ? []
+        : pairedWeave
+          ? ["curves", "samples"]
+          : weave
+            ? ["count", "curves", "samples"]
+            : lift || route
+              ? ["samples"]
+              : curved
+                ? ["count", "curves", "samples"]
+                : q.mode === "section"
+                  ? ["count"]
+                  : q.mode === "stereo"
+                    ? ["grid", "samples"]
+                    : ["grid"];
       const counts = counted.map((key) => q[key]);
       const values = weave
         ? [q.clip]
@@ -525,6 +543,9 @@ self.onmessage = async ({
       // Inactive unfinished integer fields must not fail Go JSON decoding.
       const request = {
         object: q.object,
+        ...(polytope
+          ? { cell24: { selected: polytope.selected, view: polytope.view } }
+          : {}),
         ...(weave
           ? {
               weave: {
@@ -566,7 +587,7 @@ self.onmessage = async ({
           : {}),
         mode: q.mode,
         angles: lift || route ? [0, 0, 0, 0, 0, 0] : q.angles,
-        ...(lift || route || weave
+        ...(lift || route || weave || polytope
           ? {}
           : q.mode === "section"
             ? { count: q.count, slice: q.slice, spread: q.spread }

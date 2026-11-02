@@ -234,4 +234,26 @@ export const tesseractPresets: {
     motion: "trace",
     repeat: "loop",
   },
+  // Opens one cell of the 24-cell, its center and the dual edges from it,
+  // turning in a seamless double rotation.
+  {
+    name: "The heart of a cell",
+    detail:
+      "One octahedral cell of the 24-cell. Its three diagonals cross at a vertex of the dual 24-cell: the companion sits at the cell's center, and its edges reach the centers of the eight cells beside it.",
+    config: objects.cell24.defaults(base),
+    motion: "double",
+    repeat: "loop",
+  },
+  // Opens both whole crystals around the same selected cell.
+  {
+    name: "A crystal and its companion",
+    detail:
+      "The 24-cell and its polar dual together, one cell and its center picked out. Every cell of one holds a vertex of the other.",
+    config: {
+      ...objects.cell24.defaults(base),
+      cell24: { selected: 0, view: "crystal" },
+    },
+    motion: "double",
+    repeat: "loop",
+  },
 ];

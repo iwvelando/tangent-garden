@@ -1040,43 +1040,44 @@ export default function TesseractApp({
                               : descriptor.countNote}
                           </p>
                         )}
-                        {selection?.visible(config) && (
-                          <Field
-                            label={selection.label}
-                            help={
-                              typeof selection.help === "function"
-                                ? selection.help(config)
-                                : selection.help
-                            }
-                          >
-                            <input
-                              type="number"
-                              min="1"
-                              max={selection.count(config)}
-                              step="1"
-                              value={selection.get(config) + 1}
-                              onChange={(e) => {
-                                const n = Number(e.target.value);
-                                if (
-                                  !Number.isInteger(n) ||
-                                  n < 1 ||
-                                  n > selection.count(config)
-                                )
-                                  return;
-                                select(n - 1);
-                              }}
-                            />
-                          </Field>
-                        )}
                       </>
                     ) : (
+                      descriptor.sampleLabel &&
                       count(
-                        descriptor.sampleLabel!,
+                        descriptor.sampleLabel,
                         config.samples,
                         8,
                         256,
                         (c, samples) => ({ ...c, samples }),
                       )
+                    )}
+                    {selection?.visible(config) && (
+                      <Field
+                        label={selection.label}
+                        help={
+                          typeof selection.help === "function"
+                            ? selection.help(config)
+                            : selection.help
+                        }
+                      >
+                        <input
+                          type="number"
+                          min="1"
+                          max={selection.count(config)}
+                          step="1"
+                          value={selection.get(config) + 1}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            if (
+                              !Number.isInteger(n) ||
+                              n < 1 ||
+                              n > selection.count(config)
+                            )
+                              return;
+                            select(n - 1);
+                          }}
+                        />
+                      </Field>
                     )}
                     {descriptor.motionEndpointsLabel &&
                       liftFields.some((f) => f.endpoint) && (

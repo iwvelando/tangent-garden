@@ -3,7 +3,13 @@ import type { LineWeight } from "../line-weight";
 import { objects, rotationMotions, type MotionChoice } from "./objects";
 export type Vec3 = [number, number, number];
 export type Object4 =
-  "tesseract" | "ball" | "tube" | "lift" | "bypass" | "weave";
+  "tesseract" | "ball" | "tube" | "lift" | "bypass" | "weave" | "cell24";
+// The 24-cell: the selected octahedral cell (counted from 0), which is
+// also the ID of its center, a vertex of the dual, and how much to draw.
+export type Cell24 = {
+  selected: number;
+  view: "cell" | "crystal";
+};
 export type Weave = {
   family: "tori" | "fibers";
   alpha: number;
@@ -60,6 +66,7 @@ export type Config = {
   lift?: Lift;
   bypass?: Bypass;
   weave?: Weave;
+  cell24?: Cell24;
   angles: [number, number, number, number, number, number];
   distance: number;
   slice: number;
@@ -98,7 +105,13 @@ export type Result = {
       | "window"
       | "moving"
       | "base-curve"
-      | "globe";
+      | "globe"
+      // The 24-cell's roles (./polytope.ts).
+      | "primal"
+      | "dual"
+      | "cell"
+      | "diagonal"
+      | "spoke";
     dashed?: boolean;
     parameters?: number[];
     fourPoints?: [number, number, number, number][];
@@ -139,7 +152,7 @@ export type Result = {
   };
   markers?: {
     id: string;
-    role: "moving" | "comparison" | "sample";
+    role: "moving" | "comparison" | "sample" | "center" | "vertex";
     point: Vec3;
     fourPoint: [number, number, number, number];
     family: number;
@@ -168,6 +181,20 @@ export type Result = {
       aliases?: number[];
     };
   };
+  // The 24-cell and its polar (engine4/cell24.go). Paths and markers are
+  // drawn from these arrays (./polytope.ts).
+  polytope?: {
+    view: Cell24["view"];
+    selected: number;
+    primal: Polytope24;
+    dual: Polytope24;
+    cellVertices: number[];
+    cellEdges: number[];
+    neighbors: number[];
+    neighborEdges: number[];
+    sharedFaces: [number, number, number][];
+    shadowEdges: [number, number];
+  };
   lift?: {
     thickness: number;
     missingRadius: number;
@@ -176,6 +203,16 @@ export type Result = {
     absentSources: number;
     projection: string;
   };
+};
+export type Polytope24 = {
+  circumradius: number;
+  edgeLength: number;
+  source: [number, number, number, number][];
+  rotated: [number, number, number, number][];
+  points: Vec3[];
+  edges: [number, number][];
+  faces: number;
+  cells: number;
 };
 export type View = {
   yaw: number;
