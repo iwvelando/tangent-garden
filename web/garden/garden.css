@@ -243,3 +243,36 @@ html.garden-open {
     width: min(100%, calc((100svh - 90px) * 1000 / 760));
   }
 }
+.garden-reveal-status {
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 0;
+}
+.garden .garden-reveal {
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+@media (max-width: 700px) {
+  /* The reveal's playback docks to the bottom of the screen while active,
+     as every notebook's does; the page keeps room to scroll past it. */
+  .garden .playback.active {
+    z-index: 20;
+  }
+  .garden-layout:has(.playback.active) > aside {
+    padding-bottom: 220px;
+  }
+}
+/* Sideways, the drawing stays beside the controls, so playback stays with
+   them rather than docking over the drawing. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .garden .playback.active {
+    position: static;
+    border: 0;
+    box-shadow: none;
+    background: none;
+    padding: 0;
+  }
+  .garden-layout:has(.playback.active) > aside {
+    padding-bottom: 0;
+  }
+}

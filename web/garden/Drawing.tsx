@@ -9,7 +9,7 @@ import {
   gardenScale,
   gardenZoom,
   hitCircle,
-  presented,
+  revealed,
   type GardenPresentation,
   type GardenResult,
 } from "./model";
@@ -23,6 +23,8 @@ export type GardenDrawingProps = {
   dark: boolean;
   scheme: ColorScheme;
   weight: LineWeight;
+  // A reveal frame: only circles before this breadth-first index are drawn.
+  count?: number;
 };
 const { width, height } = gardenPage;
 export const zoomRange = gardenZoom;
@@ -38,11 +40,15 @@ const ring = (rpx: number, cap: number, floor: number) =>
 function Circles(p: GardenDrawingProps) {
   const palette = plotPalette(p.dark, p.scheme),
     stroke = svgStroke(p.weight);
-  const { result: r, presentation, selected } = p;
+  const { result: r, presentation } = p;
+  const count = p.count ?? r.curvature.length;
+  // A selection not yet revealed is not drawn; its generators come before
+  // it, so they are revealed with it.
+  const selected = p.selected < count ? p.selected : -1;
   const zoom = p.camera.zoom;
   return useMemo(() => {
     const k = gardenScale * zoom;
-    const shown = presented(r, presentation, selected);
+    const shown = revealed(r, presentation, selected, count);
     const highlight = new Map<number, "selected" | "generator" | "seed">();
     if (selected >= 0) {
       highlight.set(selected, "selected");
@@ -84,6 +90,7 @@ function Circles(p: GardenDrawingProps) {
     r,
     presentation,
     selected,
+    count,
     zoom,
     p.weight,
     palette.base,
@@ -211,6 +218,7 @@ export function GardenDrawing(
       data-pan={`${p.camera.x},${p.camera.y}`}
       data-selected={p.selected}
       data-presentation={p.presentation}
+      data-count={p.count}
       tabIndex={p.onCamera ? 0 : undefined}
       onPointerDown={(e) => {
         if (!p.onCamera || e.button !== 0) return;
@@ -247,7 +255,12 @@ export function GardenDrawing(
         const tolerance = (t.type === "touch" ? 18 : 10) * at.ratio;
         const i = hitCircle(
           p.result,
-          presented(p.result, p.presentation, p.selected),
+          revealed(
+            p.result,
+            p.presentation,
+            p.selected,
+            p.count ?? p.result.curvature.length,
+          ),
           { x: at.x, y: at.y },
           p.camera,
           tolerance,

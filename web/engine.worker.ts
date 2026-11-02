@@ -138,6 +138,14 @@ self.onmessage = async ({
       for (const path of ["depth", "maxCircles"] as const)
         if (!Number.isInteger(q[path]))
           throw fieldError(path, "Enter a whole number.");
+      if (q.window)
+        for (const k of ["xMin", "xMax", "yMin", "yMax"] as const)
+          if (!Number.isFinite(q.window[k]))
+            throw fieldError(`window.${k}`, "Enter a finite number.");
+      if (q.keep)
+        for (const k of ["curvature", "x", "y"] as const)
+          if (!Number.isSafeInteger(q.keep[k]))
+            throw fieldError(`keep.${k}`, "Enter a whole number.");
       const start = performance.now();
       const raw = tangentGardenGarden(
         JSON.stringify({
@@ -145,6 +153,17 @@ self.onmessage = async ({
           depth: q.depth,
           minRadius: q.minRadius,
           maxCircles: q.maxCircles,
+          ...(q.window && {
+            window: {
+              xMin: q.window.xMin,
+              xMax: q.window.xMax,
+              yMin: q.window.yMin,
+              yMax: q.window.yMax,
+            },
+          }),
+          ...(q.keep && {
+            keep: { curvature: q.keep.curvature, x: q.keep.x, y: q.keep.y },
+          }),
         }),
       );
       const prepared = performance.now();

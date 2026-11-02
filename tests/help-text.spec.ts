@@ -376,9 +376,15 @@ test("Apollonian garden help fits both tiers", async ({ page }) => {
     "About Circle",
     "About following the selection",
     "About Presentation",
+    "About Animation progress",
+    "About Reveal duration",
+    "About Repeat",
+    "About Export resolution",
+    "About Export quality",
     "About Minimum radius",
     "About Depth",
     "About Circle limit",
+    "About zoom detail",
     "About Line weight",
   ]);
   for (const e of entries) {
@@ -389,7 +395,15 @@ test("Apollonian garden help fits both tiers", async ({ page }) => {
   }
   // The help states the limits the engine enforces.
   const text = entries.map((e) => `${e.brief} ${e.more}`).join(" ");
-  for (const limit of ["above 0, at most 1", "0–12", "4–5,000", "20,000"])
+  for (const limit of [
+    "above 0, at most 1",
+    "0–12",
+    "4–5,000",
+    "20,000",
+    // The reveal's duration, and the zoom past which detail begins.
+    "0.1–3,600",
+    "1.4×",
+  ])
     expect(text).toContain(limit);
 });
 

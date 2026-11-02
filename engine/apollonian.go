@@ -16,6 +16,27 @@ type GardenRequest struct {
 	Depth      int     `json:"depth"`
 	MinRadius  float64 `json:"minRadius"`
 	MaxCircles int     `json:"maxCircles"`
+	// Window, when present, limits generation to the gaps that reach into
+	// this model rectangle; Keep names one circle whose gaps are filled
+	// even outside it. See docs/mathematics.md, Detail for a view.
+	Window *GardenWindow   `json:"window,omitempty"`
+	Keep   *GardenIdentity `json:"keep,omitempty"`
+}
+
+// GardenWindow is a rectangle in model units, its sides parallel to the axes.
+type GardenWindow struct {
+	XMin float64 `json:"xMin"`
+	XMax float64 `json:"xMax"`
+	YMin float64 `json:"yMin"`
+	YMax float64 `json:"yMax"`
+}
+
+// GardenIdentity is a circle's identity: its integer curvature and
+// curvature-weighted center.
+type GardenIdentity struct {
+	Curvature int64 `json:"curvature"`
+	X         int64 `json:"x"`
+	Y         int64 `json:"y"`
 }
 
 // GardenOmitted counts unfilled gaps by the cutoff that left them. A gap
@@ -24,6 +45,7 @@ type GardenRequest struct {
 type GardenOmitted struct {
 	Radius int `json:"radius"`
 	Depth  int `json:"depth"`
+	View   int `json:"view"`
 }
 
 // GardenResult holds circles in breadth-first order as parallel arrays.
@@ -83,7 +105,62 @@ func (q GardenRequest) validate() error {
 	if q.MaxCircles < 4 || q.MaxCircles > GardenMaxCircles {
 		return fieldErr("maxCircles", "circle count must be 4–%d", GardenMaxCircles)
 	}
+	if w := q.Window; w != nil {
+		for _, c := range []struct {
+			name string
+			v    float64
+		}{{"xMin", w.XMin}, {"xMax", w.XMax}, {"yMin", w.YMin}, {"yMax", w.YMax}} {
+			if !finite(c.v) || math.Abs(c.v) > GardenMaxWindow {
+				return fieldErr("window."+c.name, "window sides must be finite, within ±%d", GardenMaxWindow)
+			}
+		}
+		if w.XMax <= w.XMin {
+			return fieldErr("window.xMax", "the window's right side must exceed its left side")
+		}
+		if w.YMax <= w.YMin {
+			return fieldErr("window.yMax", "the window's top must exceed its bottom")
+		}
+	}
 	return nil
+}
+
+// GardenMaxWindow bounds a window's sides in model units: far beyond any
+// view the 0.1–100 zoom range can show of the unit enclosing circle.
+const GardenMaxWindow = 1000
+
+// meets reports whether the disk at (x, y) of radius r reaches the window.
+// The disk is enlarged by a relative margin far above rounding, so a gap
+// that touches the window is never lost; admitting a gap just outside it
+// only adds a circle that is not seen.
+func (w *GardenWindow) meets(x, y, r float64) bool {
+	cx := math.Max(w.XMin, math.Min(w.XMax, x))
+	cy := math.Max(w.YMin, math.Min(w.YMax, y))
+	return math.Hypot(x-cx, y-cy) <= r+1e-9*(1+r)
+}
+
+// dualDisk is the circle through the three points where a, b and c touch.
+// It is orthogonal to all three, and the curvilinear triangle they bound,
+// with every circle inside it, lies within it. Circles j and k touch at
+// (z_j + z_k)/(b_j + b_k), for either sign of curvature. When the contacts
+// are collinear the dual circle is a line, and ok is false: in this packing
+// only the seed's lower gap, between the enclosing circle and the two
+// half-radius circles touching on its diameter.
+func dualDisk(a, b, c gardenCircle) (x, y, r float64, ok bool) {
+	touch := func(p, q gardenCircle) (float64, float64) {
+		s := float64(p.b + q.b)
+		return float64(p.x+q.x) / s, float64(p.y+q.y) / s
+	}
+	ax, ay := touch(a, b)
+	bx, by := touch(b, c)
+	cx, cy := touch(c, a)
+	d := 2 * (ax*(by-cy) + bx*(cy-ay) + cx*(ay-by))
+	if d == 0 {
+		return 0, 0, 0, false
+	}
+	a2, b2, c2 := ax*ax+ay*ay, bx*bx+by*by, cx*cx+cy*cy
+	x = (a2*(by-cy) + b2*(cy-ay) + c2*(ay-by)) / d
+	y = (a2*(cx-bx) + b2*(ax-cx) + c2*(bx-ax)) / d
+	return x, y, math.Hypot(ax-x, ay-y), true
 }
 
 var errGardenRange = errors.New("a circle's curvature exceeds the exact integer range")
@@ -150,6 +227,9 @@ func computeGarden(q GardenRequest, limits gardenLimits) (GardenResult, error) {
 			next := gardenCircle{nb, nx, ny}
 			gen := p.gen + 1
 			switch {
+			case q.Window != nil && !inView(q, a, b, c):
+				r.Omitted.View++
+				continue
 			case 1/float64(nb) < q.MinRadius:
 				r.Omitted.Radius++
 				continue
@@ -170,6 +250,28 @@ func computeGarden(q GardenRequest, limits gardenLimits) (GardenResult, error) {
 		}
 	}
 	return r, nil
+}
+
+// inView reports whether the gap bounded by a, b and c can hold a circle
+// that reaches the window, or holds the kept circle. A packing circle lies
+// in this gap exactly when its center lies in the gap's dual disk: every
+// other circle's interior is disjoint from theirs, the dual disk outside
+// their disks is the gap, and a, b and c, orthogonal to the dual circle,
+// have their centers outside it.
+//
+// A gap whose dual circle is a line is always filled. It is the half of the
+// enclosing disk below the diameter, and only one circle fills it.
+func inView(q GardenRequest, a, b, c gardenCircle) bool {
+	x, y, r, ok := dualDisk(a, b, c)
+	if !ok || q.Window.meets(x, y, r) {
+		return true
+	}
+	k := q.Keep
+	if k == nil || k.Curvature <= 0 {
+		return false
+	}
+	kb := float64(k.Curvature)
+	return math.Hypot(float64(k.X)/kb-x, float64(k.Y)/kb-y) < r
 }
 
 // descartes is 2(a + b + c) − old, the circle (or weighted center) on the

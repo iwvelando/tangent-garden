@@ -24,14 +24,25 @@ import { useTheme } from "../useTheme";
 import { useQuietFocus } from "../quiet-focus";
 import { LegendEntries } from "../Legend";
 import { LineWeightField } from "../LineWeightField";
+import { MotionExportSettings, useMotionExport } from "../MotionExportSettings";
+import { useDisclosure } from "../useDisclosure";
+import { ProgressSlider } from "../ProgressSlider";
+import { revealDrawing } from "../revealDrawing";
+import { play } from "../playback";
+import { cycles, progressAt, repeatChoices, type Repeat } from "../timing";
+import { loopLead } from "../loop-check";
 import type { GardenEntry } from "./Context";
 import { GardenSession } from "./session";
 import { GardenDrawing, type GardenDrawingProps } from "./Drawing";
-import { gardenStill } from "./export";
+import { gardenMovie, gardenStill } from "./export";
 import {
   circleName,
   cutoffSummary,
   defaultGarden,
+  defaultReveal,
+  detailFor,
+  revealCount,
+  revealLoops,
   describeCircle,
   explain,
   followView,
@@ -55,6 +66,9 @@ const labels: Record<string, string> = {
   maxCircles: "Circle limit",
   seed: "Seed",
 };
+// A frozen reveal: the packing it shows, the request that made it, and
+// where its timeline stands, from 0 to 1.
+type Film = { result: GardenResult; key: string; time: number };
 
 export function GardenPreview({
   entry,
@@ -78,7 +92,8 @@ export function GardenPreview({
     key?: string;
   }>({ message: "" });
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
-  const followHelp = useHelp();
+  const followHelp = useHelp(),
+    detailHelp = useHelp();
   // The circle number as typed, while it is being typed.
   const [circleDraft, setCircleDraft] = useState<string>();
   // Asking again after a failure that names no field, such as a timeout.
@@ -89,8 +104,39 @@ export function GardenPreview({
   const session = useRef<GardenSession | null>(null);
   const exportGeneration = useRef(0);
   const key = JSON.stringify(gardenRequest(study));
-  const result = shown?.result;
   const current = shown?.key === key;
+  // While a reveal is playing, paused or being exported, its frozen packing
+  // is drawn; otherwise the shown result. Generation waits for its end.
+  const [film, setFilm] = useState<Film>();
+  const [playing, setPlaying] = useState(false);
+  // A reveal played once to its end leaves its slider at the end.
+  const [finished, setFinished] = useState(false);
+  const [exporting, setExporting] = useState(false),
+    [exportProgress, setExportProgress] = useState(0);
+  const stopClock = useRef<() => void>(() => {}),
+    movieGeneration = useRef(0),
+    exportAbort = useRef<AbortController | null>(null);
+  const exportState = useMotionExport();
+  const exportSection = useDisclosure("garden-export");
+  const view = useRef<HTMLDivElement>(null),
+    playback = useRef<HTMLDivElement>(null);
+  const result = film?.result ?? shown?.result;
+  const reveal = study.reveal ?? defaultReveal;
+  const total = result?.curvature.length ?? 0;
+  const count = film
+    ? revealCount(total, progressAt(film.time, reveal.repeat, "steady"))
+    : undefined;
+  const durationError =
+    !Number.isFinite(reveal.duration) ||
+    reveal.duration < 0.1 ||
+    reveal.duration > 3600
+      ? "Reveal duration must be 0.1–3,600 seconds."
+      : "";
+  const loopError =
+    reveal.repeat === "loop" && result && !revealLoops(total)
+      ? `${loopLead} the reveal starts with the 4 seed circles and ends with all ${total.toLocaleString("en-US")}. Back and forth returns smoothly.`
+      : "";
+  const revealError = durationError || loopError;
   // Whole-number fields are checked here, as the worker would, so the
   // refusal names the field without a round trip.
   const countError = !Number.isInteger(study.depth)
@@ -131,6 +177,9 @@ export function GardenPreview({
     scalarClient.current = new EngineClient();
     return () => {
       exportGeneration.current++;
+      movieGeneration.current++;
+      exportAbort.current?.abort();
+      stopClock.current();
       session.current?.cancel();
       scalarClient.current?.dispose();
       generation.current++;
@@ -147,7 +196,7 @@ export function GardenPreview({
   // Generation follows the settings. Typed edits wait briefly, as the
   // ordinary editor does; the session keeps only the newest unsent intent.
   useEffect(() => {
-    if (current || countError || scalarError || scalarPending) return;
+    if (film || current || countError || scalarError || scalarPending) return;
     const request = gardenRequest(study);
     const timer = setTimeout(
       () =>
@@ -170,7 +219,7 @@ export function GardenPreview({
       clearTimeout(timer);
       session.current?.invalidate();
     };
-  }, [key, !!countError, !!scalarError, scalarPending, attempt]);
+  }, [key, !!countError, !!scalarError, scalarPending, attempt, !!film]);
   // The camera's eased move to a view, or a jump when reduced motion is
   // requested. It interpolates the model point at the page's center and the
   // logarithm of zoom, so the zoom changes monotonically and the target
@@ -212,6 +261,65 @@ export function GardenPreview({
     };
     move.current = requestAnimationFrame(step);
   };
+  // The reveal's clock. Pause keeps the frozen packing and its time; Stop
+  // and any edit to what generation needs end it and restore the static
+  // drawing.
+  const pause = () => {
+    stopClock.current();
+    stopClock.current = () => {};
+    setPlaying(false);
+  };
+  const endFilm = () => {
+    pause();
+    setFilm(undefined);
+    setFinished(false);
+  };
+  // The packing a reveal freezes: the playing one, or the current result.
+  const source = film ?? (ready && shown ? { ...shown, time: 0 } : undefined);
+  const canReveal = !!source && !revealError && !exporting;
+  const start = () => {
+    if (!canReveal || !source) return;
+    const from = finished || source.time >= 1 ? 0 : source.time;
+    const frozen = { ...source, time: from };
+    const { duration, repeat } = reveal;
+    setFilm(frozen);
+    setFinished(false);
+    setPlaying(true);
+    revealDrawing(view.current, playback.current);
+    stopClock.current = play<number>({
+      from,
+      duration: duration * 1000,
+      repeat: cycles(repeat),
+      redraw: true,
+      lanes: [async (p) => p],
+      show: (p) => setFilm((f) => f && { ...f, time: p }),
+      end: () => {
+        stopClock.current = () => {};
+        setPlaying(false);
+        setFilm(undefined);
+        setFinished(true);
+      },
+      fail: () => endFilm(),
+    });
+  };
+  const seek = (time: number) => {
+    if (!source || exporting) return;
+    pause();
+    setFinished(false);
+    setFilm({ ...source, time });
+  };
+  // Generation settings end a reveal before they change.
+  const edit = (change: (s: GardenStudy) => GardenStudy) => {
+    endFilm();
+    setStudy(change);
+  };
+  const setReveal = (change: Partial<typeof reveal>) => {
+    pause();
+    setStudy((s) => ({
+      ...s,
+      reveal: { ...(s.reveal ?? defaultReveal), ...change },
+    }));
+  };
   const select = (i: number, typed = false) => {
     if (!result) return;
     if (!typed) setCircleDraft(undefined);
@@ -246,6 +354,7 @@ export function GardenPreview({
       dark: theme.dark,
       scheme: theme.scheme,
       weight: study.weight,
+      count,
     };
   const metadata = () => ({
     kind: "apollonian-garden",
@@ -255,6 +364,7 @@ export function GardenPreview({
     minRadius: study.minRadius,
     units: "enclosing radius = 1",
     maxCircles: study.maxCircles,
+    ...detailRecord(),
     circles: result?.curvature.length,
     omitted: result?.omitted,
     stopped: result?.stopped || undefined,
@@ -277,10 +387,41 @@ export function GardenPreview({
     theme: theme.dark ? "dark" : "light",
     scheme: theme.scheme,
     weight: study.weight,
+    ...(film && {
+      reveal: {
+        ...revealRecord(),
+        time: film.time,
+        shown: count,
+      },
+    }),
+  });
+  // The detail policy and request behind the drawn packing, when detail
+  // changed them; a reveal records its frozen request.
+  function detailRecord() {
+    const q = JSON.parse(film?.key ?? shown?.key ?? key);
+    const d = study.detail ? detailFor(study) : undefined;
+    return {
+      ...(study.detail && { detail: true }),
+      ...(q.window && {
+        detailRequest: {
+          minRadius: q.minRadius,
+          window: q.window,
+          ...(q.keep && { keep: q.keep }),
+          ...(d && { level: d.level, factor: d.factor }),
+        },
+      }),
+    };
+  }
+  const revealRecord = () => ({
+    duration: reveal.duration,
+    repeat: reveal.repeat,
+    total,
+    membership:
+      "the first n circles in breadth-first order; n = 4 for progress p ≤ 0.06, n = floor(4·(N/4)^s) with s = (p − 0.06)/0.8, n = N for p ≥ 0.86",
   });
   async function still(format: string, settings: Still) {
     const props = drawing();
-    if (!ready || !props) return;
+    if (!(ready || film) || !props) return;
     const id = ++exportGeneration.current;
     try {
       await gardenStill(
@@ -300,6 +441,7 @@ export function GardenPreview({
     exportGeneration.current++;
   }, [
     key,
+    count,
     selected,
     study.presentation,
     study.view,
@@ -307,12 +449,62 @@ export function GardenPreview({
     theme.dark,
     theme.scheme,
   ]);
+  // The movie freezes the packing, view and appearance when it starts;
+  // only Cancel or Return discards it.
+  async function movie() {
+    const props = drawing();
+    if (!canReveal || !source || !props) return;
+    pause();
+    setExporting(true);
+    setExportProgress(0);
+    const id = ++movieGeneration.current;
+    const controller = new AbortController();
+    exportAbort.current = controller;
+    try {
+      await gardenMovie({
+        drawing: { ...props, result: source.result, count: undefined },
+        metadata: {
+          ...metadata(),
+          circles: source.result.curvature.length,
+          reveal: revealRecord(),
+        },
+        reveal: { ...reveal },
+        options: {
+          format: exportState.chosen,
+          fps: exportState.fps,
+          settings: { scale: exportState.scale, quality: exportState.quality },
+          loop: exportState.loop,
+        },
+        signal: controller.signal,
+        current: () => id === movieGeneration.current,
+        progress: setExportProgress,
+      });
+    } catch (e) {
+      if (id === movieGeneration.current && !controller.signal.aborted)
+        setError({ message: (e as Error).message, key });
+    } finally {
+      if (id === movieGeneration.current) setExporting(false);
+    }
+  }
+  function cancelExport() {
+    movieGeneration.current++;
+    exportAbort.current?.abort();
+    setExporting(false);
+  }
   const message = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
-    : (activeError?.message ?? "");
+    : (activeError?.message ?? revealError);
   const title =
     scalarError?.name ??
-    (activeError?.field ? labels[activeError.field] : undefined);
+    (activeError
+      ? activeError.field
+        ? labels[activeError.field]
+        : undefined
+      : durationError
+        ? "Reveal duration"
+        : loopError
+          ? "Repeat"
+          : undefined);
   const [claimed, setClaimed] = useState(false);
   const claim = useCallback((_key: string, on: boolean) => setClaimed(on), []);
   const target = useMemo(
@@ -320,7 +512,10 @@ export function GardenPreview({
     [title, message, claim],
   );
   const props = drawing();
-  const summary = shown && cutoffSummary(shown.result, JSON.parse(shown.key));
+  const summary = film
+    ? cutoffSummary(film.result, JSON.parse(film.key), study.view.zoom)
+    : shown &&
+      cutoffSummary(shown.result, JSON.parse(shown.key), study.view.zoom);
   const about = result && selected >= 0 ? explain(result, selected) : undefined;
   const whole = (
     k: "depth" | "maxCircles",
@@ -336,7 +531,7 @@ export function GardenPreview({
         value={Number.isNaN(study[k]) ? "" : study[k]}
         onChange={(e) => {
           const value = e.currentTarget.valueAsNumber;
-          setStudy((s) => ({ ...s, [k]: value }));
+          edit((s) => ({ ...s, [k]: value }));
         }}
       />
     </Field>
@@ -363,12 +558,13 @@ export function GardenPreview({
         <ShareLink
           notebook="2d"
           study={() => ({ ...entry.study, garden: study })}
-          disabled={!ready}
+          disabled={!valid || !(current || film)}
         />
         <ExportImageMenu
           kind="apollonian-garden"
           revision={JSON.stringify([
             key,
+            count,
             selected,
             study.presentation,
             study.view,
@@ -376,7 +572,7 @@ export function GardenPreview({
             theme.dark,
             theme.scheme,
           ])}
-          disabled={!ready}
+          disabled={!(ready || (film && valid)) || exporting}
           base={gardenPage}
           onSave={still}
         />
@@ -394,11 +590,16 @@ export function GardenPreview({
           <FieldErrorContext.Provider value={target}>
             <div className="garden-layout">
               <main>
-                <div className="garden-view">
+                <div
+                  className="garden-view"
+                  ref={view}
+                  data-reveal-time={film?.time}
+                  data-playing={playing || undefined}
+                >
                   {props ? (
                     <GardenDrawing
                       {...props}
-                      busy={!ready}
+                      busy={!ready && !film}
                       onCamera={manual}
                       onSelect={select}
                     />
@@ -410,8 +611,13 @@ export function GardenPreview({
                 </div>
                 <p className="note garden-gestures">
                   Click or tap near a circle to select it. Drag to pan; scroll
-                  or pinch to zoom, which enlarges these circles without adding
-                  any. Keys: arrows, + / −, Home.{" "}
+                  or pinch to zoom
+                  {study.detail
+                    ? film
+                      ? ", which only enlarges the reveal's circles until it stops"
+                      : ", which grows finer circles for the view"
+                    : ", which enlarges these circles without adding any"}
+                  . Keys: arrows, + / −, Home.{" "}
                   <button
                     type="button"
                     className="text-button"
@@ -593,21 +799,147 @@ export function GardenPreview({
                     then only the enclosing circle is drawn.
                   </p>
                 )}
+                <h3 className="garden-section">Reveal</h3>
+                <div
+                  ref={playback}
+                  id="garden-playback"
+                  className={`playback ${film || playing || exporting ? "active" : ""}`}
+                  role="group"
+                  aria-label="Reveal playback"
+                >
+                  <div className="animation-buttons">
+                    <button
+                      disabled={(!canReveal && !playing) || exporting}
+                      onClick={() => (playing ? pause() : start())}
+                    >
+                      {playing
+                        ? "Pause reveal"
+                        : film && film.time < 1
+                          ? "Resume reveal"
+                          : "Play reveal"}
+                    </button>
+                    <button
+                      disabled={!film && !playing && !exporting && !finished}
+                      onClick={() => (exporting ? cancelExport() : endFilm())}
+                    >
+                      {exporting ? "Cancel export" : "Stop reveal"}
+                    </button>
+                  </div>
+                  <div className="timeline">
+                    <Field
+                      label="Animation progress"
+                      help={gardenHelp.progress}
+                      helpBeforeControl
+                    >
+                      <ProgressSlider
+                        progress={film?.time ?? (finished ? 1 : 0)}
+                        disabled={!source || exporting}
+                        onSeek={seek}
+                      />
+                    </Field>
+                    <p className="note garden-reveal-status" aria-live="off">
+                      {(
+                        (film?.time ?? (finished ? 1 : 0)) *
+                        (durationError ? 0 : reveal.duration)
+                      ).toFixed(1)}{" "}
+                      / {durationError ? "—" : reveal.duration} s
+                      {film && result
+                        ? ` · ${count!.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} circles`
+                        : ""}
+                      {film && !playing && film.time < 1 ? " · Paused" : ""}
+                    </p>
+                  </div>
+                </div>
+                <fieldset disabled={exporting} className="garden-reveal">
+                  <div className="pair">
+                    <Field label="Reveal duration" help={gardenHelp.duration}>
+                      <input
+                        type="number"
+                        min={0.1}
+                        max={3600}
+                        step="any"
+                        value={
+                          Number.isNaN(reveal.duration) ? "" : reveal.duration
+                        }
+                        onChange={(e) =>
+                          setReveal({ duration: e.currentTarget.valueAsNumber })
+                        }
+                      />
+                    </Field>
+                    <Field label="Repeat" help={gardenHelp.repeat}>
+                      <select
+                        value={reveal.repeat}
+                        onChange={(e) =>
+                          setReveal({
+                            repeat: e.currentTarget.value as Repeat,
+                          })
+                        }
+                      >
+                        {repeatChoices.map((c) => (
+                          <option key={c.value} value={c.value}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <MotionExportSettings
+                    state={exportState}
+                    id="garden-export-settings"
+                    cyclic={cycles(reveal.repeat)}
+                    disclosure={exportSection}
+                  />
+                </fieldset>
+                <button
+                  className="animation-export"
+                  disabled={
+                    !canReveal ||
+                    exportState.formats?.[exportState.chosen] !== "yes" ||
+                    Math.ceil(reveal.duration * exportState.fps) > 7200
+                  }
+                  onClick={() => void movie()}
+                >
+                  Export {exportState.text.name} ↗
+                </button>
+                {exporting && (
+                  <p role="status" aria-live="off">
+                    Exporting {exportState.text.short}…{" "}
+                    {Math.round(exportProgress * 100)}%
+                  </p>
+                )}
                 <h3 className="garden-section">Cutoffs</h3>
                 <Field label="Minimum radius" help={gardenHelp.minRadius}>
                   <ScalarInput
                     name="Minimum radius"
                     value={study.minRadius}
-                    onChange={(v) => setStudy((s) => ({ ...s, minRadius: v }))}
+                    onChange={(v) => edit((s) => ({ ...s, minRadius: v }))}
                   />
                 </Field>
                 <div className="pair">
                   {whole("depth", "Depth", 0, gardenLimits.depth)}
                   {whole("maxCircles", "Circle limit", 4, gardenLimits.circles)}
                 </div>
+                <div className="garden-follow">
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={!!study.detail}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        edit(({ detail: _, ...s }) =>
+                          on ? { ...s, detail: true } : s,
+                        );
+                      }}
+                    />
+                    Finer circles when zoomed in
+                  </label>
+                  <HelpToggle topic="zoom detail" help={detailHelp} />
+                </div>
+                <HelpText help={detailHelp}>{gardenHelp.detail}</HelpText>
                 <p
                   className="note garden-summary"
                   data-current={current || undefined}
+                  data-frozen={film ? true : undefined}
                 >
                   {summary ? (
                     <>
@@ -629,10 +961,6 @@ export function GardenPreview({
                   value={study.weight}
                   onChange={(weight) => setStudy((s) => ({ ...s, weight }))}
                 />
-                <p className="note">
-                  This study is still: it does not animate, and zooming does not
-                  generate finer circles.
-                </p>
                 {!claimed && message && (
                   <div className="study-error" role="alert">
                     <p>
