@@ -614,6 +614,9 @@ async function exportMovie(page: Page, d: Locator, scale: string) {
 test("a paused frame's still and the decoded movie's frames show the moved lace at each time", async ({
   page,
 }) => {
+  // Thirteen reference rasters, an encode and a decode: 48 s of the
+  // default 60 on a CI runner, and past it beside a heavy file.
+  test.setTimeout(120_000);
   const d = await openLace(page, glide);
   // 1.4 s at 15 fps, played once: 21 frames at times i/20.
   await d.getByLabel("Duration", { exact: true }).fill("1.4");
