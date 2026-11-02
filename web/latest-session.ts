@@ -4,7 +4,8 @@ import { EngineError, type EngineClient } from "./engine-client";
 // the Apollonian garden and hyperbolic lace: one numerical request at a
 // time and at most one unsent intent, which a newer request replaces. Only
 // the newest revision may publish; a closed session publishes nothing. The
-// worker keeps no geometry, and the page keeps only the result it shows.
+// worker keeps no geometry, except the one frozen patch a lace motion's
+// frame worker moves, and the page keeps only the result it shows.
 export class LatestSession<Q, R> {
   private client: EngineClient;
   private revision = 0;

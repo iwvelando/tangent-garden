@@ -378,7 +378,7 @@ test("arrow keys move between cards", async ({ page }) => {
   await expect(dialog.locator(".example-card:visible").last()).toBeFocused();
   await expect(page.locator(".example-card:focus")).toHaveAttribute(
     "data-lace-example",
-    "1",
+    "2",
   );
 });
 

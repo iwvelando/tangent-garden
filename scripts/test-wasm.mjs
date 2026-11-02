@@ -256,8 +256,73 @@ checkFourierFit();
       JSON.parse(globalThis.tangentGardenLace(JSON.stringify(request))).field,
       field,
     );
+  // A moved patch and the frames of a motion cross the same transport. The
+  // frame at a motion's start is the static moved patch exactly, the frame
+  // reply carries geometry alone, and its isometry is the path's.
+  const isometry = { offset: 0.6, direction: 1, rotation: 0.5 };
+  const motion = { offset: 0.2, orbits: 1, turns: -1 };
+  const moved = lifted(
+    globalThis.tangentGardenLace(JSON.stringify({ ...q, isometry })),
+  );
+  assert.deepEqual(moved.isometry, isometry);
+  assert.deepEqual(moved.depth, r.depth, "moving keeps the tiles");
+  assert.notDeepEqual(moved.vertex, r.vertex);
+  assert.ok(moved.coverage.radius > 0 && moved.coverage.radius < 1);
+  const frameOf = (progress, lace = { ...q, isometry }) =>
+    globalThis.tangentGardenLaceFrame(
+      JSON.stringify({ lace, motion, progress }),
+    );
+  const rawFrame = frameOf(0);
+  assert.equal(typeof rawFrame, "object", "frames must use typed transport");
+  const start = lifted(rawFrame);
+  for (const k of [
+    "center",
+    "transform",
+    "vertex",
+    "edgeCenter",
+    "edgeRadius",
+    "edgeStraight",
+    "arcStart",
+    "arcEnd",
+    "arcCenter",
+    "arcRadius",
+    "arcStraight",
+    "coverage",
+  ])
+    assert.deepEqual(start[k], moved[k], `frame 0's ${k}`);
+  for (const k of ["depth", "parent", "corners", "edgeA"])
+    assert.equal(start[k], undefined, `a frame leaves out ${k}`);
+  assert.deepEqual(lifted(frameOf(1)).vertex, moved.vertex);
+  const half = lifted(frameOf(0.5));
+  assert.equal(half.isometry.offset, motion.offset);
+  // Half an orbit, reported within half a turn of the start.
+  assert.ok(Math.abs(half.isometry.direction - (1 - Math.PI)) < 1e-12);
+  // Another patch's frame replaces the frozen one.
+  const small = lifted(frameOf(0.5, { ...q, depth: 2, isometry }));
+  assert.equal(small.center.length, 29);
+  for (const [field, request] of [
+    ["isometry.offset", { ...q, isometry: { ...isometry, offset: 0.81 } }],
+    ["isometry.rotation", { ...q, isometry: { ...isometry, rotation: 101 } }],
+  ])
+    assert.equal(
+      JSON.parse(globalThis.tangentGardenLace(JSON.stringify(request))).field,
+      field,
+    );
+  for (const [field, request] of [
+    ["motion.turns", { lace: q, motion: { ...motion, turns: 4 }, progress: 0 }],
+    [
+      "motion.offset",
+      { lace: q, motion: { ...motion, offset: 1 }, progress: 0 },
+    ],
+    ["progress", { lace: q, motion, progress: 2 }],
+  ])
+    assert.equal(
+      JSON.parse(globalThis.tangentGardenLaceFrame(JSON.stringify(request)))
+        .field,
+      field,
+    );
   console.log(
-    `Lace: typed hyperbolic tiling bridge passed (${n} tiles, ${replyBytes(raw)} bytes)`,
+    `Lace: typed hyperbolic tiling bridge passed (${n} tiles, ${replyBytes(raw)} bytes; frame ${replyBytes(rawFrame)} bytes)`,
   );
 }
 const config = {

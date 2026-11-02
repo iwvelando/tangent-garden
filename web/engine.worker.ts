@@ -26,6 +26,9 @@ declare const tangentGardenGarden: (
 declare const tangentGardenLace: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
+declare const tangentGardenLaceFrame: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
 declare const tangentGardenSpatialProbe: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
@@ -86,10 +89,12 @@ self.onmessage = async ({
     | "fourier-fit"
     | "loom"
     | "garden"
-    | "lace";
+    | "lace"
+    | "laceFrame";
   loom?: import("./loom/model").LoomRequest;
   garden?: import("./garden/model").GardenRequest;
   lace?: import("./lace/model").LaceRequest;
+  laceFrame?: import("./lace/model").LaceFrameRequest;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
   closed?: boolean;
@@ -177,19 +182,32 @@ self.onmessage = async ({
     if (data.action === "lace") {
       const q = data.lace;
       if (!q) throw new Error("Enter lace settings.");
-      // JSON would turn NaN or infinity into null, which Go reads as zero.
-      if (typeof q.starPoint !== "number" || !Number.isFinite(q.starPoint))
-        throw fieldError("starPoint", "Enter a finite number.");
-      for (const path of ["depth", "maxTiles"] as const)
-        if (!Number.isInteger(q[path]))
-          throw fieldError(path, "Enter a whole number.");
       const start = performance.now();
-      const raw = tangentGardenLace(
+      const raw = tangentGardenLace(JSON.stringify(laceSettings(q)));
+      postLifted(data.id, raw, start);
+      return;
+    }
+    if (data.action === "laceFrame") {
+      const f = data.laceFrame;
+      if (!f) throw new Error("Enter lace settings.");
+      const lace = laceSettings(f.lace);
+      const { offset, orbits, turns } = f.motion;
+      if (typeof offset !== "number" || !Number.isFinite(offset))
+        throw fieldError("motion.offset", "Enter a finite number.");
+      for (const [path, v] of [
+        ["motion.orbits", orbits],
+        ["motion.turns", turns],
+      ] as const)
+        if (!Number.isInteger(v))
+          throw fieldError(path, "Enter a whole number.");
+      if (!Number.isFinite(f.progress))
+        throw fieldError("progress", "Enter a finite number.");
+      const start = performance.now();
+      const raw = tangentGardenLaceFrame(
         JSON.stringify({
-          tiling: q.tiling,
-          depth: q.depth,
-          maxTiles: q.maxTiles,
-          starPoint: q.starPoint,
+          lace,
+          motion: { offset, orbits, turns },
+          progress: f.progress,
         }),
       );
       postLifted(data.id, raw, start);
@@ -1047,6 +1065,30 @@ self.onmessage = async ({
 };
 
 // An error about one field of a study, named by its configuration path.
+// A lace request's known fields, checked before JSON could turn NaN or
+// infinity into null, which Go reads as zero.
+function laceSettings(q: import("./lace/model").LaceRequest) {
+  if (typeof q.starPoint !== "number" || !Number.isFinite(q.starPoint))
+    throw fieldError("starPoint", "Enter a finite number.");
+  for (const path of ["depth", "maxTiles"] as const)
+    if (!Number.isInteger(q[path]))
+      throw fieldError(path, "Enter a whole number.");
+  const out: import("./lace/model").LaceRequest = {
+    tiling: q.tiling,
+    depth: q.depth,
+    maxTiles: q.maxTiles,
+    starPoint: q.starPoint,
+  };
+  if (q.isometry) {
+    const { offset, direction, rotation } = q.isometry;
+    for (const [k, v] of Object.entries({ offset, direction, rotation }))
+      if (typeof v !== "number" || !Number.isFinite(v))
+        throw fieldError(`isometry.${k}`, "Enter a finite number.");
+    out.isometry = { offset, direction, rotation };
+  }
+  return out;
+}
+
 function fieldError(field: string, message: string) {
   return Object.assign(new Error(message), { field });
 }

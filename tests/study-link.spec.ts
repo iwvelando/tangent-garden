@@ -3309,6 +3309,8 @@ test("lace links conform settings, selection and view without geometry, and olde
         "view",
         "weight",
         ...(lace.selected ? ["selected"] : []),
+        ...(lace.isometry ? ["isometry"] : []),
+        ...(lace.motion ? ["motion"] : []),
       ].sort(),
     );
     // A link and a garden link are separate modes on the same study.
@@ -3325,11 +3327,42 @@ test("lace links conform settings, selection and view without geometry, and olde
     { selected: [] },
     { selected: [6, 6, 6, 6, 6, 6, 6, 6] },
     { edges: false, motif: false },
+    // The isometry and motion at their bounds; absent, the lace opens in
+    // place and still (R08.1's links).
+    { isometry: { offset: 0, direction: 0, rotation: 0 } },
+    { isometry: { offset: 0.8, direction: -100, rotation: 100 } },
+    {
+      motion: {
+        offset: 0,
+        orbits: -3,
+        turns: 3,
+        duration: 0.1,
+        repeat: "once",
+      },
+    },
+    {
+      motion: {
+        offset: 0.8,
+        orbits: 3,
+        turns: -3,
+        duration: 3600,
+        repeat: "back-and-forth",
+      },
+    },
   ])
     assert.deepEqual(
       planarStudy({ ...ordinary, lace: { ...lace, ...patch } }).lace,
       { ...lace, ...patch },
     );
+  for (const k of ["isometry", "motion"] as const)
+    assert.equal(k in planarStudy({ ...ordinary, lace }).lace!, false);
+  const motion = {
+    offset: 0.5,
+    orbits: 1,
+    turns: 0,
+    duration: 8,
+    repeat: "loop",
+  };
   for (const [patch, field] of [
     [{ tiling: "5,4" }, "lace.tiling"],
     [{ depth: 9 }, "lace.depth"],
@@ -3355,6 +3388,29 @@ test("lace links conform settings, selection and view without geometry, and olde
       { follow: true, viewBeforeFollow: { x: 0, y: 0, zoom: 0 } },
       "lace.viewBeforeFollow.zoom",
     ],
+    [
+      { isometry: { offset: 0.81, direction: 0, rotation: 0 } },
+      "lace.isometry.offset",
+    ],
+    [
+      { isometry: { offset: -0.1, direction: 0, rotation: 0 } },
+      "lace.isometry.offset",
+    ],
+    [
+      { isometry: { offset: 0, direction: 101, rotation: 0 } },
+      "lace.isometry.direction",
+    ],
+    [
+      { isometry: { offset: 0, direction: 0, rotation: "pi" } },
+      "lace.isometry.rotation",
+    ],
+    [{ isometry: { offset: 0, direction: 0 } }, "lace.isometry.rotation"],
+    [{ motion: { ...motion, offset: 0.9 } }, "lace.motion.offset"],
+    [{ motion: { ...motion, orbits: 4 } }, "lace.motion.orbits"],
+    [{ motion: { ...motion, orbits: 1.5 } }, "lace.motion.orbits"],
+    [{ motion: { ...motion, turns: -3.5 } }, "lace.motion.turns"],
+    [{ motion: { ...motion, duration: 0 } }, "lace.motion.duration"],
+    [{ motion: { ...motion, repeat: "bounce" } }, "lace.motion.repeat"],
   ] as const) {
     let error: unknown;
     try {

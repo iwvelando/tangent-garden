@@ -840,6 +840,29 @@ function laceStudy(value: unknown): LaceStudy {
             fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
           },
         },
+        // Absent in older links, which open the lace in place and still.
+        isometry: {
+          optional: {
+            fields: {
+              offset: { range: [0, laceLimits.offset] },
+              direction: { range: [-laceLimits.angle, laceLimits.angle] },
+              rotation: { range: [-laceLimits.angle, laceLimits.angle] },
+            },
+          },
+        },
+        motion: {
+          optional: {
+            fields: {
+              offset: { range: [0, laceLimits.offset] },
+              orbits: { range: [-laceLimits.turns, laceLimits.turns] },
+              turns: { range: [-laceLimits.turns, laceLimits.turns] },
+              duration: { range: [0.1, 3600] },
+              repeat: {
+                options: { once: true, loop: true, "back-and-forth": true },
+              },
+            },
+          },
+        },
       },
     },
     undefined,
@@ -848,6 +871,12 @@ function laceStudy(value: unknown): LaceStudy {
   for (const k of ["depth", "maxTiles"] as const)
     if (!Number.isInteger(out[k]))
       throw new LinkError(`lace.${k}`, `lace.${k} must be a whole number.`);
+  for (const k of ["orbits", "turns"] as const)
+    if (out.motion && !Number.isInteger(out.motion[k]))
+      throw new LinkError(
+        `lace.motion.${k}`,
+        `lace.motion.${k} must be a whole number.`,
+      );
   out.selected?.forEach((side, i) => {
     if (!Number.isInteger(side))
       throw new LinkError(

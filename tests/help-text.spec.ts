@@ -438,6 +438,17 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
     "About Presentation",
     "About Motif",
     "About Tile sides",
+    "About Animation progress",
+    "About Farthest offset",
+    "About Orbits",
+    "About Turns",
+    "About Duration",
+    "About Repeat",
+    "About Export resolution",
+    "About Export quality",
+    "About Offset",
+    "About Direction",
+    "About Rotation",
     "About Star point",
     "About Depth",
     "About Tile limit",
@@ -451,7 +462,20 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
   }
   // The help states the limits the engine enforces.
   const text = entries.map((e) => `${e.brief} ${e.more}`).join(" ");
-  for (const limit of ["0–8", "1–1,000", "10,000", "(0)", "(1)", "617"])
+  for (const limit of [
+    "0–8",
+    "1–1,000",
+    "10,000",
+    "(0)",
+    "(1)",
+    "617",
+    // The isometry and motion (engine.LaceMaxOffset and so on).
+    "0–0.8",
+    "−100–100 radians",
+    "−3–3",
+    "0.1–3,600",
+    "7,200 frames",
+  ])
     expect(text).toContain(limit);
 });
 
