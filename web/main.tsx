@@ -1,6 +1,8 @@
 import { LoomContext, type LoomEntry } from "./loom/Context";
 import { GardenContext, type GardenEntry } from "./garden/Context";
 import { presetGarden } from "./garden/model";
+import { LaceContext, type LaceEntry } from "./lace/Context";
+import { presetLace } from "./lace/model";
 import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
@@ -46,6 +48,7 @@ import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
 import {
   gardenExamples,
+  laceExamples,
   loomExamples,
   planarExamples,
   planarThumbnail,
@@ -305,6 +308,7 @@ function App({
 }) {
   const loomOwner = useContext(LoomContext);
   const gardenOwner = useContext(GardenContext);
+  const laceOwner = useContext(LaceContext);
   const loomHelp = useHelp();
   // An entry waiting for the study's inputs to settle: the study's own curve
   // from the loom button, or an authored family from the gallery.
@@ -1407,6 +1411,16 @@ function App({
               .querySelector<HTMLButtonElement>(".example-trigger")
               ?.focus({ preventScroll: true }),
         });
+      // So does a lace link's; one mode opens, the garden first.
+      else if (incoming.lace)
+        laceOwner.begin({
+          study: incoming,
+          via: "keyboard",
+          restoreFocus: () =>
+            document
+              .querySelector<HTMLButtonElement>(".example-trigger")
+              ?.focus({ preventScroll: true }),
+        });
     } catch (e) {
       setLinkNotice(
         e instanceof LinkError ? e.message : "This link could not be read.",
@@ -1705,6 +1719,19 @@ function App({
                       study: {
                         ...structuredClone(snapshot()),
                         garden: presetGarden(preset),
+                      },
+                      via,
+                      restoreFocus,
+                    }),
+                }}
+                // Nor does hyperbolic lace.
+                laces={{
+                  examples: laceExamples,
+                  open: (preset, restoreFocus, via) =>
+                    laceOwner.begin({
+                      study: {
+                        ...structuredClone(snapshot()),
+                        lace: presetLace(preset),
                       },
                       via,
                       restoreFocus,
@@ -3006,6 +3033,9 @@ const LoomPreview = lazy(() =>
 const GardenPreview = lazy(() =>
   import("./garden/Preview").then((m) => ({ default: m.GardenPreview })),
 );
+const LacePreview = lazy(() =>
+  import("./lace/Preview").then((m) => ({ default: m.LacePreview })),
+);
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
 type NotebookKind = "2d" | "3d" | "4d";
@@ -3022,8 +3052,10 @@ function Notebook() {
   const [fit, setFit] = useState<FourierFitRequest | null>(null);
   const [loom, setLoom] = useState<LoomEntry | null>(null);
   const [garden, setGarden] = useState<GardenEntry | null>(null);
+  const [lace, setLace] = useState<LaceEntry | null>(null);
   // An overlay study holds the notebooks beneath it inert.
-  const overlay = !!excursion || !!atlas || !!fit || !!loom || !!garden;
+  const overlay =
+    !!excursion || !!atlas || !!fit || !!loom || !!garden || !!lace;
   const [adoptions, setAdoptions] = useState<
     Partial<Record<NotebookKind, AdoptedJourney>>
   >({});
@@ -3035,7 +3067,7 @@ function Notebook() {
       restoreFocus.current = null;
       focus();
     }
-  }, [excursion, atlas, fit, loom, garden]);
+  }, [excursion, atlas, fit, loom, garden, lace]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -3053,6 +3085,7 @@ function Notebook() {
     setFit(null);
     setLoom(null);
     setGarden(null);
+    setLace(null);
     setExcursion(null);
     focusRequest.current = via;
     show(next);
@@ -3079,6 +3112,7 @@ function Notebook() {
       setFit(null);
       setLoom(null);
       setGarden(null);
+      setLace(null);
       show(notebookKind());
     };
     window.addEventListener("popstate", pop);
@@ -3099,6 +3133,7 @@ function Notebook() {
       setFit(null);
       setLoom(null);
       setGarden(null);
+      setLace(null);
       const id = ++links.current;
       let next: { notebook: NotebookKind; link: SharedStudy };
       try {
@@ -3179,6 +3214,29 @@ function Notebook() {
                     onReturn={(via) => {
                       restoreFocus.current = () => garden.restoreFocus(via);
                       setGarden(null);
+                    }}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {lace && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening hyperbolic lace…
+                    </div>
+                  }
+                >
+                  <LacePreview
+                    key={shared["2d"]?.id ?? "local"}
+                    entry={lace}
+                    onReturn={(via) => {
+                      restoreFocus.current = () => lace.restoreFocus(via);
+                      setLace(null);
                     }}
                   />
                 </Suspense>
@@ -3283,11 +3341,13 @@ function Notebook() {
               <div inert={overlay} hidden={mode !== "2d"}>
                 <LoomContext.Provider value={{ begin: setLoom }}>
                   <GardenContext.Provider value={{ begin: setGarden }}>
-                    <App
-                      active={mode === "2d"}
-                      shared={shared["2d"]}
-                      adoption={adoptions["2d"]}
-                    />
+                    <LaceContext.Provider value={{ begin: setLace }}>
+                      <App
+                        active={mode === "2d"}
+                        shared={shared["2d"]}
+                        adoption={adoptions["2d"]}
+                      />
+                    </LaceContext.Provider>
                   </GardenContext.Provider>
                 </LoomContext.Provider>
               </div>

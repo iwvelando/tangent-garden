@@ -23,6 +23,9 @@ declare const tangentGardenLoomPoint: (json: string) => string;
 declare const tangentGardenGarden: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
+declare const tangentGardenLace: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
 declare const tangentGardenSpatialProbe: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
@@ -82,9 +85,11 @@ self.onmessage = async ({
     | "tesseract"
     | "fourier-fit"
     | "loom"
-    | "garden";
+    | "garden"
+    | "lace";
   loom?: import("./loom/model").LoomRequest;
   garden?: import("./garden/model").GardenRequest;
+  lace?: import("./lace/model").LaceRequest;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
   closed?: boolean;
@@ -166,24 +171,28 @@ self.onmessage = async ({
           }),
         }),
       );
-      const prepared = performance.now();
-      if (typeof raw === "string") {
-        const r = JSON.parse(raw);
-        self.postMessage({ id: data.id, ...(r.error ? r : { result: r }) });
-      } else {
-        const { json, lifted } = raw;
-        const bytes =
-          new TextEncoder().encode(json).length + lifted.floats.byteLength;
-        self.postMessage(
-          {
-            id: data.id,
-            result: JSON.parse(json),
-            lifted,
-            timings: { prepare: prepared - start, bytes },
-          },
-          [lifted.floats.buffer],
-        );
-      }
+      postLifted(data.id, raw, start);
+      return;
+    }
+    if (data.action === "lace") {
+      const q = data.lace;
+      if (!q) throw new Error("Enter lace settings.");
+      // JSON would turn NaN or infinity into null, which Go reads as zero.
+      if (typeof q.starPoint !== "number" || !Number.isFinite(q.starPoint))
+        throw fieldError("starPoint", "Enter a finite number.");
+      for (const path of ["depth", "maxTiles"] as const)
+        if (!Number.isInteger(q[path]))
+          throw fieldError(path, "Enter a whole number.");
+      const start = performance.now();
+      const raw = tangentGardenLace(
+        JSON.stringify({
+          tiling: q.tiling,
+          depth: q.depth,
+          maxTiles: q.maxTiles,
+          starPoint: q.starPoint,
+        }),
+      );
+      postLifted(data.id, raw, start);
       return;
     }
     if (data.action === "loom") {
@@ -1040,4 +1049,31 @@ self.onmessage = async ({
 // An error about one field of a study, named by its configuration path.
 function fieldError(field: string, message: string) {
   return Object.assign(new Error(message), { field });
+}
+
+// Posts a lifted reply, the JSON with its arrays in one transferred float64
+// buffer, or a refusal, with the preparation time and size.
+function postLifted(
+  id: number,
+  raw: string | { json: string; lifted: import("./lifted").Lifted },
+  start: number,
+) {
+  const prepared = performance.now();
+  if (typeof raw === "string") {
+    const r = JSON.parse(raw);
+    self.postMessage({ id, ...(r.error ? r : { result: r }) });
+    return;
+  }
+  const { json, lifted } = raw;
+  const bytes =
+    new TextEncoder().encode(json).length + lifted.floats.byteLength;
+  self.postMessage(
+    {
+      id,
+      result: JSON.parse(json),
+      lifted,
+      timings: { prepare: prepared - start, bytes },
+    },
+    [lifted.floats.buffer],
+  );
 }

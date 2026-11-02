@@ -1,6 +1,6 @@
 // Draws the example gallery's thumbnails from the built site: each 2D example
 // as its plot's own SVG (a complex loom example as its image plane, an
-// Apollonian garden as its drawing), and each 3D example as a small WebP per theme, just as
+// Apollonian garden or hyperbolic lace as its drawing), and each 3D example as a small WebP per theme, just as
 // the example first appears. Run `make thumbnails` after adding or changing a
 // preset, look at the gallery, and commit web/examples.
 //
@@ -180,44 +180,50 @@ try {
         await loom.waitFor({ state: "hidden" });
         console.log(`2d ${name}`);
       }
-      // The Apollonian garden's authored studies open over the study too.
-      await button.click();
-      const gardens = await gallery
-        .locator("[data-garden-example]")
-        .evaluateAll((cards) =>
-          cards
-            .map((c) => ({ ...c.dataset }))
-            .sort((a, b) => a.gardenExample - b.gardenExample),
-        );
-      await page.keyboard.press("Escape");
-      for (const example of gardens) {
+      // The Apollonian garden's and hyperbolic lace's authored studies open
+      // over the study too.
+      for (const [kind, title, selector] of [
+        ["garden", "The Apollonian garden", "#garden-artwork"],
+        ["lace", "Hyperbolic lace", "#lace-artwork"],
+      ]) {
         await button.click();
-        await gallery
-          .locator(`[data-garden-example="${example.gardenExample}"]`)
-          .click();
-        await gallery.waitFor({ state: "hidden" });
-        const garden = page.getByRole("dialog", {
-          name: "The Apollonian garden",
-        });
-        await garden
-          .locator("#garden-artwork[aria-busy=false]")
-          .waitFor({ timeout: 60_000 });
-        const name = example.exampleSlug;
-        if (name in recorded["2d"])
-          throw new Error(`Two examples are named ${name}.`);
-        recorded["2d"][name] = example.fingerprint;
-        const svg = await page.evaluate(planarThumbnail, {
-          name,
-          stroke,
-          roles,
-          selector: "#garden-artwork",
-        });
-        writeFileSync(`${out}/2d/${name}.svg`, svg + "\n");
-        await garden
-          .getByRole("button", { name: "Return to study", exact: true })
-          .click();
-        await garden.waitFor({ state: "hidden" });
-        console.log(`2d ${name}`);
+        const overlays = await gallery
+          .locator(`[data-${kind}-example]`)
+          .evaluateAll(
+            (cards, key) =>
+              cards
+                .map((c) => ({ ...c.dataset, index: +c.dataset[key] }))
+                .sort((a, b) => a.index - b.index),
+            `${kind}Example`,
+          );
+        await page.keyboard.press("Escape");
+        for (const example of overlays) {
+          await button.click();
+          await gallery
+            .locator(`[data-${kind}-example="${example.index}"]`)
+            .click();
+          await gallery.waitFor({ state: "hidden" });
+          const dialog = page.getByRole("dialog", { name: title });
+          await dialog
+            .locator(`${selector}[aria-busy=false]`)
+            .waitFor({ timeout: 60_000 });
+          const name = example.exampleSlug;
+          if (name in recorded["2d"])
+            throw new Error(`Two examples are named ${name}.`);
+          recorded["2d"][name] = example.fingerprint;
+          const svg = await page.evaluate(planarThumbnail, {
+            name,
+            stroke,
+            roles,
+            selector,
+          });
+          writeFileSync(`${out}/2d/${name}.svg`, svg + "\n");
+          await dialog
+            .getByRole("button", { name: "Return to study", exact: true })
+            .click();
+          await dialog.waitFor({ state: "hidden" });
+          console.log(`2d ${name}`);
+        }
       }
     }
   }
@@ -241,6 +247,24 @@ async function planarThumbnail({ name, stroke, roles, selector = "#artwork" }) {
   // pixel: leave it out rather than draw a dot.
   for (const e of art.querySelectorAll("circle[data-circle]"))
     if (+e.getAttribute("r") < 1) e.remove();
+  // A lace arc under four units across is under a thumbnail pixel, as the
+  // outer rings' are by the thousand: leave it out likewise. (Other
+  // drawings' paths, such as contour levels, carry data-level too.)
+  const lace = selector === "#lace-artwork";
+  for (const e of lace ? art.querySelectorAll("path[data-level]") : []) {
+    const kept = (
+      e
+        .getAttribute("d")
+        .match(
+          /M-?[\d.]+ -?[\d.]+(?:A-?[\d.]+ -?[\d.]+ 0 0 [01] |L)-?[\d.]+ -?[\d.]+/g,
+        ) ?? []
+    ).filter((run) => {
+      const v = run.match(/-?[\d.]+/g).map(Number);
+      return Math.hypot(v.at(-2) - v[0], v.at(-1) - v[1]) >= 4;
+    });
+    if (kept.length) e.setAttribute("d", kept.join(""));
+    else e.remove();
+  }
   const round = (v) => {
     const n = Math.round(+v);
     return Object.is(n, -0) ? "0" : String(n);

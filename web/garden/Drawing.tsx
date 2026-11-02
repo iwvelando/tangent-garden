@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { createGesture, type Motion } from "../gestures";
+import { useMemo, type ReactNode } from "react";
+import { usePageGestures } from "../page-gestures";
 import type { PlotCamera } from "../planar-link";
 import type { ColorScheme } from "../color-schemes";
 import { plotPalette } from "../palette";
@@ -146,68 +146,32 @@ export function GardenDrawing(
     onSelect?: (i: number) => void;
   },
 ) {
-  const svg = useRef<SVGSVGElement>(null),
-    gesture = useRef(createGesture());
-  const camera = useRef(p.camera);
-  camera.current = p.camera;
-  const change = useRef(p.onCamera);
-  change.current = p.onCamera;
-  const tap = useRef<{ x: number; y: number; type: string } | null>(null);
-  // Client pixels to page units, as the SVG's default meet fitting draws it.
-  const page = (clientX: number, clientY: number, box: DOMRect) => {
-    const ratio = Math.max(width / box.width, height / box.height);
-    return {
-      ratio,
-      x: width / 2 + (clientX - box.left - box.width / 2) * ratio,
-      y: height / 2 + (clientY - box.top - box.height / 2) * ratio,
-    };
-  };
-  const apply = (motion: Motion, box: DOMRect) => {
-    const c = camera.current,
-      ratio = Math.max(width / box.width, height / box.height);
-    let next: PlotCamera;
-    if (motion.kind === "drag")
-      next = { ...c, x: c.x + motion.dx * ratio, y: c.y + motion.dy * ratio };
-    else {
-      const zoom = Math.max(
-          zoomRange[0],
-          Math.min(zoomRange[1], c.zoom * motion.scale),
-        ),
-        k = zoom / c.zoom;
-      // Zoom about the fingers' midpoint, kept under them as they move.
-      const u = (motion.mid.x - box.left - box.width / 2) * ratio,
-        v = (motion.mid.y - box.top - box.height / 2) * ratio;
-      next = {
-        zoom,
-        x: u - (u - motion.dx * ratio - c.x) * k,
-        y: v - (v - motion.dy * ratio - c.y) * k,
-      };
-    }
-    camera.current = next;
-    change.current?.(next);
-  };
-  useEffect(() => {
-    const el = svg.current;
-    if (!el || !p.onCamera) return;
-    const wheel = (e: WheelEvent) => {
-      e.preventDefault();
-      apply(
-        {
-          kind: "pinch",
-          scale: Math.exp(-e.deltaY * 0.001),
-          dx: 0,
-          dy: 0,
-          mid: { x: e.clientX, y: e.clientY },
-        },
-        el.getBoundingClientRect(),
-      );
-    };
-    el.addEventListener("wheel", wheel, { passive: false });
-    return () => el.removeEventListener("wheel", wheel);
-  }, [!!p.onCamera]);
+  const gestures = usePageGestures({
+    page: gardenPage,
+    range: zoomRange,
+    camera: p.camera,
+    onCamera: p.onCamera,
+    onTap:
+      p.onSelect &&
+      ((at, tolerance) => {
+        const i = hitCircle(
+          p.result,
+          revealed(
+            p.result,
+            p.presentation,
+            p.selected,
+            p.count ?? p.result.curvature.length,
+          ),
+          at,
+          p.camera,
+          tolerance,
+        );
+        if (i >= 0) p.onSelect?.(i);
+      }),
+  });
   return (
     <svg
-      ref={svg}
+      {...gestures}
       id="garden-artwork"
       className="garden-drawing"
       viewBox={`0 0 ${width} ${height}`}
@@ -219,84 +183,6 @@ export function GardenDrawing(
       data-selected={p.selected}
       data-presentation={p.presentation}
       data-count={p.count}
-      tabIndex={p.onCamera ? 0 : undefined}
-      onPointerDown={(e) => {
-        if (!p.onCamera || e.button !== 0) return;
-        tap.current =
-          gesture.current.count === 0
-            ? { x: e.clientX, y: e.clientY, type: e.pointerType }
-            : null;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        gesture.current.down(e);
-      }}
-      onPointerMove={(e) => {
-        const motion = gesture.current.move(e);
-        if (!motion || !p.onCamera) return;
-        if (
-          motion.kind === "pinch" ||
-          (tap.current &&
-            Math.hypot(e.clientX - tap.current.x, e.clientY - tap.current.y) >
-              4)
-        )
-          tap.current = null;
-        apply(motion, e.currentTarget.getBoundingClientRect());
-      }}
-      onPointerUp={(e) => {
-        gesture.current.up(e);
-        const t = tap.current;
-        tap.current = null;
-        if (!t || !p.onSelect) return;
-        const at = page(
-          e.clientX,
-          e.clientY,
-          e.currentTarget.getBoundingClientRect(),
-        );
-        // A finger covers more than a cursor does.
-        const tolerance = (t.type === "touch" ? 18 : 10) * at.ratio;
-        const i = hitCircle(
-          p.result,
-          revealed(
-            p.result,
-            p.presentation,
-            p.selected,
-            p.count ?? p.result.curvature.length,
-          ),
-          { x: at.x, y: at.y },
-          p.camera,
-          tolerance,
-        );
-        if (i >= 0) p.onSelect(i);
-      }}
-      onPointerCancel={(e) => {
-        gesture.current.up(e);
-        tap.current = null;
-      }}
-      onLostPointerCapture={(e) => gesture.current.up(e)}
-      onKeyDown={(e) => {
-        const onCamera = p.onCamera;
-        if (!onCamera) return;
-        const c = p.camera;
-        const next =
-          e.key === "Home"
-            ? { x: 0, y: 0, zoom: 1 }
-            : e.key === "+" || e.key === "="
-              ? { ...c, zoom: Math.min(zoomRange[1], c.zoom * 1.2) }
-              : e.key === "-"
-                ? { ...c, zoom: Math.max(zoomRange[0], c.zoom / 1.2) }
-                : e.key === "ArrowLeft"
-                  ? { ...c, x: c.x - 25 }
-                  : e.key === "ArrowRight"
-                    ? { ...c, x: c.x + 25 }
-                    : e.key === "ArrowUp"
-                      ? { ...c, y: c.y - 25 }
-                      : e.key === "ArrowDown"
-                        ? { ...c, y: c.y + 25 }
-                        : null;
-        if (next) {
-          e.preventDefault();
-          onCamera(next);
-        }
-      }}
     >
       <Art {...p} clip="garden-live-clip" />
     </svg>

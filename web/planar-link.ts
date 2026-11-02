@@ -6,6 +6,7 @@ import {
   type LoomStudy,
 } from "./loom/model";
 import { defaultFamilyAnimation } from "./family-motion";
+import { laceLimits, laceTiling, type LaceStudy } from "./lace/model";
 import {
   gardenLimits,
   gardenSeed,
@@ -105,6 +106,8 @@ export type PlanarStudy = {
   loom?: LoomStudy;
   // An Apollonian garden open over this study; absent in older links.
   garden?: GardenStudy;
+  // Hyperbolic lace open over this study; absent in older links.
+  lace?: LaceStudy;
 };
 export const defaultAnimation: PlanarAnimation = {
   mode: "reveal",
@@ -486,6 +489,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "family",
         "loom",
         "garden",
+        "lace",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -736,12 +740,14 @@ export function planarStudy(value: unknown): PlanarStudy {
   }
   const loom = raw.loom === undefined ? undefined : loomStudy(raw.loom);
   const garden = raw.garden === undefined ? undefined : gardenStudy(raw.garden);
+  const lace = raw.lace === undefined ? undefined : laceStudy(raw.lace);
   return {
     ...study,
     animation,
     ...(family && { family }),
     ...(loom && { loom }),
     ...(garden && { garden }),
+    ...(lace && { lace }),
   };
 }
 
@@ -803,6 +809,52 @@ function gardenStudy(value: unknown): GardenStudy {
           `garden.selected.${k}`,
           `garden.selected.${k} must be a whole number.`,
         );
+  return out;
+}
+
+// Generation and motif settings, layers, selection by address,
+// presentation, view and weight; never generated geometry. Go validates
+// the same limits again.
+function laceStudy(value: unknown): LaceStudy {
+  const out = conform<LaceStudy>(
+    value,
+    {
+      fields: {
+        tiling: { options: { [laceTiling]: true } },
+        depth: { range: [0, laceLimits.depth] },
+        maxTiles: { range: [1, laceLimits.tiles] },
+        starPoint: { range: [0, 1] },
+        edges: "boolean",
+        motif: "boolean",
+        selected: {
+          optional: { list: { range: [0, 6] }, max: laceLimits.depth },
+        },
+        presentation: { options: { complete: true, selected: true } },
+        view: {
+          fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
+        },
+        weight: lineWeightSchema,
+        follow: { optional: "boolean" },
+        viewBeforeFollow: {
+          optional: {
+            fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
+          },
+        },
+      },
+    },
+    undefined,
+    "lace",
+  );
+  for (const k of ["depth", "maxTiles"] as const)
+    if (!Number.isInteger(out[k]))
+      throw new LinkError(`lace.${k}`, `lace.${k} must be a whole number.`);
+  out.selected?.forEach((side, i) => {
+    if (!Number.isInteger(side))
+      throw new LinkError(
+        `lace.selected[${i}]`,
+        `lace.selected[${i}] must be a whole number.`,
+      );
+  });
   return out;
 }
 

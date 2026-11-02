@@ -1,0 +1,19 @@
+/* Hyperbolic lace uses the Apollonian garden's full-window layout
+   (garden.css); these rules are its own. */
+.legend .line-dot {
+  background: var(--line-ink);
+}
+.lace-neighbors {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.lace-neighbors button {
+  padding: 6px 4px;
+  font-variant-numeric: tabular-nums;
+}
+.lace-neighbors + .hint {
+  margin: 6px 0 0;
+}
+.lace-layers {
+  margin: 14px 0 0;
+}

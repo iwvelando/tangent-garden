@@ -102,6 +102,7 @@ export function useTheme() {
   const style = {
     "--base-ink": planar.base,
     "--derived-ink": planar.derived,
+    "--line-ink": planar.line,
     "--thread-ink": hex(spatial.curve[k]),
     "--surface-ink": hex(spatial.teal[k]),
     "--focal-ink": hex(spatial.rust[k]),

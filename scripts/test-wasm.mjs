@@ -209,6 +209,57 @@ checkFourierFit();
     `Garden: typed circle packing bridge passed (${r.curvature.length} circles, ${replyBytes(raw)} bytes; windowed ${view.curvature.length})`,
   );
 }
+// Hyperbolic lace uses the same lifted transport.
+{
+  const q = { tiling: "7,3", depth: 8, maxTiles: 1000, starPoint: 0.3 };
+  const raw = globalThis.tangentGardenLace(JSON.stringify(q));
+  assert.equal(typeof raw, "object", "lace geometry must use typed transport");
+  const r = lifted(raw);
+  const n = r.center.length;
+  assert.equal(n, 1000);
+  assert.equal(r.stopped, "count");
+  for (const k of ["depth", "parent", "via", "reversed", "transform"])
+    assert.equal(r[k].length, n, k);
+  assert.equal(r.corners.length, 7 * n);
+  assert.equal(r.arcStart.length, 14 * n);
+  assert.equal(r.edgeCenter.length, r.edgeA.length);
+  assert.deepEqual(r.center[0], { x: 0, y: 0 });
+  assert.equal(r.reversed[1], true);
+  // Every tile side survives the bridge as a geodesic: a diameter, or a
+  // circle orthogonal to the rim through both its vertices.
+  for (let e = 0; e < r.edgeA.length; e++) {
+    const a = r.vertex[r.edgeA[e]],
+      b = r.vertex[r.edgeB[e]];
+    if (r.edgeStraight[e]) {
+      assert.ok(Math.abs(a.x * b.y - a.y * b.x) < 1e-12, `edge ${e}`);
+      continue;
+    }
+    const c = r.edgeCenter[e],
+      rho = r.edgeRadius[e];
+    assert.ok(
+      Math.abs(c.x * c.x + c.y * c.y - 1 - rho * rho) < 1e-9 * (1 + rho * rho),
+      `edge ${e}`,
+    );
+    for (const p of [a, b])
+      assert.ok(
+        Math.abs(Math.hypot(p.x - c.x, p.y - c.y) - rho) < 1e-12,
+        `edge ${e}`,
+      );
+  }
+  for (const [field, request] of [
+    ["depth", { ...q, depth: 9 }],
+    ["maxTiles", { ...q, maxTiles: 1001 }],
+    ["starPoint", { ...q, starPoint: 2 }],
+    ["tiling", { ...q, tiling: "5,4" }],
+  ])
+    assert.equal(
+      JSON.parse(globalThis.tangentGardenLace(JSON.stringify(request))).field,
+      field,
+    );
+  console.log(
+    `Lace: typed hyperbolic tiling bridge passed (${n} tiles, ${replyBytes(raw)} bytes)`,
+  );
+}
 const config = {
   kind: "evolute",
   curve: {

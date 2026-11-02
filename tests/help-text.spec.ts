@@ -407,6 +407,54 @@ test("Apollonian garden help fits both tiers", async ({ page }) => {
     expect(text).toContain(limit);
 });
 
+test("hyperbolic lace help fits both tiers and states the engine's limits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator('[data-lace-example="1"]').click();
+  const d = page.getByRole("dialog", { name: "Hyperbolic lace" });
+  await expect(d.locator("#lace-artwork")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entries = await d.evaluate((root) =>
+    Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
+      const h = document.getElementById(toggle.getAttribute("aria-controls")!)!;
+      const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+        HTMLElement | undefined;
+      brief?.querySelector(".help-more")?.remove();
+      return {
+        topic: toggle.getAttribute("aria-label"),
+        paired: !!toggle.closest(".pair"),
+        brief: brief?.textContent ?? h.textContent ?? "",
+        more: h.querySelector(".hint-more")?.textContent ?? "",
+      };
+    }),
+  );
+  expect(entries.map((e) => e.topic)).toEqual([
+    "About Tile",
+    "About following the selection",
+    "About Presentation",
+    "About Motif",
+    "About Tile sides",
+    "About Star point",
+    "About Depth",
+    "About Tile limit",
+    "About Line weight",
+  ]);
+  for (const e of entries) {
+    expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
+      e.paired ? pairedBriefWords : 20,
+    );
+    expect(words(e.more), e.topic!).toBeLessThanOrEqual(moreWords);
+  }
+  // The help states the limits the engine enforces.
+  const text = entries.map((e) => `${e.brief} ${e.more}`).join(" ");
+  for (const limit of ["0–8", "1–1,000", "10,000", "(0)", "(1)", "617"])
+    expect(text).toContain(limit);
+});
+
 test("complex loom help fits both tiers in every source family", async ({
   page,
 }) => {
