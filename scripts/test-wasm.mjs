@@ -178,13 +178,35 @@ checkFourierFit();
     ["minRadius", { ...q, minRadius: 0 }],
     ["maxCircles", { ...q, maxCircles: 5001 }],
     ["seed", { ...q, seed: "x" }],
+    [
+      "window.xMax",
+      { ...q, window: { xMin: 0.4, xMax: 0.3, yMin: 0.4, yMax: 0.6 } },
+    ],
   ])
     assert.equal(
       JSON.parse(globalThis.tangentGardenGarden(JSON.stringify(request))).field,
       field,
     );
+  // A view window and a kept circle cross the bridge: fewer circles, the
+  // gaps outside the view counted, and the kept circle with its generators.
+  const view = lifted(
+    globalThis.tangentGardenGarden(
+      JSON.stringify({
+        ...q,
+        minRadius: 0.0002,
+        window: { xMin: 0.28, xMax: 0.42, yMin: 0.47, yMax: 0.58 },
+        keep: { curvature: 15, x: 0, y: 4 },
+      }),
+    ),
+  );
+  assert.ok(view.omitted.view > 0 && view.curvature.length < 5000);
+  const kept = view.curvature.findIndex(
+    (b, i) => b === 15 && view.weightedX[i] === 0 && view.weightedY[i] === 4,
+  );
+  assert.ok(kept > 0, "the kept circle crosses the bridge");
+  assert.deepEqual(view.parents[kept], [1, 2, 3]);
   console.log(
-    `Garden: typed circle packing bridge passed (${r.curvature.length} circles, ${replyBytes(raw)} bytes)`,
+    `Garden: typed circle packing bridge passed (${r.curvature.length} circles, ${replyBytes(raw)} bytes; windowed ${view.curvature.length})`,
   );
 }
 const config = {

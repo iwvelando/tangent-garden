@@ -3210,6 +3210,7 @@ test("garden links conform settings, selection and view without geometry, and ol
         "view",
         "weight",
         ...(garden.selected ? ["selected"] : []),
+        ...("detail" in garden ? ["detail"] : []),
       ].sort(),
     );
   }
@@ -3280,6 +3281,60 @@ test("garden links conform settings, selection and view without geometry, and ol
     "selected" in planarStudy({ ...ordinary, garden: none }).garden!,
     false,
   );
+});
+
+test("garden detail and reveal settings round-trip, default to the static garden, and refuse invalid values", async () => {
+  const { presetGarden, gardenRequest, defaultReveal } =
+    await import("../web/garden/model");
+  const ordinary = planarPreset(0);
+  const garden = { ...presetGarden(0), view: { x: 30, y: -12, zoom: 8 } };
+  // Absent: R07.1's static garden, which asks for no view window even when
+  // zoomed, and the default reveal.
+  const old = planarStudy({ ...ordinary, garden }).garden!;
+  assert.equal("detail" in old, false);
+  assert.equal("reveal" in old, false);
+  assert.equal(gardenRequest(old).window, undefined);
+  assert.deepEqual(defaultReveal, { duration: 8, repeat: "once" });
+  for (const extra of [
+    { detail: true },
+    { reveal: { duration: 2.5, repeat: "back-and-forth" } },
+    { reveal: { duration: 3600, repeat: "loop" } },
+    { detail: true, reveal: { duration: 0.1, repeat: "once" } },
+  ]) {
+    const study = { ...ordinary, garden: { ...garden, ...extra } };
+    const decoded = await readStudyLink(
+      await writeStudyLink("2d", planarStudy(study)),
+    );
+    assert.deepEqual(planarStudy(decoded.study).garden, study.garden);
+  }
+  // Detail is saved only as the view's policy, never as its geometry.
+  const detailed = planarStudy({
+    ...ordinary,
+    garden: { ...garden, detail: true },
+  }).garden!;
+  assert.ok(gardenRequest(detailed).window);
+  for (const [patch, field] of [
+    [{ detail: "yes" }, "garden.detail"],
+    [{ reveal: { duration: 0, repeat: "once" } }, "garden.reveal.duration"],
+    [{ reveal: { duration: 3601, repeat: "once" } }, "garden.reveal.duration"],
+    [{ reveal: { duration: 5, repeat: "bounce" } }, "garden.reveal.repeat"],
+    [{ reveal: { duration: 5 } }, "garden.reveal.repeat"],
+    [{ reveal: { duration: 5, repeat: "once", time: 0.5 } }, "garden.reveal"],
+    [{ window: { xMin: 0, xMax: 1, yMin: 0, yMax: 1 } }, "garden"],
+  ] as const) {
+    let error: unknown;
+    try {
+      planarStudy({ ...ordinary, garden: { ...garden, ...patch } });
+    } catch (e) {
+      error = e;
+    }
+    assert.ok(error instanceof LinkError, JSON.stringify(patch));
+    assert.equal(
+      error.field.startsWith(field),
+      true,
+      `${error.field} for ${JSON.stringify(patch)}`,
+    );
+  }
 });
 
 test("rational loom links and map motion preserve frozen sources and manual views", async () => {

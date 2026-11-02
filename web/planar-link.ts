@@ -777,6 +777,17 @@ function gardenStudy(value: unknown): GardenStudy {
             fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
           },
         },
+        detail: { optional: "boolean" },
+        reveal: {
+          optional: {
+            fields: {
+              duration: { range: [0.1, 3600] },
+              repeat: {
+                options: { once: true, loop: true, "back-and-forth": true },
+              },
+            },
+          },
+        },
       },
     },
     undefined,

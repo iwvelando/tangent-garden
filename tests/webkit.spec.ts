@@ -2139,10 +2139,38 @@ test("Apollonian garden entry, scalar blur, phone controls and return preserve f
   );
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect(d.getByRole("alert")).toHaveCount(0);
-  // The paired cutoffs keep their clearance from what follows.
-  const pair = (await d.locator(".pair").first().boundingBox())!;
-  const next = (await d.locator(".garden-summary").boundingBox())!;
-  expect(next.y - pair.y - pair.height).toBeGreaterThanOrEqual(0);
+  // The paired cutoffs and the reveal's pair keep their clearance from
+  // what follows, as first painted.
+  for (const [field, after] of [
+    ["Depth", d.getByLabel("Finer circles when zoomed in")],
+    ["Repeat", d.locator("#garden-export-settings")],
+  ] as const) {
+    const bottom = await d
+      .locator(".pair", { has: page.getByLabel(field, { exact: true }) })
+      .evaluate((pair) =>
+        Math.max(
+          ...Array.from(
+            pair.querySelectorAll(":scope > .field"),
+            (f) => f.getBoundingClientRect().bottom,
+          ),
+        ),
+      );
+    const next = (await after.boundingBox())!;
+    expect(next.y - bottom, field).toBeGreaterThanOrEqual(12);
+  }
+  // Playback docks at the bottom of the phone's screen while active, with
+  // the drawing in view above it; clicks work without focus.
+  await d.getByRole("button", { name: "Play reveal" }).click();
+  const bar = d.locator("#garden-playback");
+  await expect(bar).toHaveCSS("position", "fixed");
+  await d.getByRole("button", { name: "Pause reveal" }).click();
+  const docked = (await bar.boundingBox())!;
+  expect(docked.y + docked.height).toBeLessThanOrEqual(844 + 0.5);
+  const shown = (await art.boundingBox())!;
+  expect(shown.y).toBeGreaterThanOrEqual(-0.5);
+  expect(shown.y + shown.height).toBeLessThanOrEqual(docked.y + 0.5);
+  await d.getByRole("button", { name: "Stop reveal" }).click();
+  await expect(bar).not.toHaveCSS("position", "fixed");
   // A click on a generator selects it; Safari does not focus buttons it
   // clicks, so selection must not depend on focus.
   const generator = d

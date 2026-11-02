@@ -571,7 +571,18 @@ test("rapid edits keep one computation and show only the latest packing", async 
   // While a packing is pending, nothing flashes into the settings: the
   // previous summary stays and the controls below it keep their place.
   const weight = d.getByLabel("Line weight", { exact: true });
-  const placed = (await weight.boundingBox())!.y;
+  // Within the settings column's content, which filling a field below the
+  // fold scrolls.
+  const place = () =>
+    weight.evaluate((el) => {
+      const aside = el.closest("aside")!;
+      return (
+        el.getBoundingClientRect().top -
+        aside.getBoundingClientRect().top +
+        aside.scrollTop
+      );
+    });
+  const placed = await place();
   const text = await d.locator("aside").innerText();
   await d.getByLabel("Depth", { exact: true }).fill("11");
   await expect(d.locator("#garden-artwork")).toHaveAttribute(
@@ -579,7 +590,7 @@ test("rapid edits keep one computation and show only the latest packing", async 
     "true",
   );
   expect(await d.locator("aside").innerText()).toBe(text);
-  expect((await weight.boundingBox())!.y).toBe(placed);
+  expect(await place()).toBe(placed);
   await ready(d);
   await d.getByLabel("Depth", { exact: true }).fill("12");
   await ready(d);

@@ -13,7 +13,8 @@ export type Section =
   | "spatial-export"
   | "shape-animation"
   | "shape-export"
-  | "loom-export";
+  | "loom-export"
+  | "garden-export";
 
 function read(): Partial<Record<Section, boolean>> {
   try {
