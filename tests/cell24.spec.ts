@@ -116,7 +116,12 @@ test("one cell, its diagonals and its center draw, with no text in the artwork",
     expect(Math.abs(d[1] - cy)).toBeLessThan(0.002);
   }
   await expect(page.locator(".lift-readout")).toContainText("1 of 24");
-  await expect(page.locator(".lift-readout")).toContainText("(1, 0, 0, 0)");
+  for (const [axis, value] of ["1", "0", "0", "0"].entries())
+    await expect(
+      page.locator(".lift-readout > span").filter({
+        hasText: `Center ${"xyzw"[axis]}:`,
+      }),
+    ).toHaveText(`Center ${"xyzw"[axis]}: ${value}`);
   await expect(page.locator(".tesseract-diagnostics")).toHaveText(
     "Cell 1 of 24 and its center, a vertex of the dual.",
   );
@@ -259,6 +264,35 @@ test("a tap selects on a phone, and nothing widens the page", async ({
   expect(fits.page).toBeLessThanOrEqual(fits.screen);
   expect(fits.readouts).toEqual([]);
   await context.close();
+});
+
+test("every cell center fits the readout columns with different font metrics", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await open(page);
+  // A fixed-width fallback exposes the tuple exceeding the 10ch value
+  // column on macOS too; Linux's default sans-serif exposed it in CI.
+  await page.evaluate(() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(".lift-readout { font-family: monospace }");
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  });
+  for (const width of [390, 844, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (let k = 0; k < 24; k++) {
+      await selectedField(page).fill(String(k + 1));
+      await expect.poll(() => selected(page)).toBe(k);
+      const overflow = await page
+        .locator(".lift-readout b")
+        .evaluateAll((bs) =>
+          bs
+            .filter((b) => b.scrollWidth > b.clientWidth + 0.5)
+            .map((b) => b.textContent),
+        );
+      expect(overflow, `${width}px, cell ${k + 1}`).toEqual([]);
+    }
+  }
 });
 
 test("angle expressions rotate both crystals; the latest edit wins and errors stay under their field", async ({

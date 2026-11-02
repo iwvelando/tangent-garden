@@ -1173,13 +1173,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       if (!p) return [];
       return [
         { label: "Selected cell", value: `${p.selected + 1} of 24` },
+        ...p.dual.source[p.selected].map((n, i) => ({
+          label: `Center ${"xyzw"[i]}`,
+          value: rational(n),
+        })),
         {
-          label: "Its center",
-          value: `(${p.dual.source[p.selected].map(rational).join(", ")})`,
+          label: "Shortest shadow edge",
+          value: p.shadowEdges[0].toFixed(3),
         },
         {
-          label: "Cell edges in shadow",
-          value: `${p.shadowEdges[0].toFixed(3)}–${p.shadowEdges[1].toFixed(3)}`,
+          label: "Longest shadow edge",
+          value: p.shadowEdges[1].toFixed(3),
         },
         { label: "Cell edges in 4D", value: "√2 ≈ 1.414" },
       ];
