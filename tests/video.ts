@@ -226,8 +226,23 @@ export function frameDifference(
     ],
     { maxBuffer: width * height * 3 + 1024 },
   );
+  if (pixels.length !== width * height * 3)
+    throw new Error("Frame parity dimensions differ");
+  return pixelDifference(pixels, 3, width, height, reference);
+}
+
+// The same parity for a frame already decoded, such as an animated WebP
+// frame from Chromium's ImageDecoder (ffmpeg before 8 cannot decode those).
+// `stride` is 3 for RGB, 4 for RGBA; the reference is the RGBA drawing.
+export function pixelDifference(
+  pixels: ArrayLike<number>,
+  stride: number,
+  width: number,
+  height: number,
+  reference: ArrayLike<number>,
+): { meanDifference: number; unmatchedInk: number } {
   if (
-    pixels.length !== width * height * 3 ||
+    pixels.length !== width * height * stride ||
     reference.length !== width * height * 4
   )
     throw new Error("Frame parity dimensions differ");
@@ -235,7 +250,7 @@ export function frameDifference(
   for (let i = 0; i < width * height; i++)
     for (let channel = 0; channel < 3; channel++)
       difference += Math.abs(
-        pixels[i * 3 + channel] - reference[i * 4 + channel],
+        pixels[i * stride + channel] - reference[i * 4 + channel],
       );
   const mask = (data: ArrayLike<number>, stride: number, threshold: number) => {
     const out = new Uint8Array(width * height);
@@ -247,8 +262,8 @@ export function frameDifference(
     }
     return out;
   };
-  const weakActual = mask(pixels, 3, 30),
-    strongActual = mask(pixels, 3, 90),
+  const weakActual = mask(pixels, stride, 30),
+    strongActual = mask(pixels, stride, 90),
     weakReference = mask(reference, 4, 30),
     strongReference = mask(reference, 4, 90);
   const unmatched = (strong: Uint8Array, weak: Uint8Array) => {

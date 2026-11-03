@@ -7,7 +7,7 @@ import {
   exportImage,
   openShapeExport,
 } from "./helpers";
-import { decodeVideo, frameDifference, probe } from "./video";
+import { decodeVideo, frameDifference, pixelDifference, probe } from "./video";
 import { writeStudyLink } from "../web/study-link";
 import { presetStudy } from "../web/tesseract/link";
 import { createElement } from "react";
@@ -850,19 +850,17 @@ for (const format of ["mp4", "webp"] as const)
       path,
       contentType: format === "mp4" ? "video/mp4" : "image/webp",
     });
-    const p = probe(path);
-    expect(p, "independent decoder is available").not.toBeNull();
-    expect([p!.width, p!.height, p!.frames]).toEqual([1000, 760, 15]);
-    expect(p!.durations.reduce((a, b) => a + b, 0)).toBe(1000);
-    for (const [k, index] of [0, 7, 14].entries()) {
-      const d = frameDifference(path, 1000, 760, index, references[k]);
-      expect(d).not.toBeNull();
-      expect(d!.meanDifference).toBeLessThan(6);
-      if (index === 7) expect(d!.unmatchedInk).toBeLessThan(0.03);
-      else {
-        // frameDifference deliberately refuses a no-ink match. Decode
-        // endpoints explicitly and require every pixel to be background.
-        const pixels = execFileSync(
+    // ffprobe decodes the MP4; CI's ffmpeg predates animated WebP decoding,
+    // so the WebP's container is read directly and Chromium's ImageDecoder,
+    // independent of the encoder, decodes its frames.
+    let frame: (index: number) => Promise<ArrayLike<number>>;
+    if (format === "mp4") {
+      const p = probe(path);
+      expect(p, "independent decoder is available").not.toBeNull();
+      expect([p!.width, p!.height, p!.frames]).toEqual([1000, 760, 15]);
+      expect(p!.durations.reduce((a, b) => a + b, 0)).toBe(1000);
+      frame = async (index) =>
+        execFileSync(
           "ffmpeg",
           [
             "-v",
@@ -881,8 +879,57 @@ for (const format of ["mp4", "webp"] as const)
           ],
           { maxBuffer: 1000 * 760 * 3 + 1024 },
         );
+    } else {
+      const bytes = await readFile(path);
+      const parts: { name: string; body: Buffer }[] = [];
+      for (let offset = 12; offset < bytes.length;) {
+        const length = bytes.readUInt32LE(offset + 4);
+        parts.push({
+          name: bytes.toString("ascii", offset, offset + 4),
+          body: bytes.subarray(offset + 8, offset + 8 + length),
+        });
+        offset += 8 + length + (length % 2);
+      }
+      const vp8x = parts.find((c) => c.name === "VP8X")!.body;
+      expect([vp8x.readUIntLE(4, 3) + 1, vp8x.readUIntLE(7, 3) + 1]).toEqual([
+        1000, 760,
+      ]);
+      const anmf = parts.filter((c) => c.name === "ANMF");
+      expect(anmf).toHaveLength(15);
+      expect(anmf.reduce((s, c) => s + c.body.readUIntLE(12, 3), 0)).toBe(1000);
+      frame = (index) =>
+        page.evaluate(
+          async ({ input, index }) => {
+            const decoder = new (window as any).ImageDecoder({
+              data: new Uint8Array(input),
+              type: "image/webp",
+            });
+            await decoder.tracks.ready;
+            if (decoder.tracks.selectedTrack.frameCount !== 15)
+              throw new Error("Chromium decoded a different frame count");
+            const { image } = await decoder.decode({ frameIndex: index });
+            const canvas = new OffscreenCanvas(1000, 760);
+            canvas.getContext("2d")!.drawImage(image, 0, 0);
+            image.close();
+            const rgba = canvas
+              .getContext("2d")!
+              .getImageData(0, 0, 1000, 760).data;
+            return Array.from(rgba);
+          },
+          { input: Array.from(bytes), index },
+        );
+    }
+    const stride = format === "mp4" ? 3 : 4;
+    for (const [k, index] of [0, 7, 14].entries()) {
+      const pixels = await frame(index);
+      const d = pixelDifference(pixels, stride, 1000, 760, references[k]);
+      expect(d.meanDifference).toBeLessThan(6);
+      if (index === 7) expect(d.unmatchedInk).toBeLessThan(0.03);
+      else {
+        // pixelDifference's ink match is meaningless without ink. Require
+        // every pixel of an empty endpoint to be background instead.
         let ink = 0;
-        for (let i = 0; i < pixels.length; i += 3)
+        for (let i = 0; i < pixels.length; i += stride)
           if (
             Math.abs(pixels[i] - pixels[0]) +
               Math.abs(pixels[i + 1] - pixels[1]) +
