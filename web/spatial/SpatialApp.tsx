@@ -296,6 +296,8 @@ export default function SpatialApp({
   // The curated event the study opened as (story.ts), kept until another
   // study replaces it; it applies only while the study is its recipe.
   const [story, setStory] = useState<StoryId | undefined>(undefined);
+  // Selecting even the base study's current event state ends playback.
+  const [eventSelection, setEventSelection] = useState(0);
   const [preset, setPreset] = useState("0"),
     [states, setStates] = useState<Record<string, ScalarState>>({});
   const [frame, setFrame] = useState<Frame | null>(null),
@@ -405,7 +407,13 @@ export default function SpatialApp({
     scalarError?.error ?? error.message,
   );
   const receiverPending = receiverView && busy;
-  const revision = JSON.stringify([key, states, active, journey.requested]);
+  const revision = JSON.stringify([
+    key,
+    states,
+    active,
+    journey.requested,
+    eventSelection,
+  ]);
   useEffect(() => {
     client.current = new EngineClient();
     return () => {
@@ -1687,15 +1695,20 @@ export default function SpatialApp({
   const setSections = (
     change: (s: ImplicitConfig["sections"]) => ImplicitConfig["sections"],
   ) => setImplicit((q) => ({ ...q, sections: change(q.sections) }));
-  const levelSet =
-    frame?.config.format === "implicit" ? frame.result.implicit : undefined;
   // The note on the drawn study: its story's reading of the level first,
   // while it is its story's, and no genus at the critical level, where the
-  // surface is singular.
-  const drawnStory = frame ? storyContext(frame.config, story) : null;
+  // surface is singular. A story follows the displayed animation frame;
+  // ordinary studies keep their existing base-study notes.
+  const storyFrame = animation?.frame ?? frame;
+  const drawnStory = storyFrame ? storyContext(storyFrame.config, story) : null;
+  const noteFrame = drawnStory?.eligible ? storyFrame : frame;
+  const levelSet =
+    noteFrame?.config.format === "implicit"
+      ? noteFrame.result.implicit
+      : undefined;
   const levelNote = (r: NonNullable<typeof levelSet>) => {
     if (!drawnStory?.eligible) return implicitNote(r).join(" ");
-    const { level } = frame!.config.implicit,
+    const { level } = noteFrame!.config.implicit,
       s = drawnStory.story;
     return [
       ...storyNote(s, level, r),
@@ -1934,6 +1947,7 @@ export default function SpatialApp({
   // a late one cannot overwrite it; a study chosen meanwhile wins.
   async function chooseState(state: EventState) {
     if (!eventStory) return;
+    setEventSelection((n) => n + 1);
     const token = generation.current;
     await Promise.allSettled([...jobs.current]);
     if (token !== generation.current) return;

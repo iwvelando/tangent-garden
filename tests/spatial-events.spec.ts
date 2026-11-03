@@ -517,6 +517,51 @@ for (const id of ids)
     expect((await shownConfig(page)).implicit.level).toBe(1);
   });
 
+for (const id of ids)
+  test(`${id}: choosing the base state ends a film and restores the study`, async ({
+    page,
+  }) => {
+    await watchEngines(page, 8, { spatial: 200 });
+    await openStory(page, id);
+    await page
+      .getByRole("checkbox", { name: "Section curves", exact: true })
+      .uncheck();
+    await page.locator("#spatial-artwork").press("ArrowLeft");
+    const original = (await linked(page)).study;
+    const panel = page.locator("#spatial-animation-section");
+    if ((await panel.getAttribute("open")) === null)
+      await panel.locator(":scope > summary").click();
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+    await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+    expect((await shownConfig(page)).implicit.level).toBe(1);
+    // A paused critical frame must not keep the regular base study's
+    // genus, nor can later regular frames keep the singular disclaimer.
+    await expect(note(page)).toContainText("not a manifold");
+    await expect(note(page)).not.toContainText("genus 0");
+    await page.getByRole("slider", { name: "Animation progress" }).fill("0.7");
+    await expect(stage(page)).toHaveAttribute("data-progress", "0.7");
+    expect((await shownConfig(page)).implicit.level).not.toBe(
+      stories[id].levels.before,
+    );
+    await expect(note(page)).toContainText(
+      id === "handle" ? "surface is a torus" : "surface is one drop",
+    );
+    await expect(note(page)).not.toContainText("not a manifold");
+    // The base study still stands at Before. It must remain an effective
+    // navigation action while an animation displays another level.
+    await state(page, "before").click();
+    await expect(stage(page)).not.toHaveAttribute("data-progress");
+    await expect(
+      page.getByRole("button", { name: "Stop", exact: true }),
+    ).toBeDisabled();
+    expect(await shownConfig(page)).toEqual(original.config);
+    expect((await linked(page)).study).toEqual(original);
+  });
+
 test("a level still being evaluated settles before a state applies", async ({
   page,
 }) => {

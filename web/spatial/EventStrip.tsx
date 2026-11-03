@@ -81,9 +81,7 @@ export function EventStrip({
               data-state={state}
               aria-pressed={selected === state}
               disabled={!context.eligible}
-              onClick={() => {
-                if (selected !== state) onSelect(state);
-              }}
+              onClick={() => onSelect(state)}
             >
               <span className="event-image">
                 {slot?.status === "ready" && <img src={slot.url} alt="" />}

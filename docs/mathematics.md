@@ -1488,7 +1488,7 @@ At `c = 1.44` these are 1.4832 and 0.6, and 1.4832 and 1.2. The examples' box `[
 
 **Comparing the mesh.** A regular level's surface is the analysis's: two closed pieces of Euler characteristic 2 and 2, one of 2, a sphere (2) or a torus (0). The mesh is compared with it only when it is complete: closed, two-sided, not cut by the box, nothing left out (no undefined points, poles or unresolved crossing tetrahedra), and refinement within its budget. Then the note says the mesh agrees, or that it reads otherwise and the narrowing feature is finer than the grid resolves; an incomplete mesh is not compared. The mesh's own description follows, unchanged.
 
-At `c = 1` the surface is singular, so the note says so and reads the mesh's pieces by Euler characteristic alone, never as a genus or cross-caps. A finite mesh shows the singular point only by chance. In `[−2, 2]³` with an even number of cells, the origin is a grid point and is met by one vertex without a normal: two spheres sharing it (χ = 3), or a sphere with two points made one (χ = 1). With an odd number of cells the origin lies inside a cell, and the mesh reads as a regular neighbor with no singular vertex: two drops, or a sphere. The examples use 56 cells.
+At `c = 1` the surface is singular, so the note says so and reads the mesh's pieces by Euler characteristic alone, never as a genus or cross-caps. This also applies to a displayed animation frame at that level. A finite mesh shows the singular point only by chance. In the examples' `[−2, 2]³` with 56 cells, the origin is a grid point and is met by one vertex without a normal: two spheres sharing it (χ = 3), or a sphere with two points made one (χ = 1). On the tested 57-cell grid the origin lies inside a cell, and the mesh reads as a regular neighbor with no singular vertex: two drops, or a sphere. Other even grids can misread the singularity too: the 60-cell Cassini mesh reads χ = 5 rather than 3.
 
 **Finite resolution.** The feature that narrows toward the event has width `w`:
 
@@ -1505,7 +1505,7 @@ At the bracket's levels `w` is 0.58 (drops' gap), 0.56 (neck), 0.8 (dimples) and
 
 - on `F` itself, `F(0) = 1`, `∇F(0) = 0` and the Hessians above;
 - each half-width reached on the level set at 0.64, 1 and 1.44, and held by the examples' box;
-- at 0.64, 0.84, 1.16 and 1.44, the analysis's class on 24, 40, 56 and 60 cells, refined to 0–2 levels, in the cube and in a box moved off its lattice, never cut;
+- at 0.64, 0.84, 1.16 and 1.44, the analysis's class on 24, 40, 56 and 60 cells in the cube and in a box moved off its lattice, never cut; the bracket levels 0.84 and 1.16 are also refined to 1–2 levels;
 - the narrowing brackets above, asserting the class wherever `w ≥ 2` cells and the two misreads at `c = 0.999`;
 - at `c = 1`, a closed mesh with a singular vertex or a regular neighbor's class, the examples' pinch (χ = 3 and 1, one singular vertex), and the 57-cell grids' smooth-looking neighbors;
 - a clipped box cut open and not read whole, refinement unresolved at its deepest level, and refinement out of budget.
