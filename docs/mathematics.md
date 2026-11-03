@@ -1883,3 +1883,25 @@ The 24-cell P is the convex hull of the 24 permutations of (±1, ±1, 0, 0), wit
 The shared-plane 24-cell sections are `RP ∩ {w=h}` and `RP° ∩ {w=h}`, computed from their exact octahedral incidence after the same rotation. Source edge/vertex IDs and every containing cell survive intersection and deduplication. Cell intersections of dimension two give oriented boundary facets; a whole octahedral cell in the plane is a solid region whose adjacent cells give its boundary. Affine dimensions −1 through 3 distinguish empty/point/segment/polygon/solid; they are decided from which source vertices lie on, above or below the plane, never by remeasuring rotated points. The contact band is 64·2⁻⁵²·√2 source units, covering binary64 rotations and interpolation at fixed radius; features below it intentionally coalesce. See [Shared-plane 24-cell sections](tesseracts.md#shared-plane-24-cell-sections) for the rounding rationale, limits and provenance.
 
 Independently restricting the declared inequalities to unrotated w=0 gives a primal cuboctahedron, `|xᵢ|≤1` and `Σ|xᵢ|≤2`, with 12/24/14 vertices/edges/faces. The dual gives the rhombic dodecahedron `|xᵢ|+|xⱼ|≤1` for each distinct pair, with 14/24/12. At w=1 the primal section is the whole octahedral cell, 6/12/8, and the dual is one point. General rotated sections are not asserted to be polar duals in three dimensions: section and polarity do not generally commute. Presentation emphasis changes ink opacity only, never the declared geometry.
+
+## The square-root journey
+
+For a radius `0.25 ≤ r ≤ 4`, a sheet `σ ∈ {+1, −1}` and the unwrapped parameter `0 ≤ t ≤ 4π`, the source path is `z(t) = r e^{it}` and its continuously followed square root is `w(t) = σ√r e^{it/2}`, so `w² = z` for every t. One circuit (`t = 2π`) returns z while `w(2π) = −w(0)`; a second circuit returns w. The relation `w² = z` is a complex curve in `C² = R⁴`, and the path on it is `q(t) = (Re z, Im z, Re w, Im w)`, with `|q|² = r² + r` and `|dq/dt|² = r² + r/4`. It is a closed curve of period 4π, a (2, 1) curve on the torus `|z| = r`, `|w| = √r`.
+
+**Never reduced modulo 2π.** Reducing t modulo 2π before evaluating w would put both circuits on one sheet and erase the second. The true period is 4π: the moving point is evaluated at `t mod 4π`, so `t = 4π` gives exactly the coordinates of `t = 0`, and a whole journey loops without a seam. Progress p maps to `t = from(1 − p) + to · p`, which reaches both entered endpoints exactly. Entered endpoints within 10⁻¹² of 0 or 4π, on either side, are those ends, since constant expressions such as `2*pi*2` can round past them.
+
+**Branch point and principal cut.** The projection `(z, w) ↦ z` of the relation is branched over `z = 0`, where both roots meet; no admitted path reaches it (`r ≥ 0.25`), and the origin is drawn separately in each view. The principal root `√z = √|z| e^{i Arg z / 2}`, with `Arg z ∈ (−π, π]`, jumps across the negative real axis. It is a naming convention only. The readout reports `w = +√z` or `−√z`, and the label changes where z crosses the cut, at `t = π` and `3π`, but no break is inserted in the path: successive samples are never farther apart than the arc between them.
+
+**Projection and framing.** The 4D view applies the declared rotation R (the six plane angles, in the tesseract's order) to q and drops the fourth coordinate, `P = (Rq)_xyz`. Since R is orthogonal, `|P| ≤ |q| = √(r² + r)`, which is the rotation- and time-independent framing radius. The points `q(t)` and `q(t + 2π)` share z and have opposite w, so their difference lies in the w plane. A projection whose dropped direction `R⁻¹e₄` lies in the w plane maps some such pair to one point: a false double point. The identity rotation does that at `t = π`. A dropped direction with a z component avoids it; the signature view uses yz −1 and zw 0.6, where the second circuit runs as an inner lap of the first. The flat diagram shows the z plane centered at `(−c, 0)` and the w plane at `(+c, 0)` at one scale, `c = 1.25 max(r, √r)`, so `|w| = √|z|` reads directly.
+
+**Trace.** The bright trace is the one circuit of t behind the moving point, in the direction of travel: `[t − 2π, t]` forward and `[t, t + 2π]` in reverse, taken modulo 4π. It is determined by t alone and returns with the point. It is split where the circuits meet, and each piece keeps its circuit, 1 for `[0, 2π]` and 2 for `[2π, 4π]`. In the z plane the trace is always one whole circle; in the w plane it is always half a circle, never closed.
+
+**Checks.** Engine tests use only returned geometry and elementary complex arithmetic:
+- `w² = z` and the norm on every returned 4D point;
+- rotate-then-drop against an independent inverse rotation;
+- chord bounds across the negative real axis;
+- exchange at 2π and return at 4π for both sheets and reversed traversal;
+- rounded and arbitrary endpoints, a non-grid t;
+- the trace's circuit identity, length and direction, the diagram's plane offsets and the principal readout.
+
+Targeted mutations are detected: reduction modulo 2π, no 4π reduction, principal-root evaluation, a flipped trace, the plane offset, the readout and the endpoint interpolation.

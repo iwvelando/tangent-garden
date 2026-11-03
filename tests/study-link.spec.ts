@@ -1158,6 +1158,49 @@ test("fields a link predates take the notebook's defaults", async () => {
   await refused(() => tesseractStudy(transient), "config.cell24.emphasis");
   sectioned.config.mode = "perspective";
   await refused(() => tesseractStudy(sectioned), "config.mode", /one of/);
+  // The square-root journey: links before it have no root field; its link
+  // restores radius, sheet, endpoints and both cameras; one without root
+  // opens the object's defaults; a link never carries playback progress.
+  assert.equal("root" in tesseractStudy(tesseract()).config, false);
+  const rootIndex = tesseractPresets.findIndex(
+    (p) => p.config.object === "root",
+  );
+  const journey: TesseractStudy = {
+    ...tesseract(rootIndex),
+    config: {
+      ...tesseract(rootIndex).config,
+      samples: 2048,
+      root: { radius: 2.5, sheet: "minus", from: 4 * Math.PI, to: 0 },
+    },
+    view: { yaw: 0.8, pitch: -0.3, zoom: 1.4, panX: 6, panY: 2 },
+    diagramView: { yaw: 0.32, pitch: 0.35, zoom: 0.7, panX: -40, panY: 12 },
+  };
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", journey))).study,
+    ),
+    journey,
+  );
+  const bareJourney = structuredClone(journey) as any;
+  delete bareJourney.config.root;
+  assert.deepEqual(
+    tesseractStudy(bareJourney).config.root,
+    (await import("../web/tesseract/objects")).objects.root.defaults(
+      tesseractPresets[0].config,
+    ).root,
+  );
+  for (const [key, value] of [
+    ["sheet", "both"],
+    ["trace", 0.5],
+    ["radius", "2"],
+  ] as const) {
+    const bad = structuredClone(journey) as any;
+    bad.config.root[key] = value;
+    await refused(() => tesseractStudy(bad), `config.root.${key}`);
+  }
+  const offered = structuredClone(journey) as any;
+  offered.config.mode = "orthographic";
+  await refused(() => tesseractStudy(offered), "config.mode", /one of/);
 });
 
 // Links made by version 1 of the format, frozen when it shipped. They must

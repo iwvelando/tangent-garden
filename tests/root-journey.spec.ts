@@ -1,6 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset, exportImage, openShapeExport } from "./helpers";
+import {
+  chooseColorScheme,
+  chooseNotebook,
+  choosePreset,
+  exportImage,
+  openShapeExport,
+} from "./helpers";
 import { decodeVideo, frameDifference, probe } from "./video";
 
 // The square-root journey (engine4/root.go): the z and w planes in one
@@ -407,4 +413,201 @@ test("a decoded looping movie matches direct seeks at 0, 2π and 4π", async ({
       expect(d.unmatchedInk).toBeLessThan(0.02);
     }
   }
+});
+
+// Slow replies to the study's own requests (not playback frames).
+const slowStudy = (page: Page, delay: number) =>
+  page.addInitScript((delay) => {
+    const send = Worker.prototype.postMessage;
+    (window as any).slowRoot = 0;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "tesseract" && q.tesseract?.object === "root") {
+        (window as any).slowRoot++;
+        setTimeout(() => send.call(this, q, ...rest), delay);
+      } else return send.call(this, q, ...rest);
+    };
+  }, delay);
+// The radius the drawn 4D pane was computed for, from its norm bound.
+const drawnRadius = async (p: Page) => {
+  const n = (await desc(p, "orthographic")).root.normBound;
+  return (-1 + Math.sqrt(1 + 4 * n * n)) / 2;
+};
+
+test("slow replies never show an older edit, an example chosen meanwhile wins, and switching back restores the edited study", async ({
+  page,
+}) => {
+  await slowStudy(page, 250);
+  await open(page);
+  const radius = page.getByRole("textbox", { name: "Radius r", exact: true });
+  // Two edits while the first is still computing: only the second is drawn.
+  await radius.fill("2");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).slowRoot))
+    .toBeGreaterThan(1);
+  await radius.fill("3");
+  await settle(page);
+  expect((await meta(page)).config.root.radius).toBe(3);
+  expect(await drawnRadius(page)).toBeCloseTo(3, 12);
+  await page
+    .getByRole("combobox", { name: "Initial sheet", exact: true })
+    .selectOption("minus");
+  await settle(page);
+  const edited = await meta(page);
+  // An example chosen while an edit computes replaces the whole study, and
+  // the late reply is discarded.
+  await radius.fill("1.2");
+  await choosePreset(page, { label: "A cube beyond a cube" });
+  await settle(page);
+  await page.waitForTimeout(500);
+  await settle(page);
+  expect((await meta(page)).config.object).toBe("tesseract");
+  await expect(panel(page, "orthographic")).toHaveCount(0);
+  // Choosing the object again restores the last study it drew.
+  await page
+    .getByRole("combobox", { name: "4D object", exact: true })
+    .selectOption("root");
+  await settle(page);
+  expect((await meta(page)).config).toEqual(edited.config);
+  expect(await drawnRadius(page)).toBeCloseTo(3, 12);
+  await expect(
+    page.getByRole("combobox", { name: "Initial sheet", exact: true }),
+  ).toHaveValue("minus");
+  // Entered from another object with no saved study, it opens its defaults.
+  await page.goto("/?study=4d");
+  await settle(page);
+  await page
+    .getByRole("combobox", { name: "4D object", exact: true })
+    .selectOption("root");
+  await settle(page);
+  expect((await meta(page)).config.root).toEqual({
+    radius: 1.6,
+    sheet: "plus",
+    from: 0,
+    to: 4 * Math.PI,
+  });
+  await expect(page.locator(".stale-study")).toHaveCount(0);
+});
+
+test("cancel, an edit or leaving the notebook discards a movie export and keeps the study", async ({
+  page,
+}) => {
+  await open(page);
+  await page.getByRole("spinbutton", { name: "Path intervals" }).fill("4096");
+  await settle(page);
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("8");
+  const entered = await meta(page);
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  await openShapeExport(page);
+  for (const action of ["cancel", "edit", "switch"]) {
+    await page
+      .getByRole("button", { name: /^Export (MP4 video|animated WebP)/ })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Cancel export", exact: true }),
+    ).toBeVisible();
+    if (action === "cancel")
+      await page
+        .getByRole("button", { name: "Cancel export", exact: true })
+        .click();
+    else if (action === "edit")
+      await page
+        .getByRole("textbox", { name: "Radius r", exact: true })
+        .fill("2");
+    else {
+      await chooseNotebook(page, "2d");
+      await chooseNotebook(page, "4d");
+    }
+    await expect(
+      page.getByRole("button", { name: "Cancel export", exact: true }),
+    ).toHaveCount(0);
+    await settle(page);
+  }
+  expect(downloads).toBe(0);
+  expect((await meta(page)).config).toEqual({
+    ...entered.config,
+    root: { ...entered.config.root, radius: 2 },
+  });
+  expect(await drawnRadius(page)).toBeCloseTo(2, 12);
+});
+
+test("keys pan the planes in pane 1 and orbit the 4D path in pane 2, each alone", async ({
+  page,
+}) => {
+  await open(page);
+  const views = async () => (await meta(page)).views;
+  const [plane, lifted] = await views();
+  await panel(page, "diagram").focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("+");
+  await settle(page);
+  let [p, l] = await views();
+  expect(p.view.panX).not.toBe(plane.view.panX);
+  expect(p.view.zoom).toBeGreaterThan(plane.view.zoom);
+  expect(p.view.yaw).toBe(plane.view.yaw);
+  expect(l.view).toEqual(lifted.view);
+  await panel(page, "orthographic").focus();
+  await page.keyboard.press("ArrowRight");
+  await settle(page);
+  [p, l] = await views();
+  expect(l.view.yaw).not.toBe(lifted.view.yaw);
+  expect(l.view.panX).toBe(lifted.view.panX);
+  await page.keyboard.press("Home");
+  await settle(page);
+  expect((await views())[1].view).toEqual(lifted.view);
+  expect((await views())[0].view).toEqual(p.view);
+});
+
+test("circuit, accent and guide inks follow the color scheme in drawing, legend and export", async ({
+  page,
+}) => {
+  await open(page);
+  const stroke = (source: string) =>
+    page.locator(`[data-source="${source}"]`).getAttribute("stroke");
+  const css = (c: string) =>
+    page.evaluate((c) => {
+      const d = document.createElement("i");
+      d.style.color = c;
+      document.body.append(d);
+      const v = getComputedStyle(d).color;
+      d.remove();
+      return v;
+    }, c);
+  const swatch = (text: string) =>
+    page
+      .locator(".tesseract-legend span, .tesseract-legend li")
+      .filter({ hasText: text })
+      .locator("i")
+      .evaluate((i) => getComputedStyle(i).backgroundColor);
+  const seen = new Set<string>();
+  for (const scheme of ["default", "cobalt", "plum", "forest"]) {
+    if (scheme !== "default") {
+      await chooseColorScheme(page, scheme);
+      await settle(page);
+    }
+    const inks = {
+      first: (await stroke("root/lifted/circuit/1"))!,
+      second: (await stroke("root/lifted/circuit/2"))!,
+      guide: (await stroke("root/source/axis/re"))!,
+      current: (await page
+        .locator('[data-marker="root/lifted/current"]')
+        .getAttribute("fill"))!,
+    };
+    // Four distinct roles in every scheme, and the same ink in each view.
+    expect(new Set(Object.values(inks)).size, scheme).toBe(4);
+    expect(await stroke("root/source/circuit/1")).toBe(inks.first);
+    expect(await stroke("root/value/circuit/2")).toBe(inks.second);
+    expect(await swatch("First circuit")).toBe(await css(inks.first));
+    expect(await swatch("Second circuit")).toBe(await css(inks.second));
+    expect(await swatch("Axes, branch point")).toBe(await css(inks.guide));
+    expect(await swatch("Moving point")).toBe(await css(inks.current));
+    seen.add(inks.first);
+    if (scheme === "plum") {
+      const download = page.waitForEvent("download");
+      await exportImage(page, "SVG");
+      const svg = await readFile((await (await download).path())!, "utf8");
+      for (const ink of Object.values(inks)) expect(svg).toContain(ink);
+    }
+  }
+  expect(seen.size).toBe(4);
 });
